@@ -1821,73 +1821,96 @@ elif st.session_state.view == "overview":
 # --------------------------------------------------------------------------
 
 elif st.session_state.view == "library":
-    st.markdown(
-        "<div style='font-size:2.4rem; font-weight:800; letter-spacing:-0.5px; "
-        "margin:0.4rem 0 0.4rem'>📚 Report Library</div>",
-        unsafe_allow_html=True,
-    )
-    st.caption(
-        "Every automation. Pick who's running it and we'll take you to their runner page."
-    )
+    selected_id = st.session_state.get("library_report_id")
 
-    library_pending_key = "library_pick_for"
+    if selected_id:
+        report = next((r for r in AUTOMATED_REPORTS if r["id"] == selected_id), None)
+        if not report:
+            st.error("That report isn't in the library anymore.")
+            if st.button("← Back to Library"):
+                st.session_state.pop("library_report_id", None)
+                st.rerun()
+        else:
+            if st.button("← Back to Library", key="lib_detail_back"):
+                st.session_state.pop("library_report_id", None)
+                st.rerun()
 
-    for report in AUTOMATED_REPORTS:
-        assignees = report.get("assignees", []) or []
-        sched = report.get("schedule", {})
-        with st.container(border=True):
-            cols = st.columns([5, 2])
-            with cols[0]:
-                st.markdown(
-                    f"<div style='font-size:1.4rem; font-weight:700'>"
-                    f"{report.get('emoji', '📄')} {report['name']}</div>",
-                    unsafe_allow_html=True,
-                )
-                if report.get("description"):
-                    st.caption(report["description"])
-                meta_bits = []
-                if assignees:
-                    meta_bits.append(f"Owner: **{', '.join(assignees)}**")
-                if sched:
-                    freq = sched.get("frequency", "")
-                    time_ = sched.get("time", "")
-                    if freq or time_:
-                        meta_bits.append(f"{freq.capitalize()} · {time_}".strip(" ·"))
-                if meta_bits:
-                    st.markdown("  •  ".join(meta_bits))
-            with cols[1]:
-                if report.get("sheet_url"):
-                    st.link_button("📂 Open Sheet", report["sheet_url"],
-                                   use_container_width=True)
-                if st.button(
-                    "▶ Run this report",
-                    key=f"lib_run_{report['id']}",
-                    type="primary",
-                    use_container_width=True,
-                ):
-                    st.session_state[library_pending_key] = report["id"]
-                    st.rerun()
+            st.markdown(
+                f"<div style='font-size:2.2rem; font-weight:800; margin:0.4rem 0 0.4rem'>"
+                f"{report.get('emoji', '📄')} {report['name']}</div>",
+                unsafe_allow_html=True,
+            )
+            if report.get("description"):
+                st.caption(report["description"])
 
-            if st.session_state.get(library_pending_key) == report["id"]:
-                st.markdown("---")
-                st.markdown("**Who's running this?**")
-                pick_cols = st.columns(len(MEMBERS))
-                for pc, member in zip(pick_cols, MEMBERS):
-                    with pc:
+            # 'Running as' picker — sets st.session_state.user so the run gets
+            # attributed correctly. Defaults to current user or first assignee.
+            names = [m["name"] for m in MEMBERS]
+            default_user = st.session_state.get("user")
+            if default_user not in names:
+                assignees = report.get("assignees", [])
+                default_user = assignees[0] if assignees and assignees[0] in names else names[0]
+            chosen = st.selectbox(
+                "Running as:",
+                names,
+                index=names.index(default_user),
+                key=f"lib_run_as_{report['id']}",
+            )
+            st.session_state.user = chosen
+
+            st.markdown("---")
+            _render_report_card(report, today, chrome_ok)
+    else:
+        st.markdown(
+            "<div style='font-size:2.4rem; font-weight:800; letter-spacing:-0.5px; "
+            "margin:0.4rem 0 0.4rem'>📚 Report Library</div>",
+            unsafe_allow_html=True,
+        )
+        st.caption("Every automation. Click a report to open its checklist + run it.")
+
+        # Group reports into sections by 'category' field if present; otherwise
+        # everything lands in 'All Reports'. (When you categorize later, just
+        # add `"category": "Recruiting"` to the report dict — it'll group here.)
+        sections: dict[str, list] = {}
+        for r in AUTOMATED_REPORTS:
+            cat = r.get("category", "All Reports")
+            sections.setdefault(cat, []).append(r)
+
+        for section_name, reports_in_section in sections.items():
+            st.markdown(f"### {section_name}")
+            for report in reports_in_section:
+                with st.container(border=True):
+                    cols = st.columns([5, 2])
+                    with cols[0]:
+                        st.markdown(
+                            f"**{report.get('emoji', '📄')} {report['name']}**"
+                        )
+                        if report.get("description"):
+                            st.caption(report["description"])
+                        meta_lines = []
+                        assignees = report.get("assignees", [])
+                        if assignees:
+                            meta_lines.append(f"**Assigned to:** {', '.join(assignees)}")
+                        last_run = _latest_run_summary(report["id"])
+                        if last_run:
+                            meta_lines.append(
+                                f"<span style='color:#C92020; font-weight:600'>{last_run}</span>"
+                            )
+                        else:
+                            meta_lines.append("<span style='color:#777'>Not yet run</span>")
+                        st.markdown(
+                            "  •  ".join(meta_lines),
+                            unsafe_allow_html=True,
+                        )
+                    with cols[1]:
                         if st.button(
-                            f"{member['emoji']} {member['name']}",
-                            key=f"lib_pickuser_{report['id']}_{member['name']}",
+                            "Open →",
+                            key=f"lib_open_{report['id']}",
+                            type="primary",
                             use_container_width=True,
                         ):
-                            st.session_state.pop(library_pending_key, None)
-                            _go_user(member["name"])
+                            st.session_state["library_report_id"] = report["id"]
                             st.rerun()
-                if st.button(
-                    "✖ Cancel",
-                    key=f"lib_cancel_{report['id']}",
-                ):
-                    st.session_state.pop(library_pending_key, None)
-                    st.rerun()
 
 
 # --------------------------------------------------------------------------
