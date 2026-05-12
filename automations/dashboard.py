@@ -48,18 +48,52 @@ def _pid_alive(pid: int) -> bool:
 
 
 def _read_active_runs() -> list[dict]:
+    """Return live runs. Orphans (subprocess finished but the streamlit
+    handler never logged completion because the user navigated away) get
+    migrated into runs.jsonl + run_state.json so the user can see them."""
     if not ACTIVE_RUNS_FILE.exists():
         return []
     try:
         active = json.loads(ACTIVE_RUNS_FILE.read_text())
     except Exception:
         return []
-    # Filter out runs whose PID is no longer alive; clean those up
     alive = []
+    orphans = []
     for a in active:
         pid = a.get("pid")
         if pid and _pid_alive(int(pid)):
             alive.append(a)
+        else:
+            orphans.append(a)
+
+    for orphan in orphans:
+        report_id = orphan.get("report_id")
+        if not report_id:
+            continue
+        # Guess success/failure from the log tail
+        log_path = orphan.get("log_path")
+        status = "unknown"
+        if log_path and Path(log_path).exists():
+            try:
+                tail = Path(log_path).read_text().lower().splitlines()[-10:]
+                tail_text = "\n".join(tail)
+                if "done" in tail_text or "[ok]" in tail_text:
+                    status = "success"
+                elif "error" in tail_text or "failed" in tail_text or "traceback" in tail_text:
+                    status = "failed"
+            except Exception:
+                pass
+        try:
+            _save_run_state_for(report_id, status if status != "unknown" else "success")
+            _log_run(
+                report_id=report_id,
+                report_name=orphan.get("report_name", "?"),
+                user=orphan.get("user", "unknown"),
+                status=status,
+            )
+        except Exception:
+            pass
+
     if len(alive) != len(active):
         ACTIVE_RUNS_FILE.write_text(json.dumps(alive, indent=2))
     return alive
@@ -1523,7 +1557,7 @@ elif st.session_state.view == "overview":
     <div class="hero">
         <div class="big-date">{BIG_DATE}</div>
         <h1>📊 Alphalete Marketing — 7-Day Overview</h1>
-        <p>Every report run by anyone, last 7 days. Reports flagged ⚠️ were scheduled but never ran.</p>
+        <p>Every report run by anyone, last 7 days.</p>
     </div>
     """, unsafe_allow_html=True)
 
