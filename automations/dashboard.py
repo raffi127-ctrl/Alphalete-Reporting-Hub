@@ -303,6 +303,14 @@ st.markdown("""
     }
     .hero h1 { color: white !important; margin: 0 0 0.4rem 0; font-size: 1.9rem; }
     .hero p { margin: 0; opacity: 0.92; font-size: 1.05rem; }
+    .hero .big-date {
+        font-size: 2.4rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        margin-bottom: 0.3rem;
+        opacity: 0.95;
+        line-height: 1.1;
+    }
 
     /* Report cards */
     [data-testid="stContainer"]:has(.report-card-marker) {
@@ -353,6 +361,16 @@ today = dt.date.today()
 weekday_name = WEEKDAY_NAMES[today.weekday()]
 hour = dt.datetime.now().hour
 greeting = "Good morning" if hour < 12 else ("Good afternoon" if hour < 17 else "Good evening")
+
+
+def _ordinal(n: int) -> str:
+    """1 → '1st', 2 → '2nd', 11 → '11th', 22 → '22nd', etc."""
+    if 10 <= n % 100 <= 20:
+        return f"{n}th"
+    return f"{n}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th') }"
+
+
+BIG_DATE = f"{weekday_name.upper()}, {today.strftime('%B').upper()} {_ordinal(today.day).upper()}"
 
 
 def _go_home():
@@ -420,8 +438,9 @@ with st.sidebar:
 if st.session_state.view == "home":
     st.markdown(f"""
     <div class="hero">
+        <div class="big-date">{BIG_DATE}</div>
         <h1>📊 Welcome to Alphalete Reports</h1>
-        <p>Today is <b>{weekday_name}, {today.strftime("%B %d")}</b>. Pick your name to see today's reports — or view the team overview.</p>
+        <p>Pick your name to see today's reports — or view the team overview.</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -486,6 +505,7 @@ if st.session_state.view == "home":
 elif st.session_state.view == "overview":
     st.markdown(f"""
     <div class="hero">
+        <div class="big-date">{BIG_DATE}</div>
         <h1>📊 Alphalete Marketing — 7-Day Overview</h1>
         <p>Every report run by anyone, last 7 days. Reports flagged ⚠️ were scheduled but never ran.</p>
     </div>
@@ -543,8 +563,9 @@ else:  # st.session_state.view == "user"
 
     st.markdown(f"""
     <div class="hero">
+        <div class="big-date">{BIG_DATE}</div>
         <h1>{member_emoji} {greeting}, {user_name}!</h1>
-        <p>Today is <b>{weekday_name}, {today.strftime("%B %d")}</b>. Here's what's on your plate.</p>
+        <p>Here's what's on your plate.</p>
     </div>
     """, unsafe_allow_html=True)
 
