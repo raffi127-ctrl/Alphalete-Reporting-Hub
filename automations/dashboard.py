@@ -957,24 +957,33 @@ st.markdown("""
     .main > div { padding-top: 1rem; }
     h1, h2, h3 { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 
-    /* Hero card */
+    /* Alphalete brand palette
+       --gold-dark: #8B6914   (deep gold, header gradient end)
+       --gold:      #C9A85C   (Alphalete wolf gold)
+       --gold-soft: #E8D08C   (soft gold accent)
+       --red:       #B8232C   (Alphalete red)
+       --red-dark:  #8B1A22   (deep red, button hover) */
+
+    /* Hero card — gold gradient */
     .hero {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #2A1F12 0%, #5C4220 50%, #8B6914 100%);
         color: white;
         padding: 1.8rem 2rem;
         border-radius: 16px;
         margin-bottom: 1.2rem;
-        box-shadow: 0 8px 24px rgba(102, 126, 234, 0.18);
+        box-shadow: 0 8px 24px rgba(139, 105, 20, 0.28);
+        border: 1px solid rgba(201, 168, 92, 0.4);
     }
-    .hero h1 { color: white !important; margin: 0 0 0.4rem 0; font-size: 1.9rem; }
-    .hero p { margin: 0; opacity: 0.92; font-size: 1.05rem; }
+    .hero h1 { color: #E8D08C !important; margin: 0 0 0.4rem 0; font-size: 1.9rem; }
+    .hero p { margin: 0; opacity: 0.92; font-size: 1.05rem; color: #F5EAD0; }
     .hero .big-date {
         font-size: 2.4rem;
         font-weight: 800;
         letter-spacing: 0.08em;
         margin-bottom: 0.3rem;
-        opacity: 0.95;
+        color: #E8D08C;
         line-height: 1.1;
+        text-shadow: 0 2px 8px rgba(0,0,0,0.35);
     }
 
     /* Report cards */
@@ -1002,13 +1011,39 @@ st.markdown("""
     .stButton > button {
         border-radius: 10px;
         font-weight: 600;
-        transition: transform 0.1s ease;
+        transition: transform 0.1s ease, box-shadow 0.15s ease;
     }
-    .stButton > button:hover { transform: translateY(-1px); }
+    .stButton > button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 14px rgba(184, 35, 44, 0.18);
+    }
+    /* Primary buttons = Alphalete red gradient */
     .stButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #B8232C 0%, #8B1A22 100%);
         border: none;
+        color: #fff;
+        font-weight: 700;
     }
+    .stButton > button[kind="primary"]:hover {
+        background: linear-gradient(135deg, #D02832 0%, #A11E28 100%);
+        box-shadow: 0 6px 18px rgba(184, 35, 44, 0.32);
+    }
+    /* Secondary buttons get a subtle gold accent on hover */
+    .stButton > button[kind="secondary"]:hover {
+        border-color: #C9A85C;
+    }
+    /* Make link buttons match the secondary look */
+    .stLinkButton > a {
+        border-radius: 10px !important;
+    }
+    /* Section headings get a gold underline accent */
+    .main h2 {
+        border-bottom: 3px solid #C9A85C;
+        padding-bottom: 0.4rem;
+        display: inline-block;
+    }
+    /* Status pill: Done Today switches to brand gold */
+    .pill-ok { background: #FFF3D6 !important; color: #8B6914 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1196,15 +1231,29 @@ if st.session_state.view == "home":
     # Automation Backlog — unassigned + in-progress requests
     # --------------------------------------------------------------------
     st.markdown("---")
-    bl_cols = st.columns([4, 2, 2])
+    st.markdown("### 🚧 Automation Backlog")
+    st.caption("New report ideas and bugs from the team. Anyone can claim a request to take it on.")
+    st.markdown(
+        """
+        <style>
+        /* Make the two backlog action buttons large + brand-colored */
+        div[data-testid="column"]:has(button[key="open_intake_btn"]) button,
+        div[data-testid="column"]:has(button[key="open_wireup_direct_btn"]) button {
+            min-height: 90px !important;
+            font-size: 1.25rem !important;
+            font-weight: 700 !important;
+            border-radius: 14px !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    bl_cols = st.columns(2)
     with bl_cols[0]:
-        st.markdown("### 🚧 Automation Backlog")
-        st.caption("New report ideas and bugs from the team. Anyone can claim a request to take it on.")
-    with bl_cols[1]:
-        if st.button("➕ Submit Request", use_container_width=True, type="primary", key="open_intake_btn"):
+        if st.button("➕  Submit a New Request", use_container_width=True, type="primary", key="open_intake_btn"):
             _show_intake_dialog()
-    with bl_cols[2]:
-        if st.button("📥 Upload Built Automation", use_container_width=True, key="open_wireup_direct_btn",
+    with bl_cols[1]:
+        if st.button("📥  Upload a Built Automation", use_container_width=True, key="open_wireup_direct_btn",
                      help="Upload an automation that's already built (skips the backlog claim flow)"):
             _show_wire_up_dialog(None)
 
