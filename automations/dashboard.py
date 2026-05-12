@@ -2698,9 +2698,6 @@ with st.sidebar:
     if st.button(f"📨 New Automation Request ({_backlog_count})", use_container_width=True, key="nav_backlog"):
         _go_backlog()
         st.rerun()
-    if st.button(f"🐛 Bugs ({_bugs_count})", use_container_width=True, key="nav_bugs"):
-        _go_bugs()
-        st.rerun()
     if st.button("📥 Upload Built Automation", use_container_width=True, key="nav_upload"):
         st.session_state.show_wireup_direct = True
 
@@ -2760,6 +2757,9 @@ with st.sidebar:
     )
     if st.button("⚠️ Suggest a Change / Report A Bug", use_container_width=True, key="open_suggest_btn"):
         st.session_state.show_suggest = True
+    if st.button(f"🐛 Bugs Being Fixed ({_bugs_count})", use_container_width=True, key="nav_bugs"):
+        _go_bugs()
+        st.rerun()
 
     # Tiny sign-out link at the very bottom — ends the 1-hour session so the
     # next page load prompts for the Pack Access password again.
