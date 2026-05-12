@@ -1570,14 +1570,17 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                 with st.popover("📨 Ask for an update", use_container_width=True):
                     st.caption(
                         f"Sends a quick check-in to **{claimer or 'the claimer'}**"
-                        + (f" and CCs **{requester_email}**" if requester_email else "")
+                        + (
+                            f" and CCs the original requester at **{requester_email}**"
+                            if requester_email else ""
+                        )
                         + "."
                     )
                     asker_email = st.text_input(
-                        "Your email",
+                        "Your email (optional)",
                         key=f"asker_email_{entry['ID']}",
                         placeholder="you@example.com",
-                        help="So the claimer can reply directly to you.",
+                        help="Leave blank if you're the original requester — they're already on CC.",
                     )
                     if not claimer_email:
                         st.warning(
@@ -1604,7 +1607,6 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                         "📤 Open in my mail app",
                         _mailto_update,
                         use_container_width=True,
-                        disabled=not (asker_email and "@" in asker_email),
                         help="Drafts the email in your mail app. Fill in any blank \"To\" "
                              "if the claimer's email isn't on file yet.",
                     )
