@@ -1264,10 +1264,12 @@ def _go_overview():
     st.session_state.view = "overview"
 
 
-def _render_currently_running_banner():
-    """Show a banner at the top of any view if any reports are running in the
-    background (subprocess started here OR carried over from a prior session)."""
+def _render_currently_running_banner(filter_user: str | None = None):
+    """Show a banner if any reports are running in the background.
+    If `filter_user` is given, only show runs started by that user."""
     active = _read_active_runs()
+    if filter_user:
+        active = [a for a in active if a.get("user") == filter_user]
     if not active:
         return
     for run in active:
@@ -1378,7 +1380,6 @@ with st.sidebar:
 # --------------------------------------------------------------------------
 
 if st.session_state.view == "home":
-    _render_currently_running_banner()
     st.markdown(f"""
     <div class="hero">
         <div class="big-date">{BIG_DATE}</div>
@@ -1518,7 +1519,6 @@ if st.session_state.view == "home":
 # --------------------------------------------------------------------------
 
 elif st.session_state.view == "overview":
-    _render_currently_running_banner()
     st.markdown(f"""
     <div class="hero">
         <div class="big-date">{BIG_DATE}</div>
@@ -1526,6 +1526,22 @@ elif st.session_state.view == "overview":
         <p>Every report run by anyone, last 7 days. Reports flagged ⚠️ were scheduled but never ran.</p>
     </div>
     """, unsafe_allow_html=True)
+
+    # Currently-running activity log (anyone's runs)
+    active_now = _read_active_runs()
+    if active_now:
+        st.markdown("### 🏃 Running Right Now")
+        for run in active_now:
+            try:
+                started = dt.datetime.fromisoformat(run.get("started_at", ""))
+                elapsed = dt.datetime.now() - started
+                elapsed_str = f"{int(elapsed.total_seconds() // 60)}m {int(elapsed.total_seconds() % 60)}s"
+            except Exception:
+                elapsed_str = "?"
+            with st.container(border=True):
+                st.markdown(
+                    f"⏳ **{run.get('report_name', '?')}** — started by **{run.get('user', '?')}** • running for **{elapsed_str}**"
+                )
 
     # Missed runs alert section
     missed = _missed_runs(AUTOMATED_REPORTS, days=7, today=today)
@@ -1577,7 +1593,8 @@ else:  # st.session_state.view == "user"
     member = next((m for m in MEMBERS if m["name"] == user_name), None)
     member_emoji = member["emoji"] if member else "📊"
 
-    _render_currently_running_banner()
+    # Only show "currently running" for runs THIS user kicked off
+    _render_currently_running_banner(filter_user=user_name)
     st.markdown(f"""
     <div class="hero">
         <div class="big-date">{BIG_DATE}</div>
