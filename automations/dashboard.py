@@ -934,7 +934,7 @@ INTAKE_HEADERS = [
     "ID", "Title", "Sheet Link", "Loom Link", "Description",
     "Submitted By", "Submitted At", "Status", "Assigned To", "Assigned At",
     "Preferred Creator", "Currently runs", "Priority", "Submitter Email",
-    "Review CC", "Notes", "Resurrected At",
+    "Review CC", "Notes", "Resurrected At", "Completed At", "Claim History",
 ]
 
 PRIORITY_OPTIONS = [
@@ -1030,16 +1030,38 @@ def _assign_intake(entry_id: str, user: str) -> bool:
     if not cell:
         return False
     row = cell.row
+    now = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     ws.update_cell(row, 8, "In Progress")
     ws.update_cell(row, 9, user)
-    ws.update_cell(row, 10, dt.datetime.now().strftime("%Y-%m-%d %H:%M"))
+    ws.update_cell(row, 10, now)
+    _append_claim_history(row, user, now)
     _read_intake.clear()
     return True
 
 
+def _append_claim_history(row: int, user: str, when: str) -> None:
+    """Append a 'name | timestamp' line to the row's Claim History cell.
+
+    Keeps a running log of every assignment so completed-card summaries
+    can show the full chain when a project is resurrected and re-claimed.
+    """
+    if "Claim History" not in INTAKE_HEADERS:
+        return
+    ws = _intake_ws()
+    col = INTAKE_HEADERS.index("Claim History") + 1
+    try:
+        current = ws.cell(row, col).value or ""
+    except Exception:
+        current = ""
+    new_line = f"{user} | {when}"
+    updated = (current.rstrip() + "\n" + new_line) if current.strip() else new_line
+    ws.update_cell(row, col, updated)
+
+
 def _mark_intake_done(entry_id: str, cc_emails: str = "") -> bool:
     """Set status to Done (triggers the Apps Script review email) and stash
-    any optional CCs that should be added to that email.
+    any optional CCs that should be added to that email. Also stamps the
+    Completed At column so the summary card can compute elapsed time.
     """
     ws = _intake_ws()
     try:
@@ -1051,6 +1073,12 @@ def _mark_intake_done(entry_id: str, cc_emails: str = "") -> bool:
     row = cell.row
     if cc_emails and "Review CC" in INTAKE_HEADERS:
         ws.update_cell(row, INTAKE_HEADERS.index("Review CC") + 1, cc_emails.strip())
+    if "Completed At" in INTAKE_HEADERS:
+        ws.update_cell(
+            row,
+            INTAKE_HEADERS.index("Completed At") + 1,
+            dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        )
     ws.update_cell(row, INTAKE_HEADERS.index("Status") + 1, "Done")
     _read_intake.clear()
     return True
@@ -1093,7 +1121,8 @@ def _claim_intake_updates(entry_id: str, claimer: str) -> bool:
     Updates the Assigned To column to the claimer (the original assignee
     can claim themselves to confirm they're handling it, or anyone else
     can take it on). Assigned At is refreshed too so the card's claim
-    timestamp reflects the new ownership.
+    timestamp reflects the new ownership. Appends to Claim History so
+    completed-card summaries can show the full chain of claimers.
     """
     ws = _intake_ws()
     try:
@@ -1103,13 +1132,11 @@ def _claim_intake_updates(entry_id: str, claimer: str) -> bool:
     if not cell:
         return False
     row = cell.row
+    now = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     if claimer:
         ws.update_cell(row, INTAKE_HEADERS.index("Assigned To") + 1, claimer)
-        ws.update_cell(
-            row,
-            INTAKE_HEADERS.index("Assigned At") + 1,
-            dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
-        )
+        ws.update_cell(row, INTAKE_HEADERS.index("Assigned At") + 1, now)
+        _append_claim_history(row, claimer, now)
     ws.update_cell(row, INTAKE_HEADERS.index("Status") + 1, "In Progress")
     _read_intake.clear()
     return True
@@ -1818,6 +1845,37 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                     )
 
 
+def _format_elapsed(start_str: str, end_str: str) -> str:
+    """Pretty-print the gap between two 'YYYY-MM-DD HH:MM' timestamps.
+
+    Returns '' if either timestamp can't be parsed. Format adjusts to the
+    magnitude: minutes, hours+minutes, or days+hours.
+    """
+    fmts = ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M")
+    def _parse(s: str):
+        s = (s or "").strip()
+        if not s:
+            return None
+        for f in fmts:
+            try:
+                return dt.datetime.strptime(s, f)
+            except ValueError:
+                continue
+        return None
+    start, end = _parse(start_str), _parse(end_str)
+    if not start or not end or end < start:
+        return ""
+    delta = end - start
+    total_min = int(delta.total_seconds() // 60)
+    if total_min < 60:
+        return f"{total_min}m"
+    if total_min < 60 * 24:
+        return f"{total_min // 60}h {total_min % 60}m"
+    days = total_min // (60 * 24)
+    rem_hours = (total_min % (60 * 24)) // 60
+    return f"{days}d {rem_hours}h"
+
+
 def _render_needs_updates_card(entry: dict) -> None:
     """Resurrected backlog entry waiting to be claimed for updates.
 
@@ -1897,11 +1955,48 @@ def _render_completed_intake_card(entry: dict) -> None:
             f"</span>",
             unsafe_allow_html=True,
         )
-        if entry.get("Description"):
-            with st.expander("Project summary"):
+        with st.expander("Project summary"):
+            submitted_at = (entry.get("Submitted At") or "").strip()
+            completed_at = (entry.get("Completed At") or entry.get("Assigned At") or "").strip()
+            elapsed = _format_elapsed(submitted_at, completed_at)
+
+            # Claim history. Prefer the explicit column when present; fall
+            # back to the single Assigned To entry for older rows.
+            claim_history_raw = (entry.get("Claim History") or "").strip()
+            if claim_history_raw:
+                claim_lines = [ln.strip() for ln in claim_history_raw.splitlines() if ln.strip()]
+            elif assignee and assignee != "?":
+                claim_lines = [f"{assignee} | {entry.get('Assigned At', '')}"]
+            else:
+                claim_lines = []
+
+            timeline_rows = [
+                f"<b>👤 Requested by:</b> {submitted_by}",
+                f"<b>📨 Requested at:</b> {submitted_at or '?'}",
+            ]
+            if claim_lines:
+                if len(claim_lines) == 1:
+                    timeline_rows.append(f"<b>🤝 Claimed by:</b> {claim_lines[0]}")
+                else:
+                    inner = "<br/>&nbsp;&nbsp;• " + "<br/>&nbsp;&nbsp;• ".join(claim_lines)
+                    timeline_rows.append(f"<b>🤝 Claimed by ({len(claim_lines)} times):</b>{inner}")
+            timeline_rows.append(f"<b>✅ Completed at:</b> {completed_at or '?'}")
+            if elapsed:
+                timeline_rows.append(f"<b>⏱️ Total time to complete:</b> {elapsed}")
+
+            st.markdown(
+                "<div style='font-size:0.9em; line-height:1.7'>"
+                + "<br/>".join(timeline_rows)
+                + "</div>",
+                unsafe_allow_html=True,
+            )
+
+            if entry.get("Description"):
+                st.markdown("---")
+                st.markdown("**📝 Project description**")
                 st.markdown(entry["Description"])
-                if entry.get("Sheet Link"):
-                    st.link_button("📂 Open Sheet", entry["Sheet Link"], use_container_width=True)
+            if entry.get("Sheet Link"):
+                st.link_button("📂 Open Sheet", entry["Sheet Link"], use_container_width=True)
         with st.popover("🔄 Resurrect this project", use_container_width=True):
             st.caption(
                 "Move this back to In Progress to flag a needed update, fix, or "
