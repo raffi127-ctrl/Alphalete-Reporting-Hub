@@ -1421,11 +1421,11 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
             if allow_claim:
                 claim_to = st.selectbox(
                     "Claim for…",
-                    ["— pick name —"] + [m["name"] for m in MEMBERS],
+                    ["— claim project —"] + [m["name"] for m in MEMBERS],
                     key=f"claim_pick_{entry['ID']}",
                     label_visibility="collapsed",
                 )
-                if claim_to and claim_to != "— pick name —":
+                if claim_to and claim_to != "— claim project —":
                     if st.button("🤝 Claim", key=f"claim_btn_{entry['ID']}", use_container_width=True, type="primary"):
                         if _assign_intake(str(entry["ID"]), claim_to):
                             st.success(f"Claimed by {claim_to}")
@@ -1661,6 +1661,28 @@ st.markdown("""
     }
     /* Status pill: Done Today switches to brand gold */
     .pill-ok { background: #FFF3D6 !important; color: #8B6914 !important; }
+
+    /* Hide Streamlit's default top-right toolbar (Deploy button, hamburger
+       menu, share icon). Reusing the slot below for our own status pill. */
+    [data-testid="stToolbar"], .stDeployButton { display: none !important; }
+    header[data-testid="stHeader"] { background: transparent !important; height: 0 !important; }
+
+    /* Our custom top-right system-status pill */
+    .system-status-pill {
+        position: fixed;
+        top: 10px;
+        right: 18px;
+        z-index: 9999;
+        padding: 4px 12px;
+        border-radius: 999px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        border: 1px solid rgba(0,0,0,0.06);
+    }
+    .system-status-pill.ok   { background: #E8F6EC; color: #1F7A3D; }
+    .system-status-pill.warn { background: #FFEBE8; color: #B8232C; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1670,9 +1692,22 @@ st.markdown("""
 # --------------------------------------------------------------------------
 
 if "view" not in st.session_state:
-    st.session_state.view = "home"   # "home" | "user" | "overview"
+    st.session_state.view = "home"   # "home" | "user" | "overview" | "library" | "backlog" | "bugs"
 if "user" not in st.session_state:
     st.session_state.user = None     # name from MEMBERS once selected
+
+# Email deep-link auto-navigation. The intake/bug notification emails put
+# ?request=<id> or ?bug=<id> in the URL; on first arrival we jump straight
+# to the relevant view so the focused card lands front-and-center.
+if not st.session_state.get("_deep_link_handled"):
+    _dl_req = st.query_params.get("request", "").strip()
+    _dl_bug = st.query_params.get("bug", "").strip()
+    if _dl_req:
+        st.session_state.view = "backlog"
+    elif _dl_bug:
+        st.session_state.view = "bugs"
+    if _dl_req or _dl_bug:
+        st.session_state._deep_link_handled = True
 
 LOGO_PATH = WORKSPACE / "resources" / "alphalete-shield.png"
 LOGO_EXISTS = LOGO_PATH.exists()
@@ -1819,6 +1854,14 @@ def _go_library():
     st.session_state.pop("library_report_id", None)
 
 
+def _go_backlog():
+    st.session_state.view = "backlog"
+
+
+def _go_bugs():
+    st.session_state.view = "bugs"
+
+
 def _detect_hub_user() -> str:
     """Best guess at who's using this hub, based on the OS user (or HUB_USER env).
 
@@ -1908,12 +1951,38 @@ with st.sidebar:
     if st.button("📚 Report Library", use_container_width=True):
         _go_library()
         st.rerun()
-    st.markdown("---")
-    st.markdown("### 🛠️ System Status")
+
+    # Counts so the sidebar shows what's waiting without clicking through.
+    _backlog_count = sum(
+        1 for r in _read_intake()
+        if (r.get("Status") or "Unassigned") in ("Unassigned", "In Progress")
+    )
+    _bugs_count = sum(
+        1 for b in _read_bugs()
+        if (b.get("Status") or "Open") in ("Open", "Needs Info")
+    )
+    if st.button(f"🚧 Backlog ({_backlog_count})", use_container_width=True, key="nav_backlog"):
+        _go_backlog()
+        st.rerun()
+    if st.button(f"🐛 Bugs ({_bugs_count})", use_container_width=True, key="nav_bugs"):
+        _go_bugs()
+        st.rerun()
+    if st.button("📥 Upload Built Automation", use_container_width=True, key="nav_upload"):
+        st.session_state.show_wireup_direct = True
+
+    # Chrome status check still happens here (other code reads `chrome_ok`),
+    # but the visible pill is rendered top-right of the page instead of in
+    # the sidebar. The "Chrome not running" sidebar warning + Launch button
+    # stays as the recovery path when it's actually broken.
     chrome_ok = _check_chrome_running()
-    if chrome_ok:
-        st.success("Chrome is connected ✨")
-    else:
+    _pill_class = "ok" if chrome_ok else "warn"
+    _pill_label = "🟢 Chrome connected" if chrome_ok else "🔴 Chrome offline"
+    st.markdown(
+        f'<div class="system-status-pill {_pill_class}">{_pill_label}</div>',
+        unsafe_allow_html=True,
+    )
+    if not chrome_ok:
+        st.markdown("---")
         st.warning("Chrome not running")
         if st.button("🚀 Launch Chrome", use_container_width=True, key="sidebar_launch_chrome"):
             ok, msg = _launch_chrome()
@@ -1993,47 +2062,6 @@ if st.session_state.view == "home":
         <div class="big-date">{BIG_DATE}</div>
     </div>
     """, unsafe_allow_html=True)
-
-    # --------------------------------------------------------------------
-    # Email deep-link focus — full width, top of the page so you land ON
-    # the card you came here for instead of having to scroll/scan.
-    # Honors either ?request=<id> (automation backlog) or ?bug=<id> (bug
-    # reports). Falls back to a warning if the ID is unknown.
-    # --------------------------------------------------------------------
-    _dl_request_id = st.query_params.get("request", "").strip()
-    _dl_bug_id     = st.query_params.get("bug", "").strip()
-    if _dl_request_id or _dl_bug_id:
-        with st.container(border=True):
-            st.markdown("#### 📌 You came here from an email")
-            if _dl_request_id:
-                _hit = next(
-                    (r for r in _read_intake() if str(r.get("ID")) == _dl_request_id),
-                    None,
-                )
-                if _hit:
-                    _hit_status = _hit.get("Status") or "Unassigned"
-                    _render_intake_card(
-                        _hit,
-                        allow_claim=(_hit_status == "Unassigned"),
-                        allow_done=(_hit_status == "In Progress"),
-                    )
-                else:
-                    st.warning(f"Couldn't find a request with ID `{_dl_request_id}` — showing the full hub below.")
-            elif _dl_bug_id:
-                _hit = next(
-                    (b for b in _read_bugs() if str(b.get("ID")) == _dl_bug_id),
-                    None,
-                )
-                if _hit:
-                    _render_bug_card(_hit)
-                else:
-                    st.warning(f"Couldn't find a bug with ID `{_dl_bug_id}` — showing the full hub below.")
-            if st.button("← Back to full hub", key="clear_deeplink_focus"):
-                try:
-                    st.query_params.clear()
-                except Exception:
-                    pass
-                st.rerun()
 
     # Overview card (logo now lives next to the page header above)
     with st.container(border=True):
@@ -2123,105 +2151,108 @@ if st.session_state.view == "home":
                         _go_user(member["name"])
                         st.rerun()
 
-    # --------------------------------------------------------------------
-    # Automation Backlog (left) + Bug Reports (right) — side by side
-    # --------------------------------------------------------------------
-    st.markdown("---")
-    st.markdown(
-        """
-        <style>
-        /* Big square backlog action buttons */
-        div[data-testid="column"]:has(button[key="open_intake_btn"]) button,
-        div[data-testid="column"]:has(button[key="open_wireup_direct_btn"]) button {
-            min-height: 140px !important;
-            font-size: 1.7rem !important;
-            font-weight: 800 !important;
-            border-radius: 18px !important;
-            letter-spacing: 0.01em !important;
-            padding: 0.6rem 1rem !important;
-        }
-        /* Secondary backlog button — gold border on hover for cohesion */
-        div[data-testid="column"]:has(button[key="open_wireup_direct_btn"]) button {
-            border: 2px solid #C9A85C !important;
-            color: #5C4220 !important;
-            background: #FFF8E7 !important;
-        }
-        div[data-testid="column"]:has(button[key="open_wireup_direct_btn"]) button:hover {
-            background: #FFF2D0 !important;
-            border-color: #8B6914 !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
 
-    home_cols = st.columns([3, 2])
+# --------------------------------------------------------------------------
+# BACKLOG VIEW — automation request intake + claim flow
+# --------------------------------------------------------------------------
 
-    # ---- LEFT: submission requests ----
-    with home_cols[0]:
-        st.markdown("### 🚧 Automation Backlog")
-        st.caption("New report ideas from the team. Anyone can claim a request to take it on.")
+elif st.session_state.view == "backlog":
+    st.markdown("## 🚧 Automation Backlog")
+    st.caption("New report ideas from the team. Anyone can claim a request to take it on.")
 
-        bl_cols = st.columns(2)
-        with bl_cols[0]:
-            if st.button("➕  Submit a New Request", use_container_width=True, type="primary", key="open_intake_btn"):
-                _show_intake_dialog()
-        with bl_cols[1]:
-            if st.button("📥  Upload a Built Automation", use_container_width=True, key="open_wireup_direct_btn",
-                         help="Upload an automation that's already built (skips the backlog claim flow)"):
-                _show_wire_up_dialog(None)
+    if st.button("➕ Submit a New Request", type="primary", key="backlog_open_intake_btn"):
+        _show_intake_dialog()
 
-        intake = _read_intake()
+    intake = _read_intake()
 
-        # The deep-link focus card (if any) is rendered full-width at the top
-        # of the page; here we just filter it out of the regular lists so it
-        # doesn't appear twice.
-        _focus_id = _dl_request_id or None
-        unassigned = [r for r in intake
-                      if (r.get("Status") or "Unassigned") == "Unassigned"
-                      and str(r.get("ID")) != _focus_id]
-        in_progress = [r for r in intake
-                       if r.get("Status") == "In Progress"
-                       and str(r.get("ID")) != _focus_id]
-
-        if not intake:
-            st.info("No requests in the backlog yet. Click **Submit Request** above to add the first one.")
+    # Focused card from email deep link
+    _dl_request_id = st.query_params.get("request", "").strip()
+    if _dl_request_id:
+        _hit = next((r for r in intake if str(r.get("ID")) == _dl_request_id), None)
+        if _hit:
+            st.markdown("#### 📌 You came here from an email")
+            _hit_status = _hit.get("Status") or "Unassigned"
+            _render_intake_card(
+                _hit,
+                allow_claim=(_hit_status == "Unassigned"),
+                allow_done=(_hit_status == "In Progress"),
+            )
+            if st.button("← Back to full backlog", key="clear_request_focus"):
+                try:
+                    st.query_params.clear()
+                except Exception:
+                    pass
+                st.rerun()
+            st.markdown("---")
         else:
-            if unassigned:
-                st.markdown(f"#### 🔓 Unassigned ({len(unassigned)})")
-                for entry in unassigned:
-                    _render_intake_card(entry, allow_claim=True, allow_done=False)
-            if in_progress:
-                st.markdown(f"#### 🛠️ In Progress ({len(in_progress)})")
-                for entry in in_progress:
-                    _render_intake_card(entry, allow_claim=False, allow_done=True)
+            st.warning(f"Couldn't find a request with ID `{_dl_request_id}` — showing the full backlog below.")
 
-    # ---- RIGHT: bug reports + change requests (Megan-only) ----
-    with home_cols[1]:
-        st.markdown("### 🐛 Bug Reports & Change Requests")
-        st.caption("Submitted via the sidebar. Megan triages and replies to the submitter by email.")
-        bugs = _read_bugs()
+    _focus_id = _dl_request_id or None
+    unassigned = [r for r in intake
+                  if (r.get("Status") or "Unassigned") == "Unassigned"
+                  and str(r.get("ID")) != _focus_id]
+    in_progress = [r for r in intake
+                   if r.get("Status") == "In Progress"
+                   and str(r.get("ID")) != _focus_id]
 
-        # ?bug=<id> deep link is rendered full-width at the top of the page;
-        # filter it out here to avoid showing the same card twice.
-        _focus_bid = _dl_bug_id or None
-        active_bugs = [b for b in bugs
-                       if (b.get("Status") or "Open") in ("Open", "Needs Info")
-                       and str(b.get("ID")) != _focus_bid]
-        resolved_bugs = [b for b in bugs
-                         if (b.get("Status") or "") == "Fixed"
-                         and str(b.get("ID")) != _focus_bid]
+    if not intake:
+        st.info("No requests in the backlog yet. Click **Submit a New Request** above to add the first one.")
+    else:
+        if unassigned:
+            st.markdown(f"#### 🔓 Unassigned ({len(unassigned)})")
+            for entry in unassigned:
+                _render_intake_card(entry, allow_claim=True, allow_done=False)
+        if in_progress:
+            st.markdown(f"#### 🛠️ In Progress ({len(in_progress)})")
+            for entry in in_progress:
+                _render_intake_card(entry, allow_claim=False, allow_done=True)
 
-        if not active_bugs:
-            st.info("No open bugs or change requests.")
+
+# --------------------------------------------------------------------------
+# BUGS VIEW — bug reports + change requests (Megan-triaged)
+# --------------------------------------------------------------------------
+
+elif st.session_state.view == "bugs":
+    st.markdown("## 🐛 Bug Reports & Change Requests")
+    st.caption("Submitted via the sidebar. Megan triages and replies to the submitter by email.")
+
+    bugs = _read_bugs()
+
+    # Focused card from email deep link
+    _dl_bug_id = st.query_params.get("bug", "").strip()
+    if _dl_bug_id:
+        _hit = next((b for b in bugs if str(b.get("ID")) == _dl_bug_id), None)
+        if _hit:
+            st.markdown("#### 📌 You came here from an email")
+            _render_bug_card(_hit)
+            if st.button("← Back to full bug list", key="clear_bug_focus"):
+                try:
+                    st.query_params.clear()
+                except Exception:
+                    pass
+                st.rerun()
+            st.markdown("---")
         else:
-            for entry in active_bugs:
+            st.warning(f"Couldn't find a bug with ID `{_dl_bug_id}` — showing the full list below.")
+
+    _focus_bid = _dl_bug_id or None
+    active_bugs = [b for b in bugs
+                   if (b.get("Status") or "Open") in ("Open", "Needs Info")
+                   and str(b.get("ID")) != _focus_bid]
+    resolved_bugs = [b for b in bugs
+                     if (b.get("Status") or "") == "Fixed"
+                     and str(b.get("ID")) != _focus_bid]
+
+    if not active_bugs and not _focus_bid:
+        st.info("No open bugs or change requests.")
+    else:
+        for entry in active_bugs:
+            _render_bug_card(entry)
+
+    if resolved_bugs:
+        with st.expander(f"✅ Recently Fixed ({len(resolved_bugs)})"):
+            for entry in resolved_bugs[:10]:
                 _render_bug_card(entry)
-
-        if resolved_bugs:
-            with st.expander(f"✅ Recently Fixed ({len(resolved_bugs)})"):
-                for entry in resolved_bugs[:10]:
-                    _render_bug_card(entry)
 
 
 # --------------------------------------------------------------------------
@@ -2647,6 +2678,10 @@ def _show_suggest_dialog():
 if st.session_state.get("show_suggest"):
     st.session_state.show_suggest = False
     _show_suggest_dialog()
+
+if st.session_state.get("show_wireup_direct"):
+    st.session_state.show_wireup_direct = False
+    _show_wire_up_dialog(None)
 
 
 # --------------------------------------------------------------------------
