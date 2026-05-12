@@ -1481,6 +1481,30 @@ def _go_overview():
 
 def _go_library():
     st.session_state.view = "library"
+    # Always return to the top-level library list (not a previously-opened detail)
+    st.session_state.pop("library_report_id", None)
+
+
+def _detect_hub_user() -> str:
+    """Best guess at who's using this hub, based on the OS user (or HUB_USER env).
+
+    Each member can override by exporting HUB_USER=<name> before running
+    streamlit. Falls back to a name-similarity match against MEMBERS, then to
+    the first MEMBERS entry.
+    """
+    import os
+    import getpass
+    env = os.environ.get("HUB_USER", "").strip()
+    if env:
+        return env
+    try:
+        os_user = getpass.getuser().lower()
+    except Exception:
+        os_user = ""
+    for m in MEMBERS:
+        if m["name"].lower() == os_user or m["name"].lower().startswith(os_user):
+            return m["name"]
+    return MEMBERS[0]["name"] if MEMBERS else "Megan"
 
 
 def _render_currently_running_banner(filter_user: str | None = None):
@@ -1547,8 +1571,7 @@ with st.sidebar:
         if st.button("🏠 Back to Home", use_container_width=True):
             _go_home()
             st.rerun()
-    if st.button("📚 Report Library", use_container_width=True,
-                 disabled=st.session_state.view == "library"):
+    if st.button("📚 Report Library", use_container_width=True):
         _go_library()
         st.rerun()
     st.markdown("---")
@@ -1843,20 +1866,13 @@ elif st.session_state.view == "library":
             if report.get("description"):
                 st.caption(report["description"])
 
-            # 'Running as' picker — sets st.session_state.user so the run gets
-            # attributed correctly. Defaults to current user or first assignee.
-            names = [m["name"] for m in MEMBERS]
-            default_user = st.session_state.get("user")
-            if default_user not in names:
-                assignees = report.get("assignees", [])
-                default_user = assignees[0] if assignees and assignees[0] in names else names[0]
-            chosen = st.selectbox(
-                "Running as:",
-                names,
-                index=names.index(default_user),
-                key=f"lib_run_as_{report['id']}",
-            )
-            st.session_state.user = chosen
+            # Auto-detect the runner from the OS user. The run gets attributed
+            # to this person automatically — no dropdown needed.
+            detected_user = _detect_hub_user()
+            st.session_state.user = detected_user
+            member = next((m for m in MEMBERS if m["name"] == detected_user), None)
+            member_emoji = member["emoji"] if member else "👤"
+            st.caption(f"{member_emoji} Running as **{detected_user}**")
 
             st.markdown("---")
             _render_report_card(report, today, chrome_ok)
