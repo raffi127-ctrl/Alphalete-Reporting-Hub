@@ -307,6 +307,7 @@ AUTOMATED_REPORTS = [
         "name": "Weekly Recruiting Report",
         "emoji": "🎯",
         "color": "#FF6B6B",
+        "category": "🎯 Recruiting",
         "description": "Pulls funnel metrics from ApplicantStream, fills the mass-report Sheet across ~52 ICD office tabs.",
         "sheet_url": SHEET_URL,
         "assignees": ["Eve"],   # primary owner; anyone can still run it
@@ -369,6 +370,7 @@ AUTOMATED_REPORTS = [
         "name": "Daily Recruiting Focus",
         "emoji": "☀️",
         "color": "#4ECDC4",
+        "category": "🎯 Recruiting",
         "description": "Per-ICD daily breakdown (Mon–Fri current week, last week, plus next-week scheduled). Auto-fills the 'Daily Focus Report' tab.",
         "sheet_url": SHEET_URL,
         "assignees": ["Maud"],
@@ -947,7 +949,8 @@ def _read_intake() -> list[dict]:
 
 
 def _add_intake(title: str, sheet_link: str, loom_link: str, description: str,
-                submitted_by: str, preferred_creator: str = "") -> str:
+                submitted_by: str, preferred_creator: str = "",
+                currently_runs: str = "") -> str:
     new_id = dt.datetime.now().strftime("%Y%m%d%H%M%S")
     ws = _intake_ws()
     ws.append_row([
@@ -955,6 +958,7 @@ def _add_intake(title: str, sheet_link: str, loom_link: str, description: str,
         submitted_by, dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "Unassigned", "", "",
         preferred_creator or "",
+        currently_runs or "",
     ])
     _read_intake.clear()
     return new_id
@@ -1008,17 +1012,22 @@ def _show_intake_dialog():
         with cols[1]:
             preferred_creator = st.selectbox(
                 "Preferred creator (optional)",
-                ["— No preference —"] + [m["name"] for m in MEMBERS],
+                ["Not sure yet"] + [m["name"] for m in MEMBERS],
                 help="If you have a specific person in mind to build this, pick them. Anyone can still claim it.",
             )
+        currently_runs = st.text_input(
+            "Who currently runs this report?",
+            placeholder="e.g. Sarah from Sales, or 'me' — anyone, even folks outside the team",
+            help="Free text — the person/people doing this manually today. Helps us know who to loop in or onboard.",
+        )
         ok = st.form_submit_button("📨 Submit", type="primary", use_container_width=True)
         if ok:
             if not (title and sheet_link and loom_link and description and submitted_by):
                 st.error("Please fill in every field marked *.")
             else:
-                pc = "" if preferred_creator == "— No preference —" else preferred_creator
+                pc = "" if preferred_creator == "Not sure yet" else preferred_creator
                 try:
-                    _add_intake(title, sheet_link, loom_link, description, submitted_by, pc)
+                    _add_intake(title, sheet_link, loom_link, description, submitted_by, pc, currently_runs)
                     st.success("✅ Submitted! It will appear on the home page for someone to claim.")
                     st.balloons()
                 except Exception as e:
@@ -1089,11 +1098,11 @@ def _show_wire_up_dialog(entry: dict | None = None):
         sheet_url = st.text_input("Sheet URL", value=entry.get("Sheet Link", ""), key="wu_sheet_url")
     with col2:
         assignee = st.selectbox(
-            "Who runs this report? *",
-            [m["name"] for m in MEMBERS],
+            "Who runs this report?",
+            ["Not sure yet"] + [m["name"] for m in MEMBERS],
             index=0,
             key="wu_assignee",
-            help="The person whose dashboard this will appear on",
+            help="If unsure, leave 'Not sure yet' — it'll land in the Unassigned section of the library.",
         )
         est_min = st.number_input("Estimated minutes per run", min_value=1, max_value=120, value=5, key="wu_est_min")
 
@@ -1174,9 +1183,11 @@ def _show_wire_up_dialog(entry: dict | None = None):
 
     submitted = st.button("🚀 Wire It Up & Mark Done", type="primary", use_container_width=True, key="wu_submit")
     if submitted:
-        if not (name and assignee and script_text):
+        if not (name and script_text):
             st.error("Please fill every field marked *.")
             return
+        # "Not sure yet" → no assignee → report lands in Unassigned section.
+        assignees_list: list[str] = [] if assignee == "Not sure yet" else [assignee]
 
         # Build schedule dict
         if sched_mode.startswith("Monthly"):
@@ -1217,7 +1228,7 @@ def _show_wire_up_dialog(entry: dict | None = None):
             "emoji": emoji or "⭐",
             "description": description,
             "sheet_url": sheet_url,
-            "assignees": [assignee],
+            "assignees": assignees_list,
             "schedule": schedule,
             "checklist": checklist,
             "args": [],
@@ -1234,7 +1245,12 @@ def _show_wire_up_dialog(entry: dict | None = None):
             except Exception:
                 pass
 
-        st.success(f"✅ Wired up! It will appear on **{assignee}**'s dashboard.")
+        target_text = (
+            "in the **🔍 Unassigned** section of the Report Library"
+            if assignee == "Not sure yet"
+            else f"on **{assignee}**'s dashboard"
+        )
+        st.success(f"✅ Wired up! It will appear {target_text}.")
         st.balloons()
         st.markdown(
             "**Heads up:** The new automation is saved on this Mac. "
@@ -1314,9 +1330,10 @@ def _missed_runs(reports: list[dict], days: int = 7, today: dt.date | None = Non
 # Page setup + custom theme
 # --------------------------------------------------------------------------
 
+_FAVICON_PATH = WORKSPACE / "resources" / "alphalete-shield.png"
 st.set_page_config(
-    page_title="Megan's Reports",
-    page_icon="📊",
+    page_title="Alphalete Marketing Report Hub",
+    page_icon=str(_FAVICON_PATH) if _FAVICON_PATH.exists() else "🐺",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -1394,6 +1411,24 @@ st.markdown("""
         box-shadow: 0 4px 14px rgba(201, 32, 32, 0.45) !important;
     }
 
+    /* Bright-green "Access Alphalete Reporting Hub" button (preflight final step) */
+    div[data-testid="stVerticalBlock"]:has(> div > div > .access-btn-anchor) .stButton > button,
+    div:has(> div > div > .access-btn-anchor) + div .stButton > button {
+        background: #22C55E !important;
+        background-image: none !important;
+        color: #FFFFFF !important;
+        border: 2px solid #16A34A !important;
+        font-weight: 800 !important;
+        font-size: 1.1rem !important;
+        text-shadow: none !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div > div > .access-btn-anchor) .stButton > button:hover,
+    div:has(> div > div > .access-btn-anchor) + div .stButton > button:hover {
+        background: #16A34A !important;
+        box-shadow: 0 4px 14px rgba(34, 197, 94, 0.45) !important;
+        color: #FFFFFF !important;
+    }
+
     /* Buttons */
     .stButton > button {
         border-radius: 10px;
@@ -1448,6 +1483,286 @@ if "user" not in st.session_state:
 
 LOGO_PATH = WORKSPACE / "resources" / "alphalete-shield.png"
 LOGO_EXISTS = LOGO_PATH.exists()
+
+# --------------------------------------------------------------------------
+# Soft auth gate + preflight check
+#
+# This is a UX gate, not real security. Anyone who knows HUB_PASSWORD can sign
+# in. The real access control is GitHub repo invites + the local install
+# required to even reach localhost:8501. Rotate by changing HUB_PASSWORD below
+# (or set the HUB_PASSWORD env var to override without editing this file).
+# --------------------------------------------------------------------------
+import os as _os
+
+HUB_PASSWORD = _os.environ.get("HUB_PASSWORD", "LolaOG2026")
+_CONFIG_DIR = Path.home() / ".config" / "recruiting-report"
+_OAUTH_CLIENT_FILE = _CONFIG_DIR / "oauth-client.json"
+_CHROME_APP = Path("/Applications/Google Chrome.app")
+
+if "authed" not in st.session_state:
+    st.session_state.authed = False
+
+
+def _preflight_checks() -> list[dict]:
+    """Return all preflight items with their current status.
+
+    Items with `done=True` render as a green checkmark; items with `done=False`
+    render their fix widget so the user can resolve them in-place.
+    """
+    oauth_done = _OAUTH_CLIENT_FILE.exists()
+    chrome_done = _CHROME_APP.exists()
+    return [
+        {
+            "key": "oauth_client",
+            "icon": "🐺",
+            "title": "Pack Pass",
+            "done": oauth_done,
+            "detail_done": "Your Pack Pass is installed and ready.",
+            "detail_missing": "Your access pass for the Alphalete Report Hub. Download it below, then drag it into the drop zone to finish setup.",
+        },
+        {
+            "key": "chrome",
+            "icon": "🌐",
+            "title": "Google Chrome",
+            "done": chrome_done,
+            "detail_done": "Installed and ready.",
+            "detail_missing": "Reports scrape ApplicantStream using real Chrome.",
+        },
+    ]
+
+
+def _render_oauth_fix_widget() -> None:
+    """The OAuth card's action area: download Pack Pass + drag it onto the drop zone.
+
+    The Pack Pass file ships with the repo, so the user never has to receive
+    anything externally — they download from the hub itself and drag back in
+    to commit to the install.
+    """
+    bundled = WORKSPACE / "oauth-client.json"
+
+    if bundled.exists():
+        st.markdown(
+            "<div style='font-weight: 600; margin-bottom: 0.4rem'>Step 1 — Get your Pack Pass</div>",
+            unsafe_allow_html=True,
+        )
+        st.download_button(
+            "🐺  Download your Pack Pass",
+            data=bundled.read_bytes(),
+            file_name="alphalete-pack-pass.json",
+            mime="application/json",
+            use_container_width=True,
+            type="primary",
+            key="oauth_dl_btn",
+            help="Downloads your Alphalete Pack Pass to your Downloads folder.",
+        )
+        st.markdown(
+            "<div style='font-weight: 600; margin: 1rem 0 0.4rem'>Step 2 — Drag it back in below</div>"
+            "<div style='opacity: 0.75; margin-bottom: 0.4rem'>"
+            "Open Downloads, then drag <b>alphalete-pack-pass.json</b> onto the box below to finish setup."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.warning(
+            "⚠️ Your Pack Pass isn't bundled with this install yet. "
+            "Drag the access file onto the box below — or text Megan if you don't have it."
+        )
+
+    uploaded = st.file_uploader(
+        "Drop your Pack Pass here",
+        type=["json"],
+        key="oauth_uploader",
+        label_visibility="collapsed",
+    )
+    if uploaded is not None:
+        # Only act on each new upload once — Streamlit keeps the file in widget
+        # state across reruns, so we'd otherwise loop on rerun. Hashing by name
+        # + size is enough to detect a fresh drop.
+        upload_sig = f"{uploaded.name}:{uploaded.size}"
+        if st.session_state.get("last_oauth_upload_sig") != upload_sig:
+            try:
+                _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+                _OAUTH_CLIENT_FILE.write_bytes(uploaded.getvalue())
+                # Let preview mode know an upload happened so it stops force-marking
+                # the OAuth item as missing — flips the bottom button from gold
+                # "recheck" to green "Access Alphalete Reporting Hub".
+                st.session_state.preview_oauth_uploaded = True
+                st.session_state.last_oauth_upload_sig = upload_sig
+                # Rerun so the preflight items are re-evaluated with the new
+                # disk + session state — that's what unlocks the green button.
+                st.rerun()
+            except Exception as e:
+                st.error(f"Couldn't save the file: {e}")
+        else:
+            st.success("✅ Pack Pass saved. Click **Access Alphalete Reporting Hub** below to continue.")
+
+
+def _render_chrome_fix_widget() -> None:
+    """The Chrome card's action area: one-click download link."""
+    st.link_button(
+        "⬇️ Download Google Chrome",
+        "https://www.google.com/chrome/",
+        use_container_width=True,
+        type="primary",
+    )
+    st.caption("After Chrome installs, come back here and click **I've fixed it — recheck**.")
+
+
+def _render_login_screen() -> None:
+    # Hide the sidebar entirely on the login screen
+    st.markdown(
+        "<style>[data-testid='stSidebar'] { display: none !important; }</style>",
+        unsafe_allow_html=True,
+    )
+    cols = st.columns([1, 2, 1])
+    with cols[1]:
+        st.markdown("<div style='height: 4rem'></div>", unsafe_allow_html=True)
+        with st.container(border=True):
+            if LOGO_EXISTS:
+                import base64
+                _logo_b64 = base64.b64encode(LOGO_PATH.read_bytes()).decode()
+                st.markdown(
+                    "<div style='text-align:center; margin: 1rem 0 0.2rem'>"
+                    f"<img src='data:image/png;base64,{_logo_b64}' style='height: 90px'/>"
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
+            st.markdown(
+                "<div style='text-align:center; font-size: 1.8rem; font-weight: 800; line-height: 1.2; margin-top: 0.6rem'>"
+                "Alphalete Marketing<br/>Report Hub"
+                "</div>"
+                "<div style='text-align:center; opacity: 0.7; margin: 0.4rem 0 1.2rem'>"
+                "Enter the team password to continue."
+                "</div>",
+                unsafe_allow_html=True,
+            )
+            with st.form("login_form", clear_on_submit=False):
+                pw = st.text_input(
+                    "Password",
+                    type="password",
+                    label_visibility="collapsed",
+                    placeholder="Team password",
+                )
+                submit = st.form_submit_button("Sign in", use_container_width=True, type="primary")
+                if submit:
+                    if pw == HUB_PASSWORD:
+                        st.session_state.authed = True
+                        st.rerun()
+                    else:
+                        st.error("Wrong password. Try again or text Megan.")
+
+
+def _render_preflight_screen(items: list[dict]) -> None:
+    st.markdown(
+        "<style>[data-testid='stSidebar'] { display: none !important; }</style>",
+        unsafe_allow_html=True,
+    )
+    cols = st.columns([1, 3, 1])
+    with cols[1]:
+        st.markdown("<div style='height: 2rem'></div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div style='text-align:center; font-size: 2rem; font-weight: 800'>"
+            "🚧 Almost there — finish setup"
+            "</div>"
+            "<div style='text-align:center; opacity: 0.7; margin: 0.4rem 0 1.5rem'>"
+            "Here's what we found on your Mac. Items still needed are below — fix them right here."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        for item in items:
+            with st.container(border=True):
+                if item.get("done"):
+                    st.markdown(
+                        "<div style='font-size: 1.2rem; font-weight: 700; color: #1F7A3D'>"
+                        f"✅ {item['title']}"
+                        "<span style='font-weight: 400; opacity: 0.7; margin-left: 0.5rem'>"
+                        f"— {item.get('detail_done', 'Ready.')}"
+                        "</span>"
+                        "</div>",
+                        unsafe_allow_html=True,
+                    )
+                    continue
+
+                st.markdown(
+                    "<div style='font-size: 1.2rem; font-weight: 700'>"
+                    f"{item['icon']} {item['title']} <span style='font-weight: 400; color: #C92020'>— needed</span>"
+                    "</div>"
+                    f"<div style='margin-top: 0.4rem; margin-bottom: 0.8rem'>{item.get('detail_missing', '')}</div>",
+                    unsafe_allow_html=True,
+                )
+                key = item.get("key")
+                if key == "oauth_client":
+                    _render_oauth_fix_widget()
+                elif key == "chrome":
+                    _render_chrome_fix_widget()
+        st.markdown("<div style='height: 1rem'></div>", unsafe_allow_html=True)
+
+        # Primary action switches based on whether the user is good to go.
+        # When everything's detected: bright green "Access" button.
+        # When something's still missing: gold "recheck" button.
+        all_done = all(item.get("done") for item in items)
+        if all_done:
+            # Anchor div picked up by the app-wide CSS to paint the next button
+            # bright green (see .access-btn-anchor rules).
+            st.markdown('<div class="access-btn-anchor"></div>', unsafe_allow_html=True)
+            if st.button(
+                "🎉 Access Alphalete Reporting Hub",
+                use_container_width=True,
+                type="primary",
+                key="preflight_access_btn",
+            ):
+                # If we got here from ?preview=pack-access, drop the param so the
+                # user lands on the real dashboard rather than re-entering preview.
+                try:
+                    st.query_params.clear()
+                except Exception:
+                    pass
+                # Also reset the preview-upload flag so re-entering preview
+                # later starts in the "Pack Pass needed" state again.
+                st.session_state.pop("preview_oauth_uploaded", None)
+                st.rerun()
+        else:
+            if st.button(
+                "🔄 I've fixed it — recheck",
+                use_container_width=True,
+                type="primary",
+                key="preflight_recheck_btn",
+            ):
+                st.rerun()
+        if st.button("Sign out", use_container_width=True, key="preflight_signout_btn"):
+            st.session_state.authed = False
+            st.rerun()
+
+
+# Gate 1: not authed → login screen
+if not st.session_state.authed:
+    _render_login_screen()
+    st.stop()
+
+# Preview mode for Megan: visit http://localhost:8501/?preview=pack-access to
+# see exactly what a brand-new user sees when their machine isn't set up.
+# Remove the param from the URL to exit preview.
+if st.query_params.get("preview") == "pack-access":
+    # Show the real preflight state but force the OAuth item to be "missing"
+    # so you can see the uploader UI even when your own machine is fully set up.
+    # Once an upload happens in this session, drop the force so the bottom
+    # button can flip to the bright-green "Access Alphalete Reporting Hub".
+    _preview_items = _preflight_checks()
+    if not st.session_state.get("preview_oauth_uploaded"):
+        for _it in _preview_items:
+            if _it["key"] == "oauth_client":
+                _it["done"] = False
+    _render_preflight_screen(_preview_items)
+    st.stop()
+
+# Gate 2: authed but missing prereqs → preflight setup screen
+# (Renders all items so users see green checkmarks for what's already detected,
+# fix widgets for what's still needed. Skips the screen entirely if all done.)
+_preflight_items = _preflight_checks()
+if any(not item["done"] for item in _preflight_items):
+    _render_preflight_screen(_preflight_items)
+    st.stop()
+
 
 today = dt.date.today()
 weekday_name = WEEKDAY_NAMES[today.weekday()]
@@ -1592,7 +1907,10 @@ with st.sidebar:
     if st.session_state.view == "user" and st.session_state.user:
         st.markdown("---")
         st.markdown("### 📋 Today's Tasks")
-        my_reports = [r for r in AUTOMATED_REPORTS if st.session_state.user in r.get("assignees", [])]
+        if st.session_state.user == "Unassigned":
+            my_reports = [r for r in AUTOMATED_REPORTS if not r.get("assignees")]
+        else:
+            my_reports = [r for r in AUTOMATED_REPORTS if st.session_state.user in r.get("assignees", [])]
         due_today_for_me = [r for r in my_reports if _is_due_today(r, today)]
         if not due_today_for_me:
             st.caption("☕ Nothing due today.")
@@ -1667,13 +1985,33 @@ if st.session_state.view == "home":
                 st.rerun()
 
     st.markdown("### 🐺 The Pack")
-    rows = [MEMBERS[i:i + 3] for i in range(0, len(MEMBERS), 3)]
+    # Build pack cards: synthetic "Unassigned" card first, then real members.
+    # Clicking it opens a filtered user-style page showing only reports with
+    # no assignees, so someone can pick them up.
+    UNASSIGNED_CARD = {"name": "Unassigned", "emoji": "🔍", "is_unassigned": True}
+    pack_cards = [UNASSIGNED_CARD] + list(MEMBERS)
+    PACK_COLS = 3
+    rows = [pack_cards[i:i + PACK_COLS] for i in range(0, len(pack_cards), PACK_COLS)]
     for row in rows:
-        cols = st.columns(len(row))
-        for col, member in zip(cols, row):
+        # Always use the same column count so a partial last row keeps cards
+        # at the same width as full rows. If the row is short, center it by
+        # leaving equal empty slots on either side.
+        if len(row) < PACK_COLS:
+            cols = st.columns(PACK_COLS)
+            pad = (PACK_COLS - len(row)) // 2
+            card_cols = cols[pad:pad + len(row)]
+        else:
+            cols = st.columns(PACK_COLS)
+            card_cols = cols
+        for col, member in zip(card_cols, row):
             with col:
-                my_reports = [r for r in AUTOMATED_REPORTS if member["name"] in r.get("assignees", [])]
-                due_count = sum(1 for r in my_reports if _is_due_today(r, today))
+                is_unassigned = member.get("is_unassigned", False)
+                if is_unassigned:
+                    unassigned_reports = [r for r in AUTOMATED_REPORTS if not r.get("assignees")]
+                    count = len(unassigned_reports)
+                else:
+                    my_reports = [r for r in AUTOMATED_REPORTS if member["name"] in r.get("assignees", [])]
+                    due_count = sum(1 for r in my_reports if _is_due_today(r, today))
                 with st.container(border=True):
                     st.markdown(
                         f"<div style='text-align:center; font-size: 3.5rem; line-height: 1.0; margin-bottom: 0.4rem'>{member['emoji']}</div>",
@@ -1683,7 +2021,18 @@ if st.session_state.view == "home":
                         f"<div style='text-align:center; font-size: 1.3rem; font-weight: 700; margin-bottom: 0.3rem'>{member['name']}</div>",
                         unsafe_allow_html=True,
                     )
-                    if due_count > 0:
+                    if is_unassigned:
+                        if count > 0:
+                            st.markdown(
+                                f"<div style='text-align:center'><span class='pill pill-due'>{count} need{'s' if count == 1 else ''} a home</span></div>",
+                                unsafe_allow_html=True,
+                            )
+                        else:
+                            st.markdown(
+                                "<div style='text-align:center'><span class='pill pill-ok'>All claimed</span></div>",
+                                unsafe_allow_html=True,
+                            )
+                    elif due_count > 0:
                         st.markdown(
                             f"<div style='text-align:center'><span class='pill pill-due'>{due_count} report{'s' if due_count != 1 else ''} due today</span></div>",
                             unsafe_allow_html=True,
@@ -1698,8 +2047,9 @@ if st.session_state.view == "home":
                             f"<div style='text-align:center'><span class='pill pill-info'>No reports yet</span></div>",
                             unsafe_allow_html=True,
                         )
+                    btn_label = "Open unassigned reports" if is_unassigned else f"Open {member['name']}'s reports"
                     if st.button(
-                        f"Open {member['name']}'s reports",
+                        btn_label,
                         key=f"pick_{member['name']}",
                         use_container_width=True,
                     ):
@@ -1884,15 +2234,25 @@ elif st.session_state.view == "library":
         )
         st.caption("Every automation. Click a report to open its checklist + run it.")
 
-        # Group reports into sections by 'category' field if present; otherwise
-        # everything lands in 'All Reports'. (When you categorize later, just
-        # add `"category": "Recruiting"` to the report dict — it'll group here.)
+        # Group reports into sections. Anything with empty/missing `assignees`
+        # lands in a top "Unassigned" section so it's easy to find and claim.
+        # Otherwise, group by `category` field (defaults to "All Reports").
+        UNASSIGNED_LABEL = "🔍 Unassigned reports"
         sections: dict[str, list] = {}
         for r in AUTOMATED_REPORTS:
-            cat = r.get("category", "All Reports")
+            if not r.get("assignees"):
+                cat = UNASSIGNED_LABEL
+            else:
+                cat = r.get("category", "All Reports")
             sections.setdefault(cat, []).append(r)
 
-        for section_name, reports_in_section in sections.items():
+        # Render Unassigned first if any, then the rest in insertion order
+        ordered_sections = []
+        if UNASSIGNED_LABEL in sections:
+            ordered_sections.append((UNASSIGNED_LABEL, sections.pop(UNASSIGNED_LABEL)))
+        ordered_sections.extend(sections.items())
+
+        for section_name, reports_in_section in ordered_sections:
             st.markdown(f"### {section_name}")
             for report in reports_in_section:
                 with st.container(border=True):
@@ -1907,6 +2267,8 @@ elif st.session_state.view == "library":
                         assignees = report.get("assignees", [])
                         if assignees:
                             meta_lines.append(f"**Assigned to:** {', '.join(assignees)}")
+                        else:
+                            meta_lines.append("**Assigned to:** _Not yet assigned_")
                         last_run = _latest_run_summary(report["id"])
                         if last_run:
                             meta_lines.append(
@@ -1935,20 +2297,33 @@ elif st.session_state.view == "library":
 
 else:  # st.session_state.view == "user"
     user_name = st.session_state.user or "friend"
+    is_unassigned_view = (user_name == "Unassigned")
     member = next((m for m in MEMBERS if m["name"] == user_name), None)
-    member_emoji = member["emoji"] if member else "📊"
+    member_emoji = "🔍" if is_unassigned_view else (member["emoji"] if member else "📊")
 
     # Only show "currently running" for runs THIS user kicked off
     _render_currently_running_banner(filter_user=user_name)
-    st.markdown(f"""
-    <div class="hero">
-        <div class="big-date">{BIG_DATE}</div>
-        <h1>{member_emoji} {greeting}, {user_name}!</h1>
-        <p>Here's what's on your plate.</p>
-    </div>
-    """, unsafe_allow_html=True)
+    if is_unassigned_view:
+        st.markdown(f"""
+        <div class="hero">
+            <div class="big-date">{BIG_DATE}</div>
+            <h1>{member_emoji} Unassigned Reports</h1>
+            <p>These reports need someone to pick them up. Open one to claim it.</p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+        <div class="hero">
+            <div class="big-date">{BIG_DATE}</div>
+            <h1>{member_emoji} {greeting}, {user_name}!</h1>
+            <p>Here's what's on your plate.</p>
+        </div>
+        """, unsafe_allow_html=True)
 
-    my_reports = [r for r in AUTOMATED_REPORTS if user_name in r.get("assignees", [])]
+    if is_unassigned_view:
+        my_reports = [r for r in AUTOMATED_REPORTS if not r.get("assignees")]
+    else:
+        my_reports = [r for r in AUTOMATED_REPORTS if user_name in r.get("assignees", [])]
 
     # ----- "Pick up where you left off" banner -----
     # Show banner for: reports persisted with state where THIS user is the one
@@ -1964,117 +2339,128 @@ else:  # st.session_state.view == "user"
         )
     ]
 
-    # Two-column layout below the hero:
-    #   left:  "Completed Today" checklist for this user
-    #   right: in-progress banner + this user's reports
-    user_layout = st.columns([1, 4])
-
-    with user_layout[0]:
-        st.markdown("### ✅ Completed Today")
-        completed_today = _get_completed_today(user_name)
-        if not completed_today:
-            st.caption("Nothing marked completed yet today.")
-        else:
-            for item in completed_today:
-                report_id = item.get("report_id", "")
-                report_name = item.get("report_name", "?")
-                try:
-                    marked_dt = dt.datetime.fromisoformat(item.get("marked_at", ""))
-                    marked_str = marked_dt.strftime("%-I:%M %p")
-                except Exception:
-                    marked_str = ""
-                with st.container(border=True):
-                    st.markdown(
-                        f"<div style='font-weight:600'>✓ {report_name}</div>"
-                        f"<div style='font-size:0.8rem; color:#777'>marked at {marked_str}</div>",
-                        unsafe_allow_html=True,
-                    )
-                    if st.button(
-                        "↩ Undo",
-                        key=f"undo_completed_{report_id}_{item.get('run_ts', '')}",
-                        use_container_width=True,
-                    ):
-                        _unmark_run_completed(user_name, report_id, item.get("run_ts", ""))
-                        st.rerun()
-
-    with user_layout[1]:
-        if in_progress:
-            st.markdown("### 📌 Pick up where you left off")
-            for report in in_progress:
-                saved = persisted[report["id"]]
-                saved_ts = saved.get("ts", "")
-                try:
-                    saved_dt = dt.datetime.fromisoformat(saved_ts)
-                    saved_str = saved_dt.strftime("%I:%M %p")
-                except Exception:
-                    saved_str = saved_ts
-                post_run_cfg = report.get("post_run", {})
-                again_label = post_run_cfg.get("again_label", "🔁 Continue / Run Again")
-
-                # Recruiting report has structured per-week results: if all 52 tabs
-                # are filled, this banner shows a green "all done" state. Otherwise
-                # it lists the tabs that still need data.
-                results = _load_recruiting_results() if report["id"] == "recruiting" else {}
-                all_filled = bool(results) and not results.get("still_missing")
-                still_missing = results.get("still_missing", []) if results else []
-
-                with st.container(border=True):
-                    if all_filled:
-                        st.success(
-                            f"🎉 **{report['emoji']} {report['name']} — Complete!** "
-                            f"All **{len(results.get('filled', []))}** offices filled this week. "
-                            f"Last run **{saved_str}** today."
-                        )
-                    elif still_missing:
-                        st.warning(
-                            f"⚠️ **{report['emoji']} {report['name']}** — last run **{saved_str}** today. "
-                            f"**{len(still_missing)}** tab{'s' if len(still_missing) != 1 else ''} still need data."
-                        )
-                        with st.expander(f"📋 Show the {len(still_missing)} missing tabs", expanded=False):
-                            for name in still_missing:
-                                st.markdown(f"- {name}")
-
-                    cols = st.columns([5, 2, 2])
-                    with cols[0]:
-                        if not (all_filled or still_missing):
-                            st.markdown(f"**{report['emoji']} {report['name']}** — last run **{saved_str}** today")
-                            if post_run_cfg.get("message_success") and saved.get("status") == "success":
-                                st.caption(post_run_cfg["message_success"])
-                            else:
-                                st.caption("You started this earlier today but haven't marked it done yet.")
-                    with cols[1]:
-                        if not all_filled:
-                            if st.button(again_label, key=f"continue_{report['id']}", use_container_width=True, type="primary", disabled=not chrome_ok):
-                                primary = next((a for a in report["actions"] if a.get("primary")), report["actions"][0])
-                                picked = None
-                                if primary.get("needs_date") or primary.get("needs_text"):
-                                    d = st.session_state.get(f"date_{report['id']}_{primary['label']}")
-                                    t = st.session_state.get(f"text_{report['id']}_{primary['label']}")
-                                    if primary.get("needs_date") and primary.get("needs_text"):
-                                        picked = (d, t)
-                                    elif primary.get("needs_date"):
-                                        picked = d
-                                    elif primary.get("needs_text"):
-                                        picked = t
-                                _execute_action(report, primary, picked, chrome_ok)
-                    with cols[2]:
-                        if st.button("✅ Mark as Completed", key=f"banner_done_{report['id']}", use_container_width=True):
-                            _mark_run_completed(
-                                user=user_name,
-                                report_id=report["id"],
-                                report_name=report["name"],
-                                run_ts=saved_ts,
-                            )
-                            _clear_run_state_for(report["id"])
-                            st.session_state.pop(f"last_run_{report['id']}", None)
-                            st.rerun()
-
+    # Unassigned view is a queue, not a person — skip the personal
+    # "Completed Today" + "Pick up where you left off" sections and just
+    # list the reports needing someone to claim them.
+    if is_unassigned_view:
         if my_reports:
-            st.markdown("## 🚀 Your Reports")
+            st.markdown("## 🚀 Reports needing a home")
             for report in my_reports:
                 _render_report_card(report, today, chrome_ok)
         else:
-            st.info(f"No reports assigned to {user_name} yet.")
+            st.success("🎉 Every report has someone assigned. Nothing to pick up.")
+    else:
+        # Two-column layout below the hero:
+        #   left:  "Completed Today" checklist for this user
+        #   right: in-progress banner + this user's reports
+        user_layout = st.columns([1, 4])
+
+        with user_layout[0]:
+            st.markdown("### ✅ Completed Today")
+            completed_today = _get_completed_today(user_name)
+            if not completed_today:
+                st.caption("Nothing marked completed yet today.")
+            else:
+                for item in completed_today:
+                    report_id = item.get("report_id", "")
+                    report_name = item.get("report_name", "?")
+                    try:
+                        marked_dt = dt.datetime.fromisoformat(item.get("marked_at", ""))
+                        marked_str = marked_dt.strftime("%-I:%M %p")
+                    except Exception:
+                        marked_str = ""
+                    with st.container(border=True):
+                        st.markdown(
+                            f"<div style='font-weight:600'>✓ {report_name}</div>"
+                            f"<div style='font-size:0.8rem; color:#777'>marked at {marked_str}</div>",
+                            unsafe_allow_html=True,
+                        )
+                        if st.button(
+                            "↩ Undo",
+                            key=f"undo_completed_{report_id}_{item.get('run_ts', '')}",
+                            use_container_width=True,
+                        ):
+                            _unmark_run_completed(user_name, report_id, item.get("run_ts", ""))
+                            st.rerun()
+
+        with user_layout[1]:
+            if in_progress:
+                st.markdown("### 📌 Pick up where you left off")
+                for report in in_progress:
+                    saved = persisted[report["id"]]
+                    saved_ts = saved.get("ts", "")
+                    try:
+                        saved_dt = dt.datetime.fromisoformat(saved_ts)
+                        saved_str = saved_dt.strftime("%I:%M %p")
+                    except Exception:
+                        saved_str = saved_ts
+                    post_run_cfg = report.get("post_run", {})
+                    again_label = post_run_cfg.get("again_label", "🔁 Continue / Run Again")
+
+                    # Recruiting report has structured per-week results: if all 52 tabs
+                    # are filled, this banner shows a green "all done" state. Otherwise
+                    # it lists the tabs that still need data.
+                    results = _load_recruiting_results() if report["id"] == "recruiting" else {}
+                    all_filled = bool(results) and not results.get("still_missing")
+                    still_missing = results.get("still_missing", []) if results else []
+
+                    with st.container(border=True):
+                        if all_filled:
+                            st.success(
+                                f"🎉 **{report['emoji']} {report['name']} — Complete!** "
+                                f"All **{len(results.get('filled', []))}** offices filled this week. "
+                                f"Last run **{saved_str}** today."
+                            )
+                        elif still_missing:
+                            st.warning(
+                                f"⚠️ **{report['emoji']} {report['name']}** — last run **{saved_str}** today. "
+                                f"**{len(still_missing)}** tab{'s' if len(still_missing) != 1 else ''} still need data."
+                            )
+                            with st.expander(f"📋 Show the {len(still_missing)} missing tabs", expanded=False):
+                                for name in still_missing:
+                                    st.markdown(f"- {name}")
+
+                        cols = st.columns([5, 2, 2])
+                        with cols[0]:
+                            if not (all_filled or still_missing):
+                                st.markdown(f"**{report['emoji']} {report['name']}** — last run **{saved_str}** today")
+                                if post_run_cfg.get("message_success") and saved.get("status") == "success":
+                                    st.caption(post_run_cfg["message_success"])
+                                else:
+                                    st.caption("You started this earlier today but haven't marked it done yet.")
+                        with cols[1]:
+                            if not all_filled:
+                                if st.button(again_label, key=f"continue_{report['id']}", use_container_width=True, type="primary", disabled=not chrome_ok):
+                                    primary = next((a for a in report["actions"] if a.get("primary")), report["actions"][0])
+                                    picked = None
+                                    if primary.get("needs_date") or primary.get("needs_text"):
+                                        d = st.session_state.get(f"date_{report['id']}_{primary['label']}")
+                                        t = st.session_state.get(f"text_{report['id']}_{primary['label']}")
+                                        if primary.get("needs_date") and primary.get("needs_text"):
+                                            picked = (d, t)
+                                        elif primary.get("needs_date"):
+                                            picked = d
+                                        elif primary.get("needs_text"):
+                                            picked = t
+                                    _execute_action(report, primary, picked, chrome_ok)
+                        with cols[2]:
+                            if st.button("✅ Mark as Completed", key=f"banner_done_{report['id']}", use_container_width=True):
+                                _mark_run_completed(
+                                    user=user_name,
+                                    report_id=report["id"],
+                                    report_name=report["name"],
+                                    run_ts=saved_ts,
+                                )
+                                _clear_run_state_for(report["id"])
+                                st.session_state.pop(f"last_run_{report['id']}", None)
+                                st.rerun()
+
+            if my_reports:
+                st.markdown("## 🚀 Your Reports")
+                for report in my_reports:
+                    _render_report_card(report, today, chrome_ok)
+            else:
+                st.info(f"No reports assigned to {user_name} yet.")
 
 
 # --------------------------------------------------------------------------
