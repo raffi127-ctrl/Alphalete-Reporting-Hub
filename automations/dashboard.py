@@ -757,7 +757,7 @@ if st.session_state.view == "home":
             st.markdown(
                 "<div style='font-size: 1.8rem; font-weight: 800; line-height: 1.1; margin-top: 0.5rem'>Alphalete Marketing</div>"
                 "<div style='font-size: 1.3rem; font-weight: 600; opacity: 0.7; margin-bottom: 0.4rem'>7-Day Overview</div>"
-                "<div style='opacity: 0.85'>Every report run by anyone, last 7 days. Flagged ⚠️ if scheduled but missed.</div>",
+                "<div style='opacity: 0.85'>Every report run by anyone, last 7 days.</div>",
                 unsafe_allow_html=True,
             )
         with cols[2]:
