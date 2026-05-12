@@ -35,6 +35,7 @@ UPLOADED_SCRIPTS_DIR = WORKSPACE / "automations" / "uploaded"
 RUN_STATE_FILE = WORKSPACE / "output" / "run_state.json"
 ACTIVE_RUNS_FILE = WORKSPACE / "output" / "active_runs.json"
 ACTIVE_RUNS_LOG_DIR = WORKSPACE / "output" / "logs" / "active"
+COMPLETED_MARKS_FILE = WORKSPACE / "output" / "completed_marks.json"
 RUN_STATE_TTL_HOURS = 24
 
 
@@ -570,6 +571,9 @@ def _execute_action(report: dict, action: dict, picked, chrome_ok: bool) -> None
         }
         # Also persist to disk so the callout survives navigations / refreshes
         _save_run_state_for(report["id"], "success" if rc == 0 else "failed")
+    # Refresh so the "Pick up where you left off" banner appears immediately
+    # (otherwise the user has to manually reload to see the post-run prompt).
+    st.rerun()
 
 
 def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
@@ -1265,7 +1269,7 @@ if "view" not in st.session_state:
 if "user" not in st.session_state:
     st.session_state.user = None     # name from MEMBERS once selected
 
-LOGO_PATH = WORKSPACE / "resources" / "alphalete-logo.png"
+LOGO_PATH = WORKSPACE / "resources" / "alphalete-shield.png"
 LOGO_EXISTS = LOGO_PATH.exists()
 
 today = dt.date.today()
@@ -1414,39 +1418,46 @@ with st.sidebar:
 # --------------------------------------------------------------------------
 
 if st.session_state.view == "home":
+    if LOGO_EXISTS:
+        import base64
+        _logo_b64 = base64.b64encode(LOGO_PATH.read_bytes()).decode()
+        _logo_html = (
+            f"<img src='data:image/png;base64,{_logo_b64}' "
+            "style='height:90px; width:auto; display:block'/>"
+        )
+    else:
+        _logo_html = "<div style='font-size: 4rem; line-height: 1.0'>🐺</div>"
+    st.markdown(
+        "<div style='display:flex; align-items:center; gap:1rem; margin:0.4rem 0 1rem'>"
+        f"{_logo_html}"
+        "<div style='font-size:2.6rem; font-weight:800; letter-spacing:-0.5px; line-height:1.1'>"
+        "Alphalete Marketing Report Hub</div>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
     st.markdown(f"""
     <div class="hero">
         <div class="big-date">{BIG_DATE}</div>
-        <h1>{'🐺' if not LOGO_EXISTS else ''} Alphalete Reports</h1>
-        <p>Pick your name to see today's reports — or view the team overview.</p>
     </div>
     """, unsafe_allow_html=True)
 
-    # BIG Alphalete Overview card with wolf logo
+    # Overview card (logo now lives next to the page header above)
     with st.container(border=True):
-        cols = st.columns([1, 4, 2])
+        cols = st.columns([5, 2])
         with cols[0]:
-            if LOGO_EXISTS:
-                st.image(str(LOGO_PATH), width=130)
-            else:
-                st.markdown(
-                    "<div style='font-size: 5rem; text-align: center; line-height: 1.0'>🐺</div>",
-                    unsafe_allow_html=True,
-                )
-        with cols[1]:
             st.markdown(
                 "<div style='font-size: 1.8rem; font-weight: 800; line-height: 1.1; margin-top: 0.5rem'>Alphalete Marketing</div>"
                 "<div style='font-size: 1.3rem; font-weight: 600; opacity: 0.7; margin-bottom: 0.4rem'>7-Day Overview</div>"
                 "<div style='opacity: 0.85'>Every report run by anyone, last 7 days.</div>",
                 unsafe_allow_html=True,
             )
-        with cols[2]:
+        with cols[1]:
             st.markdown("<div style='padding-top: 1.2rem'></div>", unsafe_allow_html=True)
             if st.button("📊 Open Overview", use_container_width=True, type="primary", key="home_overview_btn"):
                 _go_overview()
                 st.rerun()
 
-    st.markdown("### 👥 Who are you?")
+    st.markdown("### 🐺 The Pack")
 
     # Member cards in a 3-column grid (2 rows x 3 cols for 6 members)
     rows = [MEMBERS[i:i + 3] for i in range(0, len(MEMBERS), 3)]
@@ -1763,6 +1774,5 @@ if st.session_state.get("show_suggest"):
 
 st.divider()
 st.caption(
-    "💜 Built with Claude. To add a new automated report: Megan + Claude work together "
-    "to build the script, then Megan adds a card to `AUTOMATED_REPORTS` in `automations/dashboard.py`."
+    "🐺 **Live more. Dream more. Do more.** — Alphalete Marketing"
 )
