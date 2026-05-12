@@ -13,11 +13,15 @@ import shlex
 import subprocess
 from pathlib import Path
 
+import sys
+
 import streamlit as st
 
-from automations.recruiting_report import fill as _fill
-
 WORKSPACE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(WORKSPACE))
+
+from automations.recruiting_report import fill as _fill  # noqa: E402
+
 VENV_PY = str(WORKSPACE / ".venv" / "bin" / "python")
 LOG_DIR = WORKSPACE / "output" / "logs"
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{_fill.SPREADSHEET_ID}/edit"
