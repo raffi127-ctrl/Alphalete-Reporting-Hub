@@ -15,6 +15,7 @@ import re
 import shlex
 import subprocess
 from pathlib import Path
+from urllib.parse import quote as _urlquote
 
 import sys
 
@@ -293,6 +294,25 @@ MEMBERS = [
     {"name": "Raf",     "emoji": "🚀",        "color": "#F4A261", "email": "raffi127@gmail.com"},
     {"name": "Twaddle", "emoji": "🦊",        "color": "#2A9D8F", "email": "dylanjtwaddle@gmail.com"},
 ]
+
+
+def _gmail_compose_url(to: str = "", subject: str = "", body: str = "", cc: str = "") -> str:
+    """Build a Gmail compose URL that drafts an email in the browser.
+
+    Opens Gmail (not the OS default mail client) so the user doesn't have
+    to swap between Gmail and Mail.app. Any empty parameter is omitted
+    cleanly from the URL — Gmail just leaves that field blank in compose.
+    """
+    parts = ["https://mail.google.com/mail/?view=cm&fs=1&tf=cm"]
+    if to:
+        parts.append(f"to={_urlquote(to)}")
+    if cc:
+        parts.append(f"cc={_urlquote(cc)}")
+    if subject:
+        parts.append(f"su={_urlquote(subject)}")
+    if body:
+        parts.append(f"body={_urlquote(body)}")
+    return parts[0] + ("&" + "&".join(parts[1:]) if len(parts) > 1 else "")
 
 
 def _member_email(name: str) -> str:
@@ -1814,16 +1834,14 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                 # native Mail app) so the user doesn't have to swap clients.
                 requester_email = (entry.get("Submitter Email") or "").strip()
                 if requester_email:
-                    from urllib.parse import quote
-                    _subject = quote(f"Re: {entry.get('Title', '')}")
-                    _body = quote(
-                        f"Hi {entry.get('Submitted By', 'there')},\n\n"
-                        f"I'm working on your automation request and had a quick question:\n\n\n\n"
-                        f"Thanks!\n"
-                    )
-                    _gmail_url = (
-                        "https://mail.google.com/mail/?view=cm&fs=1&tf=cm"
-                        f"&to={quote(requester_email)}&su={_subject}&body={_body}"
+                    _gmail_url = _gmail_compose_url(
+                        to=requester_email,
+                        subject=f"Re: {entry.get('Title', '')}",
+                        body=(
+                            f"Hi {entry.get('Submitted By', 'there')},\n\n"
+                            f"I'm working on your automation request and had a quick question:\n\n\n\n"
+                            f"Thanks!\n"
+                        ),
                     )
                     st.link_button(
                         "✉️ Ask requester a question",
@@ -1861,9 +1879,7 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                             f"No email on file for {claimer or 'this person'}. "
                             "Add one in the MEMBERS list to enable one-click pre-fill."
                         )
-                    from urllib.parse import quote as _q
                     _title = entry.get("Title", "")
-                    _subj = _q(f"Quick check-in: {_title}")
                     _body_lines = [
                         f"Hi {claimer or 'there'},",
                         "",
@@ -1873,12 +1889,11 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                     ]
                     if asker_email:
                         _body_lines.append(f"(Reply directly to: {asker_email})")
-                    _body = _q("\n".join(_body_lines))
-                    _cc = f"&cc={_q(requester_email)}" if requester_email else ""
-                    _to_param = f"&to={_q(claimer_email)}" if claimer_email else ""
-                    _gmail_update_url = (
-                        "https://mail.google.com/mail/?view=cm&fs=1&tf=cm"
-                        f"{_to_param}&su={_subj}{_cc}&body={_body}"
+                    _gmail_update_url = _gmail_compose_url(
+                        to=claimer_email or "",
+                        cc=requester_email or "",
+                        subject=f"Quick check-in: {_title}",
+                        body="\n".join(_body_lines),
                     )
                     st.link_button(
                         "📤 Open in Gmail",
