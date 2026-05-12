@@ -780,142 +780,168 @@ def _show_wire_up_dialog(entry: dict | None = None):
         )
     entry = entry or {"ID": "", "Title": "", "Sheet Link": "", "Description": ""}
 
-    with st.form("wire_up_form", clear_on_submit=False):
-        col1, col2 = st.columns(2)
-        with col1:
-            name = st.text_input("Report name *", value=entry.get("Title", ""))
-            emoji = st.text_input("Emoji (single char)", value="⭐", help="An emoji to represent the report on the dashboard")
-            sheet_url = st.text_input("Sheet URL", value=entry.get("Sheet Link", ""))
-        with col2:
-            assignee = st.selectbox(
-                "Who runs this report? *",
-                [m["name"] for m in MEMBERS],
-                index=0,
-                help="The person whose dashboard this will appear on",
-            )
-            est_min = st.number_input("Estimated minutes per run", min_value=1, max_value=120, value=5)
-
-        description = st.text_area(
-            "Short description (one line)",
-            value=entry.get("Description", "")[:140],
-            help="What this automation does — shown under the report name on the card",
+    # NOTE: this used to be an st.form, but inside a form the radio doesn't
+    # trigger a rerun, so the conditional Specific-days vs Monthly UI never
+    # updated. Plain widgets fix that — every change reruns immediately.
+    col1, col2 = st.columns(2)
+    with col1:
+        name = st.text_input("Report name *", value=entry.get("Title", ""), key="wu_name")
+        emoji = st.text_input("Emoji (single char)", value="⭐", key="wu_emoji",
+                              help="An emoji to represent the report on the dashboard")
+        sheet_url = st.text_input("Sheet URL", value=entry.get("Sheet Link", ""), key="wu_sheet_url")
+    with col2:
+        assignee = st.selectbox(
+            "Who runs this report? *",
+            [m["name"] for m in MEMBERS],
+            index=0,
+            key="wu_assignee",
+            help="The person whose dashboard this will appear on",
         )
+        est_min = st.number_input("Estimated minutes per run", min_value=1, max_value=120, value=5, key="wu_est_min")
 
-        st.markdown("**📅 Schedule**")
-        sched_mode = st.radio(
-            "When does this report run?",
-            ["Specific days", "Monthly (on a day of the month)"],
-            horizontal=True,
-            key="sched_mode_radio",
+    description = st.text_area(
+        "Short description (one line)",
+        value=entry.get("Description", "")[:140],
+        key="wu_description",
+        help="What this automation does — shown under the report name on the card",
+    )
+
+    st.markdown("**📅 Schedule**")
+    sched_mode = st.radio(
+        "When does this report run?",
+        ["Specific days", "Monthly (on a day of the month)"],
+        horizontal=True,
+        key="wu_sched_mode_radio",
+    )
+
+    days_chosen: list[int] = []
+    day_of_month: int = 1
+
+    if sched_mode == "Specific days":
+        st.caption("Tick every day this report should run.")
+        dcols = st.columns(7)
+        short_labels = ["M", "T", "W", "Th", "F", "Sa", "Su"]
+        for i, col in enumerate(dcols):
+            with col:
+                st.markdown(f"<div style='text-align:center; font-weight:600; font-size:1.05rem'>{short_labels[i]}</div>", unsafe_allow_html=True)
+                if st.checkbox(" ", key=f"wu_sched_day_{i}", label_visibility="collapsed", value=(i in [1, 2, 3, 4, 5])):
+                    days_chosen.append(i)
+    else:
+        day_of_month = st.number_input(
+            "Day of the month",
+            min_value=1, max_value=31, value=1, step=1,
+            key="wu_day_of_month",
+            help="The report will run on this day each month. If the month is shorter, it's skipped (e.g. 31st only runs in long months).",
         )
+        st.success(f"📅  This report will appear on the **{_ordinal(int(day_of_month))} of every month** in the assignee's schedule.")
 
-        days_chosen: list[int] = []
-        day_of_month: int = 1
+    sched_cols = st.columns(2)
+    with sched_cols[0]:
+        time_str = st.text_input("Time of day", value="8:00 AM", key="wu_time_str")
+    with sched_cols[1]:
+        st.caption("(Time of day is informational — runs are triggered manually unless you set a cron.)")
 
-        if sched_mode == "Specific days":
-            st.caption("Tick every day this report should run.")
-            dcols = st.columns(7)
-            short_labels = ["M", "T", "W", "Th", "F", "Sa", "Su"]
-            for i, col in enumerate(dcols):
-                with col:
-                    st.markdown(f"<div style='text-align:center; font-weight:600; font-size:1.05rem'>{short_labels[i]}</div>", unsafe_allow_html=True)
-                    if st.checkbox(" ", key=f"sched_day_{i}", label_visibility="collapsed", value=(i in [1, 2, 3, 4, 5])):
-                        days_chosen.append(i)
+    st.markdown("**🐍 Python script** (paste what Claude generated)")
+    script_text = st.text_area(
+        "Script content *",
+        height=260,
+        key="wu_script_text",
+        placeholder='# Example:\nimport sys\n\ndef main():\n    print("Hello")\n    return 0\n\nif __name__ == "__main__":\n    sys.exit(main())',
+        help="Must be valid Python. The dashboard will run it as `python -m automations.uploaded.<name>`.",
+    )
+
+    st.markdown("**📋 Pre-flight checklist (optional)**")
+    st.caption(
+        "One step per line. To add a link to a step, use the format: "
+        "`Step text | URL | Button label`. The button label is optional; "
+        "if omitted, defaults to 'Open'."
+    )
+    checklist_text = st.text_area(
+        "Each line becomes a checkbox the user ticks before the Run button enables",
+        key="wu_checklist_text",
+        height=140,
+        placeholder=(
+            "Launch Chrome\n"
+            "Log into AppStream as rhidalgo\n"
+            "Open the source data | https://docs.google.com/spreadsheets/d/abc | 📂 Open Source\n"
+            "Watch the runbook | https://loom.com/xyz | ▶️ Watch Loom"
+        ),
+        help=(
+            "Examples:\n"
+            "• 'Launch Chrome' — checkbox only\n"
+            "• 'Open the data | https://...' — checkbox + link button (default label 'Open')\n"
+            "• 'Watch loom | https://... | ▶️ Loom' — checkbox + custom-labeled link button"
+        ),
+    )
+
+    submitted = st.button("🚀 Wire It Up & Mark Done", type="primary", use_container_width=True, key="wu_submit")
+    if submitted:
+        if not (name and assignee and script_text):
+            st.error("Please fill every field marked *.")
+            return
+
+        # Build schedule dict
+        if sched_mode.startswith("Monthly"):
+            schedule = {
+                "frequency": "monthly",
+                "day_of_month": int(day_of_month),
+                "time": time_str,
+                "estimated_minutes": int(est_min),
+            }
         else:
-            day_of_month = st.number_input(
-                "Day of the month",
-                min_value=1, max_value=31, value=1, step=1,
-                help="The report will run on this day each month. If the month is shorter, it's skipped (e.g. 31st only runs in long months).",
-            )
-            # Friendly preview with ordinal suffix
-            st.success(f"📅  This report will appear on the **{_ordinal(int(day_of_month))} of every month** in the assignee's schedule.")
-
-        sched_cols = st.columns(2)
-        with sched_cols[0]:
-            time_str = st.text_input("Time of day", value="8:00 AM")
-        with sched_cols[1]:
-            st.caption("(Time of day is informational — runs are triggered manually unless you set a cron.)")
-
-        st.markdown("**🐍 Python script** (paste what Claude generated)")
-        script_text = st.text_area(
-            "Script content *",
-            height=260,
-            placeholder='# Example:\nimport sys\n\ndef main():\n    print("Hello")\n    return 0\n\nif __name__ == "__main__":\n    sys.exit(main())',
-            help="Must be valid Python. The dashboard will run it as `python -m automations.uploaded.<name>`.",
-        )
-
-        st.markdown("**📋 Pre-flight checklist (optional)**")
-        checklist_text = st.text_area(
-            "One item per line — things the user should do before clicking Run",
-            placeholder="Launch Chrome\nLog into AppStream as rhidalgo",
-            help="Each line becomes a checkbox the user must tick before the Run button enables. Leave empty for no checklist.",
-        )
-
-        submitted = st.form_submit_button("🚀 Wire It Up & Mark Done", type="primary", use_container_width=True)
-
-        if submitted:
-            if not (name and assignee and script_text):
-                st.error("Please fill every field marked *.")
+            if not days_chosen:
+                st.error("Pick at least one day.")
                 return
-
-            # Build schedule dict
-            if sched_mode.startswith("Monthly"):
-                schedule = {
-                    "frequency": "monthly",
-                    "day_of_month": int(day_of_month),
-                    "time": time_str,
-                    "estimated_minutes": int(est_min),
-                }
-            else:
-                if not days_chosen:
-                    st.error("Pick at least one weekday.")
-                    return
-                # If all 7 days picked → "daily"; otherwise "weekly" with specific days
-                freq = "daily" if len(days_chosen) == 7 else "weekly"
-                schedule = {
-                    "frequency": freq,
-                    "weekdays": sorted(days_chosen),
-                    "time": time_str,
-                    "estimated_minutes": int(est_min),
-                }
-
-            # Parse checklist
-            checklist = []
-            for line in checklist_text.splitlines():
-                line = line.strip()
-                if line:
-                    checklist.append({"text": line})
-
-            metadata = {
-                "id": name,  # _save_uploaded_report sanitizes this
-                "name": name,
-                "emoji": emoji or "⭐",
-                "description": description,
-                "sheet_url": sheet_url,
-                "assignees": [assignee],
-                "schedule": schedule,
-                "checklist": checklist,
-                "args": [],
+            freq = "daily" if len(days_chosen) == 7 else "weekly"
+            schedule = {
+                "frequency": freq,
+                "weekdays": sorted(days_chosen),
+                "time": time_str,
+                "estimated_minutes": int(est_min),
             }
 
-            ok, msg = _save_uploaded_report(metadata, script_text)
-            if not ok:
-                st.error(msg)
-                return
+        # Parse checklist: each line is "text" OR "text | url" OR "text | url | label"
+        checklist = []
+        for line in checklist_text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = [p.strip() for p in line.split("|")]
+            step = {"text": parts[0]}
+            if len(parts) >= 2 and parts[1]:
+                step["link"] = parts[1]
+                step["link_label"] = parts[2] if len(parts) >= 3 and parts[2] else "Open"
+            checklist.append(step)
 
-            # Mark backlog entry as done (only if there was one)
-            if entry.get("ID"):
-                try:
-                    _mark_intake_done(str(entry["ID"]))
-                except Exception:
-                    pass
+        metadata = {
+            "id": name,
+            "name": name,
+            "emoji": emoji or "⭐",
+            "description": description,
+            "sheet_url": sheet_url,
+            "assignees": [assignee],
+            "schedule": schedule,
+            "checklist": checklist,
+            "args": [],
+        }
 
-            st.success(f"✅ Wired up! It will appear on **{assignee}**'s dashboard.")
-            st.balloons()
-            st.markdown(
-                "**Heads up:** The new automation is saved on this Mac. "
-                "To make it available to the whole team, ask Megan to commit + push to GitHub."
-            )
+        ok, msg = _save_uploaded_report(metadata, script_text)
+        if not ok:
+            st.error(msg)
+            return
+
+        if entry.get("ID"):
+            try:
+                _mark_intake_done(str(entry["ID"]))
+            except Exception:
+                pass
+
+        st.success(f"✅ Wired up! It will appear on **{assignee}**'s dashboard.")
+        st.balloons()
+        st.markdown(
+            "**Heads up:** The new automation is saved on this Mac. "
+            "To make it available to the whole team, ask Megan to commit + push to GitHub."
+        )
 
 
 def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool = False) -> None:
