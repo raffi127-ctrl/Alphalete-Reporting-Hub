@@ -116,6 +116,11 @@ AUTOMATED_REPORTS = [
              "action": "launch_chrome"},
             {"text": "Log into AppStream as **rhidalgo** (broader account) in the new Chrome window"},
         ],
+        "post_run": {
+            "message_success": "✅ Done with **rhidalgo** (~43 offices filled). Now **log out of rhidalgo and log into rcaptain** in the same Chrome window, then click **Run Again** below to fill the remaining offices.",
+            "message_failed": "❌ rhidalgo run failed. Check the log above. To retry, switch logins if needed and click Run Again.",
+            "again_label": "🔁 Run Again with rcaptain",
+        },
         "actions": [
             {
                 "label": "Run This Week",
@@ -466,19 +471,26 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
         # Post-run callout (appears after a run completes)
         last_run = st.session_state.get(f"last_run_{report['id']}")
         if last_run:
+            post_run_cfg = report.get("post_run", {})
             with st.container(border=True):
                 if last_run["status"] == "success":
-                    st.success("✅ Run finished. If any ICD showed 'not accessible' in the log, switch AppStream logins and run again.")
+                    msg = post_run_cfg.get(
+                        "message_success",
+                        "✅ Run finished. If any ICD showed 'not accessible' in the log, switch AppStream logins and run again.",
+                    )
+                    st.success(msg)
                 else:
-                    st.error("❌ Run failed. Check the log above. You can retry with the same or other AppStream login below.")
+                    msg = post_run_cfg.get(
+                        "message_failed",
+                        "❌ Run failed. Check the log above. You can retry with the same or other AppStream login below.",
+                    )
+                    st.error(msg)
+                again_label = post_run_cfg.get("again_label", "🔁 Run Again")
                 cols = st.columns([3, 2])
                 with cols[0]:
-                    st.markdown(
-                        "**Need to switch AppStream accounts?** "
-                        "Log out in the Chrome window, log into the other account, then click Run Again."
-                    )
+                    st.caption("When you're ready, click Run Again below.")
                 with cols[1]:
-                    if st.button("🔁 Run Again", key=f"again_{report['id']}", use_container_width=True, disabled=not chrome_ok):
+                    if st.button(again_label, key=f"again_{report['id']}", use_container_width=True, disabled=not chrome_ok):
                         _execute_action(report, primary, picked, chrome_ok)
                 if st.button("✖ Dismiss", key=f"dismiss_{report['id']}"):
                     del st.session_state[f"last_run_{report['id']}"]
