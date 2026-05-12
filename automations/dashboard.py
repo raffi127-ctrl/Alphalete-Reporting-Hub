@@ -8,8 +8,10 @@ Run with:
 """
 from __future__ import annotations
 
+import ast
 import datetime as dt
 import json
+import re
 import shlex
 import subprocess
 from pathlib import Path
@@ -27,6 +29,45 @@ VENV_PY = str(WORKSPACE / ".venv" / "bin" / "python")
 LOG_DIR = WORKSPACE / "output" / "logs"
 RUNS_LOG = LOG_DIR / "runs.jsonl"
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{_fill.SPREADSHEET_ID}/edit"
+
+UPLOADED_REPORTS_FILE = WORKSPACE / "uploaded_reports.json"
+UPLOADED_SCRIPTS_DIR = WORKSPACE / "automations" / "uploaded"
+
+
+def _load_uploaded_reports_raw() -> list[dict]:
+    """Read uploaded_reports.json and convert to AUTOMATED_REPORTS-compatible dicts.
+    Called once at module load so the list of all reports is fresh on each rerun."""
+    if not UPLOADED_REPORTS_FILE.exists():
+        return []
+    try:
+        raw = json.loads(UPLOADED_REPORTS_FILE.read_text())
+    except Exception:
+        return []
+    out = []
+    for r in raw:
+        module = r.get("module")
+        if not module:
+            continue
+        args_list = r.get("args", [])
+        out.append({
+            "id": r["id"],
+            "name": r["name"],
+            "emoji": r.get("emoji", "⭐"),
+            "color": r.get("color", "#667eea"),
+            "description": r.get("description", ""),
+            "sheet_url": r.get("sheet_url", ""),
+            "assignees": r.get("assignees", []),
+            "schedule": r.get("schedule"),
+            "checklist": r.get("checklist", []),
+            "actions": [{
+                "label": r.get("action_label", "Run Report"),
+                "icon": "▶",
+                "primary": True,
+                "module": module,
+                "args_fn": (lambda a=args_list: list(a)),
+            }],
+        })
+    return out
 
 # Team members. Each is a dict so we can add avatars/colors easily.
 # Order: alphabetical by name.
@@ -141,6 +182,9 @@ AUTOMATED_REPORTS = [
         ],
     },
 ]
+
+# Merge in user-uploaded reports (saved by the Wire-Up dialog)
+AUTOMATED_REPORTS.extend(_load_uploaded_reports_raw())
 
 # Future: read pending automation requests from this Sheet. Update the ID
 # once Megan shares the URL.
@@ -576,6 +620,162 @@ def _show_intake_dialog():
                     st.error(f"Couldn't save to Sheet: {e}")
 
 
+def _save_uploaded_report(metadata: dict, script_text: str) -> tuple[bool, str]:
+    """Save a wire-up: write the script to automations/uploaded/<id>.py and
+    append metadata to uploaded_reports.json. Returns (ok, message)."""
+    safe_id = re.sub(r"[^a-zA-Z0-9_]", "_", metadata["id"]).strip("_").lower()
+    if not safe_id:
+        return False, "Report id couldn't be derived from name."
+    # Validate Python syntax before saving
+    try:
+        ast.parse(script_text)
+    except SyntaxError as e:
+        return False, f"Script has a Python syntax error: {e}"
+
+    UPLOADED_SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+    init_file = UPLOADED_SCRIPTS_DIR / "__init__.py"
+    if not init_file.exists():
+        init_file.write_text("")
+    script_path = UPLOADED_SCRIPTS_DIR / f"{safe_id}.py"
+    script_path.write_text(script_text)
+
+    metadata["id"] = safe_id
+    metadata["module"] = f"automations.uploaded.{safe_id}"
+
+    existing = []
+    if UPLOADED_REPORTS_FILE.exists():
+        try:
+            existing = json.loads(UPLOADED_REPORTS_FILE.read_text())
+        except Exception:
+            existing = []
+    # If an entry with same id exists, replace it (allows re-wire)
+    existing = [e for e in existing if e.get("id") != safe_id]
+    existing.append(metadata)
+    UPLOADED_REPORTS_FILE.write_text(json.dumps(existing, indent=2))
+    return True, f"Saved to automations/uploaded/{safe_id}.py and uploaded_reports.json"
+
+
+@st.dialog("🛠️ Wire Up Built Automation", width="large")
+def _show_wire_up_dialog(entry: dict):
+    """Form the builder fills out when their automation is built and ready."""
+    st.markdown(f"**Backlog item:** {entry.get('Title', 'Untitled')}")
+    st.caption(
+        "Paste what Claude generated (the Python script + a few details about how/when to run it). "
+        "Most fields auto-fill from the backlog entry — change them if needed."
+    )
+
+    with st.form("wire_up_form", clear_on_submit=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            name = st.text_input("Report name *", value=entry.get("Title", ""))
+            emoji = st.text_input("Emoji (single char)", value="⭐", help="An emoji to represent the report on the dashboard")
+            sheet_url = st.text_input("Sheet URL", value=entry.get("Sheet Link", ""))
+        with col2:
+            assignee = st.selectbox(
+                "Who runs this report? *",
+                [m["name"] for m in MEMBERS],
+                index=0,
+                help="The person whose dashboard this will appear on",
+            )
+            est_min = st.number_input("Estimated minutes per run", min_value=1, max_value=120, value=5)
+
+        description = st.text_area(
+            "Short description (one line)",
+            value=entry.get("Description", "")[:140],
+            help="What this automation does — shown under the report name on the card",
+        )
+
+        st.markdown("**📅 Schedule**")
+        sched_cols = st.columns([2, 4, 2])
+        with sched_cols[0]:
+            frequency = st.radio("Frequency *", ["Daily (Tue–Sat)", "Weekly", "Daily (Mon–Fri)", "Daily (every day)"], index=0)
+        with sched_cols[1]:
+            if frequency == "Weekly":
+                days_chosen = st.multiselect(
+                    "Which days?",
+                    options=list(range(7)),
+                    default=[0],
+                    format_func=lambda x: WEEKDAY_NAMES[x],
+                )
+            else:
+                days_chosen = []
+                st.caption(f"_{frequency}_ — runs on those days automatically.")
+        with sched_cols[2]:
+            time_str = st.text_input("Time of day", value="8:00 AM")
+
+        st.markdown("**🐍 Python script** (paste what Claude generated)")
+        script_text = st.text_area(
+            "Script content *",
+            height=260,
+            placeholder='# Example:\nimport sys\n\ndef main():\n    print("Hello")\n    return 0\n\nif __name__ == "__main__":\n    sys.exit(main())',
+            help="Must be valid Python. The dashboard will run it as `python -m automations.uploaded.<name>`.",
+        )
+
+        st.markdown("**📋 Pre-flight checklist (optional)**")
+        checklist_text = st.text_area(
+            "One item per line — things the user should do before clicking Run",
+            placeholder="Launch Chrome\nLog into AppStream as rhidalgo",
+            help="Each line becomes a checkbox the user must tick before the Run button enables. Leave empty for no checklist.",
+        )
+
+        submitted = st.form_submit_button("🚀 Wire It Up & Mark Done", type="primary", use_container_width=True)
+
+        if submitted:
+            if not (name and assignee and script_text and frequency):
+                st.error("Please fill every field marked *.")
+                return
+
+            # Build schedule dict
+            if frequency == "Daily (Tue–Sat)":
+                schedule = {"frequency": "weekly", "weekdays": [1, 2, 3, 4, 5], "time": time_str, "estimated_minutes": int(est_min)}
+            elif frequency == "Daily (Mon–Fri)":
+                schedule = {"frequency": "weekly", "weekdays": [0, 1, 2, 3, 4], "time": time_str, "estimated_minutes": int(est_min)}
+            elif frequency == "Daily (every day)":
+                schedule = {"frequency": "daily", "weekdays": list(range(7)), "time": time_str, "estimated_minutes": int(est_min)}
+            else:  # Weekly
+                if not days_chosen:
+                    st.error("Pick at least one day for a weekly schedule.")
+                    return
+                schedule = {"frequency": "weekly", "weekdays": days_chosen, "time": time_str, "estimated_minutes": int(est_min)}
+
+            # Parse checklist
+            checklist = []
+            for line in checklist_text.splitlines():
+                line = line.strip()
+                if line:
+                    checklist.append({"text": line})
+
+            metadata = {
+                "id": name,  # _save_uploaded_report sanitizes this
+                "name": name,
+                "emoji": emoji or "⭐",
+                "description": description,
+                "sheet_url": sheet_url,
+                "assignees": [assignee],
+                "schedule": schedule,
+                "checklist": checklist,
+                "args": [],
+            }
+
+            ok, msg = _save_uploaded_report(metadata, script_text)
+            if not ok:
+                st.error(msg)
+                return
+
+            # Mark backlog entry as done
+            try:
+                _mark_intake_done(str(entry["ID"]))
+            except Exception:
+                pass
+
+            st.success(f"✅ Wired up! It will appear on **{assignee}**'s dashboard.")
+            st.balloons()
+            st.markdown(
+                "**Heads up:** The new automation is saved on this Mac. "
+                "To make it available to the whole team, ask Megan to commit + push to GitHub."
+            )
+
+
 def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool = False) -> None:
     """Render one backlog entry."""
     with st.container(border=True):
@@ -611,9 +811,11 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                         else:
                             st.error("Couldn't claim — please try again.")
             if allow_done:
-                if st.button("✅ Mark Done", key=f"done_{entry['ID']}", use_container_width=True):
+                if st.button("🛠️ Wire It Up", key=f"wireup_{entry['ID']}", use_container_width=True, type="primary"):
+                    _show_wire_up_dialog(entry)
+                if st.button("✅ Just mark done", key=f"justdone_{entry['ID']}", use_container_width=True):
                     if _mark_intake_done(str(entry["ID"])):
-                        st.success("Marked done")
+                        st.success("Marked done (no automation wired)")
                         st.rerun()
 
 
