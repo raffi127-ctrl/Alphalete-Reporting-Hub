@@ -85,7 +85,8 @@ def _read_active_runs() -> list[dict]:
             except Exception:
                 pass
         try:
-            _save_run_state_for(report_id, status if status != "unknown" else "success")
+            _save_run_state_for(report_id, status if status != "unknown" else "success",
+                                user=orphan.get("user"))
             _log_run(
                 report_id=report_id,
                 report_name=orphan.get("report_name", "?"),
@@ -152,9 +153,12 @@ def _load_all_run_state() -> dict:
     return fresh
 
 
-def _save_run_state_for(report_id: str, status: str) -> None:
+def _save_run_state_for(report_id: str, status: str, user: str | None = None) -> None:
     state = _load_all_run_state()
-    state[report_id] = {"status": status, "ts": dt.datetime.now().isoformat(timespec="seconds")}
+    entry = {"status": status, "ts": dt.datetime.now().isoformat(timespec="seconds")}
+    if user:
+        entry["user"] = user
+    state[report_id] = entry
     RUN_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     RUN_STATE_FILE.write_text(json.dumps(state, indent=2))
 
@@ -570,7 +574,11 @@ def _execute_action(report: dict, action: dict, picked, chrome_ok: bool) -> None
             "ts": dt.datetime.now().isoformat(timespec="seconds"),
         }
         # Also persist to disk so the callout survives navigations / refreshes
-        _save_run_state_for(report["id"], "success" if rc == 0 else "failed")
+        _save_run_state_for(
+            report["id"],
+            "success" if rc == 0 else "failed",
+            user=st.session_state.get("user"),
+        )
     # Refresh so the "Pick up where you left off" banner appears immediately
     # (otherwise the user has to manually reload to see the post-run prompt).
     st.rerun()
@@ -1651,9 +1659,18 @@ else:  # st.session_state.view == "user"
     my_reports = [r for r in AUTOMATED_REPORTS if user_name in r.get("assignees", [])]
 
     # ----- "Pick up where you left off" banner -----
-    # Any of this user's reports with persisted run state (within last 24h)
+    # Show banner for: reports persisted with state where THIS user is the one
+    # who ran it (regardless of assignee). Falls back to assignee for older
+    # entries that don't have user info.
     persisted = _load_all_run_state()
-    in_progress = [r for r in my_reports if r["id"] in persisted]
+    in_progress = [
+        r for r in AUTOMATED_REPORTS
+        if r["id"] in persisted
+        and (
+            persisted[r["id"]].get("user") == user_name
+            or (not persisted[r["id"]].get("user") and user_name in r.get("assignees", []))
+        )
+    ]
     if in_progress:
         st.markdown("### 📌 Pick up where you left off")
         for report in in_progress:
