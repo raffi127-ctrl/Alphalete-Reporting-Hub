@@ -1052,6 +1052,9 @@ def _show_intake_dialog():
             placeholder="you@example.com",
             help="We'll use this to message you with any questions we have while working on your request.",
         )
+        st.caption(
+            "📬 Any questions we have while building your report will be sent to this email."
+        )
         currently_runs = st.text_input(
             "Who currently runs this report?",
             placeholder="e.g. Sarah from Sales, or 'me' — anyone, even folks outside the team",
