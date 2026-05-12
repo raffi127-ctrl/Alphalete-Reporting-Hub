@@ -32,6 +32,12 @@ SHEET_URL = f"https://docs.google.com/spreadsheets/d/{_fill.SPREADSHEET_ID}/edit
 
 UPLOADED_REPORTS_FILE = WORKSPACE / "uploaded_reports.json"
 UPLOADED_SCRIPTS_DIR = WORKSPACE / "automations" / "uploaded"
+# Manual library assignments live here so anyone can claim an unassigned
+# report from the Library view without editing source files. The file is a
+# simple {report_id: [assignee_name, ...]} JSON dict; values override
+# whatever assignees came from the source (uploaded_reports.json or the
+# hardcoded AUTOMATED_REPORTS list).
+LIBRARY_ASSIGNMENTS_FILE = WORKSPACE / "library_assignments.json"
 RUN_STATE_FILE = WORKSPACE / "output" / "run_state.json"
 ACTIVE_RUNS_FILE = WORKSPACE / "output" / "active_runs.json"
 ACTIVE_RUNS_LOG_DIR = WORKSPACE / "output" / "logs" / "active"
@@ -423,6 +429,44 @@ AUTOMATED_REPORTS = [
 
 # Merge in user-uploaded reports (saved by the Wire-Up dialog)
 AUTOMATED_REPORTS.extend(_load_uploaded_reports_raw())
+
+
+def _load_library_overrides() -> dict[str, list[str]]:
+    """Manual library assignments saved from the Library UI."""
+    if not LIBRARY_ASSIGNMENTS_FILE.exists():
+        return {}
+    try:
+        data = json.loads(LIBRARY_ASSIGNMENTS_FILE.read_text())
+        return {str(k): list(v) for k, v in data.items() if isinstance(v, list)}
+    except Exception:
+        return {}
+
+
+def _set_library_assignment(report_id: str, assignee: str) -> bool:
+    """Persist a library assignment override and return success."""
+    overrides = _load_library_overrides()
+    if assignee:
+        overrides[str(report_id)] = [assignee]
+    else:
+        overrides.pop(str(report_id), None)
+    try:
+        LIBRARY_ASSIGNMENTS_FILE.write_text(json.dumps(overrides, indent=2))
+    except Exception:
+        return False
+    # Reflect immediately in the in-memory list so the next rerun shows
+    # the move from Unassigned to the assignee's section.
+    for r in AUTOMATED_REPORTS:
+        if str(r.get("id")) == str(report_id):
+            r["assignees"] = list(overrides.get(str(report_id), [])) or []
+            break
+    return True
+
+
+# Apply any persisted overrides on top of the merged list.
+_library_overrides = _load_library_overrides()
+for _r in AUTOMATED_REPORTS:
+    if str(_r.get("id")) in _library_overrides:
+        _r["assignees"] = list(_library_overrides[str(_r["id"])])
 
 # --------------------------------------------------------------------------
 # Helpers
@@ -3179,6 +3223,28 @@ elif st.session_state.view == "library":
                             "  •  ".join(meta_lines),
                             unsafe_allow_html=True,
                         )
+                        # Inline assign picker for unassigned reports.
+                        if not assignees:
+                            assign_cols = st.columns([3, 2])
+                            with assign_cols[0]:
+                                _pick = st.selectbox(
+                                    "Assign to…",
+                                    ["— assign to —"] + [m["name"] for m in MEMBERS],
+                                    key=f"lib_assign_pick_{report['id']}",
+                                    label_visibility="collapsed",
+                                )
+                            with assign_cols[1]:
+                                if _pick and _pick != "— assign to —":
+                                    if st.button(
+                                        "🤝 Assign",
+                                        key=f"lib_assign_btn_{report['id']}",
+                                        use_container_width=True,
+                                    ):
+                                        if _set_library_assignment(str(report["id"]), _pick):
+                                            st.success(f"Assigned to {_pick}.")
+                                            st.rerun()
+                                        else:
+                                            st.error("Couldn't save — try again.")
                     with cols[1]:
                         if st.button(
                             "Open →",
