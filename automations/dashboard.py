@@ -2706,8 +2706,12 @@ def _go_overview():
 
 
 def _go_library():
-    # Always return to the top-level library list (not a previously-opened detail)
+    # Always return to the top-level library list (not a previously-opened detail).
+    # Clearing library_came_from too so the "Back" button on a detail card
+    # routes back here instead of bouncing the user to a profile they may
+    # not even be looking at anymore.
     st.session_state.pop("library_report_id", None)
+    st.session_state.pop("library_came_from", None)
     _set_view("library")
 
 
@@ -3211,17 +3215,32 @@ elif st.session_state.view == "overview":
 elif st.session_state.view == "library":
     selected_id = st.session_state.get("library_report_id")
 
+    # If we got here from a user profile, the Back button should return there
+    # instead of bouncing to the library list. Tracked via library_came_from
+    # which the entry-point buttons set.
+    _came_from = st.session_state.get("library_came_from")
+    if _came_from and _came_from[0] == "user":
+        _back_label = f"← Back to {_came_from[1]}'s profile"
+    else:
+        _back_label = "← Back to Library"
+
+    def _back_from_library_detail() -> None:
+        st.session_state.pop("library_report_id", None)
+        if _came_from and _came_from[0] == "user":
+            st.session_state.user = _came_from[1]
+            st.session_state.pop("library_came_from", None)
+            _set_view("user")
+        st.rerun()
+
     if selected_id:
         report = next((r for r in AUTOMATED_REPORTS if r["id"] == selected_id), None)
         if not report:
             st.error("That report isn't in the library anymore.")
-            if st.button("← Back to Library"):
-                st.session_state.pop("library_report_id", None)
-                st.rerun()
+            if st.button(_back_label, key="lib_detail_back_missing"):
+                _back_from_library_detail()
         else:
-            if st.button("← Back to Library", key="lib_detail_back"):
-                st.session_state.pop("library_report_id", None)
-                st.rerun()
+            if st.button(_back_label, key="lib_detail_back"):
+                _back_from_library_detail()
 
             st.markdown(
                 f"<div style='font-size:2.2rem; font-weight:800; margin:0.4rem 0 0.4rem'>"
@@ -3424,6 +3443,7 @@ else:  # st.session_state.view == "user"
                             help="Open this report to run it",
                         ):
                             st.session_state["library_report_id"] = _r["id"]
+                            st.session_state["library_came_from"] = ("user", user_name)
                             _set_view("library")
                             st.rerun()
                 else:
@@ -3625,6 +3645,7 @@ else:  # st.session_state.view == "user"
                             use_container_width=True,
                         ):
                             st.session_state["library_report_id"] = report["id"]
+                            st.session_state["library_came_from"] = ("user", user_name)
                             _set_view("library")
                             st.rerun()
                     with _row[1]:
