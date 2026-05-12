@@ -287,6 +287,7 @@ MEMBERS = [
     # `email` powers the "Ask for an update" button on claimed backlog cards.
     # Fill these in (or correct any guesses) — when blank, the button opens
     # an empty mailto and the requester types the address manually.
+    {"name": "Carlos",  "emoji": "🎩",        "color": "#E76F51", "email": "carloshidalgo349@gmail.com"},
     {"name": "Eve",     "emoji": "🌷",        "color": "#4ECDC4", "email": "alphaletereporting@gmail.com"},
     {"name": "JD",      "emoji": "⚡",        "color": "#9B59B6", "email": "josh.mascorro17@gmail.com"},
     {"name": "Maud",    "emoji": "🌟",        "color": "#FF6B6B", "email": "maudmiller4@gmail.com"},
@@ -2094,10 +2095,10 @@ def _render_completed_intake_card(entry: dict) -> None:
 
 
 def _render_completed_bug_card(entry: dict) -> None:
-    """Compact read-only summary of a Fixed bug or change request."""
+    """Compact read-only summary of a Fixed bug or site-edit suggestion."""
     bug_id = str(entry.get("ID", ""))
     bug_type = entry.get("Type", "")
-    type_emoji = "🐛" if "Bug" in bug_type else "✏️"
+    type_emoji = "💡" if "Site" in bug_type else "🐛" if "Bug" in bug_type else "✏️"
     with st.container(border=True):
         st.markdown(
             f"**{type_emoji} {entry.get('Title', 'Untitled')}**  \n"
@@ -2143,7 +2144,7 @@ def _render_bug_card(entry: dict) -> None:
     status = entry.get("Status") or "Open"
     bug_type = entry.get("Type", "")
     priority = entry.get("Priority", "")
-    type_emoji = "🐛" if "Bug" in bug_type else "✏️"
+    type_emoji = "💡" if "Site" in bug_type else "🐛" if "Bug" in bug_type else "✏️"
 
     # Bug triage is Megan-only right now. Other people on the hub can still
     # see the bugs (for visibility), but the action buttons are hidden so
@@ -2266,7 +2267,12 @@ def _render_bug_typed_view(
     st.markdown(f"## {page_title}")
     st.caption(page_caption)
 
-    bugs = [b for b in _read_bugs() if type_keyword in (b.get("Type") or "")]
+    # type_keyword can be a single string or list of accepted substrings.
+    _keywords = [type_keyword] if isinstance(type_keyword, str) else list(type_keyword)
+    bugs = [
+        b for b in _read_bugs()
+        if any(k in (b.get("Type") or "") for k in _keywords)
+    ]
 
     # Focused card from email deep link (?bug=<id>). If the row is on the
     # other typed view, drop the focus silently so we don't render a card
@@ -2485,6 +2491,21 @@ st.markdown("""
        menu, share icon). Reusing the slot below for our own status pill. */
     [data-testid="stToolbar"], .stDeployButton { display: none !important; }
     header[data-testid="stHeader"] { background: transparent !important; height: 0 !important; }
+
+    /* Sidebar is always visible — hide the collapse / expand controls so it
+       can't be dismissed accidentally. The nav is the spine of the hub. */
+    [data-testid="stSidebarCollapseButton"],
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="collapsedControl"],
+    [data-testid="stSidebar"] button[kind="header"] {
+        display: none !important;
+    }
+    [data-testid="stSidebar"] {
+        min-width: 17rem !important;
+        max-width: 17rem !important;
+        transform: none !important;
+        visibility: visible !important;
+    }
 
     /* Our custom top-right system-status pill */
     .system-status-pill {
@@ -2806,7 +2827,7 @@ def _render_currently_running_banner(filter_user: str | None = None):
 
 with st.sidebar:
     if st.session_state.view != "home":
-        if st.button("🏠 Back to Home", use_container_width=True):
+        if st.button("🏠 Home Hub", use_container_width=True):
             _go_home()
             st.rerun()
     if st.button("📚 Report Library", use_container_width=True):
@@ -2821,7 +2842,7 @@ with st.sidebar:
     _bugs_count = sum(
         1 for b in _read_bugs()
         if (b.get("Status") or "Open") in ("Open", "In Progress", "Needs Info")
-        and "Bug" in (b.get("Type") or "")
+        and any(k in (b.get("Type") or "") for k in ("Bug", "Site"))
     )
     if st.button(f"📨 New Automation Request ({_backlog_count})", use_container_width=True, key="nav_backlog"):
         _go_backlog()
@@ -2885,9 +2906,9 @@ with st.sidebar:
         """,
         unsafe_allow_html=True,
     )
-    if st.button("⚠️ Report a Bug", use_container_width=True, key="open_bug_dialog_btn"):
+    if st.button("⚠️ Report a Bug / Suggest a Site Edit", use_container_width=True, key="open_bug_dialog_btn"):
         st.session_state.show_bug_dialog = True
-    if st.button(f"🐛 Bugs Being Fixed ({_bugs_count})", use_container_width=True, key="nav_bugs"):
+    if st.button(f"🐛 Bugs & Site Edits Being Fixed ({_bugs_count})", use_container_width=True, key="nav_bugs"):
         _go_bugs()
         st.rerun()
 
@@ -3125,12 +3146,12 @@ elif st.session_state.view == "backlog":
 
 elif st.session_state.view == "bugs":
     _render_bug_typed_view(
-        type_keyword="Bug",
-        page_title="🐛 Bug Reports",
-        page_caption="Things that are broken. Submitted via the sidebar. Megan triages and replies to the submitter by email.",
-        empty_message="No bug reports right now.",
-        completed_label="🐛 Bug Fixes Completed",
-        completed_empty_label="No bugs fixed yet.",
+        type_keyword=["Bug", "Site"],
+        page_title="🐛 Bugs & Site Edits Being Fixed",
+        page_caption="Things that are broken or polish/UX tweaks to the hub. Submitted via the sidebar. Megan triages and replies to the submitter by email.",
+        empty_message="No bug reports or site-edit suggestions right now.",
+        completed_label="✅ Completed",
+        completed_empty_label="Nothing fixed yet.",
     )
 
 
@@ -3665,28 +3686,39 @@ else:  # st.session_state.view == "user"
 # sidebar button — no shared dropdown).
 # --------------------------------------------------------------------------
 
-@st.dialog("🐛 Report a Bug", width="large")
+@st.dialog("🐛 Report a Bug or Suggest a Site Edit", width="large")
 def _show_bug_dialog():
     st.caption(
-        "Something broken? Drop the details here — Megan triages bugs and "
-        "follows up by email.\n\n"
+        "Something broken on an existing report, or want to tweak how the hub "
+        "itself looks/works? Drop it here — Megan handles both and follows up "
+        "by email.\n\n"
         "**Tweak to an existing report?** Use **\"Request Change to Existing "
         "Report\"** instead.\n\n"
-        "**Brand-new report?** Use **\"New Automation Request\"** instead."
+        "**Brand-new automation?** Use **\"New Automation Request\"** instead."
     )
     with st.form("bug_form", clear_on_submit=True):
         cols = st.columns(2)
         with cols[0]:
-            report_name = st.text_input("Report name", placeholder="e.g. 'OPT Focus Report'")
+            kind = st.selectbox(
+                "What kind?",
+                ["Bug / something broke", "Site edit suggestion"],
+                help="'Bug' = a report or feature is broken. "
+                     "'Site edit suggestion' = polish/UX tweak to the hub itself.",
+            )
+            subject = st.text_input(
+                "Subject",
+                placeholder="e.g. 'OPT Focus Report' or 'Sidebar layout'",
+                help="What this is about — the report name, the page, etc.",
+            )
             requester = st.text_input("Your name", value=st.session_state.get("user", "") or "")
             requester_email = st.text_input(
                 "Your email",
                 placeholder="you@example.com",
-                help="Megan will reply here when the bug is fixed or if she needs more info.",
+                help="Megan will reply here when it's fixed or if she needs more info.",
             )
         with cols[1]:
-            link = st.text_input("Sheet link", placeholder="https://…  (paste 'n/a' if none)")
-            loom = st.text_input("Loom", placeholder="https://loom.com/…  (paste 'n/a' if none)")
+            link = st.text_input("Sheet link", placeholder="https://…  (paste 'n/a' if not applicable)")
+            loom = st.text_input("Loom", placeholder="https://loom.com/…  (paste 'n/a' if not applicable)")
             priority = st.selectbox(
                 "Priority",
                 PRIORITY_OPTIONS,
@@ -3694,16 +3726,17 @@ def _show_bug_dialog():
                 help="How urgent is this? Don't worry, 5 is a real option.",
             )
         details = st.text_area(
-            "Details — what's broken?",
+            "Details — what's broken / what should change?",
             height=140,
-            placeholder="Describe what's wrong, when it started, etc.",
+            placeholder="Describe what's wrong (or what the edit should look like), "
+                        "when it started, etc.",
         )
-        submitted = st.form_submit_button("🐛 Submit Bug Report", type="primary", use_container_width=True)
+        submitted = st.form_submit_button("📨 Submit", type="primary", use_container_width=True)
 
         if submitted:
             missing = [
                 label for label, val in [
-                    ("Report name", report_name),
+                    ("Subject", subject),
                     ("Your name", requester),
                     ("Your email", requester_email),
                     ("Sheet link", link),
@@ -3716,8 +3749,8 @@ def _show_bug_dialog():
             else:
                 try:
                     _add_bug(
-                        title=report_name,
-                        bug_type="Bug / something broke",
+                        title=subject,
+                        bug_type=kind,
                         sheet_link=link,
                         loom_link=loom,
                         details=details,
@@ -3725,10 +3758,15 @@ def _show_bug_dialog():
                         submitter_email=requester_email,
                         priority=priority,
                     )
-                    st.success("✅ Submitted! Megan will reply to your email when it's fixed.")
+                    success_msg = (
+                        "✅ Submitted! Megan will reply to your email when it's fixed."
+                        if "Bug" in kind
+                        else "✅ Suggestion sent! Megan will reply when it's been applied or if she has questions."
+                    )
+                    st.success(success_msg)
                     st.balloons()
                 except Exception as e:
-                    st.error(f"Couldn't save the bug report: {e}")
+                    st.error(f"Couldn't save: {e}")
 
 
 @st.dialog("✏️ Request a Change to an Existing Report", width="large")
