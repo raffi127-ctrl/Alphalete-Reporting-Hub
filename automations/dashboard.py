@@ -1479,6 +1479,10 @@ def _go_overview():
     st.session_state.view = "overview"
 
 
+def _go_library():
+    st.session_state.view = "library"
+
+
 def _render_currently_running_banner(filter_user: str | None = None):
     """Show a banner if any reports are running in the background.
     If `filter_user` is given, only show runs started by that user."""
@@ -1543,7 +1547,11 @@ with st.sidebar:
         if st.button("🏠 Back to Home", use_container_width=True):
             _go_home()
             st.rerun()
-        st.markdown("---")
+    if st.button("📚 Report Library", use_container_width=True,
+                 disabled=st.session_state.view == "library"):
+        _go_library()
+        st.rerun()
+    st.markdown("---")
     st.markdown("### 🛠️ System Status")
     chrome_ok = _check_chrome_running()
     if chrome_ok:
@@ -1635,73 +1643,45 @@ if st.session_state.view == "home":
                 _go_overview()
                 st.rerun()
 
-    # Two-column section: Report Library on the left, Pack on the right
-    home_lower = st.columns([2, 3])
-
-    with home_lower[0]:
-        st.markdown("### 📚 Report Library")
-        st.caption("Every automation — anyone can run any report.")
-        for report in AUTOMATED_REPORTS:
-            assignees = report.get("assignees", []) or []
-            assignee_label = (
-                f"Owner: {', '.join(assignees)}" if assignees else "Owner: —"
-            )
-            with st.container(border=True):
-                st.markdown(
-                    f"**{report.get('emoji', '📄')} {report['name']}**"
-                )
-                if report.get("description"):
-                    st.caption(report["description"])
-                st.caption(assignee_label)
-                target = assignees[0] if assignees else MEMBERS[0]["name"]
-                if st.button(
-                    f"▶ Open ({target})",
-                    key=f"lib_open_{report['id']}",
-                    use_container_width=True,
-                ):
-                    _go_user(target)
-                    st.rerun()
-
-    with home_lower[1]:
-        st.markdown("### 🐺 The Pack")
-        rows = [MEMBERS[i:i + 3] for i in range(0, len(MEMBERS), 3)]
-        for row in rows:
-            cols = st.columns(len(row))
-            for col, member in zip(cols, row):
-                with col:
-                    my_reports = [r for r in AUTOMATED_REPORTS if member["name"] in r.get("assignees", [])]
-                    due_count = sum(1 for r in my_reports if _is_due_today(r, today))
-                    with st.container(border=True):
+    st.markdown("### 🐺 The Pack")
+    rows = [MEMBERS[i:i + 3] for i in range(0, len(MEMBERS), 3)]
+    for row in rows:
+        cols = st.columns(len(row))
+        for col, member in zip(cols, row):
+            with col:
+                my_reports = [r for r in AUTOMATED_REPORTS if member["name"] in r.get("assignees", [])]
+                due_count = sum(1 for r in my_reports if _is_due_today(r, today))
+                with st.container(border=True):
+                    st.markdown(
+                        f"<div style='text-align:center; font-size: 3.5rem; line-height: 1.0; margin-bottom: 0.4rem'>{member['emoji']}</div>",
+                        unsafe_allow_html=True,
+                    )
+                    st.markdown(
+                        f"<div style='text-align:center; font-size: 1.3rem; font-weight: 700; margin-bottom: 0.3rem'>{member['name']}</div>",
+                        unsafe_allow_html=True,
+                    )
+                    if due_count > 0:
                         st.markdown(
-                            f"<div style='text-align:center; font-size: 3.5rem; line-height: 1.0; margin-bottom: 0.4rem'>{member['emoji']}</div>",
+                            f"<div style='text-align:center'><span class='pill pill-due'>{due_count} report{'s' if due_count != 1 else ''} due today</span></div>",
                             unsafe_allow_html=True,
                         )
+                    elif my_reports:
                         st.markdown(
-                            f"<div style='text-align:center; font-size: 1.3rem; font-weight: 700; margin-bottom: 0.3rem'>{member['name']}</div>",
+                            f"<div style='text-align:center'><span class='pill pill-ok'>All clear today</span></div>",
                             unsafe_allow_html=True,
                         )
-                        if due_count > 0:
-                            st.markdown(
-                                f"<div style='text-align:center'><span class='pill pill-due'>{due_count} report{'s' if due_count != 1 else ''} due today</span></div>",
-                                unsafe_allow_html=True,
-                            )
-                        elif my_reports:
-                            st.markdown(
-                                f"<div style='text-align:center'><span class='pill pill-ok'>All clear today</span></div>",
-                                unsafe_allow_html=True,
-                            )
-                        else:
-                            st.markdown(
-                                f"<div style='text-align:center'><span class='pill pill-info'>No reports yet</span></div>",
-                                unsafe_allow_html=True,
-                            )
-                        if st.button(
-                            f"Open {member['name']}'s reports",
-                            key=f"pick_{member['name']}",
-                            use_container_width=True,
-                        ):
-                            _go_user(member["name"])
-                            st.rerun()
+                    else:
+                        st.markdown(
+                            f"<div style='text-align:center'><span class='pill pill-info'>No reports yet</span></div>",
+                            unsafe_allow_html=True,
+                        )
+                    if st.button(
+                        f"Open {member['name']}'s reports",
+                        key=f"pick_{member['name']}",
+                        use_container_width=True,
+                    ):
+                        _go_user(member["name"])
+                        st.rerun()
 
     # --------------------------------------------------------------------
     # Automation Backlog — unassigned + in-progress requests
@@ -1834,6 +1814,80 @@ elif st.session_state.view == "overview":
                     st.markdown(
                         f"{icon}  **{time_str}**  •  {r.get('report_name', r.get('report_id', '?'))}  •  ran by **{r.get('user', '?')}**{sheet_link}"
                     )
+
+
+# --------------------------------------------------------------------------
+# REPORT LIBRARY VIEW — every automation in one place; anyone can launch
+# --------------------------------------------------------------------------
+
+elif st.session_state.view == "library":
+    st.markdown(
+        "<div style='font-size:2.4rem; font-weight:800; letter-spacing:-0.5px; "
+        "margin:0.4rem 0 0.4rem'>📚 Report Library</div>",
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "Every automation. Pick who's running it and we'll take you to their runner page."
+    )
+
+    library_pending_key = "library_pick_for"
+
+    for report in AUTOMATED_REPORTS:
+        assignees = report.get("assignees", []) or []
+        sched = report.get("schedule", {})
+        with st.container(border=True):
+            cols = st.columns([5, 2])
+            with cols[0]:
+                st.markdown(
+                    f"<div style='font-size:1.4rem; font-weight:700'>"
+                    f"{report.get('emoji', '📄')} {report['name']}</div>",
+                    unsafe_allow_html=True,
+                )
+                if report.get("description"):
+                    st.caption(report["description"])
+                meta_bits = []
+                if assignees:
+                    meta_bits.append(f"Owner: **{', '.join(assignees)}**")
+                if sched:
+                    freq = sched.get("frequency", "")
+                    time_ = sched.get("time", "")
+                    if freq or time_:
+                        meta_bits.append(f"{freq.capitalize()} · {time_}".strip(" ·"))
+                if meta_bits:
+                    st.markdown("  •  ".join(meta_bits))
+            with cols[1]:
+                if report.get("sheet_url"):
+                    st.link_button("📂 Open Sheet", report["sheet_url"],
+                                   use_container_width=True)
+                if st.button(
+                    "▶ Run this report",
+                    key=f"lib_run_{report['id']}",
+                    type="primary",
+                    use_container_width=True,
+                ):
+                    st.session_state[library_pending_key] = report["id"]
+                    st.rerun()
+
+            if st.session_state.get(library_pending_key) == report["id"]:
+                st.markdown("---")
+                st.markdown("**Who's running this?**")
+                pick_cols = st.columns(len(MEMBERS))
+                for pc, member in zip(pick_cols, MEMBERS):
+                    with pc:
+                        if st.button(
+                            f"{member['emoji']} {member['name']}",
+                            key=f"lib_pickuser_{report['id']}_{member['name']}",
+                            use_container_width=True,
+                        ):
+                            st.session_state.pop(library_pending_key, None)
+                            _go_user(member["name"])
+                            st.rerun()
+                if st.button(
+                    "✖ Cancel",
+                    key=f"lib_cancel_{report['id']}",
+                ):
+                    st.session_state.pop(library_pending_key, None)
+                    st.rerun()
 
 
 # --------------------------------------------------------------------------
