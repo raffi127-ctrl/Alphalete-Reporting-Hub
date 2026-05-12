@@ -415,7 +415,10 @@ AUTOMATED_REPORTS = [
         "sheet_url": SHEET_URL,
         "assignees": ["Maud"],
         "schedule": {
-            "frequency": "daily",
+            # Weekly with weekdays [1..5] = Tue–Sat. (frequency 'daily' would
+            # short-circuit and ignore the weekdays filter, so it'd appear
+            # 7 days a week on the calendar.)
+            "frequency": "weekly",
             "weekdays": [1, 2, 3, 4, 5],  # Tue–Sat
             "time": "8:00 AM",
             "estimated_minutes": 6,
