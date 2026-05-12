@@ -721,6 +721,7 @@ INTAKE_TAB = "Automation Backlog"
 INTAKE_HEADERS = [
     "ID", "Title", "Sheet Link", "Loom Link", "Description",
     "Submitted By", "Submitted At", "Status", "Assigned To", "Assigned At",
+    "Preferred Creator",
 ]
 
 
@@ -747,13 +748,15 @@ def _read_intake() -> list[dict]:
         return []
 
 
-def _add_intake(title: str, sheet_link: str, loom_link: str, description: str, submitted_by: str) -> str:
+def _add_intake(title: str, sheet_link: str, loom_link: str, description: str,
+                submitted_by: str, preferred_creator: str = "") -> str:
     new_id = dt.datetime.now().strftime("%Y%m%d%H%M%S")
     ws = _intake_ws()
     ws.append_row([
         new_id, title, sheet_link, loom_link, description,
         submitted_by, dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "Unassigned", "", "",
+        preferred_creator or "",
     ])
     _read_intake.clear()
     return new_id
@@ -801,14 +804,23 @@ def _show_intake_dialog():
                         "What manual work is it replacing? Any tricky bits?",
             height=140,
         )
-        submitted_by = st.text_input("Your name *", value=st.session_state.get("user", "") or "")
+        cols = st.columns(2)
+        with cols[0]:
+            submitted_by = st.text_input("Your name *", value=st.session_state.get("user", "") or "")
+        with cols[1]:
+            preferred_creator = st.selectbox(
+                "Preferred creator (optional)",
+                ["— No preference —"] + [m["name"] for m in MEMBERS],
+                help="If you have a specific person in mind to build this, pick them. Anyone can still claim it.",
+            )
         ok = st.form_submit_button("📨 Submit", type="primary", use_container_width=True)
         if ok:
             if not (title and sheet_link and loom_link and description and submitted_by):
                 st.error("Please fill in every field marked *.")
             else:
+                pc = "" if preferred_creator == "— No preference —" else preferred_creator
                 try:
-                    _add_intake(title, sheet_link, loom_link, description, submitted_by)
+                    _add_intake(title, sheet_link, loom_link, description, submitted_by, pc)
                     st.success("✅ Submitted! It will appear on the home page for someone to claim.")
                     st.balloons()
                 except Exception as e:
@@ -1038,6 +1050,10 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
         cols = st.columns([5, 2])
         with cols[0]:
             st.markdown(f"### {entry.get('Title', 'Untitled')}")
+            preferred = entry.get("Preferred Creator", "")
+            if preferred:
+                st.markdown(f"<span class='pill pill-info'>👋 Requested for: {preferred}</span>",
+                            unsafe_allow_html=True)
             st.caption(
                 f"Submitted by **{entry.get('Submitted By', '?')}** on {entry.get('Submitted At', '?')}"
                 + (f" • Claimed by **{entry.get('Assigned To')}** on {entry.get('Assigned At', '')}" if entry.get('Assigned To') else "")
