@@ -2794,6 +2794,8 @@ with st.sidebar:
         st.rerun()
     if st.button("📥 Upload Built Automation", use_container_width=True, key="nav_upload"):
         st.session_state.show_wireup_direct = True
+    if st.button("✏️ Request Change to Existing Report", use_container_width=True, key="open_change_request_btn"):
+        st.session_state.show_change_request_dialog = True
 
     # Chrome status check still happens here (other code reads `chrome_ok`),
     # but the visible pill is rendered top-right of the page instead of in
@@ -2854,8 +2856,6 @@ with st.sidebar:
     if st.button(f"🐛 Bugs Being Fixed ({_bugs_count})", use_container_width=True, key="nav_bugs"):
         _go_bugs()
         st.rerun()
-    if st.button("✏️ Request Change to Existing Report", use_container_width=True, key="open_change_request_btn"):
-        st.session_state.show_change_request_dialog = True
 
     # Tiny sign-out link at the very bottom — ends the 1-hour session so the
     # next page load prompts for the Pack Access password again.
@@ -3385,14 +3385,17 @@ else:  # st.session_state.view == "user"
                 _due = [r for r in my_reports if _was_due_on(r, _day)]
                 if _due:
                     for _r in _due:
-                        st.markdown(
-                            "<div style='background:#FAFAFA; border-left:3px solid #C9A85C; "
-                            "padding:4px 8px; border-radius:4px; margin-bottom:4px; "
-                            "font-size:0.82em; line-height:1.25; word-break:break-word'>"
-                            f"{_r.get('emoji', '📄')} {_r['name']}"
-                            "</div>",
-                            unsafe_allow_html=True,
-                        )
+                        # Click jumps straight to the report's Library card
+                        # so the user can run it without hunting for it.
+                        if st.button(
+                            f"{_r.get('emoji', '📄')} {_r['name']}",
+                            key=f"cal_{user_name}_{_day.strftime('%Y%m%d')}_{_r['id']}",
+                            use_container_width=True,
+                            help="Open this report to run it",
+                        ):
+                            st.session_state["library_report_id"] = _r["id"]
+                            _set_view("library")
+                            st.rerun()
                 else:
                     st.markdown(
                         "<div style='text-align:center; color:#bbb; "
@@ -3400,6 +3403,81 @@ else:  # st.session_state.view == "user"
                         unsafe_allow_html=True,
                     )
         st.markdown("---")
+
+        # ---- Personal portfolio: projects this user has claimed / shipped ----
+        # Pulled from the Automation Request Log. "In progress" = anything
+        # this user has currently claimed (Assigned To matches). "Shipped" =
+        # rows marked Done with this user as the most recent claimer.
+        _all_intake = _read_intake()
+        _my_in_flight = [
+            r for r in _all_intake
+            if (r.get("Assigned To") or "").strip() == user_name
+            and r.get("Status") in ("In Progress", "Needs Updates")
+        ]
+        _my_shipped = sorted(
+            [r for r in _all_intake
+             if (r.get("Assigned To") or "").strip() == user_name
+             and r.get("Status") == "Done"],
+            key=lambda r: r.get("Completed At", "") or r.get("Assigned At", ""),
+            reverse=True,
+        )
+
+        if _my_in_flight or _my_shipped:
+            _shipped_n = len(_my_shipped)
+            _in_flight_n = len(_my_in_flight)
+            _stat_line = (
+                f"🚀 <b>{_shipped_n} shipped</b> &nbsp;•&nbsp; "
+                f"🛠️ <b>{_in_flight_n} in flight</b>"
+            )
+            if _shipped_n >= 10:
+                _stat_line += " &nbsp;•&nbsp; 🌟 <b>look at you go!</b>"
+            elif _shipped_n >= 3:
+                _stat_line += " &nbsp;•&nbsp; 🔥 <b>on a roll!</b>"
+            elif _shipped_n >= 1:
+                _stat_line += " &nbsp;•&nbsp; 🎉 <b>nice work!</b>"
+            st.markdown(
+                "<div style='background:linear-gradient(135deg, #FFF8E7 0%, #FFF3D6 100%); "
+                "border-left:4px solid #C9A85C; border-radius:8px; padding:14px 18px; "
+                "margin-bottom:0.6rem; font-size:1.1em; color:#5C4220'>"
+                f"{_stat_line}"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+
+            _proj_cols = st.columns(2)
+            with _proj_cols[0]:
+                st.markdown(f"#### 🛠️ In Progress ({_in_flight_n})")
+                if _my_in_flight:
+                    for entry in _my_in_flight:
+                        with st.container(border=True):
+                            _ph = _priority_pill_html(entry.get("Priority", ""))
+                            st.markdown(
+                                f"**{entry.get('Title', 'Untitled')}**"
+                                + ("  \n" + _ph if _ph else "")
+                                + f"<br/><span style='color:#777; font-size:0.85em'>"
+                                f"Claimed on {entry.get('Assigned At', '?')}"
+                                f"</span>",
+                                unsafe_allow_html=True,
+                            )
+                            if st.button(
+                                "📥 Upload the Automation",
+                                key=f"profile_upload_{entry['ID']}",
+                                use_container_width=True,
+                            ):
+                                _show_wire_up_dialog(entry)
+                else:
+                    st.caption("Nothing claimed right now. Head to the **Automation Request Log** to grab one.")
+            with _proj_cols[1]:
+                st.markdown(f"#### ✅ Shipped ({_shipped_n})")
+                if _my_shipped:
+                    for entry in _my_shipped[:10]:
+                        _render_completed_intake_card(entry)
+                    if _shipped_n > 10:
+                        st.caption(f"… plus {_shipped_n - 10} more in the Automation Request Log.")
+                else:
+                    st.caption("First ship pending. You've got this. 💪")
+            st.markdown("---")
+
         # Two-column layout below the hero:
         #   left:  "Completed Today" checklist for this user
         #   right: in-progress banner + this user's reports
