@@ -2,7 +2,7 @@
 # Recruiting Report — one-shot installer for new operators (Maud, Eve, etc.)
 #
 # Run this in Terminal:
-#   curl -fsSL https://raw.githubusercontent.com/raffi127-ctrl/Daily-Focus-Report/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/raffi127-ctrl/Alphalete-Reporting-Hub/main/install.sh | bash
 #
 # Or if you've already cloned the repo:
 #   bash install.sh
@@ -10,7 +10,7 @@
 set -e
 
 INSTALL_DIR="${INSTALL_DIR:-$HOME/recruiting-report}"
-REPO_URL="${REPO_URL:-https://github.com/raffi127-ctrl/Daily-Focus-Report.git}"
+REPO_URL="${REPO_URL:-https://github.com/raffi127-ctrl/Alphalete-Reporting-Hub.git}"
 PROD_SHEET_ID="1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE"
 
 bold() { printf "\033[1m%s\033[0m\n" "$1"; }
