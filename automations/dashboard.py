@@ -145,6 +145,16 @@ AUTOMATED_REPORTS = [
                 "module": "automations.recruiting_report.run",
                 "args_fn": lambda d: ["--week", (d - dt.timedelta(days=7)).isoformat()],
             },
+            {
+                "label": "Run for One Office (pick a week)",
+                "icon": "🎯",
+                "needs_date": True,
+                "needs_text": True,
+                "text_label": "Office tab name (exact match)",
+                "help": "Just refill ONE office's tab for any week. Pick the WE Sunday + type the office tab name.",
+                "module": "automations.recruiting_report.run",
+                "args_fn": lambda d, name: ["--week", (d - dt.timedelta(days=7)).isoformat(), "--only", name],
+            },
         ],
     },
     {
@@ -343,10 +353,21 @@ def _execute_action(report: dict, action: dict, picked, chrome_ok: bool) -> None
     if not chrome_ok:
         st.error("⚠️ Chrome isn't running — launch it from the sidebar first.")
         return
-    if action.get("needs_text") and not picked:
-        st.error(f"⚠️ Please enter the {action.get('text_label', 'input')} first.")
-        return
-    if action.get("needs_date") or action.get("needs_text"):
+    needs_date = action.get("needs_date")
+    needs_text = action.get("needs_text")
+    if needs_text and needs_date:
+        # picked is a tuple (date, text)
+        date_val, text_val = picked if isinstance(picked, tuple) else (None, None)
+        if not text_val:
+            st.error(f"⚠️ Please enter the {action.get('text_label', 'input')} first.")
+            return
+        args = action["args_fn"](date_val, text_val)
+    elif needs_text:
+        if not picked:
+            st.error(f"⚠️ Please enter the {action.get('text_label', 'input')} first.")
+            return
+        args = action["args_fn"](picked)
+    elif needs_date:
         args = action["args_fn"](picked)
     else:
         args = action["args_fn"]()
@@ -506,23 +527,33 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                         if action.get("help"):
                             st.caption(action["help"])
                     with cols[1]:
+                        sec_date = None
+                        sec_text = None
                         if action.get("needs_date"):
-                            sec_picked = st.date_input(
+                            sec_date = st.date_input(
                                 "WE Sunday",
                                 key=f"sec_date_{report['id']}_{action['label']}",
                                 value=_last_completed_we_sunday(),
                                 label_visibility="collapsed",
                             )
-                        elif action.get("needs_text"):
-                            sec_picked = st.text_input(
+                        if action.get("needs_text"):
+                            sec_text = st.text_input(
                                 action.get("text_label", "Input"),
                                 key=f"sec_text_{report['id']}_{action['label']}",
                                 label_visibility="collapsed",
                                 placeholder=action.get("text_label", ""),
                             )
+                        if not (action.get("needs_date") or action.get("needs_text")):
+                            st.write("")
+                        # Build sec_picked: tuple if both, single value if one, None if neither
+                        if action.get("needs_date") and action.get("needs_text"):
+                            sec_picked = (sec_date, sec_text)
+                        elif action.get("needs_date"):
+                            sec_picked = sec_date
+                        elif action.get("needs_text"):
+                            sec_picked = sec_text
                         else:
                             sec_picked = None
-                            st.write("")
                     with cols[2]:
                         if st.button(
                             f"{action.get('icon', '▶')} Run",
