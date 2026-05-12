@@ -926,15 +926,40 @@ INTAKE_HEADERS = [
 
 
 def _intake_ws():
-    """Return the intake worksheet, creating it if missing."""
+    """Return the intake worksheet, creating it if missing.
+
+    Also self-heals the header row: if older deployments wrote a shorter
+    INTAKE_HEADERS list, the existing sheet may be missing newer columns
+    (e.g. 'Currently runs', 'Priority'). gspread's get_all_records()
+    rejects rows with values past the headered columns, which would make
+    new submissions silently disappear from the homepage. Detecting the
+    drift and extending the header row fixes that without touching any
+    user-set columns.
+    """
     import gspread as _gs
     sh = _fill.open_sheet()
     try:
-        return sh.worksheet(INTAKE_TAB)
+        ws = sh.worksheet(INTAKE_TAB)
     except _gs.WorksheetNotFound:
         ws = sh.add_worksheet(title=INTAKE_TAB, rows=300, cols=len(INTAKE_HEADERS))
         ws.update([INTAKE_HEADERS], f"A1:{chr(ord('A') + len(INTAKE_HEADERS) - 1)}1")
         return ws
+
+    # Self-heal: only extend when current row 1 is a strict PREFIX of
+    # INTAKE_HEADERS so we never overwrite custom column names.
+    try:
+        current_headers = ws.row_values(1)
+    except Exception:
+        current_headers = []
+    if (
+        len(current_headers) < len(INTAKE_HEADERS)
+        and INTAKE_HEADERS[: len(current_headers)] == current_headers
+    ):
+        ws.update(
+            [INTAKE_HEADERS],
+            f"A1:{chr(ord('A') + len(INTAKE_HEADERS) - 1)}1",
+        )
+    return ws
 
 
 @st.cache_data(ttl=30)
