@@ -277,13 +277,27 @@ def _load_uploaded_reports_raw() -> list[dict]:
 # Team members. Each is a dict so we can add avatars/colors easily.
 # Order: alphabetical by name.
 MEMBERS = [
-    {"name": "Eve",     "emoji": "🌷",        "color": "#4ECDC4"},
-    {"name": "JD",      "emoji": "⚡",        "color": "#9B59B6"},
-    {"name": "Maud",    "emoji": "🌟",        "color": "#FF6B6B"},
-    {"name": "Megan",   "emoji": "👩‍💼",     "color": "#667eea"},
-    {"name": "Raf",     "emoji": "🚀",        "color": "#F4A261"},
-    {"name": "Twaddle", "emoji": "🦊",        "color": "#2A9D8F"},
+    # `email` powers the "Ask for an update" button on claimed backlog cards.
+    # Fill these in (or correct any guesses) — when blank, the button opens
+    # an empty mailto and the requester types the address manually.
+    {"name": "Eve",     "emoji": "🌷",        "color": "#4ECDC4", "email": ""},
+    {"name": "JD",      "emoji": "⚡",        "color": "#9B59B6", "email": ""},
+    {"name": "Maud",    "emoji": "🌟",        "color": "#FF6B6B", "email": "maudmiller4@gmail.com"},
+    {"name": "Megan",   "emoji": "👩‍💼",     "color": "#667eea", "email": "meganhidalgo1191@gmail.com"},
+    {"name": "Raf",     "emoji": "🚀",        "color": "#F4A261", "email": "raffi127@gmail.com"},
+    {"name": "Twaddle", "emoji": "🦊",        "color": "#2A9D8F", "email": "dylanjtwaddle@gmail.com"},
 ]
+
+
+def _member_email(name: str) -> str:
+    """Return the email for a member name (case-insensitive). Empty if unknown."""
+    if not name:
+        return ""
+    target = name.strip().lower()
+    for m in MEMBERS:
+        if m["name"].lower() == target:
+            return (m.get("email") or "").strip()
+    return ""
 
 # --------------------------------------------------------------------------
 # Configuration — Megan edits this section as new automations come online
@@ -1546,6 +1560,53 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                         _mailto,
                         use_container_width=True,
                         help=f"Opens your mail app addressed to {requester_email}",
+                    )
+
+                # Anyone can ping the claimer for a status update. Captures the
+                # asker's email so the claimer knows who to reply to, and
+                # auto-CCs the original requester so they see the thread.
+                claimer = entry.get("Assigned To") or ""
+                claimer_email = _member_email(claimer)
+                with st.popover("📨 Ask for an update", use_container_width=True):
+                    st.caption(
+                        f"Sends a quick check-in to **{claimer or 'the claimer'}**"
+                        + (f" and CCs **{requester_email}**" if requester_email else "")
+                        + "."
+                    )
+                    asker_email = st.text_input(
+                        "Your email",
+                        key=f"asker_email_{entry['ID']}",
+                        placeholder="you@example.com",
+                        help="So the claimer can reply directly to you.",
+                    )
+                    if not claimer_email:
+                        st.warning(
+                            f"No email on file for {claimer or 'this person'}. "
+                            "Add one in the MEMBERS list to enable one-click pre-fill."
+                        )
+                    from urllib.parse import quote as _q
+                    _title = entry.get("Title", "")
+                    _subj = _q(f"Quick check-in: {_title}")
+                    _body_lines = [
+                        f"Hi {claimer or 'there'},",
+                        "",
+                        f"Quick check-in on '{_title}' — when do you think it'll be ready?",
+                        "",
+                        "Thanks!",
+                    ]
+                    if asker_email:
+                        _body_lines.append(f"(Reply directly to: {asker_email})")
+                    _body = _q("\n".join(_body_lines))
+                    _cc = f"&cc={requester_email}" if requester_email else ""
+                    _to = claimer_email or ""
+                    _mailto_update = f"mailto:{_to}?subject={_subj}{_cc}&body={_body}"
+                    st.link_button(
+                        "📤 Open in my mail app",
+                        _mailto_update,
+                        use_container_width=True,
+                        disabled=not (asker_email and "@" in asker_email),
+                        help="Drafts the email in your mail app. Fill in any blank \"To\" "
+                             "if the claimer's email isn't on file yet.",
                     )
 
 
