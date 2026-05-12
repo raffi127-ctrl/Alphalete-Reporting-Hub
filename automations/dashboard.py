@@ -1093,6 +1093,23 @@ def _add_bug(title: str, bug_type: str, sheet_link: str, loom_link: str,
     return new_id
 
 
+def _start_bug(bug_id: str) -> bool:
+    """Flip an Open bug to 'In Progress' so it moves to the left column.
+
+    No email fires (the Apps Script only emails on Fixed / Needs Info).
+    """
+    ws = _bugs_ws()
+    try:
+        cell = ws.find(str(bug_id))
+    except Exception:
+        return False
+    if not cell:
+        return False
+    ws.update_cell(cell.row, BUG_HEADERS.index("Status") + 1, "In Progress")
+    _read_bugs.clear()
+    return True
+
+
 def _resolve_bug(bug_id: str, status: str, note: str) -> bool:
     """Set Status + Resolution Note + Resolved At on a bug row.
 
@@ -1394,29 +1411,103 @@ def _show_wire_up_dialog(entry: dict | None = None):
         )
 
 
+def _priority_rank(p: str) -> int:
+    """Sort key from a priority string. Lower = more urgent.
+
+    Priorities are stored as '1 — 🚨 URGENT…', '2 — 🔥 High…', etc.
+    Empty / unrecognized priorities sort to the end so urgent items
+    bubble to the top of any list.
+    """
+    s = (p or "").strip()
+    if s and s[0].isdigit():
+        try:
+            return int(s[0])
+        except ValueError:
+            pass
+    return 99
+
+
+def _priority_pill_html(p: str) -> str:
+    """Inline HTML pill for the priority level, color-coded by urgency.
+
+    Returns empty string when the entry has no recorded priority so the
+    card doesn't render a stray gray chip for legacy rows.
+    """
+    s = (p or "").strip()
+    if not s:
+        return ""
+    rank = _priority_rank(s)
+    palette = {
+        1: ("#FDE2E1", "#8B1A22"),  # red — URGENT
+        2: ("#FFE6CC", "#9C4A00"),  # orange — High
+        3: ("#FFF3D6", "#8B6914"),  # gold — Medium
+        4: ("#E2F4E6", "#1F7A3D"),  # green — Low
+        5: ("#EEEEEE", "#555555"),  # gray — When pigs fly
+    }
+    bg, fg = palette.get(rank, ("#EEEEEE", "#555555"))
+    return (
+        f"<span style='display:inline-block; background:{bg}; color:{fg}; "
+        f"padding:3px 10px; border-radius:999px; font-size:0.85em; "
+        f"font-weight:700; margin:0 0 0.3rem'>{s}</span>"
+    )
+
+
 def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool = False) -> None:
     """Render one backlog entry."""
     with st.container(border=True):
         cols = st.columns([5, 2])
         with cols[0]:
             st.markdown(f"### {entry.get('Title', 'Untitled')}")
+            _priority_html = _priority_pill_html(entry.get("Priority", ""))
+            if _priority_html:
+                st.markdown(_priority_html, unsafe_allow_html=True)
             preferred = entry.get("Preferred Creator", "")
             if preferred:
-                st.markdown(f"<span class='pill pill-info'>👋 Requested for: {preferred}</span>",
-                            unsafe_allow_html=True)
-            st.caption(
-                f"Submitted by **{entry.get('Submitted By', '?')}** on {entry.get('Submitted At', '?')}"
-                + (f" • Claimed by **{entry.get('Assigned To')}** on {entry.get('Assigned At', '')}" if entry.get('Assigned To') else "")
-            )
+                if allow_done:
+                    # In Progress side — show as compact text since the card
+                    # is already claimed and this is just reference info.
+                    st.markdown(
+                        f"<span style='font-size:0.78em; color:#777'>"
+                        f"👋 Requested for <b>{preferred}</b></span>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(f"<span class='pill pill-info'>👋 Requested for: {preferred}</span>",
+                                unsafe_allow_html=True)
+            if entry.get("Assigned To"):
+                st.markdown(
+                    f"<div style='background:#FFF3D6; color:#5C4220; padding:6px 12px; "
+                    f"border-radius:8px; font-weight:700; margin:0.4rem 0 0.5rem; "
+                    f"display:inline-block'>"
+                    f"🛠️ Being worked on by {entry['Assigned To']}</div>",
+                    unsafe_allow_html=True,
+                )
+                st.caption(
+                    f"Submitted by **{entry.get('Submitted By', '?')}** on {entry.get('Submitted At', '?')} "
+                    f"• Claimed on {entry.get('Assigned At', '')}"
+                )
+            else:
+                st.caption(
+                    f"Submitted by **{entry.get('Submitted By', '?')}** on {entry.get('Submitted At', '?')}"
+                )
             if entry.get("Description"):
-                st.markdown(entry["Description"])
-            link_cols = st.columns(2)
-            with link_cols[0]:
-                if entry.get("Sheet Link"):
-                    st.link_button("📂 Open Sheet", entry["Sheet Link"], use_container_width=True)
-            with link_cols[1]:
-                if entry.get("Loom Link"):
-                    st.link_button("▶️ Watch Loom", entry["Loom Link"], use_container_width=True)
+                with st.expander("Details"):
+                    st.markdown(entry["Description"])
+                    link_cols = st.columns(2)
+                    with link_cols[0]:
+                        if entry.get("Sheet Link"):
+                            st.link_button("📂 Open Sheet", entry["Sheet Link"], use_container_width=True)
+                    with link_cols[1]:
+                        if entry.get("Loom Link"):
+                            st.link_button("▶️ Watch Loom", entry["Loom Link"], use_container_width=True)
+            elif entry.get("Sheet Link") or entry.get("Loom Link"):
+                link_cols = st.columns(2)
+                with link_cols[0]:
+                    if entry.get("Sheet Link"):
+                        st.link_button("📂 Open Sheet", entry["Sheet Link"], use_container_width=True)
+                with link_cols[1]:
+                    if entry.get("Loom Link"):
+                        st.link_button("▶️ Watch Loom", entry["Loom Link"], use_container_width=True)
         with cols[1]:
             if allow_claim:
                 claim_to = st.selectbox(
@@ -1433,11 +1524,11 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                         else:
                             st.error("Couldn't claim — please try again.")
             if allow_done:
-                if st.button("🛠️ Wire It Up", key=f"wireup_{entry['ID']}", use_container_width=True, type="primary"):
+                if st.button("📥 Upload the Automation", key=f"wireup_{entry['ID']}", use_container_width=True, type="primary"):
                     _show_wire_up_dialog(entry)
-                if st.button("✅ Just mark done", key=f"justdone_{entry['ID']}", use_container_width=True):
+                if st.button("📨 Submit for review by requester", key=f"justdone_{entry['ID']}", use_container_width=True):
                     if _mark_intake_done(str(entry["ID"])):
-                        st.success("Marked done (no automation wired)")
+                        st.success("Sent to requester for review — they'll get an email.")
                         st.rerun()
                 # mailto link to ask the requester a question while building
                 requester_email = (entry.get("Submitter Email") or "").strip()
@@ -1467,10 +1558,12 @@ def _render_bug_card(entry: dict) -> None:
     type_emoji = "🐛" if "Bug" in bug_type else "✏️"
 
     with st.container(border=True):
+        _priority_html = _priority_pill_html(priority)
         st.markdown(
             f"**{type_emoji} {entry.get('Title', 'Untitled')}**  \n"
-            f"<span style='color:#777; font-size:0.85em'>"
-            f"{entry.get('Submitted By', '?')} • {entry.get('Submitted At', '')} • {priority}"
+            + (_priority_html + "<br/>" if _priority_html else "")
+            + f"<span style='color:#777; font-size:0.85em'>"
+            f"{entry.get('Submitted By', '?')} • {entry.get('Submitted At', '')}"
             f"</span>",
             unsafe_allow_html=True,
         )
@@ -1487,7 +1580,14 @@ def _render_bug_card(entry: dict) -> None:
                     if ll and ll.lower() != "n/a":
                         st.link_button("▶️ Loom", ll, use_container_width=True)
 
-        if status == "Open" or status == "Needs Info":
+        if status == "Open":
+            if st.button("🚀 Start Working", key=f"bug_start_{bug_id}", use_container_width=True, type="primary"):
+                if _start_bug(bug_id):
+                    st.success("Moved to In Progress.")
+                    st.rerun()
+                else:
+                    st.error("Couldn't update — try again.")
+        elif status == "In Progress" or status == "Needs Info":
             note = st.text_input(
                 "Note to requester (sent in the email)",
                 key=f"bug_note_{bug_id}",
@@ -1692,9 +1792,12 @@ st.markdown("""
 # --------------------------------------------------------------------------
 
 if "view" not in st.session_state:
-    st.session_state.view = "home"   # "home" | "user" | "overview" | "library" | "backlog" | "bugs"
+    # Restore from URL on first load so refresh stays on the same page.
+    _url_view = st.query_params.get("view", "").strip()
+    st.session_state.view = _url_view if _url_view in _VALID_VIEWS else "home"
 if "user" not in st.session_state:
-    st.session_state.user = None     # name from MEMBERS once selected
+    _url_user = st.query_params.get("user", "").strip()
+    st.session_state.user = _url_user or None
 
 # Email deep-link auto-navigation. The intake/bug notification emails put
 # ?request=<id> or ?bug=<id> in the URL; on first arrival we jump straight
@@ -1834,32 +1937,55 @@ def _ordinal(n: int) -> str:
 BIG_DATE = f"{weekday_name.upper()}, {today.strftime('%B').upper()} {_ordinal(today.day).upper()}"
 
 
+_VALID_VIEWS = {"home", "user", "overview", "library", "backlog", "bugs"}
+
+
+def _set_view(view: str) -> None:
+    """Set the active view and mirror it into the URL.
+
+    Persisting `?view=…` in the URL keeps the user on the same page after
+    a hard refresh; without this, refreshing would always drop them back
+    to home. Clearing the query params first also drops any one-shot
+    deep-link params (?request=, ?bug=) when the user navigates away.
+    """
+    st.session_state.view = view
+    try:
+        st.query_params.clear()
+        st.query_params["view"] = view
+    except Exception:
+        pass
+
+
 def _go_home():
-    st.session_state.view = "home"
     st.session_state.user = None
+    _set_view("home")
 
 
 def _go_user(name: str):
     st.session_state.user = name
-    st.session_state.view = "user"
+    _set_view("user")
+    try:
+        st.query_params["user"] = name
+    except Exception:
+        pass
 
 
 def _go_overview():
-    st.session_state.view = "overview"
+    _set_view("overview")
 
 
 def _go_library():
-    st.session_state.view = "library"
     # Always return to the top-level library list (not a previously-opened detail)
     st.session_state.pop("library_report_id", None)
+    _set_view("library")
 
 
 def _go_backlog():
-    st.session_state.view = "backlog"
+    _set_view("backlog")
 
 
 def _go_bugs():
-    st.session_state.view = "bugs"
+    _set_view("bugs")
 
 
 def _detect_hub_user() -> str:
@@ -2188,24 +2314,39 @@ elif st.session_state.view == "backlog":
             st.warning(f"Couldn't find a request with ID `{_dl_request_id}` — showing the full backlog below.")
 
     _focus_id = _dl_request_id or None
-    unassigned = [r for r in intake
-                  if (r.get("Status") or "Unassigned") == "Unassigned"
-                  and str(r.get("ID")) != _focus_id]
-    in_progress = [r for r in intake
-                   if r.get("Status") == "In Progress"
-                   and str(r.get("ID")) != _focus_id]
+    unassigned = sorted(
+        [r for r in intake
+         if (r.get("Status") or "Unassigned") == "Unassigned"
+         and str(r.get("ID")) != _focus_id],
+        key=lambda r: _priority_rank(r.get("Priority", "")),
+    )
+    in_progress = sorted(
+        [r for r in intake
+         if r.get("Status") == "In Progress"
+         and str(r.get("ID")) != _focus_id],
+        key=lambda r: _priority_rank(r.get("Priority", "")),
+    )
 
     if not intake:
         st.info("No requests in the backlog yet. Click **Submit a New Request** above to add the first one.")
     else:
-        if unassigned:
-            st.markdown(f"#### 🔓 Unassigned ({len(unassigned)})")
-            for entry in unassigned:
-                _render_intake_card(entry, allow_claim=True, allow_done=False)
-        if in_progress:
+        backlog_cols = st.columns(2)
+        # LEFT = In Progress (claimed, actively being worked on)
+        with backlog_cols[0]:
             st.markdown(f"#### 🛠️ In Progress ({len(in_progress)})")
-            for entry in in_progress:
-                _render_intake_card(entry, allow_claim=False, allow_done=True)
+            if in_progress:
+                for entry in in_progress:
+                    _render_intake_card(entry, allow_claim=False, allow_done=True)
+            else:
+                st.caption("No projects in progress yet.")
+        # RIGHT = Unassigned (waiting to be claimed)
+        with backlog_cols[1]:
+            st.markdown(f"#### 🔓 Unassigned ({len(unassigned)})")
+            if unassigned:
+                for entry in unassigned:
+                    _render_intake_card(entry, allow_claim=True, allow_done=False)
+            else:
+                st.caption("Nothing waiting to be claimed.")
 
 
 # --------------------------------------------------------------------------
@@ -2236,18 +2377,42 @@ elif st.session_state.view == "bugs":
             st.warning(f"Couldn't find a bug with ID `{_dl_bug_id}` — showing the full list below.")
 
     _focus_bid = _dl_bug_id or None
-    active_bugs = [b for b in bugs
-                   if (b.get("Status") or "Open") in ("Open", "Needs Info")
-                   and str(b.get("ID")) != _focus_bid]
+    in_progress_bugs = sorted(
+        [b for b in bugs
+         if (b.get("Status") or "") in ("In Progress", "Needs Info")
+         and str(b.get("ID")) != _focus_bid],
+        key=lambda b: _priority_rank(b.get("Priority", "")),
+    )
+    open_bugs = sorted(
+        [b for b in bugs
+         if (b.get("Status") or "Open") == "Open"
+         and str(b.get("ID")) != _focus_bid],
+        key=lambda b: _priority_rank(b.get("Priority", "")),
+    )
     resolved_bugs = [b for b in bugs
                      if (b.get("Status") or "") == "Fixed"
                      and str(b.get("ID")) != _focus_bid]
 
-    if not active_bugs and not _focus_bid:
+    if not in_progress_bugs and not open_bugs and not _focus_bid:
         st.info("No open bugs or change requests.")
     else:
-        for entry in active_bugs:
-            _render_bug_card(entry)
+        bug_cols = st.columns(2)
+        # LEFT = In Progress (Megan has started — or asked for more info)
+        with bug_cols[0]:
+            st.markdown(f"#### 🛠️ In Progress ({len(in_progress_bugs)})")
+            if in_progress_bugs:
+                for entry in in_progress_bugs:
+                    _render_bug_card(entry)
+            else:
+                st.caption("Nothing in progress.")
+        # RIGHT = Open (untouched / just arrived)
+        with bug_cols[1]:
+            st.markdown(f"#### 📥 Open ({len(open_bugs)})")
+            if open_bugs:
+                for entry in open_bugs:
+                    _render_bug_card(entry)
+            else:
+                st.caption("Nothing new in the queue.")
 
     if resolved_bugs:
         with st.expander(f"✅ Recently Fixed ({len(resolved_bugs)})"):
