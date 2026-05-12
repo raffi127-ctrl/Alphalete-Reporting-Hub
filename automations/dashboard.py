@@ -1017,16 +1017,18 @@ st.markdown("""
         transform: translateY(-1px);
         box-shadow: 0 4px 14px rgba(184, 35, 44, 0.18);
     }
-    /* Primary buttons = Alphalete red gradient */
+    /* Primary buttons = Alphalete gold gradient with deep-brown text */
     .stButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #B8232C 0%, #8B1A22 100%);
-        border: none;
-        color: #fff;
-        font-weight: 700;
+        background: linear-gradient(135deg, #E8C268 0%, #C9A85C 100%);
+        border: 1px solid #A88840;
+        color: #2A1F12 !important;
+        font-weight: 800;
+        text-shadow: 0 1px 0 rgba(255,255,255,0.3);
     }
     .stButton > button[kind="primary"]:hover {
-        background: linear-gradient(135deg, #D02832 0%, #A11E28 100%);
-        box-shadow: 0 6px 18px rgba(184, 35, 44, 0.32);
+        background: linear-gradient(135deg, #F2D080 0%, #D6B468 100%);
+        box-shadow: 0 6px 18px rgba(201, 168, 92, 0.45);
+        color: #2A1F12 !important;
     }
     /* Secondary buttons get a subtle gold accent on hover */
     .stButton > button[kind="secondary"]:hover {
@@ -1236,13 +1238,25 @@ if st.session_state.view == "home":
     st.markdown(
         """
         <style>
-        /* Make the two backlog action buttons large + brand-colored */
+        /* Big square backlog action buttons */
         div[data-testid="column"]:has(button[key="open_intake_btn"]) button,
         div[data-testid="column"]:has(button[key="open_wireup_direct_btn"]) button {
-            min-height: 90px !important;
-            font-size: 1.25rem !important;
-            font-weight: 700 !important;
-            border-radius: 14px !important;
+            min-height: 140px !important;
+            font-size: 1.7rem !important;
+            font-weight: 800 !important;
+            border-radius: 18px !important;
+            letter-spacing: 0.01em !important;
+            padding: 0.6rem 1rem !important;
+        }
+        /* Secondary backlog button — gold border on hover for cohesion */
+        div[data-testid="column"]:has(button[key="open_wireup_direct_btn"]) button {
+            border: 2px solid #C9A85C !important;
+            color: #5C4220 !important;
+            background: #FFF8E7 !important;
+        }
+        div[data-testid="column"]:has(button[key="open_wireup_direct_btn"]) button:hover {
+            background: #FFF2D0 !important;
+            border-color: #8B6914 !important;
         }
         </style>
         """,
