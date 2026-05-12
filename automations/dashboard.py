@@ -1811,9 +1811,15 @@ def _render_bug_card(entry: dict) -> None:
                         st.link_button("▶️ Loom", ll, use_container_width=True)
 
         if status == "Open":
-            if st.button("🚀 Start Working", key=f"bug_start_{bug_id}", use_container_width=True, type="primary"):
+            if st.button(
+                "👀 I've Seen This — Working On It",
+                key=f"bug_start_{bug_id}",
+                use_container_width=True,
+                type="primary",
+                help="Moves the bug to In Progress and emails the requester a heads-up that you've seen it.",
+            ):
                 if _start_bug(bug_id):
-                    st.success("Moved to In Progress.")
+                    st.success("Moved to In Progress — heads-up email going out shortly.")
                     st.rerun()
                 else:
                     st.error("Couldn't update — try again.")
