@@ -804,7 +804,7 @@ def _show_wire_up_dialog(entry: dict | None = None):
         st.markdown("**📅 Schedule**")
         sched_mode = st.radio(
             "When does this report run?",
-            ["Specific weekdays", "Monthly (on a day of the month)"],
+            ["Specific days", "Monthly (on a day of the month)"],
             horizontal=True,
             key="sched_mode_radio",
         )
@@ -812,22 +812,23 @@ def _show_wire_up_dialog(entry: dict | None = None):
         days_chosen: list[int] = []
         day_of_month: int = 1
 
-        if sched_mode == "Specific weekdays":
+        if sched_mode == "Specific days":
             st.caption("Tick every day this report should run.")
             dcols = st.columns(7)
             short_labels = ["M", "T", "W", "Th", "F", "Sa", "Su"]
             for i, col in enumerate(dcols):
                 with col:
-                    # Vertical layout: label on top, checkbox below
                     st.markdown(f"<div style='text-align:center; font-weight:600; font-size:1.05rem'>{short_labels[i]}</div>", unsafe_allow_html=True)
                     if st.checkbox(" ", key=f"sched_day_{i}", label_visibility="collapsed", value=(i in [1, 2, 3, 4, 5])):
                         days_chosen.append(i)
         else:
             day_of_month = st.number_input(
-                "Day of the month (1–31)",
+                "Day of the month",
                 min_value=1, max_value=31, value=1, step=1,
-                help="The report will run on this day each month. If the month is shorter, it skips (e.g. 31st only runs in long months).",
+                help="The report will run on this day each month. If the month is shorter, it's skipped (e.g. 31st only runs in long months).",
             )
+            # Friendly preview with ordinal suffix
+            st.success(f"📅  This report will appear on the **{_ordinal(int(day_of_month))} of every month** in the assignee's schedule.")
 
         sched_cols = st.columns(2)
         with sched_cols[0]:
@@ -858,7 +859,7 @@ def _show_wire_up_dialog(entry: dict | None = None):
                 return
 
             # Build schedule dict
-            if sched_mode == "Monthly (on a day of the month)":
+            if sched_mode.startswith("Monthly"):
                 schedule = {
                     "frequency": "monthly",
                     "day_of_month": int(day_of_month),
