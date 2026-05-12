@@ -77,6 +77,15 @@ cat > "$CONFIG_DIR/config.json" <<EOF
 EOF
 echo "→ Wrote $CONFIG_DIR/config.json (Sheet ID baked in)"
 
+# 5b. Auto-install the bundled Pack Pass (oauth-client.json) so the user
+#     skips the preflight setup screen on first dashboard launch.
+if [ -f "$INSTALL_DIR/oauth-client.json" ]; then
+    cp "$INSTALL_DIR/oauth-client.json" "$CONFIG_DIR/oauth-client.json"
+    echo "→ Installed Pack Pass at $CONFIG_DIR/oauth-client.json"
+else
+    echo "→ ⚠️  No bundled Pack Pass found in repo. You'll be asked to drop it in via the dashboard on first launch."
+fi
+
 # 6. Make the dashboard launcher double-clickable
 chmod +x launch_dashboard.command 2>/dev/null || true
 
@@ -87,19 +96,16 @@ green "  ✅ Install complete!"
 green "════════════════════════════════════════════════"
 cat <<EOF
 
-ONE-TIME SETUP STILL NEEDED:
+ONE LAST STEP:
 
-  1. Get oauth-client.json from Megan (she'll send via Slack).
-     Save it to:
-         $CONFIG_DIR/oauth-client.json
-
-  2. Open Finder → go to "$INSTALL_DIR"
-     Drag "launch_dashboard.command" to your Dock for easy access.
+  Open Finder → go to "$INSTALL_DIR"
+  Drag "launch_dashboard.command" to your Dock for easy access.
 
 DAILY USE:
 
   • Double-click launch_dashboard.command
-  • Browser opens with the dashboard
+  • Browser opens with the Alphalete Reporting Hub
+  • Sign in with your Pack Access password
   • Click "Launch Chrome" (only the first time each day) → log in to AppStream
   • Click "Run Daily Focus" or "Run Weekly Report"
 
