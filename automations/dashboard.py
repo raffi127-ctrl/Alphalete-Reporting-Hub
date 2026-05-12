@@ -839,18 +839,13 @@ else:  # st.session_state.view == "user"
     """, unsafe_allow_html=True)
 
     my_reports = [r for r in AUTOMATED_REPORTS if user_name in r.get("assignees", [])]
-    other_reports = [r for r in AUTOMATED_REPORTS if user_name not in r.get("assignees", [])]
 
     if my_reports:
         st.markdown("## 🚀 Your Reports")
         for report in my_reports:
             _render_report_card(report, today, chrome_ok)
-
-    if other_reports:
-        st.markdown("## 🤝 Other Team Reports (anyone can run)")
-        st.caption("Not assigned to you — but you can still run them if needed.")
-        for report in other_reports:
-            _render_report_card(report, today, chrome_ok)
+    else:
+        st.info(f"No reports assigned to {user_name} yet.")
 
 
 # --------------------------------------------------------------------------
