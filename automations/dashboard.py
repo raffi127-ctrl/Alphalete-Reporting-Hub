@@ -536,6 +536,87 @@ def _assign_intake(entry_id: str, user: str) -> bool:
     return True
 
 
+def _mark_intake_done(entry_id: str) -> bool:
+    ws = _intake_ws()
+    try:
+        cell = ws.find(str(entry_id))
+    except Exception:
+        return False
+    if not cell:
+        return False
+    ws.update_cell(cell.row, 8, "Done")
+    _read_intake.clear()
+    return True
+
+
+@st.dialog("➕ Submit a New Automation Request", width="large")
+def _show_intake_dialog():
+    st.caption("Describe what you need automated. Someone on the team will claim it and build it.")
+    with st.form("new_intake_form", clear_on_submit=True):
+        title = st.text_input("Report name *", placeholder="e.g. Sales Pipeline Daily")
+        sheet_link = st.text_input("Link to the report (Google Sheet) *", placeholder="https://docs.google.com/...")
+        loom_link = st.text_input("Loom video walking through what's needed *", placeholder="https://www.loom.com/share/...")
+        description = st.text_area(
+            "Goal & details *",
+            placeholder="What should this automation do? What problem does it solve? "
+                        "What manual work is it replacing? Any tricky bits?",
+            height=140,
+        )
+        submitted_by = st.text_input("Your name *", value=st.session_state.get("user", "") or "")
+        ok = st.form_submit_button("📨 Submit", type="primary", use_container_width=True)
+        if ok:
+            if not (title and sheet_link and loom_link and description and submitted_by):
+                st.error("Please fill in every field marked *.")
+            else:
+                try:
+                    _add_intake(title, sheet_link, loom_link, description, submitted_by)
+                    st.success("✅ Submitted! It will appear on the home page for someone to claim.")
+                    st.balloons()
+                except Exception as e:
+                    st.error(f"Couldn't save to Sheet: {e}")
+
+
+def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool = False) -> None:
+    """Render one backlog entry."""
+    with st.container(border=True):
+        cols = st.columns([5, 2])
+        with cols[0]:
+            st.markdown(f"### {entry.get('Title', 'Untitled')}")
+            st.caption(
+                f"Submitted by **{entry.get('Submitted By', '?')}** on {entry.get('Submitted At', '?')}"
+                + (f" • Claimed by **{entry.get('Assigned To')}** on {entry.get('Assigned At', '')}" if entry.get('Assigned To') else "")
+            )
+            if entry.get("Description"):
+                st.markdown(entry["Description"])
+            link_cols = st.columns(2)
+            with link_cols[0]:
+                if entry.get("Sheet Link"):
+                    st.link_button("📂 Open Sheet", entry["Sheet Link"], use_container_width=True)
+            with link_cols[1]:
+                if entry.get("Loom Link"):
+                    st.link_button("▶️ Watch Loom", entry["Loom Link"], use_container_width=True)
+        with cols[1]:
+            if allow_claim:
+                claim_to = st.selectbox(
+                    "Claim for…",
+                    ["— pick name —"] + [m["name"] for m in MEMBERS],
+                    key=f"claim_pick_{entry['ID']}",
+                    label_visibility="collapsed",
+                )
+                if claim_to and claim_to != "— pick name —":
+                    if st.button("🤝 Claim", key=f"claim_btn_{entry['ID']}", use_container_width=True, type="primary"):
+                        if _assign_intake(str(entry["ID"]), claim_to):
+                            st.success(f"Claimed by {claim_to}")
+                            st.rerun()
+                        else:
+                            st.error("Couldn't claim — please try again.")
+            if allow_done:
+                if st.button("✅ Mark Done", key=f"done_{entry['ID']}", use_container_width=True):
+                    if _mark_intake_done(str(entry["ID"])):
+                        st.success("Marked done")
+                        st.rerun()
+
+
 def _missed_runs(reports: list[dict], days: int = 7, today: dt.date | None = None) -> list[dict]:
     """For each report, find days in the past `days` where it was scheduled
     but no successful run was logged. Returns list of {report, missed_date}."""
@@ -808,6 +889,34 @@ if st.session_state.view == "home":
                     ):
                         _go_user(member["name"])
                         st.rerun()
+
+    # --------------------------------------------------------------------
+    # Automation Backlog — unassigned + in-progress requests
+    # --------------------------------------------------------------------
+    st.markdown("---")
+    bl_cols = st.columns([5, 2])
+    with bl_cols[0]:
+        st.markdown("### 🚧 Automation Backlog")
+        st.caption("New report ideas and bugs from the team. Anyone can claim a request to take it on.")
+    with bl_cols[1]:
+        if st.button("➕ Submit Request", use_container_width=True, type="primary", key="open_intake_btn"):
+            _show_intake_dialog()
+
+    intake = _read_intake()
+    unassigned = [r for r in intake if (r.get("Status") or "Unassigned") == "Unassigned"]
+    in_progress = [r for r in intake if r.get("Status") == "In Progress"]
+
+    if not intake:
+        st.info("No requests in the backlog yet. Click **Submit Request** above to add the first one.")
+    else:
+        if unassigned:
+            st.markdown(f"#### 🔓 Unassigned ({len(unassigned)})")
+            for entry in unassigned:
+                _render_intake_card(entry, allow_claim=True, allow_done=False)
+        if in_progress:
+            st.markdown(f"#### 🛠️ In Progress ({len(in_progress)})")
+            for entry in in_progress:
+                _render_intake_card(entry, allow_claim=False, allow_done=True)
 
 
 # --------------------------------------------------------------------------
