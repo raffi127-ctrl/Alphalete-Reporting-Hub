@@ -29,13 +29,13 @@ RUNS_LOG = LOG_DIR / "runs.jsonl"
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{_fill.SPREADSHEET_ID}/edit"
 
 # Team members. Each is a dict so we can add avatars/colors easily.
-# Order = order shown on home page.
+# Order: alphabetical by name.
 MEMBERS = [
-    {"name": "Megan",   "emoji": "👩‍💼", "color": "#667eea"},
-    {"name": "Maud",    "emoji": "🌟",        "color": "#FF6B6B"},
     {"name": "Eve",     "emoji": "🌷",        "color": "#4ECDC4"},
-    {"name": "Raf",     "emoji": "🚀",        "color": "#F4A261"},
     {"name": "JD",      "emoji": "⚡",        "color": "#9B59B6"},
+    {"name": "Maud",    "emoji": "🌟",        "color": "#FF6B6B"},
+    {"name": "Megan",   "emoji": "👩‍💼",     "color": "#667eea"},
+    {"name": "Raf",     "emoji": "🚀",        "color": "#F4A261"},
     {"name": "Twaddle", "emoji": "🦊",        "color": "#2A9D8F"},
 ]
 
@@ -107,7 +107,7 @@ AUTOMATED_REPORTS = [
     {
         "id": "daily-focus",
         "name": "Daily Recruiting Focus",
-        "emoji": "📅",
+        "emoji": "☀️",
         "color": "#4ECDC4",
         "description": "Per-ICD daily breakdown (Mon–Fri current week, last week, plus next-week scheduled). Auto-fills the 'Daily Focus Report' tab.",
         "sheet_url": SHEET_URL,
@@ -552,7 +552,7 @@ else:  # st.session_state.view == "user"
     due_today = [r for r in user_reports if _is_due_today(r, today)]
 
     # ----- Today's Schedule -----
-    st.markdown("## 📅 Today's Schedule")
+    st.markdown("## 📋 Today's Schedule")
 
     if due_today:
         for r in due_today:
