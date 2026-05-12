@@ -1402,6 +1402,53 @@ else:  # st.session_state.view == "user"
 
     my_reports = [r for r in AUTOMATED_REPORTS if user_name in r.get("assignees", [])]
 
+    # ----- "Pick up where you left off" banner -----
+    # Any of this user's reports with persisted run state (within last 24h)
+    persisted = _load_all_run_state()
+    in_progress = [r for r in my_reports if r["id"] in persisted]
+    if in_progress:
+        st.markdown("### 📌 Pick up where you left off")
+        for report in in_progress:
+            saved = persisted[report["id"]]
+            saved_ts = saved.get("ts", "")
+            try:
+                saved_dt = dt.datetime.fromisoformat(saved_ts)
+                saved_str = saved_dt.strftime("%I:%M %p")
+            except Exception:
+                saved_str = saved_ts
+            post_run_cfg = report.get("post_run", {})
+            again_label = post_run_cfg.get("again_label", "🔁 Continue / Run Again")
+
+            with st.container(border=True):
+                cols = st.columns([5, 2, 2])
+                with cols[0]:
+                    st.markdown(f"**{report['emoji']} {report['name']}** — last run **{saved_str}** today")
+                    if post_run_cfg.get("message_success") and saved.get("status") == "success":
+                        st.caption(post_run_cfg["message_success"])
+                    else:
+                        st.caption("You started this earlier today but haven't marked it done yet.")
+                with cols[1]:
+                    if st.button(again_label, key=f"continue_{report['id']}", use_container_width=True, type="primary", disabled=not chrome_ok):
+                        # Find the primary action and re-execute
+                        primary = next((a for a in report["actions"] if a.get("primary")), report["actions"][0])
+                        # Build picked from any saved widget state (date/text)
+                        picked = None
+                        if primary.get("needs_date") or primary.get("needs_text"):
+                            d = st.session_state.get(f"date_{report['id']}_{primary['label']}")
+                            t = st.session_state.get(f"text_{report['id']}_{primary['label']}")
+                            if primary.get("needs_date") and primary.get("needs_text"):
+                                picked = (d, t)
+                            elif primary.get("needs_date"):
+                                picked = d
+                            elif primary.get("needs_text"):
+                                picked = t
+                        _execute_action(report, primary, picked, chrome_ok)
+                with cols[2]:
+                    if st.button("✅ Mark fully done", key=f"banner_done_{report['id']}", use_container_width=True):
+                        _clear_run_state_for(report["id"])
+                        st.session_state.pop(f"last_run_{report['id']}", None)
+                        st.rerun()
+
     if my_reports:
         st.markdown("## 🚀 Your Reports")
         for report in my_reports:
