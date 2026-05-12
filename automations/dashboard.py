@@ -90,6 +90,46 @@ AUTOMATED_REPORTS = [
             },
         ],
     },
+    {
+        "id": "daily-focus",
+        "name": "Daily Recruiting Focus",
+        "emoji": "📅",
+        "color": "#4ECDC4",
+        "description": "Per-ICD daily breakdown (Mon–Fri current week, last week, plus next-week scheduled). Auto-fills the 'Daily Focus Report' tab.",
+        "sheet_url": SHEET_URL,
+        "schedule": {
+            "frequency": "daily",
+            "weekdays": [1, 2, 3, 4, 5],  # Tue–Sat
+            "time": "8:00 AM",
+            "estimated_minutes": 6,
+            "human_prep": [
+                "Launch Chrome with the recruiting profile (see sidebar command)",
+                "Log into AppStream as **rhidalgo** (broader account)",
+                "Click **▶ Run Daily Focus** below — fills all 17 ICDs",
+                "If any ICD shows 'not accessible': switch to the other AppStream login and click again",
+                "Spot-check the Sheet — verify a couple ICD sections look right",
+            ],
+        },
+        "actions": [
+            {
+                "label": "Run Daily Focus",
+                "icon": "▶",
+                "primary": True,
+                "help": "Fills today's daily focus report for all 17 ICDs (current + last week + next-week scheduled)",
+                "module": "automations.recruiting_report.daily_focus",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Run for One ICD",
+                "icon": "🎯",
+                "needs_text": True,
+                "text_label": "ICD name (as it appears in col V)",
+                "help": "Just refill one ICD's section — handy after a typo fix or partial run",
+                "module": "automations.recruiting_report.daily_focus",
+                "args_fn": lambda name: ["--only", name],
+            },
+        ],
+    },
 ]
 
 # Future: read pending automation requests from this Sheet. Update the ID
@@ -352,6 +392,13 @@ for report in AUTOMATED_REPORTS:
                         value=_last_completed_we_sunday(),
                         label_visibility="collapsed",
                     )
+                elif action.get("needs_text"):
+                    picked = st.text_input(
+                        action.get("text_label", "Input"),
+                        key=f"text_{report['id']}_{action['label']}",
+                        label_visibility="collapsed",
+                        placeholder=action.get("text_label", ""),
+                    )
                 else:
                     picked = None
                     st.write("")
@@ -365,8 +412,13 @@ for report in AUTOMATED_REPORTS:
                 ):
                     if not chrome_ok:
                         st.error("⚠️ Chrome isn't running. Check the sidebar for the launch command.")
+                    elif action.get("needs_text") and not picked:
+                        st.error(f"⚠️ Please enter the {action.get('text_label', 'input')} first.")
                     else:
-                        args = action["args_fn"](picked) if action.get("needs_date") else action["args_fn"]()
+                        if action.get("needs_date") or action.get("needs_text"):
+                            args = action["args_fn"](picked)
+                        else:
+                            args = action["args_fn"]()
                         cmd = [VENV_PY, "-m", action["module"]] + args
                         st.info(f"`{' '.join(shlex.quote(c) for c in cmd)}`")
                         with st.status("Running…", expanded=True) as s:
