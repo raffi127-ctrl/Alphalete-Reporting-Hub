@@ -2487,7 +2487,7 @@ if "view" not in st.session_state:
     _url_view = st.query_params.get("view", "").strip()
     st.session_state.view = (
         _url_view
-        if _url_view in {"home", "user", "overview", "library", "backlog", "bugs", "changes"}
+        if _url_view in {"home", "user", "overview", "library", "backlog", "bugs"}
         else "home"
     )
 if "user" not in st.session_state:
@@ -2638,7 +2638,7 @@ def _ordinal(n: int) -> str:
 BIG_DATE = f"{weekday_name.upper()}, {today.strftime('%B').upper()} {_ordinal(today.day).upper()}"
 
 
-_VALID_VIEWS = {"home", "user", "overview", "library", "backlog", "bugs", "changes"}
+_VALID_VIEWS = {"home", "user", "overview", "library", "backlog", "bugs"}
 
 
 def _set_view(view: str) -> None:
@@ -2687,10 +2687,6 @@ def _go_backlog():
 
 def _go_bugs():
     _set_view("bugs")
-
-
-def _go_changes():
-    _set_view("changes")
 
 
 def _detect_hub_user() -> str:
@@ -2793,11 +2789,6 @@ with st.sidebar:
         if (b.get("Status") or "Open") in ("Open", "In Progress", "Needs Info")
         and "Bug" in (b.get("Type") or "")
     )
-    _changes_count = sum(
-        1 for b in _read_bugs()
-        if (b.get("Status") or "Open") in ("Open", "In Progress", "Needs Info")
-        and "Change" in (b.get("Type") or "")
-    )
     if st.button(f"📨 New Automation Request ({_backlog_count})", use_container_width=True, key="nav_backlog"):
         _go_backlog()
         st.rerun()
@@ -2862,9 +2853,6 @@ with st.sidebar:
         st.session_state.show_suggest = True
     if st.button(f"🐛 Bugs Being Fixed ({_bugs_count})", use_container_width=True, key="nav_bugs"):
         _go_bugs()
-        st.rerun()
-    if st.button(f"✏️ Report Change Requests ({_changes_count})", use_container_width=True, key="nav_changes"):
-        _go_changes()
         st.rerun()
 
     # Tiny sign-out link at the very bottom — ends the 1-hour session so the
@@ -3094,12 +3082,9 @@ elif st.session_state.view == "backlog":
 
 
 # --------------------------------------------------------------------------
-# BUGS / CHANGE REQUESTS VIEWS — both views are identical in shape, just
-# filtered by row Type. Bugs = 'Bug / something broke'. Change requests =
-# 'Change to an existing report'. Same Sheet tab, same Apps Script — just
-# two filtered surfaces so admins can triage them with separate mindsets.
-# The shared renderer _render_bug_typed_view is defined further up with
-# the other card helpers; here we just dispatch by view.
+# BUGS VIEW — bug reports only (Megan-triaged). Change requests now flow
+# into the Automation Request Log instead since they follow the same
+# claim → build → review path as new automation requests.
 # --------------------------------------------------------------------------
 
 elif st.session_state.view == "bugs":
@@ -3110,17 +3095,6 @@ elif st.session_state.view == "bugs":
         empty_message="No bug reports right now.",
         completed_label="🐛 Bug Fixes Completed",
         completed_empty_label="No bugs fixed yet.",
-    )
-
-
-elif st.session_state.view == "changes":
-    _render_bug_typed_view(
-        type_keyword="Change",
-        page_title="✏️ Report Change Requests",
-        page_caption="Tweaks and edits to existing reports. Submitted via the sidebar. Megan triages and replies to the submitter by email.",
-        empty_message="No change requests right now.",
-        completed_label="✏️ Completed Change Requests",
-        completed_empty_label="No change requests completed yet.",
     )
 
 
@@ -3593,20 +3567,41 @@ def _show_suggest_dialog():
                 st.error("Please fill in every field — missing: " + ", ".join(missing))
             else:
                 try:
-                    _add_bug(
-                        title=report_name,
-                        bug_type=sugg_type,
-                        sheet_link=link,
-                        loom_link=loom,
-                        details=details,
-                        submitted_by=requester,
-                        submitter_email=requester_email,
-                        priority=priority,
-                    )
-                    st.success("✅ Submitted! Megan will reply to your email when it's fixed.")
+                    if "Change" in sugg_type:
+                        # Change requests follow the same claim → build → review
+                        # flow as new automation requests, so they go straight
+                        # into the backlog. Prefixing the title makes them
+                        # visually distinct on the backlog cards.
+                        _add_intake(
+                            title=f"✏️ Change Request: {report_name}",
+                            sheet_link=link,
+                            loom_link=loom,
+                            description=details,
+                            submitted_by=requester,
+                            preferred_creator="",
+                            currently_runs="",
+                            priority=priority,
+                            submitter_email=requester_email,
+                        )
+                        st.success(
+                            "✅ Submitted to the Automation Request Log — someone will claim "
+                            "it and you'll get an email when it's ready for your review."
+                        )
+                    else:
+                        _add_bug(
+                            title=report_name,
+                            bug_type=sugg_type,
+                            sheet_link=link,
+                            loom_link=loom,
+                            details=details,
+                            submitted_by=requester,
+                            submitter_email=requester_email,
+                            priority=priority,
+                        )
+                        st.success("✅ Submitted! Megan will reply to your email when it's fixed.")
                     st.balloons()
                 except Exception as e:
-                    st.error(f"Couldn't save the bug report: {e}")
+                    st.error(f"Couldn't save: {e}")
 
 
 if st.session_state.get("show_suggest"):
