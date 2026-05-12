@@ -2891,7 +2891,7 @@ if st.session_state.view == "home":
 # --------------------------------------------------------------------------
 
 elif st.session_state.view == "backlog":
-    st.markdown("## 🚧 Automation Backlog")
+    st.markdown("## 🚧 Automation Request Log")
     st.caption("New report ideas from the team. Anyone can claim a request to take it on.")
 
     if st.button("➕ Submit a New Request", type="primary", key="backlog_open_intake_btn"):
