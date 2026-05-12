@@ -2835,12 +2835,12 @@ with st.sidebar:
                 else:
                     st.markdown(f"<div style='padding: 0.4rem 0'>☐ {r['emoji']} <b>{r['name']}</b></div>", unsafe_allow_html=True)
 
-    # Bottom-of-sidebar: suggest button (small, red)
+    # Bottom-of-sidebar: bug-report (red) + change-request entry points.
     st.markdown("---")
     st.markdown(
         """
         <style>
-        div[data-testid="stSidebar"] button[kind="secondary"]:has(div:contains("Suggest")) {
+        div[data-testid="stSidebar"] button[kind="secondary"]:has(div:contains("Report a Bug")) {
             background: #C92020 !important;
             color: white !important;
             border: none !important;
@@ -2849,11 +2849,13 @@ with st.sidebar:
         """,
         unsafe_allow_html=True,
     )
-    if st.button("⚠️ Suggest a Change / Report A Bug", use_container_width=True, key="open_suggest_btn"):
-        st.session_state.show_suggest = True
+    if st.button("⚠️ Report a Bug", use_container_width=True, key="open_bug_dialog_btn"):
+        st.session_state.show_bug_dialog = True
     if st.button(f"🐛 Bugs Being Fixed ({_bugs_count})", use_container_width=True, key="nav_bugs"):
         _go_bugs()
         st.rerun()
+    if st.button("✏️ Request Change to Existing Report", use_container_width=True, key="open_change_request_btn"):
+        st.session_state.show_change_request_dialog = True
 
     # Tiny sign-out link at the very bottom — ends the 1-hour session so the
     # next page load prompts for the Pack Access password again.
@@ -3512,23 +3514,22 @@ else:  # st.session_state.view == "user"
 
 
 # --------------------------------------------------------------------------
-# Suggest dialog (triggered from sidebar red button)
+# Bug-report and change-request dialogs (two dedicated forms, one per
+# sidebar button — no shared dropdown).
 # --------------------------------------------------------------------------
 
-@st.dialog("⚠️ Report a Bug or Suggest a Change", width="large")
-def _show_suggest_dialog():
+@st.dialog("🐛 Report a Bug", width="large")
+def _show_bug_dialog():
     st.caption(
-        "Found a bug or want a tweak to something that already exists? "
-        "Drop the details here — Megan reviews and follows up by email.\n\n"
-        "**Need a brand-new report automated?** Use **\"Submit a New Automation Request\"** on the home page instead."
+        "Something broken? Drop the details here — Megan triages bugs and "
+        "follows up by email.\n\n"
+        "**Tweak to an existing report?** Use **\"Request Change to Existing "
+        "Report\"** instead.\n\n"
+        "**Brand-new report?** Use **\"New Automation Request\"** instead."
     )
-    with st.form("suggestion_form", clear_on_submit=True):
+    with st.form("bug_form", clear_on_submit=True):
         cols = st.columns(2)
         with cols[0]:
-            sugg_type = st.selectbox(
-                "What kind?",
-                ["Bug / something broke", "Change to an existing report"],
-            )
             report_name = st.text_input("Report name", placeholder="e.g. 'OPT Focus Report'")
             requester = st.text_input("Your name", value=st.session_state.get("user", "") or "")
             requester_email = st.text_input(
@@ -3546,11 +3547,11 @@ def _show_suggest_dialog():
                 help="How urgent is this? Don't worry, 5 is a real option.",
             )
         details = st.text_area(
-            "Details — what should it do? what's broken?",
+            "Details — what's broken?",
             height=140,
-            placeholder="Describe the goal, the source data, what's wrong, etc.",
+            placeholder="Describe what's wrong, when it started, etc.",
         )
-        submitted = st.form_submit_button("📨 Submit", type="primary", use_container_width=True)
+        submitted = st.form_submit_button("🐛 Submit Bug Report", type="primary", use_container_width=True)
 
         if submitted:
             missing = [
@@ -3567,46 +3568,102 @@ def _show_suggest_dialog():
                 st.error("Please fill in every field — missing: " + ", ".join(missing))
             else:
                 try:
-                    if "Change" in sugg_type:
-                        # Change requests follow the same claim → build → review
-                        # flow as new automation requests, so they go straight
-                        # into the backlog. Prefixing the title makes them
-                        # visually distinct on the backlog cards.
-                        _add_intake(
-                            title=f"✏️ Change Request: {report_name}",
-                            sheet_link=link,
-                            loom_link=loom,
-                            description=details,
-                            submitted_by=requester,
-                            preferred_creator="",
-                            currently_runs="",
-                            priority=priority,
-                            submitter_email=requester_email,
-                        )
-                        st.success(
-                            "✅ Submitted to the Automation Request Log — someone will claim "
-                            "it and you'll get an email when it's ready for your review."
-                        )
-                    else:
-                        _add_bug(
-                            title=report_name,
-                            bug_type=sugg_type,
-                            sheet_link=link,
-                            loom_link=loom,
-                            details=details,
-                            submitted_by=requester,
-                            submitter_email=requester_email,
-                            priority=priority,
-                        )
-                        st.success("✅ Submitted! Megan will reply to your email when it's fixed.")
+                    _add_bug(
+                        title=report_name,
+                        bug_type="Bug / something broke",
+                        sheet_link=link,
+                        loom_link=loom,
+                        details=details,
+                        submitted_by=requester,
+                        submitter_email=requester_email,
+                        priority=priority,
+                    )
+                    st.success("✅ Submitted! Megan will reply to your email when it's fixed.")
                     st.balloons()
                 except Exception as e:
-                    st.error(f"Couldn't save: {e}")
+                    st.error(f"Couldn't save the bug report: {e}")
 
 
-if st.session_state.get("show_suggest"):
-    st.session_state.show_suggest = False
-    _show_suggest_dialog()
+@st.dialog("✏️ Request a Change to an Existing Report", width="large")
+def _show_change_request_dialog():
+    st.caption(
+        "Got a tweak in mind for a report that already exists? Fill this out "
+        "and it lands in the **Automation Request Log** — someone will claim "
+        "it and follow the same build → review flow as a new automation.\n\n"
+        "**Something broken instead?** Use **\"Report a Bug\"**.\n\n"
+        "**Brand-new report?** Use **\"New Automation Request\"**."
+    )
+    with st.form("change_request_form", clear_on_submit=True):
+        cols = st.columns(2)
+        with cols[0]:
+            report_name = st.text_input("Existing report name", placeholder="e.g. 'OPT Focus Report'")
+            requester = st.text_input("Your name", value=st.session_state.get("user", "") or "")
+            requester_email = st.text_input(
+                "Your email",
+                placeholder="you@example.com",
+                help="You'll get an email when someone claims it and another when it's ready for your review.",
+            )
+        with cols[1]:
+            link = st.text_input("Sheet link", placeholder="https://…  (paste 'n/a' if none)")
+            loom = st.text_input("Loom", placeholder="https://loom.com/…  (paste 'n/a' if none)")
+            priority = st.selectbox(
+                "Priority",
+                PRIORITY_OPTIONS,
+                index=2,
+                help="How urgent is this? Don't worry, 5 is a real option.",
+            )
+        details = st.text_area(
+            "Details — what should change?",
+            height=140,
+            placeholder="Describe the tweak: a new column, a different filter, updated formula, etc.",
+        )
+        submitted = st.form_submit_button("✏️ Submit Change Request", type="primary", use_container_width=True)
+
+        if submitted:
+            missing = [
+                label for label, val in [
+                    ("Existing report name", report_name),
+                    ("Your name", requester),
+                    ("Your email", requester_email),
+                    ("Sheet link", link),
+                    ("Loom", loom),
+                    ("Details", details),
+                ] if not str(val).strip()
+            ]
+            if missing:
+                st.error("Please fill in every field — missing: " + ", ".join(missing))
+            else:
+                try:
+                    # Title is prefixed so change requests are visually
+                    # distinct on backlog cards even though they live in the
+                    # same Sheet tab as new automation requests.
+                    _add_intake(
+                        title=f"✏️ Change Request: {report_name}",
+                        sheet_link=link,
+                        loom_link=loom,
+                        description=details,
+                        submitted_by=requester,
+                        preferred_creator="",
+                        currently_runs="",
+                        priority=priority,
+                        submitter_email=requester_email,
+                    )
+                    st.success(
+                        "✅ Submitted to the Automation Request Log — someone will claim it "
+                        "and you'll get an email when it's ready for your review."
+                    )
+                    st.balloons()
+                except Exception as e:
+                    st.error(f"Couldn't save the change request: {e}")
+
+
+if st.session_state.get("show_bug_dialog"):
+    st.session_state.show_bug_dialog = False
+    _show_bug_dialog()
+
+if st.session_state.get("show_change_request_dialog"):
+    st.session_state.show_change_request_dialog = False
+    _show_change_request_dialog()
 
 if st.session_state.get("show_wireup_direct"):
     st.session_state.show_wireup_direct = False
