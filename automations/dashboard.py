@@ -410,12 +410,6 @@ AUTOMATED_REPORTS = [
 # Merge in user-uploaded reports (saved by the Wire-Up dialog)
 AUTOMATED_REPORTS.extend(_load_uploaded_reports_raw())
 
-# Future: read pending automation requests from this Sheet. Update the ID
-# once Megan shares the URL.
-REPORT_INTAKE_SHEET_ID = ""
-REPORT_INTAKE_TAB = "Sheet1"
-
-
 # --------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------
@@ -936,6 +930,13 @@ PRIORITY_OPTIONS = [
     "5 — 🌮 When pigs fly (or you have a sec)",
 ]
 
+BUG_TAB = "Bug Reports"
+BUG_HEADERS = [
+    "ID", "Title", "Type", "Sheet Link", "Loom Link", "Details",
+    "Submitted By", "Submitter Email", "Priority",
+    "Status", "Submitted At", "Resolution Note", "Resolved At",
+]
+
 
 def _intake_ws():
     """Return the intake worksheet, creating it if missing.
@@ -1030,6 +1031,87 @@ def _mark_intake_done(entry_id: str) -> bool:
         return False
     ws.update_cell(cell.row, 8, "Done")
     _read_intake.clear()
+    return True
+
+
+# --------------------------------------------------------------------------
+# Bug Reports — separate tab in the intake Sheet. Lighter-weight than the
+# automation backlog: only Megan triages these, so the home-page UI is
+# condensed and there's no "claim" step. When Megan marks a bug Fixed or
+# Needs Info, the Apps Script picks up the status change and emails the
+# submitter (using the Submitter Email captured at intake).
+# --------------------------------------------------------------------------
+
+def _bugs_ws():
+    """Return the Bug Reports worksheet, creating it if missing."""
+    import gspread as _gs
+    sh = _fill._client().open_by_key(INTAKE_SPREADSHEET_ID)
+    try:
+        ws = sh.worksheet(BUG_TAB)
+    except _gs.WorksheetNotFound:
+        ws = sh.add_worksheet(title=BUG_TAB, rows=300, cols=len(BUG_HEADERS))
+        ws.update([BUG_HEADERS], f"A1:{chr(ord('A') + len(BUG_HEADERS) - 1)}1")
+        return ws
+    try:
+        current_headers = ws.row_values(1)
+    except Exception:
+        current_headers = []
+    if (
+        len(current_headers) < len(BUG_HEADERS)
+        and BUG_HEADERS[: len(current_headers)] == current_headers
+    ):
+        ws.update(
+            [BUG_HEADERS],
+            f"A1:{chr(ord('A') + len(BUG_HEADERS) - 1)}1",
+        )
+    return ws
+
+
+@st.cache_data(ttl=30)
+def _read_bugs() -> list[dict]:
+    """All bug records, newest first."""
+    try:
+        ws = _bugs_ws()
+        rows = ws.get_all_records()
+        return list(reversed(rows))
+    except Exception:
+        return []
+
+
+def _add_bug(title: str, bug_type: str, sheet_link: str, loom_link: str,
+             details: str, submitted_by: str, submitter_email: str,
+             priority: str) -> str:
+    new_id = dt.datetime.now().strftime("%Y%m%d%H%M%S")
+    ws = _bugs_ws()
+    ws.append_row([
+        new_id, title, bug_type, sheet_link, loom_link, details,
+        submitted_by, submitter_email, priority,
+        "Open", dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "", "",
+    ])
+    _read_bugs.clear()
+    return new_id
+
+
+def _resolve_bug(bug_id: str, status: str, note: str) -> bool:
+    """Set Status + Resolution Note + Resolved At on a bug row.
+
+    `status` should be 'Fixed' or 'Needs Info'. The Apps Script polls
+    this column and emails the submitter when it flips off 'Open'.
+    """
+    ws = _bugs_ws()
+    try:
+        cell = ws.find(str(bug_id))
+    except Exception:
+        return False
+    if not cell:
+        return False
+    row = cell.row
+    ws.update_cell(row, BUG_HEADERS.index("Status") + 1, status)
+    ws.update_cell(row, BUG_HEADERS.index("Resolution Note") + 1, note)
+    ws.update_cell(row, BUG_HEADERS.index("Resolved At") + 1,
+                   dt.datetime.now().strftime("%Y-%m-%d %H:%M"))
+    _read_bugs.clear()
     return True
 
 
@@ -1374,6 +1456,64 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                         use_container_width=True,
                         help=f"Opens your mail app addressed to {requester_email}",
                     )
+
+
+def _render_bug_card(entry: dict) -> None:
+    """Condensed card for the right-hand Bug Reports section."""
+    bug_id = str(entry.get("ID", ""))
+    status = entry.get("Status") or "Open"
+    bug_type = entry.get("Type", "")
+    priority = entry.get("Priority", "")
+    type_emoji = "🐛" if "Bug" in bug_type else "✏️"
+
+    with st.container(border=True):
+        st.markdown(
+            f"**{type_emoji} {entry.get('Title', 'Untitled')}**  \n"
+            f"<span style='color:#777; font-size:0.85em'>"
+            f"{entry.get('Submitted By', '?')} • {entry.get('Submitted At', '')} • {priority}"
+            f"</span>",
+            unsafe_allow_html=True,
+        )
+        if entry.get("Details"):
+            with st.expander("Details"):
+                st.write(entry["Details"])
+                link_row = st.columns(2)
+                with link_row[0]:
+                    sl = (entry.get("Sheet Link") or "").strip()
+                    if sl and sl.lower() != "n/a":
+                        st.link_button("📂 Sheet", sl, use_container_width=True)
+                with link_row[1]:
+                    ll = (entry.get("Loom Link") or "").strip()
+                    if ll and ll.lower() != "n/a":
+                        st.link_button("▶️ Loom", ll, use_container_width=True)
+
+        if status == "Open" or status == "Needs Info":
+            note = st.text_input(
+                "Note to requester (sent in the email)",
+                key=f"bug_note_{bug_id}",
+                placeholder="What did you fix? Or what do you need to know?",
+                label_visibility="collapsed",
+            )
+            btn_cols = st.columns(2)
+            with btn_cols[0]:
+                if st.button("✅ Mark Fixed", key=f"bug_fix_{bug_id}", use_container_width=True, type="primary"):
+                    if _resolve_bug(bug_id, "Fixed", note or ""):
+                        st.success("Marked Fixed — email going out shortly.")
+                        st.rerun()
+                    else:
+                        st.error("Couldn't update — try again.")
+            with btn_cols[1]:
+                if st.button("❓ Need Info", key=f"bug_info_{bug_id}", use_container_width=True):
+                    if not (note or "").strip():
+                        st.error("Add a note so the requester knows what you need.")
+                    elif _resolve_bug(bug_id, "Needs Info", note):
+                        st.success("Email going out shortly.")
+                        st.rerun()
+        else:
+            badge = "✅ Fixed" if status == "Fixed" else f"⏳ {status}"
+            st.caption(badge)
+            if entry.get("Resolution Note"):
+                st.caption(f"Note: {entry['Resolution Note']}")
 
 
 def _missed_runs(reports: list[dict], days: int = 7, today: dt.date | None = None) -> list[dict]:
@@ -1815,7 +1955,7 @@ with st.sidebar:
         """,
         unsafe_allow_html=True,
     )
-    if st.button("⚠️ Suggest a Change / Bug", use_container_width=True, key="open_suggest_btn"):
+    if st.button("⚠️ Suggest a Change / Report A Bug", use_container_width=True, key="open_suggest_btn"):
         st.session_state.show_suggest = True
 
     # Tiny sign-out link at the very bottom — ends the 1-hour session so the
@@ -1943,11 +2083,9 @@ if st.session_state.view == "home":
                         st.rerun()
 
     # --------------------------------------------------------------------
-    # Automation Backlog — unassigned + in-progress requests
+    # Automation Backlog (left) + Bug Reports (right) — side by side
     # --------------------------------------------------------------------
     st.markdown("---")
-    st.markdown("### 🚧 Automation Backlog")
-    st.caption("New report ideas from the team. Anyone can claim a request to take it on.")
     st.markdown(
         """
         <style>
@@ -1975,63 +2113,90 @@ if st.session_state.view == "home":
         """,
         unsafe_allow_html=True,
     )
-    bl_cols = st.columns(2)
-    with bl_cols[0]:
-        if st.button("➕  Submit a New Request", use_container_width=True, type="primary", key="open_intake_btn"):
-            _show_intake_dialog()
-    with bl_cols[1]:
-        if st.button("📥  Upload a Built Automation", use_container_width=True, key="open_wireup_direct_btn",
-                     help="Upload an automation that's already built (skips the backlog claim flow)"):
-            _show_wire_up_dialog(None)
 
-    intake = _read_intake()
+    home_cols = st.columns([3, 2])
 
-    # Deep-link from email: ?request=<id> pins that specific request to the
-    # top of the backlog so admins clicking through don't have to scroll/scan.
-    _requested_id = st.query_params.get("request", "").strip()
-    _focus_entry = None
-    if _requested_id:
-        _focus_entry = next((r for r in intake if str(r.get("ID")) == _requested_id), None)
-        if _focus_entry:
-            st.markdown("#### 📌 You came here from an email")
-            _focus_status = _focus_entry.get("Status") or "Unassigned"
-            _render_intake_card(
-                _focus_entry,
-                allow_claim=(_focus_status == "Unassigned"),
-                allow_done=(_focus_status == "In Progress"),
-            )
-            if st.button("← Back to full backlog", key="clear_request_focus"):
-                try:
-                    st.query_params.clear()
-                except Exception:
-                    pass
-                st.rerun()
-            st.markdown("---")
+    # ---- LEFT: submission requests ----
+    with home_cols[0]:
+        st.markdown("### 🚧 Automation Backlog")
+        st.caption("New report ideas from the team. Anyone can claim a request to take it on.")
+
+        bl_cols = st.columns(2)
+        with bl_cols[0]:
+            if st.button("➕  Submit a New Request", use_container_width=True, type="primary", key="open_intake_btn"):
+                _show_intake_dialog()
+        with bl_cols[1]:
+            if st.button("📥  Upload a Built Automation", use_container_width=True, key="open_wireup_direct_btn",
+                         help="Upload an automation that's already built (skips the backlog claim flow)"):
+                _show_wire_up_dialog(None)
+
+        intake = _read_intake()
+
+        # Deep-link from email: ?request=<id> pins that specific request to the
+        # top of the backlog so admins clicking through don't have to scroll/scan.
+        _requested_id = st.query_params.get("request", "").strip()
+        _focus_entry = None
+        if _requested_id:
+            _focus_entry = next((r for r in intake if str(r.get("ID")) == _requested_id), None)
+            if _focus_entry:
+                st.markdown("#### 📌 You came here from an email")
+                _focus_status = _focus_entry.get("Status") or "Unassigned"
+                _render_intake_card(
+                    _focus_entry,
+                    allow_claim=(_focus_status == "Unassigned"),
+                    allow_done=(_focus_status == "In Progress"),
+                )
+                if st.button("← Back to full backlog", key="clear_request_focus"):
+                    try:
+                        st.query_params.clear()
+                    except Exception:
+                        pass
+                    st.rerun()
+                st.markdown("---")
+            else:
+                st.warning(
+                    f"Couldn't find a request with ID `{_requested_id}` — "
+                    "showing the full backlog below."
+                )
+
+        _focus_id = str(_focus_entry.get("ID")) if _focus_entry else None
+        unassigned = [r for r in intake
+                      if (r.get("Status") or "Unassigned") == "Unassigned"
+                      and str(r.get("ID")) != _focus_id]
+        in_progress = [r for r in intake
+                       if r.get("Status") == "In Progress"
+                       and str(r.get("ID")) != _focus_id]
+
+        if not intake:
+            st.info("No requests in the backlog yet. Click **Submit Request** above to add the first one.")
         else:
-            st.warning(
-                f"Couldn't find a request with ID `{_requested_id}` — "
-                "showing the full backlog below."
-            )
+            if unassigned:
+                st.markdown(f"#### 🔓 Unassigned ({len(unassigned)})")
+                for entry in unassigned:
+                    _render_intake_card(entry, allow_claim=True, allow_done=False)
+            if in_progress:
+                st.markdown(f"#### 🛠️ In Progress ({len(in_progress)})")
+                for entry in in_progress:
+                    _render_intake_card(entry, allow_claim=False, allow_done=True)
 
-    _focus_id = str(_focus_entry.get("ID")) if _focus_entry else None
-    unassigned = [r for r in intake
-                  if (r.get("Status") or "Unassigned") == "Unassigned"
-                  and str(r.get("ID")) != _focus_id]
-    in_progress = [r for r in intake
-                   if r.get("Status") == "In Progress"
-                   and str(r.get("ID")) != _focus_id]
+    # ---- RIGHT: bug reports + change requests (Megan-only) ----
+    with home_cols[1]:
+        st.markdown("### 🐛 Bug Reports & Change Requests")
+        st.caption("Submitted via the sidebar. Megan triages and replies to the submitter by email.")
+        bugs = _read_bugs()
+        active_bugs = [b for b in bugs if (b.get("Status") or "Open") in ("Open", "Needs Info")]
+        resolved_bugs = [b for b in bugs if (b.get("Status") or "") == "Fixed"]
 
-    if not intake:
-        st.info("No requests in the backlog yet. Click **Submit Request** above to add the first one.")
-    else:
-        if unassigned:
-            st.markdown(f"#### 🔓 Unassigned ({len(unassigned)})")
-            for entry in unassigned:
-                _render_intake_card(entry, allow_claim=True, allow_done=False)
-        if in_progress:
-            st.markdown(f"#### 🛠️ In Progress ({len(in_progress)})")
-            for entry in in_progress:
-                _render_intake_card(entry, allow_claim=False, allow_done=True)
+        if not active_bugs:
+            st.info("No open bugs or change requests.")
+        else:
+            for entry in active_bugs:
+                _render_bug_card(entry)
+
+        if resolved_bugs:
+            with st.expander(f"✅ Recently Fixed ({len(resolved_bugs)})"):
+                for entry in resolved_bugs[:10]:
+                    _render_bug_card(entry)
 
 
 # --------------------------------------------------------------------------
@@ -2390,7 +2555,7 @@ else:  # st.session_state.view == "user"
 def _show_suggest_dialog():
     st.caption(
         "Found a bug or want a tweak to something that already exists? "
-        "Drop the details here — Megan reviews and works with Claude to fix.\n\n"
+        "Drop the details here — Megan reviews and follows up by email.\n\n"
         "**Need a brand-new report automated?** Use **\"Submit a New Automation Request\"** on the home page instead."
     )
     with st.form("suggestion_form", clear_on_submit=True):
@@ -2402,6 +2567,11 @@ def _show_suggest_dialog():
             )
             report_name = st.text_input("Report name", placeholder="e.g. 'OPT Focus Report'")
             requester = st.text_input("Your name", value=st.session_state.get("user", "") or "")
+            requester_email = st.text_input(
+                "Your email",
+                placeholder="you@example.com",
+                help="Megan will reply here when the bug is fixed or if she needs more info.",
+            )
         with cols[1]:
             link = st.text_input("Sheet link", placeholder="https://…  (paste 'n/a' if none)")
             loom = st.text_input("Loom", placeholder="https://loom.com/…  (paste 'n/a' if none)")
@@ -2423,6 +2593,7 @@ def _show_suggest_dialog():
                 label for label, val in [
                     ("Report name", report_name),
                     ("Your name", requester),
+                    ("Your email", requester_email),
                     ("Sheet link", link),
                     ("Loom", loom),
                     ("Details", details),
@@ -2430,29 +2601,22 @@ def _show_suggest_dialog():
             ]
             if missing:
                 st.error("Please fill in every field — missing: " + ", ".join(missing))
-            elif not REPORT_INTAKE_SHEET_ID:
-                st.warning("Intake Sheet not wired up yet — sending to log only.")
-                st.code(f"""Type: {sugg_type}
-Report: {report_name}
-Requester: {requester}
-Priority: {priority}
-Link: {link}
-Loom: {loom}
-Details: {details}""")
             else:
                 try:
-                    from automations.recruiting_report.fill import _client
-                    sh = _client().open_by_key(REPORT_INTAKE_SHEET_ID)
-                    ws = sh.worksheet(REPORT_INTAKE_TAB)
-                    ws.append_row([
-                        report_name, link, loom, "", "",
-                        sugg_type, requester, priority, details,
-                        dt.datetime.now().isoformat(timespec="minutes"),
-                    ])
-                    st.success("✅ Submitted!")
+                    _add_bug(
+                        title=report_name,
+                        bug_type=sugg_type,
+                        sheet_link=link,
+                        loom_link=loom,
+                        details=details,
+                        submitted_by=requester,
+                        submitter_email=requester_email,
+                        priority=priority,
+                    )
+                    st.success("✅ Submitted! Megan will reply to your email when it's fixed.")
                     st.balloons()
                 except Exception as e:
-                    st.error(f"Couldn't write to intake Sheet: {e}")
+                    st.error(f"Couldn't save the bug report: {e}")
 
 
 if st.session_state.get("show_suggest"):
