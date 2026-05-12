@@ -1722,6 +1722,48 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                     )
 
 
+def _render_completed_intake_card(entry: dict) -> None:
+    """Compact read-only summary of a Done backlog entry."""
+    with st.container(border=True):
+        title = entry.get("Title", "Untitled")
+        assignee = entry.get("Assigned To", "?")
+        submitted_by = entry.get("Submitted By", "?")
+        priority_pill = _priority_pill_html(entry.get("Priority", ""))
+        st.markdown(
+            f"**✅ {title}**"
+            + ("  \n" + priority_pill if priority_pill else "")
+            + f"<br/><span style='color:#777; font-size:0.85em'>"
+            f"Built by <b>{assignee}</b> • Requested by {submitted_by}"
+            f"</span>",
+            unsafe_allow_html=True,
+        )
+        if entry.get("Description"):
+            with st.expander("Project summary"):
+                st.markdown(entry["Description"])
+                if entry.get("Sheet Link"):
+                    st.link_button("📂 Open Sheet", entry["Sheet Link"], use_container_width=True)
+
+
+def _render_completed_bug_card(entry: dict) -> None:
+    """Compact read-only summary of a Fixed bug or change request."""
+    bug_type = entry.get("Type", "")
+    type_emoji = "🐛" if "Bug" in bug_type else "✏️"
+    with st.container(border=True):
+        st.markdown(
+            f"**{type_emoji} {entry.get('Title', 'Untitled')}**  \n"
+            f"<span style='color:#777; font-size:0.85em'>"
+            f"Reported by <b>{entry.get('Submitted By', '?')}</b>"
+            f"</span>",
+            unsafe_allow_html=True,
+        )
+        if entry.get("Resolution Note"):
+            with st.expander("Resolution note"):
+                st.write(entry["Resolution Note"])
+        if entry.get("Details"):
+            with st.expander("Original report"):
+                st.write(entry["Details"])
+
+
 def _render_bug_card(entry: dict) -> None:
     """Condensed card for the right-hand Bug Reports section."""
     bug_id = str(entry.get("ID", ""))
@@ -2523,11 +2565,19 @@ elif st.session_state.view == "backlog":
         key=lambda r: _priority_rank(r.get("Priority", "")),
     )
 
+    completed_intake = sorted(
+        [r for r in intake
+         if r.get("Status") == "Done"
+         and str(r.get("ID")) != _focus_id],
+        key=lambda r: r.get("Assigned At", "") or r.get("Submitted At", ""),
+        reverse=True,
+    )
+
     if not intake:
         st.info("No requests in the backlog yet. Click **Submit a New Request** above to add the first one.")
     else:
         backlog_cols = st.columns(2)
-        # LEFT = In Progress (claimed, actively being worked on)
+        # LEFT = In Progress (claimed, actively being worked on) + Completed history below
         with backlog_cols[0]:
             st.markdown(f"#### 🛠️ In Progress ({len(in_progress)})")
             if in_progress:
@@ -2535,6 +2585,14 @@ elif st.session_state.view == "backlog":
                     _render_intake_card(entry, allow_claim=False, allow_done=True)
             else:
                 st.caption("No projects in progress yet.")
+
+            st.markdown("---")
+            with st.expander(f"✅ Completed Automations ({len(completed_intake)})", expanded=False):
+                if completed_intake:
+                    for entry in completed_intake[:25]:
+                        _render_completed_intake_card(entry)
+                else:
+                    st.caption("Nothing finished yet.")
         # RIGHT = Unassigned (waiting to be claimed)
         with backlog_cols[1]:
             st.markdown(f"#### 🔓 Unassigned ({len(unassigned)})")
@@ -2585,8 +2643,13 @@ elif st.session_state.view == "bugs":
          and str(b.get("ID")) != _focus_bid],
         key=lambda b: _priority_rank(b.get("Priority", "")),
     )
-    resolved_bugs = [b for b in bugs
+    fixed_bugs = [b for b in bugs
+                  if (b.get("Status") or "") == "Fixed"
+                  and "Bug" in (b.get("Type") or "")
+                  and str(b.get("ID")) != _focus_bid]
+    fixed_changes = [b for b in bugs
                      if (b.get("Status") or "") == "Fixed"
+                     and "Change" in (b.get("Type") or "")
                      and str(b.get("ID")) != _focus_bid]
 
     if not in_progress_bugs and not open_bugs and not _focus_bid:
@@ -2594,6 +2657,7 @@ elif st.session_state.view == "bugs":
     else:
         bug_cols = st.columns(2)
         # LEFT = In Progress (Megan has started — or asked for more info)
+        # plus the two completed history sections beneath it.
         with bug_cols[0]:
             st.markdown(f"#### 🛠️ In Progress ({len(in_progress_bugs)})")
             if in_progress_bugs:
@@ -2601,6 +2665,20 @@ elif st.session_state.view == "bugs":
                     _render_bug_card(entry)
             else:
                 st.caption("Nothing in progress.")
+
+            st.markdown("---")
+            with st.expander(f"🐛 Bug Fixes Completed ({len(fixed_bugs)})", expanded=False):
+                if fixed_bugs:
+                    for entry in fixed_bugs[:25]:
+                        _render_completed_bug_card(entry)
+                else:
+                    st.caption("No bugs fixed yet.")
+            with st.expander(f"✏️ Report Updates Completed ({len(fixed_changes)})", expanded=False):
+                if fixed_changes:
+                    for entry in fixed_changes[:25]:
+                        _render_completed_bug_card(entry)
+                else:
+                    st.caption("No report updates completed yet.")
         # RIGHT = Open (untouched / just arrived)
         with bug_cols[1]:
             st.markdown(f"#### 📥 Open ({len(open_bugs)})")
@@ -2609,11 +2687,6 @@ elif st.session_state.view == "bugs":
                     _render_bug_card(entry)
             else:
                 st.caption("Nothing new in the queue.")
-
-    if resolved_bugs:
-        with st.expander(f"✅ Recently Fixed ({len(resolved_bugs)})"):
-            for entry in resolved_bugs[:10]:
-                _render_bug_card(entry)
 
 
 # --------------------------------------------------------------------------
