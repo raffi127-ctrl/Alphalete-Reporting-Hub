@@ -69,15 +69,19 @@ AUTOMATED_REPORTS = [
             "weekdays": [0],  # Monday
             "time": "8:00 AM",
             "estimated_minutes": 15,
-            "human_prep": [
-                "Launch Chrome with the recruiting profile (see sidebar command)",
-                "Log into AppStream as **rhidalgo** (broader account)",
-                "Click **▶ Run This Week** below — fills ~43 offices",
-                "When done: log out of rhidalgo, log into **rcaptain**",
-                "Click **▶ Backfill Last 10 Weeks** — fills the remaining 8 offices",
-                "Spot-check the Sheet — verify 1-2 random office tabs look right",
-            ],
         },
+        "checklist": [
+            {"text": "Launch Chrome with the recruiting profile",
+             "action": "launch_chrome"},
+            {"text": "Log into AppStream as **rhidalgo** (broader account)",
+             "link": "https://applicantstream.com/", "link_label": "🔗 Open AppStream"},
+            {"text": "After clicking Run, the script will fill ~43 offices accessible from this account",
+             "info": True},
+            {"text": "When done: log out of rhidalgo, log into **rcaptain**, then click **Backfill Last 10 Weeks** below",
+             "info": True},
+            {"text": "Spot-check 1–2 random office tabs in the Sheet",
+             "link": SHEET_URL, "link_label": "📂 Open Sheet"},
+        ],
         "actions": [
             {
                 "label": "Run This Week",
@@ -117,14 +121,17 @@ AUTOMATED_REPORTS = [
             "weekdays": [1, 2, 3, 4, 5],  # Tue–Sat
             "time": "8:00 AM",
             "estimated_minutes": 6,
-            "human_prep": [
-                "Launch Chrome with the recruiting profile (see sidebar command)",
-                "Log into AppStream as **rhidalgo** (broader account)",
-                "Click **▶ Run Daily Focus** below — fills all 17 ICDs",
-                "If any ICD shows 'not accessible': switch to the other AppStream login and click again",
-                "Spot-check the Sheet — verify a couple ICD sections look right",
-            ],
         },
+        "checklist": [
+            {"text": "Launch Chrome with the recruiting profile",
+             "action": "launch_chrome"},
+            {"text": "Log into AppStream as **rhidalgo** (broader account)",
+             "link": "https://applicantstream.com/", "link_label": "🔗 Open AppStream"},
+            {"text": "If any ICD shows 'not accessible' after the run: switch to the other AppStream login and click Run again",
+             "info": True},
+            {"text": "Spot-check a couple ICD sections in the Sheet after the run",
+             "link": SHEET_URL, "link_label": "📂 Open Sheet"},
+        ],
         "actions": [
             {
                 "label": "Run Daily Focus",
@@ -178,6 +185,22 @@ def _check_chrome_running() -> bool:
         return True
     except OSError:
         return False
+
+
+def _launch_chrome() -> tuple[bool, str]:
+    """Launch Chrome with the remote-debugging-port for AS scraping.
+    Returns (success, message)."""
+    import os
+    user_dir = os.path.expanduser("~/.config/recruiting-report/chrome-attach")
+    try:
+        subprocess.Popen([
+            "open", "-na", "Google Chrome", "--args",
+            "--remote-debugging-port=9222",
+            f"--user-data-dir={user_dir}",
+        ])
+        return True, "Chrome is launching — check for a new window, then log into AppStream."
+    except Exception as e:
+        return False, f"Couldn't launch Chrome: {e}"
 
 
 def _list_recent_logs(n: int = 6) -> list[Path]:
@@ -252,6 +275,164 @@ def _read_runs(days: int = 7) -> list[dict]:
             continue
     out.sort(key=lambda x: x["_dt"], reverse=True)
     return out
+
+
+def _was_run_successfully_today(report_id: str, today: dt.date | None = None) -> bool:
+    """True if a successful run of this report was logged today."""
+    today = today or dt.date.today()
+    for r in _read_runs(2):
+        if r.get("report_id") == report_id and r.get("status") == "success" and r["_dt"].date() == today:
+            return True
+    return False
+
+
+def _execute_action(report: dict, action: dict, picked, chrome_ok: bool) -> None:
+    """Run one action: stream output, log the run, balloons on success."""
+    if not chrome_ok:
+        st.error("⚠️ Chrome isn't running — launch it from the sidebar first.")
+        return
+    if action.get("needs_text") and not picked:
+        st.error(f"⚠️ Please enter the {action.get('text_label', 'input')} first.")
+        return
+    if action.get("needs_date") or action.get("needs_text"):
+        args = action["args_fn"](picked)
+    else:
+        args = action["args_fn"]()
+    cmd = [VENV_PY, "-m", action["module"]] + args
+    st.info(f"`{' '.join(shlex.quote(c) for c in cmd)}`")
+    with st.status("Running…", expanded=True) as s:
+        box = st.empty()
+        rc = _stream_subprocess(cmd, box)
+        if rc == 0:
+            s.update(label="✅ Done!", state="complete")
+            st.balloons()
+        else:
+            s.update(label=f"❌ Failed (exit {rc})", state="error")
+        _log_run(
+            report_id=report["id"],
+            report_name=report["name"],
+            user=st.session_state.get("user", "unknown"),
+            status="success" if rc == 0 else "failed",
+        )
+
+
+def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
+    """One unified card per report: header, gated checklist, primary run button,
+    secondary actions inside an expander."""
+    is_due = _is_due_today(report, today)
+    sched = report.get("schedule", {})
+    checklist = report.get("checklist", [])
+    actions = report["actions"]
+    primary = next((a for a in actions if a.get("primary")), actions[0])
+    secondary = [a for a in actions if a is not primary]
+    ran_today = _was_run_successfully_today(report["id"], today)
+
+    with st.container(border=True):
+        st.markdown('<div class="report-card-marker"></div>', unsafe_allow_html=True)
+        # Header row
+        header_cols = st.columns([5, 2])
+        with header_cols[0]:
+            pills = ""
+            if ran_today:
+                pills += "<span class='pill pill-ok'>✅ DONE TODAY</span>"
+            elif is_due:
+                pills += "<span class='pill pill-due'>DUE TODAY</span>"
+            if sched:
+                pills += f"<span class='pill pill-info'>{sched.get('time', '')} • ~{sched.get('estimated_minutes', '?')} min</span>"
+            if pills:
+                st.markdown(pills, unsafe_allow_html=True)
+            st.markdown(f"### {report['emoji']} {report['name']}")
+            st.caption(report["description"])
+        with header_cols[1]:
+            st.link_button("📂 Open Sheet", report["sheet_url"], use_container_width=True)
+
+        # Checklist (gates the primary run button)
+        all_checked = True
+        if checklist:
+            with st.expander("📋 Pre-flight checklist", expanded=(is_due and not ran_today)):
+                for idx, step in enumerate(checklist):
+                    if step.get("info"):
+                        st.info(step["text"])
+                        continue
+                    cols = st.columns([5, 3])
+                    with cols[0]:
+                        ck_key = f"check_{report['id']}_{idx}"
+                        ck = st.checkbox(step["text"], key=ck_key)
+                        if not ck:
+                            all_checked = False
+                    with cols[1]:
+                        if step.get("link"):
+                            st.link_button(step.get("link_label", "Open"), step["link"], use_container_width=True)
+                        elif step.get("action") == "launch_chrome":
+                            if st.button("🚀 Launch Chrome", key=f"chrome_{report['id']}_{idx}", use_container_width=True):
+                                ok, msg = _launch_chrome()
+                                (st.success if ok else st.error)(msg)
+
+        # Primary run button — gated by checklist + Chrome
+        run_disabled = (not all_checked) or (not chrome_ok)
+        run_help = None
+        if not chrome_ok:
+            run_help = "Chrome isn't running — launch it from the sidebar first."
+        elif not all_checked:
+            run_help = "Complete the checklist first."
+
+        # Picker for date/text input (if primary action needs one)
+        picked = None
+        if primary.get("needs_date"):
+            picked = st.date_input("WE Sunday", key=f"date_{report['id']}_{primary['label']}", value=_last_completed_we_sunday())
+        elif primary.get("needs_text"):
+            picked = st.text_input(
+                primary.get("text_label", "Input"),
+                key=f"text_{report['id']}_{primary['label']}",
+                placeholder=primary.get("text_label", ""),
+            )
+
+        if st.button(
+            f"{primary.get('icon', '▶')} {primary['label']}",
+            key=f"prim_{report['id']}",
+            type="primary",
+            use_container_width=True,
+            disabled=run_disabled,
+            help=run_help,
+        ):
+            _execute_action(report, primary, picked, chrome_ok)
+
+        # Secondary actions
+        if secondary:
+            with st.expander("⚙️ More actions"):
+                for action in secondary:
+                    cols = st.columns([4, 3, 2])
+                    with cols[0]:
+                        st.markdown(f"**{action.get('icon', '')} {action['label']}**")
+                        if action.get("help"):
+                            st.caption(action["help"])
+                    with cols[1]:
+                        if action.get("needs_date"):
+                            sec_picked = st.date_input(
+                                "WE Sunday",
+                                key=f"sec_date_{report['id']}_{action['label']}",
+                                value=_last_completed_we_sunday(),
+                                label_visibility="collapsed",
+                            )
+                        elif action.get("needs_text"):
+                            sec_picked = st.text_input(
+                                action.get("text_label", "Input"),
+                                key=f"sec_text_{report['id']}_{action['label']}",
+                                label_visibility="collapsed",
+                                placeholder=action.get("text_label", ""),
+                            )
+                        else:
+                            sec_picked = None
+                            st.write("")
+                    with cols[2]:
+                        if st.button(
+                            f"{action.get('icon', '▶')} Run",
+                            key=f"sec_{report['id']}_{action['label']}",
+                            use_container_width=True,
+                            disabled=not chrome_ok,
+                            help=None if chrome_ok else "Chrome isn't running",
+                        ):
+                            _execute_action(report, action, sec_picked, chrome_ok)
 
 
 def _missed_runs(reports: list[dict], days: int = 7, today: dt.date | None = None) -> list[dict]:
@@ -402,33 +583,46 @@ with st.sidebar:
     if chrome_ok:
         st.success("Chrome is connected ✨")
     else:
-        st.error("Chrome is NOT running")
-        with st.expander("How to launch Chrome", expanded=True):
-            st.markdown("Run this in **Terminal**:")
-            st.code(
-                'open -na "Google Chrome" --args '
-                '--remote-debugging-port=9222 '
-                '--user-data-dir="$HOME/.config/recruiting-report/chrome-attach"',
-                language="bash",
-            )
-            st.markdown("Then **log into AppStream** in the new Chrome window.")
-            st.markdown("**If Chrome won't launch:**")
+        st.warning("Chrome not running")
+        if st.button("🚀 Launch Chrome", use_container_width=True, key="sidebar_launch_chrome"):
+            ok, msg = _launch_chrome()
+            (st.success if ok else st.error)(msg)
+        with st.expander("Chrome troubleshooting"):
+            st.markdown("**If Chrome won't launch, run this in Terminal:**")
             st.code("rm ~/.config/recruiting-report/chrome-attach/Singleton*", language="bash")
 
+    # Remaining tasks today (user view only)
+    if st.session_state.view == "user" and st.session_state.user:
+        st.markdown("---")
+        st.markdown("### 📋 Today's Tasks")
+        my_reports = [r for r in AUTOMATED_REPORTS if st.session_state.user in r.get("assignees", [])]
+        due_today_for_me = [r for r in my_reports if _is_due_today(r, today)]
+        if not due_today_for_me:
+            st.caption("☕ Nothing due today.")
+        else:
+            for r in due_today_for_me:
+                done = _was_run_successfully_today(r["id"], today)
+                if done:
+                    st.markdown(f"<div style='padding: 0.4rem 0; color: #1F7A3D'>✅ <s>{r['emoji']} {r['name']}</s></div>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"<div style='padding: 0.4rem 0'>☐ {r['emoji']} <b>{r['name']}</b></div>", unsafe_allow_html=True)
+
+    # Bottom-of-sidebar: suggest button (small, red)
     st.markdown("---")
-    st.markdown("### 📜 Recent Runs")
-    logs = _list_recent_logs(6)
-    if not logs:
-        st.caption("No runs yet.")
-    for p in logs:
-        mtime = dt.datetime.fromtimestamp(p.stat().st_mtime)
-        with st.expander(f"{p.name}", expanded=False):
-            st.caption(mtime.strftime("%a %b %d, %I:%M %p"))
-            try:
-                tail = p.read_text().splitlines()[-25:]
-                st.code("\n".join(tail), language="log")
-            except Exception:
-                st.warning("(couldn't read log)")
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stSidebar"] button[kind="secondary"]:has(div:contains("Suggest")) {
+            background: #C92020 !important;
+            color: white !important;
+            border: none !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    if st.button("⚠️ Suggest a Change / Bug", use_container_width=True, key="open_suggest_btn"):
+        st.session_state.show_suggest = True
 
 
 # --------------------------------------------------------------------------
@@ -570,190 +764,76 @@ else:  # st.session_state.view == "user"
     """, unsafe_allow_html=True)
 
     user_reports = [r for r in AUTOMATED_REPORTS if user_name in r.get("assignees", [])]
-    due_today = [r for r in user_reports if _is_due_today(r, today)]
 
-    # ----- Today's Schedule -----
-    st.markdown("## 📋 Today's Schedule")
-
-    if due_today:
-        for r in due_today:
-            sched = r["schedule"]
-            with st.container(border=True):
-                cols = st.columns([1, 8])
-                with cols[0]:
-                    st.markdown(f"<div style='font-size: 3rem; text-align:center'>{r['emoji']}</div>",
-                               unsafe_allow_html=True)
-                with cols[1]:
-                    st.markdown(
-                        f"<span class='pill pill-due'>DUE TODAY</span>"
-                        f"<span class='pill pill-info'>{sched['time']} • ~{sched['estimated_minutes']} min</span>",
-                        unsafe_allow_html=True,
-                    )
-                    st.markdown(f"### {r['name']}")
-                    st.caption(r["description"])
-
-                with st.expander("📝 Your steps for today", expanded=True):
-                    for i, step in enumerate(sched["human_prep"], start=1):
-                        st.markdown(f"**{i}.** {step}")
-    elif user_reports:
-        nexts = []
-        for r in user_reports:
-            nd = _next_due(r, today)
-            if nd:
-                nexts.append((nd, r))
-        nexts.sort(key=lambda x: x[0])
-        if nexts:
-            nd, r = nexts[0]
-            delta = (nd - today).days
-            plural = "s" if delta != 1 else ""
-            st.info(
-                f"☕ Nothing on your plate today. "
-                f"Next up: **{r['name']}** in **{delta} day{plural}** ({WEEKDAY_NAMES[nd.weekday()]} {nd.strftime('%b %d')})."
-            )
-    else:
+    if not user_reports:
         st.info(f"No reports assigned to {user_name} yet. (Anyone can still run anything from the team page.)")
-
-    # ----- All this user's reports (run buttons) -----
-    if user_reports:
+    else:
         st.markdown("## 🚀 Your Reports")
-
         for report in user_reports:
-            with st.container(border=True):
-                st.markdown('<div class="report-card-marker"></div>', unsafe_allow_html=True)
-                cols = st.columns([5, 2])
-                with cols[0]:
-                    st.markdown(f"### {report['emoji']} {report['name']}")
-                    st.caption(report["description"])
-                with cols[1]:
-                    st.link_button("📂 Open Sheet", report["sheet_url"], use_container_width=True)
-
-                # Action buttons
-                for action in report["actions"]:
-                    cols = st.columns([4, 2, 2])
-                    with cols[0]:
-                        st.markdown(f"**{action.get('icon', '')} {action['label']}**")
-                        if action.get("help"):
-                            st.caption(action["help"])
-                    with cols[1]:
-                        if action.get("needs_date"):
-                            picked = st.date_input(
-                                "WE Sunday",
-                                key=f"date_{report['id']}_{action['label']}",
-                                value=_last_completed_we_sunday(),
-                                label_visibility="collapsed",
-                            )
-                        elif action.get("needs_text"):
-                            picked = st.text_input(
-                                action.get("text_label", "Input"),
-                                key=f"text_{report['id']}_{action['label']}",
-                                label_visibility="collapsed",
-                                placeholder=action.get("text_label", ""),
-                            )
-                        else:
-                            picked = None
-                            st.write("")
-                    with cols[2]:
-                        btn_kind = "primary" if action.get("primary") else "secondary"
-                        if st.button(
-                            f"{action.get('icon', '▶')} Run",
-                            key=f"btn_{report['id']}_{action['label']}",
-                            type=btn_kind,
-                            use_container_width=True,
-                        ):
-                            if not chrome_ok:
-                                st.error("⚠️ Chrome isn't running. Check the sidebar for the launch command.")
-                            elif action.get("needs_text") and not picked:
-                                st.error(f"⚠️ Please enter the {action.get('text_label', 'input')} first.")
-                            else:
-                                if action.get("needs_date") or action.get("needs_text"):
-                                    args = action["args_fn"](picked)
-                                else:
-                                    args = action["args_fn"]()
-                                cmd = [VENV_PY, "-m", action["module"]] + args
-                                st.info(f"`{' '.join(shlex.quote(c) for c in cmd)}`")
-                                with st.status("Running…", expanded=True) as s:
-                                    box = st.empty()
-                                    rc = _stream_subprocess(cmd, box)
-                                    if rc == 0:
-                                        s.update(label="✅ Done!", state="complete")
-                                        st.balloons()
-                                    else:
-                                        s.update(label=f"❌ Failed (exit {rc})", state="error")
-                                    _log_run(
-                                        report_id=report["id"],
-                                        report_name=report["name"],
-                                        user=st.session_state.get("user", "unknown"),
-                                        status="success" if rc == 0 else "failed",
-                                    )
+            _render_report_card(report, today, chrome_ok)
 
 
 # --------------------------------------------------------------------------
-# Request a new automation OR a change to an existing one
+# Suggest dialog (triggered from sidebar red button)
 # --------------------------------------------------------------------------
 
-st.markdown("## 💡 Suggest an Automation or Change")
-st.caption(
-    "See a report we should automate, or want to tweak an existing one? "
-    "Drop the details here — Megan reviews and works with Claude to build/update."
-)
-
-with st.form("suggestion_form", clear_on_submit=True):
-    cols = st.columns(2)
-    with cols[0]:
-        sugg_type = st.selectbox(
-            "What kind of suggestion?",
-            ["New automation request", "Change to an existing report", "Bug / something broke"],
-        )
-        report_name = st.text_input("Report name", placeholder="e.g. 'OPT Focus Report'")
-        requester = st.text_input("Your name", placeholder="Eve / Maud / …")
-    with cols[1]:
-        link = st.text_input("Link to the report (Sheet URL)", placeholder="https://…")
-        loom = st.text_input("Loom video showing how it's done manually (optional)", placeholder="https://loom.com/…")
-        priority = st.select_slider("Priority", options=["Low", "Medium", "High", "Blocking"], value="Medium")
-    details = st.text_area(
-        "Details — what should it do? what should change?",
-        height=120,
-        placeholder="Describe the goal, the source data, and what needs to happen weekly/daily.",
+@st.dialog("💡 Suggest an Automation or Report a Bug", width="large")
+def _show_suggest_dialog():
+    st.caption(
+        "See a report we should automate, or hit a bug? "
+        "Drop the details here — Megan reviews and works with Claude to build/fix."
     )
-    submitted = st.form_submit_button("📨 Submit Request", type="primary", use_container_width=True)
-
-    if submitted:
-        if not (report_name and requester and details):
-            st.error("Please fill in at least Report Name, Your Name, and Details.")
-        elif not REPORT_INTAKE_SHEET_ID:
-            st.warning(
-                "Intake Sheet not yet wired up. Megan: paste your "
-                "REPORT AUTOMATIONS - TO DO Sheet ID into `REPORT_INTAKE_SHEET_ID` "
-                "in `automations/dashboard.py` and re-launch."
+    with st.form("suggestion_form", clear_on_submit=True):
+        cols = st.columns(2)
+        with cols[0]:
+            sugg_type = st.selectbox(
+                "What kind?",
+                ["Bug / something broke", "Change to an existing report", "New automation request"],
             )
-            st.code(f"""Type: {sugg_type}
+            report_name = st.text_input("Report name", placeholder="e.g. 'OPT Focus Report'")
+            requester = st.text_input("Your name", value=st.session_state.get("user", "") or "")
+        with cols[1]:
+            link = st.text_input("Sheet link (optional)", placeholder="https://…")
+            loom = st.text_input("Loom (optional)", placeholder="https://loom.com/…")
+            priority = st.select_slider("Priority", options=["Low", "Medium", "High", "Blocking"], value="Medium")
+        details = st.text_area(
+            "Details — what should it do? what's broken?",
+            height=140,
+            placeholder="Describe the goal, the source data, what's wrong, etc.",
+        )
+        submitted = st.form_submit_button("📨 Submit", type="primary", use_container_width=True)
+
+        if submitted:
+            if not (report_name and requester and details):
+                st.error("Please fill in Report Name, Your Name, and Details.")
+            elif not REPORT_INTAKE_SHEET_ID:
+                st.warning("Intake Sheet not wired up yet — sending to log only.")
+                st.code(f"""Type: {sugg_type}
 Report: {report_name}
 Requester: {requester}
 Priority: {priority}
 Link: {link}
 Loom: {loom}
 Details: {details}""")
-        else:
-            try:
-                from automations.recruiting_report.fill import _client
-                sh = _client().open_by_key(REPORT_INTAKE_SHEET_ID)
-                ws = sh.worksheet(REPORT_INTAKE_TAB)
-                ws.append_row([
-                    report_name,
-                    link,
-                    loom,
-                    "",  # Who Is Working On — admin to fill
-                    "",  # Runbook link — admin to fill
-                    sugg_type,
-                    requester,
-                    priority,
-                    details,
-                    dt.datetime.now().isoformat(timespec="minutes"),
-                ])
-                st.success("✅ Submitted! Megan will see this on the next review.")
-                st.balloons()
-            except Exception as e:
-                st.error(f"Couldn't write to intake Sheet: {e}")
+            else:
+                try:
+                    from automations.recruiting_report.fill import _client
+                    sh = _client().open_by_key(REPORT_INTAKE_SHEET_ID)
+                    ws = sh.worksheet(REPORT_INTAKE_TAB)
+                    ws.append_row([
+                        report_name, link, loom, "", "",
+                        sugg_type, requester, priority, details,
+                        dt.datetime.now().isoformat(timespec="minutes"),
+                    ])
+                    st.success("✅ Submitted!")
+                    st.balloons()
+                except Exception as e:
+                    st.error(f"Couldn't write to intake Sheet: {e}")
+
+
+if st.session_state.get("show_suggest"):
+    st.session_state.show_suggest = False
+    _show_suggest_dialog()
 
 
 # --------------------------------------------------------------------------
