@@ -9,6 +9,7 @@ Run with:
 from __future__ import annotations
 
 import datetime as dt
+import json
 import shlex
 import subprocess
 from pathlib import Path
@@ -24,7 +25,19 @@ from automations.recruiting_report import fill as _fill  # noqa: E402
 
 VENV_PY = str(WORKSPACE / ".venv" / "bin" / "python")
 LOG_DIR = WORKSPACE / "output" / "logs"
+RUNS_LOG = LOG_DIR / "runs.jsonl"
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{_fill.SPREADSHEET_ID}/edit"
+
+# Team members. Each is a dict so we can add avatars/colors easily.
+# Order = order shown on home page.
+MEMBERS = [
+    {"name": "Megan",   "emoji": "👩‍💼", "color": "#667eea"},
+    {"name": "Maud",    "emoji": "🌟",        "color": "#FF6B6B"},
+    {"name": "Eve",     "emoji": "🌷",        "color": "#4ECDC4"},
+    {"name": "Raf",     "emoji": "🚀",        "color": "#F4A261"},
+    {"name": "JD",      "emoji": "⚡",        "color": "#9B59B6"},
+    {"name": "Twaddle", "emoji": "🦊",        "color": "#2A9D8F"},
+]
 
 # --------------------------------------------------------------------------
 # Configuration — Megan edits this section as new automations come online
@@ -50,6 +63,7 @@ AUTOMATED_REPORTS = [
         "color": "#FF6B6B",
         "description": "Pulls funnel metrics from ApplicantStream, fills the mass-report Sheet across ~52 ICD office tabs.",
         "sheet_url": SHEET_URL,
+        "assignees": ["Eve"],   # primary owner; anyone can still run it
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],  # Monday
@@ -97,6 +111,7 @@ AUTOMATED_REPORTS = [
         "color": "#4ECDC4",
         "description": "Per-ICD daily breakdown (Mon–Fri current week, last week, plus next-week scheduled). Auto-fills the 'Daily Focus Report' tab.",
         "sheet_url": SHEET_URL,
+        "assignees": ["Maud"],
         "schedule": {
             "frequency": "daily",
             "weekdays": [1, 2, 3, 4, 5],  # Tue–Sat
@@ -193,6 +208,73 @@ def _next_due(report: dict, today: dt.date):
     return today + dt.timedelta(days=min(deltas))
 
 
+def _was_due_on(report: dict, day: dt.date) -> bool:
+    """Was this report scheduled to run on `day`?"""
+    sched = report.get("schedule")
+    if not sched:
+        return False
+    if sched.get("frequency") == "daily":
+        return True
+    return day.weekday() in sched.get("weekdays", [])
+
+
+def _log_run(report_id: str, report_name: str, user: str, status: str) -> None:
+    """Append a single run record to runs.jsonl."""
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "ts": dt.datetime.now().isoformat(timespec="seconds"),
+        "report_id": report_id,
+        "report_name": report_name,
+        "user": user,
+        "status": status,  # "success" | "failed"
+    }
+    with RUNS_LOG.open("a") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
+def _read_runs(days: int = 7) -> list[dict]:
+    """Read runs from the last `days` days, newest first."""
+    if not RUNS_LOG.exists():
+        return []
+    cutoff = dt.datetime.now() - dt.timedelta(days=days)
+    out = []
+    for line in RUNS_LOG.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            e = json.loads(line)
+            ts = dt.datetime.fromisoformat(e["ts"])
+            if ts >= cutoff:
+                e["_dt"] = ts
+                out.append(e)
+        except Exception:
+            continue
+    out.sort(key=lambda x: x["_dt"], reverse=True)
+    return out
+
+
+def _missed_runs(reports: list[dict], days: int = 7, today: dt.date | None = None) -> list[dict]:
+    """For each report, find days in the past `days` where it was scheduled
+    but no successful run was logged. Returns list of {report, missed_date}."""
+    today = today or dt.date.today()
+    runs = _read_runs(days + 1)
+    success_by_report: dict[str, set] = {}
+    for r in runs:
+        if r.get("status") == "success":
+            success_by_report.setdefault(r["report_id"], set()).add(r["_dt"].date())
+    missed = []
+    for report in reports:
+        sched = report.get("schedule")
+        if not sched:
+            continue
+        for offset in range(1, days + 1):  # exclude today (still has time left)
+            day = today - dt.timedelta(days=offset)
+            if _was_due_on(report, day) and day not in success_by_report.get(report["id"], set()):
+                missed.append({"report": report, "missed_date": day})
+    return sorted(missed, key=lambda m: m["missed_date"], reverse=True)
+
+
 # --------------------------------------------------------------------------
 # Page setup + custom theme
 # --------------------------------------------------------------------------
@@ -259,27 +341,44 @@ st.markdown("""
 
 
 # --------------------------------------------------------------------------
-# Hero header
+# Session state init + view router
 # --------------------------------------------------------------------------
+
+if "view" not in st.session_state:
+    st.session_state.view = "home"   # "home" | "user" | "overview"
+if "user" not in st.session_state:
+    st.session_state.user = None     # name from MEMBERS once selected
 
 today = dt.date.today()
 weekday_name = WEEKDAY_NAMES[today.weekday()]
 hour = dt.datetime.now().hour
 greeting = "Good morning" if hour < 12 else ("Good afternoon" if hour < 17 else "Good evening")
 
-st.markdown(f"""
-<div class="hero">
-    <h1>📊 {greeting}, friend!</h1>
-    <p>Today is <b>{weekday_name}, {today.strftime("%B %d")}</b>. Your report dashboard is ready.</p>
-</div>
-""", unsafe_allow_html=True)
+
+def _go_home():
+    st.session_state.view = "home"
+    st.session_state.user = None
+
+
+def _go_user(name: str):
+    st.session_state.user = name
+    st.session_state.view = "user"
+
+
+def _go_overview():
+    st.session_state.view = "overview"
 
 
 # --------------------------------------------------------------------------
-# Sidebar: system status + recent logs
+# Sidebar: system status + recent logs (always visible)
 # --------------------------------------------------------------------------
 
 with st.sidebar:
+    if st.session_state.view != "home":
+        if st.button("🏠 Back to Home", use_container_width=True):
+            _go_home()
+            st.rerun()
+        st.markdown("---")
     st.markdown("### 🛠️ System Status")
     chrome_ok = _check_chrome_running()
     if chrome_ok:
@@ -315,120 +414,256 @@ with st.sidebar:
 
 
 # --------------------------------------------------------------------------
-# Today's Schedule
+# HOME VIEW — name picker + Alphalete Overview button
 # --------------------------------------------------------------------------
 
-due_today = [r for r in AUTOMATED_REPORTS if _is_due_today(r, today)]
+if st.session_state.view == "home":
+    st.markdown(f"""
+    <div class="hero">
+        <h1>📊 Welcome to Alphalete Reports</h1>
+        <p>Today is <b>{weekday_name}, {today.strftime("%B %d")}</b>. Pick your name to see today's reports — or view the team overview.</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-st.markdown("## 📅 Today's Schedule")
+    # Big Alphalete Overview button at top
+    if st.button(
+        "📊  Alphalete Marketing — 7-Day Overview",
+        use_container_width=True,
+        type="primary",
+        key="home_overview_btn",
+    ):
+        _go_overview()
+        st.rerun()
 
-if due_today:
-    for r in due_today:
-        sched = r["schedule"]
-        with st.container(border=True):
-            cols = st.columns([1, 8])
-            with cols[0]:
-                st.markdown(f"<div style='font-size: 3rem; text-align:center'>{r['emoji']}</div>",
-                           unsafe_allow_html=True)
-            with cols[1]:
-                st.markdown(
-                    f"<span class='pill pill-due'>DUE TODAY</span>"
-                    f"<span class='pill pill-info'>{sched['time']} • ~{sched['estimated_minutes']} min</span>",
-                    unsafe_allow_html=True,
-                )
-                st.markdown(f"### {r['name']}")
-                st.caption(r["description"])
+    st.markdown("### 👥 Who are you?")
 
-            with st.expander("📝 Your steps for today", expanded=True):
-                for i, step in enumerate(sched["human_prep"], start=1):
-                    st.markdown(f"**{i}.** {step}")
-else:
-    nexts = []
-    for r in AUTOMATED_REPORTS:
-        nd = _next_due(r, today)
-        if nd:
-            nexts.append((nd, r))
-    nexts.sort(key=lambda x: x[0])
-    if nexts:
-        nd, r = nexts[0]
-        delta = (nd - today).days
-        plural = "s" if delta != 1 else ""
-        st.info(
-            f"☕ Nothing on your plate today. "
-            f"Next up: **{r['name']}** in **{delta} day{plural}** ({WEEKDAY_NAMES[nd.weekday()]} {nd.strftime('%b %d')})."
-        )
-    else:
-        st.info("No scheduled reports yet.")
-
-
-# --------------------------------------------------------------------------
-# Automated Reports (run buttons)
-# --------------------------------------------------------------------------
-
-st.markdown("## 🚀 Run a Report")
-
-for report in AUTOMATED_REPORTS:
-    with st.container(border=True):
-        st.markdown('<div class="report-card-marker"></div>', unsafe_allow_html=True)
-        cols = st.columns([5, 2])
-        with cols[0]:
-            st.markdown(f"### {report['emoji']} {report['name']}")
-            st.caption(report["description"])
-        with cols[1]:
-            st.link_button("📂 Open Sheet", report["sheet_url"], use_container_width=True)
-
-        # Action buttons
-        for action in report["actions"]:
-            cols = st.columns([4, 2, 2])
-            with cols[0]:
-                st.markdown(f"**{action.get('icon', '')} {action['label']}**")
-                if action.get("help"):
-                    st.caption(action["help"])
-            with cols[1]:
-                if action.get("needs_date"):
-                    picked = st.date_input(
-                        "WE Sunday",
-                        key=f"date_{report['id']}_{action['label']}",
-                        value=_last_completed_we_sunday(),
-                        label_visibility="collapsed",
+    # Member cards in a 3-column grid (2 rows x 3 cols for 6 members)
+    rows = [MEMBERS[i:i + 3] for i in range(0, len(MEMBERS), 3)]
+    for row in rows:
+        cols = st.columns(len(row))
+        for col, member in zip(cols, row):
+            with col:
+                # Count today's reports for this member
+                my_reports = [r for r in AUTOMATED_REPORTS if member["name"] in r.get("assignees", [])]
+                due_count = sum(1 for r in my_reports if _is_due_today(r, today))
+                with st.container(border=True):
+                    st.markdown(
+                        f"<div style='text-align:center; font-size: 3.5rem; line-height: 1.0; margin-bottom: 0.4rem'>{member['emoji']}</div>",
+                        unsafe_allow_html=True,
                     )
-                elif action.get("needs_text"):
-                    picked = st.text_input(
-                        action.get("text_label", "Input"),
-                        key=f"text_{report['id']}_{action['label']}",
-                        label_visibility="collapsed",
-                        placeholder=action.get("text_label", ""),
+                    st.markdown(
+                        f"<div style='text-align:center; font-size: 1.3rem; font-weight: 700; margin-bottom: 0.3rem'>{member['name']}</div>",
+                        unsafe_allow_html=True,
                     )
-                else:
-                    picked = None
-                    st.write("")
-            with cols[2]:
-                btn_kind = "primary" if action.get("primary") else "secondary"
-                if st.button(
-                    f"{action.get('icon', '▶')} Run",
-                    key=f"btn_{report['id']}_{action['label']}",
-                    type=btn_kind,
-                    use_container_width=True,
-                ):
-                    if not chrome_ok:
-                        st.error("⚠️ Chrome isn't running. Check the sidebar for the launch command.")
-                    elif action.get("needs_text") and not picked:
-                        st.error(f"⚠️ Please enter the {action.get('text_label', 'input')} first.")
+                    if due_count > 0:
+                        st.markdown(
+                            f"<div style='text-align:center'><span class='pill pill-due'>{due_count} report{'s' if due_count != 1 else ''} due today</span></div>",
+                            unsafe_allow_html=True,
+                        )
+                    elif my_reports:
+                        st.markdown(
+                            f"<div style='text-align:center'><span class='pill pill-ok'>All clear today</span></div>",
+                            unsafe_allow_html=True,
+                        )
                     else:
-                        if action.get("needs_date") or action.get("needs_text"):
-                            args = action["args_fn"](picked)
+                        st.markdown(
+                            f"<div style='text-align:center'><span class='pill pill-info'>No reports yet</span></div>",
+                            unsafe_allow_html=True,
+                        )
+                    if st.button(
+                        f"Open {member['name']}'s reports",
+                        key=f"pick_{member['name']}",
+                        use_container_width=True,
+                    ):
+                        _go_user(member["name"])
+                        st.rerun()
+
+
+# --------------------------------------------------------------------------
+# OVERVIEW VIEW — 7-day run log with miss alerts
+# --------------------------------------------------------------------------
+
+elif st.session_state.view == "overview":
+    st.markdown(f"""
+    <div class="hero">
+        <h1>📊 Alphalete Marketing — 7-Day Overview</h1>
+        <p>Every report run by anyone, last 7 days. Reports flagged ⚠️ were scheduled but never ran.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Missed runs alert section
+    missed = _missed_runs(AUTOMATED_REPORTS, days=7, today=today)
+    if missed:
+        st.markdown("### ⚠️ Missed Runs")
+        with st.container(border=True):
+            for m in missed:
+                r = m["report"]
+                d = m["missed_date"]
+                assignees = ", ".join(r.get("assignees", [])) or "unassigned"
+                st.markdown(
+                    f"⚠️ **{r['name']}** was due on **{d.strftime('%a %b %d')}** — assigned to **{assignees}** — no successful run logged"
+                )
+    else:
+        st.success("✅ No missed runs in the last 7 days. Great work, team!")
+
+    # Recent runs activity feed
+    st.markdown("### 🗓️ Recent Activity")
+    runs = _read_runs(7)
+    if not runs:
+        st.info("No runs logged yet. As people use the dashboard, runs will appear here.")
+    else:
+        # Group by date
+        by_date: dict = {}
+        for r in runs:
+            day = r["_dt"].date()
+            by_date.setdefault(day, []).append(r)
+        for day in sorted(by_date.keys(), reverse=True):
+            label = day.strftime("%A, %b %d")
+            if day == today:
+                label += "  •  TODAY"
+            elif day == today - dt.timedelta(days=1):
+                label += "  •  Yesterday"
+            with st.expander(f"📅 {label}  —  {len(by_date[day])} run{'s' if len(by_date[day]) != 1 else ''}", expanded=(day == today)):
+                for r in by_date[day]:
+                    icon = "✅" if r.get("status") == "success" else "❌"
+                    time_str = r["_dt"].strftime("%I:%M %p")
+                    st.markdown(
+                        f"{icon}  **{time_str}**  •  {r.get('report_name', r.get('report_id', '?'))}  •  ran by **{r.get('user', '?')}**"
+                    )
+
+
+# --------------------------------------------------------------------------
+# USER VIEW — that user's today's schedule + their reports
+# --------------------------------------------------------------------------
+
+else:  # st.session_state.view == "user"
+    user_name = st.session_state.user or "friend"
+    member = next((m for m in MEMBERS if m["name"] == user_name), None)
+    member_emoji = member["emoji"] if member else "📊"
+
+    st.markdown(f"""
+    <div class="hero">
+        <h1>{member_emoji} {greeting}, {user_name}!</h1>
+        <p>Today is <b>{weekday_name}, {today.strftime("%B %d")}</b>. Here's what's on your plate.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    user_reports = [r for r in AUTOMATED_REPORTS if user_name in r.get("assignees", [])]
+    due_today = [r for r in user_reports if _is_due_today(r, today)]
+
+    # ----- Today's Schedule -----
+    st.markdown("## 📅 Today's Schedule")
+
+    if due_today:
+        for r in due_today:
+            sched = r["schedule"]
+            with st.container(border=True):
+                cols = st.columns([1, 8])
+                with cols[0]:
+                    st.markdown(f"<div style='font-size: 3rem; text-align:center'>{r['emoji']}</div>",
+                               unsafe_allow_html=True)
+                with cols[1]:
+                    st.markdown(
+                        f"<span class='pill pill-due'>DUE TODAY</span>"
+                        f"<span class='pill pill-info'>{sched['time']} • ~{sched['estimated_minutes']} min</span>",
+                        unsafe_allow_html=True,
+                    )
+                    st.markdown(f"### {r['name']}")
+                    st.caption(r["description"])
+
+                with st.expander("📝 Your steps for today", expanded=True):
+                    for i, step in enumerate(sched["human_prep"], start=1):
+                        st.markdown(f"**{i}.** {step}")
+    elif user_reports:
+        nexts = []
+        for r in user_reports:
+            nd = _next_due(r, today)
+            if nd:
+                nexts.append((nd, r))
+        nexts.sort(key=lambda x: x[0])
+        if nexts:
+            nd, r = nexts[0]
+            delta = (nd - today).days
+            plural = "s" if delta != 1 else ""
+            st.info(
+                f"☕ Nothing on your plate today. "
+                f"Next up: **{r['name']}** in **{delta} day{plural}** ({WEEKDAY_NAMES[nd.weekday()]} {nd.strftime('%b %d')})."
+            )
+    else:
+        st.info(f"No reports assigned to {user_name} yet. (Anyone can still run anything from the team page.)")
+
+    # ----- All this user's reports (run buttons) -----
+    if user_reports:
+        st.markdown("## 🚀 Your Reports")
+
+        for report in user_reports:
+            with st.container(border=True):
+                st.markdown('<div class="report-card-marker"></div>', unsafe_allow_html=True)
+                cols = st.columns([5, 2])
+                with cols[0]:
+                    st.markdown(f"### {report['emoji']} {report['name']}")
+                    st.caption(report["description"])
+                with cols[1]:
+                    st.link_button("📂 Open Sheet", report["sheet_url"], use_container_width=True)
+
+                # Action buttons
+                for action in report["actions"]:
+                    cols = st.columns([4, 2, 2])
+                    with cols[0]:
+                        st.markdown(f"**{action.get('icon', '')} {action['label']}**")
+                        if action.get("help"):
+                            st.caption(action["help"])
+                    with cols[1]:
+                        if action.get("needs_date"):
+                            picked = st.date_input(
+                                "WE Sunday",
+                                key=f"date_{report['id']}_{action['label']}",
+                                value=_last_completed_we_sunday(),
+                                label_visibility="collapsed",
+                            )
+                        elif action.get("needs_text"):
+                            picked = st.text_input(
+                                action.get("text_label", "Input"),
+                                key=f"text_{report['id']}_{action['label']}",
+                                label_visibility="collapsed",
+                                placeholder=action.get("text_label", ""),
+                            )
                         else:
-                            args = action["args_fn"]()
-                        cmd = [VENV_PY, "-m", action["module"]] + args
-                        st.info(f"`{' '.join(shlex.quote(c) for c in cmd)}`")
-                        with st.status("Running…", expanded=True) as s:
-                            box = st.empty()
-                            rc = _stream_subprocess(cmd, box)
-                            if rc == 0:
-                                s.update(label="✅ Done!", state="complete")
-                                st.balloons()
+                            picked = None
+                            st.write("")
+                    with cols[2]:
+                        btn_kind = "primary" if action.get("primary") else "secondary"
+                        if st.button(
+                            f"{action.get('icon', '▶')} Run",
+                            key=f"btn_{report['id']}_{action['label']}",
+                            type=btn_kind,
+                            use_container_width=True,
+                        ):
+                            if not chrome_ok:
+                                st.error("⚠️ Chrome isn't running. Check the sidebar for the launch command.")
+                            elif action.get("needs_text") and not picked:
+                                st.error(f"⚠️ Please enter the {action.get('text_label', 'input')} first.")
                             else:
-                                s.update(label=f"❌ Failed (exit {rc})", state="error")
+                                if action.get("needs_date") or action.get("needs_text"):
+                                    args = action["args_fn"](picked)
+                                else:
+                                    args = action["args_fn"]()
+                                cmd = [VENV_PY, "-m", action["module"]] + args
+                                st.info(f"`{' '.join(shlex.quote(c) for c in cmd)}`")
+                                with st.status("Running…", expanded=True) as s:
+                                    box = st.empty()
+                                    rc = _stream_subprocess(cmd, box)
+                                    if rc == 0:
+                                        s.update(label="✅ Done!", state="complete")
+                                        st.balloons()
+                                    else:
+                                        s.update(label=f"❌ Failed (exit {rc})", state="error")
+                                    _log_run(
+                                        report_id=report["id"],
+                                        report_name=report["name"],
+                                        user=st.session_state.get("user", "unknown"),
+                                        status="success" if rc == 0 else "failed",
+                                    )
 
 
 # --------------------------------------------------------------------------
