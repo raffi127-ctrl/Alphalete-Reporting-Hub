@@ -1984,8 +1984,41 @@ if st.session_state.view == "home":
             _show_wire_up_dialog(None)
 
     intake = _read_intake()
-    unassigned = [r for r in intake if (r.get("Status") or "Unassigned") == "Unassigned"]
-    in_progress = [r for r in intake if r.get("Status") == "In Progress"]
+
+    # Deep-link from email: ?request=<id> pins that specific request to the
+    # top of the backlog so admins clicking through don't have to scroll/scan.
+    _requested_id = st.query_params.get("request", "").strip()
+    _focus_entry = None
+    if _requested_id:
+        _focus_entry = next((r for r in intake if str(r.get("ID")) == _requested_id), None)
+        if _focus_entry:
+            st.markdown("#### 📌 You came here from an email")
+            _focus_status = _focus_entry.get("Status") or "Unassigned"
+            _render_intake_card(
+                _focus_entry,
+                allow_claim=(_focus_status == "Unassigned"),
+                allow_done=(_focus_status == "In Progress"),
+            )
+            if st.button("← Back to full backlog", key="clear_request_focus"):
+                try:
+                    st.query_params.clear()
+                except Exception:
+                    pass
+                st.rerun()
+            st.markdown("---")
+        else:
+            st.warning(
+                f"Couldn't find a request with ID `{_requested_id}` — "
+                "showing the full backlog below."
+            )
+
+    _focus_id = str(_focus_entry.get("ID")) if _focus_entry else None
+    unassigned = [r for r in intake
+                  if (r.get("Status") or "Unassigned") == "Unassigned"
+                  and str(r.get("ID")) != _focus_id]
+    in_progress = [r for r in intake
+                   if r.get("Status") == "In Progress"
+                   and str(r.get("ID")) != _focus_id]
 
     if not intake:
         st.info("No requests in the backlog yet. Click **Submit Request** above to add the first one.")
