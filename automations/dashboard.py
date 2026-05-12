@@ -1854,8 +1854,14 @@ st.markdown("""
 
 if "view" not in st.session_state:
     # Restore from URL on first load so refresh stays on the same page.
+    # Inline set (instead of _VALID_VIEWS) so this block doesn't depend on
+    # helpers defined further down in the file — Streamlit runs top-to-bottom.
     _url_view = st.query_params.get("view", "").strip()
-    st.session_state.view = _url_view if _url_view in _VALID_VIEWS else "home"
+    st.session_state.view = (
+        _url_view
+        if _url_view in {"home", "user", "overview", "library", "backlog", "bugs"}
+        else "home"
+    )
 if "user" not in st.session_state:
     _url_user = st.query_params.get("user", "").strip()
     st.session_state.user = _url_user or None
