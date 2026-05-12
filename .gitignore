@@ -1,7 +1,6 @@
 output/
 *.xlsx
 service-account.json
-oauth-client.json
 oauth-token.json
 .venv/
 __pycache__/
