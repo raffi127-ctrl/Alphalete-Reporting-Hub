@@ -1946,7 +1946,7 @@ if st.session_state.view == "home":
     # --------------------------------------------------------------------
     st.markdown("---")
     st.markdown("### 🚧 Automation Backlog")
-    st.caption("New report ideas and bugs from the team. Anyone can claim a request to take it on.")
+    st.caption("New report ideas from the team. Anyone can claim a request to take it on.")
     st.markdown(
         """
         <style>
@@ -2385,24 +2385,25 @@ else:  # st.session_state.view == "user"
 # Suggest dialog (triggered from sidebar red button)
 # --------------------------------------------------------------------------
 
-@st.dialog("💡 Suggest an Automation or Report a Bug", width="large")
+@st.dialog("⚠️ Report a Bug or Suggest a Change", width="large")
 def _show_suggest_dialog():
     st.caption(
-        "See a report we should automate, or hit a bug? "
-        "Drop the details here — Megan reviews and works with Claude to build/fix."
+        "Found a bug or want a tweak to something that already exists? "
+        "Drop the details here — Megan reviews and works with Claude to fix.\n\n"
+        "**Need a brand-new report automated?** Use **\"Submit a New Automation Request\"** on the home page instead."
     )
     with st.form("suggestion_form", clear_on_submit=True):
         cols = st.columns(2)
         with cols[0]:
             sugg_type = st.selectbox(
                 "What kind?",
-                ["Bug / something broke", "Change to an existing report", "New automation request"],
+                ["Bug / something broke", "Change to an existing report"],
             )
             report_name = st.text_input("Report name", placeholder="e.g. 'OPT Focus Report'")
             requester = st.text_input("Your name", value=st.session_state.get("user", "") or "")
         with cols[1]:
-            link = st.text_input("Sheet link (optional)", placeholder="https://…")
-            loom = st.text_input("Loom (optional)", placeholder="https://loom.com/…")
+            link = st.text_input("Sheet link", placeholder="https://…  (paste 'n/a' if none)")
+            loom = st.text_input("Loom", placeholder="https://loom.com/…  (paste 'n/a' if none)")
             priority = st.select_slider("Priority", options=["Low", "Medium", "High", "Blocking"], value="Medium")
         details = st.text_area(
             "Details — what should it do? what's broken?",
@@ -2412,8 +2413,17 @@ def _show_suggest_dialog():
         submitted = st.form_submit_button("📨 Submit", type="primary", use_container_width=True)
 
         if submitted:
-            if not (report_name and requester and details):
-                st.error("Please fill in Report Name, Your Name, and Details.")
+            missing = [
+                label for label, val in [
+                    ("Report name", report_name),
+                    ("Your name", requester),
+                    ("Sheet link", link),
+                    ("Loom", loom),
+                    ("Details", details),
+                ] if not str(val).strip()
+            ]
+            if missing:
+                st.error("Please fill in every field — missing: " + ", ".join(missing))
             elif not REPORT_INTAKE_SHEET_ID:
                 st.warning("Intake Sheet not wired up yet — sending to log only.")
                 st.code(f"""Type: {sugg_type}
