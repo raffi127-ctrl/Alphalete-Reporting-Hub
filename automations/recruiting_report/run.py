@@ -115,6 +115,21 @@ def main() -> int:
         log.info("nothing to fetch from AS (no confirmed offices in scope)")
         return 0
 
+    # Cumulative results across this week's runs (so rhidalgo + rcaptain sessions
+    # both contribute to the "filled this week" set, and `still_missing` reflects
+    # offices truly unreachable by anyone).
+    results_file = WORKSPACE / "output" / "recruiting_results.json"
+    prior_filled: set = set()
+    if results_file.exists():
+        try:
+            prior = json.loads(results_file.read_text())
+            if prior.get("week") == week.isoformat():
+                prior_filled = set(prior.get("filled", []))
+        except Exception:
+            pass
+    filled_in_run: set = set()
+    inaccessible_in_run: set = set()
+
     log.info("attaching to Chrome at %s", fetch_office.CDP_URL)
     p = sync_playwright().start()
     try:
@@ -162,6 +177,8 @@ def main() -> int:
             values = fill._retry(ws.get_all_values)
             sunday_to_col = fill.find_sunday_columns(values, header_row_idx=0)
 
+            primary_status: Optional[str] = None  # "filled" | "inaccessible"
+
             for section_id in [primary_id] + list(siblings):
                 if section_id == primary_id:
                     section_label = tab_name
@@ -196,6 +213,12 @@ def main() -> int:
                     except Exception as e:
                         log.exception("  fetch failed for %s week %s: %s", section_label, w, e)
 
+                if section_id == primary_id:
+                    if inaccessible:
+                        primary_status = "inaccessible"
+                    elif week_data:
+                        primary_status = "filled"
+
                 if inaccessible or not week_data:
                     continue
 
@@ -205,8 +228,32 @@ def main() -> int:
                 ):
                     log.info(line)
 
+            if primary_status == "filled":
+                filled_in_run.add(tab_name)
+            elif primary_status == "inaccessible":
+                inaccessible_in_run.add(tab_name)
+
     finally:
         p.stop()
+
+    # Write the cumulative weekly results so the dashboard can alert on tabs
+    # that couldn't be filled by any run this week.
+    all_filled = prior_filled | filled_in_run
+    confirmed_names = {c["sheet_tab"] for c in mapping["confirmed"]}
+    still_missing = sorted(confirmed_names - all_filled)
+    results_file.parent.mkdir(parents=True, exist_ok=True)
+    results_file.write_text(json.dumps({
+        "week": week.isoformat(),
+        "filled": sorted(all_filled),
+        "still_missing": still_missing,
+        "inaccessible_in_last_run": sorted(inaccessible_in_run),
+        "updated_at": dt.datetime.now().isoformat(timespec="seconds"),
+    }, indent=2))
+
+    if still_missing:
+        log.warning("MISSING TABS (%d): %s", len(still_missing), ", ".join(still_missing))
+    else:
+        log.info("MISSING TABS: none ✓ (all %d confirmed offices filled this week)", len(confirmed_names))
 
     log.info("done")
     return 0

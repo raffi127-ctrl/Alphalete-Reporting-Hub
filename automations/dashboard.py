@@ -170,6 +170,75 @@ def _clear_run_state_for(report_id: str) -> None:
     RUN_STATE_FILE.write_text(json.dumps(state, indent=2))
 
 
+# --- Per-report results (currently only recruiting writes this) ---
+RECRUITING_RESULTS_FILE = WORKSPACE / "output" / "recruiting_results.json"
+
+
+def _load_recruiting_results() -> dict:
+    """Returns {week, filled[], still_missing[], inaccessible_in_last_run[], updated_at}."""
+    if not RECRUITING_RESULTS_FILE.exists():
+        return {}
+    try:
+        return json.loads(RECRUITING_RESULTS_FILE.read_text())
+    except Exception:
+        return {}
+
+
+# --- Completion marks (user ticks off a finished run on their profile) ---
+
+
+def _load_completed_marks() -> dict:
+    """Structure: {user: {YYYY-MM-DD: [{report_id, report_name, run_ts, marked_at}, ...]}}."""
+    if not COMPLETED_MARKS_FILE.exists():
+        return {}
+    try:
+        return json.loads(COMPLETED_MARKS_FILE.read_text())
+    except Exception:
+        return {}
+
+
+def _save_completed_marks(data: dict) -> None:
+    COMPLETED_MARKS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    COMPLETED_MARKS_FILE.write_text(json.dumps(data, indent=2))
+
+
+def _mark_run_completed(user: str, report_id: str, report_name: str, run_ts: str) -> None:
+    data = _load_completed_marks()
+    today = dt.date.today().isoformat()
+    user_data = data.setdefault(user, {})
+    day_list = user_data.setdefault(today, [])
+    for item in day_list:
+        if item.get("report_id") == report_id and item.get("run_ts") == run_ts:
+            return
+    day_list.append({
+        "report_id": report_id,
+        "report_name": report_name,
+        "run_ts": run_ts,
+        "marked_at": dt.datetime.now().isoformat(timespec="seconds"),
+    })
+    _save_completed_marks(data)
+
+
+def _unmark_run_completed(user: str, report_id: str, run_ts: str) -> None:
+    data = _load_completed_marks()
+    today = dt.date.today().isoformat()
+    user_data = data.get(user, {})
+    day_list = user_data.get(today, [])
+    user_data[today] = [
+        item for item in day_list
+        if not (item.get("report_id") == report_id and item.get("run_ts") == run_ts)
+    ]
+    _save_completed_marks(data)
+
+
+def _get_completed_today(user: str) -> list[dict]:
+    data = _load_completed_marks()
+    today = dt.date.today().isoformat()
+    items = data.get(user, {}).get(today, [])
+    items.sort(key=lambda x: x.get("marked_at", ""), reverse=True)
+    return items
+
+
 def _load_uploaded_reports_raw() -> list[dict]:
     """Read uploaded_reports.json and convert to AUTOMATED_REPORTS-compatible dicts.
     Called once at module load so the list of all reports is fresh on each rerun."""
@@ -530,6 +599,34 @@ def _was_run_successfully_today(report_id: str, today: dt.date | None = None) ->
     return False
 
 
+def _latest_run_summary(report_id: str) -> str | None:
+    """Return compact text like 'Today · Megan · 1:06 AM', or None."""
+    for r in _read_runs(days=14):
+        if r.get("report_id") != report_id:
+            continue
+        when = r["_dt"]
+        today = dt.date.today()
+        time_str = when.strftime("%-I:%M %p")
+        if when.date() == today:
+            day = "Today"
+        elif when.date() == today - dt.timedelta(days=1):
+            day = "Yesterday"
+        else:
+            day = when.strftime("%b %-d")
+        user = r.get("user", "someone")
+        return f"Last ran {day.lower()} · {user} · {time_str}"
+    return None
+
+
+def _ran_within_24h(report_id: str) -> tuple[bool, str | None, str | None]:
+    """Was this report successfully run in the last 24h? Returns (yes/no, user, time_str)."""
+    cutoff = dt.datetime.now() - dt.timedelta(hours=24)
+    for r in _read_runs(days=2):
+        if r.get("report_id") == report_id and r.get("status") == "success" and r["_dt"] >= cutoff:
+            return True, r.get("user", "someone"), r["_dt"].strftime("%-I:%M %p")
+    return False, None, None
+
+
 def _execute_action(report: dict, action: dict, picked, chrome_ok: bool) -> None:
     """Run one action: stream output, log the run, balloons on success."""
     if not chrome_ok:
@@ -599,6 +696,7 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
         st.markdown('<div class="report-card-marker"></div>', unsafe_allow_html=True)
         # Header row
         header_cols = st.columns([5, 2])
+        last_run_text = _latest_run_summary(report["id"])
         with header_cols[0]:
             pills = ""
             if ran_today:
@@ -609,7 +707,20 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                 pills += f"<span class='pill pill-info'>{sched.get('time', '')} • ~{sched.get('estimated_minutes', '?')} min</span>"
             if pills:
                 st.markdown(pills, unsafe_allow_html=True)
-            st.markdown(f"### {report['emoji']} {report['name']}")
+            last_run_inline = (
+                f"<span style='color:#C92020; font-size:1.4rem; font-weight:700; "
+                f"margin-left:1rem; white-space:nowrap'>· {last_run_text}</span>"
+                if last_run_text else ""
+            )
+            st.markdown(
+                "<div style='display:flex; align-items:baseline; flex-wrap:nowrap; "
+                "gap:0.5rem; margin:0.4rem 0 0.2rem'>"
+                f"<span style='font-size:1.5rem; font-weight:700; line-height:1.2'>"
+                f"{report['emoji']} {report['name']}</span>"
+                f"{last_run_inline}"
+                "</div>",
+                unsafe_allow_html=True,
+            )
             st.caption(report["description"])
         with header_cols[1]:
             st.link_button("📂 Open Sheet", report["sheet_url"], use_container_width=True)
@@ -670,6 +781,12 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                 placeholder=primary.get("text_label", ""),
             )
 
+        # 24h-rerun confirmation gate. If the report was already run successfully
+        # in the last 24h (by anyone), clicking Run shows a confirmation banner
+        # instead of executing immediately.
+        confirm_key = f"confirm_pending_{report['id']}"
+        confirm_meta_key = f"confirm_meta_{report['id']}"
+
         if st.button(
             f"{primary.get('icon', '▶')} {primary['label']}",
             key=f"prim_{report['id']}",
@@ -678,7 +795,35 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
             disabled=run_disabled,
             help=run_help,
         ):
-            _execute_action(report, primary, picked, chrome_ok)
+            recent, recent_user, recent_time = _ran_within_24h(report["id"])
+            if recent:
+                st.session_state[confirm_key] = True
+                st.session_state[confirm_meta_key] = (recent_user, recent_time)
+                st.rerun()
+            else:
+                _execute_action(report, primary, picked, chrome_ok)
+
+        if st.session_state.get(confirm_key):
+            ru, rt = st.session_state.get(confirm_meta_key, ("someone", "earlier today"))
+            with st.container(border=True):
+                st.warning(
+                    f"⚠️ **{ru}** already ran this at **{rt}** today. "
+                    f"Run it again anyway?"
+                )
+                cc = st.columns([1, 1])
+                with cc[0]:
+                    if st.button("✅ Yes, run it again", key=f"confirm_yes_{report['id']}",
+                                 type="primary", use_container_width=True):
+                        st.session_state.pop(confirm_key, None)
+                        st.session_state.pop(confirm_meta_key, None)
+                        _execute_action(report, primary, picked, chrome_ok)
+                        st.rerun()
+                with cc[1]:
+                    if st.button("✖ Cancel", key=f"confirm_no_{report['id']}",
+                                 use_container_width=True):
+                        st.session_state.pop(confirm_key, None)
+                        st.session_state.pop(confirm_meta_key, None)
+                        st.rerun()
 
         # Post-run callout (appears after a run completes; persists 24h)
         last_run = st.session_state.get(f"last_run_{report['id']}")
@@ -710,7 +855,14 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                 with cols[1]:
                     if st.button(again_label, key=f"again_{report['id']}", use_container_width=True, disabled=not chrome_ok):
                         _execute_action(report, primary, picked, chrome_ok)
-                if st.button("✖ Dismiss / Mark Done", key=f"dismiss_{report['id']}"):
+                if st.button("✅ Mark as Completed", key=f"dismiss_{report['id']}"):
+                    # Record on this user's "Completed Today" list
+                    _mark_run_completed(
+                        user=st.session_state.get("user", "unknown"),
+                        report_id=report["id"],
+                        report_name=report["name"],
+                        run_ts=last_run.get("ts", ""),
+                    )
                     st.session_state.pop(f"last_run_{report['id']}", None)
                     _clear_run_state_for(report["id"])
                     st.rerun()
@@ -1215,15 +1367,32 @@ st.markdown("""
     /* Status pills */
     .pill {
         display: inline-block;
-        padding: 0.25rem 0.75rem;
+        padding: 0.45rem 1.1rem;
         border-radius: 999px;
-        font-size: 0.8rem;
-        font-weight: 600;
-        margin-right: 0.4rem;
+        font-size: 1.05rem;
+        font-weight: 700;
+        margin-right: 0.5rem;
+        letter-spacing: 0.3px;
     }
-    .pill-due { background: #FFE9E9; color: #C92020; }
-    .pill-ok  { background: #E6F7EC; color: #1F7A3D; }
+    .pill-due { background: #FFE9E9; color: #C92020; border: 2px solid #C92020; }
+    .pill-ok  { background: #E6F7EC; color: #1F7A3D; border: 2px solid #1F7A3D; }
     .pill-info{ background: #E8F0FE; color: #1A4FB0; }
+
+    /* Red STOP REPORT button (uses :has() to target the stButton right after our anchor div) */
+    div[data-testid="stVerticalBlock"]:has(> div > div > .stop-btn-anchor) .stButton > button,
+    div:has(> div > div > .stop-btn-anchor) + div .stButton > button {
+        background: #C92020 !important;
+        background-image: none !important;
+        color: #FFFFFF !important;
+        border: 2px solid #8B1414 !important;
+        font-weight: 800 !important;
+        letter-spacing: 0.5px !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div > div > .stop-btn-anchor) .stButton > button:hover,
+    div:has(> div > div > .stop-btn-anchor) + div .stButton > button:hover {
+        background: #A11515 !important;
+        box-shadow: 0 4px 14px rgba(201, 32, 32, 0.45) !important;
+    }
 
     /* Buttons */
     .stButton > button {
@@ -1353,8 +1522,9 @@ def _render_currently_running_banner(filter_user: str | None = None):
 
             stop_cols = st.columns([5, 2])
             with stop_cols[1]:
-                if st.button("⏹ Stop run", key=f"stop_{run['report_id']}", use_container_width=True,
-                             help="Force-stop this background run"):
+                st.markdown('<div class="stop-btn-anchor"></div>', unsafe_allow_html=True)
+                if st.button("🛑 STOP REPORT", key=f"stop_{run['report_id']}", use_container_width=True,
+                             help="Force-stop this background run", type="primary"):
                     try:
                         import os, signal
                         os.kill(int(run["pid"]), signal.SIGTERM)
@@ -1465,48 +1635,73 @@ if st.session_state.view == "home":
                 _go_overview()
                 st.rerun()
 
-    st.markdown("### 🐺 The Pack")
+    # Two-column section: Report Library on the left, Pack on the right
+    home_lower = st.columns([2, 3])
 
-    # Member cards in a 3-column grid (2 rows x 3 cols for 6 members)
-    rows = [MEMBERS[i:i + 3] for i in range(0, len(MEMBERS), 3)]
-    for row in rows:
-        cols = st.columns(len(row))
-        for col, member in zip(cols, row):
-            with col:
-                # Count today's reports for this member
-                my_reports = [r for r in AUTOMATED_REPORTS if member["name"] in r.get("assignees", [])]
-                due_count = sum(1 for r in my_reports if _is_due_today(r, today))
-                with st.container(border=True):
-                    st.markdown(
-                        f"<div style='text-align:center; font-size: 3.5rem; line-height: 1.0; margin-bottom: 0.4rem'>{member['emoji']}</div>",
-                        unsafe_allow_html=True,
-                    )
-                    st.markdown(
-                        f"<div style='text-align:center; font-size: 1.3rem; font-weight: 700; margin-bottom: 0.3rem'>{member['name']}</div>",
-                        unsafe_allow_html=True,
-                    )
-                    if due_count > 0:
+    with home_lower[0]:
+        st.markdown("### 📚 Report Library")
+        st.caption("Every automation — anyone can run any report.")
+        for report in AUTOMATED_REPORTS:
+            assignees = report.get("assignees", []) or []
+            assignee_label = (
+                f"Owner: {', '.join(assignees)}" if assignees else "Owner: —"
+            )
+            with st.container(border=True):
+                st.markdown(
+                    f"**{report.get('emoji', '📄')} {report['name']}**"
+                )
+                if report.get("description"):
+                    st.caption(report["description"])
+                st.caption(assignee_label)
+                target = assignees[0] if assignees else MEMBERS[0]["name"]
+                if st.button(
+                    f"▶ Open ({target})",
+                    key=f"lib_open_{report['id']}",
+                    use_container_width=True,
+                ):
+                    _go_user(target)
+                    st.rerun()
+
+    with home_lower[1]:
+        st.markdown("### 🐺 The Pack")
+        rows = [MEMBERS[i:i + 3] for i in range(0, len(MEMBERS), 3)]
+        for row in rows:
+            cols = st.columns(len(row))
+            for col, member in zip(cols, row):
+                with col:
+                    my_reports = [r for r in AUTOMATED_REPORTS if member["name"] in r.get("assignees", [])]
+                    due_count = sum(1 for r in my_reports if _is_due_today(r, today))
+                    with st.container(border=True):
                         st.markdown(
-                            f"<div style='text-align:center'><span class='pill pill-due'>{due_count} report{'s' if due_count != 1 else ''} due today</span></div>",
+                            f"<div style='text-align:center; font-size: 3.5rem; line-height: 1.0; margin-bottom: 0.4rem'>{member['emoji']}</div>",
                             unsafe_allow_html=True,
                         )
-                    elif my_reports:
                         st.markdown(
-                            f"<div style='text-align:center'><span class='pill pill-ok'>All clear today</span></div>",
+                            f"<div style='text-align:center; font-size: 1.3rem; font-weight: 700; margin-bottom: 0.3rem'>{member['name']}</div>",
                             unsafe_allow_html=True,
                         )
-                    else:
-                        st.markdown(
-                            f"<div style='text-align:center'><span class='pill pill-info'>No reports yet</span></div>",
-                            unsafe_allow_html=True,
-                        )
-                    if st.button(
-                        f"Open {member['name']}'s reports",
-                        key=f"pick_{member['name']}",
-                        use_container_width=True,
-                    ):
-                        _go_user(member["name"])
-                        st.rerun()
+                        if due_count > 0:
+                            st.markdown(
+                                f"<div style='text-align:center'><span class='pill pill-due'>{due_count} report{'s' if due_count != 1 else ''} due today</span></div>",
+                                unsafe_allow_html=True,
+                            )
+                        elif my_reports:
+                            st.markdown(
+                                f"<div style='text-align:center'><span class='pill pill-ok'>All clear today</span></div>",
+                                unsafe_allow_html=True,
+                            )
+                        else:
+                            st.markdown(
+                                f"<div style='text-align:center'><span class='pill pill-info'>No reports yet</span></div>",
+                                unsafe_allow_html=True,
+                            )
+                        if st.button(
+                            f"Open {member['name']}'s reports",
+                            key=f"pick_{member['name']}",
+                            use_container_width=True,
+                        ):
+                            _go_user(member["name"])
+                            st.rerun()
 
     # --------------------------------------------------------------------
     # Automation Backlog — unassigned + in-progress requests
@@ -1628,12 +1823,16 @@ elif st.session_state.view == "overview":
                 label += "  •  TODAY"
             elif day == today - dt.timedelta(days=1):
                 label += "  •  Yesterday"
+            report_lookup = {rep["id"]: rep for rep in AUTOMATED_REPORTS}
             with st.expander(f"📅 {label}  —  {len(by_date[day])} run{'s' if len(by_date[day]) != 1 else ''}", expanded=(day == today)):
                 for r in by_date[day]:
                     icon = "✅" if r.get("status") == "success" else "❌"
                     time_str = r["_dt"].strftime("%I:%M %p")
+                    rep = report_lookup.get(r.get("report_id"))
+                    sheet_url = rep.get("sheet_url") if rep else None
+                    sheet_link = f"  •  [📂 Open Sheet]({sheet_url})" if sheet_url else ""
                     st.markdown(
-                        f"{icon}  **{time_str}**  •  {r.get('report_name', r.get('report_id', '?'))}  •  ran by **{r.get('user', '?')}**"
+                        f"{icon}  **{time_str}**  •  {r.get('report_name', r.get('report_id', '?'))}  •  ran by **{r.get('user', '?')}**{sheet_link}"
                     )
 
 
@@ -1671,55 +1870,118 @@ else:  # st.session_state.view == "user"
             or (not persisted[r["id"]].get("user") and user_name in r.get("assignees", []))
         )
     ]
-    if in_progress:
-        st.markdown("### 📌 Pick up where you left off")
-        for report in in_progress:
-            saved = persisted[report["id"]]
-            saved_ts = saved.get("ts", "")
-            try:
-                saved_dt = dt.datetime.fromisoformat(saved_ts)
-                saved_str = saved_dt.strftime("%I:%M %p")
-            except Exception:
-                saved_str = saved_ts
-            post_run_cfg = report.get("post_run", {})
-            again_label = post_run_cfg.get("again_label", "🔁 Continue / Run Again")
 
-            with st.container(border=True):
-                cols = st.columns([5, 2, 2])
-                with cols[0]:
-                    st.markdown(f"**{report['emoji']} {report['name']}** — last run **{saved_str}** today")
-                    if post_run_cfg.get("message_success") and saved.get("status") == "success":
-                        st.caption(post_run_cfg["message_success"])
-                    else:
-                        st.caption("You started this earlier today but haven't marked it done yet.")
-                with cols[1]:
-                    if st.button(again_label, key=f"continue_{report['id']}", use_container_width=True, type="primary", disabled=not chrome_ok):
-                        # Find the primary action and re-execute
-                        primary = next((a for a in report["actions"] if a.get("primary")), report["actions"][0])
-                        # Build picked from any saved widget state (date/text)
-                        picked = None
-                        if primary.get("needs_date") or primary.get("needs_text"):
-                            d = st.session_state.get(f"date_{report['id']}_{primary['label']}")
-                            t = st.session_state.get(f"text_{report['id']}_{primary['label']}")
-                            if primary.get("needs_date") and primary.get("needs_text"):
-                                picked = (d, t)
-                            elif primary.get("needs_date"):
-                                picked = d
-                            elif primary.get("needs_text"):
-                                picked = t
-                        _execute_action(report, primary, picked, chrome_ok)
-                with cols[2]:
-                    if st.button("✅ Mark fully done", key=f"banner_done_{report['id']}", use_container_width=True):
-                        _clear_run_state_for(report["id"])
-                        st.session_state.pop(f"last_run_{report['id']}", None)
+    # Two-column layout below the hero:
+    #   left:  "Completed Today" checklist for this user
+    #   right: in-progress banner + this user's reports
+    user_layout = st.columns([1, 4])
+
+    with user_layout[0]:
+        st.markdown("### ✅ Completed Today")
+        completed_today = _get_completed_today(user_name)
+        if not completed_today:
+            st.caption("Nothing marked completed yet today.")
+        else:
+            for item in completed_today:
+                report_id = item.get("report_id", "")
+                report_name = item.get("report_name", "?")
+                try:
+                    marked_dt = dt.datetime.fromisoformat(item.get("marked_at", ""))
+                    marked_str = marked_dt.strftime("%-I:%M %p")
+                except Exception:
+                    marked_str = ""
+                with st.container(border=True):
+                    st.markdown(
+                        f"<div style='font-weight:600'>✓ {report_name}</div>"
+                        f"<div style='font-size:0.8rem; color:#777'>marked at {marked_str}</div>",
+                        unsafe_allow_html=True,
+                    )
+                    if st.button(
+                        "↩ Undo",
+                        key=f"undo_completed_{report_id}_{item.get('run_ts', '')}",
+                        use_container_width=True,
+                    ):
+                        _unmark_run_completed(user_name, report_id, item.get("run_ts", ""))
                         st.rerun()
 
-    if my_reports:
-        st.markdown("## 🚀 Your Reports")
-        for report in my_reports:
-            _render_report_card(report, today, chrome_ok)
-    else:
-        st.info(f"No reports assigned to {user_name} yet.")
+    with user_layout[1]:
+        if in_progress:
+            st.markdown("### 📌 Pick up where you left off")
+            for report in in_progress:
+                saved = persisted[report["id"]]
+                saved_ts = saved.get("ts", "")
+                try:
+                    saved_dt = dt.datetime.fromisoformat(saved_ts)
+                    saved_str = saved_dt.strftime("%I:%M %p")
+                except Exception:
+                    saved_str = saved_ts
+                post_run_cfg = report.get("post_run", {})
+                again_label = post_run_cfg.get("again_label", "🔁 Continue / Run Again")
+
+                # Recruiting report has structured per-week results: if all 52 tabs
+                # are filled, this banner shows a green "all done" state. Otherwise
+                # it lists the tabs that still need data.
+                results = _load_recruiting_results() if report["id"] == "recruiting" else {}
+                all_filled = bool(results) and not results.get("still_missing")
+                still_missing = results.get("still_missing", []) if results else []
+
+                with st.container(border=True):
+                    if all_filled:
+                        st.success(
+                            f"🎉 **{report['emoji']} {report['name']} — Complete!** "
+                            f"All **{len(results.get('filled', []))}** offices filled this week. "
+                            f"Last run **{saved_str}** today."
+                        )
+                    elif still_missing:
+                        st.warning(
+                            f"⚠️ **{report['emoji']} {report['name']}** — last run **{saved_str}** today. "
+                            f"**{len(still_missing)}** tab{'s' if len(still_missing) != 1 else ''} still need data."
+                        )
+                        with st.expander(f"📋 Show the {len(still_missing)} missing tabs", expanded=False):
+                            for name in still_missing:
+                                st.markdown(f"- {name}")
+
+                    cols = st.columns([5, 2, 2])
+                    with cols[0]:
+                        if not (all_filled or still_missing):
+                            st.markdown(f"**{report['emoji']} {report['name']}** — last run **{saved_str}** today")
+                            if post_run_cfg.get("message_success") and saved.get("status") == "success":
+                                st.caption(post_run_cfg["message_success"])
+                            else:
+                                st.caption("You started this earlier today but haven't marked it done yet.")
+                    with cols[1]:
+                        if not all_filled:
+                            if st.button(again_label, key=f"continue_{report['id']}", use_container_width=True, type="primary", disabled=not chrome_ok):
+                                primary = next((a for a in report["actions"] if a.get("primary")), report["actions"][0])
+                                picked = None
+                                if primary.get("needs_date") or primary.get("needs_text"):
+                                    d = st.session_state.get(f"date_{report['id']}_{primary['label']}")
+                                    t = st.session_state.get(f"text_{report['id']}_{primary['label']}")
+                                    if primary.get("needs_date") and primary.get("needs_text"):
+                                        picked = (d, t)
+                                    elif primary.get("needs_date"):
+                                        picked = d
+                                    elif primary.get("needs_text"):
+                                        picked = t
+                                _execute_action(report, primary, picked, chrome_ok)
+                    with cols[2]:
+                        if st.button("✅ Mark as Completed", key=f"banner_done_{report['id']}", use_container_width=True):
+                            _mark_run_completed(
+                                user=user_name,
+                                report_id=report["id"],
+                                report_name=report["name"],
+                                run_ts=saved_ts,
+                            )
+                            _clear_run_state_for(report["id"])
+                            st.session_state.pop(f"last_run_{report['id']}", None)
+                            st.rerun()
+
+        if my_reports:
+            st.markdown("## 🚀 Your Reports")
+            for report in my_reports:
+                _render_report_card(report, today, chrome_ok)
+        else:
+            st.info(f"No reports assigned to {user_name} yet.")
 
 
 # --------------------------------------------------------------------------
