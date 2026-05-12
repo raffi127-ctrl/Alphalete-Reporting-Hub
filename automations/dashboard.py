@@ -925,7 +925,7 @@ INTAKE_TAB = "Automation Backlog"
 INTAKE_HEADERS = [
     "ID", "Title", "Sheet Link", "Loom Link", "Description",
     "Submitted By", "Submitted At", "Status", "Assigned To", "Assigned At",
-    "Preferred Creator", "Currently runs", "Priority",
+    "Preferred Creator", "Currently runs", "Priority", "Submitter Email",
 ]
 
 
@@ -979,7 +979,8 @@ def _read_intake() -> list[dict]:
 
 def _add_intake(title: str, sheet_link: str, loom_link: str, description: str,
                 submitted_by: str, preferred_creator: str = "",
-                currently_runs: str = "", priority: str = "") -> str:
+                currently_runs: str = "", priority: str = "",
+                submitter_email: str = "") -> str:
     new_id = dt.datetime.now().strftime("%Y%m%d%H%M%S")
     ws = _intake_ws()
     ws.append_row([
@@ -989,6 +990,7 @@ def _add_intake(title: str, sheet_link: str, loom_link: str, description: str,
         preferred_creator or "",
         currently_runs or "",
         priority or "",
+        submitter_email or "",
     ])
     _read_intake.clear()
     return new_id
@@ -1045,6 +1047,11 @@ def _show_intake_dialog():
                 ["No preference"] + [m["name"] for m in MEMBERS],
                 help="If you have a specific person in mind to build this, pick them. Anyone can still claim it.",
             )
+        submitter_email = st.text_input(
+            "Your email *",
+            placeholder="you@example.com",
+            help="We'll use this to message you with any questions we have while working on your request.",
+        )
         currently_runs = st.text_input(
             "Who currently runs this report?",
             placeholder="e.g. Sarah from Sales, or 'me' — anyone, even folks outside the team",
@@ -1065,12 +1072,12 @@ def _show_intake_dialog():
         )
         ok = st.form_submit_button("📨 Submit", type="primary", use_container_width=True)
         if ok:
-            if not (title and sheet_link and loom_link and description and submitted_by):
+            if not (title and sheet_link and loom_link and description and submitted_by and submitter_email):
                 st.error("Please fill in every field marked *.")
             else:
                 pc = "" if preferred_creator == "No preference" else preferred_creator
                 try:
-                    _add_intake(title, sheet_link, loom_link, description, submitted_by, pc, currently_runs, priority)
+                    _add_intake(title, sheet_link, loom_link, description, submitted_by, pc, currently_runs, priority, submitter_email)
                     st.success("✅ Submitted! It will appear on the home page for someone to claim.")
                     st.balloons()
                 except Exception as e:
@@ -1346,6 +1353,23 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                     if _mark_intake_done(str(entry["ID"])):
                         st.success("Marked done (no automation wired)")
                         st.rerun()
+                # mailto link to ask the requester a question while building
+                requester_email = (entry.get("Submitter Email") or "").strip()
+                if requester_email:
+                    from urllib.parse import quote
+                    _subject = quote(f"Re: {entry.get('Title', '')}")
+                    _body = quote(
+                        f"Hi {entry.get('Submitted By', 'there')},\n\n"
+                        f"I'm working on your automation request and had a quick question:\n\n\n\n"
+                        f"Thanks!\n"
+                    )
+                    _mailto = f"mailto:{requester_email}?subject={_subject}&body={_body}"
+                    st.link_button(
+                        "✉️ Ask requester a question",
+                        _mailto,
+                        use_container_width=True,
+                        help=f"Opens your mail app addressed to {requester_email}",
+                    )
 
 
 def _missed_runs(reports: list[dict], days: int = 7, today: dt.date | None = None) -> list[dict]:
