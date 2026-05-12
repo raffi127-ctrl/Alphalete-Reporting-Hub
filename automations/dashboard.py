@@ -744,13 +744,22 @@ def _save_uploaded_report(metadata: dict, script_text: str) -> tuple[bool, str]:
 
 
 @st.dialog("🛠️ Wire Up Built Automation", width="large")
-def _show_wire_up_dialog(entry: dict):
-    """Form the builder fills out when their automation is built and ready."""
-    st.markdown(f"**Backlog item:** {entry.get('Title', 'Untitled')}")
-    st.caption(
-        "Paste what Claude generated (the Python script + a few details about how/when to run it). "
-        "Most fields auto-fill from the backlog entry — change them if needed."
-    )
+def _show_wire_up_dialog(entry: dict | None = None):
+    """Form the builder fills out when their automation is built and ready.
+    `entry` is the backlog entry to mark Done; pass None for direct upload of
+    an already-built automation that wasn't tracked on the backlog."""
+    if entry:
+        st.markdown(f"**Backlog item:** {entry.get('Title', 'Untitled')}")
+        st.caption(
+            "Paste what Claude generated (the Python script + a few details about how/when to run it). "
+            "Most fields auto-fill from the backlog entry — change them if needed."
+        )
+    else:
+        st.caption(
+            "Paste what Claude generated for an already-built automation. "
+            "All fields start blank — fill them in."
+        )
+    entry = entry or {"ID": "", "Title": "", "Sheet Link": "", "Description": ""}
 
     with st.form("wire_up_form", clear_on_submit=False):
         col1, col2 = st.columns(2)
@@ -850,11 +859,12 @@ def _show_wire_up_dialog(entry: dict):
                 st.error(msg)
                 return
 
-            # Mark backlog entry as done
-            try:
-                _mark_intake_done(str(entry["ID"]))
-            except Exception:
-                pass
+            # Mark backlog entry as done (only if there was one)
+            if entry.get("ID"):
+                try:
+                    _mark_intake_done(str(entry["ID"]))
+                except Exception:
+                    pass
 
             st.success(f"✅ Wired up! It will appear on **{assignee}**'s dashboard.")
             st.balloons()
@@ -1184,13 +1194,17 @@ if st.session_state.view == "home":
     # Automation Backlog — unassigned + in-progress requests
     # --------------------------------------------------------------------
     st.markdown("---")
-    bl_cols = st.columns([5, 2])
+    bl_cols = st.columns([4, 2, 2])
     with bl_cols[0]:
         st.markdown("### 🚧 Automation Backlog")
         st.caption("New report ideas and bugs from the team. Anyone can claim a request to take it on.")
     with bl_cols[1]:
         if st.button("➕ Submit Request", use_container_width=True, type="primary", key="open_intake_btn"):
             _show_intake_dialog()
+    with bl_cols[2]:
+        if st.button("📥 Upload Built Automation", use_container_width=True, key="open_wireup_direct_btn",
+                     help="Upload an automation that's already built (skips the backlog claim flow)"):
+            _show_wire_up_dialog(None)
 
     intake = _read_intake()
     unassigned = [r for r in intake if (r.get("Status") or "Unassigned") == "Unassigned"]
