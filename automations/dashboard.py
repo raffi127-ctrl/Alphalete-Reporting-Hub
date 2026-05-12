@@ -167,11 +167,13 @@ AUTOMATED_REPORTS = [
                 "args_fn": lambda: ["--week", _last_completed_as_picker().isoformat()],
             },
             {
-                "label": "Backfill Last 10 Weeks",
+                "label": "Backfill Last 10 Weeks (one office)",
                 "icon": "🔁",
-                "help": "For each office, fills any empty cells in the last 10 weeks (won't overwrite existing data).",
+                "needs_text": True,
+                "text_label": "Office tab name (exact match)",
+                "help": "Fill any empty cells in the last 10 weeks for ONE office. Won't overwrite existing data.",
                 "module": "automations.recruiting_report.backfill_blanks",
-                "args_fn": lambda: ["--weeks", "10"],
+                "args_fn": lambda name: ["--weeks", "10", "--only", name],
             },
             {
                 "label": "Run a Specific Past Week",
