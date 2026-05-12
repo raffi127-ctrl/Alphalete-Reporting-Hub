@@ -127,10 +127,6 @@ AUTOMATED_REPORTS = [
              "action": "launch_chrome"},
             {"text": "Log into AppStream as **rhidalgo** (broader account)",
              "link": "https://applicantstream.com/", "link_label": "🔗 Open AppStream"},
-            {"text": "If any ICD shows 'not accessible' after the run: switch to the other AppStream login and click Run again",
-             "info": True},
-            {"text": "Spot-check a couple ICD sections in the Sheet after the run",
-             "link": SHEET_URL, "link_label": "📂 Open Sheet"},
         ],
         "actions": [
             {
@@ -314,6 +310,10 @@ def _execute_action(report: dict, action: dict, picked, chrome_ok: bool) -> None
             user=st.session_state.get("user", "unknown"),
             status="success" if rc == 0 else "failed",
         )
+        st.session_state[f"last_run_{report['id']}"] = {
+            "status": "success" if rc == 0 else "failed",
+            "ts": dt.datetime.now().isoformat(timespec="seconds"),
+        }
 
 
 def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
@@ -396,6 +396,27 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
             help=run_help,
         ):
             _execute_action(report, primary, picked, chrome_ok)
+
+        # Post-run callout (appears after a run completes)
+        last_run = st.session_state.get(f"last_run_{report['id']}")
+        if last_run:
+            with st.container(border=True):
+                if last_run["status"] == "success":
+                    st.success("✅ Run finished. If any ICD showed 'not accessible' in the log, switch AppStream logins and run again.")
+                else:
+                    st.error("❌ Run failed. Check the log above. You can retry with the same or other AppStream login below.")
+                cols = st.columns([3, 2])
+                with cols[0]:
+                    st.markdown(
+                        "**Need to switch AppStream accounts?** "
+                        "Log out in the Chrome window, log into the other account, then click Run Again."
+                    )
+                with cols[1]:
+                    if st.button("🔁 Run Again", key=f"again_{report['id']}", use_container_width=True, disabled=not chrome_ok):
+                        _execute_action(report, primary, picked, chrome_ok)
+                if st.button("✖ Dismiss", key=f"dismiss_{report['id']}"):
+                    del st.session_state[f"last_run_{report['id']}"]
+                    st.rerun()
 
         # Secondary actions
         if secondary:
