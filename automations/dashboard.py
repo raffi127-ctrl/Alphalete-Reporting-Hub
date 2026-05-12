@@ -73,14 +73,7 @@ AUTOMATED_REPORTS = [
         "checklist": [
             {"text": "Launch Chrome with the recruiting profile",
              "action": "launch_chrome"},
-            {"text": "Log into AppStream as **rhidalgo** (broader account)",
-             "link": "https://applicantstream.com/", "link_label": "🔗 Open AppStream"},
-            {"text": "After clicking Run, the script will fill ~43 offices accessible from this account",
-             "info": True},
-            {"text": "When done: log out of rhidalgo, log into **rcaptain**, then click **Backfill Last 10 Weeks** below",
-             "info": True},
-            {"text": "Spot-check 1–2 random office tabs in the Sheet",
-             "link": SHEET_URL, "link_label": "📂 Open Sheet"},
+            {"text": "Log into AppStream as **rhidalgo** (broader account) in the new Chrome window"},
         ],
         "actions": [
             {
@@ -125,8 +118,7 @@ AUTOMATED_REPORTS = [
         "checklist": [
             {"text": "Launch Chrome with the recruiting profile",
              "action": "launch_chrome"},
-            {"text": "Log into AppStream as **rhidalgo** (broader account)",
-             "link": "https://applicantstream.com/", "link_label": "🔗 Open AppStream"},
+            {"text": "Log into AppStream as **rhidalgo** (broader account) in the new Chrome window"},
         ],
         "actions": [
             {
@@ -197,6 +189,21 @@ def _launch_chrome() -> tuple[bool, str]:
         return True, "Chrome is launching — check for a new window, then log into AppStream."
     except Exception as e:
         return False, f"Couldn't launch Chrome: {e}"
+
+
+def _on_chrome_launch_click(ck_key: str, msg_key: str):
+    """Callback: launch Chrome and auto-check the related checklist item."""
+    ok, msg = _launch_chrome()
+    st.session_state[msg_key] = (ok, msg)
+    if ok:
+        st.session_state[ck_key] = True
+
+
+def _on_link_open_click(url: str, ck_key: str):
+    """Callback: open URL in browser and auto-check the related checklist item."""
+    import webbrowser
+    webbrowser.open(url)
+    st.session_state[ck_key] = True
 
 
 def _list_recent_logs(n: int = 6) -> list[Path]:
@@ -355,18 +362,33 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                         st.info(step["text"])
                         continue
                     cols = st.columns([5, 3])
+                    ck_key = f"check_{report['id']}_{idx}"
+                    msg_key = f"msg_{report['id']}_{idx}"
                     with cols[0]:
-                        ck_key = f"check_{report['id']}_{idx}"
                         ck = st.checkbox(step["text"], key=ck_key)
                         if not ck:
                             all_checked = False
+                        # Display action result message (set by callback on previous run)
+                        if msg_key in st.session_state:
+                            ok, m = st.session_state[msg_key]
+                            (st.success if ok else st.error)(m)
                     with cols[1]:
                         if step.get("link"):
-                            st.link_button(step.get("link_label", "Open"), step["link"], use_container_width=True)
+                            st.button(
+                                step.get("link_label", "Open"),
+                                key=f"link_{report['id']}_{idx}",
+                                use_container_width=True,
+                                on_click=_on_link_open_click,
+                                args=(step["link"], ck_key),
+                            )
                         elif step.get("action") == "launch_chrome":
-                            if st.button("🚀 Launch Chrome", key=f"chrome_{report['id']}_{idx}", use_container_width=True):
-                                ok, msg = _launch_chrome()
-                                (st.success if ok else st.error)(msg)
+                            st.button(
+                                "🚀 Launch Chrome",
+                                key=f"chrome_{report['id']}_{idx}",
+                                use_container_width=True,
+                                on_click=_on_chrome_launch_click,
+                                args=(ck_key, msg_key),
+                            )
 
         # Primary run button — gated by checklist + Chrome
         run_disabled = (not all_checked) or (not chrome_ok)
