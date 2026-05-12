@@ -2218,6 +2218,33 @@ def _render_bug_card(entry: dict) -> None:
                 st.caption(f"Note: {entry['Resolution Note']}")
 
 
+def _format_schedule_short(report: dict) -> str:
+    """One-line schedule summary for compact lists.
+
+    Examples:
+        Mon Wed Fri at 8:00 AM
+        Daily at 9:00 AM
+        15th of each month at 8:00 AM
+    """
+    sched = report.get("schedule") or {}
+    freq = sched.get("frequency", "")
+    time_str = (sched.get("time") or "").strip()
+    time_part = f" at {time_str}" if time_str else ""
+    if freq == "monthly":
+        dom = sched.get("day_of_month")
+        if dom:
+            return f"{_ordinal(int(dom))} of each month{time_part}"
+        return f"Monthly{time_part}"
+    if freq == "daily":
+        return f"Daily{time_part}"
+    weekdays = sched.get("weekdays") or []
+    if not weekdays:
+        return "(no schedule set)"
+    day_short = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    days = " ".join(day_short[d] for d in sorted(weekdays))
+    return f"{days}{time_part}"
+
+
 def _render_bug_typed_view(
     *,
     type_keyword: str,
@@ -3585,8 +3612,26 @@ else:  # st.session_state.view == "user"
 
             if my_reports:
                 st.markdown("## 🚀 Your Reports")
+                st.caption("Click a report name to open it and run.")
                 for report in my_reports:
-                    _render_report_card(report, today, chrome_ok)
+                    _row = st.columns([3, 2])
+                    with _row[0]:
+                        if st.button(
+                            f"{report.get('emoji', '📄')} {report['name']}",
+                            key=f"profile_run_{report['id']}",
+                            use_container_width=True,
+                        ):
+                            st.session_state["library_report_id"] = report["id"]
+                            _set_view("library")
+                            st.rerun()
+                    with _row[1]:
+                        st.markdown(
+                            "<div style='padding:0.5rem 0.6rem; color:#666; "
+                            "font-size:0.9em'>"
+                            f"📅 {_format_schedule_short(report)}"
+                            "</div>",
+                            unsafe_allow_html=True,
+                        )
             else:
                 st.info(f"No reports assigned to {user_name} yet.")
 
