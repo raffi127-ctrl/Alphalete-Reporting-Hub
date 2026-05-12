@@ -310,18 +310,33 @@ def _list_recent_logs(n: int = 6) -> list[Path]:
 
 
 def _is_due_today(report: dict, today: dt.date) -> bool:
-    sched = report.get("schedule")
-    if not sched:
-        return False
-    if sched.get("frequency") == "daily":
-        return True
-    return today.weekday() in sched.get("weekdays", [])
+    return _was_due_on(report, today)
 
 
 def _next_due(report: dict, today: dt.date):
     sched = report.get("schedule")
     if not sched:
         return None
+    if sched.get("frequency") == "monthly":
+        dom = sched.get("day_of_month")
+        if not dom:
+            return None
+        # Next occurrence of dom (this month if in future, else next month)
+        try:
+            this_month = today.replace(day=dom)
+        except ValueError:
+            this_month = None
+        if this_month and this_month > today:
+            return this_month
+        # Next month
+        if today.month == 12:
+            next_year, next_month = today.year + 1, 1
+        else:
+            next_year, next_month = today.year, today.month + 1
+        try:
+            return dt.date(next_year, next_month, dom)
+        except ValueError:
+            return None
     if sched.get("frequency") == "daily":
         return today + dt.timedelta(days=1)
     weekdays = sched.get("weekdays", [])
@@ -336,6 +351,8 @@ def _was_due_on(report: dict, day: dt.date) -> bool:
     sched = report.get("schedule")
     if not sched:
         return False
+    if sched.get("frequency") == "monthly":
+        return day.day == sched.get("day_of_month")
     if sched.get("frequency") == "daily":
         return True
     return day.weekday() in sched.get("weekdays", [])
@@ -785,22 +802,38 @@ def _show_wire_up_dialog(entry: dict | None = None):
         )
 
         st.markdown("**📅 Schedule**")
-        sched_cols = st.columns([2, 4, 2])
+        sched_mode = st.radio(
+            "When does this report run?",
+            ["Specific weekdays", "Monthly (on a day of the month)"],
+            horizontal=True,
+            key="sched_mode_radio",
+        )
+
+        days_chosen: list[int] = []
+        day_of_month: int = 1
+
+        if sched_mode == "Specific weekdays":
+            st.caption("Tick every day this report should run.")
+            dcols = st.columns(7)
+            short_labels = ["M", "T", "W", "Th", "F", "Sa", "Su"]
+            for i, col in enumerate(dcols):
+                with col:
+                    # Vertical layout: label on top, checkbox below
+                    st.markdown(f"<div style='text-align:center; font-weight:600; font-size:1.05rem'>{short_labels[i]}</div>", unsafe_allow_html=True)
+                    if st.checkbox(" ", key=f"sched_day_{i}", label_visibility="collapsed", value=(i in [1, 2, 3, 4, 5])):
+                        days_chosen.append(i)
+        else:
+            day_of_month = st.number_input(
+                "Day of the month (1–31)",
+                min_value=1, max_value=31, value=1, step=1,
+                help="The report will run on this day each month. If the month is shorter, it skips (e.g. 31st only runs in long months).",
+            )
+
+        sched_cols = st.columns(2)
         with sched_cols[0]:
-            frequency = st.radio("Frequency *", ["Daily (Tue–Sat)", "Weekly", "Daily (Mon–Fri)", "Daily (every day)"], index=0)
-        with sched_cols[1]:
-            if frequency == "Weekly":
-                days_chosen = st.multiselect(
-                    "Which days?",
-                    options=list(range(7)),
-                    default=[0],
-                    format_func=lambda x: WEEKDAY_NAMES[x],
-                )
-            else:
-                days_chosen = []
-                st.caption(f"_{frequency}_ — runs on those days automatically.")
-        with sched_cols[2]:
             time_str = st.text_input("Time of day", value="8:00 AM")
+        with sched_cols[1]:
+            st.caption("(Time of day is informational — runs are triggered manually unless you set a cron.)")
 
         st.markdown("**🐍 Python script** (paste what Claude generated)")
         script_text = st.text_area(
@@ -820,22 +853,30 @@ def _show_wire_up_dialog(entry: dict | None = None):
         submitted = st.form_submit_button("🚀 Wire It Up & Mark Done", type="primary", use_container_width=True)
 
         if submitted:
-            if not (name and assignee and script_text and frequency):
+            if not (name and assignee and script_text):
                 st.error("Please fill every field marked *.")
                 return
 
             # Build schedule dict
-            if frequency == "Daily (Tue–Sat)":
-                schedule = {"frequency": "weekly", "weekdays": [1, 2, 3, 4, 5], "time": time_str, "estimated_minutes": int(est_min)}
-            elif frequency == "Daily (Mon–Fri)":
-                schedule = {"frequency": "weekly", "weekdays": [0, 1, 2, 3, 4], "time": time_str, "estimated_minutes": int(est_min)}
-            elif frequency == "Daily (every day)":
-                schedule = {"frequency": "daily", "weekdays": list(range(7)), "time": time_str, "estimated_minutes": int(est_min)}
-            else:  # Weekly
+            if sched_mode == "Monthly (on a day of the month)":
+                schedule = {
+                    "frequency": "monthly",
+                    "day_of_month": int(day_of_month),
+                    "time": time_str,
+                    "estimated_minutes": int(est_min),
+                }
+            else:
                 if not days_chosen:
-                    st.error("Pick at least one day for a weekly schedule.")
+                    st.error("Pick at least one weekday.")
                     return
-                schedule = {"frequency": "weekly", "weekdays": days_chosen, "time": time_str, "estimated_minutes": int(est_min)}
+                # If all 7 days picked → "daily"; otherwise "weekly" with specific days
+                freq = "daily" if len(days_chosen) == 7 else "weekly"
+                schedule = {
+                    "frequency": freq,
+                    "weekdays": sorted(days_chosen),
+                    "time": time_str,
+                    "estimated_minutes": int(est_min),
+                }
 
             # Parse checklist
             checklist = []
