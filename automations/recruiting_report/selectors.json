@@ -1,0 +1,14 @@
+{
+  "_comment": "ApplicantStream UI selectors. Filled in during the Phase 1 discovery session.",
+  "login_url": null,
+  "username_field": null,
+  "password_field": null,
+  "submit_button": null,
+  "post_login_url_pattern": null,
+  "office_selector": null,
+  "report_url": null,
+  "date_range_start": null,
+  "date_range_end": null,
+  "export_button": null,
+  "export_format_xlsx": null
+}

@@ -1,0 +1,462 @@
+{
+  "confirmed_count": 52,
+  "needs_review_count": 0,
+  "skip_count": 19,
+  "confirmed": [
+    {
+      "sheet_tab": "Raf Hidalgo",
+      "office_id": "11280",
+      "as_owner": "Rafael Hidalgo",
+      "as_company": "ALPHALETE MARKETING, INC.",
+      "confidence": 0.88
+    },
+    {
+      "sheet_tab": "Marcellus Butler",
+      "office_id": "22069",
+      "as_owner": "Marcellus Butler",
+      "as_company": "Pantherforge, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Edgar Muniz II",
+      "office_id": "23377",
+      "as_owner": "Edgar Muniz II",
+      "as_company": "Aurelion Marketing, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Marcial Rodriguez",
+      "office_id": "22512",
+      "as_owner": "Marcial Rodriguez",
+      "as_company": "Radiant Consulting, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Nii Tagoe",
+      "office_id": "23275",
+      "as_owner": "Nii Tagoe",
+      "as_company": "Next Horizon Group, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Jonathan Franco",
+      "office_id": "22749",
+      "as_owner": "Jonathan Franco",
+      "as_company": "Strix Strategies, Inc",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Melik El Jaiez",
+      "office_id": "23265",
+      "as_owner": "Melik El Jaiez",
+      "as_company": "Uniq Strategies, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Jacob Morgan",
+      "office_id": "22597",
+      "as_owner": "Jacob Morgan",
+      "as_company": "Emerald Edge Promotions, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Kiarri McBroom",
+      "office_id": "23139",
+      "as_owner": "Kiarri McBroom",
+      "as_company": "Apex Innovations & Marketing, Inc",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Jennifer Figueroa",
+      "office_id": "23132",
+      "as_owner": "Jennifer Figueroa",
+      "as_company": "Figspire Management, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Nicholas Weldon",
+      "office_id": "20862",
+      "as_owner": "Nicholas Weldon",
+      "as_company": "Elite Level Management, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Tre Mitchell",
+      "office_id": "21182",
+      "as_owner": "Lamar Mitchell III",
+      "as_company": "Mission III Management, Inc.",
+      "confidence": 0.67
+    },
+    {
+      "sheet_tab": "Eric Martinez",
+      "office_id": "20721",
+      "as_owner": "Eric Martinez",
+      "as_company": "Spartan Capital, Inc",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Trang Canavan",
+      "office_id": "6564",
+      "as_owner": "Trang Le Nguyen Canavan",
+      "as_company": "Fresh Success Marketing Group, Inc.",
+      "confidence": 0.75
+    },
+    {
+      "sheet_tab": "Joseph Logan",
+      "office_id": "23376",
+      "as_owner": "Joseph Logan",
+      "as_company": "Logan Legacy Group, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "JR Young",
+      "office_id": "16313",
+      "as_owner": "John Richard Young",
+      "as_company": "Boundless Promotions, Inc.",
+      "confidence": 0.75
+    },
+    {
+      "sheet_tab": "Sam Park",
+      "office_id": "21805",
+      "as_owner": "Sam Park",
+      "as_company": "Spark Approach, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Carissa Ng",
+      "office_id": "23402",
+      "as_owner": "Carissa Ng",
+      "as_company": "Lunar Management Group, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Jason Strid",
+      "office_id": "22695",
+      "as_owner": "Justin Simmons",
+      "as_company": "Newforge Marketing, Inc.",
+      "confidence": 0.7
+    },
+    {
+      "sheet_tab": "Gabe Perez",
+      "office_id": "20646",
+      "as_owner": "Abel Draper",
+      "as_company": "Abyl Acquisition Group, Inc",
+      "confidence": 0.67
+    },
+    {
+      "sheet_tab": "Nigel Gilbert",
+      "office_id": "23431",
+      "as_owner": "Natalia Gwarda",
+      "as_company": "Zora Industries, Inc.",
+      "confidence": 0.7
+    },
+    {
+      "sheet_tab": "Hasani Lynch",
+      "office_id": "20684",
+      "as_owner": "HASANI LYNCH",
+      "as_company": "Educo Solutions, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Kobe Cireus",
+      "office_id": "22765",
+      "as_owner": "Kolin Charboneau",
+      "as_company": "Prestige World Marketing, Inc.",
+      "confidence": 0.7
+    },
+    {
+      "sheet_tab": "Chris Williams",
+      "office_id": "23193",
+      "as_owner": "Chris Williams",
+      "as_company": "Kings Legacy Consultants, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Aron Corral",
+      "office_id": "23467",
+      "as_owner": "Atef Choudhury",
+      "as_company": "Domin8 Acquisitions, Inc.",
+      "confidence": 0.7
+    },
+    {
+      "sheet_tab": "Sheree Rodriguez",
+      "office_id": "21329",
+      "as_owner": "Osvaldo Rodriguez",
+      "as_company": "OzKorp, Inc",
+      "confidence": 0.75
+    },
+    {
+      "sheet_tab": "Jay Turnage",
+      "office_id": "20812",
+      "as_owner": "Jahvid Thompson",
+      "as_company": "Phoenix Acquisition Group, Inc.",
+      "confidence": 0.7
+    },
+    {
+      "sheet_tab": "Tony Chavez",
+      "office_id": "19221",
+      "as_owner": "Jose Antonio Chavez",
+      "as_company": "Cycles Consulting, Inc.",
+      "confidence": 0.75
+    },
+    {
+      "sheet_tab": "German Lopez",
+      "office_id": "22797",
+      "as_owner": "German Lopez",
+      "as_company": "Orbit Consulting Inc",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Alex Vondra",
+      "office_id": "22794",
+      "as_owner": "Alexandra Payne",
+      "as_company": "Opal Core Management, Inc.",
+      "confidence": 0.62
+    },
+    {
+      "sheet_tab": "Coel Reif",
+      "office_id": "23171",
+      "as_owner": "Coel Reif",
+      "as_company": "Tally Management Group, Inc",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Steve McElwee",
+      "office_id": "23160",
+      "as_owner": "Steve McElwee",
+      "as_company": "Luxe Global Consulting, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Sahil Multani",
+      "office_id": "20490",
+      "as_owner": "Sahil Multani",
+      "as_company": "M Coast, Inc",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Brian Tran",
+      "office_id": "23082",
+      "as_owner": "Brian Tran",
+      "as_company": "Sky Nova, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Cody Cannon",
+      "office_id": "21151",
+      "as_owner": "Cody Cannon",
+      "as_company": "Aeon Specialized Consulting, Inc",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Aya Al-Khafaji",
+      "office_id": "22992",
+      "as_owner": "Aya Al-Khafaji",
+      "as_company": "Indelible Marketing, Inc",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Cyrus Wade",
+      "office_id": "22815",
+      "as_owner": "Cyrus Wade",
+      "as_company": "Ambient Marketing, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Jeremiah Minor",
+      "office_id": "22525",
+      "as_owner": "Joshua Molina",
+      "as_company": "KEYNETIC, INC.",
+      "confidence": 0.7
+    },
+    {
+      "sheet_tab": "Haytham Nagi",
+      "office_id": "22524",
+      "as_owner": "Haytham Nagi",
+      "as_company": "Horizon Edge Alliance, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Jacob Dover (Tevin Sterling)",
+      "office_id": "22990",
+      "as_owner": "Tevin Sterling",
+      "as_company": "Kingsford Acquisitions, Inc",
+      "confidence": 0.67
+    },
+    {
+      "sheet_tab": "Hammad Haque",
+      "office_id": "21328",
+      "as_owner": "Muhammad UI Haque",
+      "as_company": "Elite Prime Group, Inc",
+      "confidence": 0.83
+    },
+    {
+      "sheet_tab": "Kash Rai",
+      "office_id": "22177",
+      "as_owner": "Akashdeep Rai",
+      "as_company": "Palace Acquisitions, Inc.",
+      "confidence": 0.76
+    },
+    {
+      "sheet_tab": "Stergios Kasapidis",
+      "office_id": "22546",
+      "as_owner": "Sung Kim",
+      "as_company": "Zenith Innovations, Inc.",
+      "confidence": 0.7
+    },
+    {
+      "sheet_tab": "Chan Park",
+      "office_id": "19588",
+      "as_owner": "Chan Park",
+      "as_company": "(hardcoded \u2014 may not be visible in all AS accounts)",
+      "confidence": 1.0,
+      "hardcoded": true,
+      "siblings": [
+        "22057"
+      ]
+    },
+    {
+      "sheet_tab": "DMari Longmire",
+      "office_id": "22989",
+      "as_owner": "DMari Longmire",
+      "as_company": "(hardcoded \u2014 may not be visible in all AS accounts)",
+      "confidence": 1.0,
+      "hardcoded": true
+    },
+    {
+      "sheet_tab": "Francisco Castillo",
+      "office_id": "22532",
+      "as_owner": "Francisco Castillo",
+      "as_company": "(hardcoded \u2014 may not be visible in all AS accounts)",
+      "confidence": 1.0,
+      "hardcoded": true
+    },
+    {
+      "sheet_tab": "JC Pascual",
+      "office_id": "22976",
+      "as_owner": "JC Pascual",
+      "as_company": "(hardcoded \u2014 may not be visible in all AS accounts)",
+      "confidence": 1.0,
+      "hardcoded": true
+    },
+    {
+      "sheet_tab": "Milly Villagrana",
+      "office_id": "22001",
+      "as_owner": "Milly Villagrana",
+      "as_company": "(hardcoded \u2014 may not be visible in all AS accounts)",
+      "confidence": 1.0,
+      "hardcoded": true
+    },
+    {
+      "sheet_tab": "Natalia Gwarda",
+      "office_id": "23431",
+      "as_owner": "Natalia Gwarda",
+      "as_company": "(hardcoded \u2014 may not be visible in all AS accounts)",
+      "confidence": 1.0,
+      "hardcoded": true
+    },
+    {
+      "sheet_tab": "Oren Shezaf",
+      "office_id": "22536",
+      "as_owner": "Oren Shezaf",
+      "as_company": "(hardcoded \u2014 may not be visible in all AS accounts)",
+      "confidence": 1.0,
+      "hardcoded": true
+    },
+    {
+      "sheet_tab": "Preppie Olison",
+      "office_id": "21373",
+      "as_owner": "Preppie Olison",
+      "as_company": "(hardcoded \u2014 may not be visible in all AS accounts)",
+      "confidence": 1.0,
+      "hardcoded": true
+    },
+    {
+      "sheet_tab": "Starr Rodenhurst",
+      "office_id": "17573",
+      "as_owner": "Starr Rodenhurst",
+      "as_company": "(hardcoded \u2014 may not be visible in all AS accounts)",
+      "confidence": 1.0,
+      "hardcoded": true
+    }
+  ],
+  "needs_review": [],
+  "skip": [
+    {
+      "sheet_tab": "Sharon Stephen",
+      "reason": "admin tab"
+    },
+    {
+      "sheet_tab": "Rason Williams",
+      "reason": "admin tab"
+    },
+    {
+      "sheet_tab": "Salik Mallick",
+      "reason": "admin tab"
+    },
+    {
+      "sheet_tab": "Template 1",
+      "reason": "admin tab"
+    },
+    {
+      "sheet_tab": "Country Sales Board (backup copy)",
+      "reason": "admin tab"
+    },
+    {
+      "sheet_tab": "Country Sales Board ",
+      "reason": "admin tab"
+    },
+    {
+      "sheet_tab": "Country Stats",
+      "reason": "admin tab"
+    },
+    {
+      "sheet_tab": "Country Metrics pilot",
+      "reason": "admin tab"
+    },
+    {
+      "sheet_tab": "Country Metrics",
+      "reason": "admin tab"
+    },
+    {
+      "sheet_tab": "Copy of Country Sales Board ",
+      "reason": "admin tab"
+    },
+    {
+      "sheet_tab": "Daily Focus Report",
+      "reason": "admin tab"
+    },
+    {
+      "sheet_tab": "Focus Office - Sales",
+      "reason": "admin tab"
+    },
+    {
+      "sheet_tab": "Zach Hogue",
+      "reason": "admin tab"
+    },
+    {
+      "sheet_tab": "Eric Zech",
+      "reason": "admin tab"
+    },
+    {
+      "sheet_tab": "Wayne Rude",
+      "reason": "admin tab"
+    },
+    {
+      "sheet_tab": "ATT owners list",
+      "reason": "admin tab"
+    },
+    {
+      "sheet_tab": "Copy of Country Stats",
+      "reason": "admin tab"
+    },
+    {
+      "sheet_tab": "Template Fiber",
+      "reason": "admin tab (filtered before sync)"
+    },
+    {
+      "sheet_tab": "Rafs",
+      "reason": "admin tab (filtered before sync)"
+    }
+  ]
+}

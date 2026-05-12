@@ -1,0 +1,224 @@
+{
+  "element_info": {
+    "tag": "INPUT",
+    "attrs": {
+      "id": "searchMC",
+      "type": "text",
+      "style": "padding:2px;font-size:.8em;width:140px;",
+      "placeholder": "Type to change office...",
+      "class": "ui-autocomplete-input",
+      "autocomplete": "off"
+    },
+    "outerHTML_truncated": "<input id=\"searchMC\" type=\"text\" style=\"padding:2px;font-size:.8em;width:140px;\" placeholder=\"Type to change office...\" class=\"ui-autocomplete-input\" autocomplete=\"off\">",
+    "parent_form_action": null,
+    "parent_form_html_truncated": null,
+    "candidate_lists": [
+      {
+        "tag": "SELECT",
+        "id": "",
+        "name": "",
+        "option_count": 12,
+        "first_5": [
+          {
+            "value": "0",
+            "text": "Jan"
+          },
+          {
+            "value": "1",
+            "text": "Feb"
+          },
+          {
+            "value": "2",
+            "text": "Mar"
+          },
+          {
+            "value": "3",
+            "text": "Apr"
+          },
+          {
+            "value": "4",
+            "text": "May"
+          }
+        ]
+      },
+      {
+        "tag": "SELECT",
+        "id": "",
+        "name": "",
+        "option_count": 21,
+        "first_5": [
+          {
+            "value": "2016",
+            "text": "2016"
+          },
+          {
+            "value": "2017",
+            "text": "2017"
+          },
+          {
+            "value": "2018",
+            "text": "2018"
+          },
+          {
+            "value": "2019",
+            "text": "2019"
+          },
+          {
+            "value": "2020",
+            "text": "2020"
+          }
+        ]
+      }
+    ]
+  },
+  "candidate_globals": {
+    "location": {
+      "type": "object",
+      "keys": [
+        "ancestorOrigins",
+        "href",
+        "origin",
+        "protocol",
+        "host",
+        "hostname",
+        "port",
+        "pathname",
+        "search",
+        "hash"
+      ]
+    }
+  },
+  "dropdown_after_type": [
+    {
+      "selector": ".ui-autocomplete",
+      "items": [
+        "1366\nJoseph Eckhart\nVincero Inc",
+        "6564\nTrang Le Nguyen Canavan\nFresh Success Marketing Group, Inc.",
+        "6871\nJuan Ignacio Lucio\nLucio Marketing, Inc.",
+        "7104\nJessica Irish\nPrestige NY",
+        "7935\nIskander Touati\nLong Beach Consulting Group",
+        "7530\nRobert Griffin\nADVANCED AXIS, INC",
+        "9218\nAlex Guzman Benitez\nBEYMARK, INC.",
+        "10366\nStacy Santos\nInstep Marketing inc",
+        "10707\nJoshua Murphy\nZealous United, Inc.",
+        "10778\nMarvin Williams\nMAC Global Marketing, Inc",
+        "11296\nGeorge Hipolito\nVincere Associates Inc",
+        "11280\nRafael Hidalgo\nALPHALETE MARKETING, INC.",
+        "11906\nKinsey Guenther\nThe KC Standard, Inc.",
+        "12044\nJames Andorful\nAscension Management, Inc.",
+        "12559\nRichard Anderson\nNewbern Excel, Inc.",
+        "11901\nKHALIL MANSOUR\nALPHALETE MANAGEMENT GROUP, INC.",
+        "15698\nAlex Turzynski\nThreshold Marketing, Inc.",
+        "15825\nEllen Dent\nVanguard Management Inc",
+        "16313\nJohn Richard Young\nBoundless Promotions, Inc.",
+        "16360\nAdam Cole\nInfinity Mgmt Group, Inc.",
+        "17077\nCindy Gaitan-Gomez\nVentura Business Management",
+        "17274\nAlex Roberts\nPrecision Solutions, Inc.",
+        "17421\nPatrick Thompson\nTidal Management, Inc 2nd",
+        "3766\nSam Rabinowitz\nStrategic Marketing",
+        "17573\nStarr Rodenhurst\nNova Management, Inc.",
+        "17653\nJessica Lieberman\n5M Promotions, Inc.",
+        "17694\nALANTE ATKINS\nA&Z MARKETING, INC.",
+        "19035\nHa-Jong Jhun\nStoic Management Group, Inc",
+        "19221\nJose Antonio Chavez\nCycles Consulting, Inc.",
+        "19298\nRobert Griffin\nADVANCED AXIS, INC 2nd",
+        "19588\nChan Park\nNola Management Group, Inc.",
+        "19592\nJamis Garay\nMIDSPIRE INC",
+        "19734\nCatherine OMeara\nStinger Management, Inc.",
+        "18102\nDorian Black\nNew Vision Management Inc",
+        "20031\nStephen Sharon\nStephen Consulting, Inc",
+        "19910\nFloyd Rude\nElite Strategic Solutions, Inc",
+        "20334\nKHALIL MANSOUR\nALPHALETE MANAGEMENT GROUP, INC. 2nd",
+        "20353\nFabian Diaz\nPaideia Management, Inc",
+        "20426\nShani Shand\nSurmount Innovations, Inc.",
+        "20301\nSubhash Biscessar\nDreamcrafters Management, Inc.",
+        "20587\nTy Singkhek\nPolar Marketing, Inc.",
+        "20588\nAlexander Vondra\nA.C.E. Executives, Inc",
+        "19152\nChristopher Marzullo\nPrime Time Executives, Inc",
+        "20688\nGrigor Dimitrov\nPinakle Inc",
+        "20684\nHASANI LYNCH\nEduco Solutions, Inc.",
+        "20721\nEric Martinez\nSpartan Capital, Inc",
+        "20799\nDarnell Brown\nAccelerated Management, Inc",
+        "20862\nNicholas Weldon\nElite Level Management, Inc.",
+        "20886\nTaylor Nickerson\nLegacy Marketing, Inc",
+        "20425\nDekiyah Sanders\nKairos Vision Inc.",
+        "20854\nSebastian Gutierrez\nWestpeak Consultants, Inc",
+        "21169\nLuis Salazar\nApex Premier Management, Inc.",
+        "21172\nSam Rabinowitz\nStrategic Marketing",
+        "21182\nLamar Mitchell III\nMission III Management, Inc.",
+        "21151\nCody Cannon\nAeon Specialized Consulting, Inc",
+        "21344\nMitchell Evans\nVon Oben Solutions, Inc.",
+        "21328\nMuhammad UI Haque\nElite Prime Group, Inc",
+        "21359\nCierra Davis\nEncore Promotions, Inc",
+        "21388\nAbhiram Potturu\nEternal Management Group, Inc",
+        "20958\nLuke Baldwin\nTakeoff Enterprises, Inc. 2nd"
+      ]
+    },
+    {
+      "selector": ".ui-menu",
+      "items": [
+        "1366\nJoseph Eckhart\nVincero Inc",
+        "6564\nTrang Le Nguyen Canavan\nFresh Success Marketing Group, Inc.",
+        "6871\nJuan Ignacio Lucio\nLucio Marketing, Inc.",
+        "7104\nJessica Irish\nPrestige NY",
+        "7935\nIskander Touati\nLong Beach Consulting Group",
+        "7530\nRobert Griffin\nADVANCED AXIS, INC",
+        "9218\nAlex Guzman Benitez\nBEYMARK, INC.",
+        "10366\nStacy Santos\nInstep Marketing inc",
+        "10707\nJoshua Murphy\nZealous United, Inc.",
+        "10778\nMarvin Williams\nMAC Global Marketing, Inc",
+        "11296\nGeorge Hipolito\nVincere Associates Inc",
+        "11280\nRafael Hidalgo\nALPHALETE MARKETING, INC.",
+        "11906\nKinsey Guenther\nThe KC Standard, Inc.",
+        "12044\nJames Andorful\nAscension Management, Inc.",
+        "12559\nRichard Anderson\nNewbern Excel, Inc.",
+        "11901\nKHALIL MANSOUR\nALPHALETE MANAGEMENT GROUP, INC.",
+        "15698\nAlex Turzynski\nThreshold Marketing, Inc.",
+        "15825\nEllen Dent\nVanguard Management Inc",
+        "16313\nJohn Richard Young\nBoundless Promotions, Inc.",
+        "16360\nAdam Cole\nInfinity Mgmt Group, Inc.",
+        "17077\nCindy Gaitan-Gomez\nVentura Business Management",
+        "17274\nAlex Roberts\nPrecision Solutions, Inc.",
+        "17421\nPatrick Thompson\nTidal Management, Inc 2nd",
+        "3766\nSam Rabinowitz\nStrategic Marketing",
+        "17573\nStarr Rodenhurst\nNova Management, Inc.",
+        "17653\nJessica Lieberman\n5M Promotions, Inc.",
+        "17694\nALANTE ATKINS\nA&Z MARKETING, INC.",
+        "19035\nHa-Jong Jhun\nStoic Management Group, Inc",
+        "19221\nJose Antonio Chavez\nCycles Consulting, Inc.",
+        "19298\nRobert Griffin\nADVANCED AXIS, INC 2nd",
+        "19588\nChan Park\nNola Management Group, Inc.",
+        "19592\nJamis Garay\nMIDSPIRE INC",
+        "19734\nCatherine OMeara\nStinger Management, Inc.",
+        "18102\nDorian Black\nNew Vision Management Inc",
+        "20031\nStephen Sharon\nStephen Consulting, Inc",
+        "19910\nFloyd Rude\nElite Strategic Solutions, Inc",
+        "20334\nKHALIL MANSOUR\nALPHALETE MANAGEMENT GROUP, INC. 2nd",
+        "20353\nFabian Diaz\nPaideia Management, Inc",
+        "20426\nShani Shand\nSurmount Innovations, Inc.",
+        "20301\nSubhash Biscessar\nDreamcrafters Management, Inc.",
+        "20587\nTy Singkhek\nPolar Marketing, Inc.",
+        "20588\nAlexander Vondra\nA.C.E. Executives, Inc",
+        "19152\nChristopher Marzullo\nPrime Time Executives, Inc",
+        "20688\nGrigor Dimitrov\nPinakle Inc",
+        "20684\nHASANI LYNCH\nEduco Solutions, Inc.",
+        "20721\nEric Martinez\nSpartan Capital, Inc",
+        "20799\nDarnell Brown\nAccelerated Management, Inc",
+        "20862\nNicholas Weldon\nElite Level Management, Inc.",
+        "20886\nTaylor Nickerson\nLegacy Marketing, Inc",
+        "20425\nDekiyah Sanders\nKairos Vision Inc.",
+        "20854\nSebastian Gutierrez\nWestpeak Consultants, Inc",
+        "21169\nLuis Salazar\nApex Premier Management, Inc.",
+        "21172\nSam Rabinowitz\nStrategic Marketing",
+        "21182\nLamar Mitchell III\nMission III Management, Inc.",
+        "21151\nCody Cannon\nAeon Specialized Consulting, Inc",
+        "21344\nMitchell Evans\nVon Oben Solutions, Inc.",
+        "21328\nMuhammad UI Haque\nElite Prime Group, Inc",
+        "21359\nCierra Davis\nEncore Promotions, Inc",
+        "21388\nAbhiram Potturu\nEternal Management Group, Inc",
+        "20958\nLuke Baldwin\nTakeoff Enterprises, Inc. 2nd"
+      ]
+    }
+  ],
+  "network_after_type": []
+}

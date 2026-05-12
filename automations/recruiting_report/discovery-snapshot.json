@@ -1,0 +1,340 @@
+{
+  "current_url": "https://applicantstream.com/index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=701",
+  "title": "Retention Report",
+  "buttons_seen": [
+    "\n\t\t\t\t\t\t\t\t\u00d7\n\t\t\t\t\t\t\t",
+    "Close",
+    "Save changes",
+    "\n\t\t\t\u00d7\n\t\t",
+    "Close",
+    "Save changes",
+    "\n\t\t\t\t\t\t\t\t\tCVs\n\t\t\t\t\t\t\t\t",
+    "\n\t\t\t\t\t\t\t\t\tSCP\n\t\t\t\t\t\t\t\t",
+    "Export to Excel",
+    "Export to CSV",
+    " Close",
+    " Close",
+    " Close"
+  ],
+  "links_seen": [
+    {
+      "text": "\n\t\t\t\t\t\n\t\t\t\t",
+      "href": "index.cfm?p=91&rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6"
+    },
+    {
+      "text": "Advanced Search",
+      "href": "index.cfm?p=109&rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6"
+    },
+    {
+      "text": "",
+      "href": "index.cfm?&p=77&rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6"
+    },
+    {
+      "text": "",
+      "href": "index.cfm?p=99&rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6"
+    },
+    {
+      "text": "Home",
+      "href": "#"
+    },
+    {
+      "text": "Dashboard",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=104"
+    },
+    {
+      "text": "Search",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=109"
+    },
+    {
+      "text": "Alerts",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=110"
+    },
+    {
+      "text": "Remove Reasons",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=112"
+    },
+    {
+      "text": "Quick Notes",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=113"
+    },
+    {
+      "text": "Renew Expired Apps",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=124"
+    },
+    {
+      "text": "Applicants",
+      "href": "#"
+    },
+    {
+      "text": "Enter Apps Manually",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=601"
+    },
+    {
+      "text": "One App at a time",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=604"
+    },
+    {
+      "text": "Process in Batches",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=616"
+    },
+    {
+      "text": "Process using Combo screen",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=1622"
+    },
+    {
+      "text": "Resume Scooper",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=635"
+    },
+    {
+      "text": "Removed Apps at Processing",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=605"
+    },
+    {
+      "text": "Apps Received",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=608"
+    },
+    {
+      "text": "File Import",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=632"
+    },
+    {
+      "text": "Duplicate Apps",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=620"
+    },
+    {
+      "text": "Duplicate Settings",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=130"
+    },
+    {
+      "text": "Group Duplicate Settings",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=131"
+    },
+    {
+      "text": "Call List",
+      "href": "#"
+    },
+    {
+      "text": "Call List",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=501"
+    },
+    {
+      "text": "Call List - Quick",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=506"
+    },
+    {
+      "text": "Removed Apps from Call List",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=512"
+    },
+    {
+      "text": "Undo Removed Apps from Call List",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=513"
+    },
+    {
+      "text": "Purge Call List",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=322"
+    },
+    {
+      "text": "Last Called from Mobile App",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=107"
+    },
+    {
+      "text": "Calendar",
+      "href": "#"
+    },
+    {
+      "text": "Calendar",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=102"
+    },
+    {
+      "text": "Weekly Calendar",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=105"
+    },
+    {
+      "text": "Removed Apps from Calendar",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=132"
+    },
+    {
+      "text": "Training Calendar Re-Send Email",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=134"
+    },
+    {
+      "text": "Active",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=930"
+    },
+    {
+      "text": "Retired",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=950"
+    },
+    {
+      "text": "Enter Manually",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=940"
+    },
+    {
+      "text": "Reports",
+      "href": "#"
+    },
+    {
+      "text": "Retention - Summary",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=703"
+    },
+    {
+      "text": "Retention - Attrition",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=731"
+    },
+    {
+      "text": "Retention - Details",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=701"
+    },
+    {
+      "text": "Retention - Details (new)",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=783"
+    },
+    {
+      "text": "Retention - Monthly",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=713"
+    },
+    {
+      "text": "Retention - Leaders",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=719"
+    },
+    {
+      "text": "Source Report",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=702"
+    },
+    {
+      "text": "Source Report - Attrition",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=732"
+    },
+    {
+      "text": "Source Report - Organization",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=742"
+    },
+    {
+      "text": "Source Report - Booking Type",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=737"
+    },
+    {
+      "text": "Group Report",
+      "href": "index.cfm?rqst=6DAF2062-0BFC-788A-957FB308C7F5BAB6&p=707"
+    }
+  ],
+  "inputs_seen": [
+    {
+      "name": null,
+      "id": "appstream_rqst",
+      "type": "hidden",
+      "placeholder": null
+    },
+    {
+      "name": null,
+      "id": "appstream_accId",
+      "type": "hidden",
+      "placeholder": null
+    },
+    {
+      "name": "p",
+      "id": null,
+      "type": "hidden",
+      "placeholder": null
+    },
+    {
+      "name": "rqst",
+      "id": null,
+      "type": "hidden",
+      "placeholder": null
+    },
+    {
+      "name": "globalSrchFor",
+      "id": "globalSrchFor",
+      "type": "text",
+      "placeholder": "Last name in full..."
+    },
+    {
+      "name": null,
+      "id": "glblSrchSbmt",
+      "type": "submit",
+      "placeholder": null
+    },
+    {
+      "name": null,
+      "id": "searchMC",
+      "type": "text",
+      "placeholder": "Type to change office..."
+    },
+    {
+      "name": null,
+      "id": "cvsBadgeTotalSwitch",
+      "type": "checkbox",
+      "placeholder": null
+    },
+    {
+      "name": null,
+      "id": "cvsBadgeTwoTotalSwitch",
+      "type": "checkbox",
+      "placeholder": null
+    },
+    {
+      "name": null,
+      "id": "scpBadgeTotalSwitch",
+      "type": "checkbox",
+      "placeholder": null
+    },
+    {
+      "name": null,
+      "id": "scpBadgeTwoTotalSwitch",
+      "type": "checkbox",
+      "placeholder": null
+    },
+    {
+      "name": "p",
+      "id": null,
+      "type": "hidden",
+      "placeholder": null
+    },
+    {
+      "name": "rqst",
+      "id": null,
+      "type": "hidden",
+      "placeholder": null
+    },
+    {
+      "name": "accId",
+      "id": null,
+      "type": "hidden",
+      "placeholder": null
+    },
+    {
+      "name": "startDate2",
+      "id": "startDate2",
+      "type": "hidden",
+      "placeholder": null
+    },
+    {
+      "name": "weekStart",
+      "id": "weekStart",
+      "type": "text",
+      "placeholder": null
+    },
+    {
+      "name": "submit",
+      "id": null,
+      "type": "submit",
+      "placeholder": null
+    },
+    {
+      "name": "adminToggle",
+      "id": "adminToggle",
+      "type": "checkBox",
+      "placeholder": null
+    },
+    {
+      "name": "cbZoom",
+      "id": "cbZoom",
+      "type": "checkbox",
+      "placeholder": null
+    }
+  ],
+  "select_elements": [],
+  "tables_seen": 26,
+  "page_text_first_2000_chars": "0\nMy Promotions\n(Account No: 15)\n  Advanced Search Office: \nRaf \u2013 Captain |  | \nHome\nApplicants\nCall List\nCalendar\nReports\nSMS/Email\nSettings\nJobs2Me\nOffice ID: 11280 \u00a0\u00a0\u00a0\u00a0 Owner: Rafael Hidalgo\nALPHALETE MARKETING, INC.\nTime: May, 08 11:21 PM - Central Standard Time (UTC-5)\nExplore Appstream AI beta User Guide FEEDBACK SPF RRS CVs \n99+\n99+\n SCP  SMS\n12\n1\nBased On Office's Timezone: Central Standard Time (UTC-5) | Office's Time: 05-08-2026 11:21:45 PM\n\nRetention Report\n\nWeek:   Hide/Show Admin Breakdown View Retention - Done By Report\tZoom Applicants Only \t\n05/03/2026 05/09/2026\nALPHALETE MARKETING, INC. | Export to Excel Export to CSV\nAction\tMay 3, 2026\nSunday\tMay 4, 2026\nMonday\tMay 5, 2026\nTuesday\tMay 6, 2026\nWednesday\tMay 7, 2026\nThursday\tMay 8, 2026\nFriday\tMay 9, 2026\nSaturday\tWeekly Total\nRecruiting Data:\nStarting Open Applicants\t21\t109\t40\t106\t67\t94\t0\t437\nEmails Received\t163\t263\t210\t235\t332\t214\t0\t1417\nRemoved From Process Emails View Details\t0\t144\t78\t67\t65\t86\t0\t440\nSent to Call List\t0\t359\t196\t149\t172\t240\t0\t1116\nManual Apps Entry\t0\t0\t0\t2\t0\t3\t0\t5\nNo Answers\t0\t15\t0\t1\t5\t4\t0\t25\nLeft Message One\t0\t169\t66\t111\t101\t130\t0\t577\nLeft Message Two\t0\t95\t138\t56\t100\t133\t0\t522\nLeft Message Three\t0\t164\t128\t284\t219\t216\t0\t1011\nRemoved from Call List View Details\t0\t32\t27\t32\t26\t27\t0\t144\nAdministrative Booking Data:\nInterviews Booked\t0\t191\t108\t109\t119\t164\t0\t691\nRetention Call List\t0\t53 %\t55 %\t72 %\t69 %\t67 %\t0\t61%\nTotal Daily Bob\t0\t5\t9\t7\t8\t9\t0\t38\nSecond Interviews Booked\t0\t33\t19\t38\t31\t30\t0\t151\nTotal First Interviews\t0\t154\t147\t132\t115\t138\t0\t686\nFirst Interviews Showed Up\t0\t66\t50\t67\t55\t65\t0\t303\nCancel First Interview View Details\t0\t0\t0\t0\t0\t0\t0\t0\nRetention First Interviews\t0\t42 %\t34 %\t50 %\t47 %\t47 %\t0\t44%\nTotal Second Interviews\t0\t26\t34\t19\t36\t29\t0\t144\nSecond Interviews Showed Up\t0\t15\t20\t14\t22\t25\t0\t96\nRetention Second Interviews\t0\t57 %\t58 %\t73 %\t61 %\t86 %\t0\t66%\nFirst Showed Up Booked Second\t0\t33\t21\t39\t28\t28\t0\t149\nRetention First Showed Up Booked Second\t0\t50 %\t42 %\t58 %\t50 %\t43 %\t0\t49%\nRemove"
+}

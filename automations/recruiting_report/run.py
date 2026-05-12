@@ -1,0 +1,216 @@
+"""Orchestrate the weekly recruiting-report fill.
+
+Workflow per run:
+  1. Attach to your already-running Chrome (debug port 9222) — you must have
+     logged into AppStream manually first.
+  2. For each office in office-mapping.json:
+       - confirmed:    fetch the target week's metrics, write to the office
+                       tab + master row. If the office tab is empty (no
+                       template structure), inject Template Fiber and
+                       backfill ALL historical weeks present in the template.
+       - needs_review: color the tab red so you know to fix the mapping.
+       - skip:         ignore.
+  3. Log everything to output/logs/recruiting-<date>.log.
+
+Usage:
+  .venv/bin/python -m automations.recruiting_report.run                 # current week, live
+  .venv/bin/python -m automations.recruiting_report.run --dry-run       # don't write to Sheet
+  .venv/bin/python -m automations.recruiting_report.run --only "Cody Cannon"
+  .venv/bin/python -m automations.recruiting_report.run --week 2026-05-10
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import logging
+import sys
+from pathlib import Path
+from typing import Dict, List, Optional
+
+from playwright.sync_api import sync_playwright
+
+from . import fetch_office, fill
+
+WORKSPACE = Path(__file__).resolve().parent.parent.parent
+LOG_ROOT = WORKSPACE / "output" / "logs"
+
+
+def _most_recent_sunday(today: Optional[dt.date] = None) -> dt.date:
+    """The most recent Sunday on or before today."""
+    today = today or dt.date.today()
+    # weekday(): Mon=0 ... Sun=6
+    days_back = (today.weekday() + 1) % 7
+    return today - dt.timedelta(days=days_back)
+
+
+def _setup_logging(week: dt.date) -> logging.Logger:
+    LOG_ROOT.mkdir(parents=True, exist_ok=True)
+    log_path = LOG_ROOT / f"recruiting-{week.isoformat()}.log"
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        handlers=[logging.FileHandler(log_path), logging.StreamHandler()],
+    )
+    return logging.getLogger("run")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--week", help="Sunday YYYY-MM-DD (matches AS picker + Sheet column). Default: most recent Sunday.")
+    ap.add_argument("--only", help="Only process this office (by sheet_tab name).")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--backfill-weeks", type=int, default=10,
+                    help="When a tab is empty (new ICD), how many recent weeks to auto-fill. Default: 10.")
+    args = ap.parse_args()
+
+    week = dt.date.fromisoformat(args.week) if args.week else _most_recent_sunday()
+    log = _setup_logging(week)
+    log.info("target week (AS picker Sunday): %s", week.isoformat())
+    log.info("dry_run=%s", args.dry_run)
+
+    mapping = fill.load_mapping()
+    log.info(
+        "mapping: %d confirmed, %d needs_review, %d skip",
+        mapping["confirmed_count"], mapping["needs_review_count"], mapping["skip_count"],
+    )
+
+    sh = fill.open_sheet()
+    log.info("connected to Google Sheet")
+
+    # Step 1a: needs_review tabs -> red
+    for nr in mapping["needs_review"]:
+        tab_name = nr["sheet_tab"]
+        if args.only and tab_name != args.only:
+            continue
+        try:
+            ws = sh.worksheet(tab_name)
+            if not args.dry_run:
+                fill.mark_needs_review(ws)
+            log.info("[needs_review] %s — colored tab red", tab_name)
+        except Exception as e:
+            log.warning("[needs_review] %s — failed: %s", tab_name, e)
+
+    # Step 1b: uncategorized tabs (not in any mapping bucket) -> blue
+    if not args.only:
+        confirmed_names = {c["sheet_tab"] for c in mapping["confirmed"]}
+        review_names = {n["sheet_tab"] for n in mapping["needs_review"]}
+        skip_names = {s["sheet_tab"] for s in mapping["skip"]}
+        categorized = confirmed_names | review_names | skip_names
+        all_tabs = sh.worksheets()
+        for ws in all_tabs:
+            if ws.title not in categorized:
+                try:
+                    if not args.dry_run:
+                        fill.mark_uncategorized(ws)
+                    log.info("[uncategorized] %s — colored tab blue", ws.title)
+                except Exception as e:
+                    log.warning("[uncategorized] %s — failed: %s", ws.title, e)
+
+    # Step 2: connect to AppStream Chrome via CDP
+    confirmed = mapping["confirmed"]
+    if args.only:
+        confirmed = [c for c in confirmed if c["sheet_tab"] == args.only]
+    if not confirmed:
+        log.info("nothing to fetch from AS (no confirmed offices in scope)")
+        return 0
+
+    log.info("attaching to Chrome at %s", fetch_office.CDP_URL)
+    p = sync_playwright().start()
+    try:
+        browser = p.chromium.connect_over_cdp(fetch_office.CDP_URL)
+        target_page = None
+        for ctx in browser.contexts:
+            for page in ctx.pages:
+                if "applicantstream" in page.url:
+                    target_page = page
+                    break
+            if target_page:
+                break
+        if not target_page:
+            log.error("no applicantstream tab open in attached Chrome — log in first")
+            return 1
+
+        # Pre-compute the list of Template Fiber's columns once. Used to drive
+        # backfill on newly-injected office tabs.
+        template_sundays = fill.list_template_columns(sh)
+        log.info("template has %d weekly columns", len(template_sundays))
+
+        # Step 3: per-office fetch + fill (handles primary + sibling sections)
+        for office in confirmed:
+            tab_name = office["sheet_tab"]
+            primary_id = office["office_id"]
+            owner = office["as_owner"]
+            siblings = office.get("siblings", [])
+            log.info("→ %s (id %s%s)", tab_name, primary_id,
+                     f" + siblings {siblings}" if siblings else "")
+
+            try:
+                ws = sh.worksheet(tab_name)
+            except Exception as e:
+                log.warning("  tab %r missing: %s", tab_name, e)
+                continue
+
+            # Determine weeks to fetch (uses PRIMARY section's populated check)
+            if fill.is_office_tab_populated(ws):
+                weeks_to_fetch = [week]
+            else:
+                recent_template_sundays = [s for s in template_sundays if s <= week][-args.backfill_weeks:]
+                weeks_to_fetch = sorted(set(recent_template_sundays + [week]))
+                log.info("  tab empty → backfilling last %d weeks", len(weeks_to_fetch))
+
+            values = fill._retry(ws.get_all_values)
+            sunday_to_col = fill.find_sunday_columns(values, header_row_idx=0)
+
+            for section_id in [primary_id] + list(siblings):
+                if section_id == primary_id:
+                    section_label = tab_name
+                    anchor = 1
+                else:
+                    section_label = f"{tab_name} (id {section_id})"
+                    anchor_found = fill.find_office_section_anchor(ws, section_id)
+                    if not anchor_found:
+                        log.warning("  [%s] no section header on tab — skip", section_label)
+                        continue
+                    anchor = anchor_found
+
+                metric_rows = fill.find_office_metric_rows(ws, anchor_row=anchor, max_rows=30)
+                if not metric_rows:
+                    log.info("  [%s] no metric rows in section — skip", section_label)
+                    continue
+
+                week_data: Dict[dt.date, Dict[str, Optional[float]]] = {}
+                inaccessible = False
+                for w in weeks_to_fetch:
+                    try:
+                        metrics = fetch_office.fetch_one(target_page, section_id, owner, w)
+                        if metrics:
+                            week_data[w] = metrics
+                            if section_id == primary_id:
+                                log.info("  fetched %s: pull=%s, 1st_booked=%s",
+                                         w, metrics.get("pull"), metrics.get("first_booked"))
+                        elif metrics == {}:
+                            log.warning("  [%s] not accessible — skipping (data preserved)", section_label)
+                            inaccessible = True
+                            break
+                    except Exception as e:
+                        log.exception("  fetch failed for %s week %s: %s", section_label, w, e)
+
+                if inaccessible or not week_data:
+                    continue
+
+                we_sunday_data = {(w + dt.timedelta(days=7)): m for w, m in week_data.items()}
+                for line in fill.fill_office_section(
+                    ws, metric_rows, sunday_to_col, we_sunday_data, args.dry_run, label=section_label
+                ):
+                    log.info(line)
+
+    finally:
+        p.stop()
+
+    log.info("done")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
