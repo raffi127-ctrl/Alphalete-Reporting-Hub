@@ -921,7 +921,7 @@ INTAKE_TAB = "Automation Backlog"
 INTAKE_HEADERS = [
     "ID", "Title", "Sheet Link", "Loom Link", "Description",
     "Submitted By", "Submitted At", "Status", "Assigned To", "Assigned At",
-    "Preferred Creator",
+    "Preferred Creator", "Currently runs", "Priority",
 ]
 
 
@@ -1013,7 +1013,7 @@ def _show_intake_dialog():
         with cols[1]:
             preferred_creator = st.selectbox(
                 "Preferred creator (optional)",
-                ["Not sure yet"] + [m["name"] for m in MEMBERS],
+                ["No preference"] + [m["name"] for m in MEMBERS],
                 help="If you have a specific person in mind to build this, pick them. Anyone can still claim it.",
             )
         currently_runs = st.text_input(
@@ -1039,7 +1039,7 @@ def _show_intake_dialog():
             if not (title and sheet_link and loom_link and description and submitted_by):
                 st.error("Please fill in every field marked *.")
             else:
-                pc = "" if preferred_creator == "Not sure yet" else preferred_creator
+                pc = "" if preferred_creator == "No preference" else preferred_creator
                 try:
                     _add_intake(title, sheet_link, loom_link, description, submitted_by, pc, currently_runs, priority)
                     st.success("✅ Submitted! It will appear on the home page for someone to claim.")
@@ -1425,24 +1425,6 @@ st.markdown("""
         box-shadow: 0 4px 14px rgba(201, 32, 32, 0.45) !important;
     }
 
-    /* Bright-green "Access Alphalete Reporting Hub" button (preflight final step) */
-    div[data-testid="stVerticalBlock"]:has(> div > div > .access-btn-anchor) .stButton > button,
-    div:has(> div > div > .access-btn-anchor) + div .stButton > button {
-        background: #22C55E !important;
-        background-image: none !important;
-        color: #FFFFFF !important;
-        border: 2px solid #16A34A !important;
-        font-weight: 800 !important;
-        font-size: 1.1rem !important;
-        text-shadow: none !important;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div > div > .access-btn-anchor) .stButton > button:hover,
-    div:has(> div > div > .access-btn-anchor) + div .stButton > button:hover {
-        background: #16A34A !important;
-        box-shadow: 0 4px 14px rgba(34, 197, 94, 0.45) !important;
-        color: #FFFFFF !important;
-    }
-
     /* Buttons */
     .stButton > button {
         border-radius: 10px;
@@ -1499,127 +1481,53 @@ LOGO_PATH = WORKSPACE / "resources" / "alphalete-shield.png"
 LOGO_EXISTS = LOGO_PATH.exists()
 
 # --------------------------------------------------------------------------
-# Soft auth gate + preflight check
+# Soft auth gate + session persistence
 #
 # This is a UX gate, not real security. Anyone who knows HUB_PASSWORD can sign
 # in. The real access control is GitHub repo invites + the local install
 # required to even reach localhost:8501. Rotate by changing HUB_PASSWORD below
 # (or set the HUB_PASSWORD env var to override without editing this file).
+#
+# Sessions persist via a small file under ~/.config/recruiting-report/. After
+# successful login the file is touched; every authed render refreshes the
+# timestamp. After 1 hour with no activity, the next visit prompts for the
+# password again. Browser refreshes don't bounce the user back to the login.
 # --------------------------------------------------------------------------
 import os as _os
+import time as _time
 
 HUB_PASSWORD = _os.environ.get("HUB_PASSWORD", "LolaOG2026")
 _CONFIG_DIR = Path.home() / ".config" / "recruiting-report"
-_OAUTH_CLIENT_FILE = _CONFIG_DIR / "oauth-client.json"
-_CHROME_APP = Path("/Applications/Google Chrome.app")
+_SESSION_FILE = _CONFIG_DIR / ".pack-access-session"
+_SESSION_TTL_SECONDS = 60 * 60  # 1 hour of inactivity
+
+
+def _has_valid_session() -> bool:
+    if not _SESSION_FILE.exists():
+        return False
+    try:
+        last = float(_SESSION_FILE.read_text().strip())
+    except Exception:
+        return False
+    return (_time.time() - last) < _SESSION_TTL_SECONDS
+
+
+def _refresh_session() -> None:
+    _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    _SESSION_FILE.write_text(str(_time.time()))
+
+
+def _clear_session() -> None:
+    try:
+        _SESSION_FILE.unlink()
+    except FileNotFoundError:
+        pass
+
 
 if "authed" not in st.session_state:
-    st.session_state.authed = False
-
-
-def _preflight_checks() -> list[dict]:
-    """Return all preflight items with their current status.
-
-    Items with `done=True` render as a green checkmark; items with `done=False`
-    render their fix widget so the user can resolve them in-place.
-    """
-    oauth_done = _OAUTH_CLIENT_FILE.exists()
-    chrome_done = _CHROME_APP.exists()
-    return [
-        {
-            "key": "oauth_client",
-            "icon": "🐺",
-            "title": "Pack Pass",
-            "done": oauth_done,
-            "detail_done": "Your Pack Pass is installed and ready.",
-            "detail_missing": "Your access pass for the Alphalete Report Hub. Download it below, then drag it into the drop zone to finish setup.",
-        },
-        {
-            "key": "chrome",
-            "icon": "🌐",
-            "title": "Google Chrome",
-            "done": chrome_done,
-            "detail_done": "Installed and ready.",
-            "detail_missing": "Reports scrape ApplicantStream using real Chrome.",
-        },
-    ]
-
-
-def _render_oauth_fix_widget() -> None:
-    """The OAuth card's action area: download Pack Pass + drag it onto the drop zone.
-
-    The Pack Pass file ships with the repo, so the user never has to receive
-    anything externally — they download from the hub itself and drag back in
-    to commit to the install.
-    """
-    bundled = WORKSPACE / "oauth-client.json"
-
-    if bundled.exists():
-        st.markdown(
-            "<div style='font-weight: 600; margin-bottom: 0.4rem'>Step 1 — Get your Pack Pass</div>",
-            unsafe_allow_html=True,
-        )
-        st.download_button(
-            "🐺  Download your Pack Pass",
-            data=bundled.read_bytes(),
-            file_name="alphalete-pack-pass.json",
-            mime="application/json",
-            use_container_width=True,
-            type="primary",
-            key="oauth_dl_btn",
-            help="Downloads your Alphalete Pack Pass to your Downloads folder.",
-        )
-        st.markdown(
-            "<div style='font-weight: 600; margin: 1rem 0 0.4rem'>Step 2 — Drag it back in below</div>"
-            "<div style='opacity: 0.75; margin-bottom: 0.4rem'>"
-            "Open Downloads, then drag <b>alphalete-pack-pass.json</b> onto the box below to finish setup."
-            "</div>",
-            unsafe_allow_html=True,
-        )
-    else:
-        st.warning(
-            "⚠️ Your Pack Pass isn't bundled with this install yet. "
-            "Drag the access file onto the box below — or text Megan if you don't have it."
-        )
-
-    uploaded = st.file_uploader(
-        "Drop your Pack Pass here",
-        type=["json"],
-        key="oauth_uploader",
-        label_visibility="collapsed",
-    )
-    if uploaded is not None:
-        # Only act on each new upload once — Streamlit keeps the file in widget
-        # state across reruns, so we'd otherwise loop on rerun. Hashing by name
-        # + size is enough to detect a fresh drop.
-        upload_sig = f"{uploaded.name}:{uploaded.size}"
-        if st.session_state.get("last_oauth_upload_sig") != upload_sig:
-            try:
-                _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-                _OAUTH_CLIENT_FILE.write_bytes(uploaded.getvalue())
-                # Let preview mode know an upload happened so it stops force-marking
-                # the OAuth item as missing — flips the bottom button from gold
-                # "recheck" to green "Access Alphalete Reporting Hub".
-                st.session_state.preview_oauth_uploaded = True
-                st.session_state.last_oauth_upload_sig = upload_sig
-                # Rerun so the preflight items are re-evaluated with the new
-                # disk + session state — that's what unlocks the green button.
-                st.rerun()
-            except Exception as e:
-                st.error(f"Couldn't save the file: {e}")
-        else:
-            st.success("✅ Pack Pass saved. Click **Access Alphalete Reporting Hub** below to continue.")
-
-
-def _render_chrome_fix_widget() -> None:
-    """The Chrome card's action area: one-click download link."""
-    st.link_button(
-        "⬇️ Download Google Chrome",
-        "https://www.google.com/chrome/",
-        use_container_width=True,
-        type="primary",
-    )
-    st.caption("After Chrome installs, come back here and click **I've fixed it — recheck**.")
+    # Rehydrate from disk on first load (or after browser refresh) so users
+    # don't get bounced back to the login screen every time they reload.
+    st.session_state.authed = _has_valid_session()
 
 
 def _render_login_screen() -> None:
@@ -1661,121 +1569,21 @@ def _render_login_screen() -> None:
                 if submit:
                     if pw == HUB_PASSWORD:
                         st.session_state.authed = True
+                        _refresh_session()
                         st.rerun()
                     else:
                         st.error("Wrong password. Try again or text Megan.")
 
 
-def _render_preflight_screen(items: list[dict]) -> None:
-    st.markdown(
-        "<style>[data-testid='stSidebar'] { display: none !important; }</style>",
-        unsafe_allow_html=True,
-    )
-    cols = st.columns([1, 3, 1])
-    with cols[1]:
-        st.markdown("<div style='height: 2rem'></div>", unsafe_allow_html=True)
-        st.markdown(
-            "<div style='text-align:center; font-size: 2rem; font-weight: 800'>"
-            "🚧 Almost there — finish setup"
-            "</div>"
-            "<div style='text-align:center; opacity: 0.7; margin: 0.4rem 0 1.5rem'>"
-            "Here's what we found on your Mac. Items still needed are below — fix them right here."
-            "</div>",
-            unsafe_allow_html=True,
-        )
-        for item in items:
-            with st.container(border=True):
-                if item.get("done"):
-                    st.markdown(
-                        "<div style='font-size: 1.2rem; font-weight: 700; color: #1F7A3D'>"
-                        f"✅ {item['title']}"
-                        "<span style='font-weight: 400; opacity: 0.7; margin-left: 0.5rem'>"
-                        f"— {item.get('detail_done', 'Ready.')}"
-                        "</span>"
-                        "</div>",
-                        unsafe_allow_html=True,
-                    )
-                    continue
-
-                st.markdown(
-                    "<div style='font-size: 1.2rem; font-weight: 700'>"
-                    f"{item['icon']} {item['title']} <span style='font-weight: 400; color: #C92020'>— needed</span>"
-                    "</div>"
-                    f"<div style='margin-top: 0.4rem; margin-bottom: 0.8rem'>{item.get('detail_missing', '')}</div>",
-                    unsafe_allow_html=True,
-                )
-                key = item.get("key")
-                if key == "oauth_client":
-                    _render_oauth_fix_widget()
-                elif key == "chrome":
-                    _render_chrome_fix_widget()
-        st.markdown("<div style='height: 1rem'></div>", unsafe_allow_html=True)
-
-        # Primary action switches based on whether the user is good to go.
-        # When everything's detected: bright green "Access" button.
-        # When something's still missing: gold "recheck" button.
-        all_done = all(item.get("done") for item in items)
-        if all_done:
-            # Anchor div picked up by the app-wide CSS to paint the next button
-            # bright green (see .access-btn-anchor rules).
-            st.markdown('<div class="access-btn-anchor"></div>', unsafe_allow_html=True)
-            if st.button(
-                "🎉 Access Alphalete Reporting Hub",
-                use_container_width=True,
-                type="primary",
-                key="preflight_access_btn",
-            ):
-                # If we got here from ?preview=pack-access, drop the param so the
-                # user lands on the real dashboard rather than re-entering preview.
-                try:
-                    st.query_params.clear()
-                except Exception:
-                    pass
-                # Also reset the preview-upload flag so re-entering preview
-                # later starts in the "Pack Pass needed" state again.
-                st.session_state.pop("preview_oauth_uploaded", None)
-                st.rerun()
-        else:
-            if st.button(
-                "🔄 I've fixed it — recheck",
-                use_container_width=True,
-                type="primary",
-                key="preflight_recheck_btn",
-            ):
-                st.rerun()
-        if st.button("Sign out", use_container_width=True, key="preflight_signout_btn"):
-            st.session_state.authed = False
-            st.rerun()
-
-
-# Gate 1: not authed → login screen
+# Auth gate
 if not st.session_state.authed:
     _render_login_screen()
     st.stop()
 
-# Preview mode for Megan: visit http://localhost:8501/?preview=pack-access to
-# see exactly what a brand-new user sees when their machine isn't set up.
-# Remove the param from the URL to exit preview.
-if st.query_params.get("preview") == "pack-access":
-    # Show the real preflight state but force the OAuth item to be "missing"
-    # so you can see the uploader UI even when your own machine is fully set up.
-    # Once an upload happens in this session, drop the force so the bottom
-    # button can flip to the bright-green "Access Alphalete Reporting Hub".
-    _preview_items = _preflight_checks()
-    if not st.session_state.get("preview_oauth_uploaded"):
-        for _it in _preview_items:
-            if _it["key"] == "oauth_client":
-                _it["done"] = False
-    _render_preflight_screen(_preview_items)
-    st.stop()
-
-# Gate 2: authed but missing prereqs → preflight setup screen
-# (Renders all items so users see green checkmarks for what's already detected,
-# fix widgets for what's still needed. Skips the screen entirely if all done.)
-_preflight_items = _preflight_checks()
-if any(not item["done"] for item in _preflight_items):
-    _render_preflight_screen(_preflight_items)
-    st.stop()
+# Refresh session timestamp on every authed render. After SESSION_TTL_SECONDS
+# of inactivity (no script reruns), the next page load will fail
+# _has_valid_session() and bounce back to the login screen.
+_refresh_session()
 
 
 today = dt.date.today()
@@ -1952,6 +1760,13 @@ with st.sidebar:
     )
     if st.button("⚠️ Suggest a Change / Bug", use_container_width=True, key="open_suggest_btn"):
         st.session_state.show_suggest = True
+
+    # Tiny sign-out link at the very bottom — ends the 1-hour session so the
+    # next page load prompts for the Pack Access password again.
+    if st.button("Sign out", use_container_width=True, key="sidebar_signout_btn"):
+        st.session_state.authed = False
+        _clear_session()
+        st.rerun()
 
 
 # --------------------------------------------------------------------------
