@@ -1994,6 +1994,47 @@ if st.session_state.view == "home":
     </div>
     """, unsafe_allow_html=True)
 
+    # --------------------------------------------------------------------
+    # Email deep-link focus — full width, top of the page so you land ON
+    # the card you came here for instead of having to scroll/scan.
+    # Honors either ?request=<id> (automation backlog) or ?bug=<id> (bug
+    # reports). Falls back to a warning if the ID is unknown.
+    # --------------------------------------------------------------------
+    _dl_request_id = st.query_params.get("request", "").strip()
+    _dl_bug_id     = st.query_params.get("bug", "").strip()
+    if _dl_request_id or _dl_bug_id:
+        with st.container(border=True):
+            st.markdown("#### 📌 You came here from an email")
+            if _dl_request_id:
+                _hit = next(
+                    (r for r in _read_intake() if str(r.get("ID")) == _dl_request_id),
+                    None,
+                )
+                if _hit:
+                    _hit_status = _hit.get("Status") or "Unassigned"
+                    _render_intake_card(
+                        _hit,
+                        allow_claim=(_hit_status == "Unassigned"),
+                        allow_done=(_hit_status == "In Progress"),
+                    )
+                else:
+                    st.warning(f"Couldn't find a request with ID `{_dl_request_id}` — showing the full hub below.")
+            elif _dl_bug_id:
+                _hit = next(
+                    (b for b in _read_bugs() if str(b.get("ID")) == _dl_bug_id),
+                    None,
+                )
+                if _hit:
+                    _render_bug_card(_hit)
+                else:
+                    st.warning(f"Couldn't find a bug with ID `{_dl_bug_id}` — showing the full hub below.")
+            if st.button("← Back to full hub", key="clear_deeplink_focus"):
+                try:
+                    st.query_params.clear()
+                except Exception:
+                    pass
+                st.rerun()
+
     # Overview card (logo now lives next to the page header above)
     with st.container(border=True):
         cols = st.columns([5, 2])
@@ -2132,34 +2173,10 @@ if st.session_state.view == "home":
 
         intake = _read_intake()
 
-        # Deep-link from email: ?request=<id> pins that specific request to the
-        # top of the backlog so admins clicking through don't have to scroll/scan.
-        _requested_id = st.query_params.get("request", "").strip()
-        _focus_entry = None
-        if _requested_id:
-            _focus_entry = next((r for r in intake if str(r.get("ID")) == _requested_id), None)
-            if _focus_entry:
-                st.markdown("#### 📌 You came here from an email")
-                _focus_status = _focus_entry.get("Status") or "Unassigned"
-                _render_intake_card(
-                    _focus_entry,
-                    allow_claim=(_focus_status == "Unassigned"),
-                    allow_done=(_focus_status == "In Progress"),
-                )
-                if st.button("← Back to full backlog", key="clear_request_focus"):
-                    try:
-                        st.query_params.clear()
-                    except Exception:
-                        pass
-                    st.rerun()
-                st.markdown("---")
-            else:
-                st.warning(
-                    f"Couldn't find a request with ID `{_requested_id}` — "
-                    "showing the full backlog below."
-                )
-
-        _focus_id = str(_focus_entry.get("ID")) if _focus_entry else None
+        # The deep-link focus card (if any) is rendered full-width at the top
+        # of the page; here we just filter it out of the regular lists so it
+        # doesn't appear twice.
+        _focus_id = _dl_request_id or None
         unassigned = [r for r in intake
                       if (r.get("Status") or "Unassigned") == "Unassigned"
                       and str(r.get("ID")) != _focus_id]
@@ -2185,29 +2202,9 @@ if st.session_state.view == "home":
         st.caption("Submitted via the sidebar. Megan triages and replies to the submitter by email.")
         bugs = _read_bugs()
 
-        # Deep-link from the intake email: ?bug=<id> pins that specific bug
-        # to the top so Megan doesn't have to scan for it.
-        _bug_focus_id = st.query_params.get("bug", "").strip()
-        _focus_bug = None
-        if _bug_focus_id:
-            _focus_bug = next((b for b in bugs if str(b.get("ID")) == _bug_focus_id), None)
-            if _focus_bug:
-                st.markdown("#### 📌 You came here from an email")
-                _render_bug_card(_focus_bug)
-                if st.button("← Back to full bug list", key="clear_bug_focus"):
-                    try:
-                        st.query_params.clear()
-                    except Exception:
-                        pass
-                    st.rerun()
-                st.markdown("---")
-            else:
-                st.warning(
-                    f"Couldn't find a bug with ID `{_bug_focus_id}` — "
-                    "showing the full list below."
-                )
-
-        _focus_bid = str(_focus_bug.get("ID")) if _focus_bug else None
+        # ?bug=<id> deep link is rendered full-width at the top of the page;
+        # filter it out here to avoid showing the same card twice.
+        _focus_bid = _dl_bug_id or None
         active_bugs = [b for b in bugs
                        if (b.get("Status") or "Open") in ("Open", "Needs Info")
                        and str(b.get("ID")) != _focus_bid]
@@ -2215,7 +2212,7 @@ if st.session_state.view == "home":
                          if (b.get("Status") or "") == "Fixed"
                          and str(b.get("ID")) != _focus_bid]
 
-        if not active_bugs and not _focus_bug:
+        if not active_bugs:
             st.info("No open bugs or change requests.")
         else:
             for entry in active_bugs:
