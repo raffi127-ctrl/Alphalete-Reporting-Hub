@@ -3381,6 +3381,49 @@ else:  # st.session_state.view == "user"
         else:
             st.success("🎉 Every report has someone assigned. Nothing to pick up.")
     else:
+        # 7-day schedule strip — visual overview of this user's responsibilities
+        # for the week ahead. One row, 7 columns; auto-updates as new reports
+        # get assigned to them (or as schedules change).
+        st.markdown("### 📅 This week")
+        _cal_cols = st.columns(7)
+        for _i in range(7):
+            _day = today + dt.timedelta(days=_i)
+            with _cal_cols[_i]:
+                _is_today = (_day == today)
+                _today_pill = (
+                    "<span style='background:#C9A85C; color:#2A1F12; "
+                    "padding:1px 6px; border-radius:999px; font-size:0.65em; "
+                    "font-weight:800; margin-left:4px; vertical-align:middle'>"
+                    "TODAY</span>"
+                    if _is_today else ""
+                )
+                _header_color = "#8B6914" if _is_today else "#555"
+                st.markdown(
+                    f"<div style='text-align:center; padding:2px 0 6px'>"
+                    f"<div style='font-weight:700; color:{_header_color}; font-size:0.95em'>"
+                    f"{_day.strftime('%a')}{_today_pill}</div>"
+                    f"<div style='font-size:0.78em; color:#777'>{_day.strftime('%b %-d')}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+                _due = [r for r in my_reports if _was_due_on(r, _day)]
+                if _due:
+                    for _r in _due:
+                        st.markdown(
+                            "<div style='background:#FAFAFA; border-left:3px solid #C9A85C; "
+                            "padding:4px 8px; border-radius:4px; margin-bottom:4px; "
+                            "font-size:0.82em; line-height:1.25; word-break:break-word'>"
+                            f"{_r.get('emoji', '📄')} {_r['name']}"
+                            "</div>",
+                            unsafe_allow_html=True,
+                        )
+                else:
+                    st.markdown(
+                        "<div style='text-align:center; color:#bbb; "
+                        "font-size:0.8em; padding:4px 0'>—</div>",
+                        unsafe_allow_html=True,
+                    )
+        st.markdown("---")
         # Two-column layout below the hero:
         #   left:  "Completed Today" checklist for this user
         #   right: in-progress banner + this user's reports
