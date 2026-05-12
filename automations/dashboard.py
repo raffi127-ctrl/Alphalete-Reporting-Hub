@@ -928,6 +928,14 @@ INTAKE_HEADERS = [
     "Preferred Creator", "Currently runs", "Priority", "Submitter Email",
 ]
 
+PRIORITY_OPTIONS = [
+    "1 — 🚨 URGENT (drop everything)",
+    "2 — 🔥 High (needed this week)",
+    "3 — 📌 Medium (nice to have soon)",
+    "4 — 🌱 Low (when there's bandwidth)",
+    "5 — 🌮 When pigs fly (or you have a sec)",
+]
+
 
 def _intake_ws():
     """Return the intake worksheet, creating it if missing.
@@ -1060,13 +1068,6 @@ def _show_intake_dialog():
             placeholder="e.g. Sarah from Sales, or 'me' — anyone, even folks outside the team",
             help="Free text — the person/people doing this manually today. Helps us know who to loop in or onboard.",
         )
-        PRIORITY_OPTIONS = [
-            "1 — 🚨 URGENT (drop everything)",
-            "2 — 🔥 High (needed this week)",
-            "3 — 📌 Medium (nice to have soon)",
-            "4 — 🌱 Low (when there's bandwidth)",
-            "5 — 🌮 When pigs fly (or you have a sec)",
-        ]
         priority = st.selectbox(
             "Priority",
             PRIORITY_OPTIONS,
@@ -2404,7 +2405,12 @@ def _show_suggest_dialog():
         with cols[1]:
             link = st.text_input("Sheet link", placeholder="https://…  (paste 'n/a' if none)")
             loom = st.text_input("Loom", placeholder="https://loom.com/…  (paste 'n/a' if none)")
-            priority = st.select_slider("Priority", options=["Low", "Medium", "High", "Blocking"], value="Medium")
+            priority = st.selectbox(
+                "Priority",
+                PRIORITY_OPTIONS,
+                index=2,
+                help="How urgent is this? Don't worry, 5 is a real option.",
+            )
         details = st.text_area(
             "Details — what should it do? what's broken?",
             height=140,
