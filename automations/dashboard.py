@@ -2184,10 +2184,38 @@ if st.session_state.view == "home":
         st.markdown("### 🐛 Bug Reports & Change Requests")
         st.caption("Submitted via the sidebar. Megan triages and replies to the submitter by email.")
         bugs = _read_bugs()
-        active_bugs = [b for b in bugs if (b.get("Status") or "Open") in ("Open", "Needs Info")]
-        resolved_bugs = [b for b in bugs if (b.get("Status") or "") == "Fixed"]
 
-        if not active_bugs:
+        # Deep-link from the intake email: ?bug=<id> pins that specific bug
+        # to the top so Megan doesn't have to scan for it.
+        _bug_focus_id = st.query_params.get("bug", "").strip()
+        _focus_bug = None
+        if _bug_focus_id:
+            _focus_bug = next((b for b in bugs if str(b.get("ID")) == _bug_focus_id), None)
+            if _focus_bug:
+                st.markdown("#### 📌 You came here from an email")
+                _render_bug_card(_focus_bug)
+                if st.button("← Back to full bug list", key="clear_bug_focus"):
+                    try:
+                        st.query_params.clear()
+                    except Exception:
+                        pass
+                    st.rerun()
+                st.markdown("---")
+            else:
+                st.warning(
+                    f"Couldn't find a bug with ID `{_bug_focus_id}` — "
+                    "showing the full list below."
+                )
+
+        _focus_bid = str(_focus_bug.get("ID")) if _focus_bug else None
+        active_bugs = [b for b in bugs
+                       if (b.get("Status") or "Open") in ("Open", "Needs Info")
+                       and str(b.get("ID")) != _focus_bid]
+        resolved_bugs = [b for b in bugs
+                         if (b.get("Status") or "") == "Fixed"
+                         and str(b.get("ID")) != _focus_bid]
+
+        if not active_bugs and not _focus_bug:
             st.info("No open bugs or change requests.")
         else:
             for entry in active_bugs:
