@@ -917,6 +917,10 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                             _execute_action(report, action, sec_picked, chrome_ok)
 
 
+# Intake/backlog lives in its own dedicated Google Sheet (separate from the
+# big recruiting reports Sheet). Anyone who submits requests via the dashboard
+# needs Edit access to this Sheet — share it with their Google account.
+INTAKE_SPREADSHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 INTAKE_TAB = "Automation Backlog"
 INTAKE_HEADERS = [
     "ID", "Title", "Sheet Link", "Loom Link", "Description",
@@ -937,7 +941,7 @@ def _intake_ws():
     user-set columns.
     """
     import gspread as _gs
-    sh = _fill.open_sheet()
+    sh = _fill._client().open_by_key(INTAKE_SPREADSHEET_ID)
     try:
         ws = sh.worksheet(INTAKE_TAB)
     except _gs.WorksheetNotFound:
