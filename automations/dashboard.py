@@ -287,8 +287,8 @@ MEMBERS = [
     # `email` powers the "Ask for an update" button on claimed backlog cards.
     # Fill these in (or correct any guesses) — when blank, the button opens
     # an empty mailto and the requester types the address manually.
-    {"name": "Eve",     "emoji": "🌷",        "color": "#4ECDC4", "email": ""},
-    {"name": "JD",      "emoji": "⚡",        "color": "#9B59B6", "email": ""},
+    {"name": "Eve",     "emoji": "🌷",        "color": "#4ECDC4", "email": "alphaletereporting@gmail.com"},
+    {"name": "JD",      "emoji": "⚡",        "color": "#9B59B6", "email": "josh.mascorro17@gmail.com"},
     {"name": "Maud",    "emoji": "🌟",        "color": "#FF6B6B", "email": "maudmiller4@gmail.com"},
     {"name": "Megan",   "emoji": "👩‍💼",     "color": "#667eea", "email": "meganhidalgo1191@gmail.com"},
     {"name": "Raf",     "emoji": "🚀",        "color": "#F4A261", "email": "raffi127@gmail.com"},
