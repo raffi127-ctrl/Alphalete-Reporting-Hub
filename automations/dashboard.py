@@ -934,7 +934,7 @@ INTAKE_HEADERS = [
     "ID", "Title", "Sheet Link", "Loom Link", "Description",
     "Submitted By", "Submitted At", "Status", "Assigned To", "Assigned At",
     "Preferred Creator", "Currently runs", "Priority", "Submitter Email",
-    "Review CC", "Notes",
+    "Review CC", "Notes", "Resurrected At",
 ]
 
 PRIORITY_OPTIONS = [
@@ -950,6 +950,7 @@ BUG_HEADERS = [
     "ID", "Title", "Type", "Sheet Link", "Loom Link", "Details",
     "Submitted By", "Submitter Email", "Priority",
     "Status", "Submitted At", "Resolution Note", "Resolved At",
+    "Resurrected At", "Resurrection Note",
 ]
 
 
@@ -1055,6 +1056,65 @@ def _mark_intake_done(entry_id: str, cc_emails: str = "") -> bool:
     return True
 
 
+def _resurrect_intake(entry_id: str, reason: str, author: str) -> bool:
+    """Re-open a Done backlog entry. Flips status to 'Needs Updates' so it
+    surfaces on the assigned person's queue with a red flag — someone then
+    has to explicitly claim those updates to move it to In Progress.
+    """
+    ws = _intake_ws()
+    try:
+        cell = ws.find(str(entry_id))
+    except Exception:
+        return False
+    if not cell:
+        return False
+    row = cell.row
+    # Append a note first (uses the existing notes flow so it shows up in
+    # the Notes expander like any other update).
+    _append_intake_note(
+        entry_id,
+        f"🔄 Resurrected: {reason.strip() or '(no reason given)'}",
+        author or "Someone",
+    )
+    if "Resurrected At" in INTAKE_HEADERS:
+        ws.update_cell(
+            row,
+            INTAKE_HEADERS.index("Resurrected At") + 1,
+            dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        )
+    ws.update_cell(row, INTAKE_HEADERS.index("Status") + 1, "Needs Updates")
+    _read_intake.clear()
+    return True
+
+
+def _claim_intake_updates(entry_id: str, claimer: str) -> bool:
+    """Pick up a 'Needs Updates' card and move it to In Progress.
+
+    Updates the Assigned To column to the claimer (the original assignee
+    can claim themselves to confirm they're handling it, or anyone else
+    can take it on). Assigned At is refreshed too so the card's claim
+    timestamp reflects the new ownership.
+    """
+    ws = _intake_ws()
+    try:
+        cell = ws.find(str(entry_id))
+    except Exception:
+        return False
+    if not cell:
+        return False
+    row = cell.row
+    if claimer:
+        ws.update_cell(row, INTAKE_HEADERS.index("Assigned To") + 1, claimer)
+        ws.update_cell(
+            row,
+            INTAKE_HEADERS.index("Assigned At") + 1,
+            dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        )
+    ws.update_cell(row, INTAKE_HEADERS.index("Status") + 1, "In Progress")
+    _read_intake.clear()
+    return True
+
+
 def _append_intake_note(entry_id: str, note: str, author: str) -> bool:
     """Append a timestamped note to the row's Notes column.
 
@@ -1139,6 +1199,31 @@ def _add_bug(title: str, bug_type: str, sheet_link: str, loom_link: str,
     ])
     _read_bugs.clear()
     return new_id
+
+
+def _resurrect_bug(bug_id: str, reason: str) -> bool:
+    """Re-open a Fixed bug. Flips status back to In Progress, stamps
+    Resurrected At, and stashes the reason in Resurrection Note.
+    """
+    ws = _bugs_ws()
+    try:
+        cell = ws.find(str(bug_id))
+    except Exception:
+        return False
+    if not cell:
+        return False
+    row = cell.row
+    if "Resurrection Note" in BUG_HEADERS:
+        ws.update_cell(row, BUG_HEADERS.index("Resurrection Note") + 1, (reason or "").strip())
+    if "Resurrected At" in BUG_HEADERS:
+        ws.update_cell(
+            row,
+            BUG_HEADERS.index("Resurrected At") + 1,
+            dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        )
+    ws.update_cell(row, BUG_HEADERS.index("Status") + 1, "In Progress")
+    _read_bugs.clear()
+    return True
 
 
 def _start_bug(bug_id: str) -> bool:
@@ -1523,6 +1608,17 @@ def _priority_pill_html(p: str) -> str:
 def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool = False) -> None:
     """Render one backlog entry."""
     with st.container(border=True):
+        # Resurrected banner sits above everything so it's the first thing you
+        # see on a re-opened card. Pulled from the row's Resurrected At column.
+        if (entry.get("Resurrected At") or "").strip():
+            st.markdown(
+                "<div style='background:#FFE6CC; color:#8B1A22; padding:8px 14px; "
+                "border-radius:8px; border-left:4px solid #B8232C; font-weight:700; "
+                "margin-bottom:0.6rem'>"
+                f"🔄 RESURRECTED on {entry.get('Resurrected At')} — needs additional work"
+                "</div>",
+                unsafe_allow_html=True,
+            )
         cols = st.columns([5, 2])
         with cols[0]:
             st.markdown(f"### {entry.get('Title', 'Untitled')}")
@@ -1722,8 +1818,72 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                     )
 
 
+def _render_needs_updates_card(entry: dict) -> None:
+    """Resurrected backlog entry waiting to be claimed for updates.
+
+    Visually distinct from In Progress (red banner) so the assignee — and
+    anyone else passing through — sees that this is a re-opened project
+    that hasn't been picked up yet.
+    """
+    entry_id = str(entry.get("ID", ""))
+    with st.container(border=True):
+        st.markdown(
+            "<div style='background:#FFE6CC; color:#8B1A22; padding:8px 14px; "
+            "border-radius:8px; border-left:4px solid #B8232C; font-weight:700; "
+            "margin-bottom:0.6rem'>"
+            f"🚨 UPDATES NEEDED — resurrected on {entry.get('Resurrected At') or '?'}"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        cols = st.columns([5, 2])
+        with cols[0]:
+            st.markdown(f"### {entry.get('Title', 'Untitled')}")
+            _priority_html = _priority_pill_html(entry.get("Priority", ""))
+            if _priority_html:
+                st.markdown(_priority_html, unsafe_allow_html=True)
+            previous_assignee = entry.get("Assigned To", "")
+            if previous_assignee:
+                st.markdown(
+                    f"<span style='font-size:0.9em; color:#5C4220'>"
+                    f"Previously built by <b>{previous_assignee}</b></span>",
+                    unsafe_allow_html=True,
+                )
+            # Surface the latest note (which is the resurrection reason) so the
+            # ask is visible without expanding anything.
+            _notes = (entry.get("Notes") or "").strip()
+            if _notes:
+                _latest = _notes.split("\n\n")[-1]
+                st.markdown(
+                    f"<div style='background:#FAFAFA; padding:8px 12px; "
+                    f"border-left:3px solid #C9A85C; border-radius:4px; "
+                    f"margin:0.4rem 0; font-size:0.9em; white-space:pre-wrap'>"
+                    f"{_latest}</div>",
+                    unsafe_allow_html=True,
+                )
+        with cols[1]:
+            claim_to = st.selectbox(
+                "Claim updates for…",
+                ["— claim updates —"] + [m["name"] for m in MEMBERS],
+                key=f"updates_claim_pick_{entry_id}",
+                label_visibility="collapsed",
+            )
+            if claim_to and claim_to != "— claim updates —":
+                if st.button(
+                    "🤝 Claim Updates",
+                    key=f"updates_claim_btn_{entry_id}",
+                    use_container_width=True,
+                    type="primary",
+                ):
+                    if _claim_intake_updates(entry_id, claim_to):
+                        st.success(f"Claimed by {claim_to} — moving to In Progress.")
+                        st.rerun()
+                    else:
+                        st.error("Couldn't update — please try again.")
+
+
 def _render_completed_intake_card(entry: dict) -> None:
     """Compact read-only summary of a Done backlog entry."""
+    entry_id = str(entry.get("ID", ""))
     with st.container(border=True):
         title = entry.get("Title", "Untitled")
         assignee = entry.get("Assigned To", "?")
@@ -1742,10 +1902,43 @@ def _render_completed_intake_card(entry: dict) -> None:
                 st.markdown(entry["Description"])
                 if entry.get("Sheet Link"):
                     st.link_button("📂 Open Sheet", entry["Sheet Link"], use_container_width=True)
+        with st.popover("🔄 Resurrect this project", use_container_width=True):
+            st.caption(
+                "Move this back to In Progress to flag a needed update, fix, or "
+                "edit. The card will reappear in the active list with a banner."
+            )
+            _r_reason = st.text_area(
+                "What needs to change?",
+                key=f"resurrect_reason_{entry_id}",
+                height=80,
+                placeholder="e.g. column heading changed, dates are off, etc.",
+            )
+            _r_author = st.text_input(
+                "Your name",
+                key=f"resurrect_author_{entry_id}",
+                value=st.session_state.get("user", "") or "",
+                placeholder="Your name",
+            )
+            if st.button(
+                "🔄 Resurrect",
+                key=f"resurrect_btn_{entry_id}",
+                use_container_width=True,
+                type="primary",
+            ):
+                if not (_r_reason or "").strip():
+                    st.error("Add a reason so the builder knows what to do.")
+                elif not (_r_author or "").strip():
+                    st.error("Add your name so the builder knows who to follow up with.")
+                elif _resurrect_intake(entry_id, _r_reason, _r_author):
+                    st.success("Card moved back to In Progress.")
+                    st.rerun()
+                else:
+                    st.error("Couldn't resurrect — try again.")
 
 
 def _render_completed_bug_card(entry: dict) -> None:
     """Compact read-only summary of a Fixed bug or change request."""
+    bug_id = str(entry.get("ID", ""))
     bug_type = entry.get("Type", "")
     type_emoji = "🐛" if "Bug" in bug_type else "✏️"
     with st.container(border=True):
@@ -1762,6 +1955,29 @@ def _render_completed_bug_card(entry: dict) -> None:
         if entry.get("Details"):
             with st.expander("Original report"):
                 st.write(entry["Details"])
+        with st.popover("🔄 Resurrect this", use_container_width=True):
+            st.caption(
+                "Move this back to In Progress to flag that it still needs work."
+            )
+            _b_reason = st.text_area(
+                "What's still wrong?",
+                key=f"resurrect_bug_reason_{bug_id}",
+                height=80,
+                placeholder="e.g. fix didn't stick, another instance just popped up, etc.",
+            )
+            if st.button(
+                "🔄 Resurrect",
+                key=f"resurrect_bug_btn_{bug_id}",
+                use_container_width=True,
+                type="primary",
+            ):
+                if not (_b_reason or "").strip():
+                    st.error("Add a reason so Megan knows what's needed.")
+                elif _resurrect_bug(bug_id, _b_reason):
+                    st.success("Bug moved back to In Progress.")
+                    st.rerun()
+                else:
+                    st.error("Couldn't resurrect — try again.")
 
 
 def _render_bug_card(entry: dict) -> None:
@@ -2319,7 +2535,7 @@ with st.sidebar:
     # Counts so the sidebar shows what's waiting without clicking through.
     _backlog_count = sum(
         1 for r in _read_intake()
-        if (r.get("Status") or "Unassigned") in ("Unassigned", "In Progress")
+        if (r.get("Status") or "Unassigned") in ("Unassigned", "In Progress", "Needs Updates")
     )
     _bugs_count = sum(
         1 for b in _read_bugs()
@@ -2565,6 +2781,12 @@ elif st.session_state.view == "backlog":
         key=lambda r: _priority_rank(r.get("Priority", "")),
     )
 
+    needs_updates = sorted(
+        [r for r in intake
+         if r.get("Status") == "Needs Updates"
+         and str(r.get("ID")) != _focus_id],
+        key=lambda r: _priority_rank(r.get("Priority", "")),
+    )
     completed_intake = sorted(
         [r for r in intake
          if r.get("Status") == "Done"
@@ -2577,8 +2799,16 @@ elif st.session_state.view == "backlog":
         st.info("No requests in the backlog yet. Click **Submit a New Request** above to add the first one.")
     else:
         backlog_cols = st.columns(2)
-        # LEFT = In Progress (claimed, actively being worked on) + Completed history below
+        # LEFT = Needs Updates (resurrected, waiting to be re-claimed)
+        # + In Progress (actively being worked on)
+        # + Completed history below.
         with backlog_cols[0]:
+            if needs_updates:
+                st.markdown(f"#### 🚨 Needs Updates ({len(needs_updates)})")
+                for entry in needs_updates:
+                    _render_needs_updates_card(entry)
+                st.markdown("")
+
             st.markdown(f"#### 🛠️ In Progress ({len(in_progress)})")
             if in_progress:
                 for entry in in_progress:
