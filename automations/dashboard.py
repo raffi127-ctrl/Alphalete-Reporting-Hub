@@ -33,7 +33,68 @@ SHEET_URL = f"https://docs.google.com/spreadsheets/d/{_fill.SPREADSHEET_ID}/edit
 UPLOADED_REPORTS_FILE = WORKSPACE / "uploaded_reports.json"
 UPLOADED_SCRIPTS_DIR = WORKSPACE / "automations" / "uploaded"
 RUN_STATE_FILE = WORKSPACE / "output" / "run_state.json"
+ACTIVE_RUNS_FILE = WORKSPACE / "output" / "active_runs.json"
+ACTIVE_RUNS_LOG_DIR = WORKSPACE / "output" / "logs" / "active"
 RUN_STATE_TTL_HOURS = 24
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        import os
+        os.kill(int(pid), 0)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def _read_active_runs() -> list[dict]:
+    if not ACTIVE_RUNS_FILE.exists():
+        return []
+    try:
+        active = json.loads(ACTIVE_RUNS_FILE.read_text())
+    except Exception:
+        return []
+    # Filter out runs whose PID is no longer alive; clean those up
+    alive = []
+    for a in active:
+        pid = a.get("pid")
+        if pid and _pid_alive(int(pid)):
+            alive.append(a)
+    if len(alive) != len(active):
+        ACTIVE_RUNS_FILE.write_text(json.dumps(alive, indent=2))
+    return alive
+
+
+def _record_active_run(report_id: str, report_name: str, user: str, log_path: Path, pid: int) -> None:
+    active = []
+    if ACTIVE_RUNS_FILE.exists():
+        try:
+            active = json.loads(ACTIVE_RUNS_FILE.read_text())
+        except Exception:
+            active = []
+    # Replace any existing entry for this report
+    active = [a for a in active if a.get("report_id") != report_id]
+    active.append({
+        "report_id": report_id,
+        "report_name": report_name,
+        "user": user,
+        "log_path": str(log_path),
+        "pid": pid,
+        "started_at": dt.datetime.now().isoformat(timespec="seconds"),
+    })
+    ACTIVE_RUNS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    ACTIVE_RUNS_FILE.write_text(json.dumps(active, indent=2))
+
+
+def _clear_active_run(report_id: str) -> None:
+    if not ACTIVE_RUNS_FILE.exists():
+        return
+    try:
+        active = json.loads(ACTIVE_RUNS_FILE.read_text())
+    except Exception:
+        return
+    active = [a for a in active if a.get("report_id") != report_id]
+    ACTIVE_RUNS_FILE.write_text(json.dumps(active, indent=2))
 
 
 def _load_all_run_state() -> dict:
@@ -249,14 +310,41 @@ REPORT_INTAKE_TAB = "Sheet1"
 # Helpers
 # --------------------------------------------------------------------------
 
-def _stream_subprocess(cmd: list[str], output_box) -> int:
+def _stream_subprocess(cmd: list[str], output_box, report_id: str | None = None,
+                        report_name: str | None = None) -> int:
+    """Run a subprocess, stream stdout to UI, and (if report_id given) also
+    record an active-run entry + duplicate output to a log file so the run
+    can be tracked across page navigations."""
+    log_file = None
+    log_handle = None
+    if report_id:
+        ACTIVE_RUNS_LOG_DIR.mkdir(parents=True, exist_ok=True)
+        log_file = ACTIVE_RUNS_LOG_DIR / f"{report_id}.log"
+        log_handle = log_file.open("w")
+
     proc = subprocess.Popen(cmd, cwd=str(WORKSPACE), stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True, bufsize=1)
+
+    if report_id:
+        _record_active_run(report_id, report_name or report_id,
+                           st.session_state.get("user", "unknown"),
+                           log_file, proc.pid)
+
     lines: list[str] = []
-    for line in proc.stdout:  # type: ignore[union-attr]
-        lines.append(line.rstrip())
-        output_box.code("\n".join(lines[-30:]), language="log")
-    proc.wait()
+    try:
+        for line in proc.stdout:  # type: ignore[union-attr]
+            ln = line.rstrip()
+            lines.append(ln)
+            if log_handle:
+                log_handle.write(line)
+                log_handle.flush()
+            output_box.code("\n".join(lines[-30:]), language="log")
+        proc.wait()
+    finally:
+        if log_handle:
+            log_handle.close()
+        if report_id:
+            _clear_active_run(report_id)
     return proc.returncode
 
 
@@ -430,7 +518,7 @@ def _execute_action(report: dict, action: dict, picked, chrome_ok: bool) -> None
     st.info(f"`{' '.join(shlex.quote(c) for c in cmd)}`")
     with st.status("Running…", expanded=True) as s:
         box = st.empty()
-        rc = _stream_subprocess(cmd, box)
+        rc = _stream_subprocess(cmd, box, report_id=report["id"], report_name=report["name"])
         if rc == 0:
             s.update(label="✅ Done!", state="complete")
             st.balloons()
@@ -1160,6 +1248,58 @@ def _go_overview():
     st.session_state.view = "overview"
 
 
+def _render_currently_running_banner():
+    """Show a banner at the top of any view if any reports are running in the
+    background (subprocess started here OR carried over from a prior session)."""
+    active = _read_active_runs()
+    if not active:
+        return
+    for run in active:
+        report_name = run.get("report_name", "?")
+        user = run.get("user", "?")
+        try:
+            started = dt.datetime.fromisoformat(run.get("started_at", ""))
+            elapsed = dt.datetime.now() - started
+            elapsed_str = f"{int(elapsed.total_seconds() // 60)}m {int(elapsed.total_seconds() % 60)}s"
+        except Exception:
+            elapsed_str = "?"
+
+        with st.container(border=True):
+            cols = st.columns([5, 2])
+            with cols[0]:
+                st.markdown(
+                    f"### 🏃  **{report_name}** is running…"
+                )
+                st.caption(f"Started by **{user}** • running for **{elapsed_str}** • PID {run.get('pid', '?')}")
+            with cols[1]:
+                st.markdown(
+                    "<div style='padding-top: 0.6rem; color: #8B6914; font-weight: 600'>⏳ In progress</div>",
+                    unsafe_allow_html=True,
+                )
+
+            # Tail the log file so the user can see live progress
+            log_path = run.get("log_path")
+            if log_path and Path(log_path).exists():
+                try:
+                    tail = Path(log_path).read_text().splitlines()[-15:]
+                    with st.expander("📜 Live log (last 15 lines)", expanded=False):
+                        st.code("\n".join(tail), language="log")
+                except Exception:
+                    pass
+
+            stop_cols = st.columns([5, 2])
+            with stop_cols[1]:
+                if st.button("⏹ Stop run", key=f"stop_{run['report_id']}", use_container_width=True,
+                             help="Force-stop this background run"):
+                    try:
+                        import os, signal
+                        os.kill(int(run["pid"]), signal.SIGTERM)
+                    except Exception as e:
+                        st.error(f"Couldn't stop: {e}")
+                    _clear_active_run(run["report_id"])
+                    st.rerun()
+
+
 # --------------------------------------------------------------------------
 # Sidebar: system status + recent logs (always visible)
 # --------------------------------------------------------------------------
@@ -1222,6 +1362,7 @@ with st.sidebar:
 # --------------------------------------------------------------------------
 
 if st.session_state.view == "home":
+    _render_currently_running_banner()
     st.markdown(f"""
     <div class="hero">
         <div class="big-date">{BIG_DATE}</div>
@@ -1361,6 +1502,7 @@ if st.session_state.view == "home":
 # --------------------------------------------------------------------------
 
 elif st.session_state.view == "overview":
+    _render_currently_running_banner()
     st.markdown(f"""
     <div class="hero">
         <div class="big-date">{BIG_DATE}</div>
@@ -1419,6 +1561,7 @@ else:  # st.session_state.view == "user"
     member = next((m for m in MEMBERS if m["name"] == user_name), None)
     member_emoji = member["emoji"] if member else "📊"
 
+    _render_currently_running_banner()
     st.markdown(f"""
     <div class="hero">
         <div class="big-date">{BIG_DATE}</div>
