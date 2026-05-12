@@ -2695,7 +2695,7 @@ with st.sidebar:
         1 for b in _read_bugs()
         if (b.get("Status") or "Open") in ("Open", "Needs Info")
     )
-    if st.button(f"🚧 Backlog ({_backlog_count})", use_container_width=True, key="nav_backlog"):
+    if st.button(f"📨 New Automation Request ({_backlog_count})", use_container_width=True, key="nav_backlog"):
         _go_backlog()
         st.rerun()
     if st.button(f"🐛 Bugs ({_bugs_count})", use_container_width=True, key="nav_bugs"):
