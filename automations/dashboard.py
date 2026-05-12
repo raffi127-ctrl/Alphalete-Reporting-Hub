@@ -1036,27 +1036,9 @@ def _assign_intake(entry_id: str, user: str) -> bool:
     return True
 
 
-def _mark_intake_done(entry_id: str) -> bool:
-    ws = _intake_ws()
-    try:
-        cell = ws.find(str(entry_id))
-    except Exception:
-        return False
-    if not cell:
-        return False
-    ws.update_cell(cell.row, 8, "Done")
-    _read_intake.clear()
-    return True
-
-
-def _mark_intake_uploaded(entry_id: str) -> bool:
-    """Set status to 'Uploaded' — automation is saved, requester not yet emailed.
-
-    This is the first half of the two-step completion flow: the builder
-    uploads via the wire-up dialog, which flips status from 'In Progress'
-    to 'Uploaded'. The card then shows a 'Submit for review' form that
-    optionally collects extra CC emails and flips status to 'Done', which
-    is what triggers the Apps Script review email to the requester.
+def _mark_intake_done(entry_id: str, cc_emails: str = "") -> bool:
+    """Set status to Done (triggers the Apps Script review email) and stash
+    any optional CCs that should be added to that email.
     """
     ws = _intake_ws()
     try:
@@ -1065,7 +1047,10 @@ def _mark_intake_uploaded(entry_id: str) -> bool:
         return False
     if not cell:
         return False
-    ws.update_cell(cell.row, INTAKE_HEADERS.index("Status") + 1, "Uploaded")
+    row = cell.row
+    if cc_emails and "Review CC" in INTAKE_HEADERS:
+        ws.update_cell(row, INTAKE_HEADERS.index("Review CC") + 1, cc_emails.strip())
+    ws.update_cell(row, INTAKE_HEADERS.index("Status") + 1, "Done")
     _read_intake.clear()
     return True
 
@@ -1093,28 +1078,6 @@ def _append_intake_note(entry_id: str, note: str, author: str) -> bool:
     new_line = f"[{ts} — {author.strip()}] {note.strip()}"
     updated = (current.rstrip() + "\n\n" + new_line) if current.strip() else new_line
     ws.update_cell(row, notes_col, updated)
-    _read_intake.clear()
-    return True
-
-
-def _submit_intake_for_review(entry_id: str, cc_emails: str) -> bool:
-    """Mark Done + stash any additional review CCs on the row.
-
-    Setting Status='Done' is what triggers the Apps Script review email
-    to the original submitter. The cc_emails string (comma-separated) is
-    written to the 'Review CC' column for the script to read.
-    """
-    ws = _intake_ws()
-    try:
-        cell = ws.find(str(entry_id))
-    except Exception:
-        return False
-    if not cell:
-        return False
-    row = cell.row
-    if "Review CC" in INTAKE_HEADERS:
-        ws.update_cell(row, INTAKE_HEADERS.index("Review CC") + 1, (cc_emails or "").strip())
-    ws.update_cell(row, INTAKE_HEADERS.index("Status") + 1, "Done")
     _read_intake.clear()
     return True
 
@@ -1419,13 +1382,23 @@ def _show_wire_up_dialog(entry: dict | None = None):
         ),
     )
 
+    review_cc = ""
     if entry.get("ID"):
-        st.info(
-            "**Confirm:** uploading saves this to the Report Library and marks the "
-            "backlog card as **Uploaded — ready for review**. The requester is **not** "
-            "emailed yet — that happens when you hit **Submit for review** on the card."
+        review_cc = st.text_input(
+            "Also CC on the review email (comma-separated, optional)",
+            key="wu_review_cc",
+            placeholder="alice@example.com, bob@example.com",
+            help=(
+                "The original requester is always emailed when you upload. "
+                "Add anyone else here who should know the report is ready to test."
+            ),
         )
-    submitted = st.button("🚀 Save & Mark Ready for Review", type="primary", use_container_width=True, key="wu_submit")
+        st.caption(
+            "Uploading saves the automation to the Report Library, marks the "
+            "backlog card complete, and emails the requester (plus any CCs above) "
+            "to review."
+        )
+    submitted = st.button("🚀 Upload & Send for Review", type="primary", use_container_width=True, key="wu_submit")
     if submitted:
         if not (name and script_text):
             st.error("Please fill every field marked *.")
@@ -1485,7 +1458,7 @@ def _show_wire_up_dialog(entry: dict | None = None):
 
         if entry.get("ID"):
             try:
-                _mark_intake_uploaded(str(entry["ID"]))
+                _mark_intake_done(str(entry["ID"]), cc_emails=review_cc)
             except Exception:
                 pass
 
@@ -1496,8 +1469,7 @@ def _show_wire_up_dialog(entry: dict | None = None):
         )
         st.success(
             f"✅ Uploaded! It will appear {target_text}. "
-            "Head back to the backlog card and hit **Submit for review** when "
-            "you're ready to notify the requester."
+            "The requester has been emailed to review."
         )
         st.balloons()
         st.markdown(
@@ -1663,43 +1635,13 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                         else:
                             st.error("Couldn't claim — please try again.")
             if allow_done:
-                _row_status = entry.get("Status") or "In Progress"
-                if _row_status == "Uploaded":
-                    # Step 2 of the completion flow — automation is saved,
-                    # ready to ping the requester (with optional CCs).
-                    st.markdown(
-                        "<span style='display:inline-block; background:#E8F6EC; color:#1F7A3D; "
-                        "padding:3px 10px; border-radius:999px; font-weight:700; font-size:0.85em; "
-                        "margin-bottom:0.5rem'>✅ Uploaded — ready to send for review</span>",
-                        unsafe_allow_html=True,
-                    )
-                    extra_cc = st.text_input(
-                        "Also CC (comma-separated, optional)",
-                        key=f"review_cc_{entry['ID']}",
-                        placeholder="alice@example.com, bob@example.com",
-                        help="Anyone else who should know the report is ready to test. "
-                             "The original requester is always included.",
-                    )
-                    if st.button(
-                        "📨 Submit for review by requester",
-                        key=f"submit_review_{entry['ID']}",
-                        use_container_width=True,
-                        type="primary",
-                    ):
-                        if _submit_intake_for_review(str(entry["ID"]), extra_cc):
-                            st.success("Email going out shortly.")
-                            st.rerun()
-                        else:
-                            st.error("Couldn't update — please try again.")
-                else:
-                    # Step 1 — still building. Upload first.
-                    if st.button(
-                        "📥 Upload the Automation",
-                        key=f"wireup_{entry['ID']}",
-                        use_container_width=True,
-                        type="primary",
-                    ):
-                        _show_wire_up_dialog(entry)
+                if st.button(
+                    "📥 Upload the Automation",
+                    key=f"wireup_{entry['ID']}",
+                    use_container_width=True,
+                    type="primary",
+                ):
+                    _show_wire_up_dialog(entry)
                 # Gmail compose URL — opens Gmail in the browser (not the
                 # native Mail app) so the user doesn't have to swap clients.
                 requester_email = (entry.get("Submitter Email") or "").strip()
@@ -2564,7 +2506,7 @@ elif st.session_state.view == "backlog":
     )
     in_progress = sorted(
         [r for r in intake
-         if r.get("Status") in ("In Progress", "Uploaded")
+         if r.get("Status") == "In Progress"
          and str(r.get("ID")) != _focus_id],
         key=lambda r: _priority_rank(r.get("Priority", "")),
     )
