@@ -950,7 +950,7 @@ def _read_intake() -> list[dict]:
 
 def _add_intake(title: str, sheet_link: str, loom_link: str, description: str,
                 submitted_by: str, preferred_creator: str = "",
-                currently_runs: str = "") -> str:
+                currently_runs: str = "", priority: str = "") -> str:
     new_id = dt.datetime.now().strftime("%Y%m%d%H%M%S")
     ws = _intake_ws()
     ws.append_row([
@@ -959,6 +959,7 @@ def _add_intake(title: str, sheet_link: str, loom_link: str, description: str,
         "Unassigned", "", "",
         preferred_creator or "",
         currently_runs or "",
+        priority or "",
     ])
     _read_intake.clear()
     return new_id
@@ -1020,6 +1021,19 @@ def _show_intake_dialog():
             placeholder="e.g. Sarah from Sales, or 'me' — anyone, even folks outside the team",
             help="Free text — the person/people doing this manually today. Helps us know who to loop in or onboard.",
         )
+        PRIORITY_OPTIONS = [
+            "1 — 🚨 URGENT (drop everything)",
+            "2 — 🔥 High (needed this week)",
+            "3 — 📌 Medium (nice to have soon)",
+            "4 — 🌱 Low (when there's bandwidth)",
+            "5 — 🌮 When pigs fly (or you have a sec)",
+        ]
+        priority = st.selectbox(
+            "Priority",
+            PRIORITY_OPTIONS,
+            index=2,
+            help="How urgent is this? Don't worry, 5 is a real option.",
+        )
         ok = st.form_submit_button("📨 Submit", type="primary", use_container_width=True)
         if ok:
             if not (title and sheet_link and loom_link and description and submitted_by):
@@ -1027,7 +1041,7 @@ def _show_intake_dialog():
             else:
                 pc = "" if preferred_creator == "Not sure yet" else preferred_creator
                 try:
-                    _add_intake(title, sheet_link, loom_link, description, submitted_by, pc, currently_runs)
+                    _add_intake(title, sheet_link, loom_link, description, submitted_by, pc, currently_runs, priority)
                     st.success("✅ Submitted! It will appear on the home page for someone to claim.")
                     st.balloons()
                 except Exception as e:
