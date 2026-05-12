@@ -435,6 +435,64 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                             _execute_action(report, action, sec_picked, chrome_ok)
 
 
+INTAKE_TAB = "Automation Backlog"
+INTAKE_HEADERS = [
+    "ID", "Title", "Sheet Link", "Loom Link", "Description",
+    "Submitted By", "Submitted At", "Status", "Assigned To", "Assigned At",
+]
+
+
+def _intake_ws():
+    """Return the intake worksheet, creating it if missing."""
+    import gspread as _gs
+    sh = _fill.open_sheet()
+    try:
+        return sh.worksheet(INTAKE_TAB)
+    except _gs.WorksheetNotFound:
+        ws = sh.add_worksheet(title=INTAKE_TAB, rows=300, cols=len(INTAKE_HEADERS))
+        ws.update([INTAKE_HEADERS], f"A1:{chr(ord('A') + len(INTAKE_HEADERS) - 1)}1")
+        return ws
+
+
+@st.cache_data(ttl=30)
+def _read_intake() -> list[dict]:
+    """All intake records, newest first. Cached 30s to avoid per-rerun API hits."""
+    try:
+        ws = _intake_ws()
+        rows = ws.get_all_records()
+        return list(reversed(rows))
+    except Exception:
+        return []
+
+
+def _add_intake(title: str, sheet_link: str, loom_link: str, description: str, submitted_by: str) -> str:
+    new_id = dt.datetime.now().strftime("%Y%m%d%H%M%S")
+    ws = _intake_ws()
+    ws.append_row([
+        new_id, title, sheet_link, loom_link, description,
+        submitted_by, dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "Unassigned", "", "",
+    ])
+    _read_intake.clear()
+    return new_id
+
+
+def _assign_intake(entry_id: str, user: str) -> bool:
+    ws = _intake_ws()
+    try:
+        cell = ws.find(str(entry_id))
+    except Exception:
+        return False
+    if not cell:
+        return False
+    row = cell.row
+    ws.update_cell(row, 8, "In Progress")
+    ws.update_cell(row, 9, user)
+    ws.update_cell(row, 10, dt.datetime.now().strftime("%Y-%m-%d %H:%M"))
+    _read_intake.clear()
+    return True
+
+
 def _missed_runs(reports: list[dict], days: int = 7, today: dt.date | None = None) -> list[dict]:
     """For each report, find days in the past `days` where it was scheduled
     but no successful run was logged. Returns list of {report, missed_date}."""
@@ -538,6 +596,9 @@ if "view" not in st.session_state:
 if "user" not in st.session_state:
     st.session_state.user = None     # name from MEMBERS once selected
 
+LOGO_PATH = WORKSPACE / "resources" / "alphalete-logo.png"
+LOGO_EXISTS = LOGO_PATH.exists()
+
 today = dt.date.today()
 weekday_name = WEEKDAY_NAMES[today.weekday()]
 hour = dt.datetime.now().hour
@@ -633,20 +694,34 @@ if st.session_state.view == "home":
     st.markdown(f"""
     <div class="hero">
         <div class="big-date">{BIG_DATE}</div>
-        <h1>📊 Welcome to Alphalete Reports</h1>
+        <h1>{'🐺' if not LOGO_EXISTS else ''} Alphalete Reports</h1>
         <p>Pick your name to see today's reports — or view the team overview.</p>
     </div>
     """, unsafe_allow_html=True)
 
-    # Big Alphalete Overview button at top
-    if st.button(
-        "📊  Alphalete Marketing — 7-Day Overview",
-        use_container_width=True,
-        type="primary",
-        key="home_overview_btn",
-    ):
-        _go_overview()
-        st.rerun()
+    # BIG Alphalete Overview card with wolf logo
+    with st.container(border=True):
+        cols = st.columns([1, 4, 2])
+        with cols[0]:
+            if LOGO_EXISTS:
+                st.image(str(LOGO_PATH), width=130)
+            else:
+                st.markdown(
+                    "<div style='font-size: 5rem; text-align: center; line-height: 1.0'>🐺</div>",
+                    unsafe_allow_html=True,
+                )
+        with cols[1]:
+            st.markdown(
+                "<div style='font-size: 1.8rem; font-weight: 800; line-height: 1.1; margin-top: 0.5rem'>Alphalete Marketing</div>"
+                "<div style='font-size: 1.3rem; font-weight: 600; opacity: 0.7; margin-bottom: 0.4rem'>7-Day Overview</div>"
+                "<div style='opacity: 0.85'>Every report run by anyone, last 7 days. Flagged ⚠️ if scheduled but missed.</div>",
+                unsafe_allow_html=True,
+            )
+        with cols[2]:
+            st.markdown("<div style='padding-top: 1.2rem'></div>", unsafe_allow_html=True)
+            if st.button("📊 Open Overview", use_container_width=True, type="primary", key="home_overview_btn"):
+                _go_overview()
+                st.rerun()
 
     st.markdown("### 👥 Who are you?")
 
