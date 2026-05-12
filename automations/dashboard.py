@@ -32,6 +32,42 @@ SHEET_URL = f"https://docs.google.com/spreadsheets/d/{_fill.SPREADSHEET_ID}/edit
 
 UPLOADED_REPORTS_FILE = WORKSPACE / "uploaded_reports.json"
 UPLOADED_SCRIPTS_DIR = WORKSPACE / "automations" / "uploaded"
+RUN_STATE_FILE = WORKSPACE / "output" / "run_state.json"
+RUN_STATE_TTL_HOURS = 24
+
+
+def _load_all_run_state() -> dict:
+    """Read persisted run state, dropping entries older than TTL."""
+    if not RUN_STATE_FILE.exists():
+        return {}
+    try:
+        data = json.loads(RUN_STATE_FILE.read_text())
+    except Exception:
+        return {}
+    cutoff = dt.datetime.now() - dt.timedelta(hours=RUN_STATE_TTL_HOURS)
+    fresh = {}
+    for k, v in data.items():
+        try:
+            ts = dt.datetime.fromisoformat(v.get("ts", ""))
+            if ts >= cutoff:
+                fresh[k] = v
+        except Exception:
+            continue
+    return fresh
+
+
+def _save_run_state_for(report_id: str, status: str) -> None:
+    state = _load_all_run_state()
+    state[report_id] = {"status": status, "ts": dt.datetime.now().isoformat(timespec="seconds")}
+    RUN_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    RUN_STATE_FILE.write_text(json.dumps(state, indent=2))
+
+
+def _clear_run_state_for(report_id: str) -> None:
+    state = _load_all_run_state()
+    state.pop(report_id, None)
+    RUN_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    RUN_STATE_FILE.write_text(json.dumps(state, indent=2))
 
 
 def _load_uploaded_reports_raw() -> list[dict]:
@@ -391,6 +427,8 @@ def _execute_action(report: dict, action: dict, picked, chrome_ok: bool) -> None
             "status": "success" if rc == 0 else "failed",
             "ts": dt.datetime.now().isoformat(timespec="seconds"),
         }
+        # Also persist to disk so the callout survives navigations / refreshes
+        _save_run_state_for(report["id"], "success" if rc == 0 else "failed")
 
 
 def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
@@ -489,8 +527,14 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
         ):
             _execute_action(report, primary, picked, chrome_ok)
 
-        # Post-run callout (appears after a run completes)
+        # Post-run callout (appears after a run completes; persists 24h)
         last_run = st.session_state.get(f"last_run_{report['id']}")
+        if not last_run:
+            persisted = _load_all_run_state().get(report["id"])
+            if persisted:
+                last_run = persisted
+                # Re-hydrate session state so the rest of the page sees it
+                st.session_state[f"last_run_{report['id']}"] = persisted
         if last_run:
             post_run_cfg = report.get("post_run", {})
             with st.container(border=True):
@@ -513,8 +557,9 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                 with cols[1]:
                     if st.button(again_label, key=f"again_{report['id']}", use_container_width=True, disabled=not chrome_ok):
                         _execute_action(report, primary, picked, chrome_ok)
-                if st.button("✖ Dismiss", key=f"dismiss_{report['id']}"):
-                    del st.session_state[f"last_run_{report['id']}"]
+                if st.button("✖ Dismiss / Mark Done", key=f"dismiss_{report['id']}"):
+                    st.session_state.pop(f"last_run_{report['id']}", None)
+                    _clear_run_state_for(report["id"])
                     st.rerun()
 
         # Secondary actions
