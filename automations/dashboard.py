@@ -934,6 +934,7 @@ INTAKE_HEADERS = [
     "ID", "Title", "Sheet Link", "Loom Link", "Description",
     "Submitted By", "Submitted At", "Status", "Assigned To", "Assigned At",
     "Preferred Creator", "Currently runs", "Priority", "Submitter Email",
+    "Review CC",
 ]
 
 PRIORITY_OPTIONS = [
@@ -1044,6 +1045,49 @@ def _mark_intake_done(entry_id: str) -> bool:
     if not cell:
         return False
     ws.update_cell(cell.row, 8, "Done")
+    _read_intake.clear()
+    return True
+
+
+def _mark_intake_uploaded(entry_id: str) -> bool:
+    """Set status to 'Uploaded' — automation is saved, requester not yet emailed.
+
+    This is the first half of the two-step completion flow: the builder
+    uploads via the wire-up dialog, which flips status from 'In Progress'
+    to 'Uploaded'. The card then shows a 'Submit for review' form that
+    optionally collects extra CC emails and flips status to 'Done', which
+    is what triggers the Apps Script review email to the requester.
+    """
+    ws = _intake_ws()
+    try:
+        cell = ws.find(str(entry_id))
+    except Exception:
+        return False
+    if not cell:
+        return False
+    ws.update_cell(cell.row, INTAKE_HEADERS.index("Status") + 1, "Uploaded")
+    _read_intake.clear()
+    return True
+
+
+def _submit_intake_for_review(entry_id: str, cc_emails: str) -> bool:
+    """Mark Done + stash any additional review CCs on the row.
+
+    Setting Status='Done' is what triggers the Apps Script review email
+    to the original submitter. The cc_emails string (comma-separated) is
+    written to the 'Review CC' column for the script to read.
+    """
+    ws = _intake_ws()
+    try:
+        cell = ws.find(str(entry_id))
+    except Exception:
+        return False
+    if not cell:
+        return False
+    row = cell.row
+    if "Review CC" in INTAKE_HEADERS:
+        ws.update_cell(row, INTAKE_HEADERS.index("Review CC") + 1, (cc_emails or "").strip())
+    ws.update_cell(row, INTAKE_HEADERS.index("Status") + 1, "Done")
     _read_intake.clear()
     return True
 
@@ -1348,7 +1392,13 @@ def _show_wire_up_dialog(entry: dict | None = None):
         ),
     )
 
-    submitted = st.button("🚀 Wire It Up & Mark Done", type="primary", use_container_width=True, key="wu_submit")
+    if entry.get("ID"):
+        st.info(
+            "**Confirm:** uploading saves this to the Report Library and marks the "
+            "backlog card as **Uploaded — ready for review**. The requester is **not** "
+            "emailed yet — that happens when you hit **Submit for review** on the card."
+        )
+    submitted = st.button("🚀 Save & Mark Ready for Review", type="primary", use_container_width=True, key="wu_submit")
     if submitted:
         if not (name and script_text):
             st.error("Please fill every field marked *.")
@@ -1408,7 +1458,7 @@ def _show_wire_up_dialog(entry: dict | None = None):
 
         if entry.get("ID"):
             try:
-                _mark_intake_done(str(entry["ID"]))
+                _mark_intake_uploaded(str(entry["ID"]))
             except Exception:
                 pass
 
@@ -1417,7 +1467,11 @@ def _show_wire_up_dialog(entry: dict | None = None):
             if assignee == "Not sure yet"
             else f"on **{assignee}**'s dashboard"
         )
-        st.success(f"✅ Wired up! It will appear {target_text}.")
+        st.success(
+            f"✅ Uploaded! It will appear {target_text}. "
+            "Head back to the backlog card and hit **Submit for review** when "
+            "you're ready to notify the requester."
+        )
         st.balloons()
         st.markdown(
             "**Heads up:** The new automation is saved on this Mac. "
@@ -1505,7 +1559,7 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                     f"Submitted by **{entry.get('Submitted By', '?')}** on {entry.get('Submitted At', '?')}"
                 )
             if entry.get("Description"):
-                with st.expander("Details"):
+                with st.expander("Project Details"):
                     st.markdown(entry["Description"])
                     link_cols = st.columns(2)
                     with link_cols[0]:
@@ -1538,13 +1592,45 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                         else:
                             st.error("Couldn't claim — please try again.")
             if allow_done:
-                if st.button("📥 Upload the Automation", key=f"wireup_{entry['ID']}", use_container_width=True, type="primary"):
-                    _show_wire_up_dialog(entry)
-                if st.button("📨 Submit for review by requester", key=f"justdone_{entry['ID']}", use_container_width=True):
-                    if _mark_intake_done(str(entry["ID"])):
-                        st.success("Sent to requester for review — they'll get an email.")
-                        st.rerun()
-                # mailto link to ask the requester a question while building
+                _row_status = entry.get("Status") or "In Progress"
+                if _row_status == "Uploaded":
+                    # Step 2 of the completion flow — automation is saved,
+                    # ready to ping the requester (with optional CCs).
+                    st.markdown(
+                        "<span style='display:inline-block; background:#E8F6EC; color:#1F7A3D; "
+                        "padding:3px 10px; border-radius:999px; font-weight:700; font-size:0.85em; "
+                        "margin-bottom:0.5rem'>✅ Uploaded — ready to send for review</span>",
+                        unsafe_allow_html=True,
+                    )
+                    extra_cc = st.text_input(
+                        "Also CC (comma-separated, optional)",
+                        key=f"review_cc_{entry['ID']}",
+                        placeholder="alice@example.com, bob@example.com",
+                        help="Anyone else who should know the report is ready to test. "
+                             "The original requester is always included.",
+                    )
+                    if st.button(
+                        "📨 Submit for review by requester",
+                        key=f"submit_review_{entry['ID']}",
+                        use_container_width=True,
+                        type="primary",
+                    ):
+                        if _submit_intake_for_review(str(entry["ID"]), extra_cc):
+                            st.success("Email going out shortly.")
+                            st.rerun()
+                        else:
+                            st.error("Couldn't update — please try again.")
+                else:
+                    # Step 1 — still building. Upload first.
+                    if st.button(
+                        "📥 Upload the Automation",
+                        key=f"wireup_{entry['ID']}",
+                        use_container_width=True,
+                        type="primary",
+                    ):
+                        _show_wire_up_dialog(entry)
+                # Gmail compose URL — opens Gmail in the browser (not the
+                # native Mail app) so the user doesn't have to swap clients.
                 requester_email = (entry.get("Submitter Email") or "").strip()
                 if requester_email:
                     from urllib.parse import quote
@@ -1554,12 +1640,15 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                         f"I'm working on your automation request and had a quick question:\n\n\n\n"
                         f"Thanks!\n"
                     )
-                    _mailto = f"mailto:{requester_email}?subject={_subject}&body={_body}"
+                    _gmail_url = (
+                        "https://mail.google.com/mail/?view=cm&fs=1&tf=cm"
+                        f"&to={quote(requester_email)}&su={_subject}&body={_body}"
+                    )
                     st.link_button(
                         "✉️ Ask requester a question",
-                        _mailto,
+                        _gmail_url,
                         use_container_width=True,
-                        help=f"Opens your mail app addressed to {requester_email}",
+                        help=f"Opens Gmail addressed to {requester_email}",
                     )
 
                 # Anyone can ping the claimer for a status update. Captures the
@@ -1580,7 +1669,11 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                         "Your email (optional)",
                         key=f"asker_email_{entry['ID']}",
                         placeholder="you@example.com",
-                        help="Leave blank if you're the original requester — they're already on CC.",
+                        help=(
+                            "If you're not the original requester but would still "
+                            "like an update, drop your email here and the claimer's "
+                            "reply will include you."
+                        ),
                     )
                     if not claimer_email:
                         st.warning(
@@ -1600,14 +1693,17 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                     if asker_email:
                         _body_lines.append(f"(Reply directly to: {asker_email})")
                     _body = _q("\n".join(_body_lines))
-                    _cc = f"&cc={requester_email}" if requester_email else ""
-                    _to = claimer_email or ""
-                    _mailto_update = f"mailto:{_to}?subject={_subj}{_cc}&body={_body}"
+                    _cc = f"&cc={_q(requester_email)}" if requester_email else ""
+                    _to_param = f"&to={_q(claimer_email)}" if claimer_email else ""
+                    _gmail_update_url = (
+                        "https://mail.google.com/mail/?view=cm&fs=1&tf=cm"
+                        f"{_to_param}&su={_subj}{_cc}&body={_body}"
+                    )
                     st.link_button(
-                        "📤 Open in my mail app",
-                        _mailto_update,
+                        "📤 Open in Gmail",
+                        _gmail_update_url,
                         use_container_width=True,
-                        help="Drafts the email in your mail app. Fill in any blank \"To\" "
+                        help="Drafts the email in Gmail. Fill in any blank \"To\" "
                              "if the claimer's email isn't on file yet.",
                     )
 
@@ -2391,7 +2487,7 @@ elif st.session_state.view == "backlog":
     )
     in_progress = sorted(
         [r for r in intake
-         if r.get("Status") == "In Progress"
+         if r.get("Status") in ("In Progress", "Uploaded")
          and str(r.get("ID")) != _focus_id],
         key=lambda r: _priority_rank(r.get("Priority", "")),
     )
