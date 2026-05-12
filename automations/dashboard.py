@@ -2218,6 +2218,93 @@ def _render_bug_card(entry: dict) -> None:
                 st.caption(f"Note: {entry['Resolution Note']}")
 
 
+def _render_bug_typed_view(
+    *,
+    type_keyword: str,
+    page_title: str,
+    page_caption: str,
+    empty_message: str,
+    completed_label: str,
+    completed_empty_label: str,
+) -> None:
+    """Shared renderer for the Bugs view and the Change Requests view.
+
+    Both views share data + render logic — bug rows in the same Sheet tab,
+    same card renderer, same statuses. They differ only in the Type filter
+    (e.g. 'Bug' vs 'Change'), labels, and captions.
+    """
+    st.markdown(f"## {page_title}")
+    st.caption(page_caption)
+
+    bugs = [b for b in _read_bugs() if type_keyword in (b.get("Type") or "")]
+
+    # Focused card from email deep link (?bug=<id>). If the row is on the
+    # other typed view, drop the focus silently so we don't render a card
+    # that doesn't belong here.
+    _dl_bug_id = st.query_params.get("bug", "").strip()
+    if _dl_bug_id:
+        _hit = next((b for b in bugs if str(b.get("ID")) == _dl_bug_id), None)
+        if _hit:
+            st.markdown("#### 📌 You came here from an email")
+            _render_bug_card(_hit)
+            if st.button("← Back to full list", key=f"clear_{type_keyword}_focus"):
+                try:
+                    st.query_params.clear()
+                except Exception:
+                    pass
+                st.rerun()
+            st.markdown("---")
+        else:
+            _dl_bug_id = ""
+
+    _focus_bid = _dl_bug_id or None
+    in_progress = sorted(
+        [b for b in bugs
+         if (b.get("Status") or "") in ("In Progress", "Needs Info")
+         and str(b.get("ID")) != _focus_bid],
+        key=lambda b: _priority_rank(b.get("Priority", "")),
+    )
+    open_entries = sorted(
+        [b for b in bugs
+         if (b.get("Status") or "Open") == "Open"
+         and str(b.get("ID")) != _focus_bid],
+        key=lambda b: _priority_rank(b.get("Priority", "")),
+    )
+    fixed = [b for b in bugs
+             if (b.get("Status") or "") == "Fixed"
+             and str(b.get("ID")) != _focus_bid]
+
+    if not in_progress and not open_entries and not _focus_bid and not fixed:
+        st.info(empty_message)
+        return
+
+    cols = st.columns(2)
+    # LEFT = In Progress + completed history below
+    with cols[0]:
+        st.markdown(f"#### 🛠️ In Progress ({len(in_progress)})")
+        if in_progress:
+            for entry in in_progress:
+                _render_bug_card(entry)
+        else:
+            st.caption("Nothing in progress.")
+
+        st.markdown("---")
+        with st.expander(f"{completed_label} ({len(fixed)})", expanded=False):
+            if fixed:
+                for entry in fixed[:25]:
+                    _render_completed_bug_card(entry)
+            else:
+                st.caption(completed_empty_label)
+    # RIGHT = Open (untouched / just arrived)
+    with cols[1]:
+        st.markdown(f"#### 📥 Open ({len(open_entries)})")
+        if open_entries:
+            for entry in open_entries:
+                _render_bug_card(entry)
+        else:
+            st.caption("Nothing new in the queue.")
+
+
 def _missed_runs(reports: list[dict], days: int = 7, today: dt.date | None = None) -> list[dict]:
     """For each report, find days in the past `days` where it was scheduled
     but no successful run was logged. Returns list of {report, missed_date}."""
@@ -2400,7 +2487,7 @@ if "view" not in st.session_state:
     _url_view = st.query_params.get("view", "").strip()
     st.session_state.view = (
         _url_view
-        if _url_view in {"home", "user", "overview", "library", "backlog", "bugs"}
+        if _url_view in {"home", "user", "overview", "library", "backlog", "bugs", "changes"}
         else "home"
     )
 if "user" not in st.session_state:
@@ -2416,7 +2503,13 @@ if not st.session_state.get("_deep_link_handled"):
     if _dl_req:
         st.session_state.view = "backlog"
     elif _dl_bug:
-        st.session_state.view = "bugs"
+        # Bugs and change requests share the same Sheet tab + ?bug=<id>
+        # deep link; look up the row's Type to land on the right view.
+        _b_lookup = next((b for b in _read_bugs() if str(b.get("ID")) == _dl_bug), None)
+        if _b_lookup and "Change" in (_b_lookup.get("Type") or ""):
+            st.session_state.view = "changes"
+        else:
+            st.session_state.view = "bugs"
     if _dl_req or _dl_bug:
         st.session_state._deep_link_handled = True
 
@@ -2545,7 +2638,7 @@ def _ordinal(n: int) -> str:
 BIG_DATE = f"{weekday_name.upper()}, {today.strftime('%B').upper()} {_ordinal(today.day).upper()}"
 
 
-_VALID_VIEWS = {"home", "user", "overview", "library", "backlog", "bugs"}
+_VALID_VIEWS = {"home", "user", "overview", "library", "backlog", "bugs", "changes"}
 
 
 def _set_view(view: str) -> None:
@@ -2594,6 +2687,10 @@ def _go_backlog():
 
 def _go_bugs():
     _set_view("bugs")
+
+
+def _go_changes():
+    _set_view("changes")
 
 
 def _detect_hub_user() -> str:
@@ -2693,7 +2790,13 @@ with st.sidebar:
     )
     _bugs_count = sum(
         1 for b in _read_bugs()
-        if (b.get("Status") or "Open") in ("Open", "Needs Info")
+        if (b.get("Status") or "Open") in ("Open", "In Progress", "Needs Info")
+        and "Bug" in (b.get("Type") or "")
+    )
+    _changes_count = sum(
+        1 for b in _read_bugs()
+        if (b.get("Status") or "Open") in ("Open", "In Progress", "Needs Info")
+        and "Change" in (b.get("Type") or "")
     )
     if st.button(f"📨 New Automation Request ({_backlog_count})", use_container_width=True, key="nav_backlog"):
         _go_backlog()
@@ -2759,6 +2862,9 @@ with st.sidebar:
         st.session_state.show_suggest = True
     if st.button(f"🐛 Bugs Being Fixed ({_bugs_count})", use_container_width=True, key="nav_bugs"):
         _go_bugs()
+        st.rerun()
+    if st.button(f"✏️ Report Change Requests ({_changes_count})", use_container_width=True, key="nav_changes"):
+        _go_changes()
         st.rerun()
 
     # Tiny sign-out link at the very bottom — ends the 1-hour session so the
@@ -2988,89 +3094,34 @@ elif st.session_state.view == "backlog":
 
 
 # --------------------------------------------------------------------------
-# BUGS VIEW — bug reports + change requests (Megan-triaged)
+# BUGS / CHANGE REQUESTS VIEWS — both views are identical in shape, just
+# filtered by row Type. Bugs = 'Bug / something broke'. Change requests =
+# 'Change to an existing report'. Same Sheet tab, same Apps Script — just
+# two filtered surfaces so admins can triage them with separate mindsets.
+# The shared renderer _render_bug_typed_view is defined further up with
+# the other card helpers; here we just dispatch by view.
 # --------------------------------------------------------------------------
 
 elif st.session_state.view == "bugs":
-    st.markdown("## 🐛 Bug Reports & Change Requests")
-    st.caption("Submitted via the sidebar. Megan triages and replies to the submitter by email.")
-
-    bugs = _read_bugs()
-
-    # Focused card from email deep link
-    _dl_bug_id = st.query_params.get("bug", "").strip()
-    if _dl_bug_id:
-        _hit = next((b for b in bugs if str(b.get("ID")) == _dl_bug_id), None)
-        if _hit:
-            st.markdown("#### 📌 You came here from an email")
-            _render_bug_card(_hit)
-            if st.button("← Back to full bug list", key="clear_bug_focus"):
-                try:
-                    st.query_params.clear()
-                except Exception:
-                    pass
-                st.rerun()
-            st.markdown("---")
-        else:
-            st.warning(f"Couldn't find a bug with ID `{_dl_bug_id}` — showing the full list below.")
-
-    _focus_bid = _dl_bug_id or None
-    in_progress_bugs = sorted(
-        [b for b in bugs
-         if (b.get("Status") or "") in ("In Progress", "Needs Info")
-         and str(b.get("ID")) != _focus_bid],
-        key=lambda b: _priority_rank(b.get("Priority", "")),
+    _render_bug_typed_view(
+        type_keyword="Bug",
+        page_title="🐛 Bug Reports",
+        page_caption="Things that are broken. Submitted via the sidebar. Megan triages and replies to the submitter by email.",
+        empty_message="No bug reports right now.",
+        completed_label="🐛 Bug Fixes Completed",
+        completed_empty_label="No bugs fixed yet.",
     )
-    open_bugs = sorted(
-        [b for b in bugs
-         if (b.get("Status") or "Open") == "Open"
-         and str(b.get("ID")) != _focus_bid],
-        key=lambda b: _priority_rank(b.get("Priority", "")),
+
+
+elif st.session_state.view == "changes":
+    _render_bug_typed_view(
+        type_keyword="Change",
+        page_title="✏️ Report Change Requests",
+        page_caption="Tweaks and edits to existing reports. Submitted via the sidebar. Megan triages and replies to the submitter by email.",
+        empty_message="No change requests right now.",
+        completed_label="✏️ Completed Change Requests",
+        completed_empty_label="No change requests completed yet.",
     )
-    fixed_bugs = [b for b in bugs
-                  if (b.get("Status") or "") == "Fixed"
-                  and "Bug" in (b.get("Type") or "")
-                  and str(b.get("ID")) != _focus_bid]
-    fixed_changes = [b for b in bugs
-                     if (b.get("Status") or "") == "Fixed"
-                     and "Change" in (b.get("Type") or "")
-                     and str(b.get("ID")) != _focus_bid]
-
-    if not in_progress_bugs and not open_bugs and not _focus_bid:
-        st.info("No open bugs or change requests.")
-    else:
-        bug_cols = st.columns(2)
-        # LEFT = In Progress (Megan has started — or asked for more info)
-        # plus the two completed history sections beneath it.
-        with bug_cols[0]:
-            st.markdown(f"#### 🛠️ In Progress ({len(in_progress_bugs)})")
-            if in_progress_bugs:
-                for entry in in_progress_bugs:
-                    _render_bug_card(entry)
-            else:
-                st.caption("Nothing in progress.")
-
-            st.markdown("---")
-            with st.expander(f"🐛 Bug Fixes Completed ({len(fixed_bugs)})", expanded=False):
-                if fixed_bugs:
-                    for entry in fixed_bugs[:25]:
-                        _render_completed_bug_card(entry)
-                else:
-                    st.caption("No bugs fixed yet.")
-            with st.expander(f"✏️ Report Updates Completed ({len(fixed_changes)})", expanded=False):
-                if fixed_changes:
-                    for entry in fixed_changes[:25]:
-                        _render_completed_bug_card(entry)
-                else:
-                    st.caption("No report updates completed yet.")
-        # RIGHT = Open (untouched / just arrived)
-        with bug_cols[1]:
-            st.markdown(f"#### 📥 Open ({len(open_bugs)})")
-            if open_bugs:
-                for entry in open_bugs:
-                    _render_bug_card(entry)
-            else:
-                st.caption("Nothing new in the queue.")
 
 
 # --------------------------------------------------------------------------
