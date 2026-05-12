@@ -1394,7 +1394,8 @@ def _show_wire_up_dialog(entry: dict | None = None):
             ),
         )
         st.caption(
-            "Uploading saves the automation to the Report Library, marks the "
+            "Uploading saves the automation to the Report Library, adds it to "
+            "the schedule profile card of the person assigned above, marks the "
             "backlog card complete, and emails the requester (plus any CCs above) "
             "to review."
         )
