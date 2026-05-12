@@ -1,0 +1,28 @@
+name: Update installer release asset
+
+# Whenever Install-Recruiting-Report.command changes on main, replace the
+# asset on the v0.1.0 release in place. Keeps the public download URL
+# (https://github.com/<owner>/<repo>/releases/download/v0.1.0/Install-Recruiting-Report.command)
+# stable forever so the invite email never needs editing.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - Install-Recruiting-Report.command
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Replace installer asset on v0.1.0 release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload v0.1.0 Install-Recruiting-Report.command \
+            --clobber \
+            --repo "$GITHUB_REPOSITORY"
