@@ -934,7 +934,7 @@ INTAKE_HEADERS = [
     "ID", "Title", "Sheet Link", "Loom Link", "Description",
     "Submitted By", "Submitted At", "Status", "Assigned To", "Assigned At",
     "Preferred Creator", "Currently runs", "Priority", "Submitter Email",
-    "Review CC",
+    "Review CC", "Notes",
 ]
 
 PRIORITY_OPTIONS = [
@@ -1066,6 +1066,33 @@ def _mark_intake_uploaded(entry_id: str) -> bool:
     if not cell:
         return False
     ws.update_cell(cell.row, INTAKE_HEADERS.index("Status") + 1, "Uploaded")
+    _read_intake.clear()
+    return True
+
+
+def _append_intake_note(entry_id: str, note: str, author: str) -> bool:
+    """Append a timestamped note to the row's Notes column.
+
+    Notes accumulate top-down with the newest at the bottom, each prefixed
+    with a timestamp + author so the thread reads as a running log.
+    """
+    ws = _intake_ws()
+    try:
+        cell = ws.find(str(entry_id))
+    except Exception:
+        return False
+    if not cell:
+        return False
+    row = cell.row
+    notes_col = INTAKE_HEADERS.index("Notes") + 1
+    try:
+        current = ws.cell(row, notes_col).value or ""
+    except Exception:
+        current = ""
+    ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    new_line = f"[{ts} — {author.strip()}] {note.strip()}"
+    updated = (current.rstrip() + "\n\n" + new_line) if current.strip() else new_line
+    ws.update_cell(row, notes_col, updated)
     _read_intake.clear()
     return True
 
@@ -1576,6 +1603,50 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                 with link_cols[1]:
                     if entry.get("Loom Link"):
                         st.link_button("▶️ Watch Loom", entry["Loom Link"], use_container_width=True)
+
+            # Notes — anyone can add a timestamped note to the project card.
+            _existing_notes = (entry.get("Notes") or "").strip()
+            _note_count = _existing_notes.count("\n\n") + 1 if _existing_notes else 0
+            _notes_label = f"📝 Notes ({_note_count})" if _note_count else "📝 Notes"
+            with st.expander(_notes_label):
+                if _existing_notes:
+                    st.markdown(
+                        "\n\n".join(
+                            f"<div style='background:#FAFAFA; padding:8px 12px; "
+                            f"border-left:3px solid #C9A85C; border-radius:4px; "
+                            f"margin-bottom:6px; font-size:0.9em; white-space:pre-wrap'>"
+                            f"{line}</div>"
+                            for line in _existing_notes.split("\n\n")
+                            if line.strip()
+                        ),
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.caption("No notes yet. Add the first one below.")
+                _new_note = st.text_area(
+                    "New note",
+                    key=f"note_input_{entry['ID']}",
+                    height=70,
+                    label_visibility="collapsed",
+                    placeholder="Status update, question, blocker, etc.",
+                )
+                _note_author = st.text_input(
+                    "Your name",
+                    key=f"note_author_{entry['ID']}",
+                    value=st.session_state.get("user", "") or "",
+                    placeholder="Your name",
+                    label_visibility="collapsed",
+                )
+                if st.button("➕ Add note", key=f"note_save_{entry['ID']}", use_container_width=True):
+                    if not (_new_note or "").strip():
+                        st.error("Add a note first.")
+                    elif not (_note_author or "").strip():
+                        st.error("Add your name so others know who wrote it.")
+                    elif _append_intake_note(str(entry["ID"]), _new_note, _note_author):
+                        st.success("Note added.")
+                        st.rerun()
+                    else:
+                        st.error("Couldn't save the note — try again.")
         with cols[1]:
             if allow_claim:
                 claim_to = st.selectbox(
@@ -1762,7 +1833,7 @@ def _render_bug_card(entry: dict) -> None:
                     else:
                         st.error("Couldn't update — try again.")
             with btn_cols[1]:
-                if st.button("❓ Need Info", key=f"bug_info_{bug_id}", use_container_width=True):
+                if st.button("❓ Need More Info?", key=f"bug_info_{bug_id}", use_container_width=True):
                     if not (note or "").strip():
                         st.error("Add a note so the requester knows what you need.")
                     elif _resolve_bug(bug_id, "Needs Info", note):
