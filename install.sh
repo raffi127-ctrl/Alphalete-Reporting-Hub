@@ -92,6 +92,36 @@ fi
 # the bit.
 chmod +x launch_dashboard.command 2>/dev/null || true
 chmod +x "Alphalete Reporting Hub.app/Contents/MacOS/launcher" 2>/dev/null || true
+
+# 6a. Pin the venv's Python to arm64 on Apple Silicon. Apple's universal
+# Python.app wrapper sometimes lands on x86_64 when launched via the .app
+# or LaunchServices, which then can't load arm64-only wheels (cffi etc.).
+# Replacing the symlinked python with a wrapper that forces /usr/bin/arch
+# -arm64 + __PYVENV_LAUNCHER__ keeps the venv working regardless of caller.
+if [ "$(uname -m 2>/dev/null)" = "arm64" ] && [ -f .venv/bin/python3.9 ] && [ ! -f .venv/bin/.arm64-wrapped ]; then
+    REAL_PYTHON=""
+    if [ -L .venv/bin/python3.9 ]; then
+        REAL_PYTHON="$(readlink -f .venv/bin/python3.9 2>/dev/null)"
+    fi
+    if [ -z "$REAL_PYTHON" ] || [ ! -x "$REAL_PYTHON" ]; then
+        # Fall back to the typical Apple toolchain path.
+        REAL_PYTHON="/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python"
+    fi
+    if [ -x "$REAL_PYTHON" ]; then
+        rm -f .venv/bin/python .venv/bin/python3 .venv/bin/python3.9
+        cat > .venv/bin/python3.9 <<WRAP
+#!/bin/bash
+HERE="\$(cd "\$(dirname "\$0")" && pwd)"
+export __PYVENV_LAUNCHER__="\$HERE/python3.9"
+exec /usr/bin/arch -arm64 "$REAL_PYTHON" "\$@"
+WRAP
+        chmod +x .venv/bin/python3.9
+        ln -s python3.9 .venv/bin/python3
+        ln -s python3.9 .venv/bin/python
+        touch .venv/bin/.arm64-wrapped
+        echo "→ Pinned venv Python to arm64 (universal-binary wrapper installed)"
+    fi
+fi
 # Ad-hoc code-sign the .app so macOS Sequoia accepts it onto the Dock.
 # Signatures don't survive git clone (they're in xattrs + per-machine
 # CodeResources), so this has to be redone on every fresh install.

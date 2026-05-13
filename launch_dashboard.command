@@ -37,6 +37,35 @@ fi
 # from launch_dashboard.command (paper icon). The first time they relaunch
 # after the auto-pull, show a friendly Finder + dialog combo so they can
 # swap to the on-brand icon. A marker file silences the prompt afterward.
+# Pin the venv's Python to arm64 on Apple Silicon. The CommandLineTools
+# Python is universal and sometimes resolves to its x86_64 slice when
+# launched via Python.app/LaunchServices, which then can't load arm64-
+# only wheels like _cffi_backend. Replacing the venv's python symlink
+# with a wrapper that forces /usr/bin/arch -arm64 sidesteps it entirely.
+# (install.sh sets this up on fresh installs; this block catches existing
+# clones that pre-date the fix.)
+if [ "$(uname -m 2>/dev/null)" = "arm64" ] && [ -d .venv/bin ] && [ ! -f .venv/bin/.arm64-wrapped ]; then
+  REAL_PYTHON=""
+  if [ -L .venv/bin/python3.9 ]; then
+    REAL_PYTHON="$(readlink -f .venv/bin/python3.9 2>/dev/null)"
+  fi
+  [ -z "$REAL_PYTHON" ] && REAL_PYTHON="/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python"
+  if [ -x "$REAL_PYTHON" ]; then
+    rm -f .venv/bin/python .venv/bin/python3 .venv/bin/python3.9
+    cat > .venv/bin/python3.9 <<WRAP
+#!/bin/bash
+HERE="\$(cd "\$(dirname "\$0")" && pwd)"
+export __PYVENV_LAUNCHER__="\$HERE/python3.9"
+exec /usr/bin/arch -arm64 "$REAL_PYTHON" "\$@"
+WRAP
+    chmod +x .venv/bin/python3.9
+    ln -s python3.9 .venv/bin/python3
+    ln -s python3.9 .venv/bin/python
+    touch .venv/bin/.arm64-wrapped
+    echo "→ Pinned venv Python to arm64 (universal wrapper installed)"
+  fi
+fi
+
 DASHBOARD_APP="$PWD/Alphalete Reporting Hub.app"
 APP_ONBOARD_MARKER="$HOME/.config/recruiting-report/.app-icon-onboarded"
 if [ -d "$DASHBOARD_APP" ]; then
