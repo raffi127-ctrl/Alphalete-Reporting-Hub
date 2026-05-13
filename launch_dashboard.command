@@ -32,6 +32,27 @@ if [ -d .git ]; then
   fi
 fi
 
+# ----- One-time prompt: new .app icon ready to drag to the Dock -----
+# Anyone who installed before the .app bundle existed is still launching
+# from launch_dashboard.command (paper icon). The first time they relaunch
+# after the auto-pull, show a friendly Finder + dialog combo so they can
+# swap to the on-brand icon. A marker file silences the prompt afterward.
+DASHBOARD_APP="$PWD/Alphalete Reporting Hub.app"
+APP_ONBOARD_MARKER="$HOME/.config/recruiting-report/.app-icon-onboarded"
+if [ -d "$DASHBOARD_APP" ] && [ ! -f "$APP_ONBOARD_MARKER" ]; then
+  echo ""
+  echo "════════════════════════════════════════════════"
+  echo "  🐺  New: dedicated app icon for your Dock"
+  echo "════════════════════════════════════════════════"
+  echo "  A wolf-shield app just landed in your repo. Drag it onto"
+  echo "  your Dock so the hub gets a proper on-brand icon."
+  echo ""
+  open -R "$DASHBOARD_APP" 2>/dev/null || true
+  osascript -e 'display dialog "🐺 New Dock icon ready!\n\nA Finder window just opened showing \"Alphalete Reporting Hub\" — the wolf-shield app.\n\n• Drag it onto the right side of your Dock\n• (Optional) Drag the old paper-icon launcher off your Dock\n\nFrom now on, click the wolf to open the hub." with title "Alphalete Reporting Hub — Upgraded Dock Icon" buttons {"Got it"} default button "Got it" with icon note' >/dev/null 2>&1 || true
+  mkdir -p "$(dirname "$APP_ONBOARD_MARKER")" 2>/dev/null || true
+  touch "$APP_ONBOARD_MARKER" 2>/dev/null || true
+fi
+
 
 # If a previous dashboard is still running on port 8501, kill it cleanly
 # so we always start fresh. Avoids "Port 8501 is already in use" errors.
