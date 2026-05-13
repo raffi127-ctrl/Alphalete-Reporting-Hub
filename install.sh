@@ -92,6 +92,17 @@ fi
 # the bit.
 chmod +x launch_dashboard.command 2>/dev/null || true
 chmod +x "Alphalete Reporting Hub.app/Contents/MacOS/launcher" 2>/dev/null || true
+# Ad-hoc code-sign the .app so macOS Sequoia accepts it onto the Dock.
+# Signatures don't survive git clone (they're in xattrs + per-machine
+# CodeResources), so this has to be redone on every fresh install.
+if command -v codesign >/dev/null 2>&1; then
+    codesign --force --deep --sign - "Alphalete Reporting Hub.app" 2>/dev/null || true
+fi
+# Register with LaunchServices so Finder + Dock recognize it cleanly.
+LSREG=/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister
+if [ -x "$LSREG" ]; then
+    "$LSREG" -f "Alphalete Reporting Hub.app" 2>/dev/null || true
+fi
 # Touch the .app so Finder picks up its icon resources fresh on first show.
 touch "Alphalete Reporting Hub.app" 2>/dev/null || true
 

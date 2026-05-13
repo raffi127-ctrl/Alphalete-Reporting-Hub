@@ -39,18 +39,31 @@ fi
 # swap to the on-brand icon. A marker file silences the prompt afterward.
 DASHBOARD_APP="$PWD/Alphalete Reporting Hub.app"
 APP_ONBOARD_MARKER="$HOME/.config/recruiting-report/.app-icon-onboarded"
-if [ -d "$DASHBOARD_APP" ] && [ ! -f "$APP_ONBOARD_MARKER" ]; then
-  echo ""
-  echo "════════════════════════════════════════════════"
-  echo "  🐺  New: dedicated app icon for your Dock"
-  echo "════════════════════════════════════════════════"
-  echo "  A wolf-shield app just landed in your repo. Drag it onto"
-  echo "  your Dock so the hub gets a proper on-brand icon."
-  echo ""
-  open -R "$DASHBOARD_APP" 2>/dev/null || true
-  osascript -e 'display dialog "🐺 New Dock icon ready!\n\nA Finder window just opened showing \"Alphalete Reporting Hub\" — the wolf-shield app.\n\n• Drag it onto the right side of your Dock\n• (Optional) Drag the old paper-icon launcher off your Dock\n\nFrom now on, click the wolf to open the hub." with title "Alphalete Reporting Hub — Upgraded Dock Icon" buttons {"Got it"} default button "Got it" with icon note' >/dev/null 2>&1 || true
-  mkdir -p "$(dirname "$APP_ONBOARD_MARKER")" 2>/dev/null || true
-  touch "$APP_ONBOARD_MARKER" 2>/dev/null || true
+if [ -d "$DASHBOARD_APP" ]; then
+  # Ad-hoc code-sign the .app every launch if it isn't already signed.
+  # Signatures don't ride along through git clone (per-machine xattrs +
+  # CodeResources), so without this Sequoia refuses to drop the icon
+  # onto the Dock.
+  if command -v codesign >/dev/null 2>&1; then
+    if ! codesign --verify --no-strict "$DASHBOARD_APP" 2>/dev/null; then
+      codesign --force --deep --sign - "$DASHBOARD_APP" 2>/dev/null || true
+      LSREG=/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister
+      [ -x "$LSREG" ] && "$LSREG" -f "$DASHBOARD_APP" 2>/dev/null || true
+    fi
+  fi
+  if [ ! -f "$APP_ONBOARD_MARKER" ]; then
+    echo ""
+    echo "════════════════════════════════════════════════"
+    echo "  🐺  New: dedicated app icon for your Dock"
+    echo "════════════════════════════════════════════════"
+    echo "  A wolf-shield app just landed in your repo. Drag it onto"
+    echo "  your Dock so the hub gets a proper on-brand icon."
+    echo ""
+    open -R "$DASHBOARD_APP" 2>/dev/null || true
+    osascript -e 'display dialog "🐺 New Dock icon ready!\n\nA Finder window just opened showing \"Alphalete Reporting Hub\" — the wolf-shield app.\n\n• Drag it onto the right side of your Dock\n• (Optional) Drag the old paper-icon launcher off your Dock\n\nFrom now on, click the wolf to open the hub." with title "Alphalete Reporting Hub — Upgraded Dock Icon" buttons {"Got it"} default button "Got it" with icon note' >/dev/null 2>&1 || true
+    mkdir -p "$(dirname "$APP_ONBOARD_MARKER")" 2>/dev/null || true
+    touch "$APP_ONBOARD_MARKER" 2>/dev/null || true
+  fi
 fi
 
 
