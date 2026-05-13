@@ -1,0 +1,11 @@
+#!/bin/bash
+# Alphalete Reporting Hub — .app launcher
+#
+# The .app bundle sits in the repo root. Resolving the path: this script
+# lives at .../Alphalete Reporting Hub.app/Contents/MacOS/launcher, so the
+# repo root is three levels up. Then hand off to launch_dashboard.command
+# which already handles auto-update + venv + streamlit.
+set -e
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+exec "$REPO_DIR/launch_dashboard.command"

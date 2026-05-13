@@ -86,8 +86,14 @@ else
     echo "→ ⚠️  No bundled Pack Pass found in repo. You'll be asked to drop it in via the dashboard on first launch."
 fi
 
-# 6. Make the dashboard launcher double-clickable
+# 6. Make the dashboard launcher (.command) and the .app's inner launcher
+# both executable. Git preserves +x for both, but re-asserting here keeps
+# things working even if someone copied the files via a tool that strips
+# the bit.
 chmod +x launch_dashboard.command 2>/dev/null || true
+chmod +x "Alphalete Reporting Hub.app/Contents/MacOS/launcher" 2>/dev/null || true
+# Touch the .app so Finder picks up its icon resources fresh on first show.
+touch "Alphalete Reporting Hub.app" 2>/dev/null || true
 
 # 7. Done
 echo
@@ -99,11 +105,11 @@ cat <<EOF
 ONE LAST STEP:
 
   Open Finder → go to "$INSTALL_DIR"
-  Drag "launch_dashboard.command" to your Dock for easy access.
+  Drag "Alphalete Reporting Hub" (the 🐺 wolf icon) onto your Dock.
 
 DAILY USE:
 
-  • Double-click launch_dashboard.command
+  • Click the Alphalete Reporting Hub icon in your Dock
   • Browser opens with the Alphalete Reporting Hub
   • Sign in with your Pack Access password
   • Click "Launch Chrome" (only the first time each day) → log in to AppStream

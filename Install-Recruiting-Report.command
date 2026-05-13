@@ -137,19 +137,19 @@ green "════════════════════════�
 green "  ✅ All set!"
 green "════════════════════════════════════════════════"
 echo ""
-echo "One last thing — drag launch_dashboard.command to your Dock:"
+echo "One last thing — drag the 🐺 Alphalete Reporting Hub app to your Dock:"
 echo ""
-echo "  • A Finder window will open showing the file"
-echo "  • Drag launch_dashboard.command onto the right side of your Dock"
+echo "  • A Finder window will open showing the app"
+echo "  • Drag 'Alphalete Reporting Hub' onto the right side of your Dock"
 echo "    (near the Trash)"
 echo ""
 echo "After that: click the new Dock icon any time you want to open the hub."
 echo ""
 
-# Open Finder at the install dir with launch_dashboard.command selected
-open -R "$INSTALL_DIR/launch_dashboard.command" 2>/dev/null || open "$INSTALL_DIR"
+# Open Finder at the install dir with the .app selected
+open -R "$INSTALL_DIR/Alphalete Reporting Hub.app" 2>/dev/null || open "$INSTALL_DIR"
 
-show_dialog "Recruiting Report — Ready!" "Setup complete. A Finder window opened — drag launch_dashboard.command onto your Dock to finish." "note"
+show_dialog "Recruiting Report — Ready!" "Setup complete. A Finder window opened — drag 'Alphalete Reporting Hub' onto your Dock to finish." "note"
 
 echo ""
 read -p "Press Enter to close this window."
