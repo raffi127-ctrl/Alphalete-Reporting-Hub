@@ -94,16 +94,18 @@ fi
 
 # On Apple Silicon, force the universal-binary Python to run native arm64.
 # Without this, the .app launcher inherits an x86_64 context (Rosetta) and
-# fails to load arm64-only .so files like _cffi_backend.so. Intel Macs
-# return "i386" from `arch` and need no override.
+# fails to load arm64-only .so files like _cffi_backend.so. We invoke
+# `python -m streamlit` directly instead of the .venv/bin/streamlit shim;
+# the shim uses a sh `exec python "$0"` trick that loses the arch context
+# in transit, so `arch -arm64 ./streamlit` runs as x86_64 anyway.
 NATIVE_ARCH="$(arch 2>/dev/null || echo unknown)"
 if [ "$NATIVE_ARCH" = "arm64" ]; then
-  exec /usr/bin/arch -arm64 ./.venv/bin/streamlit run automations/dashboard.py \
+  exec /usr/bin/arch -arm64 ./.venv/bin/python -m streamlit run automations/dashboard.py \
     --server.headless true \
     --server.address 0.0.0.0 \
     --server.port "$PORT"
 else
-  exec ./.venv/bin/streamlit run automations/dashboard.py \
+  exec ./.venv/bin/python -m streamlit run automations/dashboard.py \
     --server.headless true \
     --server.address 0.0.0.0 \
     --server.port "$PORT"
