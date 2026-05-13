@@ -67,31 +67,57 @@ WRAP
 fi
 
 DASHBOARD_APP="$PWD/Alphalete Reporting Hub.app"
-APP_ONBOARD_MARKER="$HOME/.config/recruiting-report/.app-icon-onboarded"
+APP_INSTALLED="/Applications/Alphalete Reporting Hub.app"
+BUNDLE_SHA_MARKER="$HOME/.config/recruiting-report/.bundle-sha"
 if [ -d "$DASHBOARD_APP" ]; then
-  # Ad-hoc code-sign the .app every launch if it isn't already signed.
-  # Signatures don't ride along through git clone (per-machine xattrs +
-  # CodeResources), so without this Sequoia refuses to drop the icon
-  # onto the Dock.
-  if command -v codesign >/dev/null 2>&1; then
-    if ! codesign --verify --no-strict "$DASHBOARD_APP" 2>/dev/null; then
-      codesign --force --deep --sign - "$DASHBOARD_APP" 2>/dev/null || true
-      LSREG=/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister
-      [ -x "$LSREG" ] && "$LSREG" -f "$DASHBOARD_APP" 2>/dev/null || true
+  # Keep the wolf .app in /Applications continually in sync with the repo
+  # version, and ensure it's pinned to the Dock. Sequoia's Dock refuses
+  # drags of ad-hoc-signed apps from non-/Applications folders, so the
+  # /Applications copy is mandatory for Dock pinning.
+  #
+  # Re-sync triggers when:
+  #   • /Applications copy is missing (first run or user trashed it), OR
+  #   • The git commit that last touched the .app in the repo has changed
+  #     since we last installed it (any future bundle update flows through).
+  NEEDS_DOCK_REFRESH=0
+  CURRENT_BUNDLE_SHA="$(git log -1 --format=%H -- "$DASHBOARD_APP" 2>/dev/null || true)"
+  INSTALLED_BUNDLE_SHA="$(cat "$BUNDLE_SHA_MARKER" 2>/dev/null || true)"
+
+  NEEDS_BUNDLE_SYNC=0
+  if [ ! -d "$APP_INSTALLED" ]; then
+    NEEDS_BUNDLE_SYNC=1
+  elif [ -n "$CURRENT_BUNDLE_SHA" ] && [ "$CURRENT_BUNDLE_SHA" != "$INSTALLED_BUNDLE_SHA" ]; then
+    NEEDS_BUNDLE_SYNC=1
+  fi
+
+  if [ "$NEEDS_BUNDLE_SYNC" = "1" ]; then
+    rm -rf "$APP_INSTALLED" 2>/dev/null || true
+    if cp -R "$DASHBOARD_APP" "$APP_INSTALLED" 2>/dev/null; then
+      # Installed copy needs an absolute path to this user's repo
+      # (relative-path resolution from inside /Applications would break).
+      cat > "$APP_INSTALLED/Contents/MacOS/launcher" <<EOF
+#!/bin/bash
+set -e
+open "$PWD/launch_dashboard.command"
+EOF
+      chmod +x "$APP_INSTALLED/Contents/MacOS/launcher" 2>/dev/null || true
+      codesign --force --deep -s - "$APP_INSTALLED" >/dev/null 2>&1 || true
+      xattr -dr com.apple.quarantine "$APP_INSTALLED" 2>/dev/null || true
+      xattr -dr com.apple.provenance "$APP_INSTALLED" 2>/dev/null || true
+      mkdir -p "$(dirname "$BUNDLE_SHA_MARKER")" 2>/dev/null || true
+      [ -n "$CURRENT_BUNDLE_SHA" ] && echo "$CURRENT_BUNDLE_SHA" > "$BUNDLE_SHA_MARKER" 2>/dev/null || true
+      NEEDS_DOCK_REFRESH=1
     fi
   fi
-  if [ ! -f "$APP_ONBOARD_MARKER" ]; then
-    echo ""
-    echo "════════════════════════════════════════════════"
-    echo "  🐺  New: dedicated app icon for your Dock"
-    echo "════════════════════════════════════════════════"
-    echo "  A wolf-shield app just landed in your repo. Drag it onto"
-    echo "  your Dock so the hub gets a proper on-brand icon."
-    echo ""
-    open -R "$DASHBOARD_APP" 2>/dev/null || true
-    osascript -e 'display dialog "🐺 New Dock icon ready!\n\nA Finder window just opened showing \"Alphalete Reporting Hub\" — the wolf-shield app.\n\n• Drag it onto the right side of your Dock\n• (Optional) Drag the old paper-icon launcher off your Dock\n\nFrom now on, click the wolf to open the hub." with title "Alphalete Reporting Hub — Upgraded Dock Icon" buttons {"Got it"} default button "Got it" with icon note' >/dev/null 2>&1 || true
-    mkdir -p "$(dirname "$APP_ONBOARD_MARKER")" 2>/dev/null || true
-    touch "$APP_ONBOARD_MARKER" 2>/dev/null || true
+
+  if [ -d "$APP_INSTALLED" ]; then
+    if ! defaults read com.apple.dock persistent-apps 2>/dev/null | grep -q "com.alphalete.reporting-hub"; then
+      defaults write com.apple.dock persistent-apps -array-add '<dict><key>tile-data</key><dict><key>file-data</key><dict><key>_CFURLString</key><string>/Applications/Alphalete Reporting Hub.app</string><key>_CFURLStringType</key><integer>0</integer></dict></dict><key>tile-type</key><string>file-tile</string></dict>' 2>/dev/null && NEEDS_DOCK_REFRESH=1
+    fi
+  fi
+
+  if [ "$NEEDS_DOCK_REFRESH" = "1" ]; then
+    killall Dock 2>/dev/null || true
   fi
 fi
 
