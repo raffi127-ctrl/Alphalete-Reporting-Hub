@@ -69,7 +69,12 @@ if ! command -v brew >/dev/null 2>&1; then
     echo "      (You may be asked for your Mac password — type it and press Enter."
     echo "       You won't see the characters as you type. That's normal.)"
     echo ""
-    NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    # No NONINTERACTIVE here — Homebrew needs to be able to prompt for the
+    # sudo password. With NONINTERACTIVE set, Homebrew bails immediately if
+    # the user isn't already a passwordless-sudo admin, which fails on most
+    # Macs in the wild. Letting it prompt works in Terminal (which is what
+    # macOS uses to open .command files on double-click).
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
     # Make brew available in this shell session
     if [ -x /opt/homebrew/bin/brew ]; then
