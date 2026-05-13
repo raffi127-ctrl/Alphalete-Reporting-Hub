@@ -5,7 +5,13 @@
 # lives at .../Alphalete Reporting Hub.app/Contents/MacOS/launcher, so the
 # repo root is three levels up. Then hand off to launch_dashboard.command
 # which already handles auto-update + venv + streamlit.
+#
+# We `open` the .command file (rather than exec'ing it) so macOS hands the
+# work to Terminal.app. Terminal registers with AppKit and clears the
+# Dock-icon "launching" bounce; if we exec'd directly, the Dock would
+# bounce forever waiting for an AppKit handshake that a shell script /
+# Python streamlit never sends.
 set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-exec "$REPO_DIR/launch_dashboard.command"
+open "$REPO_DIR/launch_dashboard.command"
