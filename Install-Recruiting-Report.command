@@ -130,26 +130,59 @@ bold "[5/5] Setting up Python + packages (this takes a minute)…"
 bash "$INSTALL_DIR/install.sh"
 
 # ------------------------------------------------------------------
-# Done — open Finder so they can drag the launcher to the Dock
+# Install the .app to /Applications and pin it to the Dock automatically.
+# Sequoia's Dock refuses drags of ad-hoc-signed apps from non-/Applications
+# folders (shows trash-only drop target), so we:
+#   1. Copy the .app to /Applications (Gatekeeper-blessed location)
+#   2. Rewrite its launcher to point at this user's $INSTALL_DIR (the
+#      relative-path resolution in the repo copy breaks once moved)
+#   3. Re-sign ad-hoc + clear quarantine
+#   4. Write the pin directly into the Dock prefs (no drag needed)
+# ------------------------------------------------------------------
+APP_SRC="$INSTALL_DIR/Alphalete Reporting Hub.app"
+APP_DST="/Applications/Alphalete Reporting Hub.app"
+
+if [ -d "$APP_SRC" ]; then
+    bold "Pinning the 🐺 wolf icon to your Dock…"
+
+    # Replace any existing /Applications copy with the freshly-installed one
+    rm -rf "$APP_DST"
+    cp -R "$APP_SRC" "$APP_DST"
+
+    # Hardcode this user's repo path in the installed launcher so it works
+    # from /Applications (relative-path resolution doesn't work once moved).
+    cat > "$APP_DST/Contents/MacOS/launcher" <<EOF
+#!/bin/bash
+set -e
+open "$INSTALL_DIR/launch_dashboard.command"
+EOF
+    chmod +x "$APP_DST/Contents/MacOS/launcher"
+
+    # Re-sign ad-hoc (launcher changed) and clear quarantine attrs
+    codesign --force --deep -s - "$APP_DST" >/dev/null 2>&1 || true
+    xattr -dr com.apple.quarantine "$APP_DST" 2>/dev/null || true
+    xattr -dr com.apple.provenance "$APP_DST" 2>/dev/null || true
+
+    # Add to Dock if not already pinned (idempotent on re-install)
+    if ! defaults read com.apple.dock persistent-apps 2>/dev/null | grep -q "com.alphalete.reporting-hub"; then
+        defaults write com.apple.dock persistent-apps -array-add '<dict><key>tile-data</key><dict><key>file-data</key><dict><key>_CFURLString</key><string>/Applications/Alphalete Reporting Hub.app</string><key>_CFURLStringType</key><integer>0</integer></dict></dict><key>tile-type</key><string>file-tile</string></dict>'
+        killall Dock 2>/dev/null || true
+    fi
+fi
+
+# ------------------------------------------------------------------
+# Done
 # ------------------------------------------------------------------
 green ""
 green "════════════════════════════════════════════════"
 green "  ✅ All set!"
 green "════════════════════════════════════════════════"
 echo ""
-echo "One last thing — drag the 🐺 Alphalete Reporting Hub app to your Dock:"
-echo ""
-echo "  • A Finder window will open showing the app"
-echo "  • Drag 'Alphalete Reporting Hub' onto the right side of your Dock"
-echo "    (near the Trash)"
-echo ""
-echo "After that: click the new Dock icon any time you want to open the hub."
+echo "The 🐺 Alphalete Reporting Hub icon is now in your Dock."
+echo "Click it any time you want to open the hub."
 echo ""
 
-# Open Finder at the install dir with the .app selected
-open -R "$INSTALL_DIR/Alphalete Reporting Hub.app" 2>/dev/null || open "$INSTALL_DIR"
-
-show_dialog "Recruiting Report — Ready!" "Setup complete. A Finder window opened — drag 'Alphalete Reporting Hub' onto your Dock to finish." "note"
+show_dialog "Recruiting Report — Ready!" "Setup complete. The 🐺 wolf icon is now in your Dock — click it any time to open the hub." "note"
 
 echo ""
 read -p "Press Enter to close this window."
