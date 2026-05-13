@@ -45,9 +45,17 @@ fi
 # (install.sh sets this up on fresh installs; this block catches existing
 # clones that pre-date the fix.)
 if [ "$(uname -m 2>/dev/null)" = "arm64" ] && [ -d .venv/bin ] && [ ! -f .venv/bin/.arm64-wrapped ]; then
+  # Only Python.app/Contents/MacOS/Python honors __PYVENV_LAUNCHER__;
+  # bin/python3.X does not. Map the resolved framework version root to
+  # its Python.app variant so venv site-packages stay discoverable.
   REAL_PYTHON=""
   if [ -L .venv/bin/python3.9 ]; then
-    REAL_PYTHON="$(readlink -f .venv/bin/python3.9 2>/dev/null)"
+    RESOLVED="$(readlink -f .venv/bin/python3.9 2>/dev/null || true)"
+    if [ -n "$RESOLVED" ]; then
+      VERSION_ROOT="${RESOLVED%/bin/python*}"
+      CANDIDATE="$VERSION_ROOT/Resources/Python.app/Contents/MacOS/Python"
+      [ -x "$CANDIDATE" ] && REAL_PYTHON="$CANDIDATE"
+    fi
   fi
   [ -z "$REAL_PYTHON" ] && REAL_PYTHON="/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python"
   if [ -x "$REAL_PYTHON" ]; then

@@ -99,12 +99,19 @@ chmod +x "Alphalete Reporting Hub.app/Contents/MacOS/launcher" 2>/dev/null || tr
 # Replacing the symlinked python with a wrapper that forces /usr/bin/arch
 # -arm64 + __PYVENV_LAUNCHER__ keeps the venv working regardless of caller.
 if [ "$(uname -m 2>/dev/null)" = "arm64" ] && [ -f .venv/bin/python3.9 ] && [ ! -f .venv/bin/.arm64-wrapped ]; then
+    # Only Python.app/Contents/MacOS/Python honors __PYVENV_LAUNCHER__.
+    # bin/python3.X does not, so using the readlink target directly would
+    # bypass the venv's site-packages and break streamlit imports.
     REAL_PYTHON=""
     if [ -L .venv/bin/python3.9 ]; then
-        REAL_PYTHON="$(readlink -f .venv/bin/python3.9 2>/dev/null)"
+        RESOLVED="$(readlink -f .venv/bin/python3.9 2>/dev/null || true)"
+        if [ -n "$RESOLVED" ]; then
+            VERSION_ROOT="${RESOLVED%/bin/python*}"
+            CANDIDATE="$VERSION_ROOT/Resources/Python.app/Contents/MacOS/Python"
+            [ -x "$CANDIDATE" ] && REAL_PYTHON="$CANDIDATE"
+        fi
     fi
     if [ -z "$REAL_PYTHON" ] || [ ! -x "$REAL_PYTHON" ]; then
-        # Fall back to the typical Apple toolchain path.
         REAL_PYTHON="/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python"
     fi
     if [ -x "$REAL_PYTHON" ]; then
