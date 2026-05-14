@@ -1862,13 +1862,15 @@ def _intake_ws():
 
 @st.cache_data(ttl=30)
 def _read_intake() -> list[dict]:
-    """All intake records, newest first. Cached 30s to avoid per-rerun API hits."""
-    try:
-        ws = _intake_ws()
-        rows = ws.get_all_records()
-        return list(reversed(rows))
-    except Exception:
-        return []
+    """All intake records, newest first. Cached 30s to avoid per-rerun API hits.
+
+    Intentionally NOT catching exceptions here — the call sites wrap this in
+    try/except and render the real error (e.g. corrupted OAuth JSON). A silent
+    return [] makes auth failures look like "nothing to claim" to the user.
+    """
+    ws = _intake_ws()
+    rows = ws.get_all_records()
+    return list(reversed(rows))
 
 
 def _add_intake(title: str, sheet_link: str, loom_link: str, description: str,
@@ -2167,13 +2169,13 @@ def _bugs_ws():
 
 @st.cache_data(ttl=30)
 def _read_bugs() -> list[dict]:
-    """All bug records, newest first."""
-    try:
-        ws = _bugs_ws()
-        rows = ws.get_all_records()
-        return list(reversed(rows))
-    except Exception:
-        return []
+    """All bug records, newest first.
+
+    Intentionally NOT catching exceptions — see _read_intake for rationale.
+    """
+    ws = _bugs_ws()
+    rows = ws.get_all_records()
+    return list(reversed(rows))
 
 
 def _add_bug(title: str, bug_type: str, sheet_link: str, loom_link: str,
