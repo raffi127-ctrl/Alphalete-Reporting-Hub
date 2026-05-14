@@ -44,7 +44,7 @@ from automations.focus_office_att.aliases import load_aliases, alias_to_canonica
 from automations.focus_office_att.columns import resolve_layout, _normalize
 from automations.focus_office_att.step5_fill_one_owner import (
     _col_letter, write_weekly_formulas, write_office_totals_row,
-    apply_empty_cell_defaults, clear_conditional_formatting,
+    apply_empty_cell_defaults, reset_conditional_formatting,
     TT_FIELD_TO_CANONICAL, DISP_FIELD_TO_CANONICAL,
 )
 
@@ -226,7 +226,7 @@ def main() -> int:
             for label, fn in [
                 ("write_weekly_formulas",        lambda: write_weekly_formulas(ws, layout)),
                 ("apply_empty_cell_defaults",    lambda: apply_empty_cell_defaults(ws, layout)),
-                ("clear_conditional_formatting", lambda: clear_conditional_formatting(ws)),
+                ("reset_conditional_formatting", lambda: reset_conditional_formatting(ws)),
                 ("write_office_totals_row",     lambda: write_office_totals_row(ws, layout)),
             ]:
                 try:

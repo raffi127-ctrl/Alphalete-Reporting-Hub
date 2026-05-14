@@ -68,7 +68,13 @@ def _setup_logging() -> logging.Logger:
 def _cf_rule(sheet_id: int, start_col: int, end_col: int,
              bg: dict, bold: bool = False) -> dict:
     """Conditional formatting rule: paint cells in [start_col, end_col)
-    whenever col A on the same row is non-blank."""
+    whenever col B (Rep Name) on the same row is non-blank.
+
+    Checks col B rather than col A because col A has a formula that
+    auto-numbers rows (=IF($B<>"",ROW()-2,"")) — the formula's value is
+    "" when there's no rep, but some Sheets conditional-formatting paths
+    treat formula-empty differently from truly-empty cells. Anchoring on
+    col B (the actual rep name) is unambiguous."""
     fmt = {"backgroundColor": bg}
     if bold:
         fmt["textFormat"] = {"bold": True}
@@ -85,7 +91,7 @@ def _cf_rule(sheet_id: int, start_col: int, end_col: int,
                 "booleanRule": {
                     "condition": {
                         "type": "CUSTOM_FORMULA",
-                        "values": [{"userEnteredValue": f"=$A{COND_TOP_ROW}<>\"\""}],
+                        "values": [{"userEnteredValue": f"=$B{COND_TOP_ROW}<>\"\""}],
                     },
                     "format": fmt,
                 },
@@ -93,6 +99,32 @@ def _cf_rule(sheet_id: int, start_col: int, end_col: int,
             "index": 0,
         },
     }
+
+
+def build_visual_rule_requests(sheet_id: int) -> list[dict]:
+    """The conditional-formatting rules that paint the Focus Office tabs
+    (pale gray / warm gold / light cream). NONE of these are green or
+    red — those colors live in older manually-added rules that the
+    pipeline wipes via clear_conditional_formatting.
+
+    Returns a list of addConditionalFormatRule requests, callable for
+    any owner tab — not just Template. Used by both this script (for
+    Template) and the per-owner pipeline (post-fill, after clearing).
+    """
+    requests: list[dict] = []
+    # Rep Name col (A) — bold + pale-gray rail
+    requests.append(_cf_rule(sheet_id, 1, 1, REP_NAME_BG, bold=True))
+    # Weekly Total Apps col — gold + bold
+    requests.append(_cf_rule(sheet_id, WEEKLY_TOTAL_APPS_COL, WEEKLY_TOTAL_APPS_COL,
+                             WARM_GOLD, bold=True))
+    # Weekly Total breakdown (C-K) — pale gray
+    requests.append(_cf_rule(sheet_id, WEEKLY_TOTAL_BREAKDOWN_START, WEEKLY_TOTAL_BREAKDOWN_END,
+                             PALE_GRAY))
+    # Each day's Total Apps + breakdown
+    for _short, ta_col, gs, ge in DAY_COLUMNS:
+        requests.append(_cf_rule(sheet_id, ta_col, ta_col, LIGHT_CREAM, bold=True))
+        requests.append(_cf_rule(sheet_id, gs, ge, PALE_GRAY))
+    return requests
 
 
 def main() -> int:
@@ -149,18 +181,7 @@ def main() -> int:
             break
 
     # 4. Conditional rules — only paint rows where col A is non-blank.
-    #    Rep Name col (A) — bold + pale-gray rail
-    requests.append(_cf_rule(sheet_id, 1, 1, REP_NAME_BG, bold=True))
-    #    Weekly Total Apps col (B) — gold + bold
-    requests.append(_cf_rule(sheet_id, WEEKLY_TOTAL_APPS_COL, WEEKLY_TOTAL_APPS_COL,
-                             WARM_GOLD, bold=True))
-    #    Weekly Total breakdown (C-K) — pale gray
-    requests.append(_cf_rule(sheet_id, WEEKLY_TOTAL_BREAKDOWN_START, WEEKLY_TOTAL_BREAKDOWN_END,
-                             PALE_GRAY))
-    #    Each day's Total Apps + breakdown
-    for _short, ta_col, gs, ge in DAY_COLUMNS:
-        requests.append(_cf_rule(sheet_id, ta_col, ta_col, LIGHT_CREAM, bold=True))
-        requests.append(_cf_rule(sheet_id, gs, ge, PALE_GRAY))
+    requests.extend(build_visual_rule_requests(sheet_id))
 
     sh.batch_update({"requests": requests})
     log.info("recolored template — %d requests "

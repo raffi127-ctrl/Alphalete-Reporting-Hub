@@ -589,12 +589,18 @@ _ACTIVITY_METRICS = {
 }
 
 
-def clear_conditional_formatting(ws) -> int:
-    """Remove ALL conditional format rules from this tab. Returns the
-    count removed. Raf wants no green/red on the report; the only
-    coloring source is conditional formatting (added by recolor_template
-    during Phase 1 setup). Wiping it leaves the tab plain.
+def reset_conditional_formatting(ws) -> tuple[int, int]:
+    """Wipe ALL conditional format rules on this tab, then re-apply the
+    canonical visual palette (pale gray / warm gold / light cream). The
+    wipe-then-reapply pattern removes any stray green/red rules that older
+    manual edits or scripts may have left on owner tabs, while keeping the
+    tab's visual structure consistent with Template.
+
+    Returns (removed_count, applied_count).
     """
+    from automations.focus_office_att.recolor_template import (
+        build_visual_rule_requests,
+    )
     sheet_id = ws.id
     meta = ws.spreadsheet.fetch_sheet_metadata(
         params={"fields": "sheets(properties.sheetId,conditionalFormats)"}
@@ -603,18 +609,18 @@ def clear_conditional_formatting(ws) -> int:
         (s for s in meta.get("sheets", []) if s["properties"]["sheetId"] == sheet_id),
         None,
     )
-    if not target:
-        return 0
-    rules = target.get("conditionalFormats", [])
-    n = len(rules)
-    if n == 0:
-        return 0
-    # Each delete shrinks the list by 1, so always delete index 0 n times.
-    ws.spreadsheet.batch_update({"requests": [
+    rules = (target or {}).get("conditionalFormats", []) if target else []
+    n_existing = len(rules)
+
+    delete_requests = [
         {"deleteConditionalFormatRule": {"sheetId": sheet_id, "index": 0}}
-        for _ in range(n)
-    ]})
-    return n
+        for _ in range(n_existing)
+    ]
+    add_requests = build_visual_rule_requests(sheet_id)
+
+    if delete_requests or add_requests:
+        ws.spreadsheet.batch_update({"requests": delete_requests + add_requests})
+    return (n_existing, len(add_requests))
 
 
 def apply_empty_cell_defaults(ws, layout: Layout) -> None:
