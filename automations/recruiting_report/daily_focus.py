@@ -41,6 +41,19 @@ from . import fetch_office, fill
 DAILY_FOCUS_TAB = "Daily Focus Report"
 ICD_LIST_COLUMN = 22  # col V
 
+# Sidecar state file: tracks which ICDs the *most recent* run couldn't pull
+# (because they need the other AppStream account). The dashboard reads this
+# to power the "Retry missing ICDs on 2nd login" button.
+STATE_FILE = Path(__file__).resolve().parent.parent.parent / "output" / "daily_focus_state.json"
+
+# User-managed ICD-name → office-id overrides. The dashboard pops a confirm
+# dialog whenever a new name appears in col V; once the user picks an office,
+# it's persisted here so we never ask again. Sentinel "__SKIP__" marks rows
+# the user told us aren't real ICDs (e.g. header text) — those names are
+# silently ignored on every run.
+OVERRIDES_PATH = Path(__file__).resolve().parent.parent.parent / "output" / "icd_office_mappings.json"
+SKIP_SENTINEL = "__SKIP__"
+
 # Section structure
 METRICS_START_OFFSET = 4   # row 5 is first metric (relative to anchor=row 1 of section)
 METRICS_END_OFFSET = 22    # last metric is ~22 rows below anchor
@@ -105,7 +118,7 @@ ICD_NAME_TO_OFFICE_ID = {
     "steve mcelwee":      "23160",
     "carissa ng":         "23402",
     "drew tepper":        "22583",
-    "max aden":           "23066",  # AS owner: Maxamad Aden
+    "maxamad aden":       "23066",
 }
 # Backwards-compatible alias
 SHORT_NAME_TO_OFFICE_ID = ICD_NAME_TO_OFFICE_ID
@@ -640,6 +653,63 @@ def fill_icd_section(
     return log
 
 
+def _load_overrides() -> dict:
+    """Read user-confirmed ICD→office-id overrides. Returns {} if missing
+    or unreadable. Keys are lowercased ICD names; values are office-id
+    strings (or the SKIP_SENTINEL for non-ICD rows the user dismissed)."""
+    if not OVERRIDES_PATH.exists():
+        return {}
+    try:
+        data = json.loads(OVERRIDES_PATH.read_text())
+        return {str(k).lower().strip(): str(v) for k, v in data.items()}
+    except Exception:
+        return {}
+
+
+def _save_overrides(overrides: dict) -> None:
+    OVERRIDES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    OVERRIDES_PATH.write_text(json.dumps(
+        {k: v for k, v in sorted(overrides.items())}, indent=2,
+    ))
+
+
+def _resolve_office_id(name: str) -> Optional[str]:
+    """Return the office id for an ICD name, or None if unmapped/skipped.
+
+    Order: user overrides (incl. SKIP sentinel) → hardcoded
+    ICD_NAME_TO_OFFICE_ID. SKIP returns None so the caller skips the row
+    without logging a 'no mapping' warning."""
+    key = name.lower().strip()
+    overrides = _load_overrides()
+    if key in overrides:
+        v = overrides[key]
+        return None if v == SKIP_SENTINEL else v
+    return ICD_NAME_TO_OFFICE_ID.get(key)
+
+
+def _is_skipped(name: str) -> bool:
+    """True if the user marked this name as 'not an ICD' in overrides."""
+    return _load_overrides().get(name.lower().strip()) == SKIP_SENTINEL
+
+
+def _read_state() -> dict:
+    if not STATE_FILE.exists():
+        return {}
+    try:
+        return json.loads(STATE_FILE.read_text())
+    except Exception:
+        return {}
+
+
+def _write_state(inaccessible: List[str], week_start: dt.date) -> None:
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    STATE_FILE.write_text(json.dumps({
+        "ts": dt.datetime.now().isoformat(timespec="seconds"),
+        "week_start": week_start.isoformat(),
+        "inaccessible": sorted(set(inaccessible)),
+    }, indent=2))
+
+
 def _setup_logging(today: dt.date) -> logging.Logger:
     log_path = fill.MAPPING_PATH.parent.parent.parent / "output" / "logs" / f"daily-focus-{today.isoformat()}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -655,6 +725,10 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--week-start", help="Sunday at start of week to fetch (default: most recent past Sunday).")
     ap.add_argument("--only", help="Only one ICD (short name as in col 22).")
+    ap.add_argument("--retry-inaccessible", action="store_true",
+                    help="Only retry the ICDs the previous run flagged as "
+                         "inaccessible (i.e. switched to 2nd AS login). "
+                         "Skips any ICDs that already pulled successfully.")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--no-copy", action="store_true",
                     help="Skip the Wednesday copy-current-to-last step.")
@@ -684,7 +758,22 @@ def main() -> int:
     icds = _read_icd_list(ws)
     if args.only:
         icds = [i for i in icds if i.lower() == args.only.lower()]
+    if args.retry_inaccessible:
+        prev = _read_state().get("inaccessible", [])
+        prev_lower = {n.lower() for n in prev}
+        icds = [i for i in icds if i.lower() in prev_lower]
+        if not icds:
+            log.info("retry-inaccessible: no ICDs in state file — nothing to retry. "
+                     "(Either all ICDs pulled on the first run, or no first run has happened yet.)")
+            return 0
+        log.info("retry-inaccessible mode: retrying %d ICD(s) from last run: %s",
+                 len(icds), icds)
     log.info("ICDs to process: %s", icds)
+
+    # Track ICDs that hit the "not accessible from this AS account" branch
+    # so the dashboard's Retry button knows which ones to re-attempt on
+    # the 2nd login.
+    inaccessible_this_run: List[str] = []
 
     col3 = fill._retry(ws.col_values, 3)
 
@@ -708,9 +797,14 @@ def main() -> int:
             return 1
 
         for icd in icds:
-            office_id = ICD_NAME_TO_OFFICE_ID.get(icd.lower().strip())
+            if _is_skipped(icd):
+                # User dismissed this row as 'not an ICD' (e.g. header text).
+                # Silent skip — don't log a warning every run.
+                continue
+            office_id = _resolve_office_id(icd)
             if not office_id:
-                log.warning("[%s] no office_id mapping (add to ICD_NAME_TO_OFFICE_ID); skip", icd)
+                log.warning("[%s] no office_id mapping — confirm it from the dashboard's "
+                            "'Map new ICDs' prompt and re-run; skip for now", icd)
                 continue
 
             anchor = _find_section_anchor(col3, icd)
@@ -733,13 +827,19 @@ def main() -> int:
             try:
                 cur_raw = fetch_office.fetch_one_daily(target_page, office_id, icd, week_start)
             except Exception as e:
-                log.exception("  fetch failed for %s (current): %s", icd, e)
+                # Timeout / network / Playwright errors are recoverable on a
+                # second pass (often resolves on retry). Mark as needing retry
+                # so the dashboard prompts to re-pull this ICD.
+                log.exception("  fetch failed for %s (current): %s — flagged for retry", icd, e)
+                inaccessible_this_run.append(icd)
                 continue
             if cur_raw == {}:
                 log.warning("  not accessible from current AS account; skip (data preserved)")
+                inaccessible_this_run.append(icd)
                 continue
             if not cur_raw:
-                log.warning("  empty current fetch; skip")
+                log.warning("  empty current fetch; skip — flagged for retry")
+                inaccessible_this_run.append(icd)
                 continue
 
             # Office is accessible — clear before filling
@@ -792,6 +892,17 @@ def main() -> int:
                         log.info("  wrote %d next-week scheduled cells", len(next_updates))
     finally:
         p.stop()
+
+    # Persist inaccessible-ICD state so the dashboard's "Retry missing ICDs"
+    # button knows what to re-attempt. Skip when --only or --dry-run is set
+    # (those don't reflect a full-list view, so they shouldn't overwrite state).
+    if not args.only and not args.dry_run:
+        _write_state(inaccessible_this_run, week_start)
+        if inaccessible_this_run:
+            log.info("saved %d inaccessible ICD(s) to %s for retry on 2nd login",
+                     len(inaccessible_this_run), STATE_FILE.name)
+        else:
+            log.info("all ICDs pulled — cleared retry state")
 
     log.info("done")
     return 0
