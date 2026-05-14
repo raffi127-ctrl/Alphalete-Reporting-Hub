@@ -44,6 +44,7 @@ from automations.focus_office_att.aliases import load_aliases, alias_to_canonica
 from automations.focus_office_att.columns import resolve_layout, _normalize
 from automations.focus_office_att.step5_fill_one_owner import (
     _col_letter, write_weekly_formulas, write_office_totals_row,
+    apply_empty_cell_defaults, clear_conditional_formatting,
     TT_FIELD_TO_CANONICAL, DISP_FIELD_TO_CANONICAL,
 )
 
@@ -217,13 +218,21 @@ def main() -> int:
         layout = resolve_layout(ws, metrics=metrics_for_layout, interactive=False)
         stats = fill_tableau_for_owner(ws, owner_data, layout, dry_run=args.dry_run)
         # Refresh Weekly formulas so newly-filled per-day data rolls up,
-        # then refresh the OFFICE TOTALS row at the bottom.
+        # apply Raf's empty-cell defaults (0 for production / x for activity),
+        # strip the green/red conditional formatting, and refresh the
+        # OFFICE TOTALS row. All wrapped — cosmetic API hiccups shouldn't
+        # invalidate the actual data write.
         if not args.dry_run and stats["written"] > 0:
-            write_weekly_formulas(ws, layout)
-            try:
-                write_office_totals_row(ws, layout)
-            except Exception as e:
-                print(f"    ⚠ office-totals refresh failed (ignoring): {type(e).__name__}: {e}")
+            for label, fn in [
+                ("write_weekly_formulas",        lambda: write_weekly_formulas(ws, layout)),
+                ("apply_empty_cell_defaults",    lambda: apply_empty_cell_defaults(ws, layout)),
+                ("clear_conditional_formatting", lambda: clear_conditional_formatting(ws)),
+                ("write_office_totals_row",     lambda: write_office_totals_row(ws, layout)),
+            ]:
+                try:
+                    fn()
+                except Exception as e:
+                    print(f"    ⚠ {label} failed (ignoring): {type(e).__name__}: {e}")
         summary[owner] = {
             "status": "ok",
             "written": stats["written"],

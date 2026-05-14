@@ -582,6 +582,113 @@ def alphabetize_reps(ws, layout: Layout) -> None:
     }]})
 
 
+_PRODUCTION_METRICS = {"new int", "upgrades", "dtv", "new lines"}
+_ACTIVITY_METRICS = {
+    "total leads knocked", "talk to's", "presentations",
+    "first knock", "last knock date", "# of gaps", "total gap time",
+}
+
+
+def clear_conditional_formatting(ws) -> int:
+    """Remove ALL conditional format rules from this tab. Returns the
+    count removed. Raf wants no green/red on the report; the only
+    coloring source is conditional formatting (added by recolor_template
+    during Phase 1 setup). Wiping it leaves the tab plain.
+    """
+    sheet_id = ws.id
+    meta = ws.spreadsheet.fetch_sheet_metadata(
+        params={"fields": "sheets(properties.sheetId,conditionalFormats)"}
+    )
+    target = next(
+        (s for s in meta.get("sheets", []) if s["properties"]["sheetId"] == sheet_id),
+        None,
+    )
+    if not target:
+        return 0
+    rules = target.get("conditionalFormats", [])
+    n = len(rules)
+    if n == 0:
+        return 0
+    # Each delete shrinks the list by 1, so always delete index 0 n times.
+    ws.spreadsheet.batch_update({"requests": [
+        {"deleteConditionalFormatRule": {"sheetId": sheet_id, "index": 0}}
+        for _ in range(n)
+    ]})
+    return n
+
+
+def apply_empty_cell_defaults(ws, layout: Layout) -> None:
+    """Fill empty data cells with '0' or 'x' per Raf's formatting request:
+
+    - Production columns (New INT / Upgrades / DTV / New Lines): empty → 0
+    - Activity columns (Total Leads Knocked / Talk To's / Presentations /
+      First Knock / Last Knock Date / # Of Gaps / Total Gap Time): empty → x
+
+    Only touches days that have already passed (Mon → today). Future days
+    in the current week stay empty — they're 'not yet scraped', not 'rep
+    didn't work'.
+    """
+    if not layout.day_cols:
+        return
+
+    rep_vals = ws.col_values(layout.rep_name_col)
+    rep_rows = [
+        i for i, v in enumerate(rep_vals, start=1)
+        if i >= 3
+        and v and v.strip()
+        and v.strip().upper() != "OFFICE TOTALS"
+    ]
+    if not rep_rows:
+        return
+    last_rep_row = rep_rows[-1]
+
+    # Only fill defaults for days that have already passed in the current week.
+    today_weekday = dt.date.today().weekday()  # 0=Mon..6=Sun
+    past_weekdays = set(range(0, today_weekday + 1))
+
+    # Build a flat map of (sheet_col → metric_name) for the day-block cells
+    # we care about, restricted to past weekdays. Compare metric names
+    # case-insensitively — the resolver may lowercase some keys (e.g.
+    # '# of gaps') while the Sheet headers are title case.
+    col_to_metric: dict[int, str] = {}
+    for wd_idx, metric_map in layout.day_cols.items():
+        if wd_idx not in past_weekdays:
+            continue
+        for metric, col in metric_map.items():
+            mlow = metric.lower()
+            if mlow in _PRODUCTION_METRICS or mlow in _ACTIVITY_METRICS:
+                col_to_metric[col] = mlow
+
+    if not col_to_metric:
+        return
+
+    min_col = min(col_to_metric)
+    max_col = max(col_to_metric)
+
+    # One range read covers every cell we might touch.
+    rep_data = ws.get(
+        f"{_col_letter(min_col)}3:{_col_letter(max_col)}{last_rep_row}",
+        value_render_option="FORMATTED_VALUE",
+    )
+
+    updates: list[dict] = []
+    for ri, row in enumerate(rep_data):
+        sheet_row = 3 + ri
+        for col, metric in col_to_metric.items():
+            idx = col - min_col
+            v = row[idx] if idx < len(row) else ""
+            if v != "" and not (isinstance(v, str) and not v.strip()):
+                continue  # already populated
+            fill = "0" if metric in _PRODUCTION_METRICS else "x"
+            updates.append({
+                "range": f"{_col_letter(col)}{sheet_row}",
+                "values": [[fill]],
+            })
+
+    if updates:
+        ws.batch_update(updates, value_input_option="USER_ENTERED")
+
+
 def write_office_totals_row(ws, layout: Layout) -> None:
     """Write/refresh the OFFICE TOTALS row at the bottom of the rep list.
 
@@ -613,25 +720,27 @@ def write_office_totals_row(ws, layout: Layout) -> None:
         return
     last_rep_row = rep_rows[-1]
 
-    # Detect any prior OFFICE TOTALS row — check cols B, C, D since past
-    # writes may have placed the label in different cells.
-    existing_totals_row = None
+    # Detect ALL prior OFFICE TOTALS rows — check cols B, C, D since past
+    # writes may have placed the label in different cells. Collect every
+    # one so we can clear duplicates that earlier buggy runs left behind.
+    existing_totals_rows: set[int] = set()
     for probe_col in (2, 3, 4):
         col_vals = ws.col_values(probe_col)
         for i, v in enumerate(col_vals, start=1):
             if isinstance(v, str) and v.strip().upper() == "OFFICE TOTALS":
-                existing_totals_row = i
-                break
-        if existing_totals_row:
-            break
+                existing_totals_rows.add(i)
 
     # Always position the totals row IMMEDIATELY below the last rep.
-    # If a stale totals row exists elsewhere (e.g., reps shrunk or grew
-    # between runs), clear it first so we don't leave orphaned numbers.
     target_row = last_rep_row + 1
-    if existing_totals_row and existing_totals_row != target_row:
+
+    # Clear any stale totals rows (anything except target_row). This
+    # handles the case where prior runs landed at a different position
+    # (rep count changed, or a write put the label in the wrong column).
+    for stale_row in sorted(existing_totals_rows):
+        if stale_row == target_row:
+            continue
         ws.update(
-            f"A{existing_totals_row}:L{existing_totals_row}",
+            f"A{stale_row}:L{stale_row}",
             [[""] * 12],
             value_input_option="RAW",
         )
