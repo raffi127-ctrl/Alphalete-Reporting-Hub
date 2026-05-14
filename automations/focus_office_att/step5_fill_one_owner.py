@@ -590,17 +590,22 @@ _ACTIVITY_METRICS = {
 
 
 def reset_conditional_formatting(ws) -> tuple[int, int]:
-    """Wipe ALL conditional format rules on this tab, then re-apply the
-    canonical visual palette (pale gray / warm gold / light cream). The
-    wipe-then-reapply pattern removes any stray green/red rules that older
-    manual edits or scripts may have left on owner tabs, while keeping the
-    tab's visual structure consistent with Template.
+    """Wipe ALL existing conditional rules AND static cell backgrounds on
+    this tab, then re-apply the canonical visual palette (pale gray /
+    warm gold / light cream) via conditional rules.
+
+    The static-background wipe is required because some tabs have direct
+    cell coloring (not conditional rules) left over from older scripts
+    or manual edits — clearing only conditional rules left those visible.
+    After the wipe, the canonical conditional rules paint only the rows
+    that have a rep name in col B; everything else stays clean white.
 
     Returns (removed_count, applied_count).
     """
     from automations.focus_office_att.recolor_template import (
         build_visual_rule_requests,
     )
+    WHITE = {"red": 1.00, "green": 1.00, "blue": 1.00}
     sheet_id = ws.id
     meta = ws.spreadsheet.fetch_sheet_metadata(
         params={"fields": "sheets(properties.sheetId,conditionalFormats)"}
@@ -612,14 +617,28 @@ def reset_conditional_formatting(ws) -> tuple[int, int]:
     rules = (target or {}).get("conditionalFormats", []) if target else []
     n_existing = len(rules)
 
-    delete_requests = [
+    delete_cf_requests = [
         {"deleteConditionalFormatRule": {"sheetId": sheet_id, "index": 0}}
         for _ in range(n_existing)
     ]
+    # Wipe static backgrounds in rows 3-200, cols A-CV (100 cols ~= every
+    # daily-block col), so conditional rules become the sole paint source.
+    wipe_static_request = {
+        "repeatCell": {
+            "range": {
+                "sheetId": sheet_id,
+                "startRowIndex": 2, "endRowIndex": 200,
+                "startColumnIndex": 0, "endColumnIndex": 100,
+            },
+            "cell": {"userEnteredFormat": {"backgroundColor": WHITE}},
+            "fields": "userEnteredFormat.backgroundColor",
+        },
+    }
     add_requests = build_visual_rule_requests(sheet_id)
 
-    if delete_requests or add_requests:
-        ws.spreadsheet.batch_update({"requests": delete_requests + add_requests})
+    all_requests = delete_cf_requests + [wipe_static_request] + add_requests
+    if all_requests:
+        ws.spreadsheet.batch_update({"requests": all_requests})
     return (n_existing, len(add_requests))
 
 
