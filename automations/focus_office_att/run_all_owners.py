@@ -48,6 +48,7 @@ from automations.focus_office_att.step5_fill_one_owner import (
     DISP_FIELD_TO_CANONICAL,
     _merge_rep_records,
     alphabetize_reps,
+    write_office_totals_row,
     apply_gap_time_format,
     fill_owner_tab,
     scrape_day,
@@ -332,12 +333,13 @@ def _scrape_one_owner(page, ws, days: list[dt.date], rqst: str) -> dict:
     # Sheets API hiccup on a cosmetic call invalidate the whole owner's
     # scrape. Log and continue.
     for label, fn in [
-        ("write_weekly_formulas", lambda: write_weekly_formulas(ws, layout)),
-        ("alphabetize_reps",      lambda: alphabetize_reps(ws, layout)),
-        ("apply_bold_border",     lambda: apply_bold_border(ws)),
-        ("apply_gap_time_format", lambda: apply_gap_time_format(ws, layout)),
-        ("autosize_all_data_cols",lambda: autosize_all_data_cols(ws)),
-        ("update_collapse_states",lambda: update_collapse_states(ws)),
+        ("write_weekly_formulas",  lambda: write_weekly_formulas(ws, layout)),
+        ("alphabetize_reps",       lambda: alphabetize_reps(ws, layout)),
+        ("apply_bold_border",      lambda: apply_bold_border(ws)),
+        ("apply_gap_time_format",  lambda: apply_gap_time_format(ws, layout)),
+        ("autosize_all_data_cols", lambda: autosize_all_data_cols(ws)),
+        ("update_collapse_states", lambda: update_collapse_states(ws)),
+        ("write_office_totals_row",lambda: write_office_totals_row(ws, layout)),
     ]:
         try:
             fn()

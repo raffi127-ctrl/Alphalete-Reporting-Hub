@@ -582,6 +582,117 @@ def alphabetize_reps(ws, layout: Layout) -> None:
     }]})
 
 
+def write_office_totals_row(ws, layout: Layout) -> None:
+    """Write/refresh the OFFICE TOTALS row at the bottom of the rep list.
+
+    Spans cols C-L (the Weekly Total summary block, minus the #/Rep Name
+    pair). Looks at each summary column's header — 'SUM ...' cols get
+    summed across reps, 'AVG ...' cols get averaged. Col C ('SUM Total
+    Apps') is repurposed as the label cell per Megan's preferred layout
+    (see Cody Cannon tab as reference).
+
+    Reads + writes use UNFORMATTED_VALUE so time/duration columns
+    (1st Knock, Last Knock, Gap Time) round-trip as serial numbers — the
+    Sheet's existing cell formatting handles display.
+
+    Idempotent: replaces the existing OFFICE TOTALS row if one exists
+    (detected by 'OFFICE TOTALS' literal in col B, C, or D), otherwise
+    appends below the last rep.
+    """
+    rep_vals = ws.col_values(layout.rep_name_col)
+    # Find last rep row — but skip any row whose rep_name_col contains
+    # 'OFFICE TOTALS' (an old buggy write may have landed the label there
+    # instead of col C).
+    rep_rows = [
+        i for i, v in enumerate(rep_vals, start=1)
+        if i >= 3
+        and v and v.strip()
+        and v.strip().upper() != "OFFICE TOTALS"
+    ]
+    if not rep_rows:
+        return
+    last_rep_row = rep_rows[-1]
+
+    # Detect any prior OFFICE TOTALS row — check cols B, C, D since past
+    # writes may have placed the label in different cells.
+    existing_totals_row = None
+    for probe_col in (2, 3, 4):
+        col_vals = ws.col_values(probe_col)
+        for i, v in enumerate(col_vals, start=1):
+            if isinstance(v, str) and v.strip().upper() == "OFFICE TOTALS":
+                existing_totals_row = i
+                break
+        if existing_totals_row:
+            break
+
+    # Always position the totals row IMMEDIATELY below the last rep.
+    # If a stale totals row exists elsewhere (e.g., reps shrunk or grew
+    # between runs), clear it first so we don't leave orphaned numbers.
+    target_row = last_rep_row + 1
+    if existing_totals_row and existing_totals_row != target_row:
+        ws.update(
+            f"A{existing_totals_row}:L{existing_totals_row}",
+            [[""] * 12],
+            value_input_option="RAW",
+        )
+    totals_row = target_row
+
+    # Read header row 2, cols A-L, to classify SUM vs AVG cells
+    header_row = ws.row_values(2)
+    sum_cols: list[int] = []
+    avg_cols: list[int] = []
+    for col_idx in range(3, 13):  # cols C..L
+        h = (header_row[col_idx - 1] if col_idx - 1 < len(header_row) else "").strip()
+        if h.startswith("SUM "):
+            sum_cols.append(col_idx)
+        elif h.startswith("AVG "):
+            avg_cols.append(col_idx)
+
+    # Pull rep-row values for cols A-L as UNFORMATTED so times stay numeric
+    rep_data = ws.get(
+        f"A3:L{last_rep_row}",
+        value_render_option="UNFORMATTED_VALUE",
+    )
+
+    def _column(col_idx: int) -> list[float]:
+        out: list[float] = []
+        for row in rep_data:
+            if len(row) < col_idx:
+                continue
+            v = row[col_idx - 1]
+            if isinstance(v, (int, float)):
+                out.append(float(v))
+        return out
+
+    # Build totals dict {col_idx → value} for cols C..L
+    totals: dict[int, object] = {3: "OFFICE TOTALS"}  # label in col C
+    for col in sum_cols:
+        if col == 3:
+            continue  # col C is the label, not a sum
+        vals = _column(col)
+        totals[col] = sum(vals) if vals else 0
+    for col in avg_cols:
+        vals = _column(col)
+        # Average all reps that have a numeric value (empty cells already
+        # excluded by _column's isinstance check). A 0 means the rep worked
+        # but had no gaps / instant gap time, which is legitimate data —
+        # don't filter those out.
+        totals[col] = sum(vals) / len(vals) if vals else ""
+
+    # Write ONLY cols C..L. Don't include A/B in the range — past attempts
+    # with leading empty strings ('') in a range write caused gspread to
+    # shift values left by one column. Sidestep entirely by starting the
+    # range at C and clearing A/B separately if they have stale data.
+    values_c_to_l: list[object] = [totals.get(col, "") for col in range(3, 13)]
+    ws.update(
+        f"C{totals_row}:L{totals_row}",
+        [values_c_to_l],
+        value_input_option="RAW",
+    )
+    # Clear A/B in case an old buggy write left content there.
+    ws.update(f"A{totals_row}:B{totals_row}", [["", ""]], value_input_option="RAW")
+
+
 # ---- Orchestration ----
 def main() -> int:
     ap = argparse.ArgumentParser()

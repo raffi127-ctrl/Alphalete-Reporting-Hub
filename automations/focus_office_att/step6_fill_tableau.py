@@ -43,7 +43,8 @@ from automations.recruiting_report import fill as _fill
 from automations.focus_office_att.aliases import load_aliases, alias_to_canonical
 from automations.focus_office_att.columns import resolve_layout, _normalize
 from automations.focus_office_att.step5_fill_one_owner import (
-    _col_letter, write_weekly_formulas, TT_FIELD_TO_CANONICAL, DISP_FIELD_TO_CANONICAL,
+    _col_letter, write_weekly_formulas, write_office_totals_row,
+    TT_FIELD_TO_CANONICAL, DISP_FIELD_TO_CANONICAL,
 )
 
 DEST_SPREADSHEET_ID = "1xgVE_e8bZimACgPdqcdNCr1qo4sedWect_zzEcUgEJY"
@@ -215,9 +216,14 @@ def main() -> int:
         print(f"  → {label}…")
         layout = resolve_layout(ws, metrics=metrics_for_layout, interactive=False)
         stats = fill_tableau_for_owner(ws, owner_data, layout, dry_run=args.dry_run)
-        # Refresh Weekly formulas so newly-filled per-day data rolls up.
+        # Refresh Weekly formulas so newly-filled per-day data rolls up,
+        # then refresh the OFFICE TOTALS row at the bottom.
         if not args.dry_run and stats["written"] > 0:
             write_weekly_formulas(ws, layout)
+            try:
+                write_office_totals_row(ws, layout)
+            except Exception as e:
+                print(f"    ⚠ office-totals refresh failed (ignoring): {type(e).__name__}: {e}")
         summary[owner] = {
             "status": "ok",
             "written": stats["written"],
