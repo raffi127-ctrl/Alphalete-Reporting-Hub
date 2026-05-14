@@ -1,35 +1,26 @@
 """Phase 3 — Step 7: Download the per-rep Tableau crosstab via Playwright.
 
-VA-assisted workflow. The VA gets the view to the correct state by hand,
-because two pieces are unreliable / impossible to automate:
-
-  (a) Tableau filters are flaky — programmatic clicks frequently leave the
-      view in a partially-applied state.
-  (b) The Rep-dimension expander on the Owner Name column header is
-      canvas-rendered (not DOM), so Playwright can't click it.
-
-What the VA does (see VA_RUNBOOK):
-  1. Open debug-port Chrome, log in to ownerville master/admin.
-  2. Click 'Login to Tableau' on the ownerville Tableau page (SSO).
-  3. Navigate to PRODUCT SALES SUMMARY 4WK (RafRepsDropDown custom view).
-  4. Set Sale Date Week Ending filter to current week's Sunday.
-  5. Set Product Type filter to NEW INTERNET / UPGRADE INTERNET / VIDEO / WIRELESS.
-  6. Leave Owner Name filter on 'All' — step6_fill_tableau skips owners that
-     don't have a matching tab in the Sheet, so picking 30 manually is wasted
-     work.
-  7. Click the `+` next to 'Owner Name' header to expand rep drilldown.
-  8. Verify the visible table shows per-rep rows.
-  9. Trigger this script.
+Zero-touch flow:
+  - The 'AUTOMATION PULL' custom view (saved by Megan) holds the things
+    we can't easily script: rep dimension expanded (canvas-rendered) +
+    Product Type filter (the 4 types we care about).
+  - Sale Date Week Ending rolls every week, so we override it via URL
+    parameter at runtime. Tableau applies URL filter params on page load.
 
 What this script does:
-  - Attaches to the existing Tableau tab (no goto — that resets filters).
-  - Clicks Download → Crosstab → picks 'Sales By ICD (Weekly View)' sheet
-    (NOT the default 'Product Sales Summary by ORG', which lacks Rep).
-  - Confirms Excel format, clicks Download.
-  - Captures the download, saves to a known path.
-  - Validates the downloaded crosstab has the 'Rep' column. If not, the VA
-    forgot to expand the rep drilldown — error loudly instead of silently
-    filling the Sheet with owner-level data.
+  1. Compute current week's Sunday.
+  2. Navigate the existing Tableau tab to:
+       .../AUTOMATIONPULL?Sale Date Week Ending (mon-sun)=YYYY-MM-DD
+  3. Wait for the viz to render fully.
+  4. Click Download → Crosstab → 'Sales By ICD (Weekly View)' → Excel.
+  5. Capture the download, save to a known path.
+  6. Validate the file has the 'Rep' column. If not, the saved custom view
+     is broken or Tableau didn't restore the rep expansion — fail loudly.
+
+VA workflow: just log into ownerville master/admin and have the Tableau
+tab open (SSO'd via 'Login to Tableau' on the ownerville Tableau page).
+Then trigger this script. No filter clicking, no rep expansion — the
+custom view handles those.
 
 Run:
     .venv/bin/python -m automations.focus_office_att.step7_download_tableau
@@ -46,13 +37,32 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
-# RafRepsDropDown custom view of ATT Tracker 2.1 D2D / PRODUCT SALES SUMMARY 4WK.
-# The UUID + view name are stable across weeks; only the filter state changes.
+# 'AUTOMATION PULL' custom view of ATT Tracker 2.1 D2D / PRODUCT SALES SUMMARY 4WK.
+# Saved by Megan 2026-05-14 with rep dimension expanded + 4 product types selected.
+# The UUID + name are stable; we override Sale Date Week Ending via URL param.
 TABLEAU_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK/"
-    "73c65041-1966-4047-ad1e-f4cc4e8a2f05/RafRepsDropDown"
+    "b2da26b8-8971-4a45-9e42-bd04af46f0fa/AUTOMATIONPULL"
 )
+
+
+def _current_week_sunday() -> "dt.date":
+    """Sunday at the end of the current Mon-Sun week. If today is Sunday,
+    returns today. Otherwise returns the next upcoming Sunday."""
+    today = dt.date.today()
+    days_until_sun = (6 - today.weekday()) % 7
+    return today + dt.timedelta(days=days_until_sun)
+
+
+def _build_view_url(week_ending: "dt.date | None" = None) -> str:
+    """Return the AUTOMATION PULL custom view URL with Sale Date Week Ending
+    filter set to week_ending (defaults to current week's Sunday)."""
+    from urllib.parse import quote
+    if week_ending is None:
+        week_ending = _current_week_sunday()
+    qs = f"{quote('Sale Date Week Ending (mon-sun)')}={quote(str(week_ending))}"
+    return f"{TABLEAU_VIEW_URL}?{qs}"
 
 # How long to wait for the viz iframe to fully render after navigation.
 # Tableau is heavy JS; under-waiting causes the Crosstab to export the base
@@ -64,15 +74,15 @@ DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
 
 
 def _find_tableau_tab(browser):
-    """Return the existing Tableau tab. Errors if missing — VA must set up
-    the view by hand first (see docstring)."""
+    """Return the existing Tableau tab. Errors if missing — VA must have
+    SSO'd in by clicking 'Login to Tableau' on the ownerville Tableau page."""
     all_pages = [pg for ctx in browser.contexts for pg in ctx.pages]
     tableau_pages = [pg for pg in all_pages if "tableau.com" in pg.url.lower()]
     if not tableau_pages:
         raise RuntimeError(
-            "No Tableau tab is open in the debug-port Chrome. The VA needs to "
-            "open ownerville → Login to Tableau → navigate to the view + apply "
-            "filters + expand rep before triggering this script."
+            "No Tableau tab is open in the debug-port Chrome. Open ownerville, "
+            "click 'Login to Tableau' on the Tableau index page to do the SSO "
+            "dance, then rerun. The Tableau tab needs to stay open."
         )
     return tableau_pages[0]
 
@@ -94,13 +104,13 @@ def _validate_per_rep_file(path: Path) -> None:
         )
 
 
-def download_crosstab(out_path: Path, verbose: bool = True) -> Path:
+def download_crosstab(out_path: Path, verbose: bool = True,
+                      week_ending: "dt.date | None" = None) -> Path:
     """Download the per-rep crosstab Excel; save to out_path. Returns out_path.
 
-    Reuses the existing Tableau tab — does NOT goto() any URL. The VA is
-    responsible for getting the view into the right state (filters applied,
-    rep dimension expanded). This function only handles the click sequence
-    that exports + saves the file.
+    Navigates to the AUTOMATION PULL custom view with Sale Date Week Ending
+    overridden via URL param (defaults to current week's Sunday). The custom
+    view restores rep expansion + Product Type filter.
 
     Uses page.frame_locator() rather than a cached Frame handle: Tableau
     sometimes re-attaches the viz iframe during interactions, invalidating
@@ -111,7 +121,10 @@ def download_crosstab(out_path: Path, verbose: bool = True) -> Path:
     with sync_playwright() as p:
         browser = p.chromium.connect_over_cdp("http://localhost:9222")
         page = _find_tableau_tab(browser)
-        print(f"Reusing Tableau tab: {page.url}", flush=True)
+        url = _build_view_url(week_ending)
+        if verbose:
+            print(f"Navigating Tableau tab to: {url}", flush=True)
+        page.goto(url, wait_until="domcontentloaded")
 
         # Viz iframe has title="Data Visualization" (verified via DOM dump).
         viz = page.frame_locator('iframe[title="Data Visualization"]')
