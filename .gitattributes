@@ -1,0 +1,25 @@
+# Force consistent line endings across macOS / Linux / Windows.
+#
+# Default: every text file checks out with LF endings on every OS. Without
+# this, Windows users with core.autocrlf=true (the Windows default) would
+# get CRLF on checkout, and `git status` would then report every file as
+# "modified" relative to the LF-committed index — breaking the auto-pull
+# guard in launch_dashboard.bat / launch_dashboard.command.
+* text=auto eol=lf
+
+# Explicitly mark Windows-only scripts so they keep CRLF endings (cmd.exe
+# parses `.bat` files line-by-line and gets confused by lone LF).
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf
+
+# Treat these as binary — git won't try to "normalize" their bytes.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.icns  binary
+*.ico   binary
+*.zip   binary
+*.xlsx  binary
+*.pdf   binary
