@@ -55,16 +55,71 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
+def _scan_running_subprocesses() -> list[dict]:
+    """Scan the OS process list for python subprocesses matching any
+    report's action module. This catches runs that bypassed active_runs.json
+    — e.g. subprocess started in a terminal, or dashboard tab crashed before
+    it could record the entry. Returns entries shaped like active_runs.json."""
+    try:
+        out = subprocess.run(
+            ["ps", "-eo", "pid,user,command"],
+            capture_output=True, text=True, timeout=2,
+        ).stdout
+    except Exception:
+        return []
+    # Build module → (report_id, report_name) from AUTOMATED_REPORTS, which is
+    # defined later in this file but evaluated at call time.
+    module_index: dict[str, tuple[str, str]] = {}
+    try:
+        for r in AUTOMATED_REPORTS:
+            for action in r.get("actions", []):
+                mod = action.get("module")
+                if mod:
+                    module_index[mod] = (r["id"], r["name"])
+    except NameError:
+        # Called before AUTOMATED_REPORTS is defined (shouldn't happen
+        # in practice; defensive).
+        return []
+    found: list[dict] = []
+    for line in out.splitlines():
+        parts = line.strip().split(None, 2)
+        if len(parts) < 3:
+            continue
+        try:
+            pid = int(parts[0])
+        except ValueError:
+            continue
+        cmd = parts[2]
+        for mod, (rid, rname) in module_index.items():
+            # Match either '-m mod' or the module path appearing in the cmd.
+            if f"-m {mod}" in cmd or f"/{mod.replace('.', '/')}.py" in cmd:
+                found.append({
+                    "report_id": rid,
+                    "report_name": rname,
+                    "user": parts[1],
+                    "pid": pid,
+                    "log_path": str(ACTIVE_RUNS_LOG_DIR / f"{rid}.log"),
+                    "started_at": "",
+                    "orphan": True,  # Flag so the UI can note "detected via ps"
+                })
+                break
+    return found
+
+
 def _read_active_runs() -> list[dict]:
     """Return live runs. Orphans (subprocess finished but the streamlit
     handler never logged completion because the user navigated away) get
-    migrated into runs.jsonl + run_state.json so the user can see them."""
-    if not ACTIVE_RUNS_FILE.exists():
-        return []
-    try:
-        active = json.loads(ACTIVE_RUNS_FILE.read_text())
-    except Exception:
-        return []
+    migrated into runs.jsonl + run_state.json so the user can see them.
+
+    Also merges in any python subprocesses found via ps that match a known
+    report module but aren't in active_runs.json — catches dashboard-lost
+    runs (e.g. tab crashed mid-run, started from terminal)."""
+    active: list[dict] = []
+    if ACTIVE_RUNS_FILE.exists():
+        try:
+            active = json.loads(ACTIVE_RUNS_FILE.read_text())
+        except Exception:
+            active = []
     alive = []
     orphans = []
     for a in active:
@@ -105,6 +160,29 @@ def _read_active_runs() -> list[dict]:
 
     if len(alive) != len(active):
         ACTIVE_RUNS_FILE.write_text(json.dumps(alive, indent=2))
+
+    # Merge in ps-scanned subprocesses that aren't already tracked. This is
+    # the safety net for runs the dashboard lost track of.
+    tracked_pids = {int(a["pid"]) for a in alive if a.get("pid")}
+    tracked_report_ids = {a.get("report_id") for a in alive}
+    for found in _scan_running_subprocesses():
+        if int(found["pid"]) in tracked_pids:
+            continue
+        if found.get("report_id") in tracked_report_ids:
+            continue
+        alive.append(found)
+        tracked_report_ids.add(found.get("report_id"))
+
+    # Merge in remote-active runs from the shared Hub Activity tab. Skip
+    # any whose RunID we already have locally (those are our own — same
+    # row, just observed from both sides).
+    local_hub_ids = {a.get("hub_run_id") for a in alive if a.get("hub_run_id")}
+    for remote in _hub_active_runs():
+        if remote.get("hub_run_id") and remote["hub_run_id"] in local_hub_ids:
+            continue
+        if remote.get("report_id") in tracked_report_ids:
+            continue
+        alive.append(remote)
     return alive
 
 
@@ -117,6 +195,10 @@ def _record_active_run(report_id: str, report_name: str, user: str, log_path: Pa
             active = []
     # Replace any existing entry for this report
     active = [a for a in active if a.get("report_id") != report_id]
+    # Write a 'started' row to the shared Hub Activity tab so other teammates'
+    # dashboards can see this run. The returned RunID is stored locally so
+    # _clear_active_run can find the row to mark complete.
+    hub_run_id = _hub_log_run_start(report_id, report_name, user, pid)
     active.append({
         "report_id": report_id,
         "report_name": report_name,
@@ -124,20 +206,91 @@ def _record_active_run(report_id: str, report_name: str, user: str, log_path: Pa
         "log_path": str(log_path),
         "pid": pid,
         "started_at": dt.datetime.now().isoformat(timespec="seconds"),
+        "hub_run_id": hub_run_id,
     })
     ACTIVE_RUNS_FILE.parent.mkdir(parents=True, exist_ok=True)
     ACTIVE_RUNS_FILE.write_text(json.dumps(active, indent=2))
 
 
-def _clear_active_run(report_id: str) -> None:
+def _clear_active_run(report_id: str, status: str = "success") -> None:
+    """Remove the local active-run entry AND mark the matching Hub Activity
+    row finished. `status` should be 'success', 'failed', or 'stopped' so
+    the shared tab reflects the actual outcome."""
     if not ACTIVE_RUNS_FILE.exists():
         return
     try:
         active = json.loads(ACTIVE_RUNS_FILE.read_text())
     except Exception:
         return
+    # Look up the Hub RunID before removing the entry locally.
+    hub_run_id = None
+    for a in active:
+        if a.get("report_id") == report_id:
+            hub_run_id = a.get("hub_run_id")
+            break
     active = [a for a in active if a.get("report_id") != report_id]
     ACTIVE_RUNS_FILE.write_text(json.dumps(active, indent=2))
+    if hub_run_id:
+        _hub_log_run_end(hub_run_id, status)
+
+
+def _kill_active_run(report_id: str, user: str | None = None) -> tuple[bool, str]:
+    """SIGTERM the running subprocess for `report_id`, then SIGKILL after a
+    short grace period if it ignores TERM. Clears the active-runs entry and
+    records the run as 'stopped' in run_state + runs.jsonl. Returns
+    (True, message) on success, (False, message) if nothing was running."""
+    import os, signal, time as _time
+    if not ACTIVE_RUNS_FILE.exists():
+        return False, "No active run for this report."
+    try:
+        active = json.loads(ACTIVE_RUNS_FILE.read_text())
+    except Exception:
+        return False, "Couldn't read active runs file."
+
+    target = next((a for a in active if a.get("report_id") == report_id), None)
+    if not target:
+        return False, "No active run for this report."
+
+    pid = target.get("pid")
+    killed_pid = False
+    if pid:
+        try:
+            os.kill(int(pid), signal.SIGTERM)
+            # Give the subprocess up to 3s to clean up after SIGTERM before
+            # we escalate to SIGKILL — most Python scripts exit on SIGTERM
+            # within a few hundred ms.
+            for _ in range(30):
+                if not _pid_alive(int(pid)):
+                    break
+                _time.sleep(0.1)
+            if _pid_alive(int(pid)):
+                os.kill(int(pid), signal.SIGKILL)
+            killed_pid = True
+        except (OSError, ValueError):
+            pass
+
+    _clear_active_run(report_id, status="stopped")
+    _save_run_state_for(report_id, "stopped", user=user or target.get("user"))
+    _log_run(
+        report_id=report_id,
+        report_name=target.get("report_name", "?"),
+        user=user or target.get("user", "unknown"),
+        status="stopped",
+    )
+    if killed_pid:
+        return True, "Run stopped. Partial Sheet writes from this run stay — re-run for a fresh pass."
+    return True, "Active-run entry cleared (subprocess had already exited)."
+
+
+def _tail_log(log_path: str | Path, lines: int = 40) -> str:
+    """Last `lines` lines of a log file. Empty string if missing/unreadable."""
+    try:
+        p = Path(log_path)
+        if not p.exists():
+            return ""
+        return "\n".join(p.read_text(errors="replace").splitlines()[-lines:])
+    except Exception:
+        return ""
 
 
 def _load_all_run_state() -> dict:
@@ -429,6 +582,19 @@ AUTOMATED_REPORTS = [
              "action": "launch_chrome"},
             {"text": "Log into AppStream as **rhidalgo** (broader account) in the new Chrome window"},
         ],
+        "post_run": {
+            "message_success": "✅ First pass done. If any ICDs showed 'not accessible' in the log, **log out of rhidalgo and log into rcaptain** in the same Chrome window, then click below to retry just those ICDs. (Already-pulled ICDs are skipped.)",
+            "message_failed": "❌ Run failed. Check the log above. To retry on the 2nd login, switch to rcaptain and click below — only the missing ICDs will be re-pulled.",
+            "again_label": "🔁 Retry missing ICDs on 2nd login",
+            "again_action": {
+                "label": "Retry missing ICDs on 2nd login",
+                "module": "automations.recruiting_report.daily_focus",
+                "args_fn": lambda: ["--retry-inaccessible"],
+            },
+            "again_state_file": "output/daily_focus_state.json",
+            "again_state_key": "inaccessible",
+            "again_empty_message": "✅ All ICDs already pulled — nothing to retry.",
+        },
         "actions": [
             {
                 "label": "Run Daily Focus",
@@ -530,7 +696,10 @@ def _stream_subprocess(cmd: list[str], output_box, report_id: str | None = None,
         if log_handle:
             log_handle.close()
         if report_id:
-            _clear_active_run(report_id)
+            # rc != 0 → mark this run as failed so the shared Hub Activity tab
+            # reflects the actual outcome (other teammates' dashboards see it).
+            final_status = "success" if proc.returncode == 0 else "failed"
+            _clear_active_run(report_id, status=final_status)
     return proc.returncode
 
 
@@ -632,6 +801,142 @@ def _was_due_on(report: dict, day: dt.date) -> bool:
     return day.weekday() in sched.get("weekdays", [])
 
 
+# --------------------------------------------------------------------------
+# Cross-user run coordination via the recruiting Sheet's "Hub Activity" tab.
+# Each run start appends a row; run-end updates the same row by RunID. Lets
+# every teammate's dashboard see who is running what right now (so they don't
+# kick off the same report on top of each other), plus a unified "Last ran by"
+# timestamp regardless of which machine the run happened on.
+# --------------------------------------------------------------------------
+HUB_ACTIVITY_TAB = "Hub Activity"
+HUB_ACTIVITY_HEADERS = [
+    "RunID", "Started At", "Report ID", "Report Name",
+    "User", "Machine", "PID", "Status", "Ended At",
+]
+# Rows older than this with no end_ts are treated as stale (the originating
+# machine probably crashed mid-run); they're hidden from the active list and
+# can be ignored for lock purposes.
+HUB_STALE_AFTER = dt.timedelta(hours=2)
+
+
+def _hub_activity_ws():
+    import gspread as _gs
+    sh = _fill._client().open_by_key(_fill.SPREADSHEET_ID)
+    try:
+        return sh.worksheet(HUB_ACTIVITY_TAB)
+    except _gs.WorksheetNotFound:
+        ws = sh.add_worksheet(title=HUB_ACTIVITY_TAB, rows=2000,
+                              cols=len(HUB_ACTIVITY_HEADERS))
+        ws.update([HUB_ACTIVITY_HEADERS],
+                  f"A1:{chr(ord('A') + len(HUB_ACTIVITY_HEADERS) - 1)}1")
+        return ws
+
+
+@st.cache_data(ttl=10)
+def _hub_activity_rows() -> list[dict]:
+    """Cached read of the Hub Activity tab (10s TTL = how fast we see other
+    users' state changes)."""
+    try:
+        return _hub_activity_ws().get_all_records()
+    except Exception:
+        return []
+
+
+def _hub_log_run_start(report_id: str, report_name: str, user: str, pid: int) -> str:
+    """Append a 'started' row. Returns the RunID — store it locally so the
+    matching run-end can find this row to update."""
+    import socket, uuid
+    run_id = uuid.uuid4().hex[:12]
+    machine = socket.gethostname()
+    try:
+        _hub_activity_ws().append_row([
+            run_id,
+            dt.datetime.now().isoformat(timespec="seconds"),
+            report_id, report_name, user, machine, str(pid or ""),
+            "started", "",
+        ])
+        _hub_activity_rows.clear()
+    except Exception:
+        # Sheet write failed — local active_runs.json still works for this
+        # user. Don't block the run on a coordination error.
+        pass
+    return run_id
+
+
+def _hub_log_run_end(run_id: str, status: str) -> None:
+    """Update an existing run row with end timestamp + final status."""
+    if not run_id:
+        return
+    try:
+        ws = _hub_activity_ws()
+        cell = ws.find(str(run_id))
+        if not cell:
+            return
+        # Status is column 8, Ended At is column 9.
+        ws.update_cell(cell.row, 8, status)
+        ws.update_cell(cell.row, 9, dt.datetime.now().isoformat(timespec="seconds"))
+        _hub_activity_rows.clear()
+    except Exception:
+        pass
+
+
+def _hub_active_runs() -> list[dict]:
+    """Return remote-active rows shaped like local active_runs entries."""
+    cutoff = dt.datetime.now() - HUB_STALE_AFTER
+    out = []
+    for r in _hub_activity_rows():
+        if str(r.get("Status", "")).lower() != "started":
+            continue
+        if r.get("Ended At"):
+            continue
+        try:
+            started = dt.datetime.fromisoformat(str(r.get("Started At", "")))
+        except Exception:
+            continue
+        if started < cutoff:
+            continue
+        out.append({
+            "report_id": str(r.get("Report ID", "")),
+            "report_name": str(r.get("Report Name", "")),
+            "user": str(r.get("User", "")),
+            "machine": str(r.get("Machine", "")),
+            "pid": str(r.get("PID", "")),
+            "started_at": str(r.get("Started At", "")),
+            "hub_run_id": str(r.get("RunID", "")),
+            "remote": True,
+        })
+    return out
+
+
+def _hub_recent_runs(days: int = 14) -> list[dict]:
+    """Return finished hub rows (success/failed/stopped) within the window,
+    newest first. Used to merge cross-user 'Last ran' timestamps."""
+    cutoff = dt.datetime.now() - dt.timedelta(days=days)
+    out = []
+    for r in _hub_activity_rows():
+        status = str(r.get("Status", "")).lower()
+        if status not in ("success", "failed", "stopped"):
+            continue
+        ts_raw = r.get("Ended At") or r.get("Started At") or ""
+        try:
+            ts = dt.datetime.fromisoformat(str(ts_raw))
+        except Exception:
+            continue
+        if ts < cutoff:
+            continue
+        out.append({
+            "ts": ts.isoformat(timespec="seconds"),
+            "_dt": ts,
+            "report_id": str(r.get("Report ID", "")),
+            "report_name": str(r.get("Report Name", "")),
+            "user": str(r.get("User", "")) or "someone",
+            "status": status,
+            "machine": str(r.get("Machine", "")),
+        })
+    out.sort(key=lambda x: x["_dt"], reverse=True)
+    return out
+
+
 def _log_run(report_id: str, report_name: str, user: str, status: str) -> None:
     """Append a single run record to runs.jsonl."""
     LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -668,18 +973,39 @@ def _read_runs(days: int = 7) -> list[dict]:
     return out
 
 
+def _all_runs_merged(days: int = 14) -> list[dict]:
+    """Local runs.jsonl + Hub Activity finished rows, deduped, newest first.
+    Lets every dashboard see runs that other teammates kicked off."""
+    local = _read_runs(days)
+    remote = _hub_recent_runs(days)
+    # Dedup: a run that ran on this machine appears in both lists. Match by
+    # (report_id, user, second-precision timestamp).
+    seen = {(r.get("report_id"), r.get("user"), r["_dt"].replace(microsecond=0))
+            for r in local}
+    out = list(local)
+    for r in remote:
+        key = (r.get("report_id"), r.get("user"), r["_dt"].replace(microsecond=0))
+        if key in seen:
+            continue
+        out.append(r)
+        seen.add(key)
+    out.sort(key=lambda x: x["_dt"], reverse=True)
+    return out
+
+
 def _was_run_successfully_today(report_id: str, today: dt.date | None = None) -> bool:
-    """True if a successful run of this report was logged today."""
+    """True if a successful run of this report was logged today by anyone."""
     today = today or dt.date.today()
-    for r in _read_runs(2):
+    for r in _all_runs_merged(2):
         if r.get("report_id") == report_id and r.get("status") == "success" and r["_dt"].date() == today:
             return True
     return False
 
 
 def _latest_run_summary(report_id: str) -> str | None:
-    """Return compact text like 'Today · Megan · 1:06 AM', or None."""
-    for r in _read_runs(days=14):
+    """Return compact text like 'Today · Megan · 1:06 AM', or None.
+    Considers runs by any teammate, not just this machine."""
+    for r in _all_runs_merged(days=14):
         if r.get("report_id") != report_id:
             continue
         when = r["_dt"]
@@ -697,9 +1023,10 @@ def _latest_run_summary(report_id: str) -> str | None:
 
 
 def _ran_within_24h(report_id: str) -> tuple[bool, str | None, str | None]:
-    """Was this report successfully run in the last 24h? Returns (yes/no, user, time_str)."""
+    """Was this report successfully run in the last 24h by anyone?
+    Returns (yes/no, user, time_str)."""
     cutoff = dt.datetime.now() - dt.timedelta(hours=24)
-    for r in _read_runs(days=2):
+    for r in _all_runs_merged(days=2):
         if r.get("report_id") == report_id and r.get("status") == "success" and r["_dt"] >= cutoff:
             return True, r.get("user", "someone"), r["_dt"].strftime("%-I:%M %p")
     return False, None, None
@@ -709,6 +1036,22 @@ def _execute_action(report: dict, action: dict, picked, chrome_ok: bool) -> None
     """Run one action: stream output, log the run, balloons on success."""
     if not chrome_ok:
         st.error("⚠️ Chrome isn't running — launch it from the sidebar first.")
+        return
+    # Cross-user lock: refuse to start a run if anyone else is already running
+    # this report (per the shared Hub Activity tab). The button disable is the
+    # primary guard; this is the backstop in case state changed mid-click.
+    me = st.session_state.get("user", "")
+    for a in _read_active_runs():
+        if a.get("report_id") != report["id"]:
+            continue
+        other = a.get("user") or "someone"
+        if other.strip().lower() == me.strip().lower():
+            continue  # our own in-flight run; let _stream_subprocess handle it
+        st.error(
+            f"⛔ **{other}** is already running this report. Wait for them "
+            "to finish before starting a new run — running it twice at the "
+            "same time would corrupt the Sheet."
+        )
         return
     needs_date = action.get("needs_date")
     needs_text = action.get("needs_text")
@@ -759,6 +1102,324 @@ def _execute_action(report: dict, action: dict, picked, chrome_ok: bool) -> None
     st.rerun()
 
 
+@st.fragment(run_every=3)
+def _active_run_fragment(report_id: str) -> None:
+    """Auto-refreshing body of the active-run panel. Re-reads active_runs
+    + log file every 3s. When the subprocess finishes, breaks out of the
+    fragment by triggering a full app rerun so the post-run callout shows."""
+    active_runs = _read_active_runs()
+    active = next((a for a in active_runs if a.get("report_id") == report_id), None)
+    if not active:
+        # Run completed (or was killed) — bounce to a full app rerun so the
+        # parent card switches back to its normal state.
+        st.rerun(scope="app")
+        return
+
+    started_at = active.get("started_at", "")
+    runner = active.get("user", "someone")
+    log_path = active.get("log_path", "")
+    pid = active.get("pid")
+    is_remote = bool(active.get("remote"))
+    machine = active.get("machine", "")
+
+    try:
+        start_dt = dt.datetime.fromisoformat(started_at)
+        elapsed_s = max(0, int((dt.datetime.now() - start_dt).total_seconds()))
+        if elapsed_s < 60:
+            elapsed_str = f"{elapsed_s}s"
+        elif elapsed_s < 3600:
+            elapsed_str = f"{elapsed_s // 60}m {elapsed_s % 60}s"
+        else:
+            elapsed_str = f"{elapsed_s // 3600}h {(elapsed_s % 3600) // 60}m"
+    except Exception:
+        elapsed_str = "—"
+
+    is_orphan = bool(active.get("orphan"))
+    elapsed_html = (
+        f"<span>running for <b>{elapsed_str}</b></span>"
+        if elapsed_str != "—"
+        else "<span style='opacity:0.85'>just detected — elapsed time unknown</span>"
+    )
+    if is_remote:
+        machine_part = f" on <b>{machine}</b>" if machine else ""
+        started_html = (
+            f"Started by <b>{runner}</b>{machine_part} · {elapsed_html} "
+            "<span style='opacity:0.85'>(running on another teammate's Mac)</span>"
+        )
+    elif is_orphan:
+        started_html = (
+            f"PID <b>{pid}</b> · running as <b>{runner}</b> · {elapsed_html} "
+            "<span style='opacity:0.85'>(detected by process scan)</span>"
+        )
+    else:
+        started_html = f"Started by <b>{runner}</b> · {elapsed_html}"
+    st.markdown(
+        "<style>"
+        "@keyframes runpulse { 0%,100% { opacity:1 } 50% { opacity:0.55 } }"
+        ".runpulse-dot { display:inline-block; width:12px; height:12px; "
+        " border-radius:50%; background:#fff; margin-right:10px; "
+        " vertical-align:middle; animation: runpulse 1.1s ease-in-out infinite }"
+        "</style>"
+        "<div style='background:linear-gradient(135deg, #D8261C 0%, #B11B12 100%); "
+        "border:0; border-radius:10px; padding:1rem 1.2rem; margin:0.4rem 0 0.8rem; "
+        "color:#fff; box-shadow:0 2px 8px rgba(201,32,32,0.25);'>"
+        "<div style='font-weight:800; font-size:1.3rem; letter-spacing:0.02em;'>"
+        "<span class='runpulse-dot'></span>RUNNING NOW</div>"
+        f"<div style='margin-top:0.35rem; font-size:1rem;'>{started_html}</div>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    if is_remote:
+        # Log file lives on the runner's machine — can't read it from here.
+        # No Stop button either, since os.kill won't reach a remote PID.
+        st.info(
+            f"📋 Live log is only visible on **{runner}'s** Mac. "
+            "This card auto-updates the moment they finish — you'll see the "
+            "post-run summary appear here. If they're stuck, ping them."
+        )
+        st.caption("Auto-refreshes every 3s.")
+        return
+
+    # Show how fresh the log file is so it's obvious whether the subprocess
+    # is actively writing or has gone quiet.
+    log_freshness = ""
+    if log_path:
+        try:
+            mtime = Path(log_path).stat().st_mtime
+            age_s = max(0, int(dt.datetime.now().timestamp() - mtime))
+            if age_s < 3:
+                log_freshness = "🟢 log updating live"
+            elif age_s < 10:
+                log_freshness = f"🟡 log last updated {age_s}s ago"
+            else:
+                log_freshness = f"🔴 log hasn't updated in {age_s}s — subprocess may be stuck or finished"
+        except Exception:
+            pass
+
+    tail = _tail_log(log_path) if log_path else ""
+    if tail:
+        st.code(tail, language="log")
+    else:
+        st.caption("No log output yet — the subprocess may have just started.")
+    if log_freshness:
+        st.caption(log_freshness + " · auto-refreshes every 3s")
+    else:
+        st.caption("Auto-refreshes every 3s.")
+
+    cols = st.columns([1, 3])
+    stop_clicked = cols[0].button(
+        "⛔ Stop",
+        key=f"stop_active_{report_id}",
+        type="secondary",
+        use_container_width=True,
+    )
+    cols[1].caption(
+        f"PID {pid}. Stop kills the report immediately. "
+        f"Data already written to the Sheet is not undone."
+    )
+
+    if stop_clicked:
+        ok, msg = _kill_active_run(
+            report_id, user=st.session_state.get("user"),
+        )
+        (st.warning if ok else st.info)(msg)
+        st.rerun(scope="app")
+
+
+def _render_active_run_panel(report: dict, active: dict) -> None:
+    """In-progress banner: who started, elapsed time, live log tail, Stop.
+
+    Renders inside an already-open report card container. Returning from
+    here is the caller's responsibility (skip the rest of the card while
+    a run is in flight). The Stop button kills the subprocess and reruns
+    the page so the normal flow comes back. The body is wrapped in a
+    Streamlit fragment so it auto-refreshes every 3s without a manual
+    refresh button — and re-reads active_runs to know when to bounce out."""
+    _active_run_fragment(report["id"])
+
+
+# ---- Daily Focus: ICD ↔ AppStream office mapping prompt ----
+# When a new name appears in col V of the Daily Focus tab, we ask Megan
+# (in the dashboard) to confirm which AppStream office it maps to. The
+# answer is persisted to output/icd_office_mappings.json so we never ask
+# about that name again. all-offices.json (149 known offices) provides
+# the candidate list for fuzzy-matching + a manual picker.
+
+@st.cache_data(ttl=60)
+def _daily_focus_icds_in_sheet() -> list[str]:
+    try:
+        from automations.recruiting_report import fill as _f, daily_focus as _df
+        sh = _f.open_sheet()
+        ws = sh.worksheet(_df.DAILY_FOCUS_TAB)
+        col = ws.col_values(_df.ICD_LIST_COLUMN)
+        return [v.strip() for v in col if v and v.strip()]
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=600)
+def _all_appstream_offices() -> list[dict]:
+    try:
+        path = WORKSPACE / "automations" / "recruiting_report" / "all-offices.json"
+        return list(json.loads(path.read_text()).get("offices", []))
+    except Exception:
+        return []
+
+
+def _suggest_office_for_name(name: str) -> dict | None:
+    """Score AppStream owners against an ICD name; return the best match
+    if the score is meaningful, else None."""
+    name_low = name.lower().strip()
+    name_words = set(name_low.replace(",", " ").split())
+    best, best_score = None, 0
+    for o in _all_appstream_offices():
+        owner = (o.get("owner") or "").lower()
+        if not owner:
+            continue
+        owner_words = set(owner.replace(",", " ").split())
+        overlap = len(name_words & owner_words)
+        score = overlap + (5 if name_low in owner or owner in name_low else 0)
+        if score > best_score:
+            best_score, best = score, o
+    return best if best_score >= 1 else None
+
+
+def _save_icd_mapping(name: str, office_id: str) -> None:
+    """Persist an ICD-name → office-id (or SKIP) decision."""
+    from automations.recruiting_report import daily_focus as _df
+    overrides = _df._load_overrides()
+    overrides[name.lower().strip()] = office_id
+    _df._save_overrides(overrides)
+
+
+def _render_daily_focus_mapping_prompt() -> None:
+    """If col V has names not yet mapped (and not skipped), render an inline
+    confirm panel with fuzzy-match suggestions + manual picker + skip."""
+    from automations.recruiting_report import daily_focus as _df
+    icds = _daily_focus_icds_in_sheet()
+    if not icds:
+        return
+    unmapped = [n for n in icds
+                if not _df._is_skipped(n) and not _df._resolve_office_id(n)]
+    if not unmapped:
+        return
+
+    st.markdown(
+        "<div style='background:linear-gradient(135deg, #FFF3D6 0%, #FFE4A8 100%); "
+        "border:2px solid #C9A85C; border-radius:10px; "
+        "padding:14px 18px; margin:6px 0 10px; color:#5C4220;'>"
+        f"<div style='font-weight:800; font-size:1.1rem;'>"
+        f"👋 {len(unmapped)} new ICD{'s' if len(unmapped)!=1 else ''} need an "
+        "AppStream mapping</div>"
+        "<div style='margin-top:6px; font-size:0.95rem;'>"
+        "Confirm each suggested match below. Anything unmapped will be "
+        "skipped on the next run."
+        "</div></div>",
+        unsafe_allow_html=True,
+    )
+
+    offices = _all_appstream_offices()
+    sorted_options = sorted(offices, key=lambda o: (o.get("owner") or "").lower())
+    option_labels = [
+        f"{o['office_id']}  —  {o.get('owner','?')}  ({o.get('company','?')})"
+        for o in sorted_options
+    ]
+
+    for name in unmapped:
+        suggestion = _suggest_office_for_name(name)
+        with st.container(border=True):
+            top_cols = st.columns([3, 6])
+            top_cols[0].markdown(f"**{name}**")
+            if suggestion:
+                top_cols[1].markdown(
+                    f"Suggested: **{suggestion.get('owner','?')}** "
+                    f"(office **{suggestion['office_id']}**) "
+                    f"— *{suggestion.get('company','')}*"
+                )
+            else:
+                top_cols[1].markdown("_No close match in known offices — pick manually below._")
+
+            btn_cols = st.columns([2, 2, 2, 4])
+            confirm_disabled = suggestion is None
+            if btn_cols[0].button(
+                "✅ Confirm match", key=f"map_confirm_{name}",
+                disabled=confirm_disabled, use_container_width=True,
+                type="primary",
+            ):
+                _save_icd_mapping(name, suggestion["office_id"])
+                _daily_focus_icds_in_sheet.clear()
+                st.rerun()
+            picker_state_key = f"map_picker_open_{name}"
+            if btn_cols[1].button(
+                "🔍 Pick different", key=f"map_pick_{name}",
+                use_container_width=True,
+            ):
+                st.session_state[picker_state_key] = not st.session_state.get(picker_state_key, False)
+                st.rerun()
+            if btn_cols[2].button(
+                "🚫 Not an ICD", key=f"map_skip_{name}",
+                use_container_width=True,
+                help="Mark this name as 'not a real ICD' so we never ask again "
+                     "(e.g. for header/title rows).",
+            ):
+                _save_icd_mapping(name, _df.SKIP_SENTINEL)
+                _daily_focus_icds_in_sheet.clear()
+                st.rerun()
+
+            if st.session_state.get(picker_state_key):
+                default_idx = 0
+                if suggestion:
+                    try:
+                        default_idx = next(
+                            i for i, o in enumerate(sorted_options)
+                            if o["office_id"] == suggestion["office_id"]
+                        )
+                    except StopIteration:
+                        pass
+                pick = st.selectbox(
+                    "AppStream office",
+                    option_labels, index=default_idx,
+                    key=f"map_picker_{name}",
+                    label_visibility="collapsed",
+                )
+                save_cols = st.columns([1, 4])
+                if save_cols[0].button(
+                    "💾 Save", key=f"map_save_{name}",
+                    type="primary", use_container_width=True,
+                ):
+                    chosen = sorted_options[option_labels.index(pick)]
+                    _save_icd_mapping(name, chosen["office_id"])
+                    _daily_focus_icds_in_sheet.clear()
+                    st.session_state.pop(picker_state_key, None)
+                    st.rerun()
+
+
+@st.fragment(run_every=10)
+def _cross_user_pulse(report_id: str) -> None:
+    """Tiny invisible fragment that polls cross-user state every 10s. When
+    a teammate's run starts (or finishes), it triggers an app-wide rerun so
+    the report card reflects the new state — no manual reload needed."""
+    sig_key = f"cross_user_sig_{report_id}"
+    me = st.session_state.get("user", "")
+    others_active_for_this = [
+        a for a in _read_active_runs()
+        if a.get("report_id") == report_id
+        and (a.get("user") or "").strip().lower() != me.strip().lower()
+    ]
+    # Build a tiny signature of what's relevant; if it changes, rerun the app.
+    sig = tuple(sorted(
+        (a.get("hub_run_id") or a.get("pid"), a.get("user"))
+        for a in others_active_for_this
+    ))
+    last_sig = st.session_state.get(sig_key)
+    if last_sig is not None and sig != last_sig:
+        st.session_state[sig_key] = sig
+        st.rerun(scope="app")
+    elif last_sig is None:
+        st.session_state[sig_key] = sig
+
+
 def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
     """One unified card per report: header, gated checklist, primary run button,
     secondary actions inside an expander."""
@@ -769,6 +1430,8 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
     primary = next((a for a in actions if a.get("primary")), actions[0])
     secondary = [a for a in actions if a is not primary]
     ran_today = _was_run_successfully_today(report["id"], today)
+    # 10s heartbeat: notices when a teammate starts/finishes a run.
+    _cross_user_pulse(report["id"])
 
     with st.container(border=True):
         st.markdown('<div class="report-card-marker"></div>', unsafe_allow_html=True)
@@ -802,6 +1465,27 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
             st.caption(report["description"])
         with header_cols[1]:
             st.link_button("📂 Open Sheet", report["sheet_url"], use_container_width=True)
+
+        # In-progress check. If THIS report has a live subprocess (maybe
+        # started by another tab, or by the same user before they navigated
+        # away), surface a Run-in-progress panel with a Stop button and the
+        # live log tail. We skip the rest of the card — checklist, Run
+        # button, post-run callout — because none of that is relevant while
+        # the subprocess is still going.
+        _active_runs = _read_active_runs()
+        _active_for_this = next(
+            (a for a in _active_runs if a.get("report_id") == report["id"]),
+            None,
+        )
+        if _active_for_this:
+            _render_active_run_panel(report, _active_for_this)
+            return
+
+        # Daily-Focus only: prompt for any new ICDs in col V that don't have
+        # an AppStream office mapped yet. Once confirmed (or marked 'not an
+        # ICD'), the choice is persisted so it never asks again.
+        if report["id"] == "daily-focus":
+            _render_daily_focus_mapping_prompt()
 
         # Checklist (gates the primary run button)
         all_checked = True
@@ -897,7 +1581,7 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                         _execute_action(report, primary, picked, chrome_ok)
                         st.rerun()
                 with cc[1]:
-                    if st.button("✖ Cancel", key=f"confirm_no_{report['id']}",
+                    if st.button("🛑 Stop", key=f"confirm_no_{report['id']}",
                                  use_container_width=True):
                         st.session_state.pop(confirm_key, None)
                         st.session_state.pop(confirm_meta_key, None)
@@ -913,26 +1597,101 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                 st.session_state[f"last_run_{report['id']}"] = persisted
         if last_run:
             post_run_cfg = report.get("post_run", {})
+            # Read state file (if configured) to find ICDs the run skipped.
+            # When the state file exists with a non-empty list, we promote the
+            # prompt to a high-visibility "switch logins and finish" call-to-
+            # action with the actual missing names — Megan asked for this so
+            # she knows every cell is accounted for.
+            again_state_rel = post_run_cfg.get("again_state_file")
+            again_state_key = post_run_cfg.get("again_state_key")
+            missing_items: list[str] = []
+            state_file_exists = False
+            if again_state_rel and again_state_key:
+                state_path = WORKSPACE / again_state_rel
+                try:
+                    if state_path.exists():
+                        state_file_exists = True
+                        data = json.loads(state_path.read_text())
+                        missing_items = list(data.get(again_state_key) or [])
+                except Exception:
+                    pass
+            nothing_to_retry = state_file_exists and not missing_items
+
             with st.container(border=True):
                 if last_run["status"] == "success":
-                    msg = post_run_cfg.get(
-                        "message_success",
-                        "✅ Run finished. If any ICD showed 'not accessible' in the log, switch AppStream logins and run again.",
-                    )
-                    st.success(msg)
+                    if missing_items:
+                        # High-visibility gold callout that lists the exact
+                        # ICDs that didn't pull. They could be missing because
+                        # they need the 2nd login OR because their fetch timed
+                        # out — the retry button will try them again either way.
+                        _names = ", ".join(missing_items)
+                        st.markdown(
+                            "<div style='background:linear-gradient(135deg, #FFF3D6 0%, #FFE4A8 100%); "
+                            "border:2px solid #C9A85C; border-radius:10px; "
+                            "padding:14px 18px; margin:4px 0 10px; color:#5C4220;'>"
+                            "<div style='font-weight:800; font-size:1.15rem;'>"
+                            f"⚠️ {len(missing_items)} ICD{'s' if len(missing_items)!=1 else ''} "
+                            "didn't pull and need a retry</div>"
+                            "<div style='margin-top:6px; font-size:0.95rem;'>"
+                            f"<b>{_names}</b></div>"
+                            "<div style='margin-top:8px; font-size:0.95rem;'>"
+                            "Click the button below to retry. If they still don't pull, "
+                            "switch to <b>rcaptain</b> in the same Chrome window and "
+                            "click again — missing data is usually a login issue or "
+                            "a timeout."
+                            "</div></div>",
+                            unsafe_allow_html=True,
+                        )
+                    elif state_file_exists:
+                        st.success(
+                            "✅ All ICDs filled on the first run — every cell is "
+                            "accounted for. Nothing to retry."
+                        )
+                    else:
+                        # Reports without a state-file config fall back to the
+                        # generic post_run success message.
+                        msg = post_run_cfg.get(
+                            "message_success",
+                            "✅ Run finished. If any ICD showed 'not accessible' "
+                            "in the log, switch AppStream logins and run again.",
+                        )
+                        st.success(msg)
                 else:
                     msg = post_run_cfg.get(
                         "message_failed",
                         "❌ Run failed. Check the log above. You can retry with the same or other AppStream login below.",
                     )
                     st.error(msg)
+
                 again_label = post_run_cfg.get("again_label", "🔁 Run Again")
-                cols = st.columns([3, 2])
-                with cols[0]:
-                    st.caption("When you're ready, click Run Again below.")
-                with cols[1]:
-                    if st.button(again_label, key=f"again_{report['id']}", use_container_width=True, disabled=not chrome_ok):
-                        _execute_action(report, primary, picked, chrome_ok)
+                if missing_items:
+                    # Make the button count-aware so it matches the callout above.
+                    base = again_label.replace("🔁", "").strip() or "Retry missing"
+                    again_label = f"🔁 Retry {len(missing_items)} missing ICD{'s' if len(missing_items)!=1 else ''} on 2nd login"
+                # Optional: a separate action to fire on Run Again (e.g. retry
+                # mode that only re-processes the items that failed last time).
+                again_action = post_run_cfg.get("again_action") or primary
+                again_empty_msg = post_run_cfg.get(
+                    "again_empty_message",
+                    "✅ Nothing to retry from the previous run.",
+                )
+
+                # Only show the retry button when there's something to retry,
+                # OR for reports without a state file (legacy fallback).
+                show_again = bool(missing_items) or not state_file_exists
+                if show_again:
+                    cols = st.columns([3, 2])
+                    with cols[0]:
+                        if missing_items:
+                            st.caption("Switch AppStream logins first, then click →")
+                        else:
+                            st.caption("When you're ready, click below.")
+                    with cols[1]:
+                        if st.button(again_label, key=f"again_{report['id']}", use_container_width=True, disabled=not chrome_ok):
+                            if nothing_to_retry:
+                                st.success(again_empty_msg)
+                            else:
+                                _execute_action(report, again_action, None, chrome_ok)
                 if st.button("✅ Mark as Completed", key=f"dismiss_{report['id']}"):
                     # Record on this user's "Completed Today" list
                     _mark_run_completed(
@@ -1003,6 +1762,7 @@ INTAKE_HEADERS = [
     "Submitted By", "Submitted At", "Status", "Assigned To", "Assigned At",
     "Preferred Creator", "Currently runs", "Priority", "Submitter Email",
     "Review CC", "Notes", "Resurrected At", "Completed At", "Claim History",
+    "Additional Links",
 ]
 
 PRIORITY_OPTIONS = [
@@ -1073,9 +1833,12 @@ def _read_intake() -> list[dict]:
 def _add_intake(title: str, sheet_link: str, loom_link: str, description: str,
                 submitted_by: str, preferred_creator: str = "",
                 currently_runs: str = "", priority: str = "",
-                submitter_email: str = "") -> str:
+                submitter_email: str = "",
+                additional_links: str = "") -> str:
     new_id = dt.datetime.now().strftime("%Y%m%d%H%M%S")
     ws = _intake_ws()
+    # Fill all 20 columns positionally so "Additional Links" (last col) lands
+    # in the right cell. Empty strings for columns the form doesn't populate.
     ws.append_row([
         new_id, title, sheet_link, loom_link, description,
         submitted_by, dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -1084,6 +1847,12 @@ def _add_intake(title: str, sheet_link: str, loom_link: str, description: str,
         currently_runs or "",
         priority or "",
         submitter_email or "",
+        "",  # Review CC
+        "",  # Notes
+        "",  # Resurrected At
+        "",  # Completed At
+        "",  # Claim History
+        additional_links or "",  # Additional Links
     ])
     _read_intake.clear()
     return new_id
@@ -1208,6 +1977,91 @@ def _claim_intake_updates(entry_id: str, claimer: str) -> bool:
     ws.update_cell(row, INTAKE_HEADERS.index("Status") + 1, "In Progress")
     _read_intake.clear()
     return True
+
+
+def _append_intake_link(entry_id: str, url: str, label: str = "") -> bool:
+    """Append a 'label | url' line to the row's Additional Links column.
+
+    Anyone viewing a project card can drop a new link onto it at any time
+    (source data, follow-up loom, supporting doc, whatever). Label is
+    optional — without one, the card renders the link as a generic 🔗.
+    """
+    url = (url or "").strip()
+    if not url:
+        return False
+    if "Additional Links" not in INTAKE_HEADERS:
+        return False
+    ws = _intake_ws()
+    try:
+        cell = ws.find(str(entry_id))
+    except Exception:
+        return False
+    if not cell:
+        return False
+    row = cell.row
+    col = INTAKE_HEADERS.index("Additional Links") + 1
+    try:
+        current = ws.cell(row, col).value or ""
+    except Exception:
+        current = ""
+    new_line = f"{(label or '').strip()} | {url}" if (label or "").strip() else url
+    updated = (current.rstrip() + "\n" + new_line) if current.strip() else new_line
+    ws.update_cell(row, col, updated)
+    _read_intake.clear()
+    return True
+
+
+def _label_for_url(url: str) -> str:
+    """Pick a short, scannable button label from a URL's host.
+
+    Used when the user attaches a link from a card without typing their own
+    label — the host alone is enough to tell at a glance what's behind the
+    button (Loom vs YouTube vs Drive vs Sheet).
+    """
+    u = (url or "").strip().lower()
+    if "loom.com" in u:
+        return "Loom video"
+    if "youtube.com" in u or "youtu.be" in u:
+        return "YouTube video"
+    if "vimeo.com" in u:
+        return "Vimeo video"
+    if "docs.google.com/spreadsheets" in u:
+        return "Google Sheet"
+    if "docs.google.com/document" in u:
+        return "Google Doc"
+    if "docs.google.com/presentation" in u:
+        return "Google Slides"
+    if "drive.google.com" in u:
+        return "Google Drive"
+    if "dropbox.com" in u:
+        return "Dropbox"
+    if "notion.so" in u or "notion.site" in u:
+        return "Notion"
+    return "Link"
+
+
+def _parse_link_lines(raw: str) -> list[tuple[str, str]]:
+    """Parse '\\n'-separated link lines into a list of (label, url) tuples.
+
+    Each line is either 'label | url' or just 'url'. Empty lines and the
+    literal placeholder 'n/a' are filtered out so legacy single-loom data
+    + the 'paste n/a if none' placeholder both pass through cleanly.
+    """
+    out: list[tuple[str, str]] = []
+    for raw_line in (raw or "").splitlines():
+        line = raw_line.strip()
+        if not line or line.lower() == "n/a":
+            continue
+        if "|" in line:
+            label_part, url_part = line.split("|", 1)
+            label = label_part.strip()
+            url = url_part.strip()
+        else:
+            label = ""
+            url = line
+        if url and url.lower() != "n/a":
+            out.append((label, url))
+    return out
 
 
 def _append_intake_note(entry_id: str, note: str, author: str) -> bool:
@@ -1366,7 +2220,15 @@ def _show_intake_dialog():
     with st.form("new_intake_form", clear_on_submit=True):
         title = st.text_input("Report name *", placeholder="e.g. Sales Pipeline Daily")
         sheet_link = st.text_input("Link to the report (Google Sheet) *", placeholder="https://docs.google.com/...")
-        loom_link = st.text_input("Loom video walking through what's needed *", placeholder="https://www.loom.com/share/...")
+        loom_link = st.text_input(
+            "Link to a video walking through what you need *",
+            placeholder="Paste a Loom, YouTube, Google Drive, or screen-recording link",
+        )
+        additional_links = st.text_area(
+            "More links (optional)",
+            placeholder="Paste any extra videos or sheets that help.\nOne link per line.",
+            height=90,
+        )
         description = st.text_area(
             "Goal & details *",
             placeholder="What should this automation do? What problem does it solve? "
@@ -1407,12 +2269,40 @@ def _show_intake_dialog():
                 st.error("Please fill in every field marked *.")
             else:
                 pc = "" if preferred_creator == "No preference" else preferred_creator
+                # Normalize the additional-links textarea: parse → re-emit canonical
+                # 'label | url' lines. Drops blanks and 'n/a' placeholders.
+                _extras = "\n".join(
+                    f"{lbl} | {url}" if lbl else url
+                    for lbl, url in _parse_link_lines(additional_links or "")
+                )
                 try:
-                    _add_intake(title, sheet_link, loom_link, description, submitted_by, pc, currently_runs, priority, submitter_email)
+                    _add_intake(
+                        title, sheet_link, loom_link, description, submitted_by,
+                        pc, currently_runs, priority, submitter_email,
+                        additional_links=_extras,
+                    )
                     st.success("✅ Submitted! It will appear on the home page for someone to claim.")
                     st.balloons()
                 except Exception as e:
-                    st.error(f"Couldn't save to Sheet: {e}")
+                    import traceback
+                    err_text = str(e) or repr(e) or "(no message)"
+                    st.error(f"Couldn't save to Sheet: {err_text}")
+                    # Most common cause: this user's Google account isn't shared
+                    # on the intake Sheet, or they haven't completed OAuth yet.
+                    err_low = err_text.lower()
+                    if "permission" in err_low or "403" in err_text or "forbidden" in err_low:
+                        st.warning(
+                            "Looks like a permissions issue. Megan needs to share "
+                            "the **Automation Backlog** Sheet with this user's Google "
+                            "account (Editor access)."
+                        )
+                    elif "credential" in err_low or "oauth" in err_low or "token" in err_low:
+                        st.warning(
+                            "Looks like a Google sign-in issue. This user may need "
+                            "to delete their saved OAuth token and sign in again."
+                        )
+                    with st.expander("🔍 Full error details (for Megan)"):
+                        st.code(traceback.format_exc(), language="text")
 
 
 def _save_uploaded_report(metadata: dict, script_text: str) -> tuple[bool, str]:
@@ -1749,24 +2639,32 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                 st.caption(
                     f"Submitted by **{entry.get('Submitted By', '?')}** on {entry.get('Submitted At', '?')}"
                 )
+            # Build the flat list of link buttons to show on the card. Each
+            # is (label, url). The two primary fields (Sheet Link, Loom Link)
+            # come first; then anything in Additional Links (labeled or not).
+            def _render_link_buttons():
+                _btns: list[tuple[str, str]] = []
+                if entry.get("Sheet Link"):
+                    _btns.append(("📂 Open Sheet", entry["Sheet Link"]))
+                if entry.get("Loom Link"):
+                    _btns.append(("▶️ Watch video", entry["Loom Link"]))
+                for _lbl, _url in _parse_link_lines(entry.get("Additional Links") or ""):
+                    _btns.append((f"🔗 {_lbl or _label_for_url(_url)}", _url))
+                if not _btns:
+                    return
+                # Two-column layout — rows of 2 buttons.
+                for i in range(0, len(_btns), 2):
+                    _row = st.columns(2)
+                    for j, (_lbl, _url) in enumerate(_btns[i:i+2]):
+                        with _row[j]:
+                            st.link_button(_lbl, _url, use_container_width=True)
+
             if entry.get("Description"):
                 with st.expander("Project Details"):
                     st.markdown(entry["Description"])
-                    link_cols = st.columns(2)
-                    with link_cols[0]:
-                        if entry.get("Sheet Link"):
-                            st.link_button("📂 Open Sheet", entry["Sheet Link"], use_container_width=True)
-                    with link_cols[1]:
-                        if entry.get("Loom Link"):
-                            st.link_button("▶️ Watch Loom", entry["Loom Link"], use_container_width=True)
-            elif entry.get("Sheet Link") or entry.get("Loom Link"):
-                link_cols = st.columns(2)
-                with link_cols[0]:
-                    if entry.get("Sheet Link"):
-                        st.link_button("📂 Open Sheet", entry["Sheet Link"], use_container_width=True)
-                with link_cols[1]:
-                    if entry.get("Loom Link"):
-                        st.link_button("▶️ Watch Loom", entry["Loom Link"], use_container_width=True)
+                    _render_link_buttons()
+            else:
+                _render_link_buttons()
 
             # Notes — anyone can add a timestamped note to the project card.
             _existing_notes = (entry.get("Notes") or "").strip()
@@ -1811,6 +2709,24 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                         st.rerun()
                     else:
                         st.error("Couldn't save the note — try again.")
+
+                # Attach an additional link to this card — video, sheet, doc,
+                # whatever. Single URL input; the button label is auto-derived
+                # from the host so it's still scannable in the button row.
+                st.markdown("---")
+                _link_url = st.text_input(
+                    "🔗 Attach a link to a sheet or video",
+                    key=f"link_url_{entry['ID']}",
+                    placeholder="Paste any URL — Loom, YouTube, Drive, Sheet, …",
+                )
+                if st.button("➕ Attach link", key=f"link_save_{entry['ID']}", use_container_width=True):
+                    if not (_link_url or "").strip():
+                        st.error("Paste a URL first.")
+                    elif _append_intake_link(str(entry["ID"]), _link_url, _label_for_url(_link_url)):
+                        st.success("Link attached.")
+                        st.rerun()
+                    else:
+                        st.error("Couldn't save the link — try again.")
         with cols[1]:
             if allow_claim:
                 claim_to = st.selectbox(
@@ -2343,9 +3259,9 @@ def _render_bug_typed_view(
 
 def _missed_runs(reports: list[dict], days: int = 7, today: dt.date | None = None) -> list[dict]:
     """For each report, find days in the past `days` where it was scheduled
-    but no successful run was logged. Returns list of {report, missed_date}."""
+    but no successful run was logged by anyone. Returns list of {report, missed_date}."""
     today = today or dt.date.today()
-    runs = _read_runs(days + 1)
+    runs = _all_runs_merged(days=days + 1)
     success_by_report: dict[str, set] = {}
     for r in runs:
         if r.get("status") == "success":
@@ -2817,7 +3733,7 @@ def _render_currently_running_banner(filter_user: str | None = None):
                         os.kill(int(run["pid"]), signal.SIGTERM)
                     except Exception as e:
                         st.error(f"Couldn't stop: {e}")
-                    _clear_active_run(run["report_id"])
+                    _clear_active_run(run["report_id"], status="stopped")
                     st.rerun()
 
 
@@ -3199,9 +4115,9 @@ elif st.session_state.view == "overview":
     else:
         st.success("✅ No missed runs in the last 7 days. Great work, team!")
 
-    # Recent runs activity feed
+    # Recent runs activity feed — merged across all teammates' machines.
     st.markdown("### 🗓️ Recent Activity")
-    runs = _read_runs(7)
+    runs = _all_runs_merged(days=7)
     if not runs:
         st.info("No runs logged yet. As people use the dashboard, runs will appear here.")
     else:
@@ -3263,23 +4179,13 @@ elif st.session_state.view == "library":
             if st.button(_back_label, key="lib_detail_back"):
                 _back_from_library_detail()
 
-            st.markdown(
-                f"<div style='font-size:2.2rem; font-weight:800; margin:0.4rem 0 0.4rem'>"
-                f"{report.get('emoji', '📄')} {report['name']}</div>",
-                unsafe_allow_html=True,
-            )
-            if report.get("description"):
-                st.caption(report["description"])
-
             # Auto-detect the runner from the OS user. The run gets attributed
             # to this person automatically — no dropdown needed.
             detected_user = _detect_hub_user()
             st.session_state.user = detected_user
-            member = next((m for m in MEMBERS if m["name"] == detected_user), None)
-            member_emoji = member["emoji"] if member else "👤"
-            st.caption(f"{member_emoji} Running as **{detected_user}**")
 
-            st.markdown("---")
+            # The card itself renders the title, description, schedule badges,
+            # and last-ran timestamp — no outer header needed (used to duplicate).
             _render_report_card(report, today, chrome_ok)
     else:
         st.markdown(
@@ -3307,10 +4213,36 @@ elif st.session_state.view == "library":
             ordered_sections.append((UNASSIGNED_LABEL, sections.pop(UNASSIGNED_LABEL)))
         ordered_sections.extend(sections.items())
 
+        # Mid-flow runs — used to decorate cards with a "pick up" pill so
+        # anyone browsing the library sees that this report is partway through.
+        lib_persisted = _load_all_run_state()
         for section_name, reports_in_section in ordered_sections:
             st.markdown(f"### {section_name}")
             for report in reports_in_section:
+                _pickup = lib_persisted.get(report["id"])
                 with st.container(border=True):
+                    if _pickup:
+                        _pickup_user = _pickup.get("user") or "someone"
+                        _pickup_ts = _pickup.get("ts", "")
+                        try:
+                            _pickup_str = dt.datetime.fromisoformat(_pickup_ts).strftime("%-I:%M %p")
+                        except Exception:
+                            _pickup_str = ""
+                        st.markdown(
+                            "<div style='background:linear-gradient(135deg, #FFF8E7 0%, #FFF3D6 100%); "
+                            "border-left:4px solid #C9A85C; border-radius:6px; "
+                            "padding:6px 12px; margin:-4px 0 8px; font-size:0.9em; color:#5C4220'>"
+                            "<span style='display:inline-block; background:#C9A85C; color:#2A1F12; "
+                            "padding:1px 8px; border-radius:999px; font-size:0.72em; "
+                            "font-weight:800; letter-spacing:0.02em; margin-right:8px'>"
+                            "📌 PICK UP WHERE YOU LEFT OFF"
+                            "</span>"
+                            + (f"<span style='color:#8B6914'>{_pickup_user}"
+                               + (f" · {_pickup_str} today" if _pickup_str else "")
+                               + "</span>")
+                            + "</div>",
+                            unsafe_allow_html=True,
+                        )
                     cols = st.columns([5, 2])
                     with cols[0]:
                         st.markdown(
@@ -3631,17 +4563,43 @@ else:  # st.session_state.view == "user"
                             if not all_filled:
                                 if st.button(again_label, key=f"continue_{report['id']}", use_container_width=True, type="primary", disabled=not chrome_ok):
                                     primary = next((a for a in report["actions"] if a.get("primary")), report["actions"][0])
-                                    picked = None
-                                    if primary.get("needs_date") or primary.get("needs_text"):
-                                        d = st.session_state.get(f"date_{report['id']}_{primary['label']}")
-                                        t = st.session_state.get(f"text_{report['id']}_{primary['label']}")
-                                        if primary.get("needs_date") and primary.get("needs_text"):
-                                            picked = (d, t)
-                                        elif primary.get("needs_date"):
-                                            picked = d
-                                        elif primary.get("needs_text"):
-                                            picked = t
-                                    _execute_action(report, primary, picked, chrome_ok)
+                                    # If post_run defines a separate retry action
+                                    # (e.g. daily-focus's --retry-inaccessible),
+                                    # prefer it over re-running the full primary.
+                                    again_action = post_run_cfg.get("again_action") or primary
+                                    again_state_rel = post_run_cfg.get("again_state_file")
+                                    again_state_key = post_run_cfg.get("again_state_key")
+                                    again_empty_msg = post_run_cfg.get(
+                                        "again_empty_message",
+                                        "✅ Nothing to retry from the previous run.",
+                                    )
+                                    nothing_to_retry = False
+                                    if again_state_rel and again_state_key:
+                                        state_path = WORKSPACE / again_state_rel
+                                        try:
+                                            if state_path.exists():
+                                                data = json.loads(state_path.read_text())
+                                                nothing_to_retry = not data.get(again_state_key)
+                                            else:
+                                                nothing_to_retry = True
+                                        except Exception:
+                                            nothing_to_retry = False
+                                    if nothing_to_retry:
+                                        st.success(again_empty_msg)
+                                    elif again_action is primary:
+                                        picked = None
+                                        if primary.get("needs_date") or primary.get("needs_text"):
+                                            d = st.session_state.get(f"date_{report['id']}_{primary['label']}")
+                                            t = st.session_state.get(f"text_{report['id']}_{primary['label']}")
+                                            if primary.get("needs_date") and primary.get("needs_text"):
+                                                picked = (d, t)
+                                            elif primary.get("needs_date"):
+                                                picked = d
+                                            elif primary.get("needs_text"):
+                                                picked = t
+                                        _execute_action(report, primary, picked, chrome_ok)
+                                    else:
+                                        _execute_action(report, again_action, None, chrome_ok)
                         with cols[2]:
                             if st.button("✅ Mark as Completed", key=f"banner_done_{report['id']}", use_container_width=True):
                                 _mark_run_completed(
@@ -3657,7 +4615,32 @@ else:  # st.session_state.view == "user"
             if my_reports:
                 st.markdown("## 🚀 Your Reports")
                 st.caption("Click a report name to open it and run.")
+                in_progress_ids = {r["id"] for r in in_progress}
                 for report in my_reports:
+                    is_pickup = report["id"] in in_progress_ids
+                    if is_pickup:
+                        saved_ts = persisted.get(report["id"], {}).get("ts", "")
+                        try:
+                            saved_str = dt.datetime.fromisoformat(saved_ts).strftime("%-I:%M %p")
+                        except Exception:
+                            saved_str = ""
+                        # Gold banner above the row — visually marks this report
+                        # as "still in flight today." Click behavior is unchanged.
+                        st.markdown(
+                            "<div style='background:linear-gradient(135deg, #FFF8E7 0%, #FFF3D6 100%); "
+                            "border-left:4px solid #C9A85C; border-radius:6px; "
+                            "padding:6px 12px; margin-top:0.4rem; margin-bottom:-0.2rem; "
+                            "font-size:0.9em; color:#5C4220'>"
+                            "<span style='display:inline-block; background:#C9A85C; color:#2A1F12; "
+                            "padding:1px 8px; border-radius:999px; font-size:0.72em; "
+                            "font-weight:800; letter-spacing:0.02em; margin-right:8px'>"
+                            "📌 PICK UP WHERE YOU LEFT OFF"
+                            "</span>"
+                            + (f"<span style='color:#8B6914'>last run {saved_str} today</span>"
+                               if saved_str else "")
+                            + "</div>",
+                            unsafe_allow_html=True,
+                        )
                     _row = st.columns([3, 2])
                     with _row[0]:
                         if st.button(
