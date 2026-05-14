@@ -52,8 +52,11 @@ if exist ".git" (
 
 REM ---- Free port 8501 if a previous dashboard is still listening ----
 set "PORT=8501"
+REM Escape the parens in `(pid %%p)` with ^ — inside a for-loop body, cmd.exe
+REM treats unescaped ( and ) as block delimiters and bails with "on was
+REM unexpected at this time".
 for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":!PORT! " ^| findstr "LISTENING"') do (
-    echo Stopping previous dashboard (pid %%p) on port !PORT!...
+    echo Stopping previous dashboard ^(pid %%p^) on port !PORT!...
     taskkill /PID %%p /F >nul 2>&1
 )
 
