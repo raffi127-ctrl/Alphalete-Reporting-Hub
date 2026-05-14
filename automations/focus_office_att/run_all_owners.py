@@ -327,13 +327,22 @@ def _scrape_one_owner(page, ws, days: list[dt.date], rqst: str) -> dict:
 
     stats = fill_owner_tab(ws, scraped_by_date, layout)
 
-    # Post-fill operations.
-    write_weekly_formulas(ws, layout)
-    alphabetize_reps(ws, layout)
-    apply_bold_border(ws)
-    apply_gap_time_format(ws, layout)
-    autosize_all_data_cols(ws)
-    update_collapse_states(ws)
+    # Post-fill operations are cosmetic — sorting, borders, formatting. The
+    # primary data write (fill_owner_tab) is done; don't let a transient
+    # Sheets API hiccup on a cosmetic call invalidate the whole owner's
+    # scrape. Log and continue.
+    for label, fn in [
+        ("write_weekly_formulas", lambda: write_weekly_formulas(ws, layout)),
+        ("alphabetize_reps",      lambda: alphabetize_reps(ws, layout)),
+        ("apply_bold_border",     lambda: apply_bold_border(ws)),
+        ("apply_gap_time_format", lambda: apply_gap_time_format(ws, layout)),
+        ("autosize_all_data_cols",lambda: autosize_all_data_cols(ws)),
+        ("update_collapse_states",lambda: update_collapse_states(ws)),
+    ]:
+        try:
+            fn()
+        except Exception as e:
+            print(f"  ⚠ {label} failed (cosmetic, ignoring): {type(e).__name__}: {e}")
 
     return {
         "tt_counts": {d.isoformat(): len(tt_by_date[d]) for d in days},
