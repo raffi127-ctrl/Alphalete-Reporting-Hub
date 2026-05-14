@@ -1686,6 +1686,18 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                         )
                         st.success(msg)
                 else:
+                    # Surface the persisted subprocess log so users don't have to
+                    # hunt for "the log above" — message_failed strings reference
+                    # a log that wasn't being rendered post-run.
+                    _log_path = ACTIVE_RUNS_LOG_DIR / f"{report['id']}.log"
+                    if _log_path.exists():
+                        try:
+                            _log_tail = _log_path.read_text(errors="replace").splitlines()[-40:]
+                            if _log_tail:
+                                with st.expander("📜 Run log (last 40 lines)", expanded=True):
+                                    st.code("\n".join(_log_tail), language="log")
+                        except Exception:
+                            pass
                     msg = post_run_cfg.get(
                         "message_failed",
                         "❌ Run failed. Check the log above. You can retry with the same or other AppStream login below.",
