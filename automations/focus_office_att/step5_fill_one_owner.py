@@ -642,6 +642,95 @@ def reset_conditional_formatting(ws) -> tuple[int, int]:
     return (n_existing, len(add_requests))
 
 
+def mark_tableau_only_reps(ws, layout: Layout) -> int:
+    """Italicize + gray the rep-name cell for any rep that had NO
+    ownerville data this week (all past-day activity cells are 'x').
+    Such reps were added by Phase 3 because they had production in
+    Tableau but didn't show up in ownerville's Time Tracker / Disposition.
+
+    Run AFTER apply_empty_cell_defaults — depends on activity-empty cells
+    already being filled with 'x' so we can detect 'all x' as the signal.
+
+    Idempotent: a rep that's no longer Tableau-only (now has TT/Disp data
+    too) gets the italic stripped back out.
+
+    Returns the count of reps now marked italic.
+    """
+    if not layout.day_cols:
+        return 0
+
+    rep_vals = ws.col_values(layout.rep_name_col)
+    rep_rows = [
+        i for i, v in enumerate(rep_vals, start=1)
+        if i >= 3
+        and v and v.strip()
+        and v.strip().upper() != "OFFICE TOTALS"
+    ]
+    if not rep_rows:
+        return 0
+    first_rep_row, last_rep_row = rep_rows[0], rep_rows[-1]
+
+    today_weekday = dt.date.today().weekday()
+    past_weekdays = set(range(0, today_weekday + 1))
+
+    # Activity-col addresses on past days only — match case-insensitively.
+    activity_cols: list[int] = []
+    for wd_idx, metric_map in layout.day_cols.items():
+        if wd_idx not in past_weekdays:
+            continue
+        for metric, col in metric_map.items():
+            if metric.lower() in _ACTIVITY_METRICS:
+                activity_cols.append(col)
+    if not activity_cols:
+        return 0
+
+    min_col, max_col = min(activity_cols), max(activity_cols)
+    rep_data = ws.get(
+        f"{_col_letter(min_col)}{first_rep_row}:{_col_letter(max_col)}{last_rep_row}",
+        value_render_option="FORMATTED_VALUE",
+    )
+
+    italic_rows: list[int] = []
+    normal_rows: list[int] = []
+    for ri, row in enumerate(rep_data):
+        sheet_row = first_rep_row + ri
+        all_x = True
+        for col in activity_cols:
+            idx = col - min_col
+            v = (row[idx] if idx < len(row) else "").strip().lower()
+            if v != "x":
+                all_x = False
+                break
+        (italic_rows if all_x else normal_rows).append(sheet_row)
+
+    GRAY = {"red": 0.40, "green": 0.40, "blue": 0.40}
+    BLACK = {"red": 0.00, "green": 0.00, "blue": 0.00}
+    rep_col_zi = layout.rep_name_col - 1
+
+    def _fmt_request(row: int, italic: bool, color: dict) -> dict:
+        return {
+            "repeatCell": {
+                "range": {
+                    "sheetId": ws.id,
+                    "startRowIndex": row - 1, "endRowIndex": row,
+                    "startColumnIndex": rep_col_zi, "endColumnIndex": rep_col_zi + 1,
+                },
+                "cell": {"userEnteredFormat": {"textFormat": {
+                    "italic": italic, "foregroundColor": color,
+                }}},
+                "fields": "userEnteredFormat.textFormat.italic,userEnteredFormat.textFormat.foregroundColor",
+            },
+        }
+
+    requests = (
+        [_fmt_request(r, True, GRAY) for r in italic_rows]
+        + [_fmt_request(r, False, BLACK) for r in normal_rows]
+    )
+    if requests:
+        ws.spreadsheet.batch_update({"requests": requests})
+    return len(italic_rows)
+
+
 def apply_empty_cell_defaults(ws, layout: Layout) -> None:
     """Fill empty data cells with '0' or 'x' per Raf's formatting request:
 

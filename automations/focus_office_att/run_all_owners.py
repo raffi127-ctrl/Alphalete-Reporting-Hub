@@ -49,6 +49,7 @@ from automations.focus_office_att.step5_fill_one_owner import (
     _merge_rep_records,
     alphabetize_reps,
     apply_empty_cell_defaults,
+    mark_tableau_only_reps,
     reset_conditional_formatting,
     write_office_totals_row,
     apply_gap_time_format,
@@ -342,6 +343,7 @@ def _scrape_one_owner(page, ws, days: list[dt.date], rqst: str) -> dict:
         ("autosize_all_data_cols",       lambda: autosize_all_data_cols(ws)),
         ("update_collapse_states",       lambda: update_collapse_states(ws)),
         ("apply_empty_cell_defaults",    lambda: apply_empty_cell_defaults(ws, layout)),
+        ("mark_tableau_only_reps",       lambda: mark_tableau_only_reps(ws, layout)),
         ("reset_conditional_formatting", lambda: reset_conditional_formatting(ws)),
         ("write_office_totals_row",      lambda: write_office_totals_row(ws, layout)),
     ]:
