@@ -1,0 +1,458 @@
+"""Scrape Time Tracker + Disposition for every owner tab in the Sheet.
+
+Uses a SINGLE persistent Playwright session for the whole batch — no
+subprocess per owner. Master rqst is captured once at start and reused
+to bounce back to Office Access between owners (the master "Office
+Access" nav link is hidden from impersonated owner portals, so direct
+URL navigation is the only reliable path).
+
+Per owner: navigate to Office Access → search owner by name → grab
+officeId → call confirmImpersonate via AJAX → navigate to Time Tracker
++ Disposition per day → scrape → fill the Sheet tab.
+
+An error on one owner doesn't stop the rest. Summary printed at end.
+
+Prereq: debug Chrome at localhost:9222, ownerville tab open + logged in.
+
+Run:
+    .venv/bin/python -m automations.focus_office_att.run_all_owners
+    .venv/bin/python -m automations.focus_office_att.run_all_owners --only "Cody Cannon,Sam Park"
+    .venv/bin/python -m automations.focus_office_att.run_all_owners --skip "Cody Cannon"
+    .venv/bin/python -m automations.focus_office_att.run_all_owners --dry-run
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import re
+import sys
+import time
+import traceback
+from pathlib import Path
+
+from playwright.sync_api import sync_playwright
+
+from automations.recruiting_report import fill as _fill
+from automations.focus_office_att.aliases import (
+    load_aliases,
+    get_search_candidates,
+    save_alias,
+)
+from automations.focus_office_att.apply_data_border import apply_bold_border
+from automations.focus_office_att.auto_collapse import update_collapse_states
+from automations.focus_office_att.autosize_rep_col import autosize_all_data_cols
+from automations.focus_office_att.columns import resolve_layout
+from automations.focus_office_att.step5_fill_one_owner import (
+    TT_FIELD_TO_CANONICAL,
+    DISP_FIELD_TO_CANONICAL,
+    _merge_rep_records,
+    alphabetize_reps,
+    apply_gap_time_format,
+    fill_owner_tab,
+    scrape_day,
+    scrape_disposition_day,
+    write_weekly_formulas,
+)
+
+DEST_SPREADSHEET_ID = "1xgVE_e8bZimACgPdqcdNCr1qo4sedWect_zzEcUgEJY"
+CDP_URL = "http://localhost:9222"
+TIME_TRACKER_PAGE = "p=510"
+
+
+def _prompt_for_unknown_owner(sheet_tab_name: str) -> str | None:
+    """Ask the user what ownerville name to use for an unknown Sheet tab.
+    Returns the typed name, or None to skip this owner."""
+    print(f"\n  ⚠ '{sheet_tab_name}' couldn't be found in ownerville under that name.")
+    print(f"     Open ownerville's Office Access table in your browser and look them up.")
+    print(f"     What is their EXACT name in ownerville? (blank or 's' to skip)")
+    try:
+        ans = input(f"     > ").strip()
+    except EOFError:
+        return None
+    if not ans or ans.lower() == "s":
+        return None
+    return ans
+
+
+def _parse_csv(s: str) -> set[str]:
+    return {x.strip() for x in (s or "").split(",") if x.strip()}
+
+
+def _find_ownerville_page(browser):
+    for ctx in browser.contexts:
+        for pg in ctx.pages:
+            if "ownerville" in pg.url:
+                return pg
+    return None
+
+
+def _capture_master_rqst(page) -> str | None:
+    """Navigate to root and read the rqst from the resulting master Welcome URL."""
+    print("  → Resetting ownerville tab to master Welcome…")
+    page.goto("https://v2.ownerville.com/", wait_until="networkidle", timeout=25000)
+    print(f"  ✓ Landed on {page.url}")
+    m = re.search(r"rqst=([A-Fa-f0-9_]+)", page.url)
+    return m.group(1) if m else None
+
+
+def _navigate_to_office_access(page) -> bool:
+    """Get the ownerville tab onto the Office Access (?p=901) page.
+
+    Each call re-establishes the master session by navigating to root, then
+    follows up to ?p=901 with whatever fresh rqst the server hands back.
+    The previously-captured master rqst becomes invalid once an impersonation
+    happens, so we can't reuse it between owners — fresh per-iteration is the
+    only reliable path.
+
+    Returns True if we land on p=901.
+    """
+    # 1. Reset to master Welcome to get a fresh rqst.
+    try:
+        page.goto("https://v2.ownerville.com/", wait_until="networkidle", timeout=25000)
+    except Exception as e:
+        print(f"  ⚠ Root nav errored: {type(e).__name__}: {str(e)[:120]}")
+        return False
+    m = re.search(r"rqst=([A-Fa-f0-9_]+)", page.url)
+    if not m:
+        print(f"  ❌ No rqst after root navigation: {page.url}")
+        return False
+    fresh_rqst = m.group(1)
+
+    # 2. Navigate to Office Access using the fresh rqst.
+    url = f"https://v2.ownerville.com/index.cfm?p=901&rqst={fresh_rqst}"
+    try:
+        page.goto(url, wait_until="networkidle", timeout=20000)
+    except Exception as e:
+        print(f"  ⚠ Direct ?p=901 nav errored: {type(e).__name__}: {str(e)[:120]}")
+        return False
+
+    if "p=901" in page.url:
+        return True
+
+    # Last resort: server bounced; click the nav link from wherever we are.
+    print(f"  → Bounced to {page.url}; trying side-nav click…")
+    try:
+        page.locator("a[href*='p=901']").first.click(timeout=8000)
+        page.wait_for_url("**p=901*", timeout=10000)
+    except Exception as e:
+        print(f"  ❌ Side-nav click also failed: {type(e).__name__}: {str(e)[:120]}")
+        return False
+    return "p=901" in page.url
+
+
+def _exit_impersonation(page) -> bool:
+    """Call exitImpersonate AJAX to release the current impersonation.
+
+    Bypasses the SweetAlert confirmation modal — same trick as
+    confirmImpersonate. Once this returns ok, the server's session goes back
+    to master/admin mode and the previously-captured master rqst is valid
+    again for ?p=901 access.
+
+    Returns True on success. Safe to call even if not currently impersonating
+    (the server returns ok=false and we just move on).
+    """
+    try:
+        result = page.evaluate(
+            """() => new Promise((resolve) => {
+                if (typeof $ === 'undefined' || typeof rqstValue === 'undefined') {
+                    resolve({ok: false, error: 'jQuery or rqstValue missing'}); return;
+                }
+                $.ajax({
+                    url: "components/promotions/promotions.cfc",
+                    method: "POST",
+                    dataType: "json",
+                    data: {rqst: rqstValue, method: "exitImpersonate"}
+                })
+                .done(r => {
+                    const parsed = (typeof r === 'string') ? JSON.parse(r) : r;
+                    resolve({ok: !!(parsed && parsed.data && parsed.data.success)});
+                })
+                .fail((xhr, status, err) => resolve({ok: false, error: status + ': ' + err}));
+            })"""
+        )
+        return bool(result.get("ok"))
+    except Exception as e:
+        print(f"  ⚠ exit-impersonate call errored: {type(e).__name__}: {str(e)[:120]}")
+        return False
+
+
+def _find_owner_and_impersonate(page, sheet_tab_name: str, aliases_raw: dict) -> str | None:
+    """On the Office Access page, search for the owner (trying canonical name
+    plus any known aliases), grab their officeId, and call confirmImpersonate.
+    Returns the new (impersonated) rqstValue on success, None on failure.
+    """
+    # Wait for the DataTables AJAX load.
+    page.locator("table#promotingOffices").wait_for(state="visible", timeout=10000)
+    page.wait_for_function(
+        """() => {
+            const rows = document.querySelectorAll('table#promotingOffices tbody tr');
+            if (rows.length < 2) return false;
+            const firstCellText = rows[0].textContent || '';
+            return !firstCellText.toLowerCase().includes('loading');
+        }""",
+        timeout=20000,
+    )
+
+    table = page.locator("table#promotingOffices")
+    sb = page.locator("#promotingOffices_filter input").first
+
+    def _try_search(cand: str) -> tuple:
+        """Run the filter for `cand`; return (matching_row_or_None, visible_names_list)."""
+        try:
+            sb.fill(cand)
+            page.wait_for_timeout(800)
+        except Exception as e:
+            print(f"  ⚠ Search box unusable: {e}")
+            return None, []
+        rows = table.locator("tbody tr").all()
+        cand_lower = " ".join(cand.lower().split())
+        visible = []
+        for tr in rows:
+            cells = tr.locator("td").all()
+            if len(cells) < 3:
+                continue
+            name_text = " ".join(cells[2].inner_text().lower().split())
+            visible.append(name_text)
+            if name_text == cand_lower:
+                return tr, visible
+        return None, visible
+
+    candidates = get_search_candidates(sheet_tab_name, aliases_raw)
+    owner_row = None
+    last_visible_names: list[str] = []
+
+    for cand in candidates:
+        owner_row, last_visible_names = _try_search(cand)
+        if owner_row is not None:
+            if cand != sheet_tab_name:
+                print(f"  ✓ Matched via known alias '{cand}' (Sheet tab: '{sheet_tab_name}')")
+            break
+
+    # Fall back: interactively prompt for an unknown name, save it as an alias.
+    if owner_row is None:
+        print(f"  ❌ Couldn't find '{sheet_tab_name}' in ownerville. Tried: {candidates}")
+        new_alias = _prompt_for_unknown_owner(sheet_tab_name)
+        if not new_alias:
+            return None
+        owner_row, last_visible_names = _try_search(new_alias)
+        if owner_row is None:
+            print(f"  ❌ '{new_alias}' also not found — skipping {sheet_tab_name}.")
+            return None
+        save_alias(sheet_tab_name, new_alias)
+        # Refresh local map so subsequent searches in this run pick it up.
+        aliases_raw.setdefault(sheet_tab_name, []).append(new_alias)
+
+    # Grab officeId from the action button.
+    action_btn = owner_row.locator("td").last.locator("button, a").first
+    office_id = action_btn.get_attribute("data-officeid") or ""
+    if not office_id:
+        print(f"  ❌ Action button missing data-officeid attribute.")
+        return None
+
+    # Call the impersonate AJAX endpoint directly (bypasses the SweetAlert).
+    result = page.evaluate(
+        """(officeId) => new Promise((resolve) => {
+            if (typeof $ === 'undefined' || typeof rqstValue === 'undefined') {
+                resolve({ok: false, error: 'jQuery or rqstValue missing'}); return;
+            }
+            $.ajax({
+                url: "components/promotions/promotions.cfc",
+                method: "POST",
+                data: {rqst: rqstValue, officeid: officeId, method: "confirmImpersonate"}
+            })
+            .done(r => {
+                const parsed = (typeof r === 'string') ? JSON.parse(r) : r;
+                if (parsed && parsed.data && parsed.data.success) {
+                    resolve({ok: true, redirect: 'index.cfm?p=2&rqst=' + rqstValue});
+                } else {
+                    resolve({ok: false, response: JSON.stringify(parsed).slice(0, 200)});
+                }
+            })
+            .fail((xhr, status, err) => resolve({ok: false, error: `${status}: ${err}`}));
+        })""",
+        office_id,
+    )
+    if not result.get("ok"):
+        print(f"  ❌ confirmImpersonate failed: {result}")
+        return None
+
+    # Navigate to the impersonated portal and read the new rqstValue.
+    page.goto(f"https://v2.ownerville.com/{result['redirect']}", wait_until="networkidle", timeout=20000)
+    new_rqst = page.evaluate("typeof rqstValue !== 'undefined' ? rqstValue : null")
+    return new_rqst
+
+
+def _scrape_one_owner(page, ws, days: list[dt.date], rqst: str) -> dict:
+    """Scrape Time Tracker + Disposition for one owner across the given days,
+    fill the Sheet tab, run post-fill ops. Returns stats dict."""
+    metrics = (
+        list(TT_FIELD_TO_CANONICAL.values())
+        + list(DISP_FIELD_TO_CANONICAL.values())
+        + ["Total Apps", "New INT", "Upgrades", "DTV", "New Lines"]
+    )
+    layout = resolve_layout(ws, metrics=metrics, interactive=False)
+
+    # Time Tracker per-day scrape. Some owner portals load slowly, so we
+    # retry the initial Time Tracker nav once before giving up.
+    tt_url = f"https://v2.ownerville.com/index.cfm?p=510&rqst={rqst}"
+    for attempt in (1, 2):
+        try:
+            page.goto(tt_url, wait_until="networkidle", timeout=45000)
+            break
+        except Exception as e:
+            if attempt == 2:
+                raise
+            print(f"  ⚠ Time Tracker nav attempt {attempt} timed out; retrying…")
+    tt_by_date: dict = {}
+    for d in days:
+        tt_by_date[d] = scrape_day(page, d)
+
+    # Disposition per-day scrape (uses URL date param, so navigation per day).
+    disp_by_date: dict = {}
+    for d in days:
+        disp_by_date[d] = scrape_disposition_day(page, d, rqst)
+
+    # Merge by (date, rep) → one record per rep per day.
+    scraped_by_date: dict = {}
+    for d in days:
+        by_name: dict = {}
+        for r in tt_by_date.get(d, []):
+            key = r["name"].lower().strip()
+            by_name[key] = {**by_name.get(key, {}), **r}
+        for r in disp_by_date.get(d, []):
+            key = r["name"].lower().strip()
+            by_name[key] = _merge_rep_records(by_name.get(key, {"name": r["name"]}), r)
+        scraped_by_date[d] = list(by_name.values())
+
+    stats = fill_owner_tab(ws, scraped_by_date, layout)
+
+    # Post-fill operations.
+    write_weekly_formulas(ws, layout)
+    alphabetize_reps(ws, layout)
+    apply_bold_border(ws)
+    apply_gap_time_format(ws, layout)
+    autosize_all_data_cols(ws)
+    update_collapse_states(ws)
+
+    return {
+        "tt_counts": {d.isoformat(): len(tt_by_date[d]) for d in days},
+        "disp_counts": {d.isoformat(): len(disp_by_date[d]) for d in days},
+        "written": stats["written_cells"],
+        "skipped": stats["skipped_cells"],
+        "new_reps": stats["new_reps"],
+    }
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--only", default="",
+                    help="Comma-separated owner tab names to scrape (rest skipped).")
+    ap.add_argument("--skip", default="",
+                    help="Comma-separated owner tab names to skip.")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="List the planned owner-order without scraping.")
+    ap.add_argument("--week-start", default=None,
+                    help="Monday of week to scrape (YYYY-MM-DD); defaults to current week.")
+    args = ap.parse_args()
+
+    only = _parse_csv(args.only)
+    skip = _parse_csv(args.skip)
+
+    sh = _fill._client().open_by_key(DEST_SPREADSHEET_ID)
+    all_tabs = {t.title: t for t in sh.worksheets()}
+    owner_tabs = [t for t in all_tabs if t != "Template"]
+    if only:
+        owner_tabs = [t for t in owner_tabs if t in only]
+    if skip:
+        owner_tabs = [t for t in owner_tabs if t not in skip]
+
+    today = dt.date.today()
+    if args.week_start:
+        monday = dt.datetime.strptime(args.week_start, "%Y-%m-%d").date()
+    else:
+        monday = today - dt.timedelta(days=today.weekday())
+    days = [monday + dt.timedelta(days=i) for i in range(7)
+            if monday + dt.timedelta(days=i) <= today]
+
+    print(f"Plan: scrape {len(owner_tabs)} owner(s); days: {[d.strftime('%a %m/%d') for d in days]}")
+    for i, t in enumerate(owner_tabs, 1):
+        print(f"  {i:>2}. {t}")
+    if args.dry_run:
+        print("\n[DRY-RUN] no scraping performed.")
+        return 0
+
+    results: dict[str, str] = {}
+    p = sync_playwright().start()
+    try:
+        browser = p.chromium.connect_over_cdp(CDP_URL)
+        page = _find_ownerville_page(browser)
+        if not page:
+            print("❌ No ownerville tab found in Chrome.")
+            return 1
+        print(f"✓ Connected. Starting URL: {page.url}")
+
+        aliases_raw = load_aliases()
+        if aliases_raw:
+            total = sum(len(v) for v in aliases_raw.values())
+            print(f"  Loaded {total} owner alias(es) for {len(aliases_raw)} ICD(s) from Sheet")
+
+        # Clear any pre-existing impersonation lock. If Megan's Chrome was
+        # left in an impersonated state from a previous (interrupted) run,
+        # the server bounces ?p=901 → ?p=2&bounce=990 until exitImpersonate
+        # is called. Always safe — returns ok=false if not currently impersonating.
+        if _exit_impersonation(page):
+            print("  ✓ Cleared lingering impersonation from prior session")
+
+        for i, owner in enumerate(owner_tabs, 1):
+            print(f"\n[{i}/{len(owner_tabs)}] === {owner} ===")
+            scraped_ok = False
+            try:
+                # _navigate_to_office_access navigates the ownerville tab to
+                # root + then ?p=901. Works on iteration 1 (no impersonation
+                # yet); works on iterations 2+ because we exit_impersonation
+                # at the end of each previous iteration, releasing the server
+                # lock that would otherwise bounce ?p=901 to ?p=2.
+                if not _navigate_to_office_access(page):
+                    results[owner] = "couldn't reach Office Access"
+                    continue
+                rqst = _find_owner_and_impersonate(page, owner, aliases_raw)
+                if not rqst:
+                    results[owner] = "impersonate failed"
+                    continue
+                print(f"  ✓ Impersonated; rqst={rqst[:8]}…")
+                ws = all_tabs[owner]
+                stats = _scrape_one_owner(page, ws, days, rqst)
+                scraped_ok = True
+                results[owner] = "ok"
+                tt = sum(stats["tt_counts"].values())
+                disp = sum(stats["disp_counts"].values())
+                print(f"  ✓ wrote {stats['written']} cell(s); TT={tt} rep-days, Disp={disp} rep-days; "
+                      f"+{len(stats['new_reps'])} new rep(s)")
+            except Exception as e:
+                results[owner] = f"exception: {type(e).__name__}: {str(e)[:120]}"
+                print(f"  ✗ {results[owner]}")
+                traceback.print_exc()
+            finally:
+                # ALWAYS exit impersonation between owners so the master
+                # rqst is valid for the next iteration's ?p=901 navigation.
+                # Safe even if we didn't successfully impersonate — returns
+                # ok=false in that case and we just continue.
+                if _exit_impersonation(page):
+                    print(f"  ✓ Exited impersonation")
+                elif scraped_ok:
+                    print(f"  ⚠ Exit-impersonation call didn't succeed; next owner may fail")
+    finally:
+        p.stop()
+
+    print("\n=== SUMMARY ===")
+    ok = [o for o, s in results.items() if s == "ok"]
+    bad = [(o, s) for o, s in results.items() if s != "ok"]
+    print(f"  ✓ {len(ok)} owner(s) scraped OK")
+    for o, s in bad:
+        print(f"  ✗ {o}: {s}")
+    return 0 if not bad else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
