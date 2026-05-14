@@ -148,7 +148,16 @@ PERCENT_METRICS = {
 
 def _client() -> gspread.Client:
     if not OAUTH_CLIENT_PATH.exists():
-        raise SystemExit(f"OAuth client JSON not found at {OAUTH_CLIENT_PATH}.")
+        # RuntimeError (not SystemExit) so try/except Exception blocks in
+        # dashboard.py catch this gracefully. SystemExit inherits from
+        # BaseException, bypasses normal exception handling, and silently
+        # halts the Streamlit script — leaves teammates with a blank UI
+        # instead of a clear "OAuth credentials missing" message.
+        raise RuntimeError(
+            f"OAuth client JSON not found at {OAUTH_CLIENT_PATH}. "
+            "Ask Megan to share her oauth-client.json + save it there, "
+            "then relaunch the hub."
+        )
     return gspread.oauth(
         scopes=SCOPES,
         credentials_filename=str(OAUTH_CLIENT_PATH),
