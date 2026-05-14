@@ -3306,10 +3306,21 @@ def _missed_runs(reports: list[dict], days: int = 7, today: dt.date | None = Non
 _FAVICON_PATH = WORKSPACE / "resources" / "alphalete-shield.png"
 st.set_page_config(
     page_title="Alphalete Marketing Report Hub",
-    page_icon=str(_FAVICON_PATH) if _FAVICON_PATH.exists() else "🐺",
+    # Pass the Path object directly (not str()). On Windows, str(Path) yields
+    # backslashes which some Streamlit code paths mis-parse as URL escapes;
+    # the Path object lets Streamlit normalize internally. Falls back to the
+    # emoji if the file isn't there.
+    page_icon=_FAVICON_PATH if _FAVICON_PATH.exists() else "🐺",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# DIAGNOSTIC: prove that the main column can render anything at all.
+# This goes right after set_page_config, before any CSS injection, before
+# the auth gate. If Eve sees this on Windows, every subsequent render
+# failure is data-specific, not a "Streamlit can't render" issue. Remove
+# once Eve confirms it's visible.
+st.write("🟢 TOP-OF-SCRIPT MARKER — if you see this, Streamlit is rendering")
 
 st.markdown("""
 <style>
