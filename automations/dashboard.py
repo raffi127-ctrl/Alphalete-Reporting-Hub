@@ -3797,7 +3797,6 @@ def _render_currently_running_banner(filter_user: str | None = None):
 # --------------------------------------------------------------------------
 
 with st.sidebar:
-    st.write("🅰️ SB-A: enter sidebar")
     if st.session_state.view != "home":
         if st.button("🏠 Home Hub", use_container_width=True):
             _go_home()
@@ -3805,15 +3804,13 @@ with st.sidebar:
     if st.button("📚 Report Library", use_container_width=True):
         _go_library()
         st.rerun()
-    st.write("🅱️ SB-B: after Library btn")
 
     # Counts so the sidebar shows what's waiting without clicking through.
-    # TEMP: wrap with try/except to surface the real error on Windows since
-    # the existing try/except inside _read_intake is below @st.cache_data
-    # and may not catch decorator-layer issues.
+    # Wrapped in try/except: _read_intake's internal try/except is below
+    # @st.cache_data, so decorator-layer errors bypass it. Without this
+    # wrapper a failure here re-creates the Eve-Windows blank-render.
     try:
         _intake_rows = _read_intake()
-        st.write(f"🅲 SB-C: _read_intake returned {len(_intake_rows)} row(s)")
     except Exception as e:
         st.error(f"❌ _read_intake threw: {type(e).__name__}: {e}")
         _intake_rows = []
@@ -3823,7 +3820,6 @@ with st.sidebar:
     )
     try:
         _bugs_rows = _read_bugs()
-        st.write(f"🅳 SB-D: _read_bugs returned {len(_bugs_rows)} row(s)")
     except Exception as e:
         st.error(f"❌ _read_bugs threw: {type(e).__name__}: {e}")
         _bugs_rows = []
