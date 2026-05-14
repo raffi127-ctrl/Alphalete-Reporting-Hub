@@ -290,13 +290,17 @@ def fill_owner_tab(ws, scraped_by_date: dict, layout: Layout) -> dict:
     Uses `layout` to resolve column positions — never assumes anything."""
     rep_col = layout.rep_name_col
 
-    # Build a {rep_name_lower: row} map from existing data
+    # Build a {rep_name_lower: row} map from existing data. Strip the
+    # Tableau-only marker emoji when keying so 'Joe Smith 🔹' (added by
+    # Phase 3 last week) matches the 'Joe Smith' ownerville returns now.
     rep_col_values = ws.col_values(rep_col)
     name_to_row = {}
     for i, name in enumerate(rep_col_values, start=1):
         if i < 3 or not name.strip():
             continue
-        name_to_row[name.lower().strip()] = i
+        key = strip_rep_mark(name).lower().strip()
+        if key:
+            name_to_row[key] = i
 
     # Determine right edge for the existing-data probe (rightmost resolved col).
     all_cols = [c for day_map in layout.day_cols.values() for c in day_map.values()] + [rep_col]
@@ -642,19 +646,37 @@ def reset_conditional_formatting(ws) -> tuple[int, int]:
     return (n_existing, len(add_requests))
 
 
+TABLEAU_ONLY_MARK = "🔹"
+
+
+def strip_rep_mark(name: str) -> str:
+    """Strip the Tableau-only marker from a rep name. Used everywhere
+    that compares rep names — Phase 2's ownerville matching must ignore
+    the marker so 'Joe Smith 🔹' (Tableau-only last week) matches the
+    'Joe Smith' that ownerville returns this week.
+    """
+    if not name:
+        return name
+    s = name.rstrip()
+    while s.endswith(TABLEAU_ONLY_MARK):
+        s = s[: -len(TABLEAU_ONLY_MARK)].rstrip()
+    return s
+
+
 def mark_tableau_only_reps(ws, layout: Layout) -> int:
-    """Italicize + gray the rep-name cell for any rep that had NO
-    ownerville data this week (all past-day activity cells are 'x').
-    Such reps were added by Phase 3 because they had production in
-    Tableau but didn't show up in ownerville's Time Tracker / Disposition.
+    """Append a subtle marker emoji (🔹) to the rep-name cell for any
+    rep that had NO ownerville data this week (all past-day activity
+    cells are 'x'). Such reps were added by Phase 3 because they had
+    production in Tableau but didn't show up in ownerville's Time
+    Tracker / Disposition.
 
     Run AFTER apply_empty_cell_defaults — depends on activity-empty cells
     already being filled with 'x' so we can detect 'all x' as the signal.
 
     Idempotent: a rep that's no longer Tableau-only (now has TT/Disp data
-    too) gets the italic stripped back out.
+    too) gets the marker stripped back off the next run.
 
-    Returns the count of reps now marked italic.
+    Returns the count of reps now marked.
     """
     if not layout.day_cols:
         return 0
@@ -690,8 +712,30 @@ def mark_tableau_only_reps(ws, layout: Layout) -> int:
         value_render_option="FORMATTED_VALUE",
     )
 
-    italic_rows: list[int] = []
-    normal_rows: list[int] = []
+    # Defensive: clear any leftover italic/gray text formatting from
+    # earlier code that used those instead of an emoji. Megan wants the
+    # rep-name color/formatting unchanged — the only marker is the emoji.
+    rep_col_zi = layout.rep_name_col - 1
+    ws.spreadsheet.batch_update({"requests": [{
+        "repeatCell": {
+            "range": {
+                "sheetId": ws.id,
+                "startRowIndex": first_rep_row - 1, "endRowIndex": last_rep_row,
+                "startColumnIndex": rep_col_zi, "endColumnIndex": rep_col_zi + 1,
+            },
+            "cell": {"userEnteredFormat": {"textFormat": {
+                "italic": False,
+                "foregroundColor": {"red": 0, "green": 0, "blue": 0},
+            }}},
+            "fields": "userEnteredFormat.textFormat.italic,userEnteredFormat.textFormat.foregroundColor",
+        },
+    }]})
+
+    # Read current rep names so we can append/strip the marker per row.
+    rep_name_values = ws.col_values(layout.rep_name_col)
+
+    marked_count = 0
+    cells_to_write: list[tuple[str, str]] = []
     for ri, row in enumerate(rep_data):
         sheet_row = first_rep_row + ri
         all_x = True
@@ -701,34 +745,20 @@ def mark_tableau_only_reps(ws, layout: Layout) -> int:
             if v != "x":
                 all_x = False
                 break
-        (italic_rows if all_x else normal_rows).append(sheet_row)
+        current = rep_name_values[sheet_row - 1] if sheet_row - 1 < len(rep_name_values) else ""
+        base = strip_rep_mark(current)
+        target = f"{base} {TABLEAU_ONLY_MARK}" if all_x else base
+        if current != target:
+            cells_to_write.append(
+                (f"{_col_letter(layout.rep_name_col)}{sheet_row}", target)
+            )
+        if all_x:
+            marked_count += 1
 
-    GRAY = {"red": 0.40, "green": 0.40, "blue": 0.40}
-    BLACK = {"red": 0.00, "green": 0.00, "blue": 0.00}
-    rep_col_zi = layout.rep_name_col - 1
-
-    def _fmt_request(row: int, italic: bool, color: dict) -> dict:
-        return {
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws.id,
-                    "startRowIndex": row - 1, "endRowIndex": row,
-                    "startColumnIndex": rep_col_zi, "endColumnIndex": rep_col_zi + 1,
-                },
-                "cell": {"userEnteredFormat": {"textFormat": {
-                    "italic": italic, "foregroundColor": color,
-                }}},
-                "fields": "userEnteredFormat.textFormat.italic,userEnteredFormat.textFormat.foregroundColor",
-            },
-        }
-
-    requests = (
-        [_fmt_request(r, True, GRAY) for r in italic_rows]
-        + [_fmt_request(r, False, BLACK) for r in normal_rows]
-    )
-    if requests:
-        ws.spreadsheet.batch_update({"requests": requests})
-    return len(italic_rows)
+    if cells_to_write:
+        data = [{"range": f"'{ws.title}'!{a1}", "values": [[v]]} for a1, v in cells_to_write]
+        ws.spreadsheet.values_batch_update({"valueInputOption": "RAW", "data": data})
+    return marked_count
 
 
 def apply_empty_cell_defaults(ws, layout: Layout) -> None:

@@ -45,7 +45,7 @@ from automations.focus_office_att.columns import resolve_layout, _normalize
 from automations.focus_office_att.step5_fill_one_owner import (
     _col_letter, write_weekly_formulas, write_office_totals_row,
     apply_empty_cell_defaults, mark_tableau_only_reps,
-    reset_conditional_formatting,
+    reset_conditional_formatting, strip_rep_mark,
     TT_FIELD_TO_CANONICAL, DISP_FIELD_TO_CANONICAL,
 )
 
@@ -139,15 +139,16 @@ def fill_tableau_for_owner(ws, owner_data: dict, layout, dry_run: bool = False) 
     new_reps (list of names appended).
     """
     rep_col_vals = ws.col_values(layout.rep_name_col)
-    # Build {lowercase_rep_name: row}. Skip the OFFICE TOTALS row — it
-    # has an empty rep_name_col anyway, but defensive.
+    # Build {lowercase_rep_name: row}. Skip the OFFICE TOTALS row.
+    # Strip the Tableau-only marker emoji when keying so a previously-
+    # marked rep still matches their Tableau name on the next run.
     sheet_reps: dict[str, int] = {}
     for i, name in enumerate(rep_col_vals, start=1):
         if i < 3 or not name or not name.strip():
             continue
         if name.strip().upper() == "OFFICE TOTALS":
             continue
-        sheet_reps[name.lower().strip()] = i
+        sheet_reps[strip_rep_mark(name).lower().strip()] = i
 
     cells_to_write: list[tuple[str, object]] = []
     written = 0
