@@ -62,7 +62,9 @@ def _resolve_sheet_id() -> str:
                 return cfg["spreadsheet_id"].strip()
         except Exception:
             pass
-    return "16l9TS32vRA-qZN1wKvsAuhZUZ6LGoyOef37y56QEXtQ"
+    # Production Recruiting Report Sheet. Teammates without a local
+    # ~/.config/recruiting-report/config.json fall through to this default.
+    return "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE"
 
 SPREADSHEET_ID = _resolve_sheet_id()
 OAUTH_CLIENT_PATH = Path.home() / ".config" / "recruiting-report" / "oauth-client.json"
