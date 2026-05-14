@@ -134,6 +134,12 @@ def build_visual_rule_requests(sheet_id: int) -> list[dict]:
     requests.append(_cf_rule(sheet_id, 1, WEEKLY_TOTAL_BREAKDOWN_END + 1,
                              WARM_GOLD, bold=True,
                              condition_formula=totals_condition))
+    # Black out cols A-B of the totals row — they're empty placeholders
+    # next to the label. Added AFTER the gold rule so it lands at index 0
+    # (higher priority) and overrides gold for just those two cells.
+    BLACK = {"red": 0.0, "green": 0.0, "blue": 0.0}
+    requests.append(_cf_rule(sheet_id, 1, 2, BLACK,
+                             condition_formula=totals_condition))
     return requests
 
 
