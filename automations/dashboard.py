@@ -3610,10 +3610,14 @@ def _render_login_screen() -> None:
                         st.error("Wrong password. Try again or text Megan.")
 
 
+st.write("🟢 MARKER 2 — reached just before auth gate")
+
 # Auth gate
 if not st.session_state.authed:
     _render_login_screen()
     st.stop()
+
+st.write("🟢 MARKER 3 — passed auth gate, post-rerun render")
 
 # Refresh session timestamp on every authed render. After SESSION_TTL_SECONDS
 # of inactivity (no script reruns), the next page load will fail
@@ -3894,15 +3898,9 @@ with st.sidebar:
 # HOME VIEW — name picker + Alphalete Overview button
 # --------------------------------------------------------------------------
 
-# Diagnostic to debug Eve's blank-main-content on Windows. Always renders;
-# if she sees this banner, main IS rendering and we know what state we're
-# in. If she doesn't, something is suppressing the main column entirely.
-# Remove once we've nailed down the Windows issue.
-st.info(
-    f"🐞 DEBUG: view={st.session_state.view!r} • "
-    f"user={st.session_state.user!r} • "
-    f"authed={st.session_state.get('authed')!r} • "
-    f"platform={__import__('platform').system()!r}"
+st.write(
+    f"🟢 MARKER 4 — about to enter view chain. "
+    f"view={st.session_state.view!r} user={st.session_state.user!r}"
 )
 
 if st.session_state.view == "home":
