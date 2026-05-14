@@ -3684,12 +3684,19 @@ def _go_bugs():
 def _detect_hub_user() -> str:
     """Best guess at who's using this hub, based on the OS user (or HUB_USER env).
 
-    Each member can override by exporting HUB_USER=<name> before running
-    streamlit. Falls back to a name-similarity match against MEMBERS, then to
-    the first MEMBERS entry.
+    Match strategy (in order):
+      1. HUB_USER env var (explicit override — set in shell or .env if needed)
+      2. Exact match: member name == OS user (case-insensitive)
+      3. Substring match: member name appears anywhere in OS user
+         (handles 'maudmiller' → Maud, 'evelynsobrino' → Eve, etc.)
+      4. Substring match on the machine hostname (fallback for shared-os-user setups)
+      5. Final fallback: title-cased OS user, NOT MEMBERS[0]. Logging as
+         the OS user is preferable to silently mis-attributing every
+         unmatched run to the first person in the list.
     """
     import os
     import getpass
+    import socket
     env = os.environ.get("HUB_USER", "").strip()
     if env:
         return env
@@ -3697,10 +3704,25 @@ def _detect_hub_user() -> str:
         os_user = getpass.getuser().lower()
     except Exception:
         os_user = ""
+    try:
+        host = socket.gethostname().lower()
+    except Exception:
+        host = ""
+
+    # Exact match on OS user.
     for m in MEMBERS:
-        if m["name"].lower() == os_user or m["name"].lower().startswith(os_user):
+        if m["name"].lower() == os_user:
             return m["name"]
-    return MEMBERS[0]["name"] if MEMBERS else "Megan"
+    # Substring match on OS user (e.g. 'maud' inside 'maudmiller').
+    for m in MEMBERS:
+        if m["name"].lower() in os_user:
+            return m["name"]
+    # Substring match on hostname (e.g. 'maud' inside 'maud-macbook').
+    for m in MEMBERS:
+        if m["name"].lower() in host:
+            return m["name"]
+    # No match — return the OS user title-cased rather than guessing.
+    return os_user.title() if os_user else "Unknown"
 
 
 def _render_currently_running_banner(filter_user: str | None = None):
