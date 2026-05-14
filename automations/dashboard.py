@@ -586,8 +586,16 @@ AUTOMATED_REPORTS = [
             {"text": "Log into AppStream as **rhidalgo** (broader account) in the new Chrome window"},
         ],
         "post_run": {
-            "message_success": "✅ First pass done. If any ICDs showed 'not accessible' in the log, **log out of rhidalgo and log into rcaptain** in the same Chrome window, then click below to retry just those ICDs. (Already-pulled ICDs are skipped.)",
-            "message_failed": "❌ Run failed. Check the log above. To retry on the 2nd login, switch to rcaptain and click below — only the missing ICDs will be re-pulled.",
+            # Generic fallback when no state file is available to enumerate
+            # specifically which ICDs are missing. The renderer at the call
+            # site (post_run rendering) handles three smarter branches:
+            #   • state file has items → gold callout listing each missing ICD
+            #   • state file exists but empty → "All ICDs filled" success
+            #   • state file missing → THIS fallback text
+            # This text intentionally doesn't ask the user to investigate the
+            # log — the retry button alone is enough action.
+            "message_success": "✅ Daily Focus run completed. If any ICDs need a 2nd-login retry (rhidalgo → rcaptain in the same Chrome window), click below. Already-pulled ICDs are automatically skipped.",
+            "message_failed": "❌ Run failed. Switch AppStream logins (rhidalgo → rcaptain) and click the retry button below — only the missing ICDs will be re-pulled.",
             "again_label": "🔁 Retry missing ICDs on 2nd login",
             "again_action": {
                 "label": "Retry missing ICDs on 2nd login",
@@ -1031,13 +1039,13 @@ def _latest_run_summary(report_id: str) -> str | None:
             continue
         when = r["_dt"]
         today = dt.date.today()
-        time_str = when.strftime("%-I:%M %p")
+        time_str = when.strftime("%I:%M %p").lstrip("0")
         if when.date() == today:
             day = "Today"
         elif when.date() == today - dt.timedelta(days=1):
             day = "Yesterday"
         else:
-            day = when.strftime("%b %-d")
+            day = f"{when.strftime('%b')} {when.day}"
         user = r.get("user", "someone")
         return f"Last ran {day.lower()} · {user} · {time_str}"
     return None
@@ -1049,7 +1057,7 @@ def _ran_within_24h(report_id: str) -> tuple[bool, str | None, str | None]:
     cutoff = dt.datetime.now() - dt.timedelta(hours=24)
     for r in _all_runs_merged(days=2):
         if r.get("report_id") == report_id and r.get("status") == "success" and r["_dt"] >= cutoff:
-            return True, r.get("user", "someone"), r["_dt"].strftime("%-I:%M %p")
+            return True, r.get("user", "someone"), r["_dt"].strftime("%I:%M %p").lstrip("0")
     return False, None, None
 
 
@@ -3315,13 +3323,6 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# DIAGNOSTIC: prove that the main column can render anything at all.
-# This goes right after set_page_config, before any CSS injection, before
-# the auth gate. If Eve sees this on Windows, every subsequent render
-# failure is data-specific, not a "Streamlit can't render" issue. Remove
-# once Eve confirms it's visible.
-st.write("🟢 TOP-OF-SCRIPT MARKER — if you see this, Streamlit is rendering")
-
 st.markdown("""
 <style>
     /* App-wide */
@@ -3610,14 +3611,10 @@ def _render_login_screen() -> None:
                         st.error("Wrong password. Try again or text Megan.")
 
 
-st.write("🟢 MARKER 2 — reached just before auth gate")
-
 # Auth gate
 if not st.session_state.authed:
     _render_login_screen()
     st.stop()
-
-st.write("🟢 MARKER 3 — passed auth gate, post-rerun render")
 
 # Refresh session timestamp on every authed render. After SESSION_TTL_SECONDS
 # of inactivity (no script reruns), the next page load will fail
@@ -3914,11 +3911,6 @@ with st.sidebar:
 # --------------------------------------------------------------------------
 # HOME VIEW — name picker + Alphalete Overview button
 # --------------------------------------------------------------------------
-
-st.write(
-    f"🟢 MARKER 4 — about to enter view chain. "
-    f"view={st.session_state.view!r} user={st.session_state.user!r}"
-)
 
 if st.session_state.view == "home":
     if LOGO_EXISTS:
@@ -4305,7 +4297,7 @@ elif st.session_state.view == "library":
                         _pickup_user = _pickup.get("user") or "someone"
                         _pickup_ts = _pickup.get("ts", "")
                         try:
-                            _pickup_str = dt.datetime.fromisoformat(_pickup_ts).strftime("%-I:%M %p")
+                            _pickup_str = dt.datetime.fromisoformat(_pickup_ts).strftime("%I:%M %p").lstrip("0")
                         except Exception:
                             _pickup_str = ""
                         st.markdown(
@@ -4460,7 +4452,7 @@ else:  # st.session_state.view == "user"
                     f"<div style='text-align:center; padding:2px 0 6px'>"
                     f"<div style='font-weight:700; color:{_header_color}; font-size:0.95em'>"
                     f"{_day.strftime('%a')}{_today_pill}</div>"
-                    f"<div style='font-size:0.78em; color:#777'>{_day.strftime('%b %-d')}</div>"
+                    f"<div style='font-size:0.78em; color:#777'>{_day.strftime('%b')} {_day.day}</div>"
                     f"</div>",
                     unsafe_allow_html=True,
                 )
@@ -4577,7 +4569,7 @@ else:  # st.session_state.view == "user"
                     report_name = item.get("report_name", "?")
                     try:
                         marked_dt = dt.datetime.fromisoformat(item.get("marked_at", ""))
-                        marked_str = marked_dt.strftime("%-I:%M %p")
+                        marked_str = marked_dt.strftime("%I:%M %p").lstrip("0")
                     except Exception:
                         marked_str = ""
                     with st.container(border=True):
@@ -4701,7 +4693,7 @@ else:  # st.session_state.view == "user"
                     if is_pickup:
                         saved_ts = persisted.get(report["id"], {}).get("ts", "")
                         try:
-                            saved_str = dt.datetime.fromisoformat(saved_ts).strftime("%-I:%M %p")
+                            saved_str = dt.datetime.fromisoformat(saved_ts).strftime("%I:%M %p").lstrip("0")
                         except Exception:
                             saved_str = ""
                         # Gold banner above the row — visually marks this report
