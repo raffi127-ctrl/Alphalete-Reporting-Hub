@@ -36,9 +36,9 @@ def autosize_col_a(ws) -> None:
     }]})
 
 
-REP_NAME_COL_PADDING_PX = 30   # added after autosize so bold names don't clip
-REP_NAME_COL_MIN_PX = 200      # roomy default even when no names are filled yet
-PER_COL_PADDING_PX = 30        # breathing room + filter-dropdown button space (~18-20px wide)
+REP_NAME_COL_PADDING_PX = 12   # added after autosize so bold names don't clip
+REP_NAME_COL_MIN_PX = 160      # roomy default even when no names are filled yet
+PER_COL_PADDING_PX = 8         # minimal breathing room (was 30 — too wide per Megan)
 
 
 def autosize_all_data_cols(ws, last_data_col: int = LAST_DATA_COL,

@@ -129,27 +129,48 @@ def parse_tableau_xlsx(path: Path) -> dict:
 def fill_tableau_for_owner(ws, owner_data: dict, layout, dry_run: bool = False) -> dict:
     """owner_data is {rep_name: {weekday_idx: {metric: count}}}.
 
-    Returns stats with: written_cells, skipped_cells, unmatched_reps (in
-    Tableau but not in this owner's Sheet tab).
+    Reps that appear in Tableau but not in this owner's Sheet tab get
+    APPENDED as new rep rows. Their production cells get filled with the
+    Tableau data; their activity cells stay empty and get 'x' filled in
+    by the downstream apply_empty_cell_defaults step.
+
+    Returns stats with: written, unmatched_reps (empty if all matched),
+    new_reps (list of names appended).
     """
     rep_col_vals = ws.col_values(layout.rep_name_col)
-    # Build {lowercase_rep_name: row}
+    # Build {lowercase_rep_name: row}. Skip the OFFICE TOTALS row — it
+    # has an empty rep_name_col anyway, but defensive.
     sheet_reps: dict[str, int] = {}
     for i, name in enumerate(rep_col_vals, start=1):
-        if i >= 3 and name and name.strip():
-            sheet_reps[name.lower().strip()] = i
+        if i < 3 or not name or not name.strip():
+            continue
+        if name.strip().upper() == "OFFICE TOTALS":
+            continue
+        sheet_reps[name.lower().strip()] = i
 
-    cells_to_write: list[tuple[str, int]] = []
+    cells_to_write: list[tuple[str, object]] = []
     written = 0
-    skipped = 0
-    unmatched_reps: list[str] = []
+    new_reps: list[str] = []
+    # Track next available row so multiple new reps in one call don't
+    # collide. Starts at the row after the last existing rep.
+    next_new_row = (max(sheet_reps.values()) + 1) if sheet_reps else 3
 
     for tableau_rep, days in owner_data.items():
         key = tableau_rep.lower().strip()
         row = sheet_reps.get(key)
         if row is None:
-            unmatched_reps.append(tableau_rep)
-            continue
+            # Unmatched — append as new rep row. Write the rep name into
+            # the rep_name_col; production cells get filled in below; the
+            # downstream apply_empty_cell_defaults will write 'x' into any
+            # leftover empty activity cells.
+            row = next_new_row
+            next_new_row += 1
+            sheet_reps[key] = row
+            new_reps.append(tableau_rep)
+            cells_to_write.append((
+                f"{_col_letter(layout.rep_name_col)}{row}", tableau_rep,
+            ))
+
         for wd, metric_counts in days.items():
             if wd not in layout.day_cols:
                 continue
@@ -166,7 +187,7 @@ def fill_tableau_for_owner(ws, owner_data: dict, layout, dry_run: bool = False) 
         data = [{"range": f"'{ws.title}'!{a1}", "values": [[v]]} for a1, v in cells_to_write]
         ws.spreadsheet.values_batch_update({"valueInputOption": "USER_ENTERED", "data": data})
 
-    return {"written": written, "unmatched_reps": unmatched_reps}
+    return {"written": written, "unmatched_reps": [], "new_reps": new_reps}
 
 
 def main() -> int:
@@ -217,6 +238,8 @@ def main() -> int:
         print(f"  → {label}…")
         layout = resolve_layout(ws, metrics=metrics_for_layout, interactive=False)
         stats = fill_tableau_for_owner(ws, owner_data, layout, dry_run=args.dry_run)
+        if stats.get("new_reps"):
+            print(f"    + added {len(stats['new_reps'])} new rep row(s): {stats['new_reps']}")
         # Refresh Weekly formulas so newly-filled per-day data rolls up,
         # apply Raf's empty-cell defaults (0 for production / x for activity),
         # strip the green/red conditional formatting, and refresh the
@@ -236,7 +259,8 @@ def main() -> int:
         summary[owner] = {
             "status": "ok",
             "written": stats["written"],
-            "unmatched_reps": stats["unmatched_reps"],
+            "unmatched_reps": stats.get("unmatched_reps", []),
+            "new_reps": stats.get("new_reps", []),
         }
         verb = "would write" if args.dry_run else "wrote"
         print(f"    ✓ {verb} {stats['written']} cell(s)" + (
