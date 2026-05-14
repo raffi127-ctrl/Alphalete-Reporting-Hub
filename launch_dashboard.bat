@@ -29,8 +29,12 @@ if exist ".git" (
             git pull --ff-only --quiet origin main
             if !ERRORLEVEL! EQU 0 (
                 echo Updated to latest version.
-                REM Reinstall deps if requirements changed.
-                git diff HEAD@{1} HEAD --name-only 2>nul | findstr /C:"requirements.txt" >nul
+                REM Reinstall deps if requirements changed. We use ORIG_HEAD
+                REM (set by git after a pull) instead of HEAD@{1}; cmd.exe's
+                REM if-block parser chokes on the `{` in HEAD@{1} and bails
+                REM with "on was unexpected at this time". ORIG_HEAD is the
+                REM same ref in this context but contains no curly braces.
+                git diff ORIG_HEAD HEAD --name-only 2>nul | findstr /C:"requirements.txt" >nul
                 if !ERRORLEVEL! EQU 0 (
                     echo Updating Python packages...
                     ".venv\Scripts\pip.exe" install --quiet -r automations\recruiting_report\requirements.txt
