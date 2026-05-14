@@ -3883,6 +3883,17 @@ with st.sidebar:
 # HOME VIEW — name picker + Alphalete Overview button
 # --------------------------------------------------------------------------
 
+# Diagnostic to debug Eve's blank-main-content on Windows. Always renders;
+# if she sees this banner, main IS rendering and we know what state we're
+# in. If she doesn't, something is suppressing the main column entirely.
+# Remove once we've nailed down the Windows issue.
+st.info(
+    f"🐞 DEBUG: view={st.session_state.view!r} • "
+    f"user={st.session_state.user!r} • "
+    f"authed={st.session_state.get('authed')!r} • "
+    f"platform={__import__('platform').system()!r}"
+)
+
 if st.session_state.view == "home":
     if LOGO_EXISTS:
         import base64
