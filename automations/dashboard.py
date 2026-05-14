@@ -3800,6 +3800,7 @@ def _render_currently_running_banner(filter_user: str | None = None):
 # --------------------------------------------------------------------------
 
 with st.sidebar:
+    st.write("🅰️ SB-A: enter sidebar")
     if st.session_state.view != "home":
         if st.button("🏠 Home Hub", use_container_width=True):
             _go_home()
@@ -3807,17 +3808,20 @@ with st.sidebar:
     if st.button("📚 Report Library", use_container_width=True):
         _go_library()
         st.rerun()
+    st.write("🅱️ SB-B: after Library btn")
 
     # Counts so the sidebar shows what's waiting without clicking through.
     _backlog_count = sum(
         1 for r in _read_intake()
         if (r.get("Status") or "Unassigned") in ("Unassigned", "In Progress", "Needs Updates")
     )
+    st.write("🅲 SB-C: after _read_intake")
     _bugs_count = sum(
         1 for b in _read_bugs()
         if (b.get("Status") or "Open") in ("Open", "In Progress", "Needs Info")
         and any(k in (b.get("Type") or "") for k in ("Bug", "Site"))
     )
+    st.write("🅳 SB-D: after _read_bugs")
     if st.button(f"📨 New Automation Request ({_backlog_count})", use_container_width=True, key="nav_backlog"):
         _go_backlog()
         st.rerun()
