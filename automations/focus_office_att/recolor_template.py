@@ -66,9 +66,10 @@ def _setup_logging() -> logging.Logger:
 
 
 def _cf_rule(sheet_id: int, start_col: int, end_col: int,
-             bg: dict, bold: bool = False) -> dict:
+             bg: dict, bold: bool = False,
+             condition_formula: str | None = None) -> dict:
     """Conditional formatting rule: paint cells in [start_col, end_col)
-    whenever col B (Rep Name) on the same row is non-blank.
+    based on condition_formula (defaults to '$B<>""' — paint rep rows).
 
     Checks col B rather than col A because col A has a formula that
     auto-numbers rows (=IF($B<>"",ROW()-2,"")) — the formula's value is
@@ -78,6 +79,8 @@ def _cf_rule(sheet_id: int, start_col: int, end_col: int,
     fmt = {"backgroundColor": bg}
     if bold:
         fmt["textFormat"] = {"bold": True}
+    if condition_formula is None:
+        condition_formula = f"=$B{COND_TOP_ROW}<>\"\""
     return {
         "addConditionalFormatRule": {
             "rule": {
@@ -91,7 +94,7 @@ def _cf_rule(sheet_id: int, start_col: int, end_col: int,
                 "booleanRule": {
                     "condition": {
                         "type": "CUSTOM_FORMULA",
-                        "values": [{"userEnteredValue": f"=$B{COND_TOP_ROW}<>\"\""}],
+                        "values": [{"userEnteredValue": condition_formula}],
                     },
                     "format": fmt,
                 },
@@ -124,6 +127,13 @@ def build_visual_rule_requests(sheet_id: int) -> list[dict]:
     for _short, ta_col, gs, ge in DAY_COLUMNS:
         requests.append(_cf_rule(sheet_id, ta_col, ta_col, LIGHT_CREAM, bold=True))
         requests.append(_cf_rule(sheet_id, gs, ge, PALE_GRAY))
+    # OFFICE TOTALS row — paint cols A-L when col C contains the label.
+    # Uses WARM_GOLD + bold for visual prominence (matches the 'headline'
+    # styling of the Weekly Total Apps col).
+    totals_condition = f'=$C{COND_TOP_ROW}="OFFICE TOTALS"'
+    requests.append(_cf_rule(sheet_id, 1, WEEKLY_TOTAL_BREAKDOWN_END + 1,
+                             WARM_GOLD, bold=True,
+                             condition_formula=totals_condition))
     return requests
 
 
