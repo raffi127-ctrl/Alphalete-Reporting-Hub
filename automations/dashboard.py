@@ -3811,17 +3811,30 @@ with st.sidebar:
     st.write("🅱️ SB-B: after Library btn")
 
     # Counts so the sidebar shows what's waiting without clicking through.
+    # TEMP: wrap with try/except to surface the real error on Windows since
+    # the existing try/except inside _read_intake is below @st.cache_data
+    # and may not catch decorator-layer issues.
+    try:
+        _intake_rows = _read_intake()
+        st.write(f"🅲 SB-C: _read_intake returned {len(_intake_rows)} row(s)")
+    except Exception as e:
+        st.error(f"❌ _read_intake threw: {type(e).__name__}: {e}")
+        _intake_rows = []
     _backlog_count = sum(
-        1 for r in _read_intake()
+        1 for r in _intake_rows
         if (r.get("Status") or "Unassigned") in ("Unassigned", "In Progress", "Needs Updates")
     )
-    st.write("🅲 SB-C: after _read_intake")
+    try:
+        _bugs_rows = _read_bugs()
+        st.write(f"🅳 SB-D: _read_bugs returned {len(_bugs_rows)} row(s)")
+    except Exception as e:
+        st.error(f"❌ _read_bugs threw: {type(e).__name__}: {e}")
+        _bugs_rows = []
     _bugs_count = sum(
-        1 for b in _read_bugs()
+        1 for b in _bugs_rows
         if (b.get("Status") or "Open") in ("Open", "In Progress", "Needs Info")
         and any(k in (b.get("Type") or "") for k in ("Bug", "Site"))
     )
-    st.write("🅳 SB-D: after _read_bugs")
     if st.button(f"📨 New Automation Request ({_backlog_count})", use_container_width=True, key="nav_backlog"):
         _go_backlog()
         st.rerun()
