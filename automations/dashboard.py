@@ -26,7 +26,10 @@ sys.path.insert(0, str(WORKSPACE))
 
 from automations.recruiting_report import fill as _fill  # noqa: E402
 
-VENV_PY = str(WORKSPACE / ".venv" / "bin" / "python")
+# Python interpreter for spawning report subprocesses. sys.executable is the
+# Python that's running this Streamlit process — on macOS it's .venv/bin/python,
+# on Windows it's .venv\Scripts\python.exe. Same answer, no platform detection.
+VENV_PY = sys.executable
 LOG_DIR = WORKSPACE / "output" / "logs"
 RUNS_LOG = LOG_DIR / "runs.jsonl"
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{_fill.SPREADSHEET_ID}/edit"
@@ -717,16 +720,34 @@ def _check_chrome_running() -> bool:
 
 def _launch_chrome() -> tuple[bool, str]:
     """Launch Chrome with the remote-debugging-port for AS scraping.
-    Returns (success, message)."""
+    Returns (success, message). Platform-aware: uses `open -na` on macOS,
+    chrome.exe on Windows, `google-chrome` on Linux."""
     import os
+    import platform
     user_dir = os.path.expanduser("~/.config/recruiting-report/chrome-attach")
+    args = [
+        f"--remote-debugging-port=9222",
+        f"--user-data-dir={user_dir}",
+    ]
+    system = platform.system()
     try:
-        subprocess.Popen([
-            "open", "-na", "Google Chrome", "--args",
-            "--remote-debugging-port=9222",
-            f"--user-data-dir={user_dir}",
-        ])
+        if system == "Darwin":
+            subprocess.Popen(["open", "-na", "Google Chrome", "--args", *args])
+        elif system == "Windows":
+            # Try the standard install locations + PATH; first one that exists wins.
+            candidates = [
+                r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+                os.path.expanduser(r"~\AppData\Local\Google\Chrome\Application\chrome.exe"),
+            ]
+            chrome_exe = next((c for c in candidates if os.path.exists(c)), "chrome.exe")
+            subprocess.Popen([chrome_exe, *args])
+        else:
+            # Linux + everything else
+            subprocess.Popen(["google-chrome", *args])
         return True, "Chrome is launching — check for a new window, then log into AppStream."
+    except FileNotFoundError as e:
+        return False, f"Couldn't find Chrome. Install Google Chrome, then retry. ({e})"
     except Exception as e:
         return False, f"Couldn't launch Chrome: {e}"
 
