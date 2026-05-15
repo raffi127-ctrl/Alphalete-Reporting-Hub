@@ -402,6 +402,9 @@ def main() -> int:
                     help="List the planned owner-order without scraping.")
     ap.add_argument("--week-start", default=None,
                     help="Monday of week to scrape (YYYY-MM-DD); defaults to current week.")
+    ap.add_argument("--today-only", action="store_true",
+                    help="Scrape ONLY today's weekday (fast path for mid-week "
+                         "daily runs — Mon-Thu data is already locked in).")
     args = ap.parse_args()
 
     only = _parse_csv(args.only)
@@ -416,12 +419,17 @@ def main() -> int:
         owner_tabs = [t for t in owner_tabs if t not in skip]
 
     today = dt.date.today()
-    if args.week_start:
-        monday = dt.datetime.strptime(args.week_start, "%Y-%m-%d").date()
+    if args.today_only:
+        # Mid-week fast path: only re-scrape today. Mon-Thu data is
+        # already on the Sheet from earlier runs and doesn't change.
+        days = [today]
     else:
-        monday = today - dt.timedelta(days=today.weekday())
-    days = [monday + dt.timedelta(days=i) for i in range(7)
-            if monday + dt.timedelta(days=i) <= today]
+        if args.week_start:
+            monday = dt.datetime.strptime(args.week_start, "%Y-%m-%d").date()
+        else:
+            monday = today - dt.timedelta(days=today.weekday())
+        days = [monday + dt.timedelta(days=i) for i in range(7)
+                if monday + dt.timedelta(days=i) <= today]
 
     print(f"Plan: scrape {len(owner_tabs)} owner(s); days: {[d.strftime('%a %m/%d') for d in days]}")
     for i, t in enumerate(owner_tabs, 1):
@@ -522,6 +530,19 @@ def main() -> int:
     print(f"  ✓ {len(ok)} owner(s) scraped OK")
     for o, s in bad:
         print(f"  ✗ {o}: {s}")
+
+    # Persist per-owner results so the daily entrypoint can color tabs
+    # (owners that didn't scrape OK = pending OV access → amber).
+    try:
+        results_path = Path(__file__).resolve().parents[2] / "output" / "focus_office_scrape_results.json"
+        results_path.parent.mkdir(parents=True, exist_ok=True)
+        results_path.write_text(json.dumps({
+            "run_at": dt.datetime.now().isoformat(timespec="seconds"),
+            "results": results,
+        }, indent=2))
+    except Exception as e:
+        print(f"  ⚠ couldn't write scrape-results file: {e}")
+
     return 0 if not bad else 1
 
 
