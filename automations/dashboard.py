@@ -726,9 +726,19 @@ def _check_chrome_running() -> bool:
         return False
 
 
+# Sites the debug Chrome opens as login-ready tabs on launch. Scraping
+# reports attach to these via CDP after the user logs in once. Add more
+# here as new scraped sources come online.
+DEBUG_CHROME_STARTUP_TABS = [
+    "https://applicantstream.com",
+    "https://v2.ownerville.com",
+]
+
+
 def _launch_chrome() -> tuple[bool, str]:
-    """Launch Chrome with the remote-debugging-port for AS scraping.
-    Returns (success, message). Platform-aware: uses `open -na` on macOS,
+    """Launch Chrome with the remote-debugging-port for scraping, opening
+    a login-ready tab for each site in DEBUG_CHROME_STARTUP_TABS.
+    Returns (success, message). Platform-aware: `open -na` on macOS,
     chrome.exe on Windows, `google-chrome` on Linux."""
     import os
     import platform
@@ -737,10 +747,12 @@ def _launch_chrome() -> tuple[bool, str]:
         f"--remote-debugging-port=9222",
         f"--user-data-dir={user_dir}",
     ]
+    # Trailing positional URLs open as tabs.
+    tabs = list(DEBUG_CHROME_STARTUP_TABS)
     system = platform.system()
     try:
         if system == "Darwin":
-            subprocess.Popen(["open", "-na", "Google Chrome", "--args", *args])
+            subprocess.Popen(["open", "-na", "Google Chrome", "--args", *args, *tabs])
         elif system == "Windows":
             # Try the standard install locations + PATH; first one that exists wins.
             candidates = [
@@ -749,11 +761,11 @@ def _launch_chrome() -> tuple[bool, str]:
                 os.path.expanduser(r"~\AppData\Local\Google\Chrome\Application\chrome.exe"),
             ]
             chrome_exe = next((c for c in candidates if os.path.exists(c)), "chrome.exe")
-            subprocess.Popen([chrome_exe, *args])
+            subprocess.Popen([chrome_exe, *args, *tabs])
         else:
             # Linux + everything else
-            subprocess.Popen(["google-chrome", *args])
-        return True, "Chrome is launching — check for a new window, then log into AppStream."
+            subprocess.Popen(["google-chrome", *args, *tabs])
+        return True, "Chrome is launching with login tabs ready."
     except FileNotFoundError as e:
         return False, f"Couldn't find Chrome. Install Google Chrome, then retry. ({e})"
     except Exception as e:
@@ -1531,10 +1543,16 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                         ck = st.checkbox(step["text"], key=ck_key)
                         if not ck:
                             all_checked = False
-                        # Display action result message (set by callback on previous run)
+                        # Display action result message (set by callback on previous run).
+                        # Success → transient toast shown once (no persistent green box);
+                        # failure → keep the error visible until the next action.
                         if msg_key in st.session_state:
                             ok, m = st.session_state[msg_key]
-                            (st.success if ok else st.error)(m)
+                            if ok:
+                                st.toast(m, icon="🚀")
+                                del st.session_state[msg_key]
+                            else:
+                                st.error(m)
                     with cols[1]:
                         if step.get("link"):
                             st.button(
@@ -1546,7 +1564,7 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                             )
                         elif step.get("action") == "launch_chrome":
                             st.button(
-                                "🚀 Launch Chrome",
+                                "🚀 Launch Report Chrome",
                                 key=f"chrome_{report['id']}_{idx}",
                                 use_container_width=True,
                                 on_click=_on_chrome_launch_click,
@@ -3849,11 +3867,20 @@ with st.sidebar:
         st.session_state.show_wireup_direct = True
     if st.button("✏️ Request Change to Existing Report", use_container_width=True, key="open_change_request_btn"):
         st.session_state.show_change_request_dialog = True
+    # Always-visible Launch Report Chrome button. Every scraping report
+    # (recruiting, focus office) needs the special port-9222 Chrome the
+    # automations attach to, so the launcher is one click away in the nav
+    # — not hidden until Chrome is already detected as offline.
+    if st.button("🚀 Launch Report Chrome", use_container_width=True, key="nav_launch_chrome"):
+        ok, msg = _launch_chrome()
+        if ok:
+            st.toast(msg, icon="🚀")  # transient — no persistent green box
+        else:
+            st.error(msg)
 
     # Chrome status check still happens here (other code reads `chrome_ok`),
     # but the visible pill is rendered top-right of the page instead of in
-    # the sidebar. The "Chrome not running" sidebar warning + Launch button
-    # stays as the recovery path when it's actually broken.
+    # the sidebar.
     chrome_ok = _check_chrome_running()
     _pill_class = "ok" if chrome_ok else "warn"
     _pill_label = "🟢 Chrome connected" if chrome_ok else "🔴 Chrome offline"
@@ -3863,10 +3890,7 @@ with st.sidebar:
     )
     if not chrome_ok:
         st.markdown("---")
-        st.warning("Chrome not running")
-        if st.button("🚀 Launch Chrome", use_container_width=True, key="sidebar_launch_chrome"):
-            ok, msg = _launch_chrome()
-            (st.success if ok else st.error)(msg)
+        st.warning("Chrome not running — click 🚀 Launch Report Chrome above.")
         with st.expander("Chrome troubleshooting"):
             st.markdown("**If Chrome won't launch, run this in Terminal:**")
             st.code("rm ~/.config/recruiting-report/chrome-attach/Singleton*", language="bash")
