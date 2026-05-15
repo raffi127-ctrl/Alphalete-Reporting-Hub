@@ -513,6 +513,46 @@ def write_weekly_formulas(ws, layout: Layout) -> int:
     return len(data)
 
 
+def write_per_day_total_apps_formulas(ws, layout: Layout) -> int:
+    """Write =SUM(New INT, Upgrades, DTV, New Lines) into each rep's
+    per-day Total Apps cell — but ONLY for days that have already
+    happened (Mon..today). Future days in the current week get their
+    Total Apps cell CLEARED, so an un-worked Saturday doesn't show a
+    misleading '0'. Idempotent. Returns the count of cells touched.
+    """
+    rep_vals = ws.col_values(layout.rep_name_col)
+    rep_rows = [
+        i for i, v in enumerate(rep_vals, start=1)
+        if i >= 3 and v and v.strip() and not _is_summary_label(v)
+    ]
+    if not rep_rows:
+        return 0
+
+    today_wd = dt.date.today().weekday()  # 0=Mon .. 6=Sun
+    SALE_METRICS = ("New INT", "Upgrades", "DTV", "New Lines")
+
+    data = []
+    for wd in sorted(layout.day_cols.keys()):
+        ta_col = layout.day_cols[wd].get("Total Apps")
+        if not ta_col:
+            continue
+        sale_cols = [c for c in (layout.day_cols[wd].get(m) for m in SALE_METRICS) if c]
+        is_future = wd > today_wd
+        for r in rep_rows:
+            if is_future or not sale_cols:
+                value = ""  # clear — day hasn't happened (or no sale cols)
+            else:
+                cells = ",".join(f"{_col_letter(c)}{r}" for c in sale_cols)
+                value = f"=SUM({cells})"
+            data.append({
+                "range": f"'{ws.title}'!{_col_letter(ta_col)}{r}",
+                "values": [[value]],
+            })
+    if data:
+        ws.spreadsheet.values_batch_update({"valueInputOption": "USER_ENTERED", "data": data})
+    return len(data)
+
+
 def apply_gap_time_format(ws, layout: Layout) -> None:
     """Apply the [h]\"h\" mm\"m\" time format to every per-day Total Gap Time
     col + the Weekly Total Gap Time col. Idempotent — safe to re-run.
@@ -556,11 +596,21 @@ def apply_gap_time_format(ws, layout: Layout) -> None:
 
 
 def alphabetize_reps(ws, layout: Layout) -> None:
-    """Sort rep rows (rows 3+) alphabetically by the Rep Name column."""
+    """Sort rep rows (rows 3+) alphabetically by the Rep Name column.
+
+    Stops at the last REAL rep row — the OFFICE TOTALS + summary rows
+    (which also have col-B text) must stay pinned below in fixed order,
+    never sorted in with the reps.
+    """
     rep_col_values = ws.col_values(layout.rep_name_col)
-    last_row = max([2] + [i for i, v in enumerate(rep_col_values, start=1) if v.strip() and i >= 3])
-    if last_row < 4:
+    rep_row_idxs = [
+        i for i, v in enumerate(rep_col_values, start=1)
+        if i >= 3 and v.strip() and not _is_summary_label(v)
+    ]
+    if len(rep_row_idxs) < 2:
         return  # nothing to sort
+    # endRowIndex is exclusive → last rep row index + 1.
+    last_row = max(rep_row_idxs) + 1
     all_cols = [c for day_map in layout.day_cols.values() for c in day_map.values()] + [layout.rep_name_col]
     last_data_col = max(all_cols) if all_cols else layout.rep_name_col
     sheet_id = ws.id

@@ -57,6 +57,7 @@ from automations.focus_office_att.step5_fill_one_owner import (
     scrape_day,
     scrape_disposition_day,
     write_weekly_formulas,
+    write_per_day_total_apps_formulas,
 )
 
 DEST_SPREADSHEET_ID = "1xgVE_e8bZimACgPdqcdNCr1qo4sedWect_zzEcUgEJY"
@@ -367,6 +368,7 @@ def _scrape_one_owner(page, ws, days: list[dt.date], rqst: str) -> dict:
     # Sheets API hiccup on a cosmetic call invalidate the whole owner's
     # scrape. Log and continue.
     for label, fn in [
+        ("write_per_day_total_apps_formulas", lambda: write_per_day_total_apps_formulas(ws, layout)),
         ("write_weekly_formulas",        lambda: write_weekly_formulas(ws, layout)),
         ("alphabetize_reps",             lambda: alphabetize_reps(ws, layout)),
         ("apply_bold_border",            lambda: apply_bold_border(ws)),
