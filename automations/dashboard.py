@@ -2401,17 +2401,123 @@ def _save_uploaded_report(metadata: dict, script_text: str) -> tuple[bool, str]:
     return True, f"Saved to automations/uploaded/{safe_id}.py and uploaded_reports.json"
 
 
+# --------------------------------------------------------------------------
+# Multi-round report review
+# --------------------------------------------------------------------------
+# When a creator uploads an automation for an intake request, it does NOT go
+# straight to the Report Library. It is STAGED while the requester reviews:
+#   In Progress --upload--> In Review --request edits--> Edits Requested
+#                              ^                              |
+#                              +---------- revise ------------+
+#   In Review --approve--> Done  (only now promoted to the Library)
+# The staged report (metadata + script) lives in output/pending_reports/
+# until the requester approves.
+PENDING_REPORTS_DIR = WORKSPACE / "output" / "pending_reports"
+
+
+def _pending_report_path(intake_id: str) -> Path:
+    return PENDING_REPORTS_DIR / f"{intake_id}.json"
+
+
+def _stage_pending_report(intake_id: str, metadata: dict, script_text: str,
+                          review_cc: str = "") -> None:
+    """Stash a built-but-not-yet-approved report through the review loop.
+    review_cc is carried through and used on the approval email."""
+    PENDING_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    _pending_report_path(intake_id).write_text(
+        json.dumps({"metadata": metadata, "script": script_text,
+                    "review_cc": review_cc}, indent=2)
+    )
+
+
+def _load_pending_report(intake_id: str) -> dict | None:
+    """Return {'metadata': ..., 'script': ...} for a staged report, or None."""
+    p = _pending_report_path(intake_id)
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text())
+    except Exception:
+        return None
+
+
+def _clear_pending_report(intake_id: str) -> None:
+    p = _pending_report_path(intake_id)
+    try:
+        if p.exists():
+            p.unlink()
+    except Exception:
+        pass
+
+
+def _set_intake_status(entry_id: str, status: str) -> bool:
+    """Set the Status cell on an intake row. Returns True on success."""
+    ws = _intake_ws()
+    try:
+        cell = ws.find(str(entry_id))
+    except Exception:
+        return False
+    if not cell:
+        return False
+    ws.update_cell(cell.row, INTAKE_HEADERS.index("Status") + 1, status)
+    _read_intake.clear()
+    return True
+
+
+def _promote_pending_report(entry_id: str) -> tuple[bool, str]:
+    """Requester-approved: promote the staged report into the Report Library
+    (uploaded_reports.json + automations/uploaded/<id>.py), mark the intake
+    row Done, and clear the staging file. Returns (ok, message)."""
+    staged = _load_pending_report(entry_id)
+    if not staged:
+        return False, "No staged report found — the creator may need to re-upload."
+    ok, msg = _save_uploaded_report(staged["metadata"], staged["script"])
+    if not ok:
+        return False, msg
+    try:
+        _mark_intake_done(str(entry_id), cc_emails=staged.get("review_cc", ""))
+    except Exception:
+        pass
+    _clear_pending_report(entry_id)
+    return True, "Report approved and added to the Library."
+
+
+def _clear_wireup_state() -> None:
+    """Drop every wu_* widget key so the dialog re-renders from `value=`
+    defaults. Call before opening the dialog so a revise pre-fills from
+    the staged report instead of showing stale values from a prior open."""
+    for k in list(st.session_state.keys()):
+        if k.startswith("wu_"):
+            del st.session_state[k]
+
+
 @st.dialog("🛠️ Wire Up Built Automation", width="large")
 def _show_wire_up_dialog(entry: dict | None = None):
     """Form the builder fills out when their automation is built and ready.
-    `entry` is the backlog entry to mark Done; pass None for direct upload of
-    an already-built automation that wasn't tracked on the backlog."""
+    `entry` is the backlog entry; pass None for direct upload of an
+    already-built automation that wasn't tracked on the backlog.
+
+    If the entry already has a STAGED report (a prior upload that's in the
+    review loop), the form pre-fills from that staged report — so a
+    'revise & re-upload' keeps the creator's script, schedule, checklist,
+    etc. instead of making them re-enter everything."""
+    # A staged report (mid-review revise) takes priority for pre-fill.
+    staged = _load_pending_report(str(entry["ID"])) if entry and entry.get("ID") else None
+    staged_meta = (staged or {}).get("metadata", {}) if staged else {}
+    staged_script = (staged or {}).get("script", "") if staged else ""
+
     if entry:
         st.markdown(f"**Backlog item:** {entry.get('Title', 'Untitled')}")
-        st.caption(
-            "Paste what Claude generated (the Python script + a few details about how/when to run it). "
-            "Most fields auto-fill from the backlog entry — change them if needed."
-        )
+        if staged:
+            st.caption(
+                "Revising after requester feedback — fields are pre-filled "
+                "from your last upload. Make the requested edits and re-upload."
+            )
+        else:
+            st.caption(
+                "Paste what Claude generated (the Python script + a few details about how/when to run it). "
+                "Most fields auto-fill from the backlog entry — change them if needed."
+            )
     else:
         st.caption(
             "Paste what Claude generated for an already-built automation. "
@@ -2422,25 +2528,40 @@ def _show_wire_up_dialog(entry: dict | None = None):
     # NOTE: this used to be an st.form, but inside a form the radio doesn't
     # trigger a rerun, so the conditional Specific-days vs Monthly UI never
     # updated. Plain widgets fix that — every change reruns immediately.
+    _members = [m["name"] for m in MEMBERS]
     col1, col2 = st.columns(2)
     with col1:
-        name = st.text_input("Report name *", value=entry.get("Title", ""), key="wu_name")
-        emoji = st.text_input("Emoji (single char)", value="⭐", key="wu_emoji",
+        name = st.text_input("Report name *",
+                              value=staged_meta.get("name") or entry.get("Title", ""),
+                              key="wu_name")
+        emoji = st.text_input("Emoji (single char)",
+                              value=staged_meta.get("emoji") or "⭐", key="wu_emoji",
                               help="An emoji to represent the report on the dashboard")
-        sheet_url = st.text_input("Sheet URL", value=entry.get("Sheet Link", ""), key="wu_sheet_url")
+        sheet_url = st.text_input("Sheet URL",
+                                  value=staged_meta.get("sheet_url") or entry.get("Sheet Link", ""),
+                                  key="wu_sheet_url")
     with col2:
+        # Pre-select the staged assignee if revising.
+        _staged_assignees = staged_meta.get("assignees") or []
+        _assignee_opts = ["Not sure yet"] + _members
+        _assignee_idx = 0
+        if _staged_assignees and _staged_assignees[0] in _members:
+            _assignee_idx = _assignee_opts.index(_staged_assignees[0])
         assignee = st.selectbox(
             "Who runs this report?",
-            ["Not sure yet"] + [m["name"] for m in MEMBERS],
-            index=0,
+            _assignee_opts,
+            index=_assignee_idx,
             key="wu_assignee",
             help="If unsure, leave 'Not sure yet' — it'll land in the Unassigned section of the library.",
         )
-        est_min = st.number_input("Estimated minutes per run", min_value=1, max_value=120, value=5, key="wu_est_min")
+        est_min = st.number_input(
+            "Estimated minutes per run", min_value=1, max_value=120,
+            value=int(staged_meta.get("schedule", {}).get("estimated_minutes", 5) or 5),
+            key="wu_est_min")
 
     description = st.text_area(
         "Short description (one line)",
-        value=entry.get("Description", "")[:140],
+        value=(staged_meta.get("description") or entry.get("Description", ""))[:140],
         key="wu_description",
         help="What this automation does — shown under the report name on the card",
     )
@@ -2456,6 +2577,9 @@ def _show_wire_up_dialog(entry: dict | None = None):
     days_chosen: list[int] = []
     day_of_month: int = 1
 
+    # Default day selection: staged schedule's weekdays if revising, else Tue-Sat.
+    _staged_weekdays = set((staged_meta.get("schedule") or {}).get("weekdays", []))
+    _default_days = _staged_weekdays if _staged_weekdays else {1, 2, 3, 4, 5}
     if sched_mode == "Specific days":
         st.caption("Tick every day this report should run.")
         dcols = st.columns(7)
@@ -2463,7 +2587,7 @@ def _show_wire_up_dialog(entry: dict | None = None):
         for i, col in enumerate(dcols):
             with col:
                 st.markdown(f"<div style='text-align:center; font-weight:600; font-size:1.05rem'>{short_labels[i]}</div>", unsafe_allow_html=True)
-                if st.checkbox(" ", key=f"wu_sched_day_{i}", label_visibility="collapsed", value=(i in [1, 2, 3, 4, 5])):
+                if st.checkbox(" ", key=f"wu_sched_day_{i}", label_visibility="collapsed", value=(i in _default_days)):
                     days_chosen.append(i)
     else:
         day_of_month = st.number_input(
@@ -2476,13 +2600,16 @@ def _show_wire_up_dialog(entry: dict | None = None):
 
     sched_cols = st.columns(2)
     with sched_cols[0]:
-        time_str = st.text_input("Time of day", value="8:00 AM", key="wu_time_str")
+        time_str = st.text_input("Time of day",
+                                 value=(staged_meta.get("schedule") or {}).get("time") or "8:00 AM",
+                                 key="wu_time_str")
     with sched_cols[1]:
         st.caption("(Time of day is informational — runs are triggered manually unless you set a cron.)")
 
     st.markdown("**🐍 Python script** (paste what Claude generated)")
     script_text = st.text_area(
         "Script content *",
+        value=staged_script,
         height=260,
         key="wu_script_text",
         placeholder='# Example:\nimport sys\n\ndef main():\n    print("Hello")\n    return 0\n\nif __name__ == "__main__":\n    sys.exit(main())',
@@ -2495,8 +2622,22 @@ def _show_wire_up_dialog(entry: dict | None = None):
         "`Step text | URL | Button label`. The button label is optional; "
         "if omitted, defaults to 'Open'."
     )
+    # Rebuild the "text | url | label" lines from a staged checklist (list
+    # of {text, link, link_label} dicts) so a revise keeps the checklist.
+    _staged_checklist_lines = ""
+    if staged_meta.get("checklist"):
+        _lines = []
+        for _step in staged_meta["checklist"]:
+            _t = _step.get("text", "")
+            if _step.get("link"):
+                _t += f" | {_step['link']}"
+                if _step.get("link_label") and _step["link_label"] != "Open":
+                    _t += f" | {_step['link_label']}"
+            _lines.append(_t)
+        _staged_checklist_lines = "\n".join(_lines)
     checklist_text = st.text_area(
         "Each line becomes a checkbox the user ticks before the Run button enables",
+        value=_staged_checklist_lines,
         key="wu_checklist_text",
         height=140,
         placeholder=(
@@ -2530,7 +2671,8 @@ def _show_wire_up_dialog(entry: dict | None = None):
             "backlog card complete, and emails the requester (plus any CCs above) "
             "to review."
         )
-    submitted = st.button("🚀 Upload & Send for Review", type="primary", use_container_width=True, key="wu_submit")
+    _submit_label = "🔧 Re-upload for Review" if staged else "🚀 Upload & Send for Review"
+    submitted = st.button(_submit_label, type="primary", use_container_width=True, key="wu_submit")
     if submitted:
         if not (name and script_text):
             st.error("Please fill every field marked *.")
@@ -2583,31 +2725,52 @@ def _show_wire_up_dialog(entry: dict | None = None):
             "args": [],
         }
 
-        ok, msg = _save_uploaded_report(metadata, script_text)
-        if not ok:
-            st.error(msg)
+        # Validate the script up front (same check _save_uploaded_report runs)
+        # so a syntax error is caught before staging.
+        try:
+            ast.parse(script_text)
+        except SyntaxError as e:
+            st.error(f"Script has a Python syntax error: {e}")
             return
 
         if entry.get("ID"):
+            # Intake-linked upload → goes through the requester review loop.
+            # Stage it; it only reaches the Library once the requester
+            # clicks Approve. review_cc rides along for the approval email.
+            _stage_pending_report(str(entry["ID"]), metadata, script_text, review_cc)
+            _set_intake_status(str(entry["ID"]), "In Review")
             try:
-                _mark_intake_done(str(entry["ID"]), cc_emails=review_cc)
+                _append_intake_note(
+                    str(entry["ID"]),
+                    f"📤 Uploaded for review — '{name}'. Requester: please "
+                    f"review and either request edits or approve.",
+                    st.session_state.get("user") or "creator",
+                )
             except Exception:
                 pass
-
-        target_text = (
-            "in the **🔍 Unassigned** section of the Report Library"
-            if assignee == "Not sure yet"
-            else f"on **{assignee}**'s dashboard"
-        )
-        st.success(
-            f"✅ Uploaded! It will appear {target_text}. "
-            "The requester has been emailed to review."
-        )
-        st.balloons()
-        st.markdown(
-            "**Heads up:** The new automation is saved on this Mac. "
-            "To make it available to the whole team, ask Megan to commit + push to GitHub."
-        )
+            requester = entry.get("Submitted By", "the requester")
+            st.success(
+                f"✅ Sent to **{requester}** for review. It moves to the Report "
+                f"Library only after they approve it."
+            )
+            st.balloons()
+        else:
+            # Direct upload (no intake card) — no review loop; register now.
+            ok, msg = _save_uploaded_report(metadata, script_text)
+            if not ok:
+                st.error(msg)
+                return
+            target_text = (
+                "in the **🔍 Unassigned** section of the Report Library"
+                if assignee == "Not sure yet"
+                else f"on **{assignee}**'s dashboard"
+            )
+            st.success(f"✅ Uploaded! It will appear {target_text}.")
+            st.balloons()
+            st.markdown(
+                "**Heads up:** The new automation is saved on this Mac. "
+                "To make it available to the whole team, ask Megan to commit + push to GitHub."
+            )
 
 
 def _priority_rank(p: str) -> int:
@@ -2651,8 +2814,76 @@ def _priority_pill_html(p: str) -> str:
     )
 
 
-def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool = False) -> None:
-    """Render one backlog entry."""
+def _render_review_panel(entry: dict) -> None:
+    """cols[1] content for a card mid-review (In Review / Edits Requested).
+    Shows the staged report summary + the requester's review actions."""
+    eid = str(entry["ID"])
+    status = entry.get("Status", "")
+    staged = _load_pending_report(eid)
+    if not staged:
+        st.warning("No staged report found — ask the creator to re-upload it.")
+        return
+    meta = staged.get("metadata", {})
+
+    st.markdown(f"**{meta.get('emoji', '📊')} {meta.get('name', '(unnamed report)')}**")
+    if meta.get("description"):
+        st.caption(meta["description"][:160])
+    sched = meta.get("schedule", {})
+    _daynames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    _days = sched.get("weekdays", [])
+    _when = (", ".join(_daynames[d] for d in _days if 0 <= d < 7)
+             if _days else sched.get("frequency", "—"))
+    _who = (meta.get("assignees") or ["Unassigned"])[0]
+    st.caption(f"📅 {_when}  ·  👤 {_who}")
+
+    if status == "In Review":
+        st.markdown("**Requester:** review, then approve or request edits.")
+        with st.popover("📝 Request Edits", use_container_width=True):
+            _edit = st.text_area(
+                "What needs to change?", key=f"edit_req_{eid}",
+                placeholder="Describe the edits you'd like the creator to make…",
+            )
+            _author = st.text_input(
+                "Your name", key=f"edit_author_{eid}",
+                value=st.session_state.get("user", "") or "",
+            )
+            if st.button("Send edits to creator", key=f"edit_send_{eid}",
+                         use_container_width=True):
+                if not (_edit or "").strip():
+                    st.error("Describe the edits first.")
+                elif not (_author or "").strip():
+                    st.error("Add your name.")
+                else:
+                    _append_intake_note(eid, f"📝 Edits requested: {_edit.strip()}", _author)
+                    _set_intake_status(eid, "Edits Requested")
+                    st.rerun()
+        if st.button("✅ Approve & Upload to HUB", key=f"approve_{eid}",
+                     use_container_width=True, type="primary"):
+            ok, msg = _promote_pending_report(eid)
+            if ok:
+                try:
+                    _append_intake_note(
+                        eid, "✅ Approved by requester — uploaded to the HUB.",
+                        st.session_state.get("user", "") or "requester")
+                except Exception:
+                    pass
+                st.success(msg)
+                st.balloons()
+                st.rerun()
+            else:
+                st.error(msg)
+    elif status == "Edits Requested":
+        st.info("⏳ Edits requested — waiting on the creator to revise.")
+        if st.button("🔧 Revise & Re-upload", key=f"revise_{eid}",
+                     use_container_width=True, type="primary"):
+            _clear_wireup_state()
+            _show_wire_up_dialog(entry)
+
+
+def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool = False,
+                        review_mode: bool = False) -> None:
+    """Render one backlog entry. review_mode=True renders the requester
+    review panel (for In Review / Edits Requested cards)."""
     with st.container(border=True):
         # Resurrected banner sits above everything so it's the first thing you
         # see on a re-opened card. Pulled from the row's Resurrected At column.
@@ -2789,6 +3020,8 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                     else:
                         st.error("Couldn't save the link — try again.")
         with cols[1]:
+            if review_mode:
+                _render_review_panel(entry)
             if allow_claim:
                 claim_to = st.selectbox(
                     "Claim for…",
@@ -2810,6 +3043,7 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                     use_container_width=True,
                     type="primary",
                 ):
+                    _clear_wireup_state()
                     _show_wire_up_dialog(entry)
                 # Gmail compose URL — opens Gmail in the browser (not the
                 # native Mail app) so the user doesn't have to swap clients.
@@ -4108,6 +4342,16 @@ elif st.session_state.view == "backlog":
         key=lambda r: _priority_rank(r.get("Priority", "")),
     )
 
+    # In Review = creator uploaded, requester reviewing. "Edits Requested"
+    # = requester sent it back; both share the In Review section since
+    # they're the same review loop, just different turns.
+    in_review = sorted(
+        [r for r in intake
+         if r.get("Status") in ("In Review", "Edits Requested")
+         and str(r.get("ID")) != _focus_id],
+        key=lambda r: _priority_rank(r.get("Priority", "")),
+    )
+
     needs_updates = sorted(
         [r for r in intake
          if r.get("Status") == "Needs Updates"
@@ -4142,6 +4386,14 @@ elif st.session_state.view == "backlog":
                     _render_intake_card(entry, allow_claim=False, allow_done=True)
             else:
                 st.caption("No projects in progress yet.")
+
+            if in_review:
+                st.markdown("")
+                st.markdown(f"#### 🔍 In Review ({len(in_review)})")
+                st.caption("Creator uploaded — requester reviews, then approves or requests edits.")
+                for entry in in_review:
+                    _render_intake_card(entry, allow_claim=False, allow_done=False,
+                                        review_mode=True)
 
             st.markdown("---")
             with st.expander(f"✅ Completed Automations ({len(completed_intake)})", expanded=False):
@@ -4518,10 +4770,14 @@ else:  # st.session_state.view == "user"
         # this user has currently claimed (Assigned To matches). "Shipped" =
         # rows marked Done with this user as the most recent claimer.
         _all_intake = _read_intake()
+        # "In flight" for the creator = anything they've claimed that isn't
+        # shipped yet — including items mid-review (In Review / Edits
+        # Requested) so the creator can jump back in to revise.
         _my_in_flight = [
             r for r in _all_intake
             if (r.get("Assigned To") or "").strip() == user_name
-            and r.get("Status") in ("In Progress", "Needs Updates")
+            and r.get("Status") in ("In Progress", "Needs Updates",
+                                     "In Review", "Edits Requested")
         ]
         _my_shipped = sorted(
             [r for r in _all_intake
@@ -4558,22 +4814,35 @@ else:  # st.session_state.view == "user"
                 st.markdown(f"#### 🛠️ In Progress ({_in_flight_n})")
                 if _my_in_flight:
                     for entry in _my_in_flight:
+                        _status = entry.get("Status", "")
                         with st.container(border=True):
                             _ph = _priority_pill_html(entry.get("Priority", ""))
+                            _status_line = {
+                                "In Review": "🔍 Awaiting requester review",
+                                "Edits Requested": "📝 Requester asked for edits",
+                            }.get(_status, "")
                             st.markdown(
                                 f"**{entry.get('Title', 'Untitled')}**"
                                 + ("  \n" + _ph if _ph else "")
                                 + f"<br/><span style='color:#777; font-size:0.85em'>"
                                 f"Claimed on {entry.get('Assigned At', '?')}"
-                                f"</span>",
+                                + (f" · {_status_line}" if _status_line else "")
+                                + f"</span>",
                                 unsafe_allow_html=True,
                             )
-                            if st.button(
-                                "📥 Upload the Automation",
-                                key=f"profile_upload_{entry['ID']}",
-                                use_container_width=True,
-                            ):
-                                _show_wire_up_dialog(entry)
+                            if _status == "In Review":
+                                st.caption("Waiting on the requester — nothing to do right now.")
+                            else:
+                                _btn_label = ("🔧 Revise & Re-upload"
+                                              if _status == "Edits Requested"
+                                              else "📥 Upload the Automation")
+                                if st.button(
+                                    _btn_label,
+                                    key=f"profile_upload_{entry['ID']}",
+                                    use_container_width=True,
+                                ):
+                                    _clear_wireup_state()
+                                    _show_wire_up_dialog(entry)
                 else:
                     st.caption("Nothing claimed right now. Head to the **Automation Request Log** to grab one.")
             with _proj_cols[1]:
@@ -4941,6 +5210,7 @@ if st.session_state.get("show_change_request_dialog"):
 
 if st.session_state.get("show_wireup_direct"):
     st.session_state.show_wireup_direct = False
+    _clear_wireup_state()
     _show_wire_up_dialog(None)
 
 
