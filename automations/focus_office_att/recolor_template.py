@@ -60,7 +60,8 @@ REP_NAME_BG   = {"red": 0.94, "green": 0.95, "blue": 0.97}
 LIGHT_GREEN   = {"red": 0.85, "green": 0.94, "blue": 0.83}   # ≥6 INTs
 LIGHT_RED     = {"red": 0.96, "green": 0.80, "blue": 0.80}   # ≤5 INTs
 DEEP_NAVY     = {"red": 0.13, "green": 0.20, "blue": 0.35}   # OFFICE TOTALS bg
-WHITE_TEXT    = {"red": 1.00, "green": 1.00, "blue": 1.00}   # OFFICE TOTALS text
+DEEP_TEAL     = {"red": 0.10, "green": 0.30, "blue": 0.30}   # REPS summary bg (distinct from navy)
+WHITE_TEXT    = {"red": 1.00, "green": 1.00, "blue": 1.00}   # text
 
 # How many rows to apply the conditional rules across. 100 covers
 # any realistic rep count per owner; conditional rules only paint
@@ -177,15 +178,24 @@ def build_visual_rule_requests(sheet_id: int) -> list[dict]:
         sheet_id, SUM_NEW_INT_COL, SUM_NEW_INT_COL, LIGHT_RED, bold=True,
         condition_formula=f'=AND($B{COND_TOP_ROW}<>"", I{COND_TOP_ROW}<=5)',
     ))
-    # OFFICE TOTALS row — paint the FULL row (cols A-CR) deep navy with
-    # white bold text when col C contains the label. Reads as one solid
-    # 'totals bar' across the whole row. (Top border is applied as a
-    # static format in write_office_totals_row, since CF can't set borders.)
-    totals_condition = f'=$C{COND_TOP_ROW}="OFFICE TOTALS"'
-    requests.append(_cf_rule(sheet_id, 1, LAST_DATA_COL,
-                             DEEP_NAVY, bold=True,
-                             condition_formula=totals_condition,
-                             text_color=WHITE_TEXT))
+    # Office summary block — TWO different colors for visual separation:
+    #   - OFFICE TOTALS row → DEEP_NAVY (the headline / aggregate row)
+    #   - 4 rep-count rows below (TOTAL REPS IN FIELD / SOLD / ROLLED 0 /
+    #     % ON BOARD per Raf 2026-05-15 Loom) → DEEP_TEAL
+    # Both painted across cols A-CR with white bold text.
+    # Labels live in col B (under the Rep Name col).
+    requests.append(_cf_rule(
+        sheet_id, 1, LAST_DATA_COL, DEEP_NAVY, bold=True,
+        condition_formula=f'=$B{COND_TOP_ROW}="OFFICE TOTALS"',
+        text_color=WHITE_TEXT,
+    ))
+    summary_labels = ["TOTAL REPS IN FIELD", "TOTAL REPS SOLD", "REPS ROLLED 0", "% ON BOARD"]
+    summary_checks = ",".join(f'$B{COND_TOP_ROW}="{lbl}"' for lbl in summary_labels)
+    requests.append(_cf_rule(
+        sheet_id, 1, LAST_DATA_COL, DEEP_TEAL, bold=True,
+        condition_formula=f"=OR({summary_checks})",
+        text_color=WHITE_TEXT,
+    ))
     return requests
 
 

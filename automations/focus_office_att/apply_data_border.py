@@ -21,7 +21,7 @@ from automations.recruiting_report import fill as _fill
 
 DEST_SPREADSHEET_ID = "1xgVE_e8bZimACgPdqcdNCr1qo4sedWect_zzEcUgEJY"
 TEMPLATE_TAB = "Template"
-LAST_DATA_COL = 95   # Sunday's "New Lines"
+LAST_DATA_COL = 96   # Sunday's "New Lines" = col CR (was 95 / CQ before the leading '#' col was added)
 BLACK = {"red": 0.0, "green": 0.0, "blue": 0.0}
 
 

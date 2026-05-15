@@ -322,11 +322,10 @@ def fill_owner_tab(ws, scraped_by_date: dict, layout: Layout) -> dict:
         except Exception:
             pass
 
-    cells_to_write = []  # list of (a1, value)
+    cells_to_write = []  # list of (a1, value) — counted at return time
     new_reps = []
     new_rep_rows: list[int] = []   # rows that need formatting copied from row 3
     skipped_cells = 0
-    written_cells = 0
 
     for date, reps in scraped_by_date.items():
         weekday_idx = date.weekday()
@@ -341,8 +340,11 @@ def fill_owner_tab(ws, scraped_by_date: dict, layout: Layout) -> dict:
             if key in name_to_row:
                 row = name_to_row[key]
             else:
-                # New rep — assign next available row
-                row = max([3] + list(name_to_row.values())) + 1
+                # New rep — assign next available row. On an empty tab
+                # (no existing reps), the FIRST rep belongs at row 3
+                # (right under row 2 headers). After that, append below
+                # the highest existing rep row.
+                row = (max(name_to_row.values()) + 1) if name_to_row else 3
                 name_to_row[key] = row
                 new_reps.append(rep_name)
                 new_rep_rows.append(row)
@@ -378,7 +380,6 @@ def fill_owner_tab(ws, scraped_by_date: dict, layout: Layout) -> dict:
                 out_value = value if isinstance(value, (int, float)) else str(value)
                 cells_to_write.append((_a1(col, row), out_value))
                 existing[(row, col)] = value
-                written_cells += 1
 
     # Batch-update all cells at once (much faster than cell-by-cell)
     if cells_to_write:
@@ -413,7 +414,7 @@ def fill_owner_tab(ws, scraped_by_date: dict, layout: Layout) -> dict:
     return {
         "new_reps": new_reps,
         "skipped_cells": skipped_cells,
-        "written_cells": written_cells,
+        "written_cells": len(cells_to_write),
     }
 
 
@@ -652,6 +653,23 @@ def reset_conditional_formatting(ws) -> tuple[int, int]:
 
 TABLEAU_ONLY_MARK = "🔹"
 
+# Office summary labels (live in col B below the rep rows). Any function
+# that iterates "reps" by col B values needs to filter these out — they
+# look like rep names structurally but aren't reps.
+OFFICE_SUMMARY_LABELS = {
+    "OFFICE TOTALS",
+    "TOTAL REPS IN FIELD",
+    "TOTAL REPS SOLD",
+    "REPS ROLLED 0",
+    "% ON BOARD",
+}
+
+
+def _is_summary_label(v: str) -> bool:
+    if not v:
+        return False
+    return v.strip().upper().rstrip(TABLEAU_ONLY_MARK).strip() in OFFICE_SUMMARY_LABELS
+
 
 def strip_rep_mark(name: str) -> str:
     """Strip the Tableau-only marker from a rep name. Used everywhere
@@ -690,7 +708,7 @@ def mark_tableau_only_reps(ws, layout: Layout) -> int:
         i for i, v in enumerate(rep_vals, start=1)
         if i >= 3
         and v and v.strip()
-        and v.strip().upper() != "OFFICE TOTALS"
+        and not _is_summary_label(v)
     ]
     if not rep_rows:
         return 0
@@ -784,7 +802,7 @@ def apply_empty_cell_defaults(ws, layout: Layout) -> None:
         i for i, v in enumerate(rep_vals, start=1)
         if i >= 3
         and v and v.strip()
-        and v.strip().upper() != "OFFICE TOTALS"
+        and not _is_summary_label(v)
     ]
     if not rep_rows:
         return
@@ -819,9 +837,16 @@ def apply_empty_cell_defaults(ws, layout: Layout) -> None:
         value_render_option="FORMATTED_VALUE",
     )
 
+    # Only fill defaults on rows that have an actual rep — skip phantom
+    # rows (no name in col B) so we don't paint 'x'/'0' across an empty
+    # row 3 (or any other empty row in the rep range).
+    rep_rows_set = set(rep_rows)
+
     updates: list[dict] = []
     for ri, row in enumerate(rep_data):
         sheet_row = 3 + ri
+        if sheet_row not in rep_rows_set:
+            continue  # phantom row — skip
         for col, metric in col_to_metric.items():
             idx = col - min_col
             v = row[idx] if idx < len(row) else ""
@@ -868,7 +893,7 @@ def write_office_totals_row(ws, layout: Layout) -> None:
         i for i, v in enumerate(rep_vals, start=1)
         if i >= 3
         and v and v.strip()
-        and v.strip().upper() != "OFFICE TOTALS"
+        and not _is_summary_label(v)
     ]
     if not rep_rows:
         return
@@ -930,12 +955,18 @@ def write_office_totals_row(ws, layout: Layout) -> None:
     # (rep count changed, or a write put the label in the wrong column).
     # Clear across the FULL data range so older writes that landed in
     # per-day cells get wiped too.
+    # When clearing a stale OFFICE TOTALS row, ALSO clear the 4 summary
+    # rows directly beneath it (TOTAL REPS IN FIELD / SOLD / ROLLED 0 / %
+    # ON BOARD) — those form one logical block with OFFICE TOTALS. Without
+    # this, a re-run that relocates OFFICE TOTALS leaves the old summary
+    # rows orphaned in their original position.
     for stale_row in sorted(existing_totals_rows):
         if stale_row == target_row:
             continue
+        stale_block_end = stale_row + 4  # OFFICE TOTALS + 4 summary rows
         ws.update(
-            f"A{stale_row}:{last_col_letter}{stale_row}",
-            [[""] * (last_col)],
+            f"A{stale_row}:{last_col_letter}{stale_block_end}",
+            [[""] * (last_col)] * 5,
             value_input_option="RAW",
         )
     totals_row = target_row
@@ -957,11 +988,10 @@ def write_office_totals_row(ws, layout: Layout) -> None:
                 out.append(float(v))
         return out
 
-    # Build totals dict {col_idx → value}.
-    totals: dict[int, object] = {3: "OFFICE TOTALS"}  # label in col C
+    # Build totals dict {col_idx → value}. Label lives in col B (under
+    # the rep-name column, per Megan's preferred layout).
+    totals: dict[int, object] = {}
     for col in weekly_sum_cols + perday_sum_cols:
-        if col == 3:
-            continue  # col C is the label
         vals = _column(col)
         totals[col] = sum(vals) if vals else 0
     for col in weekly_avg_cols + perday_avg_cols:
@@ -971,18 +1001,22 @@ def write_office_totals_row(ws, layout: Layout) -> None:
         # no gaps / instant gap time — legitimate data, not filtered.
         totals[col] = sum(vals) / len(vals) if vals else ""
 
-    # Write cols C..last_col. Don't include A/B in the range — past
-    # attempts with leading empty strings ('') in a range write caused
-    # gspread to shift values left by one column. Sidestep by starting
-    # the range at C and clearing A/B separately.
-    values_c_onward: list[object] = [totals.get(col, "") for col in range(3, last_col + 1)]
-    ws.update(
-        f"C{totals_row}:{last_col_letter}{totals_row}",
-        [values_c_onward],
-        value_input_option="RAW",
-    )
-    # Clear A/B in case an old buggy write left content there.
-    ws.update(f"A{totals_row}:B{totals_row}", [["", ""]], value_input_option="RAW")
+    # Write the FULL row B..last_col in one shot. Use values_batch_update
+    # so we can include col B (label) without hitting gspread's leading-
+    # empty-string left-shift bug (that bug only affects ws.update with
+    # leading empty cells; values_batch_update with explicit ranges is fine).
+    values_b_onward: list[object] = ["OFFICE TOTALS"]  # col B
+    for col in range(3, last_col + 1):
+        values_b_onward.append(totals.get(col, ""))
+    ws.spreadsheet.values_batch_update({
+        "valueInputOption": "RAW",
+        "data": [{
+            "range": f"'{ws.title}'!B{totals_row}:{last_col_letter}{totals_row}",
+            "values": [values_b_onward],
+        }],
+    })
+    # Clear col A in case stale content sat there.
+    ws.update(f"A{totals_row}", [[""]], value_input_option="RAW")
 
     # Borders on the totals row:
     #   - Thick black TOP border across the full row → separates totals
@@ -1031,6 +1065,194 @@ def write_office_totals_row(ws, layout: Layout) -> None:
             })
     if border_requests:
         ws.spreadsheet.batch_update({"requests": border_requests})
+
+
+def write_office_summary_block(ws, layout: Layout) -> None:
+    """Append 4 office-level metric rows below OFFICE TOTALS. Per Raf
+    Loom 2026-05-15:
+      - TOTAL REPS IN FIELD: count of reps with a positive numeric value
+        in their Total Leads Knocked cell for the day. Reps with 'x' or
+        no data didn't knock anything and are treated as not-in-field.
+      - TOTAL REPS SOLD:    count of reps with any sale (New INT /
+        Upgrades / DTV / New Lines > 0) for the day.
+      - REPS ROLLED 0:      in_field - sold (reps who worked but
+        didn't sell).
+      - % ON BOARD:         sold / in_field (formatted as percent).
+
+    Each row's per-day value lands under that day's Total Apps col
+    (M, Y, AK, AW, BI, BU, CG). Other cells empty. Conditional
+    formatting (in recolor_template.build_visual_rule_requests) paints
+    all 4 rows + the OFFICE TOTALS row navy/white as one block.
+
+    Idempotent — overwrites the same 4 rows each time. Requires
+    write_office_totals_row to have run first (uses its row as anchor).
+    """
+    # Find OFFICE TOTALS row to anchor the block. Label lives in col B
+    # (per Megan's preferred layout — under the rep-name col).
+    col_b = ws.col_values(2)
+    totals_row: int | None = None
+    for i, v in enumerate(col_b, start=1):
+        if isinstance(v, str) and v.strip().upper() == "OFFICE TOTALS":
+            totals_row = i
+            break
+    if totals_row is None:
+        return  # No anchor → nothing to do
+
+    # Find rep rows above the totals row (skip empty rows + skip totals)
+    rep_vals = ws.col_values(layout.rep_name_col)
+    rep_rows = [
+        i for i, v in enumerate(rep_vals, start=1)
+        if i >= 3 and i < totals_row and v and v.strip()
+        and not _is_summary_label(v)
+    ]
+    if not rep_rows:
+        return
+    last_rep_row = max(rep_rows)
+
+    # Pull rep data once (UNFORMATTED so time-of-day stays a numeric
+    # serial; otherwise '8:23 AM' would be a string and not pass the
+    # isinstance(_, (int, float)) check below).
+    rep_data = ws.get(
+        f"A3:CR{last_rep_row}",
+        value_render_option="UNFORMATTED_VALUE",
+    )
+
+    # All day-column references resolved dynamically from `layout` — no
+    # hardcoded col indices. Per Megan: "we shouldn't hardcode this, you
+    # should count each scrape."
+    SALE_METRICS = ("New INT", "Upgrades", "DTV", "New Lines")
+    # Per-day Total Apps col (where the daily count lands)
+    day_ta_cols: dict[int, int] = {}
+    for wd, metric_map in layout.day_cols.items():
+        ta = metric_map.get("Total Apps")
+        if ta:
+            day_ta_cols[wd] = ta
+
+    # Per-day counts + per-rep weekly flags (for unique weekly totals).
+    # In-field rule (per Megan 2026-05-15):
+    #   "in the field" = Total Leads Knocked has a positive numeric value
+    #   OR any production col (New INT/Upgrades/DTV/New Lines) > 0.
+    # Selling implies presence — Tableau-only reps with a sale but no OV
+    # door-knock count as in-field via their sale.
+    in_field: dict[int, int] = {}
+    sold: dict[int, int] = {}
+    in_field_any_day = [False] * len(rep_data)
+    sold_any_day = [False] * len(rep_data)
+    for wd in range(7):
+        knocked_col = layout.day_cols.get(wd, {}).get("Total Leads Knocked")
+        sale_cols = [
+            c for c in (layout.day_cols.get(wd, {}).get(m) for m in SALE_METRICS)
+            if c
+        ]
+        if not knocked_col and not sale_cols:
+            in_field[wd] = 0
+            sold[wd] = 0
+            continue
+        in_count = 0
+        sold_count = 0
+        for ri, row in enumerate(rep_data):
+            if not row:
+                continue
+            has_sale = False
+            for sc in sale_cols:
+                if len(row) >= sc:
+                    v = row[sc - 1]
+                    if isinstance(v, (int, float)) and v > 0:
+                        has_sale = True
+                        break
+            if has_sale:
+                sold_count += 1
+                sold_any_day[ri] = True
+            knocked = (row[knocked_col - 1] if knocked_col and len(row) >= knocked_col else None)
+            knocked_data = isinstance(knocked, (int, float)) and knocked > 0
+            if knocked_data or has_sale:
+                in_count += 1
+                in_field_any_day[ri] = True
+        in_field[wd] = in_count
+        sold[wd] = sold_count
+
+    # Weekly UNIQUE counts (a rep counts ONCE per week regardless of how
+    # many days they were in field / sold).
+    weekly_in_field = sum(in_field_any_day)
+    weekly_sold = sum(sold_any_day)
+    weekly_rolled_zero = max(0, weekly_in_field - weekly_sold)
+    weekly_pct = (weekly_sold / weekly_in_field) if weekly_in_field else 0
+
+    LAST_DATA_COL = 96  # CR
+
+    # (label, weekly_value_for_col_C, per_day_value_fn)
+    SUMMARY_ROWS: list[tuple[str, object, callable]] = [
+        ("TOTAL REPS IN FIELD", weekly_in_field,    lambda wd: in_field[wd]),
+        ("TOTAL REPS SOLD",     weekly_sold,        lambda wd: sold[wd]),
+        ("REPS ROLLED 0",       weekly_rolled_zero, lambda wd: max(0, in_field[wd] - sold[wd])),
+        ("% ON BOARD",          weekly_pct,         lambda wd: (sold[wd] / in_field[wd]) if in_field[wd] else 0),
+    ]
+
+    # Write each summary row from col B onward. Col B = label, Col C =
+    # weekly aggregate (matches the SUM Total Apps headline pattern of
+    # OFFICE TOTALS), per-day values land in each day's Total Apps col
+    # (resolved from layout, not hardcoded).
+    update_data = []
+    for offset, (label, weekly_val, value_fn) in enumerate(SUMMARY_ROWS, start=1):
+        target_row = totals_row + offset
+        # Build cols 2..96 (95 cells). Index 0 = col B.
+        row_vals: list = [""] * (LAST_DATA_COL - 1)
+        row_vals[0] = label                  # col B
+        row_vals[1] = weekly_val             # col C
+        for wd, ta_col in day_ta_cols.items():
+            row_vals[ta_col - 2] = value_fn(wd)
+        update_data.append({
+            "range": f"'{ws.title}'!B{target_row}:CR{target_row}",
+            "values": [row_vals],
+        })
+
+    if update_data:
+        ws.spreadsheet.values_batch_update({
+            "valueInputOption": "RAW",
+            "data": update_data,
+        })
+
+    # Apply % number format on the % ON BOARD row's per-day cells, plus
+    # day-block left borders on all 4 new rows (matches the OFFICE TOTALS
+    # row's separators so the navy bar reads as one continuous block).
+    pct_row = totals_row + 4
+    THIN_BLACK = {"style": "SOLID_MEDIUM", "color": {"red": 0, "green": 0, "blue": 0}}
+
+    fmt_requests = []
+    # Apply % format to col C (weekly aggregate) + each day's TA col on
+    # the % ON BOARD row.
+    pct_cols = [3] + list(day_ta_cols.values())  # col C + day TA cols
+    for c in pct_cols:
+        fmt_requests.append({
+            "repeatCell": {
+                "range": {
+                    "sheetId": ws.id,
+                    "startRowIndex": pct_row - 1,
+                    "endRowIndex": pct_row,
+                    "startColumnIndex": c - 1,
+                    "endColumnIndex": c,
+                },
+                "cell": {"userEnteredFormat": {"numberFormat": {"type": "PERCENT", "pattern": "0%"}}},
+                "fields": "userEnteredFormat.numberFormat",
+            },
+        })
+    for offset in range(1, 5):
+        target_row = totals_row + offset
+        for ta_col in day_ta_cols.values():
+            fmt_requests.append({
+                "updateBorders": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "startRowIndex": target_row - 1,
+                        "endRowIndex": target_row,
+                        "startColumnIndex": ta_col - 1,
+                        "endColumnIndex": ta_col,
+                    },
+                    "left": THIN_BLACK,
+                },
+            })
+    if fmt_requests:
+        ws.spreadsheet.batch_update({"requests": fmt_requests})
 
 
 # ---- Orchestration ----

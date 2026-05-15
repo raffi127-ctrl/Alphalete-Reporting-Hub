@@ -73,18 +73,91 @@ VIZ_RENDER_WAIT_MS = 10_000
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
 
 
-def _find_tableau_tab(browser):
-    """Return the existing Tableau tab. Errors if missing — VA must have
-    SSO'd in by clicking 'Login to Tableau' on the ownerville Tableau page."""
-    all_pages = [pg for ctx in browser.contexts for pg in ctx.pages]
-    tableau_pages = [pg for pg in all_pages if "tableau.com" in pg.url.lower()]
-    if not tableau_pages:
+def _is_active_tableau_page(pg) -> bool:
+    """A Tableau tab counts as 'active' (SSO'd in) only if it's on the
+    online.tableau.com domain, NOT a login/SSO bounce page."""
+    url = (pg.url or "").lower()
+    if "online.tableau.com" not in url:
+        return False
+    # Login/SSO pages share the parent host but route through different paths.
+    if "/login" in url or "sso." in url or "/idp/" in url:
+        return False
+    return True
+
+
+def _find_ov_page(browser):
+    """Return the first ownerville tab in the connected Chrome."""
+    for ctx in browser.contexts:
+        for pg in ctx.pages:
+            if "ownerville" in (pg.url or "").lower():
+                return pg
+    return None
+
+
+def _bootstrap_tableau_via_ov(browser, verbose: bool = True):
+    """Open a new tab + drive OV's `?p=81&...&v2=1` SSO chain so we land on
+    Tableau Online with an active session. Used when no SSO'd Tableau tab
+    is open (e.g. session expired overnight).
+
+    Returns the resulting Tableau page, or raises if SSO fails.
+    """
+    import re
+    ov_page = _find_ov_page(browser)
+    if ov_page is None:
         raise RuntimeError(
-            "No Tableau tab is open in the debug-port Chrome. Open ownerville, "
-            "click 'Login to Tableau' on the Tableau index page to do the SSO "
-            "dance, then rerun. The Tableau tab needs to stay open."
+            "No ownerville tab open. Launch debug Chrome + log into "
+            "ownerville first; we can't SSO into Tableau without an active "
+            "OV session."
         )
-    return tableau_pages[0]
+    # Pull the current OV rqst
+    m = re.search(r"rqst=([A-Fa-f0-9_]+)", ov_page.url)
+    if not m:
+        raise RuntimeError(f"OV tab has no rqst in URL: {ov_page.url}")
+    rqst = m.group(1)
+    # `?p=81&rqst=...&ssook=1` is the URL OV's "Login to Tableau" button
+    # links to. Hitting it directly triggers the SSO chain that bounces
+    # through Tableau's SAML and lands on online.tableau.com with an
+    # active session. Skips the manual button-click step.
+    sso_url = f"https://v2.ownerville.com/index.cfm?p=81&rqst={rqst}&ssook=1"
+    if verbose:
+        print(f"Bootstrapping Tableau SSO via OV: {sso_url}", flush=True)
+
+    # Open in a NEW tab so we don't disturb the OV tab's state.
+    new_page = ov_page.context.new_page()
+    try:
+        new_page.goto(sso_url, wait_until="domcontentloaded", timeout=20_000)
+    except Exception as e:
+        raise RuntimeError(f"OV SSO bootstrap nav failed: {e}")
+
+    # Wait for the SSO bounce chain to land on online.tableau.com (max 30s).
+    deadline = 30.0
+    poll = 0.5
+    waited = 0.0
+    while waited < deadline:
+        cur = (new_page.url or "").lower()
+        if "online.tableau.com" in cur and "/idp/" not in cur and "/login" not in cur:
+            if verbose:
+                print(f"Landed on Tableau: {new_page.url}", flush=True)
+            return new_page
+        new_page.wait_for_timeout(int(poll * 1000))
+        waited += poll
+    raise RuntimeError(
+        f"Tableau SSO didn't complete after {deadline}s — last URL: {new_page.url}"
+    )
+
+
+def _find_tableau_tab(browser, verbose: bool = True):
+    """Return an SSO'd Tableau tab. Strategy:
+      1. Existing tab on online.tableau.com (not login/SSO) → use it
+      2. Otherwise → bootstrap via OV's ?p=81 SSO chain (auto-creates tab)
+    """
+    all_pages = [pg for ctx in browser.contexts for pg in ctx.pages]
+    active = [pg for pg in all_pages if _is_active_tableau_page(pg)]
+    if active:
+        return active[0]
+    if verbose:
+        print("No active Tableau tab found — bootstrapping SSO via OV…", flush=True)
+    return _bootstrap_tableau_via_ov(browser, verbose=verbose)
 
 
 def _validate_per_rep_file(path: Path) -> None:
@@ -105,7 +178,8 @@ def _validate_per_rep_file(path: Path) -> None:
 
 
 def download_crosstab(out_path: Path, verbose: bool = True,
-                      week_ending: "dt.date | None" = None) -> Path:
+                      week_ending: "dt.date | None" = None,
+                      download_format: str = "csv") -> Path:
     """Download the per-rep crosstab Excel; save to out_path. Returns out_path.
 
     Navigates to the AUTOMATION PULL custom view with Sale Date Week Ending
@@ -172,12 +246,20 @@ def download_crosstab(out_path: Path, verbose: bool = True,
             page.wait_for_timeout(800)
             page.screenshot(path=str(debug_dir / "03_after_thumb_click.png"), full_page=True)
 
-            # Ensure Excel format selected (it's default, but be defensive)
-            excel_radio = viz.locator(
-                '[data-tb-test-id="crosstab-options-dialog-radio-excel-RadioButton"]'
+            # Select format (CSV by default — Excel format produced wrong
+            # data on the AUTOMATION PULL view; CSV is the verified-correct
+            # export format per Megan 2026-05-14 walk-through).
+            # Click the Label element rather than calling .check() on the
+            # RadioButton — .check()/.is_checked() can hit "event loop
+            # already running" inside the expect_download context. The
+            # Label is a regular clickable element and toggles the radio.
+            fmt = (download_format or "csv").lower()
+            label_test_id = (
+                "crosstab-options-dialog-radio-csv-Label" if fmt == "csv"
+                else "crosstab-options-dialog-radio-excel-Label"
             )
-            if not excel_radio.is_checked():
-                excel_radio.check()
+            viz.locator(f'[data-tb-test-id="{label_test_id}"]').click()
+            page.wait_for_timeout(300)
             page.screenshot(path=str(debug_dir / "04_before_download_click.png"), full_page=True)
 
             # Click final Download button in modal
@@ -196,10 +278,18 @@ def download_crosstab(out_path: Path, verbose: bool = True,
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument(
+        "--format",
+        choices=("csv", "excel"),
+        default="csv",
+        help="Crosstab download format. Default csv (Excel produced wrong "
+             "metrics on PRODUCT SALES SUMMARY 4WK per Megan 2026-05-14).",
+    )
+    ap.add_argument(
         "--out",
         type=Path,
-        default=DEFAULT_OUTPUT_DIR / "tableau_phase3_download.xlsx",
-        help="Where to save the downloaded crosstab",
+        default=None,
+        help="Where to save the downloaded crosstab (default: "
+             "output/tableau_phase3_download.{csv|xlsx} based on --format)",
     )
     ap.add_argument(
         "--fill",
@@ -213,9 +303,17 @@ def main() -> int:
     )
     args = ap.parse_args()
 
+    if args.out is None:
+        ext = "csv" if args.format == "csv" else "xlsx"
+        args.out = DEFAULT_OUTPUT_DIR / f"tableau_phase3_download.{ext}"
+
     try:
-        out = download_crosstab(args.out)
-        _validate_per_rep_file(out)
+        out = download_crosstab(args.out, download_format=args.format)
+        # Skip the per-rep validation for CSV — _validate_per_rep_file uses
+        # openpyxl which can't read CSV. CSV correctness is verified
+        # downstream via the parser + Megan's spot-check.
+        if args.format != "csv":
+            _validate_per_rep_file(out)
     except PlaywrightTimeoutError as e:
         print(f"FAIL: timed out — {e}", flush=True)
         return 2

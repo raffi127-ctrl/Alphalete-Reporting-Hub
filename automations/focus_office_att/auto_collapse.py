@@ -49,12 +49,23 @@ def _has_data_in_range(grid: list[list[str]], col_start_1based: int, col_end_1ba
     return False
 
 
+SUMMARY_LABELS = {
+    "OFFICE TOTALS", "TOTAL REPS IN FIELD", "TOTAL REPS SOLD",
+    "REPS ROLLED 0", "% ON BOARD",
+}
+
+
 def update_collapse_states(ws) -> None:
     """For each existing column group on the worksheet, set collapsed=True
     if no data exists in that group's columns, otherwise expanded.
 
     Reads the ACTUAL group ranges from sheet metadata (not hardcoded), so
-    this works even if columns have been shifted by manual edits."""
+    this works even if columns have been shifted by manual edits.
+
+    Only checks REP rows (col B = rep name, not a summary label) — the
+    OFFICE TOTALS + summary rows write '0' across all per-day cols
+    including future days, which would otherwise trip the has-data check
+    and prevent legitimate empty days from collapsing."""
     md = ws.spreadsheet.fetch_sheet_metadata(params={
         "fields": "sheets(properties,columnGroups)",
     })
@@ -75,6 +86,15 @@ def update_collapse_states(ws) -> None:
         grid = ws.get(rng)
     except Exception:
         grid = []
+
+    # Filter out non-rep rows (OFFICE TOTALS + summary block) so their
+    # aggregate '0' values don't count as data for collapse purposes.
+    # Col B (index 1) holds the rep name OR a summary label.
+    rep_rows = [
+        row for row in grid
+        if len(row) > 1 and row[1] and row[1].strip().upper() not in SUMMARY_LABELS
+    ]
+    grid = rep_rows
 
     requests = []
     for g in column_groups:

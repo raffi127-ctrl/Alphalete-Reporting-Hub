@@ -33,7 +33,9 @@ Run:
 from __future__ import annotations
 
 import argparse
+import csv
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -65,20 +67,70 @@ DAY_TO_WEEKDAY = {
 }
 
 
-def parse_tableau_xlsx(path: Path) -> dict:
-    """Returns {owner_name: {rep_name: {weekday_idx: {metric: count}}}}.
-
-    Skips Sales Total row + per-owner Total rows. Handles continuation rows
-    (rep cell is None on second/third product line for the same rep).
-    """
+def _rows_from_xlsx(path: Path) -> list[list]:
+    """Load an xlsx workbook's first sheet into a list of row lists."""
     wb = openpyxl.load_workbook(path, data_only=True)
     ws = wb.active
+    rows: list[list] = []
+    for r in range(1, ws.max_row + 1):
+        rows.append([ws.cell(r, c).value for c in range(1, ws.max_column + 1)])
+    return rows
 
-    # Find day cols.
-    headers = [ws.cell(1, c).value for c in range(1, ws.max_column + 1)]
-    day_cols: dict[int, int] = {}  # weekday_idx → 1-based col
-    for col_idx, h in enumerate(headers, start=1):
-        if h in DAY_TO_WEEKDAY:
+
+def _detect_csv_encoding_and_delim(path: Path) -> tuple[str, str]:
+    """Sniff Tableau-exported CSVs. Tableau's default 'Crosstab CSV' is
+    actually UTF-16 LE with a BOM and tab-delimited — not standard CSV.
+    Falls back to utf-8 + comma if the BOM is absent (e.g., a hand-edited
+    file)."""
+    with open(path, "rb") as f:
+        head = f.read(4)
+    if head[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return "utf-16", "\t"
+    return "utf-8-sig", ","
+
+
+def _rows_from_csv(path: Path) -> list[list]:
+    """Load a CSV into a list of row lists. Auto-detects Tableau's
+    UTF-16/tab format vs standard UTF-8/comma. Strips comma thousands
+    separators from numeric strings so values like '1,705' parse as int."""
+    encoding, delim = _detect_csv_encoding_and_delim(path)
+    rows: list[list] = []
+    with open(path, newline="", encoding=encoding) as f:
+        reader = csv.reader(f, delimiter=delim)
+        for raw in reader:
+            row: list = []
+            for cell in raw:
+                s = (cell or "").strip()
+                if s == "":
+                    row.append(None)
+                    continue
+                # Strip thousands-separator commas before numeric attempt.
+                # Tableau formats numbers like '1,705' / '12,345.67'.
+                num_candidate = s.replace(",", "") if "," in s and not s.endswith(",") else s
+                try:
+                    row.append(int(num_candidate))
+                    continue
+                except ValueError:
+                    pass
+                try:
+                    row.append(float(num_candidate))
+                    continue
+                except ValueError:
+                    pass
+                row.append(s)
+            rows.append(row)
+    return rows
+
+
+def _parse_tableau_rows(rows: list[list]) -> dict:
+    """Parser shared between xlsx + csv readers. Operates on a list of row
+    lists (1-based row R = rows[R-1])."""
+    if not rows:
+        return {}
+    headers = rows[0]
+    day_cols: dict[int, int] = {}  # weekday_idx → 0-based col
+    for col_idx, h in enumerate(headers):
+        if isinstance(h, str) and h in DAY_TO_WEEKDAY:
             day_cols[DAY_TO_WEEKDAY[h]] = col_idx
 
     out: dict = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(int))))
@@ -86,24 +138,34 @@ def parse_tableau_xlsx(path: Path) -> dict:
     current_owner: str | None = None
     current_rep: str | None = None
 
-    for r in range(2, ws.max_row + 1):
-        owner_cell = ws.cell(r, 1).value
-        rep_cell   = ws.cell(r, 2).value
-        prod_cell  = ws.cell(r, 3).value
+    for row in rows[1:]:
+        owner_cell = row[0] if len(row) > 0 else None
+        rep_cell   = row[1] if len(row) > 1 else None
+        prod_cell  = row[2] if len(row) > 2 else None
 
+        # Global summary row — skip
         if owner_cell == "Sales Total":
             continue
-        if owner_cell:
-            current_owner = owner_cell
-            current_rep = None
-            # The owner's first row is the "Total" row — body data starts next row.
-            continue
 
+        # XLSX has merged cells: owner_cell is None on body/continuation rows,
+        # only set on the per-owner header (Total) row.
+        # CSV has no merged cells: owner_cell + rep_cell are REPEATED on every
+        # body row.
+        # Unified handling: update current_owner when a NEW owner name appears;
+        # treat repeated names as no-ops, not as new totals to skip.
+        if owner_cell and owner_cell != current_owner:
+            current_owner = owner_cell
+            current_rep = None  # reset rep tracking for new owner
+
+        # Per-owner Total row (XLSX: prod=None; CSV: prod="Total"). Detected
+        # via rep_cell="Total" — that's stable across both formats.
         if rep_cell == "Total":
             continue
+
+        # XLSX continuation rows: rep_cell is None → keep current_rep.
+        # CSV: rep_cell is set on every body row → updates to same value (no-op).
         if rep_cell:
             current_rep = rep_cell
-        # rep_cell == None → continuation: same rep as previous body row.
 
         if not current_owner or not current_rep or not prod_cell:
             continue
@@ -113,11 +175,10 @@ def parse_tableau_xlsx(path: Path) -> dict:
             continue
 
         for wd, col in day_cols.items():
-            val = ws.cell(r, col).value
+            val = row[col] if col < len(row) else None
             if isinstance(val, (int, float)) and val:
                 out[current_owner][current_rep][wd][metric] += int(val)
 
-    # Convert nested defaultdicts to regular dicts for cleaner downstream code.
     return {
         owner: {
             rep: {wd: dict(metrics) for wd, metrics in days.items()}
@@ -125,6 +186,26 @@ def parse_tableau_xlsx(path: Path) -> dict:
         }
         for owner, reps in out.items()
     }
+
+
+def parse_tableau_xlsx(path: Path) -> dict:
+    """Returns {owner_name: {rep_name: {weekday_idx: {metric: count}}}}.
+
+    Dispatches by file extension — supports both .xlsx (Crosstab Excel
+    download) and .csv (Crosstab CSV download). The Tableau Crosstab
+    download has the same row/column shape regardless of format.
+
+    Skips Sales Total row + per-owner Total rows. Handles continuation
+    rows (rep cell is None on second/third product line for the same rep).
+    """
+    suffix = path.suffix.lower()
+    if suffix == ".csv":
+        rows = _rows_from_csv(path)
+    elif suffix in (".xlsx", ".xlsm"):
+        rows = _rows_from_xlsx(path)
+    else:
+        raise ValueError(f"Unsupported file extension {suffix!r} (want .csv or .xlsx)")
+    return _parse_tableau_rows(rows)
 
 
 def fill_tableau_for_owner(ws, owner_data: dict, layout, dry_run: bool = False) -> dict:
@@ -227,6 +308,38 @@ def main() -> int:
         + list(DISP_FIELD_TO_CANONICAL.values())
         + ["Total Apps", "New INT", "Upgrades", "DTV", "New Lines"]
     )
+
+    def _is_quota_error(e: Exception) -> bool:
+        return "429" in str(e) and "Quota exceeded" in str(e)
+
+    def _process_owner_with_retry(owner, owner_data, sheet_tab_name, ws):
+        """Process one owner; on 429 quota, sleep 65s and retry once."""
+        for attempt in (1, 2):
+            try:
+                layout = resolve_layout(ws, metrics=metrics_for_layout, interactive=False)
+                stats = fill_tableau_for_owner(ws, owner_data, layout, dry_run=args.dry_run)
+                if stats.get("new_reps"):
+                    print(f"    + added {len(stats['new_reps'])} new rep row(s): {stats['new_reps']}")
+                if not args.dry_run and stats["written"] > 0:
+                    for label, fn in [
+                        ("write_weekly_formulas",        lambda: write_weekly_formulas(ws, layout)),
+                        ("apply_empty_cell_defaults",    lambda: apply_empty_cell_defaults(ws, layout)),
+                        ("mark_tableau_only_reps",       lambda: mark_tableau_only_reps(ws, layout)),
+                        ("reset_conditional_formatting", lambda: reset_conditional_formatting(ws)),
+                        ("write_office_totals_row",     lambda: write_office_totals_row(ws, layout)),
+                    ]:
+                        try:
+                            fn()
+                        except Exception as e:
+                            print(f"    ⚠ {label} failed (ignoring): {type(e).__name__}: {e}")
+                return stats
+            except Exception as e:
+                if _is_quota_error(e) and attempt == 1:
+                    print(f"    ⏳ Sheets read quota hit on {sheet_tab_name} — sleeping 65s + retrying once")
+                    time.sleep(65)
+                    continue
+                raise
+
     for owner, owner_data in tableau.items():
         # Apply alias: Tableau name → Sheet tab name (via the shared ICD Aliases Sheet).
         sheet_tab_name = alias_to_canonical(owner, aliases_raw)
@@ -238,27 +351,13 @@ def main() -> int:
         ws = all_tabs[sheet_tab_name]
         label = f"{owner}" + (f" → tab {sheet_tab_name!r}" if sheet_tab_name != owner else "")
         print(f"  → {label}…")
-        layout = resolve_layout(ws, metrics=metrics_for_layout, interactive=False)
-        stats = fill_tableau_for_owner(ws, owner_data, layout, dry_run=args.dry_run)
-        if stats.get("new_reps"):
-            print(f"    + added {len(stats['new_reps'])} new rep row(s): {stats['new_reps']}")
-        # Refresh Weekly formulas so newly-filled per-day data rolls up,
-        # apply Raf's empty-cell defaults (0 for production / x for activity),
-        # strip the green/red conditional formatting, and refresh the
-        # OFFICE TOTALS row. All wrapped — cosmetic API hiccups shouldn't
-        # invalidate the actual data write.
-        if not args.dry_run and stats["written"] > 0:
-            for label, fn in [
-                ("write_weekly_formulas",        lambda: write_weekly_formulas(ws, layout)),
-                ("apply_empty_cell_defaults",    lambda: apply_empty_cell_defaults(ws, layout)),
-                ("mark_tableau_only_reps",       lambda: mark_tableau_only_reps(ws, layout)),
-                ("reset_conditional_formatting", lambda: reset_conditional_formatting(ws)),
-                ("write_office_totals_row",     lambda: write_office_totals_row(ws, layout)),
-            ]:
-                try:
-                    fn()
-                except Exception as e:
-                    print(f"    ⚠ {label} failed (ignoring): {type(e).__name__}: {e}")
+        try:
+            stats = _process_owner_with_retry(owner, owner_data, sheet_tab_name, ws)
+        except Exception as e:
+            print(f"    ✗ {type(e).__name__}: {e}")
+            summary[owner] = {"status": f"error: {type(e).__name__}", "written": 0,
+                               "unmatched_reps": [], "new_reps": []}
+            continue
         summary[owner] = {
             "status": "ok",
             "written": stats["written"],
@@ -268,6 +367,12 @@ def main() -> int:
         verb = "would write" if args.dry_run else "wrote"
         print(f"    ✓ {verb} {stats['written']} cell(s)" + (
             f"; {len(stats['unmatched_reps'])} unmatched rep(s)" if stats["unmatched_reps"] else ""))
+        # Throttle between tabs. Each tab does ~10-15 Sheets reads spread
+        # across layout-resolve + cosmetic ops; 30 tabs at full speed
+        # blows past the 300 reads/min quota. 5s pause + the in-flight
+        # 65s 429-retry above keeps the run robust.
+        if not args.dry_run:
+            time.sleep(5.0)
 
     print()
     print("=== SUMMARY ===")

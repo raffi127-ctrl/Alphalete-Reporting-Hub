@@ -63,10 +63,27 @@ DEST_SPREADSHEET_ID = "1xgVE_e8bZimACgPdqcdNCr1qo4sedWect_zzEcUgEJY"
 CDP_URL = "http://localhost:9222"
 TIME_TRACKER_PAGE = "p=510"
 
+# Owner tabs that DON'T live as sub-offices in the impersonation table —
+# their data sits at the master/admin level (Alphalete Marketing,
+# officeId 11280). For these, skip the Office Access search +
+# confirmImpersonate steps entirely; just use the current master rqst
+# to scrape ?p=510 + ?p=89 directly. Per Megan: Raf is the master
+# admin, so 'his dashboard' IS the master view.
+NO_IMPERSONATE_OWNERS = {"Rafael Hidalgo"}
+
 
 def _prompt_for_unknown_owner(sheet_tab_name: str) -> str | None:
     """Ask the user what ownerville name to use for an unknown Sheet tab.
-    Returns the typed name, or None to skip this owner."""
+    Returns the typed name, or None to skip this owner.
+
+    When stdin is not a TTY (background/cron run), auto-skips with a
+    visible warning instead of blocking on input — Hub-button-triggered
+    runs have no interactive terminal and would freeze otherwise.
+    """
+    if not sys.stdin.isatty():
+        print(f"\n  ⚠ '{sheet_tab_name}' couldn't be found in ownerville under that name.")
+        print(f"     [non-interactive mode — auto-skipping. Add an alias and re-run to backfill.]")
+        return None
     print(f"\n  ⚠ '{sheet_tab_name}' couldn't be found in ownerville under that name.")
     print(f"     Open ownerville's Office Access table in your browser and look them up.")
     print(f"     What is their EXACT name in ownerville? (blank or 's' to skip)")
@@ -331,6 +348,20 @@ def _scrape_one_owner(page, ws, days: list[dt.date], rqst: str) -> dict:
 
     stats = fill_owner_tab(ws, scraped_by_date, layout)
 
+    # Cosmetic ops are EXPENSIVE (each = 1-3 Sheets API calls; 10 ops × 30
+    # owners = 300+ calls → quota throttling). Skip them entirely if
+    # fill_owner_tab made no changes — re-sorting unchanged reps,
+    # re-painting unchanged formats, etc. is pure waste.
+    if stats["written_cells"] == 0 and not stats["new_reps"]:
+        print(f"  → no changes — skipping {10} cosmetic op(s)")
+        return {
+            "tt_counts": {d.isoformat(): len(tt_by_date[d]) for d in days},
+            "disp_counts": {d.isoformat(): len(disp_by_date[d]) for d in days},
+            "written": stats["written_cells"],
+            "skipped": stats["skipped_cells"],
+            "new_reps": stats["new_reps"],
+        }
+
     # Post-fill operations are cosmetic — sorting, borders, formatting. The
     # primary data write (fill_owner_tab) is done; don't let a transient
     # Sheets API hiccup on a cosmetic call invalidate the whole owner's
@@ -424,7 +455,27 @@ def main() -> int:
         for i, owner in enumerate(owner_tabs, 1):
             print(f"\n[{i}/{len(owner_tabs)}] === {owner} ===")
             scraped_ok = False
+            is_master = owner in NO_IMPERSONATE_OWNERS
             try:
+                if is_master:
+                    # Master-level owner (e.g. Raf) — no impersonation. Get a
+                    # fresh master rqst by navigating to root, then scrape
+                    # ?p=510 + ?p=89 directly with that rqst.
+                    print(f"  → Master-level owner — skipping impersonation")
+                    rqst = _capture_master_rqst(page)
+                    if not rqst:
+                        results[owner] = "no master rqst"
+                        continue
+                    ws = all_tabs[owner]
+                    stats = _scrape_one_owner(page, ws, days, rqst)
+                    scraped_ok = True
+                    results[owner] = "ok"
+                    tt = sum(stats["tt_counts"].values())
+                    disp = sum(stats["disp_counts"].values())
+                    print(f"  ✓ wrote {stats['written']} cell(s); TT={tt} rep-days, "
+                          f"Disp={disp} rep-days; +{len(stats['new_reps'])} new rep(s)")
+                    continue
+
                 # _navigate_to_office_access navigates the ownerville tab to
                 # root + then ?p=901. Works on iteration 1 (no impersonation
                 # yet); works on iterations 2+ because we exit_impersonation
@@ -451,6 +502,9 @@ def main() -> int:
                 print(f"  ✗ {results[owner]}")
                 traceback.print_exc()
             finally:
+                if is_master:
+                    # No impersonation to exit; nothing to do.
+                    continue
                 # ALWAYS exit impersonation between owners so the master
                 # rqst is valid for the next iteration's ?p=901 navigation.
                 # Safe even if we didn't successfully impersonate — returns

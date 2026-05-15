@@ -39,6 +39,7 @@ def autosize_col_a(ws) -> None:
 REP_NAME_COL_PADDING_PX = 12   # added after autosize so bold names don't clip
 REP_NAME_COL_MIN_PX = 160      # roomy default even when no names are filled yet
 PER_COL_PADDING_PX = 8         # minimal breathing room (was 30 — too wide per Megan)
+COUNT_COL_WIDTH_PX = 38        # col A (rep number) — narrow but readable (was 14)
 
 # Weekly Total block = cols C..L (1-based 3..12). Autosize to header
 # plus a small padding bump (smaller than day cols' 8px) so the header
@@ -193,7 +194,18 @@ def autosize_all_data_cols(ws, last_data_col: int = LAST_DATA_COL,
         if col_0idx >= len(widths) or widths[col_0idx] is None:
             continue
         if col_0idx == 0:
-            continue  # col A (count) left as-is
+            # Col A (rep count) — set to a fixed narrow-but-readable width
+            # so it survives wipes. Don't rely on autosize since '1'/'22'
+            # would size it tiny.
+            requests.append({
+                "updateDimensionProperties": {
+                    "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                              "startIndex": 0, "endIndex": 1},
+                    "properties": {"pixelSize": COUNT_COL_WIDTH_PX},
+                    "fields": "pixelSize",
+                },
+            })
+            continue
         current = widths[col_0idx]
         if col_0idx == rep_name_col - 1:
             new_width = max(current + REP_NAME_COL_PADDING_PX, REP_NAME_COL_MIN_PX)
