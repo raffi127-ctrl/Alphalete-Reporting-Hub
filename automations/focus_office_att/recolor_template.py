@@ -26,23 +26,41 @@ DEST_SPREADSHEET_ID = "1xgVE_e8bZimACgPdqcdNCr1qo4sedWect_zzEcUgEJY"
 TEMPLATE_TAB = "Template"
 
 DAY_COLUMNS = [
-    ("Mon", 12, 13, 23),
-    ("Tue", 24, 25, 35),
-    ("Wed", 36, 37, 47),
-    ("Thu", 48, 49, 59),
-    ("Fri", 60, 61, 71),
-    ("Sat", 72, 73, 83),
-    ("Sun", 84, 85, 95),
+    # (day, total_apps_col, breakdown_group_start, breakdown_group_end)
+    # All cols shifted +1 vs the original layout when the leading '#' col
+    # was added. Mon's Total Apps lives at col M (13), not L (12); Sun's
+    # New Lines lives at CR (96), not CQ (95).
+    ("Mon", 13, 14, 24),
+    ("Tue", 25, 26, 36),
+    ("Wed", 37, 38, 48),
+    ("Thu", 49, 50, 60),
+    ("Fri", 61, 62, 72),
+    ("Sat", 73, 74, 84),
+    ("Sun", 85, 86, 96),
 ]
 WEEKLY_TOTAL_APPS_COL = 2
 WEEKLY_TOTAL_BREAKDOWN_START = 3
-WEEKLY_TOTAL_BREAKDOWN_END = 11
+WEEKLY_TOTAL_BREAKDOWN_END = 12   # was 11; col L (SUM New Lines) needs pale-gray too
+
+# Last data col across the full sheet (Sun's New Lines = col CR / 96).
+# Used so the OFFICE TOTALS gold rule paints the whole row, not just the
+# Weekly Total block.
+LAST_DATA_COL = 96
+# Col I (1-based 9) = SUM New INT — Raf wants ≥6 green / ≤5 red on this
+# col for at-a-glance quota tracking.
+SUM_NEW_INT_COL = 9
 
 WHITE         = {"red": 1.00, "green": 1.00, "blue": 1.00}
 PALE_GRAY     = {"red": 0.97, "green": 0.97, "blue": 0.98}
+PALE_BLUE     = {"red": 0.85, "green": 0.91, "blue": 0.97}   # alt day-block tint
+PALE_LAVENDER = {"red": 0.92, "green": 0.88, "blue": 0.96}   # weekly block tint
 WARM_GOLD     = {"red": 0.95, "green": 0.78, "blue": 0.36}
 LIGHT_CREAM   = {"red": 1.00, "green": 0.96, "blue": 0.86}
 REP_NAME_BG   = {"red": 0.94, "green": 0.95, "blue": 0.97}
+LIGHT_GREEN   = {"red": 0.85, "green": 0.94, "blue": 0.83}   # ≥6 INTs
+LIGHT_RED     = {"red": 0.96, "green": 0.80, "blue": 0.80}   # ≤5 INTs
+DEEP_NAVY     = {"red": 0.13, "green": 0.20, "blue": 0.35}   # OFFICE TOTALS bg
+WHITE_TEXT    = {"red": 1.00, "green": 1.00, "blue": 1.00}   # OFFICE TOTALS text
 
 # How many rows to apply the conditional rules across. 100 covers
 # any realistic rep count per owner; conditional rules only paint
@@ -67,7 +85,9 @@ def _setup_logging() -> logging.Logger:
 
 def _cf_rule(sheet_id: int, start_col: int, end_col: int,
              bg: dict, bold: bool = False,
-             condition_formula: str | None = None) -> dict:
+             condition_formula: str | None = None,
+             text_color: dict | None = None,
+             font_size: int | None = None) -> dict:
     """Conditional formatting rule: paint cells in [start_col, end_col)
     based on condition_formula (defaults to '$B<>""' — paint rep rows).
 
@@ -77,8 +97,15 @@ def _cf_rule(sheet_id: int, start_col: int, end_col: int,
     treat formula-empty differently from truly-empty cells. Anchoring on
     col B (the actual rep name) is unambiguous."""
     fmt = {"backgroundColor": bg}
+    text_format: dict = {}
     if bold:
-        fmt["textFormat"] = {"bold": True}
+        text_format["bold"] = True
+    if text_color is not None:
+        text_format["foregroundColor"] = text_color
+    if font_size is not None:
+        text_format["fontSize"] = font_size
+    if text_format:
+        fmt["textFormat"] = text_format
     if condition_formula is None:
         condition_formula = f"=$B{COND_TOP_ROW}<>\"\""
     return {
@@ -120,26 +147,45 @@ def build_visual_rule_requests(sheet_id: int) -> list[dict]:
     # Weekly Total Apps col — gold + bold
     requests.append(_cf_rule(sheet_id, WEEKLY_TOTAL_APPS_COL, WEEKLY_TOTAL_APPS_COL,
                              WARM_GOLD, bold=True))
-    # Weekly Total breakdown (C-K) — pale gray
-    requests.append(_cf_rule(sheet_id, WEEKLY_TOTAL_BREAKDOWN_START, WEEKLY_TOTAL_BREAKDOWN_END,
-                             PALE_GRAY))
-    # Each day's Total Apps + breakdown
-    for _short, ta_col, gs, ge in DAY_COLUMNS:
+    # Weekly Total block:
+    #   - SUM Total Apps (col C) = LIGHT_CREAM bold, mirroring the
+    #     per-day Total Apps headline pattern.
+    #   - Breakdown cols (D..L) = PALE_LAVENDER, the weekly block's own
+    #     distinct tint so it doesn't blur into day blocks.
+    requests.append(_cf_rule(sheet_id, 3, 3, LIGHT_CREAM, bold=True))
+    requests.append(_cf_rule(sheet_id, 4, WEEKLY_TOTAL_BREAKDOWN_END,
+                             PALE_LAVENDER))
+    # Each day's Total Apps + breakdown. Breakdown blocks alternate
+    # between PALE_GRAY (Mon/Wed/Fri/Sun) and PALE_BLUE (Tue/Thu/Sat) so
+    # adjacent day-blocks read as their own zebra stripes — Raf needs to
+    # tell day boundaries apart at a glance. Total Apps cols stay
+    # LIGHT_CREAM uniformly to mark the start of every day.
+    DAY_BREAKDOWN_TINTS = [PALE_GRAY, PALE_BLUE]
+    for i, (_short, ta_col, gs, ge) in enumerate(DAY_COLUMNS):
         requests.append(_cf_rule(sheet_id, ta_col, ta_col, LIGHT_CREAM, bold=True))
-        requests.append(_cf_rule(sheet_id, gs, ge, PALE_GRAY))
-    # OFFICE TOTALS row — paint cols A-L when col C contains the label.
-    # Uses WARM_GOLD + bold for visual prominence (matches the 'headline'
-    # styling of the Weekly Total Apps col).
+        requests.append(_cf_rule(sheet_id, gs, ge, DAY_BREAKDOWN_TINTS[i % 2]))
+    # SUM New INT (col I) — green if rep hit ≥6 INTs this week, red if
+    # ≤5. Per Raf: at-a-glance quota tracking. $B<>"" condition skips
+    # OFFICE TOTALS row (which has empty col B), so the totals cell stays
+    # gold via the rule below. Added BEFORE the OFFICE TOTALS gold rule
+    # so gold lands at higher priority (index 0) and wins the totals row.
+    requests.append(_cf_rule(
+        sheet_id, SUM_NEW_INT_COL, SUM_NEW_INT_COL, LIGHT_GREEN, bold=True,
+        condition_formula=f'=AND($B{COND_TOP_ROW}<>"", I{COND_TOP_ROW}>=6)',
+    ))
+    requests.append(_cf_rule(
+        sheet_id, SUM_NEW_INT_COL, SUM_NEW_INT_COL, LIGHT_RED, bold=True,
+        condition_formula=f'=AND($B{COND_TOP_ROW}<>"", I{COND_TOP_ROW}<=5)',
+    ))
+    # OFFICE TOTALS row — paint the FULL row (cols A-CR) deep navy with
+    # white bold text when col C contains the label. Reads as one solid
+    # 'totals bar' across the whole row. (Top border is applied as a
+    # static format in write_office_totals_row, since CF can't set borders.)
     totals_condition = f'=$C{COND_TOP_ROW}="OFFICE TOTALS"'
-    requests.append(_cf_rule(sheet_id, 1, WEEKLY_TOTAL_BREAKDOWN_END + 1,
-                             WARM_GOLD, bold=True,
-                             condition_formula=totals_condition))
-    # Black out cols A-B of the totals row — they're empty placeholders
-    # next to the label. Added AFTER the gold rule so it lands at index 0
-    # (higher priority) and overrides gold for just those two cells.
-    BLACK = {"red": 0.0, "green": 0.0, "blue": 0.0}
-    requests.append(_cf_rule(sheet_id, 1, 2, BLACK,
-                             condition_formula=totals_condition))
+    requests.append(_cf_rule(sheet_id, 1, LAST_DATA_COL,
+                             DEEP_NAVY, bold=True,
+                             condition_formula=totals_condition,
+                             text_color=WHITE_TEXT))
     return requests
 
 

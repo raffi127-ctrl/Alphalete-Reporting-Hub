@@ -40,6 +40,93 @@ REP_NAME_COL_PADDING_PX = 12   # added after autosize so bold names don't clip
 REP_NAME_COL_MIN_PX = 160      # roomy default even when no names are filled yet
 PER_COL_PADDING_PX = 8         # minimal breathing room (was 30 — too wide per Megan)
 
+# Weekly Total block = cols C..L (1-based 3..12). Autosize to header
+# plus a small padding bump (smaller than day cols' 8px) so the header
+# isn't crammed against the cell edge. Per Megan: 'a touch wider' than
+# exact-header-fit.
+WEEKLY_COL_START = 3   # col C (SUM Total Apps)
+WEEKLY_COL_END = 12    # col L (SUM New Lines)
+WEEKLY_COL_PADDING_PX = 6
+
+
+def merge_weekly_banner(ws) -> None:
+    """Merge C1:L1 — the row-1 'Weekly Total Mon X/X - Sun X/X' banner —
+    + center-align so it sits over the middle of the weekly block.
+
+    Why: the merge makes the banner span the full weekly block visually,
+    matching the section it labels. (Note: the merge alone doesn't stop
+    autoResize from widening col C — the caller must clear/restore C1
+    around the autoResize call to handle that.)
+
+    Idempotent — unmerges first, then re-merges, since mergeCells errors
+    on an already-merged range.
+    """
+    weekly_range = {
+        "sheetId": ws.id,
+        "startRowIndex": 0,
+        "endRowIndex": 1,
+        "startColumnIndex": WEEKLY_COL_START - 1,
+        "endColumnIndex": WEEKLY_COL_END,
+    }
+    ws.spreadsheet.batch_update({"requests": [
+        {"unmergeCells": {"range": weekly_range}},
+        {"mergeCells": {"range": weekly_range, "mergeType": "MERGE_ALL"}},
+        {
+            "repeatCell": {
+                "range": weekly_range,
+                "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
+                "fields": "userEnteredFormat.horizontalAlignment",
+            },
+        },
+    ]})
+
+
+# Day-block ranges for row-1 label merges. Each tuple = (start_col, end_col)
+# 1-based, inclusive. Mirrors recolor_template.DAY_COLUMNS but only the
+# (ta_col, group_end) pair so the label spans Total Apps + breakdown.
+DAY_BANNER_RANGES = [
+    (13, 24),   # Mon  M..X
+    (25, 36),   # Tue  Y..AJ
+    (37, 48),   # Wed  AK..AV
+    (49, 60),   # Thu  AW..BH
+    (61, 72),   # Fri  BI..BT
+    (73, 84),   # Sat  BU..CF
+    (85, 96),   # Sun  CG..CR
+]
+
+
+def merge_day_banners(ws) -> None:
+    """Merge each day's row-1 label across that day's 12-col block (e.g.,
+    'Mon 5/11' spans M1:X1) and center-align. Mirrors merge_weekly_banner.
+
+    Trade-off: with the breakdown group COLLAPSED, only Total Apps col is
+    visible. A center-aligned label sits at the visual center of the
+    full 12-col merge — outside the visible portion when collapsed, so
+    the label may not show. (Switch to 'LEFT' alignment if that matters
+    more than the centered look in expanded view.)
+
+    Idempotent — unmerges first then re-merges.
+    """
+    requests: list[dict] = []
+    for start_col, end_col in DAY_BANNER_RANGES:
+        day_range = {
+            "sheetId": ws.id,
+            "startRowIndex": 0,
+            "endRowIndex": 1,
+            "startColumnIndex": start_col - 1,
+            "endColumnIndex": end_col,
+        }
+        requests.append({"unmergeCells": {"range": day_range}})
+        requests.append({"mergeCells": {"range": day_range, "mergeType": "MERGE_ALL"}})
+        requests.append({
+            "repeatCell": {
+                "range": day_range,
+                "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
+                "fields": "userEnteredFormat.horizontalAlignment",
+            },
+        })
+    ws.spreadsheet.batch_update({"requests": requests})
+
 
 def autosize_all_data_cols(ws, last_data_col: int = LAST_DATA_COL,
                             rep_name_col: int = 2) -> None:
@@ -56,8 +143,27 @@ def autosize_all_data_cols(ws, last_data_col: int = LAST_DATA_COL,
     REP_NAME_COL_MIN_PX floor — bold rep names need more buffer than
     plain numeric cols, and the col should never be tiny.
 
+    Weekly Total cols (C..L) get NO padding — autosize fits them exactly
+    to their header text. Per Megan: 'SUM Total Apps' etc. should be
+    only as wide as the header, no extra whitespace.
+
     Col A (count) is left alone — it's intentionally narrow.
     """
+    # Step 0: temporarily clear the C1 banner formula so autoResize doesn't
+    # measure col C against its 32-char string ('Weekly Total Mon X/X -
+    # Sun X/X'). Restored after autoResize. The C1:L1 merge alone doesn't
+    # prevent this — autoResize still reads the anchored cell's content.
+    c1_formula_resp = ws.get("C1", value_render_option="FORMULA")
+    c1_formula = c1_formula_resp[0][0] if c1_formula_resp and c1_formula_resp[0] else ""
+    ws.spreadsheet.batch_update({"requests": [{
+        "updateCells": {
+            "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1,
+                      "startColumnIndex": WEEKLY_COL_START - 1, "endColumnIndex": WEEKLY_COL_START},
+            "fields": "userEnteredValue",
+            "rows": [{"values": [{"userEnteredValue": {"stringValue": ""}}]}],
+        },
+    }]})
+
     # Step 1: auto-resize every data col.
     ws.spreadsheet.batch_update({"requests": [{
         "autoResizeDimensions": {
@@ -91,6 +197,8 @@ def autosize_all_data_cols(ws, last_data_col: int = LAST_DATA_COL,
         current = widths[col_0idx]
         if col_0idx == rep_name_col - 1:
             new_width = max(current + REP_NAME_COL_PADDING_PX, REP_NAME_COL_MIN_PX)
+        elif WEEKLY_COL_START - 1 <= col_0idx <= WEEKLY_COL_END - 1:
+            new_width = current + WEEKLY_COL_PADDING_PX
         else:
             new_width = current + PER_COL_PADDING_PX
         requests.append({
@@ -107,6 +215,13 @@ def autosize_all_data_cols(ws, last_data_col: int = LAST_DATA_COL,
         })
     if requests:
         ws.spreadsheet.batch_update({"requests": requests})
+
+    # Step 4: restore the C1 banner formula + ensure the C1:L1 merge +
+    # merge each day's row-1 label across its 12-col block.
+    if c1_formula:
+        ws.update("C1", [[c1_formula]], value_input_option="USER_ENTERED")
+    merge_weekly_banner(ws)
+    merge_day_banners(ws)
 
 
 def main() -> int:

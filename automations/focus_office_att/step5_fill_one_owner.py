@@ -496,8 +496,12 @@ def write_weekly_formulas(ws, layout: Layout) -> int:
                 if weekly_canonical in WEEKLY_SUM_METRICS:
                     formula = f"=SUM({','.join(cells)})"
                 else:
-                    # AVERAGE wrapped so reps with no data show blank, not #DIV/0!.
-                    formula = f'=IFERROR(AVERAGE({",".join(cells)}),"")'
+                    # AVERAGE over all-text source cells (rep had no data
+                    # this week — every per-day cell is "x") errors out.
+                    # IFERROR returns "x" so the weekly cell visually
+                    # matches the per-day "no data" marker instead of
+                    # rendering blank.
+                    formula = f'=IFERROR(AVERAGE({",".join(cells)}),"x")'
             data.append({
                 "range": f"'{ws.title}'!{_col_letter(weekly_col)}{r}",
                 "values": [[formula]],
@@ -836,11 +840,17 @@ def apply_empty_cell_defaults(ws, layout: Layout) -> None:
 def write_office_totals_row(ws, layout: Layout) -> None:
     """Write/refresh the OFFICE TOTALS row at the bottom of the rep list.
 
-    Spans cols C-L (the Weekly Total summary block, minus the #/Rep Name
-    pair). Looks at each summary column's header — 'SUM ...' cols get
-    summed across reps, 'AVG ...' cols get averaged. Col C ('SUM Total
-    Apps') is repurposed as the label cell per Megan's preferred layout
-    (see Cody Cannon tab as reference).
+    Spans the entire data range (col C through the last per-day metric
+    in Sun's block). Per Raf: the totals row should aggregate every per-
+    day metric, not just the Weekly Total summary.
+
+    Cell-by-cell rules:
+      - Col C: 'OFFICE TOTALS' label (col B is left blank — that's how
+        the conditional format detects this row).
+      - Weekly Total block (cols C..L): SUM cols summed across reps,
+        AVG cols averaged.
+      - Per-day cells: each metric summed (or averaged for time-style
+        metrics — First Knock, Last Knock Date, total gap time).
 
     Reads + writes use UNFORMATTED_VALUE so time/duration columns
     (1st Knock, Last Knock, Gap Time) round-trip as serial numbers — the
@@ -877,33 +887,63 @@ def write_office_totals_row(ws, layout: Layout) -> None:
     # Always position the totals row IMMEDIATELY below the last rep.
     target_row = last_rep_row + 1
 
+    # Per-day metrics that should be AVERAGED (time-style values) rather
+    # than summed. Everything else in a day's block is a count → SUM.
+    PER_DAY_AVG_METRICS = {"First Knock", "Last Knock Date", "total gap time"}
+
+    # Build the full set of cols we need to read + their aggregation type.
+    # Weekly cols (3..12) are classified by row-2 header prefix.
+    header_row = ws.row_values(2)
+    weekly_sum_cols: list[int] = []
+    weekly_avg_cols: list[int] = []
+    for col_idx in range(3, 13):  # cols C..L
+        h = (header_row[col_idx - 1] if col_idx - 1 < len(header_row) else "").strip()
+        if h.startswith("SUM "):
+            weekly_sum_cols.append(col_idx)
+        elif h.startswith("AVG "):
+            weekly_avg_cols.append(col_idx)
+
+    # Per-day cols come from layout.day_cols[wd][metric] → 1-based col idx.
+    # Group by (col_idx, agg_type) for downstream aggregation.
+    perday_sum_cols: list[int] = []
+    perday_avg_cols: list[int] = []
+    for wd in sorted(layout.day_cols.keys()):
+        for metric, col_idx in layout.day_cols[wd].items():
+            if metric in PER_DAY_AVG_METRICS:
+                perday_avg_cols.append(col_idx)
+            else:
+                perday_sum_cols.append(col_idx)
+
+    # Determine the rightmost col we need to write to so we know the
+    # write range + can clear stale rows the same width.
+    all_cols = (
+        weekly_sum_cols + weekly_avg_cols
+        + perday_sum_cols + perday_avg_cols
+        + [3]  # label cell
+    )
+    last_col = max(all_cols) if all_cols else 12
+
+    last_col_letter = _col_letter(last_col)
+
     # Clear any stale totals rows (anything except target_row). This
     # handles the case where prior runs landed at a different position
     # (rep count changed, or a write put the label in the wrong column).
+    # Clear across the FULL data range so older writes that landed in
+    # per-day cells get wiped too.
     for stale_row in sorted(existing_totals_rows):
         if stale_row == target_row:
             continue
         ws.update(
-            f"A{stale_row}:L{stale_row}",
-            [[""] * 12],
+            f"A{stale_row}:{last_col_letter}{stale_row}",
+            [[""] * (last_col)],
             value_input_option="RAW",
         )
     totals_row = target_row
 
-    # Read header row 2, cols A-L, to classify SUM vs AVG cells
-    header_row = ws.row_values(2)
-    sum_cols: list[int] = []
-    avg_cols: list[int] = []
-    for col_idx in range(3, 13):  # cols C..L
-        h = (header_row[col_idx - 1] if col_idx - 1 < len(header_row) else "").strip()
-        if h.startswith("SUM "):
-            sum_cols.append(col_idx)
-        elif h.startswith("AVG "):
-            avg_cols.append(col_idx)
-
-    # Pull rep-row values for cols A-L as UNFORMATTED so times stay numeric
+    # Pull rep-row values across the full width so per-day cols are
+    # included. UNFORMATTED keeps time-style cells as serial numbers.
     rep_data = ws.get(
-        f"A3:L{last_rep_row}",
+        f"A3:{last_col_letter}{last_rep_row}",
         value_render_option="UNFORMATTED_VALUE",
     )
 
@@ -917,33 +957,80 @@ def write_office_totals_row(ws, layout: Layout) -> None:
                 out.append(float(v))
         return out
 
-    # Build totals dict {col_idx → value} for cols C..L
+    # Build totals dict {col_idx → value}.
     totals: dict[int, object] = {3: "OFFICE TOTALS"}  # label in col C
-    for col in sum_cols:
+    for col in weekly_sum_cols + perday_sum_cols:
         if col == 3:
-            continue  # col C is the label, not a sum
+            continue  # col C is the label
         vals = _column(col)
         totals[col] = sum(vals) if vals else 0
-    for col in avg_cols:
+    for col in weekly_avg_cols + perday_avg_cols:
         vals = _column(col)
-        # Average all reps that have a numeric value (empty cells already
-        # excluded by _column's isinstance check). A 0 means the rep worked
-        # but had no gaps / instant gap time, which is legitimate data —
-        # don't filter those out.
+        # Average reps with numeric values (empty cells excluded by
+        # _column's isinstance check). A 0 means the rep worked but had
+        # no gaps / instant gap time — legitimate data, not filtered.
         totals[col] = sum(vals) / len(vals) if vals else ""
 
-    # Write ONLY cols C..L. Don't include A/B in the range — past attempts
-    # with leading empty strings ('') in a range write caused gspread to
-    # shift values left by one column. Sidestep entirely by starting the
-    # range at C and clearing A/B separately if they have stale data.
-    values_c_to_l: list[object] = [totals.get(col, "") for col in range(3, 13)]
+    # Write cols C..last_col. Don't include A/B in the range — past
+    # attempts with leading empty strings ('') in a range write caused
+    # gspread to shift values left by one column. Sidestep by starting
+    # the range at C and clearing A/B separately.
+    values_c_onward: list[object] = [totals.get(col, "") for col in range(3, last_col + 1)]
     ws.update(
-        f"C{totals_row}:L{totals_row}",
-        [values_c_to_l],
+        f"C{totals_row}:{last_col_letter}{totals_row}",
+        [values_c_onward],
         value_input_option="RAW",
     )
     # Clear A/B in case an old buggy write left content there.
     ws.update(f"A{totals_row}:B{totals_row}", [["", ""]], value_input_option="RAW")
+
+    # Borders on the totals row:
+    #   - Thick black TOP border across the full row → separates totals
+    #     from rep rows above.
+    #   - Thin black LEFT border at the start of each day's Total Apps
+    #     col (M, Y, AK, AW, BI, BU, CG) → visual day-block dividers
+    #     within the navy bar.
+    # Borders aren't part of conditional formatting, so applied as
+    # static formats. Stale prior totals rows get their borders cleared.
+    DAY_START_COLS = [13, 25, 37, 49, 61, 73, 85]  # Mon..Sun Total Apps cols
+    THICK_BLACK = {"style": "SOLID_THICK", "color": {"red": 0, "green": 0, "blue": 0}}
+    THIN_BLACK = {"style": "SOLID_MEDIUM", "color": {"red": 0, "green": 0, "blue": 0}}
+    NO_BORDER = {"style": "NONE"}
+
+    border_requests: list[dict] = []
+    for stale_row in sorted(existing_totals_rows | {totals_row}):
+        is_current = (stale_row == totals_row)
+        # Top border across the full row
+        border_requests.append({
+            "updateBorders": {
+                "range": {
+                    "sheetId": ws.id,
+                    "startRowIndex": stale_row - 1,
+                    "endRowIndex": stale_row,
+                    "startColumnIndex": 0,
+                    "endColumnIndex": last_col,
+                },
+                "top": THICK_BLACK if is_current else NO_BORDER,
+            },
+        })
+        # Day-start vertical separators (left border on each day's TA col)
+        for day_col in DAY_START_COLS:
+            if day_col > last_col:
+                continue
+            border_requests.append({
+                "updateBorders": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "startRowIndex": stale_row - 1,
+                        "endRowIndex": stale_row,
+                        "startColumnIndex": day_col - 1,
+                        "endColumnIndex": day_col,
+                    },
+                    "left": THIN_BLACK if is_current else NO_BORDER,
+                },
+            })
+    if border_requests:
+        ws.spreadsheet.batch_update({"requests": border_requests})
 
 
 # ---- Orchestration ----
