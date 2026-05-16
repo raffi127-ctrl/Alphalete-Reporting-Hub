@@ -20,6 +20,7 @@ Run:
 """
 from __future__ import annotations
 
+import base64
 import datetime as dt
 import json
 import subprocess
@@ -32,7 +33,10 @@ from automations.recruiting_report import fill as _fill
 DEST_SPREADSHEET_ID = "1xgVE_e8bZimACgPdqcdNCr1qo4sedWect_zzEcUgEJY"
 CDP_URL = "http://localhost:9222"
 WORKSPACE = Path(__file__).resolve().parents[2]
-VENV_PY = WORKSPACE / ".venv" / "bin" / "python"
+# The interpreter currently running this file — correct on macOS, Windows,
+# and Linux. (A hardcoded ".venv/bin/python" only exists on macOS/Linux;
+# Windows venvs put it at ".venv\Scripts\python.exe".)
+PYTHON = sys.executable
 LOG_DIR = WORKSPACE / "output" / "logs"
 SCRAPE_RESULTS = WORKSPACE / "output" / "focus_office_scrape_results.json"
 
@@ -143,32 +147,63 @@ def refresh_tab_colors(sh) -> dict:
 
 
 # ----------------------------------------------------------------------
-# Mac notifications
+# Desktop notifications — cross-platform (macOS + Windows)
 # ----------------------------------------------------------------------
+_NOTIFY_TITLE = "Daily Rep Breakdown - ATT Program"
+_IS_WINDOWS = sys.platform.startswith("win")
+_IS_MAC = sys.platform == "darwin"
+
+
+def _win_popup(message: str, *, failure: bool) -> None:
+    """Show a Windows popup via a .NET MessageBox (built into Windows — no
+    install needed). The script is base64-encoded and passed via
+    -EncodedCommand so quotes/newlines in the message can't break it.
+    Fire-and-forget (Popen) so the run never blocks on the popup."""
+    icon = "Warning" if failure else "Information"
+    safe = message.replace("'", "''")  # PowerShell single-quote escape
+    script = (
+        "Add-Type -AssemblyName System.Windows.Forms;"
+        "[System.Windows.Forms.MessageBox]::Show("
+        f"'{safe}','{_NOTIFY_TITLE}','OK','{icon}') | Out-Null"
+    )
+    encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+    subprocess.Popen(
+        ["powershell", "-NoProfile", "-WindowStyle", "Hidden",
+         "-EncodedCommand", encoded]
+    )
+
+
 def _notify_success(msg: str) -> None:
     try:
-        subprocess.run(
-            ["osascript", "-e",
-             f'display notification "{msg}" with title "Daily Rep Breakdown - ATT Program"'],
-            check=False, timeout=10,
-        )
+        if _IS_WINDOWS:
+            _win_popup(msg, failure=False)
+        elif _IS_MAC:
+            subprocess.run(
+                ["osascript", "-e",
+                 f'display notification "{msg}" with title "{_NOTIFY_TITLE}"'],
+                check=False, timeout=10,
+            )
     except Exception:
         pass
 
 
 def _notify_failure(headline: str, detail: str, log_file: str) -> None:
     try:
-        subprocess.run(
-            ["osascript", "-e",
-             f'display notification "{headline} Tap for details." '
-             f'with title "Daily Rep Breakdown - ATT Program" sound name "Sosumi"'],
-            check=False, timeout=10,
-        )
-        dialog = (
-            f'display dialog "{headline}\n\n{detail}\n\nLog: {log_file}" '
-            f'buttons {{"OK"}} default button 1 with icon caution'
-        )
-        subprocess.run(["osascript", "-e", dialog], check=False, timeout=120)
+        if _IS_WINDOWS:
+            _win_popup(f"{headline}\n\n{detail}\n\nLog: {log_file}",
+                       failure=True)
+        elif _IS_MAC:
+            subprocess.run(
+                ["osascript", "-e",
+                 f'display notification "{headline} Tap for details." '
+                 f'with title "{_NOTIFY_TITLE}" sound name "Sosumi"'],
+                check=False, timeout=10,
+            )
+            dialog = (
+                f'display dialog "{headline}\n\n{detail}\n\nLog: {log_file}" '
+                f'buttons {{"OK"}} default button 1 with icon caution'
+            )
+            subprocess.run(["osascript", "-e", dialog], check=False, timeout=120)
     except Exception:
         pass
 
@@ -179,7 +214,7 @@ def _notify_failure(headline: str, detail: str, log_file: str) -> None:
 def _run_phase(module: str, extra_args: list[str], log_fh) -> int:
     """Run a pipeline module as a subprocess, streaming output to log_fh.
     Returns the process exit code."""
-    cmd = [str(VENV_PY), "-m", module, *extra_args]
+    cmd = [PYTHON, "-m", module, *extra_args]
     log_fh.write(f"\n$ {' '.join(cmd)}\n")
     log_fh.flush()
     proc = subprocess.run(cmd, stdout=log_fh, stderr=subprocess.STDOUT, cwd=str(WORKSPACE))

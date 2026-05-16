@@ -2394,7 +2394,7 @@ def _show_intake_dialog():
                         schedule_days=(",".join(str(d) for d in _picked_days)
                                        if _frequency == "weekly" else ""),
                         schedule_frequency=_frequency,
-                        schedule_time=_run_time.strftime("%-I:%M %p"),
+                        schedule_time=_fmt_time_str(_run_time),
                         schedule_day_of_month=(str(int(_month_day))
                                                if _frequency == "monthly" else ""),
                     )
@@ -2550,6 +2550,15 @@ def _parse_time_str(s: str) -> dt.time:
     return dt.time(8, 0)
 
 
+def _fmt_time_str(t: dt.time) -> str:
+    """Format a datetime.time as a portable display string ('8:00 AM').
+    Hand-built rather than strftime('%-I:%M %p') — the '%-I' no-pad flag
+    is invalid on Windows and raises ValueError there."""
+    hour = t.hour % 12 or 12
+    ampm = "AM" if t.hour < 12 else "PM"
+    return f"{hour}:{t.minute:02d} {ampm}"
+
+
 def _clear_wireup_state() -> None:
     """Drop every wu_* widget key so the dialog re-renders from `value=`
     defaults. Call before opening the dialog so a revise pre-fills from
@@ -2702,7 +2711,7 @@ def _show_wire_up_dialog(entry: dict | None = None):
         time_val = st.time_input("Time of day", value=_time_default, key="wu_time_val")
     with sched_cols[1]:
         st.caption("Runs are still triggered manually — this time shows on the report card.")
-    time_str = time_val.strftime("%-I:%M %p")
+    time_str = _fmt_time_str(time_val)
 
     st.markdown("**🐍 Python script** (paste what Claude generated)")
     script_text = st.text_area(
