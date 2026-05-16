@@ -1112,9 +1112,15 @@ def write_office_totals_row(ws, layout: Layout) -> None:
 
     # Per-day cols come from layout.day_cols[wd][metric] → 1-based col idx.
     # Group by (col_idx, agg_type) for downstream aggregation.
+    # Skip future days — their per-day cells are blank (the day hasn't
+    # happened yet), so the OFFICE TOTALS row must leave them blank too
+    # rather than showing a misleading 0.
+    today_wd = dt.date.today().weekday()
     perday_sum_cols: list[int] = []
     perday_avg_cols: list[int] = []
     for wd in sorted(layout.day_cols.keys()):
+        if wd > today_wd:
+            continue
         for metric, col_idx in layout.day_cols[wd].items():
             if metric in PER_DAY_AVG_METRICS:
                 perday_avg_cols.append(col_idx)
@@ -1309,6 +1315,8 @@ def write_office_summary_block(ws, layout: Layout) -> None:
         ta = metric_map.get("Total Apps")
         if ta:
             day_ta_cols[wd] = ta
+    # Future days haven't happened — their summary cells stay blank.
+    today_wd = dt.date.today().weekday()
 
     # Per-day counts + per-rep weekly flags (for unique weekly totals).
     # In-field rule (per Megan 2026-05-15):
@@ -1382,6 +1390,8 @@ def write_office_summary_block(ws, layout: Layout) -> None:
         row_vals[0] = label                  # col B
         row_vals[1] = weekly_val             # col C
         for wd, ta_col in day_ta_cols.items():
+            if wd > today_wd:
+                continue  # future day hasn't happened — leave it blank
             row_vals[ta_col - 2] = value_fn(wd)
         update_data.append({
             "range": f"'{ws.title}'!B{target_row}:CR{target_row}",
