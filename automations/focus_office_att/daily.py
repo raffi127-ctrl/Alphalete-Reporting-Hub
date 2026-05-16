@@ -50,6 +50,11 @@ AMBER = {"red": 0.96, "green": 0.69, "blue": 0.26}       # pending OV access
 LIGHT_BLUE = {"red": 0.62, "green": 0.76, "blue": 0.91}  # has Tableau-only reps
 
 
+def _q(title: str) -> str:
+    """A1-notation-safe single-quoted tab title (escapes embedded quotes)."""
+    return "'" + title.replace("'", "''") + "'"
+
+
 # ----------------------------------------------------------------------
 # Pre-flight
 # ----------------------------------------------------------------------
@@ -74,19 +79,24 @@ def _chrome_ok() -> tuple[bool, str]:
 def wipe_all_owner_tabs(sh) -> int:
     """Clear rep rows + static formatting on every owner tab (rows 3-200,
     cols A-CR). Leaves rows 1-2 (banners + headers) + conditional rules.
-    Returns the count of tabs wiped. Monday-only."""
-    import time
+    Returns the count of tabs wiped. Monday-only.
+
+    Batched: one values-clear call + one format-clear call covering ALL
+    tabs, instead of two calls (plus a 2s sleep) per tab."""
     tabs = [t for t in sh.worksheets() if t.title not in NON_OWNER_TABS]
-    for ws in tabs:
-        ws.batch_clear(["A3:CR200"])
-        ws.spreadsheet.batch_update({"requests": [{
-            "updateCells": {
-                "range": {"sheetId": ws.id, "startRowIndex": 2, "endRowIndex": 200,
-                          "startColumnIndex": 0, "endColumnIndex": 96},
-                "fields": "userEnteredFormat",
-            },
-        }]})
-        time.sleep(2.0)  # stay under Sheets write quota
+    if not tabs:
+        return 0
+    # One values-clear covering A3:CR200 on every owner tab.
+    sh.values_batch_clear([f"{_q(t.title)}!A3:CR200" for t in tabs])
+    # One format-clear (updateCells) covering rows 3-200 on every owner tab.
+    sh.batch_update({"requests": [
+        {"updateCells": {
+            "range": {"sheetId": t.id, "startRowIndex": 2, "endRowIndex": 200,
+                      "startColumnIndex": 0, "endColumnIndex": 96},
+            "fields": "userEnteredFormat",
+        }}
+        for t in tabs
+    ]})
     return len(tabs)
 
 
@@ -102,8 +112,6 @@ def refresh_tab_colors(sh) -> dict:
     Pending status is read from focus_office_scrape_results.json (written
     by run_all_owners). Self-maintaining: when an owner's access lands and
     they scrape OK, they drop out of the pending set automatically."""
-    import time
-
     pending: set[str] = set()
     if SCRAPE_RESULTS.exists():
         try:
@@ -113,11 +121,20 @@ def refresh_tab_colors(sh) -> dict:
             pending = set()
     pending -= NON_OWNER_TABS
 
+    owner_tabs = [ws for ws in sh.worksheets() if ws.title not in NON_OWNER_TABS]
+    # One batched read of column B for every non-pending owner tab. Pending
+    # tabs go amber without needing their contents, so they're not read.
+    to_read = [ws for ws in owner_tabs if ws.title not in pending]
+    col_b: dict[str, list[str]] = {}
+    if to_read:
+        resp = sh.values_batch_get([f"{_q(ws.title)}!B:B" for ws in to_read])
+        for ws, vr in zip(to_read, resp.get("valueRanges", [])):
+            col_b[ws.title] = [(row[0] if row else "")
+                               for row in vr.get("values", [])]
+
     counts = {"amber": 0, "light_blue": 0, "none": 0}
     requests = []
-    for ws in sh.worksheets():
-        if ws.title in NON_OWNER_TABS:
-            continue
+    for ws in owner_tabs:
         if ws.title in pending:
             requests.append({"updateSheetProperties": {
                 "properties": {"sheetId": ws.id, "tabColor": AMBER},
@@ -125,8 +142,9 @@ def refresh_tab_colors(sh) -> dict:
             }})
             counts["amber"] += 1
             continue
-        col_b = ws.col_values(2)
-        has_tableau_only = any(TABLEAU_ONLY_MARK in (v or "") for v in col_b)
+        has_tableau_only = any(
+            TABLEAU_ONLY_MARK in (v or "") for v in col_b.get(ws.title, [])
+        )
         if has_tableau_only:
             requests.append({"updateSheetProperties": {
                 "properties": {"sheetId": ws.id, "tabColor": LIGHT_BLUE},
@@ -139,7 +157,6 @@ def refresh_tab_colors(sh) -> dict:
                 "fields": "tabColorStyle",
             }})
             counts["none"] += 1
-        time.sleep(0.05)
 
     if requests:
         sh.batch_update({"requests": requests})
