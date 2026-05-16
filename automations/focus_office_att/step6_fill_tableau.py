@@ -272,6 +272,10 @@ def fill_tableau_for_owner(ws, owner_data: dict, layout, dry_run: bool = False) 
 
 
 def main() -> int:
+    # Pace every Sheets call under Google's quota so Phase 3 never
+    # 429-storms (and the 65s retry never has to fire).
+    from automations.focus_office_att._ratelimit import install as _install_pacing
+    _install_pacing()
     ap = argparse.ArgumentParser()
     ap.add_argument("--file", required=True, help="Path to the Tableau xlsx download.")
     ap.add_argument("--only", default="",
@@ -375,12 +379,8 @@ def main() -> int:
         verb = "would write" if args.dry_run else "wrote"
         print(f"    ✓ {verb} {stats['written']} cell(s)" + (
             f"; {len(stats['unmatched_reps'])} unmatched rep(s)" if stats["unmatched_reps"] else ""))
-        # Throttle between tabs. Each tab does ~10-15 Sheets reads spread
-        # across layout-resolve + cosmetic ops; 30 tabs at full speed
-        # blows past the 300 reads/min quota. 5s pause + the in-flight
-        # 65s 429-retry above keeps the run robust.
-        if not args.dry_run:
-            time.sleep(5.0)
+        # No per-tab sleep — the process-wide Sheets rate limiter
+        # (_ratelimit, installed in main) paces every call under quota.
 
     print()
     print("=== SUMMARY ===")

@@ -244,6 +244,8 @@ def _run_phase(module: str, extra_args: list[str], log_fh) -> int:
 # Main
 # ----------------------------------------------------------------------
 def main() -> int:
+    from automations.focus_office_att._ratelimit import install as _install_pacing
+    _install_pacing()
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
     log_path = LOG_DIR / f"focus-office-daily-{stamp}.log"

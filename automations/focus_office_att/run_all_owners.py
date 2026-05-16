@@ -375,6 +375,10 @@ def _scrape_one_owner(page, ws, days: list[dt.date], rqst: str) -> dict:
 
 
 def main() -> int:
+    # Pace Sheets calls under Google's quota — the per-owner design pass
+    # is read-heavy; without this a full run 429-storms.
+    from automations.focus_office_att._ratelimit import install as _install_pacing
+    _install_pacing()
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default="",
                     help="Comma-separated owner tab names to scrape (rest skipped).")
