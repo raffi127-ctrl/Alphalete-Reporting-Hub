@@ -4373,6 +4373,7 @@ def _render_currently_running_banner(filter_user: str | None = None):
 # --------------------------------------------------------------------------
 
 with st.sidebar:
+    # --- Navigation ---
     if st.session_state.view != "home":
         if st.button("🏠 Home Hub", use_container_width=True):
             _go_home()
@@ -4380,54 +4381,20 @@ with st.sidebar:
     if st.button("📚 Report Library", use_container_width=True):
         _go_library()
         st.rerun()
-    if st.button("📊 7-Day Overview", use_container_width=True, key="nav_overview"):
-        _go_overview()
-        st.rerun()
-
-    # Counts so the sidebar shows what's waiting without clicking through.
-    # Wrapped in try/except: _read_intake's internal try/except is below
-    # @st.cache_data, so decorator-layer errors bypass it. Without this
-    # wrapper a failure here re-creates the Eve-Windows blank-render.
-    try:
-        _intake_rows = _read_intake()
-    except Exception as e:
-        st.error(f"❌ _read_intake threw: {type(e).__name__}: {e}")
-        _intake_rows = []
-    _backlog_count = sum(
-        1 for r in _intake_rows
-        if (r.get("Status") or "Unassigned") in ("Unassigned", "In Progress", "Needs Updates")
-    )
-    try:
-        _bugs_rows = _read_bugs()
-    except Exception as e:
-        st.error(f"❌ _read_bugs threw: {type(e).__name__}: {e}")
-        _bugs_rows = []
-    _bugs_count = sum(
-        1 for b in _bugs_rows
-        if (b.get("Status") or "Open") in ("Open", "In Progress", "Needs Info")
-        and any(k in (b.get("Type") or "") for k in ("Bug", "Site"))
-    )
-    if st.button(f"📨 New Automation Request ({_backlog_count})", use_container_width=True, key="nav_backlog"):
-        _go_backlog()
-        st.rerun()
-    if st.button("📥 Upload Built Automation", use_container_width=True, key="nav_upload"):
-        st.session_state.show_wireup_direct = True
-    if st.button("✏️ Request Change to Existing Report", use_container_width=True, key="open_change_request_btn"):
-        st.session_state.show_change_request_dialog = True
-    # Always-visible Launch Report Chrome button. Every scraping report
-    # (recruiting, focus office) needs the special port-9222 Chrome the
-    # automations attach to, so the launcher is one click away in the nav
-    # — not hidden until Chrome is already detected as offline.
+    # Launch Report Chrome — scraping reports need the special port-9222
+    # Chrome the automations attach to, so the launcher is one click away.
     if st.button("🚀 Launch Report Chrome", use_container_width=True, key="nav_launch_chrome"):
         ok, msg = _launch_chrome()
         if ok:
             st.toast(msg, icon="🚀")  # transient — no persistent green box
         else:
             st.error(msg)
+    if st.button("📊 7-Day Overview", use_container_width=True, key="nav_overview"):
+        _go_overview()
+        st.rerun()
 
-    # Chrome status check still happens here (other code reads `chrome_ok`),
-    # but the visible pill is rendered top-right of the page instead of in
-    # the sidebar.
+    # Chrome status check — other code reads `chrome_ok`; the pill gives the
+    # Launch button above immediate feedback.
     chrome_ok = _check_chrome_running()
     _pill_class = "ok" if chrome_ok else "warn"
     _pill_label = "🟢 Chrome connected" if chrome_ok else "🔴 Chrome offline"
@@ -4436,7 +4403,6 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
     if not chrome_ok:
-        st.markdown("---")
         st.warning("Chrome not running — click 🚀 Launch Report Chrome above.")
         with st.expander("Chrome troubleshooting"):
             st.markdown("**If Chrome won't launch, run this in Terminal:**")
@@ -4461,8 +4427,32 @@ with st.sidebar:
                 else:
                     st.markdown(f"<div style='padding: 0.4rem 0'>☐ {r['emoji']} <b>{r['name']}</b></div>", unsafe_allow_html=True)
 
-    # Bottom-of-sidebar: bug-report (red) + change-request entry points.
     st.markdown("---")
+
+    # --- Requests & uploads ---
+    # Backlog count so the sidebar shows what's waiting without clicking
+    # through. Wrapped in try/except: _read_intake's internal try/except is
+    # below @st.cache_data, so decorator-layer errors bypass it.
+    try:
+        _intake_rows = _read_intake()
+    except Exception as e:
+        st.error(f"❌ _read_intake threw: {type(e).__name__}: {e}")
+        _intake_rows = []
+    _backlog_count = sum(
+        1 for r in _intake_rows
+        if (r.get("Status") or "Unassigned") in ("Unassigned", "In Progress", "Needs Updates")
+    )
+    if st.button(f"📨 New Automation Request ({_backlog_count})", use_container_width=True, key="nav_backlog"):
+        _go_backlog()
+        st.rerun()
+    if st.button("📥 Upload Built Automation", use_container_width=True, key="nav_upload"):
+        st.session_state.show_wireup_direct = True
+    if st.button("✏️ Request Change to Existing Report", use_container_width=True, key="open_change_request_btn"):
+        st.session_state.show_change_request_dialog = True
+
+    st.markdown("---")
+
+    # --- Bug report + account ---
     st.markdown(
         """
         <style>
@@ -4477,12 +4467,8 @@ with st.sidebar:
     )
     if st.button("⚠️ Report a Bug / Suggest a Site Edit", use_container_width=True, key="open_bug_dialog_btn"):
         st.session_state.show_bug_dialog = True
-    if st.button(f"🐛 Bugs & Site Edits Being Fixed ({_bugs_count})", use_container_width=True, key="nav_bugs"):
-        _go_bugs()
-        st.rerun()
-
-    # Tiny sign-out link at the very bottom — ends the 1-hour session so the
-    # next page load prompts for the Pack Access password again.
+    # Tiny sign-out link — ends the 1-hour session so the next page load
+    # prompts for the Pack Access password again.
     if st.button("Sign out", use_container_width=True, key="sidebar_signout_btn"):
         st.session_state.authed = False
         _clear_session()
