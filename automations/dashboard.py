@@ -3787,6 +3787,9 @@ def _render_bug_typed_view(
     """
     st.markdown(f"## {page_title}")
     st.caption(page_caption)
+    if st.button("⚠️ Report a Bug / Suggest a Site Edit", type="primary",
+                 use_container_width=True, key="bugpage_report_btn"):
+        st.session_state.show_bug_dialog = True
 
     # type_keyword can be a single string or list of accepted substrings.
     _keywords = [type_keyword] if isinstance(type_keyword, str) else list(type_keyword)
@@ -4466,7 +4469,8 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
     if st.button("⚠️ Report a Bug / Suggest a Site Edit", use_container_width=True, key="open_bug_dialog_btn"):
-        st.session_state.show_bug_dialog = True
+        _go_bugs()
+        st.rerun()
     # Tiny sign-out link — ends the 1-hour session so the next page load
     # prompts for the Pack Access password again.
     if st.button("Sign out", use_container_width=True, key="sidebar_signout_btn"):
