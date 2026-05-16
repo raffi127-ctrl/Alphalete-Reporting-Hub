@@ -1,4 +1,4 @@
-"""Focus Office Daily Rep Scorecard — the one-click daily runner.
+"""Daily Rep Breakdown - ATT Program — the one-click daily runner.
 
 This is the Hub-button entrypoint. It orchestrates the full pipeline:
 
@@ -149,7 +149,7 @@ def _notify_success(msg: str) -> None:
     try:
         subprocess.run(
             ["osascript", "-e",
-             f'display notification "{msg}" with title "Focus Office Daily Scorecard"'],
+             f'display notification "{msg}" with title "Daily Rep Breakdown - ATT Program"'],
             check=False, timeout=10,
         )
     except Exception:
@@ -161,7 +161,7 @@ def _notify_failure(headline: str, detail: str, log_file: str) -> None:
         subprocess.run(
             ["osascript", "-e",
              f'display notification "{headline} Tap for details." '
-             f'with title "Focus Office Daily Scorecard" sound name "Sosumi"'],
+             f'with title "Daily Rep Breakdown - ATT Program" sound name "Sosumi"'],
             check=False, timeout=10,
         )
         dialog = (
@@ -202,7 +202,7 @@ def main() -> int:
             log.write(m + "\n")
             log.flush()
 
-        say(f"=== Focus Office Daily Scorecard — {today.isoformat()} "
+        say(f"=== Daily Rep Breakdown - ATT Program — {today.isoformat()} "
             f"({'MONDAY full run' if is_monday else 'mid-week incremental'}) ===")
 
         # 1. Pre-flight
