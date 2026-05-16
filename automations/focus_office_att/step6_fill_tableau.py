@@ -325,6 +325,20 @@ def main() -> int:
                         try:
                             fn()
                         except Exception as e:
+                            # On a Sheets read-quota 429, wait out the
+                            # per-minute window and retry once. Without this
+                            # the design op is silently skipped and the tab
+                            # ends up half-styled — expanded columns, missing
+                            # borders (happened to Jose/Sam/Trang on the
+                            # 2026-05-15 run).
+                            if _is_quota_error(e):
+                                print(f"    ⏳ quota hit on {label} — sleeping 65s + retrying once")
+                                time.sleep(65)
+                                try:
+                                    fn()
+                                    continue
+                                except Exception as e2:
+                                    e = e2
                             print(f"    ⚠ {label} failed (ignoring): {type(e).__name__}: {e}")
                 return stats
             except Exception as e:
