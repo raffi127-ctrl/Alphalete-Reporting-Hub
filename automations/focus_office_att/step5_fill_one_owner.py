@@ -553,6 +553,118 @@ def write_per_day_total_apps_formulas(ws, layout: Layout) -> int:
     return len(data)
 
 
+# --------------------------------------------------------------------------
+# Design helpers — every owner tab's look. Each is idempotent so the daily
+# pipeline can re-apply them on every run (see design_cosmetic_ops).
+# --------------------------------------------------------------------------
+def write_count_column(ws) -> None:
+    """Col A: '#' header + a per-row formula that numbers ONLY rep rows.
+    The REGEXMATCH guard keeps the OFFICE TOTALS + summary rows un-numbered."""
+    ws.update("A2", [["#"]], value_input_option="RAW")
+    formula = ('=IF(AND($B{r}<>"",NOT(REGEXMATCH($B{r},'
+               '"OFFICE TOTALS|TOTAL REPS|REPS ROLLED|% ON BOARD"))),ROW()-2,"")')
+    ws.update("A3:A100", [[formula.format(r=r)] for r in range(3, 101)],
+              value_input_option="USER_ENTERED")
+
+
+def apply_number_formats(ws, layout: Layout) -> None:
+    """Time-of-day format on First/Last Knock cols, [h]h mm m on gap-time
+    cols, and a 1-decimal number on AVG # Of Gaps — weekly block + every
+    per-day block. Col positions resolved from layout, never hardcoded."""
+    TIME_FMT = {"type": "TIME", "pattern": "h:mm AM/PM"}
+    GAP_FMT = {"type": "TIME", "pattern": '[h]"h" mm"m"'}
+    AVG_GAPS_FMT = {"type": "NUMBER", "pattern": "0.0"}
+    # Weekly summary cols (fixed): E/F = AVG knocks, G = AVG # Of Gaps, H = AVG Gap Time
+    fmt_targets: list[tuple[int, dict]] = [
+        (5, TIME_FMT), (6, TIME_FMT), (7, AVG_GAPS_FMT), (8, GAP_FMT),
+    ]
+    for wd, metric_map in layout.day_cols.items():
+        for metric, fmt in (("First Knock", TIME_FMT),
+                            ("Last Knock Date", TIME_FMT),
+                            ("total gap time", GAP_FMT)):
+            c = metric_map.get(metric)
+            if c:
+                fmt_targets.append((c, fmt))
+    requests = []
+    for col, fmt in fmt_targets:
+        requests.append({
+            "repeatCell": {
+                "range": {"sheetId": ws.id, "startRowIndex": 2, "endRowIndex": 200,
+                          "startColumnIndex": col - 1, "endColumnIndex": col},
+                "cell": {"userEnteredFormat": {"numberFormat": fmt}},
+                "fields": "userEnteredFormat.numberFormat",
+            },
+        })
+    if requests:
+        ws.spreadsheet.batch_update({"requests": requests})
+
+
+def apply_bold_center(ws) -> None:
+    """Bold + horizontal-center + vertical-middle across the data grid."""
+    ws.spreadsheet.batch_update({"requests": [{
+        "repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 100,
+                      "startColumnIndex": 0, "endColumnIndex": 96},
+            "cell": {"userEnteredFormat": {
+                "horizontalAlignment": "CENTER",
+                "verticalAlignment": "MIDDLE",
+                "textFormat": {"bold": True},
+            }},
+            "fields": ("userEnteredFormat.horizontalAlignment,"
+                       "userEnteredFormat.verticalAlignment,"
+                       "userEnteredFormat.textFormat.bold"),
+        },
+    }]})
+
+
+def apply_day_block_borders(ws, layout: Layout) -> None:
+    """Thick black box around each day's 12-col block, spanning the header
+    row through the last summary row so reps + OFFICE TOTALS + summary are
+    all enclosed."""
+    col_b = ws.col_values(2)
+    last_row = max((i + 1 for i, v in enumerate(col_b) if v.strip()), default=2)
+    THICK = {"style": "SOLID_THICK", "color": {"red": 0, "green": 0, "blue": 0}}
+    requests = []
+    for wd in sorted(layout.day_cols.keys()):
+        ta = layout.day_cols[wd].get("Total Apps")
+        if not ta:
+            continue
+        requests.append({
+            "updateBorders": {
+                "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": last_row,
+                          "startColumnIndex": ta - 1, "endColumnIndex": ta + 11},
+                "top": THICK, "bottom": THICK, "left": THICK, "right": THICK,
+            },
+        })
+    if requests:
+        ws.spreadsheet.batch_update({"requests": requests})
+
+
+def design_cosmetic_ops(ws, layout: Layout) -> list:
+    """The single source of truth for an owner tab's full design. Returns
+    an ordered list of (label, callable) — both Phase 2 (run_all_owners)
+    and Phase 3 (step6) run this same list so a daily run reproduces the
+    ENTIRE approved design, not a partial subset. Every op is idempotent."""
+    return [
+        ("write_per_day_total_apps_formulas", lambda: write_per_day_total_apps_formulas(ws, layout)),
+        ("write_weekly_formulas",        lambda: write_weekly_formulas(ws, layout)),
+        ("alphabetize_reps",             lambda: alphabetize_reps(ws, layout)),
+        ("apply_empty_cell_defaults",    lambda: apply_empty_cell_defaults(ws, layout)),
+        ("mark_tableau_only_reps",       lambda: mark_tableau_only_reps(ws, layout)),
+        ("write_count_column",           lambda: write_count_column(ws)),
+        ("apply_number_formats",         lambda: apply_number_formats(ws, layout)),
+        ("apply_gap_time_format",        lambda: apply_gap_time_format(ws, layout)),
+        ("apply_bold_center",            lambda: apply_bold_center(ws)),
+        ("reset_conditional_formatting", lambda: reset_conditional_formatting(ws)),
+        ("write_office_totals_row",      lambda: write_office_totals_row(ws, layout)),
+        ("write_office_summary_block",   lambda: write_office_summary_block(ws, layout)),
+        ("apply_bold_border",            lambda: apply_bold_border(ws)),
+        ("apply_day_block_borders",      lambda: apply_day_block_borders(ws, layout)),
+        ("autosize_all_data_cols",       lambda: autosize_all_data_cols(ws)),
+        ("update_collapse_states",       lambda: update_collapse_states(ws)),
+    ]
+
+
 def apply_gap_time_format(ws, layout: Layout) -> None:
     """Apply the [h]\"h\" mm\"m\" time format to every per-day Total Gap Time
     col + the Weekly Total Gap Time col. Idempotent — safe to re-run.

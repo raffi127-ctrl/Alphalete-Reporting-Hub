@@ -47,17 +47,10 @@ from automations.focus_office_att.step5_fill_one_owner import (
     TT_FIELD_TO_CANONICAL,
     DISP_FIELD_TO_CANONICAL,
     _merge_rep_records,
-    alphabetize_reps,
-    apply_empty_cell_defaults,
-    mark_tableau_only_reps,
-    reset_conditional_formatting,
-    write_office_totals_row,
-    apply_gap_time_format,
+    design_cosmetic_ops,
     fill_owner_tab,
     scrape_day,
     scrape_disposition_day,
-    write_weekly_formulas,
-    write_per_day_total_apps_formulas,
 )
 
 DEST_SPREADSHEET_ID = "1xgVE_e8bZimACgPdqcdNCr1qo4sedWect_zzEcUgEJY"
@@ -349,12 +342,11 @@ def _scrape_one_owner(page, ws, days: list[dt.date], rqst: str) -> dict:
 
     stats = fill_owner_tab(ws, scraped_by_date, layout)
 
-    # Cosmetic ops are EXPENSIVE (each = 1-3 Sheets API calls; 10 ops × 30
-    # owners = 300+ calls → quota throttling). Skip them entirely if
-    # fill_owner_tab made no changes — re-sorting unchanged reps,
-    # re-painting unchanged formats, etc. is pure waste.
+    # Cosmetic ops are EXPENSIVE (each = 1-3 Sheets API calls). Skip the
+    # whole design pass if fill_owner_tab made no changes — re-applying
+    # the same design to an unchanged tab is pure waste.
     if stats["written_cells"] == 0 and not stats["new_reps"]:
-        print(f"  → no changes — skipping {10} cosmetic op(s)")
+        print(f"  → no changes — skipping the design pass")
         return {
             "tt_counts": {d.isoformat(): len(tt_by_date[d]) for d in days},
             "disp_counts": {d.isoformat(): len(disp_by_date[d]) for d in days},
@@ -363,23 +355,11 @@ def _scrape_one_owner(page, ws, days: list[dt.date], rqst: str) -> dict:
             "new_reps": stats["new_reps"],
         }
 
-    # Post-fill operations are cosmetic — sorting, borders, formatting. The
-    # primary data write (fill_owner_tab) is done; don't let a transient
-    # Sheets API hiccup on a cosmetic call invalidate the whole owner's
-    # scrape. Log and continue.
-    for label, fn in [
-        ("write_per_day_total_apps_formulas", lambda: write_per_day_total_apps_formulas(ws, layout)),
-        ("write_weekly_formulas",        lambda: write_weekly_formulas(ws, layout)),
-        ("alphabetize_reps",             lambda: alphabetize_reps(ws, layout)),
-        ("apply_bold_border",            lambda: apply_bold_border(ws)),
-        ("apply_gap_time_format",        lambda: apply_gap_time_format(ws, layout)),
-        ("autosize_all_data_cols",       lambda: autosize_all_data_cols(ws)),
-        ("update_collapse_states",       lambda: update_collapse_states(ws)),
-        ("apply_empty_cell_defaults",    lambda: apply_empty_cell_defaults(ws, layout)),
-        ("mark_tableau_only_reps",       lambda: mark_tableau_only_reps(ws, layout)),
-        ("reset_conditional_formatting", lambda: reset_conditional_formatting(ws)),
-        ("write_office_totals_row",      lambda: write_office_totals_row(ws, layout)),
-    ]:
+    # Apply the full owner-tab design. design_cosmetic_ops is the single
+    # source of truth (shared with Phase 3) so a run reproduces the WHOLE
+    # design. Each op is wrapped — a transient Sheets hiccup on one
+    # cosmetic step shouldn't invalidate the owner's data write.
+    for label, fn in design_cosmetic_ops(ws, layout):
         try:
             fn()
         except Exception as e:

@@ -45,10 +45,7 @@ from automations.recruiting_report import fill as _fill
 from automations.focus_office_att.aliases import load_aliases, alias_to_canonical
 from automations.focus_office_att.columns import resolve_layout, _normalize
 from automations.focus_office_att.step5_fill_one_owner import (
-    _col_letter, write_weekly_formulas, write_per_day_total_apps_formulas,
-    write_office_totals_row,
-    apply_empty_cell_defaults, mark_tableau_only_reps,
-    reset_conditional_formatting, strip_rep_mark,
+    _col_letter, design_cosmetic_ops, strip_rep_mark,
     TT_FIELD_TO_CANONICAL, DISP_FIELD_TO_CANONICAL,
 )
 
@@ -322,14 +319,9 @@ def main() -> int:
                 if stats.get("new_reps"):
                     print(f"    + added {len(stats['new_reps'])} new rep row(s): {stats['new_reps']}")
                 if not args.dry_run and stats["written"] > 0:
-                    for label, fn in [
-                        ("write_per_day_total_apps_formulas", lambda: write_per_day_total_apps_formulas(ws, layout)),
-                        ("write_weekly_formulas",        lambda: write_weekly_formulas(ws, layout)),
-                        ("apply_empty_cell_defaults",    lambda: apply_empty_cell_defaults(ws, layout)),
-                        ("mark_tableau_only_reps",       lambda: mark_tableau_only_reps(ws, layout)),
-                        ("reset_conditional_formatting", lambda: reset_conditional_formatting(ws)),
-                        ("write_office_totals_row",     lambda: write_office_totals_row(ws, layout)),
-                    ]:
+                    # Same consolidated design pass as Phase 2 — one source
+                    # of truth so Phase 3 reproduces the full design too.
+                    for label, fn in design_cosmetic_ops(ws, layout):
                         try:
                             fn()
                         except Exception as e:
