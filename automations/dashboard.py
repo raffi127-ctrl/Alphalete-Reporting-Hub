@@ -4497,9 +4497,18 @@ if st.session_state.view == "home":
         "</div>",
         unsafe_allow_html=True,
     )
+    # Run-count for the date header: of the reports due to run today,
+    # how many have a successful run logged.
+    _due_today = [r for r in AUTOMATED_REPORTS if _is_due_today(r, today)]
+    _ran_today = sum(1 for r in _due_today if _was_run_successfully_today(r["id"], today))
+    _due_n = len(_due_today)
     st.markdown(f"""
-    <div class="hero">
+    <div class="hero" style="display:flex; align-items:center; justify-content:space-between">
         <div class="big-date">{BIG_DATE}</div>
+        <div style="text-align:right; line-height:1.15">
+            <div style="font-size:2rem; font-weight:800">{_ran_today}<span style="opacity:0.45">/{_due_n}</span></div>
+            <div style="font-size:0.78rem; opacity:0.75; text-transform:uppercase; letter-spacing:0.05em">Reports run today</div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
