@@ -646,9 +646,12 @@ def design_cosmetic_ops(ws, layout: Layout) -> list:
     and Phase 3 (step6) run this same list so a daily run reproduces the
     ENTIRE approved design, not a partial subset. Every op is idempotent."""
     return [
+        # alphabetize FIRST — it writes the rep block back as values, so
+        # the formula writers below must run after to restore formulas
+        # for the new (sorted) row order.
+        ("alphabetize_reps",             lambda: alphabetize_reps(ws, layout)),
         ("write_per_day_total_apps_formulas", lambda: write_per_day_total_apps_formulas(ws, layout)),
         ("write_weekly_formulas",        lambda: write_weekly_formulas(ws, layout)),
-        ("alphabetize_reps",             lambda: alphabetize_reps(ws, layout)),
         ("apply_empty_cell_defaults",    lambda: apply_empty_cell_defaults(ws, layout)),
         ("mark_tableau_only_reps",       lambda: mark_tableau_only_reps(ws, layout)),
         ("write_count_column",           lambda: write_count_column(ws)),
@@ -708,11 +711,24 @@ def apply_gap_time_format(ws, layout: Layout) -> None:
 
 
 def alphabetize_reps(ws, layout: Layout) -> None:
-    """Sort rep rows (rows 3+) alphabetically by the Rep Name column.
+    """Sort rep rows alphabetically by Rep Name — read-sort-write in
+    Python rather than the Sheets sortRange API.
 
-    Stops at the last REAL rep row — the OFFICE TOTALS + summary rows
-    (which also have col-B text) must stay pinned below in fixed order,
-    never sorted in with the reps.
+    Why not sortRange: it 500s intermittently (then consistently) on
+    these heavily-formatted tabs. Reading the rep block, sorting it
+    ourselves, and writing it back is reliable.
+
+    Scope:
+      - Sorts cols B..CR only. Col A is left alone — its =ROW()-2
+        numbering self-adjusts to the new row order.
+      - Only rows with an actual rep name are sorted; the OFFICE TOTALS
+        + summary rows below are never read or touched. Any blank gaps
+        between reps are collapsed.
+      - Reads UNFORMATTED so times/gap-times round-trip as serial
+        numbers. The per-day Total Apps + weekly cells get written back
+        as their evaluated VALUES here — design_cosmetic_ops runs this
+        op BEFORE the formula writers, which then restore the formulas
+        for the sorted order.
     """
     rep_col_values = ws.col_values(layout.rep_name_col)
     rep_row_idxs = [
@@ -721,36 +737,24 @@ def alphabetize_reps(ws, layout: Layout) -> None:
     ]
     if len(rep_row_idxs) < 2:
         return  # nothing to sort
-    # endRowIndex is exclusive → last rep row index + 1.
-    last_row = max(rep_row_idxs) + 1
-    all_cols = [c for day_map in layout.day_cols.values() for c in day_map.values()] + [layout.rep_name_col]
-    last_data_col = max(all_cols) if all_cols else layout.rep_name_col
-    sheet_id = ws.id
-    ws.spreadsheet.batch_update({"requests": [{
-        "sortRange": {
-            "range": {
-                "sheetId": sheet_id,
-                "startRowIndex": 2,            # row 3 (0-indexed)
-                "endRowIndex": last_row,       # exclusive upper bound
-                # EXCLUDE col A (the count) from the sort. sortRange doesn't
-                # auto-update relative refs when it moves cells, so if col A
-                # were included, its =IF($B3="","",ROW()-2) formulas would
-                # get shuffled along with rows and end up referencing the
-                # WRONG B column — producing scrambled count values (e.g.
-                # 3, 4, 6, 8, 13, ... instead of 1, 2, 3, 4, ...).
-                # By starting at col B (index 1), col A stays put and its
-                # per-row formulas keep evaluating sequentially.
-                "startColumnIndex": 1,
-                "endColumnIndex": last_data_col,
-            },
-            "sortSpecs": [{"sortOrder": "ASCENDING",
-                          # dimensionIndex is 0-based WITHIN the sortRange,
-                          # so subtract startColumnIndex (1) from the actual
-                          # rep-name col index. Rep is col B (1-indexed=2);
-                          # inside this range that's index 1.
-                          "dimensionIndex": layout.rep_name_col - 1 - 1}],
-        },
-    }]})
+    first, last = min(rep_row_idxs), max(rep_row_idxs)
+    WIDTH = 95  # cols B..CR
+
+    block = ws.get(f"B{first}:CR{last}", value_render_option="UNFORMATTED_VALUE")
+    rows_with_names = []
+    for row in block:
+        padded = (list(row) + [""] * WIDTH)[:WIDTH]
+        if str(padded[0] or "").strip():   # col B = rep name
+            rows_with_names.append(padded)
+    rows_with_names.sort(
+        key=lambda r: strip_rep_mark(str(r[0] or "")).lower().strip()
+    )
+    # Write back contiguously from `first`; pad with blank rows so any
+    # collapsed gaps get cleared.
+    total_rows = last - first + 1
+    out = rows_with_names[:total_rows]
+    out += [[""] * WIDTH for _ in range(total_rows - len(out))]
+    ws.update(f"B{first}:CR{last}", out, value_input_option="RAW")
 
 
 _PRODUCTION_METRICS = {"new int", "upgrades", "dtv", "new lines"}
