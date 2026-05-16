@@ -325,7 +325,10 @@ def fill_owner_tab(ws, scraped_by_date: dict, layout: Layout) -> dict:
             for r_offset, row_vals in enumerate(grid):
                 row_idx = 3 + r_offset
                 for c_offset, val in enumerate(row_vals):
-                    if val.strip():
+                    # 'x' is the no-data placeholder (written by
+                    # apply_empty_cell_defaults), NOT real data — a real
+                    # scraped value must be allowed to overwrite it.
+                    if val.strip() and val.strip().lower() != "x":
                         existing[(row_idx, c_offset + 1)] = val
         except Exception:
             pass
