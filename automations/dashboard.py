@@ -1893,6 +1893,109 @@ def _read_intake() -> list[dict]:
     return list(reversed(rows))
 
 
+@st.cache_data(ttl=60)
+def _compute_leaderboard() -> list[dict]:
+    """Per-teammate Hub-activity stats + badges, ranked by total activity.
+
+    All from data the Hub already records — the intake Sheet (requests /
+    reports built / reviews) and the Hub Activity log (report runs). No
+    weighting: every action counts as 1. Cached 60s so it never slows a
+    page render. Returns one dict per MEMBER, in rank order."""
+    members = [m["name"] for m in MEMBERS]
+    stats = {n: {"requests": 0, "builds": 0, "runs": 0, "reviews": 0}
+             for n in members}
+    try:
+        intake = _read_intake()
+    except Exception:
+        intake = []
+    for r in intake:
+        submitter = str(r.get("Submitted By") or "").strip()
+        builder = str(r.get("Assigned To") or "").strip()
+        status = str(r.get("Status") or "").strip()
+        if submitter in stats:
+            stats[submitter]["requests"] += 1
+            if status == "Done":
+                stats[submitter]["reviews"] += 1   # reviewed + approved it
+        if builder in stats and status == "Done":
+            stats[builder]["builds"] += 1
+    for run in _hub_activity_rows():
+        runner = str(run.get("User") or "").strip()
+        if runner in stats:
+            stats[runner]["runs"] += 1
+
+    board = []
+    for n in members:
+        s = stats[n]
+        board.append({
+            "name": n,
+            "requests": s["requests"], "builds": s["builds"],
+            "runs": s["runs"], "reviews": s["reviews"],
+            "total": s["requests"] + s["builds"] + s["runs"] + s["reviews"],
+        })
+    board.sort(key=lambda x: (-x["total"], x["name"]))
+    # 1-based rank; ties share a rank.
+    _rank, _prev = 0, None
+    for i, row in enumerate(board):
+        if row["total"] != _prev:
+            _rank, _prev = i + 1, row["total"]
+        row["rank"] = _rank
+
+    # Badges: #1 in each category, awarded only when the top count is > 0
+    # (no badge on a score of 0). Ties → everyone tied gets it.
+    _BADGES = [
+        ("total",    "👑", "Hub MVP"),
+        ("builds",   "🏆", "Top Creator"),
+        ("requests", "📨", "Top Requester"),
+        ("runs",     "🏃", "Top Runner"),
+        ("reviews",  "👀", "Top Reviewer"),
+    ]
+    for row in board:
+        row["badges"] = []
+    for stat, emoji, label in _BADGES:
+        top = max((r[stat] for r in board), default=0)
+        if top <= 0:
+            continue
+        for r in board:
+            if r[stat] == top:
+                r["badges"].append({"emoji": emoji, "label": label})
+    return board
+
+
+def _render_leaderboard() -> None:
+    """Ranked board — every teammate by total Hub activity, with badges."""
+    board = _compute_leaderboard()
+    if not board or all(r["total"] == 0 for r in board):
+        st.caption("No Hub activity logged yet — the leaderboard fills in "
+                   "as people submit, build, run, and review reports.")
+        return
+    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+    rows_html = ""
+    for r in board:
+        rk = medals.get(r["rank"], f"#{r['rank']}")
+        badges = " ".join(b["emoji"] for b in r["badges"])
+        rows_html += (
+            "<tr style='border-top:1px solid rgba(0,0,0,0.08)'>"
+            f"<td style='padding:7px 10px;font-size:1.1rem'>{rk}</td>"
+            f"<td style='padding:7px 10px;font-weight:700'>{r['name']} {badges}</td>"
+            "<td style='padding:7px 10px;opacity:0.75;font-size:0.9rem'>"
+            f"🏆 {r['builds']} &nbsp; 📨 {r['requests']} &nbsp; "
+            f"🏃 {r['runs']} &nbsp; 👀 {r['reviews']}</td>"
+            "<td style='padding:7px 10px;text-align:right;font-weight:800;"
+            f"font-size:1.15rem'>{r['total']}</td></tr>"
+        )
+    st.markdown(
+        "<table style='width:100%;border-collapse:collapse'>"
+        "<tr style='opacity:0.55;font-size:0.78rem;text-transform:uppercase;"
+        "letter-spacing:0.03em'>"
+        "<td style='padding:4px 10px'></td>"
+        "<td style='padding:4px 10px'>Teammate</td>"
+        "<td style='padding:4px 10px'>Built · Requested · Runs · Reviews</td>"
+        "<td style='padding:4px 10px;text-align:right'>Total</td></tr>"
+        + rows_html + "</table>",
+        unsafe_allow_html=True,
+    )
+
+
 def _add_intake(title: str, sheet_link: str, loom_link: str, description: str,
                 submitted_by: str, preferred_creator: str = "",
                 currently_runs: str = "", priority: str = "",
@@ -2307,7 +2410,12 @@ def _show_intake_dialog():
         )
         cols = st.columns(2)
         with cols[0]:
-            submitted_by = st.text_input("Your name *", value=st.session_state.get("user", "") or "")
+            # Submitter is picked from the Hub's member list (not free text)
+            # so leaderboard stats tie cleanly to a real teammate.
+            _member_names = [m["name"] for m in MEMBERS]
+            _cur_user = st.session_state.get("user", "") or ""
+            _sb_idx = _member_names.index(_cur_user) if _cur_user in _member_names else 0
+            submitted_by = st.selectbox("Your name *", _member_names, index=_sb_idx)
         with cols[1]:
             preferred_creator = st.selectbox(
                 "Preferred creator (optional)",
@@ -4405,6 +4513,7 @@ if st.session_state.view == "home":
                 st.rerun()
 
     st.markdown("### 🐺 The Pack")
+    _badges_by_member = {r["name"]: r["badges"] for r in _compute_leaderboard()}
     # Build pack cards: synthetic "Unassigned" card first, then real members.
     # Clicking it opens a filtered user-style page showing only reports with
     # no assignees, so someone can pick them up.
@@ -4441,6 +4550,16 @@ if st.session_state.view == "home":
                         f"<div style='text-align:center; font-size: 1.3rem; font-weight: 700; margin-bottom: 0.3rem'>{member['name']}</div>",
                         unsafe_allow_html=True,
                     )
+                    _mbadges = [] if is_unassigned else _badges_by_member.get(member["name"], [])
+                    if _mbadges:
+                        _bhtml = " ".join(
+                            f"<span title='{b['label']}' style='font-size:1.15rem'>{b['emoji']}</span>"
+                            for b in _mbadges
+                        )
+                        st.markdown(
+                            f"<div style='text-align:center; margin-bottom:0.3rem'>{_bhtml}</div>",
+                            unsafe_allow_html=True,
+                        )
                     if is_unassigned:
                         if count > 0:
                             st.markdown(
@@ -4625,6 +4744,11 @@ elif st.session_state.view == "overview":
         <p>Every report run by anyone, last 7 days.</p>
     </div>
     """, unsafe_allow_html=True)
+
+    # Hub leaderboard — every teammate ranked by total activity.
+    st.markdown("### 🏆 Hub Leaderboard")
+    _render_leaderboard()
+    st.markdown("")
 
     # Currently-running activity log (anyone's runs)
     active_now = _read_active_runs()
@@ -4901,6 +5025,26 @@ else:  # st.session_state.view == "user"
         else:
             st.success("🎉 Every report has someone assigned. Nothing to pick up.")
     else:
+        # Personal Hub-activity standing — rank, the four stats, badges.
+        _lb = _compute_leaderboard()
+        _me = next((r for r in _lb if r["name"] == user_name), None)
+        if _me:
+            _medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(_me["rank"], f"#{_me['rank']}")
+            _bhtml = " ".join(
+                f"<span title='{b['label']}'>{b['emoji']}</span>" for b in _me["badges"]
+            )
+            with st.container(border=True):
+                st.markdown(
+                    "<div style='font-size:1.05rem'>"
+                    f"<b>🏆 Your Hub standing:</b> &nbsp; {_medal} &nbsp; "
+                    f"<b>{_me['total']}</b> total &nbsp;·&nbsp; "
+                    f"🏆 {_me['builds']} built &nbsp; 📨 {_me['requests']} requested &nbsp; "
+                    f"🏃 {_me['runs']} runs &nbsp; 👀 {_me['reviews']} reviews"
+                    + (f" &nbsp; {_bhtml}" if _bhtml else "")
+                    + "</div>",
+                    unsafe_allow_html=True,
+                )
+
         # 7-day schedule strip — visual overview of this user's responsibilities
         # for the week ahead. One row, 7 columns; auto-updates as new reports
         # get assigned to them (or as schedules change).
