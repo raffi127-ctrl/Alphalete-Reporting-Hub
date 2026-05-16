@@ -5056,8 +5056,7 @@ else:  # st.session_state.view == "user"
             with st.container(border=True):
                 st.markdown(
                     "<div style='font-size:1.1rem;font-weight:700;margin-bottom:6px'>"
-                    f"🏆 Your Hub standing — {_medal} &nbsp;·&nbsp; "
-                    f"{_me['total']} total actions</div>"
+                    f"🏆 Your Hub standing — {_medal}</div>"
                     "<div style='font-size:0.97rem;line-height:1.9'>"
                     f"🏆 <b>{_me['builds']}</b> reports built &nbsp;&nbsp;&nbsp; "
                     f"📨 <b>{_me['requests']}</b> requests submitted &nbsp;&nbsp;&nbsp; "
