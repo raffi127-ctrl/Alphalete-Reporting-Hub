@@ -1961,6 +1961,16 @@ def _compute_leaderboard() -> list[dict]:
     return board
 
 
+def _badge_chip(b: dict) -> str:
+    """Inline HTML chip for a leaderboard badge — emoji + label, so it
+    reads at a glance instead of being a bare emoji."""
+    return (
+        "<span style='display:inline-block;background:#FFF3D6;color:#8B6914;"
+        "border-radius:999px;padding:2px 9px;font-size:0.78rem;font-weight:700;"
+        f"margin:2px 3px 2px 0;white-space:nowrap'>{b['emoji']} {b['label']}</span>"
+    )
+
+
 def _render_leaderboard() -> None:
     """Ranked board — every teammate by total Hub activity, with badges."""
     board = _compute_leaderboard()
@@ -1972,7 +1982,7 @@ def _render_leaderboard() -> None:
     rows_html = ""
     for r in board:
         rk = medals.get(r["rank"], f"#{r['rank']}")
-        badges = " ".join(b["emoji"] for b in r["badges"])
+        badges = "".join(_badge_chip(b) for b in r["badges"])
         rows_html += (
             "<tr style='border-top:1px solid rgba(0,0,0,0.08)'>"
             f"<td style='padding:7px 10px;font-size:1.1rem'>{rk}</td>"
@@ -4552,10 +4562,7 @@ if st.session_state.view == "home":
                     )
                     _mbadges = [] if is_unassigned else _badges_by_member.get(member["name"], [])
                     if _mbadges:
-                        _bhtml = " ".join(
-                            f"<span title='{b['label']}' style='font-size:1.15rem'>{b['emoji']}</span>"
-                            for b in _mbadges
-                        )
+                        _bhtml = "".join(_badge_chip(b) for b in _mbadges)
                         st.markdown(
                             f"<div style='text-align:center; margin-bottom:0.3rem'>{_bhtml}</div>",
                             unsafe_allow_html=True,
@@ -5030,9 +5037,7 @@ else:  # st.session_state.view == "user"
         _me = next((r for r in _lb if r["name"] == user_name), None)
         if _me:
             _medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(_me["rank"], f"#{_me['rank']}")
-            _bhtml = " ".join(
-                f"<span title='{b['label']}'>{b['emoji']}</span>" for b in _me["badges"]
-            )
+            _bhtml = "".join(_badge_chip(b) for b in _me["badges"])
             with st.container(border=True):
                 st.markdown(
                     "<div style='font-size:1.05rem'>"
