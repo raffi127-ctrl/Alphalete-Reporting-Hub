@@ -1823,6 +1823,7 @@ INTAKE_HEADERS = [
     "Review CC", "Notes", "Resurrected At", "Completed At", "Claim History",
     "Additional Links", "Review Notes", "Schedule Days",
     "Schedule Frequency", "Schedule Day Of Month", "Schedule Time",
+    "Report Breakdown",
 ]
 
 PRIORITY_OPTIONS = [
@@ -2559,6 +2560,27 @@ def _fmt_time_str(t: dt.time) -> str:
     return f"{hour}:{t.minute:02d} {ampm}"
 
 
+def _extract_report_breakdown(script_text: str) -> str:
+    """Pull a module-level `REPORT_BREAKDOWN = "..."` string constant out
+    of an uploaded script, if the creator wrote one. Returns '' if absent
+    or the script doesn't parse. Lets the Wire-Up form pre-fill the
+    requester cheat-sheet straight from the script (same idea as
+    ESTIMATED_MINUTES)."""
+    try:
+        tree = ast.parse(script_text)
+    except SyntaxError:
+        return ""
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for tgt in node.targets:
+            if (isinstance(tgt, ast.Name) and tgt.id == "REPORT_BREAKDOWN"
+                    and isinstance(node.value, ast.Constant)
+                    and isinstance(node.value.value, str)):
+                return node.value.value.strip()
+    return ""
+
+
 def _clear_wireup_state() -> None:
     """Drop every wu_* widget key so the dialog re-renders from `value=`
     defaults. Call before opening the dialog so a revise pre-fills from
@@ -2757,6 +2779,36 @@ def _show_wire_up_dialog(entry: dict | None = None):
         help="Included in the alert email sent to the requester when you upload for review.",
     )
 
+    # Report breakdown — a plain-language cheat-sheet for the requester
+    # (tab colors, how to add an ICD, handy functions, pre-flight steps).
+    # Pre-fills from a `REPORT_BREAKDOWN = "..."` constant in the script if
+    # the creator (Claude) wrote one; the creator can edit before it sends.
+    _parsed_breakdown = _extract_report_breakdown(script_text)
+    if "wu_breakdown_srcseen" not in st.session_state:
+        st.session_state.wu_breakdown_srcseen = script_text
+        st.session_state.wu_breakdown = (
+            staged_meta.get("breakdown") or _parsed_breakdown or ""
+        )
+    elif st.session_state.wu_breakdown_srcseen != script_text:
+        # Script changed (e.g. the creator just pasted it) → re-derive.
+        st.session_state.wu_breakdown_srcseen = script_text
+        if _parsed_breakdown:
+            st.session_state.wu_breakdown = _parsed_breakdown
+    breakdown = st.text_area(
+        "📋 Report breakdown — cheat-sheet sent to the requester",
+        key="wu_breakdown",
+        height=180,
+        placeholder=(
+            "A plain-language guide for the requester:\n"
+            "• What the tab colors mean\n"
+            "• How to add an ICD to the report\n"
+            "• Handy functions worth knowing\n"
+            "• Pre-flight steps before a run"
+        ),
+        help="Auto-fills from the script's REPORT_BREAKDOWN if present. "
+             "Goes into the 'uploaded for review' email to the requester.",
+    )
+
     review_cc = ""
     if entry.get("ID"):
         review_cc = st.text_input(
@@ -2831,6 +2883,7 @@ def _show_wire_up_dialog(entry: dict | None = None):
             "schedule": schedule,
             "checklist": checklist,
             "needs_login": needs_login,
+            "breakdown": breakdown,  # report cheat-sheet for the review email
             "followup_notes": followup_notes,  # carried for revise pre-fill
             "args": [],
         }
@@ -2851,18 +2904,24 @@ def _show_wire_up_dialog(entry: dict | None = None):
             # Stash the follow-up notes on the intake row BEFORE flipping
             # status — the Apps Script emails on the status change and
             # reads this cell for the body.
-            if "Review Notes" in INTAKE_HEADERS:
-                try:
-                    _iws = _intake_ws()
-                    _icell = _iws.find(str(entry["ID"]))
-                    if _icell:
+            try:
+                _iws = _intake_ws()
+                _icell = _iws.find(str(entry["ID"]))
+                if _icell:
+                    if "Review Notes" in INTAKE_HEADERS:
                         _iws.update_cell(
                             _icell.row,
                             INTAKE_HEADERS.index("Review Notes") + 1,
                             followup_notes.strip(),
                         )
-                except Exception:
-                    pass
+                    if "Report Breakdown" in INTAKE_HEADERS:
+                        _iws.update_cell(
+                            _icell.row,
+                            INTAKE_HEADERS.index("Report Breakdown") + 1,
+                            breakdown.strip(),
+                        )
+            except Exception:
+                pass
             _set_intake_status(str(entry["ID"]), "In Review")
             try:
                 _append_intake_note(
