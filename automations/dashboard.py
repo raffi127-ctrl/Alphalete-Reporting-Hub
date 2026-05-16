@@ -1822,6 +1822,7 @@ INTAKE_HEADERS = [
     "Preferred Creator", "Currently runs", "Priority", "Submitter Email",
     "Review CC", "Notes", "Resurrected At", "Completed At", "Claim History",
     "Additional Links", "Review Notes", "Schedule Days",
+    "Schedule Frequency", "Schedule Day Of Month", "Schedule Time",
 ]
 
 PRIORITY_OPTIONS = [
@@ -1895,7 +1896,9 @@ def _add_intake(title: str, sheet_link: str, loom_link: str, description: str,
                 submitted_by: str, preferred_creator: str = "",
                 currently_runs: str = "", priority: str = "",
                 submitter_email: str = "",
-                additional_links: str = "", schedule_days: str = "") -> str:
+                additional_links: str = "", schedule_days: str = "",
+                schedule_frequency: str = "", schedule_day_of_month: str = "",
+                schedule_time: str = "") -> str:
     new_id = dt.datetime.now().strftime("%Y%m%d%H%M%S")
     ws = _intake_ws()
     # Fill every column positionally so each value lands in the right cell.
@@ -1916,6 +1919,9 @@ def _add_intake(title: str, sheet_link: str, loom_link: str, description: str,
         additional_links or "",  # Additional Links
         "",  # Review Notes
         schedule_days or "",  # Schedule Days (weekday indexes, comma-separated)
+        schedule_frequency or "",     # Schedule Frequency (daily/weekly/monthly)
+        schedule_day_of_month or "",  # Schedule Day Of Month
+        schedule_time or "",          # Schedule Time
     ])
     _read_intake.clear()
     return new_id
@@ -2326,10 +2332,23 @@ def _show_intake_dialog():
             index=2,
             help="How urgent is this? Don't worry, 5 is a real option.",
         )
-        # Schedule — which days the finished report should run. Captured
-        # here so the Wire-Up form auto-fills the schedule at upload time.
-        st.markdown("**📅 Which days should this report run?**")
-        st.caption("Tick the days. Leave all unticked if you're not sure — the builder can set it.")
+        # Schedule — how often + what time the finished report should run.
+        # Captured here so the Wire-Up form auto-fills the schedule when the
+        # builder uploads. A form can't rerun on the radio, so all three
+        # detail widgets show at once; submit uses only the relevant ones.
+        st.markdown("**📅 When should this report run?**")
+        _freq_choice = st.radio(
+            "How often?",
+            ["Every day", "Certain days each week", "Once a month"],
+            key="intake_sched_freq",
+            horizontal=True,
+        )
+        _run_time = st.time_input(
+            "What time of day should it run?",
+            value=dt.time(8, 0),
+            key="intake_sched_time",
+        )
+        st.caption("If you picked **Certain days each week**, tick those days:")
         _sched_cols = st.columns(7)
         _day_labels = ["M", "T", "W", "Th", "F", "Sa", "Su"]
         _picked_days: list[int] = []
@@ -2342,10 +2361,23 @@ def _show_intake_dialog():
                 if st.checkbox(" ", key=f"intake_sched_day_{_di}",
                                label_visibility="collapsed"):
                     _picked_days.append(_di)
+        _month_day = st.number_input(
+            "If you picked Once a month — which day of the month?",
+            min_value=1, max_value=31, value=1, step=1,
+            key="intake_sched_month_day",
+        )
         ok = st.form_submit_button("📨 Submit", type="primary", use_container_width=True)
         if ok:
+            _freq_map = {
+                "Every day": "daily",
+                "Certain days each week": "weekly",
+                "Once a month": "monthly",
+            }
+            _frequency = _freq_map.get(_freq_choice, "daily")
             if not (title and sheet_link and loom_link and description and submitted_by and submitter_email):
                 st.error("Please fill in every field marked *.")
+            elif _frequency == "weekly" and not _picked_days:
+                st.error('You picked "Certain days each week" — tick at least one day below.')
             else:
                 pc = "" if preferred_creator == "No preference" else preferred_creator
                 # Normalize the additional-links textarea: parse → re-emit canonical
@@ -2359,7 +2391,12 @@ def _show_intake_dialog():
                         title, sheet_link, loom_link, description, submitted_by,
                         pc, currently_runs, priority, submitter_email,
                         additional_links=_extras,
-                        schedule_days=",".join(str(d) for d in _picked_days),
+                        schedule_days=(",".join(str(d) for d in _picked_days)
+                                       if _frequency == "weekly" else ""),
+                        schedule_frequency=_frequency,
+                        schedule_time=_run_time.strftime("%-I:%M %p"),
+                        schedule_day_of_month=(str(int(_month_day))
+                                               if _frequency == "monthly" else ""),
                     )
                     st.success("✅ Submitted! It will appear on the home page for someone to claim.")
                     st.balloons()
@@ -2501,6 +2538,18 @@ def _promote_pending_report(entry_id: str) -> tuple[bool, str]:
     return True, "Report approved and added to the Library."
 
 
+def _parse_time_str(s: str) -> dt.time:
+    """Parse a display time string ('8:00 AM') into a datetime.time.
+    Falls back to 08:00 if the string is missing or unrecognized."""
+    s = (s or "").strip()
+    for fmt in ("%I:%M %p", "%I:%M%p", "%H:%M"):
+        try:
+            return dt.datetime.strptime(s, fmt).time()
+        except ValueError:
+            continue
+    return dt.time(8, 0)
+
+
 def _clear_wireup_state() -> None:
     """Drop every wu_* widget key so the dialog re-renders from `value=`
     defaults. Call before opening the dialog so a revise pre-fills from
@@ -2590,9 +2639,16 @@ def _show_wire_up_dialog(entry: dict | None = None):
     description = staged_meta.get("description") or ""
 
     st.markdown("**📅 Schedule**")
+    # Pre-fill from what the requester picked on the intake form.
+    _intake_freq = (entry.get("Schedule Frequency") or "").strip().lower()
+    _intake_time = (entry.get("Schedule Time") or "").strip()
+    _intake_dom = (entry.get("Schedule Day Of Month") or "").strip()
+    _staged_sched = staged_meta.get("schedule") or {}
+    _monthly_default = (_staged_sched.get("frequency") == "monthly") or (_intake_freq == "monthly")
     sched_mode = st.radio(
         "When does this report run?",
         ["Specific days", "Monthly (on a day of the month)"],
+        index=1 if _monthly_default else 0,
         horizontal=True,
         key="wu_sched_mode_radio",
     )
@@ -2605,13 +2661,16 @@ def _show_wire_up_dialog(entry: dict | None = None):
     #   1. staged schedule (revising a prior upload)
     #   2. the days the REQUESTER picked on the intake form
     #   3. Tue-Sat fallback
-    _staged_weekdays = set((staged_meta.get("schedule") or {}).get("weekdays", []))
+    _staged_weekdays = set(_staged_sched.get("weekdays", []))
     _intake_days: set[int] = set()
     for _tok in str(entry.get("Schedule Days") or "").split(","):
         _tok = _tok.strip()
         if _tok.isdigit():
             _intake_days.add(int(_tok))
-    _default_days = _staged_weekdays or _intake_days or {1, 2, 3, 4, 5}
+    # 'Every day' on the intake form → all 7 days pre-ticked.
+    _freq_fallback = ({0, 1, 2, 3, 4, 5, 6} if _intake_freq == "daily"
+                      else {1, 2, 3, 4, 5})
+    _default_days = _staged_weekdays or _intake_days or _freq_fallback
     if sched_mode == "Specific days":
         st.caption("Tick every day this report should run.")
         dcols = st.columns(7)
@@ -2622,21 +2681,28 @@ def _show_wire_up_dialog(entry: dict | None = None):
                 if st.checkbox(" ", key=f"wu_sched_day_{i}", label_visibility="collapsed", value=(i in _default_days)):
                     days_chosen.append(i)
     else:
+        _dom_default = 1
+        if _staged_sched.get("day_of_month"):
+            _dom_default = int(_staged_sched["day_of_month"])
+        elif _intake_dom.isdigit() and 1 <= int(_intake_dom) <= 31:
+            _dom_default = int(_intake_dom)
         day_of_month = st.number_input(
             "Day of the month",
-            min_value=1, max_value=31, value=1, step=1,
+            min_value=1, max_value=31, value=_dom_default, step=1,
             key="wu_day_of_month",
             help="The report will run on this day each month. If the month is shorter, it's skipped (e.g. 31st only runs in long months).",
         )
         st.success(f"📅  This report will appear on the **{_ordinal(int(day_of_month))} of every month** in the assignee's schedule.")
 
+    # Time picker pre-fills from the staged upload, else the requester's
+    # intake time, else 8:00 AM. Stored back as a display string.
+    _time_default = _parse_time_str(_staged_sched.get("time") or _intake_time or "8:00 AM")
     sched_cols = st.columns(2)
     with sched_cols[0]:
-        time_str = st.text_input("Time of day",
-                                 value=(staged_meta.get("schedule") or {}).get("time") or "8:00 AM",
-                                 key="wu_time_str")
+        time_val = st.time_input("Time of day", value=_time_default, key="wu_time_val")
     with sched_cols[1]:
-        st.caption("(Time of day is informational — runs are triggered manually unless you set a cron.)")
+        st.caption("Runs are still triggered manually — this time shows on the report card.")
+    time_str = time_val.strftime("%-I:%M %p")
 
     st.markdown("**🐍 Python script** (paste what Claude generated)")
     script_text = st.text_area(
@@ -2648,43 +2714,23 @@ def _show_wire_up_dialog(entry: dict | None = None):
         help="Must be valid Python. The dashboard will run it as `python -m automations.uploaded.<name>`.",
     )
 
-    st.markdown("**📋 Pre-flight checklist (optional)**")
-    st.caption(
-        "One step per line. To add a link to a step, use the format: "
-        "`Step text | URL | Button label`. The button label is optional; "
-        "if omitted, defaults to 'Open'."
+    st.markdown("**🌐 Browser login**")
+    # Pre-flight steps are no longer hand-typed. If the report scrapes a
+    # logged-in website, ticking this box makes the Hub attach the standard
+    # pre-flight checklist automatically (launch Report Chrome, then log in).
+    _staged_needs_login = bool(staged_meta.get("needs_login")) or bool(staged_meta.get("checklist"))
+    needs_login = st.checkbox(
+        "This report pulls from a website that needs a login (e.g. ownerville)",
+        value=_staged_needs_login,
+        key="wu_needs_login",
+        help="If ticked, the Hub adds the standard pre-flight steps for you — "
+             "launch Report Chrome, then log in. You don't write a checklist.",
     )
-    # Rebuild the "text | url | label" lines from a staged checklist (list
-    # of {text, link, link_label} dicts) so a revise keeps the checklist.
-    _staged_checklist_lines = ""
-    if staged_meta.get("checklist"):
-        _lines = []
-        for _step in staged_meta["checklist"]:
-            _t = _step.get("text", "")
-            if _step.get("link"):
-                _t += f" | {_step['link']}"
-                if _step.get("link_label") and _step["link_label"] != "Open":
-                    _t += f" | {_step['link_label']}"
-            _lines.append(_t)
-        _staged_checklist_lines = "\n".join(_lines)
-    checklist_text = st.text_area(
-        "Each line becomes a checkbox the user ticks before the Run button enables",
-        value=_staged_checklist_lines,
-        key="wu_checklist_text",
-        height=140,
-        placeholder=(
-            "Launch Chrome\n"
-            "Log into AppStream as rhidalgo\n"
-            "Open the source data | https://docs.google.com/spreadsheets/d/abc | 📂 Open Source\n"
-            "Watch the runbook | https://loom.com/xyz | ▶️ Watch Loom"
-        ),
-        help=(
-            "Examples:\n"
-            "• 'Launch Chrome' — checkbox only\n"
-            "• 'Open the data | https://...' — checkbox + link button (default label 'Open')\n"
-            "• 'Watch loom | https://... | ▶️ Loom' — checkbox + custom-labeled link button"
-        ),
-    )
+    if needs_login:
+        st.caption(
+            "✅ Pre-flight steps added automatically — **1.** Launch Report "
+            "Chrome  **2.** Log into the site in that Chrome window."
+        )
 
     # Follow-up questions / extra info for the requester — goes into the
     # "uploaded for review" email so the requester knows what to check
@@ -2754,18 +2800,17 @@ def _show_wire_up_dialog(entry: dict | None = None):
                 "estimated_minutes": est_min,
             }
 
-        # Parse checklist: each line is "text" OR "text | url" OR "text | url | label"
-        checklist = []
-        for line in checklist_text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            parts = [p.strip() for p in line.split("|")]
-            step = {"text": parts[0]}
-            if len(parts) >= 2 and parts[1]:
-                step["link"] = parts[1]
-                step["link_label"] = parts[2] if len(parts) >= 3 and parts[2] else "Open"
-            checklist.append(step)
+        # Pre-flight checklist is auto-generated, not hand-typed. A report
+        # that needs a browser login gets the standard two steps; otherwise
+        # no checklist at all.
+        if needs_login:
+            checklist = [
+                {"text": "Launch Report Chrome", "action": "launch_chrome"},
+                {"text": "Log into the website this report pulls from, in "
+                         "that Chrome window"},
+            ]
+        else:
+            checklist = []
 
         metadata = {
             "id": name,
@@ -2776,6 +2821,7 @@ def _show_wire_up_dialog(entry: dict | None = None):
             "assignees": assignees_list,
             "schedule": schedule,
             "checklist": checklist,
+            "needs_login": needs_login,
             "followup_notes": followup_notes,  # carried for revise pre-fill
             "args": [],
         }
