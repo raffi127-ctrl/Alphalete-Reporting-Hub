@@ -86,8 +86,10 @@ def wipe_all_owner_tabs(sh) -> int:
     tabs = [t for t in sh.worksheets() if t.title not in NON_OWNER_TABS]
     if not tabs:
         return 0
-    # One values-clear covering A3:CR200 on every owner tab.
-    sh.values_batch_clear([f"{_q(t.title)}!A3:CR200" for t in tabs])
+    # One values-clear covering A3:CR200 on every owner tab. gspread's
+    # values_batch_clear takes the ranges in the request body (its first
+    # positional arg is `params`, not `ranges`).
+    sh.values_batch_clear(body={"ranges": [f"{_q(t.title)}!A3:CR200" for t in tabs]})
     # One format-clear (updateCells) covering rows 3-200 on every owner tab.
     sh.batch_update({"requests": [
         {"updateCells": {
