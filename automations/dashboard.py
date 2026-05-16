@@ -1978,13 +1978,6 @@ def _render_leaderboard() -> None:
         st.caption("No Hub activity logged yet — the leaderboard fills in "
                    "as people submit, build, run, and review reports.")
         return
-    # Key — what each column emoji means, right at the top.
-    st.markdown(
-        "<div style='font-size:0.86rem;opacity:0.72;margin-bottom:8px'>"
-        "<b>Key:</b> &nbsp; 🏆 Reports built &nbsp;&nbsp; 📨 Requests submitted"
-        " &nbsp;&nbsp; 🏃 Report runs &nbsp;&nbsp; 👀 Reviews completed</div>",
-        unsafe_allow_html=True,
-    )
     medals = {1: "🥇", 2: "🥈", 3: "🥉"}
     NUM = "padding:8px 14px;text-align:right;white-space:nowrap"
     head = (
@@ -1992,8 +1985,8 @@ def _render_leaderboard() -> None:
         "letter-spacing:0.03em'>"
         "<td style='padding:6px 12px'></td>"
         "<td style='padding:6px 12px'>Teammate</td>"
-        f"<td style='{NUM}'>🏆</td><td style='{NUM}'>📨</td>"
-        f"<td style='{NUM}'>🏃</td><td style='{NUM}'>👀</td>"
+        f"<td style='{NUM}'>🏆 Built</td><td style='{NUM}'>📨 Requested</td>"
+        f"<td style='{NUM}'>🏃 Runs</td><td style='{NUM}'>👀 Reviews</td>"
         f"<td style='{NUM}'>Total</td></tr>"
     )
     rows_html = ""
@@ -4387,6 +4380,9 @@ with st.sidebar:
     if st.button("📚 Report Library", use_container_width=True):
         _go_library()
         st.rerun()
+    if st.button("📊 7-Day Overview", use_container_width=True, key="nav_overview"):
+        _go_overview()
+        st.rerun()
 
     # Counts so the sidebar shows what's waiting without clicking through.
     # Wrapped in try/except: _read_intake's internal try/except is below
@@ -4520,22 +4516,6 @@ if st.session_state.view == "home":
         <div class="big-date">{BIG_DATE}</div>
     </div>
     """, unsafe_allow_html=True)
-
-    # Overview card (logo now lives next to the page header above)
-    with st.container(border=True):
-        cols = st.columns([5, 2])
-        with cols[0]:
-            st.markdown(
-                "<div style='font-size: 1.8rem; font-weight: 800; line-height: 1.1; margin-top: 0.5rem'>Alphalete Marketing</div>"
-                "<div style='font-size: 1.3rem; font-weight: 600; opacity: 0.7; margin-bottom: 0.4rem'>7-Day Overview</div>"
-                "<div style='opacity: 0.85'>Every report run by anyone, last 7 days.</div>",
-                unsafe_allow_html=True,
-            )
-        with cols[1]:
-            st.markdown("<div style='padding-top: 1.2rem'></div>", unsafe_allow_html=True)
-            if st.button("📊 Open Overview", use_container_width=True, type="primary", key="home_overview_btn"):
-                _go_overview()
-                st.rerun()
 
     st.markdown("### 🐺 The Pack")
     _badges_by_member = {r["name"]: r["badges"] for r in _compute_leaderboard()}
