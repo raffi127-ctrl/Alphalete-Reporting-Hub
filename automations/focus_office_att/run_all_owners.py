@@ -388,9 +388,11 @@ def main() -> int:
                     help="List the planned owner-order without scraping.")
     ap.add_argument("--week-start", default=None,
                     help="Monday of week to scrape (YYYY-MM-DD); defaults to current week.")
-    ap.add_argument("--today-only", action="store_true",
-                    help="Scrape ONLY today's weekday (fast path for mid-week "
-                         "daily runs — Mon-Thu data is already locked in).")
+    ap.add_argument("--daily-window", action="store_true",
+                    help="Re-scrape yesterday + today only (fast incremental "
+                         "path for mid-week daily runs). Yesterday is re-pulled "
+                         "because the prior run scraped it as a still-in-progress "
+                         "partial day — this run finalizes it now that it's done.")
     args = ap.parse_args()
 
     only = _parse_csv(args.only)
@@ -405,10 +407,13 @@ def main() -> int:
         owner_tabs = [t for t in owner_tabs if t not in skip]
 
     today = dt.date.today()
-    if args.today_only:
-        # Mid-week fast path: only re-scrape today. Mon-Thu data is
-        # already on the Sheet from earlier runs and doesn't change.
-        days = [today]
+    if args.daily_window:
+        # Mid-week fast path: re-scrape yesterday + today only. Yesterday
+        # is re-pulled because the prior run scraped it as a partial,
+        # still-in-progress day; now that it's complete its numbers are
+        # final. Today is scraped for an early read — the next run
+        # finalizes it. Days before yesterday don't change.
+        days = [today - dt.timedelta(days=1), today]
     else:
         if args.week_start:
             monday = dt.datetime.strptime(args.week_start, "%Y-%m-%d").date()

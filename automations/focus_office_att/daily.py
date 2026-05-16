@@ -3,14 +3,18 @@
 This is the Hub-button entrypoint. It orchestrates the full pipeline:
 
   Monday:   full wipe -> scrape ALL days -> Tableau -> full cosmetic pass
-  Tue-Sun:  scrape TODAY only -> incremental -> Tableau -> skip-unchanged
-  Both:     refresh tab colors + Mac notification on success/failure
+  Tue-Sun:  re-scrape yesterday + today -> incremental -> Tableau -> skip-unchanged
+  Both:     refresh tab colors + desktop notification on success/failure
 
 Why Monday is special: per Raf, each Monday the previous week is
 overwritten so terminated reps drop off. A wipe gives a clean slate.
 Mid-week, reps are never removed -- a rep terminated Wednesday keeps
 their Mon/Tue data visible, and a rep who first appears Wednesday is
 added.
+
+Why mid-week re-scrapes yesterday: a same-day scrape only ever sees a
+partial day, so today's numbers are always incomplete until tomorrow's
+run re-pulls the now-finished day.
 
 Prereq: debug Chrome at :9222 with ownerville logged in. Tableau SSO is
 bootstrapped automatically from the ownerville session (step7).
@@ -289,7 +293,7 @@ def main() -> int:
 
         # 3. Phase 2 — ownerville scrape
         say("Phase 2: ownerville scrape...")
-        phase2_args = [] if is_monday else ["--today-only"]
+        phase2_args = [] if is_monday else ["--daily-window"]
         rc2 = _run_phase("automations.focus_office_att.run_all_owners",
                          phase2_args, log)
         # run_all_owners exits non-zero when SOME owners were skipped — that's
