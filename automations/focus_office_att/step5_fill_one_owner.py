@@ -298,6 +298,14 @@ def fill_owner_tab(ws, scraped_by_date: dict, layout: Layout) -> dict:
     for i, name in enumerate(rep_col_values, start=1):
         if i < 3 or not name.strip():
             continue
+        # Office-summary rows (OFFICE TOTALS / % ON BOARD / etc.) sit in
+        # col B too but are NOT reps. Excluding them is critical: a new
+        # rep is placed at max(name_to_row.values()) + 1, so if the
+        # summary rows were included the new rep would land BELOW the
+        # summary block — which then scrambles the whole tab when
+        # alphabetize_reps runs.
+        if _is_summary_label(name):
+            continue
         key = strip_rep_mark(name).lower().strip()
         if key:
             name_to_row[key] = i
@@ -737,14 +745,22 @@ def alphabetize_reps(ws, layout: Layout) -> None:
     ]
     if len(rep_row_idxs) < 2:
         return  # nothing to sort
-    first, last = min(rep_row_idxs), max(rep_row_idxs)
+    # Start the sorted block at row 3 (right under the headers), NOT at
+    # the first rep row. Any stray summary rows that landed above the
+    # reps then get overwritten by the packed rep block. `last` is the
+    # lowest actual rep row; the office summary block sits below it.
+    first, last = 3, max(rep_row_idxs)
     WIDTH = 95  # cols B..CR
 
     block = ws.get(f"B{first}:CR{last}", value_render_option="UNFORMATTED_VALUE")
     rows_with_names = []
     for row in block:
         padded = (list(row) + [""] * WIDTH)[:WIDTH]
-        if str(padded[0] or "").strip():   # col B = rep name
+        name = str(padded[0] or "").strip()   # col B = rep name
+        # Keep only real rep rows — drop blanks AND any office-summary
+        # row that strayed into the rep range, so they're never sorted
+        # in among the reps.
+        if name and not _is_summary_label(name):
             rows_with_names.append(padded)
     rows_with_names.sort(
         key=lambda r: strip_rep_mark(str(r[0] or "")).lower().strip()
