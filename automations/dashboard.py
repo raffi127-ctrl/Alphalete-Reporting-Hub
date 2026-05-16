@@ -1978,30 +1978,45 @@ def _render_leaderboard() -> None:
         st.caption("No Hub activity logged yet — the leaderboard fills in "
                    "as people submit, build, run, and review reports.")
         return
+    # Key — what each column emoji means, right at the top.
+    st.markdown(
+        "<div style='font-size:0.86rem;opacity:0.72;margin-bottom:8px'>"
+        "<b>Key:</b> &nbsp; 🏆 Reports built &nbsp;&nbsp; 📨 Requests submitted"
+        " &nbsp;&nbsp; 🏃 Report runs &nbsp;&nbsp; 👀 Reviews completed</div>",
+        unsafe_allow_html=True,
+    )
     medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+    NUM = "padding:8px 14px;text-align:right;white-space:nowrap"
+    head = (
+        "<tr style='font-size:0.8rem;opacity:0.55;text-transform:uppercase;"
+        "letter-spacing:0.03em'>"
+        "<td style='padding:6px 12px'></td>"
+        "<td style='padding:6px 12px'>Teammate</td>"
+        f"<td style='{NUM}'>🏆</td><td style='{NUM}'>📨</td>"
+        f"<td style='{NUM}'>🏃</td><td style='{NUM}'>👀</td>"
+        f"<td style='{NUM}'>Total</td></tr>"
+    )
     rows_html = ""
     for r in board:
         rk = medals.get(r["rank"], f"#{r['rank']}")
         badges = "".join(_badge_chip(b) for b in r["badges"])
+        name_cell = r["name"]
+        if badges:
+            name_cell += f"<br><span style='font-weight:400'>{badges}</span>"
         rows_html += (
             "<tr style='border-top:1px solid rgba(0,0,0,0.08)'>"
-            f"<td style='padding:7px 10px;font-size:1.1rem'>{rk}</td>"
-            f"<td style='padding:7px 10px;font-weight:700'>{r['name']} {badges}</td>"
-            "<td style='padding:7px 10px;opacity:0.75;font-size:0.9rem'>"
-            f"🏆 {r['builds']} &nbsp; 📨 {r['requests']} &nbsp; "
-            f"🏃 {r['runs']} &nbsp; 👀 {r['reviews']}</td>"
-            "<td style='padding:7px 10px;text-align:right;font-weight:800;"
-            f"font-size:1.15rem'>{r['total']}</td></tr>"
+            f"<td style='padding:8px 12px;font-size:1.15rem'>{rk}</td>"
+            f"<td style='padding:8px 12px;font-weight:700'>{name_cell}</td>"
+            f"<td style='{NUM}'>{r['builds']}</td>"
+            f"<td style='{NUM}'>{r['requests']}</td>"
+            f"<td style='{NUM}'>{r['runs']}</td>"
+            f"<td style='{NUM}'>{r['reviews']}</td>"
+            f"<td style='{NUM};font-weight:800;font-size:1.15rem'>{r['total']}</td>"
+            "</tr>"
         )
     st.markdown(
         "<table style='width:100%;border-collapse:collapse'>"
-        "<tr style='opacity:0.55;font-size:0.78rem;text-transform:uppercase;"
-        "letter-spacing:0.03em'>"
-        "<td style='padding:4px 10px'></td>"
-        "<td style='padding:4px 10px'>Teammate</td>"
-        "<td style='padding:4px 10px'>Built · Requested · Runs · Reviews</td>"
-        "<td style='padding:4px 10px;text-align:right'>Total</td></tr>"
-        + rows_html + "</table>",
+        + head + rows_html + "</table>",
         unsafe_allow_html=True,
     )
 
