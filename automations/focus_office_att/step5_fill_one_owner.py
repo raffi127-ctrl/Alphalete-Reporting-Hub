@@ -1111,18 +1111,18 @@ def write_office_totals_row(ws, layout: Layout) -> None:
             weekly_avg_cols.append(col_idx)
 
     # Per-day cols come from layout.day_cols[wd][metric] → 1-based col idx.
-    # Group by (col_idx, agg_type) for downstream aggregation.
-    # Skip future days — their per-day cells are blank (the day hasn't
-    # happened yet), so the OFFICE TOTALS row must leave them blank too
-    # rather than showing a misleading 0.
+    # Group by (col_idx, agg_type) for downstream aggregation. Days after
+    # today haven't happened — their per-day cols go in perday_future_cols
+    # so the totals row CLEARS them (blank) rather than summing them to 0.
     today_wd = dt.date.today().weekday()
     perday_sum_cols: list[int] = []
     perday_avg_cols: list[int] = []
+    perday_future_cols: list[int] = []
     for wd in sorted(layout.day_cols.keys()):
-        if wd > today_wd:
-            continue
         for metric, col_idx in layout.day_cols[wd].items():
-            if metric in PER_DAY_AVG_METRICS:
+            if wd > today_wd:
+                perday_future_cols.append(col_idx)
+            elif metric in PER_DAY_AVG_METRICS:
                 perday_avg_cols.append(col_idx)
             else:
                 perday_sum_cols.append(col_idx)
@@ -1131,7 +1131,7 @@ def write_office_totals_row(ws, layout: Layout) -> None:
     # write range + can clear stale rows the same width.
     all_cols = (
         weekly_sum_cols + weekly_avg_cols
-        + perday_sum_cols + perday_avg_cols
+        + perday_sum_cols + perday_avg_cols + perday_future_cols
         + [3]  # label cell
     )
     last_col = max(all_cols) if all_cols else 12
@@ -1188,6 +1188,10 @@ def write_office_totals_row(ws, layout: Layout) -> None:
         # _column's isinstance check). A 0 means the rep worked but had
         # no gaps / instant gap time — legitimate data, not filtered.
         totals[col] = sum(vals) / len(vals) if vals else ""
+    # Future days haven't happened — clear their per-day cells (blank),
+    # never a misleading 0.
+    for col in perday_future_cols:
+        totals[col] = ""
 
     # Write the FULL row B..last_col in one shot. Use values_batch_update
     # so we can include col B (label) without hitting gspread's leading-
