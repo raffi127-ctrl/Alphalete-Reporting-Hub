@@ -5040,13 +5040,15 @@ else:  # st.session_state.view == "user"
             _bhtml = "".join(_badge_chip(b) for b in _me["badges"])
             with st.container(border=True):
                 st.markdown(
-                    "<div style='font-size:1.05rem'>"
-                    f"<b>🏆 Your Hub standing:</b> &nbsp; {_medal} &nbsp; "
-                    f"<b>{_me['total']}</b> total &nbsp;·&nbsp; "
-                    f"🏆 {_me['builds']} built &nbsp; 📨 {_me['requests']} requested &nbsp; "
-                    f"🏃 {_me['runs']} runs &nbsp; 👀 {_me['reviews']} reviews"
-                    + (f" &nbsp; {_bhtml}" if _bhtml else "")
-                    + "</div>",
+                    "<div style='font-size:1.1rem;font-weight:700;margin-bottom:6px'>"
+                    f"🏆 Your Hub standing — {_medal} &nbsp;·&nbsp; "
+                    f"{_me['total']} total actions</div>"
+                    "<div style='font-size:0.97rem;line-height:1.9'>"
+                    f"🏆 <b>{_me['builds']}</b> reports built &nbsp;&nbsp;&nbsp; "
+                    f"📨 <b>{_me['requests']}</b> requests submitted &nbsp;&nbsp;&nbsp; "
+                    f"🏃 <b>{_me['runs']}</b> report runs &nbsp;&nbsp;&nbsp; "
+                    f"👀 <b>{_me['reviews']}</b> reviews completed</div>"
+                    + (f"<div style='margin-top:8px'>{_bhtml}</div>" if _bhtml else ""),
                     unsafe_allow_html=True,
                 )
 
