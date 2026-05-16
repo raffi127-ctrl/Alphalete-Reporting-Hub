@@ -1821,7 +1821,7 @@ INTAKE_HEADERS = [
     "Submitted By", "Submitted At", "Status", "Assigned To", "Assigned At",
     "Preferred Creator", "Currently runs", "Priority", "Submitter Email",
     "Review CC", "Notes", "Resurrected At", "Completed At", "Claim History",
-    "Additional Links",
+    "Additional Links", "Review Notes", "Schedule Days",
 ]
 
 PRIORITY_OPTIONS = [
@@ -1895,11 +1895,11 @@ def _add_intake(title: str, sheet_link: str, loom_link: str, description: str,
                 submitted_by: str, preferred_creator: str = "",
                 currently_runs: str = "", priority: str = "",
                 submitter_email: str = "",
-                additional_links: str = "") -> str:
+                additional_links: str = "", schedule_days: str = "") -> str:
     new_id = dt.datetime.now().strftime("%Y%m%d%H%M%S")
     ws = _intake_ws()
-    # Fill all 20 columns positionally so "Additional Links" (last col) lands
-    # in the right cell. Empty strings for columns the form doesn't populate.
+    # Fill every column positionally so each value lands in the right cell.
+    # Empty strings for columns the form doesn't populate.
     ws.append_row([
         new_id, title, sheet_link, loom_link, description,
         submitted_by, dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -1914,6 +1914,8 @@ def _add_intake(title: str, sheet_link: str, loom_link: str, description: str,
         "",  # Completed At
         "",  # Claim History
         additional_links or "",  # Additional Links
+        "",  # Review Notes
+        schedule_days or "",  # Schedule Days (weekday indexes, comma-separated)
     ])
     _read_intake.clear()
     return new_id
@@ -2324,6 +2326,22 @@ def _show_intake_dialog():
             index=2,
             help="How urgent is this? Don't worry, 5 is a real option.",
         )
+        # Schedule — which days the finished report should run. Captured
+        # here so the Wire-Up form auto-fills the schedule at upload time.
+        st.markdown("**📅 Which days should this report run?**")
+        st.caption("Tick the days. Leave all unticked if you're not sure — the builder can set it.")
+        _sched_cols = st.columns(7)
+        _day_labels = ["M", "T", "W", "Th", "F", "Sa", "Su"]
+        _picked_days: list[int] = []
+        for _di, _dcol in enumerate(_sched_cols):
+            with _dcol:
+                st.markdown(
+                    f"<div style='text-align:center; font-weight:600'>{_day_labels[_di]}</div>",
+                    unsafe_allow_html=True,
+                )
+                if st.checkbox(" ", key=f"intake_sched_day_{_di}",
+                               label_visibility="collapsed"):
+                    _picked_days.append(_di)
         ok = st.form_submit_button("📨 Submit", type="primary", use_container_width=True)
         if ok:
             if not (title and sheet_link and loom_link and description and submitted_by and submitter_email):
@@ -2341,6 +2359,7 @@ def _show_intake_dialog():
                         title, sheet_link, loom_link, description, submitted_by,
                         pc, currently_runs, priority, submitter_email,
                         additional_links=_extras,
+                        schedule_days=",".join(str(d) for d in _picked_days),
                     )
                     st.success("✅ Submitted! It will appear on the home page for someone to claim.")
                     st.balloons()
@@ -2529,42 +2548,46 @@ def _show_wire_up_dialog(entry: dict | None = None):
     # trigger a rerun, so the conditional Specific-days vs Monthly UI never
     # updated. Plain widgets fix that — every change reruns immediately.
     _members = [m["name"] for m in MEMBERS]
+    # "Who runs" defaults to whoever the requester named in the intake's
+    # "Who currently runs this report?" field (if it matches a teammate),
+    # or the staged assignee on a revise. The creator can still change it.
+    _assignee_opts = ["Not sure yet"] + _members
+    _prefill_runner = ""
+    _staged_assignees = staged_meta.get("assignees") or []
+    if _staged_assignees and _staged_assignees[0] in _members:
+        _prefill_runner = _staged_assignees[0]
+    else:
+        _intake_runner = (entry.get("Currently runs") or "").strip()
+        for m in _members:
+            if m.lower() == _intake_runner.lower():
+                _prefill_runner = m
+                break
+    _assignee_idx = _assignee_opts.index(_prefill_runner) if _prefill_runner else 0
+
     col1, col2 = st.columns(2)
     with col1:
         name = st.text_input("Report name *",
                               value=staged_meta.get("name") or entry.get("Title", ""),
                               key="wu_name")
-        emoji = st.text_input("Emoji (single char)",
-                              value=staged_meta.get("emoji") or "⭐", key="wu_emoji",
-                              help="An emoji to represent the report on the dashboard")
         sheet_url = st.text_input("Sheet URL",
                                   value=staged_meta.get("sheet_url") or entry.get("Sheet Link", ""),
                                   key="wu_sheet_url")
     with col2:
-        # Pre-select the staged assignee if revising.
-        _staged_assignees = staged_meta.get("assignees") or []
-        _assignee_opts = ["Not sure yet"] + _members
-        _assignee_idx = 0
-        if _staged_assignees and _staged_assignees[0] in _members:
-            _assignee_idx = _assignee_opts.index(_staged_assignees[0])
         assignee = st.selectbox(
             "Who runs this report?",
             _assignee_opts,
             index=_assignee_idx,
             key="wu_assignee",
-            help="If unsure, leave 'Not sure yet' — it'll land in the Unassigned section of the library.",
+            help="Defaults to who the requester said runs it — change if it should be someone else.",
         )
-        est_min = st.number_input(
-            "Estimated minutes per run", min_value=1, max_value=120,
-            value=int(staged_meta.get("schedule", {}).get("estimated_minutes", 5) or 5),
-            key="wu_est_min")
 
-    description = st.text_area(
-        "Short description (one line)",
-        value=(staged_meta.get("description") or entry.get("Description", ""))[:140],
-        key="wu_description",
-        help="What this automation does — shown under the report name on the card",
-    )
+    # Emoji + one-line description are no longer hand-entered. Emoji
+    # defaults (carried over on a revise); description stays blank.
+    # Estimated run time is read from the script (ESTIMATED_MINUTES = N)
+    # in the submit handler — the builder knows it, the uploader shouldn't
+    # have to guess.
+    emoji = staged_meta.get("emoji") or "📊"
+    description = staged_meta.get("description") or ""
 
     st.markdown("**📅 Schedule**")
     sched_mode = st.radio(
@@ -2578,8 +2601,17 @@ def _show_wire_up_dialog(entry: dict | None = None):
     day_of_month: int = 1
 
     # Default day selection: staged schedule's weekdays if revising, else Tue-Sat.
+    # Default day selection priority:
+    #   1. staged schedule (revising a prior upload)
+    #   2. the days the REQUESTER picked on the intake form
+    #   3. Tue-Sat fallback
     _staged_weekdays = set((staged_meta.get("schedule") or {}).get("weekdays", []))
-    _default_days = _staged_weekdays if _staged_weekdays else {1, 2, 3, 4, 5}
+    _intake_days: set[int] = set()
+    for _tok in str(entry.get("Schedule Days") or "").split(","):
+        _tok = _tok.strip()
+        if _tok.isdigit():
+            _intake_days.add(int(_tok))
+    _default_days = _staged_weekdays or _intake_days or {1, 2, 3, 4, 5}
     if sched_mode == "Specific days":
         st.caption("Tick every day this report should run.")
         dcols = st.columns(7)
@@ -2654,6 +2686,22 @@ def _show_wire_up_dialog(entry: dict | None = None):
         ),
     )
 
+    # Follow-up questions / extra info for the requester — goes into the
+    # "uploaded for review" email so the requester knows what to check
+    # or answer before approving.
+    followup_notes = st.text_area(
+        "Follow-up questions / additional info for the requester",
+        value=staged_meta.get("followup_notes", ""),
+        key="wu_followup_notes",
+        height=110,
+        placeholder=(
+            "Anything the requester should know or answer before they review:\n"
+            "• 'Confirm the Saturday column should stay hidden until the weekend.'\n"
+            "• 'I assumed reps are sorted A-Z — let me know if you want by sales.'"
+        ),
+        help="Included in the alert email sent to the requester when you upload for review.",
+    )
+
     review_cc = ""
     if entry.get("ID"):
         review_cc = st.text_input(
@@ -2680,13 +2728,19 @@ def _show_wire_up_dialog(entry: dict | None = None):
         # "Not sure yet" → no assignee → report lands in Unassigned section.
         assignees_list: list[str] = [] if assignee == "Not sure yet" else [assignee]
 
+        # Estimated run time is read from the script itself — the builder
+        # declares `ESTIMATED_MINUTES = N` (module constant). Falls back to
+        # 10 if the script doesn't declare it.
+        _est_match = re.search(r"ESTIMATED_MINUTES\s*=\s*(\d+)", script_text)
+        est_min = int(_est_match.group(1)) if _est_match else 10
+
         # Build schedule dict
         if sched_mode.startswith("Monthly"):
             schedule = {
                 "frequency": "monthly",
                 "day_of_month": int(day_of_month),
                 "time": time_str,
-                "estimated_minutes": int(est_min),
+                "estimated_minutes": est_min,
             }
         else:
             if not days_chosen:
@@ -2697,7 +2751,7 @@ def _show_wire_up_dialog(entry: dict | None = None):
                 "frequency": freq,
                 "weekdays": sorted(days_chosen),
                 "time": time_str,
-                "estimated_minutes": int(est_min),
+                "estimated_minutes": est_min,
             }
 
         # Parse checklist: each line is "text" OR "text | url" OR "text | url | label"
@@ -2716,12 +2770,13 @@ def _show_wire_up_dialog(entry: dict | None = None):
         metadata = {
             "id": name,
             "name": name,
-            "emoji": emoji or "⭐",
+            "emoji": emoji or "📊",
             "description": description,
             "sheet_url": sheet_url,
             "assignees": assignees_list,
             "schedule": schedule,
             "checklist": checklist,
+            "followup_notes": followup_notes,  # carried for revise pre-fill
             "args": [],
         }
 
@@ -2738,6 +2793,21 @@ def _show_wire_up_dialog(entry: dict | None = None):
             # Stage it; it only reaches the Library once the requester
             # clicks Approve. review_cc rides along for the approval email.
             _stage_pending_report(str(entry["ID"]), metadata, script_text, review_cc)
+            # Stash the follow-up notes on the intake row BEFORE flipping
+            # status — the Apps Script emails on the status change and
+            # reads this cell for the body.
+            if "Review Notes" in INTAKE_HEADERS:
+                try:
+                    _iws = _intake_ws()
+                    _icell = _iws.find(str(entry["ID"]))
+                    if _icell:
+                        _iws.update_cell(
+                            _icell.row,
+                            INTAKE_HEADERS.index("Review Notes") + 1,
+                            followup_notes.strip(),
+                        )
+                except Exception:
+                    pass
             _set_intake_status(str(entry["ID"]), "In Review")
             try:
                 _append_intake_note(
