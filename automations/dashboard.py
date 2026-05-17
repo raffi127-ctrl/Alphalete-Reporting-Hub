@@ -49,6 +49,16 @@ COMPLETED_MARKS_FILE = WORKSPACE / "output" / "completed_marks.json"
 RUN_STATE_TTL_HOURS = 24
 
 
+def _col_a1(n: int) -> str:
+    """1-based column number → A1 column letters (1→A, 26→Z, 27→AA).
+    Plain chr(ord('A')+n) breaks past column Z — this handles any width."""
+    s = ""
+    while n > 0:
+        n, r = divmod(n - 1, 26)
+        s = chr(65 + r) + s
+    return s
+
+
 def _pid_alive(pid: int) -> bool:
     try:
         import os
@@ -994,7 +1004,7 @@ def _hub_activity_ws():
         ws = sh.add_worksheet(title=HUB_ACTIVITY_TAB, rows=2000,
                               cols=len(HUB_ACTIVITY_HEADERS))
         ws.update([HUB_ACTIVITY_HEADERS],
-                  f"A1:{chr(ord('A') + len(HUB_ACTIVITY_HEADERS) - 1)}1")
+                  f"A1:{_col_a1(len(HUB_ACTIVITY_HEADERS))}1")
         return ws
 
 
@@ -2072,7 +2082,7 @@ def _intake_ws():
         ws = sh.worksheet(INTAKE_TAB)
     except _gs.WorksheetNotFound:
         ws = sh.add_worksheet(title=INTAKE_TAB, rows=300, cols=len(INTAKE_HEADERS))
-        ws.update([INTAKE_HEADERS], f"A1:{chr(ord('A') + len(INTAKE_HEADERS) - 1)}1")
+        ws.update([INTAKE_HEADERS], f"A1:{_col_a1(len(INTAKE_HEADERS))}1")
         return ws
 
     # Self-heal: only extend when current row 1 is a strict PREFIX of
@@ -2087,7 +2097,7 @@ def _intake_ws():
     ):
         ws.update(
             [INTAKE_HEADERS],
-            f"A1:{chr(ord('A') + len(INTAKE_HEADERS) - 1)}1",
+            f"A1:{_col_a1(len(INTAKE_HEADERS))}1",
         )
     return ws
 
@@ -2510,7 +2520,7 @@ def _bugs_ws():
         ws = sh.worksheet(BUG_TAB)
     except _gs.WorksheetNotFound:
         ws = sh.add_worksheet(title=BUG_TAB, rows=300, cols=len(BUG_HEADERS))
-        ws.update([BUG_HEADERS], f"A1:{chr(ord('A') + len(BUG_HEADERS) - 1)}1")
+        ws.update([BUG_HEADERS], f"A1:{_col_a1(len(BUG_HEADERS))}1")
         return ws
     try:
         current_headers = ws.row_values(1)
@@ -2522,7 +2532,7 @@ def _bugs_ws():
     ):
         ws.update(
             [BUG_HEADERS],
-            f"A1:{chr(ord('A') + len(BUG_HEADERS) - 1)}1",
+            f"A1:{_col_a1(len(BUG_HEADERS))}1",
         )
     return ws
 
