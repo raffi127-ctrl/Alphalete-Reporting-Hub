@@ -725,20 +725,23 @@ AUTOMATED_REPORTS = [
         "description": "Per-ICD daily breakdown (Mon–Fri current week, last week, plus next-week scheduled) for Raf's captainship. Fills the 'Raf' tab.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "A day-by-day (Mon-Fri) breakdown of the recruiting numbers for "
-            "each ICD in Raf's captainship — this week and last week.\n\n"
+            "A day-by-day breakdown (Mon-Fri) of the recruiting numbers "
+            "for **every ICD in Raf's captainship** — current week and "
+            "last week, side by side.\n\n"
             "TO ADD AN ICD\n"
-            "1. Make sure the rcaptain AppStream account can see that ICD.\n"
-            "2. Add the ICD's name to the list on the right side of the "
-            "report (column V). The name must match the AppStream name "
-            "exactly.\n"
-            "The next run reads that list and fills in the ICD's data "
+            "**1.**  Make sure the **rcaptain** AppStream account can see "
+            "that ICD.\n"
+            "**2.**  Add the ICD's name to the list on the right of the "
+            "report (**column V**) — it has to match the AppStream name "
+            "**exactly**.\n"
+            "✅  The next run reads that list and fills in the new ICD "
             "automatically.\n\n"
             "IF AN ICD IS SKIPPED\n"
-            "If the run can't pull an ICD because the account has no "
-            "AppStream access, the card lists it when the run finishes. Log "
-            "into an account that has access, then click Retry — only the "
-            "skipped ICDs are re-pulled."
+            "If an ICD can't be pulled — almost always because the account "
+            "has no AppStream access — the card lists it once the run "
+            "finishes.\n"
+            "🔁  Log into an account that **has access**, then click "
+            "**Retry** — only the skipped ICDs re-pull."
         ),
         "sheet_url": DAILY_FOCUS_SHEET_URL,
         "assignees": ["Maud"],
@@ -803,20 +806,23 @@ AUTOMATED_REPORTS = [
         "description": "Per-ICD daily breakdown (Mon–Fri current week, last week, plus next-week scheduled) for Carlos's captainship. Fills the 'Carlos' tab.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "A day-by-day (Mon-Fri) breakdown of the recruiting numbers for "
-            "each ICD in Carlos's captainship — this week and last week.\n\n"
+            "A day-by-day breakdown (Mon-Fri) of the recruiting numbers "
+            "for **every ICD in Carlos's captainship** — current week and "
+            "last week, side by side.\n\n"
             "TO ADD AN ICD\n"
-            "1. Make sure the CarlosNLR AppStream account can see that ICD.\n"
-            "2. Add the ICD's name to the list on the right side of the "
-            "report (column V). The name must match the AppStream name "
-            "exactly.\n"
-            "The next run reads that list and fills in the ICD's data "
+            "**1.**  Make sure the **CarlosNLR** AppStream account can see "
+            "that ICD.\n"
+            "**2.**  Add the ICD's name to the list on the right of the "
+            "report (**column V**) — it has to match the AppStream name "
+            "**exactly**.\n"
+            "✅  The next run reads that list and fills in the new ICD "
             "automatically.\n\n"
             "IF AN ICD IS SKIPPED\n"
-            "If the run can't pull an ICD because the account has no "
-            "AppStream access, the card lists it when the run finishes. Log "
-            "into an account that has access, then click Retry — only the "
-            "skipped ICDs are re-pulled."
+            "If an ICD can't be pulled — almost always because the account "
+            "has no AppStream access — the card lists it once the run "
+            "finishes.\n"
+            "🔁  Log into an account that **has access**, then click "
+            "**Retry** — only the skipped ICDs re-pull."
         ),
         "sheet_url": DAILY_FOCUS_SHEET_URL,
         "assignees": ["Maud"],
@@ -1789,22 +1795,49 @@ def _render_report_screenshot(report: dict) -> None:
 
 
 def _render_report_breakdown(report: dict) -> None:
-    """Full-width 'how this report works' write-up, shown under the run
-    controls + screenshot on a report's Library page."""
+    """Full-width 'how this report works' panel — Alphalete cream/gold
+    styling. The breakdown text uses ALL-CAPS section headers; each
+    section renders with a styled, icon'd header. **bold** in the body is
+    honored; everything else is escaped."""
     import html as _html
     explainer = (report.get("breakdown") or "").strip()
-    with st.container(border=True):
-        st.markdown(f"### 📖 How {report['name']} works")
-        if explainer:
-            st.markdown(
-                "<div style='background:#F5F7FA; border-left:3px solid #5B7C99; "
-                "border-radius:6px; padding:12px 16px; white-space:pre-wrap; "
-                "font-size:0.95rem; line-height:1.5'>"
-                f"{_html.escape(explainer)}</div>",
-                unsafe_allow_html=True,
-            )
-        else:
+    if not explainer:
+        with st.container(border=True):
+            st.markdown(f"### 📖 How {report['name']} works")
             st.caption("No write-up for this report yet.")
+        return
+
+    def _fmt(_t: str) -> str:
+        # Escape for safety, then honor a light **bold** subset.
+        return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", _html.escape(_t))
+
+    # Friendly icon per section, matched on a keyword in its header.
+    _icons = [("ADD", "➕"), ("SKIP", "⚠️"), ("RUN", "🕒"),
+              ("PRE-FLIGHT", "🚀"), ("DOES", "📊")]
+    _blocks = []
+    for _block in explainer.split("\n\n"):
+        _lines = _block.split("\n")
+        _hdr = _lines[0].strip()
+        _body = "\n".join(_lines[1:]).strip()
+        _icon = next((e for k, e in _icons if k in _hdr.upper()), "•")
+        _blocks.append(
+            "<div style='margin-bottom:16px'>"
+            "<div style='font-weight:800; font-size:0.82rem; "
+            "letter-spacing:0.08em; color:#A8852F; margin-bottom:6px'>"
+            f"{_icon}&nbsp; {_html.escape(_hdr.upper())}</div>"
+            "<div style='white-space:pre-wrap; font-size:0.96rem; "
+            "line-height:1.7; color:#2A1F12'>"
+            f"{_fmt(_body)}</div></div>"
+        )
+    st.markdown(
+        "<div style='background:#FBF8F0; border:1px solid #E3D4AC; "
+        "border-radius:12px; padding:20px 24px 6px; "
+        "box-shadow:0 1px 4px rgba(168,133,47,0.10)'>"
+        "<div style='font-size:1.2rem; font-weight:800; color:#2A1F12; "
+        f"margin-bottom:16px'>📖 How {_html.escape(report['name'])} works</div>"
+        + "".join(_blocks) + "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
