@@ -1099,6 +1099,9 @@ def _was_due_on(report: dict, day: dt.date) -> bool:
 # timestamp regardless of which machine the run happened on.
 # --------------------------------------------------------------------------
 HUB_ACTIVITY_TAB = "Hub Activity"
+# Lives on the Hub's backend workbook (the "Automation Backlog" intake Sheet),
+# not on any individual report's deliverable sheet — see INTAKE_SPREADSHEET_ID.
+HUB_ACTIVITY_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 HUB_ACTIVITY_HEADERS = [
     "RunID", "Started At", "Report ID", "Report Name",
     "User", "Machine", "PID", "Status", "Ended At",
@@ -1111,7 +1114,7 @@ HUB_STALE_AFTER = dt.timedelta(hours=2)
 
 def _hub_activity_ws():
     import gspread as _gs
-    sh = _fill._client().open_by_key(_fill.SPREADSHEET_ID)
+    sh = _fill._client().open_by_key(HUB_ACTIVITY_SHEET_ID)
     try:
         return sh.worksheet(HUB_ACTIVITY_TAB)
     except _gs.WorksheetNotFound:
