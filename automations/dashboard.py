@@ -648,19 +648,20 @@ AUTOMATED_REPORTS = [
         "description": "Pulls funnel metrics from ApplicantStream, fills the mass-report Sheet across ~52 ICD office tabs.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Pulls the weekly recruiting funnel numbers from ApplicantStream "
-            "and fills the mass-report sheet — **one tab per ICD office** "
-            "(~52 offices).\n\n"
+            "Provides a **week-over-week** overview of the recruiting "
+            "numbers for selected ICDs.\n\n"
             "WHEN IT RUNS\n"
             "**Mondays.** Each run fills the most recently finished week.\n\n"
-            "HOW TO RUN IT\n"
-            "**1.**  Launch Report Chrome and log into ApplicantStream as "
-            "**rhidalgo**, then run — it fills every office that account "
-            "can see.\n"
-            "**2.**  When it finishes, switch the login to **rcaptain** and "
-            "click **Run Again** — it fills the remaining offices.\n"
-            "✅  Offices already filled are skipped, so the second pass only "
-            "adds what's missing."
+            "TO ADD AN ICD\n"
+            "**1.**  Add a tab and label it the ICD's name — it must match "
+            "the **AppStream name** exactly.\n"
+            "**2.**  Make sure the **rcaptain** AppStream login has access "
+            "to that ICD.\n"
+            "✅  Claude auto-adds the template and fills in that ICD's data "
+            "on the next run.\n\n"
+            "IF AN ICD IS SKIPPED\n"
+            "It most likely isn't in AppStream — check that the **rcaptain** "
+            "login can see it."
         ),
         "sheet_url": SHEET_URL,
         "assignees": ["Eve"],   # primary owner; anyone can still run it
