@@ -643,6 +643,19 @@ AUTOMATED_REPORTS = [
         "color": "#FF6B6B",
         "category": "🎯 Recruiting",
         "description": "Pulls funnel metrics from ApplicantStream, fills the mass-report Sheet across ~52 ICD office tabs.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Pulls the weekly recruiting funnel metrics from ApplicantStream "
+            "and fills the mass-report sheet — one tab per ICD office "
+            "(~52 offices).\n\n"
+            "WHEN IT RUNS\n"
+            "Mondays. Each run fills the most recently completed week.\n\n"
+            "PRE-FLIGHT\n"
+            "1. Launch Report Chrome.\n"
+            "2. Log into ApplicantStream as rhidalgo, then run. When it "
+            "finishes, log into rcaptain and click Run Again to fill the "
+            "remaining offices."
+        ),
         "sheet_url": SHEET_URL,
         "assignees": ["Eve"],   # primary owner; anyone can still run it
         "schedule": {
@@ -707,6 +720,22 @@ AUTOMATED_REPORTS = [
         "color": "#4ECDC4",
         "category": "🎯 Recruiting",
         "description": "Per-ICD daily breakdown (Mon–Fri current week, last week, plus next-week scheduled) for Raf's captainship. Fills the 'Raf' tab.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "A per-ICD daily breakdown (Mon-Fri) of the recruiting funnel "
+            "metrics for Raf's captainship. Fills the Raf tab — current "
+            "week, last week, and next-week scheduled.\n\n"
+            "WHEN IT RUNS\n"
+            "Tuesday-Saturday.\n\n"
+            "PRE-FLIGHT\n"
+            "1. Launch Report Chrome.\n"
+            "2. Log into AppStream as rcaptain.\n\n"
+            "IF AN ICD IS SKIPPED\n"
+            "When the run finishes, the card lists any ICDs it couldn't "
+            "pull because the account has no AppStream access. Log into an "
+            "account that does, then click retry — only the skipped ICDs "
+            "re-pull."
+        ),
         "sheet_url": DAILY_FOCUS_SHEET_URL,
         "assignees": ["Maud"],
         "schedule": {
@@ -768,6 +797,22 @@ AUTOMATED_REPORTS = [
         "color": "#E76F51",
         "category": "🎯 Recruiting",
         "description": "Per-ICD daily breakdown (Mon–Fri current week, last week, plus next-week scheduled) for Carlos's captainship. Fills the 'Carlos' tab.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "A per-ICD daily breakdown (Mon-Fri) of the recruiting funnel "
+            "metrics for Carlos's captainship. Fills the Carlos tab — "
+            "current week, last week, and next-week scheduled.\n\n"
+            "WHEN IT RUNS\n"
+            "Tuesday-Saturday.\n\n"
+            "PRE-FLIGHT\n"
+            "1. Launch Report Chrome.\n"
+            "2. Log into AppStream as CarlosNLR.\n\n"
+            "IF AN ICD IS SKIPPED\n"
+            "When the run finishes, the card lists any ICDs it couldn't "
+            "pull because the account has no AppStream access. Log into an "
+            "account that does, then click retry — only the skipped ICDs "
+            "re-pull."
+        ),
         "sheet_url": DAILY_FOCUS_SHEET_URL,
         "assignees": ["Maud"],
         "schedule": {
@@ -1507,7 +1552,9 @@ def _daily_focus_icds_in_sheet(captainship: str) -> list[str]:
     try:
         from automations.recruiting_report import fill as _f, daily_focus as _df
         sh = _f._client().open_by_key(_df.DAILY_FOCUS_SPREADSHEET_ID)
-        ws = sh.worksheet(captainship)
+        ws = _df.find_captainship_worksheet(sh, captainship)
+        if ws is None:
+            return []
         col = ws.col_values(_df.ICD_LIST_COLUMN)
         return [v.strip() for v in col if v and v.strip()]
     except Exception:
@@ -1674,6 +1721,46 @@ def _cross_user_pulse(report_id: str) -> None:
         st.rerun(scope="app")
     elif last_sig is None:
         st.session_state[sig_key] = sig
+
+
+def _sheet_preview_url(sheet_url: str) -> str:
+    """Turn a Google Sheets edit URL into its embeddable /preview URL —
+    a clean read-only view that renders inside an iframe."""
+    m = re.search(r"/spreadsheets/d/([A-Za-z0-9_-]+)", sheet_url or "")
+    return f"https://docs.google.com/spreadsheets/d/{m.group(1)}/preview" if m else ""
+
+
+def _render_report_explainer(report: dict) -> None:
+    """Explainer panel at the top of a report's Library page: a plain-English
+    write-up of how the report works + a live preview of its sheet."""
+    import html as _html
+    import streamlit.components.v1 as _components
+    explainer = (report.get("breakdown") or "").strip()
+    with st.container(border=True):
+        st.markdown(f"### 📖 How {report['name']} works")
+        if explainer:
+            st.markdown(
+                "<div style='background:#F5F7FA; border-left:3px solid #5B7C99; "
+                "border-radius:6px; padding:12px 16px; white-space:pre-wrap; "
+                "font-size:0.95rem; line-height:1.5'>"
+                f"{_html.escape(explainer)}</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.caption("No write-up for this report yet.")
+
+        preview = _sheet_preview_url(report.get("sheet_url", ""))
+        if preview:
+            st.markdown("<div style='margin-top:12px; font-weight:700'>"
+                        "📊 Live preview of the report</div>",
+                        unsafe_allow_html=True)
+            try:
+                _components.iframe(preview, height=420, scrolling=True)
+            except Exception:
+                st.caption("Preview couldn't load — use the link below.")
+        if report.get("sheet_url"):
+            st.link_button("📂 Open the full report ↗", report["sheet_url"],
+                           use_container_width=True)
 
 
 def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
@@ -2732,11 +2819,13 @@ def _show_intake_dialog():
             _member_names = [m["name"] for m in MEMBERS]
             _cur_user = st.session_state.get("user", "") or ""
             _sb_idx = _member_names.index(_cur_user) if _cur_user in _member_names else 0
-            submitted_by = st.selectbox("Your name *", _member_names, index=_sb_idx)
+            submitted_by = st.selectbox("Your name *", _member_names, index=_sb_idx,
+                                        key="intake_submitted_by")
         with cols[1]:
             preferred_creator = st.selectbox(
                 "Preferred creator (optional)",
                 ["No preference"] + [m["name"] for m in MEMBERS],
+                key="intake_preferred_creator",
                 help="If you have a specific person in mind to build this, pick them. Anyone can still claim it.",
             )
         submitter_email = st.text_input(
@@ -2756,6 +2845,7 @@ def _show_intake_dialog():
             "Priority",
             PRIORITY_OPTIONS,
             index=2,
+            key="intake_priority",
             help="How urgent is this? Don't worry, 5 is a real option.",
         )
         # Schedule — how often + what time the finished report should run.
@@ -5258,8 +5348,35 @@ elif st.session_state.view == "library":
             detected_user = _detect_hub_user()
             st.session_state.user = detected_user
 
-            # The card itself renders the title, description, schedule badges,
-            # and last-ran timestamp — no outer header needed (used to duplicate).
+            # Explainer panel — how the report works + a live sheet preview.
+            _render_report_explainer(report)
+
+            # Unassigned reports get an inline assign picker here (the Library
+            # list is now plain buttons, so this is where claiming happens).
+            if not report.get("assignees"):
+                with st.container(border=True):
+                    st.markdown("**🔍 This report isn't assigned yet.**")
+                    _ac = st.columns([3, 2])
+                    with _ac[0]:
+                        _pick = st.selectbox(
+                            "Assign to…",
+                            ["— assign to —"] + [m["name"] for m in MEMBERS],
+                            key=f"lib_detail_assign_pick_{report['id']}",
+                            label_visibility="collapsed",
+                        )
+                    with _ac[1]:
+                        if _pick and _pick != "— assign to —" and st.button(
+                            "🤝 Assign", key=f"lib_detail_assign_btn_{report['id']}",
+                            use_container_width=True,
+                        ):
+                            if _set_library_assignment(str(report["id"]), _pick):
+                                st.success(f"Assigned to {_pick}.")
+                                st.rerun()
+                            else:
+                                st.error("Couldn't save — try again.")
+
+            # The card renders the title, schedule badges, checklist, run
+            # button, and post-run callout — everything needed to run it.
             _render_report_card(report, today, chrome_ok)
     else:
         st.markdown(
@@ -5292,83 +5409,23 @@ elif st.session_state.view == "library":
         lib_persisted = _load_all_run_state()
         for section_name, reports_in_section in ordered_sections:
             st.markdown(f"### {section_name}")
-            for report in reports_in_section:
-                _pickup = lib_persisted.get(report["id"])
-                with st.container(border=True):
-                    if _pickup:
-                        _pickup_user = _pickup.get("user") or "someone"
-                        _pickup_ts = _pickup.get("ts", "")
-                        try:
-                            _pickup_str = dt.datetime.fromisoformat(_pickup_ts).strftime("%I:%M %p").lstrip("0")
-                        except Exception:
-                            _pickup_str = ""
-                        st.markdown(
-                            "<div style='background:linear-gradient(135deg, #FFF8E7 0%, #FFF3D6 100%); "
-                            "border-left:4px solid #C9A85C; border-radius:6px; "
-                            "padding:6px 12px; margin:-4px 0 8px; font-size:0.9em; color:#5C4220'>"
-                            "<span style='display:inline-block; background:#C9A85C; color:#2A1F12; "
-                            "padding:1px 8px; border-radius:999px; font-size:0.72em; "
-                            "font-weight:800; letter-spacing:0.02em; margin-right:8px'>"
-                            "📌 PICK UP WHERE YOU LEFT OFF"
-                            "</span>"
-                            + (f"<span style='color:#8B6914'>{_pickup_user}"
-                               + (f" · {_pickup_str} today" if _pickup_str else "")
-                               + "</span>")
-                            + "</div>",
-                            unsafe_allow_html=True,
-                        )
-                    cols = st.columns([5, 2])
-                    with cols[0]:
-                        st.markdown(
-                            f"**{report.get('emoji', '📄')} {report['name']}**"
-                        )
-                        if report.get("description"):
-                            st.caption(report["description"])
-                        meta_lines = []
-                        assignees = report.get("assignees", [])
-                        if assignees:
-                            meta_lines.append(f"**Assigned to:** {', '.join(assignees)}")
-                        else:
-                            meta_lines.append("**Assigned to:** _Not yet assigned_")
-                        last_run = _latest_run_summary(report["id"])
-                        if last_run:
-                            meta_lines.append(
-                                f"<span style='color:#C92020; font-weight:600'>{last_run}</span>"
-                            )
-                        else:
-                            meta_lines.append("<span style='color:#777'>Not yet run</span>")
-                        st.markdown(
-                            "  •  ".join(meta_lines),
-                            unsafe_allow_html=True,
-                        )
-                        # Inline assign picker for unassigned reports.
-                        if not assignees:
-                            assign_cols = st.columns([3, 2])
-                            with assign_cols[0]:
-                                _pick = st.selectbox(
-                                    "Assign to…",
-                                    ["— assign to —"] + [m["name"] for m in MEMBERS],
-                                    key=f"lib_assign_pick_{report['id']}",
-                                    label_visibility="collapsed",
-                                )
-                            with assign_cols[1]:
-                                if _pick and _pick != "— assign to —":
-                                    if st.button(
-                                        "🤝 Assign",
-                                        key=f"lib_assign_btn_{report['id']}",
-                                        use_container_width=True,
-                                    ):
-                                        if _set_library_assignment(str(report["id"]), _pick):
-                                            st.success(f"Assigned to {_pick}.")
-                                            st.rerun()
-                                        else:
-                                            st.error("Couldn't save — try again.")
-                    with cols[1]:
+            # 3-per-row grid of report buttons. Click one to open its page
+            # (explainer + live preview + run controls). A 📌 prefix flags a
+            # report whose last run is mid-flow — pick up where you left off.
+            for _i in range(0, len(reports_in_section), 3):
+                _row = st.columns(3)
+                for _j, report in enumerate(reports_in_section[_i:_i + 3]):
+                    with _row[_j]:
+                        _pickup = lib_persisted.get(report["id"])
+                        _label = f"{report.get('emoji', '📄')} {report['name']}"
+                        if _pickup:
+                            _label = "📌 " + _label
                         if st.button(
-                            "Open →",
-                            key=f"lib_open_{report['id']}",
-                            type="primary",
+                            _label,
+                            key=f"lib_btn_{report['id']}",
                             use_container_width=True,
+                            help=("Mid-run — pick up where you left off"
+                                  if _pickup else report.get("description") or None),
                         ):
                             st.session_state["library_report_id"] = report["id"]
                             st.rerun()

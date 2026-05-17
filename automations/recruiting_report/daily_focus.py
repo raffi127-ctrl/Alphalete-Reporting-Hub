@@ -708,6 +708,18 @@ def _state_file(captainship: str) -> Path:
     return _OUTPUT_DIR / f"daily_focus_state_{captainship}.json"
 
 
+def find_captainship_worksheet(sh, captainship: str):
+    """Return the worksheet for a captainship. Matches any tab whose title
+    contains the captainship name, case-insensitive — so 'Carlos' finds a
+    tab named 'Carlos Hidalgo' and the lookup survives minor tab renames.
+    Returns None if no tab matches."""
+    needle = captainship.lower().strip()
+    for ws in sh.worksheets():
+        if needle in (ws.title or "").lower():
+            return ws
+    return None
+
+
 def _read_state(captainship: str) -> dict:
     sf = _state_file(captainship)
     if not sf.exists():
@@ -772,11 +784,12 @@ def main() -> int:
              "doesn't match current week's Monday)")
 
     sh = fill._client().open_by_key(DAILY_FOCUS_SPREADSHEET_ID)
-    try:
-        ws = sh.worksheet(captainship)
-    except gspread.WorksheetNotFound:
-        log.error("tab not found for captainship: %s", captainship)
+    ws = find_captainship_worksheet(sh, captainship)
+    if ws is None:
+        log.error("no tab found for captainship %s in the daily-focus sheet "
+                  "(looked for a tab whose name contains %r)", captainship, captainship)
         return 1
+    log.info("using tab: %s", ws.title)
 
     icds = _read_icd_list(ws)
     if args.only:

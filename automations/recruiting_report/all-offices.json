@@ -1,533 +1,11 @@
 {
-  "count": 149,
+  "count": 172,
   "offices": [
-    {
-      "office_id": "6564",
-      "owner": "Trang Le Nguyen Canavan",
-      "company": "Fresh Success Marketing Group, Inc.",
-      "raw": "6564\nTrang Le Nguyen Canavan\nFresh Success Marketing Group, Inc."
-    },
-    {
-      "office_id": "11280",
-      "owner": "Rafael Hidalgo",
-      "company": "ALPHALETE MARKETING, INC.",
-      "raw": "11280\nRafael Hidalgo\nALPHALETE MARKETING, INC."
-    },
-    {
-      "office_id": "11382",
-      "owner": "Jesus Garcia Moreno",
-      "company": "Sonora Core Marketing Inc.",
-      "raw": "11382\nJesus Garcia Moreno\nSonora Core Marketing Inc."
-    },
-    {
-      "office_id": "12559",
-      "owner": "Richard Anderson",
-      "company": "Newbern Excel, Inc.",
-      "raw": "12559\nRichard Anderson\nNewbern Excel, Inc."
-    },
-    {
-      "office_id": "14229",
-      "owner": "Boaktear Chowdhury",
-      "company": "Motiv8 Management Inc",
-      "raw": "14229\nBoaktear Chowdhury\nMotiv8 Management Inc"
-    },
-    {
-      "office_id": "14733",
-      "owner": "COLTEN WRIGHT",
-      "company": "SOUTH SHORE SPECIALIZED MARKETING, INC.",
-      "raw": "14733\nCOLTEN WRIGHT\nSOUTH SHORE SPECIALIZED MARKETING, INC."
-    },
-    {
-      "office_id": "11901",
-      "owner": "KHALIL MANSOUR",
-      "company": "ALPHALETE MANAGEMENT GROUP, INC.",
-      "raw": "11901\nKHALIL MANSOUR\nALPHALETE MANAGEMENT GROUP, INC."
-    },
-    {
-      "office_id": "11580",
-      "owner": "CARLOS HIDALGO",
-      "company": "ALPHALETE SPECIALIZED MARKETING, INC.-TX",
-      "raw": "11580\nCARLOS HIDALGO\nALPHALETE SPECIALIZED MARKETING, INC.-TX"
-    },
-    {
-      "office_id": "15698",
-      "owner": "Alex Turzynski",
-      "company": "Threshold Marketing, Inc.",
-      "raw": "15698\nAlex Turzynski\nThreshold Marketing, Inc."
-    },
-    {
-      "office_id": "16221",
-      "owner": "Cinthya Reyes",
-      "company": "Dandelion Marketing, Inc.",
-      "raw": "16221\nCinthya Reyes\nDandelion Marketing, Inc."
-    },
-    {
-      "office_id": "16313",
-      "owner": "John Richard Young",
-      "company": "Boundless Promotions, Inc.",
-      "raw": "16313\nJohn Richard Young\nBoundless Promotions, Inc."
-    },
-    {
-      "office_id": "17030",
-      "owner": "Caleb Lick",
-      "company": "Voyager Consultants, Inc",
-      "raw": "17030\nCaleb Lick\nVoyager Consultants, Inc"
-    },
-    {
-      "office_id": "17651",
-      "owner": "Kassandra Lozano",
-      "company": "LZN Solutions, Inc.",
-      "raw": "17651\nKassandra Lozano\nLZN Solutions, Inc."
-    },
-    {
-      "office_id": "18588",
-      "owner": "Ronald Dawson",
-      "company": "True Blue Marketing, Inc.",
-      "raw": "18588\nRonald Dawson\nTrue Blue Marketing, Inc."
-    },
-    {
-      "office_id": "18611",
-      "owner": "Tyler Hadden",
-      "company": "Zion Capital, Inc.",
-      "raw": "18611\nTyler Hadden\nZion Capital, Inc."
-    },
-    {
-      "office_id": "17694",
-      "owner": "ALANTE ATKINS",
-      "company": "A&Z MARKETING, INC.",
-      "raw": "17694\nALANTE ATKINS\nA&Z MARKETING, INC."
-    },
-    {
-      "office_id": "18774",
-      "owner": "Victoria Herrera",
-      "company": "19 Management Group, Inc",
-      "raw": "18774\nVictoria Herrera\n19 Management Group, Inc"
-    },
-    {
-      "office_id": "19221",
-      "owner": "Jose Antonio Chavez",
-      "company": "Cycles Consulting, Inc.",
-      "raw": "19221\nJose Antonio Chavez\nCycles Consulting, Inc."
-    },
-    {
-      "office_id": "19717",
-      "owner": "Isaiah Revelle",
-      "company": "Legacy Specialized Acquisitions, Inc.",
-      "raw": "19717\nIsaiah Revelle\nLegacy Specialized Acquisitions, Inc."
-    },
-    {
-      "office_id": "19772",
-      "owner": "Esteban Villalta-Gutierrez",
-      "company": "T&R Frameworks, Inc.",
-      "raw": "19772\nEsteban Villalta-Gutierrez\nT&R Frameworks, Inc."
-    },
-    {
-      "office_id": "18102",
-      "owner": "Dorian Black",
-      "company": "New Vision Management Inc",
-      "raw": "18102\nDorian Black\nNew Vision Management Inc"
-    },
-    {
-      "office_id": "20031",
-      "owner": "Stephen Sharon",
-      "company": "Stephen Consulting, Inc",
-      "raw": "20031\nStephen Sharon\nStephen Consulting, Inc"
-    },
-    {
-      "office_id": "20195",
-      "owner": "Jordan Holt",
-      "company": "Holt Dynamics, Inc",
-      "raw": "20195\nJordan Holt\nHolt Dynamics, Inc"
-    },
-    {
-      "office_id": "19404",
-      "owner": "Steven Gale",
-      "company": "Gale Force Marketing, Inc",
-      "raw": "19404\nSteven Gale\nGale Force Marketing, Inc"
-    },
-    {
-      "office_id": "20353",
-      "owner": "Fabian Diaz",
-      "company": "Paideia Management, Inc",
-      "raw": "20353\nFabian Diaz\nPaideia Management, Inc"
-    },
-    {
-      "office_id": "20426",
-      "owner": "Shani Shand",
-      "company": "Surmount Innovations, Inc.",
-      "raw": "20426\nShani Shand\nSurmount Innovations, Inc."
-    },
-    {
-      "office_id": "20490",
-      "owner": "Sahil Multani",
-      "company": "M Coast, Inc",
-      "raw": "20490\nSahil Multani\nM Coast, Inc"
-    },
-    {
-      "office_id": "20506",
-      "owner": "Awais Iqbal",
-      "company": "Pakio, Inc",
-      "raw": "20506\nAwais Iqbal\nPakio, Inc"
-    },
-    {
-      "office_id": "19096",
-      "owner": "Raymond Glover",
-      "company": "Keys to Success Solutions, Inc.",
-      "raw": "19096\nRaymond Glover\nKeys to Success Solutions, Inc."
-    },
     {
       "office_id": "20646",
       "owner": "Abel Draper",
       "company": "Abyl Acquisition Group, Inc",
       "raw": "20646\nAbel Draper\nAbyl Acquisition Group, Inc"
-    },
-    {
-      "office_id": "20684",
-      "owner": "HASANI LYNCH",
-      "company": "Educo Solutions, Inc.",
-      "raw": "20684\nHASANI LYNCH\nEduco Solutions, Inc."
-    },
-    {
-      "office_id": "20702",
-      "owner": "Donovan Jones",
-      "company": "Brighter Day Marketing, Inc",
-      "raw": "20702\nDonovan Jones\nBrighter Day Marketing, Inc"
-    },
-    {
-      "office_id": "20772",
-      "owner": "Melissa Salmeron Pedroza",
-      "company": "Tanzanite Innovations, Inc.",
-      "raw": "20772\nMelissa Salmeron Pedroza\nTanzanite Innovations, Inc."
-    },
-    {
-      "office_id": "20675",
-      "owner": "DIVANTE EDWARDS",
-      "company": "Transcendent Lavel Consulting, Inc",
-      "raw": "20675\nDIVANTE EDWARDS\nTranscendent Lavel Consulting, Inc"
-    },
-    {
-      "office_id": "20721",
-      "owner": "Eric Martinez",
-      "company": "Spartan Capital, Inc",
-      "raw": "20721\nEric Martinez\nSpartan Capital, Inc"
-    },
-    {
-      "office_id": "20812",
-      "owner": "Jahvid Thompson",
-      "company": "Phoenix Acquisition Group, Inc.",
-      "raw": "20812\nJahvid Thompson\nPhoenix Acquisition Group, Inc."
-    },
-    {
-      "office_id": "20862",
-      "owner": "Nicholas Weldon",
-      "company": "Elite Level Management, Inc.",
-      "raw": "20862\nNicholas Weldon\nElite Level Management, Inc."
-    },
-    {
-      "office_id": "17175",
-      "owner": "MARIA JOSE DIAZ DE COSSIO",
-      "company": "SUNBEAM TX, INC",
-      "raw": "17175\nMARIA JOSE DIAZ DE COSSIO\nSUNBEAM TX, INC"
-    },
-    {
-      "office_id": "20854",
-      "owner": "Sebastian Gutierrez",
-      "company": "Westpeak Consultants, Inc",
-      "raw": "20854\nSebastian Gutierrez\nWestpeak Consultants, Inc"
-    },
-    {
-      "office_id": "20985",
-      "owner": "Todd Harrison",
-      "company": "Integrity Mindset Group, Inc",
-      "raw": "20985\nTodd Harrison\nIntegrity Mindset Group, Inc"
-    },
-    {
-      "office_id": "20990",
-      "owner": "Claudia Erazo",
-      "company": "Prosper Consultants, Inc.",
-      "raw": "20990\nClaudia Erazo\nProsper Consultants, Inc."
-    },
-    {
-      "office_id": "21045",
-      "owner": "Alek Rendulic",
-      "company": "Exodos Enterprise, Inc",
-      "raw": "21045\nAlek Rendulic\nExodos Enterprise, Inc"
-    },
-    {
-      "office_id": "21016",
-      "owner": "Michael Lewin",
-      "company": "High Key Management, Inc",
-      "raw": "21016\nMichael Lewin\nHigh Key Management, Inc"
-    },
-    {
-      "office_id": "21077",
-      "owner": "Nahum Lawani",
-      "company": "Niziah Development Corporation, Inc",
-      "raw": "21077\nNahum Lawani\nNiziah Development Corporation, Inc"
-    },
-    {
-      "office_id": "21119",
-      "owner": "Qais Zarmal",
-      "company": "QZ Solutions, Inc",
-      "raw": "21119\nQais Zarmal\nQZ Solutions, Inc"
-    },
-    {
-      "office_id": "21144",
-      "owner": "Taylor McKinney IV",
-      "company": "Key4Me Services, Inc.",
-      "raw": "21144\nTaylor McKinney IV\nKey4Me Services, Inc."
-    },
-    {
-      "office_id": "21182",
-      "owner": "Lamar Mitchell III",
-      "company": "Mission III Management, Inc.",
-      "raw": "21182\nLamar Mitchell III\nMission III Management, Inc."
-    },
-    {
-      "office_id": "21222",
-      "owner": "Emilio Suggs",
-      "company": "Omni Soldato, Inc",
-      "raw": "21222\nEmilio Suggs\nOmni Soldato, Inc"
-    },
-    {
-      "office_id": "21195",
-      "owner": "Karese Frizell",
-      "company": "Savvy Consulting, Inc.",
-      "raw": "21195\nKarese Frizell\nSavvy Consulting, Inc."
-    },
-    {
-      "office_id": "21151",
-      "owner": "Cody Cannon",
-      "company": "Aeon Specialized Consulting, Inc",
-      "raw": "21151\nCody Cannon\nAeon Specialized Consulting, Inc"
-    },
-    {
-      "office_id": "20788",
-      "owner": "Joseph Delgado",
-      "company": "Golden View Solutions, Inc.",
-      "raw": "20788\nJoseph Delgado\nGolden View Solutions, Inc."
-    },
-    {
-      "office_id": "21329",
-      "owner": "Osvaldo Rodriguez",
-      "company": "OzKorp, Inc",
-      "raw": "21329\nOsvaldo Rodriguez\nOzKorp, Inc"
-    },
-    {
-      "office_id": "21328",
-      "owner": "Muhammad UI Haque",
-      "company": "Elite Prime Group, Inc",
-      "raw": "21328\nMuhammad UI Haque\nElite Prime Group, Inc"
-    },
-    {
-      "office_id": "21377",
-      "owner": "Selena Powers",
-      "company": "Limitless Marketing Solutions, Inc",
-      "raw": "21377\nSelena Powers\nLimitless Marketing Solutions, Inc"
-    },
-    {
-      "office_id": "21436",
-      "owner": "Kobe Antolino",
-      "company": "Manifest Innovations, Inc.",
-      "raw": "21436\nKobe Antolino\nManifest Innovations, Inc."
-    },
-    {
-      "office_id": "21526",
-      "owner": "Kerolos Sadek",
-      "company": "Lykos Capital, Inc.",
-      "raw": "21526\nKerolos Sadek\nLykos Capital, Inc."
-    },
-    {
-      "office_id": "21037",
-      "owner": "Milan Godbolt",
-      "company": "Arise Solutions Inc.",
-      "raw": "21037\nMilan Godbolt\nArise Solutions Inc."
-    },
-    {
-      "office_id": "21270",
-      "owner": "Jairo Ruiz",
-      "company": "Profits Management, Inc.",
-      "raw": "21270\nJairo Ruiz\nProfits Management, Inc."
-    },
-    {
-      "office_id": "21647",
-      "owner": "Eddie Jones Jr.",
-      "company": "Next Phase Group, Inc.",
-      "raw": "21647\nEddie Jones Jr.\nNext Phase Group, Inc."
-    },
-    {
-      "office_id": "21583",
-      "owner": "Hector Cordova",
-      "company": "Olympus Solutions, Inc.",
-      "raw": "21583\nHector Cordova\nOlympus Solutions, Inc."
-    },
-    {
-      "office_id": "21724",
-      "owner": "Mohammad Altom",
-      "company": "The Babylon Group, Inc.",
-      "raw": "21724\nMohammad Altom\nThe Babylon Group, Inc."
-    },
-    {
-      "office_id": "21757",
-      "owner": "Karrington Moody",
-      "company": "Coastal Creative Concepts, Inc.",
-      "raw": "21757\nKarrington Moody\nCoastal Creative Concepts, Inc."
-    },
-    {
-      "office_id": "21805",
-      "owner": "Sam Park",
-      "company": "Spark Approach, Inc.",
-      "raw": "21805\nSam Park\nSpark Approach, Inc."
-    },
-    {
-      "office_id": "21873",
-      "owner": "Steven Sykes",
-      "company": "Meridian Enterprise, Inc.",
-      "raw": "21873\nSteven Sykes\nMeridian Enterprise, Inc."
-    },
-    {
-      "office_id": "21894",
-      "owner": "Christian Longoria",
-      "company": "MGL Solutions, Inc.",
-      "raw": "21894\nChristian Longoria\nMGL Solutions, Inc."
-    },
-    {
-      "office_id": "21451",
-      "owner": "Kyle Luna",
-      "company": "Lunas Consulting, Inc.",
-      "raw": "21451\nKyle Luna\nLunas Consulting, Inc."
-    },
-    {
-      "office_id": "19833",
-      "owner": "Roshan Amin Ahmad",
-      "company": "Sapphire Marketing, Inc",
-      "raw": "19833\nRoshan Amin Ahmad\nSapphire Marketing, Inc"
-    },
-    {
-      "office_id": "22069",
-      "owner": "Marcellus Butler",
-      "company": "Pantherforge, Inc.",
-      "raw": "22069\nMarcellus Butler\nPantherforge, Inc."
-    },
-    {
-      "office_id": "22142",
-      "owner": "Isaac Cabrera",
-      "company": "Cabrera Marketing Firm Inc.",
-      "raw": "22142\nIsaac Cabrera\nCabrera Marketing Firm Inc."
-    },
-    {
-      "office_id": "21291",
-      "owner": "Sabrina Alicea",
-      "company": "Alisei, Inc",
-      "raw": "21291\nSabrina Alicea\nAlisei, Inc"
-    },
-    {
-      "office_id": "22177",
-      "owner": "Akashdeep Rai",
-      "company": "Palace Acquisitions, Inc.",
-      "raw": "22177\nAkashdeep Rai\nPalace Acquisitions, Inc."
-    },
-    {
-      "office_id": "22245",
-      "owner": "Alexis Herrera",
-      "company": "Alera Solutions, Inc.",
-      "raw": "22245\nAlexis Herrera\nAlera Solutions, Inc."
-    },
-    {
-      "office_id": "22249",
-      "owner": "Kevin Driggs",
-      "company": "Nova Management Group, Inc.",
-      "raw": "22249\nKevin Driggs\nNova Management Group, Inc."
-    },
-    {
-      "office_id": "22284",
-      "owner": "Marcos Barbosa",
-      "company": "Capital Vision Enterprise, Inc.",
-      "raw": "22284\nMarcos Barbosa\nCapital Vision Enterprise, Inc."
-    },
-    {
-      "office_id": "22393",
-      "owner": "Grant Glennon",
-      "company": "44th Management, Inc.",
-      "raw": "22393\nGrant Glennon\n44th Management, Inc."
-    },
-    {
-      "office_id": "22409",
-      "owner": "Delaney Savidan",
-      "company": "Inizio Collective, Inc.",
-      "raw": "22409\nDelaney Savidan\nInizio Collective, Inc."
-    },
-    {
-      "office_id": "22477",
-      "owner": "George Delgado",
-      "company": "Skyline Elite, Inc.",
-      "raw": "22477\nGeorge Delgado\nSkyline Elite, Inc."
-    },
-    {
-      "office_id": "22492",
-      "owner": "Tatyana White",
-      "company": "Ascend Management Group, Inc.",
-      "raw": "22492\nTatyana White\nAscend Management Group, Inc."
-    },
-    {
-      "office_id": "22512",
-      "owner": "Marcial Rodriguez",
-      "company": "Radiant Consulting, Inc.",
-      "raw": "22512\nMarcial Rodriguez\nRadiant Consulting, Inc."
-    },
-    {
-      "office_id": "22525",
-      "owner": "Joshua Molina",
-      "company": "KEYNETIC, INC.",
-      "raw": "22525\nJoshua Molina\nKEYNETIC, INC."
-    },
-    {
-      "office_id": "22524",
-      "owner": "Haytham Nagi",
-      "company": "Horizon Edge Alliance, Inc.",
-      "raw": "22524\nHaytham Nagi\nHorizon Edge Alliance, Inc."
-    },
-    {
-      "office_id": "22531",
-      "owner": "Rachel Barnett",
-      "company": "AUVIA, Inc.",
-      "raw": "22531\nRachel Barnett\nAUVIA, Inc."
-    },
-    {
-      "office_id": "22546",
-      "owner": "Sung Kim",
-      "company": "Zenith Innovations, Inc.",
-      "raw": "22546\nSung Kim\nZenith Innovations, Inc."
-    },
-    {
-      "office_id": "22579",
-      "owner": "Luis Rivera",
-      "company": "Amplifiedvisions Inc.",
-      "raw": "22579\nLuis Rivera\nAmplifiedvisions Inc."
-    },
-    {
-      "office_id": "22583",
-      "owner": "Drew Tepper",
-      "company": "Precision Management Team, Inc.",
-      "raw": "22583\nDrew Tepper\nPrecision Management Team, Inc."
-    },
-    {
-      "office_id": "22597",
-      "owner": "Jacob Morgan",
-      "company": "Emerald Edge Promotions, Inc.",
-      "raw": "22597\nJacob Morgan\nEmerald Edge Promotions, Inc."
-    },
-    {
-      "office_id": "22604",
-      "owner": "Fernando Munoz",
-      "company": "SD Premier Consulting, Inc.",
-      "raw": "22604\nFernando Munoz\nSD Premier Consulting, Inc."
-    },
-    {
-      "office_id": "22618",
-      "owner": "Danny Galvan Rodriguez",
-      "company": "Innovative Evolution, Inc.",
-      "raw": "22618\nDanny Galvan Rodriguez\nInnovative Evolution, Inc."
     },
     {
       "office_id": "22628",
@@ -536,256 +14,16 @@
       "raw": "22628\nAiysha Mariano\nJudext Acquisition, Inc."
     },
     {
-      "office_id": "22646",
-      "owner": "Timothy Blue",
-      "company": "Royal Dominion, Inc.",
-      "raw": "22646\nTimothy Blue\nRoyal Dominion, Inc."
+      "office_id": "22177",
+      "owner": "Akashdeep Rai",
+      "company": "Palace Acquisitions, Inc.",
+      "raw": "22177\nAkashdeep Rai\nPalace Acquisitions, Inc."
     },
     {
-      "office_id": "22668",
-      "owner": "Patricio Cantu Campos",
-      "company": "Alec Solutions, Inc.",
-      "raw": "22668\nPatricio Cantu Campos\nAlec Solutions, Inc."
-    },
-    {
-      "office_id": "22689",
-      "owner": "RJ Sagum",
-      "company": "Bayani Enterprises, Inc.",
-      "raw": "22689\nRJ Sagum\nBayani Enterprises, Inc."
-    },
-    {
-      "office_id": "22695",
-      "owner": "Justin Simmons",
-      "company": "Newforge Marketing, Inc.",
-      "raw": "22695\nJustin Simmons\nNewforge Marketing, Inc."
-    },
-    {
-      "office_id": "22697",
-      "owner": "Michael Antidormi",
-      "company": "Momentum Management Analytics, Inc",
-      "raw": "22697\nMichael Antidormi\nMomentum Management Analytics, Inc"
-    },
-    {
-      "office_id": "22740",
-      "owner": "Noah Davis",
-      "company": "ND Production, Inc.",
-      "raw": "22740\nNoah Davis\nND Production, Inc."
-    },
-    {
-      "office_id": "22797",
-      "owner": "German Lopez",
-      "company": "Orbit Consulting Inc",
-      "raw": "22797\nGerman Lopez\nOrbit Consulting Inc"
-    },
-    {
-      "office_id": "22785",
-      "owner": "Carlos Padilla",
-      "company": "DMND Collective, Inc.",
-      "raw": "22785\nCarlos Padilla\nDMND Collective, Inc."
-    },
-    {
-      "office_id": "22794",
-      "owner": "Alexandra Payne",
-      "company": "Opal Core Management, Inc.",
-      "raw": "22794\nAlexandra Payne\nOpal Core Management, Inc."
-    },
-    {
-      "office_id": "22809",
-      "owner": "Dayton Dubs",
-      "company": "Dubs Capital, Inc",
-      "raw": "22809\nDayton Dubs\nDubs Capital, Inc"
-    },
-    {
-      "office_id": "22814",
-      "owner": "Nathan Murillo",
-      "company": "Murillo Legacy, Inc.",
-      "raw": "22814\nNathan Murillo\nMurillo Legacy, Inc."
-    },
-    {
-      "office_id": "22820",
-      "owner": "Ryan McSpadden",
-      "company": "Highline Management Team, Inc. 2",
-      "raw": "22820\nRyan McSpadden\nHighline Management Team, Inc. 2"
-    },
-    {
-      "office_id": "22850",
-      "owner": "Valeria Tristan",
-      "company": "Altura Marketing, Inc.",
-      "raw": "22850\nValeria Tristan\nAltura Marketing, Inc."
-    },
-    {
-      "office_id": "22815",
-      "owner": "Cyrus Wade",
-      "company": "Ambient Marketing, Inc.",
-      "raw": "22815\nCyrus Wade\nAmbient Marketing, Inc."
-    },
-    {
-      "office_id": "22749",
-      "owner": "Jonathan Franco",
-      "company": "Strix Strategies, Inc",
-      "raw": "22749\nJonathan Franco\nStrix Strategies, Inc"
-    },
-    {
-      "office_id": "22899",
-      "owner": "Resan Gabutin",
-      "company": "Triumphant Ventures, Inc. 2",
-      "raw": "22899\nResan Gabutin\nTriumphant Ventures, Inc. 2"
-    },
-    {
-      "office_id": "22765",
-      "owner": "Kolin Charboneau",
-      "company": "Prestige World Marketing, Inc.",
-      "raw": "22765\nKolin Charboneau\nPrestige World Marketing, Inc."
-    },
-    {
-      "office_id": "18235",
-      "owner": "David Martinez",
-      "company": "Alpha Acquisition Specialist, Inc.",
-      "raw": "18235\nDavid Martinez\nAlpha Acquisition Specialist, Inc."
-    },
-    {
-      "office_id": "22992",
-      "owner": "Aya Al-Khafaji",
-      "company": "Indelible Marketing, Inc",
-      "raw": "22992\nAya Al-Khafaji\nIndelible Marketing, Inc"
-    },
-    {
-      "office_id": "22990",
-      "owner": "Tevin Sterling",
-      "company": "Kingsford Acquisitions, Inc",
-      "raw": "22990\nTevin Sterling\nKingsford Acquisitions, Inc"
-    },
-    {
-      "office_id": "23011",
-      "owner": "Austin Enos",
-      "company": "Radiant Futures, Inc",
-      "raw": "23011\nAustin Enos\nRadiant Futures, Inc"
-    },
-    {
-      "office_id": "23066",
-      "owner": "Maxamad Aden",
-      "company": "Maximal Management, Inc.",
-      "raw": "23066\nMaxamad Aden\nMaximal Management, Inc."
-    },
-    {
-      "office_id": "23101",
-      "owner": "Victor Hernandez Gutierrez",
-      "company": "Covenant Apex Solutions, Inc.",
-      "raw": "23101\nVictor Hernandez Gutierrez\nCovenant Apex Solutions, Inc."
-    },
-    {
-      "office_id": "23082",
-      "owner": "Brian Tran",
-      "company": "Sky Nova, Inc.",
-      "raw": "23082\nBrian Tran\nSky Nova, Inc."
-    },
-    {
-      "office_id": "22434",
-      "owner": "Jose Velasquez",
-      "company": "Legacy Shore Marketing, Inc.",
-      "raw": "22434\nJose Velasquez\nLegacy Shore Marketing, Inc."
-    },
-    {
-      "office_id": "23158",
-      "owner": "Chris Gayler",
-      "company": "Horizon Focus Group, Inc.",
-      "raw": "23158\nChris Gayler\nHorizon Focus Group, Inc."
-    },
-    {
-      "office_id": "23160",
-      "owner": "Steve McElwee",
-      "company": "Luxe Global Consulting, Inc.",
-      "raw": "23160\nSteve McElwee\nLuxe Global Consulting, Inc."
-    },
-    {
-      "office_id": "23132",
-      "owner": "Jennifer Figueroa",
-      "company": "Figspire Management, Inc.",
-      "raw": "23132\nJennifer Figueroa\nFigspire Management, Inc."
-    },
-    {
-      "office_id": "23171",
-      "owner": "Coel Reif",
-      "company": "Tally Management Group, Inc",
-      "raw": "23171\nCoel Reif\nTally Management Group, Inc"
-    },
-    {
-      "office_id": "23139",
-      "owner": "Kiarri McBroom",
-      "company": "Apex Innovations & Marketing, Inc",
-      "raw": "23139\nKiarri McBroom\nApex Innovations & Marketing, Inc"
-    },
-    {
-      "office_id": "23181",
-      "owner": "Andrew Burris",
-      "company": "Ascension Management Group, Inc.",
-      "raw": "23181\nAndrew Burris\nAscension Management Group, Inc."
-    },
-    {
-      "office_id": "23193",
-      "owner": "Chris Williams",
-      "company": "Kings Legacy Consultants, Inc.",
-      "raw": "23193\nChris Williams\nKings Legacy Consultants, Inc."
-    },
-    {
-      "office_id": "23206",
-      "owner": "Joey Ramirez",
-      "company": "JG Fortitude, Inc.",
-      "raw": "23206\nJoey Ramirez\nJG Fortitude, Inc."
-    },
-    {
-      "office_id": "23265",
-      "owner": "Melik El Jaiez",
-      "company": "Uniq Strategies, Inc.",
-      "raw": "23265\nMelik El Jaiez\nUniq Strategies, Inc."
-    },
-    {
-      "office_id": "23275",
-      "owner": "Nii Tagoe",
-      "company": "Next Horizon Group, Inc.",
-      "raw": "23275\nNii Tagoe\nNext Horizon Group, Inc."
-    },
-    {
-      "office_id": "23319",
-      "owner": "Tracy James Jr",
-      "company": "Actus Asset Group, Inc.",
-      "raw": "23319\nTracy James Jr\nActus Asset Group, Inc."
-    },
-    {
-      "office_id": "23317",
-      "owner": "Paulina Duarte",
-      "company": "Rosel Industries, Inc. 2",
-      "raw": "23317\nPaulina Duarte\nRosel Industries, Inc. 2"
-    },
-    {
-      "office_id": "23329",
-      "owner": "Kyelie Broumley",
-      "company": "Novara Management, Inc.",
-      "raw": "23329\nKyelie Broumley\nNovara Management, Inc."
-    },
-    {
-      "office_id": "23346",
-      "owner": "Magaly Rojas",
-      "company": "Onyx Prestige, Inc.",
-      "raw": "23346\nMagaly Rojas\nOnyx Prestige, Inc."
-    },
-    {
-      "office_id": "23363",
-      "owner": "Muhammad Waqar",
-      "company": "Monarch Stonebridge Group, Inc.",
-      "raw": "23363\nMuhammad Waqar\nMonarch Stonebridge Group, Inc."
-    },
-    {
-      "office_id": "23376",
-      "owner": "Joseph Logan",
-      "company": "Logan Legacy Group, Inc.",
-      "raw": "23376\nJoseph Logan\nLogan Legacy Group, Inc."
-    },
-    {
-      "office_id": "23377",
-      "owner": "Edgar Muniz II",
-      "company": "Aurelion Marketing, Inc.",
-      "raw": "23377\nEdgar Muniz II\nAurelion Marketing, Inc."
+      "office_id": "17694",
+      "owner": "ALANTE ATKINS",
+      "company": "A&Z MARKETING, INC.",
+      "raw": "17694\nALANTE ATKINS\nA&Z MARKETING, INC."
     },
     {
       "office_id": "23358",
@@ -794,70 +32,28 @@
       "raw": "23358\nAlejandro Urquieta\nMonarch Acquisitions, Inc."
     },
     {
-      "office_id": "23402",
-      "owner": "Carissa Ng",
-      "company": "Lunar Management Group, Inc.",
-      "raw": "23402\nCarissa Ng\nLunar Management Group, Inc."
+      "office_id": "21045",
+      "owner": "Alek Rendulic",
+      "company": "Exodos Enterprise, Inc",
+      "raw": "21045\nAlek Rendulic\nExodos Enterprise, Inc"
     },
     {
-      "office_id": "22799",
-      "owner": "Lavender Ward",
-      "company": "Fortis Dynamic, Inc.",
-      "raw": "22799\nLavender Ward\nFortis Dynamic, Inc."
+      "office_id": "22197",
+      "owner": "Alex Censi",
+      "company": "Power Shift Marketing, Inc.",
+      "raw": "22197\nAlex Censi\nPower Shift Marketing, Inc."
     },
     {
-      "office_id": "23411",
-      "owner": "Rashad Reed",
-      "company": "Elevate Specialized Acquisitions, Inc",
-      "raw": "23411\nRashad Reed\nElevate Specialized Acquisitions, Inc"
+      "office_id": "15698",
+      "owner": "Alex Turzynski",
+      "company": "Threshold Marketing, Inc.",
+      "raw": "15698\nAlex Turzynski\nThreshold Marketing, Inc."
     },
     {
-      "office_id": "23416",
-      "owner": "Diego Zamora",
-      "company": "Deep Value Acquisitions, Inc",
-      "raw": "23416\nDiego Zamora\nDeep Value Acquisitions, Inc"
-    },
-    {
-      "office_id": "23425",
-      "owner": "Justin Fermin",
-      "company": "Code Marketing Executives, Inc.",
-      "raw": "23425\nJustin Fermin\nCode Marketing Executives, Inc."
-    },
-    {
-      "office_id": "23405",
-      "owner": "Jimmy Bonilla",
-      "company": "Obsidian Opulence, Inc.",
-      "raw": "23405\nJimmy Bonilla\nObsidian Opulence, Inc."
-    },
-    {
-      "office_id": "23431",
-      "owner": "Natalia Gwarda",
-      "company": "Zora Industries, Inc.",
-      "raw": "23431\nNatalia Gwarda\nZora Industries, Inc."
-    },
-    {
-      "office_id": "23467",
-      "owner": "Atef Choudhury",
-      "company": "Domin8 Acquisitions, Inc.",
-      "raw": "23467\nAtef Choudhury\nDomin8 Acquisitions, Inc."
-    },
-    {
-      "office_id": "23538",
-      "owner": "Andrew McDonald",
-      "company": "Royal Management Group, Inc.",
-      "raw": "23538\nAndrew McDonald\nRoyal Management Group, Inc."
-    },
-    {
-      "office_id": "23549",
-      "owner": "Hayden Wilson",
-      "company": "Second Wind Acquisitions Inc",
-      "raw": "23549\nHayden Wilson\nSecond Wind Acquisitions Inc"
-    },
-    {
-      "office_id": "23524",
-      "owner": "Christopher Calderon",
-      "company": "C3 Marketing, Inc.",
-      "raw": "23524\nChristopher Calderon\nC3 Marketing, Inc."
+      "office_id": "22662",
+      "owner": "Alexander Badawi",
+      "company": "Mountain Peak Marketing, Inc.",
+      "raw": "22662\nAlexander Badawi\nMountain Peak Marketing, Inc."
     },
     {
       "office_id": "23553",
@@ -866,22 +62,262 @@
       "raw": "23553\nAlexander Sierra\nHaran Management, Inc."
     },
     {
-      "office_id": "23586",
-      "owner": "Tim Kim",
-      "company": "Turnkey Marketing Group, Inc",
-      "raw": "23586\nTim Kim\nTurnkey Marketing Group, Inc"
+      "office_id": "22794",
+      "owner": "Alexandra Payne",
+      "company": "Opal Core Management, Inc.",
+      "raw": "22794\nAlexandra Payne\nOpal Core Management, Inc."
     },
     {
-      "office_id": "23576",
-      "owner": "Kimberly Rodriguez",
-      "company": "Illumane, Inc.",
-      "raw": "23576\nKimberly Rodriguez\nIllumane, Inc."
+      "office_id": "22245",
+      "owner": "Alexis Herrera",
+      "company": "Alera Solutions, Inc.",
+      "raw": "22245\nAlexis Herrera\nAlera Solutions, Inc."
     },
     {
-      "office_id": "23581",
-      "owner": "Nawres Ferchichi",
-      "company": "Sunrise Elite Marketing, Inc.",
-      "raw": "23581\nNawres Ferchichi\nSunrise Elite Marketing, Inc."
+      "office_id": "23181",
+      "owner": "Andrew Burris",
+      "company": "Ascension Management Group, Inc.",
+      "raw": "23181\nAndrew Burris\nAscension Management Group, Inc."
+    },
+    {
+      "office_id": "23538",
+      "owner": "Andrew McDonald",
+      "company": "Royal Management Group, Inc.",
+      "raw": "23538\nAndrew McDonald\nRoyal Management Group, Inc."
+    },
+    {
+      "office_id": "23467",
+      "owner": "Atef Choudhury",
+      "company": "Domin8 Acquisitions, Inc.",
+      "raw": "23467\nAtef Choudhury\nDomin8 Acquisitions, Inc."
+    },
+    {
+      "office_id": "23011",
+      "owner": "Austin Enos",
+      "company": "Radiant Futures, Inc",
+      "raw": "23011\nAustin Enos\nRadiant Futures, Inc"
+    },
+    {
+      "office_id": "20506",
+      "owner": "Awais Iqbal",
+      "company": "Pakio, Inc",
+      "raw": "20506\nAwais Iqbal\nPakio, Inc"
+    },
+    {
+      "office_id": "22992",
+      "owner": "Aya Al-Khafaji",
+      "company": "Indelible Marketing, Inc",
+      "raw": "22992\nAya Al-Khafaji\nIndelible Marketing, Inc"
+    },
+    {
+      "office_id": "14229",
+      "owner": "Boaktear Chowdhury",
+      "company": "Motiv8 Management Inc",
+      "raw": "14229\nBoaktear Chowdhury\nMotiv8 Management Inc"
+    },
+    {
+      "office_id": "22824",
+      "owner": "Brandon Lim",
+      "company": "Limitless Management, Inc.",
+      "raw": "22824\nBrandon Lim\nLimitless Management, Inc."
+    },
+    {
+      "office_id": "23292",
+      "owner": "Brenden Torrence",
+      "company": "Acceleration Enterprise, Inc.",
+      "raw": "23292\nBrenden Torrence\nAcceleration Enterprise, Inc."
+    },
+    {
+      "office_id": "23082",
+      "owner": "Brian Tran",
+      "company": "Sky Nova, Inc.",
+      "raw": "23082\nBrian Tran\nSky Nova, Inc."
+    },
+    {
+      "office_id": "17030",
+      "owner": "Caleb Lick",
+      "company": "Voyager Consultants, Inc",
+      "raw": "17030\nCaleb Lick\nVoyager Consultants, Inc"
+    },
+    {
+      "office_id": "23402",
+      "owner": "Carissa Ng",
+      "company": "Lunar Management Group, Inc.",
+      "raw": "23402\nCarissa Ng\nLunar Management Group, Inc."
+    },
+    {
+      "office_id": "11580",
+      "owner": "CARLOS HIDALGO",
+      "company": "ALPHALETE SPECIALIZED MARKETING, INC.-TX",
+      "raw": "11580\nCARLOS HIDALGO\nALPHALETE SPECIALIZED MARKETING, INC.-TX"
+    },
+    {
+      "office_id": "19788",
+      "owner": "Carlos Hidalgo",
+      "company": "Alphalete specialized marketing",
+      "raw": "19788\nCarlos Hidalgo\nAlphalete specialized marketing"
+    },
+    {
+      "office_id": "22785",
+      "owner": "Carlos Padilla",
+      "company": "DMND Collective, Inc.",
+      "raw": "22785\nCarlos Padilla\nDMND Collective, Inc."
+    },
+    {
+      "office_id": "23158",
+      "owner": "Chris Gayler",
+      "company": "Horizon Focus Group, Inc.",
+      "raw": "23158\nChris Gayler\nHorizon Focus Group, Inc."
+    },
+    {
+      "office_id": "23193",
+      "owner": "Chris Williams",
+      "company": "Kings Legacy Consultants, Inc.",
+      "raw": "23193\nChris Williams\nKings Legacy Consultants, Inc."
+    },
+    {
+      "office_id": "21894",
+      "owner": "Christian Longoria",
+      "company": "MGL Solutions, Inc.",
+      "raw": "21894\nChristian Longoria\nMGL Solutions, Inc."
+    },
+    {
+      "office_id": "23524",
+      "owner": "Christopher Calderon",
+      "company": "C3 Marketing, Inc.",
+      "raw": "23524\nChristopher Calderon\nC3 Marketing, Inc."
+    },
+    {
+      "office_id": "16221",
+      "owner": "Cinthya Reyes",
+      "company": "Dandelion Marketing, Inc.",
+      "raw": "16221\nCinthya Reyes\nDandelion Marketing, Inc."
+    },
+    {
+      "office_id": "20990",
+      "owner": "Claudia Erazo",
+      "company": "Prosper Consultants, Inc.",
+      "raw": "20990\nClaudia Erazo\nProsper Consultants, Inc."
+    },
+    {
+      "office_id": "21151",
+      "owner": "Cody Cannon",
+      "company": "Aeon Specialized Consulting, Inc",
+      "raw": "21151\nCody Cannon\nAeon Specialized Consulting, Inc"
+    },
+    {
+      "office_id": "23171",
+      "owner": "Coel Reif",
+      "company": "Tally Management Group, Inc",
+      "raw": "23171\nCoel Reif\nTally Management Group, Inc"
+    },
+    {
+      "office_id": "14733",
+      "owner": "COLTEN WRIGHT",
+      "company": "SOUTH SHORE SPECIALIZED MARKETING, INC.",
+      "raw": "14733\nCOLTEN WRIGHT\nSOUTH SHORE SPECIALIZED MARKETING, INC."
+    },
+    {
+      "office_id": "22442",
+      "owner": "Cruz Venegas",
+      "company": "Aventus Marketing, Inc.",
+      "raw": "22442\nCruz Venegas\nAventus Marketing, Inc."
+    },
+    {
+      "office_id": "22815",
+      "owner": "Cyrus Wade",
+      "company": "Ambient Marketing, Inc.",
+      "raw": "22815\nCyrus Wade\nAmbient Marketing, Inc."
+    },
+    {
+      "office_id": "22618",
+      "owner": "Danny Galvan Rodriguez",
+      "company": "Innovative Evolution, Inc.",
+      "raw": "22618\nDanny Galvan Rodriguez\nInnovative Evolution, Inc."
+    },
+    {
+      "office_id": "18235",
+      "owner": "David Martinez",
+      "company": "Alpha Acquisition Specialist, Inc.",
+      "raw": "18235\nDavid Martinez\nAlpha Acquisition Specialist, Inc."
+    },
+    {
+      "office_id": "22809",
+      "owner": "Dayton Dubs",
+      "company": "Dubs Capital, Inc",
+      "raw": "22809\nDayton Dubs\nDubs Capital, Inc"
+    },
+    {
+      "office_id": "22409",
+      "owner": "Delaney Savidan",
+      "company": "Inizio Collective, Inc.",
+      "raw": "22409\nDelaney Savidan\nInizio Collective, Inc."
+    },
+    {
+      "office_id": "23416",
+      "owner": "Diego Zamora",
+      "company": "Deep Value Acquisitions, Inc",
+      "raw": "23416\nDiego Zamora\nDeep Value Acquisitions, Inc"
+    },
+    {
+      "office_id": "20675",
+      "owner": "DIVANTE EDWARDS",
+      "company": "Transcendent Lavel Consulting, Inc",
+      "raw": "20675\nDIVANTE EDWARDS\nTranscendent Lavel Consulting, Inc"
+    },
+    {
+      "office_id": "20702",
+      "owner": "Donovan Jones",
+      "company": "Brighter Day Marketing, Inc",
+      "raw": "20702\nDonovan Jones\nBrighter Day Marketing, Inc"
+    },
+    {
+      "office_id": "18102",
+      "owner": "Dorian Black",
+      "company": "New Vision Management Inc",
+      "raw": "18102\nDorian Black\nNew Vision Management Inc"
+    },
+    {
+      "office_id": "22583",
+      "owner": "Drew Tepper",
+      "company": "Precision Management Team, Inc.",
+      "raw": "22583\nDrew Tepper\nPrecision Management Team, Inc."
+    },
+    {
+      "office_id": "21647",
+      "owner": "Eddie Jones Jr.",
+      "company": "Next Phase Group, Inc.",
+      "raw": "21647\nEddie Jones Jr.\nNext Phase Group, Inc."
+    },
+    {
+      "office_id": "23377",
+      "owner": "Edgar Muniz II",
+      "company": "Aurelion Marketing, Inc.",
+      "raw": "23377\nEdgar Muniz II\nAurelion Marketing, Inc."
+    },
+    {
+      "office_id": "15825",
+      "owner": "Ellen Dent",
+      "company": "Vanguard Management Inc",
+      "raw": "15825\nEllen Dent\nVanguard Management Inc"
+    },
+    {
+      "office_id": "21222",
+      "owner": "Emilio Suggs",
+      "company": "Omni Soldato, Inc",
+      "raw": "21222\nEmilio Suggs\nOmni Soldato, Inc"
+    },
+    {
+      "office_id": "20721",
+      "owner": "Eric Martinez",
+      "company": "Spartan Capital, Inc",
+      "raw": "20721\nEric Martinez\nSpartan Capital, Inc"
+    },
+    {
+      "office_id": "19772",
+      "owner": "Esteban Villalta-Gutierrez",
+      "company": "T&R Frameworks, Inc.",
+      "raw": "19772\nEsteban Villalta-Gutierrez\nT&R Frameworks, Inc."
     },
     {
       "office_id": "18404",
@@ -890,10 +326,712 @@
       "raw": "18404\nEveliz Wright\nSouth Shore Consulting Group, Inc."
     },
     {
+      "office_id": "20353",
+      "owner": "Fabian Diaz",
+      "company": "Paideia Management, Inc",
+      "raw": "20353\nFabian Diaz\nPaideia Management, Inc"
+    },
+    {
+      "office_id": "22604",
+      "owner": "Fernando Munoz",
+      "company": "SD Premier Consulting, Inc.",
+      "raw": "22604\nFernando Munoz\nSD Premier Consulting, Inc."
+    },
+    {
+      "office_id": "22477",
+      "owner": "George Delgado",
+      "company": "Skyline Elite, Inc.",
+      "raw": "22477\nGeorge Delgado\nSkyline Elite, Inc."
+    },
+    {
+      "office_id": "11296",
+      "owner": "George Hipolito",
+      "company": "Vincere Associates Inc",
+      "raw": "11296\nGeorge Hipolito\nVincere Associates Inc"
+    },
+    {
+      "office_id": "22797",
+      "owner": "German Lopez",
+      "company": "Orbit Consulting Inc",
+      "raw": "22797\nGerman Lopez\nOrbit Consulting Inc"
+    },
+    {
+      "office_id": "22393",
+      "owner": "Grant Glennon",
+      "company": "44th Management, Inc.",
+      "raw": "22393\nGrant Glennon\n44th Management, Inc."
+    },
+    {
+      "office_id": "23256",
+      "owner": "Harman Shamo",
+      "company": "Sparta Management, Inc.",
+      "raw": "23256\nHarman Shamo\nSparta Management, Inc."
+    },
+    {
+      "office_id": "20684",
+      "owner": "HASANI LYNCH",
+      "company": "Educo Solutions, Inc.",
+      "raw": "20684\nHASANI LYNCH\nEduco Solutions, Inc."
+    },
+    {
+      "office_id": "23549",
+      "owner": "Hayden Wilson",
+      "company": "Second Wind Acquisitions Inc",
+      "raw": "23549\nHayden Wilson\nSecond Wind Acquisitions Inc"
+    },
+    {
+      "office_id": "22524",
+      "owner": "Haytham Nagi",
+      "company": "Horizon Edge Alliance, Inc.",
+      "raw": "22524\nHaytham Nagi\nHorizon Edge Alliance, Inc."
+    },
+    {
+      "office_id": "21583",
+      "owner": "Hector Cordova",
+      "company": "Olympus Solutions, Inc.",
+      "raw": "21583\nHector Cordova\nOlympus Solutions, Inc."
+    },
+    {
+      "office_id": "22142",
+      "owner": "Isaac Cabrera",
+      "company": "Cabrera Marketing Firm Inc.",
+      "raw": "22142\nIsaac Cabrera\nCabrera Marketing Firm Inc."
+    },
+    {
+      "office_id": "19717",
+      "owner": "Isaiah Revelle",
+      "company": "Legacy Specialized Acquisitions, Inc.",
+      "raw": "19717\nIsaiah Revelle\nLegacy Specialized Acquisitions, Inc."
+    },
+    {
+      "office_id": "22358",
+      "owner": "Jackie LeRoy",
+      "company": "Elevate Marketing Team, Inc.",
+      "raw": "22358\nJackie LeRoy\nElevate Marketing Team, Inc."
+    },
+    {
+      "office_id": "23010",
+      "owner": "Jacob Dunlavy",
+      "company": "Ignite Solutions, Inc.",
+      "raw": "23010\nJacob Dunlavy\nIgnite Solutions, Inc."
+    },
+    {
+      "office_id": "22597",
+      "owner": "Jacob Morgan",
+      "company": "Emerald Edge Promotions, Inc.",
+      "raw": "22597\nJacob Morgan\nEmerald Edge Promotions, Inc."
+    },
+    {
+      "office_id": "20812",
+      "owner": "Jahvid Thompson",
+      "company": "Phoenix Acquisition Group, Inc.",
+      "raw": "20812\nJahvid Thompson\nPhoenix Acquisition Group, Inc."
+    },
+    {
+      "office_id": "21270",
+      "owner": "Jairo Ruiz",
+      "company": "Profits Management, Inc.",
+      "raw": "21270\nJairo Ruiz\nProfits Management, Inc."
+    },
+    {
+      "office_id": "19592",
+      "owner": "Jamis Garay",
+      "company": "MIDSPIRE INC",
+      "raw": "19592\nJamis Garay\nMIDSPIRE INC"
+    },
+    {
+      "office_id": "23132",
+      "owner": "Jennifer Figueroa",
+      "company": "Figspire Management, Inc.",
+      "raw": "23132\nJennifer Figueroa\nFigspire Management, Inc."
+    },
+    {
+      "office_id": "11382",
+      "owner": "Jesus Garcia Moreno",
+      "company": "Sonora Core Marketing Inc.",
+      "raw": "11382\nJesus Garcia Moreno\nSonora Core Marketing Inc."
+    },
+    {
+      "office_id": "23405",
+      "owner": "Jimmy Bonilla",
+      "company": "Obsidian Opulence, Inc.",
+      "raw": "23405\nJimmy Bonilla\nObsidian Opulence, Inc."
+    },
+    {
+      "office_id": "23206",
+      "owner": "Joey Ramirez",
+      "company": "JG Fortitude, Inc.",
+      "raw": "23206\nJoey Ramirez\nJG Fortitude, Inc."
+    },
+    {
+      "office_id": "16313",
+      "owner": "John Richard Young",
+      "company": "Boundless Promotions, Inc.",
+      "raw": "16313\nJohn Richard Young\nBoundless Promotions, Inc."
+    },
+    {
+      "office_id": "22749",
+      "owner": "Jonathan Franco",
+      "company": "Strix Strategies, Inc",
+      "raw": "22749\nJonathan Franco\nStrix Strategies, Inc"
+    },
+    {
+      "office_id": "20195",
+      "owner": "Jordan Holt",
+      "company": "Holt Dynamics, Inc",
+      "raw": "20195\nJordan Holt\nHolt Dynamics, Inc"
+    },
+    {
+      "office_id": "19221",
+      "owner": "Jose Antonio Chavez",
+      "company": "Cycles Consulting, Inc.",
+      "raw": "19221\nJose Antonio Chavez\nCycles Consulting, Inc."
+    },
+    {
+      "office_id": "22434",
+      "owner": "Jose Velasquez",
+      "company": "Legacy Shore Marketing, Inc.",
+      "raw": "22434\nJose Velasquez\nLegacy Shore Marketing, Inc."
+    },
+    {
+      "office_id": "20788",
+      "owner": "Joseph Delgado",
+      "company": "Golden View Solutions, Inc.",
+      "raw": "20788\nJoseph Delgado\nGolden View Solutions, Inc."
+    },
+    {
+      "office_id": "23376",
+      "owner": "Joseph Logan",
+      "company": "Logan Legacy Group, Inc.",
+      "raw": "23376\nJoseph Logan\nLogan Legacy Group, Inc."
+    },
+    {
+      "office_id": "22525",
+      "owner": "Joshua Molina",
+      "company": "KEYNETIC, INC.",
+      "raw": "22525\nJoshua Molina\nKEYNETIC, INC."
+    },
+    {
+      "office_id": "21770",
+      "owner": "Joshua Murphy",
+      "company": "Leadsphere Solutions, Inc.",
+      "raw": "21770\nJoshua Murphy\nLeadsphere Solutions, Inc."
+    },
+    {
+      "office_id": "23425",
+      "owner": "Justin Fermin",
+      "company": "Code Marketing Executives, Inc.",
+      "raw": "23425\nJustin Fermin\nCode Marketing Executives, Inc."
+    },
+    {
+      "office_id": "22695",
+      "owner": "Justin Simmons",
+      "company": "Newforge Marketing, Inc.",
+      "raw": "22695\nJustin Simmons\nNewforge Marketing, Inc."
+    },
+    {
+      "office_id": "22192",
+      "owner": "Justin Wood",
+      "company": "Forge Management, Inc.",
+      "raw": "22192\nJustin Wood\nForge Management, Inc."
+    },
+    {
+      "office_id": "21195",
+      "owner": "Karese Frizell",
+      "company": "Savvy Consulting, Inc.",
+      "raw": "21195\nKarese Frizell\nSavvy Consulting, Inc."
+    },
+    {
+      "office_id": "21757",
+      "owner": "Karrington Moody",
+      "company": "Coastal Creative Concepts, Inc.",
+      "raw": "21757\nKarrington Moody\nCoastal Creative Concepts, Inc."
+    },
+    {
+      "office_id": "17651",
+      "owner": "Kassandra Lozano",
+      "company": "LZN Solutions, Inc.",
+      "raw": "17651\nKassandra Lozano\nLZN Solutions, Inc."
+    },
+    {
+      "office_id": "21526",
+      "owner": "Kerolos Sadek",
+      "company": "Lykos Capital, Inc.",
+      "raw": "21526\nKerolos Sadek\nLykos Capital, Inc."
+    },
+    {
+      "office_id": "22249",
+      "owner": "Kevin Driggs",
+      "company": "Nova Management Group, Inc.",
+      "raw": "22249\nKevin Driggs\nNova Management Group, Inc."
+    },
+    {
+      "office_id": "11901",
+      "owner": "KHALIL MANSOUR",
+      "company": "ALPHALETE MANAGEMENT GROUP, INC.",
+      "raw": "11901\nKHALIL MANSOUR\nALPHALETE MANAGEMENT GROUP, INC."
+    },
+    {
+      "office_id": "20334",
+      "owner": "KHALIL MANSOUR",
+      "company": "ALPHALETE MANAGEMENT GROUP, INC. 2nd",
+      "raw": "20334\nKHALIL MANSOUR\nALPHALETE MANAGEMENT GROUP, INC. 2nd"
+    },
+    {
+      "office_id": "23139",
+      "owner": "Kiarri McBroom",
+      "company": "Apex Innovations & Marketing, Inc",
+      "raw": "23139\nKiarri McBroom\nApex Innovations & Marketing, Inc"
+    },
+    {
+      "office_id": "23576",
+      "owner": "Kimberly Rodriguez",
+      "company": "Illumane, Inc.",
+      "raw": "23576\nKimberly Rodriguez\nIllumane, Inc."
+    },
+    {
+      "office_id": "11906",
+      "owner": "Kinsey Guenther",
+      "company": "The KC Standard, Inc.",
+      "raw": "11906\nKinsey Guenther\nThe KC Standard, Inc."
+    },
+    {
+      "office_id": "21436",
+      "owner": "Kobe Antolino",
+      "company": "Manifest Innovations, Inc.",
+      "raw": "21436\nKobe Antolino\nManifest Innovations, Inc."
+    },
+    {
+      "office_id": "22765",
+      "owner": "Kolin Charboneau",
+      "company": "Prestige World Marketing, Inc.",
+      "raw": "22765\nKolin Charboneau\nPrestige World Marketing, Inc."
+    },
+    {
+      "office_id": "23329",
+      "owner": "Kyelie Broumley",
+      "company": "Novara Management, Inc.",
+      "raw": "23329\nKyelie Broumley\nNovara Management, Inc."
+    },
+    {
+      "office_id": "21451",
+      "owner": "Kyle Luna",
+      "company": "Lunas Consulting, Inc.",
+      "raw": "21451\nKyle Luna\nLunas Consulting, Inc."
+    },
+    {
+      "office_id": "21182",
+      "owner": "Lamar Mitchell III",
+      "company": "Mission III Management, Inc.",
+      "raw": "21182\nLamar Mitchell III\nMission III Management, Inc."
+    },
+    {
+      "office_id": "22799",
+      "owner": "Lavender Ward",
+      "company": "Fortis Dynamic, Inc.",
+      "raw": "22799\nLavender Ward\nFortis Dynamic, Inc."
+    },
+    {
       "office_id": "22109",
       "owner": "Lizette Ruiz-Conejo",
       "company": "Revolution Consulting Group, Inc.",
       "raw": "22109\nLizette Ruiz-Conejo\nRevolution Consulting Group, Inc."
+    },
+    {
+      "office_id": "22579",
+      "owner": "Luis Rivera",
+      "company": "Amplifiedvisions Inc.",
+      "raw": "22579\nLuis Rivera\nAmplifiedvisions Inc."
+    },
+    {
+      "office_id": "21169",
+      "owner": "Luis Salazar",
+      "company": "Apex Premier Management, Inc.",
+      "raw": "21169\nLuis Salazar\nApex Premier Management, Inc."
+    },
+    {
+      "office_id": "20958",
+      "owner": "Luke Baldwin",
+      "company": "Takeoff Enterprises, Inc. 2nd",
+      "raw": "20958\nLuke Baldwin\nTakeoff Enterprises, Inc. 2nd"
+    },
+    {
+      "office_id": "23346",
+      "owner": "Magaly Rojas",
+      "company": "Onyx Prestige, Inc.",
+      "raw": "23346\nMagaly Rojas\nOnyx Prestige, Inc."
+    },
+    {
+      "office_id": "22069",
+      "owner": "Marcellus Butler",
+      "company": "Pantherforge, Inc.",
+      "raw": "22069\nMarcellus Butler\nPantherforge, Inc."
+    },
+    {
+      "office_id": "22512",
+      "owner": "Marcial Rodriguez",
+      "company": "Radiant Consulting, Inc.",
+      "raw": "22512\nMarcial Rodriguez\nRadiant Consulting, Inc."
+    },
+    {
+      "office_id": "22284",
+      "owner": "Marcos Barbosa",
+      "company": "Capital Vision Enterprise, Inc.",
+      "raw": "22284\nMarcos Barbosa\nCapital Vision Enterprise, Inc."
+    },
+    {
+      "office_id": "17175",
+      "owner": "MARIA JOSE DIAZ DE COSSIO",
+      "company": "SUNBEAM TX, INC",
+      "raw": "17175\nMARIA JOSE DIAZ DE COSSIO\nSUNBEAM TX, INC"
+    },
+    {
+      "office_id": "23066",
+      "owner": "Maxamad Aden",
+      "company": "Maximal Management, Inc.",
+      "raw": "23066\nMaxamad Aden\nMaximal Management, Inc."
+    },
+    {
+      "office_id": "23265",
+      "owner": "Melik El Jaiez",
+      "company": "Uniq Strategies, Inc.",
+      "raw": "23265\nMelik El Jaiez\nUniq Strategies, Inc."
+    },
+    {
+      "office_id": "20772",
+      "owner": "Melissa Salmeron Pedroza",
+      "company": "Tanzanite Innovations, Inc.",
+      "raw": "20772\nMelissa Salmeron Pedroza\nTanzanite Innovations, Inc."
+    },
+    {
+      "office_id": "22697",
+      "owner": "Michael Antidormi",
+      "company": "Momentum Management Analytics, Inc",
+      "raw": "22697\nMichael Antidormi\nMomentum Management Analytics, Inc"
+    },
+    {
+      "office_id": "21016",
+      "owner": "Michael Lewin",
+      "company": "High Key Management, Inc",
+      "raw": "21016\nMichael Lewin\nHigh Key Management, Inc"
+    },
+    {
+      "office_id": "21037",
+      "owner": "Milan Godbolt",
+      "company": "Arise Solutions Inc.",
+      "raw": "21037\nMilan Godbolt\nArise Solutions Inc."
+    },
+    {
+      "office_id": "21724",
+      "owner": "Mohammad Altom",
+      "company": "The Babylon Group, Inc.",
+      "raw": "21724\nMohammad Altom\nThe Babylon Group, Inc."
+    },
+    {
+      "office_id": "22987",
+      "owner": "Monika Swanson",
+      "company": "Cheree Management, Inc.",
+      "raw": "22987\nMonika Swanson\nCheree Management, Inc."
+    },
+    {
+      "office_id": "21328",
+      "owner": "Muhammad UI Haque",
+      "company": "Elite Prime Group, Inc",
+      "raw": "21328\nMuhammad UI Haque\nElite Prime Group, Inc"
+    },
+    {
+      "office_id": "23363",
+      "owner": "Muhammad Waqar",
+      "company": "Monarch Stonebridge Group, Inc.",
+      "raw": "23363\nMuhammad Waqar\nMonarch Stonebridge Group, Inc."
+    },
+    {
+      "office_id": "21077",
+      "owner": "Nahum Lawani",
+      "company": "Niziah Development Corporation, Inc",
+      "raw": "21077\nNahum Lawani\nNiziah Development Corporation, Inc"
+    },
+    {
+      "office_id": "23431",
+      "owner": "Natalia Gwarda",
+      "company": "Zora Industries, Inc.",
+      "raw": "23431\nNatalia Gwarda\nZora Industries, Inc."
+    },
+    {
+      "office_id": "22814",
+      "owner": "Nathan Murillo",
+      "company": "Murillo Legacy, Inc.",
+      "raw": "22814\nNathan Murillo\nMurillo Legacy, Inc."
+    },
+    {
+      "office_id": "23581",
+      "owner": "Nawres Ferchichi",
+      "company": "Sunrise Elite Marketing, Inc.",
+      "raw": "23581\nNawres Ferchichi\nSunrise Elite Marketing, Inc."
+    },
+    {
+      "office_id": "20862",
+      "owner": "Nicholas Weldon",
+      "company": "Elite Level Management, Inc.",
+      "raw": "20862\nNicholas Weldon\nElite Level Management, Inc."
+    },
+    {
+      "office_id": "23275",
+      "owner": "Nii Tagoe",
+      "company": "Next Horizon Group, Inc.",
+      "raw": "23275\nNii Tagoe\nNext Horizon Group, Inc."
+    },
+    {
+      "office_id": "22740",
+      "owner": "Noah Davis",
+      "company": "ND Production, Inc.",
+      "raw": "22740\nNoah Davis\nND Production, Inc."
+    },
+    {
+      "office_id": "21329",
+      "owner": "Osvaldo Rodriguez",
+      "company": "OzKorp, Inc",
+      "raw": "21329\nOsvaldo Rodriguez\nOzKorp, Inc"
+    },
+    {
+      "office_id": "22668",
+      "owner": "Patricio Cantu Campos",
+      "company": "Alec Solutions, Inc.",
+      "raw": "22668\nPatricio Cantu Campos\nAlec Solutions, Inc."
+    },
+    {
+      "office_id": "23317",
+      "owner": "Paulina Duarte",
+      "company": "Rosel Industries, Inc. 2",
+      "raw": "23317\nPaulina Duarte\nRosel Industries, Inc. 2"
+    },
+    {
+      "office_id": "21119",
+      "owner": "Qais Zarmal",
+      "company": "QZ Solutions, Inc",
+      "raw": "21119\nQais Zarmal\nQZ Solutions, Inc"
+    },
+    {
+      "office_id": "22531",
+      "owner": "Rachel Barnett",
+      "company": "AUVIA, Inc.",
+      "raw": "22531\nRachel Barnett\nAUVIA, Inc."
+    },
+    {
+      "office_id": "11280",
+      "owner": "Rafael Hidalgo",
+      "company": "ALPHALETE MARKETING, INC.",
+      "raw": "11280\nRafael Hidalgo\nALPHALETE MARKETING, INC."
+    },
+    {
+      "office_id": "23411",
+      "owner": "Rashad Reed",
+      "company": "Elevate Specialized Acquisitions, Inc",
+      "raw": "23411\nRashad Reed\nElevate Specialized Acquisitions, Inc"
+    },
+    {
+      "office_id": "19096",
+      "owner": "Raymond Glover",
+      "company": "Keys to Success Solutions, Inc.",
+      "raw": "19096\nRaymond Glover\nKeys to Success Solutions, Inc."
+    },
+    {
+      "office_id": "22899",
+      "owner": "Resan Gabutin",
+      "company": "Triumphant Ventures, Inc. 2",
+      "raw": "22899\nResan Gabutin\nTriumphant Ventures, Inc. 2"
+    },
+    {
+      "office_id": "12559",
+      "owner": "Richard Anderson",
+      "company": "Newbern Excel, Inc.",
+      "raw": "12559\nRichard Anderson\nNewbern Excel, Inc."
+    },
+    {
+      "office_id": "22689",
+      "owner": "RJ Sagum",
+      "company": "Bayani Enterprises, Inc.",
+      "raw": "22689\nRJ Sagum\nBayani Enterprises, Inc."
+    },
+    {
+      "office_id": "18588",
+      "owner": "Ronald Dawson",
+      "company": "True Blue Marketing, Inc.",
+      "raw": "18588\nRonald Dawson\nTrue Blue Marketing, Inc."
+    },
+    {
+      "office_id": "19833",
+      "owner": "Roshan Amin Ahmad",
+      "company": "Sapphire Marketing, Inc",
+      "raw": "19833\nRoshan Amin Ahmad\nSapphire Marketing, Inc"
+    },
+    {
+      "office_id": "22335",
+      "owner": "Ryan Kabbes",
+      "company": "Romulus, Inc.",
+      "raw": "22335\nRyan Kabbes\nRomulus, Inc."
+    },
+    {
+      "office_id": "22820",
+      "owner": "Ryan McSpadden",
+      "company": "Highline Management Team, Inc. 2",
+      "raw": "22820\nRyan McSpadden\nHighline Management Team, Inc. 2"
+    },
+    {
+      "office_id": "21291",
+      "owner": "Sabrina Alicea",
+      "company": "Alisei, Inc",
+      "raw": "21291\nSabrina Alicea\nAlisei, Inc"
+    },
+    {
+      "office_id": "20490",
+      "owner": "Sahil Multani",
+      "company": "M Coast, Inc",
+      "raw": "20490\nSahil Multani\nM Coast, Inc"
+    },
+    {
+      "office_id": "21805",
+      "owner": "Sam Park",
+      "company": "Spark Approach, Inc.",
+      "raw": "21805\nSam Park\nSpark Approach, Inc."
+    },
+    {
+      "office_id": "20854",
+      "owner": "Sebastian Gutierrez",
+      "company": "Westpeak Consultants, Inc",
+      "raw": "20854\nSebastian Gutierrez\nWestpeak Consultants, Inc"
+    },
+    {
+      "office_id": "21377",
+      "owner": "Selena Powers",
+      "company": "Limitless Marketing Solutions, Inc",
+      "raw": "21377\nSelena Powers\nLimitless Marketing Solutions, Inc"
+    },
+    {
+      "office_id": "20426",
+      "owner": "Shani Shand",
+      "company": "Surmount Innovations, Inc.",
+      "raw": "20426\nShani Shand\nSurmount Innovations, Inc."
+    },
+    {
+      "office_id": "9817",
+      "owner": "SHIRETTE GRAY",
+      "company": "ROCKSTEADY PROMOTIONS, INC",
+      "raw": "9817\nSHIRETTE GRAY\nROCKSTEADY PROMOTIONS, INC"
+    },
+    {
+      "office_id": "23264",
+      "owner": "Stefan Cameron",
+      "company": "Viridian, Inc.",
+      "raw": "23264\nStefan Cameron\nViridian, Inc."
+    },
+    {
+      "office_id": "20031",
+      "owner": "Stephen Sharon",
+      "company": "Stephen Consulting, Inc",
+      "raw": "20031\nStephen Sharon\nStephen Consulting, Inc"
+    },
+    {
+      "office_id": "23160",
+      "owner": "Steve McElwee",
+      "company": "Luxe Global Consulting, Inc.",
+      "raw": "23160\nSteve McElwee\nLuxe Global Consulting, Inc."
+    },
+    {
+      "office_id": "19404",
+      "owner": "Steven Gale",
+      "company": "Gale Force Marketing, Inc",
+      "raw": "19404\nSteven Gale\nGale Force Marketing, Inc"
+    },
+    {
+      "office_id": "21873",
+      "owner": "Steven Sykes",
+      "company": "Meridian Enterprise, Inc.",
+      "raw": "21873\nSteven Sykes\nMeridian Enterprise, Inc."
+    },
+    {
+      "office_id": "22546",
+      "owner": "Sung Kim",
+      "company": "Zenith Innovations, Inc.",
+      "raw": "22546\nSung Kim\nZenith Innovations, Inc."
+    },
+    {
+      "office_id": "22492",
+      "owner": "Tatyana White",
+      "company": "Ascend Management Group, Inc.",
+      "raw": "22492\nTatyana White\nAscend Management Group, Inc."
+    },
+    {
+      "office_id": "21144",
+      "owner": "Taylor McKinney IV",
+      "company": "Key4Me Services, Inc.",
+      "raw": "21144\nTaylor McKinney IV\nKey4Me Services, Inc."
+    },
+    {
+      "office_id": "22990",
+      "owner": "Tevin Sterling",
+      "company": "Kingsford Acquisitions, Inc",
+      "raw": "22990\nTevin Sterling\nKingsford Acquisitions, Inc"
+    },
+    {
+      "office_id": "23586",
+      "owner": "Tim Kim",
+      "company": "Turnkey Marketing Group, Inc",
+      "raw": "23586\nTim Kim\nTurnkey Marketing Group, Inc"
+    },
+    {
+      "office_id": "22646",
+      "owner": "Timothy Blue",
+      "company": "Royal Dominion, Inc.",
+      "raw": "22646\nTimothy Blue\nRoyal Dominion, Inc."
+    },
+    {
+      "office_id": "20985",
+      "owner": "Todd Harrison",
+      "company": "Integrity Mindset Group, Inc",
+      "raw": "20985\nTodd Harrison\nIntegrity Mindset Group, Inc"
+    },
+    {
+      "office_id": "23319",
+      "owner": "Tracy James Jr",
+      "company": "Actus Asset Group, Inc.",
+      "raw": "23319\nTracy James Jr\nActus Asset Group, Inc."
+    },
+    {
+      "office_id": "6564",
+      "owner": "Trang Le Nguyen Canavan",
+      "company": "Fresh Success Marketing Group, Inc.",
+      "raw": "6564\nTrang Le Nguyen Canavan\nFresh Success Marketing Group, Inc."
+    },
+    {
+      "office_id": "18611",
+      "owner": "Tyler Hadden",
+      "company": "Zion Capital, Inc.",
+      "raw": "18611\nTyler Hadden\nZion Capital, Inc."
+    },
+    {
+      "office_id": "22850",
+      "owner": "Valeria Tristan",
+      "company": "Altura Marketing, Inc.",
+      "raw": "22850\nValeria Tristan\nAltura Marketing, Inc."
+    },
+    {
+      "office_id": "23101",
+      "owner": "Victor Hernandez Gutierrez",
+      "company": "Covenant Apex Solutions, Inc.",
+      "raw": "23101\nVictor Hernandez Gutierrez\nCovenant Apex Solutions, Inc."
+    },
+    {
+      "office_id": "18774",
+      "owner": "Victoria Herrera",
+      "company": "19 Management Group, Inc",
+      "raw": "18774\nVictoria Herrera\n19 Management Group, Inc"
+    },
+    {
+      "office_id": "20856",
+      "owner": "William Fritz",
+      "company": "Maverick Marketing, Inc",
+      "raw": "20856\nWilliam Fritz\nMaverick Marketing, Inc"
     }
   ]
 }

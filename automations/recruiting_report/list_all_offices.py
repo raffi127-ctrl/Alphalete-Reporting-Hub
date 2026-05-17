@@ -4,7 +4,10 @@ The searchMC input uses jQuery UI autocomplete; its `source` option is either
 an array (preloaded) or a function. We probe both. Falls back to
 alphabet-iteration if direct extraction fails.
 
-Outputs to all-offices.json: list of {office_id, owner, company, raw}.
+Merges into all-offices.json (dedup by office_id): list of
+{office_id, owner, company, raw}. Each AppStream account sees only its
+own offices, so run this once per account (rhidalgo, CarlosNLR, …) to
+build the full list.
 """
 from __future__ import annotations
 
@@ -117,10 +120,25 @@ def main() -> int:
             target.locator("#searchMC").fill("")
             target.locator("body").click(position={"x": 50, "y": 50})
 
-        OUT_PATH.write_text(json.dumps({"count": len(offices), "offices": offices}, indent=2))
-        print(f"\n✓ Wrote {len(offices)} offices to {OUT_PATH}")
-        for o in offices[:5]:
-            print(f"  - {o.get('office_id')} | {o.get('owner')} | {o.get('company')}")
+        # Merge with whatever's already in all-offices.json. Each AppStream
+        # account (rhidalgo, CarlosNLR, …) sees only its own offices, so
+        # scraping is additive — run this once per account to build the
+        # full list. Dedupe by office_id.
+        existing = []
+        if OUT_PATH.exists():
+            try:
+                existing = json.loads(OUT_PATH.read_text()).get("offices", [])
+            except Exception:
+                existing = []
+        by_id: dict = {}
+        for o in existing + offices:
+            oid = str(o.get("office_id") or "").strip()
+            if oid:
+                by_id[oid] = o
+        merged = sorted(by_id.values(), key=lambda o: (o.get("owner") or "").lower())
+        OUT_PATH.write_text(json.dumps({"count": len(merged), "offices": merged}, indent=2))
+        print(f"\n✓ Merged {len(offices)} scraped + {len(existing)} already on file "
+              f"→ {len(merged)} unique offices in {OUT_PATH}")
     return 0
 
 
