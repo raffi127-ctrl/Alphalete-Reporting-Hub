@@ -3,14 +3,16 @@
 Workflow per run:
   1. Attach to your already-running Chrome (debug port 9222) — you must have
      logged into AppStream manually first.
-  2. For each office in office-mapping.json:
-       - confirmed:    fetch the target week's metrics, write to the office
-                       tab + master row. If the office tab is empty (no
-                       template structure), inject Template Fiber and
-                       backfill ALL historical weeks present in the template.
-       - needs_review: color the tab red so you know to fix the mapping.
-       - skip:         ignore.
-  3. Log everything to output/logs/recruiting-<date>.log.
+  2. Refresh the AppStream office list, then auto-onboard: any Sheet tab not
+     yet in office-mapping.json whose name matches an AppStream office
+     (directly OR via the shared 'ICD Aliases' list) is added to the
+     confirmed set and remembered permanently.
+  3. For each confirmed office: fetch the target week's metrics, write to the
+     office tab + master row. If the tab is empty, first drop in a full
+     formatted copy of Template Fiber, then backfill the recent weeks.
+       - needs_review / ambiguous name: color the tab red to fix the mapping.
+       - no AppStream match:            color the tab blue.
+  4. Log everything to output/logs/recruiting-<date>.log.
 
 Usage:
   .venv/bin/python -m automations.recruiting_report.run                 # current week, live
@@ -91,30 +93,6 @@ def main() -> int:
         except Exception as e:
             log.warning("[needs_review] %s — failed: %s", tab_name, e)
 
-    # Step 1b: uncategorized tabs (not in any mapping bucket) -> blue
-    if not args.only:
-        confirmed_names = {c["sheet_tab"] for c in mapping["confirmed"]}
-        review_names = {n["sheet_tab"] for n in mapping["needs_review"]}
-        skip_names = {s["sheet_tab"] for s in mapping["skip"]}
-        categorized = confirmed_names | review_names | skip_names
-        all_tabs = sh.worksheets()
-        for ws in all_tabs:
-            if ws.title not in categorized:
-                try:
-                    if not args.dry_run:
-                        fill.mark_uncategorized(ws)
-                    log.info("[uncategorized] %s — colored tab blue", ws.title)
-                except Exception as e:
-                    log.warning("[uncategorized] %s — failed: %s", ws.title, e)
-
-    # Step 2: connect to AppStream Chrome via CDP
-    confirmed = mapping["confirmed"]
-    if args.only:
-        confirmed = [c for c in confirmed if c["sheet_tab"] == args.only]
-    if not confirmed:
-        log.info("nothing to fetch from AS (no confirmed offices in scope)")
-        return 0
-
     # Cumulative results across this week's runs (so rhidalgo + rcaptain sessions
     # both contribute to the "filled this week" set, and `still_missing` reflects
     # offices truly unreachable by anyone).
@@ -146,8 +124,54 @@ def main() -> int:
             log.error("no applicantstream tab open in attached Chrome — log in first")
             return 1
 
-        # Pre-compute the list of Template Fiber's columns once. Used to drive
-        # backfill on newly-injected office tabs.
+        # Step 2: refresh the AppStream office list BEFORE matching tabs, so an
+        # ICD added to AppStream today can still be onboarded this same run.
+        try:
+            from automations.recruiting_report.list_all_offices import (
+                refresh_offices_from_page,
+            )
+            log.info(refresh_offices_from_page(target_page))
+        except Exception as e:
+            log.warning("office-list refresh skipped: %s", e)
+
+        # Step 3: auto-onboard — any tab not yet mapped whose name matches an
+        # AppStream office (directly or via the shared 'ICD Aliases' list) is
+        # added to the confirmed set and remembered in office-mapping.json.
+        onboard = fill.auto_onboard_tabs(sh, mapping, dry_run=args.dry_run)
+        for entry in onboard["onboarded"]:
+            log.info("[onboarded] %s → AppStream office %s (%s)",
+                     entry["sheet_tab"], entry["office_id"], entry["as_owner"])
+        for tab in onboard["ambiguous"]:
+            log.warning("[onboard] %s — name matches >1 AppStream office; "
+                        "marking needs_review (red)", tab)
+            try:
+                if not args.dry_run:
+                    fill.mark_needs_review(sh.worksheet(tab))
+            except Exception as e:
+                log.warning("  couldn't color %s: %s", tab, e)
+
+        # Step 4: tabs still unmatched -> blue. Likely the AppStream login
+        # lacks access, or an alias row is missing from the 'ICD Aliases' Sheet.
+        if not args.only:
+            for tab in onboard["unmatched"]:
+                try:
+                    if not args.dry_run:
+                        fill.mark_uncategorized(sh.worksheet(tab))
+                    log.info("[uncategorized] %s — no AppStream match "
+                             "(check AppStream access / alias list)", tab)
+                except Exception as e:
+                    log.warning("[uncategorized] %s — failed: %s", tab, e)
+
+        # Step 5: build the fetch scope (includes any freshly-onboarded ICDs).
+        confirmed = mapping["confirmed"]
+        if args.only:
+            confirmed = [c for c in confirmed if c["sheet_tab"] == args.only]
+        if not confirmed:
+            log.info("nothing to fetch from AS (no confirmed offices in scope)")
+            return 0
+
+        # Pre-compute Template Fiber's weekly columns once — drives backfill on
+        # newly-onboarded (empty) office tabs.
         template_sundays = fill.list_template_columns(sh)
         log.info("template has %d weekly columns", len(template_sundays))
 
@@ -170,9 +194,20 @@ def main() -> int:
             if fill.is_office_tab_populated(ws):
                 weeks_to_fetch = [week]
             else:
+                # Empty tab (freshly-added ICD) — drop in a full formatted copy
+                # of Template Fiber, then backfill the recent weeks.
+                if args.dry_run:
+                    log.info("  tab empty → (dry-run) would insert Template Fiber")
+                else:
+                    try:
+                        fill.duplicate_template_for_tab(sh, tab_name)
+                        ws = sh.worksheet(tab_name)
+                        log.info("  tab empty → inserted Template Fiber")
+                    except Exception as e:
+                        log.warning("  template insert failed for %s: %s", tab_name, e)
                 recent_template_sundays = [s for s in template_sundays if s <= week][-args.backfill_weeks:]
                 weeks_to_fetch = sorted(set(recent_template_sundays + [week]))
-                log.info("  tab empty → backfilling last %d weeks", len(weeks_to_fetch))
+                log.info("  backfilling last %d weeks", len(weeks_to_fetch))
 
             values = fill._retry(ws.get_all_values)
             sunday_to_col = fill.find_sunday_columns(values, header_row_idx=0)
@@ -232,17 +267,6 @@ def main() -> int:
                 filled_in_run.add(tab_name)
             elif primary_status == "inaccessible":
                 inaccessible_in_run.add(tab_name)
-
-        # Keep the AppStream office list current — scrape this account's
-        # offices into all-offices.json so new ICDs show up in the Hub's
-        # mapping picker without anyone running a separate scrape.
-        try:
-            from automations.recruiting_report.list_all_offices import (
-                refresh_offices_from_page,
-            )
-            log.info(refresh_offices_from_page(target_page))
-        except Exception as e:
-            log.warning("office-list refresh skipped: %s", e)
     finally:
         p.stop()
 

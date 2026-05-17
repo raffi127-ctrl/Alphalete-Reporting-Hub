@@ -72,6 +72,7 @@ OAUTH_TOKEN_PATH = Path.home() / ".config" / "recruiting-report" / "oauth-token.
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 MAPPING_PATH = Path(__file__).resolve().parent / "office-mapping.json"
+ALL_OFFICES_PATH = Path(__file__).resolve().parent / "all-offices.json"
 MASTER_TAB = "Raf Hidalgo"
 TEMPLATE_TAB = "Template Fiber"
 NEEDS_REVIEW_COLOR = {"red": 1.0, "green": 0.0, "blue": 0.0}
@@ -171,6 +172,111 @@ def open_sheet():
 
 def load_mapping() -> dict:
     return json.loads(MAPPING_PATH.read_text())
+
+
+# ---------- auto-onboarding new ICD tabs ----------
+
+def _norm_name(s: str) -> str:
+    """Lowercase, trim, collapse internal whitespace — for name matching."""
+    return " ".join(str(s or "").strip().lower().split())
+
+
+def _load_office_index() -> Dict[str, list]:
+    """{normalized AppStream owner name: [office dict, ...]} from
+    all-offices.json. A name maps to >1 office when an owner runs several."""
+    index: Dict[str, list] = {}
+    try:
+        data = json.loads(ALL_OFFICES_PATH.read_text())
+    except Exception:
+        return index
+    for office in data.get("offices", []):
+        index.setdefault(_norm_name(office.get("owner", "")), []).append(office)
+    return index
+
+
+def match_tab_to_office(
+    tab_name: str, office_index: Dict[str, list], aliases_map: dict
+) -> Tuple[Optional[dict], str]:
+    """Resolve a Sheet tab name to ONE AppStream office. Tries the tab name
+    itself plus every alias for it — the alias list is the shared 'ICD
+    Aliases' Sheet, which bridges the Sheet tab name and however the person
+    is spelled in AppStream. All comparisons ignore case + extra whitespace.
+
+    Returns (office, "ok") | (None, "ambiguous") | (None, "no_match")."""
+    norm_tab = _norm_name(tab_name)
+    # Candidate names, tab name first; then — for every alias group the tab
+    # name belongs to — that group's canonical name + all of its aliases.
+    candidates: List[str] = [tab_name]
+    for canonical, aliases in aliases_map.items():
+        group = [canonical] + list(aliases)
+        if norm_tab in {_norm_name(g) for g in group}:
+            candidates.extend(group)
+
+    tried: set = set()
+    for cand in candidates:
+        key = _norm_name(cand)
+        if not key or key in tried:
+            continue
+        tried.add(key)
+        hits = office_index.get(key)
+        if not hits:
+            continue
+        if len(hits) > 1:
+            return None, "ambiguous"
+        return hits[0], "ok"
+    return None, "no_match"
+
+
+def auto_onboard_tabs(
+    sh: gspread.Spreadsheet, mapping: dict, dry_run: bool = False
+) -> Dict[str, list]:
+    """Match every Sheet tab not yet in the mapping to an AppStream office
+    (by name + the shared alias list). Confirmed matches are appended to the
+    mapping's 'confirmed' bucket and office-mapping.json is rewritten so the
+    match is permanent.
+
+    Returns {"onboarded": [entry, ...], "ambiguous": [tab, ...],
+             "unmatched": [tab, ...]}."""
+    from automations.focus_office_att import aliases as _al
+
+    categorized = (
+        {c["sheet_tab"] for c in mapping["confirmed"]}
+        | {n["sheet_tab"] for n in mapping["needs_review"]}
+        | {s["sheet_tab"] for s in mapping["skip"]}
+    )
+    office_index = _load_office_index()
+    try:
+        aliases_map = _al.load_aliases()
+    except Exception:
+        aliases_map = {}
+
+    onboarded: list = []
+    ambiguous: list = []
+    unmatched: list = []
+    for ws in sh.worksheets():
+        if ws.title in categorized:
+            continue
+        office, status = match_tab_to_office(ws.title, office_index, aliases_map)
+        if status == "ok":
+            entry = {
+                "sheet_tab": ws.title,
+                "office_id": office["office_id"],
+                "as_owner": office.get("owner", ws.title),
+                "as_company": office.get("company", ""),
+                "confidence": 1.0,
+                "auto_onboarded": True,
+            }
+            mapping["confirmed"].append(entry)
+            onboarded.append(entry)
+        elif status == "ambiguous":
+            ambiguous.append(ws.title)
+        else:
+            unmatched.append(ws.title)
+
+    if onboarded and not dry_run:
+        mapping["confirmed_count"] = len(mapping["confirmed"])
+        MAPPING_PATH.write_text(json.dumps(mapping, indent=2))
+    return {"onboarded": onboarded, "ambiguous": ambiguous, "unmatched": unmatched}
 
 
 # ---------- date helpers ----------
@@ -302,6 +408,31 @@ def inject_template(sh: gspread.Spreadsheet, target_tab: str) -> None:
         _retry(target.resize, rows=rows, cols=cols)
     # Bulk write
     _retry(target.update, template_values, "A1", value_input_option="USER_ENTERED")
+
+
+def duplicate_template_for_tab(sh: gspread.Spreadsheet, tab_name: str) -> None:
+    """Replace an empty placeholder tab with a full, formatted copy of
+    Template Fiber — colors, borders, and conditional formatting included.
+
+    The WHOLE template tab is copied (every section, not just the funnel rows
+    the report fills today), so the new tab is a complete template. The new
+    tab keeps `tab_name` and the placeholder's position in the tab strip.
+    """
+    template = sh.worksheet(TEMPLATE_TAB)
+    placeholder = sh.worksheet(tab_name)
+    insert_index = placeholder.index
+    # Delete the empty placeholder first so the duplicate can take its exact
+    # name. Safe: the placeholder is, by definition, an unpopulated tab.
+    _retry(sh.del_worksheet, placeholder)
+    _retry(sh.batch_update, {
+        "requests": [{
+            "duplicateSheet": {
+                "sourceSheetId": template.id,
+                "insertSheetIndex": insert_index,
+                "newSheetName": tab_name,
+            }
+        }]
+    })
 
 
 # ---------- formatting ----------
