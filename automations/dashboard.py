@@ -3391,7 +3391,28 @@ def _render_review_panel(entry: dict) -> None:
     st.caption(f"📅 {_when}  ·  👤 {_who}")
 
     if status == "In Review":
-        st.markdown("**Requester:** review, then approve or request edits.")
+        _requester = entry.get("Submitted By") or "Requester"
+        st.markdown(f"**{_requester}:** review, then approve or request edits.")
+
+        # The staged report isn't in the Library yet — give it a runnable
+        # identity (matches the safe_id _save_uploaded_report computes on
+        # approve) so the reviewer can actually run it before approving.
+        _safe_id = (re.sub(r"[^a-zA-Z0-9_]", "_", str(meta.get("id") or eid))
+                    .strip("_").lower()) or f"review_{eid}"
+        _review_report = {"id": _safe_id, "name": meta.get("name", "report"),
+                          "sheet_url": meta.get("sheet_url", "")}
+
+        # A review run already in flight → show the live progress panel.
+        _active = next((a for a in _read_active_runs()
+                        if a.get("report_id") == _safe_id), None)
+        if _active:
+            _render_active_run_panel(_review_report, _active)
+            return
+
+        _rs = _load_all_run_state().get(_safe_id) or {}
+        _reviewed_ok = _rs.get("status") == "success"
+
+        # Request Edits — available at any point in the review.
         with st.popover("📝 Request Edits", use_container_width=True):
             _edit = st.text_area(
                 "What needs to change?", key=f"edit_req_{eid}",
@@ -3411,21 +3432,79 @@ def _render_review_panel(entry: dict) -> None:
                     _append_intake_note(eid, f"📝 Edits requested: {_edit.strip()}", _author)
                     _set_intake_status(eid, "Edits Requested")
                     st.rerun()
-        if st.button("✅ Approve & Upload to HUB", key=f"approve_{eid}",
-                     use_container_width=True, type="primary"):
-            ok, msg = _promote_pending_report(eid)
-            if ok:
+
+        if _reviewed_ok:
+            st.success("✅ Test run finished — you've seen it work. Ready to approve.")
+            if st.button("✅ Approve & Upload to HUB", key=f"approve_{eid}",
+                         use_container_width=True, type="primary"):
+                ok, msg = _promote_pending_report(eid)
+                if ok:
+                    try:
+                        _append_intake_note(
+                            eid, "✅ Approved by requester — uploaded to the HUB.",
+                            st.session_state.get("user", "") or "requester")
+                    except Exception:
+                        pass
+                    st.session_state.pop(f"reviewing_{eid}", None)
+                    st.success(msg)
+                    st.balloons()
+                    st.rerun()
+                else:
+                    st.error(msg)
+        elif st.session_state.get(f"reviewing_{eid}"):
+            # Step 2 — pre-flight, then run the report for real.
+            _needs_login = bool(meta.get("needs_login") or meta.get("checklist"))
+            _chrome_ok = _check_chrome_running() if _needs_login else True
+            if _needs_login:
+                st.markdown(
+                    "**Pre-flight — do this first:**\n\n"
+                    "1. Launch Report Chrome\n"
+                    "2. Log into the website this report pulls from, in that window."
+                )
+                if not _chrome_ok:
+                    if st.button("🚀 Launch Report Chrome", key=f"rv_chrome_{eid}",
+                                 use_container_width=True):
+                        _launch_chrome()
+                        st.rerun()
+                    st.caption("Launch Chrome + log in, then the Run button turns on.")
+                else:
+                    st.caption("✅ Chrome detected — confirm you're logged in, then run.")
+            if _rs.get("status") == "failed":
+                _diag = _diagnose_run_failure(
+                    _tail_log(ACTIVE_RUNS_LOG_DIR / f"{_safe_id}.log"))
+                st.error("❌ The last run failed. "
+                         + (_diag[1] if _diag
+                            else "Try Run again, or send it back with Request Edits."))
+            if st.button("▶ Run the report", key=f"rv_run_{eid}",
+                         use_container_width=True, type="primary",
+                         disabled=not _chrome_ok):
                 try:
-                    _append_intake_note(
-                        eid, "✅ Approved by requester — uploaded to the HUB.",
-                        st.session_state.get("user", "") or "requester")
-                except Exception:
-                    pass
-                st.success(msg)
-                st.balloons()
+                    UPLOADED_SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+                    _init = UPLOADED_SCRIPTS_DIR / "__init__.py"
+                    if not _init.exists():
+                        _init.write_text("")
+                    (UPLOADED_SCRIPTS_DIR / f"{_safe_id}.py").write_text(
+                        staged.get("script", ""))
+                except Exception as e:
+                    st.error(f"Couldn't stage the script to run: {e}")
+                else:
+                    _execute_action(
+                        _review_report,
+                        {"label": "Review run",
+                         "module": f"automations.uploaded.{_safe_id}",
+                         "args_fn": lambda: []},
+                        None, _chrome_ok,
+                    )
+        else:
+            # Step 1 — the Review button.
+            st.markdown(
+                "👀 **Review it:** run the report once to confirm it works. "
+                "The Approve button unlocks after a successful run."
+            )
+            if st.button("🔍 Review the report", key=f"startreview_{eid}",
+                         use_container_width=True, type="primary"):
+                st.session_state[f"reviewing_{eid}"] = True
                 st.rerun()
-            else:
-                st.error(msg)
     elif status == "Edits Requested":
         st.info("⏳ Edits requested — waiting on the creator to revise.")
         if st.button("🔧 Revise & Re-upload", key=f"revise_{eid}",
@@ -3477,9 +3556,14 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                     f"🛠️ Being worked on by {entry['Assigned To']}</div>",
                     unsafe_allow_html=True,
                 )
+                st.markdown(
+                    f"<div style='font-size:0.95rem; margin:0 0 0.3rem'>"
+                    f"👤 Requested by <b>{entry.get('Submitted By') or '—'}</b></div>",
+                    unsafe_allow_html=True,
+                )
                 st.caption(
-                    f"Submitted by **{entry.get('Submitted By', '?')}** on {entry.get('Submitted At', '?')} "
-                    f"• Claimed on {entry.get('Assigned At', '')}"
+                    f"Submitted {entry.get('Submitted At', '?')} "
+                    f"• Claimed {entry.get('Assigned At', '')}"
                 )
             else:
                 st.caption(
