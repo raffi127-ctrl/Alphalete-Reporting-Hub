@@ -356,6 +356,7 @@ _ACCESS_GAP_SOURCES = [
         "script_marker": "focus_office_att",
         "ov_results": "output/focus_office_scrape_results.json",
         "tableau_results": "output/focus_office_tableau_results.json",
+        "checkpoint_file": "output/focus_office_run_checkpoint.json",
     },
 ]
 
@@ -395,6 +396,26 @@ def _access_gaps_for_script(script_text: str) -> str:
         return ("⚠️ Owner tabs we can't fully scrape yet — no access. Please "
                 "re-ping to get access granted:\n" + "\n".join(lines))
     return ""
+
+
+def _resume_checkpoint_for(report: dict) -> "Path | None":
+    """The resume-checkpoint file for a report, if it tracks one. Uses an
+    explicit post_run.resume_checkpoint config when present; otherwise
+    matches the report's uploaded script against the known access-gap
+    sources — so the resume-aware Run Again button works with zero config."""
+    rel = (report.get("post_run") or {}).get("resume_checkpoint")
+    if rel:
+        return WORKSPACE / rel
+    try:
+        script_path = UPLOADED_SCRIPTS_DIR / f"{report.get('id', '')}.py"
+        if script_path.exists():
+            txt = script_path.read_text(errors="replace")
+            for src in _ACCESS_GAP_SOURCES:
+                if src.get("checkpoint_file") and src["script_marker"] in txt:
+                    return WORKSPACE / src["checkpoint_file"]
+    except Exception:
+        pass
+    return None
 
 
 def _load_all_run_state() -> dict:
@@ -1899,17 +1920,17 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                     # Make the button count-aware so it matches the callout above.
                     base = again_label.replace("🔁", "").strip() or "Retry missing"
                     again_label = f"🔁 Retry {len(missing_items)} missing ICD{'s' if len(missing_items)!=1 else ''} on 2nd login"
-                elif post_run_cfg.get("resume_checkpoint"):
-                    # A leftover checkpoint means the last run was interrupted;
-                    # re-running picks up where it stopped (done offices skipped).
-                    try:
-                        _cp_path = WORKSPACE / post_run_cfg["resume_checkpoint"]
-                        if _cp_path.exists():
+                else:
+                    # A leftover resume checkpoint means the last run was
+                    # interrupted; re-running picks up where it stopped.
+                    _cp_path = _resume_checkpoint_for(report)
+                    if _cp_path and _cp_path.exists():
+                        try:
                             _resume_done = len(
                                 json.loads(_cp_path.read_text()).get("completed", [])
                             )
-                    except Exception:
-                        _resume_done = 0
+                        except Exception:
+                            _resume_done = 0
                     if _resume_done:
                         again_label = (f"▶ Resume run — {_resume_done} "
                                        f"office{'s' if _resume_done != 1 else ''} "
