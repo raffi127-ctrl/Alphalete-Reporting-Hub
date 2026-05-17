@@ -188,9 +188,11 @@ def main() -> int:
                      f" + siblings {siblings}" if siblings else "")
 
             try:
-                ws = sh.worksheet(tab_name)
+                # _retry so a transient Sheets rate-limit (429) waits + retries
+                # instead of being mistaken for a missing tab.
+                ws = fill._retry(sh.worksheet, tab_name)
             except Exception as e:
-                log.warning("  tab %r missing: %s", tab_name, e)
+                log.warning("  tab %r — couldn't open it (%s) — skipping", tab_name, e)
                 continue
 
             # Determine weeks to fetch (uses PRIMARY section's populated check)
