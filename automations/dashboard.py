@@ -1325,7 +1325,10 @@ def _execute_action(report: dict, action: dict, picked, chrome_ok: bool) -> None
     # Cross-user lock: refuse to start a run if anyone else is already running
     # this report (per the shared Hub Activity tab). The button disable is the
     # primary guard; this is the backstop in case state changed mid-click.
+    # Drop the 10s Hub Activity cache first so this check sees the freshest
+    # possible state — shrinks the window where two people could both start.
     me = st.session_state.get("user", "")
+    _hub_activity_rows.clear()
     for a in _read_active_runs():
         if a.get("report_id") != report["id"]:
             continue
