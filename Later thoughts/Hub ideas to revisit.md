@@ -94,6 +94,16 @@ against.
 
 ---
 
+## Report Library card — visual design pass
+Logged: 2026-05-16
+
+**What:** revisit how the report card looks in the Report Library — the
+button grid and the report's detail/explainer page. The structure is in
+(buttons → explainer + live sheet preview + run controls); this is a
+visual polish pass on top of that.
+
+---
+
 ## Platform check: Claude Cowork vs the custom Hub
 Logged: 2026-05-15
 
