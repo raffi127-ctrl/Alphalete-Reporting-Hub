@@ -1740,12 +1740,25 @@ def _cross_user_pulse(report_id: str) -> None:
 
 def _render_report_screenshot(report: dict) -> None:
     """Right-column content on a report's Library page: the report's
-    screenshot — just the clean image once one is set. When none is set
-    yet, an uploader to add one."""
+    screenshot in a fixed-height frame so it lines up with the run card
+    next to it. When none is set yet, an uploader to add one."""
+    import base64
     from PIL import Image as _Image
     shot = REPORT_SHOTS_DIR / f"{report['id']}.png"
     if shot.exists():
-        st.image(str(shot), use_container_width=True)
+        # Fixed-height frame — keeps the screenshot the same height as the
+        # run card beside it (instead of towering over, or under, it). The
+        # image is scaled to fit inside, so the whole report stays visible.
+        _b64 = base64.b64encode(shot.read_bytes()).decode("ascii")
+        st.markdown(
+            "<div style='height:460px; border:1px solid #E0E0E0; "
+            "border-radius:10px; background:#FFFFFF; display:flex; "
+            "align-items:center; justify-content:center; overflow:hidden'>"
+            f"<img src='data:image/png;base64,{_b64}' "
+            "style='max-width:100%; max-height:100%; object-fit:contain'/>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
         return
     st.markdown(
         "<div style='border:2px dashed #C9A85C; border-radius:10px; "
