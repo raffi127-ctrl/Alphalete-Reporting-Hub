@@ -677,9 +677,12 @@ AUTOMATED_REPORTS = [
             {"text": "Log into AppStream as **rhidalgo** (broader account) in the new Chrome window"},
         ],
         "post_run": {
-            "message_success": "✅ Done with **rhidalgo** (~43 offices filled). Now **log out of rhidalgo and log into rcaptain** in the same Chrome window, then click **Run Again** below to fill the remaining offices.",
+            "message_success": "⏳ Done with **rhidalgo** (~43 offices filled). Now **log out of rhidalgo and log into rcaptain** in the same Chrome window, then click **Run Again** below to fill the remaining offices.",
             "message_failed": "❌ rhidalgo run failed. Check the log above. To retry, switch logins if needed and click Run Again.",
             "again_label": "🔁 Run Again with rcaptain",
+            # This run isn't "complete" — it's a mid-process hand-off — so the
+            # callout is amber, not green. Green is reserved for fully done.
+            "success_tone": "warning",
         },
         "actions": [
             {
@@ -2115,7 +2118,12 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                             "✅ Run finished. If any ICD showed 'not accessible' "
                             "in the log, switch AppStream logins and run again.",
                         )
-                        st.success(msg)
+                        # Amber for mid-process hand-off messages; green only
+                        # when the report is genuinely complete.
+                        if post_run_cfg.get("success_tone") == "warning":
+                            st.warning(msg)
+                        else:
+                            st.success(msg)
                 else:
                     # Read the run log — used both to diagnose the failure
                     # and to show the raw tail.
