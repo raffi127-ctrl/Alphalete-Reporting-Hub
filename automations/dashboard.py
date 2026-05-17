@@ -725,19 +725,20 @@ AUTOMATED_REPORTS = [
         "description": "Per-ICD daily breakdown (Mon–Fri current week, last week, plus next-week scheduled) for Raf's captainship. Fills the 'Raf' tab.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "A per-ICD daily breakdown (Mon-Fri) of the recruiting funnel "
-            "metrics for Raf's captainship. Fills the Raf tab — current "
-            "week, last week, and next-week scheduled.\n\n"
-            "WHEN IT RUNS\n"
-            "Tuesday-Saturday.\n\n"
-            "PRE-FLIGHT\n"
-            "1. Launch Report Chrome.\n"
-            "2. Log into AppStream as rcaptain.\n\n"
+            "A day-by-day (Mon-Fri) breakdown of the recruiting numbers for "
+            "each ICD in Raf's captainship — this week and last week.\n\n"
+            "TO ADD AN ICD\n"
+            "1. Make sure the rcaptain AppStream account can see that ICD.\n"
+            "2. Add the ICD's name to the list on the right side of the "
+            "report (column V). The name must match the AppStream name "
+            "exactly.\n"
+            "The next run reads that list and fills in the ICD's data "
+            "automatically.\n\n"
             "IF AN ICD IS SKIPPED\n"
-            "When the run finishes, the card lists any ICDs it couldn't "
-            "pull because the account has no AppStream access. Log into an "
-            "account that does, then click retry — only the skipped ICDs "
-            "re-pull."
+            "If the run can't pull an ICD because the account has no "
+            "AppStream access, the card lists it when the run finishes. Log "
+            "into an account that has access, then click Retry — only the "
+            "skipped ICDs are re-pulled."
         ),
         "sheet_url": DAILY_FOCUS_SHEET_URL,
         "assignees": ["Maud"],
@@ -802,19 +803,20 @@ AUTOMATED_REPORTS = [
         "description": "Per-ICD daily breakdown (Mon–Fri current week, last week, plus next-week scheduled) for Carlos's captainship. Fills the 'Carlos' tab.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "A per-ICD daily breakdown (Mon-Fri) of the recruiting funnel "
-            "metrics for Carlos's captainship. Fills the Carlos tab — "
-            "current week, last week, and next-week scheduled.\n\n"
-            "WHEN IT RUNS\n"
-            "Tuesday-Saturday.\n\n"
-            "PRE-FLIGHT\n"
-            "1. Launch Report Chrome.\n"
-            "2. Log into AppStream as CarlosNLR.\n\n"
+            "A day-by-day (Mon-Fri) breakdown of the recruiting numbers for "
+            "each ICD in Carlos's captainship — this week and last week.\n\n"
+            "TO ADD AN ICD\n"
+            "1. Make sure the CarlosNLR AppStream account can see that ICD.\n"
+            "2. Add the ICD's name to the list on the right side of the "
+            "report (column V). The name must match the AppStream name "
+            "exactly.\n"
+            "The next run reads that list and fills in the ICD's data "
+            "automatically.\n\n"
             "IF AN ICD IS SKIPPED\n"
-            "When the run finishes, the card lists any ICDs it couldn't "
-            "pull because the account has no AppStream access. Log into an "
-            "account that does, then click retry — only the skipped ICDs "
-            "re-pull."
+            "If the run can't pull an ICD because the account has no "
+            "AppStream access, the card lists it when the run finishes. Log "
+            "into an account that has access, then click Retry — only the "
+            "skipped ICDs are re-pulled."
         ),
         "sheet_url": DAILY_FOCUS_SHEET_URL,
         "assignees": ["Maud"],
@@ -1751,8 +1753,8 @@ def _render_report_screenshot(report: dict) -> None:
         # image is scaled to fit inside, so the whole report stays visible.
         _b64 = base64.b64encode(shot.read_bytes()).decode("ascii")
         st.markdown(
-            "<div style='height:460px; border:1px solid #E0E0E0; "
-            "border-radius:10px; background:#FFFFFF; display:flex; "
+            "<div style='height:460px; border-radius:10px; "
+            "background:#FFFFFF; display:flex; "
             "align-items:center; justify-content:center; overflow:hidden'>"
             f"<img src='data:image/png;base64,{_b64}' "
             "style='max-width:100%; max-height:100%; object-fit:contain'/>"
@@ -5454,6 +5456,10 @@ elif st.session_state.view == "library":
                 _render_report_card(report, today, chrome_ok)
             with _shot_col:
                 _render_report_screenshot(report)
+            # Breathing room between the run/screenshot row and the
+            # full-width how-it-works breakdown below it.
+            st.markdown("<div style='height:1.6rem'></div>",
+                        unsafe_allow_html=True)
             _render_report_breakdown(report)
     else:
         st.markdown(
