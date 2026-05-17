@@ -1561,6 +1561,18 @@ def _daily_focus_icds_in_sheet(captainship: str) -> list[str]:
         return []
 
 
+def _daily_focus_unmapped(captainship: str) -> list[str]:
+    """ICDs in a captainship's sheet with no AppStream office mapping yet.
+    The run silently skips these — so a run that left ICDs unmapped is not
+    a clean success, and the post-run callout must say so."""
+    try:
+        from automations.recruiting_report import daily_focus as _df
+        return [n for n in _daily_focus_icds_in_sheet(captainship)
+                if not _df._is_skipped(n) and not _df._resolve_office_id(n)]
+    except Exception:
+        return []
+
+
 @st.cache_data(ttl=600)
 def _all_appstream_offices() -> list[dict]:
     try:
@@ -1996,10 +2008,26 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                             unsafe_allow_html=True,
                         )
                     elif state_file_exists:
-                        st.success(
-                            "✅ All ICDs filled on the first run — every cell is "
-                            "accounted for. Nothing to retry."
-                        )
+                        # An empty "inaccessible" list isn't real success if
+                        # ICDs are still unmapped — the run silently skips
+                        # those, so nothing got filled for them.
+                        _dfu = []
+                        if report["id"] in ("daily-focus", "daily-focus-carlos"):
+                            _dfu = _daily_focus_unmapped(
+                                "Carlos" if report["id"] == "daily-focus-carlos"
+                                else "Raf")
+                        if _dfu:
+                            st.warning(
+                                f"⚠️ {len(_dfu)} ICD(s) were skipped — not mapped "
+                                "to an AppStream office yet: "
+                                f"{', '.join(_dfu)}. Map them in the prompt at the "
+                                "top of this card, then re-run."
+                            )
+                        else:
+                            st.success(
+                                "✅ All ICDs filled on the first run — every cell is "
+                                "accounted for. Nothing to retry."
+                            )
                     else:
                         # Reports without a state-file config fall back to the
                         # generic post_run success message.
