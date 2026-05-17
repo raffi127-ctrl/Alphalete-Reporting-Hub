@@ -141,9 +141,12 @@ def main() -> int:
         for entry in onboard["onboarded"]:
             log.info("[onboarded] %s → AppStream office %s (%s)",
                      entry["sheet_tab"], entry["office_id"], entry["as_owner"])
-        for tab in onboard["ambiguous"]:
-            log.warning("[onboard] %s — name matches >1 AppStream office; "
-                        "marking needs_review (red)", tab)
+        for amb in onboard["ambiguous"]:
+            tab = amb["tab"]
+            _ids = ", ".join(str(c.get("office_id")) for c in amb["candidates"])
+            log.warning("[onboard] %s — name matches %d AppStream offices "
+                        "(%s); needs a pick in the Hub — marking red",
+                        tab, len(amb["candidates"]), _ids)
             try:
                 if not args.dry_run:
                     fill.mark_needs_review(sh.worksheet(tab))

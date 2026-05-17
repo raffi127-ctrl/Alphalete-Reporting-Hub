@@ -1732,6 +1732,73 @@ def _render_daily_focus_mapping_prompt(captainship: str) -> None:
                     st.rerun()
 
 
+# ---- Weekly Recruiting: multi-office tab picker ----
+# When a new Sheet tab's name matches MORE than one AppStream office, the run
+# can't guess which to pull. The runner picks here, before the run — the pick
+# is saved and the next run onboards that tab automatically.
+
+@st.cache_data(ttl=60)
+def _recruiting_ambiguous_tabs() -> list:
+    """Recruiting Sheet tabs whose name matches >1 AppStream office and that
+    the runner hasn't picked an office for yet. 60s cache."""
+    try:
+        from automations.recruiting_report import fill as _f
+        return _f.unresolved_ambiguous_tabs(_f.open_sheet())
+    except Exception:
+        return []
+
+
+def _render_recruiting_office_picker() -> None:
+    """Ask the runner which AppStream office a multi-office tab should pull
+    from, before the run. The pick is remembered; the next run uses it."""
+    from automations.recruiting_report import fill as _f
+    amb = _recruiting_ambiguous_tabs()
+    if not amb:
+        return
+
+    st.markdown(
+        "<div style='background:linear-gradient(135deg, #FFF3D6 0%, #FFE4A8 100%); "
+        "border:2px solid #C9A85C; border-radius:10px; "
+        "padding:14px 18px; margin:6px 0 10px; color:#5C4220;'>"
+        f"<div style='font-weight:800; font-size:1.1rem;'>"
+        f"⚠️ {len(amb)} tab{'s' if len(amb)!=1 else ''} match more than one "
+        "AppStream office</div>"
+        "<div style='margin-top:6px; font-size:0.95rem;'>"
+        "Pick the right office for each, then run — the run pulls it in. "
+        "Run without picking and the tab is flagged red, not filled."
+        "</div></div>",
+        unsafe_allow_html=True,
+    )
+
+    for item in amb:
+        tab = item["tab"]
+        cands = item["candidates"]
+        labels = [
+            f"{c.get('office_id')}  —  {c.get('company') or c.get('owner', '?')}"
+            for c in cands
+        ]
+        with st.container(border=True):
+            st.markdown(f"**{tab}** matches {len(cands)} AppStream offices:")
+            pick = st.selectbox(
+                f"Which office is {tab}?",
+                labels, key=f"recr_amb_pick_{tab}",
+                label_visibility="collapsed",
+            )
+            if st.button(
+                f"💾 Save — pull {tab} from this office",
+                key=f"recr_amb_save_{tab}", type="primary",
+                use_container_width=True,
+            ):
+                chosen = cands[labels.index(pick)]
+                _f.save_office_choice(tab, chosen["office_id"])
+                _recruiting_ambiguous_tabs.clear()
+                st.success(
+                    f"Saved. The next run pulls **{tab}** from office "
+                    f"{chosen['office_id']}."
+                )
+                st.rerun()
+
+
 @st.fragment(run_every=10)
 def _cross_user_pulse(report_id: str) -> None:
     """Tiny invisible fragment that polls cross-user state every 10s. When
@@ -1927,6 +1994,11 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
         if report["id"] in ("daily-focus", "daily-focus-carlos"):
             _render_daily_focus_mapping_prompt(
                 "Carlos" if report["id"] == "daily-focus-carlos" else "Raf")
+
+        # Weekly Recruiting only: ask the runner to resolve any tab whose name
+        # matches more than one AppStream office, before the run.
+        if report["id"] == "recruiting":
+            _render_recruiting_office_picker()
 
         # Checklist (gates the primary run button)
         all_checked = True

@@ -73,6 +73,11 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 MAPPING_PATH = Path(__file__).resolve().parent / "office-mapping.json"
 ALL_OFFICES_PATH = Path(__file__).resolve().parent / "all-offices.json"
+# Runner's office picks for tabs whose name matches >1 AppStream office.
+OFFICE_CHOICES_PATH = (
+    Path(__file__).resolve().parent.parent.parent
+    / "output" / "recruiting_office_choices.json"
+)
 MASTER_TAB = "Raf Hidalgo"
 TEMPLATE_TAB = "Template Fiber"
 NEEDS_REVIEW_COLOR = {"red": 1.0, "green": 0.0, "blue": 0.0}
@@ -196,24 +201,27 @@ def _load_office_index() -> Dict[str, list]:
 
 def match_tab_to_office(
     tab_name: str, office_index: Dict[str, list], aliases_map: dict
-) -> Tuple[Optional[dict], str]:
+) -> Tuple[Optional[dict], str, list]:
     """Resolve a Sheet tab name to ONE AppStream office. Tries the tab name
     itself plus every alias for it — the alias list is the shared 'ICD
     Aliases' Sheet, which bridges the Sheet tab name and however the person
     is spelled in AppStream. All comparisons ignore case + extra whitespace.
 
-    Returns (office, "ok") | (None, "ambiguous") | (None, "no_match")."""
+    Returns (office, status, candidates):
+      "ok"        -> (office_dict, "ok", [office_dict])
+      "ambiguous" -> (None, "ambiguous", [office_a, office_b, ...])
+      "no_match"  -> (None, "no_match", [])"""
     norm_tab = _norm_name(tab_name)
     # Candidate names, tab name first; then — for every alias group the tab
     # name belongs to — that group's canonical name + all of its aliases.
-    candidates: List[str] = [tab_name]
+    candidate_names: List[str] = [tab_name]
     for canonical, aliases in aliases_map.items():
         group = [canonical] + list(aliases)
         if norm_tab in {_norm_name(g) for g in group}:
-            candidates.extend(group)
+            candidate_names.extend(group)
 
     tried: set = set()
-    for cand in candidates:
+    for cand in candidate_names:
         key = _norm_name(cand)
         if not key or key in tried:
             continue
@@ -222,9 +230,27 @@ def match_tab_to_office(
         if not hits:
             continue
         if len(hits) > 1:
-            return None, "ambiguous"
-        return hits[0], "ok"
-    return None, "no_match"
+            return None, "ambiguous", list(hits)
+        return hits[0], "ok", list(hits)
+    return None, "no_match", []
+
+
+def load_office_choices() -> Dict[str, str]:
+    """{sheet_tab: chosen office_id} — the runner's picks for tabs whose name
+    matches more than one AppStream office."""
+    try:
+        return json.loads(OFFICE_CHOICES_PATH.read_text())
+    except Exception:
+        return {}
+
+
+def save_office_choice(tab_name: str, office_id: str) -> None:
+    """Persist the runner's office pick for a multi-office tab so the next
+    run onboards that tab automatically."""
+    choices = load_office_choices()
+    choices[str(tab_name)] = str(office_id)
+    OFFICE_CHOICES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    OFFICE_CHOICES_PATH.write_text(json.dumps(choices, indent=2))
 
 
 def auto_onboard_tabs(
@@ -235,7 +261,12 @@ def auto_onboard_tabs(
     mapping's 'confirmed' bucket and office-mapping.json is rewritten so the
     match is permanent.
 
-    Returns {"onboarded": [entry, ...], "ambiguous": [tab, ...],
+    A tab whose name matches >1 office is left for the runner to resolve in
+    the Hub — unless they already picked one (recruiting_office_choices.json),
+    in which case it onboards with that office.
+
+    Returns {"onboarded": [entry, ...],
+             "ambiguous": [{"tab": name, "candidates": [office, ...]}, ...],
              "unmatched": [tab, ...]}."""
     from automations.focus_office_att import aliases as _al
 
@@ -249,6 +280,7 @@ def auto_onboard_tabs(
         aliases_map = _al.load_aliases()
     except Exception:
         aliases_map = {}
+    choices = load_office_choices()
 
     onboarded: list = []
     ambiguous: list = []
@@ -256,7 +288,19 @@ def auto_onboard_tabs(
     for ws in sh.worksheets():
         if ws.title in categorized:
             continue
-        office, status = match_tab_to_office(ws.title, office_index, aliases_map)
+        office, status, candidates = match_tab_to_office(
+            ws.title, office_index, aliases_map)
+        if status == "ambiguous":
+            # Honor a pick the runner already made in the Hub.
+            chosen = str(choices.get(ws.title, ""))
+            picked = next(
+                (c for c in candidates
+                 if str(c.get("office_id")) == chosen), None)
+            if picked:
+                office, status = picked, "ok"
+            else:
+                ambiguous.append({"tab": ws.title, "candidates": candidates})
+                continue
         if status == "ok":
             entry = {
                 "sheet_tab": ws.title,
@@ -268,8 +312,6 @@ def auto_onboard_tabs(
             }
             mapping["confirmed"].append(entry)
             onboarded.append(entry)
-        elif status == "ambiguous":
-            ambiguous.append(ws.title)
         else:
             unmatched.append(ws.title)
 
@@ -277,6 +319,41 @@ def auto_onboard_tabs(
         mapping["confirmed_count"] = len(mapping["confirmed"])
         MAPPING_PATH.write_text(json.dumps(mapping, indent=2))
     return {"onboarded": onboarded, "ambiguous": ambiguous, "unmatched": unmatched}
+
+
+def unresolved_ambiguous_tabs(sh: gspread.Spreadsheet) -> list:
+    """For the Hub's office picker: Sheet tabs not yet in the mapping whose
+    name matches >1 AppStream office AND have no saved pick yet. Read-only.
+
+    Returns [{"tab": name, "candidates": [office, ...]}, ...]."""
+    from automations.focus_office_att import aliases as _al
+
+    mapping = load_mapping()
+    categorized = (
+        {c["sheet_tab"] for c in mapping["confirmed"]}
+        | {n["sheet_tab"] for n in mapping["needs_review"]}
+        | {s["sheet_tab"] for s in mapping["skip"]}
+    )
+    office_index = _load_office_index()
+    try:
+        aliases_map = _al.load_aliases()
+    except Exception:
+        aliases_map = {}
+    choices = load_office_choices()
+
+    out: list = []
+    for ws in sh.worksheets():
+        if ws.title in categorized:
+            continue
+        _office, status, candidates = match_tab_to_office(
+            ws.title, office_index, aliases_map)
+        if status != "ambiguous":
+            continue
+        chosen = str(choices.get(ws.title, ""))
+        if any(str(c.get("office_id")) == chosen for c in candidates):
+            continue  # runner already resolved this one
+        out.append({"tab": ws.title, "candidates": candidates})
+    return out
 
 
 # ---------- date helpers ----------
