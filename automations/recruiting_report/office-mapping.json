@@ -1,7 +1,7 @@
 {
   "confirmed_count": 52,
   "needs_review_count": 0,
-  "skip_count": 19,
+  "skip_count": 28,
   "confirmed": [
     {
       "sheet_tab": "Raf Hidalgo",
@@ -457,6 +457,42 @@
     {
       "sheet_tab": "Rafs",
       "reason": "admin tab (filtered before sync)"
+    },
+    {
+      "sheet_tab": "_CSV_Input",
+      "reason": "helper tab"
+    },
+    {
+      "sheet_tab": "_Internet_Metrics",
+      "reason": "helper tab"
+    },
+    {
+      "sheet_tab": "_Wireless_Metrics",
+      "reason": "helper tab"
+    },
+    {
+      "sheet_tab": "_ICD_Summary_ATT",
+      "reason": "summary tab"
+    },
+    {
+      "sheet_tab": "_ICD_Summary_INT",
+      "reason": "summary tab"
+    },
+    {
+      "sheet_tab": "Recruiting",
+      "reason": "non-ICD tab"
+    },
+    {
+      "sheet_tab": "1on1's",
+      "reason": "non-ICD tab"
+    },
+    {
+      "sheet_tab": "Country Sales Board",
+      "reason": "non-ICD tab"
+    },
+    {
+      "sheet_tab": "OLD-Daily Focus Report",
+      "reason": "old/deprecated tab"
     }
   ]
 }
