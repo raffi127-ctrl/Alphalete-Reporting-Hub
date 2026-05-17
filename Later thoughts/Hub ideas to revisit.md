@@ -59,7 +59,9 @@ Library — so broken or half-ready reports don't go live.
 - Declares ESTIMATED_MINUTES.
 - Required metadata present: name, Sheet URL, schedule + time, assignee.
 - "Needs a browser login" flag set correctly.
-- Ideally a dry/test run completes without error.
+- A full run of the report has been completed with NO errors before it's
+  uploaded to the Hub. Per Megan: this is a hard requirement, not a
+  "nice to have" — no report goes live unproven.
 
 **Note:** some checks can be fully automated (syntax valid, metadata
 present); others — like "works on Windows" — can't be proven without
