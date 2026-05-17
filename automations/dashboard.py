@@ -33,6 +33,9 @@ VENV_PY = sys.executable
 LOG_DIR = WORKSPACE / "output" / "logs"
 RUNS_LOG = LOG_DIR / "runs.jsonl"
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{_fill.SPREADSHEET_ID}/edit"
+# Daily Focus reports (Raf + Carlos captainships) live in their own shared
+# sheet — one tab per captainship.
+DAILY_FOCUS_SHEET_URL = "https://docs.google.com/spreadsheets/d/11FRYGG1hvuxcbWiYtDv7LzVss6ujZE_SOpqfhrQrVAo/edit"
 
 UPLOADED_REPORTS_FILE = WORKSPACE / "uploaded_reports.json"
 UPLOADED_SCRIPTS_DIR = WORKSPACE / "automations" / "uploaded"
@@ -698,13 +701,13 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "daily-focus",
-        "name": "Daily Recruiting Focus",
+        "name": "Daily Recruiting Focus — Raf",
         "creator": "Megan",
         "emoji": "☀️",
         "color": "#4ECDC4",
         "category": "🎯 Recruiting",
-        "description": "Per-ICD daily breakdown (Mon–Fri current week, last week, plus next-week scheduled). Auto-fills the 'Daily Focus Report' tab.",
-        "sheet_url": SHEET_URL,
+        "description": "Per-ICD daily breakdown (Mon–Fri current week, last week, plus next-week scheduled) for Raf's captainship. Fills the 'Raf' tab.",
+        "sheet_url": DAILY_FOCUS_SHEET_URL,
         "assignees": ["Maud"],
         "schedule": {
             # Weekly with weekdays [1..5] = Tue–Sat. (frequency 'daily' would
@@ -718,26 +721,22 @@ AUTOMATED_REPORTS = [
         "checklist": [
             {"text": "Launch Chrome with the recruiting profile",
              "action": "launch_chrome"},
-            {"text": "Log into AppStream as **rhidalgo** (broader account) in the new Chrome window"},
+            {"text": "Log into AppStream as **rcaptain** in the new Chrome window"},
         ],
         "post_run": {
-            # Generic fallback when no state file is available to enumerate
-            # specifically which ICDs are missing. The renderer at the call
-            # site (post_run rendering) handles three smarter branches:
-            #   • state file has items → gold callout listing each missing ICD
+            # The renderer at the call site handles three branches:
+            #   • state file has items → gold callout listing each skipped ICD
             #   • state file exists but empty → "All ICDs filled" success
             #   • state file missing → THIS fallback text
-            # This text intentionally doesn't ask the user to investigate the
-            # log — the retry button alone is enough action.
-            "message_success": "✅ Daily Focus run completed. If any ICDs need a 2nd-login retry (rhidalgo → rcaptain in the same Chrome window), click below. Already-pulled ICDs are automatically skipped.",
-            "message_failed": "❌ Run failed. Switch AppStream logins (rhidalgo → rcaptain) and click the retry button below — only the missing ICDs will be re-pulled.",
-            "again_label": "🔁 Retry missing ICDs on 2nd login",
+            "message_success": "✅ Daily Focus run complete. If any ICDs couldn't be pulled (no AppStream access), they're listed below — log into an account that has access, then click retry. Already-pulled ICDs are skipped.",
+            "message_failed": "❌ Run failed. Check the log, fix the issue, then retry below — only the missing ICDs are re-pulled.",
+            "again_label": "🔁 Retry the skipped ICDs",
             "again_action": {
-                "label": "Retry missing ICDs on 2nd login",
+                "label": "Retry skipped ICDs",
                 "module": "automations.recruiting_report.daily_focus",
-                "args_fn": lambda: ["--retry-inaccessible"],
+                "args_fn": lambda: ["--captainship", "Raf", "--retry-inaccessible"],
             },
-            "again_state_file": "output/daily_focus_state.json",
+            "again_state_file": "output/daily_focus_state_Raf.json",
             "again_state_key": "inaccessible",
             "again_empty_message": "✅ All ICDs already pulled — nothing to retry.",
         },
@@ -746,9 +745,9 @@ AUTOMATED_REPORTS = [
                 "label": "Run Daily Focus",
                 "icon": "▶",
                 "primary": True,
-                "help": "Fills today's daily focus report for all 17 ICDs (current + last week + next-week scheduled)",
+                "help": "Fills today's daily focus report for Raf's captainship ICDs.",
                 "module": "automations.recruiting_report.daily_focus",
-                "args_fn": lambda: [],
+                "args_fn": lambda: ["--captainship", "Raf"],
             },
             {
                 "label": "Run for One ICD",
@@ -757,7 +756,61 @@ AUTOMATED_REPORTS = [
                 "text_label": "ICD name (as it appears in col V)",
                 "help": "Just refill one ICD's section — handy after a typo fix or partial run",
                 "module": "automations.recruiting_report.daily_focus",
-                "args_fn": lambda name: ["--only", name],
+                "args_fn": lambda name: ["--captainship", "Raf", "--only", name],
+            },
+        ],
+    },
+    {
+        "id": "daily-focus-carlos",
+        "name": "Daily Recruiting Focus — Carlos",
+        "creator": "Megan",
+        "emoji": "☀️",
+        "color": "#E76F51",
+        "category": "🎯 Recruiting",
+        "description": "Per-ICD daily breakdown (Mon–Fri current week, last week, plus next-week scheduled) for Carlos's captainship. Fills the 'Carlos' tab.",
+        "sheet_url": DAILY_FOCUS_SHEET_URL,
+        "assignees": ["Maud"],
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [1, 2, 3, 4, 5],  # Tue–Sat
+            "time": "8:00 AM",
+            "estimated_minutes": 6,
+        },
+        "checklist": [
+            {"text": "Launch Chrome with the recruiting profile",
+             "action": "launch_chrome"},
+            {"text": "Log into AppStream as **CarlosNLR** in the new Chrome window"},
+        ],
+        "post_run": {
+            "message_success": "✅ Daily Focus run complete. If any ICDs couldn't be pulled (no AppStream access), they're listed below — log into an account that has access, then click retry. Already-pulled ICDs are skipped.",
+            "message_failed": "❌ Run failed. Check the log, fix the issue, then retry below — only the missing ICDs are re-pulled.",
+            "again_label": "🔁 Retry the skipped ICDs",
+            "again_action": {
+                "label": "Retry skipped ICDs",
+                "module": "automations.recruiting_report.daily_focus",
+                "args_fn": lambda: ["--captainship", "Carlos", "--retry-inaccessible"],
+            },
+            "again_state_file": "output/daily_focus_state_Carlos.json",
+            "again_state_key": "inaccessible",
+            "again_empty_message": "✅ All ICDs already pulled — nothing to retry.",
+        },
+        "actions": [
+            {
+                "label": "Run Daily Focus",
+                "icon": "▶",
+                "primary": True,
+                "help": "Fills today's daily focus report for Carlos's captainship ICDs.",
+                "module": "automations.recruiting_report.daily_focus",
+                "args_fn": lambda: ["--captainship", "Carlos"],
+            },
+            {
+                "label": "Run for One ICD",
+                "icon": "🎯",
+                "needs_text": True,
+                "text_label": "ICD name (as it appears in col V)",
+                "help": "Just refill one ICD's section — handy after a typo fix or partial run",
+                "module": "automations.recruiting_report.daily_focus",
+                "args_fn": lambda name: ["--captainship", "Carlos", "--only", name],
             },
         ],
     },
@@ -1450,11 +1503,11 @@ def _render_active_run_panel(report: dict, active: dict) -> None:
 # the candidate list for fuzzy-matching + a manual picker.
 
 @st.cache_data(ttl=60)
-def _daily_focus_icds_in_sheet() -> list[str]:
+def _daily_focus_icds_in_sheet(captainship: str) -> list[str]:
     try:
         from automations.recruiting_report import fill as _f, daily_focus as _df
-        sh = _f.open_sheet()
-        ws = sh.worksheet(_df.DAILY_FOCUS_TAB)
+        sh = _f._client().open_by_key(_df.DAILY_FOCUS_SPREADSHEET_ID)
+        ws = sh.worksheet(captainship)
         col = ws.col_values(_df.ICD_LIST_COLUMN)
         return [v.strip() for v in col if v and v.strip()]
     except Exception:
@@ -1496,11 +1549,11 @@ def _save_icd_mapping(name: str, office_id: str) -> None:
     _df._save_overrides(overrides)
 
 
-def _render_daily_focus_mapping_prompt() -> None:
+def _render_daily_focus_mapping_prompt(captainship: str) -> None:
     """If col V has names not yet mapped (and not skipped), render an inline
     confirm panel with fuzzy-match suggestions + manual picker + skip."""
     from automations.recruiting_report import daily_focus as _df
-    icds = _daily_focus_icds_in_sheet()
+    icds = _daily_focus_icds_in_sheet(captainship)
     if not icds:
         return
     unmapped = [n for n in icds
@@ -1690,8 +1743,9 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
         # Daily-Focus only: prompt for any new ICDs in col V that don't have
         # an AppStream office mapped yet. Once confirmed (or marked 'not an
         # ICD'), the choice is persisted so it never asks again.
-        if report["id"] == "daily-focus":
-            _render_daily_focus_mapping_prompt()
+        if report["id"] in ("daily-focus", "daily-focus-carlos"):
+            _render_daily_focus_mapping_prompt(
+                "Carlos" if report["id"] == "daily-focus-carlos" else "Raf")
 
         # Checklist (gates the primary run button)
         all_checked = True
@@ -1832,25 +1886,25 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
             with st.container(border=True):
                 if last_run["status"] == "success":
                     if missing_items:
-                        # High-visibility gold callout that lists the exact
-                        # ICDs that didn't pull. They could be missing because
-                        # they need the 2nd login OR because their fetch timed
-                        # out — the retry button will try them again either way.
+                        # High-visibility gold callout listing the exact ICDs
+                        # that didn't pull — these need AppStream access from
+                        # the logged-in account. The retry button re-pulls
+                        # just these once a login with access is in place.
                         _names = ", ".join(missing_items)
                         st.markdown(
                             "<div style='background:linear-gradient(135deg, #FFF3D6 0%, #FFE4A8 100%); "
                             "border:2px solid #C9A85C; border-radius:10px; "
                             "padding:14px 18px; margin:4px 0 10px; color:#5C4220;'>"
                             "<div style='font-weight:800; font-size:1.15rem;'>"
-                            f"⚠️ {len(missing_items)} ICD{'s' if len(missing_items)!=1 else ''} "
-                            "didn't pull and need a retry</div>"
+                            f"⚠️ Run complete — {len(missing_items)} "
+                            f"ICD{'s' if len(missing_items)!=1 else ''} not pulled "
+                            "(no AppStream access)</div>"
                             "<div style='margin-top:6px; font-size:0.95rem;'>"
                             f"<b>{_names}</b></div>"
                             "<div style='margin-top:8px; font-size:0.95rem;'>"
-                            "Click the button below to retry. If they still don't pull, "
-                            "switch to <b>rcaptain</b> in the same Chrome window and "
-                            "click again — missing data is usually a login issue or "
-                            "a timeout."
+                            "If another AppStream account has access to these, log "
+                            "into it in the report's Chrome window, then click the "
+                            "button below to re-pull just the missing ICDs."
                             "</div></div>",
                             unsafe_allow_html=True,
                         )
@@ -1928,8 +1982,7 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                 _resume_done = 0
                 if missing_items:
                     # Make the button count-aware so it matches the callout above.
-                    base = again_label.replace("🔁", "").strip() or "Retry missing"
-                    again_label = f"🔁 Retry {len(missing_items)} missing ICD{'s' if len(missing_items)!=1 else ''} on 2nd login"
+                    again_label = f"🔁 Retry {len(missing_items)} skipped ICD{'s' if len(missing_items)!=1 else ''}"
                 else:
                     # A leftover resume checkpoint means the last run was
                     # interrupted; re-running picks up where it stopped.
@@ -1960,7 +2013,7 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                     cols = st.columns([3, 2])
                     with cols[0]:
                         if missing_items:
-                            st.caption("Switch AppStream logins first, then click →")
+                            st.caption("Log into an AppStream account with access, then click →")
                         elif _resume_done:
                             st.caption("Picks up where it stopped — already-done "
                                        "offices are skipped.")

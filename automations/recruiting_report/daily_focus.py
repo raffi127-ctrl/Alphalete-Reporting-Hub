@@ -19,9 +19,10 @@ Conventions:
     current week (Maud's stated workflow).
 
 Run:
-    .venv/bin/python -m automations.recruiting_report.daily_focus
-    .venv/bin/python -m automations.recruiting_report.daily_focus --dry-run
-    .venv/bin/python -m automations.recruiting_report.daily_focus --only "Tevin Sterling"
+    .venv/bin/python -m automations.recruiting_report.daily_focus --captainship Raf
+    .venv/bin/python -m automations.recruiting_report.daily_focus --captainship Carlos
+    .venv/bin/python -m automations.recruiting_report.daily_focus --captainship Raf --dry-run
+    .venv/bin/python -m automations.recruiting_report.daily_focus --captainship Raf --only "Tevin Sterling"
 """
 from __future__ import annotations
 
@@ -38,13 +39,22 @@ from playwright.sync_api import sync_playwright
 
 from . import fetch_office, fill
 
-DAILY_FOCUS_TAB = "Daily Focus Report"
 ICD_LIST_COLUMN = 22  # col V
 
-# Sidecar state file: tracks which ICDs the *most recent* run couldn't pull
-# (because they need the other AppStream account). The dashboard reads this
-# to power the "Retry missing ICDs on 2nd login" button.
-STATE_FILE = Path(__file__).resolve().parent.parent.parent / "output" / "daily_focus_state.json"
+# Each captainship's Daily Focus report is one tab in the shared
+# "Daily Focus Report - Raf/Carlos" spreadsheet. The report process is
+# identical per captainship — only the AppStream account logged in (and
+# therefore which ICDs are reachable) differs. The tab name == the
+# captainship name.
+DAILY_FOCUS_SPREADSHEET_ID = "11FRYGG1hvuxcbWiYtDv7LzVss6ujZE_SOpqfhrQrVAo"
+CAPTAINSHIPS = ["Raf", "Carlos"]
+DEFAULT_CAPTAINSHIP = "Raf"
+
+# Sidecar state file, one per captainship: tracks which ICDs the *most
+# recent* run couldn't pull because the logged-in AppStream account has no
+# access to them. The dashboard reads this to list the skipped ICDs and
+# power the "retry just those" button.
+_OUTPUT_DIR = Path(__file__).resolve().parent.parent.parent / "output"
 
 # User-managed ICD-name → office-id overrides. The dashboard pops a confirm
 # dialog whenever a new name appears in col V; once the user picks an office,
@@ -692,18 +702,26 @@ def _is_skipped(name: str) -> bool:
     return _load_overrides().get(name.lower().strip()) == SKIP_SENTINEL
 
 
-def _read_state() -> dict:
-    if not STATE_FILE.exists():
+def _state_file(captainship: str) -> Path:
+    """Per-captainship retry-state file — Raf's and Carlos's runs must not
+    clobber each other's skipped-ICD list."""
+    return _OUTPUT_DIR / f"daily_focus_state_{captainship}.json"
+
+
+def _read_state(captainship: str) -> dict:
+    sf = _state_file(captainship)
+    if not sf.exists():
         return {}
     try:
-        return json.loads(STATE_FILE.read_text())
+        return json.loads(sf.read_text())
     except Exception:
         return {}
 
 
-def _write_state(inaccessible: List[str], week_start: dt.date) -> None:
-    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    STATE_FILE.write_text(json.dumps({
+def _write_state(captainship: str, inaccessible: List[str], week_start: dt.date) -> None:
+    sf = _state_file(captainship)
+    sf.parent.mkdir(parents=True, exist_ok=True)
+    sf.write_text(json.dumps({
         "ts": dt.datetime.now().isoformat(timespec="seconds"),
         "week_start": week_start.isoformat(),
         "inaccessible": sorted(set(inaccessible)),
@@ -723,19 +741,24 @@ def _setup_logging(today: dt.date) -> logging.Logger:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--captainship", choices=CAPTAINSHIPS, default=DEFAULT_CAPTAINSHIP,
+                    help="Which captainship to run — picks its tab in the shared sheet.")
     ap.add_argument("--week-start", help="Sunday at start of week to fetch (default: most recent past Sunday).")
     ap.add_argument("--only", help="Only one ICD (short name as in col 22).")
     ap.add_argument("--retry-inaccessible", action="store_true",
                     help="Only retry the ICDs the previous run flagged as "
-                         "inaccessible (i.e. switched to 2nd AS login). "
+                         "inaccessible (no AppStream access). Run this after "
+                         "logging into an account that does have access. "
                          "Skips any ICDs that already pulled successfully.")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--no-copy", action="store_true",
                     help="Skip the Wednesday copy-current-to-last step.")
     args = ap.parse_args()
+    captainship = args.captainship
 
     today = dt.date.today()
     log = _setup_logging(today)
+    log.info("captainship = %s", captainship)
 
     # Default: AS picker = most recent Sunday on or before today (current week's start)
     if args.week_start:
@@ -748,18 +771,18 @@ def main() -> int:
     log.info("(copy current→last is auto-detected per ICD: triggered when section's date row "
              "doesn't match current week's Monday)")
 
-    sh = fill.open_sheet()
+    sh = fill._client().open_by_key(DAILY_FOCUS_SPREADSHEET_ID)
     try:
-        ws = sh.worksheet(DAILY_FOCUS_TAB)
+        ws = sh.worksheet(captainship)
     except gspread.WorksheetNotFound:
-        log.error("tab not found: %s", DAILY_FOCUS_TAB)
+        log.error("tab not found for captainship: %s", captainship)
         return 1
 
     icds = _read_icd_list(ws)
     if args.only:
         icds = [i for i in icds if i.lower() == args.only.lower()]
     if args.retry_inaccessible:
-        prev = _read_state().get("inaccessible", [])
+        prev = _read_state(captainship).get("inaccessible", [])
         prev_lower = {n.lower() for n in prev}
         icds = [i for i in icds if i.lower() in prev_lower]
         if not icds:
@@ -897,10 +920,10 @@ def main() -> int:
     # button knows what to re-attempt. Skip when --only or --dry-run is set
     # (those don't reflect a full-list view, so they shouldn't overwrite state).
     if not args.only and not args.dry_run:
-        _write_state(inaccessible_this_run, week_start)
+        _write_state(captainship, inaccessible_this_run, week_start)
         if inaccessible_this_run:
-            log.info("saved %d inaccessible ICD(s) to %s for retry on 2nd login",
-                     len(inaccessible_this_run), STATE_FILE.name)
+            log.info("saved %d inaccessible ICD(s) to %s for retry on another login",
+                     len(inaccessible_this_run), _state_file(captainship).name)
         else:
             log.info("all ICDs pulled — cleared retry state")
 
