@@ -2035,7 +2035,7 @@ INTAKE_HEADERS = [
     "Review CC", "Notes", "Resurrected At", "Completed At", "Claim History",
     "Additional Links", "Review Notes", "Schedule Days",
     "Schedule Frequency", "Schedule Day Of Month", "Schedule Time",
-    "Report Breakdown",
+    "Report Breakdown", "Edit Request",
 ]
 
 PRIORITY_OPTIONS = [
@@ -3412,27 +3412,6 @@ def _render_review_panel(entry: dict) -> None:
         _rs = _load_all_run_state().get(_safe_id) or {}
         _reviewed_ok = _rs.get("status") == "success"
 
-        # Request Edits — available at any point in the review.
-        with st.popover("📝 Request Edits", use_container_width=True):
-            _edit = st.text_area(
-                "What needs to change?", key=f"edit_req_{eid}",
-                placeholder="Describe the edits you'd like the creator to make…",
-            )
-            _author = st.text_input(
-                "Your name", key=f"edit_author_{eid}",
-                value=st.session_state.get("user", "") or "",
-            )
-            if st.button("Send edits to creator", key=f"edit_send_{eid}",
-                         use_container_width=True):
-                if not (_edit or "").strip():
-                    st.error("Describe the edits first.")
-                elif not (_author or "").strip():
-                    st.error("Add your name.")
-                else:
-                    _append_intake_note(eid, f"📝 Edits requested: {_edit.strip()}", _author)
-                    _set_intake_status(eid, "Edits Requested")
-                    st.rerun()
-
         if _reviewed_ok:
             st.success("✅ Test run finished — you've seen it work. Ready to approve.")
             if st.button("✅ Approve & Upload to HUB", key=f"approve_{eid}",
@@ -3499,12 +3478,49 @@ def _render_review_panel(entry: dict) -> None:
             # Step 1 — the Review button.
             st.markdown(
                 "👀 **Review it:** run the report once to confirm it works. "
-                "The Approve button unlocks after a successful run."
+                "The Approve button unlocks after a successful run.\n\n"
+                "Spot a glitch, a flaw, or anything you'd change? Use "
+                "**📝 Request Edits** below to send it back to the creator "
+                "with your notes."
             )
             if st.button("🔍 Review the report", key=f"startreview_{eid}",
                          use_container_width=True, type="primary"):
                 st.session_state[f"reviewing_{eid}"] = True
                 st.rerun()
+
+        # Request Edits — sits below the review actions. Available at any
+        # point: spotting a flaw before/after running both count.
+        with st.popover("📝 Request Edits", use_container_width=True):
+            _edit = st.text_area(
+                "What needs to change?", key=f"edit_req_{eid}",
+                placeholder="Describe the edits you'd like the creator to make…",
+            )
+            _author = st.text_input(
+                "Your name", key=f"edit_author_{eid}",
+                value=st.session_state.get("user", "") or "",
+            )
+            if st.button("Send edits to creator", key=f"edit_send_{eid}",
+                         use_container_width=True):
+                if not (_edit or "").strip():
+                    st.error("Describe the edits first.")
+                elif not (_author or "").strip():
+                    st.error("Add your name.")
+                else:
+                    _txt = _edit.strip()
+                    _append_intake_note(eid, f"📝 Edits requested: {_txt}", _author)
+                    # Stash the edit text where the Apps Script can read it
+                    # for the "edits requested" email to the creator.
+                    try:
+                        _iws = _intake_ws()
+                        _ic = _iws.find(eid)
+                        if _ic and "Edit Request" in INTAKE_HEADERS:
+                            _iws.update_cell(
+                                _ic.row,
+                                INTAKE_HEADERS.index("Edit Request") + 1, _txt)
+                    except Exception:
+                        pass
+                    _set_intake_status(eid, "Edits Requested")
+                    st.rerun()
     elif status == "Edits Requested":
         st.info("⏳ Edits requested — waiting on the creator to revise.")
         if st.button("🔧 Revise & Re-upload", key=f"revise_{eid}",
