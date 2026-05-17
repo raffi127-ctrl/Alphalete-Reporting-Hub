@@ -1739,24 +1739,22 @@ def _cross_user_pulse(report_id: str) -> None:
 
 
 def _render_report_screenshot(report: dict) -> None:
-    """Right-column content on a report's Library page: an uploaded
-    screenshot of the report + an upload/update control."""
+    """Right-column content on a report's Library page: the report's
+    screenshot — just the clean image once one is set. When none is set
+    yet, an uploader to add one."""
     from PIL import Image as _Image
     shot = REPORT_SHOTS_DIR / f"{report['id']}.png"
     if shot.exists():
-        st.image(str(shot), use_container_width=True,
-                 caption="What this report looks like")
-    else:
-        st.markdown(
-            "<div style='border:2px dashed #C9A85C; border-radius:10px; "
-            "padding:36px 18px; text-align:center; color:#8B6914; "
-            "background:#FFFDF6; font-size:1.05rem'>"
-            "📸<br/>No screenshot yet</div>",
-            unsafe_allow_html=True,
-        )
-    with st.expander("📸 Update screenshot" if shot.exists()
-                     else "📸 Add a screenshot",
-                     expanded=not shot.exists()):
+        st.image(str(shot), use_container_width=True)
+        return
+    st.markdown(
+        "<div style='border:2px dashed #C9A85C; border-radius:10px; "
+        "padding:36px 18px; text-align:center; color:#8B6914; "
+        "background:#FFFDF6; font-size:1.05rem'>"
+        "📸<br/>No screenshot yet</div>",
+        unsafe_allow_html=True,
+    )
+    with st.expander("📸 Add a screenshot", expanded=True):
         st.caption("Upload an image of the report's tab so people can see "
                    "what it looks like.")
         _up = st.file_uploader(
@@ -1773,9 +1771,6 @@ def _render_report_screenshot(report: dict) -> None:
                 st.rerun()
             except Exception as e:
                 st.error(f"Couldn't save that image: {e}")
-    if report.get("sheet_url"):
-        st.link_button("📂 Open the full report ↗", report["sheet_url"],
-                       use_container_width=True)
 
 
 def _render_report_breakdown(report: dict) -> None:
