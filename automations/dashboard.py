@@ -45,6 +45,9 @@ UPLOADED_SCRIPTS_DIR = WORKSPACE / "automations" / "uploaded"
 # whatever assignees came from the source (uploaded_reports.json or the
 # hardcoded AUTOMATED_REPORTS list).
 LIBRARY_ASSIGNMENTS_FILE = WORKSPACE / "library_assignments.json"
+# Uploaded report screenshots — one PNG per report id, shown on the
+# report's Library page. Kept in resources/ so they sync to teammates.
+REPORT_SHOTS_DIR = WORKSPACE / "resources" / "report-screenshots"
 RUN_STATE_FILE = WORKSPACE / "output" / "run_state.json"
 ACTIVE_RUNS_FILE = WORKSPACE / "output" / "active_runs.json"
 ACTIVE_RUNS_LOG_DIR = WORKSPACE / "output" / "logs" / "active"
@@ -1735,18 +1738,50 @@ def _cross_user_pulse(report_id: str) -> None:
         st.session_state[sig_key] = sig
 
 
-def _sheet_preview_url(sheet_url: str) -> str:
-    """Turn a Google Sheets edit URL into its embeddable /preview URL —
-    a clean read-only view that renders inside an iframe."""
-    m = re.search(r"/spreadsheets/d/([A-Za-z0-9_-]+)", sheet_url or "")
-    return f"https://docs.google.com/spreadsheets/d/{m.group(1)}/preview" if m else ""
+def _render_report_screenshot(report: dict) -> None:
+    """Right-column content on a report's Library page: an uploaded
+    screenshot of the report + an upload/update control."""
+    from PIL import Image as _Image
+    shot = REPORT_SHOTS_DIR / f"{report['id']}.png"
+    if shot.exists():
+        st.image(str(shot), use_container_width=True,
+                 caption="What this report looks like")
+    else:
+        st.markdown(
+            "<div style='border:2px dashed #C9A85C; border-radius:10px; "
+            "padding:36px 18px; text-align:center; color:#8B6914; "
+            "background:#FFFDF6; font-size:1.05rem'>"
+            "📸<br/>No screenshot yet</div>",
+            unsafe_allow_html=True,
+        )
+    with st.expander("📸 Update screenshot" if shot.exists()
+                     else "📸 Add a screenshot",
+                     expanded=not shot.exists()):
+        st.caption("Upload an image of the report's tab so people can see "
+                   "what it looks like.")
+        _up = st.file_uploader(
+            "Screenshot", type=["png", "jpg", "jpeg"],
+            key=f"shot_up_{report['id']}", label_visibility="collapsed",
+        )
+        if _up is not None and st.button(
+            "💾 Save screenshot", key=f"shot_save_{report['id']}",
+            type="primary", use_container_width=True,
+        ):
+            try:
+                REPORT_SHOTS_DIR.mkdir(parents=True, exist_ok=True)
+                _Image.open(_up).convert("RGB").save(shot, "PNG")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Couldn't save that image: {e}")
+    if report.get("sheet_url"):
+        st.link_button("📂 Open the full report ↗", report["sheet_url"],
+                       use_container_width=True)
 
 
-def _render_report_explainer(report: dict) -> None:
-    """Explainer panel at the top of a report's Library page: a plain-English
-    write-up of how the report works + a live preview of its sheet."""
+def _render_report_breakdown(report: dict) -> None:
+    """Full-width 'how this report works' write-up, shown under the run
+    controls + screenshot on a report's Library page."""
     import html as _html
-    import streamlit.components.v1 as _components
     explainer = (report.get("breakdown") or "").strip()
     with st.container(border=True):
         st.markdown(f"### 📖 How {report['name']} works")
@@ -1760,19 +1795,6 @@ def _render_report_explainer(report: dict) -> None:
             )
         else:
             st.caption("No write-up for this report yet.")
-
-        preview = _sheet_preview_url(report.get("sheet_url", ""))
-        if preview:
-            st.markdown("<div style='margin-top:12px; font-weight:700'>"
-                        "📊 Live preview of the report</div>",
-                        unsafe_allow_html=True)
-            try:
-                _components.iframe(preview, height=420, scrolling=True)
-            except Exception:
-                st.caption("Preview couldn't load — use the link below.")
-        if report.get("sheet_url"):
-            st.link_button("📂 Open the full report ↗", report["sheet_url"],
-                           use_container_width=True)
 
 
 def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
@@ -5382,11 +5404,8 @@ elif st.session_state.view == "library":
             detected_user = _detect_hub_user()
             st.session_state.user = detected_user
 
-            # Explainer panel — how the report works + a live sheet preview.
-            _render_report_explainer(report)
-
-            # Unassigned reports get an inline assign picker here (the Library
-            # list is now plain buttons, so this is where claiming happens).
+            # Unassigned reports get an inline assign picker (full width,
+            # above the run/screenshot columns).
             if not report.get("assignees"):
                 with st.container(border=True):
                     st.markdown("**🔍 This report isn't assigned yet.**")
@@ -5409,9 +5428,14 @@ elif st.session_state.view == "library":
                             else:
                                 st.error("Couldn't save — try again.")
 
-            # The card renders the title, schedule badges, checklist, run
-            # button, and post-run callout — everything needed to run it.
-            _render_report_card(report, today, chrome_ok)
+            # Run controls on the left, the report's screenshot on the
+            # right; the how-it-works breakdown spans full width below.
+            _run_col, _shot_col = st.columns([1, 1])
+            with _run_col:
+                _render_report_card(report, today, chrome_ok)
+            with _shot_col:
+                _render_report_screenshot(report)
+            _render_report_breakdown(report)
     else:
         st.markdown(
             "<div style='font-size:2.4rem; font-weight:800; letter-spacing:-0.5px; "
@@ -5420,12 +5444,23 @@ elif st.session_state.view == "library":
         )
         st.caption("Every automation. Click a report to open its checklist + run it.")
 
+        # Search box — type to filter the list by report name / description.
+        _lib_query = st.text_input(
+            "Search reports", key="lib_search",
+            placeholder="🔍  Search reports by name…",
+            label_visibility="collapsed",
+        ).strip().lower()
+
         # Group reports into sections. Anything with empty/missing `assignees`
         # lands in a top "Unassigned" section so it's easy to find and claim.
         # Otherwise, group by `category` field (defaults to "All Reports").
         UNASSIGNED_LABEL = "🔍 Unassigned reports"
         sections: dict[str, list] = {}
         for r in AUTOMATED_REPORTS:
+            if _lib_query and _lib_query not in (
+                f"{r.get('name', '')} {r.get('description', '')}".lower()
+            ):
+                continue
             if not r.get("assignees"):
                 cat = UNASSIGNED_LABEL
             else:
@@ -5437,6 +5472,9 @@ elif st.session_state.view == "library":
         if UNASSIGNED_LABEL in sections:
             ordered_sections.append((UNASSIGNED_LABEL, sections.pop(UNASSIGNED_LABEL)))
         ordered_sections.extend(sections.items())
+        if not ordered_sections:
+            st.info(f"No reports match “{_lib_query}”."
+                    if _lib_query else "No reports in the library yet.")
 
         # Mid-flow runs — used to decorate cards with a "pick up" pill so
         # anyone browsing the library sees that this report is partway through.
