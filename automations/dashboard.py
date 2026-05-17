@@ -12,7 +12,6 @@ import ast
 import datetime as dt
 import json
 import re
-import shlex
 import subprocess
 from pathlib import Path
 from urllib.parse import quote as _urlquote
@@ -174,6 +173,11 @@ def _read_active_runs() -> list[dict]:
                 user=orphan.get("user", "unknown"),
                 status=status,
             )
+            # Close out the shared Hub Activity row so other teammates'
+            # dashboards stop showing this run as still going.
+            if orphan.get("hub_run_id"):
+                _hub_log_run_end(orphan["hub_run_id"],
+                                 status if status != "unknown" else "success")
         except Exception:
             pass
 
@@ -925,45 +929,29 @@ for _r in AUTOMATED_REPORTS:
 # Helpers
 # --------------------------------------------------------------------------
 
-def _stream_subprocess(cmd: list[str], output_box, report_id: str | None = None,
-                        report_name: str | None = None) -> int:
-    """Run a subprocess, stream stdout to UI, and (if report_id given) also
-    record an active-run entry + duplicate output to a log file so the run
-    can be tracked across page navigations."""
-    log_file = None
-    log_handle = None
-    if report_id:
-        ACTIVE_RUNS_LOG_DIR.mkdir(parents=True, exist_ok=True)
-        log_file = ACTIVE_RUNS_LOG_DIR / f"{report_id}.log"
-        log_handle = log_file.open("w")
+def _spawn_background_run(cmd: list[str], report_id: str, report_name: str) -> None:
+    """Start a report run as a DETACHED background process. Its output is
+    redirected straight to the run's log file, and the run is registered in
+    active_runs.json — so the auto-refreshing active-run panel shows it and
+    the dashboard never blocks waiting for the run to finish.
 
-    proc = subprocess.Popen(cmd, cwd=str(WORKSPACE), stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, text=True, bufsize=1)
-
-    if report_id:
-        _record_active_run(report_id, report_name or report_id,
-                           st.session_state.get("user", "unknown"),
-                           log_file, proc.pid)
-
-    lines: list[str] = []
+    Completion is picked up by _read_active_runs(): once the PID exits, that
+    run is treated as a finished orphan — its status is read off the log tail
+    and the post-run state is saved."""
+    ACTIVE_RUNS_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_file = ACTIVE_RUNS_LOG_DIR / f"{report_id}.log"
+    log_handle = log_file.open("w")
     try:
-        for line in proc.stdout:  # type: ignore[union-attr]
-            ln = line.rstrip()
-            lines.append(ln)
-            if log_handle:
-                log_handle.write(line)
-                log_handle.flush()
-            output_box.code("\n".join(lines[-30:]), language="log")
-        proc.wait()
+        proc = subprocess.Popen(
+            cmd, cwd=str(WORKSPACE),
+            stdout=log_handle, stderr=subprocess.STDOUT,
+        )
     finally:
-        if log_handle:
-            log_handle.close()
-        if report_id:
-            # rc != 0 → mark this run as failed so the shared Hub Activity tab
-            # reflects the actual outcome (other teammates' dashboards see it).
-            final_status = "success" if proc.returncode == 0 else "failed"
-            _clear_active_run(report_id, status=final_status)
-    return proc.returncode
+        # The child keeps its own dup of the fd; the parent's copy isn't needed.
+        log_handle.close()
+    _record_active_run(report_id, report_name,
+                       st.session_state.get("user", "unknown"),
+                       log_file, proc.pid)
 
 
 def _check_chrome_running() -> bool:
@@ -1329,7 +1317,8 @@ def _ran_within_24h(report_id: str) -> tuple[bool, str | None, str | None]:
 
 
 def _execute_action(report: dict, action: dict, picked, chrome_ok: bool) -> None:
-    """Run one action: stream output, log the run, balloons on success."""
+    """Kick off one action as a background run, then rerun so the live
+    run panel takes over. The dashboard never blocks waiting for the run."""
     if not chrome_ok:
         st.error("⚠️ Chrome isn't running — launch it from the sidebar first.")
         return
@@ -1342,7 +1331,7 @@ def _execute_action(report: dict, action: dict, picked, chrome_ok: bool) -> None
             continue
         other = a.get("user") or "someone"
         if other.strip().lower() == me.strip().lower():
-            continue  # our own in-flight run; let _stream_subprocess handle it
+            continue  # our own in-flight run — the card already shows it
         st.error(
             f"⛔ **{other}** is already running this report. Wait for them "
             "to finish before starting a new run — running it twice at the "
@@ -1367,34 +1356,16 @@ def _execute_action(report: dict, action: dict, picked, chrome_ok: bool) -> None
         args = action["args_fn"](picked)
     else:
         args = action["args_fn"]()
-    cmd = [VENV_PY, "-m", action["module"]] + args
-    st.info(f"`{' '.join(shlex.quote(c) for c in cmd)}`")
-    with st.status("Running…", expanded=True) as s:
-        box = st.empty()
-        rc = _stream_subprocess(cmd, box, report_id=report["id"], report_name=report["name"])
-        if rc == 0:
-            s.update(label="✅ Done!", state="complete")
-            st.balloons()
-        else:
-            s.update(label=f"❌ Failed (exit {rc})", state="error")
-        _log_run(
-            report_id=report["id"],
-            report_name=report["name"],
-            user=st.session_state.get("user", "unknown"),
-            status="success" if rc == 0 else "failed",
-        )
-        st.session_state[f"last_run_{report['id']}"] = {
-            "status": "success" if rc == 0 else "failed",
-            "ts": dt.datetime.now().isoformat(timespec="seconds"),
-        }
-        # Also persist to disk so the callout survives navigations / refreshes
-        _save_run_state_for(
-            report["id"],
-            "success" if rc == 0 else "failed",
-            user=st.session_state.get("user"),
-        )
-    # Refresh so the "Pick up where you left off" banner appears immediately
-    # (otherwise the user has to manually reload to see the post-run prompt).
+    # -u → unbuffered, so the live run panel sees log lines as they happen.
+    cmd = [VENV_PY, "-u", "-m", action["module"]] + args
+    try:
+        _spawn_background_run(cmd, report["id"], report["name"])
+    except Exception as e:
+        st.error(f"Couldn't start the run: {e}")
+        return
+    # The run is now a detached background process. Rerun so the card flips
+    # straight to the live, auto-refreshing run panel — nothing blocks, so the
+    # page never shows a stale duplicate of itself while the run goes.
     st.rerun()
 
 
