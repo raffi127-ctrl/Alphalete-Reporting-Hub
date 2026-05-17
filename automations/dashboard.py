@@ -1808,38 +1808,36 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
     with st.container(border=True):
         st.markdown('<div class="report-card-marker"></div>', unsafe_allow_html=True)
         # Header row
-        header_cols = st.columns([5, 2])
         last_run_text = _latest_run_summary(report["id"])
-        with header_cols[0]:
-            pills = ""
-            if ran_today:
-                pills += "<span class='pill pill-ok'>✅ DONE TODAY</span>"
-            elif is_due:
-                pills += "<span class='pill pill-due'>DUE TODAY</span>"
-            if sched:
-                pills += f"<span class='pill pill-info'>{sched.get('time', '')} • ~{sched.get('estimated_minutes', '?')} min</span>"
-            if pills:
-                st.markdown(pills, unsafe_allow_html=True)
-            last_run_inline = (
-                f"<span style='color:#C92020; font-size:1.4rem; font-weight:700; "
-                f"margin-left:1rem; white-space:nowrap'>· {last_run_text}</span>"
-                if last_run_text else ""
-            )
+        pills = ""
+        if ran_today:
+            pills += "<span class='pill pill-ok'>✅ DONE TODAY</span>"
+        elif is_due:
+            pills += "<span class='pill pill-due'>DUE TODAY</span>"
+        if sched:
+            pills += f"<span class='pill pill-info'>{sched.get('time', '')} • ~{sched.get('estimated_minutes', '?')} min</span>"
+        if pills:
+            st.markdown(pills, unsafe_allow_html=True)
+        # Report name — forced onto a single line (ellipsis if ever too long).
+        st.markdown(
+            "<div style='font-size:1.35rem; font-weight:800; line-height:1.25; "
+            "white-space:nowrap; overflow:hidden; text-overflow:ellipsis; "
+            "margin:0.45rem 0 0.1rem'>"
+            f"{report['emoji']} {report['name']}</div>",
+            unsafe_allow_html=True,
+        )
+        # Last-run tag — its own line, directly under the name.
+        if last_run_text:
             st.markdown(
-                "<div style='display:flex; align-items:baseline; flex-wrap:nowrap; "
-                "gap:0.5rem; margin:0.4rem 0 0.2rem'>"
-                f"<span style='font-size:1.5rem; font-weight:700; line-height:1.2'>"
-                f"{report['emoji']} {report['name']}</span>"
-                f"{last_run_inline}"
-                "</div>",
+                "<div style='color:#C92020; font-size:1rem; font-weight:700; "
+                "white-space:nowrap; margin:0 0 0.35rem'>"
+                f"· {last_run_text}</div>",
                 unsafe_allow_html=True,
             )
-            st.caption(report["description"])
-            _creator = report.get("creator")
-            if _creator:
-                st.caption(f"👤 Creator: {_creator}")
-        with header_cols[1]:
-            st.link_button("📂 Open Sheet", report["sheet_url"], use_container_width=True)
+        _creator = report.get("creator")
+        if _creator:
+            st.caption(f"👤 Creator: {_creator}")
+        st.link_button("📂 Open Sheet", report["sheet_url"])
 
         # In-progress check. If THIS report has a live subprocess (maybe
         # started by another tab, or by the same user before they navigated
@@ -4617,6 +4615,11 @@ if "view" not in st.session_state:
         if _url_view in {"home", "user", "overview", "library", "backlog", "bugs"}
         else "home"
     )
+    # A library report-detail page encodes ?report=<id> in the URL; restore
+    # it so a browser refresh reloads that report's page, not the list.
+    _url_report = st.query_params.get("report", "").strip()
+    if _url_report:
+        st.session_state["library_report_id"] = _url_report
 if "user" not in st.session_state:
     _url_user = st.query_params.get("user", "").strip()
     st.session_state.user = _url_user or None
@@ -5366,6 +5369,14 @@ elif st.session_state.view == "overview":
 
 elif st.session_state.view == "library":
     selected_id = st.session_state.get("library_report_id")
+
+    # Keep the URL in sync so a browser refresh reloads the SAME page — the
+    # open report's detail page if one is selected, else the library list.
+    if selected_id:
+        st.query_params["view"] = "library"
+        st.query_params["report"] = str(selected_id)
+    elif "report" in st.query_params:
+        del st.query_params["report"]
 
     # If we got here from a user profile, the Back button should return there
     # instead of bouncing to the library list. Tracked via library_came_from
