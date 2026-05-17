@@ -62,11 +62,32 @@ Library — so broken or half-ready reports don't go live.
 - A full run of the report has been completed with NO errors before it's
   uploaded to the Hub. Per Megan: this is a hard requirement, not a
   "nice to have" — no report goes live unproven.
+- Any ICDs/owners the report can't scrape yet because we don't have
+  access are identified and listed, so access can be requested. The Hub
+  already auto-appends these to the review email (the access-gap block);
+  the checklist step is to confirm the list was reviewed and the access
+  requests actually sent.
 
 **Note:** some checks can be fully automated (syntax valid, metadata
 present); others — like "works on Windows" — can't be proven without
 actually running on that OS, so the checklist may mix automated checks
 with items the creator ticks to confirm.
+
+---
+
+## Test the run-experience features across the whole Library
+Logged: 2026-05-16
+
+**What:** resume, the progress bar, retry, and failure alerts are now
+built. Go through every report in the Report Library and confirm they
+all behave correctly — not just the report the features were built
+against.
+
+**Check per report:**
+- An interrupted run can resume / retry and picks up where it stopped.
+- The progress bar + ETA show while it runs.
+- The failure diagnosis + "Report this glitch to Megan" button work.
+- The desktop alerts fire correctly on success and failure.
 
 ---
 
