@@ -926,6 +926,17 @@ def main() -> int:
                             {"range": c, "values": [[v]]} for c, v in next_updates
                         ], value_input_option="USER_ENTERED")
                         log.info("  wrote %d next-week scheduled cells", len(next_updates))
+
+        # Keep the AppStream office list current — scrape this account's
+        # offices into all-offices.json so new ICDs show up in the Hub's
+        # mapping picker without anyone running a separate scrape.
+        try:
+            from automations.recruiting_report.list_all_offices import (
+                refresh_offices_from_page,
+            )
+            log.info(refresh_offices_from_page(target_page))
+        except Exception as e:
+            log.warning("office-list refresh skipped: %s", e)
     finally:
         p.stop()
 
