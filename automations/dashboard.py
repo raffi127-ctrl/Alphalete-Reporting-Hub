@@ -2300,14 +2300,20 @@ def _compute_leaderboard() -> list[dict]:
         intake = []
     for r in intake:
         submitter = str(r.get("Submitted By") or "").strip()
-        builder = str(r.get("Assigned To") or "").strip()
         status = str(r.get("Status") or "").strip()
         if submitter in stats:
             stats[submitter]["requests"] += 1
             if status == "Done":
                 stats[submitter]["reviews"] += 1   # reviewed + approved it
-        if builder in stats and status == "Done":
-            stats[builder]["builds"] += 1
+
+    # Reports built — counted from the library itself (each report's
+    # `creator`), so built-in reports count too, not only ones that came
+    # through the intake/upload flow.
+    for rep in AUTOMATED_REPORTS:
+        creator = str(rep.get("creator") or "").strip()
+        if creator in stats:
+            stats[creator]["builds"] += 1
+
     for run in _hub_activity_rows():
         runner = str(run.get("User") or "").strip()
         if runner in stats:
