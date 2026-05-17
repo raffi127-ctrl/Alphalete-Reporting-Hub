@@ -59,6 +59,9 @@ Library — so broken or half-ready reports don't go live.
 - Declares ESTIMATED_MINUTES.
 - Required metadata present: name, Sheet URL, schedule + time, assignee.
 - "Needs a browser login" flag set correctly.
+- The pre-flight checklist was recognized and auto-pulled by Claude — the
+  "needs a browser login" flag drives the standard launch-Chrome +
+  log-in steps; the uploader never hand-types a checklist.
 - A full run of the report has been completed with NO errors before it's
   uploaded to the Hub. Per Megan: this is a hard requirement, not a
   "nice to have" — no report goes live unproven.
