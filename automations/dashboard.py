@@ -648,16 +648,19 @@ AUTOMATED_REPORTS = [
         "description": "Pulls funnel metrics from ApplicantStream, fills the mass-report Sheet across ~52 ICD office tabs.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Pulls the weekly recruiting funnel metrics from ApplicantStream "
-            "and fills the mass-report sheet — one tab per ICD office "
+            "Pulls the weekly recruiting funnel numbers from ApplicantStream "
+            "and fills the mass-report sheet — **one tab per ICD office** "
             "(~52 offices).\n\n"
             "WHEN IT RUNS\n"
-            "Mondays. Each run fills the most recently completed week.\n\n"
-            "PRE-FLIGHT\n"
-            "1. Launch Report Chrome.\n"
-            "2. Log into ApplicantStream as rhidalgo, then run. When it "
-            "finishes, log into rcaptain and click Run Again to fill the "
-            "remaining offices."
+            "**Mondays.** Each run fills the most recently finished week.\n\n"
+            "HOW TO RUN IT\n"
+            "**1.**  Launch Report Chrome and log into ApplicantStream as "
+            "**rhidalgo**, then run — it fills every office that account "
+            "can see.\n"
+            "**2.**  When it finishes, switch the login to **rcaptain** and "
+            "click **Run Again** — it fills the remaining offices.\n"
+            "✅  Offices already filled are skipped, so the second pass only "
+            "adds what's missing."
         ),
         "sheet_url": SHEET_URL,
         "assignees": ["Eve"],   # primary owner; anyone can still run it
@@ -798,6 +801,7 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "daily-focus-carlos",
+        "screenshot_from": "daily-focus",  # shares the Raf Daily Focus screenshot
         "name": "Daily Recruiting Focus — Carlos",
         "creator": "Megan",
         "emoji": "☀️",
@@ -1748,11 +1752,14 @@ def _cross_user_pulse(report_id: str) -> None:
 
 def _render_report_screenshot(report: dict) -> None:
     """Right-column content on a report's Library page: the report's
-    screenshot in a fixed-height frame so it lines up with the run card
-    next to it. When none is set yet, an uploader to add one."""
+    screenshot in a fixed-height frame so it lines up with the run card.
+    A report can borrow another report's screenshot via `screenshot_from`
+    — in that case there's no uploader here (update it on that report)."""
     import base64
     from PIL import Image as _Image
-    shot = REPORT_SHOTS_DIR / f"{report['id']}.png"
+    _borrowed = report.get("screenshot_from")
+    _shot_id = _borrowed or report["id"]
+    shot = REPORT_SHOTS_DIR / f"{_shot_id}.png"
     if shot.exists():
         # Fixed-height frame — keeps the screenshot the same height as the
         # run card beside it (instead of towering over, or under, it). The
@@ -1775,6 +1782,10 @@ def _render_report_screenshot(report: dict) -> None:
         "📸<br/>No screenshot yet</div>",
         unsafe_allow_html=True,
     )
+    if _borrowed:
+        st.caption("This report shares another report's screenshot — "
+                   "add it on that report's card.")
+        return
     with st.expander("📸 Add a screenshot", expanded=True):
         st.caption("Upload an image of the report's tab so people can see "
                    "what it looks like.")
@@ -1812,8 +1823,9 @@ def _render_report_breakdown(report: dict) -> None:
         return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", _html.escape(_t))
 
     # Friendly icon per section, matched on a keyword in its header.
-    _icons = [("ADD", "➕"), ("SKIP", "⚠️"), ("RUN", "🕒"),
-              ("PRE-FLIGHT", "🚀"), ("DOES", "📊")]
+    # Order matters — first keyword found wins.
+    _icons = [("HOW TO", "▶️"), ("ADD", "➕"), ("SKIP", "⚠️"),
+              ("RUN", "🕒"), ("PRE-FLIGHT", "🚀"), ("DOES", "📊")]
     _blocks = []
     for _block in explainer.split("\n\n"):
         _lines = _block.split("\n")
