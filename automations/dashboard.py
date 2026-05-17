@@ -296,6 +296,107 @@ def _tail_log(log_path: str | Path, lines: int = 40) -> str:
         return ""
 
 
+# Common run-failure signatures → plain-English diagnosis. Each entry is
+# (substrings to look for, headline, what-to-do). First match wins; the
+# match is case-insensitive against the failed run's log tail. Order
+# matters — the specific causes are listed before the catch-alls.
+_FAILURE_SIGNATURES: list[tuple[tuple[str, ...], str, str]] = [
+    (("port 9222", "no ownerville tab", "debug chrome isn't running",
+      "no ownerville tab found", "chrome is open but no ownerville"),
+     "Report Chrome isn't running, or the site got logged out.",
+     "Launch Report Chrome from the sidebar, log into the report's "
+     "website, then click Run Again."),
+    (("invalid_grant", "refresherror", "token has been expired",
+      "token has been revoked", "invalid credentials"),
+     "The Google sign-in for the Sheet expired.",
+     "Re-authorize Google access (the OAuth login), then click Run Again. "
+     "Ask Megan if you're not sure how."),
+    (("429", "quota exceeded", "resource_exhausted", "rate limit"),
+     "Google Sheets hit its per-minute limit.",
+     "Wait about 2 minutes, then click Run Again — the run picks up where "
+     "it stopped, so nothing already done is lost."),
+    (("phase 3 failed", "tableau pull (phase 3) failed",
+      "tableau download failed", "tableau (phase 3)"),
+     "The Tableau step couldn't load.",
+     "The scrape itself already finished — only the Tableau sale-type data "
+     "is missing. Open the Tableau tab, sign in, then click Run Again."),
+]
+
+
+def _diagnose_run_failure(log_text: str) -> tuple[str, str] | None:
+    """Translate a failed run's log into (headline, what-to-do).
+    Returns None when nothing recognizable matched — the caller then
+    falls back to the report's generic failure message."""
+    low = (log_text or "").lower()
+    for needles, headline, fix in _FAILURE_SIGNATURES:
+        if any(n in low for n in needles):
+            return headline, fix
+    return None
+
+
+def _estimated_minutes_for(report_id: str) -> int | None:
+    """A report's declared estimated_minutes, if any — powers the
+    time-based progress bar for reports without per-step log markers."""
+    try:
+        for r in AUTOMATED_REPORTS:
+            if r.get("id") == report_id:
+                return r.get("schedule", {}).get("estimated_minutes")
+    except Exception:
+        pass
+    return None
+
+
+# Reports that track owner-access gaps. When a report whose uploaded
+# script contains `script_marker` is sent for review, the Hub reads these
+# result files and appends the gaps to the review email — so the reviewer
+# knows exactly which owners still need access granted. Add an entry here
+# as new access-gated reports come online.
+_ACCESS_GAP_SOURCES = [
+    {
+        "script_marker": "focus_office_att",
+        "ov_results": "output/focus_office_scrape_results.json",
+        "tableau_results": "output/focus_office_tableau_results.json",
+    },
+]
+
+
+def _access_gaps_for_script(script_text: str) -> str:
+    """If the uploaded report tracks access gaps, return a plain-text block
+    naming owner tabs we can't fully scrape because we lack access (no
+    ownerville access, or the owner isn't in the Tableau export). Returns
+    '' when there are no gaps, or the report doesn't track them."""
+    for src in _ACCESS_GAP_SOURCES:
+        if src["script_marker"] not in (script_text or ""):
+            continue
+        ov_missing: list[str] = []
+        tab_missing: list[str] = []
+        try:
+            p = WORKSPACE / src["ov_results"]
+            if p.exists():
+                results = json.loads(p.read_text()).get("results", {})
+                ov_missing = sorted(o for o, s in results.items() if s != "ok")
+        except Exception:
+            pass
+        try:
+            p = WORKSPACE / src["tableau_results"]
+            if p.exists():
+                tab_missing = sorted(
+                    json.loads(p.read_text()).get("missing_from_tableau", [])
+                )
+        except Exception:
+            pass
+        lines = []
+        if ov_missing:
+            lines.append(f"• ownerville: {', '.join(ov_missing)}")
+        if tab_missing:
+            lines.append(f"• Tableau: {', '.join(tab_missing)}")
+        if not lines:
+            return ""
+        return ("⚠️ Owner tabs we can't fully scrape yet — no access. Please "
+                "re-ping to get access granted:\n" + "\n".join(lines))
+    return ""
+
+
 def _load_all_run_state() -> dict:
     """Read persisted run state, dropping entries older than TTL."""
     if not RUN_STATE_FILE.exists():
@@ -420,6 +521,7 @@ def _load_uploaded_reports_raw() -> list[dict]:
         out.append({
             "id": r["id"],
             "name": r["name"],
+            "creator": r.get("creator", ""),
             "emoji": r.get("emoji", "⭐"),
             "color": r.get("color", "#667eea"),
             "description": r.get("description", ""),
@@ -502,6 +604,7 @@ AUTOMATED_REPORTS = [
     {
         "id": "recruiting",
         "name": "Weekly Recruiting Report",
+        "creator": "Megan",
         "emoji": "🎯",
         "color": "#FF6B6B",
         "category": "🎯 Recruiting",
@@ -565,6 +668,7 @@ AUTOMATED_REPORTS = [
     {
         "id": "daily-focus",
         "name": "Daily Recruiting Focus",
+        "creator": "Megan",
         "emoji": "☀️",
         "color": "#4ECDC4",
         "category": "🎯 Recruiting",
@@ -1163,6 +1267,7 @@ def _active_run_fragment(report_id: str) -> None:
     is_remote = bool(active.get("remote"))
     machine = active.get("machine", "")
 
+    elapsed_s = 0
     try:
         start_dt = dt.datetime.fromisoformat(started_at)
         elapsed_s = max(0, int((dt.datetime.now() - start_dt).total_seconds()))
@@ -1239,6 +1344,32 @@ def _active_run_fragment(report_id: str) -> None:
             pass
 
     tail = _tail_log(log_path) if log_path else ""
+
+    # Progress bar. The scraper prints a "[i/N]" marker per office; with
+    # elapsed time we extrapolate how much is left. Reports that print no
+    # such marker fall back to a time estimate (if they declare one).
+    import re as _re
+    _markers = _re.findall(r"\[(\d+)/(\d+)\]", tail or "")
+    if _markers:
+        _i, _n = int(_markers[-1][0]), max(int(_markers[-1][1]), 1)
+        _i = min(_i, _n)
+        _eta = ""
+        try:
+            if 0 < _i < _n and elapsed_s:
+                _rem = int(elapsed_s * (_n - _i) / _i)
+                _eta = (f" · ~{_rem // 60}m {_rem % 60}s left" if _rem >= 60
+                        else f" · ~{_rem}s left")
+        except Exception:
+            _eta = ""
+        st.progress(min(_i / _n, 0.97), text=f"Office {_i} of {_n}{_eta}")
+    else:
+        _est = _estimated_minutes_for(report_id)
+        if _est and elapsed_s:
+            _total = _est * 60
+            _rem = max(0, _total - elapsed_s)
+            st.progress(min(elapsed_s / _total, 0.95),
+                        text=f"~{_rem // 60}m left (estimated)")
+
     if tail:
         st.code(tail, language="log")
     else:
@@ -1504,6 +1635,9 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                 unsafe_allow_html=True,
             )
             st.caption(report["description"])
+            _creator = report.get("creator")
+            if _creator:
+                st.caption(f"👤 Creator: {_creator}")
         with header_cols[1]:
             st.link_button("📂 Open Sheet", report["sheet_url"], use_container_width=True)
 
@@ -1704,29 +1838,82 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                         )
                         st.success(msg)
                 else:
-                    # Surface the persisted subprocess log so users don't have to
-                    # hunt for "the log above" — message_failed strings reference
-                    # a log that wasn't being rendered post-run.
+                    # Read the run log — used both to diagnose the failure
+                    # and to show the raw tail.
                     _log_path = ACTIVE_RUNS_LOG_DIR / f"{report['id']}.log"
+                    _log_tail_text = ""
                     if _log_path.exists():
                         try:
-                            _log_tail = _log_path.read_text(errors="replace").splitlines()[-40:]
-                            if _log_tail:
-                                with st.expander("📜 Run log (last 40 lines)", expanded=True):
-                                    st.code("\n".join(_log_tail), language="log")
+                            _log_tail_text = "\n".join(
+                                _log_path.read_text(errors="replace").splitlines()[-40:]
+                            )
                         except Exception:
-                            pass
-                    msg = post_run_cfg.get(
-                        "message_failed",
-                        "❌ Run failed. Check the log above. You can retry with the same or other AppStream login below.",
-                    )
-                    st.error(msg)
+                            _log_tail_text = ""
+
+                    # Plain-English diagnosis of common failures. When we
+                    # recognize the cause, show it prominently in place of
+                    # the report's generic failure message.
+                    _diag = _diagnose_run_failure(_log_tail_text)
+                    if _diag:
+                        st.markdown(
+                            "<div style='background:linear-gradient(135deg,#FFE4E0 0%,#FFCEC7 100%);"
+                            "border:2px solid #D8261C;border-radius:10px;"
+                            "padding:14px 18px;margin:4px 0 10px;color:#5C1A14;'>"
+                            "<div style='font-weight:800;font-size:1.1rem;'>"
+                            f"❌ {_diag[0]}</div>"
+                            "<div style='margin-top:6px;font-size:0.95rem;'>"
+                            f"<b>What to do:</b> {_diag[1]}</div></div>",
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        msg = post_run_cfg.get(
+                            "message_failed",
+                            "❌ Run failed. Check the log below, then click Run Again.",
+                        )
+                        st.error(msg)
+
+                    # Raw log — expanded when we couldn't diagnose it.
+                    if _log_tail_text:
+                        with st.expander("📜 Run log (last 40 lines)",
+                                         expanded=not bool(_diag)):
+                            st.code(_log_tail_text, language="log")
+
+                    # One click sends this failure to Megan as a bug report.
+                    _glitch_key = f"glitch_sent_{report['id']}"
+                    if st.session_state.get(_glitch_key):
+                        st.success("🚩 Sent to Megan — she'll follow up by email.")
+                    elif st.button("🚩 Report this glitch to Megan",
+                                   key=f"glitch_{report['id']}",
+                                   use_container_width=True):
+                        try:
+                            _file_run_glitch(report, _log_tail_text,
+                                             st.session_state.get("user", ""))
+                            st.session_state[_glitch_key] = True
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Couldn't send the glitch report: {e}")
 
                 again_label = post_run_cfg.get("again_label", "🔁 Run Again")
+                _resume_done = 0
                 if missing_items:
                     # Make the button count-aware so it matches the callout above.
                     base = again_label.replace("🔁", "").strip() or "Retry missing"
                     again_label = f"🔁 Retry {len(missing_items)} missing ICD{'s' if len(missing_items)!=1 else ''} on 2nd login"
+                elif post_run_cfg.get("resume_checkpoint"):
+                    # A leftover checkpoint means the last run was interrupted;
+                    # re-running picks up where it stopped (done offices skipped).
+                    try:
+                        _cp_path = WORKSPACE / post_run_cfg["resume_checkpoint"]
+                        if _cp_path.exists():
+                            _resume_done = len(
+                                json.loads(_cp_path.read_text()).get("completed", [])
+                            )
+                    except Exception:
+                        _resume_done = 0
+                    if _resume_done:
+                        again_label = (f"▶ Resume run — {_resume_done} "
+                                       f"office{'s' if _resume_done != 1 else ''} "
+                                       "already done")
                 # Optional: a separate action to fire on Run Again (e.g. retry
                 # mode that only re-processes the items that failed last time).
                 again_action = post_run_cfg.get("again_action") or primary
@@ -1743,6 +1930,9 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                     with cols[0]:
                         if missing_items:
                             st.caption("Switch AppStream logins first, then click →")
+                        elif _resume_done:
+                            st.caption("Picks up where it stopped — already-done "
+                                       "offices are skipped.")
                         else:
                             st.caption("When you're ready, click below.")
                     with cols[1]:
@@ -1760,6 +1950,7 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                         run_ts=last_run.get("ts", ""),
                     )
                     st.session_state.pop(f"last_run_{report['id']}", None)
+                    st.session_state.pop(f"glitch_sent_{report['id']}", None)
                     _clear_run_state_for(report["id"])
                     st.rerun()
 
@@ -2339,6 +2530,30 @@ def _add_bug(title: str, bug_type: str, sheet_link: str, loom_link: str,
     ])
     _read_bugs.clear()
     return new_id
+
+
+def _file_run_glitch(report: dict, log_tail: str, user: str) -> str:
+    """File a failed report run as a bug report — lands on the Bug Reports
+    tab, which emails Megan. Auto-fills the report name, a plain-English
+    cause (if recognizable), and the run log. Returns the new bug ID."""
+    diag = _diagnose_run_failure(log_tail)
+    diag_line = f"Likely cause: {diag[0]}\n{diag[1]}\n\n" if diag else ""
+    details = (
+        f"Automatic glitch report — a run of '{report['name']}' failed.\n\n"
+        f"{diag_line}"
+        f"--- Run log (last lines) ---\n"
+        f"{(log_tail or '').strip() or '(no log was captured)'}"
+    )
+    return _add_bug(
+        title=f"Run glitch — {report['name']}",
+        bug_type="Bug / something broke",
+        sheet_link=report.get("sheet_url", ""),
+        loom_link="",
+        details=details,
+        submitted_by=user or "unknown",
+        submitter_email=_member_email(user) or "",
+        priority=PRIORITY_OPTIONS[1],
+    )
 
 
 def _resurrect_bug(bug_id: str, reason: str) -> bool:
@@ -2999,9 +3214,17 @@ def _show_wire_up_dialog(entry: dict | None = None):
         else:
             checklist = []
 
+        # Auto-append owner-access gaps (owners on the Sheet we can't scrape
+        # yet, per the report's last run) to the review notes — so the
+        # review email tells the reviewer exactly what access to chase down.
+        _gap_block = _access_gaps_for_script(script_text)
+        if _gap_block and "Owner tabs we can't fully scrape" not in followup_notes:
+            followup_notes = (followup_notes.rstrip() + "\n\n" + _gap_block).strip()
+
         metadata = {
             "id": name,
             "name": name,
+            "creator": st.session_state.get("user") or "",
             "emoji": emoji or "📊",
             "description": description,
             "sheet_url": sheet_url,

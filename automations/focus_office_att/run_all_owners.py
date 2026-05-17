@@ -12,6 +12,10 @@ officeId → call confirmImpersonate via AJAX → navigate to Time Tracker
 
 An error on one owner doesn't stop the rest. Summary printed at end.
 
+If a run is interrupted (Chrome dropped, Stop button, crash), the next
+normal run resumes — owners already scraped today are skipped. See
+CHECKPOINT_FILE below.
+
 Prereq: debug Chrome at localhost:9222, ownerville tab open + logged in.
 
 Run:
@@ -64,6 +68,64 @@ TIME_TRACKER_PAGE = "p=510"
 # to scrape ?p=510 + ?p=89 directly. Per Megan: Raf is the master
 # admin, so 'his dashboard' IS the master view.
 NO_IMPERSONATE_OWNERS = {"Rafael Hidalgo"}
+
+# ----------------------------------------------------------------------
+# Resume checkpoint
+# ----------------------------------------------------------------------
+# A full Phase-2 scrape is ~30 owners. If a run is interrupted partway
+# (Chrome dropped, the Hub Stop button, a crash), a re-run shouldn't redo
+# the owners that already finished. Each owner that scrapes OK is appended
+# here; on the next run, owners listed under the SAME run_key are skipped.
+# daily.py deletes this file after the Monday wipe and after a fully
+# successful run — so a file that's still here always means "the last run
+# was interrupted; resume it."
+CHECKPOINT_FILE = (
+    Path(__file__).resolve().parents[2] / "output" / "focus_office_run_checkpoint.json"
+)
+
+# A genuine crash-and-retry happens within minutes. If the checkpoint is
+# older than this, it's a stale leftover (or a deliberate hours-later
+# re-run) — ignore it and scrape fresh so today's data isn't skipped.
+_CHECKPOINT_MAX_AGE_S = 2 * 3600
+
+
+def _read_checkpoint() -> dict | None:
+    try:
+        if CHECKPOINT_FILE.exists():
+            return json.loads(CHECKPOINT_FILE.read_text())
+    except Exception:
+        pass
+    return None
+
+
+def _checkpoint_fresh(cp: dict) -> bool:
+    try:
+        ts = dt.datetime.fromisoformat(cp.get("updated_at", ""))
+        return (dt.datetime.now() - ts).total_seconds() <= _CHECKPOINT_MAX_AGE_S
+    except Exception:
+        return False
+
+
+def _write_checkpoint(run_key: str, completed: list[str]) -> None:
+    """Best-effort — a checkpoint write must never break the scrape."""
+    try:
+        CHECKPOINT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        CHECKPOINT_FILE.write_text(json.dumps({
+            "run_key": run_key,
+            "completed": completed,
+            "updated_at": dt.datetime.now().isoformat(timespec="seconds"),
+        }, indent=2))
+    except Exception:
+        pass
+
+
+def _checkpoint_mark_done(run_key: str, owner: str) -> None:
+    """Record `owner` as scraped OK in the checkpoint for this run."""
+    cp = _read_checkpoint() or {}
+    done = list(cp.get("completed", [])) if cp.get("run_key") == run_key else []
+    if owner not in done:
+        done.append(owner)
+    _write_checkpoint(run_key, done)
 
 
 def _prompt_for_unknown_owner(sheet_tab_name: str) -> str | None:
@@ -422,6 +484,25 @@ def main() -> int:
         days = [monday + dt.timedelta(days=i) for i in range(7)
                 if monday + dt.timedelta(days=i) <= today]
 
+    # Resume: skip owners already scraped OK in an interrupted run earlier
+    # today. Only normal full / daily runs use the checkpoint — targeted
+    # --only / --skip / --week-start / --dry-run runs always scrape fresh.
+    checkpoint_active = not (only or skip or args.week_start or args.dry_run)
+    run_key = f"{today.isoformat()}|{'daily' if args.daily_window else 'full'}"
+    resumed: list[str] = []
+    if checkpoint_active:
+        cp = _read_checkpoint()
+        if cp and cp.get("run_key") == run_key and _checkpoint_fresh(cp):
+            resumed = [o for o in cp.get("completed", []) if o in owner_tabs]
+            if resumed:
+                _done = set(resumed)
+                owner_tabs = [t for t in owner_tabs if t not in _done]
+                print(f"↻ Resuming an interrupted run — {len(resumed)} owner(s) "
+                      f"already scraped today, {len(owner_tabs)} left.")
+        else:
+            # No usable checkpoint — start a clean one for this run.
+            _write_checkpoint(run_key, [])
+
     print(f"Plan: scrape {len(owner_tabs)} owner(s); days: {[d.strftime('%a %m/%d') for d in days]}")
     for i, t in enumerate(owner_tabs, 1):
         print(f"  {i:>2}. {t}")
@@ -429,7 +510,8 @@ def main() -> int:
         print("\n[DRY-RUN] no scraping performed.")
         return 0
 
-    results: dict[str, str] = {}
+    # Owners carried over from an interrupted run already scraped OK.
+    results: dict[str, str] = {o: "ok" for o in resumed}
     p = sync_playwright().start()
     try:
         browser = p.chromium.connect_over_cdp(CDP_URL)
@@ -469,6 +551,8 @@ def main() -> int:
                     stats = _scrape_one_owner(page, ws, days, rqst)
                     scraped_ok = True
                     results[owner] = "ok"
+                    if checkpoint_active:
+                        _checkpoint_mark_done(run_key, owner)
                     tt = sum(stats["tt_counts"].values())
                     disp = sum(stats["disp_counts"].values())
                     print(f"  ✓ wrote {stats['written']} cell(s); TT={tt} rep-days, "
@@ -492,6 +576,8 @@ def main() -> int:
                 stats = _scrape_one_owner(page, ws, days, rqst)
                 scraped_ok = True
                 results[owner] = "ok"
+                if checkpoint_active:
+                    _checkpoint_mark_done(run_key, owner)
                 tt = sum(stats["tt_counts"].values())
                 disp = sum(stats["disp_counts"].values())
                 print(f"  ✓ wrote {stats['written']} cell(s); TT={tt} rep-days, Disp={disp} rep-days; "

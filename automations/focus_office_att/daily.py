@@ -43,6 +43,11 @@ WORKSPACE = Path(__file__).resolve().parents[2]
 PYTHON = sys.executable
 LOG_DIR = WORKSPACE / "output" / "logs"
 SCRAPE_RESULTS = WORKSPACE / "output" / "focus_office_scrape_results.json"
+# Resume checkpoint written by run_all_owners (Phase 2). That module owns
+# it; daily.py only deletes it — after the Monday wipe (a wipe blanks the
+# sheet, so a resume would skip owners whose data is now gone) and after a
+# fully successful run. A file that survives a run means it was interrupted.
+RUN_CHECKPOINT = WORKSPACE / "output" / "focus_office_run_checkpoint.json"
 
 TABLEAU_ONLY_MARK = "\U0001f539"  # blue diamond emoji
 
@@ -235,12 +240,23 @@ def _notify_failure(headline: str, detail: str, log_file: str) -> None:
 # Phase runners (subprocess — each phase has its own CLI entrypoint)
 # ----------------------------------------------------------------------
 def _run_phase(module: str, extra_args: list[str], log_fh) -> int:
-    """Run a pipeline module as a subprocess, streaming output to log_fh.
+    """Run a pipeline module as a subprocess. Streams its output line by
+    line to BOTH the run log file and this process's stdout — so the Hub,
+    which captures daily.py's stdout, shows live per-owner progress (the
+    scraper's "[i/N]" markers) instead of just the phase headline.
     Returns the process exit code."""
     cmd = [PYTHON, "-m", module, *extra_args]
-    log_fh.write(f"\n$ {' '.join(cmd)}\n")
+    header = f"\n$ {' '.join(cmd)}\n"
+    log_fh.write(header)
     log_fh.flush()
-    proc = subprocess.run(cmd, stdout=log_fh, stderr=subprocess.STDOUT, cwd=str(WORKSPACE))
+    print(header, end="", flush=True)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, bufsize=1, cwd=str(WORKSPACE))
+    for line in proc.stdout:
+        log_fh.write(line)
+        log_fh.flush()
+        print(line, end="", flush=True)
+    proc.wait()
     return proc.returncode
 
 
@@ -285,6 +301,12 @@ def main() -> int:
             try:
                 n = wipe_all_owner_tabs(sh)
                 say(f"  wiped {n} tab(s)")
+                # A wipe blanks the sheet — any leftover Phase-2 checkpoint
+                # is now invalid, so the scrape must start fresh.
+                try:
+                    RUN_CHECKPOINT.unlink(missing_ok=True)
+                except Exception:
+                    pass
             except Exception as e:
                 say(f"  wipe failed: {e}")
                 _notify_failure("Focus Office Monday wipe failed.",
@@ -338,6 +360,12 @@ def main() -> int:
             say(f"  tab-color refresh failed (non-fatal): {e}")
 
         say("=== DONE ===")
+        # Pipeline finished cleanly — clear the Phase-2 resume checkpoint
+        # so the next run starts fresh instead of resuming.
+        try:
+            RUN_CHECKPOINT.unlink(missing_ok=True)
+        except Exception:
+            pass
 
     _notify_success(
         f"{'Monday full' if is_monday else 'Daily'} run complete — "

@@ -34,6 +34,8 @@ from __future__ import annotations
 
 import argparse
 import csv
+import datetime as dt
+import json
 import sys
 import time
 from collections import defaultdict
@@ -390,6 +392,28 @@ def main() -> int:
             continue
         print(f"  ✓ {owner}: {s['written']} cell(s) written" + (
             f"; unmatched reps: {s['unmatched_reps']}" if s["unmatched_reps"] else ""))
+
+    # Record which Sheet owner tabs are MISSING from the Tableau export —
+    # an owner with a tab but no Tableau data means we can't pull their
+    # sale-type numbers. The Hub surfaces these (alongside the ownerville
+    # access gaps) in the report's review email so access can be re-pinged.
+    _NON_OWNER_TABS = {"Template", "Raf play"}
+    sheet_owner_tabs = {t for t in all_tabs if t not in _NON_OWNER_TABS}
+    in_tableau = {alias_to_canonical(o, aliases_raw) for o in tableau}
+    missing_from_tableau = sorted(sheet_owner_tabs - in_tableau)
+    try:
+        results_path = (Path(__file__).resolve().parents[2]
+                        / "output" / "focus_office_tableau_results.json")
+        results_path.parent.mkdir(parents=True, exist_ok=True)
+        results_path.write_text(json.dumps({
+            "run_at": dt.datetime.now().isoformat(timespec="seconds"),
+            "owners_in_tableau": sorted(in_tableau),
+            "missing_from_tableau": missing_from_tableau,
+        }, indent=2))
+        print(f"  Tableau coverage: {len(missing_from_tableau)} owner tab(s) "
+              f"missing from the export.")
+    except Exception as e:
+        print(f"  ⚠ couldn't write Tableau results file: {e}")
     return 0
 
 
