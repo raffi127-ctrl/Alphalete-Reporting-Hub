@@ -171,6 +171,35 @@ with the correct filter, then the report pulls them with zero filter code.
 - Custom view (filter "downline or captain" = Captain): https://us-east-1.online.tableau.com/#/site/sci/views/DirectDepositICDVIEWVersion2_0/PROGRAMSUMMARY/639b7ff1-d2ed-49ae-a85d-b96a0787a1e9/CAPTAINVIEW
 - Direct Deposit ← the Grand Total value, assigned to the ICD.
 
+## Source view 9 — Wireless Metrics (Metrics workbook)
+
+- Custom view: https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/Metrics/23910d52-35aa-4b2d-95f5-8d96649a7b0d/AP-WIRELESSMETRICS
+- Filters baked in: "Metrics view" = Wireless metrics, "weeks metrics" = This week.
+- Writes the **Wireless Metrics** section (a separate section anchor).
+
+| Sheet row label | Tableau column |
+|---|---|
+| BYOD Lines | `BYOD Lines (Metrics)` |
+| BYOD % | `BYOD Line % (Metrics)` |
+| New Lines | `New Lines (Metrics)` |
+| New Lines % | `New Line % (Metrics)` |
+| Approval % (Rolling 4 weeks) | `Approval % (Rolling 4 Weeks)` |
+| 30-60 Activation Rate | `30-60 Activation Rate` |
+| 0-30 day cancel Rate | `0-30 day wireless cancel rate` |
+| 0-30 day Wireless Cancels | `0-30 day wireless cancels` |
+| Extra / Preimum Plan % Metrics | `Extra/Premium Plan % (Metrics)` |
+| Next up % | `Next Up % (Metrics)` |
+| **Insurance %** | ⚠️ source TBD — Raf to confirm where to pull it from; ask to add later |
+
+## Source view 10 — Wireless Churn (CHURN workbook)
+
+- Custom view: https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/CHURN/e4e438a7-c289-4128-a89a-8b5beec41baa/AP-WIRELESSCHURN
+- Filter baked in: "Churn view" = Wireless churn view.
+- Writes the **Wireless Metrics** section's churn rows (distinct from the
+  Office-Metrics churn rows): 0-30 / 30 / 60 / 90 Day Churn ← the ICD Churn
+  crosstab's `0-30 Day Churn` / `30 Day Churn` / `60 Day Churn` /
+  `90 Day Churn` columns (parse like the New-Internet CHURN view).
+
 ---
 
 ## Still to map
