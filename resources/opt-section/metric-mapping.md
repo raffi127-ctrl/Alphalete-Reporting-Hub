@@ -111,6 +111,20 @@ Scheduled 6+ Days New Internet Count (4 wk)" column — but the crosstab
 download exposes it directly as the `% of sales scheduled 6+ days out`
 column. Confirm on the first pull.)
 
+## Source view 5 — Captain's Bonus
+
+- URL: https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/CaptainsBonus
+- Sheet "Captain's Bonus". Week-ending filter (note: it's **1 day off**).
+- Find the ICD owner (in the captainship section — e.g. "Raf's team");
+  the value is on the right-hand "Churn % & Appr %" chart.
+
+| Sheet row label (Office Metrics section) | Source |
+|---|---|
+| Activation /Approval % | `Rolling 4 weeks` |
+| 30-60 Day Cancel Rate | computed: 100% − Activation/Approval % |
+
+Queued as the next OPT build step.
+
 ---
 
 ## Still to map
