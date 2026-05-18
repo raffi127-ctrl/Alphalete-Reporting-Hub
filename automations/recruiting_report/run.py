@@ -21,6 +21,7 @@ Usage:
   .venv/bin/python -m automations.recruiting_report.run --dry-run       # don't write to Sheet
   .venv/bin/python -m automations.recruiting_report.run --only "Cody Cannon"
   .venv/bin/python -m automations.recruiting_report.run --week 2026-05-10
+  .venv/bin/python -m automations.recruiting_report.run --retry-missing # 2nd-login pass for offices a prior login couldn't reach
 """
 from __future__ import annotations
 
@@ -63,6 +64,11 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--week", help="Sunday YYYY-MM-DD (matches AS picker + Sheet column). Default: most recent Sunday.")
     ap.add_argument("--only", help="Only process this office (by sheet_tab name).")
+    ap.add_argument("--retry-missing", action="store_true",
+                    help="Re-fetch only the offices still missing from this "
+                         "week's results file — for a second pass under a "
+                         "different AppStream login. Skips onboarding/pruning "
+                         "and the OPT phase.")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--backfill-weeks", type=int, default=10,
                     help="When a tab is empty (new ICD), how many recent weeks to auto-fill. Default: 10.")
@@ -100,15 +106,26 @@ def main() -> int:
     # offices truly unreachable by anyone).
     results_file = WORKSPACE / "output" / "recruiting_results.json"
     prior_filled: set = set()
+    retry_targets: set = set()
     if results_file.exists():
         try:
             prior = json.loads(results_file.read_text())
             if prior.get("week") == week.isoformat():
                 prior_filled = set(prior.get("filled", []))
+                retry_targets = set(prior.get("still_missing", []))
         except Exception:
             pass
     filled_in_run: set = set()
     inaccessible_in_run: set = set()
+
+    if args.retry_missing:
+        if not retry_targets:
+            log.info("--retry-missing: no offices still missing for week %s — "
+                     "run a full report first (or everything is already filled)",
+                     week.isoformat())
+            return 0
+        log.info("--retry-missing: re-fetching %d office(s) under the current "
+                 "login: %s", len(retry_targets), ", ".join(sorted(retry_targets)))
 
     log.info("attaching to Chrome at %s", fetch_office.CDP_URL)
     p = sync_playwright().start()
@@ -126,56 +143,62 @@ def main() -> int:
             log.error("no applicantstream tab open in attached Chrome — log in first")
             return 1
 
-        # Step 2: refresh the AppStream office list BEFORE matching tabs, so an
-        # ICD added to AppStream today can still be onboarded this same run.
-        try:
-            from automations.recruiting_report.list_all_offices import (
-                refresh_offices_from_page,
-            )
-            log.info(refresh_offices_from_page(target_page))
-        except Exception as e:
-            log.warning("office-list refresh skipped: %s", e)
-
-        # Step 3: auto-onboard — any tab not yet mapped whose name matches an
-        # AppStream office (directly or via the shared 'ICD Aliases' list) is
-        # added to the confirmed set and remembered in office-mapping.json.
-        onboard = fill.auto_onboard_tabs(sh, mapping, dry_run=args.dry_run)
-        for entry in onboard["onboarded"]:
-            log.info("[onboarded] %s → AppStream office %s (%s)",
-                     entry["sheet_tab"], entry["office_id"], entry["as_owner"])
-        for amb in onboard["ambiguous"]:
-            tab = amb["tab"]
-            _ids = ", ".join(str(c.get("office_id")) for c in amb["candidates"])
-            log.warning("[onboard] %s — name matches %d AppStream offices "
-                        "(%s); needs a pick in the Hub — marking red",
-                        tab, len(amb["candidates"]), _ids)
+        # Steps 2-4 (office-list refresh, onboard, prune, categorize) are
+        # skipped on a --retry-missing pass: a different login sees a narrower
+        # office list and would mis-categorize tabs against it.
+        if not args.retry_missing:
+            # Step 2: refresh the AppStream office list BEFORE matching tabs, so an
+            # ICD added to AppStream today can still be onboarded this same run.
             try:
-                if not args.dry_run:
-                    fill.mark_needs_review(sh.worksheet(tab))
+                from automations.recruiting_report.list_all_offices import (
+                    refresh_offices_from_page,
+                )
+                log.info(refresh_offices_from_page(target_page))
             except Exception as e:
-                log.warning("  couldn't color %s: %s", tab, e)
+                log.warning("office-list refresh skipped: %s", e)
 
-        # Step 3.5: prune — any confirmed tab the runner has since deleted
-        # from the Sheet is dropped from the mapping, so it stops erroring.
-        for tab in fill.prune_deleted_tabs(sh, mapping, dry_run=args.dry_run):
-            log.info("[pruned] %s — tab no longer in the Sheet, removed from mapping", tab)
-
-        # Step 4: tabs still unmatched -> blue. Likely the AppStream login
-        # lacks access, or an alias row is missing from the 'ICD Aliases' Sheet.
-        if not args.only:
-            for tab in onboard["unmatched"]:
+            # Step 3: auto-onboard — any tab not yet mapped whose name matches an
+            # AppStream office (directly or via the shared 'ICD Aliases' list) is
+            # added to the confirmed set and remembered in office-mapping.json.
+            onboard = fill.auto_onboard_tabs(sh, mapping, dry_run=args.dry_run)
+            for entry in onboard["onboarded"]:
+                log.info("[onboarded] %s → AppStream office %s (%s)",
+                         entry["sheet_tab"], entry["office_id"], entry["as_owner"])
+            for amb in onboard["ambiguous"]:
+                tab = amb["tab"]
+                _ids = ", ".join(str(c.get("office_id")) for c in amb["candidates"])
+                log.warning("[onboard] %s — name matches %d AppStream offices "
+                            "(%s); needs a pick in the Hub — marking red",
+                            tab, len(amb["candidates"]), _ids)
                 try:
                     if not args.dry_run:
-                        fill.mark_uncategorized(sh.worksheet(tab))
-                    log.info("[uncategorized] %s — no AppStream match "
-                             "(check AppStream access / alias list)", tab)
+                        fill.mark_needs_review(sh.worksheet(tab))
                 except Exception as e:
-                    log.warning("[uncategorized] %s — failed: %s", tab, e)
+                    log.warning("  couldn't color %s: %s", tab, e)
+
+            # Step 3.5: prune — any confirmed tab the runner has since deleted
+            # from the Sheet is dropped from the mapping, so it stops erroring.
+            for tab in fill.prune_deleted_tabs(sh, mapping, dry_run=args.dry_run):
+                log.info("[pruned] %s — tab no longer in the Sheet, removed from mapping", tab)
+
+            # Step 4: tabs still unmatched -> blue. Likely the AppStream login
+            # lacks access, or an alias row is missing from the 'ICD Aliases' Sheet.
+            if not args.only:
+                for tab in onboard["unmatched"]:
+                    try:
+                        if not args.dry_run:
+                            fill.mark_uncategorized(sh.worksheet(tab))
+                        log.info("[uncategorized] %s — no AppStream match "
+                                 "(check AppStream access / alias list)", tab)
+                    except Exception as e:
+                        log.warning("[uncategorized] %s — failed: %s", tab, e)
 
         # Step 5: build the fetch scope (includes any freshly-onboarded ICDs).
         confirmed = mapping["confirmed"]
         if args.only:
             confirmed = [c for c in confirmed if c["sheet_tab"] == args.only]
+        if args.retry_missing:
+            confirmed = [c for c in confirmed if c["sheet_tab"] in retry_targets]
         if not confirmed:
             log.info("nothing to fetch from AS (no confirmed offices in scope)")
             return 0
@@ -304,14 +327,19 @@ def main() -> int:
     # OPT phase — pull the ATT ICD Summary from Tableau and fill each tab's
     # OPT + Office-Metrics section. Runs after the AppStream phase (its
     # Playwright context is already closed). Wrapped so a Tableau hiccup
-    # can't fail the recruiting fill that already succeeded.
-    try:
-        from automations.recruiting_report import opt_phase
-        opt_result = opt_phase.run_opt_phase(dry_run=args.dry_run, logfn=log.info)
-        log.info("OPT phase: %d tabs filled, %d skipped",
-                 len(opt_result["filled"]), len(opt_result["skipped"]))
-    except Exception as e:
-        log.warning("OPT phase skipped (is Tableau open + logged in?): %s", e)
+    # can't fail the recruiting fill that already succeeded. Skipped on a
+    # --retry-missing pass — the OPT data isn't login-dependent and a full
+    # run already covered every tab.
+    if args.retry_missing:
+        log.info("OPT phase skipped (--retry-missing is an AppStream-only pass)")
+    else:
+        try:
+            from automations.recruiting_report import opt_phase
+            opt_result = opt_phase.run_opt_phase(dry_run=args.dry_run, logfn=log.info)
+            log.info("OPT phase: %d tabs filled, %d skipped",
+                     len(opt_result["filled"]), len(opt_result["skipped"]))
+        except Exception as e:
+            log.warning("OPT phase skipped (is Tableau open + logged in?): %s", e)
 
     log.info("done")
     return 0

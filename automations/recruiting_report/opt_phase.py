@@ -125,6 +125,18 @@ def _captains_path(sheet: str) -> Path:
     return WORKSPACE / "output" / f"opt_captains_{tag}.csv"
 
 
+# Program Summary (Direct Deposit) — PROGRAM SUMMARY view, CAPTAINVIEW custom
+# view. Its per-ICD table won't crosstab-export, so it's scraped via the
+# Download -> Data View Data window. Direct Deposit per ICD = the sum of that
+# ICD's "Total $ to ICD" rows.
+PROGRAM_SUMMARY_VIEW_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "DirectDepositICDVIEWVersion2_0/PROGRAMSUMMARY/"
+    "639b7ff1-d2ed-49ae-a85d-b96a0787a1e9/CAPTAINVIEW"
+)
+PROGRAM_SUMMARY_PATH = WORKSPACE / "output" / "opt_program_summary.csv"
+
+
 # Tableau product type -> short label, in the order they appear in the cell.
 PRODUCT_LABELS = [
     ("NEW INTERNET", "NI"),
@@ -235,6 +247,22 @@ def _to_num(s) -> Optional[float]:
         return None
 
 
+def _parse_money(s) -> Optional[float]:
+    """Parse a currency cell like '$2,440.00' or '($866.67)' (parens = neg)."""
+    t = str(s or "").strip()
+    if not t:
+        return None
+    neg = t.startswith("(") and t.endswith(")")
+    t = t.strip("()").replace("$", "").replace(",", "").strip()
+    if not t:
+        return None
+    try:
+        v = float(t)
+        return -v if neg else v
+    except ValueError:
+        return None
+
+
 # ---------------------------------------------------------------- download
 
 def _find_tableau_page(browser):
@@ -305,6 +333,191 @@ def download_crosstab(view_url: str, crosstab_sheet: str, out_path: Path,
     return out_path
 
 
+# ----------------------------------------------------- View Data scraping
+# Some views (Fiber Lead, Program Summary) have per-ICD tables Tableau won't
+# export as a crosstab (the Download button stays disabled) and that render
+# on a canvas. Their "Download -> Data" View Data window DOES render the rows
+# as DOM text — so we drive that and scrape it.
+
+_OWNERVILLE = "https://v2.ownerville.com/index.cfm"
+
+
+def _reauth_tableau(ctx):
+    """Refresh the Tableau session via ownerville's 'Login to Tableau' SSO
+    link, in a dedicated tab so the user's own tabs are left alone. Returns
+    the working page (now on a Tableau view, authenticated)."""
+    work = ctx.new_page()
+    work.goto(_OWNERVILLE, wait_until="domcontentloaded")
+    work.wait_for_timeout(6000)
+    m = re.search(r"rqst=([A-Za-z0-9_]+)", work.url or "")
+    if not m:
+        href = work.evaluate(
+            "() => { const a=[...document.querySelectorAll('a')]"
+            ".find(x=>/p=81/.test(x.getAttribute('href')||'')); "
+            "return a?a.getAttribute('href'):''; }")
+        m = re.search(r"rqst=([A-Za-z0-9_]+)", href or "")
+    if not m:
+        work.close()
+        raise RuntimeError(
+            "Couldn't re-auth Tableau — ownerville isn't logged in in Report "
+            "Chrome. Open v2.ownerville.com, log in, then run again."
+        )
+    work.goto(f"{_OWNERVILLE}?p=81&rqst={m.group(1)}&ssook=1",
+              wait_until="domcontentloaded")
+    work.wait_for_timeout(15_000)
+    return work
+
+
+def _wait_viz_loaded(page, timeout_s: int = 90) -> None:
+    """Wait for the Tableau viz to finish initializing (loading glass gone)."""
+    for _ in range(timeout_s):
+        glassed = False
+        for f in page.frames:
+            try:
+                loc = f.locator('#loadingGlassPane')
+                if loc.count() and loc.first.is_visible():
+                    glassed = True
+                    break
+            except Exception:
+                pass
+        if not glassed:
+            break
+        page.wait_for_timeout(1000)
+    page.wait_for_timeout(5000)
+
+
+def _parse_view_data_text(txt: str) -> Tuple[List[str], List[List[str]]]:
+    """Parse a View Data window innerText snapshot into (field_names, records).
+    Header layout: '<N> rows <M> fields', then 'Download', then M pairs of
+    (datasource, field-name), then the data as groups of M cells."""
+    lines = [l.strip() for l in (txt or "").splitlines() if l.strip()]
+    m = re.search(r"(\d+)\s+rows?\s+(\d+)\s+fields?", " ".join(lines[:14]))
+    if not m:
+        return [], []
+    nfields = int(m.group(2))
+    try:
+        di = lines.index("Download")
+    except ValueError:
+        return [], []
+    fields = [lines[di + 2 + 2 * k] for k in range(nfields)
+              if di + 2 + 2 * k < len(lines)]
+    data = lines[di + 1 + 2 * nfields:]
+    records = [data[j:j + nfields]
+               for j in range(0, len(data) - nfields + 1, nfields)]
+    return fields, records
+
+
+def _scrape_view_data_grid(win, verbose: bool = True
+                           ) -> Tuple[List[str], List[List[str]]]:
+    """Scroll-scrape the View Data window's virtualized grid. Returns
+    (field_names, records)."""
+    win.wait_for_timeout(4500)
+    fields: List[str] = []
+    seen: Dict[tuple, List[str]] = {}
+    expect = None
+    last = -1
+    stale = 0
+    for _ in range(80):
+        txt = win.evaluate("() => document.body ? document.body.innerText : ''")
+        if expect is None:
+            mm = re.search(r"(\d+)\s+rows?\s+\d+\s+fields?", txt or "")
+            expect = int(mm.group(1)) if mm else None
+        f, recs = _parse_view_data_text(txt)
+        if f and not fields:
+            fields = f
+        for r in recs:
+            seen[tuple(r)] = r
+        if expect and len(seen) >= expect:
+            break
+        stale = stale + 1 if len(seen) == last else 0
+        if stale >= 4:
+            break
+        last = len(seen)
+        win.evaluate("""() => {
+          let best=null, bh=0;
+          document.querySelectorAll('*').forEach(e => {
+            const d = e.scrollHeight - e.clientHeight;
+            if (d > bh && e.clientHeight > 120) { bh=d; best=e; }
+          });
+          if (best) best.scrollTop += Math.round(best.clientHeight * 0.75);
+        }""")
+        win.wait_for_timeout(900)
+    if verbose:
+        print(f"  scraped {len(seen)}/{expect or '?'} View Data rows", flush=True)
+    return fields, list(seen.values())
+
+
+def scrape_view_data(view_url: str, verbose: bool = True
+                     ) -> Tuple[List[str], List[List[str]]]:
+    """Drive Tableau's Download -> Data on `view_url` and scrape the View Data
+    window. Returns (field_names, records). Used for views whose per-ICD table
+    won't crosstab-export."""
+    with sync_playwright() as p:
+        browser = p.chromium.connect_over_cdp(fetch_office.CDP_URL)
+        ctx = browser.contexts[0]
+        for pg in list(ctx.pages):
+            if "hybrid-window" in (pg.url or "") or "/assets/vizql/" in (pg.url or ""):
+                try:
+                    pg.close()
+                except Exception:
+                    pass
+        page = _reauth_tableau(ctx)
+        try:
+            page.goto(view_url, wait_until="domcontentloaded")
+            viz = page.frame_locator('iframe[title="Data Visualization"]')
+            dl = viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-download"]')
+            dl.wait_for(state="visible", timeout=40_000)
+            _wait_viz_loaded(page)
+            for _ in range(3):
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(300)
+            before = set(ctx.pages)
+            clicked = False
+            for _ in range(8):
+                try:
+                    dl.click(timeout=8000)
+                    clicked = True
+                    break
+                except Exception:
+                    page.wait_for_timeout(2000)
+            if not clicked:
+                raise RuntimeError("Download button stayed blocked — viz didn't load")
+            if verbose:
+                print("Download -> Data -> View Data window…", flush=True)
+            page.wait_for_timeout(1800)
+            viz.locator('[data-tb-test-id="download-flyout-download-data-MenuItem"]').click()
+            page.wait_for_timeout(7000)
+            win = next((pg for pg in ctx.pages if pg not in before), None)
+            if win is None:
+                raise RuntimeError("Download -> Data didn't open a View Data window")
+            try:
+                return _scrape_view_data_grid(win, verbose)
+            finally:
+                try:
+                    win.close()
+                except Exception:
+                    pass
+        finally:
+            try:
+                page.close()
+            except Exception:
+                pass
+
+
+def download_program_summary(out_path: Path = PROGRAM_SUMMARY_PATH,
+                             verbose: bool = True) -> Path:
+    """Scrape the Program Summary View Data and save it tab-delimited so the
+    parse step (and --skip-download) can reuse it."""
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fields, records = scrape_view_data(PROGRAM_SUMMARY_VIEW_URL, verbose=verbose)
+    lines = ["\t".join(fields)] + ["\t".join(r) for r in records]
+    out_path.write_text("\n".join(lines), encoding="utf-8")
+    if verbose:
+        print(f"saved Program Summary view-data: {out_path} "
+              f"({len(records)} rows)", flush=True)
+    return out_path
+
+
 # ------------------------------------------------------------------- parse
 
 def parse_icd_summary(path: Path) -> Tuple[Dict[str, dict], dict]:
@@ -340,12 +553,20 @@ def parse_icd_summary(path: Path) -> Tuple[Dict[str, dict], dict]:
 
 def parse_personal_production(path: Path) -> Dict[str, dict]:
     """Parse the per-rep PRODUCT SALES crosstab into each rep's own weekly
-    sales. Columns: Owner Name, Rep, Product Type, then 7 day columns.
+    sales. Columns: Owner Name, Rep, Product Type, the 7 weekday columns,
+    then a trailing 'Product Total' column.
 
     Returns {normalized rep name: {"owner": raw rep, "values": {PRODUCT TYPE:
     week total}}} — same shape as parse_icd_summary so _match_owner works."""
     raw = Path(path).read_text(encoding="utf-16")
     rows = [ln.split("\t") for ln in raw.splitlines() if ln.strip()]
+    if not rows:
+        return {}
+    headers = [str(h).strip().lower() for h in rows[0]]
+    # Sum the weekday columns ONLY — the crosstab ends with a 'Product Total'
+    # column that already equals the week's sum, so including it would double
+    # every count. Found by header so it survives a column-order change.
+    day_cols = [i for i in range(3, len(headers)) if "total" not in headers[i]]
     out: Dict[str, dict] = {}
     for r in rows[1:]:
         if len(r) < 4:
@@ -355,8 +576,8 @@ def parse_personal_production(path: Path) -> Dict[str, dict]:
         if not rep or rep.lower() == "total" or ptype.lower() in ("total", ""):
             continue
         week_total = 0
-        for cell in r[3:]:
-            n = _to_num(cell)
+        for i in day_cols:
+            n = _to_num(r[i]) if i < len(r) else None
             if n:
                 week_total += int(n)
         if week_total:
@@ -415,6 +636,34 @@ def parse_captains(paths: List[Path]) -> Dict[str, dict]:
         by_owner, _ = parse_icd_summary(p)
         merged.update(by_owner)
     return merged
+
+
+def parse_program_summary(path: Path) -> Dict[str, dict]:
+    """Sum the View Data window's 'Total $ to ICD' per ICD owner. A trailing
+    ' LEDGER' on an owner name is a ledger / record-change line for that same
+    ICD — it's folded into the ICD's total (and the suffix stripped so the
+    name matches the tab). Returns {normalized owner: {"owner", "total"}}."""
+    if not Path(path).exists():
+        return {}
+    rows = [ln.split("\t") for ln in
+            Path(path).read_text(encoding="utf-8").splitlines() if ln.strip()]
+    if not rows:
+        return {}
+    fields = [f.strip().lower() for f in rows[0]]
+    owner_i = next((i for i, f in enumerate(fields) if "icd owner name" in f), 1)
+    total_i = next((i for i, f in enumerate(fields) if "total $" in f),
+                   len(fields) - 1)
+    out: Dict[str, dict] = {}
+    for r in rows[1:]:
+        if len(r) <= max(owner_i, total_i):
+            continue
+        owner = re.sub(r"\s+LEDGER\s*$", "", r[owner_i].strip(), flags=re.I).strip()
+        amt = _parse_money(r[total_i])
+        if not owner or amt is None:
+            continue
+        e = out.setdefault(_norm(owner), {"owner": owner, "total": 0.0})
+        e["total"] += amt
+    return out
 
 
 def _match_owner(tab_name: str, by_owner: dict, aliases_map: dict) -> Optional[dict]:
@@ -513,7 +762,7 @@ def fill_opt_for_tab(
     int_by_owner: dict, int_national: dict,
     metrics_by_owner: dict, churn_by_owner: dict, personal_prod: dict,
     wireless_metrics_by_owner: dict, wireless_churn_by_owner: dict,
-    captains_by_owner: dict,
+    captains_by_owner: dict, program_summary: dict,
     aliases_map: dict, week_sunday: dt.date, dry_run: bool,
 ) -> List[str]:
     """Write the OPT + Office-Metrics values for one ICD tab from the ATT and
@@ -625,6 +874,11 @@ def fill_opt_for_tab(
         if appr is not None:
             _queue(om_rows, "30-60 Day Cancel Rate", f"{round(100 - appr, 1)}%")
 
+    # --- Program Summary (Direct Deposit) ---
+    ps_row = _match_owner(tab_name, program_summary, aliases_map)
+    if ps_row:
+        _queue(om_rows, "Direct Deposit", round(ps_row["total"], 2))
+
     # --- Personal Production (the ICD's own sales as a rep) ---
     # Always written — an ICD with no personal sales gets a literal 0.
     pp_row = _match_owner(tab_name, personal_prod, aliases_map)
@@ -717,7 +971,8 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
                          (PRODUCT_SALES_PATH, "Product Sales"),
                          (METRICS_PATH, "Metrics"), (CHURN_PATH, "Churn"),
                          (WIRELESS_METRICS_PATH, "Wireless Metrics"),
-                         (WIRELESS_CHURN_PATH, "Wireless Churn")]:
+                         (WIRELESS_CHURN_PATH, "Wireless Churn"),
+                         (PROGRAM_SUMMARY_PATH, "Program Summary")]:
             if not pth.exists():
                 raise RuntimeError(f"--skip-download but no {lbl} crosstab at {pth}")
         logfn("OPT: reusing previously-downloaded crosstabs")
@@ -735,8 +990,10 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
         for sheet in CAPTAINS_SHEETS:
             download_crosstab(CAPTAINS_VIEW_URL, sheet, _captains_path(sheet),
                               verbose=False)
+        download_program_summary(verbose=False)
         logfn("OPT: downloaded ATT + INT + Product Sales + Metrics + Churn "
-              "+ Wireless Metrics + Wireless Churn + Captain's Bonus crosstabs")
+              "+ Wireless Metrics + Wireless Churn + Captain's Bonus "
+              "+ Program Summary")
 
     att_by_owner, att_national = parse_icd_summary(ATT_PATH)
     int_by_owner, int_national = parse_icd_summary(INT_PATH)
@@ -746,11 +1003,13 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
     wireless_metrics_by_owner, _ = parse_icd_summary(WIRELESS_METRICS_PATH)
     wireless_churn_by_owner = parse_churn(WIRELESS_CHURN_PATH)
     captains_by_owner = parse_captains([_captains_path(s) for s in CAPTAINS_SHEETS])
+    program_summary = parse_program_summary(PROGRAM_SUMMARY_PATH)
     logfn(f"OPT: parsed {len(att_by_owner)} ATT, {len(int_by_owner)} INT, "
           f"{len(metrics_by_owner)} Metrics, {len(churn_by_owner)} Churn, "
           f"{len(wireless_metrics_by_owner)} Wireless Metrics, "
           f"{len(wireless_churn_by_owner)} Wireless Churn, "
           f"{len(captains_by_owner)} Captain's Bonus, "
+          f"{len(program_summary)} Program Summary, "
           f"{len(personal_prod)} reps for Personal Production"
           + ("" if att_national and int_national
              else " — WARNING: a national total row is missing"))
@@ -776,6 +1035,7 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
                                  churn_by_owner, personal_prod,
                                  wireless_metrics_by_owner,
                                  wireless_churn_by_owner, captains_by_owner,
+                                 program_summary,
                                  aliases_map, we_sunday, dry_run)
         for ln in lines:
             logfn("OPT: " + ln)
