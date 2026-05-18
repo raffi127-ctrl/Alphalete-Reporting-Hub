@@ -73,7 +73,8 @@ PRODUCT_SALES_PATH = WORKSPACE / "output" / "opt_personal_production.csv"
 # Metrics crosstab — the Metrics view (Office-Metrics-section rates).
 METRICS_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
-    "ATTTRACKER2_1-D2D/Metrics"
+    "ATTTRACKER2_1-D2D/Metrics/"
+    "14b823c9-0ce7-4757-ba1b-4eb7a54a656f/AUTOMATIONPULL-METRICS"
 )
 METRICS_SHEET = "Metrics Call Last week data (Internet)"
 METRICS_PATH = WORKSPACE / "output" / "opt_metrics.csv"
