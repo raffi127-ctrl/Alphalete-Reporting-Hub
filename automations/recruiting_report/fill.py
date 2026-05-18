@@ -321,6 +321,25 @@ def auto_onboard_tabs(
     return {"onboarded": onboarded, "ambiguous": ambiguous, "unmatched": unmatched}
 
 
+def prune_deleted_tabs(
+    sh: gspread.Spreadsheet, mapping: dict, dry_run: bool = False
+) -> List[str]:
+    """Drop confirmed-mapping entries whose Sheet tab no longer exists — so a
+    tab the runner has deleted stops erroring (and recurring as a data gap)
+    on every run. Mutates `mapping` in place and rewrites office-mapping.json.
+    Returns the removed tab names."""
+    actual = {ws.title for ws in _retry(sh.worksheets)}
+    removed = [c["sheet_tab"] for c in mapping["confirmed"]
+               if c["sheet_tab"] not in actual]
+    if removed:
+        mapping["confirmed"] = [c for c in mapping["confirmed"]
+                                if c["sheet_tab"] in actual]
+        mapping["confirmed_count"] = len(mapping["confirmed"])
+        if not dry_run:
+            MAPPING_PATH.write_text(json.dumps(mapping, indent=2))
+    return removed
+
+
 def unresolved_ambiguous_tabs(sh: gspread.Spreadsheet) -> list:
     """For the Hub's office picker: Sheet tabs not yet in the mapping whose
     name matches >1 AppStream office AND have no saved pick yet. Read-only.

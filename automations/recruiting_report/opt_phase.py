@@ -87,6 +87,44 @@ CHURN_VIEW_URL = (
 )
 CHURN_SHEET = "ICD Churn"
 CHURN_PATH = WORKSPACE / "output" / "opt_churn.csv"
+
+# Wireless Metrics crosstab — AP-WIRELESSMETRICS custom view of Metrics.
+WIRELESS_METRICS_VIEW_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER2_1-D2D/Metrics/"
+    "23910d52-35aa-4b2d-95f5-8d96649a7b0d/AP-WIRELESSMETRICS"
+)
+WIRELESS_METRICS_SHEET = "Metrics Call Last week data (Wireless)"
+WIRELESS_METRICS_PATH = WORKSPACE / "output" / "opt_wireless_metrics.csv"
+
+# Wireless Churn crosstab — AP-WIRELESSCHURN custom view of CHURN.
+WIRELESS_CHURN_VIEW_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER2_1-D2D/CHURN/"
+    "e4e438a7-c289-4128-a89a-8b5beec41baa/AP-WIRELESSCHURN"
+)
+WIRELESS_CHURN_SHEET = "ICD Churn (Wireless)"
+WIRELESS_CHURN_PATH = WORKSPACE / "output" / "opt_wireless_churn.csv"
+
+# Captain's Bonus crosstab — AUTOMATIONPULL-CAPTAINS custom view. The Crosstab
+# dialog splits data into one "CB Appr + Churn (<captain>)" sheet per
+# captainship team; all five are pulled and merged into one ICD lookup.
+CAPTAINS_VIEW_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER2_1-D2D/CaptainsBonus/"
+    "96f8a0ef-a1fc-48c8-9669-e39cdffa4d7e/AUTOMATIONPULL-CAPTAINS"
+)
+CAPTAINS_SHEETS = ["CB Appr + Churn (Aron)", "CB Appr + Churn (Pat)",
+                   "CB Appr + Churn (Raf)", "CB Appr + Churn (Starr)",
+                   "CB Appr + Churn (Wayne)"]
+
+
+def _captains_path(sheet: str) -> Path:
+    """Per-team crosstab CSV path, e.g. .../opt_captains_raf.csv."""
+    tag = sheet.split("(")[-1].rstrip(")").strip().lower()
+    return WORKSPACE / "output" / f"opt_captains_{tag}.csv"
+
+
 # Tableau product type -> short label, in the order they appear in the cell.
 PRODUCT_LABELS = [
     ("NEW INTERNET", "NI"),
@@ -132,6 +170,31 @@ CHURN_SCRAPED: Dict[str, str] = {
     "60 day Churn":   "60 Day Churn",
     "90 day Churn":   "90 Day Churn",
 }
+# Wireless Metrics section — scraped from the Wireless Metrics crosstab.
+WIRELESS_SCRAPED: Dict[str, str] = {
+    "BYOD Lines":                     "BYOD Lines (Metrics)",
+    "BYOD %":                         "BYOD Line % (Metrics)",
+    "New Lines":                      "New Lines (Metrics)",
+    "New Lines %":                    "New Line % (Metrics)",
+    "Approval % (Rolling 4 weeks)":   "Approval % (Rolling 4 Weeks)",
+    "30-60 Activation Rate":          "30-60 Activation Rate",
+    "0-30 day cancel Rate":           "0-30 day wireless cancel rate",
+    "0-30 day Wireless Cancels":      "0-30 day wireless cancels",
+    "Extra / Preimum Plan % Metrics": "Extra/Premium Plan % (Metrics)",
+    "Next up %":                      "Next Up % (Metrics)",
+}
+# Wireless Metrics section — churn rows, scraped from the Wireless Churn crosstab.
+WIRELESS_CHURN_SCRAPED: Dict[str, str] = {
+    "0-30 Day Churn": "0-30 Day Churn",
+    "30 Day Churn":   "30 Day Churn",
+    "60 Day Churn":   "60 Day Churn",
+    "90 Day Churn":   "90 Day Churn",
+}
+# Office Metrics section — scraped from the Captain's Bonus crosstab. The
+# 30-60 Day Cancel Rate is computed (100% − Activation/Approval %).
+CAPTAINS_SCRAPED: Dict[str, str] = {
+    "Activation /Approval %": "Rolling 4 Weeks",
+}
 
 def _norm(s) -> str:
     """Normalize a label / header / name for matching: lowercase, trim, drop
@@ -151,6 +214,13 @@ ALT_LABELS: Dict[str, List[str]] = {
     "New Internets": ["New Internet"],
     "DTV": ["DTVs"],
     "0-30 Day Churn": ["0-30 Churn"],
+}
+
+# Rows legitimately absent on specific tabs — never flagged as data gaps.
+# Keyed by normalized tab name -> set of normalized labels. Raf Hidalgo is no
+# longer in the field, so his tab has no Personal Production row by design.
+_EXPECTED_MISSING: Dict[str, set] = {
+    "raf hidalgo": {"personal production"},
 }
 
 
@@ -220,8 +290,15 @@ def download_crosstab(view_url: str, crosstab_sheet: str, out_path: Path,
         page.wait_for_timeout(1200)
         viz.locator('[data-tb-test-id="crosstab-options-dialog-radio-csv-Label"]').click()
         page.wait_for_timeout(500)
-        with page.expect_download(timeout=90_000) as dl_info:
-            viz.locator('[data-tb-test-id="export-crosstab-export-Button"]').click()
+        # A large crosstab keeps the Download button disabled while Tableau
+        # prepares the export — wait for it to enable before clicking.
+        export_btn = viz.locator('[data-tb-test-id="export-crosstab-export-Button"]')
+        for _ in range(90):
+            if export_btn.is_enabled():
+                break
+            page.wait_for_timeout(1000)
+        with page.expect_download(timeout=120_000) as dl_info:
+            export_btn.click()
         dl_info.value.save_as(str(out_path))
     if verbose:
         print(f"saved crosstab: {out_path} ({out_path.stat().st_size:,} bytes)", flush=True)
@@ -328,6 +405,18 @@ def parse_churn(path: Path) -> Dict[str, dict]:
     return out
 
 
+def parse_captains(paths: List[Path]) -> Dict[str, dict]:
+    """Merge the per-team 'CB Appr + Churn' crosstabs into one ICD lookup —
+    every team's ICDs in a single {norm name: {...}} dict."""
+    merged: Dict[str, dict] = {}
+    for p in paths:
+        if not Path(p).exists():
+            continue
+        by_owner, _ = parse_icd_summary(p)
+        merged.update(by_owner)
+    return merged
+
+
 def _match_owner(tab_name: str, by_owner: dict, aliases_map: dict) -> Optional[dict]:
     """Find the crosstab row for a Sheet tab. Tries, in order: the tab name,
     its parenthetical (a tab named 'X (Y)' also tries Y and X), every alias
@@ -391,11 +480,40 @@ def _opt_block_rows(col_b: List[str]) -> Dict[str, int]:
     return out
 
 
+# Column-B anchors that END the Wireless Metrics block.
+_WIRELESS_BLOCK_END = {"we sunday", "extra data", "opt", "office metrics"}
+
+
+def _wireless_block_rows(col_b: List[str]) -> Dict[str, int]:
+    """{normalized label: 1-indexed row} for the Wireless Metrics section.
+    Found from the 'Wireless Metrics' anchor in column B to the next major
+    section; never a hardcoded row number. Separate from the OPT block — its
+    churn labels (0-30 Day Churn ...) collide with the Office-Metrics ones."""
+    start = None
+    for j, v in enumerate(col_b):
+        if _norm(v) == "wireless metrics":
+            start = j
+            break
+    if start is None:
+        return {}
+    out: Dict[str, int] = {}
+    for j in range(start + 1, len(col_b)):
+        nv = _norm(col_b[j])
+        if not nv:
+            continue
+        if nv in _WIRELESS_BLOCK_END or "office performance tracker" in nv:
+            break
+        out.setdefault(nv, j + 1)
+    return out
+
+
 def fill_opt_for_tab(
     sh: gspread.Spreadsheet, tab_name: str,
     att_by_owner: dict, att_national: dict,
     int_by_owner: dict, int_national: dict,
     metrics_by_owner: dict, churn_by_owner: dict, personal_prod: dict,
+    wireless_metrics_by_owner: dict, wireless_churn_by_owner: dict,
+    captains_by_owner: dict,
     aliases_map: dict, week_sunday: dt.date, dry_run: bool,
 ) -> List[str]:
     """Write the OPT + Office-Metrics values for one ICD tab from the ATT and
@@ -494,11 +612,48 @@ def fill_opt_for_tab(
             if str(cell).strip() != "":
                 _queue(om_rows, sheet_label, cell)
 
+    # --- Captain's Bonus (Office Metrics section) ---
+    cap_row = _match_owner(tab_name, captains_by_owner, aliases_map)
+    if cap_row:
+        cvv = cap_row["values"]
+        for sheet_label, csv_col in CAPTAINS_SCRAPED.items():
+            cell = cvv.get(_norm(csv_col), "")
+            if str(cell).strip() != "":
+                _queue(om_rows, sheet_label, cell)
+        # 30-60 Day Cancel Rate = 100% − Activation/Approval %.
+        appr = _to_num(cvv.get(_norm("Rolling 4 Weeks"), ""))
+        if appr is not None:
+            _queue(om_rows, "30-60 Day Cancel Rate", f"{round(100 - appr, 1)}%")
+
     # --- Personal Production (the ICD's own sales as a rep) ---
     # Always written — an ICD with no personal sales gets a literal 0.
     pp_row = _match_owner(tab_name, personal_prod, aliases_map)
     text = _format_personal_production(pp_row["values"]) if pp_row else ""
     _queue(opt_rows, "Personal Production", text or "0")
+
+    # --- Wireless Metrics section (its own anchor; not all tabs have it) ---
+    wireless_rows = _wireless_block_rows(col_b)
+    wm_row = wc_row = None
+    if wireless_rows:
+        wm_row = _match_owner(tab_name, wireless_metrics_by_owner, aliases_map)
+        if wm_row:
+            wv = wm_row["values"]
+            for sheet_label, csv_col in WIRELESS_SCRAPED.items():
+                cell = wv.get(_norm(csv_col), "")
+                if str(cell).strip() != "":
+                    _queue(wireless_rows, sheet_label, cell)
+        wc_row = _match_owner(tab_name, wireless_churn_by_owner, aliases_map)
+        if wc_row:
+            wcv = wc_row["values"]
+            for sheet_label, csv_col in WIRELESS_CHURN_SCRAPED.items():
+                cell = wcv.get(_norm(csv_col), "")
+                if str(cell).strip() != "":
+                    _queue(wireless_rows, sheet_label, cell)
+
+    # Drop rows that are legitimately absent on this tab — not real gaps.
+    expected_gone = _EXPECTED_MISSING.get(_norm(tab_name), set())
+    if expected_gone:
+        missing = [m for m in missing if _norm(m) not in expected_gone]
 
     if not updates:
         return [f"[SKIP] {tab_name}: nothing to write"]
@@ -518,7 +673,13 @@ def fill_opt_for_tab(
     # Data-gap line — which Tableau views this ICD wasn't found in, and which
     # rows aren't on the tab. Collected into the end-of-run rundown.
     gap_views = [v for row, v in [(att_row, "ATT"), (int_row, "INT"),
-                 (metrics_row, "Metrics"), (churn_row, "Churn")] if not row]
+                 (metrics_row, "Metrics"), (churn_row, "Churn"),
+                 (cap_row, "Captain's Bonus")] if not row]
+    if wireless_rows:
+        if not wm_row:
+            gap_views.append("Wireless Metrics")
+        if not wc_row:
+            gap_views.append("Wireless Churn")
     if gap_views or missing:
         bits = []
         if gap_views:
@@ -554,7 +715,9 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
     if skip_download:
         for pth, lbl in [(ATT_PATH, "ATT"), (INT_PATH, "INT"),
                          (PRODUCT_SALES_PATH, "Product Sales"),
-                         (METRICS_PATH, "Metrics"), (CHURN_PATH, "Churn")]:
+                         (METRICS_PATH, "Metrics"), (CHURN_PATH, "Churn"),
+                         (WIRELESS_METRICS_PATH, "Wireless Metrics"),
+                         (WIRELESS_CHURN_PATH, "Wireless Churn")]:
             if not pth.exists():
                 raise RuntimeError(f"--skip-download but no {lbl} crosstab at {pth}")
         logfn("OPT: reusing previously-downloaded crosstabs")
@@ -565,15 +728,29 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
                           PRODUCT_SALES_SHEET, PRODUCT_SALES_PATH, verbose=False)
         download_crosstab(METRICS_VIEW_URL, METRICS_SHEET, METRICS_PATH, verbose=False)
         download_crosstab(CHURN_VIEW_URL, CHURN_SHEET, CHURN_PATH, verbose=False)
-        logfn("OPT: downloaded ATT + INT + Product Sales + Metrics + Churn crosstabs")
+        download_crosstab(WIRELESS_METRICS_VIEW_URL, WIRELESS_METRICS_SHEET,
+                          WIRELESS_METRICS_PATH, verbose=False)
+        download_crosstab(WIRELESS_CHURN_VIEW_URL, WIRELESS_CHURN_SHEET,
+                          WIRELESS_CHURN_PATH, verbose=False)
+        for sheet in CAPTAINS_SHEETS:
+            download_crosstab(CAPTAINS_VIEW_URL, sheet, _captains_path(sheet),
+                              verbose=False)
+        logfn("OPT: downloaded ATT + INT + Product Sales + Metrics + Churn "
+              "+ Wireless Metrics + Wireless Churn + Captain's Bonus crosstabs")
 
     att_by_owner, att_national = parse_icd_summary(ATT_PATH)
     int_by_owner, int_national = parse_icd_summary(INT_PATH)
     personal_prod = parse_personal_production(PRODUCT_SALES_PATH)
     metrics_by_owner, _ = parse_icd_summary(METRICS_PATH)
     churn_by_owner = parse_churn(CHURN_PATH)
+    wireless_metrics_by_owner, _ = parse_icd_summary(WIRELESS_METRICS_PATH)
+    wireless_churn_by_owner = parse_churn(WIRELESS_CHURN_PATH)
+    captains_by_owner = parse_captains([_captains_path(s) for s in CAPTAINS_SHEETS])
     logfn(f"OPT: parsed {len(att_by_owner)} ATT, {len(int_by_owner)} INT, "
           f"{len(metrics_by_owner)} Metrics, {len(churn_by_owner)} Churn, "
+          f"{len(wireless_metrics_by_owner)} Wireless Metrics, "
+          f"{len(wireless_churn_by_owner)} Wireless Churn, "
+          f"{len(captains_by_owner)} Captain's Bonus, "
           f"{len(personal_prod)} reps for Personal Production"
           + ("" if att_national and int_national
              else " — WARNING: a national total row is missing"))
@@ -585,8 +762,11 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
         aliases_map = {}
 
     sh = fill.open_sheet()
+    mapping = fill.load_mapping()
+    for tab in fill.prune_deleted_tabs(sh, mapping, dry_run=dry_run):
+        logfn(f"OPT: pruned deleted tab '{tab}' — no longer in the Sheet")
     targets = [only] if only else [c["sheet_tab"]
-                                   for c in fill.load_mapping()["confirmed"]]
+                                   for c in mapping["confirmed"]]
     filled: List[str] = []
     skipped: List[str] = []
     all_gaps: List[str] = []
@@ -594,6 +774,8 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
         lines = fill_opt_for_tab(sh, tab_name, att_by_owner, att_national,
                                  int_by_owner, int_national, metrics_by_owner,
                                  churn_by_owner, personal_prod,
+                                 wireless_metrics_by_owner,
+                                 wireless_churn_by_owner, captains_by_owner,
                                  aliases_map, we_sunday, dry_run)
         for ln in lines:
             logfn("OPT: " + ln)

@@ -155,6 +155,11 @@ def main() -> int:
             except Exception as e:
                 log.warning("  couldn't color %s: %s", tab, e)
 
+        # Step 3.5: prune — any confirmed tab the runner has since deleted
+        # from the Sheet is dropped from the mapping, so it stops erroring.
+        for tab in fill.prune_deleted_tabs(sh, mapping, dry_run=args.dry_run):
+            log.info("[pruned] %s — tab no longer in the Sheet, removed from mapping", tab)
+
         # Step 4: tabs still unmatched -> blue. Likely the AppStream login
         # lacks access, or an alias row is missing from the 'ICD Aliases' Sheet.
         if not args.only:

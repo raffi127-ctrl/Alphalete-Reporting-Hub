@@ -111,22 +111,26 @@ Scheduled 6+ Days New Internet Count (4 wk)" column — but the crosstab
 download exposes it directly as the `% of sales scheduled 6+ days out`
 column. Confirm on the first pull.)
 
-## Source view 5 — Captain's Bonus
+## Source view 5 — Captain's Bonus  ✅ BUILT
 
-- URL: https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/CaptainsBonus
-- Sheet "Captain's Bonus". Week-ending filter (note: it's **1 day off**).
-- Find the ICD owner (in the captainship section — e.g. "Raf's team");
-  the value is on the right-hand "Churn % & Appr %" chart.
+- Custom view: https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/CaptainsBonus/96f8a0ef-a1fc-48c8-9669-e39cdffa4d7e/AUTOMATIONPULL-CAPTAINS
+- The Crosstab dialog has **no single sheet** — data is split into one
+  **"CB Appr + Churn (<captain>)"** sheet per captainship team. All five
+  (Aron, Pat, Raf, Starr, Wayne) are downloaded and merged into one ICD lookup.
+- Each sheet's columns: `Captain's Bonus Teams v2`, `ICD Owner Name`,
+  `60 Day New Internet Churn Rate`, `Rolling 4 Weeks`.
 
 | Sheet row label (Office Metrics section) | Source |
 |---|---|
-| Activation /Approval % | `Rolling 4 weeks` |
+| Activation /Approval % | `Rolling 4 Weeks` column |
 | 30-60 Day Cancel Rate | computed: 100% − Activation/Approval % |
 
-- Custom view (Megan saved): https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/CaptainsBonus/96f8a0ef-a1fc-48c8-9669-e39cdffa4d7e/AUTOMATIONPULL-CAPTAINS
-- ⚠️ The custom view freezes the **date filter** on a specific week — it
-  will NOT roll forward. The downloader must override the date via a URL
-  param each run (same as the Product Sales view does for week-ending).
+- **Date handling — confirmed 2026-05-18:** the view has a "Weekending"
+  *parameter* (a dropdown, a new date added weekly). It is NOT URL-overridable
+  (`?Weekending=` is ignored). BUT the "CB Appr + Churn" sheets are a **rolling
+  4-week metric** — verified identical at week 5/2 vs 5/16 — so they are
+  always current on their own. **No date override is needed.** (The
+  "CB Activations" sheets DO follow the parameter, but we don't pull those.)
 
 ## Source view 6 — CHURN
 
@@ -151,19 +155,35 @@ Metrics / CHURN / Captain's Bonus views are base views — their filters
 aren't locked. Cleanest fix: save an AUTOMATION PULL custom view of each
 with the correct filter, then the report pulls them with zero filter code.
 
-## Source view 7 — Fiber Lead Performance
+## Source view 7 — Fiber Lead Performance  ⏸ BLOCKED — pick up next session
 
+- Base view: https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/FiberLeadPerformance
 - Custom view: https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/FiberLeadPerformance/a79fd021-3606-4aa2-bf55-bc3856cdac99/AUTOMATIONPULL-NICHURNVIEW
-- ⚠️ Crosstab dialog offers: "Office New Fiber Lead Penetration By Zip",
-  "Program Overview", "Title" — none is an obvious per-ICD sheet. Needs
-  investigation (likely "Program Overview").
+- Per-ICD numbers live on the **"Office New Fiber Lead Penetration By Zip"**
+  worksheet: set the **"Owner Name"** filter to an ICD, and the **Grand Total**
+  row gives that ICD's Lead Count / Expected Fiber Sales (copy) / Total Sales /
+  Assigned Fiber Lead Penetration.
 
-| Sheet row label (Office Metrics section) | Source |
+| Sheet row label (Office Metrics section) | Source (Grand Total row) |
 |---|---|
 | Penetration Rate | `Assigned Fiber Lead Penetration` |
 | Total Leads | `Lead Count` |
 | Expected Fiber Sales (120 days, 17wks) | `Expected Fiber Sales (copy)` |
 | Expected Fiber Sales Weekly | computed: Expected Fiber Sales ÷ 17 |
+
+**⚠️ BLOCKER (confirmed 2026-05-18):** the "Office New Fiber Lead Penetration
+By Zip" worksheet **will not export as a crosstab** — Tableau's Download button
+stays disabled (too many marks). Tried unfiltered, scoped via the custom view,
+and scoped via the base view (`?Owner Name=<names>`). The only exportable
+sheet — "Program Overview" — lacks Expected Fiber Sales.
+
+**Plan for next session (Megan's idea):** this is likely a "can't download —
+must *read* the number off the rendered site" case. Scrape the on-screen Grand
+Total while the Owner Name filter is set to each ICD. The Owner Name filter
+must be driven **dynamically to the report's current tabs each run** — NOT a
+saved custom view (the tab set changes constantly; a saved view goes stale and
+breaks silently). Also check the "Penetration View" dropdown for an
+office-level (non-zip) option that might export cleanly.
 
 ## Source view 8 — Program Summary (Direct Deposit)
 
