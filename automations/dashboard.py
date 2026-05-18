@@ -178,6 +178,19 @@ def _read_active_runs() -> list[dict]:
             if orphan.get("hub_run_id"):
                 _hub_log_run_end(orphan["hub_run_id"],
                                  status if status != "unknown" else "success")
+            # A failed run auto-files a glitch report so Megan gets the full
+            # error log without anyone having to click anything.
+            if status == "failed":
+                _rep = next((r for r in AUTOMATED_REPORTS
+                             if r.get("id") == report_id), {})
+                _file_run_glitch(
+                    report_id,
+                    orphan.get("report_name", "?"),
+                    _tail_log(log_path, lines=200) if log_path else "",
+                    orphan.get("user", ""),
+                    command=orphan.get("command", ""),
+                    sheet_url=_rep.get("sheet_url", ""),
+                )
         except Exception:
             pass
 
@@ -209,7 +222,8 @@ def _read_active_runs() -> list[dict]:
     return alive
 
 
-def _record_active_run(report_id: str, report_name: str, user: str, log_path: Path, pid: int) -> None:
+def _record_active_run(report_id: str, report_name: str, user: str, log_path: Path,
+                       pid: int, command: str = "") -> None:
     active = []
     if ACTIVE_RUNS_FILE.exists():
         try:
@@ -228,6 +242,7 @@ def _record_active_run(report_id: str, report_name: str, user: str, log_path: Pa
         "user": user,
         "log_path": str(log_path),
         "pid": pid,
+        "command": command,  # exact command — surfaced in a glitch report
         "started_at": dt.datetime.now().isoformat(timespec="seconds"),
         "hub_run_id": hub_run_id,
     })
@@ -951,7 +966,7 @@ def _spawn_background_run(cmd: list[str], report_id: str, report_name: str) -> N
         log_handle.close()
     _record_active_run(report_id, report_name,
                        st.session_state.get("user", "unknown"),
-                       log_file, proc.pid)
+                       log_file, proc.pid, command=" ".join(cmd))
 
 
 def _check_chrome_running() -> bool:
@@ -2211,20 +2226,11 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                                          expanded=not bool(_diag)):
                             st.code(_log_tail_text, language="log")
 
-                    # One click sends this failure to Megan as a bug report.
-                    _glitch_key = f"glitch_sent_{report['id']}"
-                    if st.session_state.get(_glitch_key):
-                        st.success("🚩 Sent to Megan — she'll follow up by email.")
-                    elif st.button("🚩 Report this glitch to Megan",
-                                   key=f"glitch_{report['id']}",
-                                   use_container_width=True):
-                        try:
-                            _file_run_glitch(report, _log_tail_text,
-                                             st.session_state.get("user", ""))
-                            st.session_state[_glitch_key] = True
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Couldn't send the glitch report: {e}")
+                    # Every failed run auto-files a glitch report to Megan
+                    # (see the orphan path in _read_active_runs) — with the
+                    # full error log, so no one has to click anything.
+                    st.caption("🚩 This failure was automatically reported to "
+                               "Megan with the full error log.")
 
                 again_label = post_run_cfg.get("again_label", "🔁 Run Again")
                 _resume_done = 0
@@ -2869,28 +2875,108 @@ def _add_bug(title: str, bug_type: str, sheet_link: str, loom_link: str,
     return new_id
 
 
-def _file_run_glitch(report: dict, log_tail: str, user: str) -> str:
-    """File a failed report run as a bug report — lands on the Bug Reports
-    tab, which emails Megan. Auto-fills the report name, a plain-English
-    cause (if recognizable), and the run log. Returns the new bug ID."""
-    diag = _diagnose_run_failure(log_tail)
-    diag_line = f"Likely cause: {diag[0]}\n{diag[1]}\n\n" if diag else ""
+def _hub_git_sha() -> str:
+    """Short git commit the Hub is running on — lets a glitch report pin the
+    exact code version. '?' if git isn't available."""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(WORKSPACE), capture_output=True, text=True, timeout=3,
+        )
+        return out.stdout.strip() or "?"
+    except Exception:
+        return "?"
+
+
+def _file_run_glitch(report_id: str, report_name: str, log_text: str,
+                     user: str, command: str = "", sheet_url: str = "") -> str:
+    """File a failed report run as a rich bug report on the Bug Reports tab.
+
+    Captures everything needed to actually debug it: the plain-English likely
+    cause, the exact command, the Hub code version, and the run log (with any
+    traceback). Returns the new bug ID."""
+    diag = _diagnose_run_failure(log_text)
+    diag_line = f"LIKELY CAUSE: {diag[0]}\n{diag[1]}\n\n" if diag else ""
+    cmd_line = f"COMMAND: {command}\n" if command else ""
     details = (
-        f"Automatic glitch report — a run of '{report['name']}' failed.\n\n"
+        f"Automatic glitch report — a run of '{report_name}' failed.\n\n"
+        f"WHEN:  {dt.datetime.now():%Y-%m-%d %H:%M}\n"
+        f"WHO:   {user or 'unknown'}\n"
+        f"HUB:   {_hub_git_sha()}\n"
+        f"{cmd_line}\n"
         f"{diag_line}"
-        f"--- Run log (last lines) ---\n"
-        f"{(log_tail or '').strip() or '(no log was captured)'}"
+        f"--- Run log ---\n"
+        f"{(log_text or '').strip() or '(no log was captured)'}"
     )
     return _add_bug(
-        title=f"Run glitch — {report['name']}",
+        title=f"Run glitch — {report_name}",
         bug_type="Bug / something broke",
-        sheet_link=report.get("sheet_url", ""),
+        sheet_link=sheet_url,
         loom_link="",
         details=details,
         submitted_by=user or "unknown",
         submitter_email=_member_email(user) or "",
         priority=PRIORITY_OPTIONS[1],
     )
+
+
+def _file_hub_glitch(ex: BaseException) -> None:
+    """Auto-file a Hub-side crash (an uncaught error anywhere in the Hub) as a
+    bug report, with the full traceback so it can actually be fixed.
+
+    Deduped per session so a repeating error doesn't spam the tab. Never
+    raises — glitch-filing must not itself break the Hub."""
+    try:
+        if type(ex).__name__ in ("RerunException", "StopException", "RerunData"):
+            return  # Streamlit control-flow, not a real error
+        import traceback as _tb
+        tb = "".join(_tb.format_exception(type(ex), ex, ex.__traceback__))
+        sig = f"{type(ex).__name__}:{ex}"[:200]
+        seen = st.session_state.setdefault("_hub_glitch_seen", set())
+        if sig in seen:
+            return
+        seen.add(sig)
+        view = str(st.session_state.get("view", "?"))
+        user = str(st.session_state.get("user", "") or "")
+        details = (
+            f"Automatic Hub glitch — the Hub hit an uncaught error.\n\n"
+            f"WHEN:   {dt.datetime.now():%Y-%m-%d %H:%M}\n"
+            f"WHO:    {user or 'unknown'}\n"
+            f"SCREEN: {view}\n"
+            f"HUB:    {_hub_git_sha()}\n\n"
+            f"--- Error ---\n{tb}"
+        )
+        _add_bug(
+            title=f"Hub glitch — {type(ex).__name__} on '{view}' screen",
+            bug_type="Bug / something broke",
+            sheet_link="", loom_link="", details=details,
+            submitted_by=user or "unknown",
+            submitter_email=_member_email(user) or "",
+            priority=PRIORITY_OPTIONS[1],
+        )
+    except Exception:
+        pass
+
+
+# Hook Streamlit's uncaught-exception handler so ANY Hub crash auto-files a
+# glitch report (then still shows Streamlit's normal error). Idempotent — the
+# marker stops it re-wrapping on each rerun. Wrapped in try/except so a
+# Streamlit-internals change can never break the Hub.
+try:
+    import streamlit.runtime.scriptrunner.exec_code as _st_exec
+    import streamlit.runtime.fragment as _st_frag
+    if not getattr(_st_exec.handle_uncaught_app_exception, "_hub_patched", False):
+        _orig_uncaught = _st_exec.handle_uncaught_app_exception
+
+        def _hub_uncaught(ex: BaseException) -> None:
+            _file_hub_glitch(ex)
+            _orig_uncaught(ex)
+
+        _hub_uncaught._hub_patched = True
+        _st_exec.handle_uncaught_app_exception = _hub_uncaught
+        _st_frag.handle_uncaught_app_exception = _hub_uncaught
+except Exception:
+    pass
 
 
 def _resurrect_bug(bug_id: str, reason: str) -> bool:
