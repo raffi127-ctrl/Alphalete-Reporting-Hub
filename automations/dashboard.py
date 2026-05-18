@@ -2602,6 +2602,25 @@ def _assign_intake(entry_id: str, user: str) -> bool:
     return True
 
 
+def _unassign_intake(entry_id: str) -> bool:
+    """Send a claimed backlog entry back to Unassigned — for when someone
+    claimed it by mistake. Clears the assignee + claim timestamp and flips
+    Status back to 'Unassigned'. Claim History is left intact as a record."""
+    ws = _intake_ws()
+    try:
+        cell = ws.find(str(entry_id))
+    except Exception:
+        return False
+    if not cell:
+        return False
+    row = cell.row
+    ws.update_cell(row, 8, "Unassigned")   # Status
+    ws.update_cell(row, 9, "")             # Assigned To
+    ws.update_cell(row, 10, "")            # Assigned At
+    _read_intake.clear()
+    return True
+
+
 def _append_claim_history(row: int, user: str, when: str) -> None:
     """Append a 'name | timestamp' line to the row's Claim History cell.
 
@@ -4176,6 +4195,19 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                         help="Drafts the email in Gmail. Fill in any blank \"To\" "
                              "if the claimer's email isn't on file yet.",
                     )
+
+                # Unclaim — if someone grabbed this by mistake, send it
+                # straight back to the Unassigned section.
+                if st.button("↩️ Unclaim — send back to Unassigned",
+                             key=f"unclaim_{entry['ID']}",
+                             use_container_width=True,
+                             help="Clears the assignee and returns this "
+                                  "request to the Unassigned section."):
+                    if _unassign_intake(str(entry["ID"])):
+                        st.success("Unclaimed — moved back to Unassigned.")
+                        st.rerun()
+                    else:
+                        st.error("Couldn't unclaim — please try again.")
 
 
 def _format_elapsed(start_str: str, end_str: str) -> str:
