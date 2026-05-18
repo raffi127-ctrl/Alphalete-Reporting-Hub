@@ -60,6 +60,23 @@ INT_VIEW_URL = (
 INT_SHEET = "ICD Summary - ATT (V2) (2)"
 INT_PATH = WORKSPACE / "output" / "opt_icd_summary_int.csv"
 
+# Product Sales crosstab — AUTOMATION PULL view of PRODUCT SALES SUMMARY 4WK.
+# Per-rep per-product per-day; used for each ICD's Personal Production.
+PRODUCT_SALES_VIEW_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK/"
+    "b2da26b8-8971-4a45-9e42-bd04af46f0fa/AUTOMATIONPULL"
+)
+PRODUCT_SALES_SHEET = "Sales By ICD (Weekly View)"
+PRODUCT_SALES_PATH = WORKSPACE / "output" / "opt_personal_production.csv"
+# Tableau product type -> short label, in the order they appear in the cell.
+PRODUCT_LABELS = [
+    ("NEW INTERNET", "NI"),
+    ("VIDEO", "DTV"),
+    ("WIRELESS", "Wireless"),
+    ("UPGRADE INTERNET", "UG"),
+]
+
 # --- metric mapping (Sheet row label -> Tableau crosstab column header) ---
 # OPT section — scraped straight from the ATT crosstab.
 OPT_SCRAPED: Dict[str, str] = {
@@ -211,6 +228,40 @@ def parse_icd_summary(path: Path) -> Tuple[Dict[str, dict], dict]:
     return by_owner, national
 
 
+def parse_personal_production(path: Path) -> Dict[str, dict]:
+    """Parse the per-rep PRODUCT SALES crosstab into each rep's own weekly
+    sales. Columns: Owner Name, Rep, Product Type, then 7 day columns.
+
+    Returns {normalized rep name: {"owner": raw rep, "values": {PRODUCT TYPE:
+    week total}}} — same shape as parse_icd_summary so _match_owner works."""
+    raw = Path(path).read_text(encoding="utf-16")
+    rows = [ln.split("\t") for ln in raw.splitlines() if ln.strip()]
+    out: Dict[str, dict] = {}
+    for r in rows[1:]:
+        if len(r) < 4:
+            continue
+        rep = (r[1] or "").strip()
+        ptype = (r[2] or "").strip().upper()
+        if not rep or rep.lower() == "total" or ptype.lower() in ("total", ""):
+            continue
+        week_total = 0
+        for cell in r[3:]:
+            n = _to_num(cell)
+            if n:
+                week_total += int(n)
+        if week_total:
+            entry = out.setdefault(_norm(rep), {"owner": rep, "values": {}})
+            entry["values"][ptype] = entry["values"].get(ptype, 0) + week_total
+    return out
+
+
+def _format_personal_production(products: Dict[str, int]) -> str:
+    """Render a rep's product counts as e.g. '2 NI / 1 DTV / 3 Wireless'."""
+    parts = [f"{products[ptype]} {label}"
+             for ptype, label in PRODUCT_LABELS if products.get(ptype)]
+    return " / ".join(parts)
+
+
 def _match_owner(tab_name: str, by_owner: dict, aliases_map: dict) -> Optional[dict]:
     """Find the crosstab row for a Sheet tab. Tries, in order: the tab name,
     its parenthetical (a tab named 'X (Y)' also tries Y and X), every alias
@@ -277,6 +328,7 @@ def fill_opt_for_tab(
     sh: gspread.Spreadsheet, tab_name: str,
     att_by_owner: dict, att_national: dict,
     int_by_owner: dict, int_national: dict,
+    personal_prod: dict,
     aliases_map: dict, week_sunday: dt.date, dry_run: bool,
 ) -> List[str]:
     """Write the OPT + Office-Metrics values for one ICD tab from the ATT and
@@ -356,6 +408,13 @@ def fill_opt_for_tab(
         if str(cell).strip() != "":
             _queue(opt_rows, sheet_label, cell)
 
+    # --- Personal Production (the ICD's own sales as a rep) ---
+    pp_row = _match_owner(tab_name, personal_prod, aliases_map)
+    if pp_row:
+        text = _format_personal_production(pp_row["values"])
+        if text:
+            _queue(opt_rows, "Personal Production", text)
+
     if not updates:
         return [f"[SKIP] {tab_name}: nothing to write"]
 
@@ -374,6 +433,14 @@ def fill_opt_for_tab(
     return log
 
 
+def _week_url(base_url: str, we_sunday: dt.date) -> str:
+    """Append Tableau's 'Sale Date Week Ending (mon-sun)' filter param so the
+    view loads the target week."""
+    from urllib.parse import quote
+    return (f"{base_url}?{quote('Sale Date Week Ending (mon-sun)')}"
+            f"={quote(str(we_sunday))}")
+
+
 def _most_recent_sunday(today: Optional[dt.date] = None) -> dt.date:
     """The most recent Sunday on or before today — the week that just ended."""
     today = today or dt.date.today()
@@ -389,18 +456,23 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
     if we_sunday is None:
         we_sunday = _most_recent_sunday()
     if skip_download:
-        for pth, lbl in [(ATT_PATH, "ATT"), (INT_PATH, "INT")]:
+        for pth, lbl in [(ATT_PATH, "ATT"), (INT_PATH, "INT"),
+                         (PRODUCT_SALES_PATH, "Product Sales")]:
             if not pth.exists():
                 raise RuntimeError(f"--skip-download but no {lbl} crosstab at {pth}")
         logfn("OPT: reusing previously-downloaded crosstabs")
     else:
         download_crosstab(ATT_VIEW_URL, ATT_SHEET, ATT_PATH, verbose=False)
         download_crosstab(INT_VIEW_URL, INT_SHEET, INT_PATH, verbose=False)
-        logfn("OPT: downloaded ATT + INT crosstabs")
+        download_crosstab(_week_url(PRODUCT_SALES_VIEW_URL, we_sunday),
+                          PRODUCT_SALES_SHEET, PRODUCT_SALES_PATH, verbose=False)
+        logfn("OPT: downloaded ATT + INT + Product Sales crosstabs")
 
     att_by_owner, att_national = parse_icd_summary(ATT_PATH)
     int_by_owner, int_national = parse_icd_summary(INT_PATH)
-    logfn(f"OPT: parsed {len(att_by_owner)} ATT ICDs, {len(int_by_owner)} INT ICDs"
+    personal_prod = parse_personal_production(PRODUCT_SALES_PATH)
+    logfn(f"OPT: parsed {len(att_by_owner)} ATT, {len(int_by_owner)} INT, "
+          f"{len(personal_prod)} reps for Personal Production"
           + ("" if att_national and int_national
              else " — WARNING: a national total row is missing"))
 
@@ -417,8 +489,8 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
     skipped: List[str] = []
     for tab_name in targets:
         lines = fill_opt_for_tab(sh, tab_name, att_by_owner, att_national,
-                                 int_by_owner, int_national, aliases_map,
-                                 we_sunday, dry_run)
+                                 int_by_owner, int_national, personal_prod,
+                                 aliases_map, we_sunday, dry_run)
         for ln in lines:
             logfn("OPT: " + ln)
         if any(ln.startswith("[OK]") or ln.startswith("[DRY-RUN]") for ln in lines):
