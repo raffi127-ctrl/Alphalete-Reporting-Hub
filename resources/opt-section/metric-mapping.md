@@ -94,6 +94,23 @@ OFFICE GOALS / OPT section:
 - The Focus Office ATT report already pulls from this view
   (`step7_download_tableau.py`) — reuse that machinery.
 
+## Source view 4 — Metrics
+
+- URL: https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/Metrics
+- Sheet "Metrics". The **"Week's Metrics" filter must be set to "this week"**.
+- Crosstab columns (per JD's old `_Internet_Metrics` import):
+
+| Sheet row label (Office Metrics section) | Tableau column |
+|---|---|
+| 6+ days out scheduled | `% of sales scheduled 6+ days out (4 wks)` |
+| 0-30 Day Cancel Rate | `0-30 day new internet cancel rate` |
+| 30-60 activation rate % | `30-60 day new internet activation rate` |
+
+(Megan describes the 6+ days value as a hover tooltip on the "Install
+Scheduled 6+ Days New Internet Count (4 wk)" column — but the crosstab
+download exposes it directly as the `% of sales scheduled 6+ days out`
+column. Confirm on the first pull.)
+
 ---
 
 ## Still to map
