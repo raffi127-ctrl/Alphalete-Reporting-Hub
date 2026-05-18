@@ -81,7 +81,7 @@ METRICS_PATH = WORKSPACE / "output" / "opt_metrics.csv"
 PRODUCT_LABELS = [
     ("NEW INTERNET", "NI"),
     ("VIDEO", "DTV"),
-    ("WIRELESS", "Wireless"),
+    ("WIRELESS", "NL"),
     ("UPGRADE INTERNET", "UG"),
 ]
 
