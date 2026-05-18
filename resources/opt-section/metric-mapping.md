@@ -67,11 +67,37 @@ per-ICD number. Pulled from Tableau's total/average row.
 
 ---
 
+## Source view 2 — AUTOMATION PULL (Internet Only)
+
+- View: **D2D 1-PAGER V2 (Internet Only)**, sheet "D2D PAGE 1 THIS WEEK
+  (Internet Only)".
+- URL: https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/D2D1-PAGERV2InternetOnly/9a35d92c-65c1-4d12-ba6c-ebc381e1d00c/AUTOMATIONPULL
+- Same pattern as the ATT view — Download → Crosstab → the INT ICD-summary
+  sheet.
+
+OFFICE GOALS / OPT section:
+
+| Sheet row label | Tableau column | Notes |
+|---|---|---|
+| AVG New INT Per Active Headcount | `New Int Per Rep Average` | per-ICD |
+| National New INT AVG | total/avg of `New Int Sales Per Rep Avg` column | national — same value every tab |
+
+## Source view 3 — PRODUCT SALES SUMMARY 4WK
+
+- URL: https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK
+- Different pull pattern — NOT a one-shot crosstab:
+  - Must select the correct **week ending** first.
+  - In the **rep filter**, search the ICD's name (their personal production).
+  - Sheet row **"Personal Production"** holds a text value like
+    `1 NI / 1 DTV / 1 Wireless / 1 UG` (NI = new internet, DTV = video,
+    UG = upgrade). One value per ICD.
+- The Focus Office ATT report already pulls from this view
+  (`step7_download_tableau.py`) — reuse that machinery.
+
+---
+
 ## Still to map
 
 OPT rows not yet covered: Headcount, Leaders, New starts in classroom,
-New Starts by EOW, New Start Retention, AVG New INT Per Active Headcount,
-National New INT AVG, Green Leads, Personal Production.
-Per JD's code + Eve's transcript these likely come from the Internet-only
-view (`D2D 1-PAGER V2 / INT ICD Summary`) and Product Summary. Awaiting
-Megan's mapping for those + the rest of the Metric Goals + Wireless sections.
+New Starts by EOW, New Start Retention, Green Leads. Plus the rest of the
+Metric Goals + Wireless sections. Awaiting Megan's mapping.
