@@ -78,6 +78,15 @@ METRICS_VIEW_URL = (
 )
 METRICS_SHEET = "Metrics Call Last week data (Internet)"
 METRICS_PATH = WORKSPACE / "output" / "opt_metrics.csv"
+
+# Churn crosstab — AUTOMATION PULL custom view of CHURN (New Internet).
+CHURN_VIEW_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER2_1-D2D/CHURN/"
+    "874bceda-72bf-4571-976b-9d998abacdbf/AUTOMATIONPULL-NICHURNVIEW"
+)
+CHURN_SHEET = "ICD Churn"
+CHURN_PATH = WORKSPACE / "output" / "opt_churn.csv"
 # Tableau product type -> short label, in the order they appear in the cell.
 PRODUCT_LABELS = [
     ("NEW INTERNET", "NI"),
@@ -115,6 +124,13 @@ METRICS_SCRAPED: Dict[str, str] = {
     "6+ days out scheduled":   "% of sales scheduled 6+ days out (4 wks)",
     "0-30 Day Cancel Rate":    "0-30 day New Internet cancel rate",
     "30-60 activation rate %": "30-60 day New Internet activation rate",
+}
+# Office Metrics section — scraped from the CHURN crosstab (% values).
+CHURN_SCRAPED: Dict[str, str] = {
+    "0-30 Day Churn": "0-30 Day Churn",
+    "30 Day Churn":   "30 Day Churn",
+    "60 day Churn":   "60 Day Churn",
+    "90 day Churn":   "90 Day Churn",
 }
 
 # Column-B section anchors that bound a section (normalized).
@@ -275,10 +291,43 @@ def parse_personal_production(path: Path) -> Dict[str, dict]:
 
 
 def _format_personal_production(products: Dict[str, int]) -> str:
-    """Render a rep's product counts as e.g. '2 NI / 1 DTV / 3 Wireless'."""
+    """Render a rep's product counts as e.g. '2 NI / 1 DTV / 3 NL'."""
     parts = [f"{products[ptype]} {label}"
              for ptype, label in PRODUCT_LABELS if products.get(ptype)]
     return " / ".join(parts)
+
+
+def parse_churn(path: Path) -> Dict[str, dict]:
+    """Parse the CHURN 'ICD Churn' crosstab. Each ICD spans several measure
+    rows AND several colour blocks (Green/Red/Yellow) — each block fills only
+    some of the 0-30 / 30 / 60 / 90 day columns. Keep only the 'Churn Rate
+    (Unit vs Order)' rows and MERGE their non-empty cells, so an ICD ends up
+    with all four churn values.
+
+    Returns {normalized ICD name: {"owner": raw, "values": {norm header: cell}}}."""
+    raw = Path(path).read_text(encoding="utf-16")
+    rows = [ln.split("\t") for ln in raw.splitlines() if ln.strip()]
+    if not rows:
+        raise RuntimeError("churn crosstab file is empty")
+    headers = [_norm(h) for h in rows[0]]
+    owner_col = next((i for i, h in enumerate(headers)
+                      if "icd owner name" in h), 0)
+    out: Dict[str, dict] = {}
+    for r in rows[1:]:
+        if len(r) <= owner_col:
+            continue
+        owner = r[owner_col].strip()
+        if not owner or owner.lower() in ("grand total", "total"):
+            continue
+        # Keep only churn-rate rows; merge their non-empty cells per ICD.
+        if not any("churn rate" in _norm(c) for c in r):
+            continue
+        entry = out.setdefault(_norm(owner), {"owner": owner, "values": {}})
+        for i in range(min(len(headers), len(r))):
+            cell = r[i].strip()
+            if cell:
+                entry["values"][headers[i]] = cell
+    return out
 
 
 def _match_owner(tab_name: str, by_owner: dict, aliases_map: dict) -> Optional[dict]:
@@ -347,7 +396,7 @@ def fill_opt_for_tab(
     sh: gspread.Spreadsheet, tab_name: str,
     att_by_owner: dict, att_national: dict,
     int_by_owner: dict, int_national: dict,
-    metrics_by_owner: dict, personal_prod: dict,
+    metrics_by_owner: dict, churn_by_owner: dict, personal_prod: dict,
     aliases_map: dict, week_sunday: dt.date, dry_run: bool,
 ) -> List[str]:
     """Write the OPT + Office-Metrics values for one ICD tab from the ATT and
@@ -436,6 +485,15 @@ def fill_opt_for_tab(
             if str(cell).strip() != "":
                 _queue(om_rows, sheet_label, cell)
 
+    # --- CHURN view (Office Metrics section) ---
+    churn_row = _match_owner(tab_name, churn_by_owner, aliases_map)
+    if churn_row:
+        cv = churn_row["values"]
+        for sheet_label, csv_col in CHURN_SCRAPED.items():
+            cell = cv.get(_norm(csv_col), "")
+            if str(cell).strip() != "":
+                _queue(om_rows, sheet_label, cell)
+
     # --- Personal Production (the ICD's own sales as a rep) ---
     # Always written — an ICD with no personal sales gets a literal 0.
     pp_row = _match_owner(tab_name, personal_prod, aliases_map)
@@ -485,7 +543,7 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
     if skip_download:
         for pth, lbl in [(ATT_PATH, "ATT"), (INT_PATH, "INT"),
                          (PRODUCT_SALES_PATH, "Product Sales"),
-                         (METRICS_PATH, "Metrics")]:
+                         (METRICS_PATH, "Metrics"), (CHURN_PATH, "Churn")]:
             if not pth.exists():
                 raise RuntimeError(f"--skip-download but no {lbl} crosstab at {pth}")
         logfn("OPT: reusing previously-downloaded crosstabs")
@@ -495,14 +553,16 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
         download_crosstab(_week_url(PRODUCT_SALES_VIEW_URL, we_sunday),
                           PRODUCT_SALES_SHEET, PRODUCT_SALES_PATH, verbose=False)
         download_crosstab(METRICS_VIEW_URL, METRICS_SHEET, METRICS_PATH, verbose=False)
-        logfn("OPT: downloaded ATT + INT + Product Sales + Metrics crosstabs")
+        download_crosstab(CHURN_VIEW_URL, CHURN_SHEET, CHURN_PATH, verbose=False)
+        logfn("OPT: downloaded ATT + INT + Product Sales + Metrics + Churn crosstabs")
 
     att_by_owner, att_national = parse_icd_summary(ATT_PATH)
     int_by_owner, int_national = parse_icd_summary(INT_PATH)
     personal_prod = parse_personal_production(PRODUCT_SALES_PATH)
     metrics_by_owner, _ = parse_icd_summary(METRICS_PATH)
+    churn_by_owner = parse_churn(CHURN_PATH)
     logfn(f"OPT: parsed {len(att_by_owner)} ATT, {len(int_by_owner)} INT, "
-          f"{len(metrics_by_owner)} Metrics, "
+          f"{len(metrics_by_owner)} Metrics, {len(churn_by_owner)} Churn, "
           f"{len(personal_prod)} reps for Personal Production"
           + ("" if att_national and int_national
              else " — WARNING: a national total row is missing"))
@@ -521,7 +581,8 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
     for tab_name in targets:
         lines = fill_opt_for_tab(sh, tab_name, att_by_owner, att_national,
                                  int_by_owner, int_national, metrics_by_owner,
-                                 personal_prod, aliases_map, we_sunday, dry_run)
+                                 churn_by_owner, personal_prod,
+                                 aliases_map, we_sunday, dry_run)
         for ln in lines:
             logfn("OPT: " + ln)
         if any(ln.startswith("[OK]") or ln.startswith("[DRY-RUN]") for ln in lines):
