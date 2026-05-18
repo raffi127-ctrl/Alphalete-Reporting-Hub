@@ -73,12 +73,21 @@ SECTION_ANCHORS = {"we sunday", "opt", "office metrics", "wireless metrics",
 
 
 def _norm(s) -> str:
-    """Normalize a label / header / name for matching: lowercase, trim,
-    collapse internal whitespace, drop spaces around / - %."""
+    """Normalize a label / header / name for matching: lowercase, trim, drop
+    apostrophes + periods, collapse whitespace, drop spaces around / - %."""
     s = str(s or "").strip().lower()
+    s = s.replace("'", "").replace("’", "").replace(".", "")
     s = re.sub(r"\s+", " ", s)
     s = re.sub(r"\s*([/\-%])\s*", r"\1", s)
     return s
+
+
+# Some ICD tabs label an OPT row slightly differently — try these alternates.
+ALT_LABELS: Dict[str, List[str]] = {
+    "% of Wireless Rep Count": ["% of Wireless Attachment", "% Wireless Rep Count",
+                                "% Wireless Attachment"],
+    "National AVG Apps": ["National AVG for sales"],
+}
 
 
 def _to_num(s) -> Optional[float]:
@@ -187,9 +196,14 @@ def parse_icd_summary(path: Path) -> Tuple[Dict[str, dict], dict]:
 
 
 def _match_owner(tab_name: str, by_owner: dict, aliases_map: dict) -> Optional[dict]:
-    """Find the crosstab row for a Sheet tab — tries the tab name plus every
-    alias for it (shared 'ICD Aliases' list), case/space-insensitive."""
+    """Find the crosstab row for a Sheet tab. Tries, in order: the tab name,
+    its parenthetical (a tab named 'X (Y)' also tries Y and X), every alias
+    for it, then a subset match (one name has an extra middle name, same
+    surname). All comparisons ignore case, apostrophes, and extra spacing."""
     candidates = [tab_name]
+    m = re.match(r"^(.*?)\s*\((.+?)\)\s*$", tab_name or "")
+    if m:
+        candidates += [m.group(1).strip(), m.group(2).strip()]
     norm_tab = _norm(tab_name)
     for canonical, aliases in (aliases_map or {}).items():
         group = [canonical] + list(aliases)
@@ -199,6 +213,14 @@ def _match_owner(tab_name: str, by_owner: dict, aliases_map: dict) -> Optional[d
         hit = by_owner.get(_norm(cand))
         if hit:
             return hit
+    # Subset fallback: same surname (last word) AND one name's word set is a
+    # subset of the other — catches a middle name present on only one side.
+    tw = norm_tab.split()
+    if len(tw) >= 2:
+        for key, hit in by_owner.items():
+            kw = key.split()
+            if kw and kw[-1] == tw[-1] and (set(tw) <= set(kw) or set(kw) <= set(tw)):
+                return hit
     return None
 
 
@@ -268,12 +290,13 @@ def fill_opt_for_tab(
     missing: List[str] = []
 
     def _queue(label_rows: Dict[str, int], sheet_label: str, value) -> bool:
-        r = label_rows.get(_norm(sheet_label))
-        if not r:
-            missing.append(sheet_label)
-            return False
-        updates.append((gspread.utils.rowcol_to_a1(r, col), value))
-        return True
+        for lbl in [sheet_label] + ALT_LABELS.get(sheet_label, []):
+            r = label_rows.get(_norm(lbl))
+            if r:
+                updates.append((gspread.utils.rowcol_to_a1(r, col), value))
+                return True
+        missing.append(sheet_label)
+        return False
 
     # OPT — scraped
     for sheet_label, csv_col in OPT_SCRAPED.items():
