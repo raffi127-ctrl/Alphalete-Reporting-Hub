@@ -125,6 +125,29 @@ column. Confirm on the first pull.)
 
 Queued as the next OPT build step.
 
+## Source view 6 — CHURN
+
+- URL: https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/CHURN
+- Crosstab sheet: **"ICD Churn"** (the ICD BREAKOUT — not the national average).
+- The "Churn View" filter must be **New Internet** (the view currently
+  defaults to Wireless — its dialog shows "ICD Churn (Wireless)").
+- All values are % on the Google Sheet (Office Metrics section):
+
+| Sheet row label | Tableau column |
+|---|---|
+| 0-30 Day Churn | `0-30 Day Churn` |
+| 30 Day Churn | `30 Day Churn` |
+| 60 Day Churn | `60 Day Churn` |
+| 90 day Churn | `90 day Churn` |
+
+## Filter-setting note
+
+The ATT / INT / Product Sales pulls are clean because they point at
+**"AUTOMATION PULL" custom views** Megan saved with filters pre-set. The
+Metrics / CHURN / Captain's Bonus views are base views — their filters
+aren't locked. Cleanest fix: save an AUTOMATION PULL custom view of each
+with the correct filter, then the report pulls them with zero filter code.
+
 ---
 
 ## Still to map
