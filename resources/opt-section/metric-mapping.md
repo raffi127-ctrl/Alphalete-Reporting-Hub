@@ -123,7 +123,10 @@ column. Confirm on the first pull.)
 | Activation /Approval % | `Rolling 4 weeks` |
 | 30-60 Day Cancel Rate | computed: 100% − Activation/Approval % |
 
-Queued as the next OPT build step.
+- Custom view (Megan saved): https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/CaptainsBonus/96f8a0ef-a1fc-48c8-9669-e39cdffa4d7e/AUTOMATIONPULL-CAPTAINS
+- ⚠️ The custom view freezes the **date filter** on a specific week — it
+  will NOT roll forward. The downloader must override the date via a URL
+  param each run (same as the Product Sales view does for week-ending).
 
 ## Source view 6 — CHURN
 
@@ -147,6 +150,26 @@ The ATT / INT / Product Sales pulls are clean because they point at
 Metrics / CHURN / Captain's Bonus views are base views — their filters
 aren't locked. Cleanest fix: save an AUTOMATION PULL custom view of each
 with the correct filter, then the report pulls them with zero filter code.
+
+## Source view 7 — Fiber Lead Performance
+
+- Custom view: https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/FiberLeadPerformance/a79fd021-3606-4aa2-bf55-bc3856cdac99/AUTOMATIONPULL-NICHURNVIEW
+- ⚠️ Crosstab dialog offers: "Office New Fiber Lead Penetration By Zip",
+  "Program Overview", "Title" — none is an obvious per-ICD sheet. Needs
+  investigation (likely "Program Overview").
+
+| Sheet row label (Office Metrics section) | Source |
+|---|---|
+| Penetration Rate | `Assigned Fiber Lead Penetration` |
+| Total Leads | `Lead Count` |
+| Expected Fiber Sales (120 days, 17wks) | `Expected Fiber Sales (copy)` |
+| Expected Fiber Sales Weekly | computed: Expected Fiber Sales ÷ 17 |
+
+## Source view 8 — Program Summary (Direct Deposit)
+
+- Workbook: **Direct Deposit ICD VIEW Version 2.0**, view PROGRAM SUMMARY.
+- Custom view (filter "downline or captain" = Captain): https://us-east-1.online.tableau.com/#/site/sci/views/DirectDepositICDVIEWVersion2_0/PROGRAMSUMMARY/639b7ff1-d2ed-49ae-a85d-b96a0787a1e9/CAPTAINVIEW
+- Direct Deposit ← the Grand Total value, assigned to the ICD.
 
 ---
 
