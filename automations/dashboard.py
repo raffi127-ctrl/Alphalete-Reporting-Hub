@@ -4098,8 +4098,6 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                     else:
                         st.error("Couldn't save the link — try again.")
         with cols[1]:
-            if review_mode:
-                _render_review_panel(entry)
             if allow_claim:
                 claim_to = st.selectbox(
                     "Claim for…",
@@ -4208,6 +4206,12 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                         st.rerun()
                     else:
                         st.error("Couldn't unclaim — please try again.")
+
+        # The review panel's instructions are too long to read crammed in the
+        # narrow right column — render it full-width below the card instead.
+        if review_mode:
+            st.markdown("---")
+            _render_review_panel(entry)
 
 
 def _format_elapsed(start_str: str, end_str: str) -> str:
