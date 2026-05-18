@@ -447,11 +447,16 @@ def _scrape_view_data_grid(win, verbose: bool = True
     return fields, list(seen.values())
 
 
-def scrape_view_data(view_url: str, verbose: bool = True
+def scrape_view_data(view_url: str, verbose: bool = True,
+                     activate_xy: Optional[Tuple[float, float]] = None
                      ) -> Tuple[List[str], List[List[str]]]:
     """Drive Tableau's Download -> Data on `view_url` and scrape the View Data
     window. Returns (field_names, records). Used for views whose per-ICD table
-    won't crosstab-export."""
+    won't crosstab-export.
+
+    On a multi-sheet dashboard, 'Download -> Data' is disabled until a
+    worksheet is selected — pass `activate_xy` (fractional x, y of the viz)
+    to click inside the target worksheet first."""
     with sync_playwright() as p:
         browser = p.chromium.connect_over_cdp(fetch_office.CDP_URL)
         ctx = browser.contexts[0]
@@ -471,6 +476,19 @@ def scrape_view_data(view_url: str, verbose: bool = True
             for _ in range(3):
                 page.keyboard.press("Escape")
                 page.wait_for_timeout(300)
+            if activate_xy:
+                box = page.query_selector(
+                    'iframe[title="Data Visualization"]').bounding_box()
+                if box:
+                    cx = box["x"] + box["width"] * activate_xy[0]
+                    cy = box["y"] + box["height"] * activate_xy[1]
+                    # First click activates the worksheet but selects a mark
+                    # (which would scope the View Data to that one mark); a
+                    # second click on the same mark toggles the selection off.
+                    page.mouse.click(cx, cy)
+                    page.wait_for_timeout(1500)
+                    page.mouse.click(cx, cy)
+                    page.wait_for_timeout(1500)
             before = set(ctx.pages)
             clicked = False
             for _ in range(8):

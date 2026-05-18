@@ -155,7 +155,7 @@ Metrics / CHURN / Captain's Bonus views are base views — their filters
 aren't locked. Cleanest fix: save an AUTOMATION PULL custom view of each
 with the correct filter, then the report pulls them with zero filter code.
 
-## Source view 7 — Fiber Lead Performance  ⏸ BLOCKED — pick up next session
+## Source view 7 — Fiber Lead Performance  ⏸ BLOCKED — needs a Tableau-side per-office sheet
 
 - Base view: https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/FiberLeadPerformance
 - Custom view: https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/FiberLeadPerformance/a79fd021-3606-4aa2-bf55-bc3856cdac99/AUTOMATIONPULL-NICHURNVIEW
@@ -171,19 +171,30 @@ with the correct filter, then the report pulls them with zero filter code.
 | Expected Fiber Sales (120 days, 17wks) | `Expected Fiber Sales (copy)` |
 | Expected Fiber Sales Weekly | computed: Expected Fiber Sales ÷ 17 |
 
-**⚠️ BLOCKER (confirmed 2026-05-18):** the "Office New Fiber Lead Penetration
-By Zip" worksheet **will not export as a crosstab** — Tableau's Download button
-stays disabled (too many marks). Tried unfiltered, scoped via the custom view,
-and scoped via the base view (`?Owner Name=<names>`). The only exportable
-sheet — "Program Overview" — lacks Expected Fiber Sales.
+**⚠️ BLOCKED — all automated paths exhausted (2026-05-18):**
+- **Crosstab export:** the "Office New Fiber Lead Penetration By Zip" sheet's
+  Download button stays disabled (too many marks). Dead.
+- **Dashboard scrape:** the table is canvas-rendered — not in the page DOM.
+- **Download → Data** (the View Data window — works for Program Summary):
+  here it's disabled until a worksheet is clicked; once activated, the whole
+  by-zip sheet's View Data is **9,225 rows** (≈1,819 zips × ~5 measures) — far
+  too big to scroll-scrape. The View Data window's own "Download" button
+  (`download-data-Button`) is **non-functional via automation** — clicking it
+  produces no file, no event, no dialog.
+- The "Penetration View" dropdown options are `Office Penetration by Zip`,
+  `Days Since Last Sale`, `Market Expectations` — **no per-office option**.
+- Per-ICD filtering works (one ICD → ~30-50 zips → small View Data) but is
+  ~52 separate pulls ≈ 50 min/run — too slow.
 
-**Plan for next session (Megan's idea):** this is likely a "can't download —
-must *read* the number off the rendered site" case. Scrape the on-screen Grand
-Total while the Owner Name filter is set to each ICD. The Owner Name filter
-must be driven **dynamically to the report's current tabs each run** — NOT a
-saved custom view (the tab set changes constantly; a saved view goes stale and
-breaks silently). Also check the "Penetration View" dropdown for an
-office-level (non-zip) option that might export cleanly.
+Root cause: every Fiber worksheet is **per-zip**; there's no per-ICD summary
+sheet (Program Summary worked because its data is naturally ~64 per-ICD rows).
+
+**Recommended fix (Tableau-side):** ask whoever owns the *Fiber Lead
+Performance* workbook to add a **per-office (one row per ICD) summary
+worksheet** with Penetration Rate / Total Leads / Expected Fiber Sales — or an
+AUTOMATION PULL custom view of it. That sheet would crosstab-export or
+View-Data cleanly and wires in minutes. Until then Fiber Lead is the one
+OPT row group that can't be auto-pulled.
 
 ## Source view 8 — Program Summary (Direct Deposit)
 
