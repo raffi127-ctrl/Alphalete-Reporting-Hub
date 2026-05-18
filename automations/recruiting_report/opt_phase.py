@@ -1,26 +1,30 @@
-"""OPT phase — Tableau "ICD Summary" → Focus Report OPT section.
+"""OPT phase — Tableau "ICD Summary" crosstabs → Focus Report OPT section.
 
-Pulls the 'ICD Summary - ATT (V2)' crosstab from the AUTOMATION PULL view
-(ATT TRACKER 2.1 - D2D / D2D 1-PAGER V4) in Tableau and writes the OPT-section
+Pulls two AUTOMATION PULL crosstabs from Tableau and writes the OPT-section
 metrics into each ICD tab. No manual CSV downloads — the run drives Tableau's
 own Download → Crosstab.
 
+Sources:
+  - ATT view (D2D 1-PAGER V4): headcount, sale types, ranking, % wireless,
+    1 GIG%, and the national sales-per-rep average.
+  - INT view (D2D 1-PAGER V2, Internet Only): new-internet per-rep average
+    (per ICD + national).
+
 What it writes, per ICD tab:
   OPT section ("OPT" anchor in column B):
-    - scraped straight from the crosstab: Active Headcount on Tableau,
-      New Internets, Upgrades, DTV, New Lines, % of Wireless Rep Count,
-      Scorecard Ranking
+    - scraped: Active Headcount, New Internets, Upgrades, DTV, New Lines,
+      % of Wireless Rep Count, Scorecard Ranking, AVG New INT Per Active
+      Headcount
     - computed (by label lookup, never hardcoded rows): Total Apps =
       sum of the four sale types; AVG Apps Per Active Headcount =
       Total Apps / Active Headcount
-    - national (same value every tab): National AVG Apps
+    - national (same value every tab): National AVG Apps, National New INT AVG
   Office Metrics section ("Office Metrics" anchor): 1 GIG%
 
 Safety: only WRITES the cells above — never clears or deletes anything.
 
 Run:
   .venv/bin/python -m automations.recruiting_report.opt_phase --only "Marcellus Butler" --dry-run
-  .venv/bin/python -m automations.recruiting_report.opt_phase --only "Marcellus Butler"
 """
 from __future__ import annotations
 
@@ -37,20 +41,27 @@ from playwright.sync_api import sync_playwright
 from . import fetch_office, fill
 
 WORKSPACE = Path(__file__).resolve().parent.parent.parent
-DOWNLOAD_PATH = WORKSPACE / "output" / "opt_icd_summary_att.csv"
 
-# AUTOMATION PULL custom view of ATT TRACKER 2.1 - D2D / D2D 1-PAGER V4.
-TABLEAU_AUTOMATION_PULL_URL = (
+# ATT crosstab — AUTOMATION PULL view of ATT TRACKER 2.1 - D2D / D2D 1-PAGER V4.
+ATT_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/D2D1-PAGERV4/"
     "05356558-3732-4a96-af9d-99ee56f98138/AUTOMATIONPULL"
 )
-# The crosstab sheet (in Download → Crosstab) that holds one row per ICD,
-# current week. The "(LW)" sibling is last week.
-CROSSTAB_SHEET = "ICD Summary - ATT (V2)"
+ATT_SHEET = "ICD Summary - ATT (V2)"
+ATT_PATH = WORKSPACE / "output" / "opt_icd_summary_att.csv"
+
+# INT crosstab — AUTOMATION PULL view of D2D 1-PAGER V2 (Internet Only).
+INT_VIEW_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER2_1-D2D/D2D1-PAGERV2InternetOnly/"
+    "9a35d92c-65c1-4d12-ba6c-ebc381e1d00c/AUTOMATIONPULL"
+)
+INT_SHEET = "ICD Summary - ATT (V2) (2)"
+INT_PATH = WORKSPACE / "output" / "opt_icd_summary_int.csv"
 
 # --- metric mapping (Sheet row label -> Tableau crosstab column header) ---
-# OPT section — scraped straight from the crosstab.
+# OPT section — scraped straight from the ATT crosstab.
 OPT_SCRAPED: Dict[str, str] = {
     "Active Headcount on Tableau": "Rep Count",
     "New Internets":               "New Internet",
@@ -64,7 +75,14 @@ OPT_SCRAPED: Dict[str, str] = {
 TOTAL_APPS_COMPONENTS = ["New Internets", "Upgrades", "DTV", "New Lines"]
 # OPT section — national totals (Grand Total row), same value on every tab.
 OPT_NATIONAL: Dict[str, str] = {"National AVG Apps": "Sales Per Rep Avg"}
-# Office Metrics section — scraped straight.
+# OPT section — scraped from the INT crosstab.
+INT_SCRAPED: Dict[str, str] = {
+    "AVG New INT Per Active Headcount": "New Int Sales Per Rep Avg",
+}
+INT_NATIONAL: Dict[str, str] = {
+    "National New INT AVG": "New Int Sales Per Rep Avg",
+}
+# Office Metrics section — scraped from the ATT crosstab.
 METRIC_GOALS_SCRAPED: Dict[str, str] = {"1 GIG%": "New Internet 1Gig+ Mix%"}
 
 # Column-B section anchors that bound a section (normalized).
@@ -113,9 +131,10 @@ def _find_tableau_page(browser):
     return None
 
 
-def download_icd_summary(out_path: Path = DOWNLOAD_PATH, verbose: bool = True) -> Path:
-    """Drive Tableau's Download → Crosstab on the AUTOMATION PULL view and
-    save the 'ICD Summary - ATT (V2)' sheet as a CSV. Returns out_path."""
+def download_crosstab(view_url: str, crosstab_sheet: str, out_path: Path,
+                      verbose: bool = True) -> Path:
+    """Drive Tableau's Download → Crosstab on `view_url` and save the
+    `crosstab_sheet` sheet as a CSV. Returns out_path."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as p:
         browser = p.chromium.connect_over_cdp(fetch_office.CDP_URL)
@@ -123,21 +142,18 @@ def download_icd_summary(out_path: Path = DOWNLOAD_PATH, verbose: bool = True) -
         if page is None:
             raise RuntimeError(
                 "No Tableau tab open in Report Chrome. Launch Report Chrome, "
-                "open Tableau, and log in — then run again."
+                "log into ownerville, open Tableau — then run again."
             )
-        if "AUTOMATIONPULL" not in (page.url or "").upper():
-            if verbose:
-                print(f"navigating Tableau tab to AUTOMATION PULL", flush=True)
-            page.goto(TABLEAU_AUTOMATION_PULL_URL, wait_until="domcontentloaded")
+        page.goto(view_url, wait_until="domcontentloaded")
 
         viz = page.frame_locator('iframe[title="Data Visualization"]')
         dl_btn = viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-download"]')
-        dl_btn.wait_for(state="visible", timeout=30_000)
+        dl_btn.wait_for(state="visible", timeout=35_000)
         # Let Tableau hydrate the data behind the viz before exporting.
         page.wait_for_timeout(10_000)
 
         if verbose:
-            print("Download → Crosstab → 'ICD Summary - ATT (V2)' → CSV…", flush=True)
+            print(f"Download → Crosstab → {crosstab_sheet!r} → CSV…", flush=True)
         dl_btn.click()
         page.wait_for_timeout(1800)
         viz.locator('[data-tb-test-id="download-flyout-download-crosstab-MenuItem"]').click()
@@ -146,12 +162,12 @@ def download_icd_summary(out_path: Path = DOWNLOAD_PATH, verbose: bool = True) -
         thumbs = viz.locator('[data-tb-test-id^="sheet-thumbnail-"]')
         idx = None
         for i in range(thumbs.count()):
-            if thumbs.nth(i).inner_text().strip() == CROSSTAB_SHEET:
+            if thumbs.nth(i).inner_text().strip() == crosstab_sheet:
                 idx = i
                 break
         if idx is None:
             raise RuntimeError(
-                f"Couldn't find the '{CROSSTAB_SHEET}' sheet in the Crosstab "
+                f"Couldn't find the {crosstab_sheet!r} sheet in the Crosstab "
                 "dialog — the AUTOMATION PULL view may have changed."
             )
         thumbs.nth(idx).click()
@@ -258,21 +274,22 @@ def _is_office_metrics_anchor(nv: str) -> bool:
 
 
 def fill_opt_for_tab(
-    sh: gspread.Spreadsheet, tab_name: str, by_owner: dict, national: dict,
+    sh: gspread.Spreadsheet, tab_name: str,
+    att_by_owner: dict, att_national: dict,
+    int_by_owner: dict, int_national: dict,
     aliases_map: dict, week_sunday: dt.date, dry_run: bool,
 ) -> List[str]:
-    """Write the OPT + Office-Metrics values for one ICD tab. Returns log
-    lines. Only ever writes the mapped cells — never clears anything."""
-    log: List[str] = []
+    """Write the OPT + Office-Metrics values for one ICD tab from the ATT and
+    INT crosstabs. Returns log lines. Only writes mapped cells — never clears."""
     try:
         ws = fill._retry(sh.worksheet, tab_name)
     except Exception as e:
         return [f"[SKIP] {tab_name}: tab not found ({e})"]
 
-    row = _match_owner(tab_name, by_owner, aliases_map)
-    if not row:
-        return [f"[SKIP] {tab_name}: no crosstab row for this ICD"]
-    vals = row["values"]
+    att_row = _match_owner(tab_name, att_by_owner, aliases_map)
+    int_row = _match_owner(tab_name, int_by_owner, aliases_map)
+    if not att_row and not int_row:
+        return [f"[SKIP] {tab_name}: no crosstab row (ATT or INT)"]
 
     grid = fill._retry(ws.get_all_values)
     sunday_to_col = fill.find_sunday_columns(grid, header_row_idx=0)
@@ -298,45 +315,60 @@ def fill_opt_for_tab(
         missing.append(sheet_label)
         return False
 
-    # OPT — scraped
-    for sheet_label, csv_col in OPT_SCRAPED.items():
-        cell = vals.get(_norm(csv_col), "")
-        if str(cell).strip() != "":
-            _queue(opt_rows, sheet_label, cell)
-    # OPT — national (same value everywhere)
+    # --- ATT crosstab ---
+    if att_row:
+        av = att_row["values"]
+        for sheet_label, csv_col in OPT_SCRAPED.items():
+            cell = av.get(_norm(csv_col), "")
+            if str(cell).strip() != "":
+                _queue(opt_rows, sheet_label, cell)
+        # computed: Total Apps + AVG Apps (component rows found by label)
+        parts = [_to_num(av.get(_norm(OPT_SCRAPED[c]), ""))
+                 for c in TOTAL_APPS_COMPONENTS]
+        total_apps = None
+        if all(p is not None for p in parts):
+            total_apps = int(sum(parts))
+            _queue(opt_rows, "Total Apps", total_apps)
+        headcount = _to_num(av.get(_norm(OPT_SCRAPED["Active Headcount on Tableau"]), ""))
+        if total_apps is not None and headcount:
+            _queue(opt_rows, "AVG Apps Per Active Headcount",
+                   round(total_apps / headcount, 1))
+        # Office Metrics — 1 GIG%
+        for sheet_label, csv_col in METRIC_GOALS_SCRAPED.items():
+            cell = av.get(_norm(csv_col), "")
+            if str(cell).strip() != "":
+                _queue(om_rows, sheet_label, cell)
+    # ATT national (same value on every tab)
     for sheet_label, csv_col in OPT_NATIONAL.items():
-        cell = national.get(_norm(csv_col), "")
+        cell = att_national.get(_norm(csv_col), "")
         if str(cell).strip() != "":
             _queue(opt_rows, sheet_label, cell)
-    # OPT — computed: Total Apps + AVG Apps (component rows found by label)
-    parts = [_to_num(vals.get(_norm(OPT_SCRAPED[c]), "")) for c in TOTAL_APPS_COMPONENTS]
-    total_apps = None
-    if all(p is not None for p in parts):
-        total_apps = int(sum(parts))
-        _queue(opt_rows, "Total Apps", total_apps)
-    headcount = _to_num(vals.get(_norm(OPT_SCRAPED["Active Headcount on Tableau"]), ""))
-    if total_apps is not None and headcount:
-        _queue(opt_rows, "AVG Apps Per Active Headcount", round(total_apps / headcount, 1))
-    # Office Metrics — scraped (1 GIG%)
-    for sheet_label, csv_col in METRIC_GOALS_SCRAPED.items():
-        cell = vals.get(_norm(csv_col), "")
+
+    # --- INT crosstab ---
+    if int_row:
+        iv = int_row["values"]
+        for sheet_label, csv_col in INT_SCRAPED.items():
+            cell = iv.get(_norm(csv_col), "")
+            if str(cell).strip() != "":
+                _queue(opt_rows, sheet_label, cell)
+    for sheet_label, csv_col in INT_NATIONAL.items():
+        cell = int_national.get(_norm(csv_col), "")
         if str(cell).strip() != "":
-            if not _queue(om_rows, sheet_label, cell) and not om_rows:
-                missing[-1] = f"{sheet_label} (no Office Metrics section)"
+            _queue(opt_rows, sheet_label, cell)
 
     if not updates:
-        return log + [f"[SKIP] {tab_name}: nothing to write"]
+        return [f"[SKIP] {tab_name}: nothing to write"]
 
     if dry_run:
-        log.append(f"[DRY-RUN] {tab_name} (col {col}, week {week_sunday}): "
-                   f"would write {len(updates)} cells")
+        log = [f"[DRY-RUN] {tab_name} (col {col}, week {week_sunday}): "
+               f"would write {len(updates)} cells"]
         for a1, v in updates:
             log.append(f"    {a1} <- {v}")
     else:
         fill._retry(ws.batch_update, [
             {"range": a1, "values": [[v]]} for a1, v in updates
         ], value_input_option="USER_ENTERED")
-        log.append(f"[OK] {tab_name}: wrote {len(updates)} cells (col {col})")
+        log = [f"[OK] {tab_name}: wrote {len(updates)} cells (col {col})"]
     if missing:
         log.append(f"    [note] labels not found on tab: {', '.join(missing)}")
     return log
@@ -351,22 +383,26 @@ def _most_recent_sunday(today: Optional[dt.date] = None) -> dt.date:
 def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = None,
                   dry_run: bool = False, skip_download: bool = False,
                   logfn=print) -> dict:
-    """Download the ATT ICD Summary crosstab from Tableau and fill the OPT
-    section on the target ICD tabs. This is the entry point the weekly
-    report's run.py calls. Returns {"filled": [...], "skipped": [...]}."""
+    """Download the ATT + INT ICD Summary crosstabs from Tableau and fill the
+    OPT section on the target ICD tabs. Entry point the weekly report's run.py
+    calls. Returns {"filled": [...], "skipped": [...]}."""
     if we_sunday is None:
         we_sunday = _most_recent_sunday()
     if skip_download:
-        if not DOWNLOAD_PATH.exists():
-            raise RuntimeError(f"--skip-download but no file at {DOWNLOAD_PATH}")
-        logfn(f"OPT: reusing {DOWNLOAD_PATH}")
+        for pth, lbl in [(ATT_PATH, "ATT"), (INT_PATH, "INT")]:
+            if not pth.exists():
+                raise RuntimeError(f"--skip-download but no {lbl} crosstab at {pth}")
+        logfn("OPT: reusing previously-downloaded crosstabs")
     else:
-        download_icd_summary(DOWNLOAD_PATH, verbose=False)
-        logfn(f"OPT: downloaded crosstab ({DOWNLOAD_PATH.stat().st_size:,} bytes)")
+        download_crosstab(ATT_VIEW_URL, ATT_SHEET, ATT_PATH, verbose=False)
+        download_crosstab(INT_VIEW_URL, INT_SHEET, INT_PATH, verbose=False)
+        logfn("OPT: downloaded ATT + INT crosstabs")
 
-    by_owner, national = parse_icd_summary(DOWNLOAD_PATH)
-    logfn(f"OPT: parsed {len(by_owner)} ICDs"
-          + ("" if national else " — WARNING: no national total row"))
+    att_by_owner, att_national = parse_icd_summary(ATT_PATH)
+    int_by_owner, int_national = parse_icd_summary(INT_PATH)
+    logfn(f"OPT: parsed {len(att_by_owner)} ATT ICDs, {len(int_by_owner)} INT ICDs"
+          + ("" if att_national and int_national
+             else " — WARNING: a national total row is missing"))
 
     try:
         from automations.focus_office_att import aliases as _al
@@ -380,8 +416,9 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
     filled: List[str] = []
     skipped: List[str] = []
     for tab_name in targets:
-        lines = fill_opt_for_tab(sh, tab_name, by_owner, national,
-                                 aliases_map, we_sunday, dry_run)
+        lines = fill_opt_for_tab(sh, tab_name, att_by_owner, att_national,
+                                 int_by_owner, int_national, aliases_map,
+                                 we_sunday, dry_run)
         for ln in lines:
             logfn("OPT: " + ln)
         if any(ln.startswith("[OK]") or ln.startswith("[DRY-RUN]") for ln in lines):
@@ -398,7 +435,7 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true",
                     help="Don't write to the Sheet — just print what would change.")
     ap.add_argument("--skip-download", action="store_true",
-                    help="Reuse the last downloaded crosstab instead of re-pulling.")
+                    help="Reuse the last downloaded crosstabs instead of re-pulling.")
     args = ap.parse_args()
 
     week = dt.date.fromisoformat(args.week) if args.week else _most_recent_sunday()
