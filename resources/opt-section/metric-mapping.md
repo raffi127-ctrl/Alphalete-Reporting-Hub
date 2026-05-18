@@ -44,6 +44,29 @@ per-ICD number. Pulled from Tableau's total/average row.
 
 ---
 
+## Confirmed — test download (2026-05-17)
+
+- In the AUTOMATION PULL view's **Download → Crosstab** dialog, the sheet to
+  pick is **"ICD Summary - ATT (V2)"** (current week; "(LW)" = last week).
+- Downloaded file: **UTF-16, tab-delimited**, one row per ICD.
+- ICD name column: **"ICD Owner Name"** — values are ALL CAPS.
+- National/total row: **"Grand Total"** — its `Sales Per Rep Avg` cell is the
+  National AVG Apps value.
+- Columns present: ICD Owner Name, Ranking, Rep Count, Sales Per Rep Avg,
+  % Wireless rep count, New Internet, Upgrd Internet, Video Sales,
+  Wrlss Lines New/Port, New Internet ABP Mix %, Tech Install %,
+  New Internet 1Gig+ Mix%, % of Orders After 7:30PM.
+
+## Fill rules
+
+- **Raf Hidalgo's tab** has an extra section other tabs don't — find the
+  "OPT" section anchor in column B and scope the label lookup within it;
+  never assume fixed row numbers.
+- **Never delete existing data** — the fill only writes OPT metric cells.
+- Preview on the **Marcellus Butler** tab first, before rolling out to all.
+
+---
+
 ## Still to map
 
 OPT rows not yet covered: Headcount, Leaders, New starts in classroom,
