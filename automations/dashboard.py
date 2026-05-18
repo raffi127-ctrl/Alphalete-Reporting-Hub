@@ -2761,26 +2761,25 @@ def _label_for_url(url: str) -> str:
 
 
 def _parse_link_lines(raw: str) -> list[tuple[str, str]]:
-    """Parse '\\n'-separated link lines into a list of (label, url) tuples.
+    """Parse newline-separated link lines into (label, url) tuples.
 
-    Each line is either 'label | url' or just 'url'. Empty lines and the
-    literal placeholder 'n/a' are filtered out so legacy single-loom data
-    + the 'paste n/a if none' placeholder both pass through cleanly.
+    A line may be 'label | url', 'label: url', or just a bare url — and may
+    also be a plain-text note with no link at all. We pull the first http(s)
+    URL out of each line; the text before it (minus a trailing ':' or '|')
+    becomes the label. Lines with NO url are dropped, so stray notes never
+    render as dead buttons.
     """
     out: list[tuple[str, str]] = []
     for raw_line in (raw or "").splitlines():
         line = raw_line.strip()
         if not line or line.lower() == "n/a":
             continue
-        if "|" in line:
-            label_part, url_part = line.split("|", 1)
-            label = label_part.strip()
-            url = url_part.strip()
-        else:
-            label = ""
-            url = line
-        if url and url.lower() != "n/a":
-            out.append((label, url))
+        m = re.search(r"https?://\S+", line)
+        if not m:
+            continue  # a note with no link — not a button
+        url = m.group(0).rstrip(".,);")
+        label = line[:m.start()].strip().rstrip("|:").strip()
+        out.append((label, url))
     return out
 
 
