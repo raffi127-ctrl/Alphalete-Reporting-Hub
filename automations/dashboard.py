@@ -3900,11 +3900,12 @@ def _render_review_panel(entry: dict) -> None:
                     )
         else:
             # Step 1 — the Review button.
+            _creator = entry.get("Assigned To") or "the creator"
             st.markdown(
                 "👀 **Review it:** run the report once to confirm it works. "
                 "The Approve button unlocks after a successful run.\n\n"
                 "Spot a glitch, a flaw, or anything you'd change? Use "
-                "**📝 Request Edits** below to send it back to the creator "
+                f"**📝 Request Edits** below to send it back to **{_creator}** "
                 "with your notes."
             )
             if st.button("🔍 Review the report", key=f"startreview_{eid}",
