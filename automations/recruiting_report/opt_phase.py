@@ -319,36 +319,31 @@ def fill_opt_for_tab(
     return log
 
 
-def _current_week_sunday(today: Optional[dt.date] = None) -> dt.date:
-    """The Sunday that ends the current Mon-Sun week."""
+def _most_recent_sunday(today: Optional[dt.date] = None) -> dt.date:
+    """The most recent Sunday on or before today — the week that just ended."""
     today = today or dt.date.today()
-    return today + dt.timedelta(days=(6 - today.weekday()) % 7)
+    return today - dt.timedelta(days=(today.weekday() + 1) % 7)
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--only", help="Only this ICD tab (by tab name).")
-    ap.add_argument("--week", help="WE Sunday YYYY-MM-DD. Default: this week.")
-    ap.add_argument("--dry-run", action="store_true",
-                    help="Don't write to the Sheet — just print what would change.")
-    ap.add_argument("--skip-download", action="store_true",
-                    help="Reuse the last downloaded crosstab instead of re-pulling.")
-    args = ap.parse_args()
-
-    week = dt.date.fromisoformat(args.week) if args.week else _current_week_sunday()
-    print(f"OPT phase — target week (WE Sunday): {week.isoformat()}  dry_run={args.dry_run}")
-
-    if args.skip_download:
+def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = None,
+                  dry_run: bool = False, skip_download: bool = False,
+                  logfn=print) -> dict:
+    """Download the ATT ICD Summary crosstab from Tableau and fill the OPT
+    section on the target ICD tabs. This is the entry point the weekly
+    report's run.py calls. Returns {"filled": [...], "skipped": [...]}."""
+    if we_sunday is None:
+        we_sunday = _most_recent_sunday()
+    if skip_download:
         if not DOWNLOAD_PATH.exists():
-            print(f"FAIL: --skip-download but no file at {DOWNLOAD_PATH}")
-            return 1
-        print(f"reusing {DOWNLOAD_PATH}")
+            raise RuntimeError(f"--skip-download but no file at {DOWNLOAD_PATH}")
+        logfn(f"OPT: reusing {DOWNLOAD_PATH}")
     else:
-        download_icd_summary(DOWNLOAD_PATH)
+        download_icd_summary(DOWNLOAD_PATH, verbose=False)
+        logfn(f"OPT: downloaded crosstab ({DOWNLOAD_PATH.stat().st_size:,} bytes)")
 
     by_owner, national = parse_icd_summary(DOWNLOAD_PATH)
-    print(f"parsed crosstab: {len(by_owner)} ICDs, "
-          f"national row {'found' if national else 'MISSING'}")
+    logfn(f"OPT: parsed {len(by_owner)} ICDs"
+          + ("" if national else " — WARNING: no national total row"))
 
     try:
         from automations.focus_office_att import aliases as _al
@@ -357,17 +352,41 @@ def main() -> int:
         aliases_map = {}
 
     sh = fill.open_sheet()
-
-    if args.only:
-        targets = [args.only]
-    else:
-        targets = [c["sheet_tab"] for c in fill.load_mapping()["confirmed"]]
-
+    targets = [only] if only else [c["sheet_tab"]
+                                   for c in fill.load_mapping()["confirmed"]]
+    filled: List[str] = []
+    skipped: List[str] = []
     for tab_name in targets:
-        for line in fill_opt_for_tab(sh, tab_name, by_owner, national,
-                                     aliases_map, week, args.dry_run):
-            print(line)
-    print("done")
+        lines = fill_opt_for_tab(sh, tab_name, by_owner, national,
+                                 aliases_map, we_sunday, dry_run)
+        for ln in lines:
+            logfn("OPT: " + ln)
+        if any(ln.startswith("[OK]") or ln.startswith("[DRY-RUN]") for ln in lines):
+            filled.append(tab_name)
+        else:
+            skipped.append(tab_name)
+    return {"filled": filled, "skipped": skipped}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--only", help="Only this ICD tab (by tab name).")
+    ap.add_argument("--week", help="WE Sunday YYYY-MM-DD. Default: most recent Sunday.")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="Don't write to the Sheet — just print what would change.")
+    ap.add_argument("--skip-download", action="store_true",
+                    help="Reuse the last downloaded crosstab instead of re-pulling.")
+    args = ap.parse_args()
+
+    week = dt.date.fromisoformat(args.week) if args.week else _most_recent_sunday()
+    print(f"OPT phase — target week (WE Sunday): {week.isoformat()}  dry_run={args.dry_run}")
+    try:
+        result = run_opt_phase(week, only=args.only, dry_run=args.dry_run,
+                               skip_download=args.skip_download)
+    except Exception as e:
+        print(f"FAIL: {type(e).__name__}: {e}")
+        return 1
+    print(f"done — {len(result['filled'])} filled, {len(result['skipped'])} skipped")
     return 0
 
 

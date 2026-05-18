@@ -12,7 +12,9 @@ Workflow per run:
      formatted copy of Template Fiber, then backfill the recent weeks.
        - needs_review / ambiguous name: color the tab red to fix the mapping.
        - no AppStream match:            color the tab blue.
-  4. Log everything to output/logs/recruiting-<date>.log.
+  4. OPT phase — pull the ATT ICD Summary crosstab from Tableau and fill each
+     tab's OPT + Office-Metrics section (needs Tableau open + logged in).
+  5. Log everything to output/logs/recruiting-<date>.log.
 
 Usage:
   .venv/bin/python -m automations.recruiting_report.run                 # current week, live
@@ -293,6 +295,18 @@ def main() -> int:
         log.warning("MISSING TABS (%d): %s", len(still_missing), ", ".join(still_missing))
     else:
         log.info("MISSING TABS: none ✓ (all %d confirmed offices filled this week)", len(confirmed_names))
+
+    # OPT phase — pull the ATT ICD Summary from Tableau and fill each tab's
+    # OPT + Office-Metrics section. Runs after the AppStream phase (its
+    # Playwright context is already closed). Wrapped so a Tableau hiccup
+    # can't fail the recruiting fill that already succeeded.
+    try:
+        from automations.recruiting_report import opt_phase
+        opt_result = opt_phase.run_opt_phase(dry_run=args.dry_run, logfn=log.info)
+        log.info("OPT phase: %d tabs filled, %d skipped",
+                 len(opt_result["filled"]), len(opt_result["skipped"]))
+    except Exception as e:
+        log.warning("OPT phase skipped (is Tableau open + logged in?): %s", e)
 
     log.info("done")
     return 0

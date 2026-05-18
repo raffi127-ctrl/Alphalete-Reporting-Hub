@@ -694,6 +694,7 @@ AUTOMATED_REPORTS = [
             {"text": "Launch Chrome with the recruiting profile",
              "action": "launch_chrome"},
             {"text": "Log into AppStream as **rhidalgo** (broader account) in the new Chrome window"},
+            {"text": "Open **Tableau** in the same Chrome window and log in — needed for the OPT / sales section"},
         ],
         "post_run": {
             "message_success": "⏳ Done with **rhidalgo** (~43 offices filled). Now **log out of rhidalgo and log into rcaptain** in the same Chrome window, then click **Run Again** below to fill the remaining offices.",
