@@ -515,6 +515,17 @@ def fill_opt_for_tab(
         log = [f"[OK] {tab_name}: wrote {len(updates)} cells (col {col})"]
     if missing:
         log.append(f"    [note] labels not found on tab: {', '.join(missing)}")
+    # Data-gap line — which Tableau views this ICD wasn't found in, and which
+    # rows aren't on the tab. Collected into the end-of-run rundown.
+    gap_views = [v for row, v in [(att_row, "ATT"), (int_row, "INT"),
+                 (metrics_row, "Metrics"), (churn_row, "Churn")] if not row]
+    if gap_views or missing:
+        bits = []
+        if gap_views:
+            bits.append("not in Tableau view(s): " + ", ".join(gap_views))
+        if missing:
+            bits.append("row(s) not on tab: " + ", ".join(missing))
+        log.append(f"[gap] {tab_name} — " + "; ".join(bits))
     return log
 
 
@@ -578,6 +589,7 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
                                    for c in fill.load_mapping()["confirmed"]]
     filled: List[str] = []
     skipped: List[str] = []
+    all_gaps: List[str] = []
     for tab_name in targets:
         lines = fill_opt_for_tab(sh, tab_name, att_by_owner, att_national,
                                  int_by_owner, int_national, metrics_by_owner,
@@ -585,11 +597,18 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
                                  aliases_map, we_sunday, dry_run)
         for ln in lines:
             logfn("OPT: " + ln)
+            if ln.startswith("[SKIP]") or ln.startswith("[gap]"):
+                all_gaps.append(ln)
         if any(ln.startswith("[OK]") or ln.startswith("[DRY-RUN]") for ln in lines):
             filled.append(tab_name)
         else:
             skipped.append(tab_name)
-    return {"filled": filled, "skipped": skipped}
+    if all_gaps:
+        logfn("")
+        logfn("===== DATA GAPS — what couldn't be filled (chase access / fix the tab) =====")
+        for g in all_gaps:
+            logfn("  " + g)
+    return {"filled": filled, "skipped": skipped, "gaps": all_gaps}
 
 
 def main() -> int:
