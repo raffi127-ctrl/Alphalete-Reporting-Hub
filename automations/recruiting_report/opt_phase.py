@@ -133,11 +133,6 @@ CHURN_SCRAPED: Dict[str, str] = {
     "90 day Churn":   "90 Day Churn",
 }
 
-# Column-B section anchors that bound a section (normalized).
-SECTION_ANCHORS = {"we sunday", "opt", "office metrics", "wireless metrics",
-                   "extra data"}
-
-
 def _norm(s) -> str:
     """Normalize a label / header / name for matching: lowercase, trim, drop
     apostrophes + periods, collapse whitespace, drop spaces around / - %."""
@@ -153,6 +148,9 @@ ALT_LABELS: Dict[str, List[str]] = {
     "% of Wireless Rep Count": ["% of Wireless Attachment", "% Wireless Rep Count",
                                 "% Wireless Attachment"],
     "National AVG Apps": ["National AVG for sales"],
+    "New Internets": ["New Internet"],
+    "DTV": ["DTVs"],
+    "0-30 Day Churn": ["0-30 Churn"],
 }
 
 
@@ -361,14 +359,23 @@ def _match_owner(tab_name: str, by_owner: dict, aliases_map: dict) -> Optional[d
 
 # -------------------------------------------------------------------- fill
 
-def _section_label_rows(col_b: List[str], is_anchor) -> Dict[str, int]:
-    """{normalized label: 1-indexed row} for the section whose header matches
-    is_anchor() in column B — scoped from the anchor to the next section
-    anchor. Handles tabs (e.g. Raf's) with an extra section: the section is
-    found by its anchor, never by a hardcoded row number."""
+def _is_opt_anchor(nv: str) -> bool:
+    return nv == "opt" or "office performance tracker" in nv
+
+
+# Column-B anchors that END the OPT block. Everything from the OPT header to
+# one of these is one block — OPT + Office Metrics combined — because some
+# tabs (Raf's) merge them under a single OPT header instead of two sections.
+_OPT_BLOCK_END = {"we sunday", "wireless metrics", "extra data"}
+
+
+def _opt_block_rows(col_b: List[str]) -> Dict[str, int]:
+    """{normalized label: 1-indexed row} for the OPT block — the OPT section
+    AND the Office Metrics section as one span. Found from the OPT anchor in
+    column B to the next major section; never a hardcoded row number."""
     start = None
     for j, v in enumerate(col_b):
-        if is_anchor(_norm(v)):
+        if _is_opt_anchor(_norm(v)):
             start = j
             break
     if start is None:
@@ -378,18 +385,10 @@ def _section_label_rows(col_b: List[str], is_anchor) -> Dict[str, int]:
         nv = _norm(col_b[j])
         if not nv:
             continue
-        if nv in SECTION_ANCHORS or "office performance tracker" in nv:
+        if nv in _OPT_BLOCK_END or "office performance tracker" in nv:
             break
         out.setdefault(nv, j + 1)
     return out
-
-
-def _is_opt_anchor(nv: str) -> bool:
-    return nv == "opt" or "office performance tracker" in nv
-
-
-def _is_office_metrics_anchor(nv: str) -> bool:
-    return nv == "office metrics"
 
 
 def fill_opt_for_tab(
@@ -419,8 +418,9 @@ def fill_opt_for_tab(
         return [f"[SKIP] {tab_name}: no column for week {week_sunday.isoformat()}"]
 
     col_b = [r[1] if len(r) > 1 else "" for r in grid]
-    opt_rows = _section_label_rows(col_b, _is_opt_anchor)
-    om_rows = _section_label_rows(col_b, _is_office_metrics_anchor)
+    # OPT + Office Metrics as one label map — some tabs (Raf's) merge them
+    # under a single OPT header instead of two separate sections.
+    opt_rows = om_rows = _opt_block_rows(col_b)
     if not opt_rows:
         return [f"[SKIP] {tab_name}: no OPT section anchor found in column B"]
 
