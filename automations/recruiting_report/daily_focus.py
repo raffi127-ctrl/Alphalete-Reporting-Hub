@@ -419,13 +419,21 @@ def _sort_icd_list_alphabetically(
 def _find_section_anchor(col3: List[str], icd_name: str) -> Optional[int]:
     """Find row containing '<icd_name>\\nCurrent Week' in col C. Returns 1-indexed row."""
     needle = icd_name.strip().lower()
+    loose = None
     for row_idx, val in enumerate(col3, start=1):
         if not val:
             continue
         cleaned = val.strip().lower()
-        if needle in cleaned and "current week" in cleaned:
+        if "current week" not in cleaned:
+            continue
+        # Match the ICD-name portion exactly so 'George Hipolito' doesn't also
+        # grab the 'George Hipolito 2' section. The loose contains-match is
+        # kept only as a fallback for an oddly-labelled hand-made section.
+        if cleaned.split("current week")[0].strip() == needle:
             return row_idx
-    return None
+        if loose is None and needle in cleaned:
+            loose = row_idx
+    return loose
 
 
 def _find_metric_rows_in_section(col3: List[str], anchor_row: int) -> Dict[str, int]:
@@ -702,10 +710,11 @@ def _is_skipped(name: str) -> bool:
     return _load_overrides().get(name.lower().strip()) == SKIP_SENTINEL
 
 
-def _state_file(captainship: str) -> Path:
-    """Per-captainship retry-state file — Raf's and Carlos's runs must not
-    clobber each other's skipped-ICD list."""
-    return _OUTPUT_DIR / f"daily_focus_state_{captainship}.json"
+def _state_file() -> Path:
+    """Shared retry-state file — the skipped-ICD list from the last run, read
+    by the Hub's 'Retry the skipped ICDs' button. One file: a merged run
+    covers both captainships."""
+    return _OUTPUT_DIR / "daily_focus_state.json"
 
 
 def find_captainship_worksheet(sh, captainship: str):
@@ -720,8 +729,8 @@ def find_captainship_worksheet(sh, captainship: str):
     return None
 
 
-def _read_state(captainship: str) -> dict:
-    sf = _state_file(captainship)
+def _read_state() -> dict:
+    sf = _state_file()
     if not sf.exists():
         return {}
     try:
@@ -730,8 +739,8 @@ def _read_state(captainship: str) -> dict:
         return {}
 
 
-def _write_state(captainship: str, inaccessible: List[str], week_start: dt.date) -> None:
-    sf = _state_file(captainship)
+def _write_state(inaccessible: List[str], week_start: dt.date) -> None:
+    sf = _state_file()
     sf.parent.mkdir(parents=True, exist_ok=True)
     sf.write_text(json.dumps({
         "ts": dt.datetime.now().isoformat(timespec="seconds"),
@@ -752,37 +761,37 @@ def _setup_logging(today: dt.date) -> logging.Logger:
 
 
 def run_captainship(captainship: str, args, week_start: dt.date,
-                    log: logging.Logger) -> int:
-    """Fill the Daily Focus report for one captainship. Returns 0 ok / 1 fail.
-    The browser session and week are shared by the caller so one run can do
-    several captainships back-to-back."""
+                    log: logging.Logger) -> Tuple[int, List[str]]:
+    """Fill the Daily Focus report for one captainship. Returns
+    (return-code, skipped-ICD list); the caller merges the skipped lists from
+    all captainships into one shared retry-state file."""
     log.info("=== captainship: %s ===", captainship)
     sh = fill._client().open_by_key(DAILY_FOCUS_SPREADSHEET_ID)
     ws = find_captainship_worksheet(sh, captainship)
     if ws is None:
         log.error("no tab found for captainship %s in the daily-focus sheet "
                   "(looked for a tab whose name contains %r)", captainship, captainship)
-        return 1
+        return 1, []
     log.info("using tab: %s", ws.title)
 
     icds = _read_icd_list(ws)
     if args.only:
         icds = [i for i in icds if i.lower() == args.only.lower()]
     if args.retry_inaccessible:
-        prev = _read_state(captainship).get("inaccessible", [])
+        prev = _read_state().get("inaccessible", [])
         prev_lower = {n.lower() for n in prev}
         icds = [i for i in icds if i.lower() in prev_lower]
         if not icds:
-            log.info("retry-inaccessible: no ICDs in state file — nothing to retry. "
-                     "(Either all ICDs pulled on the first run, or no first run has happened yet.)")
-            return 0
+            log.info("retry-inaccessible: no skipped ICDs for %s — nothing to "
+                     "retry.", captainship)
+            return 0, []
         log.info("retry-inaccessible mode: retrying %d ICD(s) from last run: %s",
                  len(icds), icds)
     log.info("ICDs to process: %s", icds)
 
-    # Track ICDs that hit the "not accessible from this AS account" branch
-    # so the dashboard's Retry button knows which ones to re-attempt on
-    # the 2nd login.
+    # Track ICDs that couldn't be pulled — rcaptain has no AppStream access to
+    # them yet. The caller writes these to the retry-state file so the Hub can
+    # list them and offer a retry once access is granted.
     inaccessible_this_run: List[str] = []
 
     col3 = fill._retry(ws.col_values, 3)
@@ -804,7 +813,7 @@ def run_captainship(captainship: str, args, week_start: dt.date,
                 break
         if not target_page:
             log.error("no applicantstream tab open in attached Chrome")
-            return 1
+            return 1, []
 
         for icd in icds:
             if _is_skipped(icd):
@@ -914,19 +923,13 @@ def run_captainship(captainship: str, args, week_start: dt.date,
     finally:
         p.stop()
 
-    # Persist inaccessible-ICD state so the dashboard's "Retry missing ICDs"
-    # button knows what to re-attempt. Skip when --only or --dry-run is set
-    # (those don't reflect a full-list view, so they shouldn't overwrite state).
-    if not args.only and not args.dry_run:
-        _write_state(captainship, inaccessible_this_run, week_start)
-        if inaccessible_this_run:
-            log.info("saved %d inaccessible ICD(s) to %s for retry on another login",
-                     len(inaccessible_this_run), _state_file(captainship).name)
-        else:
-            log.info("all ICDs pulled — cleared retry state")
+    if inaccessible_this_run:
+        log.info("%s: %d ICD(s) skipped — rcaptain has no AppStream access "
+                 "yet: %s", captainship, len(inaccessible_this_run),
+                 ", ".join(inaccessible_this_run))
 
     log.info("done")
-    return 0
+    return 0, inaccessible_this_run
 
 
 def main() -> int:
@@ -938,9 +941,9 @@ def main() -> int:
     ap.add_argument("--week-start", help="Sunday at start of week to fetch (default: most recent past Sunday).")
     ap.add_argument("--only", help="Only one ICD (short name as in col 22).")
     ap.add_argument("--retry-inaccessible", action="store_true",
-                    help="Only retry the ICDs a previous run flagged as not "
-                         "pulled. Rarely needed now that the single rcaptain "
-                         "login reaches every ICD; kept for transient retries.")
+                    help="Only re-run the ICDs the last run flagged as not "
+                         "pulled (rcaptain had no AppStream access yet). Run "
+                         "this once that access has been granted.")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--no-copy", action="store_true",
                     help="Skip the Wednesday copy-current-to-last step.")
@@ -961,8 +964,22 @@ def main() -> int:
 
     targets = CAPTAINSHIPS if args.captainship == "all" else [args.captainship]
     rc = 0
+    skipped: List[str] = []
     for cs in targets:
-        rc |= run_captainship(cs, args, week_start, log)
+        cs_rc, cs_skipped = run_captainship(cs, args, week_start, log)
+        rc |= cs_rc
+        skipped += cs_skipped
+
+    # One shared retry-state file for the whole run — the Hub reads it to list
+    # the skipped ICDs and power the "Retry the skipped ICDs" button. Not
+    # written on --only / --dry-run (those aren't a full-list view).
+    if not args.only and not args.dry_run:
+        _write_state(skipped, week_start)
+        if skipped:
+            log.info("%d ICD(s) skipped this run — saved to %s for retry",
+                     len(skipped), _state_file().name)
+        else:
+            log.info("all ICDs pulled — cleared retry state")
     return rc
 
 

@@ -780,8 +780,17 @@ AUTOMATED_REPORTS = [
             {"text": "Log into AppStream as **rcaptain** in the new Chrome window"},
         ],
         "post_run": {
-            "message_success": "✅ Daily Focus run complete — the Raf and Carlos tabs are both filled.",
+            "message_success": "✅ Daily Focus run complete — the Raf and Carlos tabs are filled. Any ICD that couldn't be pulled (rcaptain has no AppStream access to it yet) is listed below.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+            "again_label": "🔁 Retry the skipped ICDs",
+            "again_action": {
+                "label": "Retry skipped ICDs",
+                "module": "automations.recruiting_report.daily_focus",
+                "args_fn": lambda: ["--retry-inaccessible"],
+            },
+            "again_state_file": "output/daily_focus_state.json",
+            "again_state_key": "inaccessible",
+            "again_empty_message": "✅ All ICDs pulled — nothing to retry.",
         },
         "actions": [
             {
@@ -2039,19 +2048,21 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                         # just these once a login with access is in place.
                         _names = ", ".join(missing_items)
                         st.markdown(
-                            "<div style='background:linear-gradient(135deg, #FFF3D6 0%, #FFE4A8 100%); "
-                            "border:2px solid #C9A85C; border-radius:10px; "
-                            "padding:14px 18px; margin:4px 0 10px; color:#5C4220;'>"
+                            "<div style='background:linear-gradient(135deg, #FFE4E0 0%, #FFCEC7 100%); "
+                            "border:2px solid #D8261C; border-radius:10px; "
+                            "padding:14px 18px; margin:4px 0 10px; color:#5C1A14;'>"
                             "<div style='font-weight:800; font-size:1.15rem;'>"
-                            f"⚠️ Run complete — {len(missing_items)} "
+                            f"🚩 Run complete — {len(missing_items)} "
                             f"ICD{'s' if len(missing_items)!=1 else ''} not pulled "
                             "(no AppStream access)</div>"
                             "<div style='margin-top:6px; font-size:0.95rem;'>"
                             f"<b>{_names}</b></div>"
                             "<div style='margin-top:8px; font-size:0.95rem;'>"
-                            "If another AppStream account has access to these, log "
-                            "into it in the report's Chrome window, then click the "
-                            "button below to re-pull just the missing ICDs."
+                            "Request rcaptain AppStream access for these ICDs "
+                            "(it can take a bit to go through). Or, if another "
+                            "AppStream account already has access, log into it "
+                            "in the Report Chrome window. Then click the button "
+                            "below to re-pull just these ICDs."
                             "</div></div>",
                             unsafe_allow_html=True,
                         )
@@ -2171,7 +2182,7 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                     cols = st.columns([3, 2])
                     with cols[0]:
                         if missing_items:
-                            st.caption("Log into an AppStream account with access, then click →")
+                            st.caption("Once an AppStream account with access is logged in, click →")
                         elif _resume_done:
                             st.caption("Picks up where it stopped — already-done "
                                        "offices are skipped.")
