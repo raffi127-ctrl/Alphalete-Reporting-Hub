@@ -691,7 +691,7 @@ AUTOMATED_REPORTS = [
             "estimated_minutes": 15,
         },
         "checklist": [
-            {"text": "Launch Chrome with the recruiting profile",
+            {"text": "Launch Reporting Chrome",
              "action": "launch_chrome"},
             {"text": "Log into AppStream as **rcaptain** in the new Chrome window"},
             {"text": "Log into the correct **ownerville** account in the same Chrome window — the OPT / sales section reaches Tableau through ownerville"},
@@ -775,7 +775,7 @@ AUTOMATED_REPORTS = [
             "estimated_minutes": 10,
         },
         "checklist": [
-            {"text": "Launch Chrome with the recruiting profile",
+            {"text": "Launch Reporting Chrome",
              "action": "launch_chrome"},
             {"text": "Log into AppStream as **rcaptain** in the new Chrome window"},
         ],
