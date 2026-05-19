@@ -235,6 +235,18 @@ OPT row group that can't be auto-pulled.
 
 ## Still to map
 
-OPT rows not yet covered: Headcount, Leaders, New starts in classroom,
-New Starts by EOW, New Start Retention, Green Leads. Plus the rest of the
-Metric Goals + Wireless sections. Awaiting Megan's mapping.
+**Leave alone — the automation must NOT write these** (Megan, 2026-05-18):
+- *Manual rows* — filled live in the 1-on-1 report review with the ICD and
+  Raf: **Headcount, Leaders, New starts in classroom, New Starts by EOW.**
+- *Sheet formula* — **New Start Retention** is a Google Sheets formula
+  (New starts in classroom vs New Starts by EOW); leave the cell intact.
+
+**Still awaiting a data source** (Megan to map): **Green Leads**, plus any
+other still-blank rows in the Metric Goals / Wireless sections — incl.
+**Insurance %** (Raf to confirm its source).
+
+**Next group to build — financial / P&L section** (Megan queued 2026-05-18,
+source TBD): Total Funds Available, Owners Payroll, Total Expenses, Indeed,
+Owners Withdrawal, Profit/Loss, Operating %. Source not yet given — likely
+ownerville's Office P&L page, a Tableau view, or sheet formulas; confirm
+which per row.

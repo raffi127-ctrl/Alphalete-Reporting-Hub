@@ -136,6 +136,17 @@ PROGRAM_SUMMARY_VIEW_URL = (
 )
 PROGRAM_SUMMARY_PATH = WORKSPACE / "output" / "opt_program_summary.csv"
 
+# Fiber Lead Performance — per-ICD pull. The by-zip data won't crosstab-export
+# and is 9,000+ rows whole, so the report filters the view to ONE ICD at a
+# time (Owner Name filter) and scrapes that ICD's small by-zip View Data.
+# Penetration Rate ← 'Office Lead Penetration (Fixed)'; Total Leads ← the sum
+# of the 'Lead Count' measure rows.
+FIBER_VIEW_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER2_1-D2D/FiberLeadPerformance"
+)
+FIBER_PATH = WORKSPACE / "output" / "opt_fiber.csv"
+
 
 # Tableau product type -> short label, in the order they appear in the cell.
 PRODUCT_LABELS = [
@@ -447,6 +458,86 @@ def _scrape_view_data_grid(win, verbose: bool = True
     return fields, list(seen.values())
 
 
+def _scrape_one_view_data(page, ctx, view_url: str, verbose: bool = True,
+                          activate_xy: Optional[Tuple[float, float]] = None
+                          ) -> Tuple[List[str], List[List[str]]]:
+    """Navigate an already-authenticated `page` to `view_url`, drive
+    Download -> Data, scrape + close the View Data window. Returns
+    (fields, records). Reusable in a loop with one shared page."""
+    for pg in list(ctx.pages):
+        if "hybrid-window" in (pg.url or "") or "/assets/vizql/" in (pg.url or ""):
+            try:
+                pg.close()
+            except Exception:
+                pass
+    page.goto(view_url, wait_until="domcontentloaded")
+    viz = page.frame_locator('iframe[title="Data Visualization"]')
+    dl = viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-download"]')
+    dl.wait_for(state="visible", timeout=40_000)
+    _wait_viz_loaded(page)
+    for _ in range(3):
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(300)
+    data_item = viz.locator(
+        '[data-tb-test-id="download-flyout-download-data-MenuItem"]')
+
+    def _open_flyout():
+        for _ in range(8):
+            try:
+                dl.click(timeout=8000)
+                return True
+            except Exception:
+                page.wait_for_timeout(2000)
+        return False
+
+    before = set(ctx.pages)
+    if activate_xy:
+        # 'Download -> Data' is disabled until a worksheet is active. Click a
+        # column header (activates the sheet, selects no data mark — a mark
+        # would scope the View Data to one zip). The header's y drifts per
+        # ICD, so try a few within the header band and keep whichever one
+        # leaves the 'Data' menu item enabled.
+        box = page.query_selector(
+            'iframe[title="Data Visualization"]').bounding_box()
+        x0, y0 = activate_xy
+        activated = False
+        for dy in (0.0, -0.02, 0.02, -0.03, 0.01, -0.01):
+            cx = box["x"] + box["width"] * x0
+            cy = box["y"] + box["height"] * (y0 + dy)
+            page.mouse.click(cx, cy)
+            page.wait_for_timeout(1100)
+            page.mouse.click(cx, cy)
+            page.wait_for_timeout(1100)
+            if not _open_flyout():
+                continue
+            page.wait_for_timeout(1400)
+            if data_item.get_attribute("aria-disabled") != "true":
+                activated = True
+                break
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(600)
+        if not activated:
+            raise RuntimeError("couldn't activate the worksheet for Download->Data")
+    else:
+        if not _open_flyout():
+            raise RuntimeError("Download button stayed blocked — viz didn't load")
+        page.wait_for_timeout(1400)
+    if verbose:
+        print("Download -> Data -> View Data window…", flush=True)
+    data_item.click()
+    page.wait_for_timeout(7000)
+    win = next((pg for pg in ctx.pages if pg not in before), None)
+    if win is None:
+        raise RuntimeError("Download -> Data didn't open a View Data window")
+    try:
+        return _scrape_view_data_grid(win, verbose)
+    finally:
+        try:
+            win.close()
+        except Exception:
+            pass
+
+
 def scrape_view_data(view_url: str, verbose: bool = True,
                      activate_xy: Optional[Tuple[float, float]] = None
                      ) -> Tuple[List[str], List[List[str]]]:
@@ -460,61 +551,9 @@ def scrape_view_data(view_url: str, verbose: bool = True,
     with sync_playwright() as p:
         browser = p.chromium.connect_over_cdp(fetch_office.CDP_URL)
         ctx = browser.contexts[0]
-        for pg in list(ctx.pages):
-            if "hybrid-window" in (pg.url or "") or "/assets/vizql/" in (pg.url or ""):
-                try:
-                    pg.close()
-                except Exception:
-                    pass
         page = _reauth_tableau(ctx)
         try:
-            page.goto(view_url, wait_until="domcontentloaded")
-            viz = page.frame_locator('iframe[title="Data Visualization"]')
-            dl = viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-download"]')
-            dl.wait_for(state="visible", timeout=40_000)
-            _wait_viz_loaded(page)
-            for _ in range(3):
-                page.keyboard.press("Escape")
-                page.wait_for_timeout(300)
-            if activate_xy:
-                box = page.query_selector(
-                    'iframe[title="Data Visualization"]').bounding_box()
-                if box:
-                    cx = box["x"] + box["width"] * activate_xy[0]
-                    cy = box["y"] + box["height"] * activate_xy[1]
-                    # First click activates the worksheet but selects a mark
-                    # (which would scope the View Data to that one mark); a
-                    # second click on the same mark toggles the selection off.
-                    page.mouse.click(cx, cy)
-                    page.wait_for_timeout(1500)
-                    page.mouse.click(cx, cy)
-                    page.wait_for_timeout(1500)
-            before = set(ctx.pages)
-            clicked = False
-            for _ in range(8):
-                try:
-                    dl.click(timeout=8000)
-                    clicked = True
-                    break
-                except Exception:
-                    page.wait_for_timeout(2000)
-            if not clicked:
-                raise RuntimeError("Download button stayed blocked — viz didn't load")
-            if verbose:
-                print("Download -> Data -> View Data window…", flush=True)
-            page.wait_for_timeout(1800)
-            viz.locator('[data-tb-test-id="download-flyout-download-data-MenuItem"]').click()
-            page.wait_for_timeout(7000)
-            win = next((pg for pg in ctx.pages if pg not in before), None)
-            if win is None:
-                raise RuntimeError("Download -> Data didn't open a View Data window")
-            try:
-                return _scrape_view_data_grid(win, verbose)
-            finally:
-                try:
-                    win.close()
-                except Exception:
-                    pass
+            return _scrape_one_view_data(page, ctx, view_url, verbose, activate_xy)
         finally:
             try:
                 page.close()
@@ -533,6 +572,137 @@ def download_program_summary(out_path: Path = PROGRAM_SUMMARY_PATH,
     if verbose:
         print(f"saved Program Summary view-data: {out_path} "
               f"({len(records)} rows)", flush=True)
+    return out_path
+
+
+def _fiber_totals(fields: List[str], records: List[List[str]]
+                  ) -> Tuple[str, Optional[int]]:
+    """From one ICD's by-zip View Data: (penetration %, total Lead Count).
+    Penetration = the constant 'Office Lead Penetration (Fixed)' field; Lead
+    Count = the sum of the 'Lead Count' measure rows."""
+    def col(substr):
+        return next((i for i, f in enumerate(fields)
+                     if substr in f.lower()), None)
+    pen_i = col("office lead penetration")
+    mn_i = col("measure names")
+    mv_i = col("measure values")
+    penetration = ""
+    if pen_i is not None:
+        for r in records:
+            if len(r) > pen_i and r[pen_i].strip():
+                penetration = r[pen_i].strip()
+                break
+    leads, found = 0.0, False
+    if mn_i is not None and mv_i is not None:
+        for r in records:
+            if len(r) > max(mn_i, mv_i) and \
+                    r[mn_i].strip().lower() == "lead count":
+                n = _to_num(r[mv_i])
+                if n is not None:
+                    leads += n
+                    found = True
+    return penetration, (int(round(leads)) if found else None)
+
+
+def _fiber_name_candidates(tab: str, as_owner_map: dict, aliases_map: dict
+                           ) -> List[str]:
+    """Owner-Name values to try for a tab — the Fiber view may spell a name
+    differently than the Sheet tab. Tries the tab name, its parenthetical
+    parts, the AppStream owner, and any alias-group members."""
+    cands = [tab]
+    m = re.match(r"^(.*?)\s*\((.+?)\)\s*$", tab or "")
+    if m:
+        cands += [m.group(2).strip(), m.group(1).strip()]
+    if as_owner_map.get(tab):
+        cands.append(as_owner_map[tab])
+    for canon, al in (aliases_map or {}).items():
+        grp = [canon] + list(al)
+        if _norm(tab) in {_norm(g) for g in grp}:
+            cands += grp
+    seen, out = set(), []
+    for c in cands:
+        c = (c or "").strip()
+        if c and _norm(c) not in seen:
+            seen.add(_norm(c))
+            out.append(c)
+    return out
+
+
+def download_fiber(icd_names: List[str], out_path: Path = FIBER_PATH,
+                   logfn=print) -> Path:
+    """Per-ICD Fiber pull: filter the Fiber view to each ICD's Owner Name,
+    scrape the by-zip View Data, record Penetration % + Lead Count. One
+    Tableau session, looped over the ICDs — slow (~one View Data pull per
+    ICD) because the view has no per-office summary sheet. Rows are keyed by
+    the Sheet tab name."""
+    from urllib.parse import quote
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        as_owner_map = {c["sheet_tab"]: c.get("as_owner", "")
+                        for c in fill.load_mapping()["confirmed"]}
+    except Exception:
+        as_owner_map = {}
+    try:
+        from automations.focus_office_att import aliases as _al
+        aliases_map = _al.load_aliases()
+    except Exception:
+        aliases_map = {}
+    rows: List[Tuple[str, str, str]] = []
+    with sync_playwright() as p:
+        browser = p.chromium.connect_over_cdp(fetch_office.CDP_URL)
+        ctx = browser.contexts[0]
+        page = _reauth_tableau(ctx)
+        try:
+            n = len(icd_names)
+            for i, tab in enumerate(icd_names, 1):
+                # The heavy Fiber viz leaks the working tab over many loads —
+                # re-auth a fresh tab every 10 ICDs to pre-empt the crash.
+                if i > 1 and i % 10 == 1:
+                    try:
+                        page.close()
+                    except Exception:
+                        pass
+                    page = _reauth_tableau(ctx)
+                pen, leads, ok, err = "", None, False, ""
+                for cand in _fiber_name_candidates(tab, as_owner_map, aliases_map):
+                    if ok:
+                        break
+                    url = f"{FIBER_VIEW_URL}?{quote('Owner Name')}={quote(cand)}"
+                    for _ in range(3):   # retry transient Tableau flakes
+                        try:
+                            if page.is_closed():
+                                page = _reauth_tableau(ctx)
+                            fields, recs = _scrape_one_view_data(
+                                page, ctx, url, verbose=False,
+                                activate_xy=(0.5, 0.52))
+                        except Exception as e:
+                            err = type(e).__name__
+                            if page.is_closed():
+                                try:
+                                    page = _reauth_tableau(ctx)
+                                except Exception:
+                                    pass
+                            continue
+                        pen, leads = _fiber_totals(fields, recs)
+                        if pen or leads is not None:
+                            ok = True
+                        break
+                rows.append((tab, pen, "" if leads is None else str(leads)))
+                if ok:
+                    logfn(f"OPT: Fiber [{i}/{n}] {tab}: "
+                          f"penetration={pen}, leads={leads}")
+                else:
+                    logfn(f"OPT: Fiber [{i}/{n}] {tab}: FAILED "
+                          f"({err or 'no data for this ICD'})")
+        finally:
+            try:
+                page.close()
+            except Exception:
+                pass
+    lines = ["tab\tpenetration\tlead_count"] + ["\t".join(r) for r in rows]
+    out_path.write_text("\n".join(lines), encoding="utf-8")
+    ok = sum(1 for _, pn, lc in rows if pn or lc)
+    logfn(f"OPT: Fiber — pulled {ok}/{len(rows)} ICDs → {out_path}")
     return out_path
 
 
@@ -684,6 +854,23 @@ def parse_program_summary(path: Path) -> Dict[str, dict]:
     return out
 
 
+def parse_fiber(path: Path) -> Dict[str, dict]:
+    """Read the per-ICD Fiber pull (tab-keyed). Returns {normalized tab name:
+    {"owner", "penetration", "lead_count"}}."""
+    if not Path(path).exists():
+        return {}
+    rows = [ln.split("\t") for ln in
+            Path(path).read_text(encoding="utf-8").splitlines() if ln.strip()]
+    out: Dict[str, dict] = {}
+    for r in rows[1:]:
+        if len(r) < 3 or not r[0].strip():
+            continue
+        out[_norm(r[0])] = {"owner": r[0].strip(),
+                            "penetration": r[1].strip(),
+                            "lead_count": r[2].strip()}
+    return out
+
+
 def _match_owner(tab_name: str, by_owner: dict, aliases_map: dict) -> Optional[dict]:
     """Find the crosstab row for a Sheet tab. Tries, in order: the tab name,
     its parenthetical (a tab named 'X (Y)' also tries Y and X), every alias
@@ -780,7 +967,7 @@ def fill_opt_for_tab(
     int_by_owner: dict, int_national: dict,
     metrics_by_owner: dict, churn_by_owner: dict, personal_prod: dict,
     wireless_metrics_by_owner: dict, wireless_churn_by_owner: dict,
-    captains_by_owner: dict, program_summary: dict,
+    captains_by_owner: dict, program_summary: dict, fiber_by_owner: dict,
     aliases_map: dict, week_sunday: dt.date, dry_run: bool,
 ) -> List[str]:
     """Write the OPT + Office-Metrics values for one ICD tab from the ATT and
@@ -896,6 +1083,14 @@ def fill_opt_for_tab(
     ps_row = _match_owner(tab_name, program_summary, aliases_map)
     if ps_row:
         _queue(om_rows, "Direct Deposit", round(ps_row["total"], 2))
+
+    # --- Fiber Lead (Office Metrics section) — keyed by tab name ---
+    fiber_row = fiber_by_owner.get(_norm(tab_name))
+    if fiber_row:
+        if fiber_row.get("penetration"):
+            _queue(om_rows, "Penetration Rate", fiber_row["penetration"])
+        if fiber_row.get("lead_count"):
+            _queue(om_rows, "Total Leads", fiber_row["lead_count"])
 
     # --- Personal Production (the ICD's own sales as a rep) ---
     # Always written — an ICD with no personal sales gets a literal 0.
@@ -1044,6 +1239,14 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
         logfn(f"OPT: pruned deleted tab '{tab}' — no longer in the Sheet")
     targets = [only] if only else [c["sheet_tab"]
                                    for c in mapping["confirmed"]]
+    # Fiber Lead — per-ICD pull (slow, one View Data scrape per ICD); skipped
+    # on --skip-download, which reuses the last opt_fiber.csv. parse_fiber
+    # returns {} when there's no file, so Fiber just doesn't fill.
+    if not skip_download:
+        download_fiber(targets, logfn=logfn)
+    fiber_by_owner = parse_fiber(FIBER_PATH)
+    if fiber_by_owner:
+        logfn(f"OPT: parsed {len(fiber_by_owner)} Fiber Lead")
     filled: List[str] = []
     skipped: List[str] = []
     all_gaps: List[str] = []
@@ -1053,7 +1256,7 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
                                  churn_by_owner, personal_prod,
                                  wireless_metrics_by_owner,
                                  wireless_churn_by_owner, captains_by_owner,
-                                 program_summary,
+                                 program_summary, fiber_by_owner,
                                  aliases_map, we_sunday, dry_run)
         for ln in lines:
             logfn("OPT: " + ln)

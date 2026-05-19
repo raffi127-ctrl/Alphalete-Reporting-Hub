@@ -1,5 +1,5 @@
 {
-  "confirmed_count": 52,
+  "confirmed_count": 50,
   "needs_review_count": 0,
   "skip_count": 28,
   "confirmed": [
@@ -36,13 +36,6 @@
       "office_id": "23275",
       "as_owner": "Nii Tagoe",
       "as_company": "Next Horizon Group, Inc.",
-      "confidence": 1.0
-    },
-    {
-      "sheet_tab": "Jonathan Franco",
-      "office_id": "22749",
-      "as_owner": "Jonathan Franco",
-      "as_company": "Strix Strategies, Inc",
       "confidence": 1.0
     },
     {
@@ -205,13 +198,6 @@
       "as_owner": "German Lopez",
       "as_company": "Orbit Consulting Inc",
       "confidence": 1.0
-    },
-    {
-      "sheet_tab": "Alex Vondra",
-      "office_id": "22794",
-      "as_owner": "Alexandra Payne",
-      "as_company": "Opal Core Management, Inc.",
-      "confidence": 0.62
     },
     {
       "sheet_tab": "Coel Reif",
