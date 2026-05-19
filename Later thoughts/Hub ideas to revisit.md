@@ -70,6 +70,12 @@ Library — so broken or half-ready reports don't go live.
   already auto-appends these to the review email (the access-gap block);
   the checklist step is to confirm the list was reviewed and the access
   requests actually sent.
+- Every ICD/owner name the report matches on has been checked against
+  the shared master ICD alias sheet — any tab-nickname vs legal/Tableau
+  spelling mismatch gets an alias added there (the canonical place), not
+  patched per report. Catches the silent failure where a report runs
+  clean but quietly leaves a tab blank because the name didn't match.
+  Per Megan (2026-05-19).
 
 **Note:** some checks can be fully automated (syntax valid, metadata
 present); others — like "works on Windows" — can't be proven without

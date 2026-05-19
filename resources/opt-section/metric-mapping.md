@@ -231,19 +231,32 @@ OPT row group that can't be auto-pulled.
   crosstab's `0-30 Day Churn` / `30 Day Churn` / `60 Day Churn` /
   `90 Day Churn` columns (parse like the New-Internet CHURN view).
 
-## Source view 11 — NDS Weekly Metrics (Insurance %)  ⏳ source given, not yet wired
+## Source view 11 — NDS Weekly Metrics (Insurance %)  ⏸ BLOCKED — crosstab export disabled
 
 - Workbook: **NDS-SNRES-ATT-OOF Workbook**, view **NDS Weekly Metrics Rep**.
 - URL: https://us-east-1.online.tableau.com/#/site/sci/views/NDS-SNRES-ATT-OOFWorkbook/NDSWeeklyMetricsRep?:iid=1
 - Supplies the **Insurance %** row in the Wireless Metrics section. The field
   is labeled **"Insurance %"** in Tableau too (Megan, 2026-05-18).
 
-To confirm before wiring (needs a look at the view):
-- It's a "…Rep" view — confirm whether it reports per-rep or per-ICD; the OPT
-  fill needs one per-ICD value like the other views.
-- Whether it has an AUTOMATION PULL custom view / locked filters, or the week
-  filter must be set (same filter-setting note as Metrics / CHURN).
-- Whether Crosstab download is enabled, or it's a filtered View-Data pull.
+**Investigated 2026-05-19:**
+- The view is **per-rep**, grouped by **Owner & Office**, with a **Total row
+  per owner** — that Total row is the ICD-level Insurance % the OPT fill needs.
+  The "Insurance %" column is present.
+- Filters on the view: Org, Owner & Office, Sales Week Ending, NDS Captain
+  Teams — this is the **base view**, filters not locked.
+- Crosstab dialog offers two sheets ("Weekly Metrics (Rep)" + "zzz Last
+  Refresh"), but on "Weekly Metrics (Rep)" the export **Download button stays
+  disabled** — same wall as the Fiber view (view 7): too many marks for a
+  full-base-view crosstab.
+
+**Recommended next step (needs Megan):** save an **AUTOMATION PULL custom
+view** — Sales Week Ending = current week, Owner & Office = All — like the
+other base views (Metrics / CHURN / Captain's Bonus). A filtered crosstab is
+smaller, so the Download button should enable. If it still won't, fall back to
+the **Download → Data (View Data)** scrape used for Fiber / Program Summary —
+the per-owner Total rows give the per-ICD value.
+Also confirm: it's the "NDS" workbook — does it cover **all** ICDs that need
+Insurance %, or only NDS-campaign offices?
 
 ---
 

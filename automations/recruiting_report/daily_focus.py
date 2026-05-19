@@ -751,38 +751,12 @@ def _setup_logging(today: dt.date) -> logging.Logger:
     return logging.getLogger("daily-focus")
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--captainship", choices=CAPTAINSHIPS, default=DEFAULT_CAPTAINSHIP,
-                    help="Which captainship to run — picks its tab in the shared sheet.")
-    ap.add_argument("--week-start", help="Sunday at start of week to fetch (default: most recent past Sunday).")
-    ap.add_argument("--only", help="Only one ICD (short name as in col 22).")
-    ap.add_argument("--retry-inaccessible", action="store_true",
-                    help="Only retry the ICDs the previous run flagged as "
-                         "inaccessible (no AppStream access). Run this after "
-                         "logging into an account that does have access. "
-                         "Skips any ICDs that already pulled successfully.")
-    ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--no-copy", action="store_true",
-                    help="Skip the Wednesday copy-current-to-last step.")
-    args = ap.parse_args()
-    captainship = args.captainship
-
-    today = dt.date.today()
-    log = _setup_logging(today)
-    log.info("captainship = %s", captainship)
-
-    # Default: AS picker = most recent Sunday on or before today (current week's start)
-    if args.week_start:
-        week_start = dt.date.fromisoformat(args.week_start)
-    else:
-        week_start = today - dt.timedelta(days=(today.weekday() + 1) % 7)
-    log.info("week_start (AS picker Sunday) = %s", week_start.isoformat())
-
-    log.info("today is %s", today.strftime("%A"))
-    log.info("(copy current→last is auto-detected per ICD: triggered when section's date row "
-             "doesn't match current week's Monday)")
-
+def run_captainship(captainship: str, args, week_start: dt.date,
+                    log: logging.Logger) -> int:
+    """Fill the Daily Focus report for one captainship. Returns 0 ok / 1 fail.
+    The browser session and week are shared by the caller so one run can do
+    several captainships back-to-back."""
+    log.info("=== captainship: %s ===", captainship)
     sh = fill._client().open_by_key(DAILY_FOCUS_SPREADSHEET_ID)
     ws = find_captainship_worksheet(sh, captainship)
     if ws is None:
@@ -953,6 +927,43 @@ def main() -> int:
 
     log.info("done")
     return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--captainship", choices=CAPTAINSHIPS + ["all"],
+                    default="all",
+                    help="Which captainship to run, or 'all' (default) — "
+                         "both Raf and Carlos in one run.")
+    ap.add_argument("--week-start", help="Sunday at start of week to fetch (default: most recent past Sunday).")
+    ap.add_argument("--only", help="Only one ICD (short name as in col 22).")
+    ap.add_argument("--retry-inaccessible", action="store_true",
+                    help="Only retry the ICDs a previous run flagged as not "
+                         "pulled. Rarely needed now that the single rcaptain "
+                         "login reaches every ICD; kept for transient retries.")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--no-copy", action="store_true",
+                    help="Skip the Wednesday copy-current-to-last step.")
+    args = ap.parse_args()
+
+    today = dt.date.today()
+    log = _setup_logging(today)
+
+    # Default: AS picker = most recent Sunday on or before today (current week's start)
+    if args.week_start:
+        week_start = dt.date.fromisoformat(args.week_start)
+    else:
+        week_start = today - dt.timedelta(days=(today.weekday() + 1) % 7)
+    log.info("week_start (AS picker Sunday) = %s", week_start.isoformat())
+    log.info("today is %s", today.strftime("%A"))
+    log.info("(copy current→last is auto-detected per ICD: triggered when "
+             "section's date row doesn't match current week's Monday)")
+
+    targets = CAPTAINSHIPS if args.captainship == "all" else [args.captainship]
+    rc = 0
+    for cs in targets:
+        rc |= run_captainship(cs, args, week_start, log)
+    return rc
 
 
 if __name__ == "__main__":

@@ -659,7 +659,7 @@ def _last_completed_as_picker(today: dt.date | None = None) -> dt.date:
 AUTOMATED_REPORTS = [
     {
         "id": "recruiting",
-        "name": "Weekly Recruiting Report",
+        "name": "ATT Program - Focus Report (Raf)",
         "creator": "Megan",
         "emoji": "🎯",
         "color": "#FF6B6B",
@@ -693,16 +693,12 @@ AUTOMATED_REPORTS = [
         "checklist": [
             {"text": "Launch Chrome with the recruiting profile",
              "action": "launch_chrome"},
-            {"text": "Log into AppStream as **rhidalgo** (broader account) in the new Chrome window"},
+            {"text": "Log into AppStream as **rcaptain** in the new Chrome window"},
             {"text": "Log into the correct **ownerville** account in the same Chrome window — the OPT / sales section reaches Tableau through ownerville"},
         ],
         "post_run": {
-            "message_success": "⏳ Done with **rhidalgo** (~43 offices filled). Now **log out of rhidalgo and log into rcaptain** in the same Chrome window, then click **Run Again** below to fill the remaining offices.",
-            "message_failed": "❌ rhidalgo run failed. Check the log above. To retry, switch logins if needed and click Run Again.",
-            "again_label": "🔁 Run Again with rcaptain",
-            # This run isn't "complete" — it's a mid-process hand-off — so the
-            # callout is amber, not green. Green is reserved for fully done.
-            "success_tone": "warning",
+            "message_success": "✅ Recruiting report run complete — the rcaptain login reaches every ICD, so it's all done in one run.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
         },
         "actions": [
             {
@@ -744,17 +740,17 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "daily-focus",
-        "name": "Daily Recruiting Focus — Raf",
+        "name": "Daily Recruiting Focus (Raf & Carlos)",
         "creator": "Megan",
         "emoji": "☀️",
         "color": "#4ECDC4",
         "category": "🎯 Recruiting",
-        "description": "Per-ICD daily breakdown (Mon–Fri current week, last week, plus next-week scheduled) for Raf's captainship. Fills the 'Raf' tab.",
+        "description": "Per-ICD daily breakdown (Mon–Fri current week, last week, plus next-week scheduled) for the Raf and Carlos captainships — fills both tabs in one run.",
         "breakdown": (
             "WHAT IT DOES\n"
             "A day-by-day breakdown (Mon-Fri) of the recruiting numbers "
-            "for **every ICD in Raf's captainship** — current week and "
-            "last week, side by side.\n\n"
+            "for **every ICD in the Raf and Carlos captainships** — current "
+            "week and last week, side by side. One run fills both tabs.\n\n"
             "TO ADD AN ICD\n"
             "**1.**  Make sure the **rcaptain** AppStream account can see "
             "that ICD.\n"
@@ -764,11 +760,8 @@ AUTOMATED_REPORTS = [
             "✅  The next run reads that list and fills in the new ICD "
             "automatically.\n\n"
             "IF AN ICD IS SKIPPED\n"
-            "If an ICD can't be pulled — almost always because the account "
-            "has no AppStream access — the card lists it once the run "
-            "finishes.\n"
-            "🔁  Log into an account that **has access**, then click "
-            "**Retry** — only the skipped ICDs re-pull."
+            "If a new ICD has no AppStream office mapped yet, the card "
+            "prompts you to map it at the top — confirm the match, then re-run."
         ),
         "sheet_url": DAILY_FOCUS_SHEET_URL,
         "assignees": ["Maud"],
@@ -779,7 +772,7 @@ AUTOMATED_REPORTS = [
             "frequency": "weekly",
             "weekdays": [1, 2, 3, 4, 5],  # Tue–Sat
             "time": "8:00 AM",
-            "estimated_minutes": 6,
+            "estimated_minutes": 10,
         },
         "checklist": [
             {"text": "Launch Chrome with the recruiting profile",
@@ -787,30 +780,17 @@ AUTOMATED_REPORTS = [
             {"text": "Log into AppStream as **rcaptain** in the new Chrome window"},
         ],
         "post_run": {
-            # The renderer at the call site handles three branches:
-            #   • state file has items → gold callout listing each skipped ICD
-            #   • state file exists but empty → "All ICDs filled" success
-            #   • state file missing → THIS fallback text
-            "message_success": "✅ Daily Focus run complete. If any ICDs couldn't be pulled (no AppStream access), they're listed below — log into an account that has access, then click retry. Already-pulled ICDs are skipped.",
-            "message_failed": "❌ Run failed. Check the log, fix the issue, then retry below — only the missing ICDs are re-pulled.",
-            "again_label": "🔁 Retry the skipped ICDs",
-            "again_action": {
-                "label": "Retry skipped ICDs",
-                "module": "automations.recruiting_report.daily_focus",
-                "args_fn": lambda: ["--captainship", "Raf", "--retry-inaccessible"],
-            },
-            "again_state_file": "output/daily_focus_state_Raf.json",
-            "again_state_key": "inaccessible",
-            "again_empty_message": "✅ All ICDs already pulled — nothing to retry.",
+            "message_success": "✅ Daily Focus run complete — the Raf and Carlos tabs are both filled.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
         },
         "actions": [
             {
                 "label": "Run Daily Focus",
                 "icon": "▶",
                 "primary": True,
-                "help": "Fills today's daily focus report for Raf's captainship ICDs.",
+                "help": "Fills today's daily focus report for every ICD in the Raf and Carlos captainships.",
                 "module": "automations.recruiting_report.daily_focus",
-                "args_fn": lambda: ["--captainship", "Raf"],
+                "args_fn": lambda: [],
             },
             {
                 "label": "Run for One ICD",
@@ -819,86 +799,10 @@ AUTOMATED_REPORTS = [
                 "text_label": "ICD name (as it appears in col V)",
                 "help": "Just refill one ICD's section — handy after a typo fix or partial run",
                 "module": "automations.recruiting_report.daily_focus",
-                "args_fn": lambda name: ["--captainship", "Raf", "--only", name],
+                "args_fn": lambda name: ["--only", name],
             },
         ],
-    },
-    {
-        "id": "daily-focus-carlos",
-        "screenshot_from": "daily-focus",  # shares the Raf Daily Focus screenshot
-        "name": "Daily Recruiting Focus — Carlos",
-        "creator": "Megan",
-        "emoji": "☀️",
-        "color": "#E76F51",
-        "category": "🎯 Recruiting",
-        "description": "Per-ICD daily breakdown (Mon–Fri current week, last week, plus next-week scheduled) for Carlos's captainship. Fills the 'Carlos' tab.",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "A day-by-day breakdown (Mon-Fri) of the recruiting numbers "
-            "for **every ICD in Carlos's captainship** — current week and "
-            "last week, side by side.\n\n"
-            "TO ADD AN ICD\n"
-            "**1.**  Make sure the **CarlosNLR** AppStream account can see "
-            "that ICD.\n"
-            "**2.**  Add the ICD's name to the list on the right of the "
-            "report (**column V**) — it has to match the AppStream name "
-            "**exactly**.\n"
-            "✅  The next run reads that list and fills in the new ICD "
-            "automatically.\n\n"
-            "IF AN ICD IS SKIPPED\n"
-            "If an ICD can't be pulled — almost always because the account "
-            "has no AppStream access — the card lists it once the run "
-            "finishes.\n"
-            "🔁  Log into an account that **has access**, then click "
-            "**Retry** — only the skipped ICDs re-pull."
-        ),
-        "sheet_url": DAILY_FOCUS_SHEET_URL,
-        "assignees": ["Maud"],
-        "schedule": {
-            "frequency": "weekly",
-            "weekdays": [1, 2, 3, 4, 5],  # Tue–Sat
-            "time": "8:00 AM",
-            "estimated_minutes": 6,
-        },
-        "checklist": [
-            {"text": "Launch Chrome with the recruiting profile",
-             "action": "launch_chrome"},
-            {"text": "Log into AppStream as **CarlosNLR** in the new Chrome window"},
-        ],
-        "post_run": {
-            "message_success": "✅ Daily Focus run complete. If any ICDs couldn't be pulled (no AppStream access), they're listed below — log into an account that has access, then click retry. Already-pulled ICDs are skipped.",
-            "message_failed": "❌ Run failed. Check the log, fix the issue, then retry below — only the missing ICDs are re-pulled.",
-            "again_label": "🔁 Retry the skipped ICDs",
-            "again_action": {
-                "label": "Retry skipped ICDs",
-                "module": "automations.recruiting_report.daily_focus",
-                "args_fn": lambda: ["--captainship", "Carlos", "--retry-inaccessible"],
-            },
-            "again_state_file": "output/daily_focus_state_Carlos.json",
-            "again_state_key": "inaccessible",
-            "again_empty_message": "✅ All ICDs already pulled — nothing to retry.",
-        },
-        "actions": [
-            {
-                "label": "Run Daily Focus",
-                "icon": "▶",
-                "primary": True,
-                "help": "Fills today's daily focus report for Carlos's captainship ICDs.",
-                "module": "automations.recruiting_report.daily_focus",
-                "args_fn": lambda: ["--captainship", "Carlos"],
-            },
-            {
-                "label": "Run for One ICD",
-                "icon": "🎯",
-                "needs_text": True,
-                "text_label": "ICD name (as it appears in col V)",
-                "help": "Just refill one ICD's section — handy after a typo fix or partial run",
-                "module": "automations.recruiting_report.daily_focus",
-                "args_fn": lambda name: ["--captainship", "Carlos", "--only", name],
-            },
-        ],
-    },
-]
+    },]
 
 # Merge in user-uploaded reports (saved by the Wire-Up dialog)
 AUTOMATED_REPORTS.extend(_load_uploaded_reports_raw())
@@ -1981,9 +1885,9 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
         # Daily-Focus only: prompt for any new ICDs in col V that don't have
         # an AppStream office mapped yet. Once confirmed (or marked 'not an
         # ICD'), the choice is persisted so it never asks again.
-        if report["id"] in ("daily-focus", "daily-focus-carlos"):
-            _render_daily_focus_mapping_prompt(
-                "Carlos" if report["id"] == "daily-focus-carlos" else "Raf")
+        if report["id"] == "daily-focus":
+            _render_daily_focus_mapping_prompt("Raf")
+            _render_daily_focus_mapping_prompt("Carlos")
 
         # Weekly Recruiting only: ask the runner to resolve any tab whose name
         # matches more than one AppStream office, before the run.
@@ -2156,10 +2060,9 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                         # ICDs are still unmapped — the run silently skips
                         # those, so nothing got filled for them.
                         _dfu = []
-                        if report["id"] in ("daily-focus", "daily-focus-carlos"):
-                            _dfu = _daily_focus_unmapped(
-                                "Carlos" if report["id"] == "daily-focus-carlos"
-                                else "Raf")
+                        if report["id"] == "daily-focus":
+                            _dfu = (_daily_focus_unmapped("Raf")
+                                    + _daily_focus_unmapped("Carlos"))
                         if _dfu:
                             st.warning(
                                 f"⚠️ {len(_dfu)} ICD(s) were skipped — not mapped "
