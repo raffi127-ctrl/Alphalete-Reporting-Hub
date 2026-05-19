@@ -1,5 +1,5 @@
 {
-  "count": 256,
+  "count": 257,
   "offices": [
     {
       "office_id": "20646",
@@ -1110,6 +1110,12 @@
       "owner": "Natalia Gwarda",
       "company": "Zora Industries, Inc.",
       "raw": "23431\nNatalia Gwarda\nZora Industries, Inc."
+    },
+    {
+      "office_id": "23624",
+      "owner": "Natalia Gwarda",
+      "company": "Zora Industries, Inc. 2nd",
+      "raw": "23624\nNatalia Gwarda\nZora Industries, Inc. 2nd"
     },
     {
       "office_id": "22814",

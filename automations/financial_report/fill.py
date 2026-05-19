@@ -23,7 +23,20 @@ OUTPUT_SHEETS = {
 }
 
 # How far below the 'Total Funds Available' anchor the financial rows run.
-_SECTION_SPAN = 14
+_SECTION_SPAN = 12
+# Tabs whose financial section is intentionally NOT filled. Raf's personal
+# financials live in a separate, larger report (permanent skip).
+_SKIP_TABS = {"raf hidalgo", "rafael hidalgo"}
+# ICDs not needed on the financial pull for now (Megan, 2026-05-18) — held
+# back pending their own files / source; revisit later. Jacob Dover's data is
+# "coming soon"; Coel Reif + German Lopez use a different report (not listed
+# here — handled separately once Megan provides those files).
+_SKIP_FINANCIAL = {
+    "melik el jaiez", "jacob dover", "tevin sterling", "jc pascual",
+    "oren shezaf", "nicholas weldon", "joseph logan", "jr young",
+    "jason strid", "tony chavez", "stergios kasapidis", "chan park",
+    "milly villagrana", "starr rodenhurst",
+}
 # A tab-name campaign suffix, e.g. ' - NDS' / ' - BOX' / ' - B2B'.
 _CAMPAIGN_SUFFIX = re.compile(r"\s*-\s*[A-Za-z0-9/&]+\s*$")
 
@@ -55,6 +68,11 @@ def _match_owner(tab: str, by_owner: Dict[str, dict],
     m = re.match(r"^(.*?)\s*\((.+?)\)\s*$", name)
     if m:
         cands += [m.group(2).strip(), m.group(1).strip()]
+    # Skip intentionally-unfilled tabs — checked against every candidate so a
+    # 'Jacob Dover (Tevin Sterling)' tab is caught by either name. Uses _norm
+    # (not norm_name) so an initial like 'JR' isn't dropped as a 'Jr' suffix.
+    if any(_norm(c) in _SKIP_TABS | _SKIP_FINANCIAL for c in cands):
+        return None
     if bridge:
         cands += bridge.get(norm_name(tab), [])
         cands += bridge.get(norm_name(name), [])
@@ -107,13 +125,25 @@ def fill_financial_for_tab(ws: gspread.Worksheet, office: dict,
     date_cols = _date_columns(grid[0])
     col_b = [(r[1] if len(r) > 1 else "") for r in grid]
 
+    tfa = _norm("Total Funds Available")
     anchor = next((j for j, v in enumerate(col_b)
-                   if _norm(v) == _norm("Total Funds Available")), None)
+                   if _norm(v).startswith(tfa)), None)
     if anchor is None:
         return [f"[skip] {tab}: no financial section"]
-    section = {_norm(col_b[j]): j
+    # (normalized label, row index) for the section, in order from the anchor
+    section = [(_norm(col_b[j]), j)
                for j in range(anchor, min(anchor + _SECTION_SPAN, len(col_b)))
-               if col_b[j].strip()}
+               if col_b[j].strip()]
+
+    def _find_row(metric_label: str) -> Optional[int]:
+        """Row for a metric — tolerant of suffixed labels ('Total Funds
+        Available (25k) / 11k') and short forms ('Arcadia' for Arcadia
+        Consulting). First match scanning down from the anchor."""
+        ml = _norm(metric_label)
+        for lbl, j in section:
+            if lbl == ml or lbl.startswith(ml) or ml.startswith(lbl):
+                return j
+        return None
 
     wk_cols = [_closest_col(date_cols, w) for w in weeks]
     if not any(c is not None for c in wk_cols):
@@ -122,18 +152,21 @@ def fill_financial_for_tab(ws: gspread.Worksheet, office: dict,
     updates: List[Tuple[str, object]] = []
     missing: List[str] = []
     for out_label, xl_label in FINANCIAL_METRICS.items():
-        row = section.get(_norm(out_label))
+        row = _find_row(out_label)
         if row is None:
             missing.append(out_label)
             continue
         vals = office["metrics"].get(xl_label)
         if not vals:
             continue
-        for k, col in enumerate(wk_cols):
-            if col is None or k >= len(vals) or vals[k] is None:
+        # metrics are date-keyed — slot each week into its closest column
+        for wk, col in zip(weeks, wk_cols):
+            if col is None:
                 continue
-            updates.append((gspread.utils.rowcol_to_a1(row + 1, col + 1),
-                            vals[k]))
+            v = vals.get(wk)
+            if v is None:
+                continue
+            updates.append((gspread.utils.rowcol_to_a1(row + 1, col + 1), v))
 
     if not updates:
         return [f"[skip] {tab}: nothing to write"]

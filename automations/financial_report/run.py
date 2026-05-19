@@ -22,14 +22,22 @@ from .parse import norm_name, parse_financial_files
 
 
 def _name_bridge() -> dict:
-    """{normalized tab name: [alternate names]} from the recruiting mapping —
-    bridges a tab's nickname to the AppStream owner the financial files use."""
+    """{normalized tab name: [alternate names]} — bridges a tab's nickname to
+    the legal name the financial files use. Drawn from the recruiting
+    mapping's AppStream owner AND the shared ICD alias list (the canonical
+    place for name-spelling fixes)."""
     bridge: dict = {}
     try:
         for c in rfill.load_mapping()["confirmed"]:
             ao = c.get("as_owner")
             if ao:
                 bridge.setdefault(norm_name(c["sheet_tab"]), []).append(ao)
+    except Exception:
+        pass
+    try:
+        from automations.focus_office_att import aliases as _aliases
+        for canonical, alts in _aliases.load_aliases().items():
+            bridge.setdefault(norm_name(canonical), []).extend(alts)
     except Exception:
         pass
     return bridge

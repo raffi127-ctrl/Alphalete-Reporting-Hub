@@ -220,7 +220,7 @@ OPT row group that can't be auto-pulled.
 | 0-30 day Wireless Cancels | `0-30 day wireless cancels` |
 | Extra / Preimum Plan % Metrics | `Extra/Premium Plan % (Metrics)` |
 | Next up % | `Next Up % (Metrics)` |
-| **Insurance %** | ⚠️ source TBD — Raf to confirm where to pull it from; ask to add later |
+| Insurance % | ⏳ from **Source view 11** — NDS Weekly Metrics (see below) |
 
 ## Source view 10 — Wireless Churn (CHURN workbook)
 
@@ -230,6 +230,20 @@ OPT row group that can't be auto-pulled.
   Office-Metrics churn rows): 0-30 / 30 / 60 / 90 Day Churn ← the ICD Churn
   crosstab's `0-30 Day Churn` / `30 Day Churn` / `60 Day Churn` /
   `90 Day Churn` columns (parse like the New-Internet CHURN view).
+
+## Source view 11 — NDS Weekly Metrics (Insurance %)  ⏳ source given, not yet wired
+
+- Workbook: **NDS-SNRES-ATT-OOF Workbook**, view **NDS Weekly Metrics Rep**.
+- URL: https://us-east-1.online.tableau.com/#/site/sci/views/NDS-SNRES-ATT-OOFWorkbook/NDSWeeklyMetricsRep?:iid=1
+- Supplies the **Insurance %** row in the Wireless Metrics section. The field
+  is labeled **"Insurance %"** in Tableau too (Megan, 2026-05-18).
+
+To confirm before wiring (needs a look at the view):
+- It's a "…Rep" view — confirm whether it reports per-rep or per-ICD; the OPT
+  fill needs one per-ICD value like the other views.
+- Whether it has an AUTOMATION PULL custom view / locked filters, or the week
+  filter must be set (same filter-setting note as Metrics / CHURN).
+- Whether Crosstab download is enabled, or it's a filtered View-Data pull.
 
 ---
 
@@ -242,11 +256,15 @@ OPT row group that can't be auto-pulled.
   (New starts in classroom vs New Starts by EOW); leave the cell intact.
 
 **Still awaiting a data source** (Megan to map): **Green Leads**, plus any
-other still-blank rows in the Metric Goals / Wireless sections — incl.
-**Insurance %** (Raf to confirm its source).
+other still-blank rows in the Metric Goals / Wireless sections.
 
-**Next group to build — financial / P&L section** (Megan queued 2026-05-18,
-source TBD): Total Funds Available, Owners Payroll, Total Expenses, Indeed,
-Owners Withdrawal, Profit/Loss, Operating %. Source not yet given — likely
-ownerville's Office P&L page, a Tableau view, or sheet formulas; confirm
-which per row.
+**Financial / P&L section — built as its own report** (`automations/financial_report`):
+the user uploads the emailed FINANCIAL SUMMARY .xlsx workbooks as a preflight,
+then runs it; it parses them and fills the financial rows across the
+focus-report Sheets. Rows filled: Total Funds Available, Owners Payroll,
+Total Expenses, Indeed, Aptel, Arcadia Consulting, Owners Withdrawal,
+Profit/Loss, Operating %.
+
+**⏸ "PNL -Profit %" row — intentionally NOT filled** (Megan, 2026-05-18): no
+data source figured out yet, so it's skipped on all 3 focus reports. Revisit
+when a source is known.
