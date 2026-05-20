@@ -23,7 +23,7 @@ from .parse import norm_name, parse_financial_files
 # Worksheet titles that aren't ICD tabs — don't touch them even if they
 # happen to have a 'Total Funds Available' label (templates, summary tabs).
 _NON_ICD_TAB_TITLES = {
-    "1on1's", "ATT owners list", "Copy of Country Sales Board ",
+    "1on1's", "ATT owners list", "B2B Template", "Copy of Country Sales Board ",
     "Copy of Country Stats", "Country Metrics", "Country Metrics pilot",
     "Country Sales Board", "Country Sales Board (backup copy)",
     "Country Stats", "Focus Office - Sales", "Hub Activity",
