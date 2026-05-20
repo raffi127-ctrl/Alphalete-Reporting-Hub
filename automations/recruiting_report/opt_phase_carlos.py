@@ -227,16 +227,13 @@ VIEWS: List[ViewConfig] = [
     ),
     ViewConfig(
         key="personal_production",
+        # Saved custom view 'REPEXPANDED' — all owner rows expanded to show
+        # per-rep breakdowns. Without this, the default collapsed view
+        # only exports owner totals (not what Personal Production means).
         url="https://us-east-1.online.tableau.com/#/site/sci/views/"
-            "ATTTRACKER-B2B/B2BATTSalesMetrics?:iid=1",
-        # Sheet picker TBD via test-view download. Per Eve's workflow:
-        # filter to 'This week', then sum per rep (where rep = ICD name)
-        # across product types Internet Sales / VOIP Line Count /
-        # Wireless Lines / AIR/AWB Sales. Output is a text string like
-        # '3 NI / 2 NL' (matches Raf's _format_personal_production
-        # convention). Special-cased in --apply-view loop because the
-        # output is a TEXT format, not a single numeric value.
-        sheet_thumbnail_match="",
+            "ATTTRACKER-B2B/B2BATTSalesMetrics/"
+            "7bf76a9d-5c0f-4ad6-8a29-5c8ae6c34f82/REPEXPANDED",
+        sheet_thumbnail_match="Sales.Quality Metrics",
         metrics=[
             ViewMetric(sheet_row=42, tableau_column="Total"),  # placeholder
         ],
@@ -299,6 +296,34 @@ ROW_TO_LABEL = {
 
 # Rows we MUST NOT touch — manual entry or formula-bearing cells.
 DO_NOT_TOUCH_ROWS = {27, 28, 30, 31, 32}
+
+
+# Personal Production column → label map. Listed in the order Raf's
+# pipeline emits ('N NI / N VOIP / N NL / N AIR'); only non-zero
+# products appear in the rendered string. Megan: 'Internet Sales > NI,
+# VOIP Line Count > VOIP, Wireless Lines > NL, AIR/AWB Sales > AIR'.
+PP_PRODUCT_LABELS = [
+    ("Internet Sales.", "NI"),
+    ("VOIP Line Count", "VOIP"),
+    ("Wireless Lines",  "NL"),
+    ("AIR/AWB Sales",   "AIR"),
+]
+
+
+def _format_carlos_pp(products: dict) -> str:
+    """Render Carlos PP as e.g. '3 NI / 2 NL'. Skips 0 / blank products.
+    Returns '-' when nothing to show — matches the existing manual-entry
+    convention on Carlos's sheet."""
+    parts = []
+    for col, label in PP_PRODUCT_LABELS:
+        v = products.get(col)
+        try:
+            n = int(float(str(v).replace(",", ""))) if v not in (None, "", "0") else 0
+        except (TypeError, ValueError):
+            n = 0
+        if n > 0:
+            parts.append(f"{n} {label}")
+    return " / ".join(parts) if parts else "-"
 
 
 def _norm_label(s: str) -> str:
@@ -763,8 +788,34 @@ def download_view_crosstab(view: ViewConfig, out_path: Path,
                     else:
                         thumb = thumbs.first
                     thumb.wait_for(state="visible", timeout=15_000)
-                    thumb.click()
-                    page.wait_for_timeout(800)
+                    thumb.click(force=True)
+                    page.wait_for_timeout(1200)
+                    # Verify the Download button enabled within ~3s — if
+                    # not, the click didn't register a selection. Retry
+                    # with a more specific click on the thumbnail's
+                    # internal checkbox / image.
+                    try:
+                        ok = final_btn_probe.is_enabled(timeout=3000)
+                    except Exception:
+                        ok = False
+                    if not ok:
+                        if verbose:
+                            print("  ↻ first click didn't enable Download; "
+                                  "trying thumb's inner checkbox/image",
+                                  flush=True)
+                        # Click any clickable child (button, input, img)
+                        for inner_sel in ("input", "button", "img", "div"):
+                            try:
+                                thumb.locator(inner_sel).first.click(force=True, timeout=2000)
+                                page.wait_for_timeout(700)
+                                if final_btn_probe.is_enabled(timeout=2000):
+                                    if verbose:
+                                        print(f"  ↺ Download enabled after "
+                                              f"clicking inner {inner_sel}",
+                                              flush=True)
+                                    break
+                            except Exception:
+                                continue
                 page.screenshot(path=str(debug_dir / "03_after_thumb.png"), full_page=True)
 
             # CSV radio
@@ -960,6 +1011,126 @@ def main() -> int:
             total_cleared += len(stale)
         print(f"\nSummary: cleared {total_cleared} stale cell(s)"
               f"{' (dry-run)' if args.dry_run else ''}")
+        return 0
+
+    if args.apply_view == "personal_production":
+        # Special path — the view is per-rep (REPEXPANDED custom view),
+        # so per-ICD we look up rows where REP == ICD's name (with
+        # as_owner fallback) and sum the 4 product columns. Renders as
+        # '3 NI / 2 NL' (or '-' if nothing).
+        import csv as _csv
+        pp_view = next(v for v in VIEWS if v.key == "personal_production")
+        csv_path = DOWNLOAD_DIR / "personal_production.csv"
+        if not csv_path.exists():
+            print(f"No cached CSV at {csv_path}. Run --test-view personal_production first.")
+            return 1
+        with open(csv_path, encoding="utf-16") as f:
+            rows = list(_csv.reader(f, delimiter="\t"))
+        headers = [h.strip() for h in rows[0]]
+        # The 'Rep' header has a trailing space in the CSV ('Rep ').
+        rep_idx = next((i for i, h in enumerate(headers)
+                        if h.strip().lower() == "rep"), 1)
+
+        # Build {rep-name lowered: product values} from per-rep rows.
+        by_rep: dict[str, dict] = {}
+        for r in rows[1:]:
+            if len(r) <= rep_idx:
+                continue
+            rep = (r[rep_idx] or "").strip()
+            if not rep or rep.lower() == "total":
+                continue
+            rec = {h: (r[i].strip() if i < len(r) and r[i] else "")
+                   for i, h in enumerate(headers)}
+            by_rep[rep.lower()] = rec
+        print(f"  → parsed {len(by_rep)} per-rep rows from {csv_path.name}")
+
+        sh = fill.open_sheet()
+        icd_tabs = _carlos_icd_tabs()
+        as_owner_map = _as_owner_by_tab()
+        we = _current_we_sunday()
+        print(f"Applying view 'personal_production' to {len(icd_tabs)} ICD tab(s); "
+              f"target WE {we.isoformat()}; dry_run={args.dry_run}")
+
+        # Batch-read row 1 + col B for date column + row-drift remap.
+        from automations.focus_office_att.daily import _q
+        ranges = []
+        for t in icd_tabs:
+            ranges.append(f"{_q(t)}!1:1")
+            ranges.append(f"{_q(t)}!B:B")
+        resp = sh.values_batch_get(ranges)
+        target_col_by_tab: dict[str, int] = {}
+        row_remap_by_tab: dict[str, dict] = {}
+        vrs = resp.get("valueRanges", [])
+        for idx, t in enumerate(icd_tabs):
+            row1 = vrs[idx * 2].get("values", [])
+            col_b = [r[0] if r else "" for r in vrs[idx * 2 + 1].get("values", [])]
+            if row1:
+                mapping = fill.find_sunday_columns([row1[0]], header_row_idx=0)
+                col = mapping.get(we)
+                if col:
+                    target_col_by_tab[t] = col
+            remap: dict[int, int] = {}
+            for canonical_row, label in ROW_TO_LABEL.items():
+                actual = metric_row_for_tab(col_b, label)
+                if actual:
+                    remap[canonical_row] = actual
+            # Personal Production row 42 isn't in ROW_TO_LABEL (it's
+            # captainship-specific). Look up its label directly.
+            pp_row = metric_row_for_tab(col_b, "Personal Production")
+            if pp_row:
+                remap[42] = pp_row
+            row_remap_by_tab[t] = remap
+
+        wrote = skipped = errored = 0
+        for tab in icd_tabs:
+            target_col = target_col_by_tab.get(tab)
+            remap = row_remap_by_tab.get(tab) or {}
+            pp_actual_row = remap.get(42)
+            if not target_col or not pp_actual_row:
+                print(f"  ⚠ {tab}: no col for WE {we.isoformat()} or no PP row")
+                skipped += 1
+                continue
+            try:
+                ws = sh.worksheet(tab)
+            except Exception as e:
+                print(f"  ⚠ couldn't open {tab!r}: {e}")
+                errored += 1
+                continue
+            # Try tab name + as_owner fallback as the rep name. Plus a
+            # FIRST+LAST fallback to catch middle-name variants (Atef
+            # Choudhury → 'Atef Ahmed Choudhury' in this view).
+            fb = as_owner_map.get(tab, "")
+            candidates = [tab, fb] if fb and fb.lower() != tab.lower() else [tab]
+            rec = None
+            for cand in candidates:
+                if cand.lower() in by_rep:
+                    rec = by_rep[cand.lower()]
+                    break
+            if rec is None:
+                # First-and-last fallback: 'Atef Choudhury' matches any rep
+                # that starts with 'atef ' AND ends with ' choudhury'.
+                for cand in candidates:
+                    parts = cand.strip().split()
+                    if len(parts) < 2:
+                        continue
+                    first, last = parts[0].lower(), parts[-1].lower()
+                    for rep_key, rep_rec in by_rep.items():
+                        rep_parts = rep_key.split()
+                        if (len(rep_parts) >= 2
+                                and rep_parts[0] == first
+                                and rep_parts[-1] == last):
+                            rec = rep_rec
+                            break
+                    if rec:
+                        break
+            value = _format_carlos_pp(rec or {})
+            # Use write_icd_values without row_remap (we already resolved)
+            for line in write_icd_values(ws, {pp_actual_row: value},
+                                         target_col, dry_run=args.dry_run):
+                print(line)
+            wrote += 1
+        print(f"\nSummary: {wrote} written/previewed, "
+              f"{skipped} skipped, {errored} errored")
         return 0
 
     if args.apply_view == "dd":
