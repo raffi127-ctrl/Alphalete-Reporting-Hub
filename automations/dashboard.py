@@ -35,6 +35,9 @@ SHEET_URL = f"https://docs.google.com/spreadsheets/d/{_fill.SPREADSHEET_ID}/edit
 # Daily Focus reports (Raf + Carlos captainships) live in their own shared
 # sheet — one tab per captainship.
 DAILY_FOCUS_SHEET_URL = "https://docs.google.com/spreadsheets/d/11FRYGG1hvuxcbWiYtDv7LzVss6ujZE_SOpqfhrQrVAo/edit"
+# Carlos 1on1s - Focus Report (the B2B equivalent of Raf's weekly recruiting
+# report). Shared module — set CAPTAINSHIP=Carlos when running.
+CARLOS_SHEET_URL = "https://docs.google.com/spreadsheets/d/1KLF8diMJ8pwIQWW9IqN7CL288t1l9VGUKxzBcMl8Of4/edit"
 
 UPLOADED_REPORTS_FILE = WORKSPACE / "uploaded_reports.json"
 UPLOADED_SCRIPTS_DIR = WORKSPACE / "automations" / "uploaded"
@@ -747,6 +750,89 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "recruiting-carlos",
+        "name": "Carlos 1on1s - Focus Report",
+        "creator": "Megan",
+        "emoji": "📊",
+        "color": "#A78BFA",
+        "category": "🎯 Recruiting",
+        "description": "Pulls B2B funnel + OPT metrics from ApplicantStream + Tableau, fills Carlos's 32-ICD focus-report Sheet.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Carlos's weekly captainship report — same shape as Raf's "
+            "ATT Program report, but pointed at Carlos's sheet and the "
+            "B2B Tableau views. Fills:\n"
+            "**•** Recruiting pull (APPS / Total Applies / Retention / "
+            "1st & 2nd Booked / etc.) from AppStream\n"
+            "**•** OPT metrics (Active Headcount, Sales by product, "
+            "AVG Apps, Scorecard Ranking, etc.) from Tableau\n"
+            "**•** Cancel Rate, Activation %, Churn buckets, Penetration "
+            "Rate, Direct Deposit, Personal Production from Tableau\n\n"
+            "WHEN IT RUNS\n"
+            "**Mondays.** Each run fills the just-ended week's column "
+            "(WE Sunday).\n\n"
+            "TO ADD AN ICD\n"
+            "**1.**  Add a tab named the ICD's exact AppStream name.\n"
+            "**2.**  Make sure the **rcaptain** AppStream login can see "
+            "that ICD.\n"
+            "✅  Next run auto-fills the new tab.\n\n"
+            "IF DATA IS MISSING\n"
+            "Cells marked **'No Data In Tableau'** mean the ICD is too "
+            "new for that time window (e.g. 60/90/120-day churn). Cells "
+            "marked **'No Access'** mean the Tableau session doesn't have "
+            "permission to that ICD's data."
+        ),
+        "sheet_url": CARLOS_SHEET_URL,
+        "assignees": ["Eve"],
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [0],  # Monday
+            "time": "8:00 AM",
+            "estimated_minutes": 15,
+        },
+        "checklist": [
+            {"text": "Launch Reporting Chrome",
+             "action": "launch_chrome"},
+            {"text": "Log into AppStream as **rcaptain** in the new Chrome window"},
+            {"text": "Log into the correct **ownerville** account in the same Chrome window — the OPT / sales section reaches Tableau through ownerville"},
+        ],
+        "post_run": {
+            "message_success": "✅ Carlos report run complete — Recruiting pull + 6 Tableau OPT views + Personal Production all filled across 32 ICD tabs.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        # CAPTAINSHIP=Carlos switches the shared recruiting_report module
+        # to Carlos's sheet/master tab/template/mapping file at import time.
+        "env": {"CAPTAINSHIP": "Carlos"},
+        "actions": [
+            {
+                "label": "Run This Week",
+                "icon": "▶",
+                "primary": True,
+                "help": "Fills the most recent WE Sunday column on Carlos's sheet",
+                "module": "automations.recruiting_report.run",
+                "args_fn": lambda: ["--week", _last_completed_as_picker().isoformat()],
+            },
+            {
+                "label": "Run a Specific Past Week",
+                "icon": "📆",
+                "needs_date": True,
+                "help": "Pick a WE Sunday to fill",
+                "module": "automations.recruiting_report.run",
+                "args_fn": lambda d: ["--week", (d - dt.timedelta(days=7)).isoformat()],
+            },
+            {
+                "label": "Run for One ICD (pick a week)",
+                "icon": "🎯",
+                "needs_date": True,
+                "needs_text": True,
+                "text_label": "ICD tab name (exact match)",
+                "help": "Just refill ONE ICD's tab for any week.",
+                "module": "automations.recruiting_report.run",
+                "args_fn": lambda d, name: ["--week", (d - dt.timedelta(days=7)).isoformat(), "--only", name],
+            },
+        ],
+    },
+    {
         "id": "daily-focus",
         "name": "Daily Recruiting Focus (Raf & Carlos)",
         "creator": "Megan",
@@ -1029,7 +1115,8 @@ for _r in AUTOMATED_REPORTS:
 # Helpers
 # --------------------------------------------------------------------------
 
-def _spawn_background_run(cmd: list[str], report_id: str, report_name: str) -> None:
+def _spawn_background_run(cmd: list[str], report_id: str, report_name: str,
+                          env_overrides: dict | None = None) -> None:
     """Start a report run as a DETACHED background process. Its output is
     redirected straight to the run's log file, and the run is registered in
     active_runs.json — so the auto-refreshing active-run panel shows it and
@@ -1037,10 +1124,19 @@ def _spawn_background_run(cmd: list[str], report_id: str, report_name: str) -> N
 
     Completion is picked up by _read_active_runs(): once the PID exits, that
     run is treated as a finished orphan — its status is read off the log tail
-    and the post-run state is saved."""
+    and the post-run state is saved.
+
+    `env_overrides` (optional): extra env vars to pass to the subprocess on
+    top of the inherited environment. Used by captainship-scoped reports
+    (e.g. Carlos's Focus Report sets CAPTAINSHIP=Carlos to switch the
+    shared recruiting_report module to Carlos's sheet/mapping/template)."""
     ACTIVE_RUNS_LOG_DIR.mkdir(parents=True, exist_ok=True)
     log_file = ACTIVE_RUNS_LOG_DIR / f"{report_id}.log"
     log_handle = log_file.open("w")
+    env = None
+    if env_overrides:
+        import os as _os
+        env = {**_os.environ, **env_overrides}
     try:
         proc = subprocess.Popen(
             cmd, cwd=str(WORKSPACE),
@@ -1049,6 +1145,7 @@ def _spawn_background_run(cmd: list[str], report_id: str, report_name: str) -> N
             # non-interactive and fall back to skip/fail instead of prompting
             # (which would hang forever; the Hub has no keyboard to type into).
             stdin=subprocess.DEVNULL,
+            env=env,
         )
     finally:
         # The child keeps its own dup of the fd; the parent's copy isn't needed.
@@ -1500,8 +1597,12 @@ def _execute_action(report: dict, action: dict, picked, chrome_ok: bool) -> None
         args = action["args_fn"]()
     # -u → unbuffered, so the live run panel sees log lines as they happen.
     cmd = [VENV_PY, "-u", "-m", action["module"]] + args
+    # Per-report env overrides (e.g. captainship-scoped reports set
+    # CAPTAINSHIP=Carlos so the shared module switches to Carlos's sheet).
+    env_overrides = action.get("env") or report.get("env")
     try:
-        _spawn_background_run(cmd, report["id"], report["name"])
+        _spawn_background_run(cmd, report["id"], report["name"],
+                              env_overrides=env_overrides)
     except Exception as e:
         st.error(f"Couldn't start the run: {e}")
         return
