@@ -797,7 +797,7 @@ def run_captainship(captainship: str, args, week_start: dt.date,
         if not icds:
             log.info("retry-inaccessible: no skipped ICDs for %s — nothing to "
                      "retry.", captainship)
-            return 0, []
+            return 0, {"inaccessible": [], "denied": [], "fetch_errors": []}
         log.info("retry-inaccessible mode: retrying %d ICD(s) from last run: %s",
                  len(icds), icds)
     log.info("ICDs to process: %s", icds)
@@ -918,12 +918,39 @@ def run_captainship(captainship: str, args, week_start: dt.date,
             for line in _update_date_row(ws, anchor, week_start, last_week_start, args.dry_run):
                 log.info(line)
 
-            # Fetch LAST week's data (Maud needs both each run)
-            try:
-                last_raw = fetch_office.fetch_one_daily(target_page, office_id, icd, last_week_start)
-            except Exception as e:
-                log.exception("  fetch failed for %s (last week): %s", icd, e)
-                last_raw = {}
+            # Fetch LAST week's data (Maud needs both each run). Same
+            # retry-once-on-transient as current — Khalil and others were
+            # silently dropping last-week data when the first fetch flaked.
+            # Track failures so retry-inaccessible re-pulls those ICDs too.
+            def _try_last() -> tuple[object, str]:
+                try:
+                    raw = fetch_office.fetch_one_daily(target_page, office_id, icd, last_week_start)
+                except Exception as e:
+                    log.exception("  fetch failed for %s (last week): %s", icd, e)
+                    return None, "exception"
+                if raw == {}:
+                    return None, "denied"
+                if not raw:
+                    return None, "empty"
+                return raw, "ok"
+
+            last_raw, last_err = _try_last()
+            if last_err in ("exception", "empty"):
+                log.info("  retrying %s (last week) once after transient %s …", icd, last_err)
+                last_raw, last_err = _try_last()
+                if last_err == "ok":
+                    log.info("  ✓ %s (last week) recovered on retry", icd)
+
+            if last_err != "ok":
+                # Last-week pull failed even after retry. Current week is fine,
+                # so we still fill it — but flag the ICD so retry-inaccessible
+                # tries again. Without this, missing last-week data is INVISIBLE
+                # to the dashboard (Khalil's bug).
+                log.warning("  %s (last week) failed after retry (%s) — flagging for retry",
+                            icd, last_err)
+                fetch_errors_this_run.append(icd)
+                inaccessible_this_run.append(icd)
+                last_raw = None
 
             cur_daily = _combine_weekend_into_weekdays(cur_raw)
             for line in fill_icd_section(ws, icd, anchor, metric_rows, cur_daily, args.dry_run):

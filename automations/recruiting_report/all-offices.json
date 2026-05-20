@@ -1,5 +1,5 @@
 {
-  "count": 257,
+  "count": 258,
   "offices": [
     {
       "office_id": "20646",
@@ -738,6 +738,12 @@
       "owner": "Jessica Lieberman",
       "company": "5M Promotions, Inc.",
       "raw": "17653\nJessica Lieberman\n5M Promotions, Inc."
+    },
+    {
+      "office_id": "15240",
+      "owner": "Jessica Vihtelic",
+      "company": "99 EXPOSURE, INC.",
+      "raw": "15240\nJessica Vihtelic\n99 EXPOSURE, INC."
     },
     {
       "office_id": "11382",
