@@ -421,14 +421,21 @@ def _parse_view_data_text(txt: str) -> Tuple[List[str], List[List[str]]]:
 def _scrape_view_data_grid(win, verbose: bool = True
                            ) -> Tuple[List[str], List[List[str]]]:
     """Scroll-scrape the View Data window's virtualized grid. Returns
-    (field_names, records)."""
+    (field_names, records).
+
+    Scrolls the **top-3** scrollable containers (not just the tallest) and
+    alternates incremental scrolls with a hard jump to scrollHeight — needed
+    for multi-group grids (e.g. Fiber's by-state by-zip view) where a single
+    container's incremental scroll plateaus after the first group is loaded.
+    Stale threshold is generous so a slow Tableau redraw doesn't stop us
+    short of the row count we know is coming."""
     win.wait_for_timeout(4500)
     fields: List[str] = []
     seen: Dict[tuple, List[str]] = {}
     expect = None
     last = -1
     stale = 0
-    for _ in range(80):
+    for i in range(250):
         txt = win.evaluate("() => document.body ? document.body.innerText : ''")
         if expect is None:
             mm = re.search(r"(\d+)\s+rows?\s+\d+\s+fields?", txt or "")
@@ -441,17 +448,28 @@ def _scrape_view_data_grid(win, verbose: bool = True
         if expect and len(seen) >= expect:
             break
         stale = stale + 1 if len(seen) == last else 0
-        if stale >= 4:
+        if stale >= 10:
             break
         last = len(seen)
-        win.evaluate("""() => {
-          let best=null, bh=0;
-          document.querySelectorAll('*').forEach(e => {
+        # Every 4th iteration: hard-jump every scrollable to its bottom — the
+        # only reliable way to flush a virtualized grid past a sub-group's end.
+        # Otherwise: incremental scroll on the top-3 scrollable containers.
+        jump = (i % 4 == 3)
+        win.evaluate(f"""() => {{
+          const cands = [];
+          document.querySelectorAll('*').forEach(e => {{
             const d = e.scrollHeight - e.clientHeight;
-            if (d > bh && e.clientHeight > 120) { bh=d; best=e; }
-          });
-          if (best) best.scrollTop += Math.round(best.clientHeight * 0.75);
-        }""")
+            if (d > 0 && e.clientHeight > 120) cands.push([d, e]);
+          }});
+          cands.sort((a, b) => b[0] - a[0]);
+          cands.slice(0, 3).forEach(([d, e]) => {{
+            if ({str(jump).lower()}) {{
+              e.scrollTop = e.scrollHeight;
+            }} else {{
+              e.scrollTop += Math.round(e.clientHeight * 0.75);
+            }}
+          }});
+        }}""")
         win.wait_for_timeout(900)
     if verbose:
         print(f"  scraped {len(seen)}/{expect or '?'} View Data rows", flush=True)
@@ -619,11 +637,15 @@ def _fiber_name_candidates(tab: str, as_owner_map: dict, aliases_map: dict
         grp = [canon] + list(al)
         if _norm(tab) in {_norm(g) for g in grp}:
             cands += grp
+    # Dedup by literal lowercase — NOT by _norm — because Tableau's Owner
+    # Name filter does exact-text matching, so "DMari Longmire" and
+    # "D'Mari Longmire" (same _norm) must both make it into the list.
     seen, out = set(), []
     for c in cands:
         c = (c or "").strip()
-        if c and _norm(c) not in seen:
-            seen.add(_norm(c))
+        key = c.lower()
+        if c and key not in seen:
+            seen.add(key)
             out.append(c)
     return out
 
@@ -663,7 +685,7 @@ def download_fiber(icd_names: List[str], out_path: Path = FIBER_PATH,
                     except Exception:
                         pass
                     page = _reauth_tableau(ctx)
-                pen, leads, ok, err = "", None, False, ""
+                pen, leads, ok, err, empty = "", None, False, "", False
                 for cand in _fiber_name_candidates(tab, as_owner_map, aliases_map):
                     if ok:
                         break
@@ -677,6 +699,13 @@ def download_fiber(icd_names: List[str], out_path: Path = FIBER_PATH,
                                 activate_xy=(0.5, 0.52))
                         except Exception as e:
                             err = type(e).__name__
+                            # "couldn't activate the worksheet" = the Fiber
+                            # view rendered with no marks (i.e. this owner
+                            # has zero fiber activity this period). Megan:
+                            # treat as 0%/0 instead of FAILED.
+                            if "couldn't activate" in str(e):
+                                pen, leads, ok, empty = "0%", 0, True, True
+                                break
                             if page.is_closed():
                                 try:
                                     page = _reauth_tableau(ctx)
@@ -688,7 +717,10 @@ def download_fiber(icd_names: List[str], out_path: Path = FIBER_PATH,
                             ok = True
                         break
                 rows.append((tab, pen, "" if leads is None else str(leads)))
-                if ok:
+                if empty:
+                    logfn(f"OPT: Fiber [{i}/{n}] {tab}: empty view -> "
+                          f"penetration=0%, leads=0")
+                elif ok:
                     logfn(f"OPT: Fiber [{i}/{n}] {tab}: "
                           f"penetration={pen}, leads={leads}")
                 else:
@@ -1271,6 +1303,28 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
         logfn("===== DATA GAPS — what couldn't be filled (chase access / fix the tab) =====")
         for g in all_gaps:
             logfn("  " + g)
+
+    # ----- Production Breakdown by Rep (combined NI+WIRELESS chart) -----
+    # Uses the PRODUCT SALES SUMMARY crosstab we already downloaded.
+    if not dry_run:
+        try:
+            from automations.production_breakdown.run import run_production_breakdown
+            logfn("")
+            logfn("===== Production Breakdown =====")
+            run_production_breakdown(PRODUCT_SALES_PATH, logfn=logfn)
+        except Exception as e:
+            logfn(f"OPT: Production Breakdown failed: {type(e).__name__}: {e}")
+
+    # ----- Team Breakdowns ('Next Promotion' sections) ------------------
+    if not dry_run:
+        try:
+            from automations.team_breakdowns.run import run_team_breakdowns
+            logfn("")
+            logfn("===== Team Breakdowns (Next Promotion) =====")
+            run_team_breakdowns(PRODUCT_SALES_PATH, logfn=logfn)
+        except Exception as e:
+            logfn(f"OPT: Team Breakdowns failed: {type(e).__name__}: {e}")
+
     return {"filled": filled, "skipped": skipped, "gaps": all_gaps}
 
 

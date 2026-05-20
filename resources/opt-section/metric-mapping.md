@@ -249,14 +249,22 @@ OPT row group that can't be auto-pulled.
   disabled** — same wall as the Fiber view (view 7): too many marks for a
   full-base-view crosstab.
 
-**Recommended next step (needs Megan):** save an **AUTOMATION PULL custom
-view** — Sales Week Ending = current week, Owner & Office = All — like the
-other base views (Metrics / CHURN / Captain's Bonus). A filtered crosstab is
-smaller, so the Download button should enable. If it still won't, fall back to
-the **Download → Data (View Data)** scrape used for Fiber / Program Summary —
-the per-owner Total rows give the per-ICD value.
-Also confirm: it's the "NDS" workbook — does it cover **all** ICDs that need
-Insurance %, or only NDS-campaign offices?
+**Confirmed 2026-05-19:** the NDS workbook covers **only NDS-campaign
+offices** (~25 of our 50 ICDs). The Owner & Office filter has 74 owners total
+— our ICDs in NDS include Khalil Mansour, Marci Mena, Marcos Barbosa,
+Matthew Day, Maxamad Aden, McKinley Harris, Milan Godbolt, Mohammad Altom,
+Noah Dubale, Orlando Cantu, Osi Ikhuoria, Richard Anderson, Riley Wade,
+Robert Griffin, Rudy Soto, Sarah Park, Selena Powers, Stacy Santos, Taylor
+Nickerson, Ty Jackson, Ty Singkhek, Tyler Hadden, William Smith, Yulma
+Rubio-Arteaga, Zaid Arabyat, plus a few others.
+
+**For non-NDS ICDs (Megan, 2026-05-19):** fill the Insurance % cell with the
+literal string **"Not NDS"** — so the gap is visibly intentional, not a bug.
+
+**Path (Megan): build the slow per-ICD loop now.** Mirror download_fiber:
+filter the view to the owner via URL, scrape the View Data, read the
+per-owner Total row's Insurance % value. Preview target: **Khalil Mansour**
+(Marcellus is non-NDS so he's not usable as the preview for this metric).
 
 ---
 
@@ -268,8 +276,11 @@ Insurance %, or only NDS-campaign offices?
 - *Sheet formula* — **New Start Retention** is a Google Sheets formula
   (New starts in classroom vs New Starts by EOW); leave the cell intact.
 
-**Still awaiting a data source** (Megan to map): **Green Leads**, plus any
-other still-blank rows in the Metric Goals / Wireless sections.
+**Manual-entry-only rows** (Megan, 2026-05-19):
+- **Green Leads** — manual entry.
+- **PNL - Profit %** — manual entry.
+- **Insurance %** — manual entry (NDS view doesn't cover our ICDs).
+Automation should NOT touch these cells.
 
 **Financial / P&L section — built as its own report** (`automations/financial_report`):
 the user uploads the emailed FINANCIAL SUMMARY .xlsx workbooks as a preflight,

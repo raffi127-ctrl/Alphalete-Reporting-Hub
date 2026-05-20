@@ -20,6 +20,17 @@ from automations.recruiting_report import fill as rfill
 from . import fill as ffill
 from .parse import norm_name, parse_financial_files
 
+# Worksheet titles that aren't ICD tabs — don't touch them even if they
+# happen to have a 'Total Funds Available' label (templates, summary tabs).
+_NON_ICD_TAB_TITLES = {
+    "1on1's", "ATT owners list", "Copy of Country Sales Board ",
+    "Copy of Country Stats", "Country Metrics", "Country Metrics pilot",
+    "Country Sales Board", "Country Sales Board (backup copy)",
+    "Country Stats", "Focus Office - Sales", "Hub Activity",
+    "OLD-Daily Focus Report", "Rafs", "Recruiting", "Template 1",
+    "Template Fiber",
+}
+
 
 def _name_bridge() -> dict:
     """{normalized tab name: [alternate names]} — bridges a tab's nickname to
@@ -57,12 +68,17 @@ def run_financial_report(file_paths, dry_run: bool = False,
                          only_sheet: Optional[str] = None, logfn=print) -> dict:
     """Parse the financial workbooks and fill every matching ICD tab across
     the focus-report spreadsheets. Returns a summary dict."""
-    by_owner, weeks = parse_financial_files(file_paths, logfn=logfn)
+    by_owner, weeks, problems = parse_financial_files(file_paths, logfn=logfn)
     logfn(f"financial: parsed {len(by_owner)} offices from "
           f"{len(list(file_paths))} file(s); week endings {weeks}")
     if not by_owner:
         logfn("financial: no office data parsed — nothing to fill")
-        return {"filled": 0, "matched": 0}
+        if problems:
+            logfn("")
+            logfn("===== ❌ UPLOAD PROBLEMS — Megan check these files =====")
+            for name, reason in problems:
+                logfn(f"  ❌ {name}: {reason}")
+        return {"filled": 0, "matched": 0, "problems": problems}
 
     client = rfill._client()
     bridge = _name_bridge()
@@ -75,21 +91,48 @@ def run_financial_report(file_paths, dry_run: bool = False,
         except Exception as e:
             logfn(f"financial: can't open {sheet_name!r} ({e})")
             continue
-        filled = matched = 0
+        filled = matched = not_found = 0
         for ws in rfill._retry(sh.worksheets):
-            office = ffill._match_owner(ws.title, by_owner, bridge)
-            if not office:
+            # Skip system / template / summary tabs entirely
+            if ws.title in _NON_ICD_TAB_TITLES or ws.title.startswith("_"):
                 continue
-            matched += 1
-            lines = ffill.fill_financial_for_tab(ws, office, weeks, dry_run)
+            office = ffill._match_owner(ws.title, by_owner, bridge)
+            if office:
+                matched += 1
+                lines = ffill.fill_financial_for_tab(ws, office, weeks, dry_run)
+                for line in lines:
+                    logfn(f"  {sheet_name}: {line}")
+                if lines and lines[0].lstrip().startswith(("[OK]", "[DRY-RUN]")):
+                    filled += 1
+                continue
+            # No financial-file match. Hard skip Raf (his financials live
+            # elsewhere). For everyone else with a financial section on
+            # their tab, mark each metric cell 'Not Found In Email' so the
+            # gap is visible. write_not_found returns empty for tabs that
+            # don't have the section anchor (templates, summary tabs).
+            tab_n = ffill._norm(ffill._tab_to_name(ws.title))
+            if tab_n in ffill._SKIP_TABS:
+                continue
+            lines = ffill.write_not_found_for_tab(ws, weeks, dry_run)
             for line in lines:
                 logfn(f"  {sheet_name}: {line}")
-            if lines and lines[0].lstrip().startswith(("[OK]", "[DRY-RUN]")):
-                filled += 1
-        logfn(f"financial: {sheet_name} — {filled}/{matched} matched tabs filled")
+            if lines and lines[0].lstrip().startswith(("[NOT-FOUND]",
+                                                       "[DRY-RUN-NOT-FOUND]")):
+                not_found += 1
+        logfn(f"financial: {sheet_name} — {filled}/{matched} matched tabs filled, "
+              f"{not_found} tabs marked 'Not Found In Email'")
         total_matched += matched
         total_filled += filled
-    return {"filled": total_filled, "matched": total_matched}
+    if problems:
+        logfn("")
+        logfn("===== ❌ UPLOAD PROBLEMS — Megan check these files =====")
+        for name, reason in problems:
+            logfn(f"  ❌ {name}: {reason}")
+        logfn("(A '0 offices parsed' problem usually means the file's "
+              "template is new — Claude needs to add a parser for that "
+              "layout. Send the file to Claude.)")
+    return {"filled": total_filled, "matched": total_matched,
+            "problems": problems}
 
 
 def main() -> int:

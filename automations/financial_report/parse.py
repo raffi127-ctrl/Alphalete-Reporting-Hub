@@ -211,29 +211,44 @@ def parse_one_file(path) -> Tuple[List[dict], List[dt.date], str]:
     return offices, weeks, fmt
 
 
-def parse_financial_files(paths, logfn=print) -> Tuple[Dict[str, dict], List[dt.date]]:
+def parse_financial_files(paths, logfn=print) -> Tuple[Dict[str, dict], List[dt.date], List[Tuple[str, str]]]:
     """Parse + merge any number of financial workbooks — any mix of the three
     layouts — into one {normalized owner: office} map. On a duplicate owner
-    the later file wins. Returns (by_owner, weeks).
+    the later file wins. Returns (by_owner, weeks, problems).
 
     `weeks` is the reporting window the fill writes into: the FINANCIAL
     SUMMARY week-endings when any summary file is present (Eve's checked
-    weeks), otherwise the 4 most recent dates seen. Skips Excel lock files
-    (~$...) and any workbook that won't open — a bad upload is logged."""
+    weeks), otherwise the 4 most recent dates seen.
+
+    `problems` is a list of (filename, reason) tuples for files that didn't
+    yield usable data — surfaced to the Hub so an unknown / corrupted
+    template doesn't silently slip through. Cases:
+      - 'can't open' — workbook is corrupted, locked, or wrong file type.
+      - '0 offices parsed' — file opened but our parser found no office rows
+        (often signals a brand-new template layout the auto-detector
+        misclassified as 'summary'; needs a new layout added)."""
     by_owner: Dict[str, dict] = {}
     summary_weeks: List[dt.date] = []
     all_weeks: set = set()
+    problems: List[Tuple[str, str]] = []
     for p in paths:
-        if Path(p).name.startswith("~$"):
+        name = Path(p).name
+        if name.startswith("~$"):
             continue                       # Excel lock/temp file
         try:
             offices, wk, fmt = parse_one_file(p)
         except Exception as e:
-            logfn(f"financial: SKIPPED {Path(p).name} — can't open "
-                  f"({type(e).__name__})")
+            msg = f"can't open ({type(e).__name__}: {str(e)[:80]})"
+            logfn(f"financial: ❌ SKIPPED {name} — {msg}")
+            problems.append((name, msg))
             continue
-        logfn(f"financial: {Path(p).name} — {fmt} format, "
-              f"{len(offices)} office(s)")
+        if not offices:
+            msg = (f"0 offices parsed (detected as {fmt!r} — likely a "
+                   f"new template layout)")
+            logfn(f"financial: ⚠️  {name} — {msg}")
+            problems.append((name, msg))
+            continue
+        logfn(f"financial: {name} — {fmt} format, {len(offices)} office(s)")
         all_weeks.update(wk)
         if fmt == "summary" and wk:
             summary_weeks = wk
@@ -242,4 +257,4 @@ def parse_financial_files(paths, logfn=print) -> Tuple[Dict[str, dict], List[dt.
             if key:
                 by_owner[key] = o
     weeks = summary_weeks or sorted(all_weeks)[-4:]
-    return by_owner, weeks
+    return by_owner, weeks, problems

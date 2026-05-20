@@ -811,7 +811,115 @@ AUTOMATED_REPORTS = [
                 "args_fn": lambda name: ["--only", name],
             },
         ],
-    },]
+    },
+    {
+        "id": "financial-pull",
+        "name": "Financial Pull (Upload)",
+        "creator": "Megan",
+        "emoji": "💰",
+        "color": "#34D399",
+        "category": "🎯 Recruiting",
+        "description": "Parses the emailed FINANCIAL SUMMARY workbooks "
+                       "(plus the German + Coel files) and fills the "
+                       "financial section across every ICD tab on the "
+                       "ATT Program - Focus Report.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Reads the financial workbooks emailed each week and writes "
+            "them into the latest 4 week columns on every matched ICD.\n\n"
+            "WHEN IT RUNS\n"
+            "Tuesdays, after the financial workbooks arrive.\n\n"
+            "IF AN ICD ISN'T IN ANY FILE\n"
+            "Their cells get **'Not Found In Email'** so the gap is "
+            "visibly intentional. Raf Hidalgo is permanently skipped "
+            "(his financials live in a separate report)."
+        ),
+        "sheet_url": SHEET_URL,
+        "assignees": ["Eve"],
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [1],   # Tuesday
+            "time": "9:00 AM",
+            "estimated_minutes": 5,
+        },
+        "checklist": [
+            {"text": "Upload financial .xlsx files recieved via email",
+             "uploader": {
+                 "target_dir": "automations/uploaded/financial",
+                 "accept": [".xlsx"],
+                 "multiple": True,
+             }},
+        ],
+        "post_run": {
+            "message_success": "✅ Financial section filled on every "
+                               "matched ICD tab. Unmatched tabs show "
+                               "'Not Found In Email'.",
+            "message_failed": "❌ Run failed. Check the log above.",
+        },
+        "actions": [
+            {
+                "label": "Run Financial Pull",
+                "icon": "▶",
+                "primary": True,
+                "help": "Parses every .xlsx in automations/uploaded/financial/ "
+                        "and fills the financial section.",
+                "module": "automations.financial_report.run",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
+        "id": "first-last-sale",
+        "name": "First Sale / Last Sale (Upload)",
+        "creator": "Megan",
+        "emoji": "🕰️",
+        "color": "#A78BFA",
+        "category": "🎯 Recruiting",
+        "description": "Parses the emailed B2B.D2D First Last Sale .xlsx "
+                       "and fills the FS/LS section (1 week behind) on "
+                       "every ICD tab.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Reads the weekly emailed **B2B.D2D First Last Sale** workbook "
+            "and fills the **First Sale / Last Sale times + Order Count** "
+            "table on each ICD tab.\n\n"
+            "WHEN IT RUNS\n"
+            "Mondays, after the email arrives.\n\n"
+            "IF AN ICD ISN'T IN THE FILE\n"
+            "Their section header turns into **'Not On Emailed Report'**."
+        ),
+        "sheet_url": SHEET_URL,
+        "assignees": ["Eve"],
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [0],   # Monday
+            "time": "9:15 AM",
+            "estimated_minutes": 3,
+        },
+        "checklist": [
+            {"text": "Upload the emailed **B2B.D2D First Last Sale WE M.D.YYYY.xlsx**",
+             "uploader": {
+                 "target_dir": "automations/uploaded/first_last_sale",
+                 "accept": [".xlsx"],
+                 "multiple": False,
+             }},
+        ],
+        "post_run": {
+            "message_success": "✅ FS/LS table filled on every ICD tab.",
+            "message_failed": "❌ Run failed. Check the log above.",
+        },
+        "actions": [
+            {
+                "label": "Run FS/LS Fill",
+                "icon": "▶",
+                "primary": True,
+                "help": "Reads the latest uploaded .xlsx and fills every tab.",
+                "module": "automations.first_last_sale.run",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+]
 
 # Merge in user-uploaded reports (saved by the Wire-Up dialog)
 AUTOMATED_REPORTS.extend(_load_uploaded_reports_raw())
@@ -1910,6 +2018,51 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                 for idx, step in enumerate(checklist):
                     if step.get("info"):
                         st.info(step["text"])
+                        continue
+                    # Upload step — file_uploader inline, files saved to
+                    # target_dir; step is "done" when at least 1 file is there.
+                    if step.get("uploader"):
+                        up_cfg = step["uploader"]
+                        target_dir = WORKSPACE / up_cfg["target_dir"]
+                        target_dir.mkdir(parents=True, exist_ok=True)
+                        st.markdown(f"**{step['text']}**")
+                        _accept = [a.lstrip(".")
+                                    for a in up_cfg.get("accept", [".xlsx"])]
+                        _multi = bool(up_cfg.get("multiple", False))
+                        _up = st.file_uploader(
+                            up_cfg.get("button_label", "Drop file(s) here"),
+                            type=_accept,
+                            accept_multiple_files=_multi,
+                            key=f"upload_{report['id']}_{idx}",
+                            label_visibility="collapsed",
+                        )
+                        if _up:
+                            items = _up if isinstance(_up, list) else [_up]
+                            for f in items:
+                                (target_dir / f.name).write_bytes(f.getbuffer())
+                            st.success(
+                                f"✅ Saved {len(items)} file(s) to "
+                                f"`{up_cfg['target_dir']}/`"
+                            )
+                        existing = sorted(
+                            p for p in target_dir.glob("*")
+                            if not p.name.startswith("~$")
+                            and p.suffix.lower() in {f".{a}" for a in _accept}
+                        )
+                        if existing:
+                            preview = ", ".join(p.name for p in existing[:5])
+                            more = f" (+{len(existing)-5} more)" if len(existing) > 5 else ""
+                            st.caption(f"📂 {len(existing)} file(s) ready: {preview}{more}")
+                            if st.button(
+                                "🗑️ Clear uploaded files",
+                                key=f"clear_up_{report['id']}_{idx}",
+                            ):
+                                for p in existing:
+                                    p.unlink()
+                                st.rerun()
+                        else:
+                            all_checked = False
+                            st.warning("Upload at least one file to continue.")
                         continue
                     cols = st.columns([5, 3])
                     ck_key = f"check_{report['id']}_{idx}"
@@ -5616,27 +5769,16 @@ elif st.session_state.view == "library":
             label_visibility="collapsed",
         ).strip().lower()
 
-        # Group reports into sections. Anything with empty/missing `assignees`
-        # lands in a top "Unassigned" section so it's easy to find and claim.
-        # Otherwise, group by `category` field (defaults to "All Reports").
-        UNASSIGNED_LABEL = "🔍 Unassigned reports"
-        sections: dict[str, list] = {}
-        for r in AUTOMATED_REPORTS:
-            if _lib_query and _lib_query not in (
-                f"{r.get('name', '')} {r.get('description', '')}".lower()
-            ):
-                continue
-            if not r.get("assignees"):
-                cat = UNASSIGNED_LABEL
-            else:
-                cat = r.get("category", "All Reports")
-            sections.setdefault(cat, []).append(r)
-
-        # Render Unassigned first if any, then the rest in insertion order
-        ordered_sections = []
-        if UNASSIGNED_LABEL in sections:
-            ordered_sections.append((UNASSIGNED_LABEL, sections.pop(UNASSIGNED_LABEL)))
-        ordered_sections.extend(sections.items())
+        # Flat alphabetical list — no sections (Megan, 2026-05-19 — chose
+        # this for 7-year-old-simple over by-day or by-assignee groupings).
+        # One report per row; search box at top still filters.
+        _filtered = [
+            r for r in AUTOMATED_REPORTS
+            if not _lib_query or _lib_query in (
+                f"{r.get('name', '')} {r.get('description', '')}".lower())
+        ]
+        _filtered.sort(key=lambda r: (r.get("name") or "").lower())
+        ordered_sections = [("", _filtered)] if _filtered else []
         if not ordered_sections:
             st.info(f"No reports match “{_lib_query}”."
                     if _lib_query else "No reports in the library yet.")
@@ -5645,7 +5787,8 @@ elif st.session_state.view == "library":
         # anyone browsing the library sees that this report is partway through.
         lib_persisted = _load_all_run_state()
         for section_name, reports_in_section in ordered_sections:
-            st.markdown(f"### {section_name}")
+            if section_name:
+                st.markdown(f"### {section_name}")
             # 3-per-row grid of report buttons. Click one to open its page
             # (explainer + live preview + run controls). A 📌 prefix flags a
             # report whose last run is mid-flow — pick up where you left off.
@@ -5657,9 +5800,13 @@ elif st.session_state.view == "library":
                         _label = f"{report.get('emoji', '📄')} {report['name']}"
                         if _pickup:
                             _label = "📌 " + _label
+                        # Key includes the section so a report that
+                        # appears under multiple days (e.g. Daily Focus on
+                        # Tue-Sat) doesn't trigger StreamlitDuplicateElementKey.
+                        _btn_key = f"lib_btn_{section_name}_{report['id']}"
                         if st.button(
                             _label,
-                            key=f"lib_btn_{report['id']}",
+                            key=_btn_key,
                             use_container_width=True,
                             help=("Mid-run — pick up where you left off"
                                   if _pickup else report.get("description") or None),
