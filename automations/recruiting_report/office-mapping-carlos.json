@@ -1,0 +1,238 @@
+{
+  "confirmed_count": 32,
+  "needs_review_count": 0,
+  "skip_count": 1,
+  "confirmed": [
+    {
+      "sheet_tab": "Carlos Hidalgo",
+      "office_id": "11580",
+      "as_owner": "CARLOS HIDALGO",
+      "as_company": "ALPHALETE SPECIALIZED MARKETING, INC.-TX",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Adrian Sarabia",
+      "office_id": "22895",
+      "as_owner": "Adrian Sarabia",
+      "as_company": "PAYD Enterprise, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "David Munoz",
+      "office_id": "21667",
+      "as_owner": "David Munoz",
+      "as_company": "Catalyst Marketing and Management, Inc",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Luke Baldwin",
+      "office_id": "20958",
+      "as_owner": "Luke Baldwin",
+      "as_company": "Takeoff Enterprises, Inc. 2nd",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Jacques Duncan",
+      "office_id": "22242",
+      "as_owner": "Jacques Duncan",
+      "as_company": "Dream Innovations, Inc",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Marvin Williams",
+      "office_id": "10778",
+      "as_owner": "Marvin Williams",
+      "as_company": "MAC Global Marketing, Inc",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Ellen Dent",
+      "office_id": "15825",
+      "as_owner": "Ellen Dent",
+      "as_company": "Vanguard Management Inc",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Mitch Evans",
+      "office_id": "21344",
+      "as_owner": "Mitchell Evans",
+      "as_company": "Von Oben Solutions, Inc.",
+      "confidence": 0.88
+    },
+    {
+      "sheet_tab": "Cruz Venegas",
+      "office_id": "22442",
+      "as_owner": "Cruz Venegas",
+      "as_company": "Aventus Marketing, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Roberto Rodriguez",
+      "office_id": "22994",
+      "as_owner": "Roberto Rodriguez",
+      "as_company": "Diamond Tier Management, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Max Powell",
+      "office_id": "22273",
+      "as_owner": "Max Powell",
+      "as_company": "Venatic, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Harman Shamo",
+      "office_id": "23256",
+      "as_owner": "Harman Shamo",
+      "as_company": "Sparta Management, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "David Pisikian",
+      "office_id": "21658",
+      "as_owner": "David Pisikian",
+      "as_company": "Nexus Marketing Group, Inc",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Jacob Dunlavy",
+      "office_id": "23010",
+      "as_owner": "Jacob Dunlavy",
+      "as_company": "Ignite Solutions, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Jesse Knight",
+      "office_id": "23152",
+      "as_owner": "Jesse Knight",
+      "as_company": "Vanguard Consulting Group, Inc",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Hannah Burgos (Jessica Vihtelic)",
+      "office_id": "15240",
+      "as_owner": "Jessica Vihtelic",
+      "as_company": "99 EXPOSURE, INC.",
+      "confidence": 0.67
+    },
+    {
+      "sheet_tab": "Atef Choudhury",
+      "office_id": "23467",
+      "as_owner": "Atef Choudhury",
+      "as_company": "Domin8 Acquisitions, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Joshua Murphy",
+      "office_id": "21770",
+      "as_owner": "Joshua Murphy",
+      "as_company": "Leadsphere Solutions, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Monika Swanson",
+      "office_id": "22987",
+      "as_owner": "Monika Swanson",
+      "as_company": "Cheree Management, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Gary Whitaker",
+      "office_id": "23218",
+      "as_owner": "Gary Whitaker II",
+      "as_company": "Masters Of Our Reality Solutions, Inc.",
+      "confidence": 0.9
+    },
+    {
+      "sheet_tab": "George Hipolito",
+      "office_id": "11296",
+      "as_owner": "George Hipolito",
+      "as_company": "Vincere Associates Inc",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Joey Ramirez",
+      "office_id": "23206",
+      "as_owner": "Joey Ramirez",
+      "as_company": "JG Fortitude, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Joseph (Joe) Eckhart",
+      "office_id": "1366",
+      "as_owner": "Joseph Eckhart",
+      "as_company": "Vincero Inc",
+      "confidence": 0.82
+    },
+    {
+      "sheet_tab": "Justin Wood",
+      "office_id": "22192",
+      "as_owner": "Justin Wood",
+      "as_company": "Forge Management, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Kevin Driggs",
+      "office_id": "22249",
+      "as_owner": "Kevin Driggs",
+      "as_company": "Nova Management Group, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Ryan Kabbes",
+      "office_id": "22335",
+      "as_owner": "Ryan Kabbes",
+      "as_company": "Romulus, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Kinsey Guenther",
+      "office_id": "11906",
+      "as_owner": "Kinsey Guenther",
+      "as_company": "The KC Standard, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Sabrina Alicea",
+      "office_id": "21291",
+      "as_owner": "Sabrina Alicea",
+      "as_company": "Alisei, Inc",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Jamis Garay",
+      "office_id": "19592",
+      "as_owner": "Jamis Garay",
+      "as_company": "MIDSPIRE INC",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Stefan Cameron",
+      "office_id": "23264",
+      "as_owner": "Stefan Cameron",
+      "as_company": "Viridian, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Luis Salazar",
+      "office_id": "21169",
+      "as_owner": "Luis Salazar",
+      "as_company": "Apex Premier Management, Inc.",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Alex Badawi",
+      "office_id": "22662",
+      "as_owner": "Alexander Badawi",
+      "as_company": "Mountain Peak Marketing, Inc.",
+      "confidence": 0.81
+    }
+  ],
+  "needs_review": [],
+  "skip": [
+    {
+      "sheet_tab": "B2B Template",
+      "reason": "admin tab (filtered before sync)"
+    }
+  ]
+}

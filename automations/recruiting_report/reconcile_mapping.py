@@ -13,60 +13,92 @@ import json
 import sys
 from pathlib import Path
 
-MAPPING_PATH = Path(__file__).resolve().parent / "office-mapping.json"
+from . import fill
 
-# Auto-matches we don't trust; route to needs_review until manually mapped.
-FLAGGED_BAD: set = set()
+# Honor the captainship config — points at office-mapping.json for Raf,
+# office-mapping-carlos.json for Carlos, etc.
+MAPPING_PATH = fill.MAPPING_PATH
 
-# Hardcoded sheet-tab -> office_id mappings. These take precedence over
-# auto-match. Use this for offices that exist in some AS accounts but not
-# others — the script will try the office_id and skip cleanly if not visible.
-# Source IDs were discovered via the rcaptain account.
-HARDCODED_OFFICE_IDS = {
-    "Chan Park":          "19588",
-    "DMari Longmire":     "22989",
-    "Francisco Castillo": "22532",
-    "JC Pascual":         "22976",
-    "Milly Villagrana":   "22001",
-    "Natalia Gwarda":     "23431",
-    "Nigel Gilbert":      "22435",
-    "Oren Shezaf":        "22536",
-    "Preppie Olison":     "21373",
-    "Starr Rodenhurst":   "17573",
+# Per-captainship reconcile config — each captainship has its own pile of
+# hardcoded overrides + admin/discontinued tabs that don't auto-match. The
+# default is Raf (preserves all existing behavior). Add a new captainship by
+# extending _RECONCILE_CONFIG.
+_RECONCILE_CONFIG = {
+    "Raf": {
+        # Auto-matches we don't trust; route to needs_review until manually mapped.
+        "flagged_bad": set(),
+        # Hardcoded sheet-tab -> office_id mappings. These take precedence
+        # over auto-match. Use for offices that exist in some AS accounts
+        # but not others — the script tries the office_id and skips
+        # cleanly if not visible. Source IDs from the rcaptain account.
+        "hardcoded_office_ids": {
+            "Chan Park":          "19588",
+            "DMari Longmire":     "22989",
+            "Francisco Castillo": "22532",
+            "JC Pascual":         "22976",
+            "Milly Villagrana":   "22001",
+            "Natalia Gwarda":     "23431",
+            "Nigel Gilbert":      "22435",
+            "Oren Shezaf":        "22536",
+            "Preppie Olison":     "21373",
+            "Starr Rodenhurst":   "17573",
+        },
+        # Tabs whose data sums across MULTIPLE AS offices (an ICD with two
+        # locations). Primary office_id is auto-matched or hardcoded above;
+        # this dict adds extra office_ids whose counts get summed in.
+        "hardcoded_siblings": {
+            "Chan Park": ["22057"],  # Nola Management Group, Inc. 2nd
+        },
+        # Admin / template / aggregate tabs that aren't ICD offices.
+        # Raf Hidalgo is INTENTIONALLY excluded — her tab is both the
+        # master view AND her own office data.
+        "admin_tabs": {
+            "Template 1",
+            "Template Fiber",
+            "Country Sales Board (backup copy)",
+            "Country Sales Board ",  # trailing space, exact tab title
+            "Country Stats",
+            "Country Metrics",
+            "Country Metrics pilot",
+            "Copy of Country Sales Board ",
+            "Copy of Country Stats",
+            "Daily Focus Report",
+            "Focus Office - Sales",
+            "ATT owners list",
+            "Rafs",
+            # Discontinued offices — preserved in Sheet but no longer pulling data
+            "Zach Hogue",
+            "Eric Zech",
+            "Wayne Rude",
+            "Sharon Stephen",   # no longer in business
+            "Salik Mallick",    # not actively recruiting
+            "Rason Williams",   # no longer in business; Megan will delete tab
+        },
+    },
+    "Carlos": {
+        "flagged_bad": set(),
+        # Empty for now — populated as Megan finds offices that need manual
+        # office_id assignment. Following the same pattern as Raf above.
+        "hardcoded_office_ids": {},
+        "hardcoded_siblings": {},
+        # Carlos's master tab is "Carlos Hidalgo" — excluded from admin
+        # for the same reason as Raf's. Template tab gets skipped via fill.
+        "admin_tabs": {
+            "B2B Template",
+        },
+    },
 }
+_RC = _RECONCILE_CONFIG.get(fill.CAPTAINSHIP)
+if _RC is None:
+    raise SystemExit(
+        f"No reconcile config for CAPTAINSHIP={fill.CAPTAINSHIP!r}; "
+        f"add a row to _RECONCILE_CONFIG."
+    )
 
-# Tabs whose data should sum across MULTIPLE AS offices (e.g. an ICD with
-# two locations). The primary office_id is in HARDCODED_OFFICE_IDS or auto-
-# matched; this dict adds extra office_ids whose counts get summed in.
-HARDCODED_SIBLINGS = {
-    "Chan Park": ["22057"],  # Nola Management Group, Inc. 2nd
-}
-
-# Admin / template / aggregate tabs that aren't ICD offices.
-# Raf Hidalgo is INTENTIONALLY excluded — her tab is both the master view AND
-# her own office data, so we treat it as a regular office.
-ADMIN_TABS = {
-    "Template 1",
-    "Template Fiber",
-    "Country Sales Board (backup copy)",
-    "Country Sales Board ",  # trailing space, exact tab title
-    "Country Stats",
-    "Country Metrics",
-    "Country Metrics pilot",
-    "Copy of Country Sales Board ",
-    "Copy of Country Stats",
-    "Daily Focus Report",
-    "Focus Office - Sales",
-    "ATT owners list",
-    "Rafs",
-    # Discontinued offices — preserved in Sheet but no longer pulling data
-    "Zach Hogue",
-    "Eric Zech",
-    "Wayne Rude",
-    "Sharon Stephen",   # no longer in business
-    "Salik Mallick",    # not actively recruiting
-    "Rason Williams",   # no longer in business; Megan will delete tab
-}
+FLAGGED_BAD = _RC["flagged_bad"]
+HARDCODED_OFFICE_IDS = _RC["hardcoded_office_ids"]
+HARDCODED_SIBLINGS = _RC["hardcoded_siblings"]
+ADMIN_TABS = _RC["admin_tabs"]
 
 
 def main() -> int:

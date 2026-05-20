@@ -70,6 +70,10 @@ def main() -> int:
                          "different AppStream login. Skips onboarding/pruning "
                          "and the OPT phase.")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--no-opt", action="store_true",
+                    help="Skip the OPT phase at the end of the run. Use when "
+                         "the captainship's Tableau views aren't wired up yet "
+                         "(e.g. early Carlos rollout — AppStream pull only).")
     ap.add_argument("--backfill-weeks", type=int, default=10,
                     help="When a tab is empty (new ICD), how many recent weeks to auto-fill. Default: 10.")
     args = ap.parse_args()
@@ -332,6 +336,8 @@ def main() -> int:
     # run already covered every tab.
     if args.retry_missing:
         log.info("OPT phase skipped (--retry-missing is an AppStream-only pass)")
+    elif args.no_opt:
+        log.info("OPT phase skipped (--no-opt)")
     else:
         try:
             from automations.recruiting_report import opt_phase

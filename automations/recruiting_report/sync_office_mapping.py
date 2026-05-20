@@ -20,12 +20,15 @@ import gspread
 from . import fill
 
 ALL_OFFICES_PATH = Path(__file__).resolve().parent / "all-offices.json"
-MAPPING_PATH = Path(__file__).resolve().parent / "office-mapping.json"
+# Honor the captainship config — fill.MAPPING_PATH points at
+# office-mapping.json for Raf, office-mapping-carlos.json for Carlos, etc.
+MAPPING_PATH = fill.MAPPING_PATH
 
-# Sheet tabs to ignore when building the office list (templates only).
-# Raf Hidalgo's tab serves double duty: it has the master Table 6 AND her own
-# office's funnel data, so we INCLUDE it as a regular office.
-SKIP_TABS = {"Template Fiber"}
+# Sheet tabs to ignore when building the office list — the template tab for
+# whichever captainship is active. The master tab (Raf Hidalgo / Carlos
+# Hidalgo) DOES get included as a regular office: it serves double duty
+# (master Table 6 + that owner's own funnel data).
+SKIP_TABS = {fill.TEMPLATE_TAB}
 
 
 def name_score(a: str, b: str) -> float:

@@ -52,34 +52,75 @@ def _retry(fn, *args, attempts: int = 6, base_delay: float = 1.5, **kwargs):
 import os as _os
 _CONFIG_PATH = Path.home() / ".config" / "recruiting-report" / "config.json"
 
+# CAPTAINSHIP — which leader's report this run targets. Default "Raf" keeps
+# the existing pipeline byte-identical. Set CAPTAINSHIP=Carlos to switch
+# the four config points (sheet ID, master tab, template tab, mapping file)
+# to Carlos's B2B report. Only ONE captainship per process — each Hub
+# button launches its own subprocess, so they never share module state.
+CAPTAINSHIP = (_os.environ.get("CAPTAINSHIP") or "Raf").strip()
+
+# Per-captainship config table. Adding a new captainship = add a row here
+# + ship a new office-mapping-<name>.json file. The rest of the module
+# reads these constants without caring which captainship is active.
+_CAPTAINSHIP_CONFIG = {
+    "Raf": {
+        "sheet_id_fallback": "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE",
+        "master_tab":        "Raf Hidalgo",
+        "template_tab":      "Template Fiber",
+        "mapping_filename":  "office-mapping.json",
+    },
+    "Carlos": {
+        "sheet_id_fallback": "1KLF8diMJ8pwIQWW9IqN7CL288t1l9VGUKxzBcMl8Of4",
+        "master_tab":        "Carlos Hidalgo",
+        "template_tab":      "B2B Template",
+        "mapping_filename":  "office-mapping-carlos.json",
+    },
+}
+if CAPTAINSHIP not in _CAPTAINSHIP_CONFIG:
+    raise SystemExit(
+        f"Unknown CAPTAINSHIP={CAPTAINSHIP!r}; "
+        f"valid choices: {sorted(_CAPTAINSHIP_CONFIG)}"
+    )
+_CFG = _CAPTAINSHIP_CONFIG[CAPTAINSHIP]
+
+
 def _resolve_sheet_id() -> str:
     if env := _os.environ.get("RECRUITING_REPORT_SHEET_ID"):
         return env.strip()
     if _CONFIG_PATH.exists():
         try:
             cfg = json.loads(_CONFIG_PATH.read_text())
-            if cfg.get("spreadsheet_id"):
+            # Per-captainship override key takes precedence over the
+            # legacy single 'spreadsheet_id' key. Lets a user with both
+            # reports configured keep them straight.
+            cap_key = f"spreadsheet_id_{CAPTAINSHIP.lower()}"
+            if cfg.get(cap_key):
+                return cfg[cap_key].strip()
+            # Legacy: 'spreadsheet_id' only applies to the default Raf
+            # captainship so an existing config file doesn't accidentally
+            # hijack Carlos runs.
+            if CAPTAINSHIP == "Raf" and cfg.get("spreadsheet_id"):
                 return cfg["spreadsheet_id"].strip()
         except Exception:
             pass
-    # Production Recruiting Report Sheet. Teammates without a local
-    # ~/.config/recruiting-report/config.json fall through to this default.
-    return "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE"
+    return _CFG["sheet_id_fallback"]
 
 SPREADSHEET_ID = _resolve_sheet_id()
 OAUTH_CLIENT_PATH = Path.home() / ".config" / "recruiting-report" / "oauth-client.json"
 OAUTH_TOKEN_PATH = Path.home() / ".config" / "recruiting-report" / "oauth-token.json"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
-MAPPING_PATH = Path(__file__).resolve().parent / "office-mapping.json"
+MAPPING_PATH = Path(__file__).resolve().parent / _CFG["mapping_filename"]
 ALL_OFFICES_PATH = Path(__file__).resolve().parent / "all-offices.json"
 # Runner's office picks for tabs whose name matches >1 AppStream office.
+# Per-captainship file so Raf's picks don't bleed into Carlos and vice versa.
 OFFICE_CHOICES_PATH = (
     Path(__file__).resolve().parent.parent.parent
-    / "output" / "recruiting_office_choices.json"
+    / "output"
+    / f"recruiting_office_choices{'' if CAPTAINSHIP == 'Raf' else '_' + CAPTAINSHIP.lower()}.json"
 )
-MASTER_TAB = "Raf Hidalgo"
-TEMPLATE_TAB = "Template Fiber"
+MASTER_TAB = _CFG["master_tab"]
+TEMPLATE_TAB = _CFG["template_tab"]
 NEEDS_REVIEW_COLOR = {"red": 1.0, "green": 0.0, "blue": 0.0}
 UNCATEGORIZED_COLOR = {"red": 0.0, "green": 0.4, "blue": 1.0}
 
