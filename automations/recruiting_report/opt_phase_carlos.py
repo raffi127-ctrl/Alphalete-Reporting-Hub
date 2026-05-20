@@ -158,6 +158,9 @@ VIEWS: List[ViewConfig] = [
         key_clean=_strip_office_suffix,
         subrow_column="",
         subrow_value="Cancel Rates",
+        # ICDs too new to have 6-week-avg data get a visible marker
+        # instead of a blank cell.
+        empty_placeholder="No Data In Tableau",
         metrics=[
             ViewMetric(sheet_row=43, tableau_column="6 Week Average"),
         ],
@@ -172,6 +175,9 @@ VIEWS: List[ViewConfig] = [
         key_clean=_strip_office_suffix,
         subrow_column="",
         subrow_value="Activation %",
+        # ICDs whose offices are too new for the 31-60 day window to have
+        # closed get the visible 'No Data In Tableau' marker.
+        empty_placeholder="No Data In Tableau",
         metrics=[
             ViewMetric(sheet_row=44, tableau_column="31-60 Days"),
         ],
@@ -218,6 +224,25 @@ VIEWS: List[ViewConfig] = [
             # aggregator output.
             ViewMetric(sheet_row=50, tableau_column="Actual Pen %"),
         ],
+    ),
+    ViewConfig(
+        key="personal_production",
+        url="https://us-east-1.online.tableau.com/#/site/sci/views/"
+            "ATTTRACKER-B2B/B2BATTSalesMetrics?:iid=1",
+        # Sheet picker TBD via test-view download. Per Eve's workflow:
+        # filter to 'This week', then sum per rep (where rep = ICD name)
+        # across product types Internet Sales / VOIP Line Count /
+        # Wireless Lines / AIR/AWB Sales. Output is a text string like
+        # '3 NI / 2 NL' (matches Raf's _format_personal_production
+        # convention). Special-cased in --apply-view loop because the
+        # output is a TEXT format, not a single numeric value.
+        sheet_thumbnail_match="",
+        metrics=[
+            ViewMetric(sheet_row=42, tableau_column="Total"),  # placeholder
+        ],
+        notes="Personal Production — text format. Filters per-ICD where "
+              "REP = ICD's name. Pulls only the ICD's own sales, not "
+              "the office total. Special-cased in --apply-view loop.",
     ),
     ViewConfig(
         key="dd",
@@ -429,6 +454,12 @@ def values_for_icd(icd_name: str, by_owner: dict, grand_total: dict,
             found = by_owner[key]
             break
     if not found and not any(m.is_global for m in view.metrics):
+        # ICD isn't in this view's CSV at all. If the view has an
+        # empty_placeholder, fill all non-global metric rows with it so
+        # the cell is visibly "no data" instead of left blank.
+        if view.empty_placeholder is not None:
+            return {m.sheet_row: view.empty_placeholder for m in view.metrics
+                    if not m.is_global}
         return {}
     out: dict[int, object] = {}
     if view.aggregator and found is not None:
