@@ -100,6 +100,11 @@ class ViewConfig:
     key_clean: Optional[Callable[[str], str]] = None  # optional cleaner fn
     subrow_column: str = ""                   # if non-empty, filter rows by
     subrow_value: str = ""                    # this col's value matching this
+    # Some views (DD) have crosstab that's heavily user-filtered. Setting
+    # `download_mode = "data"` clicks Download → Data → Full Data instead
+    # of Download → Crosstab. The "data" path exports underlying records
+    # (often per-row) and bypasses some view-level filtering.
+    download_mode: str = "crosstab"           # "crosstab" or "data"
     # When a view has MANY rows per owner (penetration is ZIP-level, ~37 rows
     # per ICD), `aggregator` collapses them into one {sheet_row: value} dict.
     # If set, the parser keeps ALL rows per owner instead of last-write-wins,
@@ -206,24 +211,71 @@ VIEWS: List[ViewConfig] = [
     ),
     ViewConfig(
         key="dd",
-        url="https://us-east-1.online.tableau.com/#/site/sci/views/DirectDepositICDVIEWVersion2_0/PROGRAMSUMMARY",
-        # Sheet picker iteration log:
-        # - "" (no match → first/Consultant ORG Title) → 64-byte empty file
-        # - "Sheet 7 (3)" → Download button stayed disabled
-        # Trying "Self Office Display" — "Self" sounds like the current
-        # user's filtered view, which might contain the ICD breakdown.
-        sheet_thumbnail_match="Self Office Display",
+        # Same workbook as Raf's pipeline (Direct Deposit ICD VIEW v2.0,
+        # PROGRAM SUMMARY view) but with the "downline or captain" filter
+        # flipped from "Captain" to "downline" — Megan saved this state
+        # as the DOWNLINEVIEW custom view so Carlos's ICDs appear too.
+        # Pure URL filter params didn't work (the user-scope filter
+        # applies before URL params); the saved custom view does.
+        url="https://us-east-1.online.tableau.com/#/site/sci/views/"
+            "DirectDepositICDVIEWVersion2_0/PROGRAMSUMMARY/"
+            "15c897de-6162-469b-9ef7-1735d235f2a8/DOWNLINEVIEW",
+        sheet_thumbnail_match="",
         metrics=[
-            ViewMetric(sheet_row=51, tableau_column="Grand Total to ICD"),
+            ViewMetric(sheet_row=51, tableau_column="Total $ to ICD"),
         ],
-        notes="Different workbook from the other 5. Sheet name TBD — may need "
-              "iterating through 'Sheet 7 (2)', '(3)', 'Self Office Display'.",
+        notes="dd uses View Data scrape (not crosstab). URL filter param "
+              "switches from captain-view to downline-view so Carlos's "
+              "ICDs appear too. Special-cased in the --apply-view loop.",
     ),
 ]
 
 
+# Canonical column-B label for each sheet row in our OPT block. The
+# writer looks up the actual row by matching this label in each tab's
+# column B (so tabs whose rows have shifted up/down still get data in
+# the right cell). Anything NOT in this map is hardcoded by row number.
+ROW_TO_LABEL = {
+    29: "Active Headcount on Tableau",
+    33: "New Internets",
+    34: "Voice Sales",
+    35: "Wireless",
+    36: "New Lines",
+    37: "Total Apps",
+    38: "AVG Apps Per Active Headcount",
+    39: "AVG New INT Sales",
+    40: "National AVG Apps",
+    41: "Scorecard Ranking",
+    43: "0-30 Day Cancel Rate",
+    44: "Activation /Approval %",
+    45: "0-30 Day Churn",
+    46: "30 Day Churn",
+    47: "60 Day Churn",
+    48: "90 Day Churn",
+    49: "120 Day churn",
+    50: "Penetration Rate",
+    51: "Direct Deposit",
+}
+
 # Rows we MUST NOT touch — manual entry or formula-bearing cells.
 DO_NOT_TOUCH_ROWS = {27, 28, 30, 31, 32}
+
+
+def _norm_label(s: str) -> str:
+    """Normalize a column-B label for matching — lower-cased, collapsed
+    whitespace, no leading/trailing spaces, slashes normalized."""
+    s = (s or "").strip().lower().replace("/", " / ")
+    return " ".join(s.split())
+
+
+def metric_row_for_tab(col_b: list, label: str) -> Optional[int]:
+    """Return the 1-indexed row in `col_b` where the value matches `label`
+    (case + whitespace insensitive). None if not found."""
+    target = _norm_label(label)
+    for i, v in enumerate(col_b, start=1):
+        if _norm_label(v) == target:
+            return i
+    return None
 
 # Rows we COMPUTE in Python from other rows (don't read from Tableau).
 # Each entry: target_row -> (numerator_row, denominator_row) for division
@@ -401,10 +453,16 @@ def _current_we_sunday(today: Optional["dt.date"] = None) -> "dt.date":
 
 
 def write_icd_values(ws, icd_values: dict[int, object],
-                     target_col: int, dry_run: bool = False) -> list[str]:
+                     target_col: int, dry_run: bool = False,
+                     row_remap: Optional[dict] = None) -> list[str]:
     """Write `icd_values` ({sheet_row: value}) to one ICD tab's
     `target_col` column. Rows in DO_NOT_TOUCH_ROWS are skipped silently
     so the writer can be called with a dict that includes them.
+
+    `row_remap` translates the canonical sheet_row (from the view config)
+    to the actual row on this specific tab — needed because many Carlos
+    tabs have rows shifted by ±1 from the master layout. When None, no
+    translation happens (the canonical row is used as-is).
 
     Values are written as a batch (single API call per tab) to keep the
     quota footprint small even when rolling out to 32 tabs.
@@ -412,9 +470,31 @@ def write_icd_values(ws, icd_values: dict[int, object],
     Returns a list of human-readable log lines."""
     import gspread.utils as _gu
     log = []
-    to_write = {r: v for r, v in icd_values.items() if r not in DO_NOT_TOUCH_ROWS}
-    if not to_write:
+    to_write_canonical = {r: v for r, v in icd_values.items()
+                          if r not in DO_NOT_TOUCH_ROWS}
+    # Translate canonical rows → actual rows for this tab. If we have a
+    # remap but a canonical row isn't in it, the metric is missing from
+    # this tab (e.g. the tab's column B has no matching label) — skip it
+    # with a warning. Without a remap, fall back to canonical row.
+    to_write: dict[int, object] = {}
+    missing: list[str] = []
+    for canonical_row, val in to_write_canonical.items():
+        if row_remap is not None:
+            actual_row = row_remap.get(canonical_row)
+            if actual_row is None:
+                label = ROW_TO_LABEL.get(canonical_row, f"row {canonical_row}")
+                missing.append(label)
+                continue
+        else:
+            actual_row = canonical_row
+        to_write[actual_row] = val
+    if not to_write and not missing:
         log.append(f"  {ws.title}: nothing to write (all rows in DO_NOT_TOUCH)")
+        return log
+    if missing:
+        log.append(f"  ⚠ {ws.title}: skipped {len(missing)} metric(s) — no "
+                   f"matching column-B label: {missing}")
+    if not to_write:
         return log
     # gspread batch_update wants A1 ranges. Convert (row, col) → letter.
     col_a1 = _gu.rowcol_to_a1(1, target_col).rstrip("1")
@@ -674,6 +754,12 @@ def main() -> int:
                     help="Apply one view's cached CSV to ALL Carlos ICD tabs "
                          "(rolls out across the confirmed mapping). Pair with "
                          "--dry-run to preview without writing.")
+    ap.add_argument("--cleanup-drift", action="store_true",
+                    help="One-time cleanup: scan every tab, find rows where "
+                         "our previous row-drift bug wrote data to the wrong "
+                         "row (canonical position holds a value matching what "
+                         "now lives at the correct position), and clear the "
+                         "wrong-row cell. Safe to re-run (idempotent).")
     args = ap.parse_args()
 
     if args.test_view:
@@ -712,6 +798,200 @@ def main() -> int:
                   f"first 5 keys: {list(by_owner)[:5]}")
         return 0
 
+    if args.cleanup_drift:
+        # Cleanup pass — for each drifted tab, find canonical rows where
+        # we previously wrote (wrong row) and the actual row also has the
+        # same value (correct row, just-written). Clear the wrong-row
+        # cell. Safe + idempotent: if the canonical value doesn't match
+        # the actual-row value, it's left alone (manual entry).
+        from automations.focus_office_att.daily import _q
+        sh = fill.open_sheet()
+        icd_tabs = _carlos_icd_tabs()
+        we = _current_we_sunday()
+        print(f"Cleanup-drift pass on {len(icd_tabs)} ICD tab(s); "
+              f"target WE {we.isoformat()}; dry_run={args.dry_run}")
+
+        # Batch-read row 1 + col B once per tab.
+        ranges = []
+        for t in icd_tabs:
+            ranges.append(f"{_q(t)}!1:1")
+            ranges.append(f"{_q(t)}!B:B")
+        resp = sh.values_batch_get(ranges)
+        target_col_by_tab: dict[str, int] = {}
+        row_remap_by_tab: dict[str, dict] = {}
+        vrs = resp.get("valueRanges", [])
+        for idx, t in enumerate(icd_tabs):
+            row1 = vrs[idx * 2].get("values", [])
+            col_b = [r[0] if r else "" for r in vrs[idx * 2 + 1].get("values", [])]
+            if row1:
+                mapping = fill.find_sunday_columns([row1[0]], header_row_idx=0)
+                col = mapping.get(we)
+                if col:
+                    target_col_by_tab[t] = col
+            remap: dict[int, int] = {}
+            for canonical_row, label in ROW_TO_LABEL.items():
+                actual = metric_row_for_tab(col_b, label)
+                if actual:
+                    remap[canonical_row] = actual
+            row_remap_by_tab[t] = remap
+
+        # For each tab where any canonical_row != actual_row, batch-read
+        # BOTH cells (canonical + actual) at current-week col and compare.
+        import gspread.utils as _gu
+        total_cleared = 0
+        for tab in icd_tabs:
+            target_col = target_col_by_tab.get(tab)
+            remap = row_remap_by_tab.get(tab) or {}
+            if not target_col:
+                continue
+            drifted = [(c, a) for c, a in remap.items() if c != a]
+            if not drifted:
+                continue
+            col_a1 = _gu.rowcol_to_a1(1, target_col).rstrip("1")
+            # Batch-fetch all (canonical, actual) pairs for this tab
+            cell_ranges = []
+            for c, a in drifted:
+                cell_ranges.append(f"{_q(tab)}!{col_a1}{c}")
+                cell_ranges.append(f"{_q(tab)}!{col_a1}{a}")
+            r = sh.values_batch_get(cell_ranges,
+                                    params={"valueRenderOption": "UNFORMATTED_VALUE"})
+            vals = r.get("valueRanges", [])
+            stale = []  # canonical rows on this tab whose value matches actual
+            for i, (c, a) in enumerate(drifted):
+                v_canon = vals[i * 2].get("values", [[None]])
+                v_actual = vals[i * 2 + 1].get("values", [[None]])
+                v_canon = v_canon[0][0] if v_canon and v_canon[0] else None
+                v_actual = v_actual[0][0] if v_actual and v_actual[0] else None
+                if v_canon in (None, "") or v_actual in (None, ""):
+                    continue
+                # Compare loosely — values close enough? (handles float
+                # precision). Strings exact.
+                same = False
+                try:
+                    if abs(float(v_canon) - float(v_actual)) < 1e-9:
+                        same = True
+                except (TypeError, ValueError):
+                    same = (str(v_canon) == str(v_actual))
+                if same:
+                    stale.append(c)
+            if not stale:
+                continue
+            if args.dry_run:
+                print(f"  [DRY-RUN] {tab}: would clear stale {col_a1}"
+                      f"{{{','.join(str(r) for r in stale)}}}")
+            else:
+                # Batch-clear those cells
+                clear_body = [{"range": f"{col_a1}{r}", "values": [[""]]}
+                              for r in stale]
+                ws = sh.worksheet(tab)
+                ws.batch_update(clear_body, value_input_option="USER_ENTERED")
+                print(f"  [OK] {tab}: cleared {len(stale)} stale cell(s) "
+                      f"({col_a1}{stale})")
+            total_cleared += len(stale)
+        print(f"\nSummary: cleared {total_cleared} stale cell(s)"
+              f"{' (dry-run)' if args.dry_run else ''}")
+        return 0
+
+    if args.apply_view == "dd":
+        # Special path — Program Summary uses View Data scrape (not
+        # crosstab) and a DIFFERENT view URL than Raf's pipeline: with
+        # the "downline or captain" filter set to "downline" so Carlos's
+        # ICDs appear alongside Raf's (Raf's CAPTAINVIEW filters out
+        # everyone but the logged-in user's downline).
+        from automations.recruiting_report.opt_phase import (
+            scrape_view_data, parse_program_summary, _norm,
+        )
+        dd_view = next(v for v in VIEWS if v.key == "dd")
+        # Use a distinct filename so the old UTF-16 crosstab attempts at
+        # dd.csv don't get mis-parsed as UTF-8 View Data.
+        carlos_dd_path = DOWNLOAD_DIR / "dd_view_data.csv"
+        sh = fill.open_sheet()
+        icd_tabs = _carlos_icd_tabs()
+        as_owner_map = _as_owner_by_tab()
+        we = _current_we_sunday()
+        print(f"Applying view 'dd' to {len(icd_tabs)} ICD tab(s); "
+              f"target WE {we.isoformat()}; dry_run={args.dry_run}")
+
+        # Refresh the View Data CSV from Carlos's URL (downline filter).
+        if not args.dry_run or not carlos_dd_path.exists():
+            print(f"  → scraping View Data from {dd_view.url}")
+            fields, records = scrape_view_data(dd_view.url, verbose=True)
+            carlos_dd_path.parent.mkdir(parents=True, exist_ok=True)
+            lines = ["\t".join(fields)] + ["\t".join(r) for r in records]
+            carlos_dd_path.write_text("\n".join(lines), encoding="utf-8")
+            print(f"  → saved {len(records)} View Data row(s) to {carlos_dd_path.name}")
+        by_owner = parse_program_summary(carlos_dd_path)
+        print(f"  → parsed {len(by_owner)} ICDs from Program Summary")
+
+        # Batch-read row 1 + col B for date column AND row-drift remap.
+        from automations.focus_office_att.daily import _q
+        ranges = []
+        for t in icd_tabs:
+            ranges.append(f"{_q(t)}!1:1")
+            ranges.append(f"{_q(t)}!B:B")
+        resp = sh.values_batch_get(ranges)
+        target_col_by_tab: dict[str, int] = {}
+        row_remap_by_tab: dict[str, dict] = {}
+        vrs = resp.get("valueRanges", [])
+        for idx, t in enumerate(icd_tabs):
+            row1 = vrs[idx * 2].get("values", [])
+            col_b = [r[0] if r else "" for r in vrs[idx * 2 + 1].get("values", [])]
+            if row1:
+                mapping = fill.find_sunday_columns([row1[0]], header_row_idx=0)
+                col = mapping.get(we)
+                if col:
+                    target_col_by_tab[t] = col
+            remap: dict[int, int] = {}
+            for canonical_row, label in ROW_TO_LABEL.items():
+                actual = metric_row_for_tab(col_b, label)
+                if actual:
+                    remap[canonical_row] = actual
+            row_remap_by_tab[t] = remap
+
+        wrote = skipped = errored = 0
+        for tab in icd_tabs:
+            target_col = target_col_by_tab.get(tab)
+            if not target_col:
+                print(f"  ⚠ {tab}: no col for WE {we.isoformat()}")
+                skipped += 1
+                continue
+            try:
+                ws = sh.worksheet(tab)
+            except Exception as e:
+                print(f"  ⚠ couldn't open {tab!r}: {e}")
+                errored += 1
+                continue
+            fb = as_owner_map.get(tab, "")
+            candidates = [tab, fb] if fb and fb.lower() != tab.lower() else [tab]
+            record = None
+            for cand in candidates:
+                key = _norm(cand)
+                if key in by_owner:
+                    record = by_owner[key]
+                    break
+            # Carlos's Tableau session can only see ~3 of his 32 ICDs in this
+            # view (permission-scoped to his direct downline). Per Megan: the
+            # ones we CAN'T see should get "No Access" stamped in row 51 so
+            # the viewer knows the data exists but is gated by Tableau access,
+            # vs being mistaken for $0 or a stale cell.
+            total: object
+            if record:
+                total = record.get("total")
+                if total is None:
+                    print(f"  ⚠ {tab}: matched {record.get('owner')!r} but no total")
+                    skipped += 1
+                    continue
+            else:
+                total = "No Access"
+            for line in write_icd_values(ws, {51: total}, target_col,
+                                         dry_run=args.dry_run,
+                                         row_remap=row_remap_by_tab.get(tab)):
+                print(line)
+            wrote += 1
+        print(f"\nSummary: {wrote} written/previewed, "
+              f"{skipped} skipped, {errored} errored")
+        return 0
+
     if args.apply_view:
         view = next(v for v in VIEWS if v.key == args.apply_view)
         csv_path = DOWNLOAD_DIR / f"{view.key}.csv"
@@ -725,21 +1005,37 @@ def main() -> int:
         print(f"Applying view '{view.key}' to {len(icd_tabs)} ICD tab(s); "
               f"target WE {we.isoformat()}; dry_run={args.dry_run}")
 
-        # Batch-read row 1 of every tab in ONE API call (vs 32 separate
-        # reads which blow past the 60/min Sheets quota). Build a
-        # per-tab target_col map so the loop below doesn't re-read.
+        # Batch-read row 1 AND column B of every tab in ONE API call (vs
+        # 64 separate reads which blow past the 60/min Sheets quota).
+        # Row 1 gives us the date column; column B gives us the metric
+        # label per row, used to translate canonical rows → actual rows
+        # (many tabs have rows shifted ±1 from the master layout).
         from automations.focus_office_att.daily import _q
-        ranges = [f"{_q(t)}!1:1" for t in icd_tabs]
+        ranges = []
+        for t in icd_tabs:
+            ranges.append(f"{_q(t)}!1:1")        # row 1 = dates
+            ranges.append(f"{_q(t)}!B:B")        # col B = metric labels
         resp = sh.values_batch_get(ranges)
         target_col_by_tab: dict[str, int] = {}
-        for t, vr in zip(icd_tabs, resp.get("valueRanges", [])):
-            vals = vr.get("values", [])
-            if not vals:
-                continue
-            mapping = fill.find_sunday_columns([vals[0]], header_row_idx=0)
-            col = mapping.get(we)
-            if col:
-                target_col_by_tab[t] = col
+        row_remap_by_tab: dict[str, dict] = {}
+        vrs = resp.get("valueRanges", [])
+        for idx, t in enumerate(icd_tabs):
+            row1 = vrs[idx * 2].get("values", [])
+            col_b = [r[0] if r else "" for r in vrs[idx * 2 + 1].get("values", [])]
+            if row1:
+                mapping = fill.find_sunday_columns([row1[0]], header_row_idx=0)
+                col = mapping.get(we)
+                if col:
+                    target_col_by_tab[t] = col
+            # Build canonical → actual row map by matching each metric's
+            # label in column B. Missing labels are silently absent from
+            # the map (writer skips them with a warning).
+            remap: dict[int, int] = {}
+            for canonical_row, label in ROW_TO_LABEL.items():
+                actual = metric_row_for_tab(col_b, label)
+                if actual:
+                    remap[canonical_row] = actual
+            row_remap_by_tab[t] = remap
 
         # Parse CSV ONCE (same data drives all per-ICD writes).
         try:
@@ -779,7 +1075,8 @@ def main() -> int:
                 continue
             full = apply_computed(raw)
             for line in write_icd_values(ws, full, target_col,
-                                         dry_run=args.dry_run):
+                                         dry_run=args.dry_run,
+                                         row_remap=row_remap_by_tab.get(tab)):
                 print(line)
             wrote += 1
         print(f"\nSummary: {wrote} written/previewed, "
