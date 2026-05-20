@@ -356,6 +356,19 @@ def _parse_view_csv(csv_path: Path, key_column: str = "ICD Owner Name",
         elif key:
             if keep_all_rows:
                 by_owner.setdefault(key, []).append(rec)
+            elif subrow_column or subrow_value:
+                # Subrow-filtered views can have MULTIPLE matching rows
+                # per owner (e.g. churn: Carlos has two 'Churn Rate'
+                # subrows — one with 0-30/90/120 day data, one with
+                # 30/60 day data). Merge them column-by-column so a
+                # non-empty value in either survives. Without this we'd
+                # silently lose half the data.
+                existing = by_owner.get(key, {})
+                merged = dict(existing)
+                for col, val in rec.items():
+                    if val and str(val).strip():
+                        merged[col] = val
+                by_owner[key] = merged
             else:
                 by_owner[key] = rec
     return headers, by_owner, grand_total
