@@ -111,6 +111,11 @@ class ViewConfig:
     # and `aggregator(rows)` computes the metric value(s). When None,
     # values_for_icd reads the configured columns from the single stored row.
     aggregator: Optional[Callable[[list], dict]] = None
+    # When set, empty/missing column values get this placeholder written
+    # instead of being skipped. Used by churn (some buckets have no data
+    # yet for new offices) — Megan wants the cells filled with a clear
+    # text marker rather than left blank.
+    empty_placeholder: Optional[str] = None
 
 
 # All 6 Carlos OPT-phase Tableau views, per
@@ -182,6 +187,11 @@ VIEWS: List[ViewConfig] = [
         key_clean=_strip_office_suffix,
         subrow_column="",
         subrow_value="Churn Rate",
+        # Many ICDs have data in only some buckets (e.g. a 35-day-old office
+        # has no '60/90/120 Day' churn yet). Fill empty cells with a clear
+        # text marker so the viewer knows the bucket isn't applicable, vs
+        # mistaking blank for 0%.
+        empty_placeholder="No Data In Tableau",
         metrics=[
             ViewMetric(sheet_row=45, tableau_column="0-30 Day"),
             ViewMetric(sheet_row=46, tableau_column="30 Day"),
@@ -415,9 +425,15 @@ def values_for_icd(icd_name: str, by_owner: dict, grand_total: dict,
         for m in view.metrics:
             src = grand_total if m.is_global else rec
             if not src:
+                # If we have an empty_placeholder, fill the cell anyway
+                # so it's visibly "no data" instead of silently blank.
+                if view.empty_placeholder is not None:
+                    out[m.sheet_row] = view.empty_placeholder
                 continue
             raw = src.get(m.tableau_column)
             if raw is None or raw == "":
+                if view.empty_placeholder is not None:
+                    out[m.sheet_row] = view.empty_placeholder
                 continue
             out[m.sheet_row] = _to_number(raw)
     return out
