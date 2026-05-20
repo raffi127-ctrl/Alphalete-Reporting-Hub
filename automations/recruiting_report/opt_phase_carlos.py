@@ -538,11 +538,23 @@ def apply_computed(values: dict[int, object]) -> dict[int, object]:
 # Sheet writer
 # ---------------------------------------------------------------------------
 def _current_we_sunday(today: Optional["dt.date"] = None) -> "dt.date":
-    """Return the WE Sunday for the in-progress week (today's week ending
-    Sunday). For today=Wed 5/20 returns 5/24."""
+    """Return the WE Sunday for the most-recently-completed week.
+
+    Eve runs this report on Mondays AFTER the week ends — she wants the
+    just-ended week's column filled, NOT the new in-progress week's
+    upcoming-Sunday column.
+
+    For Mon 5/25 returns 5/24 (yesterday Sun = just-ended week's WE).
+    For Wed 5/20 returns 5/17 (last Sun before today = last completed
+    week). For Sun 5/24 returns 5/17 (today's week isn't fully complete
+    until 23:59, so target last Sun's week).
+
+    Caller can override via a CLI flag if they specifically want to
+    target a different week (e.g. backfill)."""
     today = today or dt.date.today()
-    days_to_sunday = (6 - today.weekday()) % 7
-    return today + dt.timedelta(days=days_to_sunday)
+    # Most recent Sunday STRICTLY BEFORE today (or today minus 7 if Sunday)
+    days_back = (today.weekday() + 1) % 7 or 7
+    return today - dt.timedelta(days=days_back)
 
 
 def write_icd_values(ws, icd_values: dict[int, object],

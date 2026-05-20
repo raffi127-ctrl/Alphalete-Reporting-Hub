@@ -42,10 +42,30 @@ LOG_ROOT = WORKSPACE / "output" / "logs"
 
 
 def _most_recent_sunday(today: Optional[dt.date] = None) -> dt.date:
-    """The most recent Sunday on or before today."""
+    """AS picker Sunday for the most-recently-COMPLETED week.
+
+    The downstream per-week writer does a +7 day shift (sheet's WE
+    Sunday convention = AS picker Sunday + 7), so this function
+    returns the Sunday that maps to the just-ended week's column.
+
+    Eve runs this on Mondays AFTER the prior week ends — she wants
+    the just-ended week's column filled, NOT a new in-progress week's
+    upcoming-Sunday column.
+
+      Mon 5/25 → 5/17 (→ +7 = WE 5/24, just-ended week ✓)
+      Wed 5/27 → 5/17 (same → WE 5/24)
+      Sun 5/24 → 5/10 (today's week isn't fully complete until 23:59,
+                       so target last fully-completed week's WE 5/17)
+
+    Previously returned the in-progress week's Sunday, which on Monday
+    5/25 mapped to WE 5/31 (col K) instead of the desired WE 5/24
+    (col J)."""
     today = today or dt.date.today()
     # weekday(): Mon=0 ... Sun=6
-    days_back = (today.weekday() + 1) % 7
+    #   days back to last Sunday strictly before today  → (wd+1)%7 or 7
+    #   minus another 7 for the +7 WE-shift convention → target just-
+    #   completed week, not in-progress
+    days_back = ((today.weekday() + 1) % 7 or 7) + 7
     return today - dt.timedelta(days=days_back)
 
 
