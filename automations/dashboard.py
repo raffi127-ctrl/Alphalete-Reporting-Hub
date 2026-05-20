@@ -919,6 +919,61 @@ AUTOMATED_REPORTS = [
             },
         ],
     },
+    {
+        "id": "daily-rep-breakdown",
+        "name": "Daily Rep Breakdown - ATT Program",
+        "creator": "Megan",
+        "emoji": "📊",
+        "color": "#F472B6",
+        "category": "🎯 Recruiting",
+        "description": "Per-rep day-by-day production breakdown from "
+                       "ownerville + Tableau — one tab per owner. "
+                       "Monday wipes + scrapes the full week; Tue-Sun "
+                       "incremental.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Pulls each rep's daily production from ownerville and "
+            "Tableau into the Daily Rep Breakdown Sheet. Monday does a "
+            "full wipe + re-scrape (so terminated reps drop off "
+            "cleanly). Tue-Sun do an incremental update (yesterday's "
+            "now-complete numbers plus today's partial).\n\n"
+            "WHEN IT RUNS\n"
+            "**Every day.** Monday is a fresh start; the rest of the "
+            "week is additive."
+        ),
+        "sheet_url": "https://docs.google.com/spreadsheets/d/"
+                     "1xgVE_e8bZimACgPdqcdNCr1qo4sedWect_zzEcUgEJY/edit",
+        "assignees": ["Raf"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "9:00 AM",
+            "estimated_minutes": 15,
+        },
+        "checklist": [
+            {"text": "Launch Reporting Chrome",
+             "action": "launch_chrome"},
+            {"text": "Log into the correct **ownerville** account in the "
+                     "new Chrome window — Tableau SSO bootstraps from it"},
+        ],
+        "post_run": {
+            "message_success": "✅ Daily Rep Breakdown complete — Sheet "
+                               "updated and you'll see a desktop "
+                               "notification when it finishes.",
+            "message_failed": "❌ Run failed. Check the log above, fix "
+                              "the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run Daily Rep Breakdown",
+                "icon": "▶",
+                "primary": True,
+                "help": "Monday = full wipe + scrape. Tue-Sun = "
+                        "incremental update.",
+                "module": "automations.focus_office_att.daily",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
 ]
 
 # Merge in user-uploaded reports (saved by the Wire-Up dialog)
@@ -5921,13 +5976,20 @@ else:  # st.session_state.view == "user"
                 _due = [r for r in my_reports if _was_due_on(r, _day)]
                 if _due:
                     for _r in _due:
-                        # Click jumps straight to the report's Library card
-                        # so the user can run it without hunting for it.
+                        # Mark today's card with green ✅ when there's a
+                        # successful run today (same signal the sidebar's
+                        # "Today's Tasks" uses, so the two stay in sync).
+                        _done = _is_today and _was_run_successfully_today(
+                            _r["id"], today)
+                        _label = f"{_r.get('emoji', '📄')} {_r['name']}"
+                        if _done:
+                            _label = "✅ " + _label
                         if st.button(
-                            f"{_r.get('emoji', '📄')} {_r['name']}",
+                            _label,
                             key=f"cal_{user_name}_{_day.strftime('%Y%m%d')}_{_r['id']}",
                             use_container_width=True,
-                            help="Open this report to run it",
+                            help="Done today — open to view" if _done
+                                 else "Open this report to run it",
                         ):
                             st.session_state["library_report_id"] = _r["id"]
                             st.session_state["library_came_from"] = ("user", user_name)
@@ -6032,40 +6094,10 @@ else:  # st.session_state.view == "user"
                     st.caption("First ship pending. You've got this. 💪")
             st.markdown("---")
 
-        # Two-column layout below the hero:
-        #   left:  "Completed Today" checklist for this user
-        #   right: in-progress banner + this user's reports
-        user_layout = st.columns([1, 4])
-
-        with user_layout[0]:
-            st.markdown("### ✅ Completed Today")
-            completed_today = _get_completed_today(user_name)
-            if not completed_today:
-                st.caption("Nothing marked completed yet today.")
-            else:
-                for item in completed_today:
-                    report_id = item.get("report_id", "")
-                    report_name = item.get("report_name", "?")
-                    try:
-                        marked_dt = dt.datetime.fromisoformat(item.get("marked_at", ""))
-                        marked_str = marked_dt.strftime("%I:%M %p").lstrip("0")
-                    except Exception:
-                        marked_str = ""
-                    with st.container(border=True):
-                        st.markdown(
-                            f"<div style='font-weight:600'>✓ {report_name}</div>"
-                            f"<div style='font-size:0.8rem; color:#777'>marked at {marked_str}</div>",
-                            unsafe_allow_html=True,
-                        )
-                        if st.button(
-                            "↩ Undo",
-                            key=f"undo_completed_{report_id}_{item.get('run_ts', '')}",
-                            use_container_width=True,
-                        ):
-                            _unmark_run_completed(user_name, report_id, item.get("run_ts", ""))
-                            st.rerun()
-
-        with user_layout[1]:
+        # "Completed Today" section intentionally removed (Megan, 2026-05-19)
+        # — completed reports now show a green ✅ on their card in the
+        # 7-day schedule strip above. Below: in-progress pick-up banner.
+        if True:
             if in_progress:
                 st.markdown("### 📌 Pick up where you left off")
                 for report in in_progress:
@@ -6163,56 +6195,10 @@ else:  # st.session_state.view == "user"
                                 st.session_state.pop(f"last_run_{report['id']}", None)
                                 st.rerun()
 
-            if my_reports:
-                st.markdown("## 🚀 Your Reports")
-                st.caption("Click a report name to open it and run.")
-                in_progress_ids = {r["id"] for r in in_progress}
-                for report in my_reports:
-                    is_pickup = report["id"] in in_progress_ids
-                    if is_pickup:
-                        saved_ts = persisted.get(report["id"], {}).get("ts", "")
-                        try:
-                            saved_str = dt.datetime.fromisoformat(saved_ts).strftime("%I:%M %p").lstrip("0")
-                        except Exception:
-                            saved_str = ""
-                        # Gold banner above the row — visually marks this report
-                        # as "still in flight today." Click behavior is unchanged.
-                        st.markdown(
-                            "<div style='background:linear-gradient(135deg, #FFF8E7 0%, #FFF3D6 100%); "
-                            "border-left:4px solid #C9A85C; border-radius:6px; "
-                            "padding:6px 12px; margin-top:0.4rem; margin-bottom:-0.2rem; "
-                            "font-size:0.9em; color:#5C4220'>"
-                            "<span style='display:inline-block; background:#C9A85C; color:#2A1F12; "
-                            "padding:1px 8px; border-radius:999px; font-size:0.72em; "
-                            "font-weight:800; letter-spacing:0.02em; margin-right:8px'>"
-                            "📌 PICK UP WHERE YOU LEFT OFF"
-                            "</span>"
-                            + (f"<span style='color:#8B6914'>last run {saved_str} today</span>"
-                               if saved_str else "")
-                            + "</div>",
-                            unsafe_allow_html=True,
-                        )
-                    _row = st.columns([3, 2])
-                    with _row[0]:
-                        if st.button(
-                            f"{report.get('emoji', '📄')} {report['name']}",
-                            key=f"profile_run_{report['id']}",
-                            use_container_width=True,
-                        ):
-                            st.session_state["library_report_id"] = report["id"]
-                            st.session_state["library_came_from"] = ("user", user_name)
-                            _set_view("library")
-                            st.rerun()
-                    with _row[1]:
-                        st.markdown(
-                            "<div style='padding:0.5rem 0.6rem; color:#666; "
-                            "font-size:0.9em'>"
-                            f"📅 {_format_schedule_short(report)}"
-                            "</div>",
-                            unsafe_allow_html=True,
-                        )
-            else:
-                st.info(f"No reports assigned to {user_name} yet.")
+            # "Your Reports" list intentionally removed (Megan, 2026-05-19) —
+            # the 7-day schedule strip above already shows which reports
+            # the user runs and when. Library is the place to actually
+            # open + run them.
 
 
 # --------------------------------------------------------------------------
