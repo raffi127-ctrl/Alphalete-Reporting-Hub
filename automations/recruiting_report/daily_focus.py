@@ -739,13 +739,23 @@ def _read_state() -> dict:
         return {}
 
 
-def _write_state(inaccessible: List[str], week_start: dt.date) -> None:
+def _write_state(inaccessible: List[str], week_start: dt.date,
+                 denied: List[str] | None = None,
+                 fetch_errors: List[str] | None = None) -> None:
+    """Persist the skipped-ICD lists. `denied` and `fetch_errors` are
+    the two underlying buckets:
+      - denied: AppStream genuinely refused access (cur_raw == {})
+      - fetch_errors: transient Playwright/timeout errors (retry-recoverable)
+    `inaccessible` is their union, kept for backward compat with older
+    Hub builds that only read that key."""
     sf = _state_file()
     sf.parent.mkdir(parents=True, exist_ok=True)
     sf.write_text(json.dumps({
         "ts": dt.datetime.now().isoformat(timespec="seconds"),
         "week_start": week_start.isoformat(),
         "inaccessible": sorted(set(inaccessible)),
+        "denied":       sorted(set(denied or [])),
+        "fetch_errors": sorted(set(fetch_errors or [])),
     }, indent=2))
 
 
@@ -761,10 +771,13 @@ def _setup_logging(today: dt.date) -> logging.Logger:
 
 
 def run_captainship(captainship: str, args, week_start: dt.date,
-                    log: logging.Logger) -> Tuple[int, List[str]]:
+                    log: logging.Logger) -> Tuple[int, dict]:
     """Fill the Daily Focus report for one captainship. Returns
-    (return-code, skipped-ICD list); the caller merges the skipped lists from
-    all captainships into one shared retry-state file."""
+    (return-code, skipped-ICDs dict) where the dict has keys:
+      - "inaccessible": union of all skipped ICDs (legacy)
+      - "denied":       ICDs AppStream refused (cur_raw == {})
+      - "fetch_errors": ICDs that errored transiently (retry-recoverable)
+    The caller merges these across captainships into one shared state file."""
     log.info("=== captainship: %s ===", captainship)
     sh = fill._client().open_by_key(DAILY_FOCUS_SPREADSHEET_ID)
     ws = find_captainship_worksheet(sh, captainship)
@@ -789,10 +802,13 @@ def run_captainship(captainship: str, args, week_start: dt.date,
                  len(icds), icds)
     log.info("ICDs to process: %s", icds)
 
-    # Track ICDs that couldn't be pulled — rcaptain has no AppStream access to
-    # them yet. The caller writes these to the retry-state file so the Hub can
-    # list them and offer a retry once access is granted.
+    # Track ICDs that couldn't be pulled. Split into two buckets so the
+    # Hub callout can tell the user the right fix (request access vs.
+    # just retry). `inaccessible_this_run` is the union — kept for the
+    # function's return-shape compatibility.
     inaccessible_this_run: List[str] = []
+    denied_this_run: List[str] = []          # AppStream refused this account
+    fetch_errors_this_run: List[str] = []    # transient Playwright/timeout
 
     col3 = fill._retry(ws.col_values, 3)
 
@@ -842,22 +858,54 @@ def run_captainship(captainship: str, args, week_start: dt.date,
             # Fetch CURRENT week FIRST so we know if the office is accessible.
             # Only clear + fill when fetch succeeds — preserves data for offices
             # that need the other AS account.
+            #
+            # 3 failure modes, each with a DIFFERENT cause/banner so the user
+            # knows whether to request access or just retry:
+            #   - exception during fetch  -> fetch_errors  (transient, retry)
+            #   - cur_raw == {}           -> denied        (real access issue)
+            #   - cur_raw is falsy/empty  -> fetch_errors  (transient, retry)
+            #
+            # Retry transient errors ONCE before giving up — Raf + JR Young
+            # have been flaking with timeout/empty pulls and a single retry
+            # almost always recovers. Don't retry an empty-dict (real denial)
+            # because that's a server answer, not a flake.
             last_week_start = week_start - dt.timedelta(days=7)
-            try:
-                cur_raw = fetch_office.fetch_one_daily(target_page, office_id, icd, week_start)
-            except Exception as e:
-                # Timeout / network / Playwright errors are recoverable on a
-                # second pass (often resolves on retry). Mark as needing retry
-                # so the dashboard prompts to re-pull this ICD.
-                log.exception("  fetch failed for %s (current): %s — flagged for retry", icd, e)
+
+            def _try_current() -> tuple[object, str]:
+                """Returns (raw_data, error_kind) where error_kind is one of
+                'ok', 'denied', 'exception', 'empty'. raw_data only meaningful
+                when error_kind == 'ok'."""
+                try:
+                    raw = fetch_office.fetch_one_daily(target_page, office_id, icd, week_start)
+                except Exception as e:
+                    log.exception("  fetch failed for %s (current): %s", icd, e)
+                    return None, "exception"
+                if raw == {}:
+                    return None, "denied"
+                if not raw:
+                    return None, "empty"
+                return raw, "ok"
+
+            cur_raw, err = _try_current()
+            if err in ("exception", "empty"):
+                log.info("  retrying %s once after transient %s …", icd, err)
+                cur_raw, err = _try_current()
+                if err == "ok":
+                    log.info("  ✓ %s recovered on retry", icd)
+
+            if err == "exception":
+                log.warning("  %s still failing after retry — flagged as transient fetch error", icd)
+                fetch_errors_this_run.append(icd)
                 inaccessible_this_run.append(icd)
                 continue
-            if cur_raw == {}:
+            if err == "denied":
                 log.warning("  not accessible from current AS account; skip (data preserved)")
+                denied_this_run.append(icd)
                 inaccessible_this_run.append(icd)
                 continue
-            if not cur_raw:
-                log.warning("  empty current fetch; skip — flagged for retry")
+            if err == "empty":
+                log.warning("  empty current fetch after retry; flagged as transient fetch error")
+                fetch_errors_this_run.append(icd)
                 inaccessible_this_run.append(icd)
                 continue
 
@@ -924,12 +972,20 @@ def run_captainship(captainship: str, args, week_start: dt.date,
         p.stop()
 
     if inaccessible_this_run:
-        log.info("%s: %d ICD(s) skipped — rcaptain has no AppStream access "
-                 "yet: %s", captainship, len(inaccessible_this_run),
-                 ", ".join(inaccessible_this_run))
+        if denied_this_run:
+            log.info("%s: %d ICD(s) denied by AppStream account: %s",
+                     captainship, len(denied_this_run), ", ".join(denied_this_run))
+        if fetch_errors_this_run:
+            log.info("%s: %d ICD(s) had transient fetch errors (retry-recoverable): %s",
+                     captainship, len(fetch_errors_this_run),
+                     ", ".join(fetch_errors_this_run))
 
     log.info("done")
-    return 0, inaccessible_this_run
+    return 0, {
+        "inaccessible": inaccessible_this_run,
+        "denied":       denied_this_run,
+        "fetch_errors": fetch_errors_this_run,
+    }
 
 
 def main() -> int:
@@ -965,16 +1021,20 @@ def main() -> int:
     targets = CAPTAINSHIPS if args.captainship == "all" else [args.captainship]
     rc = 0
     skipped: List[str] = []
+    denied: List[str] = []
+    fetch_errors: List[str] = []
     for cs in targets:
-        cs_rc, cs_skipped = run_captainship(cs, args, week_start, log)
+        cs_rc, cs_result = run_captainship(cs, args, week_start, log)
         rc |= cs_rc
-        skipped += cs_skipped
+        skipped       += cs_result.get("inaccessible", [])
+        denied        += cs_result.get("denied", [])
+        fetch_errors  += cs_result.get("fetch_errors", [])
 
     # One shared retry-state file for the whole run — the Hub reads it to list
     # the skipped ICDs and power the "Retry the skipped ICDs" button. Not
     # written on --only / --dry-run (those aren't a full-list view).
     if not args.only and not args.dry_run:
-        _write_state(skipped, week_start)
+        _write_state(skipped, week_start, denied=denied, fetch_errors=fetch_errors)
         if skipped:
             log.info("%d ICD(s) skipped this run — saved to %s for retry",
                      len(skipped), _state_file().name)

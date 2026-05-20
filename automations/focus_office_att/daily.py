@@ -120,27 +120,59 @@ def wipe_future_day_blocks(sh, today: "dt.date") -> int:
     return len(tabs)
 
 
-def set_day_column_visibility(sh, today: "dt.date") -> int:
-    """Hide columns for days AFTER today this week; un-hide days up to
-    and including today. Each day-block is 12 cols wide starting at col
-    13 (Mon=13..24, Tue=25..36, ..., Sun=85..96). Weekly Total (3-12)
-    stays visible. Visibility is idempotent — safe to run on every
-    invocation."""
+# Day-block column-group ranges (0-indexed half-open) — Mon..Sun.
+# These match the pre-existing depth=2 column groups Sheets already has on
+# every owner tab, exactly. Each block is 11 cols; the 1-col gap between
+# blocks (col 24, 36, 48, ...) is where the group's +/- toggle button
+# lives, so it's intentionally NOT part of the group.
+_DAY_BLOCK_RANGES = [
+    (13, 24),  # Mon = N:X
+    (25, 36),  # Tue = Z:AJ
+    (37, 48),  # Wed = AL:AV
+    (49, 60),  # Thu = AX:BH
+    (61, 72),  # Fri = BJ:BT
+    (73, 84),  # Sat = BV:CF
+    (85, 96),  # Sun = CH:CR
+]
+
+
+def set_day_column_collapsed(sh, today: "dt.date") -> int:
+    """Collapse day-block column GROUPS for days AFTER today; expand days
+    up to and including today. Uses the pre-existing depth=2 column groups
+    so the +/- toggle button stays visible at the top — Megan wants the
+    user to be able to expand a collapsed day with one click, not just
+    have the columns silently hidden.
+
+    Sets BOTH the group's `collapsed` flag AND the underlying columns'
+    `hiddenByUser` flag in the same batch — the Sheets API doesn't tie
+    them together automatically (a group can be marked collapsed while
+    its columns stay visible, which is what was breaking the visual
+    effect before). The collapsed flag drives the +/- button, the
+    hiddenByUser flag actually hides the columns; together they give
+    Megan the expand-on-click UX she asked for. Idempotent."""
     dow = today.weekday()    # 0=Mon..6=Sun
     tabs = [t for t in sh.worksheets() if t.title not in NON_OWNER_TABS]
     if not tabs:
         return 0
     requests = []
     for t in tabs:
-        for day_idx in range(7):    # 0=Mon..6=Sun
-            start_col_0 = 12 + day_idx * 12   # 0-indexed startColumnIndex
-            end_col_0 = start_col_0 + 12      # exclusive
-            hide = (day_idx > dow)
+        for day_idx, (start, end) in enumerate(_DAY_BLOCK_RANGES):
+            should_collapse = (day_idx > dow)
+            # 1. Group's collapsed state (controls the +/- button glyph).
+            requests.append({"updateDimensionGroup": {
+                "dimensionGroup": {
+                    "range": {"sheetId": t.id, "dimension": "COLUMNS",
+                              "startIndex": start, "endIndex": end},
+                    "depth": 2,
+                    "collapsed": should_collapse,
+                },
+                "fields": "collapsed",
+            }})
+            # 2. Columns' hiddenByUser (actually hides them visually).
             requests.append({"updateDimensionProperties": {
                 "range": {"sheetId": t.id, "dimension": "COLUMNS",
-                          "startIndex": start_col_0,
-                          "endIndex": end_col_0},
-                "properties": {"hiddenByUser": hide},
+                          "startIndex": start, "endIndex": end},
+                "properties": {"hiddenByUser": should_collapse},
                 "fields": "hiddenByUser",
             }})
     sh.batch_update({"requests": requests})
@@ -174,6 +206,113 @@ def wipe_all_owner_tabs(sh) -> int:
         for t in tabs
     ]})
     return len(tabs)
+
+
+# ----------------------------------------------------------------------
+# No-access banner — visible warning ON the tab itself
+# ----------------------------------------------------------------------
+# Light red bg + dark red bold text — same palette as the financial
+# "Not Found In Email" marker so the visual language stays consistent.
+_BANNER_BG = {"red": 1.0, "green": 0.78, "blue": 0.76}
+_BANNER_FG = {"red": 0.78, "green": 0.15, "blue": 0.12}
+
+
+def _banner_text_for(status: str) -> str:
+    """Pick the right actionable banner text from a per-owner failure
+    status string written to scrape_results.json by run_all_owners.
+
+    Each status maps to ONE action a viewer can take — Megan/Raf
+    shouldn't have to decode raw status strings like 'exception:
+    TimeoutError:...'; the log has those for debugging."""
+    s = (status or "").lower()
+    # OV's "Office Access" table only lists offices the current login HAS
+    # access to. If a name isn't in the table, the user doesn't have
+    # access — not a name drift. Same banner as an explicit impersonate
+    # denial; the actionable fix is the same (request OV access).
+    if "name not found" in s or "no ov access" in s or "impersonate denied" in s:
+        return "❌ NO OWNERVILLE ACCESS — request access"
+    if "access request pending" in s or "request sent" in s:
+        return "⏳ OWNERVILLE ACCESS REQUEST PENDING — waiting on approval"
+    if "no impersonate button" in s or "office may be disabled" in s:
+        return "❌ OFFICE DISABLED IN OWNERVILLE — check OV"
+    if "ov page error" in s:
+        return "❌ OWNERVILLE UI ERROR — retry later"
+    if "couldn't reach office access" in s:
+        return "❌ COULDN'T REACH OWNERVILLE — retry later"
+    if s.startswith("exception:") or "timeout" in s:
+        return "❌ OWNERVILLE PULL ERROR — retry later"
+    # Legacy / unknown status (e.g. older "impersonate failed" before the
+    # status string got more specific) — show a generic, still-actionable
+    # message rather than a misleading one.
+    return "❌ COULDN'T PULL FROM OWNERVILLE — check log"
+
+
+def mark_no_access_tabs(sh, pending_results: dict) -> dict:
+    """Stamp a per-failure banner on tabs whose OV scrape failed, and
+    clear it from tabs that scraped OK.
+
+    `pending_results` is `{tab_name: status_string}` — only entries where
+    status != "ok" should be passed in (filtering happens at the call
+    site). The banner text is chosen per-status by `_banner_text_for`
+    so the viewer knows what to do (add alias vs request access vs retry).
+
+    Banner lives at A1:B1 — those cells are empty by design (col C
+    onward holds the merged weekly/per-day banners and is off-limits;
+    row 2 holds the column headers). Merged into a single visible cell
+    with light-red bg + dark-red bold text. Idempotent."""
+    tabs = [t for t in sh.worksheets() if t.title not in NON_OWNER_TABS]
+    if not tabs:
+        return {"marked": 0, "cleared": 0}
+    requests = []
+    marked = cleared = 0
+    for t in tabs:
+        status = pending_results.get(t.title)
+        is_pending = bool(status)
+        # Unmerge first — safe to do on a non-merged range (Sheets ignores).
+        # Lets us re-write A1:B1 cleanly in either branch.
+        requests.append({"unmergeCells": {
+            "range": {"sheetId": t.id, "startRowIndex": 0, "endRowIndex": 1,
+                      "startColumnIndex": 0, "endColumnIndex": 2},
+        }})
+        if is_pending:
+            requests.append({"mergeCells": {
+                "range": {"sheetId": t.id, "startRowIndex": 0, "endRowIndex": 1,
+                          "startColumnIndex": 0, "endColumnIndex": 2},
+                "mergeType": "MERGE_ALL",
+            }})
+            requests.append({"updateCells": {
+                "range": {"sheetId": t.id, "startRowIndex": 0, "endRowIndex": 1,
+                          "startColumnIndex": 0, "endColumnIndex": 1},
+                "fields": "userEnteredValue,userEnteredFormat",
+                "rows": [{"values": [{
+                    "userEnteredValue": {"stringValue": _banner_text_for(status)},
+                    "userEnteredFormat": {
+                        "backgroundColor": _BANNER_BG,
+                        "horizontalAlignment": "CENTER",
+                        "verticalAlignment": "MIDDLE",
+                        "textFormat": {
+                            "foregroundColor": _BANNER_FG,
+                            "bold": True, "fontSize": 11,
+                        },
+                        "wrapStrategy": "WRAP",
+                    },
+                }]}],
+            }})
+            marked += 1
+        else:
+            # Wipe the banner — blank the cells + clear formatting
+            requests.append({"updateCells": {
+                "range": {"sheetId": t.id, "startRowIndex": 0, "endRowIndex": 1,
+                          "startColumnIndex": 0, "endColumnIndex": 2},
+                "fields": "userEnteredValue,userEnteredFormat",
+                "rows": [{"values": [
+                    {"userEnteredValue": {"stringValue": ""}, "userEnteredFormat": {}},
+                    {"userEnteredValue": {"stringValue": ""}, "userEnteredFormat": {}},
+                ]}],
+            }})
+            cleared += 1
+    sh.batch_update({"requests": requests})
+    return {"marked": marked, "cleared": cleared}
 
 
 # ----------------------------------------------------------------------
@@ -389,15 +528,15 @@ def main() -> int:
             except Exception as e:
                 say(f"  future-day clear failed (non-fatal): {e}")
 
-        # Collapse future-day columns so empty days don't show as a wall
-        # of blank cells. Days <= today are visible; days > today hidden.
-        # Idempotent — runs every day so visibility tracks the date.
-        say("Setting day-column visibility (collapse future days)...")
+        # Collapse future-day column GROUPS so empty days are hidden
+        # behind a +/- toggle the user can click to peek at them.
+        # Idempotent — runs every day so collapse state tracks the date.
+        say("Collapsing future-day column groups...")
         try:
-            n = set_day_column_visibility(sh, today)
-            say(f"  visibility set on {n} tab(s)")
+            n = set_day_column_collapsed(sh, today)
+            say(f"  collapse state set on {n} tab(s)")
         except Exception as e:
-            say(f"  visibility set failed (non-fatal): {e}")
+            say(f"  collapse set failed (non-fatal): {e}")
 
         # 3. Phase 2 — ownerville scrape
         say("Phase 2: ownerville scrape...")
@@ -444,6 +583,26 @@ def main() -> int:
                 f"plain={counts['none']}")
         except Exception as e:
             say(f"  tab-color refresh failed (non-fatal): {e}")
+
+        # 6. Per-failure banners on the sheet tabs — each pending owner
+        # gets an actionable banner ("add alias" vs "request access" vs
+        # "retry later") based on their failure status. Everyone else has
+        # the banner cleared. Idempotent.
+        say("Stamping per-failure banners on pending tabs...")
+        try:
+            pending_results: dict = {}
+            if SCRAPE_RESULTS.exists():
+                try:
+                    data = json.loads(SCRAPE_RESULTS.read_text())
+                    pending_results = {o: s for o, s in data.get("results", {}).items()
+                                       if s != "ok" and o not in NON_OWNER_TABS}
+                except Exception:
+                    pending_results = {}
+            banner_counts = mark_no_access_tabs(sh, pending_results)
+            say(f"  banner marked on {banner_counts['marked']} tab(s), "
+                f"cleared on {banner_counts['cleared']} tab(s)")
+        except Exception as e:
+            say(f"  banner refresh failed (non-fatal): {e}")
 
         say("=== DONE ===")
         # Pipeline finished cleanly — clear the Phase-2 resume checkpoint

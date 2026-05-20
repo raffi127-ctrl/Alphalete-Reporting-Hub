@@ -254,10 +254,17 @@ def _exit_impersonation(page) -> bool:
         return False
 
 
-def _find_owner_and_impersonate(page, sheet_tab_name: str, aliases_raw: dict) -> str | None:
+def _find_owner_and_impersonate(page, sheet_tab_name: str, aliases_raw: dict) -> tuple[str | None, str]:
     """On the Office Access page, search for the owner (trying canonical name
     plus any known aliases), grab their officeId, and call confirmImpersonate.
-    Returns the new (impersonated) rqstValue on success, None on failure.
+
+    Returns (rqstValue, "ok") on success.
+    Returns (None, reason) on failure where reason is one of:
+      - "name not found in ownerville"  — alias missing / name drifted
+      - "no ov access (impersonate denied)"  — the real access denial
+      - "ov page error: missing officeId"  — site DOM unexpected
+    The reason is written verbatim to scrape_results.json so the Sheet
+    banner can show an actionable hint instead of a generic 'failed'.
     """
     # Wait for the DataTables AJAX load.
     page.locator("table#promotingOffices").wait_for(state="visible", timeout=10000)
@@ -311,21 +318,44 @@ def _find_owner_and_impersonate(page, sheet_tab_name: str, aliases_raw: dict) ->
         print(f"  ❌ Couldn't find '{sheet_tab_name}' in ownerville. Tried: {candidates}")
         new_alias = _prompt_for_unknown_owner(sheet_tab_name)
         if not new_alias:
-            return None
+            return None, "name not found in ownerville"
         owner_row, last_visible_names = _try_search(new_alias)
         if owner_row is None:
             print(f"  ❌ '{new_alias}' also not found — skipping {sheet_tab_name}.")
-            return None
+            return None, "name not found in ownerville"
         save_alias(sheet_tab_name, new_alias)
         # Refresh local map so subsequent searches in this run pick it up.
         aliases_raw.setdefault(sheet_tab_name, []).append(new_alias)
 
-    # Grab officeId from the action button.
-    action_btn = owner_row.locator("td").last.locator("button, a").first
-    office_id = action_btn.get_attribute("data-officeid") or ""
+    # Grab officeId from the action button. The action cell can be in
+    # one of THREE states for a row we can see:
+    #   (a) clickable button with data-officeid  → normal, impersonate
+    #   (b) text 'Request Sent' (no button)      → access request in flight,
+    #       not yet approved
+    #   (c) some other non-clickable text        → office disabled / odd state
+    # Read the cell text FIRST (fast) so we can return a specific status
+    # for case (b) without paying a 30s Playwright timeout.
+    action_cell = owner_row.locator("td").last
+    try:
+        cell_text = (action_cell.inner_text(timeout=4000) or "").strip().lower()
+    except Exception:
+        cell_text = ""
+    if "request sent" in cell_text or "request pending" in cell_text:
+        print(f"  ⏳ Action cell shows 'Request Sent' — access pending in OV.")
+        return None, "ov access request pending (request sent in office access table)"
+
+    action_btn = action_cell.locator("button, a").first
+    try:
+        office_id = action_btn.get_attribute("data-officeid", timeout=4000) or ""
+    except Exception:
+        # No clickable element in the cell AND no 'Request Sent' text matched.
+        # Most likely the office is in some other non-normal state.
+        print(f"  ❌ Action button not clickable — office may be disabled / suspended. "
+              f"Cell text: {cell_text!r}")
+        return None, "ov row has no impersonate button (office may be disabled)"
     if not office_id:
         print(f"  ❌ Action button missing data-officeid attribute.")
-        return None
+        return None, "ov page error: missing officeId"
 
     # Call the impersonate AJAX endpoint directly (bypasses the SweetAlert).
     result = page.evaluate(
@@ -352,12 +382,12 @@ def _find_owner_and_impersonate(page, sheet_tab_name: str, aliases_raw: dict) ->
     )
     if not result.get("ok"):
         print(f"  ❌ confirmImpersonate failed: {result}")
-        return None
+        return None, "no ov access (impersonate denied)"
 
     # Navigate to the impersonated portal and read the new rqstValue.
     page.goto(f"https://v2.ownerville.com/{result['redirect']}", wait_until="networkidle", timeout=20000)
     new_rqst = page.evaluate("typeof rqstValue !== 'undefined' ? rqstValue : null")
-    return new_rqst
+    return new_rqst, "ok"
 
 
 def _scrape_one_owner(page, ws, days: list[dt.date], rqst: str) -> dict:
@@ -567,9 +597,9 @@ def main() -> int:
                 if not _navigate_to_office_access(page):
                     results[owner] = "couldn't reach Office Access"
                     continue
-                rqst = _find_owner_and_impersonate(page, owner, aliases_raw)
+                rqst, reason = _find_owner_and_impersonate(page, owner, aliases_raw)
                 if not rqst:
-                    results[owner] = "impersonate failed"
+                    results[owner] = reason
                     continue
                 print(f"  ✓ Impersonated; rqst={rqst[:8]}…")
                 ws = all_tabs[owner]
@@ -610,12 +640,27 @@ def main() -> int:
 
     # Persist per-owner results so the daily entrypoint can color tabs
     # (owners that didn't scrape OK = pending OV access → amber).
+    #
+    # MERGE semantics — when --only is used (e.g. retry just Steve),
+    # we MUST NOT wipe out the other owners' statuses from the previous
+    # full run. We read the existing file, overlay this run's results
+    # on top, and write back. For a full run (no --only filter) we get
+    # the same end state as before because every owner appears in
+    # `results` anyway.
     try:
         results_path = Path(__file__).resolve().parents[2] / "output" / "focus_office_scrape_results.json"
         results_path.parent.mkdir(parents=True, exist_ok=True)
+        merged: dict = {}
+        if results_path.exists():
+            try:
+                prev = json.loads(results_path.read_text())
+                merged = dict(prev.get("results", {}) or {})
+            except Exception:
+                merged = {}
+        merged.update(results)   # current run overlays previous
         results_path.write_text(json.dumps({
             "run_at": dt.datetime.now().isoformat(timespec="seconds"),
-            "results": results,
+            "results": merged,
         }, indent=2))
     except Exception as e:
         print(f"  ⚠ couldn't write scrape-results file: {e}")

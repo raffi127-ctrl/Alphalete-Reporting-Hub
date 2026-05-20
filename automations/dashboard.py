@@ -158,9 +158,17 @@ def _read_active_runs() -> list[dict]:
             try:
                 tail = Path(log_path).read_text().lower().splitlines()[-10:]
                 tail_text = "\n".join(tail)
+                # Failure signatures — include scraper-style markers ("✗",
+                # "couldn't find", "couldn't be found", "auto-skipping") so a
+                # run that stalled or auto-skipped reps still gets classified
+                # as failed (the orphan path then auto-files a glitch row).
                 if "done" in tail_text or "[ok]" in tail_text:
                     status = "success"
-                elif "error" in tail_text or "failed" in tail_text or "traceback" in tail_text:
+                elif any(s in tail_text for s in (
+                    "error", "failed", "traceback",
+                    "✗", "couldn't find", "couldn't be found",
+                    "auto-skipping",
+                )):
                     status = "failed"
             except Exception:
                 pass
@@ -1037,6 +1045,10 @@ def _spawn_background_run(cmd: list[str], report_id: str, report_name: str) -> N
         proc = subprocess.Popen(
             cmd, cwd=str(WORKSPACE),
             stdout=log_handle, stderr=subprocess.STDOUT,
+            # No stdin — guarantees scripts checking `sys.stdin.isatty()` see
+            # non-interactive and fall back to skip/fail instead of prompting
+            # (which would hang forever; the Hub has no keyboard to type into).
+            stdin=subprocess.DEVNULL,
         )
     finally:
         # The child keeps its own dup of the fd; the parent's copy isn't needed.
@@ -1218,6 +1230,26 @@ def _hub_activity_rows() -> list[dict]:
         return []
 
 
+HUB_SYNC_ERROR_LOG = LOG_DIR / "hub_activity_sync_errors.log"
+
+
+def _log_hub_sync_error(op: str, ex: BaseException) -> None:
+    """Append a sync failure to a local file so silent Hub-Activity
+    breakage (auth, permissions, network) becomes visible. The Hub
+    surfaces the most recent error in its status strip when this file
+    exists + has recent entries."""
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        with HUB_SYNC_ERROR_LOG.open("a") as f:
+            f.write(json.dumps({
+                "ts": dt.datetime.now().isoformat(timespec="seconds"),
+                "op": op,
+                "error": f"{type(ex).__name__}: {str(ex)[:200]}",
+            }) + "\n")
+    except Exception:
+        pass
+
+
 def _hub_log_run_start(report_id: str, report_name: str, user: str, pid: int) -> str:
     """Append a 'started' row. Returns the RunID — store it locally so the
     matching run-end can find this row to update."""
@@ -1232,10 +1264,11 @@ def _hub_log_run_start(report_id: str, report_name: str, user: str, pid: int) ->
             "started", "",
         ])
         _hub_activity_rows.clear()
-    except Exception:
+    except Exception as ex:
         # Sheet write failed — local active_runs.json still works for this
-        # user. Don't block the run on a coordination error.
-        pass
+        # user. Don't block the run on a coordination error, but DO log
+        # it so we know cross-machine visibility is broken.
+        _log_hub_sync_error("hub_log_run_start", ex)
     return run_id
 
 
@@ -1252,8 +1285,8 @@ def _hub_log_run_end(run_id: str, status: str) -> None:
         ws.update_cell(cell.row, 8, status)
         ws.update_cell(cell.row, 9, dt.datetime.now().isoformat(timespec="seconds"))
         _hub_activity_rows.clear()
-    except Exception:
-        pass
+    except Exception as ex:
+        _log_hub_sync_error("hub_log_run_end", ex)
 
 
 def _hub_active_runs() -> list[dict]:
@@ -1380,7 +1413,14 @@ def _was_run_successfully_today(report_id: str, today: dt.date | None = None) ->
 
 def _latest_run_summary(report_id: str) -> str | None:
     """Return compact text like 'Today · Megan · 1:06 AM', or None.
-    Considers runs by any teammate, not just this machine."""
+    Considers runs by any teammate, not just this machine.
+
+    When the most recent run was on a DIFFERENT machine (e.g. Maud's
+    Hub ran it but Megan's Hub is reading this), the machine name is
+    appended so it's obvious why the local state files don't have any
+    matching details."""
+    import socket as _socket
+    this_machine = _socket.gethostname()
     for r in _all_runs_merged(days=14):
         if r.get("report_id") != report_id:
             continue
@@ -1394,6 +1434,13 @@ def _latest_run_summary(report_id: str) -> str | None:
         else:
             day = f"{when.strftime('%b')} {when.day}"
         user = r.get("user", "someone")
+        machine = (r.get("machine") or "").strip()
+        # Remote-run suffix — keep terse; full machine name would be noisy
+        # so we just show the user's name as the "on whose Mac" hint.
+        # (Local runs from runs.jsonl don't carry a machine field, so the
+        # absence-of-machine check is the local-vs-remote signal too.)
+        if machine and machine != this_machine:
+            return f"Last ran {day.lower()} · {user} · {time_str} · on {user}'s Mac"
         return f"Last ran {day.lower()} · {user} · {time_str}"
     return None
 
@@ -1547,7 +1594,21 @@ def _active_run_fragment(report_id: str) -> None:
     # Show how fresh the log file is so it's obvious whether the subprocess
     # is actively writing or has gone quiet.
     log_freshness = ""
-    if log_path:
+    # A scan-detected run (no Hub-recorded start) reads its log_path from
+    # the report's default log file, which may belong to a previous Hub
+    # run. If that file's mtime predates this process, it's not this run's
+    # log — hide it instead of showing stale content + a misleading
+    # "stuck" warning.
+    log_belongs_to_this_run = True
+    if is_orphan and not started_at and log_path:
+        try:
+            mtime = Path(log_path).stat().st_mtime
+            if dt.datetime.now().timestamp() - mtime > 30:
+                log_belongs_to_this_run = False
+        except Exception:
+            log_belongs_to_this_run = False
+
+    if log_path and log_belongs_to_this_run:
         try:
             mtime = Path(log_path).stat().st_mtime
             age_s = max(0, int(dt.datetime.now().timestamp() - mtime))
@@ -1560,7 +1621,13 @@ def _active_run_fragment(report_id: str) -> None:
         except Exception:
             pass
 
-    tail = _tail_log(log_path) if log_path else ""
+    tail = _tail_log(log_path) if (log_path and log_belongs_to_this_run) else ""
+    if not log_belongs_to_this_run:
+        st.info(
+            "📋 This run was launched outside the Hub (from a terminal) — "
+            "the live log isn't visible here. The card will refresh with "
+            "the post-run summary once it finishes."
+        )
 
     # Progress bar. The scraper prints a "[i/N]" marker per office; with
     # elapsed time we extrapolate how much is left. Reports that print no
@@ -2235,6 +2302,13 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
             again_state_rel = post_run_cfg.get("again_state_file")
             again_state_key = post_run_cfg.get("again_state_key")
             missing_items: list[str] = []
+            # New (post 2026-05-20): the state file may also carry a
+            # 'denied' list (real access denials) and 'fetch_errors'
+            # list (transient timeouts). Reading them lets the callout
+            # tell the user the RIGHT fix (request access vs just retry)
+            # instead of blaming AppStream access for every failure.
+            denied_items: list[str] = []
+            fetch_error_items: list[str] = []
             state_file_exists = False
             if again_state_rel and again_state_key:
                 state_path = WORKSPACE / again_state_rel
@@ -2243,6 +2317,8 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                         state_file_exists = True
                         data = json.loads(state_path.read_text())
                         missing_items = list(data.get(again_state_key) or [])
+                        denied_items = list(data.get("denied") or [])
+                        fetch_error_items = list(data.get("fetch_errors") or [])
                 except Exception:
                     pass
             nothing_to_retry = state_file_exists and not missing_items
@@ -2250,30 +2326,72 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
             with st.container(border=True):
                 if last_run["status"] == "success":
                     if missing_items:
-                        # High-visibility gold callout listing the exact ICDs
-                        # that didn't pull — these need AppStream access from
-                        # the logged-in account. The retry button re-pulls
-                        # just these once a login with access is in place.
-                        _names = ", ".join(missing_items)
-                        st.markdown(
-                            "<div style='background:linear-gradient(135deg, #FFE4E0 0%, #FFCEC7 100%); "
-                            "border:2px solid #D8261C; border-radius:10px; "
-                            "padding:14px 18px; margin:4px 0 10px; color:#5C1A14;'>"
-                            "<div style='font-weight:800; font-size:1.15rem;'>"
-                            f"🚩 Run complete — {len(missing_items)} "
-                            f"ICD{'s' if len(missing_items)!=1 else ''} not pulled "
-                            "(no AppStream access)</div>"
-                            "<div style='margin-top:6px; font-size:0.95rem;'>"
-                            f"<b>{_names}</b></div>"
-                            "<div style='margin-top:8px; font-size:0.95rem;'>"
-                            "Request rcaptain AppStream access for these ICDs "
-                            "(it can take a bit to go through). Or, if another "
-                            "AppStream account already has access, log into it "
-                            "in the Report Chrome window. Then click the button "
-                            "below to re-pull just these ICDs."
-                            "</div></div>",
-                            unsafe_allow_html=True,
-                        )
+                        # When the state file gives us the split (denied vs
+                        # fetch_errors), show two separate callouts so the
+                        # user knows which fix applies to each ICD.
+                        # Legacy state files only have `missing_items` —
+                        # those fall back to the single combined callout.
+                        if denied_items or fetch_error_items:
+                            if denied_items:
+                                _names = ", ".join(denied_items)
+                                st.markdown(
+                                    "<div style='background:linear-gradient(135deg, #FFE4E0 0%, #FFCEC7 100%); "
+                                    "border:2px solid #D8261C; border-radius:10px; "
+                                    "padding:14px 18px; margin:4px 0 10px; color:#5C1A14;'>"
+                                    "<div style='font-weight:800; font-size:1.15rem;'>"
+                                    f"🚩 {len(denied_items)} "
+                                    f"ICD{'s' if len(denied_items)!=1 else ''} blocked "
+                                    "by AppStream — request access</div>"
+                                    "<div style='margin-top:6px; font-size:0.95rem;'>"
+                                    f"<b>{_names}</b></div>"
+                                    "<div style='margin-top:8px; font-size:0.95rem;'>"
+                                    "AppStream refused these ICDs for the logged-in "
+                                    "account. Request rcaptain access (or switch to "
+                                    "an AppStream account that already has it) and "
+                                    "click the button below to re-pull."
+                                    "</div></div>",
+                                    unsafe_allow_html=True,
+                                )
+                            if fetch_error_items:
+                                _names = ", ".join(fetch_error_items)
+                                st.markdown(
+                                    "<div style='background:linear-gradient(135deg, #FFF4E0 0%, #FFE3B5 100%); "
+                                    "border:2px solid #C8841C; border-radius:10px; "
+                                    "padding:14px 18px; margin:4px 0 10px; color:#5C3E14;'>"
+                                    "<div style='font-weight:800; font-size:1.15rem;'>"
+                                    f"⚠️ {len(fetch_error_items)} "
+                                    f"ICD{'s' if len(fetch_error_items)!=1 else ''} hit a "
+                                    "transient pull error — usually fixed by a retry</div>"
+                                    "<div style='margin-top:6px; font-size:0.95rem;'>"
+                                    f"<b>{_names}</b></div>"
+                                    "<div style='margin-top:8px; font-size:0.95rem;'>"
+                                    "These weren't access denials — Playwright timed "
+                                    "out or the page didn't return data. Click the "
+                                    "button below to re-pull (a fresh attempt almost "
+                                    "always succeeds)."
+                                    "</div></div>",
+                                    unsafe_allow_html=True,
+                                )
+                        else:
+                            # Legacy single-bucket callout (state file pre-dates the split)
+                            _names = ", ".join(missing_items)
+                            st.markdown(
+                                "<div style='background:linear-gradient(135deg, #FFE4E0 0%, #FFCEC7 100%); "
+                                "border:2px solid #D8261C; border-radius:10px; "
+                                "padding:14px 18px; margin:4px 0 10px; color:#5C1A14;'>"
+                                "<div style='font-weight:800; font-size:1.15rem;'>"
+                                f"🚩 Run complete — {len(missing_items)} "
+                                f"ICD{'s' if len(missing_items)!=1 else ''} not pulled</div>"
+                                "<div style='margin-top:6px; font-size:0.95rem;'>"
+                                f"<b>{_names}</b></div>"
+                                "<div style='margin-top:8px; font-size:0.95rem;'>"
+                                "Either rcaptain has no AppStream access yet, or "
+                                "the pull hit a transient error. Try the retry "
+                                "button below first — if it still fails, request "
+                                "rcaptain access for these ICDs."
+                                "</div></div>",
+                                unsafe_allow_html=True,
+                            )
                     elif state_file_exists:
                         # An empty "inaccessible" list isn't real success if
                         # ICDs are still unmapped — the run silently skips
@@ -2349,11 +2467,13 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                                          expanded=not bool(_diag)):
                             st.code(_log_tail_text, language="log")
 
-                    # Every failed run auto-files a glitch report to Megan
-                    # (see the orphan path in _read_active_runs) — with the
-                    # full error log, so no one has to click anything.
-                    st.caption("🚩 This failure was automatically reported to "
-                               "Megan with the full error log.")
+                    # Every failed run auto-files a glitch row to the Bug
+                    # Reports tab in the intake Sheet (see the orphan path in
+                    # _read_active_runs). The intake Sheet's Apps Script
+                    # (notifyMeganOnNewBug, time-driven every 5 min) emails
+                    # Megan when a new row lands.
+                    st.caption("🚩 Filed on the Bug Reports tab — Megan gets "
+                               "an email with the full log within 5 minutes.")
 
                 again_label = post_run_cfg.get("again_label", "🔁 Run Again")
                 _resume_done = 0
