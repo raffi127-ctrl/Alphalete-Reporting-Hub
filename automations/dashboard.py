@@ -759,9 +759,6 @@ AUTOMATED_REPORTS = [
         "description": "Pulls B2B funnel + OPT metrics from ApplicantStream + Tableau, fills Carlos's 32-ICD focus-report Sheet.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Carlos's weekly captainship report — same shape as Raf's "
-            "ATT Program report, but pointed at Carlos's sheet and the "
-            "B2B Tableau views. Fills:\n"
             "**•** Recruiting pull (APPS / Total Applies / Retention / "
             "1st & 2nd Booked / etc.) from AppStream\n"
             "**•** OPT metrics (Active Headcount, Sales by product, "
