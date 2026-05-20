@@ -241,16 +241,21 @@ VIEWS: List[ViewConfig] = [
 ]
 
 
-# Canonical column-B label for each sheet row in our OPT block. The
-# writer looks up the actual row by matching this label in each tab's
-# column B (so tabs whose rows have shifted up/down still get data in
-# the right cell). Anything NOT in this map is hardcoded by row number.
+# Canonical column-B label(s) for each sheet row in our OPT block. The
+# writer looks up the actual row by matching ANY listed label in each
+# tab's column B (so tabs whose rows have shifted up/down still get data
+# in the right cell). A few rows have multiple accepted labels because
+# some Carlos tabs (Justin Wood / Luis Salazar / Alex Badawi) use
+# abbreviated metric names.
+#
+# A value can be a single str OR a tuple of acceptable str variants —
+# the lookup tries each in order, first match wins.
 ROW_TO_LABEL = {
     29: "Active Headcount on Tableau",
     33: "New Internets",
-    34: "Voice Sales",
-    35: "Wireless",
-    36: "New Lines",
+    34: ("Voice Sales", "Voice Count"),
+    35: ("Wireless", "Wireless Sales"),
+    36: ("New Lines", "AIR / AWB"),
     37: "Total Apps",
     38: "AVG Apps Per Active Headcount",
     39: "AVG New INT Sales",
@@ -278,12 +283,15 @@ def _norm_label(s: str) -> str:
     return " ".join(s.split())
 
 
-def metric_row_for_tab(col_b: list, label: str) -> Optional[int]:
+def metric_row_for_tab(col_b: list, label) -> Optional[int]:
     """Return the 1-indexed row in `col_b` where the value matches `label`
-    (case + whitespace insensitive). None if not found."""
-    target = _norm_label(label)
+    (case + whitespace insensitive). `label` can be a single str or a
+    tuple of acceptable variants — first matching label wins. None if
+    nothing matches."""
+    labels = (label,) if isinstance(label, str) else tuple(label)
+    targets = {_norm_label(l) for l in labels}
     for i, v in enumerate(col_b, start=1):
-        if _norm_label(v) == target:
+        if _norm_label(v) in targets:
             return i
     return None
 
@@ -498,7 +506,9 @@ def write_icd_values(ws, icd_values: dict[int, object],
         if row_remap is not None:
             actual_row = row_remap.get(canonical_row)
             if actual_row is None:
-                label = ROW_TO_LABEL.get(canonical_row, f"row {canonical_row}")
+                label_or_tuple = ROW_TO_LABEL.get(canonical_row, f"row {canonical_row}")
+                # Show the canonical (first) label for the warning, not the full tuple
+                label = label_or_tuple[0] if isinstance(label_or_tuple, tuple) else label_or_tuple
                 missing.append(label)
                 continue
         else:
