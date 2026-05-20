@@ -5458,7 +5458,14 @@ if st.session_state.view == "home":
                     count = len(unassigned_reports)
                 else:
                     my_reports = [r for r in AUTOMATED_REPORTS if member["name"] in r.get("assignees", [])]
-                    due_count = sum(1 for r in my_reports if _is_due_today(r, today))
+                    # Only count reports still UNCOMPLETED today —
+                    # successfully-run reports shouldn't show as "due"
+                    # (the strip already marks them with ✅).
+                    due_count = sum(
+                        1 for r in my_reports
+                        if _is_due_today(r, today)
+                        and not _was_run_successfully_today(r["id"], today)
+                    )
                 with st.container(border=True):
                     st.markdown(
                         f"<div style='text-align:center; font-size: 3.5rem; line-height: 1.0; margin-bottom: 0.4rem'>{member['emoji']}</div>",

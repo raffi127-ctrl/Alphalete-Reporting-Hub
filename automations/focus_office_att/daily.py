@@ -83,6 +83,71 @@ def _chrome_ok() -> tuple[bool, str]:
 
 
 # ----------------------------------------------------------------------
+# Future-day wipe — Tue-Sat: clear cells for days AFTER today this week.
+# Without this, last week's Wed-Sun data lingers in the same columns when
+# the week rolls over (since the column headers change but the cell values
+# don't until something writes them). Sunday has nothing to clear.
+# ----------------------------------------------------------------------
+def wipe_future_day_blocks(sh, today: "dt.date") -> int:
+    """Clear cells in day-blocks for days AFTER `today` (this week).
+    Each day spans 12 cols starting at col 13 (Mon). Clears both values
+    and userEnteredFormat in rows 3-200. No-op on Sunday."""
+    dow = today.weekday()    # 0=Mon..6=Sun
+    first_future_col = 13 + (dow + 1) * 12   # 0-indexed column to start clearing
+    if first_future_col > 96:
+        return 0   # Sun — nothing after today
+    tabs = [t for t in sh.worksheets() if t.title not in NON_OWNER_TABS]
+    if not tabs:
+        return 0
+    # A1 letters for the range
+    def _coletter(c: int) -> str:
+        s = ""
+        while c > 0:
+            c, r = divmod(c - 1, 26)
+            s = chr(65 + r) + s
+        return s
+    rng = f"{_coletter(first_future_col)}3:{_coletter(96)}200"
+    sh.values_batch_clear(body={"ranges": [f"{_q(t.title)}!{rng}" for t in tabs]})
+    sh.batch_update({"requests": [
+        {"updateCells": {
+            "range": {"sheetId": t.id,
+                      "startRowIndex": 2, "endRowIndex": 200,
+                      "startColumnIndex": first_future_col - 1,
+                      "endColumnIndex": 96},
+            "fields": "userEnteredFormat",
+        }} for t in tabs
+    ]})
+    return len(tabs)
+
+
+def set_day_column_visibility(sh, today: "dt.date") -> int:
+    """Hide columns for days AFTER today this week; un-hide days up to
+    and including today. Each day-block is 12 cols wide starting at col
+    13 (Mon=13..24, Tue=25..36, ..., Sun=85..96). Weekly Total (3-12)
+    stays visible. Visibility is idempotent — safe to run on every
+    invocation."""
+    dow = today.weekday()    # 0=Mon..6=Sun
+    tabs = [t for t in sh.worksheets() if t.title not in NON_OWNER_TABS]
+    if not tabs:
+        return 0
+    requests = []
+    for t in tabs:
+        for day_idx in range(7):    # 0=Mon..6=Sun
+            start_col_0 = 12 + day_idx * 12   # 0-indexed startColumnIndex
+            end_col_0 = start_col_0 + 12      # exclusive
+            hide = (day_idx > dow)
+            requests.append({"updateDimensionProperties": {
+                "range": {"sheetId": t.id, "dimension": "COLUMNS",
+                          "startIndex": start_col_0,
+                          "endIndex": end_col_0},
+                "properties": {"hiddenByUser": hide},
+                "fields": "hiddenByUser",
+            }})
+    sh.batch_update({"requests": requests})
+    return len(tabs)
+
+
+# ----------------------------------------------------------------------
 # Monday wipe
 # ----------------------------------------------------------------------
 def wipe_all_owner_tabs(sh) -> int:
@@ -295,7 +360,7 @@ def main() -> int:
 
         sh = _fill._client().open_by_key(DEST_SPREADSHEET_ID)
 
-        # 2. Monday wipe
+        # 2. Monday wipe (or future-day wipe Tue-Sat)
         if is_monday:
             say("Monday: wiping all owner tabs for a clean week...")
             try:
@@ -312,6 +377,27 @@ def main() -> int:
                 _notify_failure("Focus Office Monday wipe failed.",
                                 str(e), str(log_path))
                 return 1
+        else:
+            # Tue-Sun: clear cells for days AFTER today so last week's
+            # Wed-Sun stale data doesn't leak into this week (the column
+            # headers roll over but cell values don't until something
+            # writes them). Sunday no-ops.
+            say("Clearing future-day blocks (post-today, this week)...")
+            try:
+                n = wipe_future_day_blocks(sh, today)
+                say(f"  cleared future blocks on {n} tab(s)")
+            except Exception as e:
+                say(f"  future-day clear failed (non-fatal): {e}")
+
+        # Collapse future-day columns so empty days don't show as a wall
+        # of blank cells. Days <= today are visible; days > today hidden.
+        # Idempotent — runs every day so visibility tracks the date.
+        say("Setting day-column visibility (collapse future days)...")
+        try:
+            n = set_day_column_visibility(sh, today)
+            say(f"  visibility set on {n} tab(s)")
+        except Exception as e:
+            say(f"  visibility set failed (non-fatal): {e}")
 
         # 3. Phase 2 — ownerville scrape
         say("Phase 2: ownerville scrape...")
