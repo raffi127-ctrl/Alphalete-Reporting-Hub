@@ -299,6 +299,15 @@ def download_crosstab(view_url: str, crosstab_sheet: str, out_path: Path,
                 "No Tableau tab open in Report Chrome. Launch Report Chrome, "
                 "log into ownerville, open Tableau — then run again."
             )
+        # Navigate to about:blank first to force a clean DOM (avoids
+        # leftover modal state from a previous crashed download). Then
+        # navigate to the actual view. page.reload triggers an asyncio
+        # race on Python 3.9 / Playwright's sync API; this is the
+        # workaround.
+        try:
+            page.goto("about:blank", wait_until="domcontentloaded", timeout=10_000)
+        except Exception:
+            pass
         page.goto(view_url, wait_until="domcontentloaded")
 
         viz = page.frame_locator('iframe[title="Data Visualization"]')
@@ -312,18 +321,25 @@ def download_crosstab(view_url: str, crosstab_sheet: str, out_path: Path,
         dl_btn.click()
         page.wait_for_timeout(1800)
         viz.locator('[data-tb-test-id="download-flyout-download-crosstab-MenuItem"]').click()
-        page.wait_for_timeout(3500)
 
+        # Wait for thumbnails to actually populate — some views' Crosstab
+        # dialogs hydrate slowly. Poll for up to 30s with retries.
         thumbs = viz.locator('[data-tb-test-id^="sheet-thumbnail-"]')
+        for _ in range(30):
+            page.wait_for_timeout(1000)
+            if thumbs.count() > 0:
+                break
         idx = None
         for i in range(thumbs.count()):
             if thumbs.nth(i).inner_text().strip() == crosstab_sheet:
                 idx = i
                 break
         if idx is None:
+            available = [thumbs.nth(i).inner_text().strip() for i in range(thumbs.count())]
             raise RuntimeError(
                 f"Couldn't find the {crosstab_sheet!r} sheet in the Crosstab "
-                "dialog — the AUTOMATION PULL view may have changed."
+                f"dialog — saw {len(available)} thumb(s): {available!r}. "
+                "The view may have changed."
             )
         thumbs.nth(idx).click()
         page.wait_for_timeout(1200)
