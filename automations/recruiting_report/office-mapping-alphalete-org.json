@@ -1,0 +1,225 @@
+{
+  "confirmed_count": 17,
+  "needs_review_count": 0,
+  "skip_count": 25,
+  "confirmed": [
+    {
+      "sheet_tab": "Isaiah Revelle - NDS",
+      "office_id": "19717",
+      "as_owner": "Isaiah Revelle",
+      "as_company": "Legacy Specialized Acquisitions, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Colten Wright - NDS",
+      "office_id": "14733",
+      "as_owner": "COLTEN WRIGHT",
+      "as_company": "SOUTH SHORE SPECIALIZED MARKETING, INC.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Drew Tepper - NDS",
+      "office_id": "22583",
+      "as_owner": "Drew Tepper",
+      "as_company": "Precision Management Team, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "George Delgado - NDS",
+      "office_id": "22477",
+      "as_owner": "George Delgado",
+      "as_company": "Skyline Elite, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Jairo Ruiz - NDS",
+      "office_id": "21270",
+      "as_owner": "Jairo Ruiz",
+      "as_company": "Profits Management, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Joe Delgado - NDS",
+      "office_id": "20788",
+      "as_owner": "Joseph Delgado",
+      "as_company": "Golden View Solutions, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Jose Velasquez - NDS",
+      "office_id": "22434",
+      "as_owner": "Jose Velasquez",
+      "as_company": "Legacy Shore Marketing, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Khalil Mansour - NDS",
+      "office_id": "11901",
+      "as_owner": "KHALIL MANSOUR",
+      "as_company": "ALPHALETE MANAGEMENT GROUP, INC.",
+      "confidence": 1.0,
+      "campaign": "NDS",
+      "siblings": [
+        "20334"
+      ]
+    },
+    {
+      "sheet_tab": "Maxamed Aden - NDS",
+      "office_id": "23066",
+      "as_owner": "Maxamad Aden",
+      "as_company": "Maximal Management, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Selena - NDS",
+      "office_id": "21377",
+      "as_owner": "Selena Powers",
+      "as_company": "Limitless Marketing Solutions, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Valeria Tristan - B2B",
+      "office_id": "22850",
+      "as_owner": "Valeria Tristan",
+      "as_company": "Altura Marketing, Inc.",
+      "confidence": 1.0,
+      "campaign": "B2B"
+    },
+    {
+      "sheet_tab": "Roshan Amin Ahmad - BOX",
+      "office_id": "19833",
+      "as_owner": "Roshan Amin Ahmad",
+      "as_company": "Sapphire Marketing, Inc",
+      "confidence": 1.0,
+      "campaign": "BOX"
+    },
+    {
+      "sheet_tab": "Ryan Mcspadden - BOX",
+      "office_id": "22820",
+      "as_owner": "Ryan McSpadden",
+      "as_company": "Highline Management Team, Inc. 2",
+      "confidence": 1.0,
+      "campaign": "BOX"
+    },
+    {
+      "sheet_tab": "Ronald Dawson - Retail",
+      "office_id": "18588",
+      "as_owner": "Ronald Dawson",
+      "as_company": "True Blue Marketing, Inc.",
+      "confidence": 1.0,
+      "campaign": "Retail"
+    },
+    {
+      "sheet_tab": "Cinthya Reyes - JE",
+      "office_id": "16221",
+      "as_owner": "Cinthya Reyes",
+      "as_company": "Dandelion Marketing, Inc.",
+      "confidence": 1.0,
+      "campaign": "JE"
+    },
+    {
+      "sheet_tab": "Abel Draper (Ben) - Frontier",
+      "office_id": "20646",
+      "as_owner": "Abel Draper",
+      "as_company": "Abyl Acquisition Group, Inc",
+      "confidence": 1.0,
+      "campaign": "Frontier"
+    },
+    {
+      "sheet_tab": "Boaktear Chowdhury (Akib/MJ) - Retail",
+      "office_id": "14229",
+      "as_owner": "Boaktear Chowdhury",
+      "as_company": "Motiv8 Management Inc",
+      "confidence": 1.0,
+      "campaign": "Retail"
+    }
+  ],
+  "needs_review": [],
+  "skip": [
+    {
+      "sheet_tab": "Benjamin Burden - BOX",
+      "reason": "no AppStream recruiting data (Megan confirmed 2026-05-20)"
+    },
+    {
+      "sheet_tab": "1on1 Convos"
+    },
+    {
+      "sheet_tab": "Indeed/DBAs"
+    },
+    {
+      "sheet_tab": "ORG Daily Focus Report"
+    },
+    {
+      "sheet_tab": "Org Recruiting"
+    },
+    {
+      "sheet_tab": "Sheet9"
+    },
+    {
+      "sheet_tab": "Trips"
+    },
+    {
+      "sheet_tab": "Up and Coming"
+    },
+    {
+      "sheet_tab": "B2B Template"
+    },
+    {
+      "sheet_tab": "NDS Template"
+    },
+    {
+      "sheet_tab": "Eveliz Wright - B2B"
+    },
+    {
+      "sheet_tab": "Lizette Ruiz - B2B"
+    },
+    {
+      "sheet_tab": "x - Carlos Hidalgo - BOX"
+    },
+    {
+      "sheet_tab": "x - Cody Cannon"
+    },
+    {
+      "sheet_tab": "x - Gloria Scott - B2B"
+    },
+    {
+      "sheet_tab": "x - Karrington Moody - NDS"
+    },
+    {
+      "sheet_tab": "x - Mario Marroquin - 5G"
+    },
+    {
+      "sheet_tab": "x - Oscar Serrano - Frontier"
+    },
+    {
+      "sheet_tab": "x - Roshan Amin Ahmad - JE"
+    },
+    {
+      "sheet_tab": "x - Sanskriti Jain - B2B"
+    },
+    {
+      "sheet_tab": "x - Sebastian Zunino - BOX"
+    },
+    {
+      "sheet_tab": "x - Sebastian Zunino - Frontier"
+    },
+    {
+      "sheet_tab": "x - Zach Hogue - BOX"
+    },
+    {
+      "sheet_tab": "x- Carl Foss - NDS"
+    },
+    {
+      "sheet_tab": "x- Ryan Mcspadden - B2B"
+    }
+  ]
+}
