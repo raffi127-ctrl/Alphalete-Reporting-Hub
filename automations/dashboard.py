@@ -384,6 +384,38 @@ def _diagnose_run_failure(log_text: str) -> tuple[str, str] | None:
     return None
 
 
+def _is_oauth_failure(diag: tuple[str, str] | None) -> bool:
+    """True if the diagnosis is an expired/revoked Google OAuth token."""
+    return bool(diag) and "google sign-in" in (diag[0] or "").lower()
+
+
+def _reset_oauth_token() -> tuple[bool, str]:
+    """Delete the local OAuth token file so the next run re-prompts Google
+    sign-in. Returns (success, message). Safe to call when the file is
+    already gone."""
+    from pathlib import Path
+    token_path = Path.home() / ".config" / "recruiting-report" / "oauth-token.json"
+    if not token_path.exists():
+        return True, ("Already cleared — token file isn't here. "
+                      "Just click Run Again and you'll be prompted to sign in.")
+    try:
+        # Rename instead of delete so the prior token is recoverable from
+        # disk if the new sign-in fails (same pattern the prior rotation
+        # used on 2026-05-15: .dead-<timestamp>).
+        import datetime as _dt
+        ts = _dt.datetime.now().strftime("%Y%m%d%H%M%S")
+        backup = token_path.with_suffix(f".json.dead-{ts}")
+        token_path.rename(backup)
+        return True, ("Google sign-in cleared. Click Run Again — a Google "
+                      "sign-in tab will open in your browser. Sign in, "
+                      "grant access, and you're back.")
+    except Exception as e:
+        return False, (f"Couldn't clear the token file ({type(e).__name__}: "
+                       f"{e}). You can delete it manually: in Finder press "
+                       f"Cmd+Shift+G, paste `~/.config/recruiting-report`, "
+                       f"then trash `oauth-token.json`.")
+
+
 def _estimated_minutes_for(report_id: str) -> int | None:
     """A report's declared estimated_minutes, if any — powers the
     time-based progress bar for reports without per-step log markers."""
@@ -2655,6 +2687,23 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                             f"<b>What to do:</b> {_diag[1]}</div></div>",
                             unsafe_allow_html=True,
                         )
+                        # Self-heal for OAuth lockouts — one-click reset
+                        # instead of asking teammates to dig into a hidden
+                        # folder. Added 2026-05-21 after Maud got stuck.
+                        if _is_oauth_failure(_diag):
+                            _oauth_msg_key = f"oauth_reset_msg_{report['id']}"
+                            if _oauth_msg_key in st.session_state:
+                                _ok, _msg = st.session_state[_oauth_msg_key]
+                                (st.success if _ok else st.error)(_msg)
+                            if st.button(
+                                "🔄 Reset Google Sign-In",
+                                key=f"oauth_reset_{report['id']}",
+                                help="One-click fix — clears the expired "
+                                     "Google token so the next Run prompts "
+                                     "a fresh sign-in.",
+                            ):
+                                st.session_state[_oauth_msg_key] = _reset_oauth_token()
+                                st.rerun()
                     else:
                         msg = post_run_cfg.get(
                             "message_failed",
@@ -4322,6 +4371,20 @@ def _render_review_panel(entry: dict) -> None:
                 st.error("❌ The last run failed. "
                          + (_diag[1] if _diag
                             else "Try Run again, or send it back with Request Edits."))
+                # Self-heal for OAuth lockouts (same convention as the main
+                # report failure callout — one-click reset).
+                if _is_oauth_failure(_diag):
+                    _rv_msg_key = f"oauth_reset_msg_rv_{eid}"
+                    if _rv_msg_key in st.session_state:
+                        _ok, _msg = st.session_state[_rv_msg_key]
+                        (st.success if _ok else st.error)(_msg)
+                    if st.button("🔄 Reset Google Sign-In",
+                                 key=f"oauth_reset_rv_{eid}",
+                                 help="One-click fix — clears the expired "
+                                      "Google token so the next Run prompts "
+                                      "a fresh sign-in."):
+                        st.session_state[_rv_msg_key] = _reset_oauth_token()
+                        st.rerun()
             if st.button("▶ Run the report", key=f"rv_run_{eid}",
                          use_container_width=True, type="primary",
                          disabled=not _chrome_ok):
