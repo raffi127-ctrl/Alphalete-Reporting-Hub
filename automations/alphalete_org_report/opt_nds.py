@@ -420,14 +420,24 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
         values["60 Day Churn"] = crow["churn_60"]
     if "churn_90" in crow:
         values["90 Day Churn"] = crow["churn_90"]
-    # Next Up % computed from sara_totals — office-level shared
-    next_up = sara_totals.get("Next Up")
-    new_port = sara_totals.get("New/Port Lines")
-    try:
-        if next_up and new_port and float(new_port) > 0:
-            values["Next Up %"] = f"{float(next_up) / float(new_port):.2%}"
-    except (ValueError, ZeroDivisionError):
-        pass
+    # Office-level shared metrics computed from Sara Plus org totals.
+    # Tableau crosstabs comma-separate large numbers ("1,062") — strip
+    # them before float-conversion so the division doesn't silently fail.
+    def _num(s):
+        try:
+            return float(str(s).replace(",", "").strip())
+        except (ValueError, AttributeError):
+            return None
+    next_up = _num(sara_totals.get("Next Up"))
+    new_port = _num(sara_totals.get("New/Port Lines"))
+    premium = _num(sara_totals.get("Premium/Elite"))
+    extra = _num(sara_totals.get("Extra"))
+    # Next Up % = Next Up / New/Port Lines (office total, shared)
+    if next_up is not None and new_port and new_port > 0:
+        values["Next Up %"] = f"{next_up / new_port:.2%}"
+    # Extra/Premium % = (Premium/Elite + Extra) / New/Port Lines (shared)
+    if premium is not None and extra is not None and new_port and new_port > 0:
+        values["Extra/Premium %"] = f"{(premium + extra) / new_port:.2%}"
 
     if not values:
         return [f"[skip] {ws.title}: no metrics available for {owner_norm}"]
