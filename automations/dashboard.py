@@ -2625,6 +2625,26 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                                 "</div></div>",
                                 unsafe_allow_html=True,
                             )
+
+                        # Run log expander — also shown for completed-with-gaps
+                        # runs, not just outright failures. Lets the teammate
+                        # diagnose WHY each ICD was missed (timeout vs real
+                        # access denial vs page-load issue) without having to
+                        # crack open Terminal. Added 2026-05-21 after Maud
+                        # hit a retry-then-data-loss issue where the only way
+                        # to see what went wrong was the on-disk log file.
+                        _log_path_gap = ACTIVE_RUNS_LOG_DIR / f"{report['id']}.log"
+                        if _log_path_gap.exists():
+                            try:
+                                _gap_log_tail = "\n".join(
+                                    _log_path_gap.read_text(errors="replace").splitlines()[-40:]
+                                )
+                            except Exception:
+                                _gap_log_tail = ""
+                            if _gap_log_tail:
+                                with st.expander("📜 Run log (last 40 lines)",
+                                                 expanded=False):
+                                    st.code(_gap_log_tail, language="log")
                     elif state_file_exists:
                         # An empty "inaccessible" list isn't real success if
                         # ICDs are still unmapped — the run silently skips
