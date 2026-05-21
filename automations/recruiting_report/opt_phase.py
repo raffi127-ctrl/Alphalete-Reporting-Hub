@@ -314,7 +314,10 @@ def download_crosstab(view_url: str, crosstab_sheet: str, out_path: Path,
         dl_btn = viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-download"]')
         dl_btn.wait_for(state="visible", timeout=35_000)
         # Let Tableau hydrate the data behind the viz before exporting.
-        page.wait_for_timeout(10_000)
+        # Complex per-rep views (NDS Weekly Metrics, Activation Rates) take
+        # longer to load; their crosstab Download button stays disabled
+        # until the underlying data is in. Bumped from 10s to 25s.
+        page.wait_for_timeout(25_000)
 
         if verbose:
             print(f"Download → Crosstab → {crosstab_sheet!r} → CSV…", flush=True)
@@ -342,16 +345,28 @@ def download_crosstab(view_url: str, crosstab_sheet: str, out_path: Path,
                 "The view may have changed."
             )
         thumbs.nth(idx).click()
-        page.wait_for_timeout(1200)
-        viz.locator('[data-tb-test-id="crosstab-options-dialog-radio-csv-Label"]').click()
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(1500)
+        # CSV radio — click only if not already selected (a redundant
+        # click here can briefly disable the Download button).
+        csv_radio = viz.locator('[data-tb-test-id="crosstab-options-dialog-radio-csv-Label"]')
+        try:
+            csv_radio.click()
+        except Exception:
+            pass
+        page.wait_for_timeout(800)
         # A large crosstab keeps the Download button disabled while Tableau
         # prepares the export — wait for it to enable before clicking.
+        # Some views genuinely take >90s to prepare (NDS Weekly Metrics).
         export_btn = viz.locator('[data-tb-test-id="export-crosstab-export-Button"]')
-        for _ in range(90):
+        enabled = False
+        for _ in range(180):   # up to 3 minutes
             if export_btn.is_enabled():
+                enabled = True
                 break
             page.wait_for_timeout(1000)
+        if not enabled and verbose:
+            print(f"  ⚠ Download button still disabled after 3 min — Tableau may "
+                  f"have no data for this crosstab.", flush=True)
         with page.expect_download(timeout=120_000) as dl_info:
             export_btn.click()
         dl_info.value.save_as(str(out_path))

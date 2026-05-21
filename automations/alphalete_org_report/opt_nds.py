@@ -52,7 +52,43 @@ from typing import Dict, List, Optional, Tuple
 import gspread
 
 from automations.recruiting_report import fill as rfill
-from automations.recruiting_report.opt_phase import download_crosstab
+from automations.recruiting_report.opt_phase import download_crosstab as _download_crosstab_inline
+
+
+def _download_crosstab_subprocess(url: str, sheet: str, out_path: Path,
+                                  verbose: bool = False) -> Path:
+    """Download via a fresh Python subprocess. Workaround for the
+    Python 3.9 + Playwright sync API asyncio race that surfaces when
+    multiple sync_playwright() contexts run in the same process.
+
+    Each subprocess does ONE download then exits, so each playwright
+    runtime gets a clean lifecycle. Slower than inline but reliable."""
+    import subprocess
+    script = (
+        "from automations.recruiting_report.opt_phase import download_crosstab; "
+        "from pathlib import Path; "
+        f"download_crosstab({url!r}, {sheet!r}, Path({str(out_path)!r}), verbose={verbose!r})"
+    )
+    result = subprocess.run(
+        ["/Users/megan/1st Claude Folder/.venv/bin/python", "-c", script],
+        cwd="/Users/megan/1st Claude Folder",
+        capture_output=True, text=True, timeout=300,
+    )
+    if result.returncode != 0:
+        # Surface the inner traceback's last few lines for diagnostics
+        err = (result.stderr or result.stdout or "").strip().splitlines()
+        tail = " | ".join(err[-3:]) if err else "(no stderr)"
+        raise RuntimeError(f"subprocess download failed: {tail}")
+    return out_path
+
+
+# Default to the subprocess wrapper — it's the reliable path. Set
+# OPT_NDS_INLINE_DOWNLOAD=1 to use the in-process version for debugging.
+import os as _os
+if _os.environ.get("OPT_NDS_INLINE_DOWNLOAD") == "1":
+    download_crosstab = _download_crosstab_inline
+else:
+    download_crosstab = _download_crosstab_subprocess
 
 WORKSPACE = Path(__file__).resolve().parent.parent.parent
 OUTPUT_DIR = WORKSPACE / "output"
@@ -423,9 +459,15 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
     """Download all NDS Tableau views, parse, and fill each NDS tab on
     Alphalete Org. Returns {filled: [...], skipped: [...], errors: [...]}."""
     # Step 1: download (or skip if --skip-download)
+    # We use a fresh subprocess per download to dodge a Python 3.9 +
+    # Playwright sync-API asyncio race that surfaces with multiple
+    # sync_playwright() calls in one process. The 5s sleep between
+    # downloads gives Chrome's CDP a moment to settle between
+    # back-to-back connections (back-to-back was empirically flaky).
     download_errors: List[str] = []
     if not skip_download:
-        for url, sheet, fname in NDS_VIEWS:
+        import time
+        for i, (url, sheet, fname) in enumerate(NDS_VIEWS):
             out = OUTPUT_DIR / fname
             try:
                 logfn(f"OPT NDS: downloading {fname}…")
@@ -434,6 +476,9 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
                 msg = f"{fname}: {type(e).__name__}: {str(e)[:120]}"
                 logfn(f"OPT NDS: ✗ {msg}")
                 download_errors.append(msg)
+            # Don't sleep after the last download
+            if i < len(NDS_VIEWS) - 1:
+                time.sleep(5)
     else:
         logfn("OPT NDS: --skip-download — reusing cached crosstabs")
 
