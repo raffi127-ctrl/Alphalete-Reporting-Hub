@@ -354,20 +354,21 @@ def download_crosstab(view_url: str, crosstab_sheet: str, out_path: Path,
 
         def _try_format(format_id: str) -> bool:
             """Click the format radio + wait for Download to enable.
-            Returns True if Download enabled within 30s."""
-            radio_label = viz.locator(
-                f'[data-tb-test-id="crosstab-options-dialog-radio-{format_id}-Label"]')
-            radio_input = viz.locator(
-                f'[data-tb-test-id="crosstab-options-dialog-radio-{format_id}"]')
-            # Try clicking both — different Tableau versions / states
-            # respond to one or the other.
-            for target in (radio_label, radio_input):
-                if target.count() > 0:
-                    try:
-                        target.first.click(timeout=5_000)
-                        break
-                    except Exception:
-                        continue
+            Returns True if Download enabled within 30s.
+
+            Note: Tableau's radio test-ID suffix is '-RadioButton' (not
+            '-Label' or unsuffixed). Verified 2026-05-21 via DOM inspection
+            after every other selector silently no-op'd. Get the suffix
+            wrong and the radio click hits nothing — Excel stays as the
+            default format and (on views without Excel export available)
+            the Download button stays disabled forever."""
+            radio = viz.locator(
+                f'[data-tb-test-id="crosstab-options-dialog-radio-{format_id}-RadioButton"]')
+            if radio.count() > 0:
+                try:
+                    radio.first.click(timeout=5_000)
+                except Exception:
+                    pass
             page.wait_for_timeout(1200)
             for _ in range(30):
                 if export_btn.is_enabled():
