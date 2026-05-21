@@ -121,28 +121,14 @@ NDS_VIEWS: List[Tuple[str, str, str]] = [
         "Sara Plus Sales Summary (2)",
         "opt_nds_sara_plus_2.csv",
     ),
-    (
-        "https://us-east-1.online.tableau.com/#/site/sci/views/NDS-SNRES-ATT-OOFWorkbook/NDSWeeklyMetricsRep/2a63e621-b4cb-423f-9a46-75e56abca9a3/THISWEEK?:iid=1",
-        "Weekly Metrics (Rep)",
-        "opt_nds_weekly_metrics.csv",
-    ),
+    # Weekly Metrics, Activation Rates, Lead Penetration are now
+    # downloaded via the HTTP path (NDS_HTTP_VIEWS) — ~1s each vs ~75s
+    # via the UI Crosstab dialog. Removed from this list 2026-05-21
+    # after Megan green-lit trimming the redundancy.
     (
         "https://us-east-1.online.tableau.com/#/site/sci/views/NDS-SNRES-ATT-OOFWorkbook/CHURNRATES/c289786d-e0d4-4de7-825a-264c21e133c1/THISWEEK?:iid=1",
         "Churn Rates (ICD)",
         "opt_nds_churn.csv",
-    ),
-    (
-        "https://us-east-1.online.tableau.com/#/site/sci/views/DropshipV_2/ACTIVATIONRATES?:iid=1",
-        "Activation Rates (ICD)",
-        "opt_nds_activation.csv",
-    ),
-    (
-        "https://us-east-1.online.tableau.com/#/site/sci/views/NDS-SNRES-ATT-OOFWorkbook/LeadPenetrationOverview/a15a85ac-e0c8-423d-ba85-6be048203b0b/THISWEEK?:iid=1",
-        # Megan: "Lead Count (sum across all rows assigned to ICD)". The
-        # exact worksheet name needs to be verified — Lead Penetration By Zip
-        # is a guess pending Megan confirming the right thumbnail.
-        "Lead Penetration By Zip",
-        "opt_nds_lead_penetration.csv",
     ),
     (
         # The DD BY OWNER (ORG) dashboard with DOWNLINEVIEW (showing
@@ -303,6 +289,94 @@ def parse_sara_plus_total(path: Path) -> Dict[str, str]:
             for i, h in enumerate(header)}
 
 
+def parse_sara_plus_per_rep(path: Path) -> Dict[str, Dict[str, str]]:
+    """Parse Sara Plus Sales Summary (2) — per-rep breakdown of the
+    same metric columns as the (1) totals sheet. Returns
+    {normalized owner: {column: value}}.
+
+    The (2) sub-sheet shows one row per rep with their personal column
+    values. We expect a column identifying the rep — most likely
+    'Owner & Office' (Tableau's standard owner format), with 'Personal
+    Production', 'New/Port Lines', etc. as data columns. We match on
+    Owner & Office and fall back to the first column if missing."""
+    rows = _read_tab_csv(path)
+    if not rows or len(rows) < 2:
+        return {}
+    header = rows[0]
+    # Locate the owner-identifying column
+    owner_i = None
+    for i, h in enumerate(header):
+        if (h or "").strip().lower() in {
+            "owner & office", "owner", "rep", "rep name", "icd owner name",
+            "icd.full name", "icd full name",
+        }:
+            owner_i = i
+            break
+    if owner_i is None:
+        owner_i = 0   # fall back to first column
+    out: Dict[str, Dict[str, str]] = {}
+    for r in rows[1:]:
+        if not r or len(r) <= owner_i:
+            continue
+        owner = _norm_owner(r[owner_i])
+        if not owner or owner.startswith("total"):
+            continue
+        rec = {(header[i] or "").strip(): (r[i] if i < len(r) else "")
+               for i in range(len(header)) if i != owner_i}
+        out[owner] = rec
+    return out
+
+
+def parse_direct_deposit(path: Path) -> Dict[str, float]:
+    """Parse DD BY OWNER (ORG) Sheet 7 (5): {normalized ICD owner:
+    Grand Total to ICD summed across all rows for that owner}.
+
+    The sheet has one row per (ICD owner, Sales Rep, Commission
+    Description) combination plus per-rep 'Total' subtotal rows. We sum
+    the 'Grand Total to ICD' column ONLY across the per-line rows (NOT
+    Total rows) per ICD owner, then return dollar totals.
+
+    Dollar values come in as e.g. '$1,728.00' — we strip $ and , before
+    converting. Empty cells are treated as 0."""
+    rows = _read_tab_csv(path)
+    if not rows or len(rows) < 2:
+        return {}
+    header = rows[0]
+    # Find columns by label (case + whitespace tolerant)
+    def col(label_options):
+        targets = {opt.strip().lower() for opt in label_options}
+        for i, h in enumerate(header):
+            if (h or "").strip().lower() in targets:
+                return i
+        return None
+    owner_i = col(["cl.icd owner name", "icd owner name", "icd.icd owner name"])
+    desc_i  = col(["commission description"])
+    total_i = col(["grand total to icd", "grand total"])
+    if owner_i is None or total_i is None:
+        return {}
+    out: Dict[str, float] = {}
+    for r in rows[1:]:
+        if not r or len(r) <= max(owner_i, total_i):
+            continue
+        owner = _norm_owner(r[owner_i])
+        if not owner:
+            continue
+        # Skip subtotal rows where Commission Description is empty/"Total"
+        if desc_i is not None and desc_i < len(r):
+            desc = (r[desc_i] or "").strip().lower()
+            if desc in {"", "total"}:
+                continue
+        raw = (r[total_i] or "").strip().lstrip("$").replace(",", "")
+        if not raw:
+            continue
+        try:
+            val = float(raw)
+        except ValueError:
+            continue
+        out[owner] = out.get(owner, 0.0) + val
+    return out
+
+
 def parse_churn_icd(path: Path) -> Dict[str, Dict[str, str]]:
     """Parse Churn Rates (ICD): {normalized owner: {churn_30/60/90: pct}}.
     Headline rates come from the 'Green' status rows (per-rep, NOT
@@ -425,7 +499,9 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
                  activation: Optional[Dict[str, str]] = None,
                  cancel: Optional[Dict[str, str]] = None,
                  leads: Optional[Dict[str, int]] = None,
-                 sara_byday: Optional[Dict[str, Dict[str, int]]] = None
+                 sara_byday: Optional[Dict[str, Dict[str, int]]] = None,
+                 sara_per_rep: Optional[Dict[str, Dict[str, str]]] = None,
+                 direct_deposit: Optional[Dict[str, float]] = None,
                  ) -> List[str]:
     """Write all available metrics for this rep into the target week column.
     Skips metrics whose source data isn't available."""
@@ -478,6 +554,21 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
                 values["AVG Apps Per Active Headcount"] = f"{new_lines_rep / heads:.2f}"
         except (ValueError, TypeError):
             pass
+
+    # Sara Plus (2) per-rep — Personal Production
+    rep_sara = (sara_per_rep or {}).get(owner_norm, {})
+    if rep_sara:
+        # Look up Personal Production column (case-tolerant)
+        for label, val in rep_sara.items():
+            if label.strip().lower() in {"personal production", "personal prod"}:
+                if (val or "").strip():
+                    values["Personal Production"] = val
+                break
+
+    # Direct Deposit — per-ICD-owner dollar total
+    if direct_deposit and owner_norm in direct_deposit:
+        # Format as dollar amount with comma separators (matches sheet style)
+        values["Direct Deposit"] = f"${direct_deposit[owner_norm]:,.2f}"
 
     # Office-level shared metrics computed from Sara Plus org totals.
     # Tableau crosstabs comma-separate large numbers ("1,062") — strip
@@ -573,7 +664,9 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
     tt = parse_tt_detail(OUTPUT_DIR / "opt_nds_tt_detail.csv")
     rep_summary = parse_rep_summary_total(OUTPUT_DIR / "opt_nds_rep_summary.csv")
     sara_totals = parse_sara_plus_total(OUTPUT_DIR / "opt_nds_sara_plus.csv")
+    sara_per_rep = parse_sara_plus_per_rep(OUTPUT_DIR / "opt_nds_sara_plus_2.csv")
     churn = parse_churn_icd(OUTPUT_DIR / "opt_nds_churn.csv")
+    direct_deposit = parse_direct_deposit(OUTPUT_DIR / "opt_nds_direct_deposit.csv")
     # HTTP-sourced parses
     activation = tableau_http.parse_activation(
         OUTPUT_DIR / "opt_nds_activation_http.csv")
@@ -583,12 +676,14 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
         OUTPUT_DIR / "opt_nds_lead_penetration_http.csv")
     sara_byday = tableau_http.parse_sara_plus_byday(
         OUTPUT_DIR / "opt_nds_sara_plus_byday.csv")
-    logfn(f"OPT NDS: parsed {len(tt)} reps from TT-Detail, "
-          f"{len(churn)} from Churn, "
-          f"{len(activation)} from Activation, "
-          f"{len(cancel)} from Cancel, "
-          f"{len(leads)} from Leads, "
-          f"{len(sara_byday)} from Sara-ByDay")
+    logfn(f"OPT NDS: parsed {len(tt)} TT-Detail, "
+          f"{len(churn)} Churn, "
+          f"{len(activation)} Activation, "
+          f"{len(cancel)} Cancel, "
+          f"{len(leads)} Leads, "
+          f"{len(sara_byday)} Sara-ByDay, "
+          f"{len(sara_per_rep)} Sara(2), "
+          f"{len(direct_deposit)} DD")
 
     # Step 3: open sheet + walk NDS-suffixed tabs
     client = rfill._client()
@@ -641,7 +736,9 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
         lines = fill_nds_tab(ws, match, tt, rep_summary, sara_totals,
                              churn, week_col_label, dry_run, logfn,
                              activation=activation, cancel=cancel,
-                             leads=leads, sara_byday=sara_byday)
+                             leads=leads, sara_byday=sara_byday,
+                             sara_per_rep=sara_per_rep,
+                             direct_deposit=direct_deposit)
         for ln in lines:
             logfn(f"OPT NDS: {ln}")
         if lines and lines[0].startswith(("[OK]", "[DRY-RUN]")):
