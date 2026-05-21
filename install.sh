@@ -56,6 +56,18 @@ fi
 cd "$INSTALL_DIR"
 
 # 3. Set up Python venv + install packages
+# Validate that any existing .venv has a working Python interpreter
+# before reusing it. If the system Python that built the venv has been
+# uninstalled/upgraded (e.g. 3.9 → 3.14), the venv's interpreter symlink
+# dangles and `.venv/bin/pip` crashes with "import: command not found".
+# Detect that and force a clean rebuild — much cheaper than trying to
+# repair a half-broken venv. Confirmed root cause for Maud 2026-05-21.
+if [ -d ".venv" ]; then
+    if ! .venv/bin/python -c "import sys" >/dev/null 2>&1; then
+        echo "→ Existing .venv is broken (Python interpreter missing). Rebuilding…"
+        rm -rf .venv
+    fi
+fi
 if [ ! -d ".venv" ]; then
     echo "→ Creating Python venv"
     python3 -m venv .venv
