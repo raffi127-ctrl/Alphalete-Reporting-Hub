@@ -58,6 +58,21 @@ WORKSPACE = Path(__file__).resolve().parent.parent.parent
 UPLOAD_DIR = WORKSPACE / "automations" / "uploaded" / "financial"
 
 
+def _hidden_tab_titles(sh) -> set:
+    """Tabs Megan has hidden in the Sheet — same retired/inactive convention
+    the recruiting runner uses. One Sheets API call per spreadsheet."""
+    try:
+        resp = sh.client.request(
+            "get",
+            f"https://sheets.googleapis.com/v4/spreadsheets/{sh.id}",
+            params={"fields": "sheets(properties(title,hidden))"},
+        )
+        return {s["properties"]["title"] for s in resp.json().get("sheets", [])
+                if s["properties"].get("hidden")}
+    except Exception:
+        return set()   # fail open — better to attempt all than skip all
+
+
 def gather_files(directory: Path) -> List[Path]:
     """The uploaded .xlsx workbooks (Excel lock files excluded)."""
     return sorted(p for p in directory.glob("*.xlsx")
@@ -91,10 +106,16 @@ def run_financial_report(file_paths, dry_run: bool = False,
         except Exception as e:
             logfn(f"financial: can't open {sheet_name!r} ({e})")
             continue
+        # Tabs Megan has HIDDEN are retired/inactive — skip them, same
+        # convention the recruiting runner uses. One API call per sheet.
+        hidden = _hidden_tab_titles(sh)
+        if hidden:
+            logfn(f"financial: {sheet_name} — skipping {len(hidden)} hidden tab(s)")
         filled = matched = 0
         for ws in rfill._retry(sh.worksheets):
-            # Skip system / template / summary tabs entirely
-            if ws.title in _NON_ICD_TAB_TITLES or ws.title.startswith("_"):
+            # Skip system / template / summary / hidden tabs entirely
+            if (ws.title in _NON_ICD_TAB_TITLES or ws.title.startswith("_")
+                    or ws.title in hidden):
                 continue
             office = ffill._match_owner(ws.title, by_owner, bridge)
             if not office:

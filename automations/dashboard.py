@@ -38,6 +38,10 @@ DAILY_FOCUS_SHEET_URL = "https://docs.google.com/spreadsheets/d/11FRYGG1hvuxcbWi
 # Carlos 1on1s - Focus Report (the B2B equivalent of Raf's weekly recruiting
 # report). Shared module — set CAPTAINSHIP=Carlos when running.
 CARLOS_SHEET_URL = "https://docs.google.com/spreadsheets/d/1KLF8diMJ8pwIQWW9IqN7CL288t1l9VGUKxzBcMl8Of4/edit"
+# Alphalete Org 1on1s - Focus Reports — third sheet, reps × campaign tabs
+# (NDS / B2B / BOX / Retail / JE / Frontier). Shared module — set
+# CAPTAINSHIP=Alphalete-Org when running.
+ALPHALETE_ORG_SHEET_URL = "https://docs.google.com/spreadsheets/d/1C6BLttOSZhs_dREySac19XkxnMl-Ab_sYacNSl2l6AQ/edit"
 
 UPLOADED_REPORTS_FILE = WORKSPACE / "uploaded_reports.json"
 UPLOADED_SCRIPTS_DIR = WORKSPACE / "automations" / "uploaded"
@@ -826,6 +830,102 @@ AUTOMATED_REPORTS = [
                 "help": "Just refill ONE ICD's tab for any week.",
                 "module": "automations.recruiting_report.run",
                 "args_fn": lambda d, name: ["--week", (d - dt.timedelta(days=7)).isoformat(), "--only", name],
+            },
+        ],
+    },
+    {
+        "id": "recruiting-alphalete-org",
+        "name": "Alphalete Org 1on1s - Focus Report",
+        "creator": "Megan",
+        "emoji": "🌐",
+        "color": "#10B981",
+        "category": "🎯 Recruiting",
+        "description": "Pulls recruiting + (eventually) OPT metrics for the "
+                       "rep-per-campaign tabs on the Alphalete Org sheet "
+                       "(NDS / B2B / BOX / Retail / JE / Frontier).",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Recruiting pull (APPS / Total Applies / Retention / "
+            "1st & 2nd Booked / etc.) from AppStream for every visible "
+            "rep tab.\n"
+            "**•** OPT / Personal Production — *in progress* (NDS reps "
+            "aren't in Raf's existing Tableau view; needs Megan to share "
+            "a Tableau scope that includes them).\n"
+            "**•** Financial section — handled by the weekly Financial "
+            "Pull card, which distributes uploaded workbooks to every "
+            "matched ICD on this sheet too.\n\n"
+            "WHEN IT RUNS\n"
+            "**Mondays.** Each run fills the just-ended week's column.\n\n"
+            "TAB CONVENTION\n"
+            "Each tab is named `<AppStream owner name> - <CAMPAIGN>` "
+            "(e.g. `Isaiah Revelle - NDS`). The runner strips the "
+            "campaign suffix to find the AppStream owner.\n\n"
+            "TO ADD A NEW REP\n"
+            "**1.**  Create a tab named with the rep's exact AppStream "
+            "name + ` - <CAMPAIGN>` suffix.\n"
+            "**2.**  The campaign suffix tells the runner which template "
+            "to clone (NDS Template / B2B Template).\n"
+            "✅  Next run auto-fills the new tab.\n\n"
+            "WHEN A REP RETIRES\n"
+            "Just **hide the tab** in the Sheet. Runner auto-skips "
+            "hidden tabs — no mapping edit needed."
+        ),
+        "sheet_url": ALPHALETE_ORG_SHEET_URL,
+        "assignees": ["Eve"],
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [0],  # Monday
+            "time": "8:00 AM",
+            "estimated_minutes": 10,
+        },
+        "checklist": [
+            {"text": "Launch Reporting Chrome",
+             "action": "launch_chrome"},
+            {"text": "Log into AppStream as **rcaptain** in the new Chrome window"},
+            {"text": "Log into the correct **ownerville** account in the same Chrome window — the OPT / sales section reaches Tableau through ownerville"},
+        ],
+        "post_run": {
+            "message_success": "✅ Alphalete Org report run complete — "
+                               "recruiting pull filled across every visible "
+                               "rep tab. Financial section is handled by the "
+                               "weekly Financial Pull card.",
+            "message_failed":  "❌ Run failed. Check the log above, fix the "
+                               "issue, then run again.",
+        },
+        # CAPTAINSHIP=Alphalete-Org switches the shared recruiting_report
+        # module to the Alphalete Org sheet/mapping at import time.
+        "env": {"CAPTAINSHIP": "Alphalete-Org"},
+        "actions": [
+            {
+                "label": "Run This Week",
+                "icon": "▶",
+                "primary": True,
+                "help": "Fills the most recent WE Sunday column on Alphalete Org sheet.",
+                "module": "automations.recruiting_report.run",
+                # --no-opt while OPT scope is still being figured out for
+                # Alphalete Org reps (their Tableau view isn't wired yet).
+                "args_fn": lambda: ["--week", _last_completed_as_picker().isoformat(),
+                                    "--no-opt"],
+            },
+            {
+                "label": "Run a Specific Past Week",
+                "icon": "📆",
+                "needs_date": True,
+                "help": "Pick a WE Sunday to fill.",
+                "module": "automations.recruiting_report.run",
+                "args_fn": lambda d: ["--week", (d - dt.timedelta(days=7)).isoformat(),
+                                      "--no-opt"],
+            },
+            {
+                "label": "Run for One Rep (pick a week)",
+                "icon": "🎯",
+                "needs_date": True,
+                "needs_text": True,
+                "text_label": "Rep tab name (exact match, incl. campaign suffix)",
+                "help": "Just refill ONE rep's tab for any week.",
+                "module": "automations.recruiting_report.run",
+                "args_fn": lambda d, name: ["--week", (d - dt.timedelta(days=7)).isoformat(),
+                                            "--only", name, "--no-opt"],
             },
         ],
     },
