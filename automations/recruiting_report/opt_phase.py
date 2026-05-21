@@ -356,19 +356,27 @@ def download_crosstab(view_url: str, crosstab_sheet: str, out_path: Path,
             """Click the format radio + wait for Download to enable.
             Returns True if Download enabled within 30s.
 
-            Note: Tableau's radio test-ID suffix is '-RadioButton' (not
-            '-Label' or unsuffixed). Verified 2026-05-21 via DOM inspection
-            after every other selector silently no-op'd. Get the suffix
-            wrong and the radio click hits nothing — Excel stays as the
-            default format and (on views without Excel export available)
-            the Download button stays disabled forever."""
-            radio = viz.locator(
-                f'[data-tb-test-id="crosstab-options-dialog-radio-{format_id}-RadioButton"]')
-            if radio.count() > 0:
+            Tableau's radio button has TWO test-IDs:
+              - `-Label` on the <label> element (visually on top)
+              - `-RadioButton` on the <input type="radio"> (behind the label)
+            Clicking the input directly fails because the label intercepts
+            pointer events. The label IS the right click target — labels
+            forward clicks to their associated inputs natively. Verified
+            via DOM inspection 2026-05-21."""
+            label = viz.locator(
+                f'[data-tb-test-id="crosstab-options-dialog-radio-{format_id}-Label"]')
+            if label.count() > 0:
                 try:
-                    radio.first.click(timeout=5_000)
+                    label.first.click(timeout=5_000)
                 except Exception:
-                    pass
+                    # Fallback: force-click the input directly, bypassing
+                    # actionability checks (skips the label-intercepts error)
+                    radio = viz.locator(
+                        f'[data-tb-test-id="crosstab-options-dialog-radio-{format_id}-RadioButton"]')
+                    try:
+                        radio.first.click(force=True, timeout=5_000)
+                    except Exception:
+                        pass
             page.wait_for_timeout(1200)
             for _ in range(30):
                 if export_btn.is_enabled():

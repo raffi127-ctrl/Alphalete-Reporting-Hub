@@ -53,6 +53,7 @@ import gspread
 
 from automations.recruiting_report import fill as rfill
 from automations.recruiting_report.opt_phase import download_crosstab as _download_crosstab_inline
+from automations.alphalete_org_report import tableau_http
 
 
 def _download_crosstab_subprocess(url: str, sheet: str, out_path: Path,
@@ -144,11 +145,16 @@ NDS_VIEWS: List[Tuple[str, str, str]] = [
         "opt_nds_lead_penetration.csv",
     ),
     (
-        "https://us-east-1.online.tableau.com/#/site/sci/views/DirectDepositICDVIEWVersion2_0/PROGRAMSUMMARY/15c897de-6162-469b-9ef7-1735d235f2a8/DOWNLINEVIEW?:iid=1",
-        # 'Consultant ORG Title' gave 64 bytes (just the logged-in user's
-        # name) — that's not it. 'Sheet 7 (3)' or 'Self Office Display'
-        # is more likely. Megan to confirm overnight blocker.
-        "Sheet 7 (3)",
+        # The DD BY OWNER (ORG) dashboard with DOWNLINEVIEW (showing
+        # Rafael Hidalgo's full org, all downline ICDs). DOWNLINEVIEW
+        # is set as the user's default custom view in Tableau (Megan,
+        # 2026-05-21) so the URL-encoded path is the canonical one.
+        # The dashboard contains TWO worksheets: 'Consultant ORG Title'
+        # (the small header label, 29 bytes) and 'Sheet 7 (5)' (the
+        # actual per-ICD grid). Confirmed via the Download Crosstab
+        # dialog 2026-05-21.
+        "https://us-east-1.online.tableau.com/#/site/sci/views/DirectDepositICDVIEWVersion2_0/DDBYOWNERORG/796feca0-272f-459f-a665-63ac9aec3af8/DOWNLINEVIEW?:iid=1",
+        "Sheet 7 (5)",
         "opt_nds_direct_deposit.csv",
     ),
 ]
@@ -162,6 +168,28 @@ NDS_REP_BREAKDOWN_URL = (
 )
 NDS_REP_BREAKDOWN_SHEET = "Sales By ICD (Weekly View)"
 NDS_REP_BREAKDOWN_PATH = OUTPUT_DIR / "opt_nds_product_sales_rep.csv"
+
+
+# HTTP-direct sources — these use Tableau's /views/.../.csv endpoint
+# (tableau_http.download_view_csv). Much faster than the UI Crosstab flow
+# (~1s per view vs 60-90s) and not subject to the UI's intermittent
+# Download-button-stays-disabled bug. We use HTTP for everything that
+# DOESN'T require sub-worksheet selection from a multi-worksheet
+# dashboard. Direct Deposit + Rep Breakdown still need the UI path
+# because their .csv URL only returns a header-label stub
+# ([[reference-tableau-worksheet-names]]).
+#
+# Tuples: (workbook_slug, view_slug, output_filename)
+NDS_HTTP_VIEWS: List[Tuple[str, str, str]] = [
+    ("DropshipV_2",                  "ACTIVATIONRATES",
+     "opt_nds_activation_http.csv"),
+    ("NDS-SNRES-ATT-OOFWorkbook",    "NDSWeeklyMetricsRep",
+     "opt_nds_weekly_metrics_http.csv"),
+    ("NDS-SNRES-ATT-OOFWorkbook",    "LeadPenetrationOverview",
+     "opt_nds_lead_penetration_http.csv"),
+    ("DropshipV_2",                  "SARAPLUSSALESSUMMARYBYDAY",
+     "opt_nds_sara_plus_byday.csv"),
+]
 
 
 # Map our sheet row labels (col B) → metric keys used in fill_nds_tab.
@@ -391,7 +419,14 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
                  churn: Dict[str, Dict[str, str]],
                  week_col_label: str,
                  dry_run: bool = False,
-                 logfn=print) -> List[str]:
+                 logfn=print,
+                 # HTTP-sourced metrics (optional — when not provided, the
+                 # corresponding rows just stay blank rather than erroring)
+                 activation: Optional[Dict[str, str]] = None,
+                 cancel: Optional[Dict[str, str]] = None,
+                 leads: Optional[Dict[str, int]] = None,
+                 sara_byday: Optional[Dict[str, Dict[str, int]]] = None
+                 ) -> List[str]:
     """Write all available metrics for this rep into the target week column.
     Skips metrics whose source data isn't available."""
     log: List[str] = []
@@ -420,6 +455,30 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
         values["60 Day Churn"] = crow["churn_60"]
     if "churn_90" in crow:
         values["90 Day Churn"] = crow["churn_90"]
+
+    # HTTP-sourced per-rep metrics
+    if activation and activation.get(owner_norm):
+        values["Activation % by Week"] = activation[owner_norm]
+    if cancel and cancel.get(owner_norm):
+        values["0-30 Day Cancel Rate  4wk avg"] = cancel[owner_norm]
+    if leads and leads.get(owner_norm) is not None:
+        values["Total Leads"] = str(leads[owner_norm])
+
+    # Sara Plus By Day → per-rep weekly totals for the 5 wireless metrics.
+    # 'New Lines' = Wireless Lines (Megan's mapping). Per-rep new lines
+    # feeds AVG Apps Per Active Headcount = new_lines / active_selling_heads.
+    rep_byday = (sara_byday or {}).get(owner_norm, {})
+    new_lines_rep = rep_byday.get("Wireless Lines")
+    if new_lines_rep is not None:
+        values["New Lines"] = str(new_lines_rep)
+        # Compute AVG Apps Per Active Headcount = new_lines / active_selling_heads
+        try:
+            heads = float(str(rep.get("rep_count", "")).strip())
+            if heads > 0:
+                values["AVG Apps Per Active Headcount"] = f"{new_lines_rep / heads:.2f}"
+        except (ValueError, TypeError):
+            pass
+
     # Office-level shared metrics computed from Sara Plus org totals.
     # Tableau crosstabs comma-separate large numbers ("1,062") — strip
     # them before float-conversion so the division doesn't silently fail.
@@ -468,23 +527,41 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
                 skip_download: bool = False, logfn=print) -> dict:
     """Download all NDS Tableau views, parse, and fill each NDS tab on
     Alphalete Org. Returns {filled: [...], skipped: [...], errors: [...]}."""
-    # Step 1: download (or skip if --skip-download)
-    # We use a fresh subprocess per download to dodge a Python 3.9 +
-    # Playwright sync-API asyncio race that surfaces with multiple
-    # sync_playwright() calls in one process. The 5s sleep between
-    # downloads gives Chrome's CDP a moment to settle between
-    # back-to-back connections (back-to-back was empirically flaky).
     download_errors: List[str] = []
+
+    # Step 1a: HTTP-direct downloads (fast — ~1s each). Single requests
+    # session reuses the Tableau cookies grabbed from debug Chrome.
+    if not skip_download:
+        try:
+            http_session = tableau_http._grab_session()
+        except Exception as e:
+            logfn(f"OPT NDS: ✗ couldn't grab Tableau session: {e}")
+            http_session = None
+        if http_session is not None:
+            for wb, view, fname in NDS_HTTP_VIEWS:
+                out = OUTPUT_DIR / fname
+                try:
+                    logfn(f"OPT NDS: HTTP downloading {fname}…")
+                    tableau_http.download_view_csv(wb, view, out,
+                                                   session=http_session)
+                except Exception as e:
+                    msg = f"{fname}: {type(e).__name__}: {str(e)[:120]}"
+                    logfn(f"OPT NDS: ✗ HTTP {msg}")
+                    download_errors.append(msg)
+
+    # Step 1b: UI-driven downloads (slow — multi-worksheet dashboards
+    # only). Each spawns a fresh subprocess to dodge the Python 3.9 +
+    # Playwright sync-API asyncio race ([[reference-tableau-phase3]]).
     if not skip_download:
         import time
         for i, (url, sheet, fname) in enumerate(NDS_VIEWS):
             out = OUTPUT_DIR / fname
             try:
-                logfn(f"OPT NDS: downloading {fname}…")
+                logfn(f"OPT NDS: UI downloading {fname}…")
                 download_crosstab(url, sheet, out, verbose=False)
             except Exception as e:
                 msg = f"{fname}: {type(e).__name__}: {str(e)[:120]}"
-                logfn(f"OPT NDS: ✗ {msg}")
+                logfn(f"OPT NDS: ✗ UI {msg}")
                 download_errors.append(msg)
             # Don't sleep after the last download
             if i < len(NDS_VIEWS) - 1:
@@ -497,10 +574,21 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
     rep_summary = parse_rep_summary_total(OUTPUT_DIR / "opt_nds_rep_summary.csv")
     sara_totals = parse_sara_plus_total(OUTPUT_DIR / "opt_nds_sara_plus.csv")
     churn = parse_churn_icd(OUTPUT_DIR / "opt_nds_churn.csv")
+    # HTTP-sourced parses
+    activation = tableau_http.parse_activation(
+        OUTPUT_DIR / "opt_nds_activation_http.csv")
+    cancel = tableau_http.parse_weekly_metrics_cancel(
+        OUTPUT_DIR / "opt_nds_weekly_metrics_http.csv")
+    leads = tableau_http.parse_lead_penetration(
+        OUTPUT_DIR / "opt_nds_lead_penetration_http.csv")
+    sara_byday = tableau_http.parse_sara_plus_byday(
+        OUTPUT_DIR / "opt_nds_sara_plus_byday.csv")
     logfn(f"OPT NDS: parsed {len(tt)} reps from TT-Detail, "
-          f"{len(churn)} reps from Churn, "
-          f"national avg={'✓' if rep_summary.get('New/Port per Rep') else '✗'}, "
-          f"sara totals={'✓' if sara_totals.get('New/Port Lines') else '✗'}")
+          f"{len(churn)} from Churn, "
+          f"{len(activation)} from Activation, "
+          f"{len(cancel)} from Cancel, "
+          f"{len(leads)} from Leads, "
+          f"{len(sara_byday)} from Sara-ByDay")
 
     # Step 3: open sheet + walk NDS-suffixed tabs
     client = rfill._client()
@@ -551,7 +639,9 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
         match = next((c for c in candidates if c in tt), None) or owner_norm
 
         lines = fill_nds_tab(ws, match, tt, rep_summary, sara_totals,
-                             churn, week_col_label, dry_run, logfn)
+                             churn, week_col_label, dry_run, logfn,
+                             activation=activation, cancel=cancel,
+                             leads=leads, sara_byday=sara_byday)
         for ln in lines:
             logfn(f"OPT NDS: {ln}")
         if lines and lines[0].startswith(("[OK]", "[DRY-RUN]")):
