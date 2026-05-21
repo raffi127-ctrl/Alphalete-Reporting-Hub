@@ -2665,6 +2665,23 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                                 "✅ All ICDs filled on the first run — every cell is "
                                 "accounted for. Nothing to retry."
                             )
+                        # Also expose the run log here — "All filled" can be
+                        # misleading when a retry silently damaged data the
+                        # Hub doesn't track (e.g. cleared cells for ICDs not
+                        # in the missing list). Lets a teammate look at what
+                        # actually happened even on the success path.
+                        _log_path_ok = ACTIVE_RUNS_LOG_DIR / f"{report['id']}.log"
+                        if _log_path_ok.exists():
+                            try:
+                                _ok_log_tail = "\n".join(
+                                    _log_path_ok.read_text(errors="replace").splitlines()[-40:]
+                                )
+                            except Exception:
+                                _ok_log_tail = ""
+                            if _ok_log_tail:
+                                with st.expander("📜 Run log (last 40 lines)",
+                                                 expanded=False):
+                                    st.code(_ok_log_tail, language="log")
                     else:
                         # Reports without a state-file config fall back to the
                         # generic post_run success message.
