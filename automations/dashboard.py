@@ -920,10 +920,13 @@ AUTOMATED_REPORTS = [
             "them into the latest 4 week columns on every matched ICD.\n\n"
             "WHEN IT RUNS\n"
             "Tuesdays, after the financial workbooks arrive.\n\n"
-            "IF AN ICD ISN'T IN ANY FILE\n"
-            "Their cells get **'Not Found In Email'** so the gap is "
-            "visibly intentional. Raf Hidalgo is permanently skipped "
-            "(his financials live in a separate report)."
+            "IF AN ICD ISN'T IN THIS UPLOAD\n"
+            "Their tab is **left untouched** — whatever was filled by a "
+            "previous run stays put. When you later upload a file that "
+            "DOES include that ICD, the cells fill in then. (So you can "
+            "safely upload partial / incremental sets of files any day.) "
+            "Raf Hidalgo is permanently skipped (his financials live in "
+            "a separate report)."
         ),
         "sheet_url": SHEET_URL,
         "assignees": ["Eve"],
@@ -943,8 +946,8 @@ AUTOMATED_REPORTS = [
         ],
         "post_run": {
             "message_success": "✅ Financial section filled on every "
-                               "matched ICD tab. Unmatched tabs show "
-                               "'Not Found In Email'.",
+                               "matched ICD tab. Unmatched tabs were left "
+                               "untouched (re-upload with their file later).",
             "message_failed": "❌ Run failed. Check the log above.",
         },
         "actions": [
