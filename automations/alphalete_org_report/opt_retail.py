@@ -87,9 +87,16 @@ RETAIL_CHURN_FILENAME = "opt_retail_churn.csv"
 #
 # Each tuple: (page URL to load, Crosstab dialog worksheet name, filename)
 RETAIL_SARA_PLUS_OFFICE_VIEW = (
+    # ?:iid=1 (not 2) so the dashboard loads with the National Summary
+    # worksheet active and the per-owner '(2)' sheet INACTIVE. The
+    # Crosstab dialog then registers our click on '(2)' as a fresh
+    # selection. When :iid=2 is the load state, ABP-style click strategies
+    # all fail - dialog shows both rows unselected after clicks land,
+    # likely because clicking the already-active sheet toggles selection
+    # back off. (Megan + screenshot diagnostic 2026-05-22.)
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "DropshipV_2/SARAPLUSSALESSUMMARY/"
-    "4e5c4964-3f91-4d93-b362-f8768b771e67/RETAILPULL?:iid=2",
+    "4e5c4964-3f91-4d93-b362-f8768b771e67/RETAILPULL?:iid=1",
     "Sara Plus Sales Summary (2)",
     "opt_retail_sara_plus_office.csv",
 )
@@ -254,48 +261,75 @@ def parse_churn_rates(path: Path) -> Dict[str, Dict[str, str]]:
 
 
 def parse_sara_plus_office_totals(path: Path) -> Dict[str, Dict[str, int]]:
-    """Parse SARAPLUSSALESSUMMARY default view -> {owner_norm: {metric: int}}.
+    """Parse 'Sara Plus Sales Summary (2)' Crosstab CSV (UTF-16 tab-delim)
+    -> {owner_norm: {metric: int, '_active_reps': int}}.
 
-    Returns the office-level totals needed to compute Next Up % and
-    Extra/Premium %: 'Next Up', 'New/Port Lines', 'Premium/Elite', 'Extra'.
+    Layout (verified 2026-05-22 against Megan's manual download):
+      Owner & Office | Rep | rep.Rep Number | ATV | DTV | Internet | AIA |
+      New/Port Lines | ATT Protection Plan Total Attachment | Next Up |
+      Premium/Elite | Extra
+
+    Each owner has multiple rows - one per rep + a 'Total' row with the
+    office aggregate. We use the Total row for office-level metrics
+    (Next Up, New/Port Lines, Premium/Elite, Extra) and count the
+    non-Total rows with any metric > 0 for Active Headcount on Tableau
+    (= number of reps with a sale of any kind, per Megan 2026-05-22).
     """
-    rows = tableau_http.parse_csv(path)
-    if not rows:
+    rows = _read_tab_csv(path)
+    if not rows or len(rows) < 2:
         return {}
     header = rows[0]
-    owner_i = tableau_http.col_idx(header, "Owner & Office")
-    if owner_i is None:
+    owner_i = _col_starts_with(header, "Owner & Office")
+    rep_i = _col_starts_with(header, "Rep")
+    if owner_i is None or rep_i is None:
         return {}
-    # Try a few label variants — Tableau may shorten 'Premium/Elite' to
-    # 'Premium' or split into 'Premium/...' depending on which worksheet
-    # the .csv endpoint serves. Pick the first column whose label starts
-    # with the wanted prefix.
-    def _col_starts(prefix: str) -> Optional[int]:
-        p = prefix.lower().rstrip()
-        for i, h in enumerate(header):
-            if (h or "").strip().lower().startswith(p):
-                return i
-        return None
     metric_cols = {
         "Next Up":        tableau_http.col_idx(header, "Next Up"),
         "New/Port Lines": tableau_http.col_idx(header, "New/Port Lines"),
-        "Premium/Elite": (tableau_http.col_idx(header, "Premium/Elite")
-                          or _col_starts("Premium")),
+        "Premium/Elite":  tableau_http.col_idx(header, "Premium/Elite"),
         "Extra":          tableau_http.col_idx(header, "Extra"),
     }
+    # All numeric metric columns - used to detect "rep had any sale"
+    # for Active Headcount. Skips the rep-number / owner / rep-name cols.
+    numeric_cols = [i for i, h in enumerate(header)
+                    if i not in (owner_i, rep_i)
+                    and (h or "").strip().lower() != "rep.rep number"]
     out: Dict[str, Dict[str, int]] = {}
-    for owner, r in _office_row_filter(rows[1:], header, owner_i):
-        bucket: Dict[str, int] = {}
-        for label, col in metric_cols.items():
-            if col is None or col >= len(r):
-                continue
-            try:
-                bucket[label] = int(float((r[col] or "0").replace(",", "")))
-            except ValueError:
-                continue
-        if bucket:
-            out[owner] = bucket
-    return out
+    for r in rows[1:]:
+        if max(owner_i, rep_i, *(c for c in metric_cols.values() if c is not None)) >= len(r):
+            continue
+        owner = _norm_owner(r[owner_i])
+        if not owner:
+            continue
+        rep_val = (r[rep_i] or "").strip()
+        bucket = out.setdefault(owner, {"_active_reps": 0})
+        if rep_val.lower() == "total":
+            # Office-aggregate row - fill the Next Up / New/Port Lines / etc.
+            for label, col in metric_cols.items():
+                if col is None or col >= len(r):
+                    continue
+                try:
+                    bucket[label] = int(float((r[col] or "0").replace(",", "")))
+                except ValueError:
+                    continue
+        else:
+            # Per-rep row - count toward Active Headcount if ANY numeric
+            # value > 0 (Megan 2026-05-22 spec). All-zero rows don't count.
+            had_sale = False
+            for c in numeric_cols:
+                if c >= len(r):
+                    continue
+                try:
+                    if int(float((r[c] or "0").replace(",", ""))) > 0:
+                        had_sale = True
+                        break
+                except ValueError:
+                    continue
+            if had_sale:
+                bucket["_active_reps"] += 1
+    # Drop owners that ended up with no Total row (shouldn't happen but defensive)
+    return {k: v for k, v in out.items()
+            if any(label in v for label in metric_cols)}
 
 
 def parse_abp_conversions(path: Path) -> Dict[str, str]:
@@ -570,12 +604,13 @@ def fill_per_icd_office_totals(ws: gspread.Worksheet,
 # ('Extra/Preium %') Megan hasn't fixed yet. We pass both spellings so
 # we still write if Megan corrects the typo later.
 _OFFICE_METRIC_ROW_LABELS = {
-    "0-30 Day Churn":   ["0-30 Day Churn"],
-    "60 Day Churn":     ["60 Day Churn"],
-    "90 Day Churn":     ["90 Day Churn"],            # case-insensitive match handles 'day' vs 'Day'
-    "Next Up %":        ["Next Up %"],               # likewise 'Next up %'
-    "Extra/Premium %":  ["Extra/Premium %", "Extra/Preium %"],
-    "ABP %":            ["ABP %"],
+    "0-30 Day Churn":             ["0-30 Day Churn"],
+    "60 Day Churn":               ["60 Day Churn"],
+    "90 Day Churn":               ["90 Day Churn"],            # case-insensitive match handles 'day' vs 'Day'
+    "Next Up %":                  ["Next Up %"],               # likewise 'Next up %'
+    "Extra/Premium %":            ["Extra/Premium %", "Extra/Preium %"],
+    "ABP %":                      ["ABP %"],
+    "Active Headcount on Tableau": ["Active Headcount on Tableau"],
 }
 
 
@@ -711,6 +746,21 @@ def fill_office_metrics(ws: gspread.Worksheet,
                 log.append(f"  {a1} {icd_norm!r} ABP % <- {abp_val}")
             else:
                 log.append(f"  [miss-row] {icd_norm!r} -> no 'ABP %' row")
+
+        # 5) Active Headcount on Tableau = count of reps with any sale > 0
+        # (Megan 2026-05-22). The parse_sara_plus_office_totals counter
+        # is stored under '_active_reps' for each owner.
+        active_reps = s_row.get("_active_reps")
+        if active_reps is not None and active_reps > 0:
+            row_0 = _find_first_label_match(
+                grid, _OFFICE_METRIC_ROW_LABELS["Active Headcount on Tableau"],
+                start, end)
+            if row_0 is not None:
+                a1 = gspread.utils.rowcol_to_a1(row_0 + 1, week_col + 1)
+                updates.append({"range": a1, "values": [[str(active_reps)]]})
+                log.append(f"  {a1} {icd_norm!r} Active Headcount on Tableau <- {active_reps}")
+            else:
+                log.append(f"  [miss-row] {icd_norm!r} -> no 'Active Headcount on Tableau' row")
         else:
             log.append(f"  [miss-data] {icd_norm!r} -> no ABP % data")
 
@@ -778,27 +828,35 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
     # UI Crosstab pulls: SARA per-owner + ABP per-owner. These worksheets
     # live inside a multi-worksheet dashboard and HTTP can't address them
     # individually - Playwright drives the Download → Crosstab dialog.
-    sara_office_path: Optional[Path] = None
-    sara_url, sara_sheet, sara_fname = RETAIL_SARA_PLUS_OFFICE_VIEW
-    try:
-        logfn(f"OPT Retail: UI Crosstab → {sara_sheet!r} → {sara_fname}...")
-        sara_office_path = _download_crosstab(
-            sara_url, sara_sheet, OUTPUT_DIR / sara_fname, verbose=False)
-    except Exception as e:
-        msg = f"{sara_fname}: {type(e).__name__}: {str(e)[:120]}"
-        logfn(f"OPT Retail: Crosstab error {msg}")
-        errors.append(msg)
+    #
+    # FALLBACK: if the Playwright path fails (the SARA dialog has refused
+    # to enable Download for ANY of the click strategies we've tried —
+    # role=button:has-text, get_by_role, xpath-ancestor, force-click), and
+    # there's an existing file at the target path (e.g. one Megan
+    # manually downloaded + dropped in), use that. Keeps the run usable
+    # without blocking on the Crosstab automation puzzle.
+    def _crosstab_or_fallback(view_tuple) -> Optional[Path]:
+        url, sheet_name, filename = view_tuple
+        target = OUTPUT_DIR / filename
+        try:
+            logfn(f"OPT Retail: UI Crosstab → {sheet_name!r} → {filename}...")
+            return _download_crosstab(url, sheet_name, target, verbose=False)
+        except Exception as e:
+            msg = f"{filename}: {type(e).__name__}: {str(e)[:120]}"
+            logfn(f"OPT Retail: Crosstab error {msg}")
+            errors.append(msg)
+            # Use any existing manual download at the same path as a
+            # fallback. Skip empty / tiny files (likely partial writes
+            # or stale National Summary single-row from earlier HTTP
+            # attempts).
+            if target.exists() and target.stat().st_size > 500:
+                logfn(f"OPT Retail: using existing {filename} "
+                      f"({target.stat().st_size:,} bytes) as fallback")
+                return target
+            return None
 
-    abp_path: Optional[Path] = None
-    abp_url, abp_sheet, abp_fname = RETAIL_ABP_VIEW
-    try:
-        logfn(f"OPT Retail: UI Crosstab → {abp_sheet!r} → {abp_fname}...")
-        abp_path = _download_crosstab(
-            abp_url, abp_sheet, OUTPUT_DIR / abp_fname, verbose=False)
-    except Exception as e:
-        msg = f"{abp_fname}: {type(e).__name__}: {str(e)[:120]}"
-        logfn(f"OPT Retail: Crosstab error {msg}")
-        errors.append(msg)
+    sara_office_path = _crosstab_or_fallback(RETAIL_SARA_PLUS_OFFICE_VIEW)
+    abp_path = _crosstab_or_fallback(RETAIL_ABP_VIEW)
 
     # ---- Step 2: parse every CSV ----
     by_club = parse_retail_by_club(by_club_path)
