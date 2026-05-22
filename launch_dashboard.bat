@@ -62,6 +62,22 @@ if exist ".git" (
                     echo Updating Python packages...
                     ".venv\Scripts\pip.exe" install --quiet -r automations\recruiting_report\requirements.txt
                 )
+                REM First-run-on-this-machine: install patchright's Chromium
+                REM binary. patchright is a Playwright fork uploaded reports
+                REM use for stealth Cloudflare bypass (order_log.py). Marker
+                REM file in .venv\ tracks it so we don't re-run on every
+                REM launcher start.
+                if not exist ".venv\.patchright_chromium_installed" if exist ".venv\Scripts\patchright.exe" (
+                    echo First-time: installing Chromium for patchright ^(one-time, ~150MB^)...
+                    ".venv\Scripts\patchright.exe" install chromium >nul 2>&1
+                    if !ERRORLEVEL! EQU 0 (
+                        echo. > ".venv\.patchright_chromium_installed"
+                        echo Chromium installed for patchright.
+                    ) else (
+                        echo WARNING: patchright Chromium install failed - uploaded reports needing it may break.
+                        echo Run manually: .venv\Scripts\patchright.exe install chromium
+                    )
+                )
             ) else (
                 echo Auto-update failed; continuing with current version.
             )

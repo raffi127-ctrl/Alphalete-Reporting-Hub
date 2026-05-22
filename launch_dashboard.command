@@ -46,6 +46,22 @@ if [ -d .git ]; then
           echo "→ Updating Python packages..."
           ./.venv/bin/pip install --quiet -r automations/recruiting_report/requirements.txt
         fi
+        # First-run-on-this-machine: install patchright's Chromium binary.
+        # patchright is a Playwright fork uploaded reports use for stealth
+        # Cloudflare bypass (see automations/uploaded/order_log.py). The
+        # browser binary is separate from the pip package and has to be
+        # installed once per machine. Marker file in .venv/ tracks it so
+        # we don't re-run on every launcher start - patchright itself
+        # is fast at no-op verification, but the marker avoids the spin.
+        if [ ! -f .venv/.patchright_chromium_installed ] && [ -x .venv/bin/patchright ]; then
+          echo "→ First-time: installing Chromium for patchright (one-time, ~150MB)..."
+          if ./.venv/bin/patchright install chromium >/dev/null 2>&1; then
+            touch .venv/.patchright_chromium_installed
+            echo "✅ Chromium installed for patchright"
+          else
+            echo "⚠️  patchright Chromium install failed — uploaded reports that need it may break. Run manually: ./.venv/bin/patchright install chromium"
+          fi
+        fi
       else
         echo "⚠️  Auto-update failed — continuing with current version"
       fi

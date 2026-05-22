@@ -92,12 +92,26 @@ async def launch_stealth_browser(headless: bool = False) -> AsyncIterator[Page]:
     """
     PROFILE_DIR.mkdir(exist_ok=True)
     async with async_playwright() as p:
-        context = await p.chromium.launch_persistent_context(
-            user_data_dir=str(PROFILE_DIR),
-            channel="chrome",
-            headless=headless,
-            no_viewport=True,
-        )
+        # Prefer the system Chrome binary - patchright's stealth patches
+        # are tuned to it and Cloudflare-style detectors leave it alone
+        # more often. If Chrome isn't installed on the machine (common
+        # on a clean Windows install or in CI), fall back to patchright's
+        # bundled Chromium so the run doesn't die at launch.
+        try:
+            context = await p.chromium.launch_persistent_context(
+                user_data_dir=str(PROFILE_DIR),
+                channel="chrome",
+                headless=headless,
+                no_viewport=True,
+            )
+        except Exception as e:
+            print(f"[order_log] system Chrome unavailable ({e!r}) — "
+                  "falling back to bundled Chromium", flush=True)
+            context = await p.chromium.launch_persistent_context(
+                user_data_dir=str(PROFILE_DIR),
+                headless=headless,
+                no_viewport=True,
+            )
         page = context.pages[0] if context.pages else await context.new_page()
         try:
             yield page
@@ -740,10 +754,15 @@ def _thin_border() -> Border:
 
 def _autosize_columns(ws, df: pd.DataFrame) -> None:
     for col_idx, header in enumerate(FRIENDLY_HEADERS, start=1):
-        col_series = df[header].astype(str).replace({"NaT": "", "nan": ""})
+        col_series = df[header]
+        # Use a defensive str() conversion per-cell. pandas's .astype(str)
+        # leaves Arrow-backed nulls as `None`/NaN floats on newer pandas
+        # versions, and .map(len) then trips on TypeError: 'float' has no
+        # len. A plain generator + str() per value is bulletproof.
         max_len = max(
-            len(header),
-            col_series.map(len).max() if len(col_series) else 0,
+            (len(header),)
+            + tuple(len(str(v)) for v in col_series if v is not None
+                    and not (isinstance(v, float) and pd.isna(v)))
         )
         ws.column_dimensions[get_column_letter(col_idx)].width = max_len + 4
 
@@ -806,7 +825,7 @@ def csv_to_xlsx(csv_path: Path, output_dir: Path) -> Path:
 #  Entry point
 # ====================================================================
 
-async def main() -> None:
+async def main(owner_name: str = OWNER_NAME) -> None:
     # Intermediate CSV goes to a tempdir that auto-cleans on exit.
     # Final .xlsx is the only artifact left on disk (in Downloads).
     with tempfile.TemporaryDirectory(prefix="order_log_") as tmp:
@@ -822,7 +841,7 @@ async def main() -> None:
                 screenshot_dir=SCREENSHOT_DIR,
             )
 
-            await set_owner_name_filter(tableau_page, OWNER_NAME)
+            await set_owner_name_filter(tableau_page, owner_name)
             await set_date_range(tableau_page, START_DATE, END_DATE)
 
             csv_path = await download_dashboard_csv(
@@ -838,4 +857,13 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # `--owner "Carlos Hidalgo"` lets the same script back a separate
+    # 'Carlos Order Log' Hub card without duplicating the codebase.
+    # Defaults to OWNER_NAME (Rafael Hidalgo) so the existing Raf card
+    # keeps working with no args.
+    import argparse
+    _ap = argparse.ArgumentParser(description="Download a filtered Order Log")
+    _ap.add_argument("--owner", default=OWNER_NAME,
+                     help=f"Tableau 'Owner Name' filter value (default: {OWNER_NAME!r})")
+    _args = _ap.parse_args()
+    asyncio.run(main(_args.owner))
