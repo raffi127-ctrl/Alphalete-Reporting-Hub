@@ -1315,6 +1315,15 @@ def _spawn_background_run(cmd: list[str], report_id: str, report_name: str,
     if env_overrides:
         import os as _os
         env = {**_os.environ, **env_overrides}
+    # Windows: spawn the report in its OWN process group so a child crash
+    # (or any CTRL_C / CTRL_BREAK Windows generates for the console) does
+    # NOT propagate back to the Hub's streamlit process. Without this,
+    # the subprocess shares the .bat's console group — when a report dies
+    # mid-run Windows fires a console event group-wide, Streamlit catches
+    # it, prints 'Stopping...', and the whole Hub goes down (Eve, 2026-05-22).
+    popen_kwargs: dict = {}
+    if sys.platform == "win32":
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     try:
         proc = subprocess.Popen(
             cmd, cwd=str(WORKSPACE),
@@ -1324,6 +1333,7 @@ def _spawn_background_run(cmd: list[str], report_id: str, report_name: str,
             # (which would hang forever; the Hub has no keyboard to type into).
             stdin=subprocess.DEVNULL,
             env=env,
+            **popen_kwargs,
         )
     finally:
         # The child keeps its own dup of the fd; the parent's copy isn't needed.
