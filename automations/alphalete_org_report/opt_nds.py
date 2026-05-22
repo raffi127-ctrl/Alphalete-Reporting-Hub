@@ -927,8 +927,10 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
         values["0-30 Day Churn"] = crow["churn_30"]
     if "churn_60" in crow:
         values["60 Day Churn"] = crow["churn_60"]
-    if "churn_90" in crow:
-        values["90 Day Churn"] = crow["churn_90"]
+    # 90 Day Churn: Tableau leaves this empty for newer ICDs whose
+    # customers haven't aged 90 days yet (e.g. Maxamed). Write 'N/A' so
+    # the cell reads as a known gap, not a missed pull.
+    values["90 Day Churn"] = crow.get("churn_90") or "N/A"
 
     # HTTP-sourced per-rep metrics
     if activation and activation.get(owner_norm):
@@ -941,8 +943,12 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
             values["0-30 Day Cancel Rate  4wk avg"] = f"{float(raw):.2%}"
         except ValueError:
             values["0-30 Day Cancel Rate  4wk avg"] = raw
-    if leads and leads.get(owner_norm) is not None:
-        values["Total Leads"] = str(leads[owner_norm])
+    # Total Leads: Jairo Ruiz isn't in the Lead Penetration view at all
+    # (his ICD may be rolled under a parent or filtered out). Write 'N/A'
+    # for any owner missing from the leads dict so the gap is explicit.
+    if leads is not None:
+        v = leads.get(owner_norm)
+        values["Total Leads"] = str(v) if v is not None else "N/A"
 
     # Sara Plus By Day → per-rep weekly totals for the 5 wireless metrics.
     # 'New Lines' = Wireless Lines (Megan's mapping). Per-rep new lines
