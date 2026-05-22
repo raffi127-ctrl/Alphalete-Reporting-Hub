@@ -372,6 +372,85 @@ def parse_personal_production(path: Path) -> Dict[str, str]:
     return out
 
 
+DAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday",
+             "Friday", "Saturday", "Sunday"]
+
+
+def parse_rep_breakdown_per_owner(path: Path,
+                                  ptype_filter: str = "WIRELESS"
+                                  ) -> Dict[str, List[Dict]]:
+    """Parse the same ALLPRODUCTS-EXPANDEDREPS crosstab as
+    parse_personal_production, but return per-rep daily breakdowns
+    filtered to a single product type (wireless by default — the format
+    Megan's Rep Breakdown chart expects).
+
+    Returns {normalized owner: [{rep, days{day_name: int}, total}, ...]}
+    where each owner's reps are sorted by total DESC (then rep name asc).
+
+    Skips zero-total reps so the chart only lists reps who actually sold."""
+    rows = _read_tab_csv(path)
+    if not rows or len(rows) < 3:
+        return {}
+    header = rows[1]
+    OWNER_I, REP_I, TYPE_I = 0, 1, 2
+    # Map day name → column index
+    day_cols: Dict[str, int] = {}
+    for j, h in enumerate(header):
+        h_clean = (h or "").strip()
+        if h_clean in DAY_ORDER:
+            day_cols[h_clean] = j
+    # First "Total" column AFTER the day columns is the per-rep weekly total
+    max_day_col = max(day_cols.values()) if day_cols else TYPE_I
+    total_i: Optional[int] = None
+    for j in range(max_day_col + 1, len(header)):
+        if (header[j] or "").strip().lower() == "total":
+            total_i = j
+            break
+    if total_i is None:
+        return {}
+
+    target = ptype_filter.upper()
+    bucket: Dict[str, List[Dict]] = {}
+    for r in rows[2:]:
+        if len(r) <= total_i:
+            continue
+        owner_raw = (r[OWNER_I] or "").strip()
+        rep_raw = (r[REP_I] or "").strip()
+        ptype = (r[TYPE_I] or "").strip().upper()
+        if not owner_raw or owner_raw.lower().startswith("grand total"):
+            continue
+        if rep_raw.lower() == "total" or ptype == "TOTAL":
+            continue
+        if ptype != target:
+            continue
+        try:
+            total = int(float((r[total_i] or "0").replace(",", "")))
+        except (ValueError, AttributeError):
+            continue
+        if total == 0:
+            continue
+        days: Dict[str, int] = {}
+        for day, j in day_cols.items():
+            if j < len(r):
+                try:
+                    n = int(float((r[j] or "0").replace(",", "")))
+                    if n != 0:
+                        days[day] = n
+                except (ValueError, AttributeError):
+                    pass
+        owner = _norm_owner(owner_raw)
+        bucket.setdefault(owner, []).append({
+            "rep": rep_raw,
+            "days": days,
+            "total": total,
+        })
+
+    # Sort each owner's reps by total desc, then name asc
+    for owner in bucket:
+        bucket[owner].sort(key=lambda x: (-x["total"], x["rep"]))
+    return bucket
+
+
 def parse_direct_deposit(path: Path) -> Dict[str, float]:
     """Parse DD BY OWNER (ORG) Sheet 7 (5): {normalized ICD owner:
     sum of Total $ to ICD across all per-line rows for that owner}.
@@ -543,6 +622,239 @@ def _current_target_week_col_label(today: Optional[dt.date] = None) -> str:
     days_forward = (6 - anchor.weekday()) % 7   # 6 = Sunday
     target = anchor + dt.timedelta(days=days_forward)
     return f"{target.month}/{target.day}/{target.year % 100}"
+
+
+def _current_target_week_end(today: Optional[dt.date] = None) -> dt.date:
+    """Return the Sunday at the end of the week we're filling — same
+    logic as _current_target_week_col_label but returns the date object."""
+    today = today or dt.date.today()
+    anchor = today - dt.timedelta(days=1)
+    days_forward = (6 - anchor.weekday()) % 7
+    return anchor + dt.timedelta(days=days_forward)
+
+
+def _find_rep_breakdown_anchor(grid: List[List[str]]) -> Optional[Tuple[int, int]]:
+    """Locate the Rep Breakdown chart header on a worksheet grid. Returns
+    (row, col) of the 'Rep' header cell (0-indexed), or None if absent.
+
+    The anchor is the 'Rep' cell with 'Product Type (Broken Out)' to its
+    immediate right — matches Isaiah's tab layout (DZ57 on his sheet).
+    Tabs without the chart skeleton return None and the filler skips them."""
+    for ri, row in enumerate(grid):
+        for ci, cell in enumerate(row):
+            if (cell or "").strip() != "Rep":
+                continue
+            next_cell = row[ci + 1] if ci + 1 < len(row) else ""
+            if (next_cell or "").strip() == "Product Type (Broken Out)":
+                return (ri, ci)
+    return None
+
+
+REP_CHART_LIGHT_GRAY = {"red": 243/255, "green": 243/255, "blue": 243/255}
+REP_CHART_WHITE = {"red": 1.0, "green": 1.0, "blue": 1.0}
+
+
+def fill_rep_breakdown_chart(ws: gspread.Worksheet, owner_norm: str,
+                              breakdown: Dict[str, List[Dict]],
+                              week_end: dt.date,
+                              dry_run: bool = False,
+                              logfn=print,
+                              max_rep_rows: int = 30,
+                              ) -> List[str]:
+    """Write the per-rep wireless daily breakdown into the chart at the
+    bottom of an NDS tab. Layout (anchored on 'Rep' header):
+
+      anchor-1 row, anchor col:        WE M.D week label
+      anchor row:    Rep | Product Type | Mon | Tue | ... | Sun | Product Total
+      anchor+1 row:  Total | Total | sum_mon | ... | sum_sun | grand_total
+      anchor+2 row+: per-rep wireless rows sorted by total desc
+
+    Tabs without the chart skeleton are skipped silently — Megan adds the
+    skeleton to each NDS tab over time."""
+    log: List[str] = []
+    grid = rfill._retry(ws.get_all_values)
+    if not grid:
+        return []
+    anchor = _find_rep_breakdown_anchor(grid)
+    if anchor is None:
+        return []   # no chart on this tab yet
+
+    anchor_row, anchor_col = anchor    # 0-indexed
+    header_row = grid[anchor_row]
+    # Map day name → 0-indexed column position
+    day_cols: Dict[str, int] = {}
+    for j, cell in enumerate(header_row):
+        if j <= anchor_col:
+            continue
+        if (cell or "").strip() in DAY_ORDER:
+            day_cols[(cell or "").strip()] = j
+    # Product Total column
+    total_col: Optional[int] = None
+    for j in range(anchor_col + 2, len(header_row)):
+        if (header_row[j] or "").strip() == "Product Total":
+            total_col = j
+            break
+    if not day_cols or total_col is None:
+        return [f"[skip-chart] {ws.title}: chart header malformed"]
+
+    reps = breakdown.get(owner_norm, [])
+
+    # Build aggregate Total row
+    day_totals: Dict[str, int] = {}
+    grand_total = 0
+    for r in reps:
+        for day, n in r["days"].items():
+            day_totals[day] = day_totals.get(day, 0) + n
+        grand_total += r["total"]
+
+    updates: List[Dict] = []
+
+    # Week label one row above the anchor in the Rep column
+    we_label = f"WE {week_end.month}.{week_end.day}"
+    if anchor_row - 1 >= 0:
+        updates.append({
+            "range": gspread.utils.rowcol_to_a1(anchor_row, anchor_col + 1),
+            "values": [[we_label]],
+        })
+
+    # Total row (anchor + 1, 0-indexed → +2 for 1-indexed A1)
+    total_row_1based = anchor_row + 2
+    row_width = total_col - anchor_col + 1
+    total_row_values = ["Total", "Total"] + [""] * (row_width - 2)
+    for day, j in day_cols.items():
+        n = day_totals.get(day, 0)
+        total_row_values[j - anchor_col] = str(n) if n else ""
+    total_row_values[total_col - anchor_col] = str(grand_total) if grand_total else ""
+    updates.append({
+        "range": (f"{gspread.utils.rowcol_to_a1(total_row_1based, anchor_col + 1)}:"
+                  f"{gspread.utils.rowcol_to_a1(total_row_1based, total_col + 1)}"),
+        "values": [total_row_values],
+    })
+
+    # Per-rep rows (sorted by total desc — already sorted upstream)
+    for idx, r in enumerate(reps):
+        row_1based = anchor_row + 3 + idx   # anchor+2 + idx (0-indexed) → +3 for 1-indexed
+        row_values = [r["rep"], "WIRELESS"] + [""] * (row_width - 2)
+        for day, j in day_cols.items():
+            n = r["days"].get(day, 0)
+            row_values[j - anchor_col] = str(n) if n else ""
+        row_values[total_col - anchor_col] = str(r["total"])
+        updates.append({
+            "range": (f"{gspread.utils.rowcol_to_a1(row_1based, anchor_col + 1)}:"
+                      f"{gspread.utils.rowcol_to_a1(row_1based, total_col + 1)}"),
+            "values": [row_values],
+        })
+
+    # Clear any leftover rows from prior larger weeks. Blank out
+    # max_rep_rows rows below the last written rep row, capped at the
+    # current grid height.
+    leftover_start = anchor_row + 3 + len(reps)   # 1-indexed: anchor_row + 2 + len(reps) + 1
+    leftover_end = anchor_row + 2 + max_rep_rows
+    if leftover_start <= leftover_end:
+        blank_row = [""] * row_width
+        for r1 in range(leftover_start, leftover_end + 1):
+            if r1 - 1 >= len(grid):
+                break
+            # Only blank rows where SOMETHING is in the chart columns;
+            # otherwise skip to save API calls.
+            row = grid[r1 - 1]
+            has_content = any(
+                (row[c] or "").strip()
+                for c in range(anchor_col, total_col + 1)
+                if c < len(row)
+            )
+            if has_content:
+                updates.append({
+                    "range": (f"{gspread.utils.rowcol_to_a1(r1, anchor_col + 1)}:"
+                              f"{gspread.utils.rowcol_to_a1(r1, total_col + 1)}"),
+                    "values": [blank_row],
+                })
+
+    # Formatting strategy — chart must look uniform regardless of how many
+    # rep slots were pre-formatted in Megan's template:
+    #   1. Copy the format of the FIRST rep row (template's canonical style)
+    #      to every other rep row we wrote. Ensures borders, font, alignment
+    #      etc. match for all reps even when len(reps) > template slot count.
+    #   2. Apply zebra striping (overrides backgroundColor on alternate rows).
+    #   3. Set THICK bottom border on the actual last rep row so the chart's
+    #      bottom edge tracks the current rep count.
+    #   4. Clear all formatting on rows below the last rep row in the chart's
+    #      column range (eliminates leftover bordered/empty rows from prior
+    #      larger weeks).
+    fmt_requests: List[Dict] = []
+    first_rep_row0 = anchor_row + 2   # 0-indexed first rep row
+    ws_id = ws.id
+
+    # 1. Replicate template's first-rep-row formatting across all rep rows.
+    if len(reps) > 1:
+        fmt_requests.append({"copyPaste": {
+            "source": {"sheetId": ws_id,
+                       "startRowIndex": first_rep_row0,
+                       "endRowIndex": first_rep_row0 + 1,
+                       "startColumnIndex": anchor_col,
+                       "endColumnIndex": total_col + 1},
+            "destination": {"sheetId": ws_id,
+                            "startRowIndex": first_rep_row0 + 1,
+                            "endRowIndex": first_rep_row0 + len(reps),
+                            "startColumnIndex": anchor_col,
+                            "endColumnIndex": total_col + 1},
+            "pasteType": "PASTE_FORMAT",
+            "pasteOrientation": "NORMAL"}})
+
+    # 2. Zebra background — applies AFTER copyPaste so it survives.
+    for idx in range(len(reps)):
+        row0 = first_rep_row0 + idx
+        color = REP_CHART_LIGHT_GRAY if idx % 2 == 0 else REP_CHART_WHITE
+        fmt_requests.append({"repeatCell": {
+            "range": {"sheetId": ws_id,
+                      "startRowIndex": row0, "endRowIndex": row0 + 1,
+                      "startColumnIndex": anchor_col,
+                      "endColumnIndex": total_col + 1},
+            "cell": {"userEnteredFormat": {"backgroundColor": color}},
+            "fields": "userEnteredFormat.backgroundColor"}})
+
+    # 3. Move the chart's THICK bottom border to the last rep row. Without
+    # this, copyPaste in step 1 gives the last rep a regular (thin) bottom
+    # border like the middle reps, so the chart visually "bleeds" into the
+    # rows below.
+    if len(reps) > 0:
+        last_rep_row0 = first_rep_row0 + len(reps) - 1
+        fmt_requests.append({"updateBorders": {
+            "range": {"sheetId": ws_id,
+                      "startRowIndex": last_rep_row0,
+                      "endRowIndex": last_rep_row0 + 1,
+                      "startColumnIndex": anchor_col,
+                      "endColumnIndex": total_col + 1},
+            "bottom": {"style": "SOLID_THICK",
+                       "color": {"red": 0, "green": 0, "blue": 0}}}})
+
+    # 4. Fully clear formatting on every leftover row inside the chart's
+    # column range so it's not visible as part of the chart. Uses
+    # updateCells with empty userEnteredFormat to wipe borders + bg + font
+    # at once. Limited to max_rep_rows past the last written rep row.
+    leftover_first0 = first_rep_row0 + len(reps)
+    leftover_last0 = first_rep_row0 + max_rep_rows - 1
+    if leftover_first0 <= leftover_last0:
+        end_row_excl = min(leftover_last0 + 1, len(grid))
+        if leftover_first0 < end_row_excl:
+            fmt_requests.append({"updateCells": {
+                "range": {"sheetId": ws_id,
+                          "startRowIndex": leftover_first0,
+                          "endRowIndex": end_row_excl,
+                          "startColumnIndex": anchor_col,
+                          "endColumnIndex": total_col + 1},
+                "fields": "userEnteredFormat"}})
+
+    log.append(f"  chart: {len(reps)} rep(s), total={grand_total}, header={we_label!r}")
+    if dry_run:
+        return [f"[DRY-RUN chart] {ws.title}: would write {len(updates)} range(s) + {len(fmt_requests)} format(s)"] + log
+    if updates:
+        rfill._retry(ws.batch_update, updates, value_input_option="USER_ENTERED")
+    if fmt_requests:
+        rfill._retry(ws.spreadsheet.batch_update, {"requests": fmt_requests})
+    if updates or fmt_requests:
+        return [f"[OK chart] {ws.title}: wrote {len(updates)} range(s) + {len(fmt_requests)} format(s)"] + log
+    return [f"[skip-chart] {ws.title}: nothing to write"]
 
 
 def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
@@ -720,6 +1032,8 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
     sara_totals = parse_sara_plus_total(OUTPUT_DIR / "opt_nds_sara_plus.csv")
     personal_production = parse_personal_production(
         OUTPUT_DIR / "opt_nds_personal_production.csv")
+    rep_breakdown = parse_rep_breakdown_per_owner(
+        OUTPUT_DIR / "opt_nds_personal_production.csv")
     churn = parse_churn_icd(OUTPUT_DIR / "opt_nds_churn.csv")
     direct_deposit = parse_direct_deposit(OUTPUT_DIR / "opt_nds_direct_deposit.csv")
     # HTTP-sourced parses
@@ -800,6 +1114,15 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
             filled.append(title)
         else:
             skipped.append(title)
+
+        # Rep Breakdown chart at the bottom of the tab — separate fill.
+        # Silently skips tabs whose chart skeleton Megan hasn't added yet.
+        chart_lines = fill_rep_breakdown_chart(
+            ws, match, rep_breakdown, _current_target_week_end(),
+            dry_run=dry_run, logfn=logfn,
+        )
+        for ln in chart_lines:
+            logfn(f"OPT NDS: {ln}")
 
     return {"filled": filled, "skipped": skipped, "errors": download_errors}
 
