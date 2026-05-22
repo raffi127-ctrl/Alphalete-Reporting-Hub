@@ -2828,10 +2828,14 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                         )
                         st.error(msg)
 
-                    # Raw log — expanded when we couldn't diagnose it.
+                    # Raw log — always expanded on a failed run so users
+                    # can copy-paste the last 40 lines to Megan without an
+                    # extra click. st.code adds a hover Copy button in
+                    # Streamlit so paste-into-Slack is one click.
                     if _log_tail_text:
-                        with st.expander("📜 Run log (last 40 lines)",
-                                         expanded=not bool(_diag)):
+                        with st.expander(
+                                "📜 Run log (last 40 lines) — hover the box for a Copy button",
+                                expanded=True):
                             st.code(_log_tail_text, language="log")
 
                     # Every failed run auto-files a glitch row to the Bug

@@ -299,45 +299,43 @@ def parse_sara_plus_office_totals(path: Path) -> Dict[str, Dict[str, int]]:
 
 
 def parse_abp_conversions(path: Path) -> Dict[str, str]:
-    """Parse ABPCONVERSIONS default view -> {owner_norm: 'ABP %' string}.
+    """Parse ABPCONVERSIONS 'ABP National Average (2)' UI Crosstab CSV
+    (UTF-16, tab-delimited) -> {owner_norm: ABP_%_str}.
 
-    The sheet's 'ABP %' row gets the NEW&PORT ABP %, not the upgrade
-    column (Megan 2026-05-22). The CSV's column labels for grouped
-    headers are usually flattened by Tableau as 'new & port: ABP %' or
-    'ABP % (new & port)' or just 'ABP %' twice — try a few variants
-    in priority order; first match wins.
+    Header is TWO rows because of Tableau's grouped columns:
+      Row 1:  [blank]  [blank]  'new & port'  'new & port'  'upgrade'  'upgrade'
+      Row 2:  'Owner & Office '  'Date Range'  'ABP %'  'Wireless Lines'  'ABP %'  'Wireless Lines'
+
+    We need the 'new & port' x 'ABP %' column (Megan 2026-05-22; upgrade
+    column ignored). The other ABP % column is the upgrade group.
     """
-    rows = tableau_http.parse_csv(path)
-    if not rows:
+    rows = _read_tab_csv(path)
+    if not rows or len(rows) < 3:
         return {}
-    header = rows[0]
-    owner_i = tableau_http.col_idx(header, "Owner & Office")
-    if owner_i is None:
-        return {}
-    # Candidates in priority order. The default-view CSV column names
-    # aren't documented; this list trades off being permissive without
-    # accidentally picking the UPGRADE column.
-    abp_col: Optional[int] = None
-    for label in (
-        "new & port: ABP %",
-        "ABP % (new & port)",
-        "new & port ABP %",
-        "new and port ABP %",
-        "ABP % new & port",
-        "ABP %",                # plain — only used if no qualifier columns
-    ):
-        c = tableau_http.col_idx(header, label)
-        if c is not None:
-            abp_col = c
+    group_row = rows[0]
+    measure_row = rows[1]
+    owner_col: Optional[int] = None
+    for i, h in enumerate(measure_row):
+        if "owner" in (h or "").lower() and "office" in (h or "").lower():
+            owner_col = i
             break
-    if abp_col is None:
+    abp_col: Optional[int] = None
+    for i in range(min(len(group_row), len(measure_row))):
+        g = (group_row[i] or "").strip().lower()
+        m = (measure_row[i] or "").strip().lower()
+        if "new" in g and "port" in g and m == "abp %":
+            abp_col = i
+            break
+    if owner_col is None or abp_col is None:
         return {}
     out: Dict[str, str] = {}
-    for owner, r in _office_row_filter(rows[1:], header, owner_i):
-        if abp_col < len(r):
-            v = (r[abp_col] or "").strip()
-            if v:
-                out[owner] = v
+    for r in rows[2:]:
+        if max(owner_col, abp_col) >= len(r):
+            continue
+        owner = _norm_owner(r[owner_col])
+        val = (r[abp_col] or "").strip()
+        if owner and val:
+            out[owner] = val
     return out
 
 

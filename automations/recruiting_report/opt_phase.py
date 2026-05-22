@@ -344,7 +344,38 @@ def download_crosstab(view_url: str, crosstab_sheet: str, out_path: Path,
                 f"dialog — saw {len(available)} thumb(s): {available!r}. "
                 "The view may have changed."
             )
-        thumbs.nth(idx).click()
+        # Click the sheet by ROLE=BUTTON containing the worksheet text.
+        # Several strategies tried 2026-05-22 against SARAPLUSSALESSUMMARY:
+        #   - thumbnail icon click: didn't register as selection (screenshot
+        #     showed both sheets unselected, Download greyed)
+        #   - get_by_text exact=True at viz level: ambiguous when the same
+        #     text appears in tabs / breadcrumbs / etc. above the dialog
+        # Scoping to role=button containing the sheet name reliably hits
+        # the clickable row inside the Crosstab dialog. ABP succeeded with
+        # this strategy; SARA needs the role=button scope to disambiguate.
+        clicked = False
+        for strategy in (
+            f'[role="button"]:has-text("{crosstab_sheet}")',
+            f'button:has-text("{crosstab_sheet}")',
+            f'[role="checkbox"]:has-text("{crosstab_sheet}")',
+        ):
+            try:
+                btn = viz.locator(strategy)
+                if btn.count() > 0:
+                    btn.first.click(timeout=5_000)
+                    clicked = True
+                    break
+            except Exception:
+                continue
+        if not clicked:
+            # Last-resort: text node click + thumbnail click stacked
+            try:
+                viz.get_by_text(crosstab_sheet, exact=True).first.click(timeout=5_000)
+                clicked = True
+            except Exception:
+                pass
+        if not clicked:
+            thumbs.nth(idx).click()
         page.wait_for_timeout(2000)
         # Format selection — try CSV first (so the downstream CSV parsers
         # keep working as-is); fall back to Excel if CSV makes Tableau
@@ -403,10 +434,23 @@ def download_crosstab(view_url: str, crosstab_sheet: str, out_path: Path,
                 page.wait_for_timeout(1000)
 
         if chosen_format is None:
+            # Diagnostic screenshot - dialog DOM snapshot at the moment the
+            # Export button refused to enable. Saved to OUTPUT_DIR so a
+            # later session can inspect what UI state Tableau was in.
+            # Megan 2026-05-22 reported the button enables for her manually
+            # on SARAPLUSSALESSUMMARY 'Sara Plus Sales Summary (2)' - so
+            # this captures what's different about the Playwright session.
+            try:
+                from automations.alphalete_org_report.opt_nds import OUTPUT_DIR as _OD
+                shot_path = _OD / f"crosstab_disabled_{crosstab_sheet.replace(' ', '_').replace('(', '').replace(')', '')}.png"
+                page.screenshot(path=str(shot_path), full_page=True)
+                shot_note = f" Screenshot saved: {shot_path}"
+            except Exception:
+                shot_note = ""
             raise RuntimeError(
                 f"Crosstab Download button stayed disabled for {crosstab_sheet!r} "
                 "in both CSV and Excel formats — Tableau may have no data to "
-                "export for this view's current filter state."
+                "export for this view's current filter state." + shot_note
             )
         if verbose:
             print(f"  format: {chosen_format}", flush=True)
