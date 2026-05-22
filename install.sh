@@ -110,35 +110,50 @@ chmod +x "Alphalete Reporting Hub.app/Contents/MacOS/launcher" 2>/dev/null || tr
 # or LaunchServices, which then can't load arm64-only wheels (cffi etc.).
 # Replacing the symlinked python with a wrapper that forces /usr/bin/arch
 # -arm64 + __PYVENV_LAUNCHER__ keeps the venv working regardless of caller.
-if [ "$(uname -m 2>/dev/null)" = "arm64" ] && [ -f .venv/bin/python3.9 ] && [ ! -f .venv/bin/.arm64-wrapped ]; then
-    # Only Python.app/Contents/MacOS/Python honors __PYVENV_LAUNCHER__.
-    # bin/python3.X does not, so using the readlink target directly would
-    # bypass the venv's site-packages and break streamlit imports.
-    REAL_PYTHON=""
-    if [ -L .venv/bin/python3.9 ]; then
-        RESOLVED="$(readlink -f .venv/bin/python3.9 2>/dev/null || true)"
-        if [ -n "$RESOLVED" ]; then
-            VERSION_ROOT="${RESOLVED%/bin/python*}"
-            CANDIDATE="$VERSION_ROOT/Resources/Python.app/Contents/MacOS/Python"
-            [ -x "$CANDIDATE" ] && REAL_PYTHON="$CANDIDATE"
+#
+# Version-detection: we don't hardcode 3.9 anymore. Maud's machine
+# (2026-05-21) updated Python.org from 3.9 → 3.14 mid-install; the
+# original 'python3.9' hardcode meant her launcher invoked a binary that
+# no longer existed. Now we detect the actual minor version of the venv
+# and wrap whichever 'python3.X' is there.
+if [ "$(uname -m 2>/dev/null)" = "arm64" ] && [ ! -f .venv/bin/.arm64-wrapped ]; then
+    # Find the actual python3.X binary in the venv (whatever minor version)
+    VENV_PYTHON_BIN=""
+    for cand in .venv/bin/python3.[0-9] .venv/bin/python3.[0-9][0-9]; do
+        if [ -f "$cand" ]; then
+            VENV_PYTHON_BIN="$cand"
+            break
         fi
-    fi
-    if [ -z "$REAL_PYTHON" ] || [ ! -x "$REAL_PYTHON" ]; then
-        REAL_PYTHON="/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python"
-    fi
-    if [ -x "$REAL_PYTHON" ]; then
-        rm -f .venv/bin/python .venv/bin/python3 .venv/bin/python3.9
-        cat > .venv/bin/python3.9 <<WRAP
+    done
+    if [ -n "$VENV_PYTHON_BIN" ]; then
+        # python3.9, python3.10, python3.14 etc. — the version-specific binary
+        VENV_PY_NAME="${VENV_PYTHON_BIN##*/}"   # e.g. 'python3.14'
+        # Only Python.app/Contents/MacOS/Python honors __PYVENV_LAUNCHER__.
+        # bin/python3.X does not, so using the readlink target directly would
+        # bypass the venv's site-packages and break streamlit imports.
+        REAL_PYTHON=""
+        if [ -L "$VENV_PYTHON_BIN" ]; then
+            RESOLVED="$(readlink -f "$VENV_PYTHON_BIN" 2>/dev/null || true)"
+            if [ -n "$RESOLVED" ]; then
+                VERSION_ROOT="${RESOLVED%/bin/python*}"
+                CANDIDATE="$VERSION_ROOT/Resources/Python.app/Contents/MacOS/Python"
+                [ -x "$CANDIDATE" ] && REAL_PYTHON="$CANDIDATE"
+            fi
+        fi
+        if [ -x "$REAL_PYTHON" ]; then
+            rm -f .venv/bin/python .venv/bin/python3 "$VENV_PYTHON_BIN"
+            cat > "$VENV_PYTHON_BIN" <<WRAP
 #!/bin/bash
 HERE="\$(cd "\$(dirname "\$0")" && pwd)"
-export __PYVENV_LAUNCHER__="\$HERE/python3.9"
+export __PYVENV_LAUNCHER__="\$HERE/$VENV_PY_NAME"
 exec /usr/bin/arch -arm64 "$REAL_PYTHON" "\$@"
 WRAP
-        chmod +x .venv/bin/python3.9
-        ln -s python3.9 .venv/bin/python3
-        ln -s python3.9 .venv/bin/python
-        touch .venv/bin/.arm64-wrapped
-        echo "→ Pinned venv Python to arm64 (universal-binary wrapper installed)"
+            chmod +x "$VENV_PYTHON_BIN"
+            ln -s "$VENV_PY_NAME" .venv/bin/python3
+            ln -s "$VENV_PY_NAME" .venv/bin/python
+            touch .venv/bin/.arm64-wrapped
+            echo "→ Pinned venv Python to arm64 ($VENV_PY_NAME wrapper installed)"
+        fi
     fi
 fi
 # Ad-hoc code-sign the .app so macOS Sequoia accepts it onto the Dock.
