@@ -344,29 +344,39 @@ def download_crosstab(view_url: str, crosstab_sheet: str, out_path: Path,
                 f"dialog — saw {len(available)} thumb(s): {available!r}. "
                 "The view may have changed."
             )
-        # Click the sheet by ARIA role + accessible name. Playwright's
-        # get_by_role uses the same accessibility tree the screen reader
-        # would - bypasses CSS selector flakiness when sheet names appear
-        # in tab strips / breadcrumbs on the same page. Try checkbox first
-        # (Tableau's Crosstab dialog uses checkboxes for sheet selection
-        # per Megan's manual screenshot 2026-05-22), then button, then
-        # fall back to the matching thumbnail's clickable ancestor.
+        # Click the sheet to select it. Tries multiple strategies in
+        # order from most-likely-to-hit-the-real-row to last-resort:
+        #
+        #   1. role=button:has-text  - css selector for a button containing
+        #      the sheet name. PROVEN working on ABP National Average (2)
+        #      and NDS 'Sheet 7 (5)'. (Megan + dry-run 2026-05-22.)
+        #   2. role=checkbox:has-text + button:has-text variants
+        #   3. xpath ancestor walk from the matching thumbnail
+        #   4. force-click the thumbnail itself (legacy NDS path)
+        #
+        # Quoting: PW :has-text wants double-quoted text; if the sheet
+        # name has a double quote in it we'd need to escape - currently
+        # no known case so we just inline.
         target_thumb = thumbs.nth(idx)
         clicked = False
-        for role in ("checkbox", "button"):
+        for css_strategy in (
+            f'[role="button"]:has-text("{crosstab_sheet}")',
+            f'button:has-text("{crosstab_sheet}")',
+            f'[role="checkbox"]:has-text("{crosstab_sheet}")',
+            f'label:has-text("{crosstab_sheet}")',
+        ):
             try:
-                role_locator = viz.get_by_role(role, name=crosstab_sheet)
-                if role_locator.count() > 0:
-                    role_locator.first.click(timeout=5_000)
+                btn = viz.locator(css_strategy)
+                if btn.count() > 0:
+                    btn.first.click(timeout=5_000)
                     clicked = True
                     break
             except Exception:
                 continue
         if not clicked:
-            # Fallback: walk up from the thumbnail to its clickable row.
             for ancestor_xpath in (
-                'xpath=ancestor::*[@role="checkbox"][1]',
                 'xpath=ancestor::*[@role="button"][1]',
+                'xpath=ancestor::*[@role="checkbox"][1]',
                 'xpath=ancestor::button[1]',
                 'xpath=ancestor::label[1]',
             ):
@@ -379,7 +389,6 @@ def download_crosstab(view_url: str, crosstab_sheet: str, out_path: Path,
                 except Exception:
                     continue
         if not clicked:
-            # Last-resort: click the thumbnail directly (NDS-era path).
             target_thumb.click(force=True)
         page.wait_for_timeout(2000)
         # Format selection — try CSV first (so the downstream CSV parsers

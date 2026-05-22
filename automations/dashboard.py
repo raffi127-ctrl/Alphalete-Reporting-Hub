@@ -3921,6 +3921,53 @@ def _set_intake_status(entry_id: str, status: str) -> bool:
     return True
 
 
+def _git_push_library_addition(report_name: str) -> tuple[bool, str]:
+    """Auto-commit + push the new library files (automations/uploaded/<id>.py
+    and uploaded_reports.json) so the company repo owns the script, not just
+    the local Hub instance. Returns (ok, status_message).
+
+    Megan 2026-05-22: before this, approve-via-Hub stopped at the
+    approver's filesystem - the report only existed on their laptop, and
+    the company had no way to pull it. JD's Order Log was approved on his
+    machine and Megan couldn't see it in her Hub. Auto-push closes the
+    gap so 'in the Library' really means 'in the company repo'.
+    """
+    import subprocess
+    try:
+        # Stage only the two specific paths - never blanket `git add .`,
+        # which would sweep in unrelated working-tree changes (e.g.
+        # output/ files, in-flight edits) and create a messy commit.
+        subprocess.run(
+            ["git", "add", "automations/uploaded/", "uploaded_reports.json"],
+            cwd=str(WORKSPACE), check=True, capture_output=True, timeout=20)
+        # Check whether there's actually anything staged - a re-approve
+        # of an unchanged report wouldn't have any diff.
+        diff = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"],
+            cwd=str(WORKSPACE), capture_output=True, timeout=10)
+        if diff.returncode == 0:
+            return True, "Already in sync with remote (nothing to commit)"
+        subprocess.run(
+            ["git", "commit", "-m", f"Library: add {report_name} (approved via Hub)"],
+            cwd=str(WORKSPACE), check=True, capture_output=True, timeout=20)
+        push = subprocess.run(
+            ["git", "push"],
+            cwd=str(WORKSPACE), capture_output=True, timeout=60, text=True)
+        if push.returncode != 0:
+            return False, (
+                f"Committed locally but push failed:\n{push.stderr.strip()[:400]}\n"
+                "Run `git push` from a terminal to finish syncing."
+            )
+        return True, "Committed + pushed to remote — anyone who pulls gets it"
+    except subprocess.TimeoutExpired as e:
+        return False, f"Git command timed out: {e.cmd}. Run git push manually."
+    except subprocess.CalledProcessError as e:
+        stderr = (e.stderr or b"").decode("utf-8", errors="replace").strip()[:400]
+        return False, f"Git failed at `{' '.join(e.cmd)}`:\n{stderr}"
+    except Exception as e:
+        return False, f"{type(e).__name__}: {e}"
+
+
 def _promote_pending_report(entry_id: str) -> tuple[bool, str]:
     """Requester-approved: promote the staged report into the Report Library
     (uploaded_reports.json + automations/uploaded/<id>.py), mark the intake
@@ -3936,7 +3983,18 @@ def _promote_pending_report(entry_id: str) -> tuple[bool, str]:
     except Exception:
         pass
     _clear_pending_report(entry_id)
-    return True, "Report approved and added to the Library."
+    # Auto-push to the company repo so the new report doesn't live on
+    # the approver's laptop alone. Failure here doesn't undo the approve
+    # - the files are already saved locally - it just means the user has
+    # to run `git push` manually.
+    push_ok, push_msg = _git_push_library_addition(
+        (staged.get("metadata") or {}).get("name", "report"))
+    if push_ok:
+        return True, f"Report approved and added to the Library. {push_msg}."
+    return True, (
+        f"Report approved and added to the Library locally.\n"
+        f"⚠️ Auto-push to company repo failed: {push_msg}"
+    )
 
 
 def _parse_time_str(s: str) -> dt.time:
