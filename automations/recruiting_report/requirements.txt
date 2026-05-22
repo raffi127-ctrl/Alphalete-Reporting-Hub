@@ -5,3 +5,11 @@ gspread>=6.1
 google-auth-oauthlib>=1.2
 keyring>=25.0
 streamlit>=1.36
+# Used by uploaded automations that need a stealth Chrome (Cloudflare /
+# ownerville login). patchright is a Playwright fork with anti-detection
+# patches. Added 2026-05-22 when JD's Order Log report imported it.
+patchright>=1.60
+# Needed by Order Log + future uploaded reports producing .xlsx files
+# in the requester's Downloads folder.
+pandas>=2.0
+python-dateutil>=2.8

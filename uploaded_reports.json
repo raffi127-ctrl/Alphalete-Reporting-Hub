@@ -2,29 +2,26 @@
   {
     "id": "order_log",
     "name": "Order Log",
-    "creator": "",
-    "emoji": "\ud83d\udcca",
-    "description": "",
-    "sheet_url": "",
-    "assignees": [],
+    "creator": "JD",
+    "emoji": "📊",
+    "color": "#9B59B6",
+    "category": "🎯 Recruiting",
+    "description": "Logs into ownerville, downloads the ORDER LOG tab from the ATT Tracker 2.1 - D2D Tableau workbook (filtered to Rafael Hidalgo, last month → today), and drops a polished color-coded .xlsx in your Downloads folder ready to paste into Slack.",
+    "sheet_url": "https://docs.google.com/spreadsheets/d/1BXzSuA0uGJ8Aqdfgb5UHFyhQougauPYD/edit?gid=1985709917#gid=1985709917",
+    "assignees": ["JD"],
     "schedule": {
       "frequency": "daily",
-      "weekdays": [
-        0,
-        1,
-        2,
-        3,
-        4,
-        5,
-        6
-      ],
+      "weekdays": [0, 1, 2, 3, 4, 5, 6],
       "time": "7:30 AM",
-      "estimated_minutes": 10
+      "estimated_minutes": 5
     },
-    "checklist": [],
+    "checklist": [
+      {"text": "Make sure your internet connection is stable — the script logs into Cloudflare-protected ownerville so a flaky connection breaks the run"},
+      {"text": "The script opens its OWN Chrome window automatically and signs into ownerville + Tableau on its own. Leave that window alone while it runs (about 2 min). Do NOT open Reporting Chrome for this one — it uses a separate stealth Chrome (patchright)."}
+    ],
     "needs_login": false,
-    "breakdown": "You will need to install some specific python tools on your computer first I believe. Once installed, this code will automatically log into ownerville and pull and color the order log report for Raf",
-    "followup_notes": "",
+    "breakdown": "WHAT IT DOES\nLogs into ownerville → opens ATT Tracker 2.1 - D2D in Tableau → ORDER LOG tab → filters to **Rafael Hidalgo** + last month-to-today → downloads the Crosstab CSV → color-codes + sorts → saves a polished `.xlsx` to your Downloads folder.\n\nWHEN IT RUNS\nDaily at 7:30 AM (per JD's wire-up). Assigned to JD.\n\nWHERE THE OUTPUT GOES\n`~/Downloads/` — file name starts with `Order Log`. Open Downloads in Finder/Explorer + drag into Slack when done.\n\nFIRST-TIME SETUP\nThe deps (`patchright`, `pandas`, `openpyxl`, `python-dateutil`) are in the project's `requirements.txt` and auto-install on launcher restart. Patchright also needs Chromium installed once per machine — the launcher doesn't do this yet, so the first run on a new machine may fail until you run:\n`./.venv/bin/patchright install chromium` (macOS / Linux)\n`.venv\\Scripts\\patchright install chromium` (Windows)",
+    "followup_notes": "Hardcoded credentials in the script — flagged to Megan for migration to env-var-based secrets in a follow-up commit.",
     "args": [],
     "module": "automations.uploaded.order_log"
   }
