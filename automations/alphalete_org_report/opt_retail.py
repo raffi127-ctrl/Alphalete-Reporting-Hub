@@ -32,6 +32,8 @@ from automations.alphalete_org_report.opt_nds import (
     _find_row_by_label,
     _find_week_col,
     _norm_owner,
+    _read_tab_csv,
+    download_crosstab as _download_crosstab,
 )
 
 
@@ -71,31 +73,34 @@ RETAIL_CHURN_URL = (
 )
 RETAIL_CHURN_FILENAME = "opt_retail_churn.csv"
 
-# Per-owner office sales totals (Next Up, New/Port Lines, Premium/Elite,
-# Extra) used to compute Next Up % and Extra/Premium %. Megan's
-# 'RETAILPULL' custom view (Megan, 2026-05-22) drills into the per-owner
-# breakdown worksheet; the workbook's plain default view returns only
-# the National Summary row.
-# NOTE: NDS pulls the same workbook (SARAPLUSSALESSUMMARY) via :iid=1
-# for the National Summary; Retail uses this custom view + must pull
-# its own copy ([[feedback_no_cross_report_data_reuse]]).
-RETAIL_SARA_PLUS_OFFICE_URL = (
-    "https://us-east-1.online.tableau.com/t/sci/views/"
+# SARAPLUSSALESSUMMARY and ABPCONVERSIONS dashboards each have a
+# per-owner worksheet that's NOT addressable via the HTTP .csv endpoint
+# (the endpoint always exports the first / 'primary' worksheet, which
+# in both cases is the National Summary single-row aggregate). Verified
+# 2026-05-22: every plausible URL slug for the per-owner sheet returned
+# 404 from the HTTP endpoint.
+#
+# So both go through the UI Crosstab download path - same code NDS uses
+# for 'Sheet 7 (5)' Direct Deposit and the Rep Breakdown chart. Slower
+# (~30s each via Playwright) but it's the only way to pull worksheets
+# nested inside a multi-worksheet dashboard.
+#
+# Each tuple: (page URL to load, Crosstab dialog worksheet name, filename)
+RETAIL_SARA_PLUS_OFFICE_VIEW = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "DropshipV_2/SARAPLUSSALESSUMMARY/"
-    "4e5c4964-3f91-4d93-b362-f8768b771e67/RETAILPULL.csv?:iid=1"
+    "4e5c4964-3f91-4d93-b362-f8768b771e67/RETAILPULL?:iid=2",
+    "Sara Plus Sales Summary (2)",
+    "opt_retail_sara_plus_office.csv",
 )
-RETAIL_SARA_PLUS_OFFICE_FILENAME = "opt_retail_sara_plus_office.csv"
 
-# Per-owner ABP %. Megan's 'RETAILPULL' custom view on ABPCONVERSIONS
-# (Megan, 2026-05-22). :iid=3 picks the per-owner table within the
-# dashboard (other iids return the National Summary or other panels).
-# Sheet's 'ABP %' row maps to the NEW&PORT column, not upgrade.
-RETAIL_ABP_URL = (
-    "https://us-east-1.online.tableau.com/t/sci/views/"
+RETAIL_ABP_VIEW = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "DropshipV_2/ABPCONVERSIONS/"
-    "2ff5a739-24cf-461e-9b92-7da888196e21/RETAILPULL.csv?:iid=3"
+    "2ff5a739-24cf-461e-9b92-7da888196e21/RETAILPULL?:iid=1",
+    "ABP National Average (2)",
+    "opt_retail_abp.csv",
 )
-RETAIL_ABP_FILENAME = "opt_retail_abp.csv"
 
 
 # Pattern: extracts the store identifier ('#669', 'BC #655', '#1735') from
@@ -759,6 +764,9 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
     session = tableau_http._grab_session()
 
     # ---- Step 1: pull every CSV this run needs ----
+    # HTTP-direct pulls: Costco by club + Churn rates. Their views are
+    # single-worksheet OR the .csv endpoint serves the right worksheet
+    # for them - fast (~1s each).
     by_club_path = _http_download(session, RETAIL_BY_CLUB_URL,
                                    RETAIL_BY_CLUB_FILENAME, logfn, errors)
     if by_club_path is None:
@@ -768,11 +776,31 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
         return {"filled": [], "skipped": [], "errors": errors}
     churn_path = _http_download(session, RETAIL_CHURN_URL,
                                  RETAIL_CHURN_FILENAME, logfn, errors)
-    sara_office_path = _http_download(session, RETAIL_SARA_PLUS_OFFICE_URL,
-                                       RETAIL_SARA_PLUS_OFFICE_FILENAME,
-                                       logfn, errors)
-    abp_path = _http_download(session, RETAIL_ABP_URL,
-                               RETAIL_ABP_FILENAME, logfn, errors)
+
+    # UI Crosstab pulls: SARA per-owner + ABP per-owner. These worksheets
+    # live inside a multi-worksheet dashboard and HTTP can't address them
+    # individually - Playwright drives the Download → Crosstab dialog.
+    sara_office_path: Optional[Path] = None
+    sara_url, sara_sheet, sara_fname = RETAIL_SARA_PLUS_OFFICE_VIEW
+    try:
+        logfn(f"OPT Retail: UI Crosstab → {sara_sheet!r} → {sara_fname}...")
+        sara_office_path = _download_crosstab(
+            sara_url, sara_sheet, OUTPUT_DIR / sara_fname, verbose=False)
+    except Exception as e:
+        msg = f"{sara_fname}: {type(e).__name__}: {str(e)[:120]}"
+        logfn(f"OPT Retail: Crosstab error {msg}")
+        errors.append(msg)
+
+    abp_path: Optional[Path] = None
+    abp_url, abp_sheet, abp_fname = RETAIL_ABP_VIEW
+    try:
+        logfn(f"OPT Retail: UI Crosstab → {abp_sheet!r} → {abp_fname}...")
+        abp_path = _download_crosstab(
+            abp_url, abp_sheet, OUTPUT_DIR / abp_fname, verbose=False)
+    except Exception as e:
+        msg = f"{abp_fname}: {type(e).__name__}: {str(e)[:120]}"
+        logfn(f"OPT Retail: Crosstab error {msg}")
+        errors.append(msg)
 
     # ---- Step 2: parse every CSV ----
     by_club = parse_retail_by_club(by_club_path)
