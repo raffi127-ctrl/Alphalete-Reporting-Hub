@@ -572,21 +572,46 @@ def _find_row_by_label(grid: List[List[str]], label: str,
     appear in the cell (in any order). Handles legacy tab variants like
     'Churn 0 -30 Day' vs 'Churn 0-30 Day' vs '0-30 Day Churn' without
     needing a per-tab patch."""
-    target_words = set(label.lower().split())
+    target_norm = " ".join(label.lower().split())
+    target_words = set(label.lower().replace("-", " ").split())
     target_compact = label.lower().replace(" ", "").replace("-", "")
+
+    # Pass 1: exact match wins across the whole tab. Otherwise a later
+    # canonical row can be shadowed by an earlier fuzzy-equivalent typo
+    # (e.g. Colten's 'Churn 0 -30 Day' on row 41 shadowing the real
+    # '0-30 Day Churn' on row 42).
+    for ri, r in enumerate(grid):
+        cell = r[label_col] if len(r) > label_col else ""
+        if " ".join((cell or "").lower().split()) == target_norm:
+            return ri
+
+    # Pass 2: fuzzy fallbacks. Compact-string equality wins over word-set
+    # match so trivial punctuation/spacing differences ('Extra / Premium %'
+    # vs 'Extra/Premium %') beat looser matches.
     for ri, r in enumerate(grid):
         cell = r[label_col] if len(r) > label_col else ""
         cell_norm = " ".join((cell or "").lower().split())
-        # Exact match
-        if cell_norm == " ".join(label.lower().split()):
-            return ri
-        # All target words present (handles word-order swap)
-        cell_words = set(cell_norm.replace("-", " ").split())
-        if target_words and target_words.issubset(cell_words):
-            return ri
-        # Compact-string fallback (whitespace + dashes stripped)
         cell_compact = cell_norm.replace(" ", "").replace("-", "")
         if target_compact and target_compact == cell_compact:
+            return ri
+
+    for ri, r in enumerate(grid):
+        cell = r[label_col] if len(r) > label_col else ""
+        cell_norm = " ".join((cell or "").lower().split())
+        cell_words = set(cell_norm.replace("-", " ").split())
+        if not cell_words:
+            continue
+        # All target words present in cell (handles word-order swap + cell
+        # having extra words — e.g. 'Churn 0-30 Day' vs '0-30 Day Churn').
+        if target_words and target_words.issubset(cell_words):
+            return ri
+        # Cell words are a subset of target (cell has fewer words —
+        # e.g. '0-30 Day Cancel Rate' vs '0-30 Day Cancel Rate 4wk avg').
+        # Require ≥3 cell words AND ≥half the target so single-word cells
+        # like 'Rate' don't match every percent metric.
+        if (cell_words.issubset(target_words)
+                and len(cell_words) >= 3
+                and len(cell_words) >= len(target_words) // 2):
             return ri
     return None
 
