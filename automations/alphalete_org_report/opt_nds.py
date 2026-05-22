@@ -329,51 +329,65 @@ def parse_sara_plus_per_rep(path: Path) -> Dict[str, Dict[str, str]]:
 
 def parse_direct_deposit(path: Path) -> Dict[str, float]:
     """Parse DD BY OWNER (ORG) Sheet 7 (5): {normalized ICD owner:
-    Grand Total to ICD summed across all rows for that owner}.
+    sum of Total $ to ICD across all per-line rows for that owner}.
 
-    The sheet has one row per (ICD owner, Sales Rep, Commission
-    Description) combination plus per-rep 'Total' subtotal rows. We sum
-    the 'Grand Total to ICD' column ONLY across the per-line rows (NOT
-    Total rows) per ICD owner, then return dollar totals.
+    The crosstab has a PIVOTED layout that the column headers misrepresent:
+      - col[1] = 'cl.ICD Owner Name'
+      - col[2] = 'Sales Rep'
+      - col[4] = 'Commission Description' ('Total' on subtotal rows)
+      - col[6] = measure-name pivot column (no header). Values are
+        'Distinct count of cl.ID' or 'Total $ to ICD'.
+      - col[8] = the dollar/count VALUE (the header reads 'RES-ATT' but
+        Tableau actually puts the rolled-up Grand Total here)
 
-    Dollar values come in as e.g. '$1,728.00' — we strip $ and , before
-    converting. Empty cells are treated as 0."""
+    Each (account, ICD, rep, commission) generates TWO rows: one for
+    count, one for dollars. We filter to dollar rows (col[6]) and skip
+    'Total' subtotals (col[4]) to avoid double-counting, then sum col[8]
+    per ICD owner.
+
+    Confirmed against 8039-row sample 2026-05-21. Maxamed Aden has 0
+    rows — either he doesn't appear as an ICD owner in DD or his name
+    differs ([[feedback-alias-list]] candidate)."""
     rows = _read_tab_csv(path)
     if not rows or len(rows) < 2:
         return {}
-    header = rows[0]
-    # Find columns by label (case + whitespace tolerant)
-    def col(label_options):
-        targets = {opt.strip().lower() for opt in label_options}
-        for i, h in enumerate(header):
-            if (h or "").strip().lower() in targets:
-                return i
-        return None
-    owner_i = col(["cl.icd owner name", "icd owner name", "icd.icd owner name"])
-    desc_i  = col(["commission description"])
-    total_i = col(["grand total to icd", "grand total"])
-    if owner_i is None or total_i is None:
-        return {}
+    # Fixed column positions per the observed pivot layout.
+    OWNER_I, REP_I, DESC_I, MEASURE_I = 1, 2, 4, 6
+    # Value cells live in cols [7]-[20], each col representing a campaign
+    # (Grand Total, RES-ATT, NDS Wireless, B2B-ATT-SBS, ...). EACH ROW
+    # puts its dollar value in EXACTLY ONE of these columns — the
+    # campaign that commission belongs to. Cody Cannon's ICD downline
+    # gets dollars in col[8] (RES-ATT); the NDS reps (Isaiah, Colten,
+    # etc.) get dollars in col[9] (NDS Wireless). Summing across all
+    # value cols handles both cases. Confirmed 2026-05-21.
+    VALUE_COLS = range(7, 21)
+    DOLLAR_MEASURE = "total $ to icd"
     out: Dict[str, float] = {}
     for r in rows[1:]:
-        if not r or len(r) <= max(owner_i, total_i):
+        if not r or len(r) <= MEASURE_I:
             continue
-        owner = _norm_owner(r[owner_i])
+        if (r[MEASURE_I] or "").strip().lower() != DOLLAR_MEASURE:
+            continue
+        # Skip per-rep subtotal rows (Commission Description == 'Total')
+        # to avoid summing per-line + subtotal together
+        if DESC_I < len(r) and (r[DESC_I] or "").strip().lower() == "total":
+            continue
+        owner = _norm_owner(r[OWNER_I])
         if not owner:
             continue
-        # Skip subtotal rows where Commission Description is empty/"Total"
-        if desc_i is not None and desc_i < len(r):
-            desc = (r[desc_i] or "").strip().lower()
-            if desc in {"", "total"}:
+        row_total = 0.0
+        for ci in VALUE_COLS:
+            if ci >= len(r):
+                break
+            raw = (r[ci] or "").strip().lstrip("$").replace(",", "")
+            if not raw:
                 continue
-        raw = (r[total_i] or "").strip().lstrip("$").replace(",", "")
-        if not raw:
-            continue
-        try:
-            val = float(raw)
-        except ValueError:
-            continue
-        out[owner] = out.get(owner, 0.0) + val
+            try:
+                row_total += float(raw)
+            except ValueError:
+                continue
+        if row_total:
+            out[owner] = out.get(owner, 0.0) + row_total
     return out
 
 
