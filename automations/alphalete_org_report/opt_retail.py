@@ -109,6 +109,38 @@ RETAIL_ABP_VIEW = (
     "opt_retail_abp.csv",
 )
 
+# Per-owner activation rates per sales-date bucket. Sheet row
+# 'Activation /Approval %' maps to the '60+ Days' bucket (Megan
+# 2026-05-22; circled 91% on Boaktear's row matches the sheet's
+# DZ value 91.00%). NDS already pulls the same workbook view via
+# the HTTP CSV path; Retail pulls its own copy
+# ([[feedback_no_cross_report_data_reuse]]).
+RETAIL_ACTIVATION_URL = (
+    "https://us-east-1.online.tableau.com/t/sci/views/"
+    "DropshipV_2/ACTIVATIONRATES.csv"
+)
+RETAIL_ACTIVATION_FILENAME = "opt_retail_activation.csv"
+
+# Money Lost from TMP — Megan 2026-05-22 mapped this to the
+# 'Missed EC Bonus' row x 'Grand Total to ICD' column in the
+# ECBONUSAWARENESS dashboard's DOWNLINEVIEW custom view. Sheet's
+# DZ85 = $0.00 for Boaktear, matching the Tableau screenshot.
+# This is a multi-worksheet dashboard (PROGRAM SUMMARY / DD BY REP /
+# DD BY OWNER (ORG) / EC BONUS AWARENESS / DD DETAIL / etc), so we
+# go through the UI Crosstab path - the worksheet name to pick is
+# TBD until we run the dialog (the Crosstab dialog lists every
+# worksheet by name; we pick the EC BONUS AWARENESS one).
+RETAIL_MONEY_LOST_VIEW = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "DirectDepositICDVIEWVersion2_0/ECBONUSAWARENESS/"
+    "538e62a7-3c2a-45cd-9a91-6784fbc4c7d8/DOWNLINEVIEW?:iid=1",
+    # Worksheet name TBD - Megan to share from Crosstab Download dialog
+    # once we run, OR she manually downloads + drops the file in the
+    # opt_retail_money_lost.csv path so the fallback uses it.
+    "Rafael Hidalgo ORGANIZATION",
+    "opt_retail_money_lost.csv",
+)
+
 
 # Pattern: extracts the store identifier ('#669', 'BC #655', '#1735') from
 # both sheet labels and CSV labels so they normalize to the same key.
@@ -330,6 +362,66 @@ def parse_sara_plus_office_totals(path: Path) -> Dict[str, Dict[str, int]]:
     # Drop owners that ended up with no Total row (shouldn't happen but defensive)
     return {k: v for k, v in out.items()
             if any(label in v for label in metric_cols)}
+
+
+def parse_money_lost_from_tmp(path: Path) -> Dict[str, str]:
+    """Parse EC BONUS AWARENESS / DOWNLINEVIEW Crosstab -> {owner_norm: dollar_str}.
+
+    The 'Money Lost from TMP' sheet metric = the 'Missed EC Bonus' row's
+    'Grand Total to ICD' value, per downline owner (Megan 2026-05-22;
+    screenshot showed Boaktear's row at $0.00 matching DZ85).
+
+    The Crosstab CSV's exact column layout is unknown until we have a
+    file - parser is defensive about column names. Looks for:
+      - An owner column ('ICD.Full Name' or 'Owner & Office' or
+        anything containing 'name' / 'owner')
+      - A row-label column that contains 'Missed EC Bonus' for the
+        right row OR a metric-name pivot column
+      - A 'Grand Total to ICD' (or 'Grand Total' / 'Total $ to ICD') column
+    Returns {} when the file structure doesn't match - caller logs the
+    empty parse so we can iterate the parser on a real file.
+    """
+    rows = _read_tab_csv(path)
+    if not rows or len(rows) < 2:
+        return {}
+    header = rows[0]
+    # Owner column candidates (in order of preference)
+    owner_i: Optional[int] = None
+    for label in ("ICD.Full Name", "ICD Full Name", "Owner & Office", "Full Name"):
+        owner_i = tableau_http.col_idx(header, label)
+        if owner_i is not None:
+            break
+    if owner_i is None:
+        owner_i = _col_starts_with(header, "ICD")  # last resort
+    # Grand Total column
+    total_i: Optional[int] = None
+    for label in ("Grand Total to ICD", "Grand Total", "Total $ to ICD",
+                  "Total to ICD"):
+        total_i = tableau_http.col_idx(header, label)
+        if total_i is not None:
+            break
+    # Row-label column (the row says 'Missed EC Bonus' for the right row)
+    label_i: Optional[int] = None
+    for h_label in ("Measure Names", "Metric", "Row Label", "Bonus Type"):
+        label_i = tableau_http.col_idx(header, h_label)
+        if label_i is not None:
+            break
+    if owner_i is None or total_i is None:
+        return {}
+    out: Dict[str, str] = {}
+    for r in rows[1:]:
+        if max(owner_i, total_i) >= len(r):
+            continue
+        # If there's a label col, filter to 'Missed EC Bonus' rows only.
+        if label_i is not None and label_i < len(r):
+            lbl = (r[label_i] or "").strip().lower()
+            if "missed" not in lbl or "bonus" not in lbl:
+                continue
+        owner = _norm_owner(r[owner_i])
+        val = (r[total_i] or "").strip()
+        if owner and val:
+            out[owner] = val
+    return out
 
 
 def parse_abp_conversions(path: Path) -> Dict[str, str]:
@@ -611,6 +703,10 @@ _OFFICE_METRIC_ROW_LABELS = {
     "Extra/Premium %":            ["Extra/Premium %", "Extra/Preium %"],
     "ABP %":                      ["ABP %"],
     "Active Headcount on Tableau": ["Active Headcount on Tableau"],
+    # Sheet label has a SPACE before the slash ('Activation /Approval %').
+    # Pass both spellings in case Megan corrects it later.
+    "Activation /Approval %":     ["Activation /Approval %", "Activation/Approval %"],
+    "Money Lost from TMP":        ["Money Lost from TMP"],
 }
 
 
@@ -637,6 +733,8 @@ def fill_office_metrics(ws: gspread.Worksheet,
                         churn: Dict[str, Dict[str, str]],
                         sara_office: Dict[str, Dict[str, int]],
                         abp: Dict[str, str],
+                        activation: Dict[str, str],
+                        money_lost: Dict[str, str],
                         tab_icds: List[str],
                         week_col_label: str,
                         icds_to_write: Optional[List[str]] = None,
@@ -686,6 +784,8 @@ def fill_office_metrics(ws: gspread.Worksheet,
         c_row = _lookup(churn) or {}
         s_row = _lookup(sara_office) or {}
         abp_val = _lookup(abp)
+        activation_val = _lookup(activation)
+        money_lost_val = _lookup(money_lost)
 
         # 1) Churn rates — write the Tableau % string verbatim if present.
         for sheet_label in ("0-30 Day Churn", "60 Day Churn", "90 Day Churn"):
@@ -761,8 +861,39 @@ def fill_office_metrics(ws: gspread.Worksheet,
                 log.append(f"  {a1} {icd_norm!r} Active Headcount on Tableau <- {active_reps}")
             else:
                 log.append(f"  [miss-row] {icd_norm!r} -> no 'Active Headcount on Tableau' row")
+
+        # 6) Activation /Approval % = 60+ Days bucket from ACTIVATIONRATES.
+        # Megan 2026-05-22: sheet's 'Activation /Approval %' row maps to
+        # the 60+ Days column on the per-owner Activation Rates table.
+        if activation_val:
+            row_0 = _find_first_label_match(
+                grid, _OFFICE_METRIC_ROW_LABELS["Activation /Approval %"],
+                start, end)
+            if row_0 is not None:
+                a1 = gspread.utils.rowcol_to_a1(row_0 + 1, week_col + 1)
+                updates.append({"range": a1, "values": [[activation_val]]})
+                log.append(f"  {a1} {icd_norm!r} Activation /Approval % <- {activation_val}")
+            else:
+                log.append(f"  [miss-row] {icd_norm!r} -> no 'Activation /Approval %' row")
         else:
-            log.append(f"  [miss-data] {icd_norm!r} -> no ABP % data")
+            log.append(f"  [miss-data] {icd_norm!r} -> no Activation % data")
+
+        # 7) Money Lost from TMP = Missed EC Bonus x Grand Total to ICD,
+        # from ECBONUSAWARENESS / DOWNLINEVIEW (Megan 2026-05-22). Format
+        # comes in as a dollar string ('$0.00', '$7,515.86' etc); write
+        # verbatim - the sheet's cell is text/$-formatted already.
+        if money_lost_val:
+            row_0 = _find_first_label_match(
+                grid, _OFFICE_METRIC_ROW_LABELS["Money Lost from TMP"],
+                start, end)
+            if row_0 is not None:
+                a1 = gspread.utils.rowcol_to_a1(row_0 + 1, week_col + 1)
+                updates.append({"range": a1, "values": [[money_lost_val]]})
+                log.append(f"  {a1} {icd_norm!r} Money Lost from TMP <- {money_lost_val}")
+            else:
+                log.append(f"  [miss-row] {icd_norm!r} -> no 'Money Lost from TMP' row")
+        else:
+            log.append(f"  [miss-data] {icd_norm!r} -> no Money Lost from TMP data")
 
     if dry_run:
         return [f"[DRY-RUN retail-opt] {ws.title}: would write {len(updates)} cells"] + log
@@ -824,6 +955,8 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
         return {"filled": [], "skipped": [], "errors": errors}
     churn_path = _http_download(session, RETAIL_CHURN_URL,
                                  RETAIL_CHURN_FILENAME, logfn, errors)
+    activation_path = _http_download(session, RETAIL_ACTIVATION_URL,
+                                      RETAIL_ACTIVATION_FILENAME, logfn, errors)
 
     # UI Crosstab pulls: SARA per-owner + ABP per-owner. These worksheets
     # live inside a multi-worksheet dashboard and HTTP can't address them
@@ -857,6 +990,7 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
 
     sara_office_path = _crosstab_or_fallback(RETAIL_SARA_PLUS_OFFICE_VIEW)
     abp_path = _crosstab_or_fallback(RETAIL_ABP_VIEW)
+    money_lost_path = _crosstab_or_fallback(RETAIL_MONEY_LOST_VIEW)
 
     # ---- Step 2: parse every CSV ----
     by_club = parse_retail_by_club(by_club_path)
@@ -874,6 +1008,15 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
     abp = parse_abp_conversions(abp_path) if abp_path else {}
     logfn(f"OPT Retail: parsed ABP % for {len(abp)} office(s): "
           f"{sorted(abp.keys())}")
+
+    activation = (tableau_http.parse_activation(activation_path, bucket="60+ Days")
+                  if activation_path else {})
+    logfn(f"OPT Retail: parsed Activation % (60+ Days) for "
+          f"{len(activation)} office(s): {sorted(activation.keys())}")
+
+    money_lost = parse_money_lost_from_tmp(money_lost_path) if money_lost_path else {}
+    logfn(f"OPT Retail: parsed Money Lost from TMP for {len(money_lost)} office(s): "
+          f"{sorted(money_lost.keys())}")
 
     # Per-ICD office totals for Internet/Total New Lines still come from
     # the NDS Sara Plus By Day pull. ANTI-PATTERN per
@@ -916,7 +1059,7 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
             # + ABP %). PREVIEW: scoped to the Akib section only so Megan
             # can sign off before rolling MJ + Ronald in commit 2.
             for ln in fill_office_metrics(
-                    ws, churn, sara_office, abp,
+                    ws, churn, sara_office, abp, activation, money_lost,
                     RETAIL_TAB_ICDS[title], week_col_label,
                     icds_to_write=_PREVIEW_ICDS_AKIB_ONLY,
                     dry_run=dry_run, logfn=logfn):
