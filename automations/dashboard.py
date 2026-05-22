@@ -630,7 +630,15 @@ def _get_completed_today(user: str) -> list[dict]:
 
 def _load_uploaded_reports_raw() -> list[dict]:
     """Read uploaded_reports.json and convert to AUTOMATED_REPORTS-compatible dicts.
-    Called once at module load so the list of all reports is fresh on each rerun."""
+    Called once at module load so the list of all reports is fresh on each rerun.
+
+    Pass-through approach: copy every field from the JSON entry, then
+    layer the synthetic Hub-UI fields (`actions`) on top. Previously this
+    function hand-listed each field, which silently dropped `breakdown`,
+    `category`, `needs_login`, `followup_notes`, and any future field a
+    wire-up form added - the breakdown text was in the file but never
+    reached the 'How <report> works' panel. Megan 2026-05-22.
+    """
     if not UPLOADED_REPORTS_FILE.exists():
         return []
     try:
@@ -643,25 +651,26 @@ def _load_uploaded_reports_raw() -> list[dict]:
         if not module:
             continue
         args_list = r.get("args", [])
-        out.append({
-            "id": r["id"],
-            "name": r["name"],
-            "creator": r.get("creator", ""),
-            "emoji": r.get("emoji", "⭐"),
-            "color": r.get("color", "#667eea"),
-            "description": r.get("description", ""),
-            "sheet_url": r.get("sheet_url", ""),
-            "assignees": r.get("assignees", []),
-            "schedule": r.get("schedule"),
-            "checklist": r.get("checklist", []),
-            "actions": [{
-                "label": r.get("action_label", "Run Report"),
-                "icon": "▶",
-                "primary": True,
-                "module": module,
-                "args_fn": (lambda a=args_list: list(a)),
-            }],
-        })
+        report = dict(r)
+        # Synthesize the actions entry the Hub UI expects (the JSON
+        # stores `module` + `args` flat; the UI takes a list of action
+        # dicts with `args_fn` callables).
+        report["actions"] = [{
+            "label": r.get("action_label", "Run Report"),
+            "icon": "▶",
+            "primary": True,
+            "module": module,
+            "args_fn": (lambda a=args_list: list(a)),
+        }]
+        # Defaults for UI-required fields when the JSON didn't set them.
+        report.setdefault("creator", "")
+        report.setdefault("emoji", "⭐")
+        report.setdefault("color", "#667eea")
+        report.setdefault("description", "")
+        report.setdefault("sheet_url", "")
+        report.setdefault("assignees", [])
+        report.setdefault("checklist", [])
+        out.append(report)
     return out
 
 # Team members. Each is a dict so we can add avatars/colors easily.
