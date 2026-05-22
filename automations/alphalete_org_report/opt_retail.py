@@ -72,24 +72,28 @@ RETAIL_CHURN_URL = (
 RETAIL_CHURN_FILENAME = "opt_retail_churn.csv"
 
 # Per-owner office sales totals (Next Up, New/Port Lines, Premium/Elite,
-# Extra) used to compute Next Up % and Extra/Premium %. The default view
-# shows all owners broken out — Megan 2026-05-22. NOTE: NDS already pulls
-# this same workbook (SARAPLUSSALESSUMMARY) but reads only the National
-# Summary row; Retail needs the per-owner breakdown AND must pull its
-# own copy ([[feedback_no_cross_report_data_reuse]]).
+# Extra) used to compute Next Up % and Extra/Premium %. Megan's
+# 'RETAILPULL' custom view (Megan, 2026-05-22) drills into the per-owner
+# breakdown worksheet; the workbook's plain default view returns only
+# the National Summary row.
+# NOTE: NDS pulls the same workbook (SARAPLUSSALESSUMMARY) via :iid=1
+# for the National Summary; Retail uses this custom view + must pull
+# its own copy ([[feedback_no_cross_report_data_reuse]]).
 RETAIL_SARA_PLUS_OFFICE_URL = (
     "https://us-east-1.online.tableau.com/t/sci/views/"
-    "DropshipV_2/SARAPLUSSALESSUMMARY.csv"
+    "DropshipV_2/SARAPLUSSALESSUMMARY/"
+    "4e5c4964-3f91-4d93-b362-f8768b771e67/RETAILPULL.csv?:iid=1"
 )
 RETAIL_SARA_PLUS_OFFICE_FILENAME = "opt_retail_sara_plus_office.csv"
 
-# Per-owner ABP %. Workbook: ABPCONVERSIONS, default view (no custom
-# UUID). The 'ABP Owner (+/-) Rep' table has new&port + upgrade ABP %
-# columns per owner; we map the sheet's 'ABP %' row to the NEW&PORT
-# column (per Megan's screenshot 2026-05-22; upgrade column ignored).
+# Per-owner ABP %. Megan's 'RETAILPULL' custom view on ABPCONVERSIONS
+# (Megan, 2026-05-22). :iid=3 picks the per-owner table within the
+# dashboard (other iids return the National Summary or other panels).
+# Sheet's 'ABP %' row maps to the NEW&PORT column, not upgrade.
 RETAIL_ABP_URL = (
     "https://us-east-1.online.tableau.com/t/sci/views/"
-    "DropshipV_2/ABPCONVERSIONS.csv"
+    "DropshipV_2/ABPCONVERSIONS/"
+    "2ff5a739-24cf-461e-9b92-7da888196e21/RETAILPULL.csv?:iid=3"
 )
 RETAIL_ABP_FILENAME = "opt_retail_abp.csv"
 
@@ -193,36 +197,54 @@ def _office_row_filter(rows: List[List[str]], header: List[str],
     return out
 
 
-def parse_churn_rates(path: Path) -> Dict[str, Dict[str, str]]:
-    """Parse CHURNRATES/RETAILPULL CSV -> {owner_norm: {bucket_label: pct_str}}.
+def _col_starts_with(header: List[str], prefix: str) -> Optional[int]:
+    """First column whose normalized name starts with `prefix`. Tolerates
+    Tableau's '(copy 2)' artifact on duplicated columns - e.g. the actual
+    CHURNRATES/RETAILPULL header is 'Owner & Office  (copy 2)', not the
+    canonical 'Owner & Office'."""
+    p = " ".join(prefix.lower().split())
+    for i, h in enumerate(header):
+        if " ".join((h or "").lower().split()).startswith(p):
+            return i
+    return None
 
-    Columns expected per the Owner (+/-) Rep table: 'Owner & Office',
-    '0-30 Day Churn', '30 Day Churn', '60 Day Churn', '90 Day Churn'.
-    We use 0-30 / 60 / 90; the sheet has no '30 Day Churn' row so we
-    skip that column even when present.
+
+def parse_churn_rates(path: Path) -> Dict[str, Dict[str, str]]:
+    """Parse CHURNRATES/RETAILPULL CSV -> {owner_norm: {bucket: pct_str}}.
+
+    Long format: one row per (Day Range Pivot, Owner). Columns
+    (Megan, 2026-05-22):
+      Day Range Pivot | Owner & Office  (copy 2) | 30 Day Churn |
+      30-60 Color Churn (copy) | Activated Wireless Lines |
+      Churn Rate | Disconnect count (copy) | Min. Calculation1
+
+    Day Range Pivot is the bucket label ('0-30 Day Churn', '60 Day Churn',
+    etc.); Churn Rate is the percentage we want. The bare '30 Day Churn'
+    bucket isn't on the sheet, so we filter to just 0-30 / 60 / 90.
     """
     rows = tableau_http.parse_csv(path)
     if not rows:
         return {}
     header = rows[0]
-    owner_i = tableau_http.col_idx(header, "Owner & Office")
-    if owner_i is None:
+    range_i = tableau_http.col_idx(header, "Day Range Pivot")
+    owner_i = _col_starts_with(header, "Owner & Office")
+    rate_i = tableau_http.col_idx(header, "Churn Rate")
+    if range_i is None or owner_i is None or rate_i is None:
         return {}
-    bucket_cols = {
-        "0-30 Day Churn": tableau_http.col_idx(header, "0-30 Day Churn"),
-        "60 Day Churn":   tableau_http.col_idx(header, "60 Day Churn"),
-        "90 Day Churn":   tableau_http.col_idx(header, "90 Day Churn"),
-    }
+    wanted = {"0-30 Day Churn", "60 Day Churn", "90 Day Churn"}
     out: Dict[str, Dict[str, str]] = {}
-    for owner, r in _office_row_filter(rows[1:], header, owner_i):
-        bucket: Dict[str, str] = {}
-        for label, col in bucket_cols.items():
-            if col is not None and col < len(r):
-                v = (r[col] or "").strip()
-                if v:
-                    bucket[label] = v
-        if bucket:
-            out[owner] = bucket
+    for r in rows[1:]:
+        if max(range_i, owner_i, rate_i) >= len(r):
+            continue
+        bucket = (r[range_i] or "").strip()
+        if bucket not in wanted:
+            continue
+        owner = tableau_http._norm_owner(r[owner_i])
+        if not owner:
+            continue
+        val = (r[rate_i] or "").strip()
+        if val:
+            out.setdefault(owner, {})[bucket] = val
     return out
 
 
