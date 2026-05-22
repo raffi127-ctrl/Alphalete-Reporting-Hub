@@ -629,35 +629,40 @@ def _find_week_col(grid: List[List[str]], week_label: str) -> Optional[int]:
     return None
 
 
-def _current_target_week_col_label(today: Optional[dt.date] = None) -> str:
-    """Sheet column label = Sunday at the END of the week containing
-    yesterday. Works for both Monday morning runs (Eve's normal cadence)
-    and mid-week test runs.
-
-    Examples:
-      - Mon 5/25 → yesterday 5/24 (Sun) → target Sunday = 5/24 ✓ ('5/24/26')
-      - Thu 5/21 → yesterday 5/20 (Wed) → target Sunday = 5/24 ('5/24/26')
-      - Sun 5/24 → yesterday 5/23 (Sat) → target Sunday = 5/24 ('5/24/26')
-      - Tue 5/26 → yesterday 5/25 (Mon) → target Sunday = 5/31 ('5/31/26')
-
-    Why "yesterday" not "today": on Monday morning the Tableau data still
-    reflects last week (data lag). Using yesterday as the anchor makes
-    Monday and the rest of the week target the same column when the
-    Tableau data is for the same week."""
-    today = today or dt.date.today()
-    anchor = today - dt.timedelta(days=1)
-    days_forward = (6 - anchor.weekday()) % 7   # 6 = Sunday
-    target = anchor + dt.timedelta(days=days_forward)
-    return f"{target.month}/{target.day}/{target.year % 100}"
-
-
 def _current_target_week_end(today: Optional[dt.date] = None) -> dt.date:
-    """Return the Sunday at the end of the week we're filling — same
-    logic as _current_target_week_col_label but returns the date object."""
+    """Sheet WE-Sunday of the most-recently-COMPLETED week.
+
+    Megan 2026-05-22: OPT must target the same column the recruiting
+    pull does — the just-ended week, NOT the in-progress one. Mid-week
+    Tableau data for the in-progress week is incomplete, and the report
+    is meant to look at the last finalized week.
+
+    Examples (Monday cadence + mid-week test runs):
+      - Mon 5/25 → 5/24 (week just ended Sun 5/24 ✓)
+      - Tue 5/26 → 5/24
+      - Wed 5/27 → 5/24
+      - Fri 5/22 → 5/17 (week ending 5/24 is still in progress; last
+                          completed week ended Sun 5/17)
+      - Sun 5/24 → 5/17 (today's week not finalized until 23:59; last
+                          completed week is still 5/17)
+
+    Same convention recruiting_report._most_recent_sunday uses (no +7
+    shift here — recruiting works in AS-picker dates and shifts at write
+    time; OPT works directly in sheet-column dates)."""
     today = today or dt.date.today()
-    anchor = today - dt.timedelta(days=1)
-    days_forward = (6 - anchor.weekday()) % 7
-    return anchor + dt.timedelta(days=days_forward)
+    # Days back to the strictly-prior Sunday. `or 7` forces today→7 when
+    # today is itself a Sunday (since the week containing today isn't
+    # finalized yet at run time).
+    days_back = (today.weekday() + 1) % 7 or 7
+    return today - dt.timedelta(days=days_back)
+
+
+def _current_target_week_col_label(today: Optional[dt.date] = None) -> str:
+    """Sheet column label for the most-recently-completed WE Sunday —
+    formatted to match the header text on the Alphalete Org sheet
+    (e.g. '5/17/26'). See _current_target_week_end for the date math."""
+    target = _current_target_week_end(today)
+    return f"{target.month}/{target.day}/{target.year % 100}"
 
 
 def _find_rep_breakdown_anchor(grid: List[List[str]]) -> Optional[Tuple[int, int]]:
