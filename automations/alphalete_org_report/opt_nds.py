@@ -361,6 +361,8 @@ def parse_personal_production(path: Path) -> Dict[str, str]:
     out: Dict[str, str] = {}
     # Include all owners we saw in the CSV (even those with no personal
     # sales) so the caller can distinguish "no PP data" from "0 sales".
+    # When the owner has zero personal sales of every type, write "0"
+    # rather than blank so the column shows a real value for the week.
     for owner in seen_owners:
         totals = bucket.get(owner, {})
         parts = []
@@ -368,7 +370,7 @@ def parse_personal_production(path: Path) -> Dict[str, str]:
             n = totals.get(tableau_type, 0)
             if n > 0:
                 parts.append(f"{n} {abbrev}")
-        out[owner] = ", ".join(parts)
+        out[owner] = ", ".join(parts) if parts else "0"
     return out
 
 
