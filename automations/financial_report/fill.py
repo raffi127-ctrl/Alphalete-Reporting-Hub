@@ -24,6 +24,14 @@ OUTPUT_SHEETS = {
 
 # How far below the 'Total Funds Available' anchor the financial rows run.
 _SECTION_SPAN = 12
+# The FINANCIAL SUMMARY files arrive a week late: a file dated week-ending
+# 5/16 carries the work people actually did the week before, which the sheet
+# tracks under the 5/24 column. Shift every parsed file-week by this many
+# days before matching to a sheet column. Megan/Eve 2026-05-22: the
+# previous run left col U (5/24) empty while S/T got the same data twice
+# because the matcher rounded 5/16 to col T (5/17) instead of jumping
+# forward to U (5/24).
+_WEEK_OFFSET_DAYS = 7
 # Tabs whose financial section is intentionally NOT filled. Raf's personal
 # financials live in a separate, larger report (permanent skip).
 _SKIP_TABS = {"raf hidalgo", "rafael hidalgo"}
@@ -145,9 +153,13 @@ def fill_financial_for_tab(ws: gspread.Worksheet, office: dict,
                 return j
         return None
 
-    wk_cols = [_closest_col(date_cols, w) for w in weeks]
+    # Shift each file-week forward before matching to a sheet column —
+    # FINANCIAL SUMMARY files arrive a week late, so 5/16 file data
+    # lands in the 5/24 sheet column.
+    shifted_weeks = [w + dt.timedelta(days=_WEEK_OFFSET_DAYS) for w in weeks]
+    wk_cols = [_closest_col(date_cols, w) for w in shifted_weeks]
     if not any(c is not None for c in wk_cols):
-        return [f"[skip] {tab}: no matching week columns for {weeks}"]
+        return [f"[skip] {tab}: no matching week columns for {shifted_weeks}"]
 
     updates: List[Tuple[str, object]] = []
     missing: List[str] = []
