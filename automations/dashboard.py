@@ -1051,7 +1051,7 @@ AUTOMATED_REPORTS = [
             "Reads the financial workbooks emailed each week and writes "
             "them into the latest 4 week columns on every matched ICD.\n\n"
             "WHEN IT RUNS\n"
-            "Tuesdays, after the financial workbooks arrive.\n\n"
+            "Fridays, after the financial workbooks arrive.\n\n"
             "IF AN ICD ISN'T IN THIS UPLOAD\n"
             "Their tab is **left untouched** — whatever was filled by a "
             "previous run stays put. When you later upload a file that "
@@ -1061,10 +1061,19 @@ AUTOMATED_REPORTS = [
             "a separate report)."
         ),
         "sheet_url": SHEET_URL,
+        # The financial pull writes to three different focus reports. Listed
+        # here so the card surfaces all three destinations, not just the
+        # primary 'Open Sheet' link (which is the ATT Program one).
+        "target_sheets": [
+            {"name": "ATT Program - Focus Report",          "url": SHEET_URL},
+            {"name": "Carlos 1on1s - Focus Report",         "url": CARLOS_SHEET_URL},
+            {"name": "Alphalete Org 1on1s - Focus Reports", "url": ALPHALETE_ORG_SHEET_URL},
+        ],
         "assignees": ["Eve"],
         "schedule": {
             "frequency": "weekly",
-            "weekdays": [1],   # Tuesday
+            "weekdays": [4],   # Friday — Megan 2026-05-22: moved from Tue
+                                # to Fri to match Eve's actual run cadence.
             "time": "9:00 AM",
             "estimated_minutes": 5,
         },
@@ -2295,6 +2304,7 @@ def _render_report_breakdown(report: dict) -> None:
 def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
     """One unified card per report: header, gated checklist, primary run button,
     secondary actions inside an expander."""
+    import html as _html
     is_due = _is_due_today(report, today)
     sched = report.get("schedule", {})
     checklist = report.get("checklist", [])
@@ -2338,6 +2348,29 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
         if _creator:
             st.caption(f"👤 Creator: {_creator}")
         st.link_button("📂 Open Sheet", report["sheet_url"])
+
+        # If the report fans out to MULTIPLE destination sheets (e.g. the
+        # Financial Pull which fills ATT Program + Carlos + Alphalete Org
+        # focus reports), show each one with a small link so teammates know
+        # everywhere the run touches.
+        _target_sheets = report.get("target_sheets") or []
+        if _target_sheets:
+            _items = "".join(
+                f"<li><a href='{_html.escape(s['url'])}' target='_blank' "
+                f"style='color:#2A1F12; text-decoration:underline'>"
+                f"{_html.escape(s['name'])}</a></li>"
+                for s in _target_sheets
+            )
+            st.markdown(
+                "<div style='background:#FBF8F0; border:1px solid #E3D4AC; "
+                "border-radius:8px; padding:8px 14px; margin:8px 0 0; "
+                "font-size:0.92rem'>"
+                "<div style='font-weight:700; color:#2A1F12; margin-bottom:4px'>"
+                "Fills out these Google Sheets:</div>"
+                f"<ul style='margin:0 0 0 18px; padding:0'>{_items}</ul>"
+                "</div>",
+                unsafe_allow_html=True,
+            )
 
         # In-progress check. If THIS report has a live subprocess (maybe
         # started by another tab, or by the same user before they navigated
