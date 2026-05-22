@@ -18,6 +18,28 @@ from urllib.parse import quote as _urlquote
 
 import sys
 
+# macOS 26 (Sequoia) + Python 3.14 regression: fork() in a multi-threaded
+# Python process crashes in the child during pthread_atfork handlers
+# (NEFlowDirectorDestroy / nw_settings_child_has_forked, then
+# os_log_preferences_refresh SIGSEGVs). Pop-ups Megan saw 2026-05-22.
+# Forcing subprocess to use posix_spawn() instead of fork()+exec() avoids
+# the atfork path entirely. Set BEFORE any Popen so the module-level
+# auto-detection doesn't fire first.
+if sys.platform == "darwin":
+    subprocess._USE_POSIX_SPAWN = True   # type: ignore[attr-defined]
+
+# Windows: Python 3.13 defaults stdout/stderr to cp1252, which crashes
+# on common log chars like '<-' (←) or any non-ASCII owner name.
+# Eve hit this on the financial pull 2026-05-22 — the launcher .bat now
+# sets PYTHONIOENCODING=utf-8 + PYTHONUTF8=1, but reconfigure here too
+# so direct streamlit runs (no .bat) get the same protection.
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+    except Exception:
+        pass
+
 import streamlit as st
 
 WORKSPACE = Path(__file__).resolve().parent.parent
@@ -38,6 +60,10 @@ DAILY_FOCUS_SHEET_URL = "https://docs.google.com/spreadsheets/d/11FRYGG1hvuxcbWi
 # Carlos 1on1s - Focus Report (the B2B equivalent of Raf's weekly recruiting
 # report). Shared module — set CAPTAINSHIP=Carlos when running.
 CARLOS_SHEET_URL = "https://docs.google.com/spreadsheets/d/1KLF8diMJ8pwIQWW9IqN7CL288t1l9VGUKxzBcMl8Of4/edit"
+# Alphalete Org 1on1s - Focus Reports — third sheet, reps × campaign tabs
+# (NDS / B2B / BOX / Retail / JE / Frontier). Shared module — set
+# CAPTAINSHIP=Alphalete-Org when running.
+ALPHALETE_ORG_SHEET_URL = "https://docs.google.com/spreadsheets/d/1C6BLttOSZhs_dREySac19XkxnMl-Ab_sYacNSl2l6AQ/edit"
 
 UPLOADED_REPORTS_FILE = WORKSPACE / "uploaded_reports.json"
 UPLOADED_SCRIPTS_DIR = WORKSPACE / "automations" / "uploaded"
@@ -378,6 +404,38 @@ def _diagnose_run_failure(log_text: str) -> tuple[str, str] | None:
         if any(n in low for n in needles):
             return headline, fix
     return None
+
+
+def _is_oauth_failure(diag: tuple[str, str] | None) -> bool:
+    """True if the diagnosis is an expired/revoked Google OAuth token."""
+    return bool(diag) and "google sign-in" in (diag[0] or "").lower()
+
+
+def _reset_oauth_token() -> tuple[bool, str]:
+    """Delete the local OAuth token file so the next run re-prompts Google
+    sign-in. Returns (success, message). Safe to call when the file is
+    already gone."""
+    from pathlib import Path
+    token_path = Path.home() / ".config" / "recruiting-report" / "oauth-token.json"
+    if not token_path.exists():
+        return True, ("Already cleared — token file isn't here. "
+                      "Just click Run Again and you'll be prompted to sign in.")
+    try:
+        # Rename instead of delete so the prior token is recoverable from
+        # disk if the new sign-in fails (same pattern the prior rotation
+        # used on 2026-05-15: .dead-<timestamp>).
+        import datetime as _dt
+        ts = _dt.datetime.now().strftime("%Y%m%d%H%M%S")
+        backup = token_path.with_suffix(f".json.dead-{ts}")
+        token_path.rename(backup)
+        return True, ("Google sign-in cleared. Click Run Again — a Google "
+                      "sign-in tab will open in your browser. Sign in, "
+                      "grant access, and you're back.")
+    except Exception as e:
+        return False, (f"Couldn't clear the token file ({type(e).__name__}: "
+                       f"{e}). You can delete it manually: in Finder press "
+                       f"Cmd+Shift+G, paste `~/.config/recruiting-report`, "
+                       f"then trash `oauth-token.json`.")
 
 
 def _estimated_minutes_for(report_id: str) -> int | None:
@@ -830,6 +888,102 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "recruiting-alphalete-org",
+        "name": "Alphalete Org 1on1s - Focus Report",
+        "creator": "Megan",
+        "emoji": "🌐",
+        "color": "#10B981",
+        "category": "🎯 Recruiting",
+        "description": "Pulls recruiting + (eventually) OPT metrics for the "
+                       "rep-per-campaign tabs on the Alphalete Org sheet "
+                       "(NDS / B2B / BOX / Retail / JE / Frontier).",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Recruiting pull (APPS / Total Applies / Retention / "
+            "1st & 2nd Booked / etc.) from AppStream for every visible "
+            "rep tab.\n"
+            "**•** OPT / Personal Production — *in progress* (NDS reps "
+            "aren't in Raf's existing Tableau view; needs Megan to share "
+            "a Tableau scope that includes them).\n"
+            "**•** Financial section — handled by the weekly Financial "
+            "Pull card, which distributes uploaded workbooks to every "
+            "matched ICD on this sheet too.\n\n"
+            "WHEN IT RUNS\n"
+            "**Mondays.** Each run fills the just-ended week's column.\n\n"
+            "TAB CONVENTION\n"
+            "Each tab is named `<AppStream owner name> - <CAMPAIGN>` "
+            "(e.g. `Isaiah Revelle - NDS`). The runner strips the "
+            "campaign suffix to find the AppStream owner.\n\n"
+            "TO ADD A NEW REP\n"
+            "**1.**  Create a tab named with the rep's exact AppStream "
+            "name + ` - <CAMPAIGN>` suffix.\n"
+            "**2.**  The campaign suffix tells the runner which template "
+            "to clone (NDS Template / B2B Template).\n"
+            "✅  Next run auto-fills the new tab.\n\n"
+            "WHEN A REP RETIRES\n"
+            "Just **hide the tab** in the Sheet. Runner auto-skips "
+            "hidden tabs — no mapping edit needed."
+        ),
+        "sheet_url": ALPHALETE_ORG_SHEET_URL,
+        "assignees": ["Eve"],
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [0],  # Monday
+            "time": "8:00 AM",
+            "estimated_minutes": 10,
+        },
+        "checklist": [
+            {"text": "Launch Reporting Chrome",
+             "action": "launch_chrome"},
+            {"text": "Log into AppStream as **rcaptain** in the new Chrome window"},
+            {"text": "Log into the correct **ownerville** account in the same Chrome window — the OPT / sales section reaches Tableau through ownerville"},
+        ],
+        "post_run": {
+            "message_success": "✅ Alphalete Org report run complete — "
+                               "recruiting pull filled across every visible "
+                               "rep tab. Financial section is handled by the "
+                               "weekly Financial Pull card.",
+            "message_failed":  "❌ Run failed. Check the log above, fix the "
+                               "issue, then run again.",
+        },
+        # CAPTAINSHIP=Alphalete-Org switches the shared recruiting_report
+        # module to the Alphalete Org sheet/mapping at import time.
+        "env": {"CAPTAINSHIP": "Alphalete-Org"},
+        "actions": [
+            {
+                "label": "Run This Week",
+                "icon": "▶",
+                "primary": True,
+                "help": "Fills the most recent WE Sunday column on Alphalete Org sheet.",
+                "module": "automations.recruiting_report.run",
+                # --no-opt while OPT scope is still being figured out for
+                # Alphalete Org reps (their Tableau view isn't wired yet).
+                "args_fn": lambda: ["--week", _last_completed_as_picker().isoformat(),
+                                    "--no-opt"],
+            },
+            {
+                "label": "Run a Specific Past Week",
+                "icon": "📆",
+                "needs_date": True,
+                "help": "Pick a WE Sunday to fill.",
+                "module": "automations.recruiting_report.run",
+                "args_fn": lambda d: ["--week", (d - dt.timedelta(days=7)).isoformat(),
+                                      "--no-opt"],
+            },
+            {
+                "label": "Run for One Rep (pick a week)",
+                "icon": "🎯",
+                "needs_date": True,
+                "needs_text": True,
+                "text_label": "Rep tab name (exact match, incl. campaign suffix)",
+                "help": "Just refill ONE rep's tab for any week.",
+                "module": "automations.recruiting_report.run",
+                "args_fn": lambda d, name: ["--week", (d - dt.timedelta(days=7)).isoformat(),
+                                            "--only", name, "--no-opt"],
+            },
+        ],
+    },
+    {
         "id": "daily-focus",
         "name": "Daily Recruiting Focus (Raf & Carlos)",
         "creator": "Megan",
@@ -912,24 +1066,37 @@ AUTOMATED_REPORTS = [
         "category": "🎯 Recruiting",
         "description": "Parses the emailed FINANCIAL SUMMARY workbooks "
                        "(plus the German + Coel files) and fills the "
-                       "financial section across every ICD tab on the "
-                       "ATT Program - Focus Report.",
+                       "financial section across every matched ICD tab on "
+                       "the ATT Program, Carlos 1on1s, and Alphalete Org "
+                       "1on1s focus reports.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Reads the financial workbooks emailed each week and writes "
             "them into the latest 4 week columns on every matched ICD.\n\n"
             "WHEN IT RUNS\n"
-            "Tuesdays, after the financial workbooks arrive.\n\n"
-            "IF AN ICD ISN'T IN ANY FILE\n"
-            "Their cells get **'Not Found In Email'** so the gap is "
-            "visibly intentional. Raf Hidalgo is permanently skipped "
-            "(his financials live in a separate report)."
+            "Fridays, after the financial workbooks arrive.\n\n"
+            "IF AN ICD ISN'T IN THIS UPLOAD\n"
+            "Their tab is **left untouched** — whatever was filled by a "
+            "previous run stays put. When you later upload a file that "
+            "DOES include that ICD, the cells fill in then. (So you can "
+            "safely upload partial / incremental sets of files any day.) "
+            "Raf Hidalgo is permanently skipped (his financials live in "
+            "a separate report)."
         ),
         "sheet_url": SHEET_URL,
+        # The financial pull writes to three different focus reports. Listed
+        # here so the card surfaces all three destinations, not just the
+        # primary 'Open Sheet' link (which is the ATT Program one).
+        "target_sheets": [
+            {"name": "ATT Program - Focus Report",          "url": SHEET_URL},
+            {"name": "Carlos 1on1s - Focus Report",         "url": CARLOS_SHEET_URL},
+            {"name": "Alphalete Org 1on1s - Focus Reports", "url": ALPHALETE_ORG_SHEET_URL},
+        ],
         "assignees": ["Eve"],
         "schedule": {
             "frequency": "weekly",
-            "weekdays": [1],   # Tuesday
+            "weekdays": [4],   # Friday — Megan 2026-05-22: moved from Tue
+                                # to Fri to match Eve's actual run cadence.
             "time": "9:00 AM",
             "estimated_minutes": 5,
         },
@@ -943,8 +1110,8 @@ AUTOMATED_REPORTS = [
         ],
         "post_run": {
             "message_success": "✅ Financial section filled on every "
-                               "matched ICD tab. Unmatched tabs show "
-                               "'Not Found In Email'.",
+                               "matched ICD tab. Unmatched tabs were left "
+                               "untouched (re-upload with their file later).",
             "message_failed": "❌ Run failed. Check the log above.",
         },
         "actions": [
@@ -2160,6 +2327,7 @@ def _render_report_breakdown(report: dict) -> None:
 def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
     """One unified card per report: header, gated checklist, primary run button,
     secondary actions inside an expander."""
+    import html as _html
     is_due = _is_due_today(report, today)
     sched = report.get("schedule", {})
     checklist = report.get("checklist", [])
@@ -2203,6 +2371,29 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
         if _creator:
             st.caption(f"👤 Creator: {_creator}")
         st.link_button("📂 Open Sheet", report["sheet_url"])
+
+        # If the report fans out to MULTIPLE destination sheets (e.g. the
+        # Financial Pull which fills ATT Program + Carlos + Alphalete Org
+        # focus reports), show each one with a small link so teammates know
+        # everywhere the run touches.
+        _target_sheets = report.get("target_sheets") or []
+        if _target_sheets:
+            _items = "".join(
+                f"<li><a href='{_html.escape(s['url'])}' target='_blank' "
+                f"style='color:#2A1F12; text-decoration:underline'>"
+                f"{_html.escape(s['name'])}</a></li>"
+                for s in _target_sheets
+            )
+            st.markdown(
+                "<div style='background:#FBF8F0; border:1px solid #E3D4AC; "
+                "border-radius:8px; padding:8px 14px; margin:8px 0 0; "
+                "font-size:0.92rem'>"
+                "<div style='font-weight:700; color:#2A1F12; margin-bottom:4px'>"
+                "Fills out these Google Sheets:</div>"
+                f"<ul style='margin:0 0 0 18px; padding:0'>{_items}</ul>"
+                "</div>",
+                unsafe_allow_html=True,
+            )
 
         # In-progress check. If THIS report has a live subprocess (maybe
         # started by another tab, or by the same user before they navigated
@@ -2490,6 +2681,26 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                                 "</div></div>",
                                 unsafe_allow_html=True,
                             )
+
+                        # Run log expander — also shown for completed-with-gaps
+                        # runs, not just outright failures. Lets the teammate
+                        # diagnose WHY each ICD was missed (timeout vs real
+                        # access denial vs page-load issue) without having to
+                        # crack open Terminal. Added 2026-05-21 after Maud
+                        # hit a retry-then-data-loss issue where the only way
+                        # to see what went wrong was the on-disk log file.
+                        _log_path_gap = ACTIVE_RUNS_LOG_DIR / f"{report['id']}.log"
+                        if _log_path_gap.exists():
+                            try:
+                                _gap_log_tail = "\n".join(
+                                    _log_path_gap.read_text(errors="replace").splitlines()[-40:]
+                                )
+                            except Exception:
+                                _gap_log_tail = ""
+                            if _gap_log_tail:
+                                with st.expander("📜 Run log (last 40 lines)",
+                                                 expanded=False):
+                                    st.code(_gap_log_tail, language="log")
                     elif state_file_exists:
                         # An empty "inaccessible" list isn't real success if
                         # ICDs are still unmapped — the run silently skips
@@ -2510,6 +2721,23 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                                 "✅ All ICDs filled on the first run — every cell is "
                                 "accounted for. Nothing to retry."
                             )
+                        # Also expose the run log here — "All filled" can be
+                        # misleading when a retry silently damaged data the
+                        # Hub doesn't track (e.g. cleared cells for ICDs not
+                        # in the missing list). Lets a teammate look at what
+                        # actually happened even on the success path.
+                        _log_path_ok = ACTIVE_RUNS_LOG_DIR / f"{report['id']}.log"
+                        if _log_path_ok.exists():
+                            try:
+                                _ok_log_tail = "\n".join(
+                                    _log_path_ok.read_text(errors="replace").splitlines()[-40:]
+                                )
+                            except Exception:
+                                _ok_log_tail = ""
+                            if _ok_log_tail:
+                                with st.expander("📜 Run log (last 40 lines)",
+                                                 expanded=False):
+                                    st.code(_ok_log_tail, language="log")
                     else:
                         # Reports without a state-file config fall back to the
                         # generic post_run success message.
@@ -2552,6 +2780,23 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                             f"<b>What to do:</b> {_diag[1]}</div></div>",
                             unsafe_allow_html=True,
                         )
+                        # Self-heal for OAuth lockouts — one-click reset
+                        # instead of asking teammates to dig into a hidden
+                        # folder. Added 2026-05-21 after Maud got stuck.
+                        if _is_oauth_failure(_diag):
+                            _oauth_msg_key = f"oauth_reset_msg_{report['id']}"
+                            if _oauth_msg_key in st.session_state:
+                                _ok, _msg = st.session_state[_oauth_msg_key]
+                                (st.success if _ok else st.error)(_msg)
+                            if st.button(
+                                "🔄 Reset Google Sign-In",
+                                key=f"oauth_reset_{report['id']}",
+                                help="One-click fix — clears the expired "
+                                     "Google token so the next Run prompts "
+                                     "a fresh sign-in.",
+                            ):
+                                st.session_state[_oauth_msg_key] = _reset_oauth_token()
+                                st.rerun()
                     else:
                         msg = post_run_cfg.get(
                             "message_failed",
@@ -4219,6 +4464,20 @@ def _render_review_panel(entry: dict) -> None:
                 st.error("❌ The last run failed. "
                          + (_diag[1] if _diag
                             else "Try Run again, or send it back with Request Edits."))
+                # Self-heal for OAuth lockouts (same convention as the main
+                # report failure callout — one-click reset).
+                if _is_oauth_failure(_diag):
+                    _rv_msg_key = f"oauth_reset_msg_rv_{eid}"
+                    if _rv_msg_key in st.session_state:
+                        _ok, _msg = st.session_state[_rv_msg_key]
+                        (st.success if _ok else st.error)(_msg)
+                    if st.button("🔄 Reset Google Sign-In",
+                                 key=f"oauth_reset_rv_{eid}",
+                                 help="One-click fix — clears the expired "
+                                      "Google token so the next Run prompts "
+                                      "a fresh sign-in."):
+                        st.session_state[_rv_msg_key] = _reset_oauth_token()
+                        st.rerun()
             if st.button("▶ Run the report", key=f"rv_run_{eid}",
                          use_container_width=True, type="primary",
                          disabled=not _chrome_ok):

@@ -24,6 +24,14 @@ OUTPUT_SHEETS = {
 
 # How far below the 'Total Funds Available' anchor the financial rows run.
 _SECTION_SPAN = 12
+# The FINANCIAL SUMMARY files arrive a week late: a file dated week-ending
+# 5/16 carries the work people actually did the week before, which the sheet
+# tracks under the 5/24 column. Shift every parsed file-week by this many
+# days before matching to a sheet column. Megan/Eve 2026-05-22: the
+# previous run left col U (5/24) empty while S/T got the same data twice
+# because the matcher rounded 5/16 to col T (5/17) instead of jumping
+# forward to U (5/24).
+_WEEK_OFFSET_DAYS = 7
 # Tabs whose financial section is intentionally NOT filled. Raf's personal
 # financials live in a separate, larger report (permanent skip).
 _SKIP_TABS = {"raf hidalgo", "rafael hidalgo"}
@@ -115,59 +123,6 @@ def _closest_col(date_cols: Dict[dt.date, int], target: dt.date,
     return best
 
 
-NOT_FOUND_MARKER = "Not Found In Email"
-
-
-def write_not_found_for_tab(ws: gspread.Worksheet, weeks: List[dt.date],
-                            dry_run: bool) -> List[str]:
-    """Mark every metric cell in the financial section with 'Not Found In
-    Email' for the given weeks. For ICDs whose data is absent from the
-    uploaded financial reports — keeps the gap visible instead of leaving
-    the cells blank (Megan, 2026-05-19).
-
-    No-op (returns empty log) when the tab has no financial section anchor —
-    so non-ICD tabs (templates, summary tabs, etc.) don't get touched."""
-    tab = ws.title
-    grid = rfill._retry(ws.get_all_values)
-    if not grid:
-        return []
-    date_cols = _date_columns(grid[0])
-    col_b = [(r[1] if len(r) > 1 else "") for r in grid]
-    tfa = _norm("Total Funds Available")
-    anchor = next((j for j, v in enumerate(col_b)
-                   if _norm(v).startswith(tfa)), None)
-    if anchor is None:
-        return []   # no financial section on this tab — silent skip
-    section = [(_norm(col_b[j]), j)
-               for j in range(anchor, min(anchor + _SECTION_SPAN, len(col_b)))
-               if col_b[j].strip()]
-    wk_cols = [_closest_col(date_cols, w) for w in weeks]
-    if not any(c is not None for c in wk_cols):
-        return [f"[skip] {tab}: no matching week columns for {weeks}"]
-
-    updates: List[Tuple[str, object]] = []
-    for out_label in FINANCIAL_METRICS:
-        ml = _norm(out_label)
-        row = next((j for lbl, j in section
-                    if lbl == ml or lbl.startswith(ml) or ml.startswith(lbl)),
-                   None)
-        if row is None:
-            continue
-        for col in wk_cols:
-            if col is None:
-                continue
-            updates.append((gspread.utils.rowcol_to_a1(row + 1, col + 1),
-                            NOT_FOUND_MARKER))
-    if not updates:
-        return []
-    if dry_run:
-        return [f"[DRY-RUN-NOT-FOUND] {tab}: would mark {len(updates)} cells"]
-    rfill._retry(ws.batch_update,
-                 [{"range": a1, "values": [[v]]} for a1, v in updates],
-                 value_input_option="USER_ENTERED")
-    return [f"[NOT-FOUND] {tab}: marked {len(updates)} cells"]
-
-
 def fill_financial_for_tab(ws: gspread.Worksheet, office: dict,
                            weeks: List[dt.date], dry_run: bool) -> List[str]:
     """Write the financial rows for one ICD tab. Returns log lines."""
@@ -198,9 +153,13 @@ def fill_financial_for_tab(ws: gspread.Worksheet, office: dict,
                 return j
         return None
 
-    wk_cols = [_closest_col(date_cols, w) for w in weeks]
+    # Shift each file-week forward before matching to a sheet column —
+    # FINANCIAL SUMMARY files arrive a week late, so 5/16 file data
+    # lands in the 5/24 sheet column.
+    shifted_weeks = [w + dt.timedelta(days=_WEEK_OFFSET_DAYS) for w in weeks]
+    wk_cols = [_closest_col(date_cols, w) for w in shifted_weeks]
     if not any(c is not None for c in wk_cols):
-        return [f"[skip] {tab}: no matching week columns for {weeks}"]
+        return [f"[skip] {tab}: no matching week columns for {shifted_weeks}"]
 
     updates: List[Tuple[str, object]] = []
     missing: List[str] = []

@@ -909,10 +909,14 @@ def run_captainship(captainship: str, args, week_start: dt.date,
                 inaccessible_this_run.append(icd)
                 continue
 
-            # Office is accessible — clear before filling
+            # Office is accessible for current week — clear + fill current.
+            # Last week's cells are NOT cleared yet: we only clear them once
+            # we have last-week data in hand (line below). Otherwise a
+            # transient last-week fetch failure would leave the section
+            # empty (Maud's incident 2026-05-21: 5 ICDs lost last-week data
+            # because the clear ran before a flaky fetch).
             cleared_c = _clear_current_week(ws, metric_rows, args.dry_run)
-            cleared_l = _clear_last_week(ws, metric_rows, args.dry_run)
-            log.info("  cleared %d current + %d last-week daily cells", cleared_c, cleared_l)
+            log.info("  cleared %d current-week daily cells", cleared_c)
 
             # Update day-of-month numbers in the section's date row
             for line in _update_date_row(ws, anchor, week_start, last_week_start, args.dry_run):
@@ -944,9 +948,11 @@ def run_captainship(captainship: str, args, week_start: dt.date,
             if last_err != "ok":
                 # Last-week pull failed even after retry. Current week is fine,
                 # so we still fill it — but flag the ICD so retry-inaccessible
-                # tries again. Without this, missing last-week data is INVISIBLE
-                # to the dashboard (Khalil's bug).
-                log.warning("  %s (last week) failed after retry (%s) — flagging for retry",
+                # tries again. CRITICAL: we never cleared last week's cells
+                # here, so existing data stays intact (preserves the prior
+                # successful pull from an earlier run).
+                log.warning("  %s (last week) failed after retry (%s) — last week's "
+                            "existing data preserved; flagging for retry",
                             icd, last_err)
                 fetch_errors_this_run.append(icd)
                 inaccessible_this_run.append(icd)
@@ -957,6 +963,9 @@ def run_captainship(captainship: str, args, week_start: dt.date,
                 log.info(line)
 
             if last_raw:
+                # Only clear last week NOW that we have data to write into it.
+                cleared_l = _clear_last_week(ws, metric_rows, args.dry_run)
+                log.info("  cleared %d last-week daily cells (have fresh data to fill)", cleared_l)
                 last_daily = _combine_weekend_into_weekdays(last_raw)
                 for line in fill_icd_section_last_week(ws, icd, metric_rows, last_daily, args.dry_run):
                     log.info(line)

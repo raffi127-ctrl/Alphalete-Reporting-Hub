@@ -67,9 +67,35 @@ def _attach() -> tuple:
     return p, browser, target
 
 
+def _dismiss_overlays(page: Page) -> None:
+    """Close any open AppStream top-bar dropdowns (Settings, etc.) that would
+    intercept clicks on #searchMC. Hovering the topBar opens menus that float
+    over the office search input; Playwright then refuses the click.
+
+    Press Escape, then click a neutral area near the page top-left, then
+    move the mouse far away so no hover-menu is re-triggered."""
+    try:
+        page.keyboard.press("Escape")
+    except Exception:
+        pass
+    try:
+        page.locator("body").click(position={"x": 5, "y": 5}, timeout=2000)
+    except Exception:
+        pass
+    try:
+        page.mouse.move(2000, 2000)
+    except Exception:
+        pass
+
+
 def _switch_office(page: Page, office_id: str, owner_hint: str = "") -> bool:
     """Type into searchMC and select the matching office. Wait for page load."""
-    page.locator("#searchMC").click()
+    _dismiss_overlays(page)
+    try:
+        page.locator("#searchMC").click(timeout=8000)
+    except Exception:
+        # Menu re-opened (hover-trigger) — force-click ignores intercept.
+        page.locator("#searchMC").click(force=True)
     page.locator("#searchMC").fill("")
     # Type the office_id — most specific search term.
     page.locator("#searchMC").type(office_id, delay=30)

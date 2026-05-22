@@ -75,6 +75,17 @@ _CAPTAINSHIP_CONFIG = {
         "template_tab":      "B2B Template",
         "mapping_filename":  "office-mapping-carlos.json",
     },
+    # Alphalete Org 1on1s - Focus Reports — combo sheet of NDS / B2B / BOX /
+    # Retail / JE / Frontier rep tabs spanning both Raf's and Carlos's rosters.
+    # No single master tab to sync (Org Recruiting auto-populates via cell
+    # formulas). Template picked per-tab from the campaign suffix (NDS → 'NDS
+    # Template', B2B → 'B2B Template'); template_tab below is just the default.
+    "Alphalete-Org": {
+        "sheet_id_fallback": "1C6BLttOSZhs_dREySac19XkxnMl-Ab_sYacNSl2l6AQ",
+        "master_tab":        "Org Recruiting",   # formula-driven; runner won't write
+        "template_tab":      "NDS Template",     # default; per-campaign selection TBD
+        "mapping_filename":  "office-mapping-alphalete-org.json",
+    },
 }
 if CAPTAINSHIP not in _CAPTAINSHIP_CONFIG:
     raise SystemExit(

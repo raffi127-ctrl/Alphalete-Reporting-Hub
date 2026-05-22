@@ -41,6 +41,29 @@ WORKSPACE = Path(__file__).resolve().parent.parent.parent
 LOG_ROOT = WORKSPACE / "output" / "logs"
 
 
+def _hidden_tab_titles(sh) -> set:
+    """Set of tab titles currently HIDDEN in the Sheet. Megan hides a tab when
+    the rep is retired / no longer producing; the runner uses that as the
+    cue to stop fetching for them (their AppStream office is usually
+    deprovisioned too, which is why a fetch attempt fails). One API call —
+    gspread's Worksheet object doesn't expose the hidden flag, so we ask
+    the Sheets API directly."""
+    try:
+        # On gspread.Spreadsheet, .client is the HTTPClient directly (not a
+        # Client wrapper) — call .request on it. Don't reach for a .http_client
+        # attribute; that's only on the higher-level Client.
+        resp = sh.client.request(
+            "get",
+            f"https://sheets.googleapis.com/v4/spreadsheets/{sh.id}",
+            params={"fields": "sheets(properties(title,hidden))"},
+        )
+        data = resp.json()
+        return {s["properties"]["title"] for s in data.get("sheets", [])
+                if s["properties"].get("hidden")}
+    except Exception:
+        return set()   # fail open — better to attempt all than skip all
+
+
 def _most_recent_sunday(today: Optional[dt.date] = None) -> dt.date:
     """AS picker Sunday for the most-recently-COMPLETED week.
 
@@ -223,6 +246,17 @@ def main() -> int:
             confirmed = [c for c in confirmed if c["sheet_tab"] == args.only]
         if args.retry_missing:
             confirmed = [c for c in confirmed if c["sheet_tab"] in retry_targets]
+        # Drop tabs the user has HIDDEN in the Sheet — hiding is the visual
+        # signal that a tab is inactive/retired (often because the underlying
+        # AppStream office has also been deprovisioned, which is why these
+        # hits return "not accessible"). Mapping stays intact so unhiding the
+        # tab later just re-enables it; no edit needed (Megan, 2026-05-20).
+        hidden = _hidden_tab_titles(sh)
+        skipped_hidden = [c["sheet_tab"] for c in confirmed if c["sheet_tab"] in hidden]
+        if skipped_hidden:
+            log.info("skipping %d hidden tab(s): %s",
+                     len(skipped_hidden), ", ".join(skipped_hidden))
+        confirmed = [c for c in confirmed if c["sheet_tab"] not in hidden]
         if not confirmed:
             log.info("nothing to fetch from AS (no confirmed offices in scope)")
             return 0
@@ -330,10 +364,12 @@ def main() -> int:
         p.stop()
 
     # Write the cumulative weekly results so the dashboard can alert on tabs
-    # that couldn't be filled by any run this week.
+    # that couldn't be filled by any run this week. Hidden tabs (retired
+    # reps Megan has hidden in the Sheet) are dropped from the missing list
+    # — we never tried to fill them, so they shouldn't be flagged.
     all_filled = prior_filled | filled_in_run
     confirmed_names = {c["sheet_tab"] for c in mapping["confirmed"]}
-    still_missing = sorted(confirmed_names - all_filled)
+    still_missing = sorted(confirmed_names - all_filled - hidden)
     results_file.parent.mkdir(parents=True, exist_ok=True)
     results_file.write_text(json.dumps({
         "week": week.isoformat(),

@@ -299,43 +299,110 @@ def download_crosstab(view_url: str, crosstab_sheet: str, out_path: Path,
                 "No Tableau tab open in Report Chrome. Launch Report Chrome, "
                 "log into ownerville, open Tableau — then run again."
             )
+        # Navigate to about:blank first to force a clean DOM (avoids
+        # leftover modal state from a previous crashed download). Then
+        # navigate to the actual view. page.reload triggers an asyncio
+        # race on Python 3.9 / Playwright's sync API; this is the
+        # workaround.
+        try:
+            page.goto("about:blank", wait_until="domcontentloaded", timeout=10_000)
+        except Exception:
+            pass
         page.goto(view_url, wait_until="domcontentloaded")
 
         viz = page.frame_locator('iframe[title="Data Visualization"]')
         dl_btn = viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-download"]')
         dl_btn.wait_for(state="visible", timeout=35_000)
         # Let Tableau hydrate the data behind the viz before exporting.
-        page.wait_for_timeout(10_000)
+        # Complex per-rep views (NDS Weekly Metrics, Activation Rates) take
+        # longer to load; their crosstab Download button stays disabled
+        # until the underlying data is in. Bumped from 10s to 25s.
+        page.wait_for_timeout(25_000)
 
         if verbose:
             print(f"Download → Crosstab → {crosstab_sheet!r} → CSV…", flush=True)
         dl_btn.click()
         page.wait_for_timeout(1800)
         viz.locator('[data-tb-test-id="download-flyout-download-crosstab-MenuItem"]').click()
-        page.wait_for_timeout(3500)
 
+        # Wait for thumbnails to actually populate — some views' Crosstab
+        # dialogs hydrate slowly. Poll for up to 30s with retries.
         thumbs = viz.locator('[data-tb-test-id^="sheet-thumbnail-"]')
+        for _ in range(30):
+            page.wait_for_timeout(1000)
+            if thumbs.count() > 0:
+                break
         idx = None
         for i in range(thumbs.count()):
             if thumbs.nth(i).inner_text().strip() == crosstab_sheet:
                 idx = i
                 break
         if idx is None:
+            available = [thumbs.nth(i).inner_text().strip() for i in range(thumbs.count())]
             raise RuntimeError(
                 f"Couldn't find the {crosstab_sheet!r} sheet in the Crosstab "
-                "dialog — the AUTOMATION PULL view may have changed."
+                f"dialog — saw {len(available)} thumb(s): {available!r}. "
+                "The view may have changed."
             )
         thumbs.nth(idx).click()
-        page.wait_for_timeout(1200)
-        viz.locator('[data-tb-test-id="crosstab-options-dialog-radio-csv-Label"]').click()
-        page.wait_for_timeout(500)
-        # A large crosstab keeps the Download button disabled while Tableau
-        # prepares the export — wait for it to enable before clicking.
+        page.wait_for_timeout(2000)
+        # Format selection — try CSV first (so the downstream CSV parsers
+        # keep working as-is); fall back to Excel if CSV makes Tableau
+        # disable the Download button. Some views (NDS Weekly Metrics,
+        # Activation Rates) only export as Excel; others are CSV-friendly.
         export_btn = viz.locator('[data-tb-test-id="export-crosstab-export-Button"]')
-        for _ in range(90):
-            if export_btn.is_enabled():
-                break
-            page.wait_for_timeout(1000)
+
+        def _try_format(format_id: str) -> bool:
+            """Click the format radio + wait for Download to enable.
+            Returns True if Download enabled within 30s.
+
+            Note: Tableau's radio test-ID suffix is '-RadioButton' (not
+            '-Label' or unsuffixed). Verified 2026-05-21 via DOM inspection
+            after every other selector silently no-op'd. Get the suffix
+            wrong and the radio click hits nothing — Excel stays as the
+            default format and (on views without Excel export available)
+            the Download button stays disabled forever."""
+            radio = viz.locator(
+                f'[data-tb-test-id="crosstab-options-dialog-radio-{format_id}-RadioButton"]')
+            if radio.count() > 0:
+                try:
+                    radio.first.click(timeout=5_000)
+                except Exception:
+                    pass
+            page.wait_for_timeout(1200)
+            for _ in range(30):
+                if export_btn.is_enabled():
+                    return True
+                page.wait_for_timeout(1000)
+            return False
+
+        chosen_format = None
+        if _try_format("csv"):
+            chosen_format = "csv"
+        elif _try_format("excel"):
+            chosen_format = "excel"
+            # Caller passed .csv path; switch to .xlsx so we can parse it
+            if str(out_path).lower().endswith(".csv"):
+                out_path = out_path.with_suffix(".xlsx")
+        else:
+            # Last resort — long wait for whatever format is currently
+            # selected to finalize (sometimes Tableau just needs more time
+            # to prepare a large crosstab).
+            for _ in range(150):
+                if export_btn.is_enabled():
+                    chosen_format = "default"
+                    break
+                page.wait_for_timeout(1000)
+
+        if chosen_format is None:
+            raise RuntimeError(
+                f"Crosstab Download button stayed disabled for {crosstab_sheet!r} "
+                "in both CSV and Excel formats — Tableau may have no data to "
+                "export for this view's current filter state."
+            )
+        if verbose:
+            print(f"  format: {chosen_format}", flush=True)
+
         with page.expect_download(timeout=120_000) as dl_info:
             export_btn.click()
         dl_info.value.save_as(str(out_path))

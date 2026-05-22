@@ -58,6 +58,21 @@ WORKSPACE = Path(__file__).resolve().parent.parent.parent
 UPLOAD_DIR = WORKSPACE / "automations" / "uploaded" / "financial"
 
 
+def _hidden_tab_titles(sh) -> set:
+    """Tabs Megan has hidden in the Sheet — same retired/inactive convention
+    the recruiting runner uses. One Sheets API call per spreadsheet."""
+    try:
+        resp = sh.client.request(
+            "get",
+            f"https://sheets.googleapis.com/v4/spreadsheets/{sh.id}",
+            params={"fields": "sheets(properties(title,hidden))"},
+        )
+        return {s["properties"]["title"] for s in resp.json().get("sheets", [])
+                if s["properties"].get("hidden")}
+    except Exception:
+        return set()   # fail open — better to attempt all than skip all
+
+
 def gather_files(directory: Path) -> List[Path]:
     """The uploaded .xlsx workbooks (Excel lock files excluded)."""
     return sorted(p for p in directory.glob("*.xlsx")
@@ -86,41 +101,49 @@ def run_financial_report(file_paths, dry_run: bool = False,
     for sheet_name, sid in ffill.OUTPUT_SHEETS.items():
         if only_sheet and only_sheet.lower() not in sheet_name.lower():
             continue
+        # Per-sheet opening log so the runner doesn't go silent for minutes
+        # while gspread auth + initial tab walk happens. Eve 2026-05-22
+        # killed a run thinking it had hung — the script was actually still
+        # working but the previous version stayed quiet through this phase.
+        logfn(f"financial: opening {sheet_name}…")
         try:
             sh = client.open_by_key(sid)
         except Exception as e:
             logfn(f"financial: can't open {sheet_name!r} ({e})")
             continue
-        filled = matched = not_found = 0
-        for ws in rfill._retry(sh.worksheets):
-            # Skip system / template / summary tabs entirely
-            if ws.title in _NON_ICD_TAB_TITLES or ws.title.startswith("_"):
-                continue
+        # Tabs Megan has HIDDEN are retired/inactive — skip them, same
+        # convention the recruiting runner uses. One API call per sheet.
+        hidden = _hidden_tab_titles(sh)
+        all_tabs = rfill._retry(sh.worksheets)
+        candidate_tabs = [w for w in all_tabs
+                          if w.title not in _NON_ICD_TAB_TITLES
+                          and not w.title.startswith("_")
+                          and w.title not in hidden]
+        logfn(f"financial: {sheet_name} — {len(candidate_tabs)} ICD tab(s) to scan "
+              f"({len(hidden)} hidden skipped)")
+        filled = matched = 0
+        for idx, ws in enumerate(candidate_tabs, start=1):
             office = ffill._match_owner(ws.title, by_owner, bridge)
-            if office:
-                matched += 1
-                lines = ffill.fill_financial_for_tab(ws, office, weeks, dry_run)
-                for line in lines:
-                    logfn(f"  {sheet_name}: {line}")
-                if lines and lines[0].lstrip().startswith(("[OK]", "[DRY-RUN]")):
-                    filled += 1
+            if not office:
+                # No data in this upload — leave the tab alone. Whatever was
+                # filled by a previous run stays put; when an upload that
+                # DOES include this ICD arrives, the cells get filled then.
+                # (Megan, 2026-05-20: incremental uploads must never wipe
+                # previously-entered data.)
                 continue
-            # No financial-file match. Hard skip Raf (his financials live
-            # elsewhere). For everyone else with a financial section on
-            # their tab, mark each metric cell 'Not Found In Email' so the
-            # gap is visible. write_not_found returns empty for tabs that
-            # don't have the section anchor (templates, summary tabs).
-            tab_n = ffill._norm(ffill._tab_to_name(ws.title))
-            if tab_n in ffill._SKIP_TABS:
-                continue
-            lines = ffill.write_not_found_for_tab(ws, weeks, dry_run)
+            matched += 1
+            lines = ffill.fill_financial_for_tab(ws, office, weeks, dry_run)
             for line in lines:
                 logfn(f"  {sheet_name}: {line}")
-            if lines and lines[0].lstrip().startswith(("[NOT-FOUND]",
-                                                       "[DRY-RUN-NOT-FOUND]")):
-                not_found += 1
-        logfn(f"financial: {sheet_name} — {filled}/{matched} matched tabs filled, "
-              f"{not_found} tabs marked 'Not Found In Email'")
+            if lines and lines[0].lstrip().startswith(("[OK]", "[DRY-RUN]")):
+                filled += 1
+            # Heartbeat every 10 ICD tabs so the user sees forward motion
+            # even on a sheet where most tabs are matched + writing.
+            if idx % 10 == 0:
+                logfn(f"financial: {sheet_name} — {idx}/{len(candidate_tabs)} "
+                      f"tabs scanned, {filled} filled so far…")
+        logfn(f"financial: {sheet_name} — {filled}/{matched} matched tabs filled "
+              f"(unmatched tabs left untouched)")
         total_matched += matched
         total_filled += filled
     if problems:

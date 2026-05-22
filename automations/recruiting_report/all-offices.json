@@ -1,5 +1,5 @@
 {
-  "count": 258,
+  "count": 259,
   "offices": [
     {
       "office_id": "20646",
@@ -882,6 +882,12 @@
       "owner": "Kevin Driggs",
       "company": "Nova Management Group, Inc.",
       "raw": "22249\nKevin Driggs\nNova Management Group, Inc."
+    },
+    {
+      "office_id": "16744",
+      "owner": "Kevin\u00a0 Baham",
+      "company": "Ludach Inc",
+      "raw": "16744\nKevin\u00a0 Baham\nLudach Inc"
     },
     {
       "office_id": "11901",
