@@ -3,6 +3,19 @@
 # Binds to all network interfaces so Tailscale peers can reach it.
 # On launch, auto-pulls latest from GitHub if there are no local changes.
 
+# macOS 26 (Sequoia) + Python 3.14 regression: subprocess.Popen crashes
+# in the child process post-fork inside the Network framework's atfork
+# handler ('crashed on child side of fork pre-exec' in the crash dump,
+# stack ends in NEFlowDirectorDestroy / nw_settings_child_has_forked).
+# The fix is to disable the Obj-C fork-safety check + force Python to
+# use posix_spawn() rather than fork() for subprocesses. Both env vars
+# are inherited by every Python process the launcher (and the dashboard)
+# spawn. Setting NO_PROXY='*' also stops the Network framework's CFNetwork
+# proxy lookup from registering the offending atfork handler.
+export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
+export NO_PROXY='*'
+export _PYTHON_DEFAULT_USE_POSIX_SPAWN=1
+
 cd "$(dirname "$0")"
 
 # ----- Auto-update from GitHub (skips if local edits present) -----
