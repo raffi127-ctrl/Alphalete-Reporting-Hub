@@ -1051,7 +1051,7 @@ AUTOMATED_REPORTS = [
             "Reads the financial workbooks emailed each week and writes "
             "them into the latest 4 week columns on every matched ICD.\n\n"
             "WHEN IT RUNS\n"
-            "Tuesdays, after the financial workbooks arrive.\n\n"
+            "Fridays, after the financial workbooks arrive.\n\n"
             "IF AN ICD ISN'T IN THIS UPLOAD\n"
             "Their tab is **left untouched** — whatever was filled by a "
             "previous run stays put. When you later upload a file that "
@@ -1072,7 +1072,8 @@ AUTOMATED_REPORTS = [
         "assignees": ["Eve"],
         "schedule": {
             "frequency": "weekly",
-            "weekdays": [1],   # Tuesday
+            "weekdays": [4],   # Friday — Megan 2026-05-22: moved from Tue
+                                # to Fri to match Eve's actual run cadence.
             "time": "9:00 AM",
             "estimated_minutes": 5,
         },
