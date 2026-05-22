@@ -1054,8 +1054,9 @@ AUTOMATED_REPORTS = [
         "category": "🎯 Recruiting",
         "description": "Parses the emailed FINANCIAL SUMMARY workbooks "
                        "(plus the German + Coel files) and fills the "
-                       "financial section across every ICD tab on the "
-                       "ATT Program - Focus Report.",
+                       "financial section across every matched ICD tab on "
+                       "the ATT Program, Carlos 1on1s, and Alphalete Org "
+                       "1on1s focus reports.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Reads the financial workbooks emailed each week and writes "
