@@ -59,6 +59,41 @@ RETAIL_BY_CLUB_URL = (
 RETAIL_BY_CLUB_FILENAME = "opt_retail_by_club.csv"
 
 
+# Per-owner office churn rates. Custom view 'RETAILPULL' filters the
+# CHURNRATES dashboard to the Retail-relevant owners; Megan confirmed
+# 2026-05-22 the saved view shows all retail owners (not pre-filtered
+# to Boaktear). The Owner (+/-) Rep table has one row per Owner & Office
+# with 0-30 / 30 / 60 / 90 Day Churn %; we use 0-30, 60, 90 (skip 30).
+RETAIL_CHURN_URL = (
+    "https://us-east-1.online.tableau.com/t/sci/views/"
+    "DropshipV_2/CHURNRATES/"
+    "244b4740-4d16-4ee8-94e4-d88941315395/RETAILPULL.csv"
+)
+RETAIL_CHURN_FILENAME = "opt_retail_churn.csv"
+
+# Per-owner office sales totals (Next Up, New/Port Lines, Premium/Elite,
+# Extra) used to compute Next Up % and Extra/Premium %. The default view
+# shows all owners broken out — Megan 2026-05-22. NOTE: NDS already pulls
+# this same workbook (SARAPLUSSALESSUMMARY) but reads only the National
+# Summary row; Retail needs the per-owner breakdown AND must pull its
+# own copy ([[feedback_no_cross_report_data_reuse]]).
+RETAIL_SARA_PLUS_OFFICE_URL = (
+    "https://us-east-1.online.tableau.com/t/sci/views/"
+    "DropshipV_2/SARAPLUSSALESSUMMARY.csv"
+)
+RETAIL_SARA_PLUS_OFFICE_FILENAME = "opt_retail_sara_plus_office.csv"
+
+# Per-owner ABP %. Workbook: ABPCONVERSIONS, default view (no custom
+# UUID). The 'ABP Owner (+/-) Rep' table has new&port + upgrade ABP %
+# columns per owner; we map the sheet's 'ABP %' row to the NEW&PORT
+# column (per Megan's screenshot 2026-05-22; upgrade column ignored).
+RETAIL_ABP_URL = (
+    "https://us-east-1.online.tableau.com/t/sci/views/"
+    "DropshipV_2/ABPCONVERSIONS.csv"
+)
+RETAIL_ABP_FILENAME = "opt_retail_abp.csv"
+
+
 # Pattern: extracts the store identifier ('#669', 'BC #655', '#1735') from
 # both sheet labels and CSV labels so they normalize to the same key.
 # Examples handled:
@@ -118,6 +153,164 @@ def parse_retail_by_club(path: Path) -> Dict[tuple, int]:
         except (ValueError, AttributeError):
             continue
         out[key] = val
+    return out
+
+
+def _office_row_filter(rows: List[List[str]], header: List[str],
+                       owner_col: int) -> List[Tuple[str, List[str]]]:
+    """Yield (norm_owner, row) for rows that represent OFFICE-level totals
+    (one per Owner & Office), filtering out per-rep sub-rows.
+
+    Tableau's Owner (+/-) Rep tables emit one office row per owner +
+    multiple per-rep rows beneath it. The office row has the owner name
+    set, and EITHER (a) no Rep value, or (b) Rep == 'Total' / blank, or
+    (c) is the first row with that owner. We use the 'first row per
+    owner' heuristic since the Rep column's exact contents differ between
+    views (CHURNRATES vs SARAPLUSSALESSUMMARY vs ABPCONVERSIONS).
+
+    If the CSV is already one-row-per-owner (no per-rep sub-rows), this
+    just yields every row.
+    """
+    seen: Dict[str, bool] = {}
+    out: List[Tuple[str, List[str]]] = []
+    rep_i = tableau_http.col_idx(header, "Rep")
+    for r in rows:
+        if len(r) <= owner_col:
+            continue
+        owner = tableau_http._norm_owner(r[owner_col])
+        if not owner or owner in seen:
+            continue
+        # If there's a Rep column, skip rows where Rep names a specific
+        # person — those are sub-rows under the office. An empty Rep,
+        # 'Total', or 'Office/Organization Average' marker is the
+        # office aggregate (varies by view).
+        if rep_i is not None and rep_i < len(r):
+            rep_val = (r[rep_i] or "").strip().lower()
+            if rep_val and rep_val not in {"total", "office/organization average"}:
+                continue
+        seen[owner] = True
+        out.append((owner, r))
+    return out
+
+
+def parse_churn_rates(path: Path) -> Dict[str, Dict[str, str]]:
+    """Parse CHURNRATES/RETAILPULL CSV -> {owner_norm: {bucket_label: pct_str}}.
+
+    Columns expected per the Owner (+/-) Rep table: 'Owner & Office',
+    '0-30 Day Churn', '30 Day Churn', '60 Day Churn', '90 Day Churn'.
+    We use 0-30 / 60 / 90; the sheet has no '30 Day Churn' row so we
+    skip that column even when present.
+    """
+    rows = tableau_http.parse_csv(path)
+    if not rows:
+        return {}
+    header = rows[0]
+    owner_i = tableau_http.col_idx(header, "Owner & Office")
+    if owner_i is None:
+        return {}
+    bucket_cols = {
+        "0-30 Day Churn": tableau_http.col_idx(header, "0-30 Day Churn"),
+        "60 Day Churn":   tableau_http.col_idx(header, "60 Day Churn"),
+        "90 Day Churn":   tableau_http.col_idx(header, "90 Day Churn"),
+    }
+    out: Dict[str, Dict[str, str]] = {}
+    for owner, r in _office_row_filter(rows[1:], header, owner_i):
+        bucket: Dict[str, str] = {}
+        for label, col in bucket_cols.items():
+            if col is not None and col < len(r):
+                v = (r[col] or "").strip()
+                if v:
+                    bucket[label] = v
+        if bucket:
+            out[owner] = bucket
+    return out
+
+
+def parse_sara_plus_office_totals(path: Path) -> Dict[str, Dict[str, int]]:
+    """Parse SARAPLUSSALESSUMMARY default view -> {owner_norm: {metric: int}}.
+
+    Returns the office-level totals needed to compute Next Up % and
+    Extra/Premium %: 'Next Up', 'New/Port Lines', 'Premium/Elite', 'Extra'.
+    """
+    rows = tableau_http.parse_csv(path)
+    if not rows:
+        return {}
+    header = rows[0]
+    owner_i = tableau_http.col_idx(header, "Owner & Office")
+    if owner_i is None:
+        return {}
+    # Try a few label variants — Tableau may shorten 'Premium/Elite' to
+    # 'Premium' or split into 'Premium/...' depending on which worksheet
+    # the .csv endpoint serves. Pick the first column whose label starts
+    # with the wanted prefix.
+    def _col_starts(prefix: str) -> Optional[int]:
+        p = prefix.lower().rstrip()
+        for i, h in enumerate(header):
+            if (h or "").strip().lower().startswith(p):
+                return i
+        return None
+    metric_cols = {
+        "Next Up":        tableau_http.col_idx(header, "Next Up"),
+        "New/Port Lines": tableau_http.col_idx(header, "New/Port Lines"),
+        "Premium/Elite": (tableau_http.col_idx(header, "Premium/Elite")
+                          or _col_starts("Premium")),
+        "Extra":          tableau_http.col_idx(header, "Extra"),
+    }
+    out: Dict[str, Dict[str, int]] = {}
+    for owner, r in _office_row_filter(rows[1:], header, owner_i):
+        bucket: Dict[str, int] = {}
+        for label, col in metric_cols.items():
+            if col is None or col >= len(r):
+                continue
+            try:
+                bucket[label] = int(float((r[col] or "0").replace(",", "")))
+            except ValueError:
+                continue
+        if bucket:
+            out[owner] = bucket
+    return out
+
+
+def parse_abp_conversions(path: Path) -> Dict[str, str]:
+    """Parse ABPCONVERSIONS default view -> {owner_norm: 'ABP %' string}.
+
+    The sheet's 'ABP %' row gets the NEW&PORT ABP %, not the upgrade
+    column (Megan 2026-05-22). The CSV's column labels for grouped
+    headers are usually flattened by Tableau as 'new & port: ABP %' or
+    'ABP % (new & port)' or just 'ABP %' twice — try a few variants
+    in priority order; first match wins.
+    """
+    rows = tableau_http.parse_csv(path)
+    if not rows:
+        return {}
+    header = rows[0]
+    owner_i = tableau_http.col_idx(header, "Owner & Office")
+    if owner_i is None:
+        return {}
+    # Candidates in priority order. The default-view CSV column names
+    # aren't documented; this list trades off being permissive without
+    # accidentally picking the UPGRADE column.
+    abp_col: Optional[int] = None
+    for label in (
+        "new & port: ABP %",
+        "ABP % (new & port)",
+        "new & port ABP %",
+        "new and port ABP %",
+        "ABP % new & port",
+        "ABP %",                # plain — only used if no qualifier columns
+    ):
+        c = tableau_http.col_idx(header, label)
+        if c is not None:
+            abp_col = c
+            break
+    if abp_col is None:
+        return {}
+    out: Dict[str, str] = {}
+    for owner, r in _office_row_filter(rows[1:], header, owner_i):
+        if abp_col < len(r):
+            v = (r[abp_col] or "").strip()
+            if v:
+                out[owner] = v
     return out
 
 
@@ -347,42 +540,245 @@ def fill_per_icd_office_totals(ws: gspread.Worksheet,
     return [f"[skip-retail-office] {ws.title}: nothing to write"]
 
 
-def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
-    """Pull RETAILSALESSUMMARYBYCLUB, fill the Costco section on Boaktear's
-    Retail tab. Returns {filled: [...], skipped: [...], errors: [...]}."""
-    errors: List[str] = []
+# Sheet rows we fill from the office-metrics pull. Labels match what
+# the sheet actually has on the Akib tab today; some include a typo
+# ('Extra/Preium %') Megan hasn't fixed yet. We pass both spellings so
+# we still write if Megan corrects the typo later.
+_OFFICE_METRIC_ROW_LABELS = {
+    "0-30 Day Churn":   ["0-30 Day Churn"],
+    "60 Day Churn":     ["60 Day Churn"],
+    "90 Day Churn":     ["90 Day Churn"],            # case-insensitive match handles 'day' vs 'Day'
+    "Next Up %":        ["Next Up %"],               # likewise 'Next up %'
+    "Extra/Premium %":  ["Extra/Premium %", "Extra/Preium %"],
+    "ABP %":            ["ABP %"],
+}
 
-    # Step 1: HTTP-pull the per-club crosstab. Uses the explicit custom-view
-    # URL (UUID + AkibMJSummary) so we get Akib + MJ filtered data, not the
-    # workbook's default (which includes other reps' Costco sales).
-    out_path = OUTPUT_DIR / RETAIL_BY_CLUB_FILENAME
+
+def _find_first_label_match(grid: List[List[str]], candidates: List[str],
+                             start: int, end: int) -> Optional[int]:
+    """Try each label spelling in order; first hit wins. Lets us tolerate
+    the 'Extra/Preium %' typo on Boaktear's tab without losing the canonical
+    label match if Megan corrects it."""
+    for label in candidates:
+        row_0 = _find_label_row_in_range(grid, label, start, end)
+        if row_0 is not None:
+            return row_0
+    return None
+
+
+def _format_pct(value: float) -> str:
+    """Format a fraction (0.40) or percentage-int (40) into the sheet's
+    'XX.XX%' style. Tableau CSV exports give percentages as either a
+    decimal (0.047) or a pre-formatted string ('4.7%'); accept both."""
+    return f"{value:.2%}"
+
+
+def fill_office_metrics(ws: gspread.Worksheet,
+                        churn: Dict[str, Dict[str, str]],
+                        sara_office: Dict[str, Dict[str, int]],
+                        abp: Dict[str, str],
+                        tab_icds: List[str],
+                        week_col_label: str,
+                        icds_to_write: Optional[List[str]] = None,
+                        dry_run: bool = False,
+                        logfn=print) -> List[str]:
+    """Fill the 6 office-level OPT metrics into each ICD's section of a
+    Retail tab: 0-30 / 60 / 90 Day Churn (from CHURNRATES/RETAILPULL),
+    Next Up % + Extra/Premium % (computed from SARAPLUSSALESSUMMARY office
+    totals), and ABP % (from ABPCONVERSIONS).
+
+    Multi-ICD tabs (Boaktear's Akib+MJ) get separate sections per ICD
+    so 'ABP %' in MJ's block doesn't shadow Akib's. If `icds_to_write`
+    is set, only those ICD section(s) are filled — the preview-on-Akib
+    flow passes `['boaktear chowdhury']` so MJ stays untouched until
+    Megan signs off ([[feedback_preview_marcellus]]).
+    """
+    log: List[str] = []
+    grid = rfill._retry(ws.get_all_values)
+    if not grid:
+        return [f"[skip-retail-opt] {ws.title}: empty tab"]
+    week_col = _find_week_col(grid, week_col_label)
+    if week_col is None:
+        return [f"[skip-retail-opt] {ws.title}: no column for week {week_col_label}"]
+
+    ranges = _find_icd_section_ranges(grid, tab_icds)
+    if not ranges:
+        return [f"[skip-retail-opt] {ws.title}: no ICD sections found"]
+
+    scope = {i.lower() for i in icds_to_write} if icds_to_write else None
+    updates: List[Dict] = []
+    for icd_norm, (start, end) in ranges.items():
+        if scope is not None and icd_norm not in scope:
+            log.append(f"  [scope-skip] {icd_norm!r} (preview limited to {scope})")
+            continue
+        # Look up this ICD's office data in each pull. Owner names in the
+        # CSVs are normalized via _norm_owner; the section header in col A
+        # ('Akib', 'MJ', 'BOAKTEAR CHOWDHURY [motiv8…]') may not exactly
+        # match the CSV. Fall back to last-name match like fill_per_icd_*.
+        def _lookup(d):
+            if icd_norm in d:
+                return d[icd_norm]
+            last = icd_norm.split()[-1]
+            for k in d:
+                if k.split()[-1] == last:
+                    return d[k]
+            return None
+        c_row = _lookup(churn) or {}
+        s_row = _lookup(sara_office) or {}
+        abp_val = _lookup(abp)
+
+        # 1) Churn rates — write the Tableau % string verbatim if present.
+        for sheet_label in ("0-30 Day Churn", "60 Day Churn", "90 Day Churn"):
+            row_0 = _find_first_label_match(grid, _OFFICE_METRIC_ROW_LABELS[sheet_label],
+                                            start, end)
+            if row_0 is None:
+                log.append(f"  [miss-row] {icd_norm!r} -> no '{sheet_label}' row")
+                continue
+            val = c_row.get(sheet_label)
+            if not val:
+                log.append(f"  [miss-data] {icd_norm!r} -> no churn data for {sheet_label}")
+                continue
+            a1 = gspread.utils.rowcol_to_a1(row_0 + 1, week_col + 1)
+            updates.append({"range": a1, "values": [[val]]})
+            log.append(f"  {a1} {icd_norm!r} {sheet_label} <- {val}")
+
+        # 2) Next Up % = office Next Up / office New/Port Lines.
+        next_up = s_row.get("Next Up")
+        new_port = s_row.get("New/Port Lines")
+        if next_up is not None and new_port and new_port > 0:
+            row_0 = _find_first_label_match(grid, _OFFICE_METRIC_ROW_LABELS["Next Up %"],
+                                            start, end)
+            if row_0 is not None:
+                pct = _format_pct(next_up / new_port)
+                a1 = gspread.utils.rowcol_to_a1(row_0 + 1, week_col + 1)
+                updates.append({"range": a1, "values": [[pct]]})
+                log.append(f"  {a1} {icd_norm!r} Next Up % <- {pct} ({next_up}/{new_port})")
+            else:
+                log.append(f"  [miss-row] {icd_norm!r} -> no 'Next Up %' row")
+        else:
+            log.append(f"  [miss-data] {icd_norm!r} -> missing Next Up or New/Port Lines")
+
+        # 3) Extra/Premium % = (office Premium/Elite + office Extra) / office New/Port Lines.
+        premium = s_row.get("Premium/Elite")
+        extra = s_row.get("Extra")
+        if (premium is not None and extra is not None
+                and new_port and new_port > 0):
+            row_0 = _find_first_label_match(grid, _OFFICE_METRIC_ROW_LABELS["Extra/Premium %"],
+                                            start, end)
+            if row_0 is not None:
+                pct = _format_pct((premium + extra) / new_port)
+                a1 = gspread.utils.rowcol_to_a1(row_0 + 1, week_col + 1)
+                updates.append({"range": a1, "values": [[pct]]})
+                log.append(f"  {a1} {icd_norm!r} Extra/Premium % <- {pct} "
+                           f"(({premium}+{extra})/{new_port})")
+            else:
+                log.append(f"  [miss-row] {icd_norm!r} -> no 'Extra/Premium %' row")
+        else:
+            log.append(f"  [miss-data] {icd_norm!r} -> missing Premium/Elite or Extra")
+
+        # 4) ABP % — write the Tableau % string verbatim.
+        if abp_val:
+            row_0 = _find_first_label_match(grid, _OFFICE_METRIC_ROW_LABELS["ABP %"],
+                                            start, end)
+            if row_0 is not None:
+                a1 = gspread.utils.rowcol_to_a1(row_0 + 1, week_col + 1)
+                updates.append({"range": a1, "values": [[abp_val]]})
+                log.append(f"  {a1} {icd_norm!r} ABP % <- {abp_val}")
+            else:
+                log.append(f"  [miss-row] {icd_norm!r} -> no 'ABP %' row")
+        else:
+            log.append(f"  [miss-data] {icd_norm!r} -> no ABP % data")
+
+    if dry_run:
+        return [f"[DRY-RUN retail-opt] {ws.title}: would write {len(updates)} cells"] + log
+    if updates:
+        rfill._retry(ws.batch_update, updates, value_input_option="USER_ENTERED")
+        return [f"[OK retail-opt] {ws.title}: wrote {len(updates)} cells"] + log
+    return [f"[skip-retail-opt] {ws.title}: nothing to write"]
+
+
+def _http_download(session, url: str, filename: str, logfn,
+                   errors: List[str]) -> Optional[Path]:
+    """Download a Tableau view CSV to OUTPUT_DIR/<filename>. Returns the
+    path on success, None on failure (and appends to `errors`)."""
+    out_path = OUTPUT_DIR / filename
     try:
-        logfn(f"OPT Retail: HTTP downloading {RETAIL_BY_CLUB_FILENAME}…")
-        session = tableau_http._grab_session()
-        r = session.get(RETAIL_BY_CLUB_URL, allow_redirects=True, timeout=120)
+        logfn(f"OPT Retail: HTTP downloading {filename}...")
+        r = session.get(url, allow_redirects=True, timeout=120)
         if r.status_code != 200:
-            raise RuntimeError(
-                f"HTTP {r.status_code} ({len(r.content)} bytes)")
+            raise RuntimeError(f"HTTP {r.status_code} ({len(r.content)} bytes)")
         out_path.write_bytes(r.content)
+        return out_path
     except Exception as e:
-        msg = f"{RETAIL_BY_CLUB_FILENAME}: {type(e).__name__}: {str(e)[:120]}"
-        logfn(f"OPT Retail: ✗ HTTP {msg}")
+        msg = f"{filename}: {type(e).__name__}: {str(e)[:120]}"
+        logfn(f"OPT Retail: HTTP error {msg}")
         errors.append(msg)
-        return {"filled": [], "skipped": [], "errors": errors}
+        return None
 
-    # Step 2: parse the per-store totals.
-    by_club = parse_retail_by_club(out_path)
+
+# Akib-section-only preview scope. Megan signs off on the Akib fill, then
+# we drop this list in the rollout commit so MJ + Ronald also get filled.
+# [[feedback_preview_marcellus]]: every new multi-tab automation previews
+# on one section before going wide.
+_PREVIEW_ICDS_AKIB_ONLY = ["boaktear chowdhury"]
+
+
+def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
+    """Pull every Retail Tableau source + fill Boaktear's Retail tab:
+      - Costco section (per-store wireless lines)
+      - Akib's office metrics (churn 0-30/60/90, Next Up %, Extra/Premium %, ABP %)
+    Returns {filled: [...], skipped: [...], errors: [...]}.
+
+    Per [[feedback_no_cross_report_data_reuse]] every source CSV is
+    downloaded fresh by this run — never reads an artifact produced
+    by another Hub card.
+    """
+    errors: List[str] = []
+    session = tableau_http._grab_session()
+
+    # ---- Step 1: pull every CSV this run needs ----
+    by_club_path = _http_download(session, RETAIL_BY_CLUB_URL,
+                                   RETAIL_BY_CLUB_FILENAME, logfn, errors)
+    if by_club_path is None:
+        # The Costco fill is the existing/blocking output — abort if its
+        # source failed. (The new office-metric fills could continue but
+        # leaving the run partial mid-rollout is more confusing.)
+        return {"filled": [], "skipped": [], "errors": errors}
+    churn_path = _http_download(session, RETAIL_CHURN_URL,
+                                 RETAIL_CHURN_FILENAME, logfn, errors)
+    sara_office_path = _http_download(session, RETAIL_SARA_PLUS_OFFICE_URL,
+                                       RETAIL_SARA_PLUS_OFFICE_FILENAME,
+                                       logfn, errors)
+    abp_path = _http_download(session, RETAIL_ABP_URL,
+                               RETAIL_ABP_FILENAME, logfn, errors)
+
+    # ---- Step 2: parse every CSV ----
+    by_club = parse_retail_by_club(by_club_path)
     logfn(f"OPT Retail: parsed {len(by_club)} Costco store(s): "
           f"{sorted(by_club.items())}")
 
-    # Per-ICD office totals come from the existing Sara Plus By Day pull
-    # (already cached by the NDS run). The Retail ICDs (Amjad Malhas,
-    # Boaktear Chowdhury, Ronald Dawson) all appear in that CSV.
+    churn = parse_churn_rates(churn_path) if churn_path else {}
+    logfn(f"OPT Retail: parsed churn rates for {len(churn)} office(s): "
+          f"{sorted(churn.keys())}")
+
+    sara_office = parse_sara_plus_office_totals(sara_office_path) if sara_office_path else {}
+    logfn(f"OPT Retail: parsed Sara Plus office totals for {len(sara_office)} office(s): "
+          f"{sorted(sara_office.keys())}")
+
+    abp = parse_abp_conversions(abp_path) if abp_path else {}
+    logfn(f"OPT Retail: parsed ABP % for {len(abp)} office(s): "
+          f"{sorted(abp.keys())}")
+
+    # Per-ICD office totals for Internet/Total New Lines still come from
+    # the NDS Sara Plus By Day pull. ANTI-PATTERN per
+    # [[feedback_no_cross_report_data_reuse]] — track in
+    # [[project_alphalete_org_report]] 'ANTI-PATTERN to fix'; separate
+    # follow-up commit will move it to a Retail-owned pull.
     sara_byday = tableau_http.parse_sara_plus_byday(
         OUTPUT_DIR / "opt_nds_sara_plus_byday.csv")
     logfn(f"OPT Retail: parsed {len(sara_byday)} ICDs from Sara Plus By Day")
 
-    # Step 3: walk the Retail tabs.
+    # ---- Step 3: walk the Retail tabs ----
     client = rfill._client()
     sh = client.open_by_key(ALPHALETE_ORG_SHEET_ID)
     week_col_label = _current_target_week_col_label()
@@ -407,6 +803,17 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
             for ln in fill_per_icd_office_totals(
                     ws, sara_byday, RETAIL_TAB_ICDS[title],
                     week_col_label, dry_run, logfn):
+                logfn(f"OPT Retail: {ln}")
+                if ln.startswith(("[OK", "[DRY-RUN")):
+                    ok_any = True
+            # New office-metric fill (churn + Next Up % + Extra/Premium %
+            # + ABP %). PREVIEW: scoped to the Akib section only so Megan
+            # can sign off before rolling MJ + Ronald in commit 2.
+            for ln in fill_office_metrics(
+                    ws, churn, sara_office, abp,
+                    RETAIL_TAB_ICDS[title], week_col_label,
+                    icds_to_write=_PREVIEW_ICDS_AKIB_ONLY,
+                    dry_run=dry_run, logfn=logfn):
                 logfn(f"OPT Retail: {ln}")
                 if ln.startswith(("[OK", "[DRY-RUN")):
                     ok_any = True
