@@ -18,6 +18,16 @@ from urllib.parse import quote as _urlquote
 
 import sys
 
+# macOS 26 (Sequoia) + Python 3.14 regression: fork() in a multi-threaded
+# Python process crashes in the child during pthread_atfork handlers
+# (NEFlowDirectorDestroy / nw_settings_child_has_forked, then
+# os_log_preferences_refresh SIGSEGVs). Pop-ups Megan saw 2026-05-22.
+# Forcing subprocess to use posix_spawn() instead of fork()+exec() avoids
+# the atfork path entirely. Set BEFORE any Popen so the module-level
+# auto-detection doesn't fire first.
+if sys.platform == "darwin":
+    subprocess._USE_POSIX_SPAWN = True   # type: ignore[attr-defined]
+
 import streamlit as st
 
 WORKSPACE = Path(__file__).resolve().parent.parent
