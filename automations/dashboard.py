@@ -28,6 +28,18 @@ import sys
 if sys.platform == "darwin":
     subprocess._USE_POSIX_SPAWN = True   # type: ignore[attr-defined]
 
+# Windows: Python 3.13 defaults stdout/stderr to cp1252, which crashes
+# on common log chars like '<-' (←) or any non-ASCII owner name.
+# Eve hit this on the financial pull 2026-05-22 — the launcher .bat now
+# sets PYTHONIOENCODING=utf-8 + PYTHONUTF8=1, but reconfigure here too
+# so direct streamlit runs (no .bat) get the same protection.
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+    except Exception:
+        pass
+
 import streamlit as st
 
 WORKSPACE = Path(__file__).resolve().parent.parent

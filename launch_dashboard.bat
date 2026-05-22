@@ -13,6 +13,16 @@ REM delayed expansion, %VAR% expands at parse time (empty/stale) instead of
 REM run time. Use !VAR! inside the blocks.
 setlocal enabledelayedexpansion
 
+REM Force UTF-8 for the cmd window AND every Python process spawned from
+REM here. Without this, Python 3.13 on Windows defaults stdout to cp1252,
+REM and any report log line containing a non-ASCII char (the arrow in
+REM "[OK] tab <- office", any owner name with an accent) crashes with
+REM UnicodeEncodeError. PYTHONIOENCODING propagates into subprocess env,
+REM so the Hub-spawned report runs also pick it up.
+chcp 65001 >nul
+set "PYTHONIOENCODING=utf-8"
+set "PYTHONUTF8=1"
+
 cd /d "%~dp0"
 
 REM ---- Auto-update from GitHub (skip if there are local edits) ----
