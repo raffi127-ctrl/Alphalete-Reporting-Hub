@@ -906,8 +906,14 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
     # HTTP-sourced per-rep metrics
     if activation and activation.get(owner_norm):
         values["Activation % by Week"] = activation[owner_norm]
-    if cancel and cancel.get(owner_norm):
-        values["0-30 Day Cancel Rate  4wk avg"] = cancel[owner_norm]
+    if cancel and cancel.get(owner_norm) is not None:
+        # Tableau exports the cancel rate as a decimal fraction
+        # (e.g. 0.004975 = 0.50%). Convert to a percent string for display.
+        raw = (cancel[owner_norm] or "").strip()
+        try:
+            values["0-30 Day Cancel Rate  4wk avg"] = f"{float(raw):.2%}"
+        except ValueError:
+            values["0-30 Day Cancel Rate  4wk avg"] = raw
     if leads and leads.get(owner_norm) is not None:
         values["Total Leads"] = str(leads[owner_norm])
 
