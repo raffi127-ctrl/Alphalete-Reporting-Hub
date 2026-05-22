@@ -37,6 +37,29 @@ fi
 # from launch_dashboard.command (paper icon). The first time they relaunch
 # after the auto-pull, show a friendly Finder + dialog combo so they can
 # swap to the on-brand icon. A marker file silences the prompt afterward.
+# Find whichever python3.X exists in the venv (any minor version).
+# Teammates who upgrade Python.org mid-life can end up with a venv where
+# the original 'python3.9' (or whatever) binary is gone but a newer one
+# (python3.14) is sitting there — and .venv/bin/python is then a stale
+# broken symlink. Detect the live binary up front so the rest of this
+# script can self-heal regardless of minor version.
+VENV_PY_BIN=""
+if [ -d .venv/bin ]; then
+  for cand in .venv/bin/python3.[0-9] .venv/bin/python3.[0-9][0-9]; do
+    if [ -f "$cand" ]; then VENV_PY_BIN="$cand"; break; fi
+  done
+fi
+
+# If .venv/bin/python is missing or broken, recreate it from the live
+# python3.X binary. Without this, `exec ./.venv/bin/python …` at the end
+# of this script fails silently and the Hub icon appears "broken" — same
+# trap that hit Maud after her Python 3.9 → 3.14 upgrade.
+if [ -n "$VENV_PY_BIN" ] && [ ! -x .venv/bin/python ]; then
+  VENV_PY_NAME="${VENV_PY_BIN##*/}"
+  (cd .venv/bin && ln -sf "$VENV_PY_NAME" python && ln -sf "$VENV_PY_NAME" python3)
+  echo "→ Healed .venv/bin/python → $VENV_PY_NAME (was missing)"
+fi
+
 # Pin the venv's Python to arm64 on Apple Silicon. The CommandLineTools
 # Python is universal and sometimes resolves to its x86_64 slice when
 # launched via Python.app/LaunchServices, which then can't load arm64-
@@ -44,33 +67,33 @@ fi
 # with a wrapper that forces /usr/bin/arch -arm64 sidesteps it entirely.
 # (install.sh sets this up on fresh installs; this block catches existing
 # clones that pre-date the fix.)
-if [ "$(uname -m 2>/dev/null)" = "arm64" ] && [ -d .venv/bin ] && [ ! -f .venv/bin/.arm64-wrapped ]; then
+if [ "$(uname -m 2>/dev/null)" = "arm64" ] && [ -n "$VENV_PY_BIN" ] && [ ! -f .venv/bin/.arm64-wrapped ]; then
+  VENV_PY_NAME="${VENV_PY_BIN##*/}"
   # Only Python.app/Contents/MacOS/Python honors __PYVENV_LAUNCHER__;
   # bin/python3.X does not. Map the resolved framework version root to
   # its Python.app variant so venv site-packages stay discoverable.
   REAL_PYTHON=""
-  if [ -L .venv/bin/python3.9 ]; then
-    RESOLVED="$(readlink -f .venv/bin/python3.9 2>/dev/null || true)"
+  if [ -L "$VENV_PY_BIN" ]; then
+    RESOLVED="$(readlink -f "$VENV_PY_BIN" 2>/dev/null || true)"
     if [ -n "$RESOLVED" ]; then
       VERSION_ROOT="${RESOLVED%/bin/python*}"
       CANDIDATE="$VERSION_ROOT/Resources/Python.app/Contents/MacOS/Python"
       [ -x "$CANDIDATE" ] && REAL_PYTHON="$CANDIDATE"
     fi
   fi
-  [ -z "$REAL_PYTHON" ] && REAL_PYTHON="/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python"
   if [ -x "$REAL_PYTHON" ]; then
-    rm -f .venv/bin/python .venv/bin/python3 .venv/bin/python3.9
-    cat > .venv/bin/python3.9 <<WRAP
+    rm -f .venv/bin/python .venv/bin/python3 "$VENV_PY_BIN"
+    cat > "$VENV_PY_BIN" <<WRAP
 #!/bin/bash
 HERE="\$(cd "\$(dirname "\$0")" && pwd)"
-export __PYVENV_LAUNCHER__="\$HERE/python3.9"
+export __PYVENV_LAUNCHER__="\$HERE/$VENV_PY_NAME"
 exec /usr/bin/arch -arm64 "$REAL_PYTHON" "\$@"
 WRAP
-    chmod +x .venv/bin/python3.9
-    ln -s python3.9 .venv/bin/python3
-    ln -s python3.9 .venv/bin/python
+    chmod +x "$VENV_PY_BIN"
+    ln -s "$VENV_PY_NAME" .venv/bin/python3
+    ln -s "$VENV_PY_NAME" .venv/bin/python
     touch .venv/bin/.arm64-wrapped
-    echo "→ Pinned venv Python to arm64 (universal wrapper installed)"
+    echo "→ Pinned venv Python to arm64 ($VENV_PY_NAME wrapper installed)"
   fi
 fi
 
