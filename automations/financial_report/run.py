@@ -101,6 +101,11 @@ def run_financial_report(file_paths, dry_run: bool = False,
     for sheet_name, sid in ffill.OUTPUT_SHEETS.items():
         if only_sheet and only_sheet.lower() not in sheet_name.lower():
             continue
+        # Per-sheet opening log so the runner doesn't go silent for minutes
+        # while gspread auth + initial tab walk happens. Eve 2026-05-22
+        # killed a run thinking it had hung — the script was actually still
+        # working but the previous version stayed quiet through this phase.
+        logfn(f"financial: opening {sheet_name}…")
         try:
             sh = client.open_by_key(sid)
         except Exception as e:
@@ -109,14 +114,15 @@ def run_financial_report(file_paths, dry_run: bool = False,
         # Tabs Megan has HIDDEN are retired/inactive — skip them, same
         # convention the recruiting runner uses. One API call per sheet.
         hidden = _hidden_tab_titles(sh)
-        if hidden:
-            logfn(f"financial: {sheet_name} — skipping {len(hidden)} hidden tab(s)")
+        all_tabs = rfill._retry(sh.worksheets)
+        candidate_tabs = [w for w in all_tabs
+                          if w.title not in _NON_ICD_TAB_TITLES
+                          and not w.title.startswith("_")
+                          and w.title not in hidden]
+        logfn(f"financial: {sheet_name} — {len(candidate_tabs)} ICD tab(s) to scan "
+              f"({len(hidden)} hidden skipped)")
         filled = matched = 0
-        for ws in rfill._retry(sh.worksheets):
-            # Skip system / template / summary / hidden tabs entirely
-            if (ws.title in _NON_ICD_TAB_TITLES or ws.title.startswith("_")
-                    or ws.title in hidden):
-                continue
+        for idx, ws in enumerate(candidate_tabs, start=1):
             office = ffill._match_owner(ws.title, by_owner, bridge)
             if not office:
                 # No data in this upload — leave the tab alone. Whatever was
@@ -131,6 +137,11 @@ def run_financial_report(file_paths, dry_run: bool = False,
                 logfn(f"  {sheet_name}: {line}")
             if lines and lines[0].lstrip().startswith(("[OK]", "[DRY-RUN]")):
                 filled += 1
+            # Heartbeat every 10 ICD tabs so the user sees forward motion
+            # even on a sheet where most tabs are matched + writing.
+            if idx % 10 == 0:
+                logfn(f"financial: {sheet_name} — {idx}/{len(candidate_tabs)} "
+                      f"tabs scanned, {filled} filled so far…")
         logfn(f"financial: {sheet_name} — {filled}/{matched} matched tabs filled "
               f"(unmatched tabs left untouched)")
         total_matched += matched
