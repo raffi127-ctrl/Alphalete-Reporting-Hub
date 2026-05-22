@@ -185,7 +185,7 @@ def _read_active_runs() -> list[dict]:
         status = "unknown"
         if log_path and Path(log_path).exists():
             try:
-                tail = Path(log_path).read_text().lower().splitlines()[-10:]
+                tail = Path(log_path).read_text(errors="replace").lower().splitlines()[-10:]
                 tail_text = "\n".join(tail)
                 # Failure signatures — include scraper-style markers ("✗",
                 # "couldn't find", "couldn't be found", "auto-skipping") so a

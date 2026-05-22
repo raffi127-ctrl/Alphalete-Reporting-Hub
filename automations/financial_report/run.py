@@ -105,7 +105,7 @@ def run_financial_report(file_paths, dry_run: bool = False,
         # while gspread auth + initial tab walk happens. Eve 2026-05-22
         # killed a run thinking it had hung — the script was actually still
         # working but the previous version stayed quiet through this phase.
-        logfn(f"financial: opening {sheet_name}…")
+        logfn(f"financial: opening {sheet_name}...")
         try:
             sh = client.open_by_key(sid)
         except Exception as e:
@@ -141,7 +141,7 @@ def run_financial_report(file_paths, dry_run: bool = False,
             # even on a sheet where most tabs are matched + writing.
             if idx % 10 == 0:
                 logfn(f"financial: {sheet_name} — {idx}/{len(candidate_tabs)} "
-                      f"tabs scanned, {filled} filled so far…")
+                      f"tabs scanned, {filled} filled so far...")
         logfn(f"financial: {sheet_name} — {filled}/{matched} matched tabs filled "
               f"(unmatched tabs left untouched)")
         total_matched += matched
