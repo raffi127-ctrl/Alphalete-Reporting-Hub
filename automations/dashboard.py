@@ -962,6 +962,20 @@ AUTOMATED_REPORTS = [
                                     "--no-opt"],
             },
             {
+                # Retail OPT - currently scoped to the Akib section on
+                # Boaktear's tab (preview before MJ + Ronald rollout).
+                # Pulls fresh from CHURNRATES/RETAILPULL, SARAPLUSSALESSUMMARY,
+                # ABPCONVERSIONS, and RETAILSALESSUMMARYBYCLUB on every run.
+                "label": "Run Retail OPT (Akib preview)",
+                "icon": "🛒",
+                "help": "Fills the Retail OPT block on Boaktear's tab - Akib "
+                        "section only this round (preview). Writes churn %, "
+                        "Next Up %, Extra/Premium %, ABP %, Costco store "
+                        "wireless lines, Internet, and Total New Lines.",
+                "module": "automations.alphalete_org_report.opt_retail",
+                "args_fn": lambda: [],
+            },
+            {
                 "label": "Run a Specific Past Week",
                 "icon": "📆",
                 "needs_date": True,
