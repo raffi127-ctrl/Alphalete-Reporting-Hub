@@ -209,15 +209,23 @@ fi
 # `python -m streamlit` directly instead of the .venv/bin/streamlit shim;
 # the shim uses a sh `exec python "$0"` trick that loses the arch context
 # in transit, so `arch -arm64 ./streamlit` runs as x86_64 anyway.
+# --server.fileWatcherType=none: disable Streamlit's auto-reload-on-file-change.
+# The Hub spawns report subprocesses that write to output/logs/active/*.log,
+# and Streamlit's default watcher detects those writes and tries to rerun the
+# dashboard mid-flight. On Windows that rerun trips through colorama and
+# crashes the Hub with 'RuntimeError: reentrant call inside <_io.BufferedWriter>'
+# (Eve, 2026-05-22). Teammates get new code via git pull + Hub restart anyway.
 NATIVE_ARCH="$(arch 2>/dev/null || echo unknown)"
 if [ "$NATIVE_ARCH" = "arm64" ]; then
   exec /usr/bin/arch -arm64 ./.venv/bin/python -m streamlit run automations/dashboard.py \
     --server.headless true \
     --server.address 0.0.0.0 \
-    --server.port "$PORT"
+    --server.port "$PORT" \
+    --server.fileWatcherType=none
 else
   exec ./.venv/bin/python -m streamlit run automations/dashboard.py \
     --server.headless true \
     --server.address 0.0.0.0 \
-    --server.port "$PORT"
+    --server.port "$PORT" \
+    --server.fileWatcherType=none
 fi

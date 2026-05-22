@@ -87,7 +87,16 @@ REM ---- Open the browser to the dashboard a couple seconds after Streamlit star
 start "" /B cmd /c "timeout /T 3 /NOBREAK >nul && start http://localhost:!PORT!"
 
 REM ---- Run Streamlit ----
+REM --server.fileWatcherType=none: disable Streamlit's auto-reload-on-file-change.
+REM The Hub spawns report subprocesses that write to output/logs/active/*.log,
+REM and Streamlit's default watcher detects those writes + tries to rerun the
+REM dashboard mid-flight. On Windows that rerun trips through colorama's
+REM WriteConsoleW and hits 'RuntimeError: reentrant call inside <_io.BufferedWriter>',
+REM crashing the whole Hub server (Eve, 2026-05-22). Teammates get new code
+REM via git pull + Hub restart anyway, so we don't lose anything by turning
+REM auto-reload off.
 ".venv\Scripts\python.exe" -m streamlit run automations\dashboard.py ^
     --server.headless true ^
     --server.address 0.0.0.0 ^
-    --server.port !PORT!
+    --server.port !PORT! ^
+    --server.fileWatcherType=none
