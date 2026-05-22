@@ -117,7 +117,15 @@ NDS_VIEWS: List[Tuple[str, str, str]] = [
         "opt_nds_sara_plus.csv",
     ),
     (
-        "https://us-east-1.online.tableau.com/#/site/sci/views/DropshipV_2/SARAPLUSSALESSUMMARY?:iid=1",
+        # Sara Plus Sales Summary (2) — per-rep breakdown of Personal
+        # Production. Must use :iid=2 (NOT :iid=1) — the (2) worksheet
+        # only renders inside the second dashboard tab. With :iid=1 the
+        # Crosstab dialog opens but can't find the (2) sheet, so the
+        # Download button stays disabled and the subprocess crashes.
+        # Confirmed via Crosstab dialog screenshot 2026-05-21:
+        # dialog at :iid=2 shows three worksheets — 'Sara Plus Sales
+        # Summary', 'Sara Plus Sales Summary (2)', and 'Z_Last Refresh'.
+        "https://us-east-1.online.tableau.com/#/site/sci/views/DropshipV_2/SARAPLUSSALESSUMMARY?:iid=2",
         "Sara Plus Sales Summary (2)",
         "opt_nds_sara_plus_2.csv",
     ),
