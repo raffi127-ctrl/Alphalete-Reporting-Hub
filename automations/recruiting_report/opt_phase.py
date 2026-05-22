@@ -344,38 +344,43 @@ def download_crosstab(view_url: str, crosstab_sheet: str, out_path: Path,
                 f"dialog — saw {len(available)} thumb(s): {available!r}. "
                 "The view may have changed."
             )
-        # Click the sheet by ROLE=BUTTON containing the worksheet text.
-        # Several strategies tried 2026-05-22 against SARAPLUSSALESSUMMARY:
-        #   - thumbnail icon click: didn't register as selection (screenshot
-        #     showed both sheets unselected, Download greyed)
-        #   - get_by_text exact=True at viz level: ambiguous when the same
-        #     text appears in tabs / breadcrumbs / etc. above the dialog
-        # Scoping to role=button containing the sheet name reliably hits
-        # the clickable row inside the Crosstab dialog. ABP succeeded with
-        # this strategy; SARA needs the role=button scope to disambiguate.
+        # Click the sheet by ARIA role + accessible name. Playwright's
+        # get_by_role uses the same accessibility tree the screen reader
+        # would - bypasses CSS selector flakiness when sheet names appear
+        # in tab strips / breadcrumbs on the same page. Try checkbox first
+        # (Tableau's Crosstab dialog uses checkboxes for sheet selection
+        # per Megan's manual screenshot 2026-05-22), then button, then
+        # fall back to the matching thumbnail's clickable ancestor.
+        target_thumb = thumbs.nth(idx)
         clicked = False
-        for strategy in (
-            f'[role="button"]:has-text("{crosstab_sheet}")',
-            f'button:has-text("{crosstab_sheet}")',
-            f'[role="checkbox"]:has-text("{crosstab_sheet}")',
-        ):
+        for role in ("checkbox", "button"):
             try:
-                btn = viz.locator(strategy)
-                if btn.count() > 0:
-                    btn.first.click(timeout=5_000)
+                role_locator = viz.get_by_role(role, name=crosstab_sheet)
+                if role_locator.count() > 0:
+                    role_locator.first.click(timeout=5_000)
                     clicked = True
                     break
             except Exception:
                 continue
         if not clicked:
-            # Last-resort: text node click + thumbnail click stacked
-            try:
-                viz.get_by_text(crosstab_sheet, exact=True).first.click(timeout=5_000)
-                clicked = True
-            except Exception:
-                pass
+            # Fallback: walk up from the thumbnail to its clickable row.
+            for ancestor_xpath in (
+                'xpath=ancestor::*[@role="checkbox"][1]',
+                'xpath=ancestor::*[@role="button"][1]',
+                'xpath=ancestor::button[1]',
+                'xpath=ancestor::label[1]',
+            ):
+                try:
+                    ancestor = target_thumb.locator(ancestor_xpath)
+                    if ancestor.count() > 0:
+                        ancestor.first.click(timeout=5_000)
+                        clicked = True
+                        break
+                except Exception:
+                    continue
         if not clicked:
-            thumbs.nth(idx).click()
+            # Last-resort: click the thumbnail directly (NDS-era path).
+            target_thumb.click(force=True)
         page.wait_for_timeout(2000)
         # Format selection — try CSV first (so the downstream CSV parsers
         # keep working as-is); fall back to Excel if CSV makes Tableau
