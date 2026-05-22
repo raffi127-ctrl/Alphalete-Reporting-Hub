@@ -1,0 +1,31 @@
+[
+  {
+    "id": "order_log",
+    "name": "Order Log",
+    "creator": "",
+    "emoji": "\ud83d\udcca",
+    "description": "",
+    "sheet_url": "",
+    "assignees": [],
+    "schedule": {
+      "frequency": "daily",
+      "weekdays": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "time": "7:30 AM",
+      "estimated_minutes": 10
+    },
+    "checklist": [],
+    "needs_login": false,
+    "breakdown": "You will need to install some specific python tools on your computer first I believe. Once installed, this code will automatically log into ownerville and pull and color the order log report for Raf",
+    "followup_notes": "",
+    "args": [],
+    "module": "automations.uploaded.order_log"
+  }
+]
