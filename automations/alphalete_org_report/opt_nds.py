@@ -11,11 +11,13 @@ Source map (resources/opt-section/alphalete-org-campaign-sources.md):
     Ranking (per-rep). Reads "Rep Count" + "Ranking" columns.
   - NDSDailyTracker / Rep Summary → National AVG for sales (org total
     of New/Port per Rep; SAME value on every NDS tab).
-  - SARAPLUSSALESSUMMARY iid=1 / 'Sara Plus Sales Summary' (2) → per-rep
-    Personal Production + New Lines. The "(2)" worksheet was unavailable
-    overnight (only Z_Last Refresh thumb visible); Megan to verify view
-    state. Org totals (iid=1 main sheet) DO download — ATV / Internet /
-    New/Port Lines / Next Up.
+  - SARAPLUSSALESSUMMARY iid=1 / 'Sara Plus Sales Summary' → org totals
+    (ATV / Internet / New/Port Lines / Next Up / Premium/Elite / Extra).
+    Used for the office-level shared metrics (Next Up %, Extra/Premium %).
+  - ProductSalesSummaryRep / ALLPRODUCTS-EXPANDEDREPS iid=1 → per-rep
+    breakdown across all sale types (WIRELESS / NEW INTERNET / VIDEO / AIR).
+    Feeds Personal Production. Megan's custom view sets the Product Type
+    filter to (All) so all four types appear in the crosstab.
   - NDSWeeklyMetricsRep / THISWEEK → 0-30 Day Cancel Rate 4wk avg
     ('Cancel Fraud Review %', office total).
   - CHURNRATES / THISWEEK → 0-30 / 60 / 90 Day Churn (per-rep, look for
@@ -117,17 +119,15 @@ NDS_VIEWS: List[Tuple[str, str, str]] = [
         "opt_nds_sara_plus.csv",
     ),
     (
-        # Sara Plus Sales Summary (2) — per-rep breakdown of Personal
-        # Production. Must use :iid=2 (NOT :iid=1) — the (2) worksheet
-        # only renders inside the second dashboard tab. With :iid=1 the
-        # Crosstab dialog opens but can't find the (2) sheet, so the
-        # Download button stays disabled and the subprocess crashes.
-        # Confirmed via Crosstab dialog screenshot 2026-05-21:
-        # dialog at :iid=2 shows three worksheets — 'Sara Plus Sales
-        # Summary', 'Sara Plus Sales Summary (2)', and 'Z_Last Refresh'.
-        "https://us-east-1.online.tableau.com/#/site/sci/views/DropshipV_2/SARAPLUSSALESSUMMARY?:iid=2",
-        "Sara Plus Sales Summary (2)",
-        "opt_nds_sara_plus_2.csv",
+        # Personal Production — per-rep breakdown across all sale types
+        # (WIRELESS / NEW INTERNET / VIDEO / AIR). Uses a Megan-saved
+        # custom view 'ALLPRODUCTS-EXPANDEDREPS' that has the Product Type
+        # filter set to (All) and the Rep dimension expanded. The earlier
+        # mapping of Personal Production → Sara Plus (2) was wrong; the
+        # canonical source is ProductSalesSummaryRep per Megan 2026-05-22.
+        "https://us-east-1.online.tableau.com/#/site/sci/views/NDS-SNRES-ATT-OOFWorkbook/ProductSalesSummaryRep/c6d0a461-f8ac-49ed-bb38-27a807328a70/ALLPRODUCTS-EXPANDEDREPS?:iid=1",
+        "Sales By ICD (Weekly View)",
+        "opt_nds_personal_production.csv",
     ),
     # Weekly Metrics, Activation Rates, Lead Penetration are now
     # downloaded via the HTTP path (NDS_HTTP_VIEWS) — ~1s each vs ~75s
@@ -297,41 +297,78 @@ def parse_sara_plus_total(path: Path) -> Dict[str, str]:
             for i, h in enumerate(header)}
 
 
-def parse_sara_plus_per_rep(path: Path) -> Dict[str, Dict[str, str]]:
-    """Parse Sara Plus Sales Summary (2) — per-rep breakdown of the
-    same metric columns as the (1) totals sheet. Returns
-    {normalized owner: {column: value}}.
+# Sheet display abbreviations for Personal Production text. Order = output
+# order, so "NI" comes before "NL" before "DTV" before "AIR" in the sheet
+# cell — mirrors Megan's manual entries like "1 NI, 15 NL".
+PP_PRODUCT_ABBREV = [
+    ("NEW INTERNET", "NI"),
+    ("WIRELESS",     "NL"),
+    ("VIDEO",        "DTV"),
+    ("AIR",          "AIR"),
+]
 
-    The (2) sub-sheet shows one row per rep with their personal column
-    values. We expect a column identifying the rep — most likely
-    'Owner & Office' (Tableau's standard owner format), with 'Personal
-    Production', 'New/Port Lines', etc. as data columns. We match on
-    Owner & Office and fall back to the first column if missing."""
+
+def parse_personal_production(path: Path) -> Dict[str, str]:
+    """Parse the ALLPRODUCTS-EXPANDEDREPS crosstab and return
+    {normalized ICD owner: 'X NI, Y NL, Z DTV, W AIR'} — but ONLY counting
+    the ICD's *own* sales (rows where Rep Name == Owner name), not the
+    sum of their downline reps. Per Megan 2026-05-22: Personal Production
+    is the ICD's personal selling activity, not their team total.
+
+    Row layout (confirmed 2026-05-22):
+      col 0 = 'Owner & Office'  ('ISAIAH REVELLE\\n[legacy specialized...]')
+      col 1 = 'Rep Name'        ('Brandon Childs', 'Isaiah Revelle', or 'Total')
+      col 2 = 'Product Type (Broken Out)'  (WIRELESS / NEW INTERNET / VIDEO / AIR)
+      cols 3-7 = per-weekday counts (Mon-Fri)
+      col 8 = 'Total' (week sum for this rep/type)
+
+    Owners with no matching self-row (no personal sales this week) come
+    back as empty strings."""
     rows = _read_tab_csv(path)
-    if not rows or len(rows) < 2:
+    if not rows or len(rows) < 3:
         return {}
-    header = rows[0]
-    # Locate the owner-identifying column
-    owner_i = None
-    for i, h in enumerate(header):
-        if (h or "").strip().lower() in {
-            "owner & office", "owner", "rep", "rep name", "icd owner name",
-            "icd.full name", "icd full name",
-        }:
-            owner_i = i
-            break
-    if owner_i is None:
-        owner_i = 0   # fall back to first column
-    out: Dict[str, Dict[str, str]] = {}
-    for r in rows[1:]:
-        if not r or len(r) <= owner_i:
+    OWNER_I, REP_I, TYPE_I, TOTAL_I = 0, 1, 2, 8
+    bucket: Dict[str, Dict[str, int]] = {}
+    seen_owners: set = set()
+    for r in rows[2:]:
+        if len(r) <= TOTAL_I:
             continue
-        owner = _norm_owner(r[owner_i])
-        if not owner or owner.startswith("total"):
+        owner_raw = (r[OWNER_I] or "").strip()
+        rep_raw = (r[REP_I] or "").strip()
+        ptype = (r[TYPE_I] or "").strip().upper()
+        if not owner_raw or owner_raw.lower().startswith("grand total"):
             continue
-        rec = {(header[i] or "").strip(): (r[i] if i < len(r) else "")
-               for i in range(len(header)) if i != owner_i}
-        out[owner] = rec
+        # Skip per-ICD subtotal rows
+        if rep_raw.lower() == "total" or ptype == "TOTAL":
+            continue
+        owner = _norm_owner(owner_raw)
+        seen_owners.add(owner)
+        # Only count rows where the rep IS the owner (case-insensitive,
+        # whitespace-collapsed). Names like 'Maxamad-Amin Aden' vs the
+        # ICD 'MAXAMAD ADEN' are different people — strict equality
+        # filters them out correctly.
+        if _norm_owner(rep_raw) != owner:
+            continue
+        try:
+            val = int(float((r[TOTAL_I] or "0").replace(",", "")))
+        except (ValueError, AttributeError):
+            continue
+        if val == 0:
+            continue
+        rec = bucket.setdefault(owner, {})
+        rec[ptype] = rec.get(ptype, 0) + val
+
+    out: Dict[str, str] = {}
+    # Include all owners we saw in the CSV (even those with no personal
+    # sales) so the caller can distinguish "no PP data" from "0 sales".
+    for owner in seen_owners:
+        totals = bucket.get(owner, {})
+        parts = []
+        for tableau_type, abbrev in PP_PRODUCT_ABBREV:
+            n = totals.get(tableau_type, 0)
+            if n > 0:
+                parts.append(f"{n} {abbrev}")
+        out[owner] = ", ".join(parts)
     return out
 
 
@@ -522,7 +559,7 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
                  cancel: Optional[Dict[str, str]] = None,
                  leads: Optional[Dict[str, int]] = None,
                  sara_byday: Optional[Dict[str, Dict[str, int]]] = None,
-                 sara_per_rep: Optional[Dict[str, Dict[str, str]]] = None,
+                 personal_production: Optional[Dict[str, str]] = None,
                  direct_deposit: Optional[Dict[str, float]] = None,
                  ) -> List[str]:
     """Write all available metrics for this rep into the target week column.
@@ -577,15 +614,10 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
         except (ValueError, TypeError):
             pass
 
-    # Sara Plus (2) per-rep — Personal Production
-    rep_sara = (sara_per_rep or {}).get(owner_norm, {})
-    if rep_sara:
-        # Look up Personal Production column (case-tolerant)
-        for label, val in rep_sara.items():
-            if label.strip().lower() in {"personal production", "personal prod"}:
-                if (val or "").strip():
-                    values["Personal Production"] = val
-                break
+    # Personal Production — pre-formatted text like "2 NI, 58 NL, 3 AIR"
+    # from ProductSalesSummaryRep / ALLPRODUCTS-EXPANDEDREPS crosstab.
+    if personal_production and personal_production.get(owner_norm):
+        values["Personal Production"] = personal_production[owner_norm]
 
     # Direct Deposit — per-ICD-owner dollar total
     if direct_deposit and owner_norm in direct_deposit:
@@ -686,7 +718,8 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
     tt = parse_tt_detail(OUTPUT_DIR / "opt_nds_tt_detail.csv")
     rep_summary = parse_rep_summary_total(OUTPUT_DIR / "opt_nds_rep_summary.csv")
     sara_totals = parse_sara_plus_total(OUTPUT_DIR / "opt_nds_sara_plus.csv")
-    sara_per_rep = parse_sara_plus_per_rep(OUTPUT_DIR / "opt_nds_sara_plus_2.csv")
+    personal_production = parse_personal_production(
+        OUTPUT_DIR / "opt_nds_personal_production.csv")
     churn = parse_churn_icd(OUTPUT_DIR / "opt_nds_churn.csv")
     direct_deposit = parse_direct_deposit(OUTPUT_DIR / "opt_nds_direct_deposit.csv")
     # HTTP-sourced parses
@@ -704,7 +737,7 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
           f"{len(cancel)} Cancel, "
           f"{len(leads)} Leads, "
           f"{len(sara_byday)} Sara-ByDay, "
-          f"{len(sara_per_rep)} Sara(2), "
+          f"{len(personal_production)} PP, "
           f"{len(direct_deposit)} DD")
 
     # Step 3: open sheet + walk NDS-suffixed tabs
@@ -759,7 +792,7 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
                              churn, week_col_label, dry_run, logfn,
                              activation=activation, cancel=cancel,
                              leads=leads, sara_byday=sara_byday,
-                             sara_per_rep=sara_per_rep,
+                             personal_production=personal_production,
                              direct_deposit=direct_deposit)
         for ln in lines:
             logfn(f"OPT NDS: {ln}")
