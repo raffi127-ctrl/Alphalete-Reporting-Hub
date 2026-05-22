@@ -33,13 +33,18 @@ from automations.alphalete_org_report.opt_nds import (
 )
 
 
-# HTTP-direct view — like the NDS HTTP views, no UI Crosstab needed.
-# Tuple: (workbook_slug, view_slug, output_filename)
-RETAIL_HTTP_VIEW = (
-    "DropshipV_2",
-    "RETAILSALESSUMMARYBYCLUB",
-    "opt_retail_by_club.csv",
+# HTTP-direct view URL. Critical: appending the custom-view UUID +
+# name to the path filters to Akib + MJ only. Without it, the HTTP
+# endpoint returns the workbook's unfiltered default view, which leaks
+# other reps' Costco sales (e.g. BC #579 = 18, a non-Akib/MJ store)
+# and inflates Total Store Count. Confirmed 2026-05-22 against Megan's
+# AkibMJSummary view.
+RETAIL_BY_CLUB_URL = (
+    "https://us-east-1.online.tableau.com/t/sci/views/"
+    "DropshipV_2/RETAILSALESSUMMARYBYCLUB/"
+    "35f6a7b4-eab4-4821-8f30-cabc530c648e/AkibMJSummary.csv"
 )
+RETAIL_BY_CLUB_FILENAME = "opt_retail_by_club.csv"
 
 
 # Pattern: extracts the store identifier ('#669', 'BC #655', '#1735') from
@@ -163,15 +168,20 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
     Retail tab. Returns {filled: [...], skipped: [...], errors: [...]}."""
     errors: List[str] = []
 
-    # Step 1: HTTP-pull the per-club crosstab.
-    workbook, view, fname = RETAIL_HTTP_VIEW
-    out_path = OUTPUT_DIR / fname
+    # Step 1: HTTP-pull the per-club crosstab. Uses the explicit custom-view
+    # URL (UUID + AkibMJSummary) so we get Akib + MJ filtered data, not the
+    # workbook's default (which includes other reps' Costco sales).
+    out_path = OUTPUT_DIR / RETAIL_BY_CLUB_FILENAME
     try:
-        logfn(f"OPT Retail: HTTP downloading {fname}…")
+        logfn(f"OPT Retail: HTTP downloading {RETAIL_BY_CLUB_FILENAME}…")
         session = tableau_http._grab_session()
-        tableau_http.download_view_csv(workbook, view, out_path, session=session)
+        r = session.get(RETAIL_BY_CLUB_URL, allow_redirects=True, timeout=120)
+        if r.status_code != 200:
+            raise RuntimeError(
+                f"HTTP {r.status_code} ({len(r.content)} bytes)")
+        out_path.write_bytes(r.content)
     except Exception as e:
-        msg = f"{fname}: {type(e).__name__}: {str(e)[:120]}"
+        msg = f"{RETAIL_BY_CLUB_FILENAME}: {type(e).__name__}: {str(e)[:120]}"
         logfn(f"OPT Retail: ✗ HTTP {msg}")
         errors.append(msg)
         return {"filled": [], "skipped": [], "errors": errors}
