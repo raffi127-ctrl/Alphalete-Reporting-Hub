@@ -23,12 +23,25 @@ chcp 65001 >nul
 set "PYTHONIOENCODING=utf-8"
 set "PYTHONUTF8=1"
 
+REM Disable click/colorama's ANSI wrapping on the Windows console. Streamlit's
+REM signal handler calls click.secho("Stopping..."), which on Windows goes
+REM through colorama -> WriteConsoleW. If a second signal arrives mid-write,
+REM Python's BufferedWriter raises 'RuntimeError: reentrant call inside
+REM <_io.BufferedWriter>' and the whole Hub server dies (Eve, 2026-05-22).
+REM NO_COLOR is a widely-respected env var; click skips colorama when set,
+REM so the reentrancy path doesn't exist.
+set "NO_COLOR=1"
+
 cd /d "%~dp0"
 
 REM ---- Auto-update from GitHub (skip if there are local edits) ----
 if exist ".git" (
     REM Count dirty files via porcelain output.
-    for /f %%i in ('git status --porcelain 2^>nul ^| find /c /v ""') do set "DIRTY=%%i"
+    REM -uno: ignore untracked files (uploaded reports, generated outputs, etc.).
+    REM Without it, any teammate with even one untracked file gets
+    REM 'Local changes detected; skipping auto-update' on every launch and
+    REM silently runs stale code forever (Eve's situation, 2026-05-22).
+    for /f %%i in ('git status --porcelain -uno 2^>nul ^| find /c /v ""') do set "DIRTY=%%i"
     if "!DIRTY!"=="0" (
         echo Checking for updates...
         git fetch --quiet origin main

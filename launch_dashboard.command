@@ -16,11 +16,23 @@ export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
 export NO_PROXY='*'
 export _PYTHON_DEFAULT_USE_POSIX_SPAWN=1
 
+# Disable click/colorama's ANSI wrapping. Streamlit's signal_handler calls
+# click.secho("Stopping...") which on Windows can re-enter the BufferedWriter
+# and crash the Hub server (Eve, 2026-05-22). NO_COLOR is harmless on macOS
+# but needs to be set in the launcher BOTH places so the .bat and .command
+# stay symmetric — anyone who edits one and forgets the other reintroduces
+# the bug on the other OS.
+export NO_COLOR=1
+
 cd "$(dirname "$0")"
 
 # ----- Auto-update from GitHub (skips if local edits present) -----
 if [ -d .git ]; then
-  if [ -z "$(git status --porcelain 2>/dev/null)" ]; then
+  # -uno: ignore untracked files (uploaded reports, generated outputs, etc.).
+  # Without it, even one untracked file makes the launcher skip auto-update
+  # forever and the teammate silently runs stale code (Eve's situation,
+  # 2026-05-22).
+  if [ -z "$(git status --porcelain -uno 2>/dev/null)" ]; then
     echo "→ Checking for updates..."
     git fetch --quiet origin main 2>/dev/null || true
     LOCAL=$(git rev-parse @ 2>/dev/null || echo "")
