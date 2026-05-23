@@ -20,7 +20,7 @@
       {"text": "The script opens its OWN Chrome window automatically and signs into ownerville + Tableau on its own. Leave that window alone while it runs (about 2 min). Do NOT open Reporting Chrome for this one — it uses a separate stealth Chrome (patchright)."}
     ],
     "needs_login": false,
-    "breakdown": "WHAT IT DOES\nFills out the order log and downloads it to your computer's Downloads folder.\n\nWHEN IT RUNS\nDaily.\n\nWHERE THE OUTPUT GOES\nThe finished `.xlsx` lands in your **Downloads** folder, named **`Order Log MM-DD-YYYY.xlsx`**.\n\nFIRST-TIME SETUP\nMac (Terminal):\n`./.venv/bin/patchright install chromium`\n\nWindows (Command Prompt):\n`.venv\\Scripts\\patchright install chromium`",
+    "breakdown": "WHAT IT DOES\nFills out the order log and downloads it to your computer's Downloads folder.\n\nWHEN IT RUNS\nDaily.\n\nWHERE THE OUTPUT GOES\nThe finished `.xlsx` lands in your **Downloads** folder, named **`Order Log MM-DD-YYYY.xlsx`**.\n\nFIRST-TIME SETUP\nINPUT to Mac Terminal:\n`./.venv/bin/patchright install chromium`\n\nINPUT to Windows Command Prompt:\n`.venv\\Scripts\\patchright install chromium`",
     "followup_notes": "Hardcoded credentials in the script — flagged to Megan for migration to env-var-based secrets in a follow-up commit.",
     "args": [],
     "module": "automations.uploaded.order_log"
