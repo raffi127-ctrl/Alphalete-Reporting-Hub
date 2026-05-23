@@ -117,13 +117,27 @@ def _sara_view_data_url(week_end_label: str) -> str:
         f"&Max%20Date={end.strftime('%Y-%m-%d')}"
     )
 
-RETAIL_ABP_VIEW = (
+RETAIL_ABP_SHEET = "ABP National Average (2)"
+RETAIL_ABP_FILENAME = "opt_retail_abp.csv"
+_RETAIL_ABP_BASE_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
-    "DropshipV_2/ABPCONVERSIONS/"
-    "2ff5a739-24cf-461e-9b92-7da888196e21/RETAILPULL?:iid=1",
-    "ABP National Average (2)",
-    "opt_retail_abp.csv",
+    "DropshipV_2/ABPCONVERSIONS"
 )
+
+
+def _abp_view_url(week_end_label: str) -> str:
+    """Build the ABP URL with explicit Min/Max Date params for the target
+    week. RETAILPULL custom view's saved dates were stale (showed last
+    week's values) — switching to bare URL + URL params, same pattern
+    as SARA. (Megan verified ABP values off 2026-05-23.)"""
+    from datetime import datetime, timedelta
+    end = datetime.strptime(week_end_label, "%m/%d/%y")
+    start = end - timedelta(days=6)
+    return (
+        f"{_RETAIL_ABP_BASE_URL}?:iid=1"
+        f"&Min%20Date={start.strftime('%Y-%m-%d')}"
+        f"&Max%20Date={end.strftime('%Y-%m-%d')}"
+    )
 
 # Per-owner activation rates per sales-date bucket. Sheet row
 # 'Activation /Approval %' maps to the '60+ Days' bucket (Megan
@@ -450,13 +464,15 @@ def parse_money_lost_from_tmp(path: Path) -> Dict[str, str]:
 
 def parse_sara_view_data(path: Path) -> Dict[str, Dict[str, int]]:
     """Parse SARA Plus office View Data scrape (long format from
-    `scrape_view_data_patchright`) → same shape as
-    `parse_sara_plus_office_totals`: {owner_norm: {metric: int, '_active_reps': int}}.
+    `scrape_view_data_patchright`) → {owner_norm: {metric: int, '_active_reps': int}}.
 
     Layout: Owner & Office | Rep | rep.Rep Number | Measure Names | Measure Values
     One row per (rep, measure). Aggregates per office by summing each
-    target measure across reps; Active Headcount = unique reps with any
-    non-zero measure value (Megan 2026-05-22 spec)."""
+    target measure across reps. Active Headcount = COUNT OF DISTINCT
+    REPS that appear in the office's data for the week, regardless of
+    whether any specific measure is > 0 (Megan 2026-05-23 spec — a rep
+    that shows up on the dashboard counts as headcount even if their
+    week's measures are all 0)."""
     rows = _read_tab_csv(path)
     if not rows or len(rows) < 2:
         return {}
@@ -467,9 +483,13 @@ def parse_sara_view_data(path: Path) -> Dict[str, Dict[str, int]]:
     val_i = tableau_http.col_idx(header, "Measure Values")
     if None in (owner_i, rep_i, meas_i, val_i):
         return {}
-    target_measures = {"Next Up", "New/Port Lines", "Premium/Elite", "Extra"}
+    # Pull all retail-relevant measures so the SARA office data can
+    # source Internet + Total New Lines too (instead of the by-day file
+    # which carries NDS's date filter and is wrong for retail weeks).
+    target_measures = {"Next Up", "New/Port Lines", "Premium/Elite",
+                       "Extra", "Internet", "DTV"}
     sums: Dict[str, Dict[str, int]] = {}
-    active_reps: Dict[str, set] = {}
+    reps_seen: Dict[str, set] = {}
     for r in rows[1:]:
         if max(owner_i, rep_i, meas_i, val_i) >= len(r):
             continue
@@ -486,11 +506,10 @@ def parse_sara_view_data(path: Path) -> Dict[str, Dict[str, int]]:
         bucket = sums.setdefault(owner, {})
         if measure in target_measures:
             bucket[measure] = bucket.get(measure, 0) + num
-        if num > 0:
-            active_reps.setdefault(owner, set()).add(rep)
+        reps_seen.setdefault(owner, set()).add(rep)
     out: Dict[str, Dict[str, int]] = {}
     for owner, metrics in sums.items():
-        metrics["_active_reps"] = len(active_reps.get(owner, set()))
+        metrics["_active_reps"] = len(reps_seen.get(owner, set()))
         out[owner] = metrics
     return out
 
@@ -729,19 +748,17 @@ def fill_costco_section(ws: gspread.Worksheet,
 
 
 def fill_per_icd_office_totals(ws: gspread.Worksheet,
-                                sara_byday: Dict[str, Dict[str, int]],
+                                sara_office: Dict[str, Dict[str, int]],
                                 tab_icds: List[str],
                                 week_col_label: str,
                                 dry_run: bool = False,
                                 logfn=print) -> List[str]:
     """Fill per-ICD office-total metrics (Internet, Total New Lines) into
-    each ICD's section of the tab. AVG Sales per Leader is computed in
-    the sheet via formula reference and skipped here — Active Headcount
-    needs to be populated first before we can compute it.
-
-    For multi-ICD tabs, the function scopes its row-label lookups to
-    each ICD's section so 'Internet' in MJ's block doesn't shadow 'Internet'
-    in Akib's block."""
+    each ICD's section of the tab. Sourced from SARA Plus office View
+    Data — same source that fills the % metrics — so the date range
+    matches (was previously sourced from the NDS shared by-day file
+    which carried NDS's date filter, producing wrong totals for retail
+    weeks; Megan 2026-05-23)."""
     log: List[str] = []
     grid = rfill._retry(ws.get_all_values)
     if not grid:
@@ -756,26 +773,15 @@ def fill_per_icd_office_totals(ws: gspread.Worksheet,
 
     updates: List[Dict] = []
     for icd_norm, (start, end) in ranges.items():
-        # Sara Plus By Day keys are the ICD's first+last names (Title Case).
-        # Try a few canonical forms in order; pick the first match.
-        candidates = [icd_norm, icd_norm.replace("amjad", "amjad")]
-        # Sara Plus key uses _norm_owner format (lowercase, [office] stripped)
-        data = sara_byday.get(icd_norm, {})
+        data = sara_office.get(icd_norm, {})
         if not data:
-            # Fall back: scan for any key whose last word matches
-            last = icd_norm.split()[-1]
-            for k in sara_byday:
-                if k.split()[-1] == last:
-                    data = sara_byday[k]
-                    break
-        if not data:
-            log.append(f"  [miss-icd] {icd_norm!r}: no Sara Plus By Day data")
+            log.append(f"  [miss-icd] {icd_norm!r}: no Sara Plus office data")
             continue
 
-        # Metric → (sheet label, source measure name)
+        # Metric → (sheet label, source measure name in SARA office data)
         for sheet_label, src_measure in [
             ("Internet",        "Internet"),
-            ("Total New Lines", "Wireless Lines"),
+            ("Total New Lines", "New/Port Lines"),
         ]:
             row_0 = _find_label_row_in_range(grid, sheet_label, start, end)
             if row_0 is None:
@@ -1125,12 +1131,12 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
                     verbose=False, page=page,
                     scrape_kwargs=_VIEWDATA_SCRAPE_KWARGS))
 
-            abp_url, abp_sheet, abp_fname = RETAIL_ABP_VIEW
-            abp_target = OUTPUT_DIR / abp_fname
+            abp_target = OUTPUT_DIR / RETAIL_ABP_FILENAME
             abp_path = _try_with_retry(
-                "patchright Crosstab", abp_fname, 2,
+                "patchright Crosstab", RETAIL_ABP_FILENAME, 2,
                 lambda: download_crosstab_patchright(
-                    abp_url, abp_sheet, abp_target,
+                    _abp_view_url(week_col_label),
+                    RETAIL_ABP_SHEET, abp_target,
                     verbose=False, page=page))
 
             money_target = OUTPUT_DIR / RETAIL_MONEY_LOST_FILENAME
@@ -1147,7 +1153,7 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
         errors.append(f"patchright session: {type(e).__name__}: {str(e)[:120]}")
         sara_office_path = sara_office_path or _fallback_existing(
             RETAIL_SARA_PLUS_OFFICE_FILENAME)
-        abp_path = abp_path or _fallback_existing(RETAIL_ABP_VIEW[2])
+        abp_path = abp_path or _fallback_existing(RETAIL_ABP_FILENAME)
         money_lost_path = money_lost_path or _fallback_existing(
             RETAIL_MONEY_LOST_FILENAME)
 
@@ -1177,15 +1183,6 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
     logfn(f"OPT Retail: parsed Money Lost from TMP for {len(money_lost)} office(s): "
           f"{sorted(money_lost.keys())}")
 
-    # Per-ICD office totals for Internet/Total New Lines still come from
-    # the NDS Sara Plus By Day pull. ANTI-PATTERN per
-    # [[feedback_no_cross_report_data_reuse]] — track in
-    # [[project_alphalete_org_report]] 'ANTI-PATTERN to fix'; separate
-    # follow-up commit will move it to a Retail-owned pull.
-    sara_byday = tableau_http.parse_sara_plus_byday(
-        OUTPUT_DIR / "opt_nds_sara_plus_byday.csv")
-    logfn(f"OPT Retail: parsed {len(sara_byday)} ICDs from Sara Plus By Day")
-
     # ---- Step 3: walk the Retail tabs ----
     client = rfill._client()
     sh = client.open_by_key(ALPHALETE_ORG_SHEET_ID)
@@ -1207,7 +1204,7 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
                     ok_any = True
         if title in RETAIL_TAB_ICDS:
             for ln in fill_per_icd_office_totals(
-                    ws, sara_byday, RETAIL_TAB_ICDS[title],
+                    ws, sara_office, RETAIL_TAB_ICDS[title],
                     week_col_label, dry_run, logfn):
                 logfn(f"OPT Retail: {ln}")
                 if ln.startswith(("[OK", "[DRY-RUN")):
