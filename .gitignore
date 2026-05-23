@@ -9,3 +9,11 @@ __pycache__/
 .DS_Store
 .browser_profile/
 *.app/
+# Build artifacts + Claude Code local state
+build/
+.claude/
+Install-Recruiting-Report.command.zip
+# Per-run debug screenshots from uploaded automations - regenerated on
+# every run; never useful to commit. Keep the directory itself tracked
+# so the script can write into it on a fresh clone.
+automations/uploaded/screenshots/*.png
