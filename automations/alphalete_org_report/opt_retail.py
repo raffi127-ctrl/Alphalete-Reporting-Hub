@@ -488,7 +488,12 @@ def parse_sara_view_data(path: Path) -> Dict[str, Dict[str, int]]:
     # which carries NDS's date filter and is wrong for retail weeks).
     target_measures = {"Next Up", "New/Port Lines", "Premium/Elite",
                        "Extra", "Internet", "DTV"}
+    # Personal Production = the rep whose name matches the ICD/owner name
+    # (Megan 2026-05-23). Track per-rep measures so we can pull that rep's
+    # row out per office. Keyed by lowercased rep name.
+    personal_measures = {"Internet", "New/Port Lines", "DTV"}
     sums: Dict[str, Dict[str, int]] = {}
+    per_rep: Dict[str, Dict[str, Dict[str, int]]] = {}
     reps_seen: Dict[str, set] = {}
     for r in rows[1:]:
         if max(owner_i, rep_i, meas_i, val_i) >= len(r):
@@ -506,12 +511,38 @@ def parse_sara_view_data(path: Path) -> Dict[str, Dict[str, int]]:
         bucket = sums.setdefault(owner, {})
         if measure in target_measures:
             bucket[measure] = bucket.get(measure, 0) + num
+        if measure in personal_measures:
+            per_rep.setdefault(owner, {}).setdefault(
+                rep.lower(), {})[measure] = num
         reps_seen.setdefault(owner, set()).add(rep)
     out: Dict[str, Dict[str, int]] = {}
     for owner, metrics in sums.items():
         metrics["_active_reps"] = len(reps_seen.get(owner, set()))
+        metrics["_per_rep"] = per_rep.get(owner, {})
         out[owner] = metrics
     return out
+
+
+def _personal_production_text(per_rep: Dict[str, Dict[str, int]],
+                              icd_norm: str) -> Optional[str]:
+    """For the rep with the same name as the ICD, format their personal
+    production as "<INT> INT, <NL> NL, <DTV> DTV" — measures with a 0
+    count are omitted (matches the sheet's historical "2 NI, 11 NL"
+    style of dropping zero columns). Returns None if no matching rep."""
+    rep_data = per_rep.get(icd_norm)
+    if not rep_data:
+        return None
+    int_n = rep_data.get("Internet", 0)
+    nl_n = rep_data.get("New/Port Lines", 0)
+    dtv_n = rep_data.get("DTV", 0)
+    parts = []
+    if int_n:
+        parts.append(f"{int_n} INT")
+    if nl_n:
+        parts.append(f"{nl_n} NL")
+    if dtv_n:
+        parts.append(f"{dtv_n} DTV")
+    return ", ".join(parts) if parts else "0"
 
 
 def parse_money_lost_view_data(path: Path) -> Dict[str, str]:
@@ -819,6 +850,7 @@ _OFFICE_METRIC_ROW_LABELS = {
     # Pass both spellings in case Megan corrects it later.
     "Activation /Approval %":     ["Activation /Approval %", "Activation/Approval %"],
     "Money Lost from TMP":        ["Money Lost from TMP"],
+    "Personal Production":        ["Personal Production"],
 }
 
 
@@ -990,7 +1022,25 @@ def fill_office_metrics(ws: gspread.Worksheet,
         else:
             log.append(f"  [miss-data] {icd_norm!r} -> no Activation % data")
 
-        # 7) Money Lost from TMP = Missed EC Bonus x Grand Total to ICD,
+        # 7) Personal Production = the rep with the same name as the ICD
+        # (e.g. for ICD Boaktear Chowdhury, the rep named 'BOAKTEAR
+        # CHOWDHURY'). Format: "<INT> INT, <NL> NL, <DTV> DTV" with zeros
+        # omitted (Megan 2026-05-23).
+        personal = _personal_production_text(s_row.get("_per_rep", {}), icd_norm)
+        if personal:
+            row_0 = _find_first_label_match(
+                grid, _OFFICE_METRIC_ROW_LABELS["Personal Production"],
+                start, end)
+            if row_0 is not None:
+                a1 = gspread.utils.rowcol_to_a1(row_0 + 1, week_col + 1)
+                updates.append({"range": a1, "values": [[personal]]})
+                log.append(f"  {a1} {icd_norm!r} Personal Production <- {personal}")
+            else:
+                log.append(f"  [miss-row] {icd_norm!r} -> no 'Personal Production' row")
+        else:
+            log.append(f"  [miss-data] {icd_norm!r} -> no same-name rep in SARA")
+
+        # 8) Money Lost from TMP = Missed EC Bonus x Grand Total to ICD,
         # from ECBONUSAWARENESS / DOWNLINEVIEW (Megan 2026-05-22). Format
         # comes in as a dollar string ('$0.00', '$7,515.86' etc); write
         # verbatim - the sheet's cell is text/$-formatted already.
