@@ -212,10 +212,29 @@ NDS_METRIC_LABELS = {
 
 
 def _read_tab_csv(path: Path) -> List[List[str]]:
-    """Read a Tableau crosstab CSV (UTF-16, tab-delimited). Returns []
-    if the file is missing or empty."""
+    """Read a Tableau crosstab into rows. Handles UTF-16 tab-delimited
+    CSV (Tableau's CSV format) AND XLSX (returned when the Crosstab
+    dialog's 'default' format branch fires — happens when the CSV radio
+    click silently no-ops). Detection is by magic bytes, not extension,
+    since patchright's 'default' path saves xlsx content under a .csv
+    name. Returns [] if the file is missing or empty."""
     if not path.exists() or path.stat().st_size == 0:
         return []
+    with open(path, "rb") as f:
+        magic = f.read(4)
+    if magic.startswith(b"PK"):
+        # Wrap in BytesIO so openpyxl skips its filename-extension check
+        # (it refuses .csv even when the bytes are valid XLSX).
+        import io as _io
+        from openpyxl import load_workbook
+        with open(path, "rb") as f:
+            buf = _io.BytesIO(f.read())
+        wb = load_workbook(buf, read_only=True, data_only=True)
+        ws = wb.active
+        out: List[List[str]] = []
+        for row in ws.iter_rows(values_only=True):
+            out.append(["" if v is None else str(v) for v in row])
+        return out
     for enc in ("utf-16", "utf-8-sig", "utf-8"):
         try:
             with open(path, encoding=enc) as f:

@@ -33,7 +33,10 @@ from automations.alphalete_org_report.opt_nds import (
     _find_week_col,
     _norm_owner,
     _read_tab_csv,
-    download_crosstab as _download_crosstab,
+)
+from automations.shared.tableau_patchright import (
+    tableau_session,
+    download_crosstab_patchright,
 )
 
 
@@ -131,13 +134,15 @@ RETAIL_ACTIVATION_FILENAME = "opt_retail_activation.csv"
 # TBD until we run the dialog (the Crosstab dialog lists every
 # worksheet by name; we pick the EC BONUS AWARENESS one).
 RETAIL_MONEY_LOST_VIEW = (
+    # :iid=1 leaves 'Consultant ORG Title' (our target) UNSELECTED at
+    # load so the click registers as a fresh selection — same toggle-off
+    # trap that SARA hits. 'ICD EC Bonus' only contains the self-ICD
+    # row; 'Consultant ORG Title' has the full downline org table with
+    # one row per (downline ICD, measure). (Megan 2026-05-22.)
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "DirectDepositICDVIEWVersion2_0/ECBONUSAWARENESS/"
-    "538e62a7-3c2a-45cd-9a91-6784fbc4c7d8/DOWNLINEVIEW?:iid=1",
-    # Worksheet name TBD - Megan to share from Crosstab Download dialog
-    # once we run, OR she manually downloads + drops the file in the
-    # opt_retail_money_lost.csv path so the fallback uses it.
-    "Rafael Hidalgo ORGANIZATION",
+    "538e62a7-3c2a-45cd-9a91-6784fbc4c7d8/DOWNLINEVIEW?:iid=2",
+    "Consultant ORG Title",
     "opt_retail_money_lost.csv",
 )
 
@@ -327,12 +332,19 @@ def parse_sara_plus_office_totals(path: Path) -> Dict[str, Dict[str, int]]:
                     if i not in (owner_i, rep_i)
                     and (h or "").strip().lower() != "rep.rep number"]
     out: Dict[str, Dict[str, int]] = {}
+    # Tableau's XLSX export blanks the owner cell on continuation rows
+    # (only the first row of each group has the owner name); the CSV
+    # export repeats it. Forward-fill so both formats parse identically.
+    current_owner: Optional[str] = None
     for r in rows[1:]:
         if max(owner_i, rep_i, *(c for c in metric_cols.values() if c is not None)) >= len(r):
             continue
-        owner = _norm_owner(r[owner_i])
-        if not owner:
+        raw_owner = (r[owner_i] or "").strip()
+        if raw_owner:
+            current_owner = _norm_owner(raw_owner)
+        if not current_owner:
             continue
+        owner = current_owner
         rep_val = (r[rep_i] or "").strip()
         bucket = out.setdefault(owner, {"_active_reps": 0})
         if rep_val.lower() == "total":
@@ -922,13 +934,6 @@ def _http_download(session, url: str, filename: str, logfn,
         return None
 
 
-# Akib-section-only preview scope. Megan signs off on the Akib fill, then
-# we drop this list in the rollout commit so MJ + Ronald also get filled.
-# [[feedback_preview_marcellus]]: every new multi-tab automation previews
-# on one section before going wide.
-_PREVIEW_ICDS_AKIB_ONLY = ["boaktear chowdhury"]
-
-
 def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
     """Pull every Retail Tableau source + fill Boaktear's Retail tab:
       - Costco section (per-store wireless lines)
@@ -958,39 +963,58 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
     activation_path = _http_download(session, RETAIL_ACTIVATION_URL,
                                       RETAIL_ACTIVATION_FILENAME, logfn, errors)
 
-    # UI Crosstab pulls: SARA per-owner + ABP per-owner. These worksheets
-    # live inside a multi-worksheet dashboard and HTTP can't address them
-    # individually - Playwright drives the Download → Crosstab dialog.
+    # UI Crosstab pulls: SARA per-owner + ABP per-owner + Money Lost. These
+    # worksheets live inside multi-worksheet dashboards and HTTP can't
+    # address them individually. SARA and Money Lost both hit the CDP
+    # silent-no-op bug — their thumbnail click registers visually but
+    # Tableau refuses to enter the selected state, leaving Download
+    # disabled. Patchright (stealth Playwright) launches a non-CDP Chrome
+    # that Tableau accepts; uses Order Log's persistent profile so the
+    # ownerville login is reused across runs. (Megan confirmed 2026-05-22:
+    # Download enables in a regular browser, fails in CDP-attached one.)
     #
-    # FALLBACK: if the Playwright path fails (the SARA dialog has refused
-    # to enable Download for ANY of the click strategies we've tried —
-    # role=button:has-text, get_by_role, xpath-ancestor, force-click), and
-    # there's an existing file at the target path (e.g. one Megan
-    # manually downloaded + dropped in), use that. Keeps the run usable
-    # without blocking on the Crosstab automation puzzle.
-    def _crosstab_or_fallback(view_tuple) -> Optional[Path]:
-        url, sheet_name, filename = view_tuple
-        target = OUTPUT_DIR / filename
-        try:
-            logfn(f"OPT Retail: UI Crosstab → {sheet_name!r} → {filename}...")
-            return _download_crosstab(url, sheet_name, target, verbose=False)
-        except Exception as e:
-            msg = f"{filename}: {type(e).__name__}: {str(e)[:120]}"
-            logfn(f"OPT Retail: Crosstab error {msg}")
-            errors.append(msg)
-            # Use any existing manual download at the same path as a
-            # fallback. Skip empty / tiny files (likely partial writes
-            # or stale National Summary single-row from earlier HTTP
-            # attempts).
-            if target.exists() and target.stat().st_size > 500:
-                logfn(f"OPT Retail: using existing {filename} "
-                      f"({target.stat().st_size:,} bytes) as fallback")
-                return target
-            return None
+    # FALLBACK: if patchright errors (browser launch failure, expired
+    # session) and an existing file at the target path is fresh enough,
+    # use it. Keeps runs usable even if the new path regresses.
+    crosstab_views = [
+        ("sara", RETAIL_SARA_PLUS_OFFICE_VIEW),
+        ("abp", RETAIL_ABP_VIEW),
+        ("money_lost", RETAIL_MONEY_LOST_VIEW),
+    ]
+    crosstab_paths: Dict[str, Optional[Path]] = {k: None for k, _ in crosstab_views}
 
-    sara_office_path = _crosstab_or_fallback(RETAIL_SARA_PLUS_OFFICE_VIEW)
-    abp_path = _crosstab_or_fallback(RETAIL_ABP_VIEW)
-    money_lost_path = _crosstab_or_fallback(RETAIL_MONEY_LOST_VIEW)
+    def _fallback_existing(filename: str) -> Optional[Path]:
+        target = OUTPUT_DIR / filename
+        if target.exists() and target.stat().st_size > 500:
+            logfn(f"OPT Retail: using existing {filename} "
+                  f"({target.stat().st_size:,} bytes) as fallback")
+            return target
+        return None
+
+    try:
+        with tableau_session(verbose=False) as page:
+            for key, (url, sheet_name, filename) in crosstab_views:
+                target = OUTPUT_DIR / filename
+                try:
+                    logfn(f"OPT Retail: patchright Crosstab → {sheet_name!r} "
+                          f"→ {filename}...")
+                    crosstab_paths[key] = download_crosstab_patchright(
+                        url, sheet_name, target, verbose=False, page=page)
+                except Exception as e:
+                    msg = f"{filename}: {type(e).__name__}: {str(e)[:120]}"
+                    logfn(f"OPT Retail: Crosstab error {msg}")
+                    errors.append(msg)
+                    crosstab_paths[key] = _fallback_existing(filename)
+    except Exception as e:
+        logfn(f"OPT Retail: patchright session failed: "
+              f"{type(e).__name__}: {str(e)[:160]}")
+        errors.append(f"patchright session: {type(e).__name__}: {str(e)[:120]}")
+        for key, (_, _, filename) in crosstab_views:
+            crosstab_paths[key] = _fallback_existing(filename)
+
+    sara_office_path = crosstab_paths["sara"]
+    abp_path = crosstab_paths["abp"]
+    money_lost_path = crosstab_paths["money_lost"]
 
     # ---- Step 2: parse every CSV ----
     by_club = parse_retail_by_club(by_club_path)
@@ -1055,13 +1079,10 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
                 logfn(f"OPT Retail: {ln}")
                 if ln.startswith(("[OK", "[DRY-RUN")):
                     ok_any = True
-            # New office-metric fill (churn + Next Up % + Extra/Premium %
-            # + ABP %). PREVIEW: scoped to the Akib section only so Megan
-            # can sign off before rolling MJ + Ronald in commit 2.
             for ln in fill_office_metrics(
                     ws, churn, sara_office, abp, activation, money_lost,
                     RETAIL_TAB_ICDS[title], week_col_label,
-                    icds_to_write=_PREVIEW_ICDS_AKIB_ONLY,
+                    icds_to_write=None,
                     dry_run=dry_run, logfn=logfn):
                 logfn(f"OPT Retail: {ln}")
                 if ln.startswith(("[OK", "[DRY-RUN")):
