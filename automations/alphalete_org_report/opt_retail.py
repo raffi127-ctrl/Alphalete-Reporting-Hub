@@ -90,16 +90,16 @@ RETAIL_CHURN_FILENAME = "opt_retail_churn.csv"
 #
 # Each tuple: (page URL to load, Crosstab dialog worksheet name, filename)
 RETAIL_SARA_PLUS_OFFICE_VIEW = (
-    # ?:iid=1 (not 2) so the dashboard loads with the National Summary
-    # worksheet active and the per-owner '(2)' sheet INACTIVE. The
-    # Crosstab dialog then registers our click on '(2)' as a fresh
-    # selection. When :iid=2 is the load state, ABP-style click strategies
-    # all fail - dialog shows both rows unselected after clicks land,
-    # likely because clicking the already-active sheet toggles selection
-    # back off. (Megan + screenshot diagnostic 2026-05-22.)
+    # 'Weekproduction' custom view bakes the date range picker to ONE
+    # WEEK (Megan 2026-05-22). The default 'RETAILPULL' custom view
+    # ran a wider date window, inflating Next Up, Total New Lines,
+    # Active Headcount, etc. across multiple weeks — verified wrong
+    # against the sheet's actual week values. This view must be
+    # configured as a *dynamic* date filter (auto-advances) for the
+    # report to stay correct week-over-week.
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "DropshipV_2/SARAPLUSSALESSUMMARY/"
-    "4e5c4964-3f91-4d93-b362-f8768b771e67/RETAILPULL?:iid=1",
+    "53654748-be66-4049-84d8-1a4a0464ba6d/Weekproduction?:iid=1",
     "Sara Plus Sales Summary (2)",
     "opt_retail_sara_plus_office.csv",
 )
@@ -976,12 +976,19 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
     # FALLBACK: if patchright errors (browser launch failure, expired
     # session) and an existing file at the target path is fresh enough,
     # use it. Keeps runs usable even if the new path regresses.
+    # Per-view retry budget. SARA's Crosstab dialog is flaky under
+    # patchright — succeeds ~1 in 3 first attempts with a silent
+    # "Download disabled" failure mode the rest. Retry with an
+    # about:blank reset between attempts to clear any leftover dialog
+    # state. ABP and Money Lost are deterministic per session (ABP
+    # always works first try; Money Lost always silently no-ops — its
+    # fallback path is a separate HTML scrape, TODO).
     crosstab_views = [
-        ("sara", RETAIL_SARA_PLUS_OFFICE_VIEW),
-        ("abp", RETAIL_ABP_VIEW),
-        ("money_lost", RETAIL_MONEY_LOST_VIEW),
+        ("sara", RETAIL_SARA_PLUS_OFFICE_VIEW, 3),
+        ("abp", RETAIL_ABP_VIEW, 1),
+        ("money_lost", RETAIL_MONEY_LOST_VIEW, 1),
     ]
-    crosstab_paths: Dict[str, Optional[Path]] = {k: None for k, _ in crosstab_views}
+    crosstab_paths: Dict[str, Optional[Path]] = {k: None for k, _, _ in crosstab_views}
 
     def _fallback_existing(filename: str) -> Optional[Path]:
         target = OUTPUT_DIR / filename
@@ -993,15 +1000,33 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
 
     try:
         with tableau_session(verbose=False) as page:
-            for key, (url, sheet_name, filename) in crosstab_views:
+            for key, (url, sheet_name, filename), max_attempts in crosstab_views:
                 target = OUTPUT_DIR / filename
-                try:
-                    logfn(f"OPT Retail: patchright Crosstab → {sheet_name!r} "
-                          f"→ {filename}...")
-                    crosstab_paths[key] = download_crosstab_patchright(
-                        url, sheet_name, target, verbose=False, page=page)
-                except Exception as e:
-                    msg = f"{filename}: {type(e).__name__}: {str(e)[:120]}"
+                last_err: Optional[Exception] = None
+                for attempt in range(1, max_attempts + 1):
+                    label = (f"attempt {attempt}/{max_attempts} "
+                             if max_attempts > 1 else "")
+                    logfn(f"OPT Retail: patchright Crosstab {label}→ "
+                          f"{sheet_name!r} → {filename}...")
+                    try:
+                        crosstab_paths[key] = download_crosstab_patchright(
+                            url, sheet_name, target, verbose=False, page=page)
+                        last_err = None
+                        break
+                    except Exception as e:
+                        last_err = e
+                        if attempt < max_attempts:
+                            logfn(f"OPT Retail:   {type(e).__name__}, "
+                                  "resetting page + retrying...")
+                            try:
+                                page.goto("about:blank",
+                                          wait_until="domcontentloaded",
+                                          timeout=10_000)
+                                page.wait_for_timeout(3_000)
+                            except Exception:
+                                pass
+                if last_err is not None:
+                    msg = f"{filename}: {type(last_err).__name__}: {str(last_err)[:120]}"
                     logfn(f"OPT Retail: Crosstab error {msg}")
                     errors.append(msg)
                     crosstab_paths[key] = _fallback_existing(filename)
@@ -1009,7 +1034,7 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
         logfn(f"OPT Retail: patchright session failed: "
               f"{type(e).__name__}: {str(e)[:160]}")
         errors.append(f"patchright session: {type(e).__name__}: {str(e)[:120]}")
-        for key, (_, _, filename) in crosstab_views:
+        for key, (_, _, filename), _max in crosstab_views:
             crosstab_paths[key] = _fallback_existing(filename)
 
     sara_office_path = crosstab_paths["sara"]
