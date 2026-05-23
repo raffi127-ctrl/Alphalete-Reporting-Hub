@@ -37,6 +37,7 @@ from automations.alphalete_org_report.opt_nds import (
 from automations.shared.tableau_patchright import (
     tableau_session,
     download_crosstab_patchright,
+    scrape_view_data_patchright,
 )
 
 
@@ -89,20 +90,32 @@ RETAIL_CHURN_FILENAME = "opt_retail_churn.csv"
 # nested inside a multi-worksheet dashboard.
 #
 # Each tuple: (page URL to load, Crosstab dialog worksheet name, filename)
-RETAIL_SARA_PLUS_OFFICE_VIEW = (
-    # 'Weekproduction' custom view bakes the date range picker to ONE
-    # WEEK (Megan 2026-05-22). The default 'RETAILPULL' custom view
-    # ran a wider date window, inflating Next Up, Total New Lines,
-    # Active Headcount, etc. across multiple weeks — verified wrong
-    # against the sheet's actual week values. This view must be
-    # configured as a *dynamic* date filter (auto-advances) for the
-    # report to stay correct week-over-week.
+# SARA Plus office data. Constructed per-run via _sara_view_data_url()
+# because the Min/Max Date URL params need the target week's dates.
+# We download via View Data scrape (not Crosstab — the Crosstab dialog
+# silently no-ops the (2) thumbnail click even in patchright) and use
+# the BARE dashboard URL with date params (NOT a custom view path — saved
+# custom views like 'Weekproduction' lock their saved date and ignore
+# URL params; the bare URL respects them).
+RETAIL_SARA_PLUS_OFFICE_FILENAME = "opt_retail_sara_plus_office.csv"
+_RETAIL_SARA_BASE_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
-    "DropshipV_2/SARAPLUSSALESSUMMARY/"
-    "53654748-be66-4049-84d8-1a4a0464ba6d/Weekproduction?:iid=1",
-    "Sara Plus Sales Summary (2)",
-    "opt_retail_sara_plus_office.csv",
+    "DropshipV_2/SARAPLUSSALESSUMMARY"
 )
+
+
+def _sara_view_data_url(week_end_label: str) -> str:
+    """Build the SARA Plus URL with Min/Max Date filters for the target
+    week. `week_end_label` is the sheet's week-ending Sunday in "M/D/YY"
+    format (e.g. '5/17/26'). Week is Mon-Sun: Min Date = Sun minus 6 days."""
+    from datetime import datetime, timedelta
+    end = datetime.strptime(week_end_label, "%m/%d/%y")
+    start = end - timedelta(days=6)
+    return (
+        f"{_RETAIL_SARA_BASE_URL}?:iid=1"
+        f"&Min%20Date={start.strftime('%Y-%m-%d')}"
+        f"&Max%20Date={end.strftime('%Y-%m-%d')}"
+    )
 
 RETAIL_ABP_VIEW = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
@@ -133,18 +146,17 @@ RETAIL_ACTIVATION_FILENAME = "opt_retail_activation.csv"
 # go through the UI Crosstab path - the worksheet name to pick is
 # TBD until we run the dialog (the Crosstab dialog lists every
 # worksheet by name; we pick the EC BONUS AWARENESS one).
-RETAIL_MONEY_LOST_VIEW = (
-    # :iid=1 leaves 'Consultant ORG Title' (our target) UNSELECTED at
-    # load so the click registers as a fresh selection — same toggle-off
-    # trap that SARA hits. 'ICD EC Bonus' only contains the self-ICD
-    # row; 'Consultant ORG Title' has the full downline org table with
-    # one row per (downline ICD, measure). (Megan 2026-05-22.)
+RETAIL_MONEY_LOST_URL = (
+    # Money Lost = sum of 'Missed EC Bonus' across campaigns per downline
+    # ICD. Crosstab dialog silently no-ops on 'Consultant ORG Title' even
+    # in patchright; pivoted to View Data scrape with activate_xy=(0.4,0.7)
+    # that clicks into the lower 'Rafael Hidalgo ORGANIZATION' table to
+    # enable Download → Data on this multi-worksheet dashboard.
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "DirectDepositICDVIEWVersion2_0/ECBONUSAWARENESS/"
-    "538e62a7-3c2a-45cd-9a91-6784fbc4c7d8/DOWNLINEVIEW?:iid=2",
-    "Consultant ORG Title",
-    "opt_retail_money_lost.csv",
+    "538e62a7-3c2a-45cd-9a91-6784fbc4c7d8/DOWNLINEVIEW?:iid=2"
 )
+RETAIL_MONEY_LOST_FILENAME = "opt_retail_money_lost.csv"
 
 
 # Pattern: extracts the store identifier ('#669', 'BC #655', '#1735') from
@@ -434,6 +446,88 @@ def parse_money_lost_from_tmp(path: Path) -> Dict[str, str]:
         if owner and val:
             out[owner] = val
     return out
+
+
+def parse_sara_view_data(path: Path) -> Dict[str, Dict[str, int]]:
+    """Parse SARA Plus office View Data scrape (long format from
+    `scrape_view_data_patchright`) → same shape as
+    `parse_sara_plus_office_totals`: {owner_norm: {metric: int, '_active_reps': int}}.
+
+    Layout: Owner & Office | Rep | rep.Rep Number | Measure Names | Measure Values
+    One row per (rep, measure). Aggregates per office by summing each
+    target measure across reps; Active Headcount = unique reps with any
+    non-zero measure value (Megan 2026-05-22 spec)."""
+    rows = _read_tab_csv(path)
+    if not rows or len(rows) < 2:
+        return {}
+    header = rows[0]
+    owner_i = _col_starts_with(header, "Owner & Office")
+    rep_i = _col_starts_with(header, "Rep")
+    meas_i = tableau_http.col_idx(header, "Measure Names")
+    val_i = tableau_http.col_idx(header, "Measure Values")
+    if None in (owner_i, rep_i, meas_i, val_i):
+        return {}
+    target_measures = {"Next Up", "New/Port Lines", "Premium/Elite", "Extra"}
+    sums: Dict[str, Dict[str, int]] = {}
+    active_reps: Dict[str, set] = {}
+    for r in rows[1:]:
+        if max(owner_i, rep_i, meas_i, val_i) >= len(r):
+            continue
+        owner = _norm_owner(r[owner_i])
+        rep = (r[rep_i] or "").strip()
+        measure = (r[meas_i] or "").strip()
+        raw_val = (r[val_i] or "").strip().replace(",", "")
+        if not owner or not rep:
+            continue
+        try:
+            num = int(float(raw_val))
+        except ValueError:
+            continue
+        bucket = sums.setdefault(owner, {})
+        if measure in target_measures:
+            bucket[measure] = bucket.get(measure, 0) + num
+        if num > 0:
+            active_reps.setdefault(owner, set()).add(rep)
+    out: Dict[str, Dict[str, int]] = {}
+    for owner, metrics in sums.items():
+        metrics["_active_reps"] = len(active_reps.get(owner, set()))
+        out[owner] = metrics
+    return out
+
+
+def parse_money_lost_view_data(path: Path) -> Dict[str, str]:
+    """Parse Money Lost View Data scrape (long format) → {icd_norm: dollar_str}.
+
+    Layout: ICD.Corporation Name | ICD.Full Name | Measure Names |
+            cl.Campaign__c | Measure Values
+    Sum 'Missed EC Bonus' across all campaigns per ICD.Full Name. The
+    sum is the per-ICD Money Lost from TMP value (matches the dashboard's
+    'Missed EC Bonus' row totals visible in the ORG table)."""
+    rows = _read_tab_csv(path)
+    if not rows or len(rows) < 2:
+        return {}
+    header = rows[0]
+    name_i = tableau_http.col_idx(header, "ICD.Full Name")
+    meas_i = tableau_http.col_idx(header, "Measure Names")
+    val_i = tableau_http.col_idx(header, "Measure Values")
+    if None in (name_i, meas_i, val_i):
+        return {}
+    sums: Dict[str, float] = {}
+    for r in rows[1:]:
+        if max(name_i, meas_i, val_i) >= len(r):
+            continue
+        if (r[meas_i] or "").strip().lower() != "missed ec bonus":
+            continue
+        owner = _norm_owner(r[name_i])
+        raw_val = (r[val_i] or "").strip().replace("$", "").replace(",", "")
+        if not owner or not raw_val:
+            continue
+        try:
+            num = float(raw_val)
+        except ValueError:
+            continue
+        sums[owner] = sums.get(owner, 0.0) + num
+    return {k: f"${v:,.2f}" for k, v in sums.items()}
 
 
 def parse_abp_conversions(path: Path) -> Dict[str, str]:
@@ -963,32 +1057,28 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
     activation_path = _http_download(session, RETAIL_ACTIVATION_URL,
                                       RETAIL_ACTIVATION_FILENAME, logfn, errors)
 
-    # UI Crosstab pulls: SARA per-owner + ABP per-owner + Money Lost. These
-    # worksheets live inside multi-worksheet dashboards and HTTP can't
-    # address them individually. SARA and Money Lost both hit the CDP
-    # silent-no-op bug — their thumbnail click registers visually but
-    # Tableau refuses to enter the selected state, leaving Download
-    # disabled. Patchright (stealth Playwright) launches a non-CDP Chrome
-    # that Tableau accepts; uses Order Log's persistent profile so the
-    # ownerville login is reused across runs. (Megan confirmed 2026-05-22:
-    # Download enables in a regular browser, fails in CDP-attached one.)
-    #
-    # FALLBACK: if patchright errors (browser launch failure, expired
-    # session) and an existing file at the target path is fresh enough,
-    # use it. Keeps runs usable even if the new path regresses.
-    # Per-view retry budget. SARA's Crosstab dialog is flaky under
-    # patchright — succeeds ~1 in 3 first attempts with a silent
-    # "Download disabled" failure mode the rest. Retry with an
-    # about:blank reset between attempts to clear any leftover dialog
-    # state. ABP and Money Lost are deterministic per session (ABP
-    # always works first try; Money Lost always silently no-ops — its
-    # fallback path is a separate HTML scrape, TODO).
-    crosstab_views = [
-        ("sara", RETAIL_SARA_PLUS_OFFICE_VIEW, 3),
-        ("abp", RETAIL_ABP_VIEW, 1),
-        ("money_lost", RETAIL_MONEY_LOST_VIEW, 1),
-    ]
-    crosstab_paths: Dict[str, Optional[Path]] = {k: None for k, _, _ in crosstab_views}
+    # Patchright session for SARA + ABP + Money Lost. Three different paths:
+    #   - SARA: View Data scrape with dynamic Min/Max Date URL params
+    #     (the bare dashboard URL respects them; custom views like
+    #     'Weekproduction' lock their own dates and ignore URL params).
+    #   - ABP: Crosstab (its dialog isn't broken; the Crosstab path works).
+    #   - Money Lost: View Data scrape with activate_xy clicking into the
+    #     lower 'Rafael Hidalgo ORGANIZATION' table to enable Download → Data.
+    # All three share one patchright session (one Chrome launch). On full
+    # session failure, fall back to any existing fresh file at the target
+    # path so a transient launch failure doesn't blank the run.
+    week_col_label = _current_target_week_col_label()
+    logfn(f"OPT Retail: target week column = {week_col_label!r}")
+
+    sara_office_path: Optional[Path] = None
+    abp_path: Optional[Path] = None
+    money_lost_path: Optional[Path] = None
+
+    # Linear-scroll tuning for View Data scrapes — default scraper's
+    # alternating incremental+jump strategy skips middle rows on SARA's
+    # 3-owner grid.
+    _VIEWDATA_SCRAPE_KWARGS = dict(jump_every=None, scroll_step=0.35,
+                                    scroll_wait_ms=1800, stale_max=30)
 
     def _fallback_existing(filename: str) -> Optional[Path]:
         target = OUTPUT_DIR / filename
@@ -998,48 +1088,68 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
             return target
         return None
 
+    def _try_with_retry(label: str, filename: str, max_attempts: int, op):
+        """Run `op()` (download/scrape) up to max_attempts times, with an
+        about:blank reset between attempts. Returns the result path, or
+        the existing-file fallback, or None."""
+        target = OUTPUT_DIR / filename
+        last_err: Optional[Exception] = None
+        for attempt in range(1, max_attempts + 1):
+            tag = (f"attempt {attempt}/{max_attempts} " if max_attempts > 1 else "")
+            logfn(f"OPT Retail: {label} {tag}→ {filename}...")
+            try:
+                return op()
+            except Exception as e:
+                last_err = e
+                if attempt < max_attempts:
+                    logfn(f"OPT Retail:   {type(e).__name__}, retrying...")
+                    try:
+                        page.goto("about:blank",
+                                  wait_until="domcontentloaded",
+                                  timeout=10_000)
+                        page.wait_for_timeout(3_000)
+                    except Exception:
+                        pass
+        msg = f"{filename}: {type(last_err).__name__}: {str(last_err)[:120]}"
+        logfn(f"OPT Retail: error {msg}")
+        errors.append(msg)
+        return _fallback_existing(filename)
+
     try:
         with tableau_session(verbose=False) as page:
-            for key, (url, sheet_name, filename), max_attempts in crosstab_views:
-                target = OUTPUT_DIR / filename
-                last_err: Optional[Exception] = None
-                for attempt in range(1, max_attempts + 1):
-                    label = (f"attempt {attempt}/{max_attempts} "
-                             if max_attempts > 1 else "")
-                    logfn(f"OPT Retail: patchright Crosstab {label}→ "
-                          f"{sheet_name!r} → {filename}...")
-                    try:
-                        crosstab_paths[key] = download_crosstab_patchright(
-                            url, sheet_name, target, verbose=False, page=page)
-                        last_err = None
-                        break
-                    except Exception as e:
-                        last_err = e
-                        if attempt < max_attempts:
-                            logfn(f"OPT Retail:   {type(e).__name__}, "
-                                  "resetting page + retrying...")
-                            try:
-                                page.goto("about:blank",
-                                          wait_until="domcontentloaded",
-                                          timeout=10_000)
-                                page.wait_for_timeout(3_000)
-                            except Exception:
-                                pass
-                if last_err is not None:
-                    msg = f"{filename}: {type(last_err).__name__}: {str(last_err)[:120]}"
-                    logfn(f"OPT Retail: Crosstab error {msg}")
-                    errors.append(msg)
-                    crosstab_paths[key] = _fallback_existing(filename)
+            sara_target = OUTPUT_DIR / RETAIL_SARA_PLUS_OFFICE_FILENAME
+            sara_office_path = _try_with_retry(
+                "patchright View Data", RETAIL_SARA_PLUS_OFFICE_FILENAME, 2,
+                lambda: scrape_view_data_patchright(
+                    _sara_view_data_url(week_col_label), sara_target,
+                    verbose=False, page=page,
+                    scrape_kwargs=_VIEWDATA_SCRAPE_KWARGS))
+
+            abp_url, abp_sheet, abp_fname = RETAIL_ABP_VIEW
+            abp_target = OUTPUT_DIR / abp_fname
+            abp_path = _try_with_retry(
+                "patchright Crosstab", abp_fname, 2,
+                lambda: download_crosstab_patchright(
+                    abp_url, abp_sheet, abp_target,
+                    verbose=False, page=page))
+
+            money_target = OUTPUT_DIR / RETAIL_MONEY_LOST_FILENAME
+            money_lost_path = _try_with_retry(
+                "patchright View Data", RETAIL_MONEY_LOST_FILENAME, 2,
+                lambda: scrape_view_data_patchright(
+                    RETAIL_MONEY_LOST_URL, money_target,
+                    verbose=False, page=page,
+                    activate_xy=(0.4, 0.7),
+                    scrape_kwargs=_VIEWDATA_SCRAPE_KWARGS))
     except Exception as e:
         logfn(f"OPT Retail: patchright session failed: "
               f"{type(e).__name__}: {str(e)[:160]}")
         errors.append(f"patchright session: {type(e).__name__}: {str(e)[:120]}")
-        for key, (_, _, filename), _max in crosstab_views:
-            crosstab_paths[key] = _fallback_existing(filename)
-
-    sara_office_path = crosstab_paths["sara"]
-    abp_path = crosstab_paths["abp"]
-    money_lost_path = crosstab_paths["money_lost"]
+        sara_office_path = sara_office_path or _fallback_existing(
+            RETAIL_SARA_PLUS_OFFICE_FILENAME)
+        abp_path = abp_path or _fallback_existing(RETAIL_ABP_VIEW[2])
+        money_lost_path = money_lost_path or _fallback_existing(
+            RETAIL_MONEY_LOST_FILENAME)
 
     # ---- Step 2: parse every CSV ----
     by_club = parse_retail_by_club(by_club_path)
@@ -1050,7 +1160,7 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
     logfn(f"OPT Retail: parsed churn rates for {len(churn)} office(s): "
           f"{sorted(churn.keys())}")
 
-    sara_office = parse_sara_plus_office_totals(sara_office_path) if sara_office_path else {}
+    sara_office = parse_sara_view_data(sara_office_path) if sara_office_path else {}
     logfn(f"OPT Retail: parsed Sara Plus office totals for {len(sara_office)} office(s): "
           f"{sorted(sara_office.keys())}")
 
@@ -1063,7 +1173,7 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
     logfn(f"OPT Retail: parsed Activation % (60+ Days) for "
           f"{len(activation)} office(s): {sorted(activation.keys())}")
 
-    money_lost = parse_money_lost_from_tmp(money_lost_path) if money_lost_path else {}
+    money_lost = parse_money_lost_view_data(money_lost_path) if money_lost_path else {}
     logfn(f"OPT Retail: parsed Money Lost from TMP for {len(money_lost)} office(s): "
           f"{sorted(money_lost.keys())}")
 
@@ -1079,8 +1189,6 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
     # ---- Step 3: walk the Retail tabs ----
     client = rfill._client()
     sh = client.open_by_key(ALPHALETE_ORG_SHEET_ID)
-    week_col_label = _current_target_week_col_label()
-    logfn(f"OPT Retail: target week column = {week_col_label!r}")
 
     filled: List[str] = []
     skipped: List[str] = []

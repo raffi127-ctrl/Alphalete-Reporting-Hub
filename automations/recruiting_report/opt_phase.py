@@ -587,7 +587,12 @@ def _parse_view_data_text(txt: str) -> Tuple[List[str], List[List[str]]]:
     return fields, records
 
 
-def _scrape_view_data_grid(win, verbose: bool = True
+def _scrape_view_data_grid(win, verbose: bool = True,
+                           max_iter: int = 250,
+                           stale_max: int = 10,
+                           scroll_step: float = 0.75,
+                           scroll_wait_ms: int = 900,
+                           jump_every: Optional[int] = 4,
                            ) -> Tuple[List[str], List[List[str]]]:
     """Scroll-scrape the View Data window's virtualized grid. Returns
     (field_names, records).
@@ -597,14 +602,22 @@ def _scrape_view_data_grid(win, verbose: bool = True
     for multi-group grids (e.g. Fiber's by-state by-zip view) where a single
     container's incremental scroll plateaus after the first group is loaded.
     Stale threshold is generous so a slow Tableau redraw doesn't stop us
-    short of the row count we know is coming."""
+    short of the row count we know is coming.
+
+    Tuning params for sparse single-group grids (SARA Plus office) where
+    jump-to-bottom skips middle rows:
+      jump_every=None disables jumps (pure linear scroll)
+      scroll_step=0.35 (smaller) sweeps without skipping rows
+      scroll_wait_ms=1800 (longer) gives Tableau time to redraw
+      stale_max=30 (more patience) survives slow re-renders mid-grid
+    """
     win.wait_for_timeout(4500)
     fields: List[str] = []
     seen: Dict[tuple, List[str]] = {}
     expect = None
     last = -1
     stale = 0
-    for i in range(250):
+    for i in range(max_iter):
         txt = win.evaluate("() => document.body ? document.body.innerText : ''")
         if expect is None:
             mm = re.search(r"(\d+)\s+rows?\s+\d+\s+fields?", txt or "")
@@ -617,13 +630,10 @@ def _scrape_view_data_grid(win, verbose: bool = True
         if expect and len(seen) >= expect:
             break
         stale = stale + 1 if len(seen) == last else 0
-        if stale >= 10:
+        if stale >= stale_max:
             break
         last = len(seen)
-        # Every 4th iteration: hard-jump every scrollable to its bottom — the
-        # only reliable way to flush a virtualized grid past a sub-group's end.
-        # Otherwise: incremental scroll on the top-3 scrollable containers.
-        jump = (i % 4 == 3)
+        jump = (jump_every is not None and i % jump_every == jump_every - 1)
         win.evaluate(f"""() => {{
           const cands = [];
           document.querySelectorAll('*').forEach(e => {{
@@ -635,18 +645,19 @@ def _scrape_view_data_grid(win, verbose: bool = True
             if ({str(jump).lower()}) {{
               e.scrollTop = e.scrollHeight;
             }} else {{
-              e.scrollTop += Math.round(e.clientHeight * 0.75);
+              e.scrollTop += Math.round(e.clientHeight * {scroll_step});
             }}
           }});
         }}""")
-        win.wait_for_timeout(900)
+        win.wait_for_timeout(scroll_wait_ms)
     if verbose:
         print(f"  scraped {len(seen)}/{expect or '?'} View Data rows", flush=True)
     return fields, list(seen.values())
 
 
 def _scrape_one_view_data(page, ctx, view_url: str, verbose: bool = True,
-                          activate_xy: Optional[Tuple[float, float]] = None
+                          activate_xy: Optional[Tuple[float, float]] = None,
+                          scrape_kwargs: Optional[Dict] = None,
                           ) -> Tuple[List[str], List[List[str]]]:
     """Navigate an already-authenticated `page` to `view_url`, drive
     Download -> Data, scrape + close the View Data window. Returns
@@ -717,7 +728,7 @@ def _scrape_one_view_data(page, ctx, view_url: str, verbose: bool = True,
     if win is None:
         raise RuntimeError("Download -> Data didn't open a View Data window")
     try:
-        return _scrape_view_data_grid(win, verbose)
+        return _scrape_view_data_grid(win, verbose, **(scrape_kwargs or {}))
     finally:
         try:
             win.close()

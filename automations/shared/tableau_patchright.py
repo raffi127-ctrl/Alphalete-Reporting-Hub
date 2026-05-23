@@ -35,7 +35,10 @@ from patchright.sync_api import (
     TimeoutError as PWTimeout,
 )
 
-from automations.recruiting_report.opt_phase import drive_crosstab_dialog
+from automations.recruiting_report.opt_phase import (
+    drive_crosstab_dialog,
+    _scrape_one_view_data,
+)
 
 
 PROFILE_DIR = (
@@ -216,3 +219,54 @@ def download_crosstab_patchright(
     with tableau_session(verbose=verbose) as pg:
         return drive_crosstab_dialog(pg, view_url, crosstab_sheet, out_path,
                                      verbose=verbose)
+
+
+def scrape_view_data_patchright(
+    view_url: str,
+    out_path: Path,
+    verbose: bool = True,
+    activate_xy: Optional[tuple] = None,
+    scrape_kwargs: Optional[dict] = None,
+    page: Optional[Page] = None,
+):
+    """Scrape Tableau's Download → Data 'View Data' window via patchright.
+
+    Used as a fallback for dashboards whose Crosstab dialog silently
+    no-ops the thumbnail click (SARA, Money Lost). The View Data path
+    goes through a different Tableau UI mechanism that isn't subject
+    to the same CDP-detection bug — and works in patchright even when
+    Crosstab doesn't.
+
+    Writes the scraped rows to `out_path` as UTF-8 tab-delimited so
+    `_read_tab_csv` parses it without changes.
+
+    Args:
+      view_url: Tableau view URL.
+      out_path: where to write the .csv (tab-delimited).
+      activate_xy: fractional (x, y) within the viz to click before
+        opening Download — required on multi-worksheet dashboards
+        where Download → Data is disabled until a worksheet is active.
+      scrape_kwargs: tuning knobs forwarded to `_scrape_view_data_grid`
+        (jump_every, scroll_step, scroll_wait_ms, stale_max, max_iter).
+        For sparse single-group grids that the default alternating
+        incremental+jump strategy skips middle rows on, pass
+        {'jump_every': None, 'scroll_step': 0.35, 'scroll_wait_ms': 1800,
+         'stale_max': 30}.
+      page: reuse a tableau_session() page (caller manages lifecycle).
+    """
+    def _do(pg):
+        ctx = pg.context
+        fields, records = _scrape_one_view_data(
+            pg, ctx, view_url, verbose=verbose,
+            activate_xy=activate_xy, scrape_kwargs=scrape_kwargs)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        lines = ["\t".join(fields)] + ["\t".join(r) for r in records]
+        out_path.write_text("\n".join(lines), encoding="utf-8")
+        if verbose:
+            print(f"saved View Data: {out_path} ({len(records)} rows)", flush=True)
+        return out_path
+
+    if page is not None:
+        return _do(page)
+    with tableau_session(verbose=verbose) as pg:
+        return _do(pg)
