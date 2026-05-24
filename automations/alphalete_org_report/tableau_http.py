@@ -58,15 +58,20 @@ def _grab_session() -> requests.Session:
 
 def download_view_csv(workbook: str, view: str, out_path: Path,
                       session: Optional[requests.Session] = None,
-                      timeout: int = 120) -> Path:
+                      timeout: int = 120,
+                      params: Optional[Dict[str, str]] = None) -> Path:
     """GET the .csv export of a Tableau view + save it to disk.
     `workbook` and `view` are the URL slugs (e.g. 'DropshipV_2' and
     'ACTIVATIONRATES'). Reuses `session` if provided; otherwise grabs
-    a fresh one from the debug Chrome."""
+    a fresh one from the debug Chrome.
+
+    `params` (e.g. {'Min Date': '2026-05-11', 'Max Date': '2026-05-17'})
+    are passed as query params to pin the view's date filter — the .csv
+    endpoint honors them the same way the dashboard URL does."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     s = session or _grab_session()
     url = f"{TABLEAU_BASE}/t/{TABLEAU_SITE}/views/{workbook}/{view}.csv"
-    r = s.get(url, allow_redirects=True, timeout=timeout)
+    r = s.get(url, params=params or {}, allow_redirects=True, timeout=timeout)
     if r.status_code != 200:
         raise RuntimeError(
             f"Tableau CSV download failed for {workbook}/{view}: "

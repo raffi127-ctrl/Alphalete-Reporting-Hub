@@ -673,6 +673,41 @@ def _current_target_week_col_label(today: Optional[dt.date] = None) -> str:
     return f"{target.month}/{target.day}/{target.year % 100}"
 
 
+def _target_week_date_range(today: Optional[dt.date] = None) -> Dict[str, str]:
+    """Min/Max Date URL params (ISO) for the target week — Mon..Sun ending
+    on the target WE Sunday. Used to pin the SARA views to the right week
+    instead of relying on the dashboard's default 'current week' (which is
+    only correct on a Monday run). Unlike NDSDailyTracker, the SARA
+    dashboard honors these params. (2026-05-24.)"""
+    end = _current_target_week_end(today)        # Sunday
+    start = end - dt.timedelta(days=6)           # Monday
+    return {"Min Date": start.isoformat(), "Max Date": end.isoformat()}
+
+
+# Personal Production product order/abbrev for the SARA By Day own-row
+# breakdown (Megan 2026-05-24: NDS uses the same INT/NL/DTV format Retail
+# does, sourced from the ICD's own rep row in SARA By Day — the old
+# ProductSalesSummaryRep source returned 0). Zero-count parts are omitted.
+_PP_BYDAY_PARTS = [("Internet", "INT"), ("Wireless Lines", "NL"), ("DTV", "DTV")]
+
+
+def _personal_production_byday(rep_byday: Dict[str, int]) -> Optional[str]:
+    """Format an ICD's own SARA By Day row as '1 INT, 84 NL' (zeros
+    dropped). Returns None if the row is empty/missing."""
+    if not rep_byday:
+        return None
+    parts = []
+    for key, abbr in _PP_BYDAY_PARTS:
+        n = rep_byday.get(key, 0)
+        try:
+            n = int(float(n))
+        except (ValueError, TypeError):
+            n = 0
+        if n:
+            parts.append(f"{n} {abbr}")
+    return ", ".join(parts) if parts else "0"
+
+
 def _find_rep_breakdown_anchor(grid: List[List[str]]) -> Optional[Tuple[int, int]]:
     """Locate the Rep Breakdown chart header on a worksheet grid. Returns
     (row, col) of the 'Rep' header cell (0-indexed), or None if absent.
@@ -913,9 +948,16 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
                  sara_byday: Optional[Dict[str, Dict[str, int]]] = None,
                  personal_production: Optional[Dict[str, str]] = None,
                  direct_deposit: Optional[Dict[str, float]] = None,
+                 backfill: bool = False,
                  ) -> List[str]:
     """Write all available metrics for this rep into the target week column.
-    Skips metrics whose source data isn't available."""
+    Skips metrics whose source data isn't available.
+
+    `backfill=True` (past-week catch-up): don't write the metrics whose
+    dashboards have NO date control and so can't be pinned to a past week
+    — NDSDailyTracker (Active Selling Heads, Scorecard Ranking, National
+    AVG, AVG Apps), Direct Deposit, and Total Leads. Those cells are left
+    blank rather than filled with wrong-week data. (Megan 2026-05-24.)"""
     log: List[str] = []
     grid = rfill._retry(ws.get_all_values)
     if not grid:
@@ -930,17 +972,18 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
     crow = churn.get(owner_norm, {})
 
     values: Dict[str, str] = {}
-    if "rep_count" in rep:
-        values["Active Selling Heads"] = rep["rep_count"]
-    if "ranking" in rep:
-        values["Scorecard Ranking"] = rep["ranking"]
-    # 'National AVG for sales' = Rep Summary Total row, 'New/Port per Rep'
-    # column (Megan confirmed via screenshot 2026-05-24, circled this
-    # column + the 6.2 total for WE 5/11-5/14). The 8.0 we'd been getting
-    # was the wrong WEEK (current 5/18-5/23), not the wrong column — fixed
-    # by pinning the NDSDailyTracker date range below.
-    if rep_summary_total.get("New/Port per Rep"):
-        values["National AVG for sales"] = rep_summary_total["New/Port per Rep"]
+    # NDSDailyTracker-sourced metrics. That dashboard has no URL date
+    # control, so on a past-week backfill we leave these blank rather
+    # than write the wrong (current) week.
+    if not backfill:
+        if "rep_count" in rep:
+            values["Active Selling Heads"] = rep["rep_count"]
+        if "ranking" in rep:
+            values["Scorecard Ranking"] = rep["ranking"]
+        # 'National AVG for sales' = Rep Summary Total row, 'New/Port per
+        # Rep' column (Megan confirmed via screenshot 2026-05-24).
+        if rep_summary_total.get("New/Port per Rep"):
+            values["National AVG for sales"] = rep_summary_total["New/Port per Rep"]
     if "churn_30" in crow:
         values["0-30 Day Churn"] = crow["churn_30"]
     if "churn_60" in crow:
@@ -964,7 +1007,8 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
     # Total Leads: Jairo Ruiz isn't in the Lead Penetration view at all
     # (his ICD may be rolled under a parent or filtered out). Write 'N/A'
     # for any owner missing from the leads dict so the gap is explicit.
-    if leads is not None:
+    # Skipped on backfill — LeadPenetrationOverview isn't date-pinnable.
+    if leads is not None and not backfill:
         v = leads.get(owner_norm)
         values["Total Leads"] = str(v) if v is not None else "N/A"
 
@@ -975,21 +1019,28 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
     new_lines_rep = rep_byday.get("Wireless Lines")
     if new_lines_rep is not None:
         values["New Lines"] = str(new_lines_rep)
-        # Compute AVG Apps Per Active Headcount = new_lines / active_selling_heads
-        try:
-            heads = float(str(rep.get("rep_count", "")).strip())
-            if heads > 0:
-                values["AVG Apps Per Active Headcount"] = f"{new_lines_rep / heads:.2f}"
-        except (ValueError, TypeError):
-            pass
+        # AVG Apps Per Active Headcount = New Lines / Active Selling Heads.
+        # Active Selling Heads is NDSDailyTracker-sourced, so this is
+        # skipped in backfill mode (no headcount for a past week).
+        if not backfill:
+            try:
+                heads = float(str(rep.get("rep_count", "")).strip())
+                if heads > 0:
+                    values["AVG Apps Per Active Headcount"] = f"{new_lines_rep / heads:.2f}"
+            except (ValueError, TypeError):
+                pass
 
-    # Personal Production — pre-formatted text like "2 NI, 58 NL, 3 AIR"
-    # from ProductSalesSummaryRep / ALLPRODUCTS-EXPANDEDREPS crosstab.
-    if personal_production and personal_production.get(owner_norm):
-        values["Personal Production"] = personal_production[owner_norm]
+    # Personal Production — the ICD's own SARA By Day row formatted
+    # '1 INT, 84 NL' (Megan 2026-05-24). Replaces the ProductSalesSummaryRep
+    # source which returned 0. Date-pinnable via SARA By Day, unlike the
+    # old source.
+    pp_text = _personal_production_byday(rep_byday)
+    if pp_text is not None:
+        values["Personal Production"] = pp_text
 
-    # Direct Deposit — per-ICD-owner dollar total
-    if direct_deposit and owner_norm in direct_deposit:
+    # Direct Deposit — per-ICD-owner dollar total. Skipped on backfill —
+    # the DD dashboard isn't date-pinnable (Megan 2026-05-24).
+    if direct_deposit and owner_norm in direct_deposit and not backfill:
         # Format as dollar amount with comma separators (matches sheet style)
         values["Direct Deposit"] = f"${direct_deposit[owner_norm]:,.2f}"
 
@@ -1038,10 +1089,21 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
 
 
 def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
-                skip_download: bool = False, logfn=print) -> dict:
+                skip_download: bool = False, backfill: bool = False,
+                logfn=print) -> dict:
     """Download all NDS Tableau views, parse, and fill each NDS tab on
-    Alphalete Org. Returns {filled: [...], skipped: [...], errors: [...]}."""
+    Alphalete Org. Returns {filled: [...], skipped: [...], errors: [...]}.
+
+    `backfill=True`: a past-week run (e.g. catching up WE 5/17 after the
+    dashboards rolled to the current week). Pins the SARA views to the
+    target week via Min/Max Date params, and SKIPS the NDSDailyTracker
+    metrics + Rep Breakdown chart (their dashboards have no date control,
+    so a past week can't be reconstructed — those cells are left blank)."""
     download_errors: List[str] = []
+    date_params = _target_week_date_range()
+    # Views whose dashboards honor Min/Max Date URL params (pin to the
+    # target week). NDSDailyTracker is NOT here — it ignores the params.
+    SARA_BYDAY_FNAME = "opt_nds_sara_plus_byday.csv"
 
     # All downloads run inside ONE patchright stealth session — no CDP /
     # Report Chrome dependency, so NDS is fully unattended/schedulable.
@@ -1063,14 +1125,18 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
     if not skip_download:
         try:
             with tableau_session(verbose=False) as page:
-                # 1a: HTTP-direct CSV pulls via patchright cookies
+                # 1a: HTTP-direct CSV pulls via patchright cookies. SARA By
+                # Day is pinned to the target week (it honors Min/Max Date);
+                # the others are date-robust (rolling / 4wk-avg) so left as-is.
                 http_session = requests_session_from_page(page)
                 for wb, view, fname in NDS_HTTP_VIEWS:
                     out = OUTPUT_DIR / fname
+                    params = date_params if fname == SARA_BYDAY_FNAME else None
                     try:
                         logfn(f"OPT NDS: HTTP downloading {fname}…")
                         tableau_http.download_view_csv(wb, view, out,
-                                                       session=http_session)
+                                                       session=http_session,
+                                                       params=params)
                     except Exception as e:
                         msg = f"{fname}: {type(e).__name__}: {str(e)[:120]}"
                         logfn(f"OPT NDS: ✗ HTTP {msg}")
@@ -1079,6 +1145,18 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
 
                 # 1b: UI Crosstab pulls
                 for url, sheet, fname in NDS_VIEWS:
+                    # Backfill skips the views with no date control — their
+                    # past-week data can't be reconstructed.
+                    if backfill and ("NDSDailyTracker" in url
+                                     or "ProductSalesSummaryRep" in url):
+                        logfn(f"OPT NDS: [backfill skip] {fname} (no date control)")
+                        continue
+                    # Pin SARA total to the target week (honors date params).
+                    dl_url = url
+                    if "SARAPLUSSALESSUMMARY" in url:
+                        sep = "&" if "?" in dl_url else "?"
+                        dl_url = (f"{dl_url}{sep}Min%20Date={date_params['Min Date']}"
+                                  f"&Max%20Date={date_params['Max Date']}")
                     out = OUTPUT_DIR / fname
                     last_err = None
                     for attempt in (1, 2):
@@ -1087,7 +1165,7 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
                               f"{sheet!r} → {fname}…")
                         try:
                             download_crosstab_patchright(
-                                url, sheet, out, verbose=False, page=page)
+                                dl_url, sheet, out, verbose=False, page=page)
                             last_err = None
                             break
                         except Exception as e:
@@ -1119,8 +1197,9 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
     tt = parse_tt_detail(OUTPUT_DIR / "opt_nds_tt_detail.csv")
     rep_summary = parse_rep_summary_total(OUTPUT_DIR / "opt_nds_rep_summary.csv")
     sara_totals = parse_sara_plus_total(OUTPUT_DIR / "opt_nds_sara_plus.csv")
-    personal_production = parse_personal_production(
-        OUTPUT_DIR / "opt_nds_personal_production.csv")
+    # Personal Production now comes from each ICD's own SARA By Day row
+    # (see fill_nds_tab) — ProductSalesSummaryRep is only still pulled for
+    # the Rep Breakdown chart (non-backfill runs).
     rep_breakdown = parse_rep_breakdown_per_owner(
         OUTPUT_DIR / "opt_nds_personal_production.csv")
     churn = parse_churn_icd(OUTPUT_DIR / "opt_nds_churn.csv")
@@ -1140,7 +1219,6 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
           f"{len(cancel)} Cancel, "
           f"{len(leads)} Leads, "
           f"{len(sara_byday)} Sara-ByDay, "
-          f"{len(personal_production)} PP, "
           f"{len(direct_deposit)} DD")
 
     # Step 3: open sheet + walk NDS-suffixed tabs
@@ -1195,8 +1273,8 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
                              churn, week_col_label, dry_run, logfn,
                              activation=activation, cancel=cancel,
                              leads=leads, sara_byday=sara_byday,
-                             personal_production=personal_production,
-                             direct_deposit=direct_deposit)
+                             direct_deposit=direct_deposit,
+                             backfill=backfill)
         for ln in lines:
             logfn(f"OPT NDS: {ln}")
         if lines and lines[0].startswith(("[OK]", "[DRY-RUN]")):
@@ -1204,14 +1282,15 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
         else:
             skipped.append(title)
 
-        # Rep Breakdown chart at the bottom of the tab — separate fill.
-        # Silently skips tabs whose chart skeleton Megan hasn't added yet.
-        chart_lines = fill_rep_breakdown_chart(
-            ws, match, rep_breakdown, _current_target_week_end(),
-            dry_run=dry_run, logfn=logfn,
-        )
-        for ln in chart_lines:
-            logfn(f"OPT NDS: {ln}")
+        # Rep Breakdown chart — sourced from ProductSalesSummaryRep, which
+        # has no date control, so it's skipped on a past-week backfill.
+        if not backfill:
+            chart_lines = fill_rep_breakdown_chart(
+                ws, match, rep_breakdown, _current_target_week_end(),
+                dry_run=dry_run, logfn=logfn,
+            )
+            for ln in chart_lines:
+                logfn(f"OPT NDS: {ln}")
 
     return {"filled": filled, "skipped": skipped, "errors": download_errors}
 
@@ -1223,9 +1302,14 @@ if __name__ == "__main__":
     ap.add_argument("--only", help="Only this rep (substring match).")
     ap.add_argument("--skip-download", action="store_true",
                     help="Reuse cached crosstabs instead of re-pulling.")
+    ap.add_argument("--backfill", action="store_true",
+                    help="Past-week catch-up: pin SARA to the target week, "
+                         "skip the no-date-control metrics (NDSDailyTracker "
+                         "+ Rep Breakdown chart).")
     args = ap.parse_args()
     result = run_nds_opt(dry_run=args.dry_run, only_rep=args.only,
-                         skip_download=args.skip_download)
+                         skip_download=args.skip_download,
+                         backfill=args.backfill)
     print(f"\nFilled: {len(result['filled'])} tab(s); "
           f"Skipped: {len(result['skipped'])}; "
           f"Download errors: {len(result['errors'])}")
