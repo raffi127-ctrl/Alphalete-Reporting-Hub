@@ -1214,8 +1214,7 @@ AUTOMATED_REPORTS = [
                        "focus report.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Reads the Frontier PDFs and fills each ' - Frontier' tab. "
-            "Each PDF type is independent:\n"
+            "Reads the Frontier PDFs and fills each Frontier tab:\n"
             "- **Daily Sales - by Store** → per-store production, Total "
             "Sales, Total Store Count, AVG/Store, Active Headcount\n"
             "- **Daily Sales - Events** → GIG % / VAS % / ABP %\n"
