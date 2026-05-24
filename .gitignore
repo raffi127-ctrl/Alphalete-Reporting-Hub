@@ -17,3 +17,6 @@ Install-Recruiting-Report.command.zip
 # every run; never useful to commit. Keep the directory itself tracked
 # so the script can write into it on a fresh clone.
 automations/uploaded/screenshots/*.png
+# Shared-library scripts are materialized from the Google Sheet on each Hub —
+# they're a local cache, not source. Never commit (would also block git pull).
+automations/uploaded/_shared/

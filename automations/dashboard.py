@@ -67,6 +67,20 @@ ALPHALETE_ORG_SHEET_URL = "https://docs.google.com/spreadsheets/d/1C6BLttOSZhs_d
 
 UPLOADED_REPORTS_FILE = WORKSPACE / "uploaded_reports.json"
 UPLOADED_SCRIPTS_DIR = WORKSPACE / "automations" / "uploaded"
+
+# --- Shared report library (so ANY upload is instantly visible/runnable on
+# EVERY Hub, with no Git push/pull). Uploaded automations are stored in a
+# shared Google Sheet (same login every Hub already uses for the backlog).
+# Each Hub reads it on load, writes the script to a local, git-ignored cache
+# dir, and runs it from there — no collaborator access or `git push` needed.
+SHARED_LIBRARY_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
+SHARED_LIBRARY_TAB = "Report Library"
+SHARED_LIBRARY_HEADERS = ["ID", "Name", "Module", "Created By", "Created At",
+                          "Metadata", "Script"]
+# Git-ignored — scripts are materialized here from the shared Sheet, so they
+# never collide with tracked files or block the launcher's `git pull`.
+SHARED_SCRIPTS_DIR = WORKSPACE / "automations" / "uploaded" / "_shared"
+SHARED_SCRIPTS_PKG = "automations.uploaded._shared"
 # Manual library assignments live here so anyone can claim an unassigned
 # report from the Library view without editing source files. The file is a
 # simple {report_id: [assignee_name, ...]} JSON dict; values override
@@ -626,6 +640,108 @@ def _get_completed_today(user: str) -> list[dict]:
     items = data.get(user, {}).get(today, [])
     items.sort(key=lambda x: x.get("marked_at", ""), reverse=True)
     return items
+
+
+def _shared_library_ws():
+    """The shared 'Report Library' worksheet, created with headers if missing.
+    Lives in the same Sheet the backlog uses, so every Hub can read/write it
+    with the shared login — no Git, no per-user access setup."""
+    import gspread as _gs
+    sh = _fill._client().open_by_key(SHARED_LIBRARY_SHEET_ID)
+    try:
+        return sh.worksheet(SHARED_LIBRARY_TAB)
+    except _gs.WorksheetNotFound:
+        ws = sh.add_worksheet(title=SHARED_LIBRARY_TAB, rows=200,
+                              cols=len(SHARED_LIBRARY_HEADERS))
+        ws.update([SHARED_LIBRARY_HEADERS], "A1:G1")
+        return ws
+
+
+def _materialize_shared_script(safe_id: str, script_text: str) -> str:
+    """Write a shared-library script to the local git-ignored cache dir so it
+    can be run via `python -m automations.uploaded._shared.<id>`. Only rewrites
+    when the content changed. Returns the dotted module path."""
+    SHARED_SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+    init_f = SHARED_SCRIPTS_DIR / "__init__.py"
+    if not init_f.exists():
+        init_f.write_text("")
+    p = SHARED_SCRIPTS_DIR / f"{safe_id}.py"
+    if (not p.exists()) or p.read_text() != script_text:
+        p.write_text(script_text)
+    return f"{SHARED_SCRIPTS_PKG}.{safe_id}"
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _read_shared_library() -> list[dict]:
+    """Read uploaded automations from the shared Sheet, materialize each
+    script locally, and return AUTOMATED_REPORTS-compatible dicts. Cached 60s
+    so Streamlit reruns don't hammer the API. Fails open (returns []) so the
+    Hub still works off legacy local reports if the Sheet is unreachable."""
+    try:
+        rows = _shared_library_ws().get_all_records()
+    except Exception:
+        return []
+    out: list[dict] = []
+    for r in rows:
+        meta_json = str(r.get("Metadata") or "").strip()
+        script = str(r.get("Script") or "")
+        if not meta_json or not script:
+            continue
+        try:
+            meta = json.loads(meta_json)
+        except Exception:
+            continue
+        safe_id = meta.get("id") or str(r.get("ID") or "").strip()
+        if not safe_id:
+            continue
+        try:
+            module = _materialize_shared_script(safe_id, script)
+        except Exception:
+            continue
+        report = dict(meta)
+        report["id"] = safe_id
+        report["module"] = module
+        args_list = meta.get("args", [])
+        report["actions"] = [{
+            "label": meta.get("action_label", "Run Report"),
+            "icon": "▶", "primary": True, "module": module,
+            "args_fn": (lambda a=args_list: list(a)),
+        }]
+        report.setdefault("creator", str(r.get("Created By") or ""))
+        report.setdefault("emoji", "⭐")
+        report.setdefault("color", "#667eea")
+        report.setdefault("description", "")
+        report.setdefault("sheet_url", "")
+        report.setdefault("assignees", [])
+        report.setdefault("checklist", [])
+        out.append(report)
+    return out
+
+
+def _shared_library_upsert(metadata: dict, script_text: str) -> tuple[bool, str]:
+    """Write/replace an uploaded automation in the shared Sheet (keyed by ID),
+    so it's instantly visible + runnable on every Hub. Returns (ok, message)."""
+    safe_id = metadata.get("id", "")
+    if not safe_id:
+        return False, "missing report id"
+    row = [safe_id, metadata.get("name", ""), metadata.get("module", ""),
+           metadata.get("creator", "") or (st.session_state.get("user") or ""),
+           dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
+           json.dumps(metadata), script_text]
+    try:
+        ws = _shared_library_ws()
+        try:
+            cell = ws.find(safe_id, in_column=1)
+        except Exception:
+            cell = None
+        if cell:
+            ws.update([row], f"A{cell.row}:G{cell.row}")
+        else:
+            ws.append_row(row, value_input_option="RAW")
+        _read_shared_library.clear()
+        return True, "published to the shared library (live for everyone)"
+    except Exception as e:
+        return False, f"{type(e).__name__}: {e}"
 
 
 def _load_uploaded_reports_raw() -> list[dict]:
@@ -1341,7 +1457,18 @@ AUTOMATED_REPORTS = [
 ]
 
 # Merge in user-uploaded reports (saved by the Wire-Up dialog)
-AUTOMATED_REPORTS.extend(_load_uploaded_reports_raw())
+# Uploaded automations come from two places: the shared Google Sheet library
+# (anyone's upload, visible to everyone instantly — preferred) and the legacy
+# local uploaded_reports.json (older Git-based reports, e.g. Order Log). Merge
+# them, with the shared store winning on an id collision.
+try:
+    _shared_uploaded = _read_shared_library()
+except Exception:
+    _shared_uploaded = []   # fail open — Hub still loads off legacy reports
+_shared_ids = {r.get("id") for r in _shared_uploaded}
+AUTOMATED_REPORTS.extend(_shared_uploaded)
+AUTOMATED_REPORTS.extend(r for r in _load_uploaded_reports_raw()
+                         if r.get("id") not in _shared_ids)
 
 
 def _load_library_overrides() -> dict[str, list[str]]:
@@ -3916,38 +4043,35 @@ def _show_intake_dialog():
 
 
 def _save_uploaded_report(metadata: dict, script_text: str) -> tuple[bool, str]:
-    """Save a wire-up: write the script to automations/uploaded/<id>.py and
-    append metadata to uploaded_reports.json. Returns (ok, message)."""
+    """Publish a wire-up to the SHARED report library (a Google Sheet every Hub
+    reads), and cache the script locally so the submitting machine can run it
+    immediately. No Git push/pull or collaborator access — the upload is live
+    for everyone the moment it's saved. Returns (ok, message)."""
     safe_id = re.sub(r"[^a-zA-Z0-9_]", "_", metadata["id"]).strip("_").lower()
     if not safe_id:
         return False, "Report id couldn't be derived from name."
-    # Validate Python syntax before saving
     try:
         ast.parse(script_text)
     except SyntaxError as e:
         return False, f"Script has a Python syntax error: {e}"
-
-    UPLOADED_SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
-    init_file = UPLOADED_SCRIPTS_DIR / "__init__.py"
-    if not init_file.exists():
-        init_file.write_text("")
-    script_path = UPLOADED_SCRIPTS_DIR / f"{safe_id}.py"
-    script_path.write_text(script_text)
+    # Google Sheets caps a cell at 50k chars; scripts are almost always far
+    # smaller, but guard so an oversized one fails loudly instead of truncating.
+    if len(script_text) > 49000:
+        return False, ("Script is too large for the shared library "
+                       f"({len(script_text)} chars; max ~49,000).")
 
     metadata["id"] = safe_id
-    metadata["module"] = f"automations.uploaded.{safe_id}"
-
-    existing = []
-    if UPLOADED_REPORTS_FILE.exists():
-        try:
-            existing = json.loads(UPLOADED_REPORTS_FILE.read_text())
-        except Exception:
-            existing = []
-    # If an entry with same id exists, replace it (allows re-wire)
-    existing = [e for e in existing if e.get("id") != safe_id]
-    existing.append(metadata)
-    UPLOADED_REPORTS_FILE.write_text(json.dumps(existing, indent=2))
-    return True, f"Saved to automations/uploaded/{safe_id}.py and uploaded_reports.json"
+    metadata["module"] = f"{SHARED_SCRIPTS_PKG}.{safe_id}"
+    # Cache locally first so this Hub can run it right away.
+    try:
+        _materialize_shared_script(safe_id, script_text)
+    except Exception as e:
+        return False, f"Couldn't cache the script locally: {e}"
+    # Publish to the shared store → visible + runnable on every Hub.
+    ok, msg = _shared_library_upsert(metadata, script_text)
+    if not ok:
+        return False, f"Saved locally but couldn't publish to the shared library: {msg}"
+    return True, msg
 
 
 # --------------------------------------------------------------------------
@@ -4455,10 +4579,10 @@ def _show_wire_up_dialog(entry: dict | None = None):
             return
 
         # Review process removed 2026-05-24 (Megan: it wasn't working as
-        # intended, and uploads were getting stuck on the submitter's laptop).
-        # Every upload now registers in the Library AND pushes to the company
-        # repo immediately — live for the whole team the moment it's sent,
-        # no approval step.
+        # intended, and uploads got stuck on the submitter's laptop). Uploads
+        # now publish straight to the SHARED library (a Google Sheet every Hub
+        # reads) — instantly visible + runnable for everyone, no Git, no
+        # approval, no collaborator access needed.
         ok, msg = _save_uploaded_report(metadata, script_text)
         if not ok:
             st.error(msg)
@@ -4483,18 +4607,13 @@ def _show_wire_up_dialog(entry: dict | None = None):
                 _mark_intake_done(str(entry["ID"]), cc_emails=review_cc)
             except Exception:
                 pass
-        push_ok, push_msg = _git_push_library_addition(name)
         target_text = (
             "in the **🔍 Unassigned** section of the Report Library"
             if assignee == "Not sure yet"
             else f"on **{assignee}**'s dashboard"
         )
-        if push_ok:
-            st.success(f"✅ Published live — it's now {target_text} for the whole team.")
-        else:
-            st.success(f"✅ Uploaded — it will appear {target_text}.")
-            st.warning("Saved on this Mac, but auto-publish to the team didn't "
-                       f"finish: {push_msg}")
+        st.success(f"✅ Published live — it's now {target_text} for the whole "
+                   f"team, instantly. No commit/push needed.")
         st.balloons()
 
 
