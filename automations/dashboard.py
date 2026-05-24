@@ -681,6 +681,9 @@ MEMBERS = [
     # an empty mailto and the requester types the address manually.
     {"name": "Carlos",  "emoji": "🎩",        "color": "#E76F51", "email": "carloshidalgo349@gmail.com"},
     {"name": "Eve",     "emoji": "🌷",        "color": "#4ECDC4", "email": "alphaletereporting@gmail.com"},
+    # Not a person — the bucket for reports that run on a schedule with NO
+    # human trigger (fully unattended via patchright auto-login). No email.
+    {"name": "Fully Automated Alphalete Reports", "emoji": "🤖", "color": "#10B981", "email": ""},
     {"name": "JD",      "emoji": "⚡",        "color": "#9B59B6", "email": "josh.mascorro17@gmail.com"},
     {"name": "Maud",    "emoji": "🌟",        "color": "#FF6B6B", "email": "maudmiller4@gmail.com"},
     {"name": "Megan",   "emoji": "👩‍💼",     "color": "#667eea", "email": "meganhidalgo1191@gmail.com"},
