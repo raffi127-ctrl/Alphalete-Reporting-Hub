@@ -173,20 +173,40 @@ Week Ending = default latest (correct).
 **URL: still needed** — Eve didn't paste it; ask for the workbook + the
 "track by rep" conversion view URLs.
 
-Fillable from Tableau:
-- **Sales by store** — per-store sale counts (sum across the week's days),
-  + Total Store Count + Headcount (people per store, summed). Example
-  week: stores 6265=9, 8248=1, etc.; store count 3, ~6 people. (New
-  stores appear week to week — handle dynamically like Retail Costco.)
-- **Conversion** — a SEPARATE "track by rep" view, filtered to Cinthya
-  (filter auto-selects a few reps; remove + reselect her). It's the
-  **4-week average** — Eve selects 5 week-endings in the picker so the
-  latest (incomplete) week-ending doesn't dilute it, leaving 4 complete
-  weeks. (Same "select 5 to get 4" trick the NDS Cancel 4wk-avg uses.)
+**Sales-by-store source (confirmed 2026-05-24, URL + access verified for
+rhidalgo):**
+`JustEnergyRTL-SalesStaffingProductivityWorkbook/JEAllRetailersSalesSummarybyLocation`
+- Crosstab worksheet: **'All RTL Sales Summary by Store'**
+- URL filters that WORK: `ICD Name=Cinthya Reyes` + `Sales Week
+  Ending=2026-05-17` (date-pinnable, unlike NDSDailyTracker).
+- Layout: store rows × daily columns (Mon..Sun). Each store can have a
+  main row + an 'orange' (staffed-no-sales=0) row + occasional 'Cases'
+  row — **sum all numeric daily cells across the store's rows** for the
+  week total. Store label: "Sam's Club #6265"→"Sams 6265",
+  "Walmart #471"→"Walmart 471".
+- **Total Sales** = sum of all stores (= the Grand Total row). WE 5/17
+  Cinthya example: 6265=33, 6482=30, 8210=17, 8248=9, Walmart471=16,
+  Walmart5312=28 → Total 133.
+- **Total Store Count** = # stores with production > 0 (6 in the example).
+- New store number → add a row (dynamic, like Retail Costco). Listed
+  store with no production → 0.
 
-NOT from Tableau (email / manual):
-- **Financials / Direct Deposit** — Program Summary email
-- **Personal Production** — not visible in JE Tableau (leave blank)
+**Conversion + Personal Production source (confirmed 2026-05-24):**
+`6WkConversionTracker/6WeekTrackerbyRep` → Crosstab worksheet
+**'6 Week Tracker by ICD & Rep'** (auto-filtered to the ICD; rows are
+one per rep on the team). Columns: ICD Name | Rep Name | Conversion%
+(per wk) | Total Sales (per wk) | Total Installs (per wk).
+- **Conversion** = OFFICE average across ALL the ICD's reps, averaged
+  over the last 4 complete weeks (Megan 2026-05-24). Select the last 5
+  week-endings so the incomplete latest one drops out, leaving 4.
+- **Personal Production** = the ICD's OWN row (Rep = ICD name) Total
+  Sales for the target week. (Revised from "manual" 2026-05-24.)
+
+Manual / formula (not automated):
+- **Leaders** — manual entry. **AVG Sales per Leader** = Total Sales /
+  Leaders → sheet formula referencing the manual cell.
+- **AVG Sales per Store** = Total Sales / Total Store Count → sheet formula.
+- **Direct Deposit** — Program Summary email (manual).
 
 ---
 
