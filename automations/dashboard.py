@@ -4454,65 +4454,48 @@ def _show_wire_up_dialog(entry: dict | None = None):
             st.error(f"Script has a Python syntax error: {e}")
             return
 
+        # Review process removed 2026-05-24 (Megan: it wasn't working as
+        # intended, and uploads were getting stuck on the submitter's laptop).
+        # Every upload now registers in the Library AND pushes to the company
+        # repo immediately — live for the whole team the moment it's sent,
+        # no approval step.
+        ok, msg = _save_uploaded_report(metadata, script_text)
+        if not ok:
+            st.error(msg)
+            return
         if entry.get("ID"):
-            # Intake-linked upload → goes through the requester review loop.
-            # Stage it; it only reaches the Library once the requester
-            # clicks Approve. review_cc rides along for the approval email.
-            _stage_pending_report(str(entry["ID"]), metadata, script_text, review_cc)
-            # Stash the follow-up notes on the intake row BEFORE flipping
-            # status — the Apps Script emails on the status change and
-            # reads this cell for the body.
+            # Record the breakdown / notes on the intake row, then close it out.
             try:
                 _iws = _intake_ws()
                 _icell = _iws.find(str(entry["ID"]))
                 if _icell:
                     if "Review Notes" in INTAKE_HEADERS:
-                        _iws.update_cell(
-                            _icell.row,
-                            INTAKE_HEADERS.index("Review Notes") + 1,
-                            followup_notes.strip(),
-                        )
+                        _iws.update_cell(_icell.row,
+                                         INTAKE_HEADERS.index("Review Notes") + 1,
+                                         followup_notes.strip())
                     if "Report Breakdown" in INTAKE_HEADERS:
-                        _iws.update_cell(
-                            _icell.row,
-                            INTAKE_HEADERS.index("Report Breakdown") + 1,
-                            breakdown.strip(),
-                        )
+                        _iws.update_cell(_icell.row,
+                                         INTAKE_HEADERS.index("Report Breakdown") + 1,
+                                         breakdown.strip())
             except Exception:
                 pass
-            _set_intake_status(str(entry["ID"]), "In Review")
             try:
-                _append_intake_note(
-                    str(entry["ID"]),
-                    f"📤 Uploaded for review — '{name}'. Requester: please "
-                    f"review and either request edits or approve.",
-                    st.session_state.get("user") or "creator",
-                )
+                _mark_intake_done(str(entry["ID"]), cc_emails=review_cc)
             except Exception:
                 pass
-            requester = entry.get("Submitted By", "the requester")
-            st.success(
-                f"✅ Sent to **{requester}** for review. It moves to the Report "
-                f"Library only after they approve it."
-            )
-            st.balloons()
+        push_ok, push_msg = _git_push_library_addition(name)
+        target_text = (
+            "in the **🔍 Unassigned** section of the Report Library"
+            if assignee == "Not sure yet"
+            else f"on **{assignee}**'s dashboard"
+        )
+        if push_ok:
+            st.success(f"✅ Published live — it's now {target_text} for the whole team.")
         else:
-            # Direct upload (no intake card) — no review loop; register now.
-            ok, msg = _save_uploaded_report(metadata, script_text)
-            if not ok:
-                st.error(msg)
-                return
-            target_text = (
-                "in the **🔍 Unassigned** section of the Report Library"
-                if assignee == "Not sure yet"
-                else f"on **{assignee}**'s dashboard"
-            )
-            st.success(f"✅ Uploaded! It will appear {target_text}.")
-            st.balloons()
-            st.markdown(
-                "**Heads up:** The new automation is saved on this Mac. "
-                "To make it available to the whole team, ask Megan to commit + push to GitHub."
-            )
+            st.success(f"✅ Uploaded — it will appear {target_text}.")
+            st.warning("Saved on this Mac, but auto-publish to the team didn't "
+                       f"finish: {push_msg}")
+        st.balloons()
 
 
 def _priority_rank(p: str) -> int:
