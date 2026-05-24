@@ -56,6 +56,21 @@ JE_SALES_BASE = (
 JE_SALES_SHEET = "All RTL Sales Summary by Store"
 JE_SALES_FILENAME = "opt_je_sales_by_store.csv"
 
+# Direct Deposit — DirectDepositICDVIEWVersion2_0 / PROGRAMSUMMARY /
+# DOWNLINEVIEW, worksheet 'Sheet 7 (3)' (the downline grid). Per Megan
+# 2026-05-24, DD = 'Grand Total to ICD' for the ICD's row — but Tableau
+# leaves that computed column blank in the export, so we sum the per-
+# campaign dollar columns in the row instead (for a JE-only ICD that's
+# just the 'Just Energy' column; for the rare multi-campaign ICD it's the
+# true grand total). Same Direct Deposit workbook family as NDS.
+JE_DD_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "DirectDepositICDVIEWVersion2_0/PROGRAMSUMMARY/"
+    "15c897de-6162-469b-9ef7-1735d235f2a8/DOWNLINEVIEW?:iid=1"
+)
+JE_DD_SHEET = "Sheet 7 (3)"
+JE_DD_FILENAME = "opt_je_direct_deposit.csv"
+
 
 def _je_sales_url(icd_name: str, week_end: dt.date) -> str:
     """Sales-by-store URL filtered to the ICD + target week. Both
@@ -149,9 +164,109 @@ def parse_je_sales_by_store(path: Path) -> Dict[str, int]:
     return out
 
 
+JE_CONV_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "6WkConversionTracker/6WeekTrackerbyRep?:iid=1"
+)
+JE_CONV_SHEET = "6 Week Tracker by ICD & Rep"
+JE_CONV_FILENAME = "opt_je_conversion.csv"
+
+
+def _parse_pct(s: str) -> Optional[float]:
+    s = (s or "").strip().replace("%", "")
+    if not s:
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _parse_dollars(s: str) -> Optional[float]:
+    s = (s or "").strip().replace("$", "").replace(",", "")
+    if not s:
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def parse_je_conversion(path: Path, icd_norm: str) -> Tuple[Optional[str], Optional[str]]:
+    """Parse '6 Week Tracker by ICD & Rep' → (office_avg_conversion,
+    icd_own_total_sales).
+
+    Layout: row0 groups (Conversion % ×N, Total Sales ×N, Total Installs ×N),
+    row1 = Owner | Rep | <week dates per group>, then one row per rep.
+    - Conversion (office avg) = simple mean of every rep's Conversion %
+      across all shown weeks (Megan 2026-05-24: 'general avg', eyeball-OK —
+      the tracker's week window isn't URL-controllable so we use whatever
+      recent weeks it shows).
+    - Personal Production = the ICD's OWN row (Rep == ICD name) Total Sales
+      for the latest shown week.
+    """
+    rows = _read_tab_csv(path)
+    if len(rows) < 3:
+        return None, None
+    groups = rows[0]
+    conv_cols = [i for i, g in enumerate(groups)
+                 if "conversion" in (g or "").strip().lower()]
+    sales_cols = [i for i, g in enumerate(groups)
+                  if (g or "").strip().lower() == "total sales"]
+    conv_vals: List[float] = []
+    own_sales: Optional[str] = None
+    for r in rows[2:]:
+        if len(r) < 2:
+            continue
+        for c in conv_cols:
+            v = _parse_pct(r[c]) if c < len(r) else None
+            if v is not None:
+                conv_vals.append(v)
+        if _norm_owner(r[1]) == icd_norm:
+            vals = [r[c].strip() for c in sales_cols
+                    if c < len(r) and (r[c] or "").strip()]
+            if vals:
+                own_sales = vals[-1]   # latest shown week
+    office_avg = f"{round(sum(conv_vals) / len(conv_vals))}%" if conv_vals else None
+    return office_avg, own_sales
+
+
+def parse_je_direct_deposit(path: Path, icd_norm: str) -> Optional[str]:
+    """Parse PROGRAMSUMMARY/DOWNLINEVIEW 'Sheet 7 (3)' → the ICD's
+    Grand Total to ICD as a '$X,XXX.XX' string. Tableau leaves the
+    'Grand Total to ICD' column blank in the export, so we sum the
+    per-campaign dollar columns in the ICD's row."""
+    rows = _read_tab_csv(path)
+    if len(rows) < 2:
+        return None
+    header = rows[0]
+    name_i = next((i for i, h in enumerate(header)
+                   if "icd owner name" in (h or "").strip().lower()), None)
+    if name_i is None:
+        return None
+    # Dollar columns = everything after 'Grand Total to ICD' (the campaign
+    # breakdown); fall back to any cell that parses as dollars.
+    gt_i = next((i for i, h in enumerate(header)
+                 if "grand total to icd" in (h or "").strip().lower()), None)
+    for r in rows[1:]:
+        if name_i >= len(r) or _norm_owner(r[name_i]) != icd_norm:
+            continue
+        start = (gt_i + 1) if gt_i is not None else 0
+        total = 0.0
+        for c in range(start, len(r)):
+            d = _parse_dollars(r[c])
+            if d is not None:
+                total += d
+        return f"${total:,.2f}"
+    return None
+
+
 def fill_je_tab(ws: gspread.Worksheet, by_store: Dict[str, int],
                 week_col_label: str, dry_run: bool = False,
-                logfn=print) -> List[str]:
+                logfn=print,
+                conversion: Optional[str] = None,
+                personal_production: Optional[str] = None,
+                direct_deposit: Optional[str] = None) -> List[str]:
     """Fill the JE per-store rows + Total Sales + Total Store Count +
     AVG Sales per Store (formula) into the target week column.
 
@@ -244,6 +359,21 @@ def fill_je_tab(ws: gspread.Worksheet, by_store: Dict[str, int],
         updates.append({"range": a1, "values": [[formula]]})
         log.append(f"  {a1} AVG Sales per Store <- {formula}")
 
+    # Conversion / Personal Production / Direct Deposit (from the other
+    # views). Each written only if we got a value.
+    for label, val in (("Conversion", conversion),
+                       ("Personal Production", personal_production),
+                       ("Direct Deposit", direct_deposit)):
+        if val is None:
+            continue
+        row = _find_row_by_label(grid, label)
+        if row is None:
+            log.append(f"  [miss-row] no '{label}' row")
+            continue
+        a1 = gspread.utils.rowcol_to_a1(row + 1, week_col + 1)
+        updates.append({"range": a1, "values": [[str(val)]]})
+        log.append(f"  {a1} {label} <- {val}")
+
     if dry_run:
         return [f"[DRY-RUN je] {ws.title}: would write {len(updates)} cells"] + log
     if updates:
@@ -278,16 +408,37 @@ def run_je_opt(dry_run: bool = False, only_rep: Optional[str] = None,
         if only_rep and only_rep.lower() not in rep_name.lower():
             continue
         icd_name = rep_name   # Tableau ICD Name matches the tab's rep name
+        icd_norm = _norm_owner(icd_name)
 
-        # Download this ICD's sales-by-store, filtered to the target week.
-        out = OUTPUT_DIR / JE_SALES_FILENAME
+        sales_out = OUTPUT_DIR / JE_SALES_FILENAME
+        conv_out = OUTPUT_DIR / JE_CONV_FILENAME
+        dd_out = OUTPUT_DIR / JE_DD_FILENAME
+        by_store: Dict[str, int] = {}
+        conversion = personal_production = direct_deposit = None
         try:
             with tableau_session(verbose=False) as page:
-                logfn(f"OPT JE: patchright Crosstab → {JE_SALES_SHEET!r} "
-                      f"({icd_name}, WE {week_end})...")
+                logfn(f"OPT JE: Crosstab → sales-by-store ({icd_name}, WE {week_end})...")
                 download_crosstab_patchright(
-                    _je_sales_url(icd_name, week_end), JE_SALES_SHEET, out,
-                    verbose=False, page=page)
+                    _je_sales_url(icd_name, week_end), JE_SALES_SHEET,
+                    sales_out, verbose=False, page=page)
+                by_store = parse_je_sales_by_store(sales_out)
+
+                try:
+                    logfn(f"OPT JE: Crosstab → conversion tracker...")
+                    download_crosstab_patchright(JE_CONV_URL, JE_CONV_SHEET,
+                                                 conv_out, verbose=False, page=page)
+                    conversion, personal_production = parse_je_conversion(
+                        conv_out, icd_norm)
+                except Exception as e:
+                    logfn(f"OPT JE: ✗ conversion: {type(e).__name__}: {str(e)[:100]}")
+
+                try:
+                    logfn(f"OPT JE: Crosstab → direct deposit...")
+                    download_crosstab_patchright(JE_DD_URL, JE_DD_SHEET,
+                                                 dd_out, verbose=False, page=page)
+                    direct_deposit = parse_je_direct_deposit(dd_out, icd_norm)
+                except Exception as e:
+                    logfn(f"OPT JE: ✗ direct deposit: {type(e).__name__}: {str(e)[:100]}")
         except Exception as e:
             msg = f"{title}: {type(e).__name__}: {str(e)[:120]}"
             logfn(f"OPT JE: ✗ {msg}")
@@ -295,9 +446,12 @@ def run_je_opt(dry_run: bool = False, only_rep: Optional[str] = None,
             skipped.append(title)
             continue
 
-        by_store = parse_je_sales_by_store(out)
-        logfn(f"OPT JE: parsed {len(by_store)} store(s): {sorted(by_store.items())}")
-        for ln in fill_je_tab(ws, by_store, week_col_label, dry_run, logfn):
+        logfn(f"OPT JE: parsed {len(by_store)} store(s); conversion={conversion}; "
+              f"PP={personal_production}; DD={direct_deposit}")
+        for ln in fill_je_tab(ws, by_store, week_col_label, dry_run, logfn,
+                              conversion=conversion,
+                              personal_production=personal_production,
+                              direct_deposit=direct_deposit):
             logfn(f"OPT JE: {ln}")
             if ln.startswith(("[OK", "[DRY-RUN")):
                 filled.append(title)
