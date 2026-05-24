@@ -221,6 +221,18 @@ def download_crosstab_patchright(
                                      verbose=verbose)
 
 
+def requests_session_from_page(page: Page):
+    """Build a requests.Session pre-loaded with the patchright context's
+    Tableau cookies, so HTTP-direct CSV pulls (tableau_http.download_view_csv)
+    work off the same unattended session — no CDP / Report Chrome needed.
+    Mirrors tableau_http._grab_session but sources cookies from patchright."""
+    import requests
+    s = requests.Session()
+    for c in page.context.cookies():
+        s.cookies.set(c["name"], c["value"], domain=c["domain"])
+    return s
+
+
 def scrape_view_data_patchright(
     view_url: str,
     out_path: Path,

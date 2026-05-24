@@ -365,127 +365,112 @@ def drive_crosstab_dialog(page, view_url: str, crosstab_sheet: str,
             f"dialog — saw {len(available)} thumb(s): {available!r}. "
             "The view may have changed."
         )
-    # Click the sheet to select it. Tries multiple strategies in
-    # order from most-likely-to-hit-the-real-row to last-resort:
+    # Select the sheet, then export. The hard-won lesson (2026-05-24):
+    # the thumbnail click strategies must be tried ONE AT A TIME and we
+    # must STOP as soon as the sheet is selected — because clicking an
+    # ALREADY-selected thumbnail toggles it back OFF. Firing every
+    # strategy unconditionally (the old behavior) selected then
+    # deselected on dialogs where the first strategy already worked,
+    # which is why the same code worked on some worksheets and silently
+    # failed on others.
     #
-    #   1. role=button:has-text  - css selector for a button containing
-    #      the sheet name. PROVEN working on ABP National Average (2)
-    #      and NDS 'Sheet 7 (5)'. (Megan + dry-run 2026-05-22.)
-    #   2. role=checkbox:has-text + button:has-text variants
-    #   3. xpath ancestor walk from the matching thumbnail
-    #   4. force-click the thumbnail itself (legacy NDS path)
-    #
-    # Quoting: PW :has-text wants double-quoted text; if the sheet
-    # name has a double quote in it we'd need to escape - currently
-    # no known case so we just inline.
+    # The signal that a sheet is selected: the Export button enables
+    # (a format radio is selected by default). So: pick a format, then
+    # walk the click strategies, polling Export after each, and break
+    # the instant it enables.
     target_thumb = thumbs.nth(idx)
-    clicked = False
-    for css_strategy in (
-        f'[role="button"]:has-text("{crosstab_sheet}")',
-        f'button:has-text("{crosstab_sheet}")',
-        f'[role="checkbox"]:has-text("{crosstab_sheet}")',
-        f'label:has-text("{crosstab_sheet}")',
-    ):
-        try:
-            btn = viz.locator(css_strategy)
-            if btn.count() > 0:
-                btn.first.click(timeout=5_000)
-                clicked = True
-                break
-        except Exception:
-            continue
-    if not clicked:
-        for ancestor_xpath in (
-            'xpath=ancestor::*[@role="button"][1]',
-            'xpath=ancestor::*[@role="checkbox"][1]',
-            'xpath=ancestor::button[1]',
-            'xpath=ancestor::label[1]',
-        ):
-            try:
-                ancestor = target_thumb.locator(ancestor_xpath)
-                if ancestor.count() > 0:
-                    ancestor.first.click(timeout=5_000)
-                    clicked = True
-                    break
-            except Exception:
-                continue
-    # Some Crosstab dialogs (e.g. 'Sara Plus Sales Summary (2)') accept
-    # the strategies above without raising, but the thumbnail never
-    # enters the selected state, so Download stays disabled. Always
-    # also fire a synthetic DOM click + a coordinate-based mouse click;
-    # one of these tends to register selection when the locator path
-    # silently no-ops.
-    try:
-        target_thumb.dispatch_event("click")
-    except Exception:
-        pass
-    try:
-        bbox = target_thumb.bounding_box()
-        if bbox:
-            page.mouse.click(
-                bbox["x"] + bbox["width"] / 2,
-                bbox["y"] + bbox["height"] / 2,
-            )
-    except Exception:
-        pass
-    if not clicked:
-        target_thumb.click(force=True)
-    page.wait_for_timeout(2000)
-    # Format selection — try CSV first (so the downstream CSV parsers
-    # keep working as-is); fall back to Excel if CSV makes Tableau
-    # disable the Download button. Some views (NDS Weekly Metrics,
-    # Activation Rates) only export as Excel; others are CSV-friendly.
     export_btn = viz.locator('[data-tb-test-id="export-crosstab-export-Button"]')
 
-    def _try_format(format_id: str) -> bool:
-        """Click the format radio + wait for Download to enable.
-        Returns True if Download enabled within 30s.
-
-        Tableau's radio button has TWO test-IDs:
-          - `-Label` on the <label> element (visually on top)
-          - `-RadioButton` on the <input type="radio"> (behind the label)
-        Clicking the input directly fails because the label intercepts
-        pointer events. The label IS the right click target — labels
-        forward clicks to their associated inputs natively. Verified
-        via DOM inspection 2026-05-21."""
+    def _select_format(format_id: str) -> None:
+        """Click the format radio. Tableau's radio has two test-IDs:
+        `-Label` (the <label>, visually on top) and `-RadioButton` (the
+        <input>, behind it). The label is the right click target —
+        labels forward clicks to their input natively; clicking the
+        input directly fails because the label intercepts pointer
+        events. (Verified 2026-05-21.)"""
         label = viz.locator(
             f'[data-tb-test-id="crosstab-options-dialog-radio-{format_id}-Label"]')
         if label.count() > 0:
             try:
                 label.first.click(timeout=5_000)
             except Exception:
-                # Fallback: force-click the input directly, bypassing
-                # actionability checks (skips the label-intercepts error)
                 radio = viz.locator(
                     f'[data-tb-test-id="crosstab-options-dialog-radio-{format_id}-RadioButton"]')
                 try:
                     radio.first.click(force=True, timeout=5_000)
                 except Exception:
                     pass
-        page.wait_for_timeout(1200)
-        for _ in range(30):
-            if export_btn.is_enabled():
-                return True
+        page.wait_for_timeout(800)
+
+    def _export_enabled_within(secs: int) -> bool:
+        for _ in range(secs):
+            try:
+                if export_btn.is_enabled(timeout=2_000):
+                    return True
+            except Exception:
+                pass
             page.wait_for_timeout(1000)
         return False
 
+    # Click strategies in order: locator-based first (clean single
+    # selection on dialogs that accept them), then the synthetic /
+    # coordinate / force clicks that crack the silent-no-op dialogs.
+    def _click_css(sel):
+        btn = viz.locator(sel)
+        if btn.count() == 0:
+            raise RuntimeError("no match")
+        btn.first.click(timeout=5_000)
+
+    def _click_xpath(xp):
+        anc = target_thumb.locator(xp)
+        if anc.count() == 0:
+            raise RuntimeError("no match")
+        anc.first.click(timeout=5_000)
+
+    def _click_mouse_center():
+        bbox = target_thumb.bounding_box()
+        if not bbox:
+            raise RuntimeError("no bbox")
+        page.mouse.click(bbox["x"] + bbox["width"] / 2,
+                         bbox["y"] + bbox["height"] / 2)
+
+    click_attempts = [
+        ("css role=button",   lambda: _click_css(f'[role="button"]:has-text("{crosstab_sheet}")')),
+        ("css button",        lambda: _click_css(f'button:has-text("{crosstab_sheet}")')),
+        ("css role=checkbox", lambda: _click_css(f'[role="checkbox"]:has-text("{crosstab_sheet}")')),
+        ("css label",         lambda: _click_css(f'label:has-text("{crosstab_sheet}")')),
+        ("xpath button",      lambda: _click_xpath('xpath=ancestor::*[@role="button"][1]')),
+        ("xpath checkbox",    lambda: _click_xpath('xpath=ancestor::*[@role="checkbox"][1]')),
+        ("dispatch_event",    lambda: target_thumb.dispatch_event("click")),
+        ("mouse center",      _click_mouse_center),
+        ("force click",       lambda: target_thumb.click(force=True)),
+    ]
+
+    # Try each format; within a format, walk click strategies one at a
+    # time, stopping at the first that enables Export. CSV first so the
+    # downstream parsers keep getting tab-CSV; Excel fallback for views
+    # that only export as xlsx.
     chosen_format = None
-    if _try_format("csv"):
-        chosen_format = "csv"
-    elif _try_format("excel"):
-        chosen_format = "excel"
-        # Caller passed .csv path; switch to .xlsx so we can parse it
-        if str(out_path).lower().endswith(".csv"):
-            out_path = out_path.with_suffix(".xlsx")
-    else:
-        # Last resort — long wait for whatever format is currently
-        # selected to finalize (sometimes Tableau just needs more time
-        # to prepare a large crosstab).
-        for _ in range(150):
-            if export_btn.is_enabled():
-                chosen_format = "default"
+    for fmt in ("csv", "excel"):
+        _select_format(fmt)
+        for name, action in click_attempts:
+            try:
+                action()
+            except Exception:
+                continue
+            page.wait_for_timeout(1200)
+            if _export_enabled_within(6):
+                chosen_format = fmt
+                if verbose:
+                    print(f"  selected via {name} ({fmt})", flush=True)
                 break
-            page.wait_for_timeout(1000)
+        if chosen_format:
+            break
+
+    if chosen_format == "excel" and str(out_path).lower().endswith(".csv"):
+        # Caller passed .csv; the file is really xlsx. _read_tab_csv
+        # sniffs the PK magic bytes so the extension can stay .csv.
+        pass
 
     if chosen_format is None:
         # Diagnostic screenshot at the moment Export refused to enable —

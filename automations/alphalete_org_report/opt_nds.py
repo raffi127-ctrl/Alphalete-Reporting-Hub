@@ -56,6 +56,11 @@ import gspread
 from automations.recruiting_report import fill as rfill
 from automations.recruiting_report.opt_phase import download_crosstab as _download_crosstab_inline
 from automations.alphalete_org_report import tableau_http
+from automations.shared.tableau_patchright import (
+    tableau_session,
+    download_crosstab_patchright,
+    requests_session_from_page,
+)
 
 
 def _download_crosstab_subprocess(url: str, sheet: str, out_path: Path,
@@ -98,11 +103,9 @@ OUTPUT_DIR = WORKSPACE / "output"
 
 ALPHALETE_ORG_SHEET_ID = "1C6BLttOSZhs_dREySac19XkxnMl-Ab_sYacNSl2l6AQ"
 
-# Tableau views — one entry per (URL, worksheet, output filename).
-# The runner iterates these once per week; failed downloads are logged
-# but don't block the others (preserves Megan's incremental-fill rule).
+# Tableau Crosstab views — all pulled via patchright in one session.
+# (url, crosstab_worksheet_name, output_filename)
 NDS_VIEWS: List[Tuple[str, str, str]] = [
-    # (url, crosstab_worksheet_name, output_filename)
     (
         "https://us-east-1.online.tableau.com/#/site/sci/views/NDS-SNRES-ATT-OOFWorkbook/NDSDailyTracker?:iid=1",
         "TT-LineN/P Detail",
@@ -114,39 +117,25 @@ NDS_VIEWS: List[Tuple[str, str, str]] = [
         "opt_nds_rep_summary.csv",
     ),
     (
-        "https://us-east-1.online.tableau.com/#/site/sci/views/DropshipV_2/SARAPLUSSALESSUMMARY?:iid=1",
-        "Sara Plus Sales Summary",
-        "opt_nds_sara_plus.csv",
-    ),
-    (
-        # Personal Production — per-rep breakdown across all sale types
-        # (WIRELESS / NEW INTERNET / VIDEO / AIR). Uses a Megan-saved
-        # custom view 'ALLPRODUCTS-EXPANDEDREPS' that has the Product Type
-        # filter set to (All) and the Rep dimension expanded. The earlier
-        # mapping of Personal Production → Sara Plus (2) was wrong; the
-        # canonical source is ProductSalesSummaryRep per Megan 2026-05-22.
-        "https://us-east-1.online.tableau.com/#/site/sci/views/NDS-SNRES-ATT-OOFWorkbook/ProductSalesSummaryRep/c6d0a461-f8ac-49ed-bb38-27a807328a70/ALLPRODUCTS-EXPANDEDREPS?:iid=1",
-        "Sales By ICD (Weekly View)",
-        "opt_nds_personal_production.csv",
-    ),
-    # Weekly Metrics, Activation Rates, Lead Penetration are now
-    # downloaded via the HTTP path (NDS_HTTP_VIEWS) — ~1s each vs ~75s
-    # via the UI Crosstab dialog. Removed from this list 2026-05-21
-    # after Megan green-lit trimming the redundancy.
-    (
         "https://us-east-1.online.tableau.com/#/site/sci/views/NDS-SNRES-ATT-OOFWorkbook/CHURNRATES/c289786d-e0d4-4de7-825a-264c21e133c1/THISWEEK?:iid=1",
         "Churn Rates (ICD)",
         "opt_nds_churn.csv",
     ),
     (
-        # The DD BY OWNER (ORG) dashboard with DOWNLINEVIEW (showing
-        # Rafael Hidalgo's full org, all downline ICDs). DOWNLINEVIEW
-        # is set as the user's default custom view in Tableau (Megan,
-        # 2026-05-21) so the URL-encoded path is the canonical one.
-        # The dashboard contains TWO worksheets: 'Consultant ORG Title'
-        # (the small header label, 29 bytes) and 'Sheet 7 (5)' (the
-        # actual per-ICD grid). Confirmed via the Download Crosstab
-        # dialog 2026-05-21.
+        "https://us-east-1.online.tableau.com/#/site/sci/views/DropshipV_2/SARAPLUSSALESSUMMARY?:iid=1",
+        "Sara Plus Sales Summary",
+        "opt_nds_sara_plus.csv",
+    ),
+    (
+        # Personal Production — per-rep breakdown across all sale types.
+        # Custom view 'ALLPRODUCTS-EXPANDEDREPS' filters Product Type to
+        # (All) and expands the Rep dimension.
+        "https://us-east-1.online.tableau.com/#/site/sci/views/NDS-SNRES-ATT-OOFWorkbook/ProductSalesSummaryRep/c6d0a461-f8ac-49ed-bb38-27a807328a70/ALLPRODUCTS-EXPANDEDREPS?:iid=1",
+        "Sales By ICD (Weekly View)",
+        "opt_nds_personal_production.csv",
+    ),
+    (
+        # DD BY OWNER (ORG) / DOWNLINEVIEW — per-ICD direct deposit grid.
         "https://us-east-1.online.tableau.com/#/site/sci/views/DirectDepositICDVIEWVersion2_0/DDBYOWNERORG/796feca0-272f-459f-a665-63ac9aec3af8/DOWNLINEVIEW?:iid=1",
         "Sheet 7 (5)",
         "opt_nds_direct_deposit.csv",
@@ -945,6 +934,11 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
         values["Active Selling Heads"] = rep["rep_count"]
     if "ranking" in rep:
         values["Scorecard Ranking"] = rep["ranking"]
+    # 'National AVG for sales' = Rep Summary Total row, 'New/Port per Rep'
+    # column (Megan confirmed via screenshot 2026-05-24, circled this
+    # column + the 6.2 total for WE 5/11-5/14). The 8.0 we'd been getting
+    # was the wrong WEEK (current 5/18-5/23), not the wrong column — fixed
+    # by pinning the NDSDailyTracker date range below.
     if rep_summary_total.get("New/Port per Rep"):
         values["National AVG for sales"] = rep_summary_total["New/Port per Rep"]
     if "churn_30" in crow:
@@ -1049,43 +1043,75 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
     Alphalete Org. Returns {filled: [...], skipped: [...], errors: [...]}."""
     download_errors: List[str] = []
 
-    # Step 1a: HTTP-direct downloads (fast — ~1s each). Single requests
-    # session reuses the Tableau cookies grabbed from debug Chrome.
+    # All downloads run inside ONE patchright stealth session — no CDP /
+    # Report Chrome dependency, so NDS is fully unattended/schedulable.
+    #   - HTTP-direct CSV pulls (fast) reuse the patchright cookies.
+    #   - UI Crosstab pulls drive the Download dialog. The
+    #     drive_crosstab_dialog click logic stops at the first strategy
+    #     that enables Export (instead of firing every strategy and
+    #     accidentally deselecting) — that fixed the dialogs that used
+    #     to silent-no-op under both CDP and the old patchright path.
+    # (Megan 2026-05-24.)
+    def _fallback_existing(filename: str) -> bool:
+        target = OUTPUT_DIR / filename
+        if target.exists() and target.stat().st_size > 500:
+            logfn(f"OPT NDS: using existing {filename} "
+                  f"({target.stat().st_size:,} bytes) as fallback")
+            return True
+        return False
+
     if not skip_download:
         try:
-            http_session = tableau_http._grab_session()
-        except Exception as e:
-            logfn(f"OPT NDS: ✗ couldn't grab Tableau session: {e}")
-            http_session = None
-        if http_session is not None:
-            for wb, view, fname in NDS_HTTP_VIEWS:
-                out = OUTPUT_DIR / fname
-                try:
-                    logfn(f"OPT NDS: HTTP downloading {fname}…")
-                    tableau_http.download_view_csv(wb, view, out,
-                                                   session=http_session)
-                except Exception as e:
-                    msg = f"{fname}: {type(e).__name__}: {str(e)[:120]}"
-                    logfn(f"OPT NDS: ✗ HTTP {msg}")
-                    download_errors.append(msg)
+            with tableau_session(verbose=False) as page:
+                # 1a: HTTP-direct CSV pulls via patchright cookies
+                http_session = requests_session_from_page(page)
+                for wb, view, fname in NDS_HTTP_VIEWS:
+                    out = OUTPUT_DIR / fname
+                    try:
+                        logfn(f"OPT NDS: HTTP downloading {fname}…")
+                        tableau_http.download_view_csv(wb, view, out,
+                                                       session=http_session)
+                    except Exception as e:
+                        msg = f"{fname}: {type(e).__name__}: {str(e)[:120]}"
+                        logfn(f"OPT NDS: ✗ HTTP {msg}")
+                        if not _fallback_existing(fname):
+                            download_errors.append(msg)
 
-    # Step 1b: UI-driven downloads (slow — multi-worksheet dashboards
-    # only). Each spawns a fresh subprocess to dodge the Python 3.9 +
-    # Playwright sync-API asyncio race ([[reference-tableau-phase3]]).
-    if not skip_download:
-        import time
-        for i, (url, sheet, fname) in enumerate(NDS_VIEWS):
-            out = OUTPUT_DIR / fname
-            try:
-                logfn(f"OPT NDS: UI downloading {fname}…")
-                download_crosstab(url, sheet, out, verbose=False)
-            except Exception as e:
-                msg = f"{fname}: {type(e).__name__}: {str(e)[:120]}"
-                logfn(f"OPT NDS: ✗ UI {msg}")
-                download_errors.append(msg)
-            # Don't sleep after the last download
-            if i < len(NDS_VIEWS) - 1:
-                time.sleep(5)
+                # 1b: UI Crosstab pulls
+                for url, sheet, fname in NDS_VIEWS:
+                    out = OUTPUT_DIR / fname
+                    last_err = None
+                    for attempt in (1, 2):
+                        tag = f"attempt {attempt}/2 "
+                        logfn(f"OPT NDS: patchright Crosstab {tag}→ "
+                              f"{sheet!r} → {fname}…")
+                        try:
+                            download_crosstab_patchright(
+                                url, sheet, out, verbose=False, page=page)
+                            last_err = None
+                            break
+                        except Exception as e:
+                            last_err = e
+                            if attempt == 1:
+                                logfn(f"OPT NDS:   {type(e).__name__}, "
+                                      "resetting page + retrying…")
+                                try:
+                                    page.goto("about:blank",
+                                              wait_until="domcontentloaded",
+                                              timeout=10_000)
+                                    page.wait_for_timeout(3_000)
+                                except Exception:
+                                    pass
+                    if last_err is not None:
+                        msg = f"{fname}: {type(last_err).__name__}: {str(last_err)[:120]}"
+                        logfn(f"OPT NDS: ✗ patchright {msg}")
+                        if not _fallback_existing(fname):
+                            download_errors.append(msg)
+        except Exception as e:
+            logfn(f"OPT NDS: patchright session failed: "
+                  f"{type(e).__name__}: {str(e)[:160]}")
+            download_errors.append(
+                f"patchright session: {type(e).__name__}: {str(e)[:120]}")
     else:
         logfn("OPT NDS: --skip-download — reusing cached crosstabs")
 
