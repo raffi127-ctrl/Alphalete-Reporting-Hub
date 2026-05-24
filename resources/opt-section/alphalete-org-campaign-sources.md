@@ -164,14 +164,48 @@ Reps (visible): Boaktear Chowdhury (Akib/MJ), Ronald Dawson
 
 ---
 
-## JE (Just Energy) — pending
-Megan to share walkthrough / Tableau URL.
+## JE (Just Energy) — Tableau-based (Eve walkthrough 2026-05-24)
+Reps (visible): Cinthya Reyes (only rep for now)
 
-Reps (visible): Cinthya Reyes
+**Workbook:** "Just Energy Sales, Staffing & Productivity" (Eve types "JE"
+in Tableau search → opens this workbook). Filter: ICD name = Cinthya;
+Week Ending = default latest (correct).
+**URL: still needed** — Eve didn't paste it; ask for the workbook + the
+"track by rep" conversion view URLs.
+
+Fillable from Tableau:
+- **Sales by store** — per-store sale counts (sum across the week's days),
+  + Total Store Count + Headcount (people per store, summed). Example
+  week: stores 6265=9, 8248=1, etc.; store count 3, ~6 people. (New
+  stores appear week to week — handle dynamically like Retail Costco.)
+- **Conversion** — a SEPARATE "track by rep" view, filtered to Cinthya
+  (filter auto-selects a few reps; remove + reselect her). It's the
+  **4-week average** — Eve selects 5 week-endings in the picker so the
+  latest (incomplete) week-ending doesn't dilute it, leaving 4 complete
+  weeks. (Same "select 5 to get 4" trick the NDS Cancel 4wk-avg uses.)
+
+NOT from Tableau (email / manual):
+- **Financials / Direct Deposit** — Program Summary email
+- **Personal Production** — not visible in JE Tableau (leave blank)
 
 ---
 
-## Frontier (Frontier Internet) — pending
-Megan to share walkthrough / Tableau URL.
+## Frontier (Frontier Internet) — EMAIL/PDF only, NO Tableau (Eve 2026-05-24)
+Reps (visible): Abel Draper (Ben) (only rep for now)
 
-Reps (visible): Abel Draper (Ben)
+**There is no Tableau for Frontier.** Everything comes from email + PDFs,
+so automating it needs Gmail + PDF parsing — a different toolchain than
+the Tableau scrape pattern. Sources:
+- **"Frontier Events Daily Sales Scorecard"** email — two attached PDFs:
+  - *Events by Store* PDF → per-store sales + headcount (e.g. store
+    2144 = 6 sales / 3 heads; 2299 = 4 sales / 2 heads). Sum heads
+    across stores for Total Headcount.
+  - *Metrics* PDF → JIG (100% / 123.1), ABB (100%), etc. — the green
+    figures are 4-week averages.
+- **Direct Deposit** — from the weekly bulletin (Eve copies Abel's
+  latest deposit). Not in the scorecard email.
+- **Approval / Consult / Pending** — a DIFFERENT email (scorecard/quality);
+  inconsistent, pull from the latest. Approval e.g. 85.7%.
+
+Automation approach (future): Gmail search for the scorecard email →
+download PDFs → parse tables. Heavier lift; sequence after JE.
