@@ -988,6 +988,20 @@ AUTOMATED_REPORTS = [
                 "args_fn": lambda: [],
             },
             {
+                # BOX OPT - fully automated (Tableau B2B BOX Energy daily
+                # tracker, no email/upload needed), so it runs as part of
+                # this report. Fills every ' - BOX' tab on each run.
+                "label": "Run BOX OPT",
+                "icon": "🔋",
+                "help": "Fills the BOX OPT block on every ' - BOX' tab: "
+                        "Active Selling Heads, Total Box CX's, AVG Kwh per "
+                        "CX, AVG Sales per Leader, the shared National AVGs, "
+                        "and Accepted %. Pulls fresh from the B2B BOX Energy "
+                        "daily tracker (current week).",
+                "module": "automations.alphalete_org_report.opt_box",
+                "args_fn": lambda: [],
+            },
+            {
                 "label": "Run a Specific Past Week",
                 "icon": "📆",
                 "needs_date": True,
