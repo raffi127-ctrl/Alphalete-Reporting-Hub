@@ -52,10 +52,12 @@ from automations.alphalete_org_report.opt_nds import (
 )
 
 
-# Where users drop the downloaded scorecards. Cross-platform (~/Downloads
-# works on macOS + Windows). The interim flow is manual upload; the
-# end-goal is to pull these straight from email (Gmail MCP).
-DEFAULT_UPLOAD_DIR = Path.home() / "Downloads"
+# Where the Hub drops the uploaded Frontier PDFs (mirrors the Financial Pull
+# and First Sale/Last Sale upload reports). Workspace-relative so it works on
+# macOS + Windows. Override with --dir for ad-hoc local testing (e.g.
+# ~/Downloads). End-goal = pull straight from email (Gmail MCP).
+WORKSPACE = Path(__file__).resolve().parent.parent.parent
+DEFAULT_UPLOAD_DIR = WORKSPACE / "automations" / "uploaded" / "frontier"
 # Two scorecards feed this report:
 #   - "Events by Store" → per-store production (Data) + Scoring HC
 #   - "Events"          → the ICD-level GIG % / VAS % / ABP % (Megan 5/24)
@@ -704,14 +706,14 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--only", help="Only this ICD (substring match).")
-    ap.add_argument("--upload-dir", help="Folder with the uploaded PDFs "
-                    "(default ~/Downloads).")
+    ap.add_argument("--dir", help=f"Folder of uploaded Frontier PDFs "
+                    f"(default: {DEFAULT_UPLOAD_DIR}).")
     ap.add_argument("--include-current", action="store_true",
                     help="Also fill the in-progress current week.")
     args = ap.parse_args()
     result = run_frontier_opt(
         dry_run=args.dry_run, only_rep=args.only,
-        upload_dir=Path(args.upload_dir) if args.upload_dir else None,
+        upload_dir=Path(args.dir).expanduser() if args.dir else None,
         include_current=args.include_current)
     print(f"\nFilled: {len(result['filled'])}; Skipped: {len(result['skipped'])}; "
           f"Errors: {len(result['errors'])}")

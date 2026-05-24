@@ -1201,6 +1201,73 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "frontier-opt-data-pull",
+        "name": "Frontier OPT Data Pull (Upload)",
+        "creator": "Megan",
+        "emoji": "📄",
+        "color": "#10B981",
+        "category": "🎯 Recruiting",
+        "description": "Parses the uploaded Frontier PDF reports (Daily "
+                       "Sales by Store, Daily Sales Events, Quality "
+                       "Scorecard) and fills the OPT section on every "
+                       "' - Frontier' tab of the Alphalete Org 1on1s "
+                       "focus report.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Reads the Frontier PDFs and fills each ' - Frontier' tab. "
+            "Each PDF type is independent:\n"
+            "- **Daily Sales - by Store** → per-store production, Total "
+            "Sales, Total Store Count, AVG/Store, Active Headcount\n"
+            "- **Daily Sales - Events** → GIG % / VAS % / ABP %\n"
+            "- **Quality Scorecard** → Approval / Canceled / Pending "
+            "(Four Weeks Rolling)\n\n"
+            "WHEN IT RUNS\n"
+            "Mondays — upload whichever Frontier PDFs arrived, then Run.\n\n"
+            "PARTIAL UPLOADS ARE SAFE\n"
+            "Upload one, two, or all three PDFs — only the rows from the "
+            "PDFs you uploaded change; every other cell is left untouched. "
+            "The PDFs each carry their week-ending; data lands in the "
+            "correct week column automatically (re-uploads refresh to the "
+            "latest numbers)."
+        ),
+        "sheet_url": ALPHALETE_ORG_SHEET_URL,
+        "assignees": ["Eve"],
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [0],   # Monday
+            "time": "9:30 AM",
+            "estimated_minutes": 3,
+        },
+        "checklist": [
+            {"text": "Upload the Frontier PDF report(s) received via email "
+                     "(Daily Sales by Store, Daily Sales Events, and/or "
+                     "Quality Scorecard)",
+             "uploader": {
+                 "target_dir": "automations/uploaded/frontier",
+                 "accept": [".pdf"],
+                 "multiple": True,
+             }},
+        ],
+        "post_run": {
+            "message_success": "✅ Frontier OPT filled from the uploaded "
+                               "PDF(s). Rows without a matching PDF were "
+                               "left untouched.",
+            "message_failed": "❌ Run failed. Check the log above.",
+        },
+        "actions": [
+            {
+                "label": "Run Frontier OPT Data Pull",
+                "icon": "▶",
+                "primary": True,
+                "help": "Parses every Frontier PDF in "
+                        "automations/uploaded/frontier/ and fills the "
+                        "Frontier tabs.",
+                "module": "automations.alphalete_org_report.opt_frontier",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
         "id": "daily-rep-breakdown",
         "name": "Daily Rep Breakdown - ATT Program",
         "creator": "Megan",
