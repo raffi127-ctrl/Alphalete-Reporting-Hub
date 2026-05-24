@@ -684,28 +684,6 @@ def _target_week_date_range(today: Optional[dt.date] = None) -> Dict[str, str]:
     return {"Min Date": start.isoformat(), "Max Date": end.isoformat()}
 
 
-# Personal Production product order/abbrev for the SARA By Day own-row
-# breakdown (Megan 2026-05-24: NDS uses the same INT/NL/DTV format Retail
-# does, sourced from the ICD's own rep row in SARA By Day — the old
-# ProductSalesSummaryRep source returned 0). Zero-count parts are omitted.
-_PP_BYDAY_PARTS = [("Internet", "INT"), ("Wireless Lines", "NL"), ("DTV", "DTV")]
-
-
-def _personal_production_byday(rep_byday: Dict[str, int]) -> Optional[str]:
-    """Format an ICD's own SARA By Day row as '1 INT, 84 NL' (zeros
-    dropped). Returns None if the row is empty/missing."""
-    if not rep_byday:
-        return None
-    parts = []
-    for key, abbr in _PP_BYDAY_PARTS:
-        n = rep_byday.get(key, 0)
-        try:
-            n = int(float(n))
-        except (ValueError, TypeError):
-            n = 0
-        if n:
-            parts.append(f"{n} {abbr}")
-    return ", ".join(parts) if parts else "0"
 
 
 def _find_rep_breakdown_anchor(grid: List[List[str]]) -> Optional[Tuple[int, int]]:
@@ -1030,13 +1008,14 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
             except (ValueError, TypeError):
                 pass
 
-    # Personal Production — the ICD's own SARA By Day row formatted
-    # '1 INT, 84 NL' (Megan 2026-05-24). Replaces the ProductSalesSummaryRep
-    # source which returned 0. Date-pinnable via SARA By Day, unlike the
-    # old source.
-    pp_text = _personal_production_byday(rep_byday)
-    if pp_text is not None:
-        values["Personal Production"] = pp_text
+    # Personal Production — the ICD's OWN per-rep production from
+    # ProductSalesSummaryRep (0 for managers like Jairo/Isaiah, whose
+    # teams sell but who don't personally). NOT the office total — that
+    # was the SARA By Day bug Megan caught 2026-05-24. ProductSalesSummaryRep
+    # has no date control, so it's skipped on a past-week backfill.
+    if (personal_production and personal_production.get(owner_norm)
+            and not backfill):
+        values["Personal Production"] = personal_production[owner_norm]
 
     # Direct Deposit — per-ICD-owner dollar total. Skipped on backfill —
     # the DD dashboard isn't date-pinnable (Megan 2026-05-24).
@@ -1197,9 +1176,8 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
     tt = parse_tt_detail(OUTPUT_DIR / "opt_nds_tt_detail.csv")
     rep_summary = parse_rep_summary_total(OUTPUT_DIR / "opt_nds_rep_summary.csv")
     sara_totals = parse_sara_plus_total(OUTPUT_DIR / "opt_nds_sara_plus.csv")
-    # Personal Production now comes from each ICD's own SARA By Day row
-    # (see fill_nds_tab) — ProductSalesSummaryRep is only still pulled for
-    # the Rep Breakdown chart (non-backfill runs).
+    personal_production = parse_personal_production(
+        OUTPUT_DIR / "opt_nds_personal_production.csv")
     rep_breakdown = parse_rep_breakdown_per_owner(
         OUTPUT_DIR / "opt_nds_personal_production.csv")
     churn = parse_churn_icd(OUTPUT_DIR / "opt_nds_churn.csv")
@@ -1219,6 +1197,7 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
           f"{len(cancel)} Cancel, "
           f"{len(leads)} Leads, "
           f"{len(sara_byday)} Sara-ByDay, "
+          f"{len(personal_production)} PP, "
           f"{len(direct_deposit)} DD")
 
     # Step 3: open sheet + walk NDS-suffixed tabs
@@ -1273,6 +1252,7 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
                              churn, week_col_label, dry_run, logfn,
                              activation=activation, cancel=cancel,
                              leads=leads, sara_byday=sara_byday,
+                             personal_production=personal_production,
                              direct_deposit=direct_deposit,
                              backfill=backfill)
         for ln in lines:
