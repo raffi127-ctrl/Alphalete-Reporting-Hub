@@ -87,6 +87,17 @@ def _owner_from_office(header: str) -> str:
     return re.sub(r"\s*-\s*[A-Za-z]{2}$", "", inside).strip()
 
 
+def _state_from_office(header: str) -> str:
+    """The 2-letter state code on the office header, or '' if none.
+    '...(RYAN MCSPADDEN-CO)' -> 'CO'. Some owners run more than one
+    location (Ryan: CO + TX) — the state distinguishes their office
+    blocks so each lands in its own row-set on the tab."""
+    m = re.search(r"\(([^)]+)\)\s*$", header or "")
+    inside = (m.group(1) if m else "")
+    sm = re.search(r"-\s*([A-Za-z]{2})\s*$", inside)
+    return sm.group(1).upper() if sm else ""
+
+
 def _detect_format(wb) -> str:
     """'german' | 'coel' | 'summary' — by a signature cell in column A."""
     for name in wb.sheetnames:
@@ -114,6 +125,7 @@ def _parse_summary(wb) -> Tuple[List[dict], List[dt.date]]:
         if b and "(" in str(b) and ")" in str(b):
             cur = {"office": str(b).strip(),
                    "owner": _owner_from_office(str(b)),
+                   "state": _state_from_office(str(b)),
                    "metrics": {}}
             offices.append(cur)
         elif c and cur is not None:
@@ -211,10 +223,11 @@ def parse_one_file(path) -> Tuple[List[dict], List[dt.date], str]:
     return offices, weeks, fmt
 
 
-def parse_financial_files(paths, logfn=print) -> Tuple[Dict[str, dict], List[dt.date], List[Tuple[str, str]]]:
+def parse_financial_files(paths, logfn=print) -> Tuple[Dict[str, List[dict]], List[dt.date], List[Tuple[str, str]]]:
     """Parse + merge any number of financial workbooks — any mix of the three
-    layouts — into one {normalized owner: office} map. On a duplicate owner
-    the later file wins. Returns (by_owner, weeks, problems).
+    layouts — into one {normalized owner: [offices]} map. A duplicate
+    (owner, state) lets the later file win; a multi-location owner keeps one
+    office per state (Ryan: CO + TX). Returns (by_owner, weeks, problems).
 
     `weeks` is the reporting window the fill writes into: the FINANCIAL
     SUMMARY week-endings when any summary file is present (Eve's checked
@@ -254,7 +267,17 @@ def parse_financial_files(paths, logfn=print) -> Tuple[Dict[str, dict], List[dt.
             summary_weeks = wk
         for o in offices:
             key = norm_name(o["owner"])
-            if key:
-                by_owner[key] = o
+            if not key:
+                continue
+            # Dedup by (owner, state) so a re-uploaded file's later copy wins,
+            # but a multi-location owner (Ryan: CO + TX) keeps BOTH offices.
+            st = o.get("state", "")
+            bucket = by_owner.setdefault(key, [])
+            existing = next((i for i, x in enumerate(bucket)
+                             if x.get("state", "") == st), None)
+            if existing is None:
+                bucket.append(o)
+            else:
+                bucket[existing] = o            # later file wins
     weeks = summary_weeks or sorted(all_weeks)[-4:]
     return by_owner, weeks, problems

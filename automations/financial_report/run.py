@@ -84,8 +84,9 @@ def run_financial_report(file_paths, dry_run: bool = False,
     """Parse the financial workbooks and fill every matching ICD tab across
     the focus-report spreadsheets. Returns a summary dict."""
     by_owner, weeks, problems = parse_financial_files(file_paths, logfn=logfn)
-    logfn(f"financial: parsed {len(by_owner)} offices from "
-          f"{len(list(file_paths))} file(s); week endings {weeks}")
+    n_offices = sum(len(v) for v in by_owner.values())
+    logfn(f"financial: parsed {n_offices} office(s) for {len(by_owner)} owner(s) "
+          f"from {len(list(file_paths))} file(s); week endings {weeks}")
     if not by_owner:
         logfn("financial: no office data parsed — nothing to fill")
         if problems:
@@ -123,8 +124,8 @@ def run_financial_report(file_paths, dry_run: bool = False,
               f"({len(hidden)} hidden skipped)")
         filled = matched = 0
         for idx, ws in enumerate(candidate_tabs, start=1):
-            office = ffill._match_owner(ws.title, by_owner, bridge)
-            if not office:
+            tab_offices = ffill._match_owner(ws.title, by_owner, bridge)
+            if not tab_offices:
                 # No data in this upload — leave the tab alone. Whatever was
                 # filled by a previous run stays put; when an upload that
                 # DOES include this ICD arrives, the cells get filled then.
@@ -132,7 +133,7 @@ def run_financial_report(file_paths, dry_run: bool = False,
                 # previously-entered data.)
                 continue
             matched += 1
-            lines = ffill.fill_financial_for_tab(ws, office, weeks, dry_run)
+            lines = ffill.fill_financial_for_tab(ws, tab_offices, weeks, dry_run)
             for line in lines:
                 logfn(f"  {sheet_name}: {line}")
             if lines and lines[0].lstrip().startswith(("[OK]", "[DRY-RUN]")):
