@@ -1,5 +1,5 @@
 {
-  "confirmed_count": 50,
+  "confirmed_count": 54,
   "needs_review_count": 0,
   "skip_count": 28,
   "confirmed": [
@@ -364,6 +364,35 @@
       "as_company": "(hardcoded \u2014 may not be visible in all AS accounts)",
       "confidence": 1.0,
       "hardcoded": true
+    },
+    {
+      "sheet_tab": "Kimberly Rodriguez",
+      "office_id": "23576",
+      "as_owner": "Kimberly Rodriguez",
+      "as_company": "Illumane, Inc.",
+      "confidence": 1.0,
+      "auto_onboarded": true
+    },
+    {
+      "sheet_tab": "Eric Zech",
+      "office_id": "",
+      "as_owner": "Eric Zech",
+      "as_company": "",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Salik Mallick",
+      "office_id": "",
+      "as_owner": "Salik Mallick",
+      "as_company": "",
+      "confidence": 1.0
+    },
+    {
+      "sheet_tab": "William Sassenberg",
+      "office_id": "",
+      "as_owner": "William Sassenberg",
+      "as_company": "",
+      "confidence": 1.0
     }
   ],
   "needs_review": [],
