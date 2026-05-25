@@ -823,13 +823,19 @@ def _fiber_overview(fields: List[str], records: List[List[str]]
     lead = _to_num(by.get("lead count", ""))
     sales = _to_num(by.get("total sales", ""))
     goal = _to_num(by.get("assigned fiber lead penetration", ""))
+    # Sanity guards — a brand-new ICD whose Fiber isn't set up in Tableau yet
+    # can report nonsense (e.g. Eric Zech: 967 sales vs 256 leads -> 377%, goal
+    # 3.777). Penetration can't exceed 100% (sales <= leads); the goal is a
+    # fraction (0..1). When the source data violates either, leave that metric
+    # blank rather than write a wrong number to the sheet.
     penetration = ""
-    if lead:
-        penetration = f"{(sales or 0) / lead * 100:.2f}%"
-    elif lead == 0:
+    if lead == 0:
         penetration = "0%"
-    expected = (int(round(lead * goal))
-                if (lead is not None and goal is not None) else None)
+    elif lead and sales is not None and 0 <= sales <= lead:
+        penetration = f"{sales / lead * 100:.2f}%"
+    expected = None
+    if lead is not None and goal is not None and 0 <= goal <= 1:
+        expected = int(round(lead * goal))
     lead_i = int(round(lead)) if lead is not None else None
     return penetration, lead_i, expected
 
