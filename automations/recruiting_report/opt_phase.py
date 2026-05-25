@@ -103,7 +103,11 @@ WIRELESS_CHURN_VIEW_URL = (
     "ATTTRACKER2_1-D2D/CHURN/"
     "e4e438a7-c289-4128-a89a-8b5beec41baa/AP-WIRELESSCHURN"
 )
-WIRELESS_CHURN_SHEET = "ICD Churn (Wireless)"
+# Tableau renamed this sheet from "ICD Churn (Wireless)" → "ICD Churn"
+# (2026-05-25, caught on Eve's run). The wireless churn data lives on a
+# DIFFERENT view (WIRELESS_CHURN_VIEW_URL) than the regular churn "ICD Churn",
+# so the same sheet name on two different views is fine.
+WIRELESS_CHURN_SHEET = "ICD Churn"
 WIRELESS_CHURN_PATH = WORKSPACE / "output" / "opt_wireless_churn.csv"
 
 # Captain's Bonus crosstab — AUTOMATIONPULL-CAPTAINS custom view. The Crosstab
