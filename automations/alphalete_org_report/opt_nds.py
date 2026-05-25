@@ -342,6 +342,17 @@ def parse_personal_production(path: Path) -> Dict[str, str]:
     rows = _read_tab_csv(path)
     if not rows or len(rows) < 3:
         return {}
+    # Shared ICD alias list so rep-name spelling variants resolve to the ICD
+    # (Megan 2026-05-24: 'Maxamad-Amin Aden' IS Max). Identity fallback if the
+    # alias Sheet is unreachable.
+    try:
+        from automations.focus_office_att.aliases import (
+            load_aliases as _load_aliases, alias_to_canonical)
+        _aliases = _load_aliases()
+    except Exception:
+        _aliases = {}
+        def alias_to_canonical(name, raw):
+            return name
     OWNER_I, REP_I, TYPE_I, TOTAL_I = 0, 1, 2, 8
     bucket: Dict[str, Dict[str, int]] = {}
     seen_owners: set = set()
@@ -356,13 +367,22 @@ def parse_personal_production(path: Path) -> Dict[str, str]:
         # Skip per-ICD subtotal rows
         if rep_raw.lower() == "total" or ptype == "TOTAL":
             continue
-        owner = _norm_owner(owner_raw)
+        # Bucket key = the CANONICAL ICD name (alias-resolved, office-suffix
+        # stripped) so the caller's lookup by sheet-tab name matches even when
+        # the view spells it differently ('MAXAMAD ADEN' vs tab 'Maxamed Aden').
+        owner = _norm_owner(
+            alias_to_canonical(owner_raw.split("\n")[0].strip(), _aliases))
         seen_owners.add(owner)
-        # Only count rows where the rep IS the owner (case-insensitive,
-        # whitespace-collapsed). Names like 'Maxamad-Amin Aden' vs the
-        # ICD 'MAXAMAD ADEN' are different people — strict equality
-        # filters them out correctly.
-        if _norm_owner(rep_raw) != owner:
+        # Count only the ICD's OWN rows (personal production). The owner cell
+        # carries an office suffix ('MAXAMAD ADEN\n[maximal..]') the rep cell
+        # never has, so compare just the NAME — and resolve spelling variants
+        # through the shared ICD alias list (Megan 5/24: 'Maxamad-Amin Aden'
+        # IS Max). The old compare matched owner+suffix vs the bare rep name,
+        # so NO self-row ever matched and every ICD's PP came back 0.
+        owner_name = alias_to_canonical(
+            owner_raw.split("\n")[0].strip(), _aliases).strip().lower()
+        rep_name = alias_to_canonical(rep_raw, _aliases).strip().lower()
+        if rep_name != owner_name:
             continue
         try:
             val = int(float((r[TOTAL_I] or "0").replace(",", "")))
