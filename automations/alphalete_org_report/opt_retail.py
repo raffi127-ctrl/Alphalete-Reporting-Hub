@@ -28,6 +28,9 @@ from automations.alphalete_org_report import tableau_http
 from automations.alphalete_org_report.opt_nds import (
     ALPHALETE_ORG_SHEET_ID,
     OUTPUT_DIR,
+    ORG_DD_URL,
+    ORG_DD_SHEET,
+    parse_direct_deposit,
     _current_target_week_col_label,
     _find_row_by_label,
     _find_week_col,
@@ -172,6 +175,7 @@ RETAIL_MONEY_LOST_URL = (
     "538e62a7-3c2a-45cd-9a91-6784fbc4c7d8/DOWNLINEVIEW?:iid=2"
 )
 RETAIL_MONEY_LOST_FILENAME = "opt_retail_money_lost.csv"
+RETAIL_DD_FILENAME = "opt_retail_direct_deposit.csv"
 
 
 # Pattern: extracts the store identifier ('#669', 'BC #655', '#1735') from
@@ -852,6 +856,7 @@ _OFFICE_METRIC_ROW_LABELS = {
     "Activation /Approval %":     ["Activation /Approval %", "Activation/Approval %"],
     "Money Lost from TMP":        ["Money Lost from TMP"],
     "Personal Production":        ["Personal Production"],
+    "Direct Deposit":             ["Direct Deposit"],
 }
 
 
@@ -880,6 +885,7 @@ def fill_office_metrics(ws: gspread.Worksheet,
                         abp: Dict[str, str],
                         activation: Dict[str, str],
                         money_lost: Dict[str, str],
+                        direct_deposit: Dict[str, str],
                         tab_icds: List[str],
                         week_col_label: str,
                         icds_to_write: Optional[List[str]] = None,
@@ -931,6 +937,7 @@ def fill_office_metrics(ws: gspread.Worksheet,
         abp_val = _lookup(abp)
         activation_val = _lookup(activation)
         money_lost_val = _lookup(money_lost)
+        direct_deposit_val = _lookup(direct_deposit)
 
         # 1) Churn rates — write the Tableau % string verbatim if present.
         for sheet_label in ("0-30 Day Churn", "60 Day Churn", "90 Day Churn"):
@@ -1058,6 +1065,20 @@ def fill_office_metrics(ws: gspread.Worksheet,
         else:
             log.append(f"  [miss-data] {icd_norm!r} -> no Money Lost from TMP data")
 
+        # 9) Direct Deposit — Tableau org-wide DD view, per ICD owner
+        # (Megan 2026-05-25: DD = Tableau for every campaign). Dollar string.
+        if direct_deposit_val:
+            row_0 = _find_first_label_match(
+                grid, _OFFICE_METRIC_ROW_LABELS["Direct Deposit"], start, end)
+            if row_0 is not None:
+                a1 = gspread.utils.rowcol_to_a1(row_0 + 1, week_col + 1)
+                updates.append({"range": a1, "values": [[direct_deposit_val]]})
+                log.append(f"  {a1} {icd_norm!r} Direct Deposit <- {direct_deposit_val}")
+            else:
+                log.append(f"  [miss-row] {icd_norm!r} -> no 'Direct Deposit' row")
+        else:
+            log.append(f"  [miss-data] {icd_norm!r} -> no Direct Deposit data")
+
     if dry_run:
         return [f"[DRY-RUN retail-opt] {ws.title}: would write {len(updates)} cells"] + log
     if updates:
@@ -1112,6 +1133,7 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
     sara_office_path: Optional[Path] = None
     abp_path: Optional[Path] = None
     money_lost_path: Optional[Path] = None
+    dd_path: Optional[Path] = None
 
     # Linear-scroll tuning for View Data scrapes — default scraper's
     # alternating incremental+jump strategy skips middle rows on SARA's
@@ -1206,6 +1228,15 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
                         verbose=False, page=page,
                         activate_xy=(0.4, 0.7),
                         scrape_kwargs=_VIEWDATA_SCRAPE_KWARGS))
+
+                # Direct Deposit — org-wide DD view (same source every campaign
+                # uses; Megan 2026-05-25). Crosstab path like NDS.
+                dd_target = OUTPUT_DIR / RETAIL_DD_FILENAME
+                dd_path = _try_with_retry(
+                    "patchright Crosstab", RETAIL_DD_FILENAME, 2,
+                    lambda: download_crosstab_patchright(
+                        ORG_DD_URL, ORG_DD_SHEET, dd_target,
+                        verbose=False, page=page))
     except Exception as e:
         logfn(f"OPT Retail: patchright session failed: "
               f"{type(e).__name__}: {str(e)[:160]}")
@@ -1215,6 +1246,7 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
         abp_path = abp_path or _fallback_existing(RETAIL_ABP_FILENAME)
         money_lost_path = money_lost_path or _fallback_existing(
             RETAIL_MONEY_LOST_FILENAME)
+        dd_path = dd_path or _fallback_existing(RETAIL_DD_FILENAME)
 
     # Costco by-club is the blocking output — abort if its source failed
     # (or the whole patchright session failed to open).
@@ -1247,6 +1279,10 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
     logfn(f"OPT Retail: parsed Money Lost from TMP for {len(money_lost)} office(s): "
           f"{sorted(money_lost.keys())}")
 
+    direct_deposit = ({k: f"${v:,.2f}" for k, v in
+                       parse_direct_deposit(dd_path).items()} if dd_path else {})
+    logfn(f"OPT Retail: parsed Direct Deposit for {len(direct_deposit)} owner(s)")
+
     # ---- Step 3: walk the Retail tabs ----
     client = rfill._client()
     sh = rfill.open_by_key(ALPHALETE_ORG_SHEET_ID, client)
@@ -1275,7 +1311,7 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
                     ok_any = True
             for ln in fill_office_metrics(
                     ws, churn, sara_office, abp, activation, money_lost,
-                    RETAIL_TAB_ICDS[title], week_col_label,
+                    direct_deposit, RETAIL_TAB_ICDS[title], week_col_label,
                     icds_to_write=None,
                     dry_run=dry_run, logfn=logfn):
                 logfn(f"OPT Retail: {ln}")

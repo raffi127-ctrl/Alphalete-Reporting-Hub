@@ -35,6 +35,10 @@ from automations.recruiting_report import fill as rfill
 from automations.alphalete_org_report.opt_nds import (
     ALPHALETE_ORG_SHEET_ID,
     OUTPUT_DIR,
+    ORG_DD_URL,
+    ORG_DD_SHEET,
+    parse_direct_deposit,
+    match_dd_owner,
     _read_tab_csv,
     _norm_owner,
     _find_week_col,
@@ -56,19 +60,9 @@ JE_SALES_BASE = (
 JE_SALES_SHEET = "All RTL Sales Summary by Store"
 JE_SALES_FILENAME = "opt_je_sales_by_store.csv"
 
-# Direct Deposit — DirectDepositICDVIEWVersion2_0 / PROGRAMSUMMARY /
-# DOWNLINEVIEW, worksheet 'Sheet 7 (3)' (the downline grid). Per Megan
-# 2026-05-24, DD = 'Grand Total to ICD' for the ICD's row — but Tableau
-# leaves that computed column blank in the export, so we sum the per-
-# campaign dollar columns in the row instead (for a JE-only ICD that's
-# just the 'Just Energy' column; for the rare multi-campaign ICD it's the
-# true grand total). Same Direct Deposit workbook family as NDS.
-JE_DD_URL = (
-    "https://us-east-1.online.tableau.com/#/site/sci/views/"
-    "DirectDepositICDVIEWVersion2_0/PROGRAMSUMMARY/"
-    "15c897de-6162-469b-9ef7-1735d235f2a8/DOWNLINEVIEW?:iid=1"
-)
-JE_DD_SHEET = "Sheet 7 (3)"
+# Direct Deposit — pulled from the org-wide DD view (opt_nds.ORG_DD_URL /
+# parse_direct_deposit), the canonical DD source for every campaign
+# (Megan 2026-05-25). JE_DD_FILENAME is just the local file we save it to.
 JE_DD_FILENAME = "opt_je_direct_deposit.csv"
 
 
@@ -229,36 +223,6 @@ def parse_je_conversion(path: Path, icd_norm: str) -> Tuple[Optional[str], Optio
                 own_sales = vals[-1]   # latest shown week
     office_avg = f"{round(sum(conv_vals) / len(conv_vals))}%" if conv_vals else None
     return office_avg, own_sales
-
-
-def parse_je_direct_deposit(path: Path, icd_norm: str) -> Optional[str]:
-    """Parse PROGRAMSUMMARY/DOWNLINEVIEW 'Sheet 7 (3)' → the ICD's
-    Grand Total to ICD as a '$X,XXX.XX' string. Tableau leaves the
-    'Grand Total to ICD' column blank in the export, so we sum the
-    per-campaign dollar columns in the ICD's row."""
-    rows = _read_tab_csv(path)
-    if len(rows) < 2:
-        return None
-    header = rows[0]
-    name_i = next((i for i, h in enumerate(header)
-                   if "icd owner name" in (h or "").strip().lower()), None)
-    if name_i is None:
-        return None
-    # Dollar columns = everything after 'Grand Total to ICD' (the campaign
-    # breakdown); fall back to any cell that parses as dollars.
-    gt_i = next((i for i, h in enumerate(header)
-                 if "grand total to icd" in (h or "").strip().lower()), None)
-    for r in rows[1:]:
-        if name_i >= len(r) or _norm_owner(r[name_i]) != icd_norm:
-            continue
-        start = (gt_i + 1) if gt_i is not None else 0
-        total = 0.0
-        for c in range(start, len(r)):
-            d = _parse_dollars(r[c])
-            if d is not None:
-                total += d
-        return f"${total:,.2f}"
-    return None
 
 
 def fill_je_tab(ws: gspread.Worksheet, by_store: Dict[str, int],
@@ -433,10 +397,11 @@ def run_je_opt(dry_run: bool = False, only_rep: Optional[str] = None,
                     logfn(f"OPT JE: ✗ conversion: {type(e).__name__}: {str(e)[:100]}")
 
                 try:
-                    logfn(f"OPT JE: Crosstab → direct deposit...")
-                    download_crosstab_patchright(JE_DD_URL, JE_DD_SHEET,
+                    logfn(f"OPT JE: Crosstab → direct deposit (org-wide DD view)...")
+                    download_crosstab_patchright(ORG_DD_URL, ORG_DD_SHEET,
                                                  dd_out, verbose=False, page=page)
-                    direct_deposit = parse_je_direct_deposit(dd_out, icd_norm)
+                    dd_v = match_dd_owner(parse_direct_deposit(dd_out), icd_name)
+                    direct_deposit = f"${dd_v:,.2f}" if dd_v is not None else None
                 except Exception as e:
                     logfn(f"OPT JE: ✗ direct deposit: {type(e).__name__}: {str(e)[:100]}")
         except Exception as e:

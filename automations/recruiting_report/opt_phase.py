@@ -140,11 +140,18 @@ PROGRAM_SUMMARY_VIEW_URL = (
 )
 PROGRAM_SUMMARY_PATH = WORKSPACE / "output" / "opt_program_summary.csv"
 
-# Fiber Lead Performance — per-ICD pull. The by-zip data won't crosstab-export
-# and is 9,000+ rows whole, so the report filters the view to ONE ICD at a
-# time (Owner Name filter) and scrapes that ICD's small by-zip View Data.
-# Penetration Rate ← 'Office Lead Penetration (Fixed)'; Total Leads ← the sum
-# of the 'Lead Count' measure rows.
+# Fiber Lead Performance — per-ICD pull. The report filters the view to ONE ICD
+# at a time (Owner Name filter) and scrapes that ICD's "Program Overview" box —
+# a clean 4-row Measure Names/Values worksheet (activate_xy below). The by-zip
+# table can't be scraped reliably (Measure-Names pivot garbles the grid), but
+# Program Overview has every number we need as a single per-owner total:
+#   Lead Count                       -> Total Leads
+#   Total Sales                      -> Penetration Rate = Total Sales / Lead Count
+#   Assigned Fiber Lead Penetration  -> goal (e.g. 0.02); Expected Fiber Sales
+#                                       (120 days, 17wks) = round(Lead Count * goal)
+#   Expected Fiber Sales Weekly      = round(Expected / 17)
+# The Program Overview box sits near the top-center of the dashboard.
+FIBER_OVERVIEW_XY = (0.45, 0.45)
 FIBER_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/FiberLeadPerformance"
@@ -795,33 +802,36 @@ def download_program_summary(out_path: Path = PROGRAM_SUMMARY_PATH,
     return out_path
 
 
-def _fiber_totals(fields: List[str], records: List[List[str]]
-                  ) -> Tuple[str, Optional[int]]:
-    """From one ICD's by-zip View Data: (penetration %, total Lead Count).
-    Penetration = the constant 'Office Lead Penetration (Fixed)' field; Lead
-    Count = the sum of the 'Lead Count' measure rows."""
-    def col(substr):
-        return next((i for i, f in enumerate(fields)
-                     if substr in f.lower()), None)
-    pen_i = col("office lead penetration")
-    mn_i = col("measure names")
-    mv_i = col("measure values")
+def _fiber_overview(fields: List[str], records: List[List[str]]
+                    ) -> Tuple[str, Optional[int], Optional[int]]:
+    """Parse one ICD's 'Program Overview' View Data (a clean Measure
+    Names/Values table) into (penetration %, Total Leads, Expected Fiber Sales).
+      Lead Count  -> Total Leads
+      Total Sales -> Penetration Rate = Total Sales / Lead Count
+      Assigned Fiber Lead Penetration -> goal; Expected = round(Lead Count*goal)
+    Returns ("", None, None) if the worksheet didn't yield the measures."""
+    mn_i = next((i for i, f in enumerate(fields)
+                 if "measure names" in f.lower()), None)
+    mv_i = next((i for i, f in enumerate(fields)
+                 if "measure values" in f.lower()), None)
+    if mn_i is None or mv_i is None:
+        return "", None, None
+    by: Dict[str, str] = {}
+    for r in records:
+        if len(r) > max(mn_i, mv_i):
+            by[r[mn_i].strip().lower()] = r[mv_i].strip()
+    lead = _to_num(by.get("lead count", ""))
+    sales = _to_num(by.get("total sales", ""))
+    goal = _to_num(by.get("assigned fiber lead penetration", ""))
     penetration = ""
-    if pen_i is not None:
-        for r in records:
-            if len(r) > pen_i and r[pen_i].strip():
-                penetration = r[pen_i].strip()
-                break
-    leads, found = 0.0, False
-    if mn_i is not None and mv_i is not None:
-        for r in records:
-            if len(r) > max(mn_i, mv_i) and \
-                    r[mn_i].strip().lower() == "lead count":
-                n = _to_num(r[mv_i])
-                if n is not None:
-                    leads += n
-                    found = True
-    return penetration, (int(round(leads)) if found else None)
+    if lead:
+        penetration = f"{(sales or 0) / lead * 100:.2f}%"
+    elif lead == 0:
+        penetration = "0%"
+    expected = (int(round(lead * goal))
+                if (lead is not None and goal is not None) else None)
+    lead_i = int(round(lead)) if lead is not None else None
+    return penetration, lead_i, expected
 
 
 def _fiber_name_candidates(tab: str, as_owner_map: dict, aliases_map: dict
@@ -855,10 +865,9 @@ def _fiber_name_candidates(tab: str, as_owner_map: dict, aliases_map: dict
 def download_fiber(icd_names: List[str], out_path: Path = FIBER_PATH,
                    logfn=print) -> Path:
     """Per-ICD Fiber pull: filter the Fiber view to each ICD's Owner Name,
-    scrape the by-zip View Data, record Penetration % + Lead Count. One
-    Tableau session, looped over the ICDs — slow (~one View Data pull per
-    ICD) because the view has no per-office summary sheet. Rows are keyed by
-    the Sheet tab name."""
+    scrape that ICD's 'Program Overview' box (FIBER_OVERVIEW_XY), and record
+    Penetration % + Total Leads + Expected Fiber Sales. One Tableau session,
+    looped over the ICDs. Rows are keyed by the Sheet tab name."""
     from urllib.parse import quote
     out_path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -871,7 +880,7 @@ def download_fiber(icd_names: List[str], out_path: Path = FIBER_PATH,
         aliases_map = _al.load_aliases()
     except Exception:
         aliases_map = {}
-    rows: List[Tuple[str, str, str]] = []
+    rows: List[Tuple[str, str, str, str]] = []
     # patchright session (self-logs in) instead of CDP/Report-Chrome. The heavy
     # Fiber viz still leaks tabs over many loads, so we open a fresh page from
     # the SAME authed context every 10 ICDs (ctx.new_page() — cookies carry the
@@ -888,7 +897,7 @@ def download_fiber(icd_names: List[str], out_path: Path = FIBER_PATH,
                     except Exception:
                         pass
                     page = ctx.new_page()
-                pen, leads, ok, err, empty = "", None, False, "", False
+                pen, leads, expected, ok, err, empty = "", None, None, False, "", False
                 for cand in _fiber_name_candidates(tab, as_owner_map, aliases_map):
                     if ok:
                         break
@@ -899,7 +908,7 @@ def download_fiber(icd_names: List[str], out_path: Path = FIBER_PATH,
                                 page = ctx.new_page()
                             fields, recs = _scrape_one_view_data(
                                 page, ctx, url, verbose=False,
-                                activate_xy=(0.5, 0.52))
+                                activate_xy=FIBER_OVERVIEW_XY)
                         except Exception as e:
                             err = type(e).__name__
                             # "couldn't activate the worksheet" = the Fiber
@@ -907,7 +916,7 @@ def download_fiber(icd_names: List[str], out_path: Path = FIBER_PATH,
                             # has zero fiber activity this period). Megan:
                             # treat as 0%/0 instead of FAILED.
                             if "couldn't activate" in str(e):
-                                pen, leads, ok, empty = "0%", 0, True, True
+                                pen, leads, expected, ok, empty = "0%", 0, 0, True, True
                                 break
                             if page.is_closed():
                                 try:
@@ -915,17 +924,19 @@ def download_fiber(icd_names: List[str], out_path: Path = FIBER_PATH,
                                 except Exception:
                                     pass
                             continue
-                        pen, leads = _fiber_totals(fields, recs)
+                        pen, leads, expected = _fiber_overview(fields, recs)
                         if pen or leads is not None:
                             ok = True
                         break
-                rows.append((tab, pen, "" if leads is None else str(leads)))
+                rows.append((tab, pen,
+                             "" if leads is None else str(leads),
+                             "" if expected is None else str(expected)))
                 if empty:
                     logfn(f"OPT: Fiber [{i}/{n}] {tab}: empty view -> "
-                          f"penetration=0%, leads=0")
+                          f"penetration=0%, leads=0, expected=0")
                 elif ok:
-                    logfn(f"OPT: Fiber [{i}/{n}] {tab}: "
-                          f"penetration={pen}, leads={leads}")
+                    logfn(f"OPT: Fiber [{i}/{n}] {tab}: penetration={pen}, "
+                          f"leads={leads}, expected={expected}")
                 else:
                     logfn(f"OPT: Fiber [{i}/{n}] {tab}: FAILED "
                           f"({err or 'no data for this ICD'})")
@@ -934,9 +945,10 @@ def download_fiber(icd_names: List[str], out_path: Path = FIBER_PATH,
                 page.close()
             except Exception:
                 pass
-    lines = ["tab\tpenetration\tlead_count"] + ["\t".join(r) for r in rows]
+    lines = (["tab\tpenetration\tlead_count\texpected"]
+             + ["\t".join(r) for r in rows])
     out_path.write_text("\n".join(lines), encoding="utf-8")
-    ok = sum(1 for _, pn, lc in rows if pn or lc)
+    ok = sum(1 for _, pn, lc, _ex in rows if pn or lc)
     logfn(f"OPT: Fiber — pulled {ok}/{len(rows)} ICDs → {out_path}")
     return out_path
 
@@ -1091,7 +1103,8 @@ def parse_program_summary(path: Path) -> Dict[str, dict]:
 
 def parse_fiber(path: Path) -> Dict[str, dict]:
     """Read the per-ICD Fiber pull (tab-keyed). Returns {normalized tab name:
-    {"owner", "penetration", "lead_count"}}."""
+    {"owner", "penetration", "lead_count", "expected"}}. The 'expected' column
+    is optional so older cached files (3 columns) still parse."""
     if not Path(path).exists():
         return {}
     rows = [ln.split("\t") for ln in
@@ -1102,7 +1115,8 @@ def parse_fiber(path: Path) -> Dict[str, dict]:
             continue
         out[_norm(r[0])] = {"owner": r[0].strip(),
                             "penetration": r[1].strip(),
-                            "lead_count": r[2].strip()}
+                            "lead_count": r[2].strip(),
+                            "expected": r[3].strip() if len(r) > 3 else ""}
     return out
 
 
@@ -1320,12 +1334,19 @@ def fill_opt_for_tab(
         _queue(om_rows, "Direct Deposit", round(ps_row["total"], 2))
 
     # --- Fiber Lead (Office Metrics section) — keyed by tab name ---
+    # All from the Fiber view's Program Overview box: Penetration Rate, Total
+    # Leads, Expected Fiber Sales (120 days/17wks), and Weekly = Expected / 17.
     fiber_row = fiber_by_owner.get(_norm(tab_name))
     if fiber_row:
         if fiber_row.get("penetration"):
             _queue(om_rows, "Penetration Rate", fiber_row["penetration"])
-        if fiber_row.get("lead_count"):
-            _queue(om_rows, "Total Leads", fiber_row["lead_count"])
+        lead_n = _to_num(fiber_row.get("lead_count", ""))
+        if lead_n is not None:
+            _queue(om_rows, "Total Leads", int(lead_n))
+        exp_n = _to_num(fiber_row.get("expected", ""))
+        if exp_n is not None:
+            _queue(om_rows, "Expected Fiber Sales (120 days, 17wks)", int(exp_n))
+            _queue(om_rows, "Expected Fiber Sales Weekly", round(exp_n / 17))
 
     # --- Personal Production (the ICD's own sales as a rep) ---
     # Always written — an ICD with no personal sales gets a literal 0.

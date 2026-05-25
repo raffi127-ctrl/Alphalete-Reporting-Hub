@@ -36,9 +36,8 @@ from automations.recruiting_report import fill as rfill
 from automations.recruiting_report import opt_phase_carlos as cb
 from automations.recruiting_report.opt_phase import drive_crosstab_dialog
 from automations.alphalete_org_report.opt_nds import (
-    ALPHALETE_ORG_SHEET_ID, OUTPUT_DIR, _norm_owner, _current_target_week_end)
-from automations.alphalete_org_report.opt_je import (
-    JE_DD_URL, JE_DD_SHEET, parse_je_direct_deposit)
+    ALPHALETE_ORG_SHEET_ID, OUTPUT_DIR, ORG_DD_URL, ORG_DD_SHEET,
+    parse_direct_deposit, match_dd_owner, _norm_owner, _current_target_week_end)
 from automations.shared.tableau_patchright import (
     tableau_session, download_crosstab_patchright)
 
@@ -123,15 +122,16 @@ def collect_b2b_values(page, logfn=print) -> dict:
         except Exception as e:
             logfn(f"OPT B2B: ✗ {view.key}: {type(e).__name__}: {str(e)[:120]}")
 
-    # Direct Deposit — shared Program Summary workbook, same parser as JE.
+    # Direct Deposit — org-wide DD view (same source every campaign uses;
+    # Megan 2026-05-25).
     try:
         dd_out = OUTPUT_DIR / "opt_b2b_dd.csv"
-        download_crosstab_patchright(JE_DD_URL, JE_DD_SHEET, dd_out,
+        download_crosstab_patchright(ORG_DD_URL, ORG_DD_SHEET, dd_out,
                                      verbose=False, page=page)
-        dd = parse_je_direct_deposit(dd_out, _norm_owner(B2B_ICD))
-        if dd:
-            values[DD_ROW] = dd
-            logfn(f"OPT B2B: dd: {dd}")
+        dd_v = match_dd_owner(parse_direct_deposit(dd_out), B2B_ICD)
+        if dd_v is not None:
+            values[DD_ROW] = f"${dd_v:,.2f}"
+            logfn(f"OPT B2B: dd: ${dd_v:,.2f}")
     except Exception as e:
         logfn(f"OPT B2B: ✗ dd: {type(e).__name__}: {str(e)[:120]}")
 

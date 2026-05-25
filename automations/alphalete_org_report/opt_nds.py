@@ -112,6 +112,19 @@ ALPHALETE_ORG_SHEET_ID = "1C6BLttOSZhs_dREySac19XkxnMl-Ab_sYacNSl2l6AQ"
 
 # Tableau Crosstab views — all pulled via patchright in one session.
 # (url, crosstab_worksheet_name, output_filename)
+# Org-wide Direct Deposit — DD BY OWNER (ORG) / DOWNLINEVIEW. THE canonical DD
+# source for EVERY campaign: the grid holds all ICD owners across every campaign
+# (RES-ATT, NDS Wireless, B2B, BOX, Retail, …), so each campaign fills its reps'
+# Direct Deposit from this one view via parse_direct_deposit(). Standardized
+# 2026-05-25 (Megan) so BOX/Retail/JE/B2B all pull DD from Tableau, not per-
+# campaign DD views (which missed BOX + Retail reps entirely).
+ORG_DD_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "DirectDepositICDVIEWVersion2_0/DDBYOWNERORG/"
+    "796feca0-272f-459f-a665-63ac9aec3af8/DOWNLINEVIEW?:iid=1"
+)
+ORG_DD_SHEET = "Sheet 7 (5)"
+
 NDS_VIEWS: List[Tuple[str, str, str]] = [
     (
         "https://us-east-1.online.tableau.com/#/site/sci/views/NDS-SNRES-ATT-OOFWorkbook/NDSDailyTracker?:iid=1",
@@ -550,6 +563,27 @@ def parse_direct_deposit(path: Path) -> Dict[str, float]:
         if row_total:
             out[owner] = out.get(owner, 0.0) + row_total
     return out
+
+
+def match_dd_owner(dd: Dict[str, float], name: str) -> Optional[float]:
+    """Look up an owner's Direct Deposit dollar in the org-wide DD grid,
+    tolerant of middle names / spacing: exact _norm_owner first, then
+    first+last name, then a UNIQUE last-name match. Handles tabs like
+    'Roshan Amin Ahmad' whose DD grid entry is 'roshan ahmad'. Returns None
+    if no confident match (caller leaves DD untouched)."""
+    key = _norm_owner(name)
+    if key in dd:
+        return dd[key]
+    parts = key.split()
+    if len(parts) >= 2:
+        fl = f"{parts[0]} {parts[-1]}"
+        if fl in dd:
+            return dd[fl]
+        last = parts[-1]
+        cands = [k for k in dd if k.split() and k.split()[-1] == last]
+        if len(cands) == 1:
+            return dd[cands[0]]
+    return None
 
 
 def parse_churn_icd(path: Path) -> Dict[str, Dict[str, str]]:

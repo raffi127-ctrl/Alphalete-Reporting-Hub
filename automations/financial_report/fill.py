@@ -65,6 +65,16 @@ def _tab_to_name(tab: str) -> str:
     return t.strip()
 
 
+# Shared/multi-ICD tabs whose financial block belongs to a SECONDARY ICD, not
+# the tab's primary name. The 'Boaktear Chowdhury (Akib/MJ)' Retail tab's only
+# financial section sits under the 'AMJAD MALHAS' header and is MJ's — Akib
+# (Boaktear Chowdhury) has no financial block on that tab. Keyed by a substring
+# of the normalized tab name. (Megan 2026-05-25)
+_TAB_FINANCIAL_OWNER: Dict[str, str] = {
+    "akib/mj": "Amjad Malhas",
+}
+
+
 def _match_owner(tab: str, by_owner: Dict[str, List[dict]],
                  bridge: Optional[Dict[str, List[str]]] = None) -> List[dict]:
     """Match a Sheet tab to its financial office(s). Returns a LIST — most
@@ -74,6 +84,13 @@ def _match_owner(tab: str, by_owner: Dict[str, List[dict]],
     tabs use nicknames (Raf Hidalgo) — `bridge` maps a normalized tab name
     to alternate names (the recruiting mapping's AppStream owner)."""
     name = _tab_to_name(tab)
+    # Shared-tab override (checked first): a multi-ICD tab whose financial block
+    # belongs to a specific ICD (e.g. the Akib/MJ tab's block is Amjad Malhas's).
+    for tabkey, owner in _TAB_FINANCIAL_OWNER.items():
+        if tabkey in _norm(name):
+            hit = by_owner.get(norm_name(owner))
+            if hit:
+                return hit
     cands = [name]
     m = re.match(r"^(.*?)\s*\((.+?)\)\s*$", name)
     if m:

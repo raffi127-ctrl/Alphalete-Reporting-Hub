@@ -25,10 +25,15 @@ National AVGs are the same on every BOX tab (they're the office-wide
 "total general"/Grand Total row). A rep absent from the tracker this week
 (not actively selling) is LEFT UNTOUCHED, not zeroed.
 
+Direct Deposit is pulled from Tableau's org-wide DD view (ORG_DD_URL,
+shared with every campaign — see opt_nds.parse_direct_deposit), keyed by
+ICD owner name. Standardized 2026-05-25 (Megan): DD = Tableau for every
+campaign on all 3 reports.
+
 NOT filled here (other sources / manual): WTD KwH, Completed %, New Lines,
 AVG Apps Per Active Headcount, Scorecard Ranking, Personal Production,
-churn/activation rows, Direct Deposit + the CO/TX financial blocks (those
-come from the financial pull — Ryan has 2 payrolls → 2 financial sets).
+churn/activation rows, and the CO/TX financial blocks (those come from the
+financial pull — Ryan has 2 payrolls → 2 financial sets).
 """
 
 import datetime as dt
@@ -42,6 +47,10 @@ from automations.recruiting_report import fill as rfill
 from automations.alphalete_org_report.opt_nds import (
     ALPHALETE_ORG_SHEET_ID,
     OUTPUT_DIR,
+    ORG_DD_URL,
+    ORG_DD_SHEET,
+    parse_direct_deposit,
+    match_dd_owner,
     _read_tab_csv,
     _norm_owner,
     _find_week_col,
@@ -60,6 +69,7 @@ BOX_TRACKER_URL = (
 )
 BOX_WTD_SHEET = "WTD Metrics"
 BOX_WTD_FILENAME = "opt_box_wtd_metrics.csv"
+BOX_DD_FILENAME = "opt_box_direct_deposit.csv"
 
 
 def _box_week_label(today: Optional[dt.date] = None) -> str:
@@ -141,9 +151,9 @@ def parse_box_wtd_metrics(path: Path) -> Tuple[Dict[str, Optional[float]],
 
 def fill_box_tab(ws: gspread.Worksheet, rep: Dict, national: Dict,
                  week_col_label: str, dry_run: bool = False,
-                 logfn=print) -> List[str]:
-    """Fill the 7 BOX tracker metrics into the target week column for one rep.
-    Rows are looked up by label (tabs differ in layout)."""
+                 logfn=print, direct_deposit: Optional[str] = None) -> List[str]:
+    """Fill the 7 BOX tracker metrics (+ Direct Deposit) into the target week
+    column for one rep. Rows are looked up by label (tabs differ in layout)."""
     log: List[str] = []
     grid = rfill._retry(ws.get_all_values)
     if not grid:
@@ -196,6 +206,10 @@ def fill_box_tab(ws: gspread.Worksheet, rep: Dict, national: Dict,
     put(natkwh_row, national.get("kwh_per_sale"), "National AVG kwH Usage per CX")
     acc = rep.get("accepted")
     put(acc_row, acc if acc else None, "Accepted %")
+    # Direct Deposit — Tableau org-wide DD view, per ICD owner (Megan 2026-05-25).
+    if direct_deposit:
+        put(_find_row_by_label(grid, "Direct Deposit"), direct_deposit,
+            "Direct Deposit")
 
     if dry_run:
         return [f"[DRY-RUN box] {ws.title}: would write {len(updates)} cells"] + log
@@ -213,18 +227,30 @@ def run_box_opt(dry_run: bool = False, only_rep: Optional[str] = None,
     logfn(f"OPT BOX: target week = {week_col_label!r} (tracker current week)")
 
     out = OUTPUT_DIR / BOX_WTD_FILENAME
+    dd_out = OUTPUT_DIR / BOX_DD_FILENAME
+    direct_deposit: Dict[str, float] = {}
     try:
         with tableau_session(verbose=False) as page:
             logfn("OPT BOX: Crosstab → 'WTD Metrics'...")
             download_crosstab_patchright(BOX_TRACKER_URL, BOX_WTD_SHEET,
                                          out, verbose=False, page=page)
+            # Direct Deposit — org-wide DD view (same source every campaign uses).
+            try:
+                logfn("OPT BOX: Crosstab → org-wide Direct Deposit...")
+                download_crosstab_patchright(ORG_DD_URL, ORG_DD_SHEET,
+                                             dd_out, verbose=False, page=page)
+                direct_deposit = parse_direct_deposit(dd_out)
+            except Exception as e:
+                logfn(f"OPT BOX: ⚠ Direct Deposit pull failed "
+                      f"({type(e).__name__}) — DD left as-is this run")
     except Exception as e:
         msg = f"WTD Metrics download: {type(e).__name__}: {str(e)[:120]}"
         logfn(f"OPT BOX: ✗ {msg}")
         return {"filled": [], "skipped": [], "errors": [msg]}
 
     national, reps = parse_box_wtd_metrics(out)
-    logfn(f"OPT BOX: national={national}; parsed {len(reps)} rep(s)")
+    logfn(f"OPT BOX: national={national}; parsed {len(reps)} rep(s), "
+          f"{len(direct_deposit)} DD")
 
     client = rfill._client()
     sh = rfill.open_by_key(ALPHALETE_ORG_SHEET_ID, client)
@@ -247,7 +273,10 @@ def run_box_opt(dry_run: bool = False, only_rep: Optional[str] = None,
             logfn(f"OPT BOX: {rep_name} not in tracker this week — left untouched")
             skipped.append(title)
             continue
-        for ln in fill_box_tab(ws, rep, national, week_col_label, dry_run, logfn):
+        dd_val = match_dd_owner(direct_deposit, rep_name)
+        dd_str = f"${dd_val:,.2f}" if dd_val is not None else None
+        for ln in fill_box_tab(ws, rep, national, week_col_label, dry_run, logfn,
+                               direct_deposit=dd_str):
             logfn(f"OPT BOX: {ln}")
             if ln.startswith(("[OK", "[DRY-RUN")):
                 filled.append(title)
