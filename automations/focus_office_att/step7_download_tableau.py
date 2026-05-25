@@ -192,9 +192,13 @@ def download_crosstab(out_path: Path, verbose: bool = True,
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with sync_playwright() as p:
-        browser = p.chromium.connect_over_cdp("http://localhost:9222")
-        page = _find_tableau_tab(browser)
+    # Pull via the patchright stealth session (self-logs into ownerville ->
+    # Tableau), NOT the old CDP/Report-Chrome path — that needed a human to keep
+    # a Tableau tab open + signed in, and timed out for Eve on 2026-05-25 (the
+    # same failure the recruiting OPT had before its patchright fix). No human-
+    # launched Chrome / Tableau tab required now.
+    from automations.shared.tableau_patchright import tableau_session
+    with tableau_session(verbose=verbose) as page:
         url = _build_view_url(week_ending)
         if verbose:
             print(f"Navigating Tableau tab to: {url}", flush=True)
