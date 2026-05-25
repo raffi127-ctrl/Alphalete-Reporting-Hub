@@ -34,58 +34,82 @@ set "NO_COLOR=1"
 
 cd /d "%~dp0"
 
-REM ---- Auto-update from GitHub (skip if there are local edits) ----
+REM ---- Auto-update from GitHub ----
+REM Two modes, decided by the gitignored `.dev-machine` marker:
+REM   - DEV machine (marker present): only fast-forward when the tree is clean,
+REM     so local uncommitted edits are never discarded.
+REM   - TEAMMATE machine (no marker): hard-align to origin/main every launch so
+REM     a stray tracked change (often just CRLF line-endings) or a wrong branch
+REM     can NEVER strand them on stale code (the bug that hid every fix from
+REM     Eve, 2026-05-25).
 if exist ".git" (
-    REM Count dirty files via porcelain output.
-    REM -uno: ignore untracked files (uploaded reports, generated outputs, etc.).
-    REM Without it, any teammate with even one untracked file gets
-    REM 'Local changes detected; skipping auto-update' on every launch and
-    REM silently runs stale code forever (Eve's situation, 2026-05-22).
-    for /f %%i in ('git status --porcelain -uno 2^>nul ^| find /c /v ""') do set "DIRTY=%%i"
-    if "!DIRTY!"=="0" (
-        echo Checking for updates...
-        git fetch --quiet origin main
-        for /f %%a in ('git rev-parse @ 2^>nul') do set "LOCAL=%%a"
-        for /f %%a in ('git rev-parse origin/main 2^>nul') do set "REMOTE=%%a"
-        if not "!LOCAL!"=="!REMOTE!" (
-            echo Updates found - pulling...
-            git pull --ff-only --quiet origin main
-            if !ERRORLEVEL! EQU 0 (
-                echo Updated to latest version.
-                REM Reinstall deps if requirements changed. We use ORIG_HEAD
-                REM (set by git after a pull) instead of HEAD@{1}; cmd.exe's
-                REM if-block parser chokes on the `{` in HEAD@{1} and bails
-                REM with "on was unexpected at this time". ORIG_HEAD is the
-                REM same ref in this context but contains no curly braces.
-                git diff ORIG_HEAD HEAD --name-only 2>nul | findstr /C:"requirements.txt" >nul
+    for /f %%a in ('git rev-parse @ 2^>nul') do set "PRE_HEAD=%%a"
+    set "DID_UPDATE=0"
+
+    if exist ".dev-machine" (
+        REM --- DEV machine: protect local edits ---
+        for /f %%i in ('git status --porcelain -uno 2^>nul ^| find /c /v ""') do set "DIRTY=%%i"
+        if "!DIRTY!"=="0" (
+            echo Checking for updates ^(dev^)...
+            git fetch --quiet origin main
+            for /f %%a in ('git rev-parse @ 2^>nul') do set "LOCAL=%%a"
+            for /f %%a in ('git rev-parse origin/main 2^>nul') do set "REMOTE=%%a"
+            if not "!LOCAL!"=="!REMOTE!" (
+                echo Updates found - pulling...
+                git pull --ff-only --quiet origin main
                 if !ERRORLEVEL! EQU 0 (
-                    echo Updating Python packages...
-                    ".venv\Scripts\pip.exe" install --quiet -r automations\recruiting_report\requirements.txt
-                )
-                REM First-run-on-this-machine: install patchright's Chromium
-                REM binary. patchright is a Playwright fork uploaded reports
-                REM use for stealth Cloudflare bypass (order_log.py). Marker
-                REM file in .venv\ tracks it so we don't re-run on every
-                REM launcher start.
-                if not exist ".venv\.patchright_chromium_installed" if exist ".venv\Scripts\patchright.exe" (
-                    echo First-time: installing Chromium for patchright ^(one-time, ~150MB^)...
-                    ".venv\Scripts\patchright.exe" install chromium >nul 2>&1
-                    if !ERRORLEVEL! EQU 0 (
-                        echo. > ".venv\.patchright_chromium_installed"
-                        echo Chromium installed for patchright.
-                    ) else (
-                        echo WARNING: patchright Chromium install failed - uploaded reports needing it may break.
-                        echo Run manually: .venv\Scripts\patchright.exe install chromium
-                    )
+                    echo Updated to latest version.
+                    set "DID_UPDATE=1"
+                ) else (
+                    echo Auto-update failed; continuing with current version.
                 )
             ) else (
-                echo Auto-update failed; continuing with current version.
+                echo Already up to date.
             )
         ) else (
-            echo Already up to date.
+            echo Local changes detected; skipping auto-update ^(dev mode^).
         )
     ) else (
-        echo Local changes detected; skipping auto-update.
+        REM --- TEAMMATE machine: force-align to origin/main every launch ---
+        echo Syncing to latest...
+        git fetch --quiet origin main
+        if !ERRORLEVEL! EQU 0 (
+            git checkout -f -B main origin/main >nul 2>&1
+            if !ERRORLEVEL! EQU 0 (
+                echo On latest code.
+                set "DID_UPDATE=1"
+            ) else (
+                echo.
+                echo ================================================================
+                echo  WARNING: COULD NOT SYNC TO LATEST - you may be running OLD code.
+                echo  If a report looks wrong, tell Megan. Manual fix ^(this folder^):
+                echo     git fetch origin ^&^& git checkout -f -B main origin/main
+                echo ================================================================
+                echo.
+            )
+        ) else (
+            echo WARNING: could not reach GitHub - offline? Running current version.
+        )
+    )
+
+    REM ---- Post-update: deps if requirements changed + one-time patchright Chromium ----
+    if "!DID_UPDATE!"=="1" (
+        git diff !PRE_HEAD! HEAD --name-only 2>nul | findstr /C:"requirements.txt" >nul
+        if !ERRORLEVEL! EQU 0 (
+            echo Updating Python packages...
+            ".venv\Scripts\pip.exe" install --quiet -r automations\recruiting_report\requirements.txt
+        )
+    )
+    if not exist ".venv\.patchright_chromium_installed" if exist ".venv\Scripts\patchright.exe" (
+        echo First-time: installing Chromium for patchright ^(one-time, ~150MB^)...
+        ".venv\Scripts\patchright.exe" install chromium >nul 2>&1
+        if !ERRORLEVEL! EQU 0 (
+            echo. > ".venv\.patchright_chromium_installed"
+            echo Chromium installed for patchright.
+        ) else (
+            echo WARNING: patchright Chromium install failed - run manually:
+            echo     .venv\Scripts\patchright.exe install chromium
+        )
     )
 )
 

@@ -26,50 +26,76 @@ export NO_COLOR=1
 
 cd "$(dirname "$0")"
 
-# ----- Auto-update from GitHub (skips if local edits present) -----
+# ----- Auto-update from GitHub -----
+# Two modes, decided by the gitignored `.dev-machine` marker:
+#   • DEV machine (marker present): only fast-forward when the tree is clean,
+#     so Megan/Claude's uncommitted edits are never discarded.
+#   • TEAMMATE machine (no marker): hard-align to origin/main every launch, so
+#     a stray tracked change (often just Windows CRLF line-endings) or a wrong
+#     branch can NEVER strand them on stale code — the bug that hid every fix
+#     from Eve on 2026-05-25.
 if [ -d .git ]; then
-  # -uno: ignore untracked files (uploaded reports, generated outputs, etc.).
-  # Without it, even one untracked file makes the launcher skip auto-update
-  # forever and the teammate silently runs stale code (Eve's situation,
-  # 2026-05-22).
-  if [ -z "$(git status --porcelain -uno 2>/dev/null)" ]; then
-    echo "→ Checking for updates..."
-    git fetch --quiet origin main 2>/dev/null || true
-    LOCAL=$(git rev-parse @ 2>/dev/null || echo "")
-    REMOTE=$(git rev-parse origin/main 2>/dev/null || echo "")
-    if [ -n "$REMOTE" ] && [ "$LOCAL" != "$REMOTE" ]; then
-      echo "→ Updates found — pulling..."
-      if git pull --ff-only --quiet origin main; then
-        echo "✅ Updated to latest version"
-        # Reinstall Python deps if requirements changed
-        if git diff HEAD@{1} HEAD --name-only 2>/dev/null | grep -q "requirements.txt"; then
-          echo "→ Updating Python packages..."
-          ./.venv/bin/pip install --quiet -r automations/recruiting_report/requirements.txt
-        fi
-        # First-run-on-this-machine: install patchright's Chromium binary.
-        # patchright is a Playwright fork uploaded reports use for stealth
-        # Cloudflare bypass (see automations/uploaded/order_log.py). The
-        # browser binary is separate from the pip package and has to be
-        # installed once per machine. Marker file in .venv/ tracks it so
-        # we don't re-run on every launcher start - patchright itself
-        # is fast at no-op verification, but the marker avoids the spin.
-        if [ ! -f .venv/.patchright_chromium_installed ] && [ -x .venv/bin/patchright ]; then
-          echo "→ First-time: installing Chromium for patchright (one-time, ~150MB)..."
-          if ./.venv/bin/patchright install chromium >/dev/null 2>&1; then
-            touch .venv/.patchright_chromium_installed
-            echo "✅ Chromium installed for patchright"
-          else
-            echo "⚠️  patchright Chromium install failed — uploaded reports that need it may break. Run manually: ./.venv/bin/patchright install chromium"
-          fi
+  PRE_UPDATE_HEAD="$(git rev-parse @ 2>/dev/null || echo "")"
+  DID_UPDATE=0
+
+  if [ -f .dev-machine ]; then
+    # --- DEV machine: protect local edits (only update when tree is clean) ---
+    if [ -z "$(git status --porcelain -uno 2>/dev/null)" ]; then
+      echo "→ Checking for updates (dev)..."
+      git fetch --quiet origin main 2>/dev/null || true
+      LOCAL=$(git rev-parse @ 2>/dev/null || echo "")
+      REMOTE=$(git rev-parse origin/main 2>/dev/null || echo "")
+      if [ -n "$REMOTE" ] && [ "$LOCAL" != "$REMOTE" ]; then
+        echo "→ Updates found — pulling..."
+        if git pull --ff-only --quiet origin main; then
+          echo "✅ Updated to latest version"; DID_UPDATE=1
+        else
+          echo "⚠️  Auto-update failed — continuing with current version"
         fi
       else
-        echo "⚠️  Auto-update failed — continuing with current version"
+        echo "✅ Already up to date"
       fi
     else
-      echo "✅ Already up to date"
+      echo "→ Local changes detected — skipping auto-update (dev mode)"
     fi
   else
-    echo "→ Local changes detected — skipping auto-update (you're in dev mode)"
+    # --- TEAMMATE machine: force-align to origin/main, every launch ---
+    echo "→ Syncing to latest..."
+    if git fetch --quiet origin main 2>/dev/null && \
+       git checkout -f -B main origin/main >/dev/null 2>&1; then
+      NEW_HEAD="$(git rev-parse @ 2>/dev/null || echo "")"
+      [ "$PRE_UPDATE_HEAD" != "$NEW_HEAD" ] && DID_UPDATE=1
+      echo "✅ On latest: $(git log -1 --format='%h %s' 2>/dev/null)"
+    else
+      echo ""
+      echo "════════════════════════════════════════════════════════════════"
+      echo "⚠️   COULDN'T SYNC TO LATEST — you may be running OLD code."
+      echo "     If a report looks wrong, tell Megan. Manual fix (this folder):"
+      echo "        git fetch origin && git checkout -f -B main origin/main"
+      echo "════════════════════════════════════════════════════════════════"
+      echo ""
+    fi
+  fi
+
+  # ----- Post-update (both modes): reinstall deps if requirements.txt changed,
+  # and one-time patchright Chromium install. patchright is a Playwright fork
+  # the Tableau OPT pulls + uploaded reports use for stealth Cloudflare bypass;
+  # its browser binary is separate from the pip package and installs once per
+  # machine (marker file in .venv/ tracks it).
+  if [ "$DID_UPDATE" = "1" ] && [ -n "$PRE_UPDATE_HEAD" ]; then
+    if git diff "$PRE_UPDATE_HEAD" @ --name-only 2>/dev/null | grep -q "requirements.txt"; then
+      echo "→ Updating Python packages..."
+      ./.venv/bin/pip install --quiet -r automations/recruiting_report/requirements.txt
+    fi
+  fi
+  if [ ! -f .venv/.patchright_chromium_installed ] && [ -x .venv/bin/patchright ]; then
+    echo "→ First-time: installing Chromium for patchright (one-time, ~150MB)..."
+    if ./.venv/bin/patchright install chromium >/dev/null 2>&1; then
+      touch .venv/.patchright_chromium_installed
+      echo "✅ Chromium installed for patchright"
+    else
+      echo "⚠️  patchright Chromium install failed — run: ./.venv/bin/patchright install chromium"
+    fi
   fi
 fi
 

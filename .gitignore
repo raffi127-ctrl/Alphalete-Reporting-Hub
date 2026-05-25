@@ -2,6 +2,7 @@ output/
 *.xlsx
 service-account.json
 oauth-token.json
+ownerville-creds.json
 .venv/
 __pycache__/
 *.pyc
@@ -20,3 +21,9 @@ automations/uploaded/screenshots/*.png
 # Shared-library scripts are materialized from the Google Sheet on each Hub —
 # they're a local cache, not source. Never commit (would also block git pull).
 automations/uploaded/_shared/
+# Marks a DEV machine (Megan/Claude). When present, the launcher protects
+# local edits (fast-forward-updates only when the tree is clean). When ABSENT
+# (teammate machines), the launcher hard-aligns to origin/main every launch so
+# a stray change or wrong branch can't strand them on stale code. Machine-
+# specific — never commit (committing it would disable force-align for everyone).
+.dev-machine
