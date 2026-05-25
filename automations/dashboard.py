@@ -1077,7 +1077,7 @@ AUTOMATED_REPORTS = [
             "frequency": "weekly",
             "weekdays": [0],  # Monday
             "time": "8:00 AM",
-            "estimated_minutes": 10,
+            "estimated_minutes": 45,
         },
         "checklist": [
             {"text": "Launch Reporting Chrome",
@@ -1086,10 +1086,12 @@ AUTOMATED_REPORTS = [
             {"text": "Log into the correct **ownerville** account in the same Chrome window — the OPT / sales section reaches Tableau through ownerville"},
         ],
         "post_run": {
-            "message_success": "✅ Alphalete Org report run complete — "
-                               "recruiting pull filled across every visible "
-                               "rep tab. Financial section is handled by the "
-                               "weekly Financial Pull card.",
+            "message_success": "✅ Alphalete Org run complete — recruiting + all "
+                               "OPT (NDS, BOX, JE, B2B, Retail) ran. Check the "
+                               "per-step summary at the bottom of the log: any "
+                               "step marked ❌ can be re-run from its own button. "
+                               "Financial section is handled by the weekly "
+                               "Financial Pull card.",
             "message_failed":  "❌ Run failed. Check the log above, fix the "
                                "issue, then run again.",
         },
@@ -1101,12 +1103,16 @@ AUTOMATED_REPORTS = [
                 "label": "Run This Week",
                 "icon": "▶",
                 "primary": True,
-                "help": "Fills the most recent WE Sunday column on Alphalete Org sheet.",
-                "module": "automations.recruiting_report.run",
-                # --no-opt while OPT scope is still being figured out for
-                # Alphalete Org reps (their Tableau view isn't wired yet).
-                "args_fn": lambda: ["--week", _last_completed_as_picker().isoformat(),
-                                    "--no-opt"],
+                "help": "ONE run: recruiting pull + all OPT (NDS, BOX, JE, B2B, "
+                        "Retail) for the current week. Needs Report Chrome open + "
+                        "logged into AppStream + ownerville.",
+                # Chains recruiting (--no-opt) + every OPT module in sequence via
+                # opt_all (Megan 2026-05-25: "chain them"). Each step is an
+                # isolated subprocess so one failure can't abort the rest; the
+                # OPT modules auto-target the current week, so only the
+                # recruiting step needs --week.
+                "module": "automations.alphalete_org_report.opt_all",
+                "args_fn": lambda: ["--week", _last_completed_as_picker().isoformat()],
             },
             {
                 # Retail OPT - fills BOTH ICD sections on Boaktear's tab
