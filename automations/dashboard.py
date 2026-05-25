@@ -1634,6 +1634,42 @@ def _check_chrome_running() -> bool:
         return False
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _git_health() -> dict:
+    """'Are you on the latest code?' status for the sidebar badge. Compares the
+    local HEAD to the cached origin/main ref (the launcher fetches it on every
+    startup), so this needs NO network call — fast, cached 5 min. Surfacing this
+    would have caught Eve running week-old code on the wrong branch for hours
+    (2026-05-25). Returns {icon,label,detail,ok}; empty label = not a git repo."""
+    import subprocess
+
+    def _git(*args) -> str:
+        try:
+            return subprocess.run(["git", *args], cwd=str(WORKSPACE),
+                                  capture_output=True, text=True,
+                                  timeout=5).stdout.strip()
+        except Exception:
+            return ""
+
+    head = _git("rev-parse", "--short", "HEAD")
+    if not head:
+        return {"icon": "", "label": "", "detail": "", "ok": True}
+    branch = _git("rev-parse", "--abbrev-ref", "HEAD")
+    local = _git("rev-parse", "HEAD")
+    remote = _git("rev-parse", "origin/main")
+    when = _git("log", "-1", "--format=%cr")
+    if remote and local != remote:
+        behind = _git("rev-list", "--count", "HEAD..origin/main")
+        if behind and behind != "0":
+            return {"icon": "⚠️", "label": f"{behind} update(s) behind",
+                    "detail": f"on '{branch}' @ {head} — fully quit + relaunch to update",
+                    "ok": False}
+        return {"icon": "⚠️", "label": "not on latest main",
+                "detail": f"on '{branch}' @ {head}", "ok": False}
+    return {"icon": "✅", "label": "On latest",
+            "detail": f"{head} · updated {when}", "ok": True}
+
+
 # Sites the debug Chrome opens as login-ready tabs on launch. Scraping
 # reports attach to these via CDP after the user logs in once. Add more
 # here as new scraped sources come online.
@@ -2007,6 +2043,37 @@ def _latest_run_summary(report_id: str) -> str | None:
             return f"Last ran {day.lower()} · {user} · {time_str} · on {user}'s Mac"
         return f"Last ran {day.lower()} · {user} · {time_str}"
     return None
+
+
+# Unambiguous "the run finished but something real went wrong" markers in a run
+# log — kept narrow on purpose so expected per-report gaps (e.g. Daily Focus
+# skipping no-access ICDs) DON'T false-flag. Catches the silent-partial trap: a
+# run that 'succeeds' while a whole phase quietly skipped (Eve's OPT, 2026-05-25).
+_PARTIAL_RUN_MARKERS = [
+    ("opt phase skipped", "Tableau OPT was skipped"),
+    ("download failed", "a Tableau source failed to download"),
+    ("fiber pull failed", "the Fiber pull didn't finish"),
+    ("targetclosederror", "the browser closed mid-run (sleep/crash?)"),
+    ("couldn't sync to latest", "ran on possibly-stale code"),
+]
+
+
+def _run_outcome(report_id: str) -> dict:
+    """Classify the LAST run of `report_id` from its persisted log:
+    {'status': 'full'|'partial'|'failed'|None, 'issues': [...]}. None = no log.
+    Powers the honest run status (#1) + the card's last-run badge (#4) — so a
+    run that quietly skipped a phase reads as 'partial', not a green 'success'."""
+    try:
+        text = (ACTIVE_RUNS_LOG_DIR / f"{report_id}.log").read_text(errors="replace")
+    except Exception:
+        return {"status": None, "issues": []}
+    low = text.lower()
+    issues = [msg for marker, msg in _PARTIAL_RUN_MARKERS if marker in low]
+    if issues:
+        return {"status": "partial", "issues": issues}
+    if "traceback (most recent call last)" in low:
+        return {"status": "failed", "issues": ["the run crashed — see the log"]}
+    return {"status": "full", "issues": []}
 
 
 def _ran_within_24h(report_id: str) -> tuple[bool, str | None, str | None]:
@@ -2650,6 +2717,13 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
             pills += "<span class='pill pill-ok'>✅ DONE TODAY</span>"
         elif is_due:
             pills += "<span class='pill pill-due'>DUE TODAY</span>"
+        # Last-run outcome (#4) — surfaces a silent partial/failed run at a
+        # glance, without opening the card.
+        _card_oc = _run_outcome(report["id"])
+        if _card_oc["status"] == "partial":
+            pills += "<span class='pill pill-warn'>⚠️ LAST RUN PARTIAL</span>"
+        elif _card_oc["status"] == "failed":
+            pills += "<span class='pill pill-warn'>❌ LAST RUN FAILED</span>"
         if sched:
             pills += f"<span class='pill pill-info'>{sched.get('time', '')} • ~{sched.get('estimated_minutes', '?')} min</span>"
         if pills:
@@ -3043,15 +3117,23 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                                     st.code(_ok_log_tail, language="log")
                     else:
                         # Reports without a state-file config fall back to the
-                        # generic post_run success message.
+                        # generic post_run success message — but reflect what
+                        # ACTUALLY happened (honest status #1): if the run log
+                        # shows a phase quietly skipped or the browser died mid-
+                        # run, go amber + name it instead of a misleading green.
                         msg = post_run_cfg.get(
                             "message_success",
                             "✅ Run finished. If any ICD showed 'not accessible' "
                             "in the log, switch AppStream logins and run again.",
                         )
-                        # Amber for mid-process hand-off messages; green only
-                        # when the report is genuinely complete.
-                        if post_run_cfg.get("success_tone") == "warning":
+                        _post_oc = _run_outcome(report["id"])
+                        if _post_oc["status"] == "partial":
+                            st.warning(
+                                "⚠️ Run finished, but not everything filled:\n"
+                                + "\n".join(f"• {i}" for i in _post_oc["issues"])
+                                + "\n\nCheck the run log below, then re-run if needed."
+                            )
+                        elif post_run_cfg.get("success_tone") == "warning":
                             st.warning(msg)
                         else:
                             st.success(msg)
@@ -4110,15 +4192,17 @@ def _save_uploaded_report(metadata: dict, script_text: str) -> tuple[bool, str]:
     safe_id = re.sub(r"[^a-zA-Z0-9_]", "_", metadata["id"]).strip("_").lower()
     if not safe_id:
         return False, "Report id couldn't be derived from name."
-    try:
-        ast.parse(script_text)
-    except SyntaxError as e:
-        return False, f"Script has a Python syntax error: {e}"
-    # Google Sheets caps a cell at 50k chars; scripts are almost always far
-    # smaller, but guard so an oversized one fails loudly instead of truncating.
-    if len(script_text) > 49000:
-        return False, ("Script is too large for the shared library "
-                       f"({len(script_text)} chars; max ~49,000).")
+    # VALIDATION GATE — every upload (anyone's, including Megan's) passes through
+    # here, no exceptions (Megan 2026-05-25). validate_report enforces the
+    # block-level auto-checks (syntax, size, Windows compatibility, required
+    # metadata) AND the attestations the uploader ticked (carried on
+    # metadata['attestations']). On block we return the plain-English reasons so
+    # the caller shows the user exactly what to fix.
+    from automations.shared.report_validation import validate_report
+    _vr = validate_report(script_text, metadata, metadata.get("attestations"))
+    if _vr.blocked:
+        return False, ("This report can't go live yet — fix these first:\n  • "
+                       + "\n  • ".join(_vr.why()))
 
     metadata["id"] = safe_id
     metadata["module"] = f"{SHARED_SCRIPTS_PKG}.{safe_id}"
@@ -4560,6 +4644,31 @@ def _show_wire_up_dialog(entry: dict | None = None):
             "backlog card complete, and emails the requester (plus any CCs above) "
             "to review."
         )
+    # ---- Validation gate (Megan 2026-05-25): live script checks + the
+    # attestations the uploader must confirm before it can go live. The full
+    # check (incl. metadata + these attestations) is re-run as the hard gate in
+    # _save_uploaded_report on submit, so nothing can bypass it. ----
+    from automations.shared.report_validation import (
+        RULES as _VAL_RULES, validate_report as _live_validate)
+    _live = _live_validate(
+        script_text or "",
+        {"name": name, "sheet_url": sheet_url, "schedule": {"_ok": 1},
+         "needs_login": needs_login, "breakdown": breakdown})
+    _script_fails = [r for r in _live.results
+                     if r.rule_id in ("syntax", "size", "windows") and not r.passed]
+    if _script_fails:
+        st.error("⚠️ This won't pass validation yet:\n"
+                 + "\n".join(f"• {r.detail}" for r in _script_fails))
+    if _live.warnings:
+        st.caption("Heads up (won't block): "
+                   + "; ".join(r.detail for r in _live.warnings))
+    st.markdown("**Confirm before it goes live:**")
+    _attestations = {}
+    for _r in _VAL_RULES:
+        if _r.kind == "attest":
+            _attestations[_r.id] = st.checkbox(_r.label, key=f"wu_att_{_r.id}",
+                                               help=_r.help)
+
     _submit_label = "🔧 Re-upload for Review" if staged else "🚀 Upload & Send for Review"
     submitted = st.button(_submit_label, type="primary", use_container_width=True, key="wu_submit")
     if submitted:
@@ -4628,6 +4737,7 @@ def _show_wire_up_dialog(entry: dict | None = None):
             "breakdown": breakdown,  # report cheat-sheet for the review email
             "followup_notes": followup_notes,  # carried for revise pre-fill
             "args": [],
+            "attestations": _attestations,  # validation-gate human confirmations
         }
 
         # Validate the script up front (same check _save_uploaded_report runs)
@@ -5684,6 +5794,7 @@ st.markdown("""
     .pill-due { background: #FFE9E9; color: #C92020; border: 2px solid #C92020; }
     .pill-ok  { background: #E6F7EC; color: #1F7A3D; border: 2px solid #1F7A3D; }
     .pill-info{ background: #E8F0FE; color: #1A4FB0; }
+    .pill-warn{ background: #FFF3D6; color: #8B6914; border: 2px solid #C9A227; }
 
     /* Red STOP REPORT button (uses :has() to target the stButton right after our anchor div) */
     div[data-testid="stVerticalBlock"]:has(> div > div > .stop-btn-anchor) .stButton > button,
@@ -6003,6 +6114,76 @@ def _go_bugs():
     _set_view("bugs")
 
 
+def _go_audit():
+    _set_view("audit")
+
+
+def _render_validation_audit() -> None:
+    """Re-run every automated validation rule across every report. When a rule is
+    added to report_validation.RULES, this instantly flags which existing reports
+    now fail it (Megan 2026-05-25: 'check all existing reports against any new
+    validation requirements'). Attestations (human confirmations) can't be
+    re-derived after upload, so only the automated rules are re-checked here."""
+    import automations.shared.report_validation as _rv
+    st.markdown("## 🛡️ Validation Audit")
+    st.caption("Re-runs the automated validation rules across every report. Add "
+               "a rule and this shows which existing reports now fail it. "
+               "Attestations (clean run / preview / names) were confirmed by the "
+               "uploader at upload time and can't be re-checked here.")
+
+    # --- Uploaded library reports: full auto-rule audit (what the gate governs) ---
+    try:
+        rows = _shared_library_ws().get_all_records()
+    except Exception as e:
+        rows = []
+        st.error(f"Couldn't read the shared library: {e}")
+    uploaded, uploaded_ids = [], set()
+    for r in rows:
+        meta_json = str(r.get("Metadata") or "").strip()
+        try:
+            meta = json.loads(meta_json) if meta_json else {}
+        except Exception:
+            meta = {}
+        name = meta.get("name") or str(r.get("Name") or r.get("ID") or "?")
+        if meta.get("id"):
+            uploaded_ids.add(meta["id"])
+        uploaded.append((name, str(r.get("Script") or ""), meta))
+
+    st.markdown(f"### Uploaded reports ({len(uploaded)})")
+    if not uploaded:
+        st.caption("No uploaded reports in the shared library yet.")
+    else:
+        audited = _rv.audit_reports(uploaded)
+        n_fail = sum(1 for rep in audited.values() if rep.auto_failures)
+        if n_fail:
+            st.warning(f"⚠️ {n_fail} of {len(audited)} uploaded report(s) fail an automated rule.")
+        else:
+            st.success(f"✅ All {len(audited)} uploaded report(s) pass the automated rules.")
+        for nm, rep in audited.items():
+            fails, warns = rep.auto_failures, rep.warnings
+            icon = "❌" if fails else ("⚠️" if warns else "✅")
+            head = f"{icon} {nm}" + (f" — {len(fails)} issue(s)" if fails else "")
+            with st.expander(head, expanded=bool(fails)):
+                for cr in rep.results:
+                    if cr.kind != "auto":
+                        continue
+                    mark = "✅" if cr.passed else ("⚠️" if cr.severity == "warn" else "❌")
+                    md = f"{mark} **{cr.label}**"
+                    if not cr.passed and cr.detail:
+                        md += f" — {cr.detail}"
+                    st.markdown(md)
+
+    # --- Built-in reports: maintained in code (kept cross-platform there), listed
+    # for completeness, NOT script-audited (avoids false positives on the vetted,
+    # platform-guarded codebase). ---
+    builtin = [r for r in AUTOMATED_REPORTS if r.get("id") not in uploaded_ids]
+    st.markdown(f"### Built-in reports ({len(builtin)})")
+    st.caption("Maintained in the codebase and kept cross-platform there — listed "
+               "for completeness, not script-audited.")
+    for r in builtin:
+        st.markdown(f"- {r.get('emoji', '📊')} {r.get('name', '?')}")
+
+
 def _detect_hub_user() -> str:
     """Best guess at who's using this hub, based on the OS user (or HUB_USER env).
 
@@ -6127,6 +6308,19 @@ with st.sidebar:
         _go_overview()
         st.rerun()
 
+    # Version/health badge — "are you on the latest code?" Would have caught
+    # Eve running week-old code on the wrong branch for hours (2026-05-25).
+    _gh = _git_health()
+    if _gh.get("label"):
+        _gh_cls = "ok" if _gh["ok"] else "warn"
+        st.markdown(
+            f'<div class="system-status-pill {_gh_cls}" title="{_gh["detail"]}">'
+            f'{_gh["icon"]} {_gh["label"]}</div>',
+            unsafe_allow_html=True,
+        )
+        if not _gh["ok"]:
+            st.caption(f"⚠️ {_gh['detail']}")
+
     # Chrome status check — other code reads `chrome_ok`; the pill gives the
     # Launch button above immediate feedback.
     chrome_ok = _check_chrome_running()
@@ -6179,10 +6373,16 @@ with st.sidebar:
     if st.button(f"📨 New Automation Request ({_backlog_count})", use_container_width=True, key="nav_backlog"):
         _go_backlog()
         st.rerun()
-    if st.button("📥 Upload Built Automation", use_container_width=True, key="nav_upload"):
-        st.session_state.show_wireup_direct = True
-    if st.button("✏️ Request Change to Existing Report", use_container_width=True, key="open_change_request_btn"):
-        st.session_state.show_change_request_dialog = True
+    # Admin/build tools tucked under one expander (#7 declutter) so the daily
+    # path — run my reports — stays front and center.
+    with st.expander("🛠️ Build & manage"):
+        if st.button("📥 Upload Built Automation", use_container_width=True, key="nav_upload"):
+            st.session_state.show_wireup_direct = True
+        if st.button("✏️ Request Change to Existing Report", use_container_width=True, key="open_change_request_btn"):
+            st.session_state.show_change_request_dialog = True
+        if st.button("🛡️ Validation Audit", use_container_width=True, key="nav_audit"):
+            _go_audit()
+            st.rerun()
 
     st.markdown("---")
 
@@ -6697,6 +6897,12 @@ elif st.session_state.view == "library":
 # --------------------------------------------------------------------------
 # USER VIEW — that user's today's schedule + their reports
 # --------------------------------------------------------------------------
+
+elif st.session_state.view == "audit":
+    if st.button("← Back to Library", key="audit_back"):
+        _go_library()
+        st.rerun()
+    _render_validation_audit()
 
 else:  # st.session_state.view == "user"
     user_name = st.session_state.user or "friend"
