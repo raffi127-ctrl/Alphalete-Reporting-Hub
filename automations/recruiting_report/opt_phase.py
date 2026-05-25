@@ -317,6 +317,43 @@ def download_crosstab(view_url: str, crosstab_sheet: str, out_path: Path,
                                      verbose=verbose)
 
 
+def _norm_crosstab_sheet(s: str) -> str:
+    """Normalize a Crosstab sheet name for rename-tolerant matching: drop a
+    trailing parenthetical (Tableau adds/removes these — e.g. 'ICD Churn
+    (Wireless)' vs 'ICD Churn'), collapse whitespace, lowercase."""
+    s = re.sub(r"\s*\([^)]*\)\s*$", "", s or "")
+    return re.sub(r"\s+", " ", s).strip().lower()
+
+
+def _match_crosstab_sheet(available: List[str], wanted: str,
+                          verbose: bool = True) -> Optional[int]:
+    """Find `wanted` among the `available` Crosstab thumbnails, with fallbacks
+    so a Tableau-side rename degrades gracefully instead of aborting the whole
+    OPT phase (the 2026-05-25 'ICD Churn (Wireless)' incident):
+      1) exact match
+      2) case-insensitive exact
+      3) rename-tolerant (trailing parentheticals stripped) — but ONLY when
+         it's unambiguous (exactly one candidate); never guess between two.
+    Returns the matched index, or None."""
+    for i, a in enumerate(available):                 # 1) exact
+        if a == wanted:
+            return i
+    wl = (wanted or "").strip().lower()
+    for i, a in enumerate(available):                 # 2) case-insensitive
+        if a.strip().lower() == wl:
+            if verbose:
+                print(f"  (matched {wanted!r} -> {a!r}, case-insensitive)", flush=True)
+            return i
+    nw = _norm_crosstab_sheet(wanted)                 # 3) rename-tolerant, unambiguous
+    hits = [i for i, a in enumerate(available) if _norm_crosstab_sheet(a) == nw]
+    if len(hits) == 1:
+        print(f"  WARNING: Crosstab sheet {wanted!r} not found exactly; matched "
+              f"{available[hits[0]]!r} (rename-tolerant). Update the sheet-name "
+              f"constant in opt_phase.py to silence this.", flush=True)
+        return hits[0]
+    return None
+
+
 def drive_crosstab_dialog(page, view_url: str, crosstab_sheet: str,
                           out_path: Path, verbose: bool = True) -> Path:
     """The Page-level Crosstab driver: navigates to `view_url`, opens the
@@ -358,13 +395,9 @@ def drive_crosstab_dialog(page, view_url: str, crosstab_sheet: str,
         page.wait_for_timeout(1000)
         if thumbs.count() > 0:
             break
-    idx = None
-    for i in range(thumbs.count()):
-        if thumbs.nth(i).inner_text().strip() == crosstab_sheet:
-            idx = i
-            break
+    available = [thumbs.nth(i).inner_text().strip() for i in range(thumbs.count())]
+    idx = _match_crosstab_sheet(available, crosstab_sheet, verbose=verbose)
     if idx is None:
-        available = [thumbs.nth(i).inner_text().strip() for i in range(thumbs.count())]
         raise RuntimeError(
             f"Couldn't find the {crosstab_sheet!r} sheet in the Crosstab "
             f"dialog — saw {len(available)} thumb(s): {available!r}. "
@@ -1381,6 +1414,11 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
     calls. Returns {"filled": [...], "skipped": [...]}."""
     if we_sunday is None:
         we_sunday = _most_recent_sunday()
+    # Per-source download success, so one bad Tableau sheet (renamed/missing)
+    # skips ONLY its metric instead of aborting the whole OPT phase. Empty for
+    # --skip-download (the files were already verified present below).
+    dl_ok: Dict[str, bool] = {}
+    dl_gaps: List[str] = []
     if skip_download:
         for pth, lbl in [(ATT_PATH, "ATT"), (INT_PATH, "INT"),
                          (PRODUCT_SALES_PATH, "Product Sales"),
@@ -1395,39 +1433,72 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
         # ONE patchright login powers every crosstab + the Program Summary
         # view-data scrape (instead of 8 separate logins). It self-authenticates
         # via the persistent profile — no Report Chrome / manual Tableau tab, the
-        # same proven path the Alphalete Org OPT uses.
+        # same proven path the Alphalete Org OPT uses. Each source is ISOLATED:
+        # if one fails (e.g. a renamed sheet), only that metric is skipped (its
+        # cells left as-is) + flagged; the rest still fill. (Before 2026-05-25 a
+        # single bad sheet aborted the entire OPT phase.)
         from automations.shared.tableau_patchright import tableau_session
-        with tableau_session(verbose=False) as _pg:
-            download_crosstab(ATT_VIEW_URL, ATT_SHEET, ATT_PATH, verbose=False, page=_pg)
-            download_crosstab(INT_VIEW_URL, INT_SHEET, INT_PATH, verbose=False, page=_pg)
-            download_crosstab(_week_url(PRODUCT_SALES_VIEW_URL, we_sunday),
-                              PRODUCT_SALES_SHEET, PRODUCT_SALES_PATH,
-                              verbose=False, page=_pg)
-            download_crosstab(METRICS_VIEW_URL, METRICS_SHEET, METRICS_PATH,
-                              verbose=False, page=_pg)
-            download_crosstab(CHURN_VIEW_URL, CHURN_SHEET, CHURN_PATH,
-                              verbose=False, page=_pg)
-            download_crosstab(WIRELESS_METRICS_VIEW_URL, WIRELESS_METRICS_SHEET,
-                              WIRELESS_METRICS_PATH, verbose=False, page=_pg)
-            download_crosstab(WIRELESS_CHURN_VIEW_URL, WIRELESS_CHURN_SHEET,
-                              WIRELESS_CHURN_PATH, verbose=False, page=_pg)
-            for sheet in CAPTAINS_SHEETS:
-                download_crosstab(CAPTAINS_VIEW_URL, sheet, _captains_path(sheet),
-                                  verbose=False, page=_pg)
-            download_program_summary(verbose=False, page=_pg)
-        logfn("OPT: downloaded ATT + INT + Product Sales + Metrics + Churn "
-              "+ Wireless Metrics + Wireless Churn + Captain's Bonus "
-              "+ Program Summary")
 
-    att_by_owner, att_national = parse_icd_summary(ATT_PATH)
-    int_by_owner, int_national = parse_icd_summary(INT_PATH)
-    personal_prod = parse_personal_production(PRODUCT_SALES_PATH)
-    metrics_by_owner, _ = parse_icd_summary(METRICS_PATH)
-    churn_by_owner = parse_churn(CHURN_PATH)
-    wireless_metrics_by_owner, _ = parse_icd_summary(WIRELESS_METRICS_PATH)
-    wireless_churn_by_owner = parse_churn(WIRELESS_CHURN_PATH)
-    captains_by_owner = parse_captains([_captains_path(s) for s in CAPTAINS_SHEETS])
-    program_summary = parse_program_summary(PROGRAM_SUMMARY_PATH)
+        def _dl(key: str, label: str, fn) -> None:
+            try:
+                fn()
+                dl_ok[key] = True
+            except Exception as e:
+                dl_ok[key] = False
+                dl_gaps.append(label)
+                logfn(f"OPT: ⚠️ {label} download FAILED — skipping that metric "
+                      f"(cells left as-is); the rest continue. "
+                      f"({type(e).__name__}: {str(e)[:140]})")
+
+        with tableau_session(verbose=False) as _pg:
+            _dl("att", "ATT", lambda: download_crosstab(
+                ATT_VIEW_URL, ATT_SHEET, ATT_PATH, verbose=False, page=_pg))
+            _dl("int", "INT", lambda: download_crosstab(
+                INT_VIEW_URL, INT_SHEET, INT_PATH, verbose=False, page=_pg))
+            _dl("product", "Product Sales", lambda: download_crosstab(
+                _week_url(PRODUCT_SALES_VIEW_URL, we_sunday),
+                PRODUCT_SALES_SHEET, PRODUCT_SALES_PATH, verbose=False, page=_pg))
+            _dl("metrics", "Metrics", lambda: download_crosstab(
+                METRICS_VIEW_URL, METRICS_SHEET, METRICS_PATH, verbose=False, page=_pg))
+            _dl("churn", "Churn", lambda: download_crosstab(
+                CHURN_VIEW_URL, CHURN_SHEET, CHURN_PATH, verbose=False, page=_pg))
+            _dl("wmetrics", "Wireless Metrics", lambda: download_crosstab(
+                WIRELESS_METRICS_VIEW_URL, WIRELESS_METRICS_SHEET,
+                WIRELESS_METRICS_PATH, verbose=False, page=_pg))
+            _dl("wchurn", "Wireless Churn", lambda: download_crosstab(
+                WIRELESS_CHURN_VIEW_URL, WIRELESS_CHURN_SHEET,
+                WIRELESS_CHURN_PATH, verbose=False, page=_pg))
+            _dl("captains", "Captain's Bonus", lambda: [download_crosstab(
+                CAPTAINS_VIEW_URL, sheet, _captains_path(sheet),
+                verbose=False, page=_pg) for sheet in CAPTAINS_SHEETS])
+            _dl("program", "Program Summary",
+                lambda: download_program_summary(verbose=False, page=_pg))
+        _n_ok = sum(1 for v in dl_ok.values() if v)
+        logfn(f"OPT: downloaded {_n_ok}/{len(dl_ok)} source(s)"
+              + (f" — FAILED: {dl_gaps}" if dl_gaps else ""))
+
+    # Parse each source only if it downloaded OK this run (or on --skip-download,
+    # where dl_ok is empty so .get(..., True) lets every parse proceed). A failed
+    # source stays empty → its cells are left untouched, never overwritten with
+    # stale data.
+    att_by_owner, att_national = (parse_icd_summary(ATT_PATH)
+                                  if dl_ok.get("att", True) else ({}, {}))
+    int_by_owner, int_national = (parse_icd_summary(INT_PATH)
+                                  if dl_ok.get("int", True) else ({}, {}))
+    personal_prod = (parse_personal_production(PRODUCT_SALES_PATH)
+                     if dl_ok.get("product", True) else {})
+    metrics_by_owner = (parse_icd_summary(METRICS_PATH)[0]
+                        if dl_ok.get("metrics", True) else {})
+    churn_by_owner = (parse_churn(CHURN_PATH)
+                      if dl_ok.get("churn", True) else {})
+    wireless_metrics_by_owner = (parse_icd_summary(WIRELESS_METRICS_PATH)[0]
+                                 if dl_ok.get("wmetrics", True) else {})
+    wireless_churn_by_owner = (parse_churn(WIRELESS_CHURN_PATH)
+                               if dl_ok.get("wchurn", True) else {})
+    captains_by_owner = (parse_captains([_captains_path(s) for s in CAPTAINS_SHEETS])
+                         if dl_ok.get("captains", True) else {})
+    program_summary = (parse_program_summary(PROGRAM_SUMMARY_PATH)
+                       if dl_ok.get("program", True) else {})
     logfn(f"OPT: parsed {len(att_by_owner)} ATT, {len(int_by_owner)} INT, "
           f"{len(metrics_by_owner)} Metrics, {len(churn_by_owner)} Churn, "
           f"{len(wireless_metrics_by_owner)} Wireless Metrics, "
@@ -1468,6 +1539,11 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
     filled: List[str] = []
     skipped: List[str] = []
     all_gaps: List[str] = []
+    if dl_gaps:
+        # Surface download failures at the top of the gap report — these affect
+        # the metric on EVERY tab, not one tab's data.
+        all_gaps.append("[download] Tableau source(s) that failed to download "
+                        "(that metric left as-is on all tabs): " + ", ".join(dl_gaps))
     for tab_name in targets:
         lines = fill_opt_for_tab(sh, tab_name, att_by_owner, att_national,
                                  int_by_owner, int_national, metrics_by_owner,

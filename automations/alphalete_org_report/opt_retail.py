@@ -38,6 +38,7 @@ from automations.shared.tableau_patchright import (
     tableau_session,
     download_crosstab_patchright,
     scrape_view_data_patchright,
+    requests_session_from_page,
 )
 
 
@@ -1095,37 +1096,19 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
     by another Hub card.
     """
     errors: List[str] = []
-    session = tableau_http._grab_session()
 
-    # ---- Step 1: pull every CSV this run needs ----
-    # HTTP-direct pulls: Costco by club + Churn rates. Their views are
-    # single-worksheet OR the .csv endpoint serves the right worksheet
-    # for them - fast (~1s each).
-    by_club_path = _http_download(session, RETAIL_BY_CLUB_URL,
-                                   RETAIL_BY_CLUB_FILENAME, logfn, errors)
-    if by_club_path is None:
-        # The Costco fill is the existing/blocking output — abort if its
-        # source failed. (The new office-metric fills could continue but
-        # leaving the run partial mid-rollout is more confusing.)
-        return {"filled": [], "skipped": [], "errors": errors}
-    churn_path = _http_download(session, RETAIL_CHURN_URL,
-                                 RETAIL_CHURN_FILENAME, logfn, errors)
-    activation_path = _http_download(session, RETAIL_ACTIVATION_URL,
-                                      RETAIL_ACTIVATION_FILENAME, logfn, errors)
-
-    # Patchright session for SARA + ABP + Money Lost. Three different paths:
-    #   - SARA: View Data scrape with dynamic Min/Max Date URL params
-    #     (the bare dashboard URL respects them; custom views like
-    #     'Weekproduction' lock their own dates and ignore URL params).
-    #   - ABP: Crosstab (its dialog isn't broken; the Crosstab path works).
-    #   - Money Lost: View Data scrape with activate_xy clicking into the
-    #     lower 'Rafael Hidalgo ORGANIZATION' table to enable Download → Data.
-    # All three share one patchright session (one Chrome launch). On full
-    # session failure, fall back to any existing fresh file at the target
-    # path so a transient launch failure doesn't blank the run.
+    # ONE unattended patchright session powers BOTH the HTTP-direct CSV pulls
+    # (Costco by-club, churn, activation — fast ~1s each) AND the View Data /
+    # Crosstab UI scrapes. requests_session_from_page lends the authenticated
+    # Tableau cookies to a plain requests.Session, so the .csv endpoints work
+    # off the same login — no CDP / Report Chrome dependency anywhere in this
+    # run (Megan 2026-05-24: full patchright cutover so Retail runs unattended).
     week_col_label = _current_target_week_col_label()
     logfn(f"OPT Retail: target week column = {week_col_label!r}")
 
+    by_club_path: Optional[Path] = None
+    churn_path: Optional[Path] = None
+    activation_path: Optional[Path] = None
     sara_office_path: Optional[Path] = None
     abp_path: Optional[Path] = None
     money_lost_path: Optional[Path] = None
@@ -1135,6 +1118,8 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
     # 3-owner grid.
     _VIEWDATA_SCRAPE_KWARGS = dict(jump_every=None, scroll_step=0.35,
                                     scroll_wait_ms=1800, stale_max=30)
+
+    page = None  # bound by the `with` below; referenced in _try_with_retry
 
     def _fallback_existing(filename: str) -> Optional[Path]:
         target = OUTPUT_DIR / filename
@@ -1173,30 +1158,54 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
 
     try:
         with tableau_session(verbose=False) as page:
-            sara_target = OUTPUT_DIR / RETAIL_SARA_PLUS_OFFICE_FILENAME
-            sara_office_path = _try_with_retry(
-                "patchright View Data", RETAIL_SARA_PLUS_OFFICE_FILENAME, 2,
-                lambda: scrape_view_data_patchright(
-                    _sara_view_data_url(week_col_label), sara_target,
-                    verbose=False, page=page,
-                    scrape_kwargs=_VIEWDATA_SCRAPE_KWARGS))
+            # ---- Step 1: HTTP-direct CSV pulls off the patchright session's
+            # Tableau cookies. These views are single-worksheet OR their .csv
+            # endpoint serves the right worksheet — fast (~1s each).
+            session = requests_session_from_page(page)
+            by_club_path = _http_download(session, RETAIL_BY_CLUB_URL,
+                                          RETAIL_BY_CLUB_FILENAME, logfn, errors)
+            # The Costco fill is the blocking output — only do the rest of the
+            # run (churn/activation + the slow UI scrapes) if its source came
+            # through. (A partial run mid-rollout is more confusing than none.)
+            if by_club_path is not None:
+                churn_path = _http_download(session, RETAIL_CHURN_URL,
+                                            RETAIL_CHURN_FILENAME, logfn, errors)
+                activation_path = _http_download(session, RETAIL_ACTIVATION_URL,
+                                                 RETAIL_ACTIVATION_FILENAME,
+                                                 logfn, errors)
 
-            abp_target = OUTPUT_DIR / RETAIL_ABP_FILENAME
-            abp_path = _try_with_retry(
-                "patchright Crosstab", RETAIL_ABP_FILENAME, 2,
-                lambda: download_crosstab_patchright(
-                    _abp_view_url(week_col_label),
-                    RETAIL_ABP_SHEET, abp_target,
-                    verbose=False, page=page))
+                # ---- Step 2: UI scrapes (same Chrome launch). Three paths:
+                #   - SARA: View Data scrape with dynamic Min/Max Date URL
+                #     params (the bare dashboard URL respects them; custom
+                #     views lock their own dates and ignore URL params).
+                #   - ABP: Crosstab (its dialog isn't broken).
+                #   - Money Lost: View Data scrape with activate_xy clicking
+                #     the lower 'Rafael Hidalgo ORGANIZATION' table to enable
+                #     Download → Data.
+                sara_target = OUTPUT_DIR / RETAIL_SARA_PLUS_OFFICE_FILENAME
+                sara_office_path = _try_with_retry(
+                    "patchright View Data", RETAIL_SARA_PLUS_OFFICE_FILENAME, 2,
+                    lambda: scrape_view_data_patchright(
+                        _sara_view_data_url(week_col_label), sara_target,
+                        verbose=False, page=page,
+                        scrape_kwargs=_VIEWDATA_SCRAPE_KWARGS))
 
-            money_target = OUTPUT_DIR / RETAIL_MONEY_LOST_FILENAME
-            money_lost_path = _try_with_retry(
-                "patchright View Data", RETAIL_MONEY_LOST_FILENAME, 2,
-                lambda: scrape_view_data_patchright(
-                    RETAIL_MONEY_LOST_URL, money_target,
-                    verbose=False, page=page,
-                    activate_xy=(0.4, 0.7),
-                    scrape_kwargs=_VIEWDATA_SCRAPE_KWARGS))
+                abp_target = OUTPUT_DIR / RETAIL_ABP_FILENAME
+                abp_path = _try_with_retry(
+                    "patchright Crosstab", RETAIL_ABP_FILENAME, 2,
+                    lambda: download_crosstab_patchright(
+                        _abp_view_url(week_col_label),
+                        RETAIL_ABP_SHEET, abp_target,
+                        verbose=False, page=page))
+
+                money_target = OUTPUT_DIR / RETAIL_MONEY_LOST_FILENAME
+                money_lost_path = _try_with_retry(
+                    "patchright View Data", RETAIL_MONEY_LOST_FILENAME, 2,
+                    lambda: scrape_view_data_patchright(
+                        RETAIL_MONEY_LOST_URL, money_target,
+                        verbose=False, page=page,
+                        activate_xy=(0.4, 0.7),
+                        scrape_kwargs=_VIEWDATA_SCRAPE_KWARGS))
     except Exception as e:
         logfn(f"OPT Retail: patchright session failed: "
               f"{type(e).__name__}: {str(e)[:160]}")
@@ -1206,6 +1215,11 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
         abp_path = abp_path or _fallback_existing(RETAIL_ABP_FILENAME)
         money_lost_path = money_lost_path or _fallback_existing(
             RETAIL_MONEY_LOST_FILENAME)
+
+    # Costco by-club is the blocking output — abort if its source failed
+    # (or the whole patchright session failed to open).
+    if by_club_path is None:
+        return {"filled": [], "skipped": [], "errors": errors}
 
     # ---- Step 2: parse every CSV ----
     by_club = parse_retail_by_club(by_club_path)
