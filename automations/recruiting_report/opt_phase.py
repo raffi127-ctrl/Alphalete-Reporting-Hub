@@ -287,35 +287,29 @@ def _find_tableau_page(browser):
 
 
 def download_crosstab(view_url: str, crosstab_sheet: str, out_path: Path,
-                      verbose: bool = True) -> Path:
+                      verbose: bool = True, page=None) -> Path:
     """Drive Tableau's Download → Crosstab on `view_url` and save the
     `crosstab_sheet` sheet as a CSV. Returns out_path.
 
-    Uses the CDP-attached Report Chrome session. NOTE: certain Crosstab
-    dialogs (SARAPLUSSALESSUMMARY 'Sara Plus Sales Summary (2)',
-    ECBONUSAWARENESS 'Consultant ORG Title') silently no-op clicks under
-    CDP — Tableau appears to detect the devtools connection and disable
-    the selection state. For those, use
-    `automations.shared.tableau_patchright.download_crosstab_patchright`
-    which launches a non-CDP stealth browser instead.
+    Runs through the patchright stealth session (self-logs into ownerville →
+    Tableau via the persistent profile), NOT the CDP/Report-Chrome path. The
+    CDP path depended on a human keeping ownerville + a live Tableau tab in
+    Report Chrome and silently failed twice on 2026-05-25 (Eve's ATT/Carlos
+    OPT didn't fill). patchright is the same proven path the Alphalete Org OPT
+    uses and needs no human-launched Chrome.
+
+    `run_opt_phase` passes a shared `page` so all ~8 crosstab pulls in a run
+    reuse ONE login. If `page` is None, opens its own one-shot session.
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    with sync_playwright() as p:
-        browser = p.chromium.connect_over_cdp(fetch_office.CDP_URL)
-        page = _find_tableau_page(browser)
-        if page is None:
-            # No Tableau tab open yet — auto-open one through ownerville's
-            # 'Login to Tableau' SSO link, exactly like the View Data pulls
-            # already do (_reauth_tableau). Being logged into ownerville is
-            # all that's required; the user does NOT have to manually open a
-            # Tableau tab. (Megan 2026-05-25: "we access Tableau through
-            # ownerville" — the Crosstab path now matches that behavior.)
-            # The reauth'd tab is left open so the ~8 crosstab pulls in one
-            # run reuse it (via _find_tableau_page) instead of re-authing
-            # every view. If ownerville itself isn't logged in, _reauth_tableau
-            # raises a clear "log into ownerville, then run again" error.
-            page = _reauth_tableau(browser.contexts[0])
+    if page is not None:
         return drive_crosstab_dialog(page, view_url, crosstab_sheet, out_path,
+                                     verbose=verbose)
+    # Lazy import — tableau_patchright imports drive_crosstab_dialog from this
+    # module, so a top-level import would be circular.
+    from automations.shared.tableau_patchright import tableau_session
+    with tableau_session(verbose=verbose) as pg:
+        return drive_crosstab_dialog(pg, view_url, crosstab_sheet, out_path,
                                      verbose=verbose)
 
 
@@ -729,34 +723,33 @@ def _scrape_one_view_data(page, ctx, view_url: str, verbose: bool = True,
 
 
 def scrape_view_data(view_url: str, verbose: bool = True,
-                     activate_xy: Optional[Tuple[float, float]] = None
-                     ) -> Tuple[List[str], List[List[str]]]:
+                     activate_xy: Optional[Tuple[float, float]] = None,
+                     page=None) -> Tuple[List[str], List[List[str]]]:
     """Drive Tableau's Download -> Data on `view_url` and scrape the View Data
     window. Returns (field_names, records). Used for views whose per-ICD table
     won't crosstab-export.
 
+    Runs through the patchright session (self-logs in) like download_crosstab.
+    A caller can pass a shared `page` to reuse one login; otherwise opens a
+    one-shot session.
+
     On a multi-sheet dashboard, 'Download -> Data' is disabled until a
     worksheet is selected — pass `activate_xy` (fractional x, y of the viz)
     to click inside the target worksheet first."""
-    with sync_playwright() as p:
-        browser = p.chromium.connect_over_cdp(fetch_office.CDP_URL)
-        ctx = browser.contexts[0]
-        page = _reauth_tableau(ctx)
-        try:
-            return _scrape_one_view_data(page, ctx, view_url, verbose, activate_xy)
-        finally:
-            try:
-                page.close()
-            except Exception:
-                pass
+    if page is not None:
+        return _scrape_one_view_data(page, page.context, view_url, verbose, activate_xy)
+    from automations.shared.tableau_patchright import tableau_session
+    with tableau_session(verbose=verbose) as pg:
+        return _scrape_one_view_data(pg, pg.context, view_url, verbose, activate_xy)
 
 
 def download_program_summary(out_path: Path = PROGRAM_SUMMARY_PATH,
-                             verbose: bool = True) -> Path:
+                             verbose: bool = True, page=None) -> Path:
     """Scrape the Program Summary View Data and save it tab-delimited so the
     parse step (and --skip-download) can reuse it."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fields, records = scrape_view_data(PROGRAM_SUMMARY_VIEW_URL, verbose=verbose)
+    fields, records = scrape_view_data(PROGRAM_SUMMARY_VIEW_URL, verbose=verbose,
+                                       page=page)
     lines = ["\t".join(fields)] + ["\t".join(r) for r in records]
     out_path.write_text("\n".join(lines), encoding="utf-8")
     if verbose:
@@ -842,21 +835,22 @@ def download_fiber(icd_names: List[str], out_path: Path = FIBER_PATH,
     except Exception:
         aliases_map = {}
     rows: List[Tuple[str, str, str]] = []
-    with sync_playwright() as p:
-        browser = p.chromium.connect_over_cdp(fetch_office.CDP_URL)
-        ctx = browser.contexts[0]
-        page = _reauth_tableau(ctx)
+    # patchright session (self-logs in) instead of CDP/Report-Chrome. The heavy
+    # Fiber viz still leaks tabs over many loads, so we open a fresh page from
+    # the SAME authed context every 10 ICDs (ctx.new_page() — cookies carry the
+    # login, no re-SSO needed).
+    from automations.shared.tableau_patchright import tableau_session
+    with tableau_session(verbose=False) as page:
+        ctx = page.context
         try:
             n = len(icd_names)
             for i, tab in enumerate(icd_names, 1):
-                # The heavy Fiber viz leaks the working tab over many loads —
-                # re-auth a fresh tab every 10 ICDs to pre-empt the crash.
                 if i > 1 and i % 10 == 1:
                     try:
                         page.close()
                     except Exception:
                         pass
-                    page = _reauth_tableau(ctx)
+                    page = ctx.new_page()
                 pen, leads, ok, err, empty = "", None, False, "", False
                 for cand in _fiber_name_candidates(tab, as_owner_map, aliases_map):
                     if ok:
@@ -865,7 +859,7 @@ def download_fiber(icd_names: List[str], out_path: Path = FIBER_PATH,
                     for _ in range(3):   # retry transient Tableau flakes
                         try:
                             if page.is_closed():
-                                page = _reauth_tableau(ctx)
+                                page = ctx.new_page()
                             fields, recs = _scrape_one_view_data(
                                 page, ctx, url, verbose=False,
                                 activate_xy=(0.5, 0.52))
@@ -880,7 +874,7 @@ def download_fiber(icd_names: List[str], out_path: Path = FIBER_PATH,
                                 break
                             if page.is_closed():
                                 try:
-                                    page = _reauth_tableau(ctx)
+                                    page = ctx.new_page()
                                 except Exception:
                                     pass
                             continue
@@ -1394,20 +1388,29 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
                 raise RuntimeError(f"--skip-download but no {lbl} crosstab at {pth}")
         logfn("OPT: reusing previously-downloaded crosstabs")
     else:
-        download_crosstab(ATT_VIEW_URL, ATT_SHEET, ATT_PATH, verbose=False)
-        download_crosstab(INT_VIEW_URL, INT_SHEET, INT_PATH, verbose=False)
-        download_crosstab(_week_url(PRODUCT_SALES_VIEW_URL, we_sunday),
-                          PRODUCT_SALES_SHEET, PRODUCT_SALES_PATH, verbose=False)
-        download_crosstab(METRICS_VIEW_URL, METRICS_SHEET, METRICS_PATH, verbose=False)
-        download_crosstab(CHURN_VIEW_URL, CHURN_SHEET, CHURN_PATH, verbose=False)
-        download_crosstab(WIRELESS_METRICS_VIEW_URL, WIRELESS_METRICS_SHEET,
-                          WIRELESS_METRICS_PATH, verbose=False)
-        download_crosstab(WIRELESS_CHURN_VIEW_URL, WIRELESS_CHURN_SHEET,
-                          WIRELESS_CHURN_PATH, verbose=False)
-        for sheet in CAPTAINS_SHEETS:
-            download_crosstab(CAPTAINS_VIEW_URL, sheet, _captains_path(sheet),
-                              verbose=False)
-        download_program_summary(verbose=False)
+        # ONE patchright login powers every crosstab + the Program Summary
+        # view-data scrape (instead of 8 separate logins). It self-authenticates
+        # via the persistent profile — no Report Chrome / manual Tableau tab, the
+        # same proven path the Alphalete Org OPT uses.
+        from automations.shared.tableau_patchright import tableau_session
+        with tableau_session(verbose=False) as _pg:
+            download_crosstab(ATT_VIEW_URL, ATT_SHEET, ATT_PATH, verbose=False, page=_pg)
+            download_crosstab(INT_VIEW_URL, INT_SHEET, INT_PATH, verbose=False, page=_pg)
+            download_crosstab(_week_url(PRODUCT_SALES_VIEW_URL, we_sunday),
+                              PRODUCT_SALES_SHEET, PRODUCT_SALES_PATH,
+                              verbose=False, page=_pg)
+            download_crosstab(METRICS_VIEW_URL, METRICS_SHEET, METRICS_PATH,
+                              verbose=False, page=_pg)
+            download_crosstab(CHURN_VIEW_URL, CHURN_SHEET, CHURN_PATH,
+                              verbose=False, page=_pg)
+            download_crosstab(WIRELESS_METRICS_VIEW_URL, WIRELESS_METRICS_SHEET,
+                              WIRELESS_METRICS_PATH, verbose=False, page=_pg)
+            download_crosstab(WIRELESS_CHURN_VIEW_URL, WIRELESS_CHURN_SHEET,
+                              WIRELESS_CHURN_PATH, verbose=False, page=_pg)
+            for sheet in CAPTAINS_SHEETS:
+                download_crosstab(CAPTAINS_VIEW_URL, sheet, _captains_path(sheet),
+                                  verbose=False, page=_pg)
+            download_program_summary(verbose=False, page=_pg)
         logfn("OPT: downloaded ATT + INT + Product Sales + Metrics + Churn "
               "+ Wireless Metrics + Wireless Churn + Captain's Bonus "
               "+ Program Summary")
@@ -1447,7 +1450,14 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
     # on --skip-download, which reuses the last opt_fiber.csv. parse_fiber
     # returns {} when there's no file, so Fiber just doesn't fill.
     if not skip_download:
-        download_fiber(targets, logfn=logfn)
+        # Non-fatal: the per-ICD Fiber pull is the slowest/flakiest step. If it
+        # fails, keep going — the main OPT metrics are already downloaded above,
+        # and parse_fiber just falls back to the prior Fiber file (or no fill).
+        try:
+            download_fiber(targets, logfn=logfn)
+        except Exception as e:
+            logfn(f"OPT: Fiber pull failed (non-fatal, prior Fiber data kept): "
+                  f"{type(e).__name__}: {str(e)[:160]}")
     fiber_by_owner = parse_fiber(FIBER_PATH)
     if fiber_by_owner:
         logfn(f"OPT: parsed {len(fiber_by_owner)} Fiber Lead")
