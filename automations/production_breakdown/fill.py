@@ -198,6 +198,32 @@ def copyfmt_req(src_sid, sr1, sr2, sc1, sc2, dst_sid, dr1, dr2, dc1, dc2):
         "pasteType": "PASTE_FORMAT", "pasteOrientation": "NORMAL"}}
 
 
+def _unmerge_reqs_for(sh, sid: int, top0: int, cols0) -> List[dict]:
+    """Unmerge requests for every EXISTING merge that touches rows >= `top0`
+    (0-indexed) in any of `cols0` (0-indexed column set). Each request uses the
+    merge's own full range, so an unmerge can never partial-overlap (the [400]
+    'you must select all cells in a merged range' error) — even for a stale merge
+    left longer than the current chart. Reads live sheet metadata each call."""
+    try:
+        meta = sh.fetch_sheet_metadata(
+            {"fields": "sheets(properties(sheetId),merges)"})
+    except Exception:
+        return []
+    reqs: List[dict] = []
+    for s in meta.get("sheets", []):
+        if s.get("properties", {}).get("sheetId") != sid:
+            continue
+        for m in s.get("merges", []):
+            if m.get("endRowIndex", 0) > top0 and m.get("startColumnIndex") in cols0:
+                reqs.append({"unmergeCells": {"range": {
+                    "sheetId": sid,
+                    "startRowIndex": m["startRowIndex"],
+                    "endRowIndex": m["endRowIndex"],
+                    "startColumnIndex": m["startColumnIndex"],
+                    "endColumnIndex": m["endColumnIndex"]}}})
+    return reqs
+
+
 # --------------------------------------------- main per-tab processor
 def fill_for_tab(sh, ws, parsed: Dict[str, dict],
                  aliases_map: Dict[str, List[str]],
@@ -296,18 +322,17 @@ def fill_for_tab(sh, ws, parsed: Dict[str, dict],
                 "startIndex": rep_start + n_new - 1,
                 "endIndex": rep_start + n_old - 1}}}]})
 
-    # Unmerge the WHOLE rep area before (re)merging. Without this, a rep whose
-    # row-shape changed since last run leaves a stale merge that the new range
-    # PARTIAL-overlaps, which Sheets rejects with [400] "you must select all
-    # cells in a merged range to merge or unmerge them" — the 2026-05-25 bug
-    # that errored 32 reps. Unmerging the entire rep area fully contains any
-    # stale merge, so the re-merge can never partial-overlap. Computed once,
-    # used at both merge points below.
-    _unmerge_reqs = [{"unmergeCells": {"range": {"sheetId": sid,
-        "startRowIndex": rep_start - 1,
-        "endRowIndex": rep_start + len(display) - 1,
-        "startColumnIndex": c - 1, "endColumnIndex": c}}}
-        for c in (chart["label_col"], chart["total_col"])] if merges_pending else []
+    # Unmerge any stale merge in the rep columns before (re)merging. A rep whose
+    # row-shape changed since last run leaves a stale merge that a fixed unmerge
+    # range can PARTIAL-overlap, which Sheets rejects with [400] "you must select
+    # all cells in a merged range" (the 2026-05-25 bug — 32 reps, plus Hasani
+    # Lynch whose prior run left a rows 152-153 merge one row past the now-
+    # shorter chart). _unmerge_reqs_for reads the ACTUAL existing merges and
+    # unmerges each by its full range, so the unmerge can never partial-overlap,
+    # no matter how far a stale merge extends. Re-read at both merge points
+    # because the PASTE_FORMAT in post_reqs re-creates merges between them.
+    _rep_cols0 = {chart["label_col"] - 1, chart["total_col"] - 1}
+    _rep_top0 = rep_start - 1
 
     # ----- mergeCells for mixed reps (clear filter + stale merges first)
     if merges_pending:
@@ -321,7 +346,8 @@ def fill_for_tab(sh, ws, parsed: Dict[str, dict],
                       "startRowIndex": top - 1, "endRowIndex": bot,
                       "startColumnIndex": col - 1, "endColumnIndex": col},
             "mergeType": "MERGE_ALL"}} for top, bot, col in merges_pending]
-        rfill._retry(sh.batch_update, {"requests": _unmerge_reqs + merge_reqs})
+        rfill._retry(sh.batch_update, {"requests":
+            _unmerge_reqs_for(sh, sid, _rep_top0, _rep_cols0) + merge_reqs})
 
     # ----- re-find chart, format-copy (skip Hasani), trailing cleanup,
     # outer border, zebra striping
@@ -379,8 +405,10 @@ def fill_for_tab(sh, ws, parsed: Dict[str, dict],
                       "startColumnIndex": col - 1, "endColumnIndex": col},
             "mergeType": "MERGE_ALL"}} for top, bot, col in merges_pending]
         # Same unmerge-first guard (post_reqs' PASTE_FORMAT can leave/re-create
-        # merges that would otherwise partial-overlap the re-merge).
-        rfill._retry(sh.batch_update, {"requests": _unmerge_reqs + merge_reqs})
+        # merges that would otherwise partial-overlap the re-merge). Re-read the
+        # merges here — post_reqs changed them since the first merge point.
+        rfill._retry(sh.batch_update, {"requests":
+            _unmerge_reqs_for(sh, sid, _rep_top0, _rep_cols0) + merge_reqs})
 
     # Zebra striping: alternate per rep group (mixed pair = 1 group)
     groups = []
