@@ -1225,7 +1225,7 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
 
     # Step 3: open sheet + walk NDS-suffixed tabs
     client = rfill._client()
-    sh = client.open_by_key(ALPHALETE_ORG_SHEET_ID)
+    sh = rfill.open_by_key(ALPHALETE_ORG_SHEET_ID, client)
     # Skip hidden tabs (same convention as recruiting + financial)
     resp = sh.client.request(
         "get",

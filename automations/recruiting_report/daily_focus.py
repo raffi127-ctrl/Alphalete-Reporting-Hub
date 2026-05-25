@@ -779,7 +779,7 @@ def run_captainship(captainship: str, args, week_start: dt.date,
       - "fetch_errors": ICDs that errored transiently (retry-recoverable)
     The caller merges these across captainships into one shared state file."""
     log.info("=== captainship: %s ===", captainship)
-    sh = fill._client().open_by_key(DAILY_FOCUS_SPREADSHEET_ID)
+    sh = fill.open_by_key(DAILY_FOCUS_SPREADSHEET_ID)
     ws = find_captainship_worksheet(sh, captainship)
     if ws is None:
         log.error("no tab found for captainship %s in the daily-focus sheet "

@@ -1235,7 +1235,7 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
 
     # ---- Step 3: walk the Retail tabs ----
     client = rfill._client()
-    sh = client.open_by_key(ALPHALETE_ORG_SHEET_ID)
+    sh = rfill.open_by_key(ALPHALETE_ORG_SHEET_ID, client)
 
     filled: List[str] = []
     skipped: List[str] = []

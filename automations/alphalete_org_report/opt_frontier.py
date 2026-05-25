@@ -642,7 +642,7 @@ def run_frontier_opt(dry_run: bool = False, only_rep: Optional[str] = None,
         logfn(f"  - {p.name}")
 
     client = rfill._client()
-    sh = client.open_by_key(ALPHALETE_ORG_SHEET_ID)
+    sh = rfill.open_by_key(ALPHALETE_ORG_SHEET_ID, client)
     resp = sh.client.request(
         "get", f"https://sheets.googleapis.com/v4/spreadsheets/{sh.id}",
         params={"fields": "sheets(properties(title,hidden))"})

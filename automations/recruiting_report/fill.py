@@ -223,8 +223,17 @@ def _client() -> gspread.Client:
     )
 
 
+def open_by_key(key, client=None):
+    """Open a spreadsheet by key WITH 429/5xx retry. The initial open fetches
+    sheet metadata — a Sheets call that ISN'T otherwise wrapped in _retry, so
+    a transient quota/rate-limit (429) at open time would crash the whole run
+    (all Hubs share one Google account, so simultaneous runs can hit the
+    per-minute read quota). Route every report's sheet-open through this."""
+    return _retry((client or _client()).open_by_key, key)
+
+
 def open_sheet():
-    return _client().open_by_key(SPREADSHEET_ID)
+    return open_by_key(SPREADSHEET_ID)
 
 
 def load_mapping() -> dict:

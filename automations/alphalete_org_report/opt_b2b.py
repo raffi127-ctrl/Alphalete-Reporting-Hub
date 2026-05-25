@@ -175,7 +175,7 @@ def run_b2b_opt(dry_run: bool = False, logfn=print) -> dict:
 
     logfn(f"OPT B2B: collected {len(values)} metric(s) for {B2B_ICD}")
     client = rfill._client()
-    sh = client.open_by_key(ALPHALETE_ORG_SHEET_ID)
+    sh = rfill.open_by_key(ALPHALETE_ORG_SHEET_ID, client)
     ws = rfill._retry(sh.worksheet, B2B_TAB)
     filled = []
     for ln in fill_b2b_tab(ws, values, week_label, dry_run, logfn):

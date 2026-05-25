@@ -647,7 +647,7 @@ def _shared_library_ws():
     Lives in the same Sheet the backlog uses, so every Hub can read/write it
     with the shared login — no Git, no per-user access setup."""
     import gspread as _gs
-    sh = _fill._client().open_by_key(SHARED_LIBRARY_SHEET_ID)
+    sh = _fill.open_by_key(SHARED_LIBRARY_SHEET_ID)
     try:
         return sh.worksheet(SHARED_LIBRARY_TAB)
     except _gs.WorksheetNotFound:
@@ -1767,7 +1767,7 @@ HUB_STALE_AFTER = dt.timedelta(hours=2)
 
 def _hub_activity_ws():
     import gspread as _gs
-    sh = _fill._client().open_by_key(HUB_ACTIVITY_SHEET_ID)
+    sh = _fill.open_by_key(HUB_ACTIVITY_SHEET_ID)
     try:
         return sh.worksheet(HUB_ACTIVITY_TAB)
     except _gs.WorksheetNotFound:
@@ -2268,7 +2268,7 @@ def _render_active_run_panel(report: dict, active: dict) -> None:
 def _daily_focus_icds_in_sheet(captainship: str) -> list[str]:
     try:
         from automations.recruiting_report import fill as _f, daily_focus as _df
-        sh = _f._client().open_by_key(_df.DAILY_FOCUS_SPREADSHEET_ID)
+        sh = _f.open_by_key(_df.DAILY_FOCUS_SPREADSHEET_ID)
         ws = _df.find_captainship_worksheet(sh, captainship)
         if ws is None:
             return []
@@ -3271,7 +3271,7 @@ def _intake_ws():
     user-set columns.
     """
     import gspread as _gs
-    sh = _fill._client().open_by_key(INTAKE_SPREADSHEET_ID)
+    sh = _fill.open_by_key(INTAKE_SPREADSHEET_ID)
     try:
         ws = sh.worksheet(INTAKE_TAB)
     except _gs.WorksheetNotFound:
@@ -3733,7 +3733,7 @@ def _append_intake_note(entry_id: str, note: str, author: str) -> bool:
 def _bugs_ws():
     """Return the Bug Reports worksheet, creating it if missing."""
     import gspread as _gs
-    sh = _fill._client().open_by_key(INTAKE_SPREADSHEET_ID)
+    sh = _fill.open_by_key(INTAKE_SPREADSHEET_ID)
     try:
         ws = sh.worksheet(BUG_TAB)
     except _gs.WorksheetNotFound:

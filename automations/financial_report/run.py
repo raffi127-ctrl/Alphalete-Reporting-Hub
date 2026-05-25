@@ -108,7 +108,7 @@ def run_financial_report(file_paths, dry_run: bool = False,
         # working but the previous version stayed quiet through this phase.
         logfn(f"financial: opening {sheet_name}...")
         try:
-            sh = client.open_by_key(sid)
+            sh = rfill.open_by_key(sid, client)
         except Exception as e:
             logfn(f"financial: can't open {sheet_name!r} ({e})")
             continue
