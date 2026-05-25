@@ -672,11 +672,12 @@ def _materialize_shared_script(safe_id: str, script_text: str) -> str:
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def _read_shared_library() -> list[dict]:
-    """Read uploaded automations from the shared Sheet, materialize each
-    script locally, and return AUTOMATED_REPORTS-compatible dicts. Cached 60s
-    so Streamlit reruns don't hammer the API. Fails open (returns []) so the
-    Hub still works off legacy local reports if the Sheet is unreachable."""
+def _read_shared_library_rows() -> list[dict]:
+    """Read uploaded automations from the shared Sheet + materialize each
+    script locally. Returns PLAIN, picklable metadata dicts (no `actions`
+    callables) — st.cache_data can't serialize lambdas, so the action/args_fn
+    are added later in _read_shared_library (uncached). Cached 60s so reruns
+    don't hammer the API. Fails open (returns []) if the Sheet is unreachable."""
     try:
         rows = _shared_library_ws().get_all_records()
     except Exception:
@@ -698,16 +699,34 @@ def _read_shared_library() -> list[dict]:
             module = _materialize_shared_script(safe_id, script)
         except Exception:
             continue
+        meta["id"] = safe_id
+        meta["module"] = module
+        meta.setdefault("creator", str(r.get("Created By") or ""))
+        out.append(meta)
+    return out
+
+
+def _read_shared_library() -> list[dict]:
+    """AUTOMATED_REPORTS-compatible dicts for the shared library. Wraps the
+    cached row read and layers on the synthetic `actions` (with args_fn
+    lambdas) — kept OUT of the cached function because st.cache_data can't
+    pickle lambdas (that error was silently yielding an empty library)."""
+    out: list[dict] = []
+    try:
+        rows = _read_shared_library_rows()
+    except Exception:
+        return []
+    for meta in rows:
         report = dict(meta)
-        report["id"] = safe_id
-        report["module"] = module
-        args_list = meta.get("args", [])
+        module = report.get("module")
+        if not module:
+            continue
+        args_list = report.get("args", [])
         report["actions"] = [{
-            "label": meta.get("action_label", "Run Report"),
+            "label": report.get("action_label", "Run Report"),
             "icon": "▶", "primary": True, "module": module,
             "args_fn": (lambda a=args_list: list(a)),
         }]
-        report.setdefault("creator", str(r.get("Created By") or ""))
         report.setdefault("emoji", "⭐")
         report.setdefault("color", "#667eea")
         report.setdefault("description", "")
