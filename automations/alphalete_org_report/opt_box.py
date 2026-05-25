@@ -46,6 +46,7 @@ from automations.alphalete_org_report.opt_nds import (
     _norm_owner,
     _find_week_col,
     _find_row_by_label,
+    _current_target_week_end,
 )
 from automations.shared.tableau_patchright import (
     tableau_session,
@@ -62,13 +63,13 @@ BOX_WTD_FILENAME = "opt_box_wtd_metrics.csv"
 
 
 def _box_week_label(today: Optional[dt.date] = None) -> str:
-    """Sheet week label (M/D/YY) for the Sunday ending the current Mon–Sun
-    week. The BOX tracker is a 'current sales week' snapshot (Mon→Sun, week
-    ending Sunday), so its data belongs in the current week's column —
-    not the last-completed week. Run within the week you want to capture."""
-    today = today or dt.date.today()
-    sunday = today + dt.timedelta(days=(6 - today.weekday()))  # Mon=0..Sun=6
-    return f"{sunday.month}/{sunday.day}/{sunday.year % 100}"
+    """Sheet week label (M/D/YY) for the week we're filling = the most recent
+    Sunday on-or-before today (shared _current_target_week_end). Sun 5/24 and
+    Mon 5/25 both → 5/24, so a Sunday-evening or Monday-morning run fills the
+    just-ended week and never the prior column. The BOX tracker is a current-
+    week snapshot whose just-completed week the Monday-morning view shows."""
+    d = _current_target_week_end(today)
+    return f"{d.month}/{d.day}/{d.year % 100}"
 
 
 def _num(s: str) -> Optional[float]:

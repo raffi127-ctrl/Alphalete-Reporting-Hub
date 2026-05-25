@@ -645,30 +645,26 @@ def _find_week_col(grid: List[List[str]], week_label: str) -> Optional[int]:
 
 
 def _current_target_week_end(today: Optional[dt.date] = None) -> dt.date:
-    """Sheet WE-Sunday of the most-recently-COMPLETED week.
+    """Sheet WE-Sunday of the week we're filling = the most recent Sunday
+    ON OR BEFORE today. This is the SAME column the recruiting funnel writes
+    (dashboard._last_completed_we_sunday uses the identical formula), so OPT
+    and the funnel always agree.
 
-    Megan 2026-05-22: OPT must target the same column the recruiting
-    pull does — the just-ended week, NOT the in-progress one. Mid-week
-    Tableau data for the in-progress week is incomplete, and the report
-    is meant to look at the last finalized week.
+    The week flips to the new column the day it ends (Sunday), then stays
+    put through the following Saturday — so a Sunday-evening or Monday-
+    morning run both fill the just-ended week, and we never overwrite the
+    prior week's finalized column.
 
-    Examples (Monday cadence + mid-week test runs):
-      - Mon 5/25 → 5/24 (week just ended Sun 5/24 ✓)
+    Examples:
+      - Sun 5/24 → 5/24 (the week ending today — fill it now, don't touch 5/17)
+      - Mon 5/25 → 5/24 (last Sunday)
       - Tue 5/26 → 5/24
-      - Wed 5/27 → 5/24
-      - Fri 5/22 → 5/17 (week ending 5/24 is still in progress; last
-                          completed week ended Sun 5/17)
-      - Sun 5/24 → 5/17 (today's week not finalized until 23:59; last
-                          completed week is still 5/17)
-
-    Same convention recruiting_report._most_recent_sunday uses (no +7
-    shift here — recruiting works in AS-picker dates and shifts at write
-    time; OPT works directly in sheet-column dates)."""
+      - Sat 5/23 → 5/17 (week ending 5/24 not reached yet → still 5/17)
+      - Fri 5/22 → 5/17
+    """
     today = today or dt.date.today()
-    # Days back to the strictly-prior Sunday. `or 7` forces today→7 when
-    # today is itself a Sunday (since the week containing today isn't
-    # finalized yet at run time).
-    days_back = (today.weekday() + 1) % 7 or 7
+    # Days back to the most recent Sunday, counting today if it IS Sunday.
+    days_back = (today.weekday() + 1) % 7
     return today - dt.timedelta(days=days_back)
 
 
