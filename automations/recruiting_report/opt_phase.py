@@ -304,10 +304,17 @@ def download_crosstab(view_url: str, crosstab_sheet: str, out_path: Path,
         browser = p.chromium.connect_over_cdp(fetch_office.CDP_URL)
         page = _find_tableau_page(browser)
         if page is None:
-            raise RuntimeError(
-                "No Tableau tab open in Report Chrome. Launch Report Chrome, "
-                "log into ownerville, open Tableau — then run again."
-            )
+            # No Tableau tab open yet — auto-open one through ownerville's
+            # 'Login to Tableau' SSO link, exactly like the View Data pulls
+            # already do (_reauth_tableau). Being logged into ownerville is
+            # all that's required; the user does NOT have to manually open a
+            # Tableau tab. (Megan 2026-05-25: "we access Tableau through
+            # ownerville" — the Crosstab path now matches that behavior.)
+            # The reauth'd tab is left open so the ~8 crosstab pulls in one
+            # run reuse it (via _find_tableau_page) instead of re-authing
+            # every view. If ownerville itself isn't logged in, _reauth_tableau
+            # raises a clear "log into ownerville, then run again" error.
+            page = _reauth_tableau(browser.contexts[0])
         return drive_crosstab_dialog(page, view_url, crosstab_sheet, out_path,
                                      verbose=verbose)
 
