@@ -1118,6 +1118,41 @@ AUTOMATED_REPORTS = [
                 "args_fn": lambda: [],
             },
             {
+                # NDS OPT - fully automated (Tableau via patchright, no manual
+                # Chrome). Fills every ' - NDS' tab's OPT block + rep chart.
+                "label": "Run NDS OPT",
+                "icon": "📡",
+                "help": "Fills the NDS OPT block on every ' - NDS' tab: Active "
+                        "Selling Heads, New Lines, AVG Apps/Headcount, Scorecard "
+                        "Ranking, churn, Activation %, Cancel Rate, Total Leads, "
+                        "Direct Deposit, Next Up/Extra %, plus the rep chart.",
+                "module": "automations.alphalete_org_report.opt_nds",
+                "args_fn": lambda: [],
+            },
+            {
+                # JE OPT - fully automated (Tableau via patchright). Fills the
+                # ' - JE' tab(s): per-store sales, totals, conversion, DD.
+                "label": "Run JE OPT",
+                "icon": "⚡",
+                "help": "Fills the JE OPT block on every ' - JE' tab: per-store "
+                        "sales, Total Sales, Store Count, AVG/Store, Conversion, "
+                        "Personal Production, Direct Deposit.",
+                "module": "automations.alphalete_org_report.opt_je",
+                "args_fn": lambda: [],
+            },
+            {
+                # B2B OPT - fully automated (ATTTRACKER-B2B via patchright).
+                # Fills the ' - B2B' tab, mapping every metric by label.
+                "label": "Run B2B OPT",
+                "icon": "🏢",
+                "help": "Fills the B2B OPT block on every ' - B2B' tab: rep "
+                        "count, new internets/voice/wireless/new lines, total "
+                        "apps + AVGs, scorecard ranking, cancel/activation/churn "
+                        "rates, penetration, Direct Deposit.",
+                "module": "automations.alphalete_org_report.opt_b2b",
+                "args_fn": lambda: [],
+            },
+            {
                 "label": "Run a Specific Past Week",
                 "icon": "📆",
                 "needs_date": True,
