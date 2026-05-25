@@ -72,14 +72,21 @@ def _download_crosstab_subprocess(url: str, sheet: str, out_path: Path,
     Each subprocess does ONE download then exits, so each playwright
     runtime gets a clean lifecycle. Slower than inline but reliable."""
     import subprocess
+    import sys
+    # Cross-platform: use the interpreter that's already running this report
+    # (the Hub launches reports with the venv's python on macOS AND Windows)
+    # and the repo root derived from this file's location — never a hardcoded
+    # absolute path. The previous '/Users/megan/...' literal worked only on
+    # Megan's Mac and would crash on Eve's Windows box.
+    workspace = Path(__file__).resolve().parent.parent.parent
     script = (
         "from automations.recruiting_report.opt_phase import download_crosstab; "
         "from pathlib import Path; "
         f"download_crosstab({url!r}, {sheet!r}, Path({str(out_path)!r}), verbose={verbose!r})"
     )
     result = subprocess.run(
-        ["/Users/megan/1st Claude Folder/.venv/bin/python", "-c", script],
-        cwd="/Users/megan/1st Claude Folder",
+        [sys.executable, "-c", script],
+        cwd=str(workspace),
         capture_output=True, text=True, timeout=300,
     )
     if result.returncode != 0:
