@@ -367,7 +367,17 @@ def aggregate_quality(pages: List[Tuple[dt.date, bool, dt.datetime, Dict[str, st
 # ----- "Quality Scorecard" PDF → Approval / Canceled / Pending -----------
 # Single page; per-owner row; 9 percent columns (3 windows × appr/canc/pend).
 # We read the leftmost window (Four Weeks Rolling = columns 0,1,2) and map it
-# to the sheet week by the rolling range's end-Saturday + 1 day.
+# to the sheet column 2 weeks AHEAD of the rolling window's end-Saturday.
+#
+# Why 2 weeks ahead: Quality Scorecard PDFs arrive ~2 weeks behind reality.
+# A PDF received 5/19 (filename "5/19/26") internally reads "Sales Range
+# 4/12/26 to 5/9/26" — its data covers the period ending 5/9. If the script
+# keys off that internal 5/9, the most recent 1-2 WE Sunday columns NEVER
+# fill, because the PDF covering those weeks "doesn't exist yet" — we'd be
+# permanently behind. Eve's rule (2026-05-26): the latest scorecard
+# received always fills the latest WE Sunday column. Empirically that's
+# rolling we_sat + 14 days = the target Saturday, +1 day = Sunday column.
+_SCORECARD_LAG_DAYS = 14
 
 _RANGE_RE = re.compile(r"(\d{1,2}/\d{1,2}/\d{2})\s+to\s+(\d{1,2}/\d{1,2}/\d{2})")
 
@@ -448,7 +458,7 @@ def aggregate_scorecard(entries: List[Tuple[dt.date, dt.datetime, Dict[str, str]
         cur = best.get(we_sat)
         if cur is None or mtime > cur[0]:
             best[we_sat] = (mtime, qual)
-    return {_week_label(we_sat + dt.timedelta(days=1)): qual
+    return {_week_label(we_sat + dt.timedelta(days=_SCORECARD_LAG_DAYS + 1)): qual
             for we_sat, (_m, qual) in best.items()}
 
 
