@@ -39,6 +39,7 @@ import gspread
 from playwright.sync_api import sync_playwright
 
 from . import fetch_office, fill
+from automations.shared import sheet_flags as _sheet_flags
 
 WORKSPACE = Path(__file__).resolve().parent.parent.parent
 
@@ -823,19 +824,18 @@ def _fiber_overview(fields: List[str], records: List[List[str]]
     lead = _to_num(by.get("lead count", ""))
     sales = _to_num(by.get("total sales", ""))
     goal = _to_num(by.get("assigned fiber lead penetration", ""))
-    # Sanity guards — a brand-new ICD whose Fiber isn't set up in Tableau yet
-    # can report nonsense (e.g. Eric Zech: 967 sales vs 256 leads -> 377%, goal
-    # 3.777). Penetration can't exceed 100% (sales <= leads); the goal is a
-    # fraction (0..1). When the source data violates either, leave that metric
-    # blank rather than write a wrong number to the sheet.
+    # Fill what the data IS — never blank a weird value (Megan 2026-05-25:
+    # "fill in what it is/has, turn the font red on anything that looks weird").
+    # A brand-new ICD whose Fiber isn't set up can report nonsense (Eric Zech:
+    # 967 sales vs 256 leads -> 377%, goal 3.777); we write it anyway and the
+    # fill red-flags it (looks_weird_pct) so a human eyeballs it.
     penetration = ""
-    if lead == 0:
+    if lead:
+        penetration = f"{(sales or 0) / lead * 100:.2f}%"
+    elif lead == 0:
         penetration = "0%"
-    elif lead and sales is not None and 0 <= sales <= lead:
-        penetration = f"{sales / lead * 100:.2f}%"
-    expected = None
-    if lead is not None and goal is not None and 0 <= goal <= 1:
-        expected = int(round(lead * goal))
+    expected = (int(round(lead * goal))
+                if (lead is not None and goal is not None) else None)
     lead_i = int(round(lead)) if lead is not None else None
     return penetration, lead_i, expected
 
@@ -1253,6 +1253,7 @@ def fill_opt_for_tab(
 
     updates: List[Tuple[str, object]] = []
     missing: List[str] = []
+    red_cells: List[str] = []   # cells whose value looks weird -> red font (fill-but-flag)
 
     def _queue(label_rows: Dict[str, int], sheet_label: str, value) -> bool:
         for lbl in [sheet_label] + ALT_LABELS.get(sheet_label, []):
@@ -1344,8 +1345,9 @@ def fill_opt_for_tab(
     # Leads, Expected Fiber Sales (120 days/17wks), and Weekly = Expected / 17.
     fiber_row = fiber_by_owner.get(_norm(tab_name))
     if fiber_row:
-        if fiber_row.get("penetration"):
-            _queue(om_rows, "Penetration Rate", fiber_row["penetration"])
+        pen = fiber_row.get("penetration")
+        if pen:
+            _queue(om_rows, "Penetration Rate", pen)
         lead_n = _to_num(fiber_row.get("lead_count", ""))
         if lead_n is not None:
             _queue(om_rows, "Total Leads", int(lead_n))
@@ -1353,6 +1355,16 @@ def fill_opt_for_tab(
         if exp_n is not None:
             _queue(om_rows, "Expected Fiber Sales (120 days, 17wks)", int(exp_n))
             _queue(om_rows, "Expected Fiber Sales Weekly", round(exp_n / 17))
+        # Fill-but-flag (Megan 2026-05-25): an impossible penetration (>100% =
+        # more sales than leads, e.g. a brand-new ICD whose Fiber isn't set up)
+        # is still written, but the whole Fiber block goes RED so a human checks.
+        if _sheet_flags.looks_weird_pct(pen):
+            for lbl in ("Penetration Rate",
+                        "Expected Fiber Sales (120 days, 17wks)",
+                        "Expected Fiber Sales Weekly"):
+                r = om_rows.get(_norm(lbl))
+                if r:
+                    red_cells.append(gspread.utils.rowcol_to_a1(r, col))
 
     # --- Personal Production (the ICD's own sales as a rep) ---
     # Always written — an ICD with no personal sales gets a literal 0.
@@ -1397,6 +1409,11 @@ def fill_opt_for_tab(
             {"range": a1, "values": [[v]]} for a1, v in updates
         ], value_input_option="USER_ENTERED")
         log = [f"[OK] {tab_name}: wrote {len(updates)} cells (col {col})"]
+        # Fill-but-flag: red-font any value that looked weird (e.g. >100%
+        # penetration). Done after the value write so the data lands regardless.
+        if red_cells:
+            _sheet_flags.apply_red_font(ws, red_cells, retry=fill._retry)
+            log.append(f"    [flag] {len(red_cells)} weird cell(s) marked red")
     if missing:
         log.append(f"    [note] labels not found on tab: {', '.join(missing)}")
     # Data-gap line — which Tableau views this ICD wasn't found in, and which
