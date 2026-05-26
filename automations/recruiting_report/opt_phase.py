@@ -1007,9 +1007,15 @@ def _download_fiber_bulk(icd_names: List[str], out_path: Path,
             logfn(f"OPT: Fiber {tab}: penetration={pen}, leads={leads}, "
                   f"expected={expected}")
         else:
-            rows.append((tab, "", "", ""))
+            # Matches legacy's "empty view -> 0%/0/0" semantic for ICDs that
+            # Tableau has no fiber rows for (verified Khalil Mansour 2026-05-26:
+            # legacy also returns 0%/0/0 for him because the bare workbook
+            # view has no marks under his Owner Name filter). Per Megan's
+            # fill-but-flag policy: "enter 0% if it's 0".
+            rows.append((tab, "0%", "0", "0"))
             unmatched += 1
-            logfn(f"OPT: Fiber {tab}: no matching owner in crosstab (skip)")
+            logfn(f"OPT: Fiber {tab}: no matching owner in crosstab "
+                  f"(filling 0%/0/0 per legacy 'empty view' behavior)")
     out_lines = (["tab\tpenetration\tlead_count\texpected"]
                  + ["\t".join(r) for r in rows])
     out_path.write_text("\n".join(out_lines), encoding="utf-8")
