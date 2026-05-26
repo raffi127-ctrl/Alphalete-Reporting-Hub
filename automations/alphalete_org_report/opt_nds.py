@@ -160,7 +160,17 @@ NDS_VIEWS: List[Tuple[str, str, str]] = [
         "Sheet 7 (5)",
         "opt_nds_direct_deposit.csv",
     ),
+    (
+        # ABP % — same source Retail uses (DropshipV_2 / ABPCONVERSIONS,
+        # "ABP National Average (2)"). Honors Min/Max Date URL params, so the
+        # download loop date-pins it to the target week like SARA. Parsed by
+        # opt_retail.parse_abp_conversions (Megan 2026-05-25).
+        "https://us-east-1.online.tableau.com/#/site/sci/views/DropshipV_2/ABPCONVERSIONS?:iid=1",
+        "ABP National Average (2)",
+        "opt_nds_abp.csv",
+    ),
 ]
+NDS_ABP_FILENAME = "opt_nds_abp.csv"
 
 # The Rep Breakdown chart at the bottom of each tab — its OWN download
 # (separate from the metric crosstabs above).
@@ -565,15 +575,31 @@ def parse_direct_deposit(path: Path) -> Dict[str, float]:
     return out
 
 
-def match_dd_owner(dd: Dict[str, float], name: str) -> Optional[float]:
-    """Look up an owner's Direct Deposit dollar in the org-wide DD grid,
-    tolerant of middle names / spacing: exact _norm_owner first, then
-    first+last name, then a UNIQUE last-name match. Handles tabs like
-    'Roshan Amin Ahmad' whose DD grid entry is 'roshan ahmad'. Returns None
-    if no confident match (caller leaves DD untouched)."""
+def match_dd_owner(dd: Dict[str, float], name: str,
+                   aliases_map: Optional[Dict[str, List[str]]] = None
+                   ) -> Optional[float]:
+    """Look up an owner's Direct Deposit dollar in the org-wide DD grid.
+    Match order:
+      1. exact _norm_owner
+      2. ICD alias group (when `aliases_map` given) — the canonical fix for
+         name spelling/nickname variants (tab 'Joe Delgado' -> grid 'joseph
+         delgado'; tab 'Selena' -> 'selena powers'). Checked BEFORE the last-
+         name fallback so it stays precise even when siblings share a surname
+         (Joe vs George Delgado — match the alias, never the other brother).
+      3. first+last name (handles middle names: 'Roshan Amin Ahmad' -> 'roshan ahmad')
+      4. a UNIQUE last-name match (skipped when the surname isn't unique).
+    Returns None if no confident match (caller leaves DD untouched)."""
     key = _norm_owner(name)
     if key in dd:
         return dd[key]
+    if aliases_map:
+        for canon, al in aliases_map.items():
+            group = [canon] + list(al)
+            if key in {_norm_owner(g) for g in group}:
+                for g in group:
+                    v = dd.get(_norm_owner(g))
+                    if v is not None:
+                        return v
     parts = key.split()
     if len(parts) >= 2:
         fl = f"{parts[0]} {parts[-1]}"
@@ -983,6 +1009,8 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
                  sara_byday: Optional[Dict[str, Dict[str, int]]] = None,
                  personal_production: Optional[Dict[str, str]] = None,
                  direct_deposit: Optional[Dict[str, float]] = None,
+                 abp: Optional[Dict[str, str]] = None,
+                 aliases_map: Optional[Dict[str, List[str]]] = None,
                  backfill: bool = False,
                  ) -> List[str]:
     """Write all available metrics for this rep into the target week column.
@@ -1076,9 +1104,19 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
 
     # Direct Deposit — per-ICD-owner dollar total. Skipped on backfill —
     # the DD dashboard isn't date-pinnable (Megan 2026-05-24).
-    if direct_deposit and owner_norm in direct_deposit and not backfill:
-        # Format as dollar amount with comma separators (matches sheet style)
-        values["Direct Deposit"] = f"${direct_deposit[owner_norm]:,.2f}"
+    if direct_deposit and not backfill:
+        # match_dd_owner resolves nickname/spelling variants via the alias list
+        # (tab 'Joe Delgado' -> grid 'joseph delgado'; 'Selena' -> 'selena
+        # powers') without conflating same-surname siblings (Joe vs George).
+        _dd_v = match_dd_owner(direct_deposit, owner_norm, aliases_map)
+        if _dd_v is not None:
+            # Format as dollar amount with comma separators (matches sheet style)
+            values["Direct Deposit"] = f"${_dd_v:,.2f}"
+
+    # ABP % — from ABPCONVERSIONS (same source Retail uses). Date-pinned, so
+    # it's safe on a backfill too (Megan 2026-05-25).
+    if abp and abp.get(owner_norm):
+        values["ABP %"] = abp[owner_norm]
 
     # Office-level shared metrics computed from Sara Plus org totals.
     # Tableau crosstabs comma-separate large numbers ("1,062") — strip
@@ -1187,9 +1225,9 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
                                      or "ProductSalesSummaryRep" in url):
                         logfn(f"OPT NDS: [backfill skip] {fname} (no date control)")
                         continue
-                    # Pin SARA total to the target week (honors date params).
+                    # Pin date-aware views (SARA total, ABP) to the target week.
                     dl_url = url
-                    if "SARAPLUSSALESSUMMARY" in url:
+                    if "SARAPLUSSALESSUMMARY" in url or "ABPCONVERSIONS" in url:
                         sep = "&" if "?" in dl_url else "?"
                         dl_url = (f"{dl_url}{sep}Min%20Date={date_params['Min Date']}"
                                   f"&Max%20Date={date_params['Max Date']}")
@@ -1239,6 +1277,15 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
         OUTPUT_DIR / "opt_nds_personal_production.csv")
     churn = parse_churn_icd(OUTPUT_DIR / "opt_nds_churn.csv")
     direct_deposit = parse_direct_deposit(OUTPUT_DIR / "opt_nds_direct_deposit.csv")
+    # ABP % — reuse Retail's parser (same ABPCONVERSIONS source). Lazy import:
+    # opt_retail imports opt_nds at module load, so importing it at the top here
+    # would be circular; by run-time both modules are loaded.
+    try:
+        from automations.alphalete_org_report.opt_retail import parse_abp_conversions
+        abp = parse_abp_conversions(OUTPUT_DIR / NDS_ABP_FILENAME)
+    except Exception as e:
+        logfn(f"OPT NDS: ABP parse skipped ({type(e).__name__})")
+        abp = {}
     # HTTP-sourced parses
     activation = tableau_http.parse_activation(
         OUTPUT_DIR / "opt_nds_activation_http.csv")
@@ -1255,7 +1302,8 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
           f"{len(leads)} Leads, "
           f"{len(sara_byday)} Sara-ByDay, "
           f"{len(personal_production)} PP, "
-          f"{len(direct_deposit)} DD")
+          f"{len(direct_deposit)} DD, "
+          f"{len(abp)} ABP")
 
     # Step 3: open sheet + walk NDS-suffixed tabs
     client = rfill._client()
@@ -1271,6 +1319,14 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
 
     week_col_label = _current_target_week_col_label()
     logfn(f"OPT NDS: target week column = {week_col_label!r}")
+
+    # Shared ICD alias list — lets DD resolve nickname/spelling variants
+    # (Joe Delgado -> Joseph Delgado, Selena -> Selena Powers). Loaded once.
+    try:
+        from automations.focus_office_att.aliases import load_aliases as _la
+        nds_aliases = _la()
+    except Exception:
+        nds_aliases = {}
 
     filled: List[str] = []
     skipped: List[str] = []
@@ -1311,6 +1367,8 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
                              leads=leads, sara_byday=sara_byday,
                              personal_production=personal_production,
                              direct_deposit=direct_deposit,
+                             abp=abp,
+                             aliases_map=nds_aliases,
                              backfill=backfill)
         for ln in lines:
             logfn(f"OPT NDS: {ln}")
