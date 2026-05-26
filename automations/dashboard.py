@@ -906,10 +906,9 @@ AUTOMATED_REPORTS = [
             "time": "8:00 AM",
             "estimated_minutes": 15,
         },
-        "checklist": [
-            {"text": "Confirm AppStream credentials are stored on this machine (login is unattended via patchright)"},
-            {"text": "Log into the correct **ownerville** account in the same Chrome window — the OPT / sales section reaches Tableau through ownerville"},
-        ],
+        # Fully unattended via patchright (rcaptain AppStream + ownerville
+        # Tableau) — no pre-flight clicks. Empty list hides the section.
+        "checklist": [],
         "post_run": {
             "message_success": "✅ Recruiting report run complete — the rcaptain login reaches every ICD, so it's all done in one run.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
@@ -990,10 +989,9 @@ AUTOMATED_REPORTS = [
             "time": "8:00 AM",
             "estimated_minutes": 15,
         },
-        "checklist": [
-            {"text": "Confirm AppStream credentials are stored on this machine (login is unattended via patchright)"},
-            {"text": "Log into the correct **ownerville** account in the same Chrome window — the OPT / sales section reaches Tableau through ownerville"},
-        ],
+        # Fully unattended via patchright (rcaptain AppStream + ownerville
+        # Tableau) — no pre-flight clicks. Empty list hides the section.
+        "checklist": [],
         "post_run": {
             "message_success": "✅ Carlos report run complete — Recruiting pull + 6 Tableau OPT views + Personal Production all filled across 32 ICD tabs.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
@@ -1075,10 +1073,9 @@ AUTOMATED_REPORTS = [
             "time": "8:00 AM",
             "estimated_minutes": 45,
         },
-        "checklist": [
-            {"text": "Confirm AppStream credentials are stored on this machine (login is unattended via patchright)"},
-            {"text": "Log into the correct **ownerville** account in the same Chrome window — the OPT / sales section reaches Tableau through ownerville"},
-        ],
+        # Fully unattended via patchright (rcaptain AppStream + ownerville
+        # Tableau) — no pre-flight clicks. Empty list hides the section.
+        "checklist": [],
         "post_run": {
             "message_success": "✅ Alphalete Org run complete — recruiting + all "
                                "OPT (NDS, BOX, JE, B2B, Retail) ran. Check the "
@@ -1233,9 +1230,9 @@ AUTOMATED_REPORTS = [
             "time": "8:00 AM",
             "estimated_minutes": 10,
         },
-        "checklist": [
-            {"text": "Confirm AppStream credentials are stored on this machine (login is unattended via patchright)"},
-        ],
+        # Fully unattended via patchright (rcaptain AppStream) — no pre-flight
+        # clicks. Empty list hides the section.
+        "checklist": [],
         "post_run": {
             "message_success": "✅ Daily Focus run complete — the Raf and Carlos tabs are filled. Any ICD that couldn't be pulled (rcaptain has no AppStream access to it yet) is listed below.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
@@ -1485,12 +1482,9 @@ AUTOMATED_REPORTS = [
             "time": "9:00 AM",
             "estimated_minutes": 15,
         },
-        "checklist": [
-            {"text": "Launch Reporting Chrome",
-             "action": "launch_chrome"},
-            {"text": "Log into the correct **ownerville** account in the "
-                     "new Chrome window — Tableau SSO bootstraps from it"},
-        ],
+        # Fully unattended via patchright (ownerville Tableau session) — no
+        # pre-flight clicks. Empty list hides the section.
+        "checklist": [],
         "post_run": {
             "message_success": "✅ Daily Rep Breakdown complete — Sheet "
                                "updated and you'll see a desktop "
