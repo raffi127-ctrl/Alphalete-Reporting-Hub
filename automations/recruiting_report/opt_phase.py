@@ -599,20 +599,39 @@ def _wait_viz_loaded(page, timeout_s: int = 90) -> None:
 
 def _parse_view_data_text(txt: str) -> Tuple[List[str], List[List[str]]]:
     """Parse a View Data window innerText snapshot into (field_names, records).
-    Header layout: '<N> rows <M> fields', then 'Download', then M pairs of
-    (datasource, field-name), then the data as groups of M cells."""
+    Header layout: '<N> rows <M> fields', then 'Download', then K pairs of
+    (datasource, field-name), then the data as groups of K cells.
+
+    Note on K vs M: Tableau's "<M> fields" header counts every conceptual
+    field including ones not present as a (datasource, field-name) pair in
+    the text (e.g. Fiber Penetration by Zip reports "14 fields" but emits
+    only 10 visible pairs; the row width is 10, not 14). So we count the
+    ACTUAL header pairs by walking forward from "Download" while the
+    datasource line repeats, then stop. Records are sliced at K cells,
+    not M."""
     lines = [l.strip() for l in (txt or "").splitlines() if l.strip()]
-    m = re.search(r"(\d+)\s+rows?\s+(\d+)\s+fields?", " ".join(lines[:14]))
-    if not m:
+    if not re.search(r"\d+\s+rows?\s+\d+\s+fields?",
+                     " ".join(lines[:14])):
         return [], []
-    nfields = int(m.group(2))
     try:
         di = lines.index("Download")
     except ValueError:
         return [], []
-    fields = [lines[di + 2 + 2 * k] for k in range(nfields)
-              if di + 2 + 2 * k < len(lines)]
-    data = lines[di + 1 + 2 * nfields:]
+    # The first non-Download line is the datasource marker — it repeats
+    # before every field-name pair. Walk forward until that marker stops
+    # matching: that's the start of the data section.
+    if di + 1 >= len(lines):
+        return [], []
+    ds_marker = lines[di + 1]
+    fields: List[str] = []
+    i = di + 1
+    while i + 1 < len(lines) and lines[i] == ds_marker:
+        fields.append(lines[i + 1])
+        i += 2
+    if not fields:
+        return [], []
+    nfields = len(fields)
+    data = lines[i:]
     records = [data[j:j + nfields]
                for j in range(0, len(data) - nfields + 1, nfields)]
     return fields, records
@@ -902,6 +921,18 @@ def download_fiber(icd_names: List[str], out_path: Path = FIBER_PATH,
                         page.close()
                     except Exception:
                         pass
+                    # The Fiber viz leaks helper "hybrid-window" / vizql tabs
+                    # that accumulate across page.goto's. Closing JUST our
+                    # working page isn't enough — over time the context fills
+                    # up and ctx.new_page() fails with "Failed to open a new
+                    # tab" (Eve 2026-05-26, crashed at ICD #10/52). Close
+                    # every leftover page in the context before requesting a
+                    # new one so Chrome's per-context tab cap doesn't trip.
+                    for _stale in list(ctx.pages):
+                        try:
+                            _stale.close()
+                        except Exception:
+                            pass
                     page = ctx.new_page()
                 pen, leads, expected, ok, err, empty = "", None, None, False, "", False
                 for cand in _fiber_name_candidates(tab, as_owner_map, aliases_map):
