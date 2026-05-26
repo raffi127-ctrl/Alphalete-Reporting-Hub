@@ -172,6 +172,14 @@ FIBER_BULK_VIEW_URL = (
 )
 FIBER_BULK_CROSSTAB_SHEET = "Office New Fiber Lead Penetration By Zip"
 FIBER_PATH = WORKSPACE / "output" / "opt_fiber.csv"
+# Sentinel value written when an ICD has no row in Tableau's Fiber data
+# (e.g. Khalil Mansour 2026-05-26 — neither the AUTOMATIONPULL-NICHURNVIEW
+# crosstab nor the bare workbook's owner-filtered scrape returned any
+# rows for him). Megan asked for a clearly visible "missing from source"
+# signal to distinguish this from a real-zero case (e.g. Rashad Reed,
+# who genuinely has 0.0% activity but IS in the data). The fill code
+# detects this string and writes it across all four Fiber cells.
+FIBER_NOT_ON_TABLEAU = "Not On Tableau"
 
 
 # Tableau product type -> short label, in the order they appear in the cell.
@@ -1007,15 +1015,18 @@ def _download_fiber_bulk(icd_names: List[str], out_path: Path,
             logfn(f"OPT: Fiber {tab}: penetration={pen}, leads={leads}, "
                   f"expected={expected}")
         else:
-            # Matches legacy's "empty view -> 0%/0/0" semantic for ICDs that
-            # Tableau has no fiber rows for (verified Khalil Mansour 2026-05-26:
-            # legacy also returns 0%/0/0 for him because the bare workbook
-            # view has no marks under his Owner Name filter). Per Megan's
-            # fill-but-flag policy: "enter 0% if it's 0".
-            rows.append((tab, "0%", "0", "0"))
+            # The ICD has no row in Tableau's Fiber data — verified empty
+            # for Khalil Mansour 2026-05-26 in both the crosstab and the
+            # bare workbook scrape. Write "Not On Tableau" as the sentinel
+            # so the user sees a clear "missing from source" signal across
+            # all four Fiber cells (Megan 2026-05-26 — "0%" was confusing
+            # because it conflicted with the real-zero case like Rashad
+            # Reed who genuinely has 0.0% activity).
+            rows.append((tab, FIBER_NOT_ON_TABLEAU, FIBER_NOT_ON_TABLEAU,
+                         FIBER_NOT_ON_TABLEAU))
             unmatched += 1
             logfn(f"OPT: Fiber {tab}: no matching owner in crosstab "
-                  f"(filling 0%/0/0 per legacy 'empty view' behavior)")
+                  f"({FIBER_NOT_ON_TABLEAU})")
     out_lines = (["tab\tpenetration\tlead_count\texpected"]
                  + ["\t".join(r) for r in rows])
     out_path.write_text("\n".join(out_lines), encoding="utf-8")
@@ -1087,10 +1098,15 @@ def _download_fiber_legacy(icd_names: List[str], out_path: Path = FIBER_PATH,
                             err = type(e).__name__
                             # "couldn't activate the worksheet" = the Fiber
                             # view rendered with no marks (i.e. this owner
-                            # has zero fiber activity this period). Megan:
-                            # treat as 0%/0 instead of FAILED.
+                            # has no row in Tableau's Fiber data). Write
+                            # the FIBER_NOT_ON_TABLEAU sentinel (Megan
+                            # 2026-05-26) so the user sees "missing from
+                            # source" across all four Fiber cells instead
+                            # of zeros that look indistinguishable from a
+                            # real-zero owner like Rashad Reed.
                             if "couldn't activate" in str(e):
-                                pen, leads, expected, ok, empty = "0%", 0, 0, True, True
+                                pen = leads = expected = FIBER_NOT_ON_TABLEAU
+                                ok = empty = True
                                 break
                             if page.is_closed():
                                 try:
@@ -1523,26 +1539,39 @@ def fill_opt_for_tab(
     # Leads, Expected Fiber Sales (120 days/17wks), and Weekly = Expected / 17.
     fiber_row = fiber_by_owner.get(_norm(tab_name))
     if fiber_row:
-        pen = fiber_row.get("penetration")
-        if pen:
-            _queue(om_rows, "Penetration Rate", pen)
-        lead_n = _to_num(fiber_row.get("lead_count", ""))
-        if lead_n is not None:
-            _queue(om_rows, "Total Leads", int(lead_n))
-        exp_n = _to_num(fiber_row.get("expected", ""))
-        if exp_n is not None:
-            _queue(om_rows, "Expected Fiber Sales (120 days, 17wks)", int(exp_n))
-            _queue(om_rows, "Expected Fiber Sales Weekly", round(exp_n / 17))
-        # Fill-but-flag (Megan 2026-05-25): an impossible penetration (>100% =
-        # more sales than leads, e.g. a brand-new ICD whose Fiber isn't set up)
-        # is still written, but the whole Fiber block goes RED so a human checks.
-        if _sheet_flags.looks_weird_pct(pen):
-            for lbl in ("Penetration Rate",
+        pen = fiber_row.get("penetration") or ""
+        # "Not On Tableau" sentinel: write the message into all four Fiber
+        # cells so the user sees a clear "missing from data source" signal
+        # everywhere (instead of mixed updated/stale, or zeros that look
+        # like real-zero activity). Megan 2026-05-26 — distinguishes
+        # genuinely-missing owners (Khalil Mansour) from real-zero ones
+        # (Rashad Reed: 0.0% / 52,889 / 0 — has data, just no sales).
+        if pen == FIBER_NOT_ON_TABLEAU:
+            for lbl in ("Penetration Rate", "Total Leads",
                         "Expected Fiber Sales (120 days, 17wks)",
                         "Expected Fiber Sales Weekly"):
-                r = om_rows.get(_norm(lbl))
-                if r:
-                    red_cells.append(gspread.utils.rowcol_to_a1(r, col))
+                _queue(om_rows, lbl, FIBER_NOT_ON_TABLEAU)
+        else:
+            if pen:
+                _queue(om_rows, "Penetration Rate", pen)
+            lead_n = _to_num(fiber_row.get("lead_count", ""))
+            if lead_n is not None:
+                _queue(om_rows, "Total Leads", int(lead_n))
+            exp_n = _to_num(fiber_row.get("expected", ""))
+            if exp_n is not None:
+                _queue(om_rows, "Expected Fiber Sales (120 days, 17wks)", int(exp_n))
+                _queue(om_rows, "Expected Fiber Sales Weekly", round(exp_n / 17))
+            # Fill-but-flag (Megan 2026-05-25): an impossible penetration
+            # (>100% = more sales than leads, e.g. a brand-new ICD whose
+            # Fiber isn't set up) is still written, but the whole Fiber
+            # block goes RED so a human checks.
+            if _sheet_flags.looks_weird_pct(pen):
+                for lbl in ("Penetration Rate",
+                            "Expected Fiber Sales (120 days, 17wks)",
+                            "Expected Fiber Sales Weekly"):
+                    r = om_rows.get(_norm(lbl))
+                    if r:
+                        red_cells.append(gspread.utils.rowcol_to_a1(r, col))
 
     # --- Personal Production (the ICD's own sales as a rep) ---
     # Always written — an ICD with no personal sales gets a literal 0.
