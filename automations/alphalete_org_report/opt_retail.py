@@ -58,17 +58,37 @@ RETAIL_TAB_ICDS: Dict[str, List[str]] = {
 
 
 # HTTP-direct view URL. Critical: appending the custom-view UUID +
-# name to the path filters to Akib + MJ only. Without it, the HTTP
+# name to the path filters to Akib + MJ only AND aggregates Costco
+# sales across both reps per store (one row per (Location, Measure)
+# — no per-rep breakdown in the CSV, so the values are already the
+# combined Akib+MJ total). Without the custom-view path the HTTP
 # endpoint returns the workbook's unfiltered default view, which leaks
 # other reps' Costco sales (e.g. BC #579 = 18, a non-Akib/MJ store)
 # and inflates Total Store Count. Confirmed 2026-05-22 against Megan's
 # AkibMJSummary view.
-RETAIL_BY_CLUB_URL = (
+_RETAIL_BY_CLUB_BASE_URL = (
     "https://us-east-1.online.tableau.com/t/sci/views/"
     "DropshipV_2/RETAILSALESSUMMARYBYCLUB/"
     "35f6a7b4-eab4-4821-8f30-cabc530c648e/AkibMJSummary.csv"
 )
 RETAIL_BY_CLUB_FILENAME = "opt_retail_by_club.csv"
+
+
+def _by_club_view_url(week_end_label: str) -> str:
+    """Build the AkibMJSummary CSV URL with Min/Max Date params for the
+    target week. Without these the saved view's date filter wins, and on
+    a Mon/Tue run that means 'this week so far' = 0 sales (the new week
+    has just started) — every Costco store fills 0 even though the 4-WK
+    Avg shows real activity. (Megan 2026-05-26 zero-fill report.) Same
+    pattern as _sara_view_data_url / _abp_view_url."""
+    from datetime import datetime, timedelta
+    end = datetime.strptime(week_end_label, "%m/%d/%y")
+    start = end - timedelta(days=6)
+    return (
+        f"{_RETAIL_BY_CLUB_BASE_URL}?"
+        f"Min%20Date={start.strftime('%Y-%m-%d')}"
+        f"&Max%20Date={end.strftime('%Y-%m-%d')}"
+    )
 
 
 # Per-owner office churn rates. Custom view 'RETAILPULL' filters the
@@ -1190,7 +1210,8 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
             # Tableau cookies. These views are single-worksheet OR their .csv
             # endpoint serves the right worksheet — fast (~1s each).
             session = requests_session_from_page(page)
-            by_club_path = _http_download(session, RETAIL_BY_CLUB_URL,
+            by_club_path = _http_download(session,
+                                          _by_club_view_url(week_col_label),
                                           RETAIL_BY_CLUB_FILENAME, logfn, errors)
             # The Costco fill is the blocking output — only do the rest of the
             # run (churn/activation + the slow UI scrapes) if its source came
