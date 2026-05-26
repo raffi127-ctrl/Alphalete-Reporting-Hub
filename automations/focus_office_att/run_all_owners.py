@@ -542,14 +542,11 @@ def main() -> int:
 
     # Owners carried over from an interrupted run already scraped OK.
     results: dict[str, str] = {o: "ok" for o in resumed}
-    p = sync_playwright().start()
-    try:
-        browser = p.chromium.connect_over_cdp(CDP_URL)
-        page = _find_ownerville_page(browser)
-        if not page:
-            print("❌ No ownerville tab found in Chrome.")
-            return 1
-        print(f"✓ Connected. Starting URL: {page.url}")
+    # Unattended ownerville login via patchright — replaces the debug-Chrome
+    # CDP attach (broken on Chrome 148). Megan 2026-05-25.
+    from automations.shared.tableau_patchright import ownerville_session
+    with ownerville_session(verbose=True) as page:
+        print(f"✓ Ownerville session ready. URL: {page.url}")
 
         aliases_raw = load_aliases()
         if aliases_raw:
@@ -628,8 +625,7 @@ def main() -> int:
                     print(f"  ✓ Exited impersonation")
                 elif scraped_ok:
                     print(f"  ⚠ Exit-impersonation call didn't succeed; next owner may fail")
-    finally:
-        p.stop()
+    # (ownerville_session closes the browser on exit — no manual teardown)
 
     print("\n=== SUMMARY ===")
     ok = [o for o, s in results.items() if s == "ok"]

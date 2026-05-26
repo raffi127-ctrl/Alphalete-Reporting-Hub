@@ -174,21 +174,13 @@ def main() -> int:
         log.info("--retry-missing: re-fetching %d office(s) under the current "
                  "login: %s", len(retry_targets), ", ".join(sorted(retry_targets)))
 
-    log.info("attaching to Chrome at %s", fetch_office.CDP_URL)
-    p = sync_playwright().start()
-    try:
-        browser = p.chromium.connect_over_cdp(fetch_office.CDP_URL)
-        target_page = None
-        for ctx in browser.contexts:
-            for page in ctx.pages:
-                if "applicantstream" in page.url:
-                    target_page = page
-                    break
-            if target_page:
-                break
-        if not target_page:
-            log.error("no applicantstream tab open in attached Chrome — log in first")
-            return 1
+    # Unattended AppStream login via patchright (rcaptain) — no human-launched
+    # debug Chrome. Replaces the old connect_over_cdp(9222) path, which broke on
+    # Chrome 148 ("Browser context management is not supported"). The session is
+    # a full AppStream console with the #searchMC office switcher.
+    from automations.shared.tableau_patchright import appstream_direct_session
+    log.info("logging into AppStream via patchright (rcaptain) — unattended")
+    with appstream_direct_session(verbose=True) as target_page:
 
         # Steps 2-4 (office-list refresh, onboard, prune, categorize) are
         # skipped on a --retry-missing pass: a different login sees a narrower
@@ -360,8 +352,7 @@ def main() -> int:
                 filled_in_run.add(tab_name)
             elif primary_status == "inaccessible":
                 inaccessible_in_run.add(tab_name)
-    finally:
-        p.stop()
+    # (appstream_direct_session closes the browser on exit — no manual teardown)
 
     # Write the cumulative weekly results so the dashboard can alert on tabs
     # that couldn't be filled by any run this week. Hidden tabs (retired

@@ -14,10 +14,16 @@ import sys
 from pathlib import Path
 from typing import Dict, Optional
 
-from playwright.sync_api import sync_playwright, Page
+from playwright.sync_api import sync_playwright, Page, TimeoutError as PWTimeout
 
 CDP_URL = "http://localhost:9222"
 RETENTION_REPORT_PAGE = "p=701"
+
+# Process-level flags. Once jQuery has been seen to never load (patchright
+# stealth context appears to suppress it on AppStream), stop paying the
+# wait timeout on every subsequent picker call.
+_JQUERY_GIVE_UP = False
+_FORM_DUMPED = False
 
 # Map our canonical metric -> (AppStream row label, value type)
 # Value types: 'count' (int), 'percent' (parsed from "44%" -> 44),
@@ -126,39 +132,125 @@ def _set_week_and_submit(page: Page, week_start: dt.date) -> None:
 
     The input is a jQuery UI datepicker (readonly). To change its value we use
     the datepicker's setDate API rather than mutating the DOM, then submit."""
+    global _JQUERY_GIVE_UP, _FORM_DUMPED
     formatted_dash = f"{week_start.month:02d}-{week_start.day:02d}-{week_start.year}"
     formatted_slash = f"{week_start.month:02d}/{week_start.day:02d}/{week_start.year}"
     current = page.locator("#weekStart").input_value()
+    print(f"[picker] target={formatted_dash} BEFORE setDate: input_value={current!r}",
+          flush=True)
     if current in (formatted_dash, formatted_slash):
+        print("[picker] already on target week — skipping setDate", flush=True)
         return  # already on the right week
 
-    page.evaluate(
+    # AppStream's datepicker is initialized by an async-loaded jQuery+UI bundle.
+    # Under patchright stealth, the page reaches DOMContentLoaded before that
+    # bundle finishes, so a setDate call here hits an undefined jQuery and
+    # falls through to a no-op direct-value write — the form then submits
+    # the server-rendered default week (Megan, 2026-05-26 diagnostic run).
+    # Wait for jQuery+plugin once; if it genuinely never loads, give up on
+    # the wait for the rest of the process so we don't eat 8s per call.
+    if not _JQUERY_GIVE_UP:
+        try:
+            page.wait_for_function(
+                "typeof jQuery !== 'undefined' && jQuery.fn && !!jQuery.fn.datepicker",
+                timeout=8000,
+            )
+            print("[picker] jQuery+datepicker ready", flush=True)
+        except PWTimeout:
+            _JQUERY_GIVE_UP = True
+            print("[picker] jQuery+datepicker never loaded after 8s — "
+                  "giving up on wait for the rest of this process", flush=True)
+
+    # Diagnostic: confirm jQuery + datepicker are actually present in this
+    # context (patchright stealth has been suspected of stripping them).
+    env = page.evaluate(
+        """() => ({
+          jq:      typeof jQuery !== 'undefined',
+          dp:      typeof jQuery !== 'undefined' && !!jQuery.fn && !!jQuery.fn.datepicker,
+          dpInstance: (typeof jQuery !== 'undefined' && jQuery('#weekStart').length)
+                       ? !!jQuery('#weekStart').data('datepicker') : null,
+        })"""
+    )
+    print(f"[picker] env: jQuery={env.get('jq')} datepicker={env.get('dp')} "
+          f"#weekStart has datepicker instance={env.get('dpInstance')}", flush=True)
+
+    # One-shot dump of the form's inputs when jQuery is genuinely missing.
+    # If there's a hidden field the datepicker syncs to (separate from
+    # #weekStart), we'll see it here and can set it directly.
+    if not env.get("jq") and not _FORM_DUMPED:
+        _FORM_DUMPED = True
+        form_info = page.evaluate(
+            """() => {
+              const ws = document.getElementById('weekStart');
+              const form = ws && ws.form;
+              const inputs = form
+                ? Array.from(form.querySelectorAll('input, select, textarea'))
+                  .map(i => ({name: i.name, type: i.type, id: i.id,
+                              value: (i.value || '').slice(0, 60)}))
+                : [];
+              return {
+                action: form ? form.action : null,
+                method: form ? form.method : null,
+                inputs,
+                scripts: Array.from(document.scripts)
+                              .map(s => s.src || '<inline>')
+                              .slice(0, 30),
+              };
+            }"""
+        )
+        print(f"[picker][form-dump] action={form_info.get('action')} "
+              f"method={form_info.get('method')}", flush=True)
+        for inp in form_info.get("inputs", []):
+            print(f"[picker][form-dump]   input name={inp['name']!r} "
+                  f"type={inp['type']!r} id={inp['id']!r} value={inp['value']!r}",
+                  flush=True)
+        for src in form_info.get("scripts", []):
+            print(f"[picker][form-dump]   <script src={src!r}>", flush=True)
+
+    # The server reads the HIDDEN #startDate2 input (slash format), NOT the
+    # visible #weekStart text input. The jQuery UI datepicker normally syncs
+    # both via setDate, but under patchright the plugin isn't always loaded
+    # in time — so we set both inputs directly and skip the plugin entirely.
+    # (Found via 2026-05-26 form-dump: both fields are part of the same
+    # POST form to index.cfm; startDate2 is what the backend deserializes.)
+    set_result = page.evaluate(
         """
         ({dash, slash}) => {
-          const $el = (typeof jQuery !== 'undefined') ? jQuery('#weekStart') : null;
-          if ($el && $el.datepicker) {
-            // Try the datepicker API first
-            try {
-              $el.datepicker('setDate', dash);
-            } catch (e) {
-              // Some configs prefer slash format
-              $el.datepicker('setDate', slash);
-            }
+          const out = {tried: [], finalValues: {}};
+          const visible = document.getElementById('weekStart');
+          if (visible) {
+            visible.removeAttribute('readonly');
+            visible.value = dash;
+            visible.dispatchEvent(new Event('change', {bubbles: true}));
+            visible.dispatchEvent(new Event('blur',   {bubbles: true}));
+            out.tried.push('#weekStart=' + dash);
+            out.finalValues.weekStart = visible.value;
           }
-          // Fallback: also set value directly + fire events
-          const el = document.getElementById('weekStart');
-          if (el) {
-            el.removeAttribute('readonly');
-            if (el.value !== dash && el.value !== slash) el.value = dash;
-            el.dispatchEvent(new Event('change', {bubbles: true}));
-            el.dispatchEvent(new Event('blur', {bubbles: true}));
+          const hidden = document.getElementById('startDate2');
+          if (hidden) {
+            hidden.value = slash;
+            hidden.dispatchEvent(new Event('change', {bubbles: true}));
+            out.tried.push('#startDate2=' + slash);
+            out.finalValues.startDate2 = hidden.value;
+          } else {
+            out.tried.push('NO #startDate2 hidden input on page');
           }
+          return out;
         }
         """,
         {"dash": formatted_dash, "slash": formatted_slash},
     )
+    print(f"[picker] setDate result: tried={set_result.get('tried')} "
+          f"finalValues={set_result.get('finalValues')}",
+          flush=True)
+    after = page.locator("#weekStart").input_value()
+    print(f"[picker] AFTER setDate, BEFORE submit: input_value={after!r}", flush=True)
+
     with page.expect_navigation(timeout=15000, wait_until="load"):
         page.locator('input[name="submit"][type="submit"]').first.click()
+    post_nav = page.locator("#weekStart").input_value()
+    print(f"[picker] AFTER submit/navigation: input_value={post_nav!r} url={page.url[:120]}",
+          flush=True)
 
 
 def _ensure_on_retention_report(page: Page) -> None:

@@ -35,7 +35,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import gspread
-from playwright.sync_api import sync_playwright
 
 from . import fetch_office, fill
 
@@ -250,93 +249,113 @@ def _find_last_section_anchor(col3: List[str]) -> Optional[int]:
     return last
 
 
-def _ensure_sections(
+def _rebuild_sections_from_list(
     ws: gspread.Worksheet,
     icds: List[str],
     col3: List[str],
     dry_run: bool,
     log: logging.Logger,
 ) -> List[str]:
-    """For each ICD without a section, clone the first existing section and
-    append it at the bottom of the tab. Returns updated col3 values."""
-    missing = []
-    for icd in icds:
-        if not _find_section_anchor(col3, icd):
-            missing.append(icd)
-    if not missing:
-        return col3
+    """Sync the tab's section body so one section exists per ICD in col V, in
+    col V order. Sections whose ICD is no longer in col V are removed; new
+    ICDs get a fresh blank section. The fetch loop that runs after this
+    repopulates metric cells on every run, so we don't bother preserving
+    in-section data (Megan 2026-05-26).
 
-    # Dedupe the missing list — if col 22 had duplicate entries (e.g. from a
-    # previous bug), don't create the same section multiple times.
+    Returns updated col3 values."""
+    # Dedupe col V preserving order — guards against duplicate entries.
     seen = set()
-    missing_unique = []
-    for icd in missing:
-        if icd not in seen:
-            seen.add(icd)
-            missing_unique.append(icd)
-    missing = missing_unique
+    desired: List[str] = []
+    for icd in icds:
+        key = icd.lower()
+        if key not in seen:
+            seen.add(key)
+            desired.append(icd)
 
-    log.info("creating %d new section(s) for: %s", len(missing), missing)
-    if dry_run:
-        log.info("  [DRY-RUN] would clone first section (with formatting) for each missing ICD")
+    existing = _read_all_sections(ws, col3)
+    existing_names = [e[0] for e in existing]
+
+    # No-op when the section order already matches col V exactly.
+    if [n.lower() for n in existing_names] == [n.lower() for n in desired]:
         return col3
 
-    last_anchor = _find_last_section_anchor(col3) or 1
-    next_anchor = last_anchor + SECTION_HEIGHT
+    if not existing:
+        log.warning("no existing sections on tab — cannot bootstrap template; "
+                    "manually add one section then re-run")
+        return col3
 
-    # Resize sheet if needed
-    needed_rows = next_anchor + (SECTION_HEIGHT * len(missing))
-    if ws.row_count < needed_rows:
-        fill._retry(ws.resize, rows=needed_rows, cols=ws.col_count)
+    log.info("rebuilding sections to match col V: %s -> %s",
+             existing_names, desired)
+    if dry_run:
+        log.info("  [DRY-RUN] would rewrite %d section header(s) + blank "
+                 "metric cells (next fetch fills)", len(desired))
+        return col3
 
-    sheet_id = ws.id
-    for icd in missing:
-        # Use Sheets API copyPaste to clone formatting + values from rows 1-24
-        # (only cols A-T; col V-W is the ICD list and must NOT be duplicated).
-        copy_request = {
-            "requests": [{
-                "copyPaste": {
-                    "source": {
-                        "sheetId": sheet_id,
-                        "startRowIndex": 0,
-                        "endRowIndex": SECTION_HEIGHT,
-                        "startColumnIndex": 0,
-                        "endColumnIndex": 20,
-                    },
-                    "destination": {
-                        "sheetId": sheet_id,
-                        "startRowIndex": next_anchor - 1,
-                        "endRowIndex": next_anchor + SECTION_HEIGHT - 1,
-                        "startColumnIndex": 0,
-                        "endColumnIndex": 20,
-                    },
-                    "pasteType": "PASTE_NORMAL",
-                }
-            }]
-        }
+    # Blank-template from section 1 (preserves label cells in col C, all
+    # formatting-irrelevant text, and the row/header structure). Metric data
+    # cells D:I + M:R are blanked — fetch loop repopulates.
+    import copy
+    template = copy.deepcopy(existing[0][2])
+    for r in range(METRICS_START_OFFSET, METRICS_END_OFFSET + 1):
+        if r >= len(template):
+            break
+        for c in range(3, 9):    # D-I
+            template[r][c] = ""
+        for c in range(12, 18):  # M-R
+            template[r][c] = ""
+
+    flat: List[List[str]] = []
+    for icd in desired:
+        block = copy.deepcopy(template)
+        block[0][2]  = f"{icd}\nCurrent Week"  # col C row 1 of section
+        block[0][11] = f"{icd}\nLast Week"     # col L row 1 of section
+        flat.extend(block)
+
+    new_total = len(desired) * SECTION_HEIGHT
+    old_total = len(existing) * SECTION_HEIGHT
+
+    # Grow if needed (never shrink — col V's list may extend past sections).
+    if ws.row_count < new_total:
+        fill._retry(ws.resize, rows=new_total, cols=ws.col_count)
+
+    # Clone section-1 formatting into any newly-needed rows. Sheets API
+    # tiles the 24-row source across the destination, so a single call
+    # handles however many new section slots we just added.
+    if new_total > old_total:
+        sheet_id = ws.id
+        copy_request = {"requests": [{
+            "copyPaste": {
+                "source": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": 0,
+                    "endRowIndex": SECTION_HEIGHT,
+                    "startColumnIndex": 0,
+                    "endColumnIndex": 20,
+                },
+                "destination": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": old_total,
+                    "endRowIndex": new_total,
+                    "startColumnIndex": 0,
+                    "endColumnIndex": 20,
+                },
+                "pasteType": "PASTE_FORMAT",
+            }
+        }]}
         fill._retry(ws.spreadsheet.batch_update, copy_request)
 
-        # Update headers with the new ICD name
-        header_updates = [
-            {"range": f"C{next_anchor}", "values": [[f"{icd}\nCurrent Week"]]},
-            {"range": f"L{next_anchor}", "values": [[f"{icd}\nLast Week"]]},
-        ]
-        fill._retry(ws.batch_update, header_updates, value_input_option="USER_ENTERED")
+    # Write the full section body in one call.
+    fill._retry(ws.update, flat, f"A1:T{new_total}",
+                value_input_option="USER_ENTERED")
 
-        # Clear data cells (cols D-I + M-R, metric rows) so we don't carry over
-        # the template's data values. Formatting is preserved.
-        first_metric = next_anchor + METRICS_START_OFFSET
-        last_metric = next_anchor + METRICS_END_OFFSET
-        fill._retry(ws.batch_clear, [
-            f"D{first_metric}:I{last_metric}",
-            f"M{first_metric}:R{last_metric}",
-        ])
+    # Wipe any trailing rows that USED to hold sections but no longer do.
+    # Col V/W are out of range (cols 22/23) so they stay intact.
+    if old_total > new_total:
+        fill._retry(ws.batch_clear, [f"A{new_total + 1}:T{old_total}"])
+        log.info("  removed %d trailing section(s) no longer in col V",
+                 (old_total - new_total) // SECTION_HEIGHT)
 
-        log.info("  created section for %s at rows %d-%d (with formatting)",
-                 icd, next_anchor, next_anchor + SECTION_HEIGHT - 1)
-        next_anchor += SECTION_HEIGHT
-
-    # Re-read col3 so callers see the new sections
+    log.info("  rebuilt %d section(s) in col V order", len(desired))
     return fill._retry(ws.col_values, 3)
 
 
@@ -812,24 +831,18 @@ def run_captainship(captainship: str, args, week_start: dt.date,
 
     col3 = fill._retry(ws.col_values, 3)
 
-    # Auto-create sections for any ICDs in the list without one yet.
-    # (Sort functions are defined but not called — Megan's preference.)
-    col3 = _ensure_sections(ws, icds, col3, args.dry_run, log)
+    # Sync the section body to col V every run: add new ICDs, remove sections
+    # whose ICD was deleted from col V, reorder to match col V's order.
+    # Metric cells are blanked — the fetch loop below refills them.
+    col3 = _rebuild_sections_from_list(ws, icds, col3, args.dry_run, log)
 
-    p = sync_playwright().start()
-    try:
-        browser = p.chromium.connect_over_cdp(fetch_office.CDP_URL)
-        target_page = None
-        for ctx in browser.contexts:
-            for page in ctx.pages:
-                if "applicantstream" in page.url:
-                    target_page = page
-                    break
-            if target_page:
-                break
-        if not target_page:
-            log.error("no applicantstream tab open in attached Chrome")
-            return 1, []
+    # Unattended AppStream login via patchright (rcaptain) — replaces the old
+    # connect_over_cdp(9222) path, which broke on Chrome 148. Mirrors the
+    # weekly run.py migration; session is a full AppStream console with the
+    # #searchMC office switcher.
+    from automations.shared.tableau_patchright import appstream_direct_session
+    log.info("logging into AppStream via patchright (rcaptain) — unattended")
+    with appstream_direct_session(verbose=True) as target_page:
 
         for icd in icds:
             if _is_skipped(icd):
@@ -1004,8 +1017,7 @@ def run_captainship(captainship: str, args, week_start: dt.date,
             log.info(refresh_offices_from_page(target_page))
         except Exception as e:
             log.warning("office-list refresh skipped: %s", e)
-    finally:
-        p.stop()
+    # (appstream_direct_session closes the browser on exit — no manual teardown)
 
     if inaccessible_this_run:
         if denied_this_run:

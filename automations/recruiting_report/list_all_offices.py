@@ -142,19 +142,10 @@ def refresh_offices_from_page(page, verbose: bool = False) -> str:
 
 
 def main() -> int:
-    with sync_playwright() as p:
-        browser = p.chromium.connect_over_cdp(CDP_URL)
-        target = None
-        for ctx in browser.contexts:
-            for page in ctx.pages:
-                if "applicantstream" in page.url:
-                    target = page
-                    break
-            if target:
-                break
-        if not target:
-            print("No applicantstream tab open")
-            return 1
+    # Unattended AppStream login via patchright (rcaptain) — replaces the
+    # debug-Chrome CDP attach (broken on Chrome 148). Megan 2026-05-25.
+    from automations.shared.tableau_patchright import appstream_direct_session
+    with appstream_direct_session(verbose=True) as target:
         print(refresh_offices_from_page(target, verbose=True))
     return 0
 

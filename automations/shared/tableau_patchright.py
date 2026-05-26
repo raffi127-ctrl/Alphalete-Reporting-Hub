@@ -39,6 +39,7 @@ from automations.recruiting_report.opt_phase import (
     drive_crosstab_dialog,
     _scrape_one_view_data,
 )
+from automations.shared import creds
 
 
 PROFILE_DIR = (
@@ -50,10 +51,10 @@ LOGIN_URL = "https://ownerville.com"
 # link. The CDP-attached path (opt_phase._reauth_tableau) navigates
 # here to extract the rqst token and ride it through to Tableau.
 OWNERVILLE_V2_URL = "https://v2.ownerville.com/index.cfm"
-# Hardcoded per the order_log.py convention. Local-only Hub means this
-# is acceptable; if the repo ever goes public, switch to env vars / keyring.
-OWNERVILLE_USERNAME = "rhidalgo"
-OWNERVILLE_PASSWORD = "Alphalete123!"
+# Ownerville login is read from a gitignored local file (automations.shared.
+# creds → ownerville-creds.json at the repo root), NOT hardcoded — the repo was
+# public, so the password must never live in source. creds.ownerville_*() raise
+# a clear error if the file is missing.
 
 # Form selectors (mirror order_log.py — kept stable since 2026-05).
 _USERNAME_SELECTOR = (
@@ -162,8 +163,14 @@ def _sso_to_tableau(page: Page, verbose: bool = True) -> None:
               flush=True)
 
 
-def _drive_login_form(page: Page, verbose: bool) -> None:
-    """Drive the ownerville two-step login form. Mirrors order_log.login."""
+def _drive_login_form(page: Page, verbose: bool,
+                      username: Optional[str] = None,
+                      password: Optional[str] = None) -> None:
+    """Drive the two-step username→NEXT→password login form. Defaults to the
+    ownerville login; AppStream uses the SAME form, so pass its (rcaptain) creds
+    to reuse this for the direct AppStream login. Mirrors order_log.login."""
+    username = username if username is not None else creds.ownerville_username()
+    password = password if password is not None else creds.ownerville_password()
     if verbose:
         print("-> Filling username", flush=True)
     # Open form if it's behind a 'Log in' click.
@@ -176,7 +183,7 @@ def _drive_login_form(page: Page, verbose: bool) -> None:
         except PWTimeout:
             continue
     page.wait_for_selector(_USERNAME_SELECTOR, timeout=15_000)
-    page.fill(_USERNAME_SELECTOR, OWNERVILLE_USERNAME)
+    page.fill(_USERNAME_SELECTOR, username)
 
     if verbose:
         print("-> Clicking NEXT", flush=True)
@@ -190,7 +197,7 @@ def _drive_login_form(page: Page, verbose: bool) -> None:
 
     if verbose:
         print("-> Filling password", flush=True)
-    page.fill(_PASSWORD_SELECTOR, OWNERVILLE_PASSWORD)
+    page.fill(_PASSWORD_SELECTOR, password)
     page.wait_for_timeout(_PRE_SUBMIT_PAUSE_MS)
 
     if verbose:
@@ -282,3 +289,210 @@ def scrape_view_data_patchright(
         return _do(page)
     with tableau_session(verbose=verbose) as pg:
         return _do(pg)
+
+
+# ---------------------------------------------------------------------------
+# AppStream (ApplicantStream) — same ownerville SSO as Tableau, p=701.
+# ---------------------------------------------------------------------------
+# fetch_office._attach() needs a human-launched debug Chrome with an AppStream
+# tab already logged in. But AppStream auth rides the SAME ownerville 'rqst'
+# SSO token as Tableau — just p=701 instead of p=81 (see fetch_office.
+# _ensure_on_retention_report). So the patchright stealth profile that already
+# beats ownerville's Cloudflare for Tableau can seed AppStream too, with no
+# manual Chrome. UNVERIFIED LIVE as of 2026-05-25 — smoke-test first with:
+#   python -m automations.shared.tableau_patchright --appstream
+# before wiring fetch_office / the recruiting run to it.
+
+APPSTREAM_BASE = "https://applicantstream.com/index.cfm"
+# AppStream rqst tokens can carry hyphens + uppercase (fetch_office matches
+# [A-Z0-9-]); broaden the charset vs the Tableau token regex.
+_APPSTREAM_RQST_RE = re.compile(r"rqst=([A-Za-z0-9_-]+)")
+
+
+def _sso_to_appstream(page: Page, verbose: bool = True) -> Page:
+    """Seed an AppStream session by following ownerville's SSO link with
+    p=701. Mirrors _sso_to_tableau (which uses p=81 for Tableau). Leaves the
+    page on an authenticated applicantstream.com URL and returns it."""
+    if verbose:
+        print(f"-> Fetching AppStream SSO token from {OWNERVILLE_V2_URL}", flush=True)
+    page.goto(OWNERVILLE_V2_URL, wait_until="domcontentloaded")
+    page.wait_for_timeout(6_000)
+    m = _APPSTREAM_RQST_RE.search(page.url or "")
+    if not m:
+        href = page.evaluate(
+            "() => { const a=[...document.querySelectorAll('a')]"
+            ".find(x=>/p=701/.test(x.getAttribute('href')||'')); "
+            "return a?a.getAttribute('href'):''; }")
+        m = _APPSTREAM_RQST_RE.search(href or "")
+    if not m:
+        # Fall back to any rqst token in the page HTML — it's an ownerville
+        # session token that works for both p=81 and p=701.
+        m = _APPSTREAM_RQST_RE.search(
+            page.evaluate("() => document.documentElement.innerHTML") or "")
+    if not m:
+        raise RuntimeError(
+            "Couldn't find an ownerville SSO token (rqst=...) for AppStream — "
+            f"ownerville login isn't valid. Delete {PROFILE_DIR} and retry to "
+            "force a fresh login.")
+    sso_url = f"{APPSTREAM_BASE}?rqst={m.group(1)}&p=701"
+    if verbose:
+        print("-> Following SSO link to AppStream…", flush=True)
+    page.goto(sso_url, wait_until="domcontentloaded")
+    page.wait_for_timeout(12_000)
+    if verbose:
+        print(f"-> AppStream session established (page at {(page.url or '')[:80]})",
+              flush=True)
+    return page
+
+
+@contextmanager
+def appstream_session(headless: bool = False, verbose: bool = True) -> Iterator[Page]:
+    """Yield a Page logged into AppStream via ownerville SSO — the unattended
+    replacement for fetch_office._attach() (which needs a human-launched debug
+    Chrome with an AppStream tab). Uses the shared persistent profile, so the
+    ownerville login carries across runs.
+
+    UNVERIFIED LIVE (2026-05-25) — smoke-test before wiring it in."""
+    PROFILE_DIR.mkdir(exist_ok=True, parents=True)
+    with sync_playwright() as p:
+        try:
+            ctx = p.chromium.launch_persistent_context(
+                user_data_dir=str(PROFILE_DIR), channel="chrome",
+                headless=headless, no_viewport=True)
+        except Exception as e:
+            if verbose:
+                print(f"[appstream_session] system Chrome unavailable ({e!r}) — "
+                      "falling back to bundled Chromium", flush=True)
+            ctx = p.chromium.launch_persistent_context(
+                user_data_dir=str(PROFILE_DIR), headless=headless, no_viewport=True)
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        try:
+            # Ensure ownerville is logged in (drives the form if not), then SSO.
+            if verbose:
+                print(f"-> Loading {LOGIN_URL}", flush=True)
+            page.goto(LOGIN_URL, wait_until="domcontentloaded")
+            page.wait_for_timeout(3_000)
+            if (page.locator(_PASSWORD_SELECTOR).count() > 0
+                    or page.locator(_USERNAME_SELECTOR).count() > 0):
+                _drive_login_form(page, verbose=verbose)
+            elif verbose:
+                print("-> ownerville session reused from profile", flush=True)
+            _sso_to_appstream(page, verbose=verbose)
+            yield page
+        finally:
+            ctx.close()
+
+
+@contextmanager
+def ownerville_session(headless: bool = False,
+                      verbose: bool = True) -> Iterator[Page]:
+    """Yield a Page logged into ownerville.com via patchright — WITHOUT the
+    Tableau SSO hop. For reports that scrape ownerville's own pages (e.g.
+    focus_office_att rep breakdowns). Same login + shared profile as
+    tableau_session; the caller navigates to the ownerville URLs it needs."""
+    PROFILE_DIR.mkdir(exist_ok=True, parents=True)
+    with sync_playwright() as p:
+        try:
+            ctx = p.chromium.launch_persistent_context(
+                user_data_dir=str(PROFILE_DIR), channel="chrome",
+                headless=headless, no_viewport=True)
+        except Exception:
+            ctx = p.chromium.launch_persistent_context(
+                user_data_dir=str(PROFILE_DIR), headless=headless,
+                no_viewport=True)
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        try:
+            if verbose:
+                print(f"-> Loading {LOGIN_URL}", flush=True)
+            page.goto(LOGIN_URL, wait_until="domcontentloaded")
+            page.wait_for_timeout(3_000)
+            if (page.locator(_PASSWORD_SELECTOR).count() > 0
+                    or page.locator(_USERNAME_SELECTOR).count() > 0):
+                _drive_login_form(page, verbose)
+            elif verbose:
+                print("-> ownerville session reused from profile", flush=True)
+            yield page
+        finally:
+            ctx.close()
+
+
+# Dedicated profile for the DIRECT AppStream login, kept separate from the
+# Tableau/ownerville profile: applicantstream.com auto-SSOs off an ownerville
+# cookie (the short-lived p=701 report view) instead of showing the rcaptain
+# login form, so the recruiting console needs its own clean profile.
+APPSTREAM_PROFILE_DIR = (
+    Path(__file__).resolve().parent.parent / "uploaded" / ".appstream_profile"
+)
+_APPSTREAM_USERNAME_SELECTOR = 'input[name="userName"], ' + _USERNAME_SELECTOR
+
+
+@contextmanager
+def appstream_direct_session(headless: bool = False,
+                             verbose: bool = True) -> Iterator[Page]:
+    """Yield a Page logged DIRECTLY into AppStream as the recruiting account
+    (rcaptain) via patchright stealth — a FULL, sustained console session with
+    the #searchMC office switcher. This is the unattended replacement for
+    fetch_office._attach() (debug-Chrome CDP, broken on Chrome 148).
+
+    NOT appstream_session(): that rides the ownerville SSO and lands on a
+    short-lived p=701 report view that times out within ~30s and has no office
+    switcher. This logs in on AppStream's own two-step form (same shape as
+    ownerville) and the session persists in a dedicated profile."""
+    APPSTREAM_PROFILE_DIR.mkdir(exist_ok=True, parents=True)
+    with sync_playwright() as p:
+        try:
+            ctx = p.chromium.launch_persistent_context(
+                user_data_dir=str(APPSTREAM_PROFILE_DIR), channel="chrome",
+                headless=headless, no_viewport=True)
+        except Exception as e:
+            if verbose:
+                print(f"[appstream_direct] system Chrome unavailable ({e!r}) — "
+                      "bundled Chromium", flush=True)
+            ctx = p.chromium.launch_persistent_context(
+                user_data_dir=str(APPSTREAM_PROFILE_DIR), headless=headless,
+                no_viewport=True)
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        try:
+            if verbose:
+                print("-> Loading https://applicantstream.com/", flush=True)
+            page.goto("https://applicantstream.com/",
+                      wait_until="domcontentloaded")
+            page.wait_for_timeout(3_000)
+            if (page.locator(_PASSWORD_SELECTOR).count() > 0
+                    or page.locator(_APPSTREAM_USERNAME_SELECTOR).count() > 0):
+                _drive_login_form(page, verbose,
+                                  username=creds.appstream_username(),
+                                  password=creds.appstream_password())
+            elif verbose:
+                print("-> AppStream session reused from profile", flush=True)
+            page.wait_for_timeout(3_000)
+            if verbose:
+                print(f"-> AppStream console ready "
+                      f"(page at {(page.url or '')[:72]})", flush=True)
+            yield page
+        finally:
+            ctx.close()
+
+
+if __name__ == "__main__":
+    # Smoke tests for the patchright sessions. Run headed so you can watch
+    # Cloudflare + SSO. --appstream verifies the new (unverified) AppStream
+    # login; default verifies the Tableau login.
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--appstream", action="store_true",
+                    help="Smoke-test the AppStream patchright login.")
+    args = ap.parse_args()
+    if args.appstream:
+        with appstream_session(verbose=True) as pg:
+            url = pg.url or ""
+            print(f"\nAppStream page URL: {url}")
+            ok = "applicantstream.com" in url and "login" not in url.lower()
+            print("✅ AppStream login looks good" if ok else
+                  "❌ AppStream login did NOT land on an authed page — check above")
+    else:
+        with tableau_session(verbose=True) as pg:
+            url = pg.url or ""
+            print(f"\nTableau page URL: {url}")
+            print("✅ Tableau login looks good" if "online.tableau.com" in url
+                  else "❌ Tableau login did NOT land on Tableau — check above")

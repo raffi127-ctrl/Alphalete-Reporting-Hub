@@ -80,20 +80,10 @@ def main() -> int:
     sh = fill.open_sheet()
     log.info("connected to Google Sheet")
 
-    p = sync_playwright().start()
-    try:
-        browser = p.chromium.connect_over_cdp(fetch_office.CDP_URL)
-        target_page = None
-        for ctx in browser.contexts:
-            for page in ctx.pages:
-                if "applicantstream" in page.url:
-                    target_page = page
-                    break
-            if target_page:
-                break
-        if not target_page:
-            log.error("no applicantstream tab open")
-            return 1
+    # Unattended AppStream login via patchright (rcaptain) — replaces the
+    # debug-Chrome CDP attach (broken on Chrome 148). Megan 2026-05-25.
+    from automations.shared.tableau_patchright import appstream_direct_session
+    with appstream_direct_session(verbose=True) as target_page:
 
         for office in confirmed:
             tab_name = office["sheet_tab"]
@@ -162,8 +152,7 @@ def main() -> int:
                     ws, metric_rows, sunday_to_col, week_data, args.dry_run, label=section_label
                 ):
                     log.info(line)
-    finally:
-        p.stop()
+    # (appstream_direct_session closes the browser on exit — no manual teardown)
 
     log.info("done")
     return 0

@@ -25,25 +25,6 @@ logged-in browser session can be kept alive or the login automated.
 
 ---
 
-## Glitch recovery + resumable report runs
-Logged: 2026-05-15
-
-**What:** when a report run hits a glitch, the user can pick it back up
-from the report's project card instead of starting the whole run over.
-
-**Details to build:**
-- Detect the glitch and alert the user clearly — what went wrong, and the
-  exact steps to take to fix it or continue.
-- A "Continue / resume run" action on the project card so a stalled or
-  failed run carries on from where it stopped, not from scratch.
-- A "Report this glitch to the Hub master" button so the issue gets sent
-  to whoever owns the Hub (Megan) for follow-up.
-- Persistent run state: the user can navigate out of the running-report
-  screen and back in and land exactly where they left off — the live
-  progress view, not a reset/refreshed one.
-
----
-
 ## Upload validation checklist
 Logged: 2026-05-15
 
@@ -97,16 +78,6 @@ against.
 - The progress bar + ETA show while it runs.
 - The failure diagnosis + "Report this glitch to Megan" button work.
 - The desktop alerts fire correctly on success and failure.
-
----
-
-## Report Library card — visual design pass
-Logged: 2026-05-16
-
-**What:** revisit how the report card looks in the Report Library — the
-button grid and the report's detail/explainer page. The structure is in
-(buttons → explainer + live sheet preview + run controls); this is a
-visual polish pass on top of that.
 
 ---
 

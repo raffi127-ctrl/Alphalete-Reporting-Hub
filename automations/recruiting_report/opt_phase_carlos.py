@@ -683,28 +683,16 @@ def download_view_crosstab(view: ViewConfig, out_path: Path,
     Reuses the pattern from focus_office_att/step7_download_tableau.py:
     Tableau viz lives in an iframe `[title="Data Visualization"]`; toolbar
     buttons + the crosstab modal use `data-tb-test-id` attributes."""
-    from playwright.sync_api import sync_playwright
+    # Unattended Tableau login via patchright (ownerville SSO) — replaces the
+    # debug-Chrome CDP attach (broken on Chrome 148). Megan 2026-05-25.
+    from automations.shared.tableau_patchright import tableau_session
 
     VIZ_RENDER_WAIT_MS = 10_000
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     debug_dir = out_path.parent / "_debug" / view.key
     debug_dir.mkdir(parents=True, exist_ok=True)
-    with sync_playwright() as p:
-        browser = p.chromium.connect_over_cdp("http://localhost:9222")
-        # Find an existing Tableau tab in the user's Chrome session
-        page = None
-        for ctx in browser.contexts:
-            for pg in ctx.pages:
-                if "online.tableau.com" in (pg.url or ""):
-                    page = pg
-                    break
-            if page:
-                break
-        if not page:
-            # Fall back to the first open page — caller may need to
-            # bootstrap the Tableau SSO themselves first.
-            page = browser.contexts[0].pages[0]
+    with tableau_session(verbose=verbose) as page:
 
         if verbose:
             print(f"  → navigating Tableau tab to: {view.url}", flush=True)

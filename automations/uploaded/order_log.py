@@ -23,12 +23,10 @@ HOW TO USE
 #  CONFIG — EDIT THIS SECTION
 # ====================================================================
 
-# Your ownerville.com login. These are read directly by the script —
-# no `.env` file needed. The Hub is local-only, so keeping creds in
-# code is acceptable. (If the Hub ever moves to a shared / public
-# repo, switch back to environment variables to avoid leaking these.)
-OWNERVILLE_USERNAME = "rhidalgo"
-OWNERVILLE_PASSWORD = "Alphalete123!"
+# Your ownerville.com login is read from a gitignored local file
+# (automations.shared.creds -> ownerville-creds.json at the repo root), NOT
+# hardcoded here — the repo was public, so the password must never live in
+# source. See _validate_credentials().
 
 # Tableau coordinates.
 WORKBOOK_NAME = "ATT Tracker 2.1 - D2D"
@@ -140,18 +138,11 @@ FINAL_SUBMIT_NAME = re.compile(
 
 
 def _validate_credentials() -> tuple[str, str]:
-    """Make sure the user filled in the CONFIG section above."""
-    username = OWNERVILLE_USERNAME.strip()
-    password = OWNERVILLE_PASSWORD.strip()
-    if not username or username == "YOUR_EMAIL@alphalete.com":
-        raise RuntimeError(
-            "Set OWNERVILLE_USERNAME at the top of this file before running."
-        )
-    if not password or password == "YOUR_PASSWORD_HERE":
-        raise RuntimeError(
-            "Set OWNERVILLE_PASSWORD at the top of this file before running."
-        )
-    return username, password
+    """Read the ownerville login from the gitignored creds file (not source).
+    creds.ownerville_*() raise a clear 'create ownerville-creds.json' error if
+    the file/env var is missing."""
+    from automations.shared import creds
+    return creds.ownerville_username().strip(), creds.ownerville_password().strip()
 
 
 async def _open_login_form(page: Page) -> None:

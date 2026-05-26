@@ -1212,14 +1212,18 @@ AUTOMATED_REPORTS = [
             "A day-by-day breakdown (Mon-Fri) of the recruiting numbers "
             "for **every ICD in the Raf and Carlos captainships** — current "
             "week and last week, side by side. One run fills both tabs.\n\n"
-            "TO ADD AN ICD\n"
-            "**1.**  Make sure the **rcaptain** AppStream account can see "
-            "that ICD.\n"
-            "**2.**  Add the ICD's name to the list on the right of the "
-            "report (**column V**) — it has to match the AppStream name "
-            "**exactly**.\n"
-            "✅  The next run reads that list and fills in the new ICD "
-            "automatically.\n\n"
+            "WEEKEND ROLLOVER\n"
+            "Per Raf's rule, weekend numbers fold into the adjacent weekday:\n"
+            "• **Sunday → Monday** (Sun + Mon counts combined into Mon's cell).\n"
+            "• **Saturday → Friday** (Fri + Sat counts combined into Fri's cell).\n"
+            "Tue/Wed/Thu pass through unchanged. Percentages get recomputed "
+            "from the combined counts.\n\n"
+            "COLUMN V IS THE LIST — ADD / REMOVE / REORDER\n"
+            "The names in **column V** are the source of truth. Each run:\n"
+            "• **Adds** a section for any name newly in col V (needs "
+            "**rcaptain** AppStream access + an exact-match name).\n"
+            "• **Deletes** the section for any name removed from col V.\n"
+            "• **Reorders** the sections to match col V's order.\n\n"
             "IF AN ICD IS SKIPPED\n"
             "If a new ICD has no AppStream office mapped yet, the card "
             "prompts you to map it at the top — confirm the match, then re-run."
@@ -2089,7 +2093,12 @@ def _ran_within_24h(report_id: str) -> tuple[bool, str | None, str | None]:
 def _execute_action(report: dict, action: dict, picked, chrome_ok: bool) -> None:
     """Kick off one action as a background run, then rerun so the live
     run panel takes over. The dashboard never blocks waiting for the run."""
-    if not chrome_ok:
+    # Every report now self-logs-in via patchright (ownerville/AppStream/Tableau),
+    # so none need the manual debug Chrome — the preflight no longer blocks runs
+    # (Megan 2026-05-25, "remove the debug from all reports + update the
+    # preflight"). A card can opt back into the Chrome check with
+    # "needs_chrome": True if it ever depends on the debug browser again.
+    if not chrome_ok and report.get("needs_chrome"):
         st.error("⚠️ Chrome isn't running — launch it from the sidebar first.")
         return
     # Cross-user lock: refuse to start a run if anyone else is already running
@@ -2698,6 +2707,9 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
     """One unified card per report: header, gated checklist, primary run button,
     secondary actions inside an expander."""
     import html as _html
+    # Reports self-log-in via patchright — don't gate the run button on the debug
+    # Chrome unless the card explicitly opts in with needs_chrome (Megan 2026-05-25).
+    chrome_ok = chrome_ok or not report.get("needs_chrome", False)
     is_due = _is_due_today(report, today)
     sched = report.get("schedule", {})
     checklist = report.get("checklist", [])
@@ -4892,9 +4904,12 @@ def _render_review_panel(entry: dict) -> None:
                     st.error(msg)
         elif st.session_state.get(f"reviewing_{eid}"):
             # Step 2 — pre-flight, then run the report for real.
+            # Reports self-log-in via patchright — only check the debug Chrome
+            # for a card that explicitly opts in with needs_chrome.
             _needs_login = bool(meta.get("needs_login") or meta.get("checklist"))
-            _chrome_ok = _check_chrome_running() if _needs_login else True
-            if _needs_login:
+            _needs_chrome = bool(meta.get("needs_chrome"))
+            _chrome_ok = _check_chrome_running() if _needs_chrome else True
+            if _needs_chrome:
                 st.markdown(
                     "**Pre-flight — do this first:**\n\n"
                     "1. Launch Report Chrome\n"
