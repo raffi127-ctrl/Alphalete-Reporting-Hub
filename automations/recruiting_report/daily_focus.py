@@ -831,10 +831,20 @@ def run_captainship(captainship: str, args, week_start: dt.date,
 
     col3 = fill._retry(ws.col_values, 3)
 
-    # Sync the section body to col V every run: add new ICDs, remove sections
-    # whose ICD was deleted from col V, reorder to match col V's order.
-    # Metric cells are blanked — the fetch loop below refills them.
-    col3 = _rebuild_sections_from_list(ws, icds, col3, args.dry_run, log)
+    # Sync the section body to col V every full run: add new ICDs, remove
+    # sections whose ICD was deleted from col V, reorder to match col V's
+    # order. Metric cells are blanked — the fetch loop below refills them.
+    #
+    # CRITICAL: skip the rebuild on --only / --retry-inaccessible. Those
+    # modes intentionally narrow `icds` to a subset; if we passed that
+    # subset to the rebuild, it would treat col V as "wants just these
+    # names" and DELETE every other section. (Megan, 2026-05-26 — bug we
+    # hit minutes after the first push: single-ICD run nuked the tab.)
+    # The rebuild is for whole-list sync only; partial runs leave the
+    # tab body alone and just refill metric cells for their targets.
+    if not args.only and not args.retry_inaccessible:
+        full_icds = _read_icd_list(ws)
+        col3 = _rebuild_sections_from_list(ws, full_icds, col3, args.dry_run, log)
 
     # Unattended AppStream login via patchright (rcaptain) — replaces the old
     # connect_over_cdp(9222) path, which broke on Chrome 148. Mirrors the
