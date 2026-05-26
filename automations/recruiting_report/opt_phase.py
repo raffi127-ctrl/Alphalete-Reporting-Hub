@@ -1259,7 +1259,13 @@ def fill_opt_for_tab(
         for lbl in [sheet_label] + ALT_LABELS.get(sheet_label, []):
             r = label_rows.get(_norm(lbl))
             if r:
-                updates.append((gspread.utils.rowcol_to_a1(r, col), value))
+                a1 = gspread.utils.rowcol_to_a1(r, col)
+                updates.append((a1, value))
+                # Universal fill-but-flag: any percentage that lands outside
+                # 0–100% (e.g. a churn or penetration >100%) is written but
+                # red-flagged so a human eyeballs it (Megan 2026-05-25).
+                if _sheet_flags.looks_weird_pct(value):
+                    red_cells.append(a1)
                 return True
         missing.append(sheet_label)
         return False

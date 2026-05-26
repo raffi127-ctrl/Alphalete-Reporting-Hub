@@ -31,6 +31,19 @@ def looks_weird_pct(value) -> bool:
     return n > 100 or n < 0
 
 
+def weird_ranges(updates: List[dict]) -> List[str]:
+    """From a gspread batch_update payload ([{'range': a1, 'values': [[v]]}, …])
+    return the ranges whose value looks weird — so a fill can red-flag them right
+    after writing, with one line: apply_red_font(ws, weird_ranges(updates))."""
+    out: List[str] = []
+    for u in updates:
+        vals = u.get("values") or [[]]
+        v = vals[0][0] if (vals and vals[0]) else ""
+        if looks_weird_pct(v):
+            out.append(u["range"])
+    return out
+
+
 def apply_red_font(ws, a1_cells: List[str], retry=None) -> None:
     """Set each A1 cell's font to bold red. `retry` is an optional wrapper
     (e.g. recruiting_report.fill._retry) for 429 backoff. Best-effort — a

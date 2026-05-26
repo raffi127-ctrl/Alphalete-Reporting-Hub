@@ -23,6 +23,8 @@ from typing import Dict, List, Optional
 
 import gspread
 
+from automations.shared import sheet_flags as _sheet_flags
+
 from automations.recruiting_report import fill as rfill
 from automations.alphalete_org_report import tableau_http
 from automations.alphalete_org_report.opt_nds import (
@@ -1083,7 +1085,11 @@ def fill_office_metrics(ws: gspread.Worksheet,
         return [f"[DRY-RUN retail-opt] {ws.title}: would write {len(updates)} cells"] + log
     if updates:
         rfill._retry(ws.batch_update, updates, value_input_option="USER_ENTERED")
-        return [f"[OK retail-opt] {ws.title}: wrote {len(updates)} cells"] + log
+        _red = _sheet_flags.weird_ranges(updates)   # fill-but-flag weird %s
+        if _red:
+            _sheet_flags.apply_red_font(ws, _red, retry=rfill._retry)
+        return [f"[OK retail-opt] {ws.title}: wrote {len(updates)} cells"
+                + (f" ({len(_red)} flagged)" if _red else "")] + log
     return [f"[skip-retail-opt] {ws.title}: nothing to write"]
 
 

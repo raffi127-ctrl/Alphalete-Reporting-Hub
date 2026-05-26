@@ -53,6 +53,8 @@ from typing import Dict, List, Optional, Tuple
 
 import gspread
 
+from automations.shared import sheet_flags as _sheet_flags
+
 from automations.recruiting_report import fill as rfill
 from automations.recruiting_report.opt_phase import download_crosstab as _download_crosstab_inline
 from automations.alphalete_org_report import tableau_http
@@ -1155,7 +1157,11 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
         return [f"[DRY-RUN] {ws.title}: would write {len(updates)} cells"] + log
     if updates:
         rfill._retry(ws.batch_update, updates, value_input_option="USER_ENTERED")
-        return [f"[OK] {ws.title}: wrote {len(updates)} cells"] + log
+        _red = _sheet_flags.weird_ranges(updates)   # fill-but-flag weird %s
+        if _red:
+            _sheet_flags.apply_red_font(ws, _red, retry=rfill._retry)
+        return [f"[OK] {ws.title}: wrote {len(updates)} cells"
+                + (f" ({len(_red)} flagged)" if _red else "")] + log
     return [f"[skip] {ws.title}: nothing to write"]
 
 
