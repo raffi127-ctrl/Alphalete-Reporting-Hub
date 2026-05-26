@@ -697,6 +697,21 @@ def _csv_canonical_label(key: tuple) -> str:
     return f"Costco BC #{num}" if kind == "BC" else f"Costco #{num}"
 
 
+# Disable the per-Costco-store fill until the Tableau dashboard is updated
+# to expose per-store wireless-line totals from a source that respects the
+# date filter. (Megan 2026-05-26: current data source returns 0 for the
+# WK Total measure on a Mon/Tue run since the new week has barely started,
+# and there's no other accessible source for per-store last-week totals.
+# Until the data team adds an `AkibMJSummary` worksheet with `Club #` as a
+# Rows dimension AND `Measure Values` as a column — i.e. one row per
+# Costco store with the actual New/Port Lines value — running the fill
+# would overwrite Megan's manual values with zeros on every run.)
+#
+# Re-enable: flip _COSTCO_FILL_ENABLED to True once the new view is live
+# and `parse_retail_by_club` / call site point at the right CSV.
+_COSTCO_FILL_ENABLED = False
+
+
 def fill_costco_section(ws: gspread.Worksheet,
                         by_club: Dict[tuple, int],
                         week_col_label: str,
@@ -713,6 +728,11 @@ def fill_costco_section(ws: gspread.Worksheet,
     with akib or mj (or the icd you're pulling) with production, we need
     it added to this section with a club label and production count'."""
     log: List[str] = []
+    if not _COSTCO_FILL_ENABLED:
+        # See the comment at _COSTCO_FILL_ENABLED for the re-enable conditions.
+        return [f"[skip-retail-costco] {ws.title}: Costco per-store fill "
+                f"DISABLED — Tableau dashboard doesn't expose per-store WK "
+                f"totals for the requested week. Manual values left intact."]
     grid = rfill._retry(ws.get_all_values)
     if not grid:
         return [f"[skip-retail] {ws.title}: empty tab"]
