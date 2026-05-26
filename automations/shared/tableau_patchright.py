@@ -428,7 +428,10 @@ _APPSTREAM_USERNAME_SELECTOR = 'input[name="userName"], ' + _USERNAME_SELECTOR
 
 @contextmanager
 def appstream_direct_session(headless: bool = False,
-                             verbose: bool = True) -> Iterator[Page]:
+                             verbose: bool = True,
+                             profile_dir: Optional[Path] = None,
+                             username: Optional[str] = None,
+                             password: Optional[str] = None) -> Iterator[Page]:
     """Yield a Page logged DIRECTLY into AppStream as the recruiting account
     (rcaptain) via patchright stealth — a FULL, sustained console session with
     the #searchMC office switcher. This is the unattended replacement for
@@ -437,19 +440,30 @@ def appstream_direct_session(headless: bool = False,
     NOT appstream_session(): that rides the ownerville SSO and lands on a
     short-lived p=701 report view that times out within ~30s and has no office
     switcher. This logs in on AppStream's own two-step form (same shape as
-    ownerville) and the session persists in a dedicated profile."""
-    APPSTREAM_PROFILE_DIR.mkdir(exist_ok=True, parents=True)
+    ownerville) and the session persists in a dedicated profile.
+
+    Override args (used by daily_focus --alt-appstream for ICDs visible only
+    from a different AppStream account):
+      - profile_dir: use a separate profile (so rcaptain's cookies aren't
+                     overwritten by the alternate account's session).
+      - username / password: skip creds.py lookup; pass these directly to
+                             the login form (lets the caller load them from
+                             env without touching keychain/file)."""
+    profile = profile_dir or APPSTREAM_PROFILE_DIR
+    profile.mkdir(exist_ok=True, parents=True)
+    user = username or creds.appstream_username()
+    pwd  = password or creds.appstream_password()
     with sync_playwright() as p:
         try:
             ctx = p.chromium.launch_persistent_context(
-                user_data_dir=str(APPSTREAM_PROFILE_DIR), channel="chrome",
+                user_data_dir=str(profile), channel="chrome",
                 headless=headless, no_viewport=True)
         except Exception as e:
             if verbose:
                 print(f"[appstream_direct] system Chrome unavailable ({e!r}) — "
                       "bundled Chromium", flush=True)
             ctx = p.chromium.launch_persistent_context(
-                user_data_dir=str(APPSTREAM_PROFILE_DIR), headless=headless,
+                user_data_dir=str(profile), headless=headless,
                 no_viewport=True)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
@@ -460,9 +474,7 @@ def appstream_direct_session(headless: bool = False,
             page.wait_for_timeout(3_000)
             if (page.locator(_PASSWORD_SELECTOR).count() > 0
                     or page.locator(_APPSTREAM_USERNAME_SELECTOR).count() > 0):
-                _drive_login_form(page, verbose,
-                                  username=creds.appstream_username(),
-                                  password=creds.appstream_password())
+                _drive_login_form(page, verbose, username=user, password=pwd)
             elif verbose:
                 print("-> AppStream session reused from profile", flush=True)
             page.wait_for_timeout(3_000)

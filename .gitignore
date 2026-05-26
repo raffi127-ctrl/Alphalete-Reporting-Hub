@@ -10,6 +10,7 @@ __pycache__/
 .DS_Store
 .browser_profile/
 .appstream_profile/
+.appstream_profile_alt/
 *.app/
 # Build artifacts + Claude Code local state
 build/

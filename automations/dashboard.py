@@ -907,9 +907,7 @@ AUTOMATED_REPORTS = [
             "estimated_minutes": 15,
         },
         "checklist": [
-            {"text": "Launch Reporting Chrome",
-             "action": "launch_chrome"},
-            {"text": "Log into AppStream as **rcaptain** in the new Chrome window"},
+            {"text": "Confirm AppStream credentials are stored on this machine (login is unattended via patchright)"},
             {"text": "Log into the correct **ownerville** account in the same Chrome window — the OPT / sales section reaches Tableau through ownerville"},
         ],
         "post_run": {
@@ -993,9 +991,7 @@ AUTOMATED_REPORTS = [
             "estimated_minutes": 15,
         },
         "checklist": [
-            {"text": "Launch Reporting Chrome",
-             "action": "launch_chrome"},
-            {"text": "Log into AppStream as **rcaptain** in the new Chrome window"},
+            {"text": "Confirm AppStream credentials are stored on this machine (login is unattended via patchright)"},
             {"text": "Log into the correct **ownerville** account in the same Chrome window — the OPT / sales section reaches Tableau through ownerville"},
         ],
         "post_run": {
@@ -1080,9 +1076,7 @@ AUTOMATED_REPORTS = [
             "estimated_minutes": 45,
         },
         "checklist": [
-            {"text": "Launch Reporting Chrome",
-             "action": "launch_chrome"},
-            {"text": "Log into AppStream as **rcaptain** in the new Chrome window"},
+            {"text": "Confirm AppStream credentials are stored on this machine (login is unattended via patchright)"},
             {"text": "Log into the correct **ownerville** account in the same Chrome window — the OPT / sales section reaches Tableau through ownerville"},
         ],
         "post_run": {
@@ -1240,9 +1234,7 @@ AUTOMATED_REPORTS = [
             "estimated_minutes": 10,
         },
         "checklist": [
-            {"text": "Launch Reporting Chrome",
-             "action": "launch_chrome"},
-            {"text": "Log into AppStream as **rcaptain** in the new Chrome window"},
+            {"text": "Confirm AppStream credentials are stored on this machine (login is unattended via patchright)"},
         ],
         "post_run": {
             "message_success": "✅ Daily Focus run complete — the Raf and Carlos tabs are filled. Any ICD that couldn't be pulled (rcaptain has no AppStream access to it yet) is listed below.",
@@ -6311,14 +6303,6 @@ with st.sidebar:
     if st.button("📚 Report Library", use_container_width=True):
         _go_library()
         st.rerun()
-    # Launch Report Chrome — scraping reports need the special port-9222
-    # Chrome the automations attach to, so the launcher is one click away.
-    if st.button("🚀 Launch Report Chrome", use_container_width=True, key="nav_launch_chrome"):
-        ok, msg = _launch_chrome()
-        if ok:
-            st.toast(msg, icon="🚀")  # transient — no persistent green box
-        else:
-            st.error(msg)
     if st.button("📊 7-Day Overview", use_container_width=True, key="nav_overview"):
         _go_overview()
         st.rerun()
@@ -6336,20 +6320,12 @@ with st.sidebar:
         if not _gh["ok"]:
             st.caption(f"⚠️ {_gh['detail']}")
 
-    # Chrome status check — other code reads `chrome_ok`; the pill gives the
-    # Launch button above immediate feedback.
-    chrome_ok = _check_chrome_running()
-    _pill_class = "ok" if chrome_ok else "warn"
-    _pill_label = "🟢 Chrome connected" if chrome_ok else "🔴 Chrome offline"
-    st.markdown(
-        f'<div class="system-status-pill {_pill_class}">{_pill_label}</div>',
-        unsafe_allow_html=True,
-    )
-    if not chrome_ok:
-        st.warning("Chrome not running — click 🚀 Launch Report Chrome above.")
-        with st.expander("Chrome troubleshooting"):
-            st.markdown("**If Chrome won't launch, run this in Terminal:**")
-            st.code("rm ~/.config/recruiting-report/chrome-attach/Singleton*", language="bash")
+    # Chrome status check removed 2026-05-26: every report now runs through
+    # patchright's unattended login (rcaptain on AppStream, ownerville on
+    # Tableau), so there's no debug-port Chrome for the user to keep open.
+    # `chrome_ok` (referenced elsewhere) is force-true so any leftover gates
+    # don't block runs; clean those out in a follow-up if anything reads it.
+    chrome_ok = True
 
     # Remaining tasks today (user view only)
     if st.session_state.view == "user" and st.session_state.user:

@@ -850,9 +850,34 @@ def run_captainship(captainship: str, args, week_start: dt.date,
     # connect_over_cdp(9222) path, which broke on Chrome 148. Mirrors the
     # weekly run.py migration; session is a full AppStream console with the
     # #searchMC office switcher.
-    from automations.shared.tableau_patchright import appstream_direct_session
-    log.info("logging into AppStream via patchright (rcaptain) — unattended")
-    with appstream_direct_session(verbose=True) as target_page:
+    from automations.shared.tableau_patchright import (
+        appstream_direct_session, APPSTREAM_PROFILE_DIR,
+    )
+    session_kwargs = {"verbose": True}
+    if args.alt_appstream:
+        # Alternate AppStream account for ICDs the primary account can't see.
+        # Creds come from env (not creds.py / keychain) so the primary
+        # credentials stay the default; profile dir is separate so the
+        # alt session's cookies don't overwrite rcaptain's.
+        import os
+        alt_user = os.environ.get("APPLICANTSTREAM_USERNAME", "").strip()
+        alt_pass = os.environ.get("APPLICANTSTREAM_PASSWORD", "").strip()
+        if not alt_user or not alt_pass:
+            log.error("--alt-appstream needs APPLICANTSTREAM_USERNAME and "
+                      "APPLICANTSTREAM_PASSWORD env vars set on the command "
+                      "(e.g. APPLICANTSTREAM_USERNAME=... "
+                      "APPLICANTSTREAM_PASSWORD=... python -m ...).")
+            return 1, {"inaccessible": [], "denied": [], "fetch_errors": []}
+        session_kwargs["username"] = alt_user
+        session_kwargs["password"] = alt_pass
+        session_kwargs["profile_dir"] = (
+            APPSTREAM_PROFILE_DIR.parent / ".appstream_profile_alt"
+        )
+        log.info("logging into AppStream via patchright (ALT account: %s) — "
+                 "unattended; using separate profile", alt_user)
+    else:
+        log.info("logging into AppStream via patchright (rcaptain) — unattended")
+    with appstream_direct_session(**session_kwargs) as target_page:
 
         for icd in icds:
             if _is_skipped(icd):
@@ -1061,6 +1086,14 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--no-copy", action="store_true",
                     help="Skip the Wednesday copy-current-to-last step.")
+    ap.add_argument("--alt-appstream", action="store_true",
+                    help="Log in with the ALTERNATE AppStream account (read "
+                         "from env APPLICANTSTREAM_USERNAME / "
+                         "APPLICANTSTREAM_PASSWORD) into a separate profile "
+                         "dir. Use this for ICDs visible only from a "
+                         "different account, e.g. one waiting on rcaptain "
+                         "access. Combine with --only \"ICD Name\" to pull "
+                         "just that ICD without touching the rest.")
     args = ap.parse_args()
 
     today = dt.date.today()
