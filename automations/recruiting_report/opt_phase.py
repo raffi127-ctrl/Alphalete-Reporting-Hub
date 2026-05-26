@@ -1271,6 +1271,10 @@ def fill_opt_for_tab(
             cell = av.get(_norm(csv_col), "")
             if str(cell).strip() != "":
                 _queue(opt_rows, sheet_label, cell)
+            elif sheet_label == "% of Wireless Rep Count":
+                # Blank in the crosstab = 0% — write it rather than leave the
+                # cell empty (Megan 2026-05-25: "enter a 0% if it's 0").
+                _queue(opt_rows, sheet_label, "0%")
         # computed: Total Apps + AVG Apps (component rows found by label)
         parts = [_to_num(av.get(_norm(OPT_SCRAPED[c]), ""))
                  for c in TOTAL_APPS_COMPONENTS]
