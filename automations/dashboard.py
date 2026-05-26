@@ -205,7 +205,15 @@ def _read_active_runs() -> list[dict]:
                 # "couldn't find", "couldn't be found", "auto-skipping") so a
                 # run that stalled or auto-skipped reps still gets classified
                 # as failed (the orphan path then auto-files a glitch row).
-                if "done" in tail_text or "[ok]" in tail_text:
+                #
+                # Success markers checked FIRST so a summary line like
+                # "Filled: 1; Errors: 0" wins before the failure scan sees
+                # the substring "error" inside "Errors: 0" — Eve's 2026-05-26
+                # Frontier OPT run was wrongly auto-filed as failed because
+                # "errors: 0" tripped the "error" substring match.
+                if any(s in tail_text for s in (
+                    "done", "[ok]", "errors: 0", "0 errors", "filled:",
+                )):
                     status = "success"
                 elif any(s in tail_text for s in (
                     "error", "failed", "traceback",
