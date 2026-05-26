@@ -157,6 +157,20 @@ FIBER_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/FiberLeadPerformance"
 )
+# Bulk-pull custom view: AUTOMATIONPULL-NICHURNVIEW exposes the same
+# Penetration By Zip data BUT its Crosstab export is a clean wide CSV
+# with per-owner "Fixed" aggregates already computed by Tableau —
+# Office Lead Penetration (Fixed) / ICD Workable Fiber Lead Count (copy)
+# / Fiber Sales (Fixed) (copy). One ~10s Crosstab download replaces the
+# 25-min per-ICD loop. Megan/data-team added this view 2026-05-22;
+# verified working against Hasani Lynch (2.6%/80,404/2,062 — matches
+# the per-ICD scrape's prior values within day-to-day drift).
+FIBER_BULK_VIEW_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER2_1-D2D/FiberLeadPerformance/"
+    "a79fd021-3606-4aa2-bf55-bc3856cdac99/AUTOMATIONPULL-NICHURNVIEW"
+)
+FIBER_BULK_CROSSTAB_SHEET = "Office New Fiber Lead Penetration By Zip"
 FIBER_PATH = WORKSPACE / "output" / "opt_fiber.csv"
 
 
@@ -889,6 +903,123 @@ def _fiber_name_candidates(tab: str, as_owner_map: dict, aliases_map: dict
 
 def download_fiber(icd_names: List[str], out_path: Path = FIBER_PATH,
                    logfn=print) -> Path:
+    """Fiber pull dispatch — tries the fast bulk path first, falls back to
+    the legacy per-ICD loop if anything goes wrong. Both produce the same
+    tab\\tpenetration\\tlead_count\\texpected CSV at `out_path`.
+
+    Bulk path (~10s total): one Crosstab download of the
+    AUTOMATIONPULL-NICHURNVIEW custom view, which exposes per-owner Fixed
+    aggregates (Office Lead Penetration / ICD Workable Fiber Lead Count /
+    Fiber Sales). We parse the CSV, match each Sheet tab to an owner row
+    by candidate name (same alias logic the legacy path used), and emit
+    the same CSV.
+
+    Legacy path (~25 min): one page.goto per ICD, scrape the Program
+    Overview box, compute penetration from sales/leads. The reliable but
+    slow fallback. Used to be the only path. Eve 2026-05-26 also hit a
+    `new_page() Failed` crash at ICD 10 in this path — the bulk path
+    eliminates the per-ICD loop entirely and dodges that failure mode."""
+    try:
+        return _download_fiber_bulk(icd_names, out_path, logfn=logfn)
+    except Exception as e:
+        logfn(f"OPT: Fiber bulk path failed ({type(e).__name__}: "
+              f"{str(e)[:120]}) — falling back to per-ICD loop")
+        return _download_fiber_legacy(icd_names, out_path, logfn=logfn)
+
+
+def _download_fiber_bulk(icd_names: List[str], out_path: Path,
+                         logfn=print) -> Path:
+    """One Crosstab download → 1,800-ish per-(owner, zip) rows → group by
+    owner → match Sheet tabs to owner rows by candidate name → emit the
+    same CSV format as the legacy per-ICD path."""
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        as_owner_map = {c["sheet_tab"]: c.get("as_owner", "")
+                        for c in fill.load_mapping()["confirmed"]}
+    except Exception:
+        as_owner_map = {}
+    try:
+        from automations.focus_office_att import aliases as _al
+        aliases_map = _al.load_aliases()
+    except Exception:
+        aliases_map = {}
+
+    # Download the Crosstab to a tmp file. UTF-16-LE encoded, tab-delimited.
+    tmp_path = out_path.parent / "opt_fiber_crosstab_raw.csv"
+    from automations.shared.tableau_patchright import download_crosstab_patchright
+    download_crosstab_patchright(FIBER_BULK_VIEW_URL, FIBER_BULK_CROSSTAB_SHEET,
+                                 tmp_path, verbose=False)
+    raw = tmp_path.read_bytes().decode("utf-16").replace("\r\n", "\n")
+    lines = raw.split("\n")
+    if len(lines) < 3:
+        raise RuntimeError(f"crosstab too short ({len(lines)} lines)")
+    header = lines[0].split("\t")
+    # Locate columns by name — Tableau can reorder them when the workbook
+    # is edited, so match by header rather than hardcoded index.
+    def _col(needle: str) -> int:
+        nl = needle.lower()
+        for i, h in enumerate(header):
+            if nl in h.lower():
+                return i
+        raise RuntimeError(f"crosstab missing column matching {needle!r}; "
+                           f"have {header}")
+    pen_i   = _col("office lead penetration")
+    owner_i = _col("account_owner_name")
+    leads_i = _col("icd workable fiber lead count")
+    exp_i   = _col("fiber sales (fixed)")
+
+    # First-row-per-owner is enough because columns pen/leads/exp are
+    # "Fixed" calc — same value on every one of that owner's zip rows.
+    by_owner: Dict[str, Tuple[str, str, str]] = {}
+    for line in lines[1:]:
+        cols = line.split("\t")
+        if len(cols) <= max(pen_i, owner_i, leads_i, exp_i):
+            continue
+        owner = cols[owner_i].strip()
+        if not owner or owner.lower() in ("grand total", "total"):
+            continue
+        if owner in by_owner:
+            continue
+        by_owner[owner] = (
+            cols[pen_i].strip(),
+            cols[leads_i].strip().replace(",", ""),
+            cols[exp_i].strip().replace(",", ""),
+        )
+    # Reindex by normalized name for matching.
+    by_owner_norm: Dict[str, Tuple[str, str, str]] = {
+        _norm(o): v for o, v in by_owner.items()
+    }
+    logfn(f"OPT: Fiber bulk — crosstab has {len(by_owner)} owners")
+
+    # For each Sheet tab, walk candidate names to find a matching owner row.
+    rows: List[Tuple[str, str, str, str]] = []
+    matched = unmatched = 0
+    for tab in icd_names:
+        hit = None
+        for cand in _fiber_name_candidates(tab, as_owner_map, aliases_map):
+            hit = by_owner_norm.get(_norm(cand))
+            if hit:
+                break
+        if hit:
+            pen, leads, expected = hit
+            rows.append((tab, pen, leads, expected))
+            matched += 1
+            logfn(f"OPT: Fiber {tab}: penetration={pen}, leads={leads}, "
+                  f"expected={expected}")
+        else:
+            rows.append((tab, "", "", ""))
+            unmatched += 1
+            logfn(f"OPT: Fiber {tab}: no matching owner in crosstab (skip)")
+    out_lines = (["tab\tpenetration\tlead_count\texpected"]
+                 + ["\t".join(r) for r in rows])
+    out_path.write_text("\n".join(out_lines), encoding="utf-8")
+    logfn(f"OPT: Fiber bulk — matched {matched}/{len(rows)} tabs, "
+          f"{unmatched} skipped → {out_path}")
+    return out_path
+
+
+def _download_fiber_legacy(icd_names: List[str], out_path: Path = FIBER_PATH,
+                           logfn=print) -> Path:
     """Per-ICD Fiber pull: filter the Fiber view to each ICD's Owner Name,
     scrape that ICD's 'Program Overview' box (FIBER_OVERVIEW_XY), and record
     Penetration % + Total Leads + Expected Fiber Sales. One Tableau session,
