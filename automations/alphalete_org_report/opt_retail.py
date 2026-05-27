@@ -57,19 +57,17 @@ RETAIL_TAB_ICDS: Dict[str, List[str]] = {
 }
 
 
-# HTTP-direct view URL. Critical: appending the custom-view UUID +
-# name to the path filters to Akib + MJ only AND aggregates Costco
-# sales across both reps per store (one row per (Location, Measure)
-# — no per-rep breakdown in the CSV, so the values are already the
-# combined Akib+MJ total). Without the custom-view path the HTTP
-# endpoint returns the workbook's unfiltered default view, which leaks
-# other reps' Costco sales (e.g. BC #579 = 18, a non-Akib/MJ store)
-# and inflates Total Store Count. Confirmed 2026-05-22 against Megan's
-# AkibMJSummary view.
+# HTTP-direct view URL. The CLUBBREAKDOWN-MJAKIB custom view (Megan set
+# up 2026-05-27) pre-filters to MJ + Akib at the data-source level and
+# breaks each Costco location out per-owner. Rows are long-format:
+#   Location | Measure Names | Owner & Office (loc) | Measure Values
+# We sum 'New/Port Lines' per Location across both owners' rows.
+# Replaces the old AkibMJSummary view which returned 0 for WK Total
+# on Mon/Tue runs (the new week had barely started).
 _RETAIL_BY_CLUB_BASE_URL = (
     "https://us-east-1.online.tableau.com/t/sci/views/"
-    "DropshipV_2/RETAILSALESSUMMARYBYCLUB/"
-    "35f6a7b4-eab4-4821-8f30-cabc530c648e/AkibMJSummary.csv"
+    "DropshipV_2/LOCATIONSALESSUMMARY/"
+    "31c10a73-b383-4238-b3c6-2745d07c1ff5/CLUBBREAKDOWN-MJAKIB.csv"
 )
 RETAIL_BY_CLUB_FILENAME = "opt_retail_by_club.csv"
 
@@ -226,18 +224,19 @@ def _normalize_store_label(label: str) -> Optional[tuple]:
 
 
 def parse_retail_by_club(path: Path) -> Dict[tuple, int]:
-    """Parse RETAILSALESSUMMARYBYCLUB and return
-    {(kind, number): wk_total_int} per Costco store.
+    """Parse CLUBBREAKDOWN-MJAKIB and return {(kind, number): new_port_lines}
+    summed across BOTH owners (MJ + Akib) per Costco store.
 
-    The CSV is long-format with one row per (Location, Measure) pair:
-      Location (copy) | Measure Names | Measure Values
-    We filter to rows where Measure Names == 'WK Total' and the Location
-    starts with 'Costco'. Aggregate 'NDS' and 'All' rows are skipped."""
+    CSV is long-format, one row per (Location, Measure, Owner):
+      Location | Measure Names | Owner & Office (loc) | Measure Values
+    We filter to 'New/Port Lines' rows for Costco locations and sum
+    Measure Values across the two owners. ('Costco BC #655' shows up for
+    both owners; without summing we'd undercount.)"""
     rows = tableau_http.parse_csv(path)
     if not rows:
         return {}
     header = rows[0]
-    loc_i = tableau_http.col_idx(header, "Location (copy)")
+    loc_i = tableau_http.col_idx(header, "Location")
     meas_i = tableau_http.col_idx(header, "Measure Names")
     val_i = tableau_http.col_idx(header, "Measure Values")
     if loc_i is None or meas_i is None or val_i is None:
@@ -248,8 +247,8 @@ def parse_retail_by_club(path: Path) -> Dict[tuple, int]:
             continue
         loc = (r[loc_i] or "").strip()
         if not loc.lower().startswith("costco"):
-            continue   # skip NDS / All aggregate rows
-        if (r[meas_i] or "").strip() != "WK Total":
+            continue   # skip aggregate rows
+        if (r[meas_i] or "").strip() != "New/Port Lines":
             continue
         key = _normalize_store_label(loc)
         if key is None:
@@ -258,7 +257,7 @@ def parse_retail_by_club(path: Path) -> Dict[tuple, int]:
             val = int(float((r[val_i] or "0").replace(",", "")))
         except (ValueError, AttributeError):
             continue
-        out[key] = val
+        out[key] = out.get(key, 0) + val   # SUM across MJ + Akib
     return out
 
 
@@ -697,19 +696,12 @@ def _csv_canonical_label(key: tuple) -> str:
     return f"Costco BC #{num}" if kind == "BC" else f"Costco #{num}"
 
 
-# Disable the per-Costco-store fill until the Tableau dashboard is updated
-# to expose per-store wireless-line totals from a source that respects the
-# date filter. (Megan 2026-05-26: current data source returns 0 for the
-# WK Total measure on a Mon/Tue run since the new week has barely started,
-# and there's no other accessible source for per-store last-week totals.
-# Until the data team adds an `AkibMJSummary` worksheet with `Club #` as a
-# Rows dimension AND `Measure Values` as a column — i.e. one row per
-# Costco store with the actual New/Port Lines value — running the fill
-# would overwrite Megan's manual values with zeros on every run.)
-#
-# Re-enable: flip _COSTCO_FILL_ENABLED to True once the new view is live
-# and `parse_retail_by_club` / call site point at the right CSV.
-_COSTCO_FILL_ENABLED = False
+# Re-enabled 2026-05-27 after Megan set up the CLUBBREAKDOWN-MJAKIB
+# custom view on DropshipV_2/LOCATIONSALESSUMMARY. New view pre-filters
+# to MJ + Akib, exposes per-Costco-store New/Port Lines (which is the
+# metric on the AKIB & MJ Costco section), and respects Min Date /
+# Max Date URL params for week targeting.
+_COSTCO_FILL_ENABLED = True
 
 
 def fill_costco_section(ws: gspread.Worksheet,
