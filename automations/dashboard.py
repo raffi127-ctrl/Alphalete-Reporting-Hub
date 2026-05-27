@@ -1484,7 +1484,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": "https://docs.google.com/spreadsheets/d/"
                      "1xgVE_e8bZimACgPdqcdNCr1qo4sedWect_zzEcUgEJY/edit",
-        "assignees": ["Raf"],
+        "assignees": ["Eve"],
         "schedule": {
             "frequency": "daily",
             "time": "9:00 AM",
