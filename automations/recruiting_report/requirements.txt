@@ -16,3 +16,4 @@ python-dateutil>=2.8
 # Frontier OPT Data Pull parses the emailed Frontier PDFs. Added 2026-05-24;
 # without it Eve's Windows Hub crashes on the Frontier run (ModuleNotFoundError).
 pdfplumber>=0.11
+slack_sdk

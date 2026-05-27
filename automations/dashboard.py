@@ -1513,6 +1513,60 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "ongoing-cancel",
+        "name": "Ongoing Cancel",
+        "creator": "Megan",
+        "emoji": "🔁",
+        "color": "#EF4444",
+        "category": "📊 Metrics",
+        "description": "Daily Internet Cancel Rates image → posted as a reply in #alphalete-sales today's 'Metrics M/DD' thread.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Pulls Internet Cancel Rates (Running Sum) from Tableau for "
+            "Raf's reps over the last 7 days, renders a single colored "
+            "table image, and posts it as a reply in today's 'Metrics M/DD' "
+            "thread in #alphalete-sales.\n\n"
+            "WHEN IT RUNS\n"
+            "**Every morning at 7:00 AM**, after the daily metrics header "
+            "thread has been posted in #alphalete-sales.\n\n"
+            "PRE-FLIGHT (must be done before each run)\n"
+            "Someone has to post the **'Metrics M/DD' header thread** in "
+            "#alphalete-sales BEFORE this report runs — the bot replies to "
+            "that parent thread. Once the other 8 metrics are automated, "
+            "the Hub will auto-post the header thread itself."
+        ),
+        "sheet_url": None,
+        "assignees": ["Eve"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "estimated_minutes": 3,
+        },
+        "checklist": [
+            {"label": "✅ I've posted the 'Metrics M/DD' header thread in "
+                      "#alphalete-sales",
+             "key": "metrics_header_posted"},
+        ],
+        "post_run": {
+            "message_success": "✅ Ongoing Cancel posted to today's metrics thread.",
+            "message_failed": "❌ Run failed — most likely cause is the "
+                              "Metrics header thread wasn't posted in "
+                              "#alphalete-sales yet. Post it, then click "
+                              "Run Again.",
+        },
+        "actions": [
+            {
+                "label": "Run Ongoing Cancel",
+                "icon": "▶",
+                "primary": True,
+                "help": "Pulls Tableau, renders the image, posts to today's "
+                        "Metrics thread in #alphalete-sales.",
+                "module": "automations.ongoing_cancel.run",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
         "id": "fiber-activations",
         "name": "Fiber Activations Report",
         "creator": "Megan",
