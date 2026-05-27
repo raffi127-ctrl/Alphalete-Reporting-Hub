@@ -93,13 +93,16 @@ def _insert_new_we_row(ws: gspread.Worksheet, avg_row: int) -> int:
     # Col A formula auto-increments WE Sunday by 7; Q mirrors A.
     # Col L: % activated vs last week = current week's J / previous week's I.
     #        IFERROR keeps the cell blank until Tuesday fills J.
-    # Col Z: Estimated Revenue = current week's X * 2 (mirrors existing pattern).
+    # Col Z: Estimated Revenue = (latest filled R..X) * 2 — dynamic, so each
+    #        day during the cycle Z reflects today's country activation × 2.
     ws.batch_update([
         {"range": f"A{new_row}", "values": [[f"=A{prev_data_row}+7"]]},
         {"range": f"Q{new_row}", "values": [[f"=A{new_row}"]]},
         {"range": f"L{new_row}",
          "values": [[f'=IFERROR(J{new_row}/I{prev_data_row}, "")']]},
-        {"range": f"Z{new_row}", "values": [[f"=X{new_row}*2"]]},
+        {"range": f"Z{new_row}",
+         "values": [[f'=IFERROR(INDEX(R{new_row}:X{new_row}, 1, '
+                     f'COUNT(R{new_row}:X{new_row})) * 2, "")']]},
     ], value_input_option="USER_ENTERED")
 
     sheet_id = ws.id
@@ -135,6 +138,26 @@ def _insert_new_we_row(ws: gspread.Worksheet, avg_row: int) -> int:
         # 5. Row R-5 (falls out of last-4-completed) A/Q: un-highlight (R-6).
         _cp_format(sheet_id, new_row - 6, new_row - 5, A_COL, A_END),
         _cp_format(sheet_id, new_row - 6, new_row - 5, Q_COL, Q_END),
+        # 6. Re-bold the value cols on the new row (the whole-row unbold in
+        #    step 2 wiped these; I/J/K/L and Y/Z are bold on every data row).
+        {
+            "repeatCell": {
+                "range": {"sheetId": sheet_id,
+                          "startRowIndex": new_row - 1, "endRowIndex": new_row,
+                          "startColumnIndex": 8, "endColumnIndex": 12},  # I..L
+                "cell": {"userEnteredFormat": {"textFormat": {"bold": True}}},
+                "fields": "userEnteredFormat.textFormat.bold",
+            }
+        },
+        {
+            "repeatCell": {
+                "range": {"sheetId": sheet_id,
+                          "startRowIndex": new_row - 1, "endRowIndex": new_row,
+                          "startColumnIndex": 24, "endColumnIndex": 26},  # Y..Z
+                "cell": {"userEnteredFormat": {"textFormat": {"bold": True}}},
+                "fields": "userEnteredFormat.textFormat.bold",
+            }
+        },
     ]
     sh.batch_update({"requests": requests})
 

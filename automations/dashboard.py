@@ -1522,23 +1522,10 @@ AUTOMATED_REPORTS = [
         "description": "Daily Wed→Tue fill on the 'Captainship Activations' tab — Raf's team activations + country activations + EOW sales + 60-day churn + activation rate.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "**•** Pulls 6 numbers from Tableau every day:\n"
-            "  – Raf's Team daily activations (today's day-of-week col)\n"
-            "  – Country daily activations (sum of 5 teams)\n"
-            "  – Raf's EOW Captainship Sales\n"
-            "  – Country EOW Sales (excluding UPGRADE INTERNET)\n"
-            "  – 60-Day New Internet Churn Rate\n"
-            "  – Rolling 4-Week Approval / Activation Rate\n\n"
+            "Pulls 6 Tableau numbers daily into the 'Captainship Activations' tab.\n\n"
             "WHEN IT RUNS\n"
             "**Every day, Wed–Tue.** Each Wednesday inserts a new row for the "
-            "new cycle (WE Sunday in the middle). Each other day overwrites "
-            "today's day-of-week cell on the existing in-progress row.\n\n"
-            "SOURCES\n"
-            "**•** Activations + Churn + Activation Rate: Captain's Bonus "
-            "dashboard → `AUTOMATIONPULL-NICHURNVIEW` custom view.\n"
-            "**•** EOW Sales: PRODUCT SALES SUMMARY 4WK → `ALLREPS` custom "
-            "view → 'Sales By ICD (Weekly View)' worksheet, filtered by "
-            "current WE Sunday + (for Raf) Captain's Bonus Teams v2."
+            "new cycle."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
@@ -1561,13 +1548,6 @@ AUTOMATED_REPORTS = [
                 "help": "Fills today's day-of-week cell. Wednesday also inserts the new row for the new cycle.",
                 "module": "automations.fiber_activations.run",
                 "args_fn": lambda: [],
-            },
-            {
-                "label": "Dry-run (print, don't write)",
-                "icon": "👁",
-                "help": "Prints what would be written without touching the sheet.",
-                "module": "automations.fiber_activations.run",
-                "args_fn": lambda: ["--dry-run"],
             },
         ],
     },
