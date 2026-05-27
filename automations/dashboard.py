@@ -1543,8 +1543,9 @@ AUTOMATED_REPORTS = [
             "estimated_minutes": 3,
         },
         "checklist": [
-            {"label": "✅ I've posted the 'Metrics M/DD' header thread in "
-                      "#alphalete-sales",
+            {"text": "Posted the 'Metrics M/DD' header thread in "
+                     "#alphalete-sales — this report posts as a reply in "
+                     "that thread, so the thread MUST exist before running.",
              "key": "metrics_header_posted"},
         ],
         "post_run": {
