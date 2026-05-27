@@ -485,18 +485,8 @@ def main() -> int:
         say(f"=== Daily Rep Breakdown - ATT Program — {today.isoformat()} "
             f"({'MONDAY full run' if is_monday else 'mid-week incremental'}) ===")
 
-        # 1. Pre-flight
-        ok, msg = _chrome_ok()
-        say(f"Pre-flight: {msg}")
-        if not ok:
-            _notify_failure(
-                "Focus Office run can't start.",
-                f"{msg}\n\nFix: launch the debug Chrome + log into ownerville, "
-                f"then click Run again.",
-                str(log_path),
-            )
-            return 1
-
+        # Phase 2 (run_all_owners) and Phase 3 (step7_download_tableau) both
+        # self-auth via patchright now — no more debug-Chrome pre-flight gate.
         sh = _fill._client().open_by_key(DEST_SPREADSHEET_ID)
 
         # 2. Monday wipe (or future-day wipe Tue-Sat)
@@ -564,7 +554,8 @@ def main() -> int:
             _notify_failure(
                 "Focus Office Tableau pull (Phase 3) failed.",
                 "ownerville scrape DID complete — only the Tableau sale-type "
-                "data is missing. The Tableau tab may need a fresh login.",
+                "data is missing. Usually a transient patchright/Tableau "
+                "load issue — click Run Again.",
                 str(log_path))
             # Phase 2 data is still good — colors still worth refreshing.
             try:
