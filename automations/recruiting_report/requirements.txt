@@ -17,3 +17,4 @@ python-dateutil>=2.8
 # without it Eve's Windows Hub crashes on the Frontier run (ModuleNotFoundError).
 pdfplumber>=0.11
 slack_sdk
+certifi

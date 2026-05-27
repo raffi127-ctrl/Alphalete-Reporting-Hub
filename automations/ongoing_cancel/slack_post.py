@@ -34,8 +34,14 @@ def _load_token() -> str:
 
 
 def _client():
+    """Build an SSL-context-aware Slack client. Python 3.14's bundled
+    urllib doesn't ship with system root certs on macOS, so we hand the
+    WebClient an explicit cafile-backed SSL context from certifi."""
+    import ssl
+    import certifi
     from slack_sdk import WebClient
-    return WebClient(token=_load_token())
+    ctx = ssl.create_default_context(cafile=certifi.where())
+    return WebClient(token=_load_token(), ssl=ctx)
 
 
 def find_metrics_thread_ts(client, today: dt.date) -> str:
