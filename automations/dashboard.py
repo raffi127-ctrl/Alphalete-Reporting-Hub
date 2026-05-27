@@ -2048,6 +2048,22 @@ def _was_run_successfully_today(report_id: str, today: dt.date | None = None) ->
     return False
 
 
+def _run_status_on(report_id: str, day: dt.date) -> str | None:
+    """Return the LATEST run-outcome for this report on `day`, or None if no
+    run was logged. Values: 'success' | 'failed' | 'stopped' | other. Used by
+    the 'This week' calendar to mark each card per-day — success → ✅,
+    anything else with content → ⚠️."""
+    # runs_merged is newest-first; first hit on the right (report_id, day) is
+    # the latest outcome for that day.
+    for r in _all_runs_merged(days=14):
+        if r.get("report_id") != report_id:
+            continue
+        if r["_dt"].date() != day:
+            continue
+        return (r.get("status") or "").lower() or None
+    return None
+
+
 def _latest_run_summary(report_id: str) -> str | None:
     """Return compact text like 'Today · Megan · 1:06 AM', or None.
     Considers runs by any teammate, not just this machine.
@@ -7038,20 +7054,32 @@ else:  # st.session_state.view == "user"
                 _due = [r for r in my_reports if _was_due_on(r, _day)]
                 if _due:
                     for _r in _due:
-                        # Mark today's card with green ✅ when there's a
-                        # successful run today (same signal the sidebar's
-                        # "Today's Tasks" uses, so the two stay in sync).
-                        _done = _is_today and _was_run_successfully_today(
-                            _r["id"], today)
+                        # Per-day per-report run status — drives the thin colored
+                        # bar above the button. Green = success, red = failed/
+                        # stopped, nothing = no run yet (or future day).
+                        _status = _run_status_on(_r["id"], _day)
+                        if _status == "success":
+                            _bar_color = "#28a745"
+                            _help = "✓ Ran successfully on this day — open to view"
+                        elif _status:
+                            _bar_color = "#dc3545"
+                            _help = (f"✗ Last run on this day {_status} — "
+                                     "open the card to see what went wrong")
+                        else:
+                            _bar_color = None
+                            _help = "Open this report to run it"
+                        if _bar_color:
+                            st.markdown(
+                                f"<div style='height:5px; background:{_bar_color}; "
+                                f"border-radius:3px; margin-bottom:-3px;'></div>",
+                                unsafe_allow_html=True,
+                            )
                         _label = f"{_r.get('emoji', '📄')} {_r['name']}"
-                        if _done:
-                            _label = "✅ " + _label
                         if st.button(
                             _label,
                             key=f"cal_{user_name}_{_day.strftime('%Y%m%d')}_{_r['id']}",
                             use_container_width=True,
-                            help="Done today — open to view" if _done
-                                 else "Open this report to run it",
+                            help=_help,
                         ):
                             st.session_state["library_report_id"] = _r["id"]
                             st.session_state["library_came_from"] = ("user", user_name)
