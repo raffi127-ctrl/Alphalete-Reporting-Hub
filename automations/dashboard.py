@@ -7054,17 +7054,26 @@ else:  # st.session_state.view == "user"
                 _due = [r for r in my_reports if _was_due_on(r, _day)]
                 if _due:
                     for _r in _due:
-                        # Per-day per-report run status — drives the thin colored
-                        # bar above the button. Green = success, red = failed/
-                        # stopped, nothing = no run yet (or future day).
+                        # Per-day per-report run status. Color rules:
+                        #   green = ran successfully on this day
+                        #   red   = due on this day AND (failed OR not run yet)
+                        #   none  = future day (not urgent yet)
+                        # Megan 2026-05-27: cards 'due today' should show red
+                        # until run, then turn green — so the week-view
+                        # mirrors the 'X reports due today' pill on The Pack.
                         _status = _run_status_on(_r["id"], _day)
                         if _status == "success":
                             _bar_color = "#28a745"
                             _help = "✓ Ran successfully on this day — open to view"
-                        elif _status:
+                        elif _day <= today:
+                            # Due that day and either failed or hasn't run yet.
                             _bar_color = "#dc3545"
-                            _help = (f"✗ Last run on this day {_status} — "
-                                     "open the card to see what went wrong")
+                            if _status:
+                                _help = (f"✗ Last run on this day {_status} — "
+                                         "open the card to see what went wrong")
+                            else:
+                                _help = ("Due — not yet run. Open the card "
+                                         "to kick it off")
                         else:
                             _bar_color = None
                             _help = "Open this report to run it"
