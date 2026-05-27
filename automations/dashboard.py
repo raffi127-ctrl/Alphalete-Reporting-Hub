@@ -2869,7 +2869,10 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
         _creator = report.get("creator")
         if _creator:
             st.caption(f"👤 Creator: {_creator}")
-        st.link_button("📂 Open Sheet", report["sheet_url"])
+        # sheet_url is optional — Slack-posting reports (e.g. Ongoing Cancel)
+        # don't have a destination Sheet.
+        if report.get("sheet_url"):
+            st.link_button("📂 Open Sheet", report["sheet_url"])
 
         # If the report fans out to MULTIPLE destination sheets (e.g. the
         # Financial Pull which fills ATT Program + Carlos + Alphalete Org
