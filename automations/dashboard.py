@@ -1525,7 +1525,7 @@ AUTOMATED_REPORTS = [
             "Pulls Internet Cancel Rates (Running Sum) from Tableau for "
             "Raf's reps over the last 7 days.\n\n"
             "WHEN IT RUNS\n"
-            "**Daily.**\n\n"
+            "Daily.\n\n"
             "PRE-FLIGHT (must be done before each run)\n"
             "Someone has to post the **'Metrics M/DD' header thread** in "
             "#alphalete-sales BEFORE this report runs — the bot replies to "
