@@ -7077,12 +7077,20 @@ else:  # st.session_state.view == "user"
                         else:
                             _bar_color = None
                             _help = "Open this report to run it"
+                        # Thin glowing top + bottom bars sandwich the button so
+                        # it visually reads as a colored frame. (Per-button CSS
+                        # is hard in Streamlit — buttons don't expose their
+                        # key as a CSS attribute — so the sandwich is the
+                        # cleanest 'wrap around' look without a custom HTML
+                        # button replacement.)
                         if _bar_color:
-                            st.markdown(
-                                f"<div style='height:5px; background:{_bar_color}; "
-                                f"border-radius:3px; margin-bottom:-3px;'></div>",
-                                unsafe_allow_html=True,
+                            _bar = (
+                                f"<div style='height:2px; background:{_bar_color}; "
+                                f"box-shadow:0 0 6px {_bar_color}, "
+                                f"0 0 12px {_bar_color}80; "
+                                f"border-radius:2px; margin:0;'></div>"
                             )
+                            st.markdown(_bar, unsafe_allow_html=True)
                         _label = f"{_r.get('emoji', '📄')} {_r['name']}"
                         if st.button(
                             _label,
@@ -7094,6 +7102,8 @@ else:  # st.session_state.view == "user"
                             st.session_state["library_came_from"] = ("user", user_name)
                             _set_view("library")
                             st.rerun()
+                        if _bar_color:
+                            st.markdown(_bar, unsafe_allow_html=True)
                 else:
                     st.markdown(
                         "<div style='text-align:center; color:#bbb; "
