@@ -2098,13 +2098,36 @@ _PARTIAL_RUN_MARKERS = [
 def _run_outcome(report_id: str) -> dict:
     """Classify the LAST run of `report_id` from its persisted log:
     {'status': 'full'|'partial'|'failed'|None, 'issues': [...]}. None = no log.
-    Powers the honest run status (#1) + the card's last-run badge (#4) — so a
-    run that quietly skipped a phase reads as 'partial', not a green 'success'."""
+    Powers the card's last-run badge — so a run that quietly skipped a phase
+    reads as 'partial', not a green 'success'.
+
+    Trust the SAVED status (set from the script's exit code at run-end) as the
+    source of truth — only re-scan the log if the save says success but the
+    log contains an unambiguous partial-run marker. This stops transient
+    'TargetClosedError' / 'traceback' lines in a recovered-and-finished run
+    from flipping a clean 'success' into a red 'LAST RUN FAILED' (Eve flagged
+    this 2026-05-27 on ATT Focus Report + Frontier OPT)."""
     try:
         text = (ACTIVE_RUNS_LOG_DIR / f"{report_id}.log").read_text(errors="replace")
     except Exception:
         return {"status": None, "issues": []}
     low = text.lower()
+    saved_status = (_load_all_run_state().get(report_id, {}).get("status") or "").lower()
+
+    # If exit code → success, only down-grade to 'partial' on the narrow,
+    # unambiguous markers; ignore generic 'traceback'/'targetclosederror'
+    # (those routinely appear in successful runs that retried + recovered).
+    if saved_status == "success":
+        # Only trust markers that explicitly say a whole phase was SKIPPED
+        # — those are silent-partials worth surfacing.
+        skip_markers = [(m, msg) for m, msg in _PARTIAL_RUN_MARKERS
+                        if "skipped" in m or "failed" in m or "sync to latest" in m]
+        issues = [msg for marker, msg in skip_markers if marker in low]
+        if issues:
+            return {"status": "partial", "issues": issues}
+        return {"status": "full", "issues": []}
+
+    # Saved status is failed/unknown — old behavior (broad log scan).
     issues = [msg for marker, msg in _PARTIAL_RUN_MARKERS if marker in low]
     if issues:
         return {"status": "partial", "issues": issues}
