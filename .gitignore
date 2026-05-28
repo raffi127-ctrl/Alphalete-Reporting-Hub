@@ -29,3 +29,11 @@ automations/uploaded/_shared/
 # a stray change or wrong branch can't strand them on stale code. Machine-
 # specific — never commit (committing it would disable force-align for everyone).
 .dev-machine
+# Frontier OPT PDFs are uploaded daily sales data (customer info) — never
+# commit. The script reads them from this directory at run time; cleanup
+# is per-user.
+automations/uploaded/frontier/
+# Scratch probe scripts (_probe_*.py) under report modules are throwaway
+# debugging from one-off mapping work — never commit. Keep them around
+# locally if useful, but don't track them.
+automations/*/_probe_*.py
