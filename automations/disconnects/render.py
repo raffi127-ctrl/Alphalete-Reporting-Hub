@@ -28,10 +28,12 @@ COLS = [
     ("Tech Install", 100),
 ]
 
-HEADER_BG = (50, 50, 80)
+# Green palette differentiates the Disconnects image from Canceled Orders
+# (blue) at a glance in the Metrics thread — Megan 2026-05-28.
+HEADER_BG = (28, 100, 56)        # forest green
 HEADER_FG = (255, 255, 255)
-ROW_ALT = (245, 247, 252)
-NEW_HIGHLIGHT = (213, 232, 252)   # light blue — matches Eve's "new" highlight
+ROW_ALT = (245, 252, 247)
+NEW_HIGHLIGHT = (216, 240, 220)  # light green — matches the green Hub card
 
 
 def _font(size: int, bold: bool = False):

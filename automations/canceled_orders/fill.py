@@ -17,6 +17,12 @@ TAB_LOCAL_OFFICE = "Local Office - Daily Cancels"
 TAB_RAF_CAPTAINSHIP = "Raf's Captainship - Cancels Ongoing"
 TAB_STARR_SAHIL = "Starr Capi + Sahil- Cancels Ongoing"
 
+# Light-blue highlight for the rows added in the most recent run, so
+# whoever opens the sheet can see what's new at a glance. Matches the
+# render.py NEW_HIGHLIGHT for visual continuity with the Slack image.
+_HIGHLIGHT_BG = {"red": 213 / 255, "green": 232 / 255, "blue": 252 / 255}
+_WHITE_BG = {"red": 1.0, "green": 1.0, "blue": 1.0}
+
 
 def _norm(s: str) -> str:
     return (s or "").strip().lower()
@@ -90,12 +96,23 @@ def insert_new_rows_at_top(sh, tab_name: str, rows: List[Dict[str, str]],
 
     ws = sh.worksheet(tab_name)
     header = ws.row_values(1)
-    # Header-label mapping: build a matrix that matches THIS tab's columns.
+    grid_before = ws.get_all_values()
+    rows_before = len(grid_before)
+
+    # Insert at row 2 (just below the header).
     # Sheet headers may be aliased ("SPM Number " ↔ "SPM #") so we look up
     # row values by canonical key. Unknown columns get empty strings (Eve's
     # manual cols like SENT?, Cancels Feedback, Reason — left blank for her).
     matrix = [[r.get(_canonical(col), "") for col in header] for r in new]
     ws.insert_rows(matrix, row=2, value_input_option="USER_ENTERED")
+
+    # Highlight ONLY the newly-inserted rows in light blue + clear every
+    # other data row back to white, so whoever opens the sheet can see at
+    # a glance which rows arrived in the most recent run.
+    N = len(new)
+    rows_after = rows_before + N  # incl. header
+    ncols = max(len(header), 1)
+    _paint_highlight(ws, rows_after=rows_after, new_count=N, ncols=ncols)
 
     deleted = _dedup_pass(ws)
 
@@ -103,6 +120,37 @@ def insert_new_rows_at_top(sh, tab_name: str, rows: List[Dict[str, str]],
             "skipped_already_in_sheet": len(rows) - len(new),
             "wrote_rows": len(new),
             "post_insert_dedup_deleted": deleted}
+
+
+def _paint_highlight(ws, *, rows_after: int, new_count: int, ncols: int) -> None:
+    """Clear backgrounds on all data rows (white), then highlight just
+    the top `new_count` rows in light blue — one batched Sheets API call.
+    """
+    requests = [
+        {"repeatCell": {
+            "range": {
+                "sheetId": ws.id,
+                "startRowIndex": 1,       # row 2 (skip header at row 1)
+                "endRowIndex": rows_after,
+                "startColumnIndex": 0,
+                "endColumnIndex": ncols,
+            },
+            "cell": {"userEnteredFormat": {"backgroundColor": _WHITE_BG}},
+            "fields": "userEnteredFormat.backgroundColor",
+        }},
+        {"repeatCell": {
+            "range": {
+                "sheetId": ws.id,
+                "startRowIndex": 1,
+                "endRowIndex": 1 + new_count,
+                "startColumnIndex": 0,
+                "endColumnIndex": ncols,
+            },
+            "cell": {"userEnteredFormat": {"backgroundColor": _HIGHLIGHT_BG}},
+            "fields": "userEnteredFormat.backgroundColor",
+        }},
+    ]
+    ws.spreadsheet.batch_update({"requests": requests})
 
 
 def _dedup_pass(ws) -> int:

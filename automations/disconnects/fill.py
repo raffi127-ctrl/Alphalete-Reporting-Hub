@@ -15,6 +15,12 @@ TAB_LOCAL_OFFICE = "Local Office - New Internet Disconnects"
 TAB_RAF_CAPTAINSHIP = "Raf's Captainship - New Internet Disconnects"
 TAB_STARR_SAHIL = "Starr Capi + Sahil - New Internet Disconnects"
 
+# Light-blue highlight for rows added in the most recent run, so
+# whoever opens the sheet can see what's new at a glance. Matches
+# the canceled_orders fill highlight for consistency across tabs.
+_HIGHLIGHT_BG = {"red": 213 / 255, "green": 232 / 255, "blue": 252 / 255}
+_WHITE_BG = {"red": 1.0, "green": 1.0, "blue": 1.0}
+
 # Sheet's column order — must match the keys produced by pull.parse_and_filter
 SHEET_COLS = [
     "Rep", "Order Date", "Customer Name", "SPM Number", "Account BAN",
@@ -73,8 +79,19 @@ def insert_new_rows_at_top(sh, tab_name: str, rows: List[Dict[str, str]],
                 "dry_run": True}
 
     ws = sh.worksheet(tab_name)
+    grid_before = ws.get_all_values()
+    rows_before = len(grid_before)
+    header = grid_before[0] if grid_before else SHEET_COLS
+
     matrix = [[r.get(col, "") for col in SHEET_COLS] for r in new]
     ws.insert_rows(matrix, row=2, value_input_option="USER_ENTERED")
+
+    # Highlight the new rows light blue + reset every other data row to
+    # white, so whoever opens the tab sees this run's additions at a glance.
+    N = len(new)
+    rows_after = rows_before + N
+    ncols = max(len(header), len(SHEET_COLS))
+    _paint_highlight(ws, rows_after=rows_after, new_count=N, ncols=ncols)
 
     # Post-insert dedup safety pass: if (Customer Name, Account BAN) appears
     # twice in the tab, delete the row CLOSEST TO THE TOP (= newer, since new
@@ -133,3 +150,33 @@ def _dedup_pass(ws) -> int:
     ]
     ws.spreadsheet.batch_update({"requests": requests})
     return len(rows_to_delete)
+
+
+def _paint_highlight(ws, *, rows_after: int, new_count: int, ncols: int) -> None:
+    """Clear backgrounds on all data rows (white), then highlight just
+    the top `new_count` rows in light blue — one batched Sheets API call."""
+    requests = [
+        {"repeatCell": {
+            "range": {
+                "sheetId": ws.id,
+                "startRowIndex": 1,
+                "endRowIndex": rows_after,
+                "startColumnIndex": 0,
+                "endColumnIndex": ncols,
+            },
+            "cell": {"userEnteredFormat": {"backgroundColor": _WHITE_BG}},
+            "fields": "userEnteredFormat.backgroundColor",
+        }},
+        {"repeatCell": {
+            "range": {
+                "sheetId": ws.id,
+                "startRowIndex": 1,
+                "endRowIndex": 1 + new_count,
+                "startColumnIndex": 0,
+                "endColumnIndex": ncols,
+            },
+            "cell": {"userEnteredFormat": {"backgroundColor": _HIGHLIGHT_BG}},
+            "fields": "userEnteredFormat.backgroundColor",
+        }},
+    ]
+    ws.spreadsheet.batch_update({"requests": requests})
