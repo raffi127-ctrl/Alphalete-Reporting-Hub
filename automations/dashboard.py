@@ -5683,10 +5683,10 @@ def _render_bug_card(entry: dict) -> None:
     priority = entry.get("Priority", "")
     type_emoji = "💡" if "Site" in bug_type else "🐛" if "Bug" in bug_type else "✏️"
 
-    # Bug triage is Megan-only right now. Other people on the hub can still
-    # see the bugs (for visibility), but the action buttons are hidden so
-    # only Megan can move them between states.
-    _is_megan = (_detect_hub_user() or "").strip().lower() == "megan"
+    # Bug triage is admin-only (Megan + Eve as of 2026-05-28). Other people
+    # on the hub can still see the bugs (for visibility), but the action
+    # buttons are hidden so only admins can move them between states.
+    _is_admin = (_detect_hub_user() or "").strip().lower() in {"megan", "eve"}
 
     with st.container(border=True):
         _priority_html = _priority_pill_html(priority)
@@ -5712,7 +5712,7 @@ def _render_bug_card(entry: dict) -> None:
                         st.link_button("▶️ Loom", ll, use_container_width=True)
 
         if status == "Open":
-            if _is_megan:
+            if _is_admin:
                 if st.button(
                     "👀 I've Seen This — Working On It",
                     key=f"bug_start_{bug_id}",
@@ -5726,9 +5726,9 @@ def _render_bug_card(entry: dict) -> None:
                     else:
                         st.error("Couldn't update — try again.")
             else:
-                st.caption("⏳ Waiting on Megan to triage.")
+                st.caption("⏳ Waiting on triage.")
         elif status == "In Progress" or status == "Needs Info":
-            if _is_megan:
+            if _is_admin:
                 note = st.text_input(
                     "Note to requester (sent in the email)",
                     key=f"bug_note_{bug_id}",
@@ -5751,7 +5751,7 @@ def _render_bug_card(entry: dict) -> None:
                             st.success("Email going out shortly.")
                             st.rerun()
             else:
-                st.caption(f"⏳ Megan is on it — current status: **{status}**.")
+                st.caption(f"⏳ Triage in progress — current status: **{status}**.")
         else:
             badge = "✅ Fixed" if status == "Fixed" else f"⏳ {status}"
             st.caption(badge)
