@@ -1541,7 +1541,12 @@ AUTOMATED_REPORTS = [
             "time": "7:00 AM",
             "estimated_minutes": 3,
         },
-        "checklist": [],
+        "checklist": [
+            {"text": "Posted the 'Metrics M/DD' header thread in "
+                     "#alphalete-sales — this report posts as a reply in "
+                     "that thread, so the thread MUST exist before running.",
+             "key": "metrics_header_posted"},
+        ],
         "post_run": {
             "message_success": "✅ Disconnects done — new rows inserted + dedup'd.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
@@ -1551,19 +1556,9 @@ AUTOMATED_REPORTS = [
                 "label": "Run for Yesterday",
                 "icon": "▶",
                 "primary": True,
-                "help": "Pull yesterday's disconnects + fill both tabs.",
+                "help": "Pull yesterday's disconnects + fill all 3 tabs.",
                 "module": "automations.disconnects.run",
                 "args_fn": lambda: [],
-            },
-            {
-                "label": "Backfill Date Range",
-                "icon": "📆",
-                "needs_text": True,
-                "text_label": "Date range YYYY-MM-DD..YYYY-MM-DD (e.g. 2026-05-14..2026-05-26)",
-                "help": "Pull a custom date range. Format: start..end",
-                "module": "automations.disconnects.run",
-                "args_fn": lambda r: ["--start-date", r.split("..")[0].strip(),
-                                       "--end-date", r.split("..")[1].strip()],
             },
         ],
     },
