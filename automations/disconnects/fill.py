@@ -116,7 +116,20 @@ def _dedup_pass(ws) -> int:
 
     if not rows_to_delete:
         return 0
-    # Delete top-down (highest index first) so earlier row indexes stay valid.
-    for row_0 in sorted(rows_to_delete, reverse=True):
-        ws.delete_rows(row_0 + 1)   # gspread uses 1-indexed
+    # Batch all deletes into ONE Sheets API call. Iterating per-row hit
+    # the 60-writes/minute quota on tabs with lots of legacy dupes.
+    # Walk top-down (highest index first) so each deleteDimension range
+    # is interpreted against the same baseline.
+    requests = [
+        {"deleteDimension": {
+            "range": {
+                "sheetId": ws.id,
+                "dimension": "ROWS",
+                "startIndex": row_0,
+                "endIndex": row_0 + 1,
+            },
+        }}
+        for row_0 in sorted(rows_to_delete, reverse=True)
+    ]
+    ws.spreadsheet.batch_update({"requests": requests})
     return len(rows_to_delete)
