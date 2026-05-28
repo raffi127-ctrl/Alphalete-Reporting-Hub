@@ -425,6 +425,30 @@ def drive_crosstab_dialog(page, view_url: str, crosstab_sheet: str,
         page.wait_for_timeout(1000)
         if thumbs.count() > 0:
             break
+
+    # If thumbs are still empty, the dialog opened before Tableau finished
+    # hydrating the underlying viz data — Tableau snapshots worksheet state
+    # at open-time, so they will NOT appear no matter how long we keep
+    # polling. Close the dialog, give the viz another 20s to hydrate, and
+    # reopen once. Adaptive: fast machines never enter this branch; slow
+    # ones (Eve's Windows, 2026-05-28) self-heal without bumping the
+    # baseline hydration wait for everyone.
+    if thumbs.count() == 0:
+        if verbose:
+            print("  ⚠ Crosstab dialog opened empty — closing + retrying once after extra hydration…", flush=True)
+        try:
+            page.keyboard.press("Escape")
+        except Exception:
+            pass
+        page.wait_for_timeout(20_000)
+        dl_btn.click()
+        page.wait_for_timeout(1800)
+        viz.locator('[data-tb-test-id="download-flyout-download-crosstab-MenuItem"]').click()
+        for _ in range(30):
+            page.wait_for_timeout(1000)
+            if thumbs.count() > 0:
+                break
+
     available = [thumbs.nth(i).inner_text().strip() for i in range(thumbs.count())]
     idx = _match_crosstab_sheet(available, crosstab_sheet, verbose=verbose)
     if idx is None:
