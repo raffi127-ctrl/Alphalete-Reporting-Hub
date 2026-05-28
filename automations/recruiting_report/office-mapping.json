@@ -1,7 +1,7 @@
 {
   "confirmed_count": 54,
   "needs_review_count": 0,
-  "skip_count": 28,
+  "skip_count": 29,
   "confirmed": [
     {
       "sheet_tab": "Raf Hidalgo",
@@ -432,6 +432,10 @@
     {
       "sheet_tab": "Country Metrics",
       "reason": "admin tab"
+    },
+    {
+      "sheet_tab": "_Country Metrics (OLD)",
+      "reason": "archived"
     },
     {
       "sheet_tab": "Copy of Country Sales Board ",

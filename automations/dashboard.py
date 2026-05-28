@@ -1719,6 +1719,58 @@ AUTOMATED_REPORTS = [
             },
         ],
     },
+    {
+        "id": "country-metrics",
+        "name": "Country Metrics",
+        "creator": "Eve",
+        "emoji": "🌎",
+        "color": "#0EA5E9",
+        "category": "📊 Metrics",
+        "description": "Weekly New Internet Country Metrics + Sales/breakdown per captainship (Raf / Starr / Aron / Pat / Wayne / Sam) on the 'Country Metrics' tab.",
+        "breakdown": (
+            "📊 WHAT IT DOES\n"
+            "Pulls New Internet Country Metrics and Sales + Breakdown per "
+            "Captainship.\n\n"
+            "🕒 WHEN IT RUNS\n"
+            "Thursdays. Each run fills the most recently finished week.\n\n"
+            "⚠️ WHILE IT RUNS\n"
+            "Claude will automatically open/connect with Tableau, do not type "
+            "or close the window while it works, otherwise the run will fail. "
+            "It will indicate when it's finished."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE/edit#gid=1044031962"),
+        "assignees": ["Eve"],
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [3],  # Thursday
+            "time": "8:00 AM",
+            "estimated_minutes": 5,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Country Metrics done — all 7 sections (COUNTRY + 5 captainships + SAM) filled for the latest weekending.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run This Week",
+                "icon": "▶",
+                "primary": True,
+                "help": "Fills the most recently finished week's column (run Thursdays).",
+                "module": "automations.country_metrics.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Run a Specific Past Week",
+                "icon": "📆",
+                "needs_date": True,
+                "help": "Pick a weekending Sunday (WE) to fill.",
+                "module": "automations.country_metrics.run",
+                "args_fn": lambda d: ["--week", d.isoformat()],
+            },
+        ],
+    },
 ]
 
 # Merge in user-uploaded reports (saved by the Wire-Up dialog)

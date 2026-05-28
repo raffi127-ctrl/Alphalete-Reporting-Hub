@@ -52,6 +52,16 @@ fluff. I need clear visuals and concise communications.
   structure / layout / nav / card schema. Report-flow + assignee + new
   module additions are open — you can edit those freely.
 
+# Rules — when building new reports (Eve)
+
+- **Sandbox-first.** While I'm building a new report, always point it at
+  a DUPLICATED test Sheet — never the production Sheet — until I
+  explicitly say "use the real Sheet".
+- **Always `--dry-run` while testing.** Run new scripts with `--dry-run`
+  (no writes to the Sheet) until I confirm the output looks correct.
+- **Don't register the report in the Hub** — no `AUTOMATED_REPORTS`
+  entry and no upload to the shared library — until I approve it.
+
 # Specific reports in the codebase
 
 - `automations/recruiting_report/` — ATT Program - Focus Report (Hub's
