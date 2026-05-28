@@ -1,10 +1,11 @@
 """Canceled Orders — daily run.
 
-Pulls the Tableau Order Log for the previous 3 completed days (catches
-a missed run), filters Python-side to canceled new-internet ATT orders,
-splits across 3 destination tabs by owner, and posts an image to the
-Slack Metrics thread for the Local Office tab only (the other two tabs
-are silent sheet updates Dylan / Starr pick up directly).
+Pulls the Tableau Order Log for the previous 60 days (Order Date),
+filters Python-side to canceled new-internet ATT orders whose Status
+Date lands in the previous 30 completed days, splits across 3
+destination tabs by owner, and posts an image to the Slack Metrics
+thread for the Local Office tab only (the other two tabs are silent
+sheet updates Dylan / Starr pick up directly).
 
 Sheet-side dedup by (Customer Name, SPM #) keeps the tabs clean;
 the Slack image is filtered to truly-new Local Office rows so we never
@@ -51,21 +52,22 @@ def main(argv=None) -> int:
     p.add_argument("--dry-run", action="store_true",
                    help="Don't write to the sheet or post to Slack.")
     p.add_argument("--start-date", default=None,
-                   help="Override Order-Date start (YYYY-MM-DD). Default = 30 days ago.")
+                   help="Override Order-Date start (YYYY-MM-DD). Default = 60 days ago.")
     p.add_argument("--end-date", default=None,
                    help="Override Order-Date end (YYYY-MM-DD). Default = yesterday.")
     args = p.parse_args(argv)
 
     today = dt.date.today()
     yesterday = today - dt.timedelta(days=1)
-    # URL pull window: 30 days of Order Date — wide enough to catch a
-    # recent status change on an older order (Santosh N's order was
-    # placed 5/21 but cancelled 5/26; a 3-day Order Date window misses
-    # him entirely). Python-side Status Date filter below trims down to
-    # the actual reporting window.
-    default_order_start = today - dt.timedelta(days=30)
-    # Status Date window: previous 3 completed days (3 days ago → yesterday).
-    status_start = today - dt.timedelta(days=3)
+    # URL pull window: 60 days of Order Date — wide enough that a 30-day
+    # Status-Date filter still catches cancellations of orders placed
+    # well before the reporting window (Santosh-N pattern at scale).
+    default_order_start = today - dt.timedelta(days=60)
+    # Status Date window: previous 30 completed days — "pull the last
+    # 30 days so orders aren't missed" (Megan 2026-05-28). Sheet-side
+    # dedup + Slack new-only filter mean re-pulling the same window
+    # daily is cheap.
+    status_start = today - dt.timedelta(days=30)
     order_start = (dt.date.fromisoformat(args.start_date)
                    if args.start_date else default_order_start)
     end = dt.date.fromisoformat(args.end_date) if args.end_date else yesterday

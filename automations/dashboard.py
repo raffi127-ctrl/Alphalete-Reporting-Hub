@@ -1522,7 +1522,7 @@ AUTOMATED_REPORTS = [
         "description": "Daily pull of new-internet disconnects on Raf's + Starr's teams — routed to Local Office, Raf's Captainship, or Starr+Sahil tab by owner.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Pulls Tableau Order Log for the previous 3 completed days "
+            "Pulls Tableau Order Log for the previous 30 completed days "
             "(catches a missed run). New rows insert at the TOP of each "
             "tab. Dedup by (Customer Name, Account BAN) — duplicates "
             "auto-deleted in a post-insert pass. Slack image shows only "
@@ -1542,7 +1542,7 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "daily",
             "time": "7:00 AM",
-            "estimated_minutes": 3,
+            "estimated_minutes": 5,
         },
         "checklist": [
             {"text": "Posted the day's Metrics header thread "
@@ -1560,7 +1560,7 @@ AUTOMATED_REPORTS = [
                 "label": "Run Disconnects",
                 "icon": "▶",
                 "primary": True,
-                "help": "Pull the previous 3 completed days + fill all 3 tabs (dedup'd).",
+                "help": "Pull the previous 30 completed days + fill all 3 tabs (dedup'd).",
                 "module": "automations.disconnects.run",
                 "args_fn": lambda: [],
             },
@@ -1576,7 +1576,7 @@ AUTOMATED_REPORTS = [
         "description": "Daily pull of new-internet canceled orders on Raf's + Starr's teams — routed to Local Office, Raf's Captainship, or Starr+Sahil tab by owner.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Pulls Tableau Order Log for the previous 3 completed days "
+            "Pulls Tableau Order Log for the previous 30 completed days "
             "(catches a missed run). Filters Python-side to Order Status "
             "= Canceled, DTR Status = Canceled, Provider = ATT, Product "
             "Type = NEW INTERNET, DD Date empty. New rows insert at the "
@@ -1597,7 +1597,7 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "daily",
             "time": "7:00 AM",
-            "estimated_minutes": 3,
+            "estimated_minutes": 5,
         },
         "checklist": [
             {"text": "Posted the day's Metrics header thread "
@@ -1615,7 +1615,7 @@ AUTOMATED_REPORTS = [
                 "label": "Run Canceled Orders",
                 "icon": "▶",
                 "primary": True,
-                "help": "Pull the previous 3 completed days + fill all 3 tabs (dedup'd).",
+                "help": "Pull the previous 30 completed days + fill all 3 tabs (dedup'd).",
                 "module": "automations.canceled_orders.run",
                 "args_fn": lambda: [],
             },
@@ -1647,7 +1647,7 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "daily",
             "time": "7:00 AM",
-            "estimated_minutes": 3,
+            "estimated_minutes": 5,
         },
         "checklist": [
             {"text": "Posted the day's Metrics header thread "

@@ -1,11 +1,12 @@
 """New Internet Disconnects — daily run.
 
 Default behavior:
-  - Tableau pull window: 30 days of Order Date (catches a recent
+  - Tableau pull window: 60 days of Order Date (catches a recent
     disconnect of an older order).
-  - Python-side Status Date filter: previous 3 completed days (today-3
-    → yesterday) — the actual reporting window.
-  - Sheet-side dedup by (Customer Name, Account BAN) keeps tabs clean.
+  - Python-side Status Date filter: previous 30 completed days — the
+    actual reporting window.
+  - Sheet-side dedup by (Customer Name, Account BAN) keeps tabs clean
+    even when daily re-pulls overlap heavily.
   - Slack image is filtered to truly-new Local Office rows so we never
     double-post on overlap.
 Override with --start-date / --end-date for wider Order-Date backfill.
@@ -50,18 +51,22 @@ def main(argv=None) -> int:
     p.add_argument("--dry-run", action="store_true",
                    help="Don't write to the sheet; print what would happen.")
     p.add_argument("--start-date", default=None,
-                   help="Override Order-Date start (YYYY-MM-DD). Default = 30 days ago.")
+                   help="Override Order-Date start (YYYY-MM-DD). Default = 60 days ago.")
     p.add_argument("--end-date", default=None,
                    help="Override Order-Date end (YYYY-MM-DD). Default = yesterday.")
     args = p.parse_args(argv)
 
     today = dt.date.today()
     yesterday = today - dt.timedelta(days=1)
-    # URL pull window: 30 days of Order Date — catches recent disconnects
-    # of older orders. Python-side Status Date filter below trims to the
-    # actual reporting window (previous 3 completed days).
-    default_order_start = today - dt.timedelta(days=30)
-    status_start = today - dt.timedelta(days=3)
+    # URL pull window: 60 days of Order Date — wide enough that a 30-day
+    # Status-Date filter catches disconnects of orders placed well
+    # before the reporting window.
+    default_order_start = today - dt.timedelta(days=60)
+    # Status Date window: previous 30 completed days — "pull the last
+    # 30 days so orders aren't missed" (Megan 2026-05-28). Sheet-side
+    # dedup + Slack new-only filter mean re-pulling the same window
+    # daily is cheap.
+    status_start = today - dt.timedelta(days=30)
     order_start = (dt.date.fromisoformat(args.start_date)
                    if args.start_date else default_order_start)
     end = dt.date.fromisoformat(args.end_date) if args.end_date else yesterday
