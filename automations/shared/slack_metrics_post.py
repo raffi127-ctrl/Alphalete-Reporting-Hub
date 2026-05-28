@@ -25,11 +25,20 @@ class SlackPostError(RuntimeError):
 
 
 def _load_token() -> str:
+    """Read the xoxp- token from env var or file.
+
+    Reads the file as utf-8-sig (auto-strips a leading BOM) because
+    Windows Notepad + PowerShell 5.x's Set-Content default to writing
+    UTF-8 *with* BOM. A BOM in the token corrupts the
+    'Authorization: Bearer <token>' header — slack_sdk then crashes with
+    'UnicodeEncodeError: latin-1 codec can't encode character \\ufeff'
+    when urllib tries to send the request (Eve, 2026-05-28).
+    """
     tok = os.environ.get("SLACK_USER_TOKEN")
     if tok:
-        return tok.strip()
+        return tok.lstrip("﻿").strip()
     if TOKEN_PATH.exists():
-        return TOKEN_PATH.read_text().strip()
+        return TOKEN_PATH.read_text(encoding="utf-8-sig").strip()
     raise SlackPostError(
         f"No Slack user token found. Save it to {TOKEN_PATH} or set "
         f"SLACK_USER_TOKEN env var. See "
