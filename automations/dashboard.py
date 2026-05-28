@@ -1526,7 +1526,12 @@ AUTOMATED_REPORTS = [
             "at the TOP of each tab. Dedup by (Customer Name, Account "
             "BAN) — duplicates auto-deleted in a post-insert pass.\n\n"
             "WHEN IT RUNS\n"
-            "Daily."
+            "Daily.\n\n"
+            "PRE-FLIGHT (must be done before each run)\n"
+            "Someone has to post the **'Metrics M/DD' header thread** in "
+            "#alphalete-sales BEFORE this report runs — the bot replies to "
+            "that parent thread. Once the other 8 metrics are automated, "
+            "the Hub will auto-post the header thread itself."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8/edit"),
