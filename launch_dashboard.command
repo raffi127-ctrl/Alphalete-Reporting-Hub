@@ -77,16 +77,15 @@ if [ -d .git ]; then
     fi
   fi
 
-  # ----- Post-update (both modes): reinstall deps if requirements.txt changed,
-  # and one-time patchright Chromium install. patchright is a Playwright fork
-  # the Tableau OPT pulls + uploaded reports use for stealth Cloudflare bypass;
-  # its browser binary is separate from the pip package and installs once per
-  # machine (marker file in .venv/ tracks it).
-  if [ "$DID_UPDATE" = "1" ] && [ -n "$PRE_UPDATE_HEAD" ]; then
-    if git diff "$PRE_UPDATE_HEAD" @ --name-only 2>/dev/null | grep -q "requirements.txt"; then
-      echo "→ Updating Python packages..."
-      ./.venv/bin/pip install --quiet -r automations/recruiting_report/requirements.txt
-    fi
+  # ----- Always sync Python packages on launch.
+  # Previously gated on "requirements.txt was in this pull's diff", which
+  # silently missed teammates whose pull fell outside the change window
+  # (Eve hit ModuleNotFoundError: slack_sdk on 2026-05-28). pip install
+  # --quiet is ~2-4s when everything's already in place — cheap insurance.
+  if [ -x .venv/bin/pip ]; then
+    echo "→ Syncing Python packages..."
+    ./.venv/bin/pip install --quiet -r automations/recruiting_report/requirements.txt 2>/dev/null \
+      || echo "⚠️  pip install hit an error (offline?) — reports will crash with ModuleNotFoundError if a dep is missing"
   fi
   if [ ! -f .venv/.patchright_chromium_installed ] && [ -x .venv/bin/patchright ]; then
     echo "→ First-time: installing Chromium for patchright (one-time, ~150MB)..."

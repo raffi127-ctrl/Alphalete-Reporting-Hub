@@ -92,12 +92,16 @@ if exist ".git" (
         )
     )
 
-    REM ---- Post-update: deps if requirements changed + one-time patchright Chromium ----
-    if "!DID_UPDATE!"=="1" (
-        git diff !PRE_HEAD! HEAD --name-only 2>nul | findstr /C:"requirements.txt" >nul
-        if !ERRORLEVEL! EQU 0 (
-            echo Updating Python packages...
-            ".venv\Scripts\pip.exe" install --quiet -r automations\recruiting_report\requirements.txt
+    REM ---- Always sync Python packages on launch.
+    REM Previously gated on "requirements.txt was in this pull's diff", which
+    REM silently missed teammates whose pull fell outside the change window
+    REM (Eve hit ModuleNotFoundError: slack_sdk on 2026-05-28). pip install
+    REM --quiet is ~2-4s when everything's already in place - cheap insurance.
+    if exist ".venv\Scripts\pip.exe" (
+        echo Syncing Python packages...
+        ".venv\Scripts\pip.exe" install --quiet -r automations\recruiting_report\requirements.txt
+        if !ERRORLEVEL! NEQ 0 (
+            echo WARNING: pip install hit an error ^(offline?^) - reports will crash with ModuleNotFoundError if a dep is missing.
         )
     )
     if not exist ".venv\.patchright_chromium_installed" if exist ".venv\Scripts\patchright.exe" (
