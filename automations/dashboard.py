@@ -1513,6 +1513,64 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "disconnects",
+        "name": "New Internet Disconnects",
+        "creator": "Megan",
+        "emoji": "❎",
+        "color": "#22C55E",
+        "category": "📊 Metrics",
+        "description": "Daily pull of yesterday's new-internet disconnects on Raf's Team — routed to Local Office tab (Raf himself) or Raf's Captainship tab (other owners).",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Pulls Tableau Order Log (Posted Date = yesterday, "
+            "DTR Status = Disconnected, Product Type = NEW INTERNET, "
+            "Captain's Bonus = Raf's Team). Splits the result by Owner:\n"
+            "  • Owner = Rafael Hidalgo → 'Local Office' tab\n"
+            "  • Other Raf's-Team owners → 'Raf's Captainship' tab\n"
+            "New rows insert at the TOP of each tab. Dedup by (Customer "
+            "Name, Account BAN) — duplicates auto-deleted in a "
+            "post-insert pass.\n\n"
+            "WHEN IT RUNS\n"
+            "Daily.\n\n"
+            "NOT YET WIRED\n"
+            "Image rendering + Slack post in the Metrics thread + "
+            "reaction emoji on the parent — still on the build list."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8/edit"),
+        "assignees": ["Eve"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "estimated_minutes": 3,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Disconnects done — new rows inserted + dedup'd.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run for Yesterday",
+                "icon": "▶",
+                "primary": True,
+                "help": "Pull yesterday's disconnects + fill both tabs.",
+                "module": "automations.disconnects.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Backfill Date Range",
+                "icon": "📆",
+                "needs_text": True,
+                "text_label": "Date range YYYY-MM-DD..YYYY-MM-DD (e.g. 2026-05-14..2026-05-26)",
+                "help": "Pull a custom date range. Format: start..end",
+                "module": "automations.disconnects.run",
+                "args_fn": lambda r: ["--start-date", r.split("..")[0].strip(),
+                                       "--end-date", r.split("..")[1].strip()],
+            },
+        ],
+    },
+    {
         "id": "ongoing-cancel",
         "name": "Ongoing Cancel",
         "creator": "Megan",
