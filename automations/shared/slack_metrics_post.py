@@ -44,23 +44,60 @@ def _client():
     return WebClient(token=_load_token(), ssl=ctx)
 
 
+def _ordinal(n: int) -> str:
+    """1 → '1st', 2 → '2nd', 3 → '3rd', 4 → '4th', 11 → '11th', 21 → '21st'…"""
+    if 11 <= (n % 100) <= 13:
+        return f"{n}th"
+    return f"{n}{'st' if n % 10 == 1 else 'nd' if n % 10 == 2 else 'rd' if n % 10 == 3 else 'th'}"
+
+
+_SPANISH_MONTHS = {
+    1: "enero", 2: "febrero", 3: "marzo", 4: "abril", 5: "mayo", 6: "junio",
+    7: "julio", 8: "agosto", 9: "septiembre", 10: "octubre", 11: "noviembre",
+    12: "diciembre",
+}
+
+
 def find_metrics_thread_ts(client, today: dt.date) -> str:
-    candidates = [
+    """Find today's Metrics parent thread in #alphalete-sales.
+
+    Primary match: the daily Slack Workflow that posts at 7:00 AM with
+    display name 'Metrics' (bot_profile.name / username == 'Metrics').
+    Its body text starts with 'for <date>:' rendered in the viewer's
+    locale — no 'Metrics' word in the body, so identity match is the
+    only reliable signal.
+
+    Fallback: body-text match for manually-posted headers in either
+    English ('Metrics for: May 28th 2026') or legacy short form
+    ('Metrics 5/28'). Spanish month names included for completeness.
+    """
+    text_candidates = [
+        f"Metrics for: {today.strftime('%B')} {_ordinal(today.day)} {today.year}",
+        f"Metrics for: {today.strftime('%B')} {_ordinal(today.day)}",
         f"Metrics {today.month}/{today.day}",
         f"Metrics {today.month:02d}/{today.day:02d}",
+        f"for {today.day} de {_SPANISH_MONTHS[today.month]} de {today.year}",
+        f"for {today.day} de {_SPANISH_MONTHS[today.month]}",
     ]
     oldest = dt.datetime.combine(today, dt.time.min).timestamp()
     resp = client.conversations_history(
         channel=CHANNEL_ID, oldest=str(oldest), limit=100
     )
     for msg in resp.get("messages", []):
-        text = msg.get("text", "")
-        if any(c in text for c in candidates):
+        # Identity match — Workflow Builder bot named 'Metrics'.
+        bot_name = (msg.get("bot_profile") or {}).get("name") or msg.get("username") or ""
+        if bot_name.strip().lower() == "metrics":
             return msg.get("thread_ts") or msg.get("ts")
+        # Body-text fallback for manual posts.
+        text = msg.get("text", "")
+        if any(c in text for c in text_candidates):
+            return msg.get("thread_ts") or msg.get("ts")
+    expected = (f"'Metrics for: {today.strftime('%B')} "
+                f"{_ordinal(today.day)} {today.year}'")
     raise SlackPostError(
-        f"Couldn't find today's 'Metrics {today.month}/{today.day}' header "
-        f"thread in #alphalete-sales. Post the header thread there first, "
-        f"then click Run Again."
+        f"Couldn't find today's {expected} header thread (or the Slack "
+        f"workflow post) in #alphalete-sales. Post the header thread "
+        f"there first, then click Run Again."
     )
 
 

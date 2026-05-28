@@ -1528,10 +1528,11 @@ AUTOMATED_REPORTS = [
             "WHEN IT RUNS\n"
             "Daily.\n\n"
             "PRE-FLIGHT (must be done before each run)\n"
-            "Someone has to post the **'Metrics M/DD' header thread** in "
-            "#alphalete-sales BEFORE this report runs — the bot replies to "
-            "that parent thread. Once the other 8 metrics are automated, "
-            "the Hub will auto-post the header thread itself."
+            "Someone has to post the day's **Metrics header thread** "
+            "(format: 'Metrics for: May 27th 2026') in #alphalete-sales "
+            "BEFORE this report runs — the bot replies to that parent "
+            "thread. Once the other 8 metrics are automated, the Hub will "
+            "auto-post the header thread itself."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8/edit"),
@@ -1542,7 +1543,8 @@ AUTOMATED_REPORTS = [
             "estimated_minutes": 3,
         },
         "checklist": [
-            {"text": "Posted the 'Metrics M/DD' header thread in "
+            {"text": "Posted the day's Metrics header thread "
+                     "(format: 'Metrics for: May 27th 2026') in "
                      "#alphalete-sales — this report posts as a reply in "
                      "that thread, so the thread MUST exist before running.",
              "key": "metrics_header_posted"},
@@ -1569,7 +1571,7 @@ AUTOMATED_REPORTS = [
         "emoji": "🔁",
         "color": "#EF4444",
         "category": "📊 Metrics",
-        "description": "Daily Internet Cancel Rates image → posted as a reply in #alphalete-sales today's 'Metrics M/DD' thread.",
+        "description": "Daily Internet Cancel Rates image → posted as a reply in today's 'Metrics for:' header thread in #alphalete-sales.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Pulls Internet Cancel Rates (Running Sum) from Tableau for "
@@ -1577,10 +1579,11 @@ AUTOMATED_REPORTS = [
             "WHEN IT RUNS\n"
             "Daily.\n\n"
             "PRE-FLIGHT (must be done before each run)\n"
-            "Someone has to post the **'Metrics M/DD' header thread** in "
-            "#alphalete-sales BEFORE this report runs — the bot replies to "
-            "that parent thread. Once the other 8 metrics are automated, "
-            "the Hub will auto-post the header thread itself."
+            "Someone has to post the day's **Metrics header thread** "
+            "(format: 'Metrics for: May 27th 2026') in #alphalete-sales "
+            "BEFORE this report runs — the bot replies to that parent "
+            "thread. Once the other 8 metrics are automated, the Hub will "
+            "auto-post the header thread itself."
         ),
         "sheet_url": None,
         "assignees": ["Eve"],
@@ -1590,7 +1593,8 @@ AUTOMATED_REPORTS = [
             "estimated_minutes": 3,
         },
         "checklist": [
-            {"text": "Posted the 'Metrics M/DD' header thread in "
+            {"text": "Posted the day's Metrics header thread "
+                     "(format: 'Metrics for: May 27th 2026') in "
                      "#alphalete-sales — this report posts as a reply in "
                      "that thread, so the thread MUST exist before running.",
              "key": "metrics_header_posted"},
