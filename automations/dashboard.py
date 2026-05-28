@@ -1522,19 +1522,11 @@ AUTOMATED_REPORTS = [
         "description": "Daily pull of yesterday's new-internet disconnects on Raf's Team — routed to Local Office tab (Raf himself) or Raf's Captainship tab (other owners).",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Pulls Tableau Order Log (Posted Date = yesterday, "
-            "DTR Status = Disconnected, Product Type = NEW INTERNET, "
-            "Captain's Bonus = Raf's Team). Splits the result by Owner:\n"
-            "  • Owner = Rafael Hidalgo → 'Local Office' tab\n"
-            "  • Other Raf's-Team owners → 'Raf's Captainship' tab\n"
-            "New rows insert at the TOP of each tab. Dedup by (Customer "
-            "Name, Account BAN) — duplicates auto-deleted in a "
-            "post-insert pass.\n\n"
+            "Pulls Tableau Order Log for previous day. New rows insert "
+            "at the TOP of each tab. Dedup by (Customer Name, Account "
+            "BAN) — duplicates auto-deleted in a post-insert pass.\n\n"
             "WHEN IT RUNS\n"
-            "Daily.\n\n"
-            "NOT YET WIRED\n"
-            "Image rendering + Slack post in the Metrics thread + "
-            "reaction emoji on the parent — still on the build list."
+            "Daily."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8/edit"),
