@@ -83,16 +83,25 @@ def main(argv=None) -> int:
     print(f"  ✓ Captainship:   {r2}")
     print(f"  ✓ Starr+Sahil:   {r3}")
 
-    print("Step 4: Render Local Office image + post to Metrics thread...")
-    img_path = Path("/tmp/disconnects_local_office.png")
-    render.render(local_rows, img_path)
+    print("Step 4: Slack post to today's Metrics thread...")
     try:
-        slack_result = slack_metrics_post.post_reply_with_image(
-            img_path,
-            comment="Disconnected New Internets",
-            react_emoji="negative_squared_cross_mark",   # ❎
-            dry_run=args.dry_run,
-        )
+        if local_rows:
+            img_path = Path("/tmp/disconnects_local_office.png")
+            render.render(local_rows, img_path)
+            slack_result = slack_metrics_post.post_reply_with_image(
+                img_path,
+                comment="Disconnected New Internets",
+                react_emoji="negative_squared_cross_mark",   # ❎
+                dry_run=args.dry_run,
+            )
+        else:
+            # No new local-office disconnects → text-only message + reaction
+            # on the parent (still marks the metric 'done' on the header).
+            slack_result = slack_metrics_post.post_reply_text_only(
+                "No New Disconnected New Internets ❎",
+                react_emoji="negative_squared_cross_mark",
+                dry_run=args.dry_run,
+            )
         print(f"  ✓ Slack: {slack_result}")
     except slack_metrics_post.SlackPostError as e:
         print(f"  ⚠ Slack post failed: {e}")

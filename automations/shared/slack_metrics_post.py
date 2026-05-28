@@ -64,6 +64,36 @@ def find_metrics_thread_ts(client, today: dt.date) -> str:
     )
 
 
+def post_reply_text_only(
+    text: str,
+    *,
+    react_emoji: str | None = None,
+    today: dt.date | None = None,
+    dry_run: bool = False,
+) -> dict:
+    """Reply in today's Metrics thread with just a text message (no file
+    attachment). Used by reports where 'nothing new' = a one-liner instead
+    of an empty-state image. Still adds the parent-thread reaction so the
+    metric is marked done on the header."""
+    today = today or dt.date.today()
+    if dry_run:
+        return {"dry_run": True, "would_post_text": text,
+                "to_channel": CHANNEL_ID, "react_emoji": react_emoji}
+    client = _client()
+    thread_ts = find_metrics_thread_ts(client, today)
+    resp = client.chat_postMessage(channel=CHANNEL_ID, thread_ts=thread_ts,
+                                    text=text)
+    out = {"ok": resp.get("ok"), "thread_ts": thread_ts, "ts": resp.get("ts")}
+    if react_emoji:
+        try:
+            r = client.reactions_add(channel=CHANNEL_ID, timestamp=thread_ts,
+                                     name=react_emoji)
+            out["reaction_ok"] = r.get("ok")
+        except Exception as e:
+            out["reaction_warning"] = str(e)
+    return out
+
+
 def post_reply_with_image(
     image_path: Path,
     *,
