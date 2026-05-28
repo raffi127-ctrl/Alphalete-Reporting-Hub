@@ -13,8 +13,9 @@ import datetime as dt
 import sys
 from pathlib import Path
 
-from automations.disconnects import pull, fill
+from automations.disconnects import pull, fill, render
 from automations.recruiting_report import fill as rfill
+from automations.shared import slack_metrics_post
 
 
 # Team rosters — sourced from CB Activations (Raf|Starr) Crosstab Grand-Total
@@ -81,6 +82,22 @@ def main(argv=None) -> int:
     print(f"  ✓ Local Office:  {r1}")
     print(f"  ✓ Captainship:   {r2}")
     print(f"  ✓ Starr+Sahil:   {r3}")
+
+    print("Step 4: Render Local Office image + post to Metrics thread...")
+    img_path = Path("/tmp/disconnects_local_office.png")
+    render.render(local_rows, img_path)
+    try:
+        slack_result = slack_metrics_post.post_reply_with_image(
+            img_path,
+            comment="Disconnected New Internets",
+            react_emoji="negative_squared_cross_mark",   # ❎
+            dry_run=args.dry_run,
+        )
+        print(f"  ✓ Slack: {slack_result}")
+    except slack_metrics_post.SlackPostError as e:
+        print(f"  ⚠ Slack post failed: {e}")
+        # Sheet fill already succeeded — don't fail the whole run.
+
     print("=== done ===")
     return 0
 
