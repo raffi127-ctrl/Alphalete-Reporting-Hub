@@ -582,7 +582,10 @@ def drive_crosstab_dialog(page, view_url: str, crosstab_sheet: str,
     if verbose:
         print(f"  format: {chosen_format}", flush=True)
 
-    with page.expect_download(timeout=120_000) as dl_info:
+    # 300s ceiling lets a wide Order-Date window (Canceled Orders /
+    # Disconnects pull 30 days) finish; fast pulls return as soon as the
+    # download event fires so they don't pay for the bigger budget.
+    with page.expect_download(timeout=300_000) as dl_info:
         export_btn.click()
     dl_info.value.save_as(str(out_path))
     if verbose:

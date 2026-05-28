@@ -1519,12 +1519,14 @@ AUTOMATED_REPORTS = [
         "emoji": "❎",
         "color": "#22C55E",
         "category": "📊 Metrics",
-        "description": "Daily pull of yesterday's new-internet disconnects on Raf's Team — routed to Local Office tab (Raf himself) or Raf's Captainship tab (other owners).",
+        "description": "Daily pull of new-internet disconnects on Raf's + Starr's teams — routed to Local Office, Raf's Captainship, or Starr+Sahil tab by owner.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Pulls Tableau Order Log for previous day. New rows insert "
-            "at the TOP of each tab. Dedup by (Customer Name, Account "
-            "BAN) — duplicates auto-deleted in a post-insert pass.\n\n"
+            "Pulls Tableau Order Log for the previous 3 completed days "
+            "(catches a missed run). New rows insert at the TOP of each "
+            "tab. Dedup by (Customer Name, Account BAN) — duplicates "
+            "auto-deleted in a post-insert pass. Slack image shows only "
+            "truly-new Local Office rows (no double-posting on overlap).\n\n"
             "WHEN IT RUNS\n"
             "Daily.\n\n"
             "PRE-FLIGHT (must be done before each run)\n"
@@ -1555,11 +1557,66 @@ AUTOMATED_REPORTS = [
         },
         "actions": [
             {
-                "label": "Run for Yesterday",
+                "label": "Run Disconnects",
                 "icon": "▶",
                 "primary": True,
-                "help": "Pull yesterday's disconnects + fill all 3 tabs.",
+                "help": "Pull the previous 3 completed days + fill all 3 tabs (dedup'd).",
                 "module": "automations.disconnects.run",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
+        "id": "canceled-orders",
+        "name": "Canceled Orders",
+        "creator": "Megan",
+        "emoji": "🚫",
+        "color": "#DC2626",
+        "category": "📊 Metrics",
+        "description": "Daily pull of new-internet canceled orders on Raf's + Starr's teams — routed to Local Office, Raf's Captainship, or Starr+Sahil tab by owner.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Pulls Tableau Order Log for the previous 3 completed days "
+            "(catches a missed run). Filters Python-side to Order Status "
+            "= Canceled, DTR Status = Canceled, Provider = ATT, Product "
+            "Type = NEW INTERNET, DD Date empty. New rows insert at the "
+            "TOP of each tab; dedup by (Customer Name, SPM #). Slack "
+            "image shows only truly-new Local Office rows.\n\n"
+            "WHEN IT RUNS\n"
+            "Daily.\n\n"
+            "PRE-FLIGHT (must be done before each run)\n"
+            "Someone has to post the day's **Metrics header thread** "
+            "(format: 'Metrics for: May 27th 2026') in #alphalete-sales "
+            "BEFORE this report runs — the bot replies to that parent "
+            "thread. Once the other 8 metrics are automated, the Hub will "
+            "auto-post the header thread itself."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8/edit"),
+        "assignees": ["Eve"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "estimated_minutes": 3,
+        },
+        "checklist": [
+            {"text": "Posted the day's Metrics header thread "
+                     "(format: 'Metrics for: May 27th 2026') in "
+                     "#alphalete-sales — this report posts as a reply in "
+                     "that thread, so the thread MUST exist before running.",
+             "key": "metrics_header_posted"},
+        ],
+        "post_run": {
+            "message_success": "✅ Canceled Orders done — new rows inserted + dedup'd.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run Canceled Orders",
+                "icon": "▶",
+                "primary": True,
+                "help": "Pull the previous 3 completed days + fill all 3 tabs (dedup'd).",
+                "module": "automations.canceled_orders.run",
                 "args_fn": lambda: [],
             },
         ],

@@ -1,7 +1,9 @@
 """Pull Order Log Crosstab via the ALLREPS custom view + apply filters
-Python-side. URL params for date range work; trying to also pass DTR /
-Product Type / Captain's Bonus via URL hides the worksheet on empty
-matches, so we filter the full pull in Python instead.
+Python-side. Same Tableau view as Disconnects — URL params for date range
+work; other filters (Order Status, DTR Status, Provider, Product Type,
+DD Date NULL) are applied after the pull. Matches Eve's manual flow:
+Order Status = Canceled, DTR Status = Canceled, Provider = ATT,
+Product Type (Broken Out) = NEW INTERNET, DD Date is empty.
 """
 from __future__ import annotations
 
@@ -20,21 +22,21 @@ VIEW_URL_TMPL = (
 )
 WORKSHEET = "A.Order Log"
 
-# Tableau column → Sheet column. Order matters — output rows preserve this.
+# Tableau column → our sheet-side field name. We always emit all 12 fields
+# in each row; fill.py maps onto each tab's actual header by label, so a
+# tab with only 10 columns (Local Office) just skips the 2 extras.
 COL_MAP = [
+    ("Owner Name", "Owner Name"),
     ("Rep", "Rep"),
-    ("sp.Order Date (copy)", "Order Date"),
     ("Customer Name", "Customer Name"),
-    ("sp.SPM Number", "SPM Number"),
-    ("spe.Account BAN", "Account BAN"),
-    ("Product Type (Broken Out)", "Product Type"),
-    ("sp.Customer Phone", "Customer Phone"),
     ("Package", "Package"),
+    ("sp.SPM Number", "SPM #"),
+    ("sp.Order Date (copy)", "Order Date"),
     ("spe.Install Date", "Install Date"),
-    ("DTR Status", "DTR Status"),
     ("Status Date", "Status Date"),
-    ("Eligibility Reason", "Eligibility Reason"),
-    ("Auto Bill Pay", "Auto Bill Pay"),
+    ("sp.Customer Phone", "Customer Phone"),
+    ("Days to Appointment", "Days to Appointment"),
+    ("DTR Status", "DTR Status"),
     ("Tech Install", "Tech Install"),
 ]
 
@@ -46,26 +48,31 @@ def build_url(start: dt.date, end: dt.date) -> str:
 def fetch_crosstab(start: dt.date, end: dt.date,
                    out_path: Optional[Path] = None,
                    verbose: bool = False) -> Path:
-    out_path = out_path or Path("/tmp/disconnects_orderlog.csv")
+    out_path = out_path or Path("/tmp/canceled_orders_orderlog.csv")
     download_crosstab_patchright(build_url(start, end), WORKSHEET, out_path,
                                   verbose=verbose)
     return out_path
 
 
-def parse_and_filter(csv_path: Path, raf_owners: set[str],
+def parse_and_filter(csv_path: Path, owners: set[str],
                      status_window: tuple[dt.date, dt.date]) -> list[dict]:
     """Parse the Crosstab CSV + filter to:
-      - DTR Status == 'Disconnected'
+      - Order Status == 'Canceled'   (Tableau UI label; one L)
+      - DTR Status   == 'Canceled'
       - Product Type (Broken Out) == 'NEW INTERNET'
-      - Owner Name in raf_owners (team-routing set)
-      - Status Date in `status_window` (inclusive) — the URL pull
-        widens Order Date to ~30 days so it catches recent disconnects
-        on older orders; this filter trims to the actual reporting
-        window (previous 3 completed days).
+      - spe.Provider == 'ATT'
+      - cl.DD Date is empty           (i.e. not yet DD-processed)
+      - Owner Name in `owners`        (team-routing set)
+      - Status Date in `status_window` (inclusive, both endpoints) —
+        the URL pull intentionally widens Order Date to ~30 days so it
+        catches recent status changes on older orders (Santosh-N case,
+        Order Date 5/21 → Cancel Status Date 5/26). This filter keeps
+        only the rows whose status actually changed in the target window.
 
-    Returns a list of dicts mapped to the SHEET column names. The dict
-    ALSO carries the raw 'Owner Name' (under key '_owner') so the caller
-    can split rows between Local Office vs Captainship tabs."""
+    Returns a list of dicts mapped to our sheet-side field names. The dict
+    ALSO carries the raw 'Owner Name' under key '_owner' so the caller can
+    split rows between Local Office (Raf himself) vs Captainship tabs.
+    """
     with open(csv_path, "r", encoding="utf-16-le") as f:
         rows = list(csv.reader(f, delimiter="\t"))
     if not rows:
@@ -76,24 +83,33 @@ def parse_and_filter(csv_path: Path, raf_owners: set[str],
         return header.index(name)
 
     owner_i = col("Owner Name")
+    order_status_i = col("Order Status")
     dtr_i = col("DTR Status")
     prod_i = col("Product Type (Broken Out)")
+    provider_i = col("spe.Provider")
+    dd_date_i = col("cl.DD Date")
     status_date_i = col("Status Date")
 
-    # Indexes for each (tab_col → sheet_col) mapping.
     mapped_idx = [(sheet_col, col(tab_col)) for tab_col, sheet_col in COL_MAP]
 
     win_start, win_end = status_window
-    raf_owners_lc = {o.lower() for o in raf_owners}
+    owners_lc = {o.lower() for o in owners}
     out: list[dict] = []
     for r in rows[1:]:
-        if len(r) <= max(dtr_i, prod_i, owner_i, status_date_i):
+        if len(r) <= max(order_status_i, dtr_i, prod_i, provider_i,
+                         dd_date_i, owner_i, status_date_i):
             continue
-        if r[dtr_i].strip() != "Disconnected":
+        if r[order_status_i].strip() != "Canceled":
+            continue
+        if r[dtr_i].strip() != "Canceled":
             continue
         if r[prod_i].strip() != "NEW INTERNET":
             continue
-        # Status Date window — keep only recent disconnects.
+        if r[provider_i].strip() != "ATT":
+            continue
+        if r[dd_date_i].strip():
+            continue  # DD Date is NOT NULL — skip (already DD-processed)
+        # Status Date window filter — keep only recent status changes.
         sd_raw = r[status_date_i].strip()
         if not sd_raw:
             continue
@@ -104,7 +120,7 @@ def parse_and_filter(csv_path: Path, raf_owners: set[str],
         if sd < win_start or sd > win_end:
             continue
         owner = r[owner_i].strip()
-        if owner.lower() not in raf_owners_lc:
+        if owner.lower() not in owners_lc:
             continue
         row = {"_owner": owner}
         for sheet_col, ti in mapped_idx:

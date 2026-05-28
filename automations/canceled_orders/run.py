@@ -1,14 +1,14 @@
-"""New Internet Disconnects — daily run.
+"""Canceled Orders — daily run.
 
-Default behavior:
-  - Tableau pull window: 30 days of Order Date (catches a recent
-    disconnect of an older order).
-  - Python-side Status Date filter: previous 3 completed days (today-3
-    → yesterday) — the actual reporting window.
-  - Sheet-side dedup by (Customer Name, Account BAN) keeps tabs clean.
-  - Slack image is filtered to truly-new Local Office rows so we never
-    double-post on overlap.
-Override with --start-date / --end-date for wider Order-Date backfill.
+Pulls the Tableau Order Log for the previous 3 completed days (catches
+a missed run), filters Python-side to canceled new-internet ATT orders,
+splits across 3 destination tabs by owner, and posts an image to the
+Slack Metrics thread for the Local Office tab only (the other two tabs
+are silent sheet updates Dylan / Starr pick up directly).
+
+Sheet-side dedup by (Customer Name, SPM #) keeps the tabs clean;
+the Slack image is filtered to truly-new Local Office rows so we never
+double-post on overlap days.
 """
 from __future__ import annotations
 
@@ -17,13 +17,14 @@ import datetime as dt
 import sys
 from pathlib import Path
 
-from automations.disconnects import pull, fill, render
+from automations.canceled_orders import pull, fill, render
 from automations.recruiting_report import fill as rfill
 from automations.shared import slack_metrics_post
 
 
 # Team rosters — sourced from CB Activations (Raf|Starr) Crosstab Grand-Total
-# rows. Refresh when new ICDs are added to a captainship.
+# rows. Mirrors disconnects.run.{RAF_OWNERS,STARR_OWNERS}. Refresh when new
+# ICDs are added to a captainship.
 RAF_OWNERS = {
     "Rafael Hidalgo", "Aya Al-Khafaji", "Carissa Ng", "Cody Cannon",
     "Cyrus Wade", "Edgar Muniz II", "Eric Martinez", "Fnu Stephen Sharon",
@@ -46,9 +47,9 @@ STARR_PLUS_SAHIL = STARR_OWNERS | SAHIL_OWNER
 
 
 def main(argv=None) -> int:
-    p = argparse.ArgumentParser(prog="disconnects")
+    p = argparse.ArgumentParser(prog="canceled_orders")
     p.add_argument("--dry-run", action="store_true",
-                   help="Don't write to the sheet; print what would happen.")
+                   help="Don't write to the sheet or post to Slack.")
     p.add_argument("--start-date", default=None,
                    help="Override Order-Date start (YYYY-MM-DD). Default = 30 days ago.")
     p.add_argument("--end-date", default=None,
@@ -57,16 +58,19 @@ def main(argv=None) -> int:
 
     today = dt.date.today()
     yesterday = today - dt.timedelta(days=1)
-    # URL pull window: 30 days of Order Date — catches recent disconnects
-    # of older orders. Python-side Status Date filter below trims to the
-    # actual reporting window (previous 3 completed days).
+    # URL pull window: 30 days of Order Date — wide enough to catch a
+    # recent status change on an older order (Santosh N's order was
+    # placed 5/21 but cancelled 5/26; a 3-day Order Date window misses
+    # him entirely). Python-side Status Date filter below trims down to
+    # the actual reporting window.
     default_order_start = today - dt.timedelta(days=30)
+    # Status Date window: previous 3 completed days (3 days ago → yesterday).
     status_start = today - dt.timedelta(days=3)
     order_start = (dt.date.fromisoformat(args.start_date)
                    if args.start_date else default_order_start)
     end = dt.date.fromisoformat(args.end_date) if args.end_date else yesterday
 
-    print(f"=== Disconnects — Status Date window "
+    print(f"=== Canceled Orders — Status Date window "
           f"{status_start.isoformat()} → {end.isoformat()} ===")
     print(f"Step 1: Tableau Order Log pull "
           f"(Order Date {order_start.isoformat()} → {end.isoformat()})...")
@@ -74,7 +78,8 @@ def main(argv=None) -> int:
     print(f"  ✓ {csv_path}")
 
     print("Step 2: Parse + filter "
-          "(DTR=Disconnected, Product=NEW INTERNET, Status Date in window)...")
+          "(Order Status=Canceled, DTR=Canceled, Product=NEW INTERNET, "
+          "Provider=ATT, DD Date=empty, Status Date in window)...")
     raf_rows = pull.parse_and_filter(csv_path, RAF_OWNERS,
                                       status_window=(status_start, end))
     starr_rows = pull.parse_and_filter(csv_path, STARR_PLUS_SAHIL,
@@ -83,7 +88,6 @@ def main(argv=None) -> int:
           f"Starr's Team matches: {len(starr_rows)}")
 
     print("Step 3: Split Raf rows by Owner + insert at top of each tab...")
-    # Raf split: Owner=Rafael Hidalgo → Local Office; everyone else → Captainship.
     local_rows = [r for r in raf_rows
                   if r.get("_owner", "").strip().lower() == "rafael hidalgo"]
     cap_rows = [r for r in raf_rows
@@ -94,9 +98,8 @@ def main(argv=None) -> int:
 
     sh = rfill.open_by_key(fill.SHEET_ID)
 
-    # Pre-compute the truly-new Local Office rows BEFORE inserting, so the
-    # Slack image shows only what's being added (the 3-day pull catches
-    # missed days but Slack shouldn't repost rows already in the tab).
+    # Pre-compute truly-new Local Office rows for the Slack image — the
+    # 3-day window catches missed days but Slack shouldn't repost.
     local_rows_new = fill.find_new_rows(sh, fill.TAB_LOCAL_OFFICE, local_rows)
 
     r1 = fill.insert_new_rows_at_top(sh, fill.TAB_LOCAL_OFFICE,
@@ -109,29 +112,26 @@ def main(argv=None) -> int:
     print(f"  ✓ Captainship:   {r2}")
     print(f"  ✓ Starr+Sahil:   {r3}")
 
-    print("Step 4: Slack post to today's Metrics thread...")
+    print("Step 4: Slack post to today's Metrics thread (Local Office only)...")
     try:
         if local_rows_new:
-            img_path = Path("/tmp/disconnects_local_office.png")
+            img_path = Path("/tmp/canceled_orders_local_office.png")
             render.render(local_rows_new, img_path)
             slack_result = slack_metrics_post.post_reply_with_image(
                 img_path,
-                comment="Disconnected New Internets",
-                react_emoji="negative_squared_cross_mark",   # ❎
+                comment="Canceled Orders",
+                react_emoji="no_entry_sign",   # 🚫
                 dry_run=args.dry_run,
             )
         else:
-            # No new local-office disconnects → text-only message + reaction
-            # on the parent (still marks the metric 'done' on the header).
             slack_result = slack_metrics_post.post_reply_text_only(
-                "No New Disconnected New Internets ❎",
-                react_emoji="negative_squared_cross_mark",
+                "No New Canceled Orders 🚫",
+                react_emoji="no_entry_sign",
                 dry_run=args.dry_run,
             )
         print(f"  ✓ Slack: {slack_result}")
     except slack_metrics_post.SlackPostError as e:
         print(f"  ⚠ Slack post failed: {e}")
-        # Sheet fill already succeeded — don't fail the whole run.
 
     print("=== done ===")
     return 0

@@ -38,8 +38,13 @@ def _find_col(header: list[str], name: str) -> int:
     raise ValueError(f"Column {name!r} not found in {header}")
 
 
-def insert_new_rows_at_top(sh, tab_name: str, rows: List[Dict[str, str]],
-                            dry_run: bool = False) -> dict:
+def find_new_rows(sh, tab_name: str,
+                  rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    """Return the subset of `rows` whose (Customer Name, Account BAN)
+    is NOT already in `tab_name`. Used by run.py to filter the Slack
+    image to truly-new rows when the pull window overlaps prior runs
+    (3-day window catches missed days but Slack should only show what's
+    actually being added)."""
     ws = sh.worksheet(tab_name)
     grid = ws.get_all_values()
     header = grid[0] if grid else SHEET_COLS
@@ -50,11 +55,15 @@ def insert_new_rows_at_top(sh, tab_name: str, rows: List[Dict[str, str]],
         return (r[cust_col].strip() if len(r) > cust_col else "",
                 r[ban_col].strip() if len(r) > ban_col else "")
 
-    # Existing (Customer, BAN) pairs in the tab so we skip pre-existing.
     existing_keys = {_key(r) for r in grid[1:] if _key(r) != ("", "")}
-    new = [r for r in rows
-           if (r.get("Customer Name", "").strip(),
-               r.get("Account BAN", "").strip()) not in existing_keys]
+    return [r for r in rows
+            if (r.get("Customer Name", "").strip(),
+                r.get("Account BAN", "").strip()) not in existing_keys]
+
+
+def insert_new_rows_at_top(sh, tab_name: str, rows: List[Dict[str, str]],
+                            dry_run: bool = False) -> dict:
+    new = find_new_rows(sh, tab_name, rows)
     if not new:
         return {"tab": tab_name, "new_count": 0,
                 "skipped_already_in_sheet": len(rows)}
@@ -63,6 +72,7 @@ def insert_new_rows_at_top(sh, tab_name: str, rows: List[Dict[str, str]],
                 "skipped_already_in_sheet": len(rows) - len(new),
                 "dry_run": True}
 
+    ws = sh.worksheet(tab_name)
     matrix = [[r.get(col, "") for col in SHEET_COLS] for r in new]
     ws.insert_rows(matrix, row=2, value_input_option="USER_ENTERED")
 
