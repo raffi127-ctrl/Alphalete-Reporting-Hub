@@ -13,6 +13,7 @@ from typing import List, Dict
 SHEET_ID = "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8"
 TAB_LOCAL_OFFICE = "Local Office - New Internet Disconnects"
 TAB_RAF_CAPTAINSHIP = "Raf's Captainship - New Internet Disconnects"
+TAB_STARR_SAHIL = "Starr Capi + Sahil - New Internet Disconnects"
 
 # Sheet's column order — must match the keys produced by pull.parse_and_filter
 SHEET_COLS = [

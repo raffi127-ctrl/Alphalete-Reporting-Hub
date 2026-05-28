@@ -17,9 +17,8 @@ from automations.disconnects import pull, fill
 from automations.recruiting_report import fill as rfill
 
 
-# Raf's local office owners. Source: CB Activations (Raf) Crosstab grand-total
-# rows we already pulled for Fiber Activations. Includes Raf himself (his own
-# office shows up as Rafael Hidalgo owner-rows even though he leads the team).
+# Team rosters — sourced from CB Activations (Raf|Starr) Crosstab Grand-Total
+# rows. Refresh when new ICDs are added to a captainship.
 RAF_OWNERS = {
     "Rafael Hidalgo", "Aya Al-Khafaji", "Carissa Ng", "Cody Cannon",
     "Cyrus Wade", "Edgar Muniz II", "Eric Martinez", "Fnu Stephen Sharon",
@@ -29,6 +28,10 @@ RAF_OWNERS = {
     "Kimberly Rodriguez", "Marcellus Butler", "Marcial Rodriguez",
     "Melik El Jaiez", "Tony Chavez", "Trang Canavan", "Tre Mitchell",
     "Zachary Hogue",
+}
+STARR_OWNERS = {
+    "Jason Strid", "Jc Gerard Pascual", "Milly Villagrana",
+    "Oren Shezaf", "Starr Rodenhurst", "William Sassenberg",
 }
 
 
@@ -52,26 +55,32 @@ def main(argv=None) -> int:
     csv_path = pull.fetch_crosstab(start, end, verbose=False)
     print(f"  ✓ {csv_path}")
 
-    print("Step 2: Parse + filter (DTR=Disconnected, Product=NEW INTERNET, Raf's team)...")
-    rows = pull.parse_and_filter(csv_path, RAF_OWNERS)
-    print(f"  ✓ {len(rows)} matching rows")
+    print("Step 2: Parse + filter (DTR=Disconnected, Product=NEW INTERNET)...")
+    raf_rows = pull.parse_and_filter(csv_path, RAF_OWNERS)
+    starr_rows = pull.parse_and_filter(csv_path, STARR_OWNERS)
+    print(f"  ✓ Raf's Team matches: {len(raf_rows)}   "
+          f"Starr's Team matches: {len(starr_rows)}")
 
-    print("Step 3: Split rows by Owner Name + insert at top of each tab...")
-    # Rows where Owner is Rafael himself → Local Office tab. Everyone else
-    # on Raf's Team → Raf's Captainship tab.
-    local_rows = [r for r in rows
+    print("Step 3: Split Raf rows by Owner + insert at top of each tab...")
+    # Raf split: Owner=Rafael Hidalgo → Local Office; everyone else → Captainship.
+    local_rows = [r for r in raf_rows
                   if r.get("_owner", "").strip().lower() == "rafael hidalgo"]
-    cap_rows = [r for r in rows
+    cap_rows = [r for r in raf_rows
                 if r.get("_owner", "").strip().lower() != "rafael hidalgo"]
-    print(f"  Local Office: {len(local_rows)}   Captainship: {len(cap_rows)}")
+    print(f"  Raf Local Office: {len(local_rows)}   "
+          f"Raf Captainship: {len(cap_rows)}   "
+          f"Starr+Sahil: {len(starr_rows)}")
 
     sh = rfill.open_by_key(fill.SHEET_ID)
     r1 = fill.insert_new_rows_at_top(sh, fill.TAB_LOCAL_OFFICE,
                                       local_rows, dry_run=args.dry_run)
     r2 = fill.insert_new_rows_at_top(sh, fill.TAB_RAF_CAPTAINSHIP,
                                       cap_rows, dry_run=args.dry_run)
+    r3 = fill.insert_new_rows_at_top(sh, fill.TAB_STARR_SAHIL,
+                                      starr_rows, dry_run=args.dry_run)
     print(f"  ✓ Local Office:  {r1}")
     print(f"  ✓ Captainship:   {r2}")
+    print(f"  ✓ Starr+Sahil:   {r3}")
     print("=== done ===")
     return 0
 
