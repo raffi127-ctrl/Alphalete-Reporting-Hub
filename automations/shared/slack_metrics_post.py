@@ -188,3 +188,54 @@ def post_reply_with_image(
             # Already-reacted is fine; surface other errors only.
             out["reaction_warning"] = str(e)
     return out
+
+
+def post_reply_with_file(
+    file_path: Path,
+    *,
+    comment: str,
+    react_emoji: str | None = None,
+    today: dt.date | None = None,
+    dry_run: bool = False,
+    file_name: str | None = None,
+) -> dict:
+    """Reply in today's Metrics thread with an arbitrary file attachment
+    (.xlsx, .csv, .pdf, etc.) + optional reaction emoji on the parent.
+
+    Same shape as post_reply_with_image but the default upload filename
+    preserves the source file's extension (instead of forcing .png), so
+    Slack renders the right preview for spreadsheets / docs / etc.
+    """
+    today = today or dt.date.today()
+    if dry_run:
+        return {
+            "dry_run": True,
+            "would_post_file": str(file_path),
+            "to_channel": CHANNEL_ID,
+            "comment": comment,
+            "react_emoji": react_emoji,
+        }
+    client = _client()
+    thread_ts = find_metrics_thread_ts(client, today)
+    default_name = f"{comment} {today.month}.{today.day}{file_path.suffix}"
+    upload_resp = client.files_upload_v2(
+        channel=CHANNEL_ID,
+        thread_ts=thread_ts,
+        file=str(file_path),
+        filename=file_name or default_name,
+        initial_comment=comment,
+    )
+    out = {
+        "ok": upload_resp.get("ok"),
+        "thread_ts": thread_ts,
+        "file": upload_resp.get("file", {}).get("id"),
+    }
+    if react_emoji:
+        try:
+            r = client.reactions_add(
+                channel=CHANNEL_ID, timestamp=thread_ts, name=react_emoji
+            )
+            out["reaction_ok"] = r.get("ok")
+        except Exception as e:
+            out["reaction_warning"] = str(e)
+    return out

@@ -816,9 +816,10 @@ def csv_to_xlsx(csv_path: Path, output_dir: Path) -> Path:
 #  Entry point
 # ====================================================================
 
-async def main(owner_name: str = OWNER_NAME) -> None:
+async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True) -> None:
     # Intermediate CSV goes to a tempdir that auto-cleans on exit.
     # Final .xlsx is the only artifact left on disk (in Downloads).
+    xlsx_path: Optional[Path] = None
     with tempfile.TemporaryDirectory(prefix="order_log_") as tmp:
         tmp_dir = Path(tmp)
 
@@ -844,7 +845,39 @@ async def main(owner_name: str = OWNER_NAME) -> None:
 
             xlsx_path = csv_to_xlsx(csv_path, OUTPUT_DIR)
             print(f"\n✓ Saved to Downloads: {xlsx_path.name}")
-            print("  Open your Downloads folder and drag it into Slack.")
+
+    # Slack post happens AFTER the browser context is torn down so a
+    # failing Slack call can never strand a logged-in patchright session.
+    # Skipped for non-Raf ad-hoc runs so we never noise up the Metrics
+    # thread with someone else's order log.
+    if xlsx_path is None:
+        return
+    if not post_to_slack:
+        print("  (Skipping Slack post — --no-slack passed.)")
+        return
+    if owner_name != OWNER_NAME:
+        print(f"  (Skipping Slack post — owner is {owner_name!r}, "
+              f"Metrics thread is for {OWNER_NAME!r} only.)")
+        return
+
+    today = date.today()
+    # Match Eve's manual filename pattern: 'Order Log MM-DD-YYYY.xlsx'.
+    slack_filename = f"Order Log {today:%m-%d-%Y}.xlsx"
+    try:
+        from automations.shared.slack_metrics_post import (
+            post_reply_with_file, SlackPostError,
+        )
+        result = post_reply_with_file(
+            xlsx_path,
+            comment="Order Log",
+            react_emoji="clipboard",       # 📋 — matches the Metrics workflow header line
+            file_name=slack_filename,
+        )
+        print(f"  ✓ Slack: posted to today's Metrics thread "
+              f"(file={result.get('file')})")
+    except SlackPostError as e:
+        print(f"  ⚠ Slack post failed: {e}")
+        print("    .xlsx is still in Downloads — you can drag it into Slack manually.")
 
 
 if __name__ == "__main__":
@@ -856,5 +889,7 @@ if __name__ == "__main__":
     _ap = argparse.ArgumentParser(description="Download a filtered Order Log")
     _ap.add_argument("--owner", default=OWNER_NAME,
                      help=f"Tableau 'Owner Name' filter value (default: {OWNER_NAME!r})")
+    _ap.add_argument("--no-slack", action="store_true",
+                     help="Skip the Slack post (just save the .xlsx to Downloads).")
     _args = _ap.parse_args()
-    asyncio.run(main(_args.owner))
+    asyncio.run(main(_args.owner, post_to_slack=not _args.no_slack))
