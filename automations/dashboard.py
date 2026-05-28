@@ -1728,12 +1728,12 @@ AUTOMATED_REPORTS = [
         "category": "📊 Metrics",
         "description": "Weekly New Internet Country Metrics + Sales/breakdown per captainship (Raf / Starr / Aron / Pat / Wayne / Sam) on the 'Country Metrics' tab.",
         "breakdown": (
-            "📊 WHAT IT DOES\n"
+            "WHAT IT DOES\n"
             "Pulls New Internet Country Metrics and Sales + Breakdown per "
             "Captainship.\n\n"
-            "🕒 WHEN IT RUNS\n"
+            "WHEN IT RUNS\n"
             "Thursdays. Each run fills the most recently finished week.\n\n"
-            "⚠️ WHILE IT RUNS\n"
+            "WHILE IT RUNS\n"
             "Claude will automatically open/connect with Tableau, do not type "
             "or close the window while it works, otherwise the run will fail. "
             "It will indicate when it's finished."
