@@ -143,6 +143,12 @@ def _run_fill_phase(label: str, pull_mod, fill_mod, parsed: dict,
     if isinstance(hide_actions, dict) and "hidden" in hide_actions:
         print(f"  Hidden: {len(hide_actions['hidden'])}   "
               f"Unhidden: {len(hide_actions['unhidden'])}")
+
+    # Megan 2026-05-29: hide reps whose 5 leftmost pct cols
+    # (B/D/F/H/J) are all explicit 0% (blanks don't count). Same rule
+    # already applied on Captainship tabs.
+    fill_mod.hide_after_5_zero_pulls(ws, sections,
+                                     dry_run=args.dry_run, logfn=print)
     return 0
 
 

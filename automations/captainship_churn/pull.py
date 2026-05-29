@@ -44,7 +44,7 @@ NEW_INT_VIEW_URL = (
 WIRELESS_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/CHURN/"
-    "5e65f095-5ff8-404d-a476-364f84cddc44/CaptainshipWIRELESSChurn?:iid=1"
+    "5a9ebd21-67c0-42c7-bf9f-38ba34b0b750/WirelessCAPTAINSHIP?:iid=1"
 )
 WORKSHEET = "ICD Churn"
 
@@ -85,7 +85,17 @@ def parse(csv_path: Path) -> dict:
 
     header = [h.lstrip("﻿").strip() for h in rows[0]]
     rep_i = header.index("ICD Owner Name (rep)")
-    color_i = header.index("30-60 Color Churn (copy)")
+    # Color col varies: '30-60 Color Churn (copy)' on NI view,
+    # '30-60 Color Churn (Wireless)' on Wireless view.
+    color_col = next(
+        (c for c in header if c.startswith("30-60 Color Churn")),
+        None,
+    )
+    if color_col is None:
+        raise ValueError(
+            f"No '30-60 Color Churn ...' column found in {header}."
+        )
+    color_i = header.index(color_col)
     metric_i = header.index("0-30 Day Churn") - 1
     period_cols = {p: header.index(f"{p} Day Churn") for p in PERIODS}
 
