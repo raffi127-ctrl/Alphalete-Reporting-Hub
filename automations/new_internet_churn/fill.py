@@ -539,6 +539,152 @@ def write_today(
     return summary
 
 
+def apply_filters(
+    ws,
+    sections: dict,
+    *,
+    dry_run: bool = False,
+    logfn=print,
+) -> None:
+    """Set up filters per section.
+
+    Sheets allows ONE basic filter per sheet (always-visible dropdowns),
+    so we put that on the FIRST section's rep-header row (the most-
+    prominent visual). The other 3 sections get saved FILTER VIEWS,
+    accessible from Data → Filter views in the Sheets UI.
+
+    Idempotent across runs: clear the existing basic filter and any
+    prior filter views we installed before re-adding.
+    """
+    if not sections:
+        return
+
+    sorted_periods = sorted(sections.items(), key=lambda kv: kv[1]["header_row"])
+
+    def section_range(idx_in_sorted: int) -> dict:
+        sect = sorted_periods[idx_in_sorted][1]
+        rep_hdr_row = sect["rep_header_row"]
+        if idx_in_sorted + 1 < len(sorted_periods):
+            last_row = sorted_periods[idx_in_sorted + 1][1]["header_row"] - 1
+        else:
+            last_row = ws.row_count
+        return {
+            "sheetId": ws.id,
+            "startRowIndex": rep_hdr_row - 1,    # 0-indexed inclusive
+            "endRowIndex":   last_row,           # 0-indexed exclusive
+            "startColumnIndex": 0,
+            "endColumnIndex":   ws.col_count,
+        }
+
+    if dry_run:
+        logfn(f"  (dry-run) would set basic filter on first section + "
+              f"{len(sorted_periods) - 1} saved filter views")
+        return
+
+    # First, find + delete any prior filter views we installed.
+    url = (f"https://sheets.googleapis.com/v4/spreadsheets/{ws.spreadsheet.id}"
+           f"?fields=sheets(properties(sheetId),filterViews(title,filterViewId))")
+    result = ws.spreadsheet.client.request("get", url).json()
+    our_titles = {f"{p}-Day Section" for p, _ in sorted_periods}
+    delete_requests: list[dict] = []
+    for sheet in result.get("sheets", []):
+        if sheet.get("properties", {}).get("sheetId") != ws.id:
+            continue
+        for fv in sheet.get("filterViews", []) or []:
+            if fv.get("title") in our_titles:
+                delete_requests.append({
+                    "deleteFilterView": {"filterId": fv["filterViewId"]}
+                })
+
+    # Clear basic filter, then re-set on first section.
+    requests: list[dict] = list(delete_requests)
+    requests.append({"clearBasicFilter": {"sheetId": ws.id}})
+    requests.append({"setBasicFilter": {
+        "filter": {"range": section_range(0)}
+    }})
+    # Saved filter views for remaining sections.
+    for idx in range(1, len(sorted_periods)):
+        period = sorted_periods[idx][0]
+        requests.append({
+            "addFilterView": {
+                "filter": {
+                    "title": f"{period}-Day Section",
+                    "range": section_range(idx),
+                }
+            }
+        })
+    ws.spreadsheet.batch_update({"requests": requests})
+
+
+def sort_sections_via_sortrange(
+    ws,
+    sections: dict,
+    *,
+    dry_run: bool = False,
+    logfn=print,
+) -> None:
+    """Sort each section's rep block by today's % (col B) descending,
+    using the Sheets-native sortRange request — atomic server-side, no
+    client read-after-write race.
+
+    Sheets sorts blanks to the TOP for DESCENDING. That's fine for us
+    because `hide_blanks_today` runs RIGHT AFTER this and hides every
+    rep row whose today % is blank — so the blank rows at the top end
+    up hidden. Visual end state: non-blank reps in % desc order, blank
+    reps invisible.
+    """
+    if not sections:
+        return
+    sorted_periods = sorted(sections.items(), key=lambda kv: kv[1]["header_row"])
+    requests = []
+    for idx, (period, sect) in enumerate(sorted_periods):
+        rep_rows = sect["rep_rows"]
+        if not rep_rows:
+            continue
+        first_row = min(rep_rows.values())
+        if idx + 1 < len(sorted_periods):
+            last_row = sorted_periods[idx + 1][1]["header_row"] - 1
+        else:
+            last_row = max(rep_rows.values())
+        requests.append({
+            "sortRange": {
+                "range": {
+                    "sheetId": ws.id,
+                    "startRowIndex": first_row - 1,    # 0-indexed inclusive
+                    "endRowIndex":   last_row,          # 0-indexed exclusive
+                    "startColumnIndex": 0,
+                    "endColumnIndex":   ws.col_count,
+                },
+                "sortSpecs": [
+                    {"dimensionIndex": 1, "sortOrder": "DESCENDING"}
+                ],
+            }
+        })
+
+    if dry_run:
+        logfn(f"  (dry-run) would sortRange {len(requests)} sections by col B desc")
+        return
+    if requests:
+        ws.spreadsheet.batch_update({"requests": requests})
+
+    # After server-side sort, the rep_rows map in `sections` is stale
+    # (names moved to different rows). Refresh it by re-scanning col A
+    # so hide_blanks_today sees the new positions.
+    for period, sect in sections.items():
+        rep_rows = sect["rep_rows"]
+        if not rep_rows:
+            continue
+        first_row = min(rep_rows.values())
+        last_row  = max(rep_rows.values())
+        col_a = ws.range(f"A{first_row}:A{last_row}")
+        new_map: dict[str, int] = {}
+        for offset, cell in enumerate(col_a):
+            name = (cell.value or "").strip()
+            if name:
+                new_map[name.lower()] = first_row + offset
+        sect["rep_rows"] = new_map
+
+
 def apply_units_white_override(
     ws,
     sections: dict,

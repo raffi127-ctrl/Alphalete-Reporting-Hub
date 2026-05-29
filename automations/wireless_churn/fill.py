@@ -27,4 +27,6 @@ write_today               = _shared.write_today
 sort_sections_desc        = _shared.sort_sections_desc
 hide_blanks_today         = _shared.hide_blanks_today
 apply_units_white_override = _shared.apply_units_white_override
+apply_filters             = _shared.apply_filters
+sort_sections_via_sortrange = _shared.sort_sections_via_sortrange
 _date_label               = _shared._date_label

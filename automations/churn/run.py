@@ -100,16 +100,23 @@ def _run_fill_phase(label: str, pull_mod, fill_mod, parsed: dict,
                          if s['unmatched'] else "")
         print(f"    {p:>4}-day: {s['filled']} filled{unmatched_str}")
 
-    # Sort step intentionally OFF — its read-after-write was the second
-    # race risk (sort reads stale, writes blank back, clobbers our
-    # fresh data). Will re-enable once we move it onto Sheets' native
-    # sortRange request (atomic server-side, no client read).
+    # Sort by today's % descending — Sheets-native sortRange, atomic.
+    # Blanks land at the top (DESCENDING quirk), then hide_blanks_today
+    # below hides them — visual end state is non-blank reps in % desc
+    # order, blanks invisible.
+    fill_mod.sort_sections_via_sortrange(ws, sections,
+                                         dry_run=args.dry_run, logfn=print)
 
     # Col C (units) white-override conditional rule — required because
     # Eve's existing % color rules have 3-col ranges that paint C red
     # when the % triggers.
     fill_mod.apply_units_white_override(ws, sections,
                                          dry_run=args.dry_run, logfn=print)
+
+    # Per-section filters: Megan 2026-05-28 — sortRange above already
+    # gives reps highest-to-lowest within each section, so we let Eve
+    # apply per-section filters from the Sheets UI as needed. The
+    # apply_filters helper is kept in fill.py for future use.
 
     hide_actions = fill_mod.hide_blanks_today(ws, sections,
                                               dry_run=args.dry_run, logfn=print)
