@@ -1143,7 +1143,24 @@ def clear_empty_cell_backgrounds(
     if not sections:
         return
 
-    # Determine read range per section: rep rows × cols B..ws.col_count
+    # Determine read range per section: every row from the first rep
+    # row down through the row before the next section's header (or
+    # ws.row_count for the last section). Using min/max of rep_rows
+    # leaves empty buffer rows between the last named rep and the
+    # next section header out of the cleanup — those rows keep
+    # whatever bg they inherited from prior pulls (Megan 2026-05-29:
+    # red col J bleeding into rows 129-132 of Captainship 60-day).
+    sorted_periods = sorted(sections.items(),
+                            key=lambda kv: kv[1]["header_row"])
+    section_end_rows: dict = {}
+    for idx, (period, sect) in enumerate(sorted_periods):
+        if idx + 1 < len(sorted_periods):
+            section_end_rows[period] = (
+                sorted_periods[idx + 1][1]["header_row"] - 1
+            )
+        else:
+            section_end_rows[period] = ws.row_count
+
     requests: list[dict] = []
     cleared_count = 0
 
@@ -1152,7 +1169,7 @@ def clear_empty_cell_backgrounds(
         if not rep_rows:
             continue
         first_row = min(rep_rows.values())
-        last_row  = max(rep_rows.values())
+        last_row  = section_end_rows[period]
         # Read cols B..min(ws.col_count, 30) — past col 30 we're well into
         # historical weekly cols which are usually fine; capping keeps
         # the read fast.
@@ -1160,7 +1177,13 @@ def clear_empty_cell_backgrounds(
         if end_col_excl <= 1:
             continue
         end_col_letter = _col_letter(end_col_excl)   # exclusive
-        rng = f"{ws.title}!B{first_row}:{end_col_letter}{last_row}"
+        # NB: NO {ws.title}! prefix — gspread.Worksheet.get_values
+        # already qualifies the range with the worksheet title. Adding
+        # it again double-prefixes (becomes 'Tab!Tab!B…:Z…') which
+        # gspread can't parse — error gets swallowed by the bare except
+        # below and every section silently no-ops. (Megan 2026-05-29:
+        # the bg bleed bug that wouldn't go away.)
+        rng = f"B{first_row}:{end_col_letter}{last_row}"
         try:
             values = ws.get_values(rng)
         except Exception:
@@ -1274,7 +1297,8 @@ def hide_after_5_zero_pulls(
             continue
         first_row = min(rep_rows.values())
         last_row  = max(rep_rows.values())
-        rng = f"{ws.title}!B{first_row}:J{last_row}"
+        # Same gspread no-prefix rule as clear_empty_cell_backgrounds.
+        rng = f"B{first_row}:J{last_row}"
         try:
             values = ws.get_values(rng)
         except Exception:
