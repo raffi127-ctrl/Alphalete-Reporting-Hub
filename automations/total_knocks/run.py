@@ -32,7 +32,9 @@ from automations.total_knocks.pull import SHEET_COLUMNS, pull_disposition_day
 
 # 🚪 reaction on the parent Metrics post (short name, no colons).
 REACT_EMOJI = "door"
-SLACK_COMMENT = "Total Knocks"
+# Comment leads with the workflow emoji + Title Case title, matching every
+# other metrics post (🚫 Canceled Orders, 🌐 New Internet Churn).
+SLACK_COMMENT = "🚪 Total Knocks"
 
 
 def _yesterday() -> dt.date:
