@@ -59,8 +59,10 @@ fluff. I need clear visuals and concise communications.
   explicitly say "use the real Sheet".
 - **Always `--dry-run` while testing.** Run new scripts with `--dry-run`
   (no writes to the Sheet) until I confirm the output looks correct.
-- **Don't register the report in the Hub** — no `AUTOMATED_REPORTS`
-  entry and no upload to the shared library — until I approve it.
+- **Hub uploads are open** (2026-05-29). Anyone on the Hub can upload a
+  new report / add it to the shared library without my approval — no
+  sign-off gate. (Sandbox + `--dry-run` while building still apply; this
+  lifts only the approval gate, not the correctness checks.)
 
 # Specific reports in the codebase
 
