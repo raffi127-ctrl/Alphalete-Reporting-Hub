@@ -145,18 +145,54 @@ def find_sections(ws) -> dict:
     for idx, (period, header_row) in enumerate(sorted_periods):
         end_row = (sorted_periods[idx + 1][1] - 1
                    if idx + 1 < len(sorted_periods) else n_rows)
+
+        # Locate the avg row + rep-header row by their col-A LABELS, not by
+        # assuming the fixed header+1 / header+2 offsets. A mid-cycle manual
+        # row delete (e.g. Megan clearing duplicate rows) shifts the section
+        # structure; the old positional offsets then pointed office_avg_row /
+        # rep_header_row at REAL rep rows, and write_today clobbered them with
+        # 'pct'/'units'/office data while the rep silently dropped out of the
+        # roster. That was the 2026-05-29 Khalil 90-day corruption. Labels
+        # survive row drift; offsets don't.
+        #
+        # avg row label is 'Office Avg' (Local Office tabs) or 'Captainship
+        # Avg' (Captainship tabs) — both contain 'AVG'. rep-header is 'Rep'.
+        office_avg_row = None
+        rep_header_row = None
+        for r in range(header_row + 1, end_row + 1):
+            if r > n_rows:
+                break
+            norm = _norm(col_a[r - 1])
+            if norm == "REP":
+                rep_header_row = r
+                break   # the rep-data block starts on the next row
+            if office_avg_row is None and "AVG" in norm:
+                office_avg_row = r
+        # Fallback to the canonical offsets if a tab doesn't carry the labels
+        # (keeps any non-conforming tab working exactly as before). On the
+        # intact layout this is a no-op — AVG is at +1 and 'Rep' at +2.
+        if rep_header_row is None:
+            rep_header_row = header_row + 2
+        if office_avg_row is None:
+            office_avg_row = header_row + 1
+
         rep_rows: dict[str, int] = {}
-        for r in range(header_row + 3, end_row + 1):
+        for r in range(rep_header_row + 1, end_row + 1):
             if r > n_rows:
                 break
             name = col_a[r - 1].strip()
             if not name:
                 continue
+            # Belt + braces: never let a structural header row leak into the
+            # rep-data map even if labels/offsets ever disagree.
+            norm = _norm(name)
+            if norm == "REP" or "AVG" in norm:
+                continue
             rep_rows[name.lower()] = r
         sections[period] = {
             "header_row": header_row,
-            "office_avg_row": header_row + 1,
-            "rep_header_row": header_row + 2,
+            "office_avg_row": office_avg_row,
+            "rep_header_row": rep_header_row,
             "rep_rows": rep_rows,
         }
     return sections
@@ -811,7 +847,12 @@ def sort_sections_via_sortrange(
         rep_rows = sect["rep_rows"]
         if not rep_rows:
             continue
-        first_row = min(rep_rows.values())
+        # Use the STRUCTURAL boundary (rep_header_row + 1) as the floor, not
+        # just the data-content boundary. min(rep_rows) is the topmost rep;
+        # clamping it to never rise above rep_header_row+1 guarantees the sort
+        # range can't swallow the office-avg / rep-header rows even if rep_rows
+        # is ever stale. Belt-and-braces for the Khalil 90-day corruption.
+        first_row = max(min(rep_rows.values()), sect["rep_header_row"] + 1)
         if idx + 1 < len(sorted_periods):
             last_row = sorted_periods[idx + 1][1]["header_row"] - 1
         else:
@@ -844,7 +885,7 @@ def sort_sections_via_sortrange(
         rep_rows = sect["rep_rows"]
         if not rep_rows:
             continue
-        first_row = min(rep_rows.values())
+        first_row = max(min(rep_rows.values()), sect["rep_header_row"] + 1)
         last_row  = max(rep_rows.values())
         col_a = ws.range(f"A{first_row}:A{last_row}")
         new_map: dict[str, int] = {}
@@ -964,7 +1005,9 @@ def sort_sections_desc(
         rep_rows = sect["rep_rows"]
         if not rep_rows:
             continue
-        first_row = min(rep_rows.values())
+        # Structural floor — see sort_sections_via_sortrange. Never let the
+        # sorted block start above the rep-header row.
+        first_row = max(min(rep_rows.values()), sect["rep_header_row"] + 1)
         # End the block one row before the next section's header (or end
         # of sheet for the last section).
         if idx + 1 < len(sorted_periods):
