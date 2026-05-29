@@ -498,16 +498,19 @@ def write_today(
             pdata = rep_periods.get(period)
             if not pdata or not pdata.get("pct"):
                 continue   # rep has no data here; B+C already blank
-            # Skip 0% values entirely — Megan 2026-05-28: "if it's 0% or
-            # no data, we want it left blank." Same rule as auto-insert,
-            # applied to writes too so the rep's row stays clean.
-            if not _has_nonzero_pct(pdata):
-                continue
+            # Write 0.00% + units too (Megan 2026-05-29 reversal of the
+            # 2026-05-28 skip rule — the team wants 0% reps SHOWN with
+            # their unit count, not left blank). Auto-insert still
+            # filters 0%-only reps to avoid roster bloat — they appear
+            # here only if they're already in the existing roster.
             row = rep_rows.get(rep_name.lower())
             if row is None:
-                # Has data but no row — should never happen post auto-insert
-                # under the non-zero rule. Flag it so we know.
-                sect_summary["unmatched"].append(rep_name)
+                # Has data but no row. With auto-insert keeping its
+                # non-zero-only rule, this path is for 0% reps the team
+                # hasn't added to the roster yet. Skip silently (would
+                # otherwise be noisy); flag genuine surprises only.
+                if _has_nonzero_pct(pdata):
+                    sect_summary["unmatched"].append(rep_name)
                 continue
             pct_cells.append({
                 "range": f"{ws.title}!B{row}",
