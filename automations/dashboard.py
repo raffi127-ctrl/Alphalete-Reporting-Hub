@@ -1818,6 +1818,51 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "owners-metrics-churn",
+        "name": "Captainship Churn - Owners Metrics Report",
+        "creator": "Megan",
+        "emoji": "📑",
+        "color": "#F59E0B",
+        "category": "📊 Metrics",
+        "description": "Daily per-ICD churn fills across the Owners Metrics Report sheet — one tab per captainship. Phase 1 covers ATT Fiber (Wayne / Starr Rodenhurst / Aron Corral). B2B and NDS captainships plug in later.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Fills per-ICD churn rates on every captainship tab of "
+            "the Owners Metrics Report Google Sheet. One Tableau "
+            "session, one Crosstab pull per captainship, one fill "
+            "per destination tab.\n\n"
+            "TABS FILLED (Phase 1 — ATT Fiber)\n"
+            "• Churn - Wayne (ATT Fiber)\n"
+            "• Churn - Starr Rodenhurst (ATT Fiber)\n"
+            "• Churn - Aron Corral (ATT Fiber)\n\n"
+            "WHEN IT RUNS\n"
+            "Daily."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1uFrT0EkkGT0QqlYTxw_uevZD3ObKxaVjWsvZAUDxK6c/edit"),
+        "assignees": ["Eve"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "estimated_minutes": 5,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Owners Metrics Churn done — all Fiber tabs filled, sections sorted, blank-today + 5-zero rows hidden.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run Owners Metrics Churn",
+                "icon": "▶",
+                "primary": True,
+                "help": "Pulls all captainship Crosstabs in one Tableau session + fills each tab (skips today's INSERT if already filled — pass --force-insert in CLI to override).",
+                "module": "automations.owners_metrics_churn.run",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
         "id": "country-metrics",
         "name": "Country Metrics",
         "creator": "Eve",

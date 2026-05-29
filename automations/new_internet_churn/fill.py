@@ -1159,7 +1159,14 @@ def clear_empty_cell_backgrounds(
                 sorted_periods[idx + 1][1]["header_row"] - 1
             )
         else:
-            section_end_rows[period] = ws.row_count
+            # Last section — cap at last named rep + 50-row buffer
+            # so we cover bleed-prone empty rows below the section
+            # without scanning the whole sheet (some tabs have 700+
+            # rows; reading + emitting a clear request per empty row
+            # would burn API quota for no visual gain).
+            rep_rows = sect.get("rep_rows") or {}
+            last_named = max(rep_rows.values()) if rep_rows else sect["header_row"]
+            section_end_rows[period] = min(ws.row_count, last_named + 50)
 
     requests: list[dict] = []
     cleared_count = 0
@@ -1185,9 +1192,26 @@ def clear_empty_cell_backgrounds(
         # the bg bleed bug that wouldn't go away.)
         rng = f"B{first_row}:{end_col_letter}{last_row}"
         try:
-            values = ws.get_values(rng)
+            # FORMULA render option — returns underlying cell content
+            # (formula text or literal value) without Sheets' default
+            # number-format coercion. Distinguishes between a genuinely
+            # empty cell (returns '') and a legitimate 0 (returns 0).
+            # UNFORMATTED_VALUE returns 0 for both because Sheets reads
+            # null + '0.00%' format → 0. FORMATTED_VALUE returns
+            # '0.00%' literal which my code can't distinguish from a
+            # written 0%.
+            values = ws.get(rng, value_render_option="FORMULA")
         except Exception:
             continue
+
+        # gspread.get_values truncates trailing empty rows — so empty
+        # buffer rows between the last named rep and the next section
+        # header (or the very bottom of a section for the last
+        # section) are dropped from `values` and never processed.
+        # Pad up to the requested row count so those rows get cleared.
+        expected_rows = last_row - first_row + 1
+        while len(values) < expected_rows:
+            values.append([])
 
         # For each row, find contiguous runs of empty cells (cols B+) and
         # batch one repeatCell white-bg request per run. Much fewer
@@ -1199,7 +1223,12 @@ def clear_empty_cell_backgrounds(
             padded = list(row) + [""] * ((end_col_excl - 1) - len(row))
             start = None
             for ci, cell in enumerate(padded):
-                is_empty = (cell or "").strip() == ""
+                # UNFORMATTED_VALUE returns numbers as numbers; only
+                # None / "" / whitespace-only strings count as empty.
+                is_empty = (
+                    cell is None
+                    or (isinstance(cell, str) and cell.strip() == "")
+                )
                 if is_empty:
                     if start is None:
                         start = ci
@@ -1297,10 +1326,14 @@ def hide_after_5_zero_pulls(
             continue
         first_row = min(rep_rows.values())
         last_row  = max(rep_rows.values())
-        # Same gspread no-prefix rule as clear_empty_cell_backgrounds.
+        # UNFORMATTED_VALUE so number cells come back as numbers
+        # (a real 0% pct returns 0.0, not the formatted string '0.00%')
+        # and empty cells come back as '' regardless of number format
+        # (a cell with '0.00%' number format applied to a null value
+        # would otherwise look like a real zero in formatted output).
         rng = f"B{first_row}:J{last_row}"
         try:
-            values = ws.get_values(rng)
+            values = ws.get(rng, value_render_option="UNFORMATTED_VALUE")
         except Exception:
             continue
 
@@ -1311,10 +1344,14 @@ def hide_after_5_zero_pulls(
             # so a row with < 5 pulls of data won't trigger).
             padded = list(row) + [""] * (9 - len(row))
             pct_cells = [padded[i] for i in PCT_COL_OFFSETS]
-            all_zero = all(
-                (c or "").strip() in _ZERO_PCT_LITERALS
-                for c in pct_cells
-            )
+
+            def _is_zero(c):
+                if c == 0 or c == 0.0:
+                    return True
+                if isinstance(c, str) and c.strip() in _ZERO_PCT_LITERALS:
+                    return True
+                return False
+            all_zero = all(_is_zero(c) for c in pct_cells)
             if all_zero:
                 actions["hidden"].append(row_num)
                 batch_requests.append({
