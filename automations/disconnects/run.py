@@ -122,7 +122,7 @@ def main(argv=None) -> int:
             render.render(local_rows_new, img_path)
             slack_result = slack_metrics_post.post_reply_with_image(
                 img_path,
-                comment="Disconnected New Internets",
+                comment="❎ Disconnected New Internets",
                 react_emoji="negative_squared_cross_mark",   # ❎
                 dry_run=args.dry_run,
             )
@@ -130,7 +130,7 @@ def main(argv=None) -> int:
             # No new local-office disconnects → text-only message + reaction
             # on the parent (still marks the metric 'done' on the header).
             slack_result = slack_metrics_post.post_reply_text_only(
-                "No New Disconnected New Internets ❎",
+                "❎ No New Disconnected New Internets",
                 react_emoji="negative_squared_cross_mark",
                 dry_run=args.dry_run,
             )

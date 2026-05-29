@@ -122,13 +122,13 @@ def main(argv=None) -> int:
             render.render(local_rows_new, img_path)
             slack_result = slack_metrics_post.post_reply_with_image(
                 img_path,
-                comment="Canceled Orders",
+                comment="🚫 Canceled Orders",
                 react_emoji="no_entry_sign",   # 🚫
                 dry_run=args.dry_run,
             )
         else:
             slack_result = slack_metrics_post.post_reply_text_only(
-                "No New Canceled Orders 🚫",
+                "🚫 No New Canceled Orders",
                 react_emoji="no_entry_sign",
                 dry_run=args.dry_run,
             )

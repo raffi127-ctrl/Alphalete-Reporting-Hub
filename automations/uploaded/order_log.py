@@ -869,7 +869,7 @@ async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True) -> None
         )
         result = post_reply_with_file(
             xlsx_path,
-            comment="Order Log",
+            comment="📋 Order Log",
             react_emoji="clipboard",       # 📋 — matches the Metrics workflow header line
             file_name=slack_filename,
         )

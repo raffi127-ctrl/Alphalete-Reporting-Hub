@@ -24,7 +24,7 @@ def post_reply_with_image(image_path: Path,
                           dry_run: bool = False) -> dict:
     return _smp.post_reply_with_image(
         image_path,
-        comment="Ongoing Cancel",
+        comment="🔄 Ongoing Cancel",
         react_emoji="arrows_counterclockwise",   # 🔄
         today=today,
         dry_run=dry_run,

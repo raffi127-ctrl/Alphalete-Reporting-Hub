@@ -1,0 +1,215 @@
+"""Combined Churn run — fills BOTH Local Office Churn tabs (New Internet
++ Wireless) from a single Tableau patchright session.
+
+Both reports pull from the same CHURN view (ATT TRACKER 2.1 - D2D), so
+running them under one shared session saves ~30s of Ownerville → Tableau
+SSO each daily run.
+
+  python -m automations.churn.run                 # both, today
+  python -m automations.churn.run --force-insert  # insert dup col even if today's already there
+  python -m automations.churn.run --dry-run
+  python -m automations.churn.run --skip-download # reuse cached CSVs
+  python -m automations.churn.run --only new-internet   # one or the other
+  python -m automations.churn.run --only wireless
+
+After both fills complete, each report renders 4 multi-week PNG
+images (one per period bucket) and posts them as replies in today's
+7am Metrics workflow thread in #alphalete-sales — 🌐 globe reaction on
+the parent for New Internet Churn, 📊 bar_chart for Wireless Churn.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import sys
+import tempfile
+from pathlib import Path
+
+from automations.shared.tableau_patchright import tableau_session
+from automations.shared.slack_metrics_post import (
+    post_reply_with_file, SlackPostError,
+)
+from automations.new_internet_churn import (
+    pull as ni_pull, fill as ni_fill, render as ni_render,
+)
+from automations.wireless_churn import (
+    pull as wl_pull, fill as wl_fill, render as wl_render,
+)
+
+
+SLACK_CONFIG = {
+    # (slug from REPORTS) → (title prefix, render module, reaction emoji)
+    "new-internet": ("New Internet Churn", ni_render, "globe_with_meridians"),
+    "wireless":     ("Wireless Churn",     wl_render, "bar_chart"),
+}
+
+
+REPORTS = [
+    ("new-internet", "New Internet Churn", ni_pull, ni_fill),
+    ("wireless",     "Wireless Churn",     wl_pull, wl_fill),
+]
+
+
+def _run_fill_phase(label: str, pull_mod, fill_mod, parsed: dict,
+                    today: dt.date, args) -> int:
+    """Fill the destination tab for one of the two Churn reports.
+    Returns 0 on success, 1 on early-exit (today's column already
+    present without --force-insert)."""
+    print(f"\n--- {label}: parse + fill ---")
+    office = parsed["office_total"]
+    reps = parsed["reps"]
+    print(f"  Reps with data: {len(reps)}")
+    for p in pull_mod.PERIODS:
+        odata = office.get(p, {})
+        units = pull_mod.fmt_units(odata)
+        print(f"    Office {p:>4}-day: {odata.get('pct', '-'):>8}  ({units or '-'})")
+
+    print(f"  Open '{fill_mod.TAB_LOCAL_OFFICE}'...")
+    ws = fill_mod.open_ws()
+    sections = fill_mod.find_sections(ws)
+    for p, sect in sections.items():
+        print(f"    {p:>4}-day: header row {sect['header_row']}, "
+              f"{len(sect['rep_rows'])} existing reps")
+
+    added = fill_mod.insert_missing_reps(ws, sections, parsed,
+                                          dry_run=args.dry_run, logfn=print)
+    if added:
+        for p, names in added.items():
+            print(f"  + {p}-day: added {len(names)} new rep(s): {names[:5]}"
+                  + (" …" if len(names) > 5 else ""))
+    else:
+        print("  (no new reps to add)")
+
+    already_filled = fill_mod.today_already_filled(ws, sections, today)
+    if already_filled and not args.force_insert:
+        print(f"  ⚠ '{fill_mod._date_label(today)}' already in B+C — skipping "
+              f"(idempotent). Use --force-insert to add a duplicate column.")
+        return 1
+
+    if args.dry_run:
+        print("  (dry-run, skipping column insert + merge + write)")
+    else:
+        fill_mod.insert_two_cols_at_b(ws, sections)
+        fill_mod._merge_section_headers(ws, sections)
+
+    print(f"  Write today ({fill_mod._date_label(today)})...")
+    summary = fill_mod.write_today(ws, sections, today, parsed,
+                                    dry_run=args.dry_run, logfn=print)
+    for p, s in summary.items():
+        unmatched_str = (f", {len(s['unmatched'])} unmatched"
+                         if s['unmatched'] else "")
+        print(f"    {p:>4}-day: {s['filled']} filled{unmatched_str}")
+
+    # Sort step intentionally OFF — its read-after-write was the second
+    # race risk (sort reads stale, writes blank back, clobbers our
+    # fresh data). Will re-enable once we move it onto Sheets' native
+    # sortRange request (atomic server-side, no client read).
+
+    # Col C (units) white-override conditional rule — required because
+    # Eve's existing % color rules have 3-col ranges that paint C red
+    # when the % triggers.
+    fill_mod.apply_units_white_override(ws, sections,
+                                         dry_run=args.dry_run, logfn=print)
+
+    hide_actions = fill_mod.hide_blanks_today(ws, sections,
+                                              dry_run=args.dry_run, logfn=print)
+    if isinstance(hide_actions, dict) and "hidden" in hide_actions:
+        print(f"  Hidden: {len(hide_actions['hidden'])}   "
+              f"Unhidden: {len(hide_actions['unhidden'])}")
+    return 0
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(prog="churn")
+    ap.add_argument("--date", default=None,
+                    help="Override today's date (YYYY-MM-DD).")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="Print what would happen, but don't write to the Sheet.")
+    ap.add_argument("--skip-download", action="store_true",
+                    help="Reuse cached Tableau CSVs in the temp dir.")
+    ap.add_argument("--force-insert", action="store_true",
+                    help="Insert a NEW B+C column even if today's date label "
+                         "is already present (for side-by-side verification).")
+    ap.add_argument("--only", choices=("new-internet", "wireless"), default=None,
+                    help="Run only one of the two reports.")
+    args = ap.parse_args(argv)
+
+    today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
+    selected = [r for r in REPORTS if args.only is None or r[0] == args.only]
+
+    print(f"=== Churn (Local Office) — {today.isoformat()} "
+          f"({'DRY-RUN' if args.dry_run else 'LIVE'}) ===")
+    print(f"Reports: {[r[1] for r in selected]}")
+
+    # --- Phase 1: pull both CSVs (single Tableau session) ---
+    csvs: dict = {}
+    if args.skip_download:
+        for slug, label, pull_mod, _ in selected:
+            # Default temp path for each module
+            default = Path(tempfile.gettempdir()) / (
+                "new_internet_churn_local_office.csv" if slug == "new-internet"
+                else "wireless_churn_local_office.csv"
+            )
+            if not default.exists():
+                print(f"  ⚠ --skip-download set but no cached CSV at {default}")
+                return 1
+            csvs[slug] = default
+            print(f"  ✓ {label}: cached {default}")
+    else:
+        print("\nPhase 1: one Tableau patchright session, two Crosstab pulls...")
+        with tableau_session(verbose=False) as page:
+            for slug, label, pull_mod, _ in selected:
+                print(f"  → pulling {label}...")
+                csvs[slug] = pull_mod.fetch_crosstab(verbose=False, page=page)
+                print(f"    ✓ {csvs[slug]}")
+
+    # --- Phase 2: parse + fill each ---
+    print("\nPhase 2: fill destination tabs")
+    for slug, label, pull_mod, fill_mod in selected:
+        parsed = pull_mod.parse(csvs[slug])
+        _run_fill_phase(label, pull_mod, fill_mod, parsed, today, args)
+
+    # --- Phase 3: render 4 multi-week PNGs per report + post to Slack ---
+    if args.dry_run:
+        print("\nPhase 3: (dry-run, skipping Slack post)")
+    else:
+        _post_to_slack(selected, today)
+
+    print("\n=== done ===")
+    return 0
+
+
+def _post_to_slack(selected, today: dt.date) -> None:
+    """For each selected report: render 4 multi-week PNGs from the
+    freshly-filled sheet + post each as a reply in today's 7am Metrics
+    workflow thread. Adds the matching workflow-header reaction on the
+    parent thread (only the first post per report triggers it; the
+    other 3 posts re-attempt but Slack's already-reacted is silent)."""
+    print("\nPhase 3: render + post to today's Metrics thread")
+    PERIODS = ("0-30", "30", "60", "90")
+    out_dir = Path(tempfile.gettempdir()) / "churn_slack_post"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    for slug, label, _pull_mod, fill_mod in selected:
+        title_prefix, render_mod, react_emoji = SLACK_CONFIG[slug]
+        print(f"  → {label} (​{title_prefix})")
+        ws = fill_mod.open_ws()
+        sections = fill_mod.find_sections(ws)
+        paths = render_mod.render_all_sections(ws, sections, today, out_dir)
+        for i, period in enumerate(PERIODS):
+            comment = f"{'🌐' if slug == 'new-internet' else '📊'} {title_prefix} — {period} Day"
+            file_name = f"{title_prefix} {period} Day {today:%m-%d-%Y}.png"
+            try:
+                result = post_reply_with_file(
+                    paths[period],
+                    comment=comment,
+                    react_emoji=react_emoji if i == 0 else None,
+                    file_name=file_name,
+                )
+                print(f"      {period}-day: posted (file={result.get('file')})")
+            except SlackPostError as e:
+                print(f"      {period}-day: ⚠ Slack post failed: {e}")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

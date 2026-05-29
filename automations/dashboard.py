@@ -1720,6 +1720,69 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "new-internet-wireless-churn-local-office",
+        "name": "New Internet & Wireless Churn - Raf's Local Office",
+        "creator": "Megan",
+        "emoji": "🌐",
+        "color": "#F59E0B",
+        "category": "📊 Metrics",
+        "description": "Daily fill of Raf's Local Office churn rates (4 buckets: 0-30 / 30 / 60 / 90 day) for BOTH the New Internet and Wireless tabs — one Tableau session, both pulls + fills.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Pulls the ICD Churn Crosstab from the CHURN view in ATT TRACKER "
+            "2.1 - D2D (custom view 'NewINTRafExpanded', pre-filtered to "
+            "RAFAEL HIDALGO) twice in one Tableau session — once with Product "
+            "Type = NEW INTERNET and once with WIRELESS. Each pull fills its "
+            "own destination tab with today's 0-30 / 30 / 60 / 90 day churn "
+            "rates (% + units). Per-rep rows insert 2 fresh columns at B+C, "
+            "label the section header with today's date, sort each section "
+            "by % desc, then hide rep rows blank today (names are NEVER "
+            "deleted — they just get hidden until they have data again). "
+            "Auto-inserts brand-new reps with non-zero churn for that "
+            "period.\n\n"
+            "TABS FILLED (on the AT&T Fiber Metrics Report sheet)\n"
+            "• Local Office - New Internet Churn\n"
+            "• Local Office - Wireless Churn\n\n"
+            "WHEN IT RUNS\n"
+            "Daily.\n\n"
+            "PRE-FLIGHT (must be done before each run)\n"
+            "Someone has to post the day's **Metrics header thread** "
+            "(format: 'Metrics for: May 27th 2026') in #alphalete-sales "
+            "BEFORE this report runs — the bot replies to that parent "
+            "thread. Once the other 8 metrics are automated, the Hub will "
+            "auto-post the header thread itself."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8/edit"),
+        "assignees": ["Eve"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "estimated_minutes": 5,
+        },
+        "checklist": [
+            {"text": "Posted the day's Metrics header thread "
+                     "(format: 'Metrics for: May 27th 2026') in "
+                     "#alphalete-sales — this report posts as a reply in "
+                     "that thread, so the thread MUST exist before running.",
+             "key": "metrics_header_posted"},
+        ],
+        "post_run": {
+            "message_success": "✅ Churn done — both tabs filled, sections sorted, blank-today rows hidden.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run Churn (Both Tabs)",
+                "icon": "▶",
+                "primary": True,
+                "help": "Pulls both Churn Crosstabs in one Tableau session + fills both tabs (skips today if already filled — pass --force-insert in CLI to override).",
+                "module": "automations.churn.run",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
         "id": "country-metrics",
         "name": "Country Metrics",
         "creator": "Eve",
