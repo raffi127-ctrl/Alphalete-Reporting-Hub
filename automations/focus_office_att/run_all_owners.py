@@ -16,7 +16,9 @@ If a run is interrupted (Chrome dropped, Stop button, crash), the next
 normal run resumes — owners already scraped today are skipped. See
 CHECKPOINT_FILE below.
 
-Prereq: debug Chrome at localhost:9222, ownerville tab open + logged in.
+No prereq: launches its own patchright Chrome window via
+tableau_patchright.ownerville_session() and logs into ownerville
+unattended (persistent profile keeps Cloudflare/login warm between runs).
 
 Run:
     .venv/bin/python -m automations.focus_office_att.run_all_owners
@@ -35,8 +37,6 @@ import time
 import traceback
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
-
 from automations.recruiting_report import fill as _fill
 from automations.focus_office_att.aliases import (
     load_aliases,
@@ -53,12 +53,12 @@ from automations.focus_office_att.step5_fill_one_owner import (
     _merge_rep_records,
     design_cosmetic_ops,
     fill_owner_tab,
+    page_rqst,
     scrape_day,
     scrape_disposition_day,
 )
 
 DEST_SPREADSHEET_ID = "1xgVE_e8bZimACgPdqcdNCr1qo4sedWect_zzEcUgEJY"
-CDP_URL = "http://localhost:9222"
 TIME_TRACKER_PAGE = "p=510"
 
 # Owner tabs that DON'T live as sub-offices in the impersonation table —
@@ -229,24 +229,36 @@ def _exit_impersonation(page) -> bool:
     Returns True on success. Safe to call even if not currently impersonating
     (the server returns ok=false and we just move on).
     """
+    rqst = page_rqst(page)
+    if not rqst:
+        print("  ⚠ exit-impersonate: no rqst token on page")
+        return False
     try:
+        # Vanilla fetch (no jQuery `$`) so it works under patchright's
+        # isolated evaluate world. fetch is a browser builtin; same-origin
+        # cookies ride along automatically. Headers match what $.ajax sent
+        # (X-Requested-With + form-urlencoded) so the ColdFusion endpoint
+        # treats it identically.
         result = page.evaluate(
-            """() => new Promise((resolve) => {
-                if (typeof $ === 'undefined' || typeof rqstValue === 'undefined') {
-                    resolve({ok: false, error: 'jQuery or rqstValue missing'}); return;
+            """async (rqst) => {
+                try {
+                    const resp = await fetch("components/promotions/promotions.cfc", {
+                        method: "POST",
+                        credentials: "same-origin",
+                        headers: {
+                            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                            "X-Requested-With": "XMLHttpRequest"
+                        },
+                        body: new URLSearchParams({rqst: rqst, method: "exitImpersonate"}).toString()
+                    });
+                    const text = await resp.text();
+                    let parsed; try { parsed = JSON.parse(text); } catch (e) { parsed = null; }
+                    return {ok: !!(parsed && parsed.data && parsed.data.success)};
+                } catch (e) {
+                    return {ok: false, error: String(e)};
                 }
-                $.ajax({
-                    url: "components/promotions/promotions.cfc",
-                    method: "POST",
-                    dataType: "json",
-                    data: {rqst: rqstValue, method: "exitImpersonate"}
-                })
-                .done(r => {
-                    const parsed = (typeof r === 'string') ? JSON.parse(r) : r;
-                    resolve({ok: !!(parsed && parsed.data && parsed.data.success)});
-                })
-                .fail((xhr, status, err) => resolve({ok: false, error: status + ': ' + err}));
-            })"""
+            }""",
+            rqst,
         )
         return bool(result.get("ok"))
     except Exception as e:
@@ -357,36 +369,47 @@ def _find_owner_and_impersonate(page, sheet_tab_name: str, aliases_raw: dict) ->
         print(f"  ❌ Action button missing data-officeid attribute.")
         return None, "ov page error: missing officeId"
 
+    rqst = page_rqst(page)
+    if not rqst:
+        print(f"  ❌ confirmImpersonate: no rqst token on page")
+        return None, "ov page error: missing rqst token"
+
     # Call the impersonate AJAX endpoint directly (bypasses the SweetAlert).
+    # Vanilla fetch (no jQuery `$`) so it survives patchright's isolated
+    # evaluate world — the old `$.ajax` path saw `$` as undefined and failed
+    # for every owner. Headers mirror $.ajax (X-Requested-With + form body).
     result = page.evaluate(
-        """(officeId) => new Promise((resolve) => {
-            if (typeof $ === 'undefined' || typeof rqstValue === 'undefined') {
-                resolve({ok: false, error: 'jQuery or rqstValue missing'}); return;
-            }
-            $.ajax({
-                url: "components/promotions/promotions.cfc",
-                method: "POST",
-                data: {rqst: rqstValue, officeid: officeId, method: "confirmImpersonate"}
-            })
-            .done(r => {
-                const parsed = (typeof r === 'string') ? JSON.parse(r) : r;
+        """({officeId, rqst}) => (async () => {
+            try {
+                const resp = await fetch("components/promotions/promotions.cfc", {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: {
+                        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                        "X-Requested-With": "XMLHttpRequest"
+                    },
+                    body: new URLSearchParams({rqst: rqst, officeid: officeId, method: "confirmImpersonate"}).toString()
+                });
+                const text = await resp.text();
+                let parsed; try { parsed = JSON.parse(text); } catch (e) { parsed = null; }
                 if (parsed && parsed.data && parsed.data.success) {
-                    resolve({ok: true, redirect: 'index.cfm?p=2&rqst=' + rqstValue});
-                } else {
-                    resolve({ok: false, response: JSON.stringify(parsed).slice(0, 200)});
+                    return {ok: true, redirect: 'index.cfm?p=2&rqst=' + rqst};
                 }
-            })
-            .fail((xhr, status, err) => resolve({ok: false, error: `${status}: ${err}`}));
-        })""",
-        office_id,
+                return {ok: false, response: JSON.stringify(parsed).slice(0, 200)};
+            } catch (e) {
+                return {ok: false, error: String(e)};
+            }
+        })()""",
+        {"officeId": office_id, "rqst": rqst},
     )
     if not result.get("ok"):
         print(f"  ❌ confirmImpersonate failed: {result}")
         return None, "no ov access (impersonate denied)"
 
-    # Navigate to the impersonated portal and read the new rqstValue.
+    # Navigate to the impersonated portal and read the new rqst token (the
+    # server hands back a fresh one for the impersonated session).
     page.goto(f"https://v2.ownerville.com/{result['redirect']}", wait_until="networkidle", timeout=20000)
-    new_rqst = page.evaluate("typeof rqstValue !== 'undefined' ? rqstValue : null")
+    new_rqst = page_rqst(page)
     return new_rqst, "ok"
 
 

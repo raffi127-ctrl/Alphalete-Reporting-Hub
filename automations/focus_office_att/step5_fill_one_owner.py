@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import re
 import sys
 from pathlib import Path
 from typing import Optional
@@ -41,6 +42,32 @@ CDP_URL = "http://localhost:9222"
 DEST_SPREADSHEET_ID = "1xgVE_e8bZimACgPdqcdNCr1qo4sedWect_zzEcUgEJY"
 TIME_TRACKER_PAGE = "p=510"
 DISPOSITION_PAGE = "p=89"
+
+
+def page_rqst(page) -> Optional[str]:
+    """Return the ownerville session's current rqst token WITHOUT relying on
+    the page's `rqstValue` JS global.
+
+    We used to read `rqstValue` via page.evaluate, but under patchright (the
+    stealth fork the Hub machines run) page.evaluate executes in an ISOLATED
+    JS world, so the site's main-world globals (jQuery `$`, `rqstValue`) are
+    invisible — every read returned null and the whole scrape failed with
+    'jQuery or rqstValue missing'. The token is server-rendered into both the
+    page URL (`...&rqst=XXX`) and an inline `var rqstValue = "XXX"`, so we
+    parse it from those instead. Works under plain Playwright AND patchright.
+    """
+    # URL is cheapest + always reflects the current navigation.
+    m = re.search(r"rqst=([A-Fa-f0-9_]{8,})", page.url or "")
+    if m:
+        return m.group(1)
+    # Fall back to the inline-script value the site's own JS uses.
+    try:
+        m = re.search(r"rqstValue\s*=\s*['\"]([A-Fa-f0-9_]{8,})['\"]", page.content())
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    return None
 
 # Source-table column indices (Time Tracker)
 SRC_NAME = 1
@@ -119,13 +146,20 @@ def parse_gap_time(s) -> "Optional[float]":
 def _set_date_and_pagesize(page, target_mdy: str) -> None:
     """Set the date picker, swallow the navigation it triggers, then set Show 100."""
     try:
+        # Vanilla DOM only — no jQuery `$`. Under patchright, page.evaluate
+        # runs in an isolated world where the site's `$` global is invisible,
+        # so the old `$('#datepicker')...` threw "ReferenceError: $ is not
+        # defined". Setting .value + dispatching native input/change/blur
+        # fires the same handlers jQuery's .on('change') binds (jQuery listens
+        # via addEventListener), which is what triggers the date navigation.
         page.evaluate(
             """(targetDate) => {
-                const el = $('#datepicker');
-                if (el.datepicker && typeof el.datepicker === 'function') {
-                    try { el.datepicker('setDate', targetDate); } catch(e) {}
-                }
-                el.val(targetDate).trigger('change').trigger('blur');
+                const el = document.querySelector('#datepicker');
+                if (!el) return;
+                el.value = targetDate;
+                el.dispatchEvent(new Event('input',  {bubbles: true}));
+                el.dispatchEvent(new Event('change', {bubbles: true}));
+                el.dispatchEvent(new Event('blur',   {bubbles: true}));
             }""",
             target_mdy,
         )
@@ -1510,10 +1544,12 @@ def main() -> int:
             return 1
         print(f"✓ Chrome session: {page.title()}")
 
-        # Read rqstValue once — needed for navigation to both pages.
-        rqst = page.evaluate("typeof rqstValue !== 'undefined' ? rqstValue : null")
+        # Read the rqst token once — needed for navigation to both pages.
+        # Parsed from the URL/inline value (not the JS global) so it works
+        # under patchright's isolated evaluate world. See page_rqst().
+        rqst = page_rqst(page)
         if not rqst:
-            print("❌ rqstValue not found — not impersonating?")
+            print("❌ rqst token not found — not impersonating?")
             return 1
 
         # Time Tracker scrape: one navigation, then one day at a time.
