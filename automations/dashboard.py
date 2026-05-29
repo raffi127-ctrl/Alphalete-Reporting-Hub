@@ -1824,17 +1824,24 @@ AUTOMATED_REPORTS = [
         "emoji": "📑",
         "color": "#F59E0B",
         "category": "📊 Metrics",
-        "description": "Daily per-ICD churn fills across the Owners Metrics Report sheet — one tab per captainship. Phase 1 covers ATT Fiber (Wayne / Starr Rodenhurst / Aron Corral). B2B and NDS captainships plug in later.",
+        "description": "Daily per-ICD churn fills across the Owners Metrics Report sheet — one tab per captainship. Covers ATT Fiber (Wayne / Starr Rodenhurst / Aron Corral), B2B (Carlos Hidalgo / Eveliz Wright), and NDS (Khalil Mansour / Colten Wright / Jairo Ruiz).",
         "breakdown": (
             "WHAT IT DOES\n"
             "Fills per-ICD churn rates on every captainship tab of "
             "the Owners Metrics Report Google Sheet. One Tableau "
             "session, one Crosstab pull per captainship, one fill "
             "per destination tab.\n\n"
-            "TABS FILLED (Phase 1 — ATT Fiber)\n"
+            "TABS FILLED — ATT Fiber (4 buckets: 0-30 / 30 / 60 / 90)\n"
             "• Churn - Wayne (ATT Fiber)\n"
             "• Churn - Starr Rodenhurst (ATT Fiber)\n"
             "• Churn - Aron Corral (ATT Fiber)\n\n"
+            "TABS FILLED — B2B (5 buckets: 0-30 / 30 / 60 / 90 / 120)\n"
+            "• Churn - Carlos Hidalgo (B2B)\n"
+            "• Churn - Eveliz Wright (B2B)\n\n"
+            "TABS FILLED — NDS (4 buckets: 0-30 / 30 / 60 / 90)\n"
+            "• Churn - Khalil Mansour (NDS)\n"
+            "• Churn - Colten Wright (NDS)\n"
+            "• Churn - Jairo Ruiz (NDS)\n\n"
             "WHEN IT RUNS\n"
             "Daily."
         ),

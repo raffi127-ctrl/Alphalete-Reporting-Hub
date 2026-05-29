@@ -43,6 +43,24 @@ def open_ws_b2b_eveliz():
     return _shared.open_by_key(SHEET_ID).worksheet(TAB_B2B_EVELIZ)
 
 
+# ----- NDS tabs (Phase 3) --------------------------------------------
+TAB_NDS_KHALIL = "Churn - Khalil Mansour (NDS)"
+TAB_NDS_COLTEN = "Churn - Colten Wright (NDS)"
+TAB_NDS_JAIRO  = "Churn - Jairo Ruiz (NDS)"
+
+
+def open_ws_nds_khalil():
+    return _shared.open_by_key(SHEET_ID).worksheet(TAB_NDS_KHALIL)
+
+
+def open_ws_nds_colten():
+    return _shared.open_by_key(SHEET_ID).worksheet(TAB_NDS_COLTEN)
+
+
+def open_ws_nds_jairo():
+    return _shared.open_by_key(SHEET_ID).worksheet(TAB_NDS_JAIRO)
+
+
 # Re-export shared fill operations under their canonical names so the
 # runner can call them by the same names used elsewhere.
 find_sections                = _shared.find_sections

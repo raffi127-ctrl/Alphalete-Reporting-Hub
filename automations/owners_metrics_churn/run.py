@@ -26,6 +26,33 @@ from pathlib import Path
 
 from automations.shared.tableau_patchright import tableau_session
 from automations.owners_metrics_churn import pull, fill
+from automations.focus_office_att.aliases import load_aliases, alias_to_canonical
+
+
+def _apply_aliases(parsed: dict, aliases: dict) -> dict:
+    """Post-process a parsed dict: map every rep name through the
+    aliases sheet so the runner's downstream matching against the
+    destination tab uses the canonical sheet-tab name.
+
+    If two parsed names collapse to the same canonical (e.g. both
+    'Mohammad' and 'Mohammed' map to 'Mohammad Altom'), merge their
+    period slots. Megan 2026-05-29: 'Mohammed Altom' (sheet) vs
+    'Mohammad Altom' (Tableau) created a duplicate insert on
+    Khalil's NDS tab — wiring the alias dict here prevents it.
+    """
+    if not aliases:
+        return parsed
+    new_reps: dict = {}
+    for name, periods in parsed.get("reps", {}).items():
+        canonical = alias_to_canonical(name, aliases)
+        if canonical in new_reps:
+            # Merge same-period slots if both spellings carried data.
+            for p, slot in periods.items():
+                new_reps[canonical].setdefault(p, {}).update(slot)
+        else:
+            new_reps[canonical] = periods
+    parsed["reps"] = new_reps
+    return parsed
 
 
 REPORTS = [
@@ -47,6 +74,16 @@ REPORTS = [
     ("eveliz", "Eveliz Wright (B2B)",
      pull.fetch_b2b_eveliz, fill.open_ws_b2b_eveliz,
      "owners_b2b_eveliz.csv", pull.parse_b2b, pull.B2B_PERIODS),
+    # ----- NDS (Phase 3) -----
+    ("khalil", "Khalil Mansour (NDS)",
+     pull.fetch_nds_khalil, fill.open_ws_nds_khalil,
+     "owners_nds_khalil.csv", pull.parse_nds, pull.NDS_PERIODS),
+    ("colten", "Colten Wright (NDS)",
+     pull.fetch_nds_colten, fill.open_ws_nds_colten,
+     "owners_nds_colten.csv", pull.parse_nds, pull.NDS_PERIODS),
+    ("jairo", "Jairo Ruiz (NDS)",
+     pull.fetch_nds_jairo, fill.open_ws_nds_jairo,
+     "owners_nds_jairo.csv", pull.parse_nds, pull.NDS_PERIODS),
 ]
 
 
@@ -141,7 +178,8 @@ def main(argv=None) -> int:
                          "label is already present.")
     ap.add_argument("--only", default=None,
                     help="Comma-separated slugs to run. Fiber: wayne, "
-                         "starr, aron. B2B: carlos, eveliz. Defaults to all.")
+                         "starr, aron. B2B: carlos, eveliz. NDS: khalil, "
+                         "colten, jairo. Defaults to all.")
     args = ap.parse_args(argv)
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
@@ -175,9 +213,18 @@ def main(argv=None) -> int:
                 print(f"    ✓ {csvs[slug]}")
 
     # --- Phase 2: parse + fill each ---
+    # Load aliases once per run — applied to every parser's output so
+    # name-spelling drift between Tableau + the sheet (Mohammad vs
+    # Mohammed Altom etc.) doesn't insert duplicate ICDs.
     print("\nPhase 2: fill destination tabs")
+    aliases = load_aliases()
+    if aliases:
+        print(f"  Loaded {sum(len(v) for v in aliases.values())} aliases "
+              f"({len(aliases)} canonical names).")
+
     for slug, label, _fetch_fn, open_ws_fn, _csv_name, parse_fn, periods in selected:
         parsed = parse_fn(csvs[slug])
+        parsed = _apply_aliases(parsed, aliases)
         _run_fill_phase(label, open_ws_fn, parsed, periods, today, args)
 
     # No Slack post — sheet-only (matches existing Captainship pattern).
