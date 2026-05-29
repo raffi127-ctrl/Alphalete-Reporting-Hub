@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import datetime as dt
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -48,7 +49,7 @@ def build_url(start: dt.date, end: dt.date) -> str:
 def fetch_crosstab(start: dt.date, end: dt.date,
                    out_path: Optional[Path] = None,
                    verbose: bool = False) -> Path:
-    out_path = out_path or Path("/tmp/canceled_orders_orderlog.csv")
+    out_path = out_path or Path(tempfile.gettempdir()) / "canceled_orders_orderlog.csv"
     download_crosstab_patchright(build_url(start, end), WORKSHEET, out_path,
                                   verbose=verbose)
     return out_path

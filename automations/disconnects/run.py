@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import sys
+import tempfile
 from pathlib import Path
 
 from automations.disconnects import pull, fill, render
@@ -117,7 +118,7 @@ def main(argv=None) -> int:
     print("Step 4: Slack post to today's Metrics thread...")
     try:
         if local_rows_new:
-            img_path = Path("/tmp/disconnects_local_office.png")
+            img_path = Path(tempfile.gettempdir()) / "disconnects_local_office.png"
             render.render(local_rows_new, img_path)
             slack_result = slack_metrics_post.post_reply_with_image(
                 img_path,

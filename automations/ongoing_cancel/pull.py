@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -17,7 +18,7 @@ RATE_METRIC = "Internet Cancel Rates Running Sum along sp.Order Date"
 
 
 def fetch_crosstab(out_path: Optional[Path] = None, verbose: bool = False) -> Path:
-    out_path = out_path or Path("/tmp/ongoing_cancel.csv")
+    out_path = out_path or Path(tempfile.gettempdir()) / "ongoing_cancel.csv"
     download_crosstab_patchright(VIEW_URL, WORKSHEET, out_path, verbose=verbose)
     return out_path
 

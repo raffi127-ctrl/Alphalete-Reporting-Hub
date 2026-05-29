@@ -1761,14 +1761,6 @@ AUTOMATED_REPORTS = [
                 "module": "automations.country_metrics.run",
                 "args_fn": lambda: [],
             },
-            {
-                "label": "Run a Specific Past Week",
-                "icon": "📆",
-                "needs_date": True,
-                "help": "Pick a weekending Sunday (WE) to fill.",
-                "module": "automations.country_metrics.run",
-                "args_fn": lambda d: ["--week", d.isoformat()],
-            },
         ],
     },
 ]

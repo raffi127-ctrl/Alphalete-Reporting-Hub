@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import sys
+import tempfile
 from pathlib import Path
 
 from automations.ongoing_cancel import pull, render, slack_post
@@ -30,7 +31,7 @@ def main(argv=None) -> int:
     args = p.parse_args(argv)
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
 
-    scratch = Path("/tmp")
+    scratch = Path(tempfile.gettempdir())
     csv_path = scratch / "ongoing_cancel.csv"
     img_path = scratch / "ongoing_cancel.png"
 
