@@ -159,8 +159,18 @@ def _read_section(ws, section: dict, n_weeks: int) -> dict:
             pct = (rep_row[i] if i < len(rep_row) else "").strip()
             units = (rep_row[i + 1] if i + 1 < len(rep_row) else "").strip()
             pairs.append((pct, units))
-        # Skip reps with no value in ANY of the N weeks (hidden rows).
-        if not any(pct for pct, _ in pairs):
+        # Skip reps whose TODAY % (col B = first week-pair) is blank
+        # OR exactly 0.00% — Raf 2026-05-29: prefers smaller Slack
+        # screenshots showing only reps with ACTIVE churn (>0% today).
+        # The sheet still carries every 0% row; this filter is just
+        # for the Slack image.
+        today_pct_str = (pairs[0][0] if pairs else "").strip().rstrip("%")
+        if not today_pct_str:
+            continue
+        try:
+            if float(today_pct_str) <= 0:
+                continue
+        except ValueError:
             continue
         reps.append((name, pairs))
 
