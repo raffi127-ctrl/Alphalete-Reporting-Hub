@@ -23,6 +23,7 @@ import argparse
 import datetime as dt
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from automations.shared.tableau_patchright import tableau_session
@@ -204,6 +205,14 @@ def _post_to_slack(selected, today: dt.date) -> None:
         sections = fill_mod.find_sections(ws)
         paths = render_mod.render_all_sections(ws, sections, today, out_dir)
         for i, period in enumerate(PERIODS):
+            # Small wait between posts so Slack's file-upload events
+            # commit in the SAME ORDER we send them. Without this, rapid
+            # back-to-back files_upload_v2 calls can get assigned
+            # overlapping millisecond timestamps and the Slack thread
+            # may display them out of [0-30, 30, 60, 90] order (Megan
+            # 2026-05-28).
+            if i > 0:
+                time.sleep(1.0)
             comment = f"{'🌐' if slug == 'new-internet' else '📊'} {title_prefix} — {period} Day"
             file_name = f"{title_prefix} {period} Day {today:%m-%d-%Y}.png"
             try:
