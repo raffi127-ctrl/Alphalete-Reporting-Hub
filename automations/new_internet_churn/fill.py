@@ -619,6 +619,160 @@ def apply_filters(
     ws.spreadsheet.batch_update({"requests": requests})
 
 
+_PCT_THRESHOLDS = {
+    # period → (green-cap, red-floor) — from Eve's transcript
+    "0-30": (2.0, 3.5),
+    "30":   (5.0, 8.0),
+    "60":   (5.0, 8.0),
+    "90":   (5.0, 8.0),
+}
+_PCT_GREEN  = {"red": 147/255, "green": 196/255, "blue": 125/255}
+_PCT_YELLOW = {"red": 255/255, "green": 217/255, "blue": 102/255}
+_PCT_RED    = {"red": 224/255, "green": 102/255, "blue": 102/255}
+
+
+def _pct_color_for(period: str, pct_str: str) -> Optional[dict]:
+    raw = (pct_str or "").strip().rstrip("%")
+    if not raw:
+        return None
+    try:
+        v = float(raw)
+    except ValueError:
+        return None
+    g_cap, r_floor = _PCT_THRESHOLDS.get(period, (2.0, 3.5))
+    if v <= g_cap:
+        return _PCT_GREEN
+    if v >= r_floor:
+        return _PCT_RED
+    return _PCT_YELLOW
+
+
+def apply_pct_direct_colors(
+    ws,
+    sections: dict,
+    parsed: dict,
+    *,
+    dry_run: bool = False,
+    logfn=print,
+) -> None:
+    """Set DIRECT background color on each pct cell (col B) — Office
+    Avg + every rep with non-blank pct — using Eve's threshold logic
+    (≤ green-cap = green, ≥ red-floor = red, else yellow).
+
+    Required because Eve's existing conditional-format rules don't
+    cover every rep row (only the ones she's filled by hand before);
+    cells outside their range stay white even after we write a value.
+    Setting a DIRECT background works regardless of rule coverage —
+    in cells Eve's rule covers, the rule still wins on top, so the
+    visible state is unchanged for those. Cells NOT covered by her
+    rule fall back to our direct color, which matches her logic
+    anyway, so the visual result is uniform across all rep rows.
+    """
+    reps = parsed.get("reps", {})
+    office_total = parsed.get("office_total", {})
+    requests: list[dict] = []
+
+    for period, sect in sections.items():
+        rep_rows = sect["rep_rows"]
+        # Office Avg row.
+        odata = office_total.get(period, {})
+        bg = _pct_color_for(period, odata.get("pct", ""))
+        if bg is not None:
+            requests.append({"repeatCell": {
+                "range": {
+                    "sheetId": ws.id,
+                    "startRowIndex": sect["office_avg_row"] - 1,
+                    "endRowIndex":   sect["office_avg_row"],
+                    "startColumnIndex": 1,
+                    "endColumnIndex":   2,
+                },
+                "cell": {"userEnteredFormat": {"backgroundColor": bg}},
+                "fields": "userEnteredFormat.backgroundColor",
+            }})
+        # Rep rows.
+        for rep_name, periods in reps.items():
+            pdata = periods.get(period)
+            if not pdata or not pdata.get("pct"):
+                continue
+            row = rep_rows.get(rep_name.lower())
+            if row is None:
+                continue
+            bg = _pct_color_for(period, pdata.get("pct", ""))
+            if bg is None:
+                continue
+            requests.append({"repeatCell": {
+                "range": {
+                    "sheetId": ws.id,
+                    "startRowIndex": row - 1,
+                    "endRowIndex":   row,
+                    "startColumnIndex": 1,
+                    "endColumnIndex":   2,
+                },
+                "cell": {"userEnteredFormat": {"backgroundColor": bg}},
+                "fields": "userEnteredFormat.backgroundColor",
+            }})
+
+    if dry_run:
+        logfn(f"  (dry-run) would paint pct backgrounds on {len(requests)} cells")
+        return
+    if requests:
+        ws.spreadsheet.batch_update({"requests": requests})
+
+
+def unhide_all_rep_rows(
+    ws,
+    sections: dict,
+    *,
+    dry_run: bool = False,
+    logfn=print,
+) -> None:
+    """Unhide every rep row in every section. Required BEFORE
+    sort_sections_via_sortrange because Sheets' sortRange skips hidden
+    rows — leaving them stuck in their old positions. Without this
+    step, a rep that was hidden yesterday (e.g. had 0% under the
+    skip-rule) but has a real value today (e.g. Bill Hirwa: 6.67% on
+    2026-05-29) stays at his old row position even after writes,
+    because sort can't move him.
+
+    hide_blanks_today runs AFTER sort to re-hide rows whose today %
+    is blank — so the cycle is: unhide all → write today → sort →
+    hide blanks today. Names are never deleted."""
+    if not sections:
+        return
+    requests = []
+    sorted_periods = sorted(sections.items(), key=lambda kv: kv[1]["header_row"])
+    for idx, (_, sect) in enumerate(sorted_periods):
+        rep_rows = sect["rep_rows"]
+        if not rep_rows:
+            continue
+        first_row = min(rep_rows.values())
+        # End at the next section's header row (or sheet end for the
+        # last section) so we also unhide any gap-rows that may have
+        # been hidden previously.
+        if idx + 1 < len(sorted_periods):
+            last_row = sorted_periods[idx + 1][1]["header_row"] - 1
+        else:
+            last_row = ws.row_count
+        requests.append({
+            "updateDimensionProperties": {
+                "range": {
+                    "sheetId": ws.id,
+                    "dimension": "ROWS",
+                    "startIndex": first_row - 1,    # 0-indexed inclusive
+                    "endIndex":   last_row,         # 0-indexed exclusive
+                },
+                "properties": {"hiddenByUser": False},
+                "fields": "hiddenByUser",
+            }
+        })
+
+    if dry_run:
+        logfn(f"  (dry-run) would unhide rep rows across {len(requests)} sections")
+        return
+    if requests:
+        ws.spreadsheet.batch_update({"requests": requests})
+
+
 def sort_sections_via_sortrange(
     ws,
     sections: dict,

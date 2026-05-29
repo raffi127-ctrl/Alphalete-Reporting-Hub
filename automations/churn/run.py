@@ -101,12 +101,28 @@ def _run_fill_phase(label: str, pull_mod, fill_mod, parsed: dict,
                          if s['unmatched'] else "")
         print(f"    {p:>4}-day: {s['filled']} filled{unmatched_str}")
 
+    # Unhide every rep row BEFORE sort so sortRange (which skips
+    # hidden rows) can actually move them. Without this, a rep who
+    # was hidden yesterday but has data today stays stuck at their
+    # old row position even after the write (Megan 2026-05-29: Bill
+    # Hirwa stuck at row 24 with 6.67% instead of being sorted into
+    # the visible block).
+    fill_mod.unhide_all_rep_rows(ws, sections,
+                                 dry_run=args.dry_run, logfn=print)
+
     # Sort by today's % descending — Sheets-native sortRange, atomic.
     # Blanks land at the top (DESCENDING quirk), then hide_blanks_today
     # below hides them — visual end state is non-blank reps in % desc
     # order, blanks invisible.
     fill_mod.sort_sections_via_sortrange(ws, sections,
                                          dry_run=args.dry_run, logfn=print)
+
+    # Paint direct background on each pct cell (col B) per period
+    # threshold — required because Eve's existing conditional rules
+    # don't cover every rep row; direct backgrounds make the colors
+    # uniform across all rep rows regardless of rule coverage.
+    fill_mod.apply_pct_direct_colors(ws, sections, parsed,
+                                     dry_run=args.dry_run, logfn=print)
 
     # Col C (units) white-override conditional rule — required because
     # Eve's existing % color rules have 3-col ranges that paint C red

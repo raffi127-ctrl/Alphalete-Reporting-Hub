@@ -29,4 +29,6 @@ hide_blanks_today         = _shared.hide_blanks_today
 apply_units_white_override = _shared.apply_units_white_override
 apply_filters             = _shared.apply_filters
 sort_sections_via_sortrange = _shared.sort_sections_via_sortrange
+unhide_all_rep_rows       = _shared.unhide_all_rep_rows
+apply_pct_direct_colors   = _shared.apply_pct_direct_colors
 _date_label               = _shared._date_label
