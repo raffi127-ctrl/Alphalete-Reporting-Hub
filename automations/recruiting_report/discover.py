@@ -1,8 +1,8 @@
 """Discovery session for ApplicantStream — stealth edition.
 
-Uses your real Chrome (not the Playwright-bundled Chromium) plus a persistent
-profile, plus playwright-stealth patches. This combination passes the
-Cloudflare Turnstile check that stops vanilla Playwright.
+Uses your real Chrome (channel="chrome", not bundled Chromium) plus a
+persistent profile, driven by patchright (a stealth Playwright fork). This
+combination passes the Cloudflare Turnstile check that stops vanilla Playwright.
 
 The persistent profile lives at PROFILE_DIR. After your first manual login,
 the session cookie is saved there and subsequent runs skip the login flow
@@ -21,8 +21,7 @@ import json
 import sys
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
-from playwright_stealth import Stealth
+from patchright.sync_api import sync_playwright
 
 LOGIN_URL = "https://applicantstream.com/"
 SELECTORS_PATH = Path(__file__).resolve().parent / "selectors.json"
@@ -40,7 +39,8 @@ def main() -> int:
     print("  3. When you see the export button, click 'Resume' in the Playwright Inspector.")
     print()
 
-    with Stealth().use_sync(sync_playwright()) as p:
+    # patchright is itself a stealth fork — no playwright_stealth wrapper needed.
+    with sync_playwright() as p:
         context = p.chromium.launch_persistent_context(
             user_data_dir=str(PROFILE_DIR),
             channel="chrome",

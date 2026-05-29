@@ -22,7 +22,7 @@ import sys
 import time
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+from patchright.sync_api import sync_playwright
 
 POLL_INTERVAL_S = 1.2  # how often we sample state
 OUT_ROOT = Path(__file__).resolve().parents[2] / "output" / "_phase3_watch"

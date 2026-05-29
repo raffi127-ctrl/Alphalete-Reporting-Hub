@@ -21,7 +21,7 @@ import json
 import sys
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+from patchright.sync_api import sync_playwright
 
 SELECTORS_PATH = Path(__file__).resolve().parent / "selectors.json"
 SNAPSHOT_PATH = SELECTORS_PATH.parent / "discovery-snapshot.json"

@@ -35,7 +35,7 @@ import datetime as dt
 import sys
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from patchright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 # 'AUTOMATION PULL' custom view of ATT Tracker 2.1 D2D / PRODUCT SALES SUMMARY 4WK.
 # Saved by Megan 2026-05-14 with rep dimension expanded + 4 product types selected.

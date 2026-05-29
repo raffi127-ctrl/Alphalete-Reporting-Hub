@@ -1,13 +1,13 @@
-playwright>=1.45
-playwright-stealth>=2.0
 openpyxl>=3.1
 gspread>=6.1
 google-auth-oauthlib>=1.2
 keyring>=25.0
 streamlit>=1.36
-# Used by uploaded automations that need a stealth Chrome (Cloudflare /
-# ownerville login). patchright is a Playwright fork with anti-detection
-# patches. Added 2026-05-22 when JD's Order Log report imported it.
+# The browser driver for EVERY report that drives Chrome (AppStream,
+# ownerville, Tableau). patchright is a Playwright fork with anti-detection
+# patches; all reports import patchright.{sync,async}_api, not playwright.
+# (page.evaluate runs in an isolated world under patchright — never depend
+# on a site's main-world globals like jQuery `$`; see run_all_owners.py.)
 patchright>=1.60
 # Needed by Order Log + future uploaded reports producing .xlsx files
 # in the requester's Downloads folder.

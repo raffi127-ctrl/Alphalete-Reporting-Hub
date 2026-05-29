@@ -30,7 +30,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from playwright.sync_api import sync_playwright
+from patchright.sync_api import sync_playwright
 
 from automations.recruiting_report import fill as _fill
 from automations.focus_office_att.apply_data_border import apply_bold_border

@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import requests
-from playwright.sync_api import sync_playwright
+from patchright.sync_api import sync_playwright
 
 from automations.recruiting_report import fetch_office
 from automations.recruiting_report.opt_phase import (

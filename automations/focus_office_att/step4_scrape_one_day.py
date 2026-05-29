@@ -16,7 +16,7 @@ import json
 import sys
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+from patchright.sync_api import sync_playwright
 
 CDP_URL = "http://localhost:9222"
 TIME_TRACKER_PAGE = "p=510"

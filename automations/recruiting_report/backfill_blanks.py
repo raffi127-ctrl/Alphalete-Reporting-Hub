@@ -17,7 +17,7 @@ import sys
 from typing import Dict, List, Optional
 
 import gspread
-from playwright.sync_api import sync_playwright
+from patchright.sync_api import sync_playwright
 
 from . import fetch_office, fill
 

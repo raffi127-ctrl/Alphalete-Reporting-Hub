@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+from patchright.sync_api import sync_playwright
 
 CDP_URL = "http://localhost:9222"
 OUT_PATH = Path(__file__).resolve().parent / "page-tables.json"

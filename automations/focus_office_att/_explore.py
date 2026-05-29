@@ -15,7 +15,7 @@ import datetime as dt
 import sys
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+from patchright.sync_api import sync_playwright
 
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "_phase3_explore"
 

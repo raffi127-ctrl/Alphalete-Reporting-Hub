@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from typing import Dict, Optional
 
-from playwright.sync_api import sync_playwright, Page, TimeoutError as PWTimeout
+from patchright.sync_api import sync_playwright, Page, TimeoutError as PWTimeout
 
 CDP_URL = "http://localhost:9222"
 RETENTION_REPORT_PAGE = "p=701"

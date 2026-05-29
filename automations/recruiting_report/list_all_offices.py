@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 from string import ascii_lowercase, digits
 
-from playwright.sync_api import sync_playwright
+from patchright.sync_api import sync_playwright
 
 CDP_URL = "http://localhost:9222"
 OUT_PATH = Path(__file__).resolve().parent / "all-offices.json"
