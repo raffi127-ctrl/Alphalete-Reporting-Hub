@@ -1681,6 +1681,62 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "total-knocks",
+        "name": "Total Knocks",
+        "creator": "Eve",
+        "emoji": "🚪",
+        "color": "#B45309",
+        "category": "📊 Metrics",
+        "description": "Daily Disposition-by-Rep knock totals (day prior) for Local Office → screenshot posted as a reply in today's 'Metrics for:' header thread in #alphalete-sales.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Collects Disposition by rep from Ownerville (always the day "
+            "prior) for Local Office.\n\n"
+            "WHEN IT RUNS\n"
+            "Every morning. Each run collects data from the day prior, keeps "
+            "no record, it just screenshots and posts in the metrics thread "
+            "in 'alphalete-sales'.\n\n"
+            "WHILE IT RUNS\n"
+            "It will automatically open/connect with Ownerville, do not type "
+            "or close the window while it works, otherwise the run will fail. "
+            "It will indicate when it's finished."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1qUiljtWXhcy3OGhQ_81LnNPIsUXjad3MJi-VzjEIDV8/edit"
+                      "#gid=2013773146"),
+        "assignees": ["Eve"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "estimated_minutes": 5,
+        },
+        "checklist": [
+            {"text": "The daily Metrics thread must exist in #alphalete-sales "
+                     "before running. This report posts as a reply in that "
+                     "thread.",
+             "key": "metrics_header_posted"},
+        ],
+        "post_run": {
+            "message_success": "✅ Total Knocks posted to today's metrics thread.",
+            "message_failed": "❌ Run failed. Most likely the Metrics header "
+                              "thread wasn't posted in #alphalete-sales yet, "
+                              "or the Ownerville window was touched mid-run. "
+                              "Fix that, then click Run Again.",
+        },
+        "actions": [
+            {
+                "label": "Run Total Knocks",
+                "icon": "▶",
+                "primary": True,
+                "help": "Scrapes yesterday's Disposition by Rep from "
+                        "Ownerville, renders the table image, posts to "
+                        "today's Metrics thread in #alphalete-sales.",
+                "module": "automations.total_knocks.run",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
         "id": "fiber-activations",
         "name": "Fiber Activations Report",
         "creator": "Megan",
