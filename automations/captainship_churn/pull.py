@@ -39,7 +39,7 @@ def _smart_title(name: str) -> str:
 NEW_INT_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/CHURN/"
-    "0b6dc7ed-26c5-4308-9c46-eda2a5eca15b/CaptainshipChurn?:iid=1"
+    "06249379-32de-4ce4-8089-f792c71aaba9/CaptainshipINTChurn?:iid=1"
 )
 WIRELESS_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"

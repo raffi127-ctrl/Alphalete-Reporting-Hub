@@ -72,26 +72,29 @@ def _run_fill_phase(label: str, pull_mod, fill_mod, parsed: dict,
         print(f"    {p:>4}-day: header row {sect['header_row']}, "
               f"{len(sect['rep_rows'])} existing reps")
 
-    added = fill_mod.insert_missing_reps(ws, sections, parsed,
-                                          dry_run=args.dry_run, logfn=print)
-    if added:
-        for p, names in added.items():
-            print(f"  + {p}-day: added {len(names)} new rep(s): {names[:5]}"
-                  + (" …" if len(names) > 5 else ""))
-    else:
-        print("  (no new reps to add)")
-
     already_filled = fill_mod.today_already_filled(ws, sections, today)
-    if already_filled and not args.force_insert:
-        print(f"  ⚠ '{fill_mod._date_label(today)}' already in B+C — skipping "
-              f"(idempotent). Use --force-insert to add a duplicate column.")
-        return 1
+    skip_insert = already_filled and not args.force_insert
 
-    if args.dry_run:
-        print("  (dry-run, skipping column insert + merge + write)")
+    if skip_insert:
+        print(f"  ⚠ '{fill_mod._date_label(today)}' already in B+C — skipping "
+              f"INSERT (idempotent). write_today + cleanup pass still runs "
+              f"so today's values get refreshed from the latest pull "
+              f"(matters when the source URL changed mid-day, e.g. Eve's "
+              f"wireless-URL fix 2026-05-29).")
     else:
-        fill_mod.insert_two_cols_at_b(ws, sections)
-        fill_mod._merge_section_headers(ws, sections)
+        added = fill_mod.insert_missing_reps(ws, sections, parsed,
+                                              dry_run=args.dry_run, logfn=print)
+        if added:
+            for p, names in added.items():
+                print(f"  + {p}-day: added {len(names)} new rep(s): {names[:5]}"
+                      + (" …" if len(names) > 5 else ""))
+        else:
+            print("  (no new reps to add)")
+        if args.dry_run:
+            print("  (dry-run, skipping column insert + merge)")
+        else:
+            fill_mod.insert_two_cols_at_b(ws, sections)
+            fill_mod._merge_section_headers(ws, sections)
 
     print(f"  Write today ({fill_mod._date_label(today)})...")
     summary = fill_mod.write_today(ws, sections, today, parsed,
@@ -156,6 +159,10 @@ def main(argv=None) -> int:
                          "is already present (for side-by-side verification).")
     ap.add_argument("--only", choices=("new-internet", "wireless"), default=None,
                     help="Run only one of the two reports.")
+    ap.add_argument("--skip-slack", action="store_true",
+                    help="Sheet-only run, no Slack post. Use for mid-day "
+                         "re-runs (e.g. URL fix) when you don't want to "
+                         "double-post screenshots in the metrics thread.")
     args = ap.parse_args(argv)
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
@@ -196,6 +203,8 @@ def main(argv=None) -> int:
     # --- Phase 3: render 4 multi-week PNGs per report + post to Slack ---
     if args.dry_run:
         print("\nPhase 3: (dry-run, skipping Slack post)")
+    elif args.skip_slack:
+        print("\nPhase 3: (--skip-slack, sheet fill only)")
     else:
         _post_to_slack(selected, today)
 
@@ -221,6 +230,10 @@ def _post_to_slack(selected, today: dt.date) -> None:
         sections = fill_mod.find_sections(ws)
         paths = render_mod.render_all_sections(ws, sections, today, out_dir)
         for i, period in enumerate(PERIODS):
+            if period not in paths:
+                print(f"      {period}-day: ⚠ skipped — section not "
+                      f"detected on the sheet (no PNG rendered).")
+                continue
             # Small wait between posts so Slack's file-upload events
             # commit in the SAME ORDER we send them. Without this, rapid
             # back-to-back files_upload_v2 calls can get assigned

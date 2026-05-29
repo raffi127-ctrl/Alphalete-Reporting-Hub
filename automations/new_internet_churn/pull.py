@@ -31,13 +31,18 @@ from typing import Optional
 
 from automations.shared.tableau_patchright import download_crosstab_patchright
 
-# Custom view URL: NewINTRafExpanded already filters to NEW INTERNET +
-# ICD Owner Name (rep) = RAFAEL HIDALGO. So a Crosstab pull returns only
-# the reps under Raf's Local Office.
+# Custom view URL: NewINTLocalOffice (Megan 2026-05-29) bakes in all
+# three filters at the right values:
+#   * Churn View = New Internet Churn View   (← the parameter that was
+#     missing from NewINTRafExpanded, which left wireless pulls
+#     computed with NI formula. Eve's bug. Replaced with a freshly-
+#     saved custom view so all 3 dropdowns are locked correctly.)
+#   * Product Type (Broken Out) = NEW INTERNET
+#   * ICD Owner Name (rep) = RAFAEL HIDALGO
 VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/CHURN/"
-    "42233190-1706-4628-9ab4-a307b01c8edb/NewINTRafExpanded?:iid=1"
+    "6a425046-e284-4e60-9ffa-7656aa7b9776/INTLocalOffice?:iid=2"
 )
 WORKSHEET = "ICD Churn"
 
@@ -78,7 +83,20 @@ def parse(csv_path: Path) -> dict:
 
     header = [h.lstrip("﻿").strip() for h in rows[0]]
     rep_i = header.index("Rep Name")
-    color_i = header.index("30-60 Color Churn (copy)")
+    # Color column name varies across views:
+    #   New Internet Churn View:  '30-60 Color Churn (copy)'
+    #   Wireless Churn View:      '30-60 Color Churn (Wireless)'
+    # Match by prefix so both work.
+    color_col = next(
+        (c for c in header if c.startswith("30-60 Color Churn")),
+        None,
+    )
+    if color_col is None:
+        raise ValueError(
+            f"No '30-60 Color Churn ...' column found in {header}. "
+            "The Tableau Crosstab schema changed."
+        )
+    color_i = header.index(color_col)
     # The unnamed metric-type column sits between color and the 0-30 column.
     metric_i = header.index("0-30 Day Churn") - 1
     period_cols = {p: header.index(f"{p} Day Churn") for p in PERIODS}

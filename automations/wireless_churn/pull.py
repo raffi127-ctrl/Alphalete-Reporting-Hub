@@ -1,15 +1,20 @@
 """Pull the Wireless Churn Crosstab for Raf's Local Office.
 
-Identical pipeline + parser as new_internet_churn — only the Tableau
-URL differs by ONE filter (Product Type (Broken Out) = WIRELESS
-instead of NEW INTERNET). Same CHURN view, same ICD Owner = RAFAEL
-HIDALGO, same 'ICD Churn' worksheet, same long-format Crosstab shape.
+Identical pipeline + parser as new_internet_churn — different custom
+view URL (WirelessLocalOffice) that locks ALL three Tableau filters at
+the right values for wireless:
 
-Per Megan 2026-05-28: 'Only 1 filter change for the wireless tab.'
-We reach for the URL-param override on top of the NewINTRafExpanded
-custom view rather than building a parallel custom view, so this
-module's URL is the New-Internet URL with `&Product%20Type%20
-(Broken%20Out)=WIRELESS` appended.
+  * Churn View = Wireless Churn View       (← drives the underlying
+    formula. Eve 2026-05-29: the prior URL reused NewINTRafExpanded
+    with a Product Type=WIRELESS override, which left Churn View on
+    "New Internet Churn View" — so wireless was being computed with
+    NI formula. That's why team-facing wireless numbers looked
+    "duplicated" from NI calculations.)
+  * Product Type (Broken Out) = WIRELESS
+  * ICD Owner Name (rep) = RAFAEL HIDALGO
+
+Switching to a wireless-specific custom view fixes the bug at the
+source (no more URL-param hacks).
 """
 from __future__ import annotations
 
@@ -27,13 +32,12 @@ fmt_units = _shared.fmt_units
 PERIODS = _shared.PERIODS
 WORKSHEET = _shared.WORKSHEET
 
-# Same CHURN view + custom-view GUID as new_internet_churn, with one
-# Product Type URL-param override flipping the filter to WIRELESS.
+# Custom view URL: WirelessLocalOffice — see module docstring for why
+# this swap matters.
 VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/CHURN/"
-    "42233190-1706-4628-9ab4-a307b01c8edb/NewINTRafExpanded?:iid=1"
-    "&Product%20Type%20(Broken%20Out)=WIRELESS"
+    "237d7959-bef0-40df-8697-8d879fe22560/WirelessLocalOffice?:iid=1"
 )
 
 

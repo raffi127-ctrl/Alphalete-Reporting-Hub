@@ -64,9 +64,10 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict,
     skip_insert = already_filled and not args.force_insert
     if skip_insert:
         print(f"  ⚠ '{fill._date_label(today)}' already in B+C — skipping "
-              f"INSERT + WRITE (idempotent). Cleanup pass (sort / repaint / "
-              f"clear-empty-bg / hide) still runs so today's run picks up "
-              f"any formatting tweaks since the last run.")
+              f"INSERT (idempotent). write_today + cleanup pass still "
+              f"runs so today's values get refreshed from the latest "
+              f"pull (matters when the source URL changed mid-day, "
+              f"e.g. Eve's wireless-URL fix 2026-05-29).")
     else:
         added = fill.insert_missing_reps(ws, sections, parsed,
                                          dry_run=args.dry_run, logfn=print)
@@ -76,21 +77,21 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict,
                       + (" …" if len(names) > 5 else ""))
         else:
             print("  (no new ICDs to add)")
-
-    if not skip_insert:
         if args.dry_run:
-            print("  (dry-run, skipping column insert + merge + write)")
+            print("  (dry-run, skipping column insert + merge)")
         else:
             fill.insert_two_cols_at_b(ws, sections)
             fill._merge_section_headers(ws, sections)
 
-        print(f"  Write today ({fill._date_label(today)})...")
-        summary = fill.write_today(ws, sections, today, parsed,
-                                   dry_run=args.dry_run, logfn=print)
-        for p, s in summary.items():
-            unmatched_str = (f", {len(s['unmatched'])} unmatched"
-                             if s['unmatched'] else "")
-            print(f"    {p:>4}-day: {s['filled']} filled{unmatched_str}")
+    # write_today runs every run — fresh values overwrite existing ones
+    # so a re-run after a URL fix picks up the corrected pull.
+    print(f"  Write today ({fill._date_label(today)})...")
+    summary = fill.write_today(ws, sections, today, parsed,
+                               dry_run=args.dry_run, logfn=print)
+    for p, s in summary.items():
+        unmatched_str = (f", {len(s['unmatched'])} unmatched"
+                         if s['unmatched'] else "")
+        print(f"    {p:>4}-day: {s['filled']} filled{unmatched_str}")
 
     # Cleanup pipeline — runs every run (including re-runs on the same
     # day) so today's formatting always reflects the latest code:
@@ -100,9 +101,8 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict,
                              dry_run=args.dry_run, logfn=print)
     fill.sort_sections_via_sortrange(ws, sections,
                                      dry_run=args.dry_run, logfn=print)
-    if not skip_insert:
-        fill.apply_pct_direct_colors(ws, sections, parsed,
-                                     dry_run=args.dry_run, logfn=print)
+    fill.apply_pct_direct_colors(ws, sections, parsed,
+                                 dry_run=args.dry_run, logfn=print)
     fill.apply_units_white_override(ws, sections,
                                     dry_run=args.dry_run, logfn=print)
     hide_actions = fill.hide_blanks_today(ws, sections,
