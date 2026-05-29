@@ -1774,6 +1774,55 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "captainship-new-internet-wireless-churn",
+        "name": "Captainship - New Internet & Wireless Churn",
+        "creator": "Megan",
+        "emoji": "🧭",
+        "color": "#F59E0B",
+        "category": "📊 Metrics",
+        "description": "Daily fill of Raf's Captainship per-ICD churn rates (4 buckets: 0-30 / 30 / 60 / 90 day) for BOTH the Captainship New Internet and Wireless tabs. Pulls overall ICD churn (one row per ICD owner), not per-rep. No Slack post — sheet fill only.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Fills Raf's Captainship per-ICD churn rates "
+            "(\"AT&T Fiber Metrics Report\" Google Sheet) "
+            "on both the Captainship New Internet and Captainship "
+            "Wireless tabs. Source = Megan's CaptainshipChurn and "
+            "CaptainshipWIRELESSChurn Tableau custom views (Raf's "
+            "Team filter baked in).\n\n"
+            "TABS FILLED (on the AT&T Fiber Metrics Report sheet)\n"
+            "• Captainship - New Internet Churn\n"
+            "• Captainship - Wireless Churn\n\n"
+            "WHEN IT RUNS\n"
+            "Daily.\n\n"
+            "NO SLACK POST\n"
+            "Unlike the Local Office sibling, this report does NOT "
+            "post screenshots to #alphalete-sales — sheet fill only."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8/edit"),
+        "assignees": ["Eve"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "estimated_minutes": 5,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Captainship Churn done — both tabs filled, sections sorted, blank-today rows hidden.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run Captainship Churn (Both Tabs)",
+                "icon": "▶",
+                "primary": True,
+                "help": "Pulls both Captainship Churn Crosstabs in one Tableau session + fills both tabs (skips today if already filled — pass --force-insert in CLI to override).",
+                "module": "automations.captainship_churn.run",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
         "id": "country-metrics",
         "name": "Country Metrics",
         "creator": "Eve",

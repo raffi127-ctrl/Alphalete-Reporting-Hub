@@ -335,77 +335,88 @@ def _find_formatted_template_col_after_insert(ws, section_header_row: int) -> Op
     return None
 
 
-def insert_two_cols_at_b(ws, sections: Optional[dict] = None) -> None:
-    """Insert 2 columns at position B+C (sheet-wide), then PASTE_NORMAL
-    Eve's template formatting from the leftmost formatted col pair we
-    can find. PASTE_NORMAL also brings over the merged-cell ranges,
-    conditional formatting rules, and direct cell backgrounds — so the
-    new B+C end up with Eve's exact template (orange section header,
-    peach office avg, black rep header, white units, conditional %).
+_CHURN_TIERS_PRESERVE_ROWS = 3   # rows 1-3 on tabs that carry the block
 
-    Megan 2026-05-28: 'we should be copying formatting exactly on
-    colors/bold/headers/lines'. PASTE_FORMAT didn't carry the merges or
-    conditional rules; PASTE_NORMAL does. write_today then overwrites
-    the duplicated values with our new today's data, so the visual
-    end-state is Eve's template + our numbers.
+
+def _detect_preserve_top_rows(ws) -> int:
+    """Return the number of top rows to preserve when inserting today's
+    B+C cols. Tabs with the CHURN TIERS reference block at A1 (NEW INT
+    tabs, Local Office + Captainship) keep rows 1-3 static. Tabs without
+    it (Wireless) preserve nothing — section header starts at row 1.
+
+    Detected by reading A1: if it contains 'CHURN TIERS', preserve rows
+    1-3. Megan 2026-05-29: 'this top section never changes'."""
+    try:
+        a1 = (ws.acell("A1").value or "").upper()
+    except Exception:
+        return 0
+    return _CHURN_TIERS_PRESERVE_ROWS if "CHURN TIERS" in a1 else 0
+
+
+def insert_two_cols_at_b(ws, sections: Optional[dict] = None) -> None:
+    """Insert 2 new B+C columns into the rep-data area ONLY (rows
+    preserve_top_rows..end), then paste yesterday's formatting from D+E
+    (just shifted from B+C by the insert) onto the new B+C.
+
+    Uses insertRange with shiftDimension=COLUMNS — shifts existing cells
+    right by 2 WITHIN the rep-data rows only. Rows 1..preserve_top_rows
+    (the CHURN TIERS reference block on NEW INT tabs) stay put.
+
+    Megan 2026-05-29:
+      * 'this top section never changes' — rows 1-3 cols A-G on NEW INT
+        tabs are the CHURN TIERS reference block; prior insertDimension
+        was shifting the whole column sheet-wide, dragging that block
+        right by 2 every day.
+      * 'formatting from the previous pull should be copied exactly' —
+        D+E (post-insert yesterday) is the source of truth; copyPaste
+        PASTE_NORMAL brings over values + formatting + merges +
+        conditional rules.
     """
     last_row = ws.row_count
-    paste_dst = {
-        "sheetId": ws.id,
-        "startRowIndex": 0,
-        "endRowIndex": last_row,
-        "startColumnIndex": 1,    # B
-        "endColumnIndex": 3,      # through C
-    }
-    # Pass 1: insert the new B+C columns.
+    preserve_top_rows = _detect_preserve_top_rows(ws)
+
+    # Pass 1: insert a 2-col-wide blank range at rows
+    # (preserve_top_rows..end) cols B-C, shifting existing cells right
+    # WITHIN those rows only (insertRange respects the row bounds).
     ws.spreadsheet.batch_update({"requests": [{
-        "insertDimension": {
+        "insertRange": {
             "range": {
                 "sheetId": ws.id,
-                "dimension": "COLUMNS",
-                "startIndex": 1,    # col B (0-indexed)
-                "endIndex": 3,
+                "startRowIndex": preserve_top_rows,    # 0-indexed inclusive
+                "endRowIndex":   last_row,             # exclusive
+                "startColumnIndex": 1,                 # B
+                "endColumnIndex":   3,                 # C+1 exclusive
             },
-            "inheritFromBefore": False,
+            "shiftDimension": "COLUMNS",
         }
     }]})
     # Brief wait so the insert is fully committed server-side.
     time.sleep(1)
-    # Pass 2: locate Eve's formatted template col pair and paste from
-    # it. If prior --force-insert runs left unformatted duplicate cols
-    # to the left of Eve's template, D+E may be one of THOSE — so we
-    # scan past them to find the real template.
-    # Use the 0-30 section's header row as the scan target (row 7 on
-    # New Internet, row 1 on Wireless). Falls back to row 7 if no
-    # sections supplied (legacy callers).
-    scan_row = 7
-    if sections:
-        first_section = min(sections.values(), key=lambda s: s["header_row"])
-        scan_row = first_section["header_row"]
-    template_col = _find_formatted_template_col_after_insert(ws, scan_row)
-    if template_col is None:
-        # Fall back to D+E (which is the typical leftmost source for
-        # a clean daily run where the previous day's fill IS Eve's
-        # template). This is the happy path for production.
-        template_col = 3   # col D (0-indexed)
+
+    # Pass 2: paste yesterday's pull (D+E, just shifted from B+C by the
+    # insert above) onto today's new B+C. Same row range — preserve_top_rows
+    # to last_row — so the CHURN TIERS block at rows 1-3 isn't repainted.
     paste_src = {
         "sheetId": ws.id,
-        "startRowIndex": 0,
+        "startRowIndex": preserve_top_rows,
         "endRowIndex": last_row,
-        "startColumnIndex": template_col,
-        "endColumnIndex": template_col + 2,
+        "startColumnIndex": 3,    # D (0-indexed) = yesterday's pull, post-insert
+        "endColumnIndex": 5,      # F exclusive
+    }
+    paste_dst = {
+        "sheetId": ws.id,
+        "startRowIndex": preserve_top_rows,
+        "endRowIndex": last_row,
+        "startColumnIndex": 1,    # B
+        "endColumnIndex": 3,      # D exclusive
     }
     ws.spreadsheet.batch_update({"requests": [
         {"copyPaste": {"source": paste_src, "destination": paste_dst,
                        "pasteType": "PASTE_NORMAL"}},
     ]})
     # Wait for the paste to fully commit server-side before the next
-    # values_batch_update fires. Megan's New Internet tab (~1200 rows ×
-    # 380+ cols) had a write race where writes processed before the
-    # insert+paste finished — writes landed on the OLD col B (which
-    # became D after the insert settled), leaving the new B+C empty.
-    # Wireless (~750 rows) was fast enough that the race didn't fire.
-    # A short sync wait closes the window.
+    # values_batch_update fires. Without this, writes can land on the
+    # OLD col B (which became D after the insert settled).
     time.sleep(3)
 
 
@@ -1106,5 +1117,300 @@ def hide_blanks_today(
     if batch_requests:
         ws.spreadsheet.batch_update({"requests": batch_requests})
     return actions
+
+
+def clear_empty_cell_backgrounds(
+    ws,
+    sections: dict,
+    *,
+    dry_run: bool = False,
+    logfn=print,
+) -> None:
+    """Force WHITE background on every empty-value cell in each section's
+    rep-row block (cols B onwards). Catches inherited bg from inserts
+    (cols D+ of a freshly-inserted rep inherit format from the row above
+    via insertDimension(inheritFromBefore=True)) plus any leftover bg
+    from prior pulls whose values have since been cleared.
+
+    Only touches cells with NO value — cells with data keep their
+    existing background (which is set by apply_pct_direct_colors for col B
+    and Eve's template/conditional rules for the rest).
+
+    Megan 2026-05-29: 'formatting is weird under the sections' — empty
+    rows below the last visible rep + empty cells on inserted reps were
+    showing leftover red/green/yellow backgrounds. This cleans it.
+    """
+    if not sections:
+        return
+
+    # Determine read range per section: rep rows × cols B..ws.col_count
+    requests: list[dict] = []
+    cleared_count = 0
+
+    for period, sect in sections.items():
+        rep_rows = sect.get("rep_rows") or {}
+        if not rep_rows:
+            continue
+        first_row = min(rep_rows.values())
+        last_row  = max(rep_rows.values())
+        # Read cols B..min(ws.col_count, 30) — past col 30 we're well into
+        # historical weekly cols which are usually fine; capping keeps
+        # the read fast.
+        end_col_excl = min(ws.col_count, 30)
+        if end_col_excl <= 1:
+            continue
+        end_col_letter = _col_letter(end_col_excl)   # exclusive
+        rng = f"{ws.title}!B{first_row}:{end_col_letter}{last_row}"
+        try:
+            values = ws.get_values(rng)
+        except Exception:
+            continue
+
+        # For each row, find contiguous runs of empty cells (cols B+) and
+        # batch one repeatCell white-bg request per run. Much fewer
+        # requests than per-cell.
+        for ri, row in enumerate(values):
+            row_num = first_row + ri        # 1-indexed sheet row
+            # Pad row to end_col_excl - 1 columns so trailing-empty cols
+            # past the data still get checked.
+            padded = list(row) + [""] * ((end_col_excl - 1) - len(row))
+            start = None
+            for ci, cell in enumerate(padded):
+                is_empty = (cell or "").strip() == ""
+                if is_empty:
+                    if start is None:
+                        start = ci
+                else:
+                    if start is not None:
+                        run_len = ci - start
+                        cleared_count += run_len
+                        requests.append({
+                            "repeatCell": {
+                                "range": {
+                                    "sheetId": ws.id,
+                                    "startRowIndex": row_num - 1,
+                                    "endRowIndex":   row_num,
+                                    # ci offsets are within the B-onwards
+                                    # window, so add +1 to land in
+                                    # absolute col indices (B=1).
+                                    "startColumnIndex": 1 + start,
+                                    "endColumnIndex":   1 + ci,
+                                },
+                                "cell": {"userEnteredFormat": {
+                                    "backgroundColor": {"red": 1, "green": 1, "blue": 1},
+                                }},
+                                "fields": "userEnteredFormat.backgroundColor",
+                            }
+                        })
+                        start = None
+            if start is not None:
+                run_len = (end_col_excl - 1) - start
+                cleared_count += run_len
+                requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws.id,
+                            "startRowIndex": row_num - 1,
+                            "endRowIndex":   row_num,
+                            "startColumnIndex": 1 + start,
+                            "endColumnIndex":   1 + (end_col_excl - 1),
+                        },
+                        "cell": {"userEnteredFormat": {
+                            "backgroundColor": {"red": 1, "green": 1, "blue": 1},
+                        }},
+                        "fields": "userEnteredFormat.backgroundColor",
+                    }
+                })
+
+    if dry_run:
+        logfn(f"  (dry-run) would clear bg on {cleared_count} empty cell(s) "
+              f"across {len(sections)} sections ({len(requests)} requests)")
+        return
+
+    if not requests:
+        return
+
+    # Sheets batch_update accepts thousands of requests; we chunk at 1000
+    # as a safe limit.
+    for i in range(0, len(requests), 1000):
+        ws.spreadsheet.batch_update({"requests": requests[i:i + 1000]})
+
+    logfn(f"  cleared bg on {cleared_count} empty cell(s) "
+          f"({len(requests)} ranges across {len(sections)} sections)")
+
+
+_ZERO_PCT_LITERALS = {"0", "0.00", "0.0", "0%", "0.00%", "0.0%"}
+
+
+def hide_after_5_zero_pulls(
+    ws,
+    sections: dict,
+    *,
+    dry_run: bool = False,
+    logfn=print,
+) -> dict:
+    """Hide rep rows whose 5 leftmost pct columns (B, D, F, H, J) are
+    ALL explicit zero (0.00%, 0%, 0). Blank cells DO NOT count as zero —
+    blank means 'no data that pull', so a row with mixed blanks + zeros
+    is NOT hidden (it hasn't actually had 5 consecutive 0% pulls yet).
+
+    Returns {'hidden': [row_nums]} for logging.
+
+    Megan 2026-05-29: ICDs that show 0% across 5 consecutive pulls aren't
+    actionable for the team — hide them so the visible roster is the
+    set of ICDs currently churning.
+    """
+    actions = {"hidden": []}
+    if not sections:
+        return actions
+
+    PCT_COL_OFFSETS = (0, 2, 4, 6, 8)   # B=0, D=2, F=4, H=6, J=8 in B-J window
+
+    batch_requests: list[dict] = []
+
+    for period, sect in sections.items():
+        rep_rows = sect.get("rep_rows") or {}
+        if not rep_rows:
+            continue
+        first_row = min(rep_rows.values())
+        last_row  = max(rep_rows.values())
+        rng = f"{ws.title}!B{first_row}:J{last_row}"
+        try:
+            values = ws.get_values(rng)
+        except Exception:
+            continue
+
+        for ri, row in enumerate(values):
+            row_num = first_row + ri
+            # Need at least 9 cols (B..J = 9 entries). Pad with "" so
+            # missing trailing cells count as blank (rule: blank ≠ zero,
+            # so a row with < 5 pulls of data won't trigger).
+            padded = list(row) + [""] * (9 - len(row))
+            pct_cells = [padded[i] for i in PCT_COL_OFFSETS]
+            all_zero = all(
+                (c or "").strip() in _ZERO_PCT_LITERALS
+                for c in pct_cells
+            )
+            if all_zero:
+                actions["hidden"].append(row_num)
+                batch_requests.append({
+                    "updateDimensionProperties": {
+                        "range": {
+                            "sheetId": ws.id,
+                            "dimension": "ROWS",
+                            "startIndex": row_num - 1,
+                            "endIndex": row_num,
+                        },
+                        "properties": {"hiddenByUser": True},
+                        "fields": "hiddenByUser",
+                    }
+                })
+
+    if dry_run:
+        logfn(f"  (dry-run) would hide {len(actions['hidden'])} rep row(s) "
+              f"(5 consecutive 0% pulls)")
+        return actions
+
+    if batch_requests:
+        ws.spreadsheet.batch_update({"requests": batch_requests})
+        logfn(f"  hid {len(actions['hidden'])} rep row(s) "
+              f"(5 consecutive 0% pulls)")
+    else:
+        logfn("  (no rep rows match 5-consecutive-0% rule)")
+    return actions
+
+
+def apply_rep_row_borders(
+    ws,
+    sections: dict,
+    *,
+    dry_run: bool = False,
+    logfn=print,
+) -> None:
+    """Apply uniform Eve rep-row border pattern to every rep row in
+    each section. The pattern (observed on Cyrus Wade row 90, a
+    correctly-formatted reference row):
+
+      Pair-start cols (B, D, F, ...):
+        top + bottom = SOLID_MEDIUM
+        left = SOLID_THICK    (the dark vertical line between date pairs)
+        right = SOLID_MEDIUM  (the lighter line between % and units in
+                               the same pair)
+      Pair-end cols (C, E, G, ...):
+        top + bottom = SOLID_MEDIUM
+        left = SOLID_MEDIUM    (matches the right of the pair-start col)
+
+    Required because sortRange physically moves rows + their borders —
+    if a rep gets sorted into a row position that was previously an
+    empty buffer row (no border), the borders disappear entirely on
+    that row. This pass restores the canonical pattern for every rep
+    row across all sections.
+
+    Megan 2026-05-29: Sam Park row 91 (NEW INT 30) + FNU Stephen
+    Sharon row 83 (Wireless 30) — both the last visible rep in their
+    section — were missing borders. First attempt only applied
+    top + bottom (which API confirmed but borders still didn't show
+    because the THICK left/right pair-separator lines were absent).
+    This version paints the full pattern.
+    """
+    if not sections:
+        return
+    MED = {"style": "SOLID_MEDIUM",
+           "color": {"red": 0, "green": 0, "blue": 0}}
+    THICK = {"style": "SOLID_THICK",
+             "color": {"red": 0, "green": 0, "blue": 0}}
+    end_col_excl = min(ws.col_count, 12)   # cover ~5 date pairs (B-K)
+
+    requests: list[dict] = []
+    for period, sect in sections.items():
+        rep_rows = sect.get("rep_rows") or {}
+        if not rep_rows:
+            continue
+        first_row = min(rep_rows.values())
+        last_row  = max(rep_rows.values())
+        for col_idx in range(1, end_col_excl):
+            # col_idx 1=B, 2=C, 3=D, 4=E, ...
+            # Pair-start (B, D, F, ...) are odd; pair-end (C, E, G, ...)
+            # are even.
+            is_pair_start = (col_idx % 2 == 1)
+            border_req: dict = {
+                "updateBorders": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "startRowIndex": first_row - 1,
+                        "endRowIndex":   last_row,
+                        "startColumnIndex": col_idx,
+                        "endColumnIndex":   col_idx + 1,
+                    },
+                    "top": MED,
+                    "bottom": MED,
+                    "innerHorizontal": MED,
+                    "left": THICK if is_pair_start else MED,
+                }
+            }
+            if is_pair_start:
+                border_req["updateBorders"]["right"] = MED
+            requests.append(border_req)
+
+    if dry_run:
+        logfn(f"  (dry-run) would apply rep-row pair-border pattern "
+              f"({len(requests)} requests across {len(sections)} sections)")
+        return
+    if requests:
+        for i in range(0, len(requests), 500):
+            ws.spreadsheet.batch_update({"requests": requests[i:i + 500]})
+        logfn(f"  applied rep-row pair-border pattern "
+              f"({len(requests)} requests, {len(sections)} sections)")
+
+
+def _col_letter(idx: int) -> str:
+    """Convert a 1-indexed column number (1=A, 2=B, …, 26=Z, 27=AA) into
+    its A1 letter form."""
+    letters = ""
+    n = idx
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        letters = chr(ord("A") + rem) + letters
+    return letters
 
 
