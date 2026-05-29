@@ -29,20 +29,28 @@ from automations.owners_metrics_churn import pull, fill
 
 
 REPORTS = [
-    # (slug, label, fetch_fn, open_ws_fn, csv_filename)
+    # (slug, label, fetch_fn, open_ws_fn, csv_filename, parse_fn, periods)
+    # ----- ATT Fiber (Phase 1) -----
     ("wayne", "Wayne (ATT Fiber)",
      pull.fetch_fiber_wayne, fill.open_ws_fiber_wayne,
-     "owners_fiber_wayne.csv"),
+     "owners_fiber_wayne.csv", pull.parse, pull.PERIODS),
     ("starr", "Starr Rodenhurst (ATT Fiber)",
      pull.fetch_fiber_starr, fill.open_ws_fiber_starr,
-     "owners_fiber_starr.csv"),
+     "owners_fiber_starr.csv", pull.parse, pull.PERIODS),
     ("aron", "Aron Corral (ATT Fiber)",
      pull.fetch_fiber_aron, fill.open_ws_fiber_aron,
-     "owners_fiber_aron.csv"),
+     "owners_fiber_aron.csv", pull.parse, pull.PERIODS),
+    # ----- B2B (Phase 2) -----
+    ("carlos", "Carlos Hidalgo (B2B)",
+     pull.fetch_b2b_carlos, fill.open_ws_b2b_carlos,
+     "owners_b2b_carlos.csv", pull.parse_b2b, pull.B2B_PERIODS),
+    ("eveliz", "Eveliz Wright (B2B)",
+     pull.fetch_b2b_eveliz, fill.open_ws_b2b_eveliz,
+     "owners_b2b_eveliz.csv", pull.parse_b2b, pull.B2B_PERIODS),
 ]
 
 
-def _run_fill_phase(label: str, open_ws_fn, parsed: dict,
+def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
                     today: dt.date, args) -> int:
     """Fill one tab. Returns 0 on success, 1 on early-exit when
     today is already in place AND --force-insert wasn't set."""
@@ -50,7 +58,7 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict,
     office = parsed["office_total"]
     reps = parsed["reps"]
     print(f"  ICDs with data: {len(reps)}")
-    for p in pull.PERIODS:
+    for p in periods:
         odata = office.get(p, {})
         units = pull.fmt_units(odata)
         print(f"    Captainship Avg {p:>4}-day: {odata.get('pct', '-'):>8}  "
@@ -132,8 +140,8 @@ def main(argv=None) -> int:
                     help="Insert a NEW B+C column even if today's date "
                          "label is already present.")
     ap.add_argument("--only", default=None,
-                    help="Comma-separated slugs to run (wayne,starr,aron). "
-                         "Defaults to all.")
+                    help="Comma-separated slugs to run. Fiber: wayne, "
+                         "starr, aron. B2B: carlos, eveliz. Defaults to all.")
     args = ap.parse_args(argv)
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
@@ -151,7 +159,7 @@ def main(argv=None) -> int:
     # --- Phase 1: pull each CSV (shared Tableau session) ---
     csvs: dict = {}
     if args.skip_download:
-        for slug, label, _fetch_fn, _open_ws_fn, csv_name in selected:
+        for slug, label, _fetch_fn, _open_ws_fn, csv_name, _parse_fn, _periods in selected:
             default = Path(tempfile.gettempdir()) / csv_name
             if not default.exists():
                 print(f"  ⚠ --skip-download set but no cached CSV at {default}")
@@ -161,16 +169,16 @@ def main(argv=None) -> int:
     else:
         print(f"\nPhase 1: one Tableau session, {len(selected)} Crosstab pull(s)...")
         with tableau_session(verbose=False) as page:
-            for slug, label, fetch_fn, _open_ws_fn, _csv_name in selected:
+            for slug, label, fetch_fn, _open_ws_fn, _csv_name, _parse_fn, _periods in selected:
                 print(f"  → pulling {label}...")
                 csvs[slug] = fetch_fn(verbose=False, page=page)
                 print(f"    ✓ {csvs[slug]}")
 
     # --- Phase 2: parse + fill each ---
     print("\nPhase 2: fill destination tabs")
-    for slug, label, _fetch_fn, open_ws_fn, _csv_name in selected:
-        parsed = pull.parse(csvs[slug])
-        _run_fill_phase(label, open_ws_fn, parsed, today, args)
+    for slug, label, _fetch_fn, open_ws_fn, _csv_name, parse_fn, periods in selected:
+        parsed = parse_fn(csvs[slug])
+        _run_fill_phase(label, open_ws_fn, parsed, periods, today, args)
 
     # No Slack post — sheet-only (matches existing Captainship pattern).
 

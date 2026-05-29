@@ -40,10 +40,13 @@ _SKIP_TABS = {"raf hidalgo", "rafael hidalgo"}
 # "coming soon"; Coel Reif + German Lopez use a different report (not listed
 # here — handled separately once Megan provides those files).
 _SKIP_FINANCIAL = {
-    "melik el jaiez", "jacob dover", "tevin sterling", "jc pascual",
+    "melik el jaiez", "tevin sterling", "jc pascual",
     "oren shezaf", "nicholas weldon", "joseph logan", "jr young",
     "jason strid", "tony chavez", "stergios kasapidis", "chan park",
     "milly villagrana", "starr rodenhurst",
+    # 'jacob dover' removed 2026-05-29 (Eve flagged) — his data is now
+    # in the RAF workbook as ROCKSTARWORLD INCORPORATED (JACOB DOVER-TN)
+    # and his tab name matches exactly so no alias is needed.
 }
 # A tab-name campaign suffix, e.g. ' - NDS' / ' - BOX' / ' - B2B'.
 _CAMPAIGN_SUFFIX = re.compile(r"\s*-\s*[A-Za-z0-9/&]+\s*$")

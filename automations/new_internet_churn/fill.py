@@ -45,6 +45,7 @@ PERIOD_SECTION_LABELS = (
     ("30",   "30 DAYS"),
     ("60",   "60 DAYS"),
     ("90",   "90 DAYS"),
+    ("120",  "120 DAYS"),   # B2B (Carlos / Eveliz) has a 5th 120-day bucket
 )
 
 # Hide rule: after today's fill, hide any rep whose TODAY % cell is
@@ -636,6 +637,7 @@ _PCT_THRESHOLDS = {
     "30":   (5.0, 8.0),
     "60":   (5.0, 8.0),
     "90":   (5.0, 8.0),
+    "120":  (5.0, 8.0),   # B2B 120-day — same band as 30/60/90 until Megan corrects
 }
 _PCT_GREEN  = {"red": 147/255, "green": 196/255, "blue": 125/255}
 _PCT_YELLOW = {"red": 255/255, "green": 217/255, "blue": 102/255}
