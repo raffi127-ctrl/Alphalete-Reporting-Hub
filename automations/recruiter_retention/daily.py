@@ -50,6 +50,7 @@ R_NAME, R_DAYS, R_TOTAL = 13, [14, 15, 16, 17, 18], 19  # M / N-R / S
 PCT_LABEL = "1st Round Retention %"   # col C marker used to count blocks
 
 CF_GREEN, CF_GREY, CF_RED = wk.CF_GREEN, wk.CF_GREY, wk.CF_RED
+HEADER_BG = {"red": 0.71, "green": 0.69, "blue": 0.90}  # day+date header band (periwinkle)
 
 
 def _col(n: int) -> str:
@@ -58,6 +59,13 @@ def _col(n: int) -> str:
         n, r = divmod(n - 1, 26)
         s = chr(65 + r) + s
     return s
+
+
+def _ord(n: int) -> str:
+    """1 -> '1st', 24 -> '24th' — date headers read as dates, not counts."""
+    if 11 <= n % 100 <= 13:
+        return f"{n}th"
+    return f"{n}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th') }"
 
 
 def _mon_fri(arr):
@@ -116,7 +124,7 @@ def _card_rows(rec_cur, rec_last, this_mon, today):
         sch_t = sum(bydays["Sch"][i] for i in range(5) if fill[i])
         su_t = sum(bydays["SU"][i] for i in range(5) if fill[i])
         out["pct"] = {"days": pct_days, "total": _frac(su_t, sch_t)}
-        out["dates"] = [d.day for d in dates]
+        out["dates"] = [_ord(d.day) for d in dates]
         return out
 
     cur = card(rec_cur, this_mon, future_aware=True)
@@ -186,7 +194,7 @@ def _zero_card(this_mon, today):
         out = {m: {"days": [0 if fill[i] else "" for i in range(5)], "total": 0}
                for m in ("B", "Sch", "SU")}
         out["pct"] = {"days": ["0%" if fill[i] else "" for i in range(5)], "total": "0%"}
-        out["dates"] = [d.day for d in dates]
+        out["dates"] = [_ord(d.day) for d in dates]
         return out
     return card(this_mon, True), card(this_mon - dt.timedelta(days=7), False)
 
@@ -298,6 +306,15 @@ def _write(active_cards, this_mon, today):
             "fields": "userEnteredFormat.numberFormat"}})
         if k < n_active:
             pct_ranges.append(rng)
+        # Tint the day-label + date rows (rows 3-4) so they read as a header
+        # band, distinct from the numbers below.
+        r0 = k * STRIDE + 2
+        for c0, c1 in ((L_DAYS[0] - 1, L_TOTAL), (R_DAYS[0] - 1, R_TOTAL)):
+            fmt_reqs.append({"repeatCell": {"range": {"sheetId": sid,
+                "startRowIndex": r0, "endRowIndex": r0 + 2,
+                "startColumnIndex": c0, "endColumnIndex": c1},
+                "cell": {"userEnteredFormat": {"backgroundColor": HEADER_BG}},
+                "fields": "userEnteredFormat.backgroundColor"}})
     if n_active:
         fmt_reqs.append({"updateDimensionProperties": {
             "range": {"sheetId": sid, "dimension": "ROWS",
