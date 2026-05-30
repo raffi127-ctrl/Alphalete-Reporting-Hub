@@ -1627,8 +1627,8 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
-        "id": "schedules-6-days-out",
-        "name": "Schedules 6 days out",
+        "id": "scheduled-6-days-out",
+        "name": "Scheduled 6 days out",
         "creator": "Eve",
         "emoji": "📅",
         "color": "#0EA5E9",
@@ -1643,15 +1643,20 @@ AUTOMATED_REPORTS = [
             "more days in advance for Raf's Local Office + Raf's Captainship + "
             "Starr's Captainship. Local Office gets posted in the Metrics thread "
             "immediately after running.\n\n"
-            "TABS FILLED (on the sandbox 'VAs' Data' sheet)\n"
-            "• Schedules 6 days out (Raf)\n"
-            "• Schedules 6 days out (Starr)\n"
+            "TABS FILLED (on the 'VAs' Data' sheet)\n"
+            "• Scheduled 6 days out (Raf)\n"
+            "• Scheduled 6 days out (Starr)\n"
             "Each tab is overwritten clean, sorted by Owner Name, and every "
-            "Owner's rows shaded their own soft gradient color.\n\n"
+            "Owner's rows shaded a soft color from its family (greens, blues, "
+            "ambers, …).\n\n"
             "SCREENSHOTS\n"
             "A full colored table for each captainship is saved to your "
             "Downloads folder. Raf's Local Office (Owner = Rafael Hidalgo) is "
             "posted as an image in the Metrics thread with a 📅 reaction.\n\n"
+            "EMAILS\n"
+            "Each captainship's full table is emailed from "
+            "alphaletereporting@gmail.com to its team (Raf's Captain Team / "
+            "Starr's Captainship) with Eve's signature.\n\n"
             "WHEN IT RUNS\n"
             "Every morning. Refreshed daily — it OVERWRITES prior data instead "
             "of keeping history.\n\n"
@@ -1681,20 +1686,20 @@ AUTOMATED_REPORTS = [
              "key": "metrics_header_posted"},
         ],
         "post_run": {
-            "message_success": "✅ Schedules 6 days out done — both tabs "
+            "message_success": "✅ Scheduled 6 days out done — both tabs "
                                "overwritten + screenshots saved to Downloads.",
             "message_failed": "❌ Run failed. Check the log above, fix the "
                               "issue, then run again.",
         },
         "actions": [
             {
-                "label": "Run Schedules 6 days out",
+                "label": "Run Scheduled 6 days out",
                 "icon": "▶",
                 "primary": True,
                 "help": "Pull yesterday's Order Log for both captainships, "
                         "overwrite the tabs, save screenshots, and post Raf's "
                         "Local Office to the Metrics thread.",
-                "module": "automations.schedules_6_days_out.run",
+                "module": "automations.scheduled_6_days_out.run",
                 "args_fn": lambda: ["--post-slack"],
             },
         ],

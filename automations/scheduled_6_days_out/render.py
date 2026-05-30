@@ -1,4 +1,4 @@
-"""Render the sorted Schedules table as a good-quality PNG, with each Rep group
+"""Render the sorted Scheduled table as a good-quality PNG, with each Rep group
 shaded its gradient color (same palette the Sheet uses, via colors.py).
 
 Cross-platform fonts: tries common Windows + macOS TrueType paths, then falls
@@ -11,7 +11,7 @@ from typing import Dict, List
 
 from PIL import Image, ImageDraw, ImageFont
 
-from automations.schedules_6_days_out import colors, pull
+from automations.scheduled_6_days_out import colors, pull
 
 # Display label + pixel width per column (left→right = Sheet order).
 COLS = [

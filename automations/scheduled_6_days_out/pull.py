@@ -1,4 +1,4 @@
-"""Pull the Order Log Crosstab for the 'Schedules 6 days out' report.
+"""Pull the Order Log Crosstab for the 'Scheduled 6 days out' report.
 
 Source: Tableau ATT TRACKER 2.1 - D2D / ORDER LOG, worksheet 'A.Order Log'.
 
@@ -47,7 +47,7 @@ MIN_DAYS_TO_APPT = 6
 # have to hand-edit source after creating them in Tableau.
 VIEWS_JSON = Path(__file__).resolve().parent / "views.json"
 
-# Sheet header label (col A→F on the 'Schedules 6 days out ...' tabs) ← Tableau
+# Sheet header label (col A→F on the 'Scheduled 6 days out ...' tabs) ← Tableau
 # crosstab column. Order matches the Sheet left→right. Lookups are by LABEL so a
 # template change to column order survives.
 COL_MAP = [
@@ -65,11 +65,10 @@ def load_view_url(team: str) -> str:
     """team is 'raf' or 'starr'. Returns the saved custom-view base URL."""
     if not VIEWS_JSON.exists():
         raise RuntimeError(
-            f"{VIEWS_JSON.name} not found — the Tableau custom views haven't "
-            "been created yet. Run:\n"
-            "  python -m automations.schedules_6_days_out.create_views\n"
-            "(creates 'Schedules - Raf' / 'Schedules - Starr' off the ORDER LOG "
-            "and writes their URLs here)."
+            f"{VIEWS_JSON.name} not found next to pull.py. It must hold the two "
+            "Tableau ORDER LOG custom-view URLs (keys 'raf' and 'starr'), each "
+            "pre-filtered to its Captain's bonus Team + Product Type = New "
+            "Internet. Recreate the views in Tableau and paste their URLs there."
         )
     data = json.loads(VIEWS_JSON.read_text(encoding="utf-8"))
     url = data.get(team)
@@ -92,7 +91,7 @@ def fetch_crosstab(team: str, day: dt.date,
                    verbose: bool = False,
                    page=None) -> Path:
     out_path = out_path or (Path(tempfile.gettempdir())
-                            / f"schedules_6days_{team}_orderlog.csv")
+                            / f"scheduled_6days_{team}_orderlog.csv")
     url = build_url(load_view_url(team), day)
     download_crosstab_patchright(url, WORKSHEET, out_path,
                                  verbose=verbose, page=page)

@@ -1,4 +1,4 @@
-"""Write the sorted Schedules rows to a tab and color each Rep group.
+"""Write the sorted Scheduled rows to a tab and color each Rep group.
 
 The report OVERWRITES prior data every run (it's a daily snapshot, no history) —
 so we clear the data region (row 2 down), write the fresh sorted rows, reset all
@@ -13,11 +13,11 @@ from typing import Dict, List
 
 import gspread
 
-from automations.schedules_6_days_out import colors, pull
+from automations.scheduled_6_days_out import colors, pull
 
 SHEET_ID = "1qUiljtWXhcy3OGhQ_81LnNPIsUXjad3MJi-VzjEIDV8"  # sandbox "VAs' Data"
-TAB_RAF = "Schedules 6 days out (Raf)"
-TAB_STARR = "Schedules 6 days out (Starr)"
+TAB_RAF = "Scheduled 6 days out (Raf)"
+TAB_STARR = "Scheduled 6 days out (Starr)"
 
 _WHITE = {"red": 1.0, "green": 1.0, "blue": 1.0}
 
