@@ -113,7 +113,23 @@ B2B_EVELIZ_URL = (
     "867f88d3-4026-4c70-b275-330208a4053c/EvelizWOVan?:iid=1"
 )
 
+# Luis Salazar — same B2B workbook, view filtered to his captainship team
+# (added 2026-05-30 at Eve's request).
+B2B_LUIS_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER-B2B/CHURNRATES/"
+    "2d2a9ec0-8088-4e4e-8ada-ed370f4b9d8f/LuissCaptainship?:iid=1"
+)
+
 B2B_PERIODS = ("0-30", "30", "60", "90", "120")
+
+
+def fetch_b2b_luis(out_path: Optional[Path] = None,
+                   verbose: bool = False, page=None) -> Path:
+    out_path = out_path or Path(tempfile.gettempdir()) / "owners_b2b_luis.csv"
+    download_crosstab_patchright(B2B_LUIS_URL, WORKSHEET, out_path,
+                                  verbose=verbose, page=page)
+    return out_path
 
 
 def fetch_b2b_carlos(out_path: Optional[Path] = None,

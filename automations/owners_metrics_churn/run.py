@@ -74,6 +74,9 @@ REPORTS = [
     ("eveliz", "Eveliz Wright (B2B)",
      pull.fetch_b2b_eveliz, fill.open_ws_b2b_eveliz,
      "owners_b2b_eveliz.csv", pull.parse_b2b, pull.B2B_PERIODS),
+    ("luis", "Luis Salazar (B2B)",
+     pull.fetch_b2b_luis, fill.open_ws_b2b_luis,
+     "owners_b2b_luis.csv", pull.parse_b2b, pull.B2B_PERIODS),
     # ----- NDS (Phase 3) -----
     ("khalil", "Khalil Mansour (NDS)",
      pull.fetch_nds_khalil, fill.open_ws_nds_khalil,

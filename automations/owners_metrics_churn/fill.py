@@ -33,6 +33,7 @@ def open_ws_fiber_aron():
 # ----- B2B tabs (Phase 2) --------------------------------------------
 TAB_B2B_CARLOS = "Churn - Carlos Hidalgo (B2B)"
 TAB_B2B_EVELIZ = "Churn - Eveliz Wright (B2B)"
+TAB_B2B_LUIS   = "Luis Salazar (B2B)"   # Eve's tab name (no "Churn -" prefix)
 
 
 def open_ws_b2b_carlos():
@@ -41,6 +42,10 @@ def open_ws_b2b_carlos():
 
 def open_ws_b2b_eveliz():
     return _shared.open_by_key(SHEET_ID).worksheet(TAB_B2B_EVELIZ)
+
+
+def open_ws_b2b_luis():
+    return _shared.open_by_key(SHEET_ID).worksheet(TAB_B2B_LUIS)
 
 
 # ----- NDS tabs (Phase 3) --------------------------------------------
