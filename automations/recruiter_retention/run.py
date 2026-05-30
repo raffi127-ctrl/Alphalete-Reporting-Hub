@@ -1,53 +1,49 @@
 """Ongoing 1st Round Recruiter Retention — weekly Hub report (Eve, Mondays).
 
 Pulls AppStream's Retention Report (p=701, admin breakdown) for Raf's office
-(11280), per recruiter / per day, and fills the 'Ongoing 1st Round Recruiter
-Retention' tab: one 24-col block per week (Mon-Fri B/Sch/SU/% + Week Total),
-WE = the Sunday. % = Showed ÷ Scheduled. Counts incl. 0. Active recruiters
-(booked in the last 2 weeks) sort to the top by latest-week retention desc;
-inactive go to the bottom as one contiguous HIDDEN group (keeps the banding
-clean). Alternating dark/blue week headers; banding + borders + the row-4
-filter are extended to cover new weeks/recruiters.
+(11280) and fills the 'Ongoing 1st Round Recruiter Retention' tab: one 4-col
+block per week = the WEEK TOTAL (Booked / Scheduled / Showed / %), WE = the
+Sunday. % = Showed ÷ Scheduled. Counts incl. 0. Active recruiters (booked in
+the last 2 weeks) sort to the top by latest-week retention desc; inactive go to
+the bottom as one contiguous HIDDEN group (keeps the banding clean).
+Alternating dark/blue week headers; banding + the row-4 filter are extended to
+cover new weeks/recruiters. Each run pulls WE 4/05 → current week and re-fills.
 
-Each run pulls WE 4/05 → the current week and re-fills (idempotent).
+(The Mon-Fri daily breakdown is a SEPARATE report on the 'Daily 1st Round
+Recruiter Retention' tab — same pull, different fill.)
 
   python -m automations.recruiter_retention.run            # live, current week
   python -m automations.recruiter_retention.run --dry-run  # pull + preview only
-  python -m automations.recruiter_retention.run --date 2026-05-24  # override today
+  python -m automations.recruiter_retention.run --date 2026-05-24
 """
 from __future__ import annotations
 
 import argparse
 import datetime as dt
 import re
-import sys
 
 from automations.shared.tableau_patchright import appstream_direct_session
 from automations.recruiting_report import fetch_office as fo
 from automations.recruiting_report.fill import open_by_key
 
 SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
-TAB = "Ongoing 1st Round Recruiter Retention"
+TAB = "1st rd Recruiter %"        # sheet tab (Hub card is named "Ongoing 1st Round Recruiter Retention")
 OFFICE_ID, OWNER = "11280", "Rafael Hidalgo"
 FIRST_WEEK = dt.date(2026, 4, 5)        # WE 4/05 — report start (Sundays)
 
-# AppStream mainRow label (normalized) -> sheet metric key
 SECTIONS = {"interviews booked": "B",            # NOT "second interviews booked"
             "total first interviews": "Sch",
             "first interviews showed up": "SU"}
 
-# Sheet block geometry
-BLOCK_W = 24
+BLOCK_W = 4                              # per week: B / Sch / SU / %
 WE_ROW, DAY_ROW, SUB_ROW, FIRST_REC = 2, 3, 4, 5
 FIRST_BLOCK_COL = 2                      # col B (1-indexed)
-WEEKDAY_OFFS = [0, 4, 8, 12, 16]         # Mon..Fri within a block
-WEEK_TOTAL_OFF = 20
-DATA_DAYIDX = [1, 2, 3, 4, 5]            # Mon..Fri in the [Sun..Sat] arrays
 HIDE_WINDOW = 2                          # hide if 0 booked in last N weeks
 
-DARK = {"red": 0.1686, "green": 0.2431, "blue": 0.3098}
-BLUE = {"red": 0.2902, "green": 0.5294, "blue": 0.9098}
-WHITE = {"red": 1, "green": 1, "blue": 1}
+# Retention % color-coding (Raf): <45% red, 45–49.9% grey, >=50% green.
+CF_GREEN = {"red": 0.71, "green": 0.84, "blue": 0.66}
+CF_GREY = {"red": 0.85, "green": 0.85, "blue": 0.85}
+CF_RED = {"red": 0.96, "green": 0.78, "blue": 0.76}
 
 
 # --------------------------------------------------------------------------- pull
@@ -90,7 +86,7 @@ def _admin_on(page):
 def _load_week(page, sunday):
     rqst = _rqst(page)
     if not rqst:
-        return False
+        return
     page.goto(f"https://applicantstream.com/index.cfm?rqst={rqst}&p=701",
               wait_until="load", timeout=25000)
     page.wait_for_selector("#weekStart", timeout=15000)
@@ -110,7 +106,6 @@ def _load_week(page, sunday):
         except Exception:
             pass
         page.wait_for_timeout(1500)
-    return True
 
 
 def _parse(page):
@@ -179,59 +174,82 @@ def _week_index(sun):
 
 
 def ensure_blocks(sh, ws, weeks, dry=False):
-    """Make sure every week has a 24-col block; add missing ones by copyPaste
-    from an existing SAME-COLOR block (parity), set the WE date."""
+    """Make sure every week has a 4-col block; add missing ones by copyPaste
+    from an existing SAME-PARITY (same-color) block, then set the WE date."""
     v = ws.get_all_values()
     have = {}
-    for i, c in enumerate(v[WE_ROW - 1]):
+    for i, c in enumerate(v[WE_ROW - 1] if len(v) >= WE_ROW else []):
         d = _parse_we(c)
         if d:
             have[d] = i + 1
     missing = [w for w in weeks if w not in have]
-    if not missing:
+    if not missing or dry:
+        if missing and dry:
+            print(f"  (dry-run) would add {len(missing)} week block(s)")
         return have
     sid = ws.id
-    rightmost = max(have.values()) + BLOCK_W - 1 if have else 1
-    # pick a dark + a blue source block from existing
     src_dark = next((have[d] for d in sorted(have) if _week_index(d) % 2 == 0), None)
     src_blue = next((have[d] for d in sorted(have) if _week_index(d) % 2 == 1), None)
+    rightmost = max(have.values()) + BLOCK_W - 1 if have else FIRST_BLOCK_COL - 1
     reqs, dates, nxt = [], [], rightmost + 1
     for w in sorted(missing):
-        even = _week_index(w) % 2 == 0
-        src = (src_dark if even else src_blue) or next(iter(have.values()))
-        d0 = nxt - 1
+        src = (src_dark if _week_index(w) % 2 == 0 else src_blue) or next(iter(have.values()))
         if ws.col_count < nxt + BLOCK_W - 1:
             ws.resize(rows=ws.row_count, cols=nxt + BLOCK_W - 1)
         reqs.append({"copyPaste": {
             "source": {"sheetId": sid, "startRowIndex": 0, "endRowIndex": 66,
                        "startColumnIndex": src - 1, "endColumnIndex": src - 1 + BLOCK_W},
             "destination": {"sheetId": sid, "startRowIndex": 0, "endRowIndex": 66,
-                            "startColumnIndex": d0, "endColumnIndex": d0 + BLOCK_W},
+                            "startColumnIndex": nxt - 1, "endColumnIndex": nxt - 1 + BLOCK_W},
             "pasteType": "PASTE_NORMAL"}})
-        dates.append({"range": f"{TAB}!{_a1(nxt)}{WE_ROW}",
-                      "values": [[f"{w.month}/{w.day}/{w.year}"]]})
+        dates.append({"range": f"{TAB}!{_a1(nxt)}{WE_ROW}", "values": [[f"{w.month}/{w.day}/{w.year}"]]})
         have[w] = nxt
         nxt += BLOCK_W
-    if dry:
-        print(f"  (dry-run) would add {len(missing)} week block(s)")
-        return have
     sh.batch_update({"requests": reqs})
     sh.values_batch_update({"valueInputOption": "USER_ENTERED", "data": dates})
     return have
 
 
+def _totals(per_day_recs):
+    """{rec: {B:[7],Sch:[7],SU:[7]}} (per-day) -> {rec: {B,Sch,SU}} (week totals)."""
+    return {n: {k: sum(v.get(k, [0]*7)) for k in ("B", "Sch", "SU")}
+            for n, v in per_day_recs.items()}
+
+
+def read_sheet_data(ws, blocks):
+    """Read the already-filled week-total blocks back from the sheet so the
+    weekly run can re-sort/re-hide without re-pulling old weeks. Returns
+    {week: {recruiter: {B,Sch,SU}}}."""
+    v = ws.get_all_values()
+    out = {}
+    for wk, start in blocks.items():
+        recs = {}
+        for r in range(FIRST_REC - 1, len(v)):
+            row = v[r]
+            name = (row[0] if row else "").strip()
+            if not name:
+                continue
+            def cell(i):
+                idx = start - 1 + i
+                return _to_int(row[idx]) if idx < len(row) else 0
+            recs[name] = {"B": cell(0), "Sch": cell(1), "SU": cell(2)}
+        out[wk] = recs
+    return out
+
+
 def fill(sh, ws, data, blocks, dry=False):
+    # `data` is week-TOTAL shaped: {week: {recruiter: {B,Sch,SU}}}.
     weeks_sorted = sorted(data)
     sort_wk = weeks_sorted[-1]
     recent = weeks_sorted[-HIDE_WINDOW:]
     names = {n for wk in data.values() for n in wk}
 
     def booked_recent(n):
-        return sum(sum(data[wk].get(n, {}).get("B", [0]*7)) for wk in recent)
+        return sum(data[wk].get(n, {}).get("B", 0) for wk in recent)
 
     def sortkey(n):
         m = data[sort_wk].get(n, {})
-        sch, su, b = sum(m.get("Sch", [0]*7)), sum(m.get("SU", [0]*7)), sum(m.get("B", [0]*7))
+        sch, su, b = m.get("Sch", 0), m.get("SU", 0), m.get("B", 0)
         return (-(su/sch if sch else 0.0), -b, n.lower())
 
     active = sorted([n for n in names if booked_recent(n) > 0], key=sortkey)
@@ -243,17 +261,14 @@ def fill(sh, ws, data, blocks, dry=False):
     if dry:
         for n in roster[:8]:
             m = data[sort_wk].get(n, {})
-            B, S, U = m.get("B", [0]*7), m.get("Sch", [0]*7), m.get("SU", [0]*7)
-            print("   ", n[:22].ljust(22),
-                  "  ".join(f"{B[i]}/{S[i]}/{U[i]}/{_pct(U[i],S[i])}" for i in DATA_DAYIDX))
+            b, s, u = m.get("B", 0), m.get("Sch", 0), m.get("SU", 0)
+            print(f"    {n[:24].ljust(24)} {b}/{s}/{u}/{_pct(u, s)}")
         return
 
-    # roster -> col A
     ws.batch_clear([f"A{FIRST_REC}:A{max(last_row, FIRST_REC+60)}"])
     ws.update(range_name=f"A{FIRST_REC}:A{last_row}",
               values=[[n] for n in roster], value_input_option="USER_ENTERED")
 
-    # values per week block
     batch = []
     for w, start in sorted(blocks.items()):
         if w not in data:
@@ -261,12 +276,8 @@ def fill(sh, ws, data, blocks, dry=False):
         grid = []
         for n in roster:
             m = data[w].get(n, {})
-            B, S, U = m.get("B", [0]*7), m.get("Sch", [0]*7), m.get("SU", [0]*7)
-            row = [""] * BLOCK_W
-            for di, off in zip(DATA_DAYIDX, WEEKDAY_OFFS):
-                row[off:off+4] = [B[di], S[di], U[di], _pct(U[di], S[di])]
-            row[20:24] = [sum(B), sum(S), sum(U), _pct(sum(U), sum(S))]
-            grid.append(row)
+            b, s, u = m.get("B", 0), m.get("Sch", 0), m.get("SU", 0)
+            grid.append([b, s, u, _pct(u, s)])
         batch.append({"range": f"{TAB}!{_a1(start)}{FIRST_REC}:{_a1(start+BLOCK_W-1)}{last_row}",
                       "values": grid})
     sh.values_batch_update({"valueInputOption": "USER_ENTERED", "data": batch})
@@ -274,85 +285,124 @@ def fill(sh, ws, data, blocks, dry=False):
     sid = ws.id
     last_col = max(blocks.values()) + BLOCK_W - 1
     reqs = []
-    # number formats per block: counts integer, % as 0%
     for start in blocks.values():
-        for g in range(6):
-            base = start - 1 + g*4
-            reqs.append(_fmt(sid, FIRST_REC-1, last_row, base, base+3, {"type": "NUMBER", "pattern": "0"}))
-            reqs.append(_fmt(sid, FIRST_REC-1, last_row, base+3, base+4, {"type": "PERCENT", "pattern": "0%"}))
-    # extend banding + filter to cover all rows/cols
-    reqs += _band_filter(sid, sh, ws, last_row, last_col)
+        reqs.append(_numfmt(sid, FIRST_REC-1, last_row, start-1, start+2, {"type": "NUMBER", "pattern": "0"}))
+        reqs.append(_numfmt(sid, FIRST_REC-1, last_row, start+2, start+3, {"type": "PERCENT", "pattern": "0%"}))
+    reqs += _band_filter(sid, sh, last_row, last_col)
+    reqs += _cf_rules(sid, sh, [s + 3 for s in blocks.values()])
     sh.batch_update({"requests": reqs})
 
-    # hide the inactive (bottom) block as one contiguous group
-    hreqs = []
-    for i in range(len(roster)):
-        hreqs.append({"updateDimensionProperties": {
-            "range": {"sheetId": sid, "dimension": "ROWS",
-                      "startIndex": FIRST_REC-1+i, "endIndex": FIRST_REC+i},
-            "properties": {"hiddenByUser": i >= len(active)}, "fields": "hiddenByUser"}})
+    hreqs = [{"updateDimensionProperties": {
+        "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": FIRST_REC-1+i, "endIndex": FIRST_REC+i},
+        "properties": {"hiddenByUser": i >= len(active)}, "fields": "hiddenByUser"}}
+        for i in range(len(roster))]
     sh.batch_update({"requests": hreqs})
     print(f"  shown rows {FIRST_REC}-{FIRST_REC+len(active)-1}; "
           f"hidden {FIRST_REC+len(active)}-{last_row}", flush=True)
 
 
-def _fmt(sid, r0, r1, c0, c1, numfmt):
+def _numfmt(sid, r0, r1, c0, c1, numfmt):
     return {"repeatCell": {"range": {"sheetId": sid, "startRowIndex": r0, "endRowIndex": r1+1,
             "startColumnIndex": c0, "endColumnIndex": c1},
             "cell": {"userEnteredFormat": {"numberFormat": numfmt}},
             "fields": "userEnteredFormat.numberFormat"}}
 
 
-def _band_filter(sid, sh, ws, last_row, last_col):
+def _band_filter(sid, sh, last_row, last_col):
     reqs = []
-    # extend the existing banded range (if any) to rows 3..last_row, cols 0..last_col
     meta = sh.fetch_sheet_metadata()
-    band_id = None
     for s in meta["sheets"]:
         if s["properties"]["sheetId"] == sid:
             for b in s.get("bandedRanges", []):
-                band_id = b.get("bandedRangeId")
+                reqs.append({"updateBanding": {"bandedRange": {"bandedRangeId": b["bandedRangeId"],
+                    "range": {"sheetId": sid, "startRowIndex": 2, "endRowIndex": last_row,
+                              "startColumnIndex": 0, "endColumnIndex": last_col}}, "fields": "range"}})
                 break
-    if band_id is not None:
-        reqs.append({"updateBanding": {"bandedRange": {"bandedRangeId": band_id,
-            "range": {"sheetId": sid, "startRowIndex": 2, "endRowIndex": last_row,
-                      "startColumnIndex": 0, "endColumnIndex": last_col}},
-            "fields": "range"}})
-    # re-anchor the basic filter: header row 4, through last_row, cols B..last_col
     reqs.append({"setBasicFilter": {"filter": {"range": {"sheetId": sid,
         "startRowIndex": SUB_ROW-1, "endRowIndex": last_row,
         "startColumnIndex": 1, "endColumnIndex": last_col}}}})
     return reqs
 
 
+def _cf_rules(sid, sh, pct_cols):
+    """Color the retention % cells (Raf): <45% red, 45-49.9% grey, >=50% green.
+    Clears this tab's existing CF rules first (idempotent across runs; this tab
+    is dedicated to the report), then adds the 3 ordered rules over every %
+    column so it auto-extends as new weeks are added."""
+    meta = sh.fetch_sheet_metadata()
+    count = 0
+    for s in meta["sheets"]:
+        if s["properties"]["sheetId"] == sid:
+            count = len(s.get("conditionalFormats", []))
+    reqs = [{"deleteConditionalFormatRule": {"sheetId": sid, "index": i}}
+            for i in range(count - 1, -1, -1)]
+    ranges = [{"sheetId": sid, "startRowIndex": FIRST_REC - 1, "endRowIndex": 200,
+               "startColumnIndex": c - 1, "endColumnIndex": c} for c in pct_cols]
+
+    def rule(idx, cond, val, color):
+        return {"addConditionalFormatRule": {"index": idx, "rule": {"ranges": ranges,
+            "booleanRule": {"condition": {"type": cond,
+                "values": [{"userEnteredValue": str(val)}]},
+                "format": {"backgroundColor": color}}}}}
+    # Order matters (first match wins): green >=0.5, then grey >=0.45, then red.
+    reqs += [rule(0, "NUMBER_GREATER_THAN_EQ", 0.5, CF_GREEN),
+             rule(1, "NUMBER_GREATER_THAN_EQ", 0.45, CF_GREY),
+             rule(2, "NUMBER_LESS", 0.45, CF_RED)]
+    return reqs
+
+
 # --------------------------------------------------------------------------- main
+def _last_completed_sunday(today):
+    """The Sunday that starts the most recent FULLY-completed Sun-Sat week
+    (the current week containing `today` is still in progress)."""
+    this_sun = today - dt.timedelta(days=(today.weekday() + 1) % 7)
+    return this_sun - dt.timedelta(days=7)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="recruiter_retention")
     ap.add_argument("--dry-run", action="store_true", help="pull + preview, no Sheet writes")
     ap.add_argument("--date", default=None, help="override today (YYYY-MM-DD)")
+    ap.add_argument("--backfill", action="store_true",
+                    help="pull EVERY week 4/05->current (one-time seed; default only "
+                         "pulls the last completed week and reuses sheet history)")
     args = ap.parse_args(argv)
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
-    cur_sun = today - dt.timedelta(days=(today.weekday() + 1) % 7)
-    weeks = []
-    w = FIRST_WEEK
-    while w <= cur_sun:
-        weeks.append(w)
-        w += dt.timedelta(days=7)
+    if args.backfill:
+        cur_sun = today - dt.timedelta(days=(today.weekday() + 1) % 7)
+        weeks, w = [], FIRST_WEEK
+        while w <= cur_sun:
+            weeks.append(w)
+            w += dt.timedelta(days=7)
+    else:
+        weeks = [_last_completed_sunday(today)]   # weekly run: just last full week
 
-    print(f"=== Recruiter Retention — {len(weeks)} weeks ({weeks[0]}..{weeks[-1]}) "
-          f"{'DRY-RUN' if args.dry_run else 'LIVE'} ===", flush=True)
+    print(f"=== Ongoing 1st Round Recruiter Retention — "
+          f"{'BACKFILL ' if args.backfill else ''}pulling {len(weeks)} week(s) "
+          f"({weeks[0]}..{weeks[-1]}) {'DRY-RUN' if args.dry_run else 'LIVE'} ===", flush=True)
     print("Phase 1: pull AppStream (Raf office, admin breakdown)…", flush=True)
-    data = pull_weeks(weeks)
-    if not any(data.values()):
+    pulled = pull_weeks(weeks)
+    if not any(pulled.values()):
         print("⚠ No data pulled — aborting.", flush=True)
         return 1
 
-    print("Phase 2: fill the Ongoing tab…", flush=True)
+    print("Phase 2: fill the Ongoing tab (week totals)…", flush=True)
     sh = open_by_key(SHEET_ID)
     ws = sh.worksheet(TAB)
     blocks = ensure_blocks(sh, ws, weeks, dry=args.dry_run)
-    fill(sh, ws, data, blocks, dry=args.dry_run)
+
+    if args.dry_run:
+        data = {wk: _totals(recs) for wk, recs in pulled.items()}
+        fill(sh, ws, data, blocks, dry=True)
+        print("=== done (dry-run) ===", flush=True)
+        return 0
+
+    # Merge: sheet history (all existing week blocks) + the freshly-pulled week(s).
+    data = read_sheet_data(ws, blocks)
+    for wk, recs in pulled.items():
+        data[wk] = _totals(recs)        # fresh data wins for the pulled week(s)
+    fill(sh, ws, data, blocks, dry=False)
     print("=== done ===", flush=True)
     return 0
 

@@ -1924,6 +1924,52 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "ongoing-1st-round-recruiter-retention",
+        "name": "Ongoing 1st Round Recruiter Retention",
+        "creator": "Megan",
+        "emoji": "🎯",
+        "color": "#2563EB",
+        "category": "🎯 Recruiting",
+        "description": "Weekly per-recruiter 1st-round interview retention for Raf's office — Booked / Scheduled / Showed Up + Retention % (Showed ÷ Scheduled), one week-total block per week on the '1st rd Recruiter %' tab. (% color-coded: <45% red, 45–49.9% grey, ≥50% green.)",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Pulls AppStream's Retention Report (admin breakdown) for Raf's "
+            "office and fills one Week-Total block per week per recruiter: "
+            "Booked, Scheduled, Showed Up, and Retention % (Showed ÷ Scheduled).\n\n"
+            "ROWS\n"
+            "Recruiters who booked an interview in the last 2 weeks show on top, "
+            "sorted by the latest week's retention (high → low). Recruiters with "
+            "no bookings in the last 2 weeks drop to the bottom and are hidden.\n\n"
+            "WHEN IT RUNS\n"
+            "Mondays. Each run pulls the last full completed week and refreshes "
+            "the tab (history stays as-is)."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
+        "assignees": ["Eve"],
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [0],  # Monday
+            "time": "8:00 AM",
+            "estimated_minutes": 10,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Recruiter retention updated — week totals filled, recruiters sorted by retention, inactive rows hidden.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run Recruiter Retention",
+                "icon": "▶",
+                "primary": True,
+                "help": "Pull AppStream + fill all weeks on the Ongoing tab (week totals).",
+                "module": "automations.recruiter_retention.run",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
         "id": "country-metrics",
         "name": "Country Metrics",
         "creator": "Eve",
