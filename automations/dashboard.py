@@ -1522,10 +1522,9 @@ AUTOMATED_REPORTS = [
         "description": "One run that fires all 9 daily #alphalete-sales metrics — Telemapper Knocks, Time Gaps, Order Log, Sales Scheduled 6+ Days, Canceled Orders, Ongoing Cancel, Disconnects, New Internet Churn, Wireless Churn — each posting into today's Metrics thread.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Runs all 7 metric reports back-to-back in one click and posts "
-            "the 9 daily metrics into today's 'Metrics for: <date>' thread "
-            "in #alphalete-sales. The day's header thread is posted first "
-            "if it isn't already up — no pre-flight needed.\n\n"
+            "Runs all 9 metric reports back-to-back & posts into today's "
+            "Metrics thread in #alphalete-sales Slack. The day's header "
+            "thread is posted first if it isn't already up.\n\n"
             "METRICS POSTED (in thread order)\n"
             "• 🪵 Telemapper Knocks\n"
             "• ⏰ Time Gaps\n"
@@ -1540,7 +1539,45 @@ AUTOMATED_REPORTS = [
             "The run keeps going and ends with a ✅/❌ summary. Re-run just "
             "the ones that failed from 'More actions' below.\n\n"
             "WHEN IT RUNS\n"
-            "Daily."
+            "Daily.\n\n"
+            "──────────  HOW EACH REPORT WORKS  ──────────\n\n"
+            "🪵 TELEMAPPER KNOCKS + ⏰ TIME GAPS\n"
+            "Collects Disposition by rep + time gaps from Ownerville (always "
+            "the day prior) for Raf's Local Office. Screenshots + posts both "
+            "to the Metrics thread; keeps no record. Opens Ownerville "
+            "automatically — don't type in or close the window while it runs.\n\n"
+            "📋 ORDER LOG\n"
+            "Fills out the order log and saves it to your Downloads folder as "
+            "'Order Log MM-DD-YYYY.xlsx', then posts it to the Metrics thread.\n\n"
+            "📅 SALES SCHEDULED 6+ DAYS OUT\n"
+            "All scheduled new-internet installs planned 6+ days out for Raf's "
+            "Local Office + Raf's Captainship + Starr's Captainship. Fills the "
+            "'VAs' Data' sheet tabs (Scheduled 6 days out — Raf / Starr), "
+            "overwritten clean + color-shaded by Owner. Saves a colored table "
+            "per captainship to Downloads, posts Raf's Local Office to the "
+            "Metrics thread, and emails each captainship its table from "
+            "alphaletereporting@gmail.com with Eve's signature.\n\n"
+            "🚫 CANCELED ORDERS\n"
+            "Pulls the Tableau Order Log for the previous 30 completed days. "
+            "New rows insert at the TOP of each tab, dedup'd by (Customer "
+            "Name, SPM #). Posts an image of the new Local Office cancels. "
+            "Tabs filled (AT&T Fiber Metrics Report): Local Office - Daily "
+            "Cancels, Raf's Captainship - Cancels Ongoing, Starr Capi + Sahil "
+            "- Cancels Ongoing.\n\n"
+            "🔁 ONGOING CANCEL\n"
+            "Pulls Internet Cancel Rates (Running Sum) from Tableau for Raf's "
+            "reps over the last 7 days.\n\n"
+            "❎ DISCONNECTED NEW INTERNETS\n"
+            "Pulls the Tableau Order Log for the previous 30 completed days. "
+            "New rows insert at the TOP of each tab, dedup'd by (Customer "
+            "Name, Account BAN). Posts an image of the new Local Office "
+            "disconnects. Tabs filled (AT&T Fiber Metrics Report): Local "
+            "Office / Raf's Captainship / Starr Capi + Sahil - New Internet "
+            "Disconnects.\n\n"
+            "🌐 NEW INTERNET CHURN + 📊 WIRELESS CHURN\n"
+            "Fills Raf's Local Office churn on the AT&T Fiber Metrics Report "
+            "sheet (tabs: Local Office - New Internet Churn, Local Office - "
+            "Wireless Churn) and posts both to the Metrics thread."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8/edit"),
@@ -1548,7 +1585,7 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "daily",
             "time": "7:00 AM",
-            "estimated_minutes": 40,
+            "estimated_minutes": 15,
         },
         "post_run": {
             "message_success": "✅ Daily Metrics done — all 9 posted to the Metrics thread.",

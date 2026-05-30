@@ -213,6 +213,24 @@ async def login(page: Page) -> None:
     doesn't land, we clear cookies and retry once from a fresh session — the
     happy path keeps its Cloudflare clearance, and we only re-run Cloudflare
     on the recovery path."""
+    # Fast path: the shared browser profile may already hold a live Ownerville
+    # session — e.g. Telemapper Knocks logged in just before us in the Daily
+    # Metrics run. If a Log Out control is already visible, reuse the session
+    # and skip the login flow. This also dodges the Cloudflare re-login that
+    # fails when two Ownerville reports run back-to-back. (2026-05-30)
+    # Match ONLY the logout text here (not the broad sidebar) so the
+    # logged-out homepage can't false-positive.
+    try:
+        await page.goto(LOGIN_URL, wait_until="domcontentloaded")
+        await page.get_by_text(
+            re.compile(r"^\s*log\s*out\s*$", re.IGNORECASE)
+        ).first.wait_for(state="visible", timeout=6000)
+        print("-> Already logged into Ownerville (reusing session) — "
+              "skipping login")
+        return
+    except PlaywrightTimeoutError:
+        pass  # not logged in — fall through to the full login flow
+
     for attempt in (1, 2):
         try:
             await _attempt_login(page)
