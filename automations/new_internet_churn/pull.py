@@ -139,4 +139,6 @@ def fmt_units(slot: dict) -> str:
     denom = slot.get("denom")
     if num is None or denom is None:
         return ""
-    return f"{int(num)}/{int(denom)}"
+    # Comma-thousands separator (Eve 2026-05-30): 1563 -> 1,563. Written RAW to
+    # the sheet, so the comma+slash stays text (no date re-parsing of 'N/D').
+    return f"{int(num):,}/{int(denom):,}"
