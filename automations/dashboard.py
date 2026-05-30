@@ -1843,6 +1843,62 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "daily-1st-round-recruiter-percent",
+        "name": "Daily 1st rd Recruiter %",
+        "creator": "Megan",
+        "emoji": "🎯",
+        "color": "#2563EB",
+        "category": "🎯 Recruiting",
+        "description": "Daily Mon–Fri recruiter scorecards for Raf's office on the 'Daily 1st rd Recruiter %' tab — Booked / Scheduled / Showed / Retention % per day + Total, with current week (Mon→today) and last week side by side. Alphabetized; inactive recruiters recycle to a hidden bottom; % color-coded.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Pulls AppStream's Retention Report (admin breakdown) for Raf's "
+            "office and fills a daily Mon–Fri scorecard per recruiter: 1st "
+            "Rounds Booked, First Rounds Scheduled, First Rounds Showed, and "
+            "Retention % (Showed ÷ Scheduled), plus a weekly Total.\n\n"
+            "TWO CARDS PER RECRUITER\n"
+            "• Left = current week, filled Monday → today (days after today "
+            "stay blank).\n"
+            "• Right = last week, full Mon–Fri.\n"
+            "The day-header dates auto-update to the current week each run.\n\n"
+            "COLORS\n"
+            "Retention %: under 45% red, 45–49.9% grey, 50%+ green. A 0% with no "
+            "scheduled interviews stays uncolored; a real 0% (scheduled but none "
+            "showed) flags red.\n\n"
+            "ROWS / RECYCLING\n"
+            "Recruiters are alphabetized. Anyone with no Booked/Scheduled/Showed "
+            "for two weeks straight drops to the bottom and is hidden (never "
+            "deleted) — they resurface at the top automatically when they get "
+            "activity again. Manual Weekly/Daily goals in columns A/B travel with "
+            "each recruiter, so they're never erased or misaligned.\n\n"
+            "WHEN IT RUNS\n"
+            "Daily."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
+        "assignees": ["Eve"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "8:00 AM",
+            "estimated_minutes": 4,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Daily recruiter % updated — Mon→today + last week filled, alphabetized, inactive recycled to the hidden bottom.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run Daily Recruiter %",
+                "icon": "▶",
+                "primary": True,
+                "help": "Pull AppStream + fill the daily Mon–Fri scorecards (this week + last week).",
+                "module": "automations.recruiter_retention.daily",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
         "id": "country-metrics",
         "name": "Country Metrics",
         "creator": "Eve",
