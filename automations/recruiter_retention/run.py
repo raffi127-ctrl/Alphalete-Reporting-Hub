@@ -42,9 +42,13 @@ TAB = "1st rd Recruiter %"        # sheet tab (Hub card: "Ongoing 1st Round Recr
 OFFICE_ID, OWNER = "11280", "Rafael Hidalgo"
 REPORT_FIRST = dt.date(2026, 4, 12)   # first week-ENDING-Sunday column
 
-# AppStream mainRow label (normalized) -> metric. (No "Booked" — Raf dropped it;
-# % = Showed/Scheduled so Booked isn't needed.)
+# AppStream mainRow label (normalized) -> metric. (Booked dropped — % uses
+# Showed/Scheduled, hide + the name-highlight key off Scheduled.)
 SECTIONS = {"total first interviews": "Sch", "first interviews showed up": "SU"}
+
+NAME_YELLOW = {"red": 1.0, "green": 0.898, "blue": 0.6}   # name highlight: scheduled in latest week
+CHANNEL_BG = {"red": 0.85, "green": 0.82, "blue": 0.95}   # full-row tint for non-human channels
+CHANNELS = {"ai messaging", "self scheduled"}             # interviews not booked by a person
 
 BLOCK_W = 3                            # per week: Sch / SU / %
 WE_ROW, SUB_ROW, FIRST_REC = 2, 4, 5
@@ -176,6 +180,22 @@ def _parse_we(s):
     return None
 
 
+def _locate(values):
+    """Find the header rows by content (never hard-coded) so inserting/removing
+    rows at the top can't misalign the fill. Returns (we_row, sub_row, first_rec),
+    all 1-indexed. we_row = the row with the WE-date headers; sub_row = the
+    'NAME / Sch / SU / %' row; first_rec = the first recruiter row."""
+    we_row = sub_row = None
+    for i, row in enumerate(values):
+        if we_row is None and sum(1 for c in row if _parse_we(c)) >= 2:
+            we_row = i + 1
+        if sub_row is None and row and row[0].strip().lower() == "name":
+            sub_row = i + 1
+    we_row = we_row or 2
+    sub_row = sub_row or (we_row + 2)
+    return we_row, sub_row, sub_row + 1
+
+
 def _pct(su, sch):
     return f"{round(100*su/sch)}%" if sch else "0%"
 
@@ -300,6 +320,28 @@ def fill(sh, ws, report, blocks, dry=False):
     reqs += _cf_rules(sid, sh, [s + 2 for s in blocks.values()])
     sh.batch_update({"requests": reqs})
 
+    # Highlights (re-applied every run since rows re-sort): clear all data-cell
+    # backgrounds so the banding shows through, then (a) full-row tint the
+    # non-human channels, (b) yellow the NAME of anyone who SCHEDULED an
+    # interview in the latest week (active on the market that week).
+    sched_now = {n for n in roster if report[sort_wk].get(n, {}).get("Sch", 0) > 0}
+    hl = [{"repeatCell": {"range": {"sheetId": sid, "startRowIndex": FIRST_REC-1,
+            "endRowIndex": last_row, "startColumnIndex": 0, "endColumnIndex": last_col},
+            "cell": {"userEnteredFormat": {}}, "fields": "userEnteredFormat.backgroundColor"}}]
+    for i, n in enumerate(roster):
+        r0 = FIRST_REC - 1 + i
+        if _norm(n) in CHANNELS:        # full-row lavender for AI Messaging / Self Scheduled
+            hl.append({"repeatCell": {"range": {"sheetId": sid, "startRowIndex": r0, "endRowIndex": r0+1,
+                "startColumnIndex": 0, "endColumnIndex": last_col},
+                "cell": {"userEnteredFormat": {"backgroundColor": CHANNEL_BG}},
+                "fields": "userEnteredFormat.backgroundColor"}})
+        elif n in sched_now:            # yellow name for current-week schedulers
+            hl.append({"repeatCell": {"range": {"sheetId": sid, "startRowIndex": r0, "endRowIndex": r0+1,
+                "startColumnIndex": 0, "endColumnIndex": 1},
+                "cell": {"userEnteredFormat": {"backgroundColor": NAME_YELLOW}},
+                "fields": "userEnteredFormat.backgroundColor"}})
+    sh.batch_update({"requests": hl})
+
     hreqs = [{"updateDimensionProperties": {
         "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": FIRST_REC-1+i, "endIndex": FIRST_REC+i},
         "properties": {"hiddenByUser": i >= len(active)}, "fields": "hiddenByUser"}}
@@ -320,9 +362,17 @@ def _band_filter(sid, sh, last_row, last_col):
     for s in meta["sheets"]:
         if s["properties"]["sheetId"] == sid:
             for b in s.get("bandedRanges", []):
+                # Preserve the band's existing start (keeps Megan's parity +
+                # any header styling); only EXTEND its end to cover all
+                # recruiter rows + week columns.
+                r = b.get("range", {})
                 reqs.append({"updateBanding": {"bandedRange": {"bandedRangeId": b["bandedRangeId"],
-                    "range": {"sheetId": sid, "startRowIndex": 2, "endRowIndex": last_row,
-                              "startColumnIndex": 0, "endColumnIndex": last_col}}, "fields": "range"}})
+                    "range": {"sheetId": sid,
+                              "startRowIndex": r.get("startRowIndex", FIRST_REC - 1),
+                              "endRowIndex": max(r.get("endRowIndex", 0), last_row),
+                              "startColumnIndex": r.get("startColumnIndex", 0),
+                              "endColumnIndex": max(r.get("endColumnIndex", 0), last_col)}},
+                    "fields": "range"}})
                 break
     reqs.append({"setBasicFilter": {"filter": {"range": {"sheetId": sid,
         "startRowIndex": SUB_ROW-1, "endRowIndex": last_row, "startColumnIndex": 1, "endColumnIndex": last_col}}}})
@@ -360,18 +410,38 @@ def main(argv=None):
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
     cur_sun = today - dt.timedelta(days=(today.weekday() + 1) % 7)   # latest completed week-ending Sunday
+
+    sh = open_by_key(SHEET_ID)
+    ws = sh.worksheet(TAB)
+    v0 = ws.get_all_values()
+    # Detect header rows by content (robust to rows inserted/removed at the top).
+    global WE_ROW, SUB_ROW, FIRST_REC
+    WE_ROW, SUB_ROW, FIRST_REC = _locate(v0)
+    print(f"  layout: WE row {WE_ROW}, header row {SUB_ROW}, recruiters from row {FIRST_REC}", flush=True)
+    blocks0 = {d: i + 1 for i, c in enumerate(v0[WE_ROW - 1] if len(v0) >= WE_ROW else [])
+               if (d := _parse_we(c))}
+    sheet0 = read_sheet_data(ws, blocks0)
+
+    # Candidate report weeks = every week-ending Sunday from REPORT_FIRST..cur_sun.
+    candidates, w = [], REPORT_FIRST
+    while w <= cur_sun:
+        candidates.append(w)
+        w += dt.timedelta(days=7)
+
     if args.backfill:
-        report_weeks, w = [], REPORT_FIRST
-        while w <= cur_sun:
-            report_weeks.append(w)
-            w += dt.timedelta(days=7)
+        report_weeks = candidates                      # re-pull everything
     else:
-        report_weeks = [cur_sun]
+        # SELF-HEALING: target any candidate week whose column is missing or
+        # empty (catches up skipped weeks) + always refresh the current week.
+        filled = {D for D in candidates if D in sheet0
+                  and any((r.get("Sch") or r.get("SU")) for r in sheet0[D].values())}
+        report_weeks = sorted((set(candidates) - filled) | {cur_sun})
+    report_weeks = [d for d in report_weeks if d >= REPORT_FIRST] or [cur_sun]
 
     # 1-week-behind: each report column D needs AppStream week starting D-7.
     as_weeks = sorted({D - dt.timedelta(days=7) for D in report_weeks})
     print(f"=== 1st rd Recruiter % — {'BACKFILL ' if args.backfill else ''}"
-          f"report week(s) {report_weeks[0]}..{report_weeks[-1]} "
+          f"filling {len(report_weeks)} week(s): {[d.isoformat() for d in report_weeks]} "
           f"(AS weeks {as_weeks[0]}..{as_weeks[-1]}) {'DRY-RUN' if args.dry_run else 'LIVE'} ===", flush=True)
     print("Phase 1: pull AppStream (Raf office, admin breakdown)…", flush=True)
     as_data = pull_as_weeks(as_weeks)
@@ -380,8 +450,6 @@ def main(argv=None):
         return 1
 
     print("Phase 2: fill the tab (week-ending Sundays)…", flush=True)
-    sh = open_by_key(SHEET_ID)
-    ws = sh.worksheet(TAB)
     blocks = ensure_blocks(sh, ws, report_weeks, dry=args.dry_run)
     pulled = _report_totals(as_data, report_weeks)
 
@@ -390,7 +458,7 @@ def main(argv=None):
         print("=== done (dry-run) ===", flush=True)
         return 0
 
-    report = read_sheet_data(ws, blocks)    # history from the sheet
+    report = read_sheet_data(ws, blocks)    # history from the sheet (post-ensure)
     for D, recs in pulled.items():
         report[D] = recs                    # fresh data wins for the pulled column(s)
     fill(sh, ws, report, blocks, dry=False)
