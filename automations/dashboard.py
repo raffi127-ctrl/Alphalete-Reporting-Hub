@@ -1682,16 +1682,16 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "total-knocks",
-        "name": "Total Knocks",
+        "name": "Total Knocks and Time Gaps",
         "creator": "Eve",
         "emoji": "🚪",
         "color": "#B45309",
         "category": "📊 Metrics",
-        "description": "Daily Disposition-by-Rep knock totals (day prior) for Local Office → screenshot posted as a reply in today's 'Metrics for:' header thread in #alphalete-sales.",
+        "description": "Daily Disposition-by-Rep knock totals + Time Tracker gaps (day prior) for Raf's Local Office → two screenshots (Total Knocks 🚪 + Time Gaps 🕐) posted as replies in today's 'Metrics for:' header thread in #alphalete-sales.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Collects Disposition by rep from Ownerville (always the day "
-            "prior) for Local Office.\n\n"
+            "Collects Disposition by rep and time gaps from Ownerville "
+            "(always the day prior) for Raf's Local Office.\n\n"
             "WHEN IT RUNS\n"
             "Every morning. Each run collects data from the day prior, keeps "
             "no record, it just screenshots and posts in the metrics thread "
@@ -1703,7 +1703,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1qUiljtWXhcy3OGhQ_81LnNPIsUXjad3MJi-VzjEIDV8/edit"
-                      "#gid=2013773146"),
+                      "#gid=2073260467"),
         "assignees": ["Eve"],
         "schedule": {
             "frequency": "daily",
@@ -1717,7 +1717,7 @@ AUTOMATED_REPORTS = [
              "key": "metrics_header_posted"},
         ],
         "post_run": {
-            "message_success": "✅ Total Knocks posted to today's metrics thread.",
+            "message_success": "✅ Total Knocks + Time Gaps posted to today's metrics thread.",
             "message_failed": "❌ Run failed. Most likely the Metrics header "
                               "thread wasn't posted in #alphalete-sales yet, "
                               "or the Ownerville window was touched mid-run. "
@@ -1725,12 +1725,12 @@ AUTOMATED_REPORTS = [
         },
         "actions": [
             {
-                "label": "Run Total Knocks",
+                "label": "Run Total Knocks and Time Gaps",
                 "icon": "▶",
                 "primary": True,
-                "help": "Scrapes yesterday's Disposition by Rep from "
-                        "Ownerville, renders the table image, posts to "
-                        "today's Metrics thread in #alphalete-sales.",
+                "help": "Scrapes yesterday's Disposition by Rep + Time Tracker "
+                        "gaps from Ownerville, renders both table images, posts "
+                        "them to today's Metrics thread in #alphalete-sales.",
                 "module": "automations.total_knocks.run",
                 "args_fn": lambda: [],
             },

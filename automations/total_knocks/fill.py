@@ -102,9 +102,37 @@ def _resolve_columns(header_values: list[str]) -> dict:
     return resolved
 
 
+def _ensure_headers(ws, header_values: list[str],
+                    dry_run: bool = False) -> list[str]:
+    """Append any SHEET_COLUMNS header missing from row 1 (e.g. the new
+    'Gaps' / 'Total Gaps (min)' columns) just after the last existing header
+    — never reorders or deletes. Returns the (possibly extended) header list.
+    The A–N template columns are expected to already exist; only genuinely
+    new trailing columns get auto-added."""
+    present = {_norm(h) for h in header_values if h.strip()}
+    missing = [c for c in SHEET_COLUMNS if _norm(c) not in present]
+    if not missing:
+        return header_values
+    last = max((i for i, h in enumerate(header_values, 1) if h.strip()), default=0)
+    new_header = list(header_values)
+    added = []
+    for col_1 in range(last + 1, last + 1 + len(missing)):
+        name = missing[col_1 - last - 1]
+        while len(new_header) < col_1:
+            new_header.append("")
+        new_header[col_1 - 1] = name
+        added.append((col_1, name))
+    if not dry_run:
+        for col_1, name in added:
+            ws.update_cell(HEADER_ROW, col_1, name)
+    print(f"[total_knocks.fill] added header(s): "
+          f"{', '.join(f'{_col_letter(c)}1={n!r}' for c, n in added)}")
+    return new_header
+
+
 def _cell_value(col: str, value):
     """Numeric columns → int (0 written as 0, not blank). Everything else
-    (ID, Rep, First/Last Knock) passes through as-is."""
+    (ID, Rep, First/Last Knock, blank Gaps) passes through as-is."""
     if col in _NUMERIC_COLUMNS:
         try:
             return int(value or 0)
@@ -126,6 +154,7 @@ def fill_total_knocks(
     ws = sh.worksheet(tab)
 
     header_values = ws.row_values(HEADER_ROW)
+    header_values = _ensure_headers(ws, header_values, dry_run=dry_run)
     resolved = _resolve_columns(header_values)
     left = min(resolved.values())
     right = max(resolved.values())

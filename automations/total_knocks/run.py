@@ -28,27 +28,18 @@ except Exception:
 
 from automations.total_knocks import fill as _fill
 from automations.total_knocks import render as _render
-from automations.total_knocks.pull import SHEET_COLUMNS, pull_disposition_day
+from automations.total_knocks.pull import central_today, pull_disposition_day
 
-# 🚪 reaction on the parent Metrics post (short name, no colons).
-REACT_EMOJI = "door"
-# Comment leads with the workflow emoji + Title Case title, matching every
-# other metrics post (🚫 Canceled Orders, 🌐 New Internet Churn).
-SLACK_COMMENT = "🚪 Total Knocks"
+# Two posts to the same Metrics thread, in order: (comment label, reaction
+# short-name). Each comment leads with the workflow emoji + Title Case title,
+# matching every other metrics post (🚫 Canceled Orders, 🌐 New Internet Churn);
+# the same emoji is also added as a reaction on the parent.
+POST_TOTAL_KNOCKS = ("🚪 Total Knocks", "door")
+POST_TIME_GAPS    = ("🕐 Time Gaps", "clock1")
 
 
 def _yesterday() -> dt.date:
-    return dt.date.today() - dt.timedelta(days=1)
-
-
-def _preview_rows(rows: list[dict]) -> tuple[list[str], list[list[str]]]:
-    """Build (header, string-rows) from in-memory records — used for the
-    --dry-run image when nothing was written to the Sheet."""
-    ordered = _fill._sorted_rows(rows)
-    out = []
-    for rec in ordered:
-        out.append([str(_fill._cell_value(c, rec.get(c, ""))) for c in SHEET_COLUMNS])
-    return list(SHEET_COLUMNS), out
+    return central_today() - dt.timedelta(days=1)
 
 
 def run(target: dt.date | None = None, *, test_tab: bool = False,
@@ -60,48 +51,48 @@ def run(target: dt.date | None = None, *, test_tab: bool = False,
     print("[total_knocks] Opening Ownerville… please don't touch or close "
           "the browser window while it works.", flush=True)
 
-    # 1. Pull.
+    # 1. Pull (Disposition + Time Tracker gaps, merged).
     target, rows = pull_disposition_day(target)
-    print(f"[total_knocks] Scraped {len(rows)} rep(s) from Disposition by Rep.",
-          flush=True)
+    print(f"[total_knocks] Scraped {len(rows)} rep(s).", flush=True)
     if not rows:
         print("[total_knocks] ⚠ No rows for that day — nothing to post.",
               flush=True)
         return 1
 
-    # 2. Fill (skipped on dry-run).
+    # 2. Fill the tab (skipped on dry-run).
     if dry_run:
-        print("[total_knocks] DRY-RUN — skipping Sheet write.", flush=True)
-    else:
-        stats = _fill.fill_total_knocks(rows, tab=tab)
-        print(f"[total_knocks] Wrote {stats['reps']} rep(s) to "
-              f"{stats['write_range']}.", flush=True)
+        print("[total_knocks] DRY-RUN — skipping Sheet write, render & post.",
+              flush=True)
+        print("[total_knocks] ✅ Finished (dry-run).", flush=True)
+        return 0
+    stats = _fill.fill_total_knocks(rows, tab=tab)
+    print(f"[total_knocks] Wrote {stats['reps']} rep(s) to "
+          f"{stats['write_range']}.", flush=True)
 
-    # 3. Render.
-    if dry_run:
-        header, srows = _preview_rows(rows)
-        img = _render.render_table(header, srows, target)
-    else:
-        img = _render.render_from_sheet(target, tab=tab)
-    print(f"[total_knocks] Rendered image -> {img}", flush=True)
+    # 3. Render both images from the filled tab.
+    img_tk = _render.render_total_knocks(target, tab=tab)
+    img_tg = _render.render_time_gaps(target, tab=tab)
+    print(f"[total_knocks] Rendered -> {img_tk} ; {img_tg}", flush=True)
 
-    # 4. Slack.
-    if dry_run or no_slack:
-        why = "dry-run" if dry_run else "--no-slack"
-        print(f"[total_knocks] Skipping Slack post ({why}).", flush=True)
+    # 4. Slack — Total Knocks first, then Time Gaps in the same thread.
+    if no_slack:
+        print("[total_knocks] Skipping Slack post (--no-slack).", flush=True)
         print("[total_knocks] ✅ Finished.", flush=True)
         return 0
 
     from automations.shared.slack_metrics_post import post_reply_with_image
-    comment = f"{SLACK_COMMENT} — {target.strftime('%b')} {target.day}"
-    resp = post_reply_with_image(
-        Path(img), comment=comment, react_emoji=REACT_EMOJI,
-    )
-    if resp.get("ok"):
-        print(f"[total_knocks] ✅ Posted to today's Metrics thread "
-              f"(file {resp.get('file')}).", flush=True)
-    else:
-        print(f"[total_knocks] ⚠ Slack response: {resp}", flush=True)
+    slack_today = central_today()   # post into TODAY's thread in Texas time
+    for img, (label, emoji) in [(img_tk, POST_TOTAL_KNOCKS),
+                                (img_tg, POST_TIME_GAPS)]:
+        comment = f"{label} — {target.strftime('%b')} {target.day}"
+        resp = post_reply_with_image(Path(img), comment=comment,
+                                     react_emoji=emoji, today=slack_today)
+        if resp.get("ok"):
+            print(f"[total_knocks] ✅ Posted '{label}' (file {resp.get('file')}).",
+                  flush=True)
+        else:
+            print(f"[total_knocks] ⚠ Slack response for '{label}': {resp}",
+                  flush=True)
     print("[total_knocks] ✅ Finished.", flush=True)
     return 0
 

@@ -1,13 +1,17 @@
-"""Render — draw the Total Knocks tab as a PNG for the Slack post.
+"""Render — draw the report's two PNGs from the freshly-filled tab.
 
-Reads the freshly-filled tab straight from the Sheet (so the image is a
-faithful screenshot of the full 14-column table, in the exact order/values
-the tab shows) and draws it with Pillow.
+  1. Total Knocks  — columns A–N, in the tab's order (First Knock asc),
+     amber theme. Posted to Slack as 'Total Knocks' (🚪).
+  2. Time Gaps     — columns ID, Rep, First Knock, Last Knock, Gaps,
+     Total Gaps (min), sorted by Total Gaps (min) DESC, teal theme (a
+     different header colour so it reads as a separate metric). Posted as
+     'Time Gaps' (🕐).
 
+Both read straight from the Sheet so they're faithful screenshots of the tab.
 Cross-platform font lookup (Windows + macOS + Linux) — no hard-coded Mac paths.
 
 Standalone:
-    .venv/Scripts/python.exe -m automations.total_knocks.render 2026-05-28
+    .venv/Scripts/python.exe -m automations.total_knocks.render 2026-05-28 [--test-tab]
 """
 from __future__ import annotations
 
@@ -19,17 +23,34 @@ from PIL import Image, ImageDraw, ImageFont
 
 from automations.recruiting_report.fill import open_by_key
 from automations.total_knocks.fill import SHEET_ID, TAB_TEST, TAB_PROD, HEADER_ROW
+from automations.total_knocks.pull import (
+    COL_ID, COL_REP, COL_FIRST_KNOCK, COL_LAST_KNOCK, COL_GAPS, COL_TOTAL_GAPS,
+    _norm,
+)
 
-# ---- palette (amber / door theme, matching the Hub card #B45309) ----
-TITLE_BG  = (180, 83, 9)       # #B45309
+# ---- themes (title bar / header row / alternating stripe) ----
+THEME_AMBER = {        # Total Knocks (matches the Hub card #B45309)
+    "title_bg": (180, 83, 9),
+    "header_bg": (60, 47, 36),
+    "stripe": (248, 244, 239),
+}
+THEME_TEAL = {         # Time Gaps — distinct colour (🕐)
+    "title_bg": (13, 110, 139),
+    "header_bg": (15, 52, 67),
+    "stripe": (234, 243, 246),
+}
 TITLE_FG  = (255, 255, 255)
-HEADER_BG = (60, 47, 36)       # dark brown
 HEADER_FG = (255, 255, 255)
 ROW_BG_A  = (255, 255, 255)
-ROW_BG_B  = (248, 244, 239)    # faint warm stripe
 GRID      = (224, 214, 204)
 TEXT      = (38, 34, 30)
 NAME_FG   = (20, 18, 16)
+
+# Total Knocks shows columns A–N (the first 14); Gaps / Total Gaps are excluded.
+TOTAL_KNOCKS_NCOL = 14
+# Time Gaps shows just these, in this order.
+TIME_GAPS_COLUMNS = [COL_ID, COL_REP, COL_FIRST_KNOCK, COL_LAST_KNOCK,
+                     COL_GAPS, COL_TOTAL_GAPS]
 
 # ---- layout ----
 PAD        = 16
@@ -43,7 +64,6 @@ OUT_DIR_DEFAULT = Path("output")
 
 
 def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    """First installed font that loads, across Windows + macOS + Linux."""
     candidates = (
         [r"C:\Windows\Fonts\arialbd.ttf", r"C:\Windows\Fonts\segoeuib.ttf",
          "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
@@ -83,23 +103,21 @@ def _text_w(draw: ImageDraw.ImageDraw, text: str, font) -> int:
     return int(draw.textlength(text or "", font=font))
 
 
-def render_table(header: list[str], rows: list[list[str]], target: dt.date,
-                 out_dir: Path = OUT_DIR_DEFAULT) -> Path:
-    """Draw the table to a PNG, return its path."""
-    out_dir.mkdir(parents=True, exist_ok=True)
+def _draw(header: list[str], rows: list[list[str]], title: str, theme: dict,
+          out_path: Path, name_col: int = 1) -> Path:
+    """Generic table → PNG. `name_col` (0-based) is left-aligned + bold."""
     f_title = _font(26, bold=True)
     f_head  = _font(13, bold=True)
     f_cell  = _font(13)
     f_name  = _font(13, bold=True)
 
-    probe = Image.new("RGB", (10, 10))
-    d0 = ImageDraw.Draw(probe)
+    probe = ImageDraw.Draw(Image.new("RGB", (10, 10)))
     ncol = len(header)
     col_w = []
     for ci in range(ncol):
-        w = _text_w(d0, header[ci], f_head)
+        w = _text_w(probe, header[ci], f_head)
         for r in rows:
-            w = max(w, _text_w(d0, r[ci] if ci < len(r) else "", f_cell))
+            w = max(w, _text_w(probe, r[ci] if ci < len(r) else "", f_cell))
         col_w.append(min(MAX_COL_W, max(MIN_COL_W, w + 2 * CELL_PAD_X)))
 
     table_w = sum(col_w)
@@ -107,33 +125,27 @@ def render_table(header: list[str], rows: list[list[str]], target: dt.date,
     img = Image.new("RGB", (table_w + 2 * PAD, img_h), (255, 255, 255))
     d = ImageDraw.Draw(img)
 
-    # Title bar.
-    d.rectangle([PAD, PAD, PAD + table_w, PAD + TITLE_H], fill=TITLE_BG)
-    title = f"TOTAL KNOCKS — {target.strftime('%B')} {target.day}, {target.year}"
+    d.rectangle([PAD, PAD, PAD + table_w, PAD + TITLE_H], fill=theme["title_bg"])
     d.text((PAD + CELL_PAD_X, PAD + (TITLE_H - 26) // 2), title,
            font=f_title, fill=TITLE_FG)
 
-    # Header row.
-    y = PAD + TITLE_H
-    x = PAD
+    y, x = PAD + TITLE_H, PAD
     for ci in range(ncol):
-        d.rectangle([x, y, x + col_w[ci], y + HEADER_H], fill=HEADER_BG)
+        d.rectangle([x, y, x + col_w[ci], y + HEADER_H], fill=theme["header_bg"])
         d.text((x + CELL_PAD_X, y + (HEADER_H - 13) // 2),
                header[ci], font=f_head, fill=HEADER_FG)
         x += col_w[ci]
 
-    # Data rows.
     y += HEADER_H
     for ri, r in enumerate(rows):
-        bg = ROW_BG_A if ri % 2 == 0 else ROW_BG_B
+        bg = ROW_BG_A if ri % 2 == 0 else theme["stripe"]
         d.rectangle([PAD, y, PAD + table_w, y + ROW_H], fill=bg)
         x = PAD
         for ci in range(ncol):
             val = r[ci] if ci < len(r) else ""
-            font = f_name if ci == 1 else f_cell
-            fg = NAME_FG if ci == 1 else TEXT
-            # Right-align numeric count columns; ID (col 0), Rep, times stay left.
-            if val.strip().isdigit() and ci != 0:
+            font = f_name if ci == name_col else f_cell
+            fg = NAME_FG if ci == name_col else TEXT
+            if val.strip().isdigit() and ci != 0:    # right-align counts (not ID)
                 tx = x + col_w[ci] - CELL_PAD_X - _text_w(d, val, font)
             else:
                 tx = x + CELL_PAD_X
@@ -141,7 +153,6 @@ def render_table(header: list[str], rows: list[list[str]], target: dt.date,
             x += col_w[ci]
         y += ROW_H
 
-    # Grid lines.
     x = PAD
     for ci in range(ncol + 1):
         d.line([x, PAD + TITLE_H, x, img_h - PAD], fill=GRID, width=1)
@@ -154,18 +165,72 @@ def render_table(header: list[str], rows: list[list[str]], target: dt.date,
         d.line([PAD, yy, PAD + table_w, yy], fill=GRID, width=1)
         yy += ROW_H
 
-    out_path = out_dir / f"total_knocks_{target.isoformat()}.png"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     img.save(out_path)
     return out_path
 
 
-def render_from_sheet(target: dt.date, *, tab: str = TAB_PROD,
-                      sheet_id: str = SHEET_ID,
-                      out_dir: Path = OUT_DIR_DEFAULT) -> Path:
+def _title_date(target: dt.date) -> str:
+    return f"{target.strftime('%B')} {target.day}, {target.year}"
+
+
+def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
+                        sheet_id: str = SHEET_ID,
+                        out_dir: Path = OUT_DIR_DEFAULT) -> Path:
+    """PNG 1 — columns A–N, in tab order (First Knock asc), amber theme."""
     header, rows = _read_table(sheet_id, tab)
     if not rows:
-        raise RuntimeError(f"No data rows found in tab {tab!r} to render.")
-    return render_table(header, rows, target, out_dir=out_dir)
+        raise RuntimeError(f"No data rows in tab {tab!r} to render.")
+    n = min(TOTAL_KNOCKS_NCOL, len(header))
+    header = header[:n]
+    rows = [r[:n] for r in rows]
+    return _draw(header, rows, f"TOTAL KNOCKS — {_title_date(target)}",
+                 THEME_AMBER, out_dir / f"total_knocks_{target.isoformat()}.png")
+
+
+def _gap_min(v: str) -> int:
+    v = (v or "").strip()
+    return int(v) if v.isdigit() else -1
+
+
+def _fmt_hm(v: str) -> str:
+    """Minutes int → 'Xh Ym' (matching how Ownerville displays it, e.g. 79 ->
+    '1h 19m', 180 -> '3h 0m'). Blank / non-numeric passes through unchanged."""
+    v = (v or "").strip()
+    if not v.isdigit():
+        return v
+    m = int(v)
+    return f"{m // 60}h {m % 60}m"
+
+
+def render_time_gaps(target: dt.date, *, tab: str = TAB_PROD,
+                     sheet_id: str = SHEET_ID,
+                     out_dir: Path = OUT_DIR_DEFAULT) -> Path:
+    """PNG 2 — ID, Rep, First/Last Knock, Gaps, Total Gaps (min), sorted by
+    Total Gaps (min) desc, teal theme. Total Gaps is shown as 'Xh Ym' (like
+    Ownerville); the Sheet column itself stays in plain minutes."""
+    header, rows = _read_table(sheet_id, tab)
+    if not rows:
+        raise RuntimeError(f"No data rows in tab {tab!r} to render.")
+    idx = {}
+    for i, h in enumerate(header):
+        k = _norm(h)
+        if k and k not in idx:
+            idx[k] = i
+    missing = [c for c in TIME_GAPS_COLUMNS if _norm(c) not in idx]
+    if missing:
+        raise RuntimeError(f"Tab {tab!r} missing column(s) for Time Gaps: "
+                           f"{missing}. Header: {header}")
+    sel = [idx[_norm(c)] for c in TIME_GAPS_COLUMNS]
+    sub = [[(r[i] if i < len(r) else "") for i in sel] for r in rows]
+    tg_pos = TIME_GAPS_COLUMNS.index(COL_TOTAL_GAPS)
+    # Sort by numeric minutes (desc) BEFORE formatting to 'Xh Ym'.
+    sub.sort(key=lambda r: _gap_min(r[tg_pos]), reverse=True)
+    for r in sub:
+        r[tg_pos] = _fmt_hm(r[tg_pos])
+    return _draw(list(TIME_GAPS_COLUMNS), sub,
+                 f"TIME GAPS — {_title_date(target)}",
+                 THEME_TEAL, out_dir / f"time_gaps_{target.isoformat()}.png")
 
 
 def main() -> int:
@@ -177,8 +242,10 @@ def main() -> int:
     target = (dt.datetime.strptime(args.date, "%Y-%m-%d").date()
               if args.date else dt.date.today() - dt.timedelta(days=1))
     tab = TAB_TEST if args.test_tab else TAB_PROD
-    path = render_from_sheet(target, tab=tab)
-    print(f"[total_knocks.render] wrote {path}")
+    p1 = render_total_knocks(target, tab=tab)
+    p2 = render_time_gaps(target, tab=tab)
+    print(f"[total_knocks.render] wrote {p1}")
+    print(f"[total_knocks.render] wrote {p2}")
     return 0
 
 
