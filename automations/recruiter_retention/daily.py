@@ -202,6 +202,33 @@ def _zero_card(this_mon, today):
 GOAL_COLS = {1: "A", 2: "B", 11: "K", 12: "L"}   # manual goal columns to preserve
 TEMPLATE_NAME = "RECRUITER NAME"
 
+# Low-performer chart (right of the data): last week's recruiters at <=50%
+# retention, with a streak count of consecutive weeks on the list.
+CHART_NAME_C, CHART_PCT_C, CHART_CNT_C = 21, 22, 23   # cols U / V / W
+CHART_ROW0, CHART_MAX = 4, 60                          # first list row / clear extent
+
+
+def _chart_state(ws):
+    """Existing chart contents -> {name: weeks_count}, plus the last-counted
+    reference week (kept as an invisible note on U1 so daily re-runs within a
+    week don't re-increment)."""
+    counts = {}
+    for row in ws.get(f"U{CHART_ROW0}:W{CHART_MAX}"):
+        if row and row[0].strip():
+            c = str(row[2]).strip() if len(row) >= 3 else ""
+            counts[row[0].strip()] = int(c) if c.isdigit() else 0
+    marker = None
+    try:
+        meta = ws.spreadsheet.fetch_sheet_metadata({
+            "ranges": [f"'{TAB}'!U1"],
+            "fields": "sheets(data(rowData(values(note))))"})
+        note = meta["sheets"][0]["data"][0]["rowData"][0]["values"][0].get("note", "")
+        if "counted_week=" in note:
+            marker = note.split("counted_week=")[-1].strip()
+    except Exception:
+        pass
+    return counts, marker
+
 
 def _write(active_cards, this_mon, today):
     sh = wk.open_by_key(SHEET_ID) if hasattr(wk, "open_by_key") else None
@@ -239,6 +266,23 @@ def _write(active_cards, this_mon, today):
     n_active, n_total = len(active_cards), len(all_cards)
     print(f"  existing: {existing} | active: {n_active} | "
           f"recycled(hidden): {len(recycled)} | total: {n_total}")
+
+    # ---- low-performer chart: last week <=50% retention, streak count ----
+    last_mon = this_mon - dt.timedelta(days=7)
+    prev_counts, marker = _chart_state(ws)
+    new_week = (marker != last_mon.isoformat())
+    listed = sorted(
+        [(name, last["pct"]["total"]) for name, _, last in active_cards
+         if isinstance(last["pct"]["total"], (int, float))
+         and last["pct"]["total"] <= 0.5],
+        key=lambda x: x[1], reverse=True)              # greatest -> least
+    chart_rows = []
+    for name, pct in listed:
+        prev = prev_counts.get(name, 0)
+        cnt = (prev + 1 if prev else 1) if new_week else (prev or 1)
+        chart_rows.append((name, pct, cnt))
+    print(f"  low-performer chart: {len(chart_rows)} recruiter(s) <=50% — "
+          f"{'NEW week (+1)' if new_week else 'same week (counts held)'}")
 
     # ---- 1) replicate the template block for any positions beyond existing ----
     reqs = [{"copyPaste": {
@@ -293,6 +337,14 @@ def _write(active_cards, this_mon, today):
             put(f"{_col(L_DAYS[0])}{r}:{_col(L_TOTAL)}{r}", [""] * 6)
             put(f"{_col(R_DAYS[0])}{r}:{_col(R_TOTAL)}{r}", [""] * 6)
 
+    # low-performer chart — clear then fill (U=name, V=%, W=weeks-on-list)
+    data.append({"range": f"'{TAB}'!U{CHART_ROW0}:W{CHART_MAX}",
+                 "values": [["", "", ""]] * (CHART_MAX - CHART_ROW0 + 1)})
+    if chart_rows:
+        data.append({"range":
+            f"'{TAB}'!U{CHART_ROW0}:W{CHART_ROW0 + len(chart_rows) - 1}",
+            "values": [[nm, pc, ct] for nm, pc, ct in chart_rows]})
+
     sh.values_batch_update({"valueInputOption": "RAW", "data": data})
 
     # ---- 3) % number format (all blocks) + hide recycled / unhide active ----
@@ -326,6 +378,19 @@ def _write(active_cards, this_mon, today):
             "range": {"sheetId": sid, "dimension": "ROWS",
                       "startIndex": n_active * STRIDE, "endIndex": hide_to},
             "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}})
+    # chart: % format on V, + stamp the reference-week marker note on U1
+    chart_pct_rng = {"sheetId": sid, "startRowIndex": CHART_ROW0 - 1,
+                     "endRowIndex": CHART_MAX, "startColumnIndex": CHART_PCT_C - 1,
+                     "endColumnIndex": CHART_PCT_C}
+    fmt_reqs.append({"repeatCell": {"range": chart_pct_rng,
+        "cell": {"userEnteredFormat": {"numberFormat": {"type": "PERCENT", "pattern": "0%"}}},
+        "fields": "userEnteredFormat.numberFormat"}})
+    fmt_reqs.append({"updateCells": {
+        "range": {"sheetId": sid, "startRowIndex": 0, "endRowIndex": 1,
+                  "startColumnIndex": CHART_NAME_C - 1, "endColumnIndex": CHART_NAME_C},
+        "rows": [{"values": [{"note": f"counted_week={last_mon.isoformat()}"}]}],
+        "fields": "note"}})
+    pct_ranges.append(chart_pct_rng)          # color the chart % same as the sheet
     if fmt_reqs:
         sh.batch_update({"requests": fmt_reqs})
 
