@@ -1884,9 +1884,7 @@ AUTOMATED_REPORTS = [
         "breakdown": (
             "WHAT IT DOES\n"
             "Fills per-ICD churn rates on every captainship tab of "
-            "the Owners Metrics Report Google Sheet. One Tableau "
-            "session, one Crosstab pull per captainship, one fill "
-            "per destination tab.\n\n"
+            "the Owners Metrics Report Google Sheet.\n\n"
             "TABS FILLED — ATT Fiber (4 buckets: 0-30 / 30 / 60 / 90)\n"
             "• Churn - Wayne (ATT Fiber)\n"
             "• Churn - Starr Rodenhurst (ATT Fiber)\n"
