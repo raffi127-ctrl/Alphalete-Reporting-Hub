@@ -110,6 +110,34 @@ def find_metrics_thread_ts(client, today: dt.date) -> str:
     )
 
 
+def ensure_metrics_thread(today: dt.date | None = None,
+                          *, dry_run: bool = False) -> dict:
+    """Make sure today's Metrics header thread exists in #alphalete-sales.
+
+    The daily Slack Workflow normally posts the 'Metrics for: <date>'
+    header early morning, and each per-metric report just replies to it.
+    This is a FALLBACK so a fully-automated run never depends on that
+    workflow firing: if today's header is already there (bot OR manual) we
+    do nothing and return its ts; if it's missing we post one ourselves,
+    in the exact 'Metrics for: <Month> <ordinal> <year>' format that
+    find_metrics_thread_ts recognises (so the replies still match it)."""
+    today = today or dt.date.today()
+    header_text = (f"Metrics for: {today.strftime('%B')} "
+                   f"{_ordinal(today.day)} {today.year}")
+    if dry_run:
+        return {"dry_run": True, "header_text": header_text,
+                "to_channel": CHANNEL_ID}
+    client = _client()
+    try:
+        ts = find_metrics_thread_ts(client, today)
+        return {"ok": True, "existed": True, "thread_ts": ts}
+    except SlackPostError:
+        pass  # not posted yet — fall through and post it ourselves
+    resp = client.chat_postMessage(channel=CHANNEL_ID, text=header_text)
+    return {"ok": resp.get("ok"), "existed": False,
+            "thread_ts": resp.get("ts"), "header_text": header_text}
+
+
 def post_reply_text_only(
     text: str,
     *,

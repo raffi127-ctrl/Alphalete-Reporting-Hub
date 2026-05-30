@@ -1513,303 +1513,103 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
-        "id": "disconnects",
-        "name": "New Internet Disconnects",
+        "id": "daily-metrics",
+        "name": "9 Daily Metrics Report",
         "creator": "Megan",
-        "emoji": "❎",
-        "color": "#22C55E",
-        "category": "📊 Metrics",
-        "description": "Daily pull of new-internet disconnects on Raf's + Starr's teams — routed to Local Office, Raf's Captainship, or Starr+Sahil tab by owner.",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "Pulls Tableau Order Log for the previous 30 completed days. "
-            "New rows insert at the TOP of each tab; dedup by "
-            "(Customer Name, Account BAN). Image of the new Local Office "
-            "disconnects is generated and posted in #alphalete-sales.\n\n"
-            "TABS FILLED (on the AT&T Fiber Metrics Report sheet)\n"
-            "• Local Office - New Internet Disconnects\n"
-            "• Raf's Captainship - New Internet Disconnects\n"
-            "• Starr Capi + Sahil - New Internet Disconnects\n\n"
-            "WHEN IT RUNS\n"
-            "Daily.\n\n"
-            "PRE-FLIGHT (must be done before each run)\n"
-            "Someone has to post the day's **Metrics header thread** "
-            "(format: 'Metrics for: May 27th 2026') in #alphalete-sales "
-            "BEFORE this report runs — the bot replies to that parent "
-            "thread. Once the other 8 metrics are automated, the Hub will "
-            "auto-post the header thread itself."
-        ),
-        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8/edit"),
-        "assignees": ["Eve"],
-        "schedule": {
-            "frequency": "daily",
-            "time": "7:00 AM",
-            "estimated_minutes": 5,
-        },
-        "checklist": [
-            {"text": "Posted the day's Metrics header thread "
-                     "(format: 'Metrics for: May 27th 2026') in "
-                     "#alphalete-sales — this report posts as a reply in "
-                     "that thread, so the thread MUST exist before running.",
-             "key": "metrics_header_posted"},
-        ],
-        "post_run": {
-            "message_success": "✅ Disconnects done — new rows inserted + dedup'd.",
-            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
-        },
-        "actions": [
-            {
-                "label": "Run Disconnects",
-                "icon": "▶",
-                "primary": True,
-                "help": "Pull the previous 30 completed days + fill all 3 tabs (dedup'd).",
-                "module": "automations.disconnects.run",
-                "args_fn": lambda: [],
-            },
-        ],
-    },
-    {
-        "id": "canceled-orders",
-        "name": "Canceled Orders",
-        "creator": "Megan",
-        "emoji": "🚫",
-        "color": "#DC2626",
-        "category": "📊 Metrics",
-        "description": "Daily pull of new-internet canceled orders on Raf's + Starr's teams — routed to Local Office, Raf's Captainship, or Starr+Sahil tab by owner.",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "Pulls Tableau Order Log for the previous 30 completed days. "
-            "New rows insert at the TOP of each tab; dedup by "
-            "(Customer Name, SPM #). Image of the new Local Office "
-            "cancels is generated and posted in #alphalete-sales.\n\n"
-            "TABS FILLED (on the AT&T Fiber Metrics Report sheet)\n"
-            "• Local Office - Daily Cancels\n"
-            "• Raf's Captainship - Cancels Ongoing\n"
-            "• Starr Capi + Sahil- Cancels Ongoing\n\n"
-            "WHEN IT RUNS\n"
-            "Daily.\n\n"
-            "PRE-FLIGHT (must be done before each run)\n"
-            "Someone has to post the day's **Metrics header thread** "
-            "(format: 'Metrics for: May 27th 2026') in #alphalete-sales "
-            "BEFORE this report runs — the bot replies to that parent "
-            "thread. Once the other 8 metrics are automated, the Hub will "
-            "auto-post the header thread itself."
-        ),
-        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8/edit"),
-        "assignees": ["Eve"],
-        "schedule": {
-            "frequency": "daily",
-            "time": "7:00 AM",
-            "estimated_minutes": 5,
-        },
-        "checklist": [
-            {"text": "Posted the day's Metrics header thread "
-                     "(format: 'Metrics for: May 27th 2026') in "
-                     "#alphalete-sales — this report posts as a reply in "
-                     "that thread, so the thread MUST exist before running.",
-             "key": "metrics_header_posted"},
-        ],
-        "post_run": {
-            "message_success": "✅ Canceled Orders done — new rows inserted + dedup'd.",
-            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
-        },
-        "actions": [
-            {
-                "label": "Run Canceled Orders",
-                "icon": "▶",
-                "primary": True,
-                "help": "Pull the previous 30 completed days + fill all 3 tabs (dedup'd).",
-                "module": "automations.canceled_orders.run",
-                "args_fn": lambda: [],
-            },
-        ],
-    },
-    {
-        "id": "scheduled-6-days-out",
-        "name": "Scheduled 6 days out",
-        "creator": "Eve",
-        "emoji": "📅",
+        "emoji": "📊",
         "color": "#0EA5E9",
         "category": "📊 Metrics",
-        "description": "Daily new-internet installs scheduled 6+ days out for "
-                       "Raf's + Starr's captainships. Owner-colored tabs + "
-                       "Downloads screenshots; Raf's Local Office posts to the "
-                       "Metrics thread.",
+        "description": "One run that fires all 9 daily #alphalete-sales metrics — Telemapper Knocks, Time Gaps, Order Log, Sales Scheduled 6+ Days, Canceled Orders, Ongoing Cancel, Disconnects, New Internet Churn, Wireless Churn — each posting into today's Metrics thread.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Collects all scheduled new internet installations planned for 6 or "
-            "more days in advance for Raf's Local Office + Raf's Captainship + "
-            "Starr's Captainship. Local Office gets posted in the Metrics thread "
-            "immediately after running.\n\n"
-            "TABS FILLED (on the 'VAs' Data' sheet)\n"
-            "• Scheduled 6 days out (Raf)\n"
-            "• Scheduled 6 days out (Starr)\n"
-            "Each tab is overwritten clean, sorted by Owner Name, and every "
-            "Owner's rows shaded a soft color from its family (greens, blues, "
-            "ambers, …).\n\n"
-            "SCREENSHOTS\n"
-            "A full colored table for each captainship is saved to your "
-            "Downloads folder. Raf's Local Office (Owner = Rafael Hidalgo) is "
-            "posted as an image in the Metrics thread with a 📅 reaction.\n\n"
-            "EMAILS\n"
-            "Each captainship's full table is emailed from "
-            "alphaletereporting@gmail.com to its team (Raf's Captain Team / "
-            "Starr's Captainship) with Eve's signature.\n\n"
+            "Runs all 7 metric reports back-to-back in one click and posts "
+            "the 9 daily metrics into today's 'Metrics for: <date>' thread "
+            "in #alphalete-sales. The day's header thread is posted first "
+            "if it isn't already up — no pre-flight needed.\n\n"
+            "METRICS POSTED (in thread order)\n"
+            "• 🪵 Telemapper Knocks\n"
+            "• ⏰ Time Gaps\n"
+            "• 📋 Order Log\n"
+            "• 📅 Sales Scheduled 6+ Days Out\n"
+            "• 🚫 Canceled Orders\n"
+            "• 🔁 Ongoing Cancel\n"
+            "• ❎ Disconnected New Internets\n"
+            "• 🌐 New Internet Churn\n"
+            "• 📊 Wireless Churn\n\n"
+            "IF ONE FAILS\n"
+            "The run keeps going and ends with a ✅/❌ summary. Re-run just "
+            "the ones that failed from 'More actions' below.\n\n"
             "WHEN IT RUNS\n"
-            "Every morning. Refreshed daily — it OVERWRITES prior data instead "
-            "of keeping history.\n\n"
-            "WHILE IT RUNS\n"
-            "It will automatically open/connect with Tableau — do not type or "
-            "close the window while it works, otherwise the run will fail. It "
-            "will indicate when it's finished.\n\n"
-            "PRE-FLIGHT (must be done before each run)\n"
-            "Someone has to post the day's **Metrics header thread** "
-            "(format: 'Metrics for: May 30th 2026') in #alphalete-sales BEFORE "
-            "this runs — the Local Office image posts as a reply in that thread."
+            "Daily."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1qUiljtWXhcy3OGhQ_81LnNPIsUXjad3MJi-VzjEIDV8/edit"),
+                      "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8/edit"),
         "assignees": ["Eve"],
         "schedule": {
             "frequency": "daily",
             "time": "7:00 AM",
-            "estimated_minutes": 5,
+            "estimated_minutes": 40,
         },
-        "checklist": [
-            {"text": "Posted the day's Metrics header thread "
-                     "(format: 'Metrics for: May 30th 2026') in "
-                     "#alphalete-sales — Raf's Local Office image posts as a "
-                     "reply in that thread, so the thread MUST exist before "
-                     "running.",
-             "key": "metrics_header_posted"},
-        ],
         "post_run": {
-            "message_success": "✅ Scheduled 6 days out done — both tabs "
-                               "overwritten + screenshots saved to Downloads.",
-            "message_failed": "❌ Run failed. Check the log above, fix the "
-                              "issue, then run again.",
+            "message_success": "✅ Daily Metrics done — all 9 posted to the Metrics thread.",
+            "message_failed": "❌ Some metrics failed — check the summary above, then re-run those from More actions.",
         },
         "actions": [
             {
-                "label": "Run Scheduled 6 days out",
+                "label": "Run All 9 Metrics",
                 "icon": "▶",
                 "primary": True,
-                "help": "Pull yesterday's Order Log for both captainships, "
-                        "overwrite the tabs, save screenshots, and post Raf's "
-                        "Local Office to the Metrics thread.",
+                "help": "Runs all 7 reports → 9 metrics posted to today's thread; continues past any that fail.",
+                "module": "automations.daily_metrics.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Telemapper Knocks + Time Gaps",
+                "icon": "🪵",
+                "help": "Re-run just Knocks + Time Gaps.",
+                "module": "automations.total_knocks.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Order Log",
+                "icon": "📋",
+                "help": "Re-run just the Order Log.",
+                "module": "automations.uploaded.order_log",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Sales Scheduled 6+ Days Out",
+                "icon": "📅",
+                "help": "Re-run just Sales Scheduled 6+ Days Out.",
                 "module": "automations.scheduled_6_days_out.run",
                 "args_fn": lambda: ["--post-slack"],
             },
-        ],
-    },
-    {
-        "id": "ongoing-cancel",
-        "name": "Ongoing Cancel",
-        "creator": "Megan",
-        "emoji": "🔁",
-        "color": "#EF4444",
-        "category": "📊 Metrics",
-        "description": "Daily Internet Cancel Rates image → posted as a reply in today's 'Metrics for:' header thread in #alphalete-sales.",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "Pulls Internet Cancel Rates (Running Sum) from Tableau for "
-            "Raf's reps over the last 7 days.\n\n"
-            "WHEN IT RUNS\n"
-            "Daily.\n\n"
-            "PRE-FLIGHT (must be done before each run)\n"
-            "Someone has to post the day's **Metrics header thread** "
-            "(format: 'Metrics for: May 27th 2026') in #alphalete-sales "
-            "BEFORE this report runs — the bot replies to that parent "
-            "thread. Once the other 8 metrics are automated, the Hub will "
-            "auto-post the header thread itself."
-        ),
-        "sheet_url": None,
-        "assignees": ["Eve"],
-        "schedule": {
-            "frequency": "daily",
-            "time": "7:00 AM",
-            "estimated_minutes": 5,
-        },
-        "checklist": [
-            {"text": "Posted the day's Metrics header thread "
-                     "(format: 'Metrics for: May 27th 2026') in "
-                     "#alphalete-sales — this report posts as a reply in "
-                     "that thread, so the thread MUST exist before running.",
-             "key": "metrics_header_posted"},
-        ],
-        "post_run": {
-            "message_success": "✅ Ongoing Cancel posted to today's metrics thread.",
-            "message_failed": "❌ Run failed — most likely cause is the "
-                              "Metrics header thread wasn't posted in "
-                              "#alphalete-sales yet. Post it, then click "
-                              "Run Again.",
-        },
-        "actions": [
             {
-                "label": "Run Ongoing Cancel",
-                "icon": "▶",
-                "primary": True,
-                "help": "Pulls Tableau, renders the image, posts to today's "
-                        "Metrics thread in #alphalete-sales.",
+                "label": "Canceled Orders",
+                "icon": "🚫",
+                "help": "Re-run just Canceled Orders.",
+                "module": "automations.canceled_orders.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Ongoing Cancel",
+                "icon": "🔁",
+                "help": "Re-run just Ongoing Cancel.",
                 "module": "automations.ongoing_cancel.run",
                 "args_fn": lambda: [],
             },
-        ],
-    },
-    {
-        "id": "total-knocks",
-        "name": "Total Knocks and Time Gaps",
-        "creator": "Eve",
-        "emoji": "🚪",
-        "color": "#B45309",
-        "category": "📊 Metrics",
-        "description": "Daily Disposition-by-Rep knock totals + Time Tracker gaps (day prior) for Raf's Local Office → two screenshots (Total Knocks 🚪 + Time Gaps 🕐) posted as replies in today's 'Metrics for:' header thread in #alphalete-sales.",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "Collects Disposition by rep and time gaps from Ownerville "
-            "(always the day prior) for Raf's Local Office.\n\n"
-            "WHEN IT RUNS\n"
-            "Every morning. Each run collects data from the day prior, keeps "
-            "no record, it just screenshots and posts in the metrics thread "
-            "in 'alphalete-sales'.\n\n"
-            "WHILE IT RUNS\n"
-            "It will automatically open/connect with Ownerville, do not type "
-            "or close the window while it works, otherwise the run will fail. "
-            "It will indicate when it's finished."
-        ),
-        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1qUiljtWXhcy3OGhQ_81LnNPIsUXjad3MJi-VzjEIDV8/edit"
-                      "#gid=2073260467"),
-        "assignees": ["Eve"],
-        "schedule": {
-            "frequency": "daily",
-            "time": "7:00 AM",
-            "estimated_minutes": 5,
-        },
-        "checklist": [
-            {"text": "The daily Metrics thread must exist in #alphalete-sales "
-                     "before running. This report posts as a reply in that "
-                     "thread.",
-             "key": "metrics_header_posted"},
-        ],
-        "post_run": {
-            "message_success": "✅ Total Knocks + Time Gaps posted to today's metrics thread.",
-            "message_failed": "❌ Run failed. Most likely the Metrics header "
-                              "thread wasn't posted in #alphalete-sales yet, "
-                              "or the Ownerville window was touched mid-run. "
-                              "Fix that, then click Run Again.",
-        },
-        "actions": [
             {
-                "label": "Run Total Knocks and Time Gaps",
-                "icon": "▶",
-                "primary": True,
-                "help": "Scrapes yesterday's Disposition by Rep + Time Tracker "
-                        "gaps from Ownerville, renders both table images, posts "
-                        "them to today's Metrics thread in #alphalete-sales.",
-                "module": "automations.total_knocks.run",
+                "label": "Disconnected New Internets",
+                "icon": "❎",
+                "help": "Re-run just Disconnects.",
+                "module": "automations.disconnects.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "New Internet + Wireless Churn (Local Office)",
+                "icon": "🌐",
+                "help": "Re-run just Raf's Local Office churn (New Internet + Wireless).",
+                "module": "automations.churn.run",
                 "args_fn": lambda: [],
             },
         ],
@@ -1849,60 +1649,6 @@ AUTOMATED_REPORTS = [
                 "primary": True,
                 "help": "Fills today's day-of-week cell. Wednesday also inserts the new row for the new cycle.",
                 "module": "automations.fiber_activations.run",
-                "args_fn": lambda: [],
-            },
-        ],
-    },
-    {
-        "id": "new-internet-wireless-churn-local-office",
-        "name": "New Internet & Wireless Churn - Raf's Local Office",
-        "creator": "Megan",
-        "emoji": "🌐",
-        "color": "#F59E0B",
-        "category": "📊 Metrics",
-        "description": "Daily fill of Raf's Local Office churn rates (4 buckets: 0-30 / 30 / 60 / 90 day) for BOTH the New Internet and Wireless tabs — one Tableau session, both pulls + fills.",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "Fills in Raf's local office (\"AT&T Fiber Metrics Report\" "
-            "Google Sheet) New Internet & Wireless Churn.\n\n"
-            "TABS FILLED (on the AT&T Fiber Metrics Report sheet)\n"
-            "• Local Office - New Internet Churn\n"
-            "• Local Office - Wireless Churn\n\n"
-            "WHEN IT RUNS\n"
-            "Daily.\n\n"
-            "PRE-FLIGHT (must be done before each run)\n"
-            "Someone has to post the day's **Metrics header thread** "
-            "(format: 'Metrics for: May 27th 2026') in #alphalete-sales "
-            "BEFORE this report runs — the bot replies to that parent "
-            "thread. Once the other 8 metrics are automated, the Hub will "
-            "auto-post the header thread itself."
-        ),
-        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8/edit"),
-        "assignees": ["Eve"],
-        "schedule": {
-            "frequency": "daily",
-            "time": "7:00 AM",
-            "estimated_minutes": 5,
-        },
-        "checklist": [
-            {"text": "Posted the day's Metrics header thread "
-                     "(format: 'Metrics for: May 27th 2026') in "
-                     "#alphalete-sales — this report posts as a reply in "
-                     "that thread, so the thread MUST exist before running.",
-             "key": "metrics_header_posted"},
-        ],
-        "post_run": {
-            "message_success": "✅ Churn done — both tabs filled, sections sorted, blank-today rows hidden.",
-            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
-        },
-        "actions": [
-            {
-                "label": "Run Churn (Both Tabs)",
-                "icon": "▶",
-                "primary": True,
-                "help": "Pulls both Churn Crosstabs in one Tableau session + fills both tabs (skips today if already filled — pass --force-insert in CLI to override).",
-                "module": "automations.churn.run",
                 "args_fn": lambda: [],
             },
         ],
