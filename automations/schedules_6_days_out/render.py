@@ -54,11 +54,9 @@ def _font(size: int, bold: bool = False):
 
 
 def _text_color(bg01) -> tuple:
-    """Black on our pastel backgrounds (they're all high-value), but compute
-    luminance anyway so a future darker palette stays legible."""
-    r, g, b = bg01
-    lum = 0.299 * r + 0.587 * g + 0.114 * b
-    return (0, 0, 0) if lum > 0.5 else (255, 255, 255)
+    """Always black — the spec calls for black text, and every palette shade is
+    kept pastel/light enough to stay legible under it."""
+    return (0, 0, 0)
 
 
 def _sorted_for_color(rows: List[Dict[str, str]], color_by: str
@@ -74,11 +72,15 @@ def _sorted_for_color(rows: List[Dict[str, str]], color_by: str
 
 
 def render(rows: List[Dict[str, str]], out_path: Path, title: str,
-           color_by: str = "Owner Name") -> Path:
-    """Render the table as a PNG, shading each `color_by` group its gradient
-    color. Full-captainship tables color by 'Owner Name'; the single-owner
-    (Rafael Hidalgo) Slack image colors by 'Rep'. Rows are re-sorted by the
-    color key so the gradient is contiguous and ascending."""
+           color_by: str = "Owner Name", palette: Dict[str, tuple] = None
+           ) -> Path:
+    """Render the table as a PNG, shading each `color_by` group its color.
+    Full-captainship tables color by 'Owner Name'; the single-owner (Rafael
+    Hidalgo) Slack image colors by 'Rep'. Rows are re-sorted by the color key
+    so groups are contiguous.
+
+    palette: optional {group_value: (r,g,b) in 0..1}. If omitted, falls back to
+    the simple ascending gradient."""
     s = SCALE
     cols = COLS
     rows = _sorted_for_color(rows, color_by)
@@ -116,7 +118,7 @@ def render(rows: List[Dict[str, str]], out_path: Path, title: str,
         img.save(out_path)
         return out_path
 
-    group_color = colors.gradient_for_groups(
+    group_color = palette or colors.family_palette(
         [r.get(color_by, "") for r in rows])
     for row in rows:
         c01 = group_color[row.get(color_by, "")]

@@ -54,6 +54,56 @@ def gradient_for_groups(values_in_order: List[str]) -> dict:
 gradient_for_reps = gradient_for_groups
 
 
+# ---------------------------------------------------------------------------
+# Family palette — owners are grouped into color FAMILIES (greens, blues,
+# ambers, lavenders, …). Owners near each other in the list share a family;
+# each owner gets a unique shade WITHIN its family. Keeps the table from looking
+# saturated with colors while still letting you tell every owner apart.
+# ---------------------------------------------------------------------------
+
+# Base hue per family, ordered so adjacent families look clearly different.
+_FAMILIES = [
+    0.33,  # green
+    0.60,  # blue
+    0.12,  # amber / yellow-orange
+    0.78,  # lavender / soft purple
+    0.47,  # teal
+    0.95,  # rose / pink
+]
+# Owners per family before rotating to the next family.
+_FAMILY_SIZE = 4
+
+# Shade spread WITHIN a family (light→deep). All stay pastel and keep black
+# text legible (value never drops below ~0.76). The small hue nudge gives the
+# "mint vs olive" feel the spec describes for the green family.
+_SAT_MIN, _SAT_MAX = 0.16, 0.44
+_VAL_MAX, _VAL_MIN = 0.98, 0.82
+_HUE_SPREAD = 0.05
+
+
+def family_palette(values_in_order: List[str],
+                   family_size: int = _FAMILY_SIZE) -> dict:
+    """Map each DISTINCT group value (first-seen order) to a pastel (r,g,b) in
+    0..1, grouping consecutive values into color families and giving each a
+    unique shade within its family."""
+    distinct: List[str] = []
+    for v in values_in_order:
+        if v not in distinct:
+            distinct.append(v)
+
+    out = {}
+    for i, v in enumerate(distinct):
+        fam = (i // family_size) % len(_FAMILIES)
+        shade = i % family_size
+        # Normalized shade position 0..1 (light → deep) — works for any size.
+        t = shade / max(family_size - 1, 1)
+        hue = _FAMILIES[fam] + (t - 0.5) * _HUE_SPREAD
+        sat = _SAT_MIN + t * (_SAT_MAX - _SAT_MIN)
+        val = _VAL_MAX - t * (_VAL_MAX - _VAL_MIN)
+        out[v] = colorsys.hsv_to_rgb(hue % 1.0, sat, val)
+    return out
+
+
 def rgb01_to_sheet(c: Tuple[float, float, float]) -> dict:
     """(r,g,b) 0..1 → gspread/Sheets API backgroundColor dict."""
     return {"red": c[0], "green": c[1], "blue": c[2]}

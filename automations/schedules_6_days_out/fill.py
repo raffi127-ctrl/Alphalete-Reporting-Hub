@@ -101,7 +101,7 @@ def _paint(ws, rows: List[Dict[str, str]], *, ncols: int,
         }
     }]
 
-    group_color = colors.gradient_for_groups(
+    group_color = colors.family_palette(
         [r.get(color_by, "") for r in rows])
     # Walk contiguous color-key groups.
     start = 0
