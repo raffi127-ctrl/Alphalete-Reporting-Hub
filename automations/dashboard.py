@@ -1627,6 +1627,79 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "schedules-6-days-out",
+        "name": "Schedules 6 days out",
+        "creator": "Eve",
+        "emoji": "📅",
+        "color": "#0EA5E9",
+        "category": "📊 Metrics",
+        "description": "Daily new-internet installs scheduled 6+ days out for "
+                       "Raf's + Starr's captainships. Owner-colored tabs + "
+                       "Downloads screenshots; Raf's Local Office posts to the "
+                       "Metrics thread.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Collects all scheduled new internet installations planned for 6 or "
+            "more days in advance for Raf's Local Office + Raf's Captainship + "
+            "Starr's Captainship. Local Office gets posted in the Metrics thread "
+            "immediately after running.\n\n"
+            "TABS FILLED (on the sandbox 'VAs' Data' sheet)\n"
+            "• Schedules 6 days out (Raf)\n"
+            "• Schedules 6 days out (Starr)\n"
+            "Each tab is overwritten clean, sorted by Owner Name, and every "
+            "Owner's rows shaded their own soft gradient color.\n\n"
+            "SCREENSHOTS\n"
+            "A full colored table for each captainship is saved to your "
+            "Downloads folder. Raf's Local Office (Owner = Rafael Hidalgo) is "
+            "posted as an image in the Metrics thread with a 📅 reaction.\n\n"
+            "WHEN IT RUNS\n"
+            "Every morning. Refreshed daily — it OVERWRITES prior data instead "
+            "of keeping history.\n\n"
+            "WHILE IT RUNS\n"
+            "It will automatically open/connect with Tableau — do not type or "
+            "close the window while it works, otherwise the run will fail. It "
+            "will indicate when it's finished.\n\n"
+            "PRE-FLIGHT (must be done before each run)\n"
+            "Someone has to post the day's **Metrics header thread** "
+            "(format: 'Metrics for: May 30th 2026') in #alphalete-sales BEFORE "
+            "this runs — the Local Office image posts as a reply in that thread."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1qUiljtWXhcy3OGhQ_81LnNPIsUXjad3MJi-VzjEIDV8/edit"),
+        "assignees": ["Eve"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "estimated_minutes": 5,
+        },
+        "checklist": [
+            {"text": "Posted the day's Metrics header thread "
+                     "(format: 'Metrics for: May 30th 2026') in "
+                     "#alphalete-sales — Raf's Local Office image posts as a "
+                     "reply in that thread, so the thread MUST exist before "
+                     "running.",
+             "key": "metrics_header_posted"},
+        ],
+        "post_run": {
+            "message_success": "✅ Schedules 6 days out done — both tabs "
+                               "overwritten + screenshots saved to Downloads.",
+            "message_failed": "❌ Run failed. Check the log above, fix the "
+                              "issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run Schedules 6 days out",
+                "icon": "▶",
+                "primary": True,
+                "help": "Pull yesterday's Order Log for both captainships, "
+                        "overwrite the tabs, save screenshots, and post Raf's "
+                        "Local Office to the Metrics thread.",
+                "module": "automations.schedules_6_days_out.run",
+                "args_fn": lambda: ["--post-slack"],
+            },
+        ],
+    },
+    {
         "id": "ongoing-cancel",
         "name": "Ongoing Cancel",
         "creator": "Megan",
