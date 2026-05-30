@@ -1844,7 +1844,7 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "daily-1st-round-recruiter-percent",
-        "name": "Daily 1st rd Recruiter %",
+        "name": "Daily Recruiter 1st Round Retention",
         "creator": "Megan",
         "emoji": "🎯",
         "color": "#2563EB",
@@ -1868,13 +1868,14 @@ AUTOMATED_REPORTS = [
             "activity again. Manual Weekly/Daily goals in columns A/B travel with "
             "each recruiter, so they're never erased or misaligned.\n\n"
             "WHEN IT RUNS\n"
-            "Daily."
+            "Monday–Friday, 8 AM."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
         "assignees": ["Eve"],
         "schedule": {
             "frequency": "daily",
+            "weekdays": [0, 1, 2, 3, 4],   # Mon–Fri only
             "time": "8:00 AM",
             "estimated_minutes": 4,
         },
