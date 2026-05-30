@@ -157,8 +157,10 @@ async def _open_login_form(page: Page) -> None:
             continue
 
 
-async def login(page: Page) -> None:
-    """Sign into Ownerville. Returns when the post-login page is loaded."""
+async def _attempt_login(page: Page) -> None:
+    """One login attempt: homepage -> username -> NEXT -> password -> submit
+    -> wait for the post-login landing. Raises PlaywrightTimeoutError if the
+    post-login page never renders (e.g. a stale 'Session expired' bounce)."""
     username, password = _validate_credentials()
 
     print(f"-> Navigating to {LOGIN_URL}")
@@ -189,10 +191,61 @@ async def login(page: Page) -> None:
 
     print("-> Waiting for post-login page to render...")
     await page.wait_for_load_state("load")
-    await page.get_by_text(re.compile(r"^\s*logout\s*$", re.IGNORECASE)).first.wait_for(
-        state="visible", timeout=30_000
-    )
-    print("-> Login complete")
+    # Confirm the login landed. The control historically read "Logout", but
+    # an exact-match regex (^\s*logout\s*$) silently misses "Log Out" (the
+    # space breaks the token) — broaden it to allow an optional space, and
+    # race it against the post-login sidebar nav (a.waves-effect) so a
+    # cosmetic label change can't block an otherwise-successful login.
+    # .first on the COMBINED locator — both match post-login, so racing
+    # them without .first trips strict mode.
+    logout = page.get_by_text(re.compile(r"^\s*log\s*out\s*$", re.IGNORECASE))
+    sidebar = page.locator("a.waves-effect")
+    await logout.or_(sidebar).first.wait_for(state="visible", timeout=45_000)
+
+
+async def login(page: Page) -> None:
+    """Sign into Ownerville, recovering from a stale 'Session expired' state.
+
+    The persistent browser profile sometimes carries an expired ownerville
+    session cookie. After we submit valid credentials the server bounces the
+    page back to a 'Session expired — enter your username again' login screen,
+    so the post-login wait times out (Eve 2026-05-30). When the first attempt
+    doesn't land, we clear cookies and retry once from a fresh session — the
+    happy path keeps its Cloudflare clearance, and we only re-run Cloudflare
+    on the recovery path."""
+    for attempt in (1, 2):
+        try:
+            await _attempt_login(page)
+            print("-> Login complete")
+            return
+        except PlaywrightTimeoutError:
+            try:
+                body = (await page.inner_text("body"))[:300].replace("\n", " | ")
+            except Exception:
+                body = "(unreadable)"
+            stale = "session" in body.lower() and "expired" in body.lower()
+            if attempt == 1:
+                print(f"   [login] attempt 1 did not land "
+                      f"({'stale session detected' if stale else 'post-login timeout'})"
+                      " — clearing cookies and retrying from a fresh session...")
+                await page.context.clear_cookies()
+                continue
+            # Second failure — capture diagnostics, then give up.
+            try:
+                shot = SCREENSHOT_DIR / "order_log_login_stuck.png"
+                await page.screenshot(path=str(shot))
+                print(f"   [debug] stuck URL: {page.url}")
+                print(f"   [debug] title:    {await page.title()}")
+                print(f"   [debug] body[:400]: "
+                      f"{(await page.inner_text('body'))[:400]}")
+                print(f"   [debug] screenshot: {shot}")
+            except Exception as _e:
+                print(f"   [debug] could not capture page state: {_e}")
+            raise RuntimeError(
+                "Ownerville login did not complete after 2 attempts (cookies "
+                "cleared before the retry). Check the credentials file / "
+                "Cloudflare, or the post-login page layout changed."
+            )
 
 
 # ====================================================================
@@ -575,6 +628,64 @@ async def set_owner_name_filter(page: Page, owner_name: str) -> None:
     await page.wait_for_timeout(1500)
 
 
+async def reset_team_filter_to_all(page: Page) -> None:
+    """Force the 'Captain's Bonus Teams' filter to (All).
+
+    The shared ORDER LOG dashboard can load with this filter pinned to a
+    specific team (e.g. 'Starr's Team'), which excludes the requested
+    owner's orders and leaves the data table empty — the Crosstab dialog
+    then only offers the 'Last Refresh' caption sheet, so the export has no
+    data (Eve/Megan 2026-05-30). Resetting to (All) makes the pull immune to
+    whatever the dashboard's saved filter state happens to be. Matched by a
+    title prefix so a wording tweak ('Team' vs 'Teams') still resolves."""
+    print("-> Resetting 'Captain's Bonus Teams' filter to (All)")
+    viz = await _viz_scope(page)
+
+    team_filter = viz.locator(
+        '.CategoricalFilter:has(h3.FilterTitle[title^="Captain"])'
+    ).first
+    try:
+        await team_filter.wait_for(state="visible", timeout=15_000)
+    except PlaywrightTimeoutError:
+        print("   (filter not found — skipping; dashboard layout may differ)")
+        return
+
+    combobox = team_filter.locator('[role="combobox"]').first
+    # This filter sits far right on the dashboard and can be partially
+    # off-screen → plain click isn't actionable. Scroll in + force-click.
+    await combobox.scroll_into_view_if_needed()
+    await combobox.click(force=True, timeout=10_000)
+    await page.wait_for_timeout(800)
+
+    all_item = viz.locator(".FIItem.all-item").first
+    try:
+        await all_item.wait_for(state="visible", timeout=5000)
+        await _toggle_filter_row(page, all_item, "(All)", want_checked=True)
+    except Exception as e:
+        print(f"   (could not select (All) on the team filter: {e})")
+
+    # Commit + CLOSE the dropdown — otherwise the open overlay covers the
+    # next filter's combobox. 'Show Apply button' filters expose an Apply
+    # (scoped to this filter); 'apply immediately' filters have none and
+    # commit on each click, so we just press Escape to close the list.
+    applied = False
+    apply = team_filter.locator('button[title="Apply"]:not([disabled])').first
+    try:
+        await apply.wait_for(state="visible", timeout=4000)
+        await apply.click()
+        applied = True
+        print("   clicked Apply on team filter")
+    except PlaywrightTimeoutError:
+        pass
+    if not applied:
+        await page.keyboard.press("Escape")
+        print("   closed team dropdown (apply-immediate)")
+
+    await page.wait_for_timeout(500)
+    await _wait_for_viz_ready(viz, page)
+    await page.wait_for_timeout(1000)
+
+
 async def set_date_range(page: Page, start_date: date, end_date: date) -> None:
     """Set the Start Date and End Date textareas at the top of the view."""
     print(
@@ -621,7 +732,7 @@ async def download_dashboard_csv(
     ).first
     await crosstab_item.wait_for(state="visible", timeout=10_000)
     await crosstab_item.click()
-    await page.wait_for_timeout(1000)
+    await page.wait_for_timeout(1500)
 
     print('-> Selecting CSV format')
     # Click the label, not the input — label intercepts clicks.
@@ -716,7 +827,20 @@ def _status_sort_key(value) -> int:
 
 def _load_and_clean(csv_path: Path) -> pd.DataFrame:
     # Tableau exports UTF-16 LE with tab separators despite the .csv name.
-    df = pd.read_csv(csv_path, encoding="utf-16", sep="\t")
+    # 2026-05-30: the ORDER LOG view now prepends a title/caption line
+    # ("Last Server Update… / Data Source Sales Date Range…") with no tabs,
+    # which a naive read treats as the header. Find the real header row
+    # dynamically — the first tab-separated line whose cells include "Rep" —
+    # and parse from there, so a leading caption can't shift the columns.
+    with open(csv_path, "r", encoding="utf-16") as f:
+        lines = f.readlines()
+    header_idx = next(
+        (i for i, ln in enumerate(lines)
+         if "\t" in ln and any(c.strip().strip('"') == "Rep"
+                                for c in ln.split("\t"))),
+        0,
+    )
+    df = pd.read_csv(csv_path, encoding="utf-16", sep="\t", skiprows=header_idx)
 
     rep_blank = df["Rep"].isna() | (df["Rep"].astype(str).str.strip() == "")
     df = df.loc[~rep_blank].copy()
@@ -833,7 +957,10 @@ async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True) -> None
                 screenshot_dir=SCREENSHOT_DIR,
             )
 
+            # Owner Name first — proves the filter panel has rendered, so the
+            # team-filter reset below reliably finds its dropdown.
             await set_owner_name_filter(tableau_page, owner_name)
+            await reset_team_filter_to_all(tableau_page)
             await set_date_range(tableau_page, START_DATE, END_DATE)
 
             csv_path = await download_dashboard_csv(

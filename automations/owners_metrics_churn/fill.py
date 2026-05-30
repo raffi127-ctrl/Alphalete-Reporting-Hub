@@ -33,7 +33,7 @@ def open_ws_fiber_aron():
 # ----- B2B tabs (Phase 2) --------------------------------------------
 TAB_B2B_CARLOS = "Churn - Carlos Hidalgo (B2B)"
 TAB_B2B_EVELIZ = "Churn - Eveliz Wright (B2B)"
-TAB_B2B_LUIS   = "Luis Salazar (B2B)"   # Eve's tab name (no "Churn -" prefix)
+TAB_B2B_LUIS   = "Churn - Luis Salazar (B2B)"   # renamed to match the others 2026-05-30
 
 
 def open_ws_b2b_carlos():
