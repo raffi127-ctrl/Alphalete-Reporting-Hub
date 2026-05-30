@@ -17,6 +17,7 @@ sends, so we build it ourselves).
 """
 from __future__ import annotations
 
+import io
 import os
 import smtplib
 import ssl
@@ -25,6 +26,8 @@ from email.message import EmailMessage
 from email.utils import make_msgid
 from pathlib import Path
 from typing import List, Optional
+
+from PIL import Image, ImageDraw
 
 FROM_ADDR = "alphaletereporting@gmail.com"
 SMTP_HOST = "smtp.gmail.com"
@@ -66,21 +69,53 @@ RECIPIENTS: dict[str, List[str]] = {
     ],
 }
 
-# Eve's signature is an IMAGE (her branded sig with photo), embedded inline in
-# the body after "Best,". Lives in the package so the report doesn't depend on a
-# file in Downloads. Gmail's stored signature doesn't apply over SMTP, so we
-# embed it ourselves. Displayed at SIGNATURE_WIDTH px (native 445px) — sized to
-# sit proportionally under the table, not dominate it.
-SIGNATURE_IMG = Path(__file__).resolve().parent / "assets" / "signature.png"
-SIGNATURE_WIDTH = 420
+# Eve's signature is BUILT here: her photo (circular) on the left + text on the
+# right. We build it instead of using Gmail's stored signature because that only
+# applies when composing in the web UI, not over SMTP. The photo lives in the
+# package so the report doesn't depend on a file in Downloads.
+PHOTO_IMG = Path(__file__).resolve().parent / "assets" / "eve_photo.png"
+PHOTO_DISPLAY_PX = 84    # rendered size in the email
+PHOTO_EMBED_PX = 200     # embedded resolution (crisp on retina, small file)
+
+_SIG_NAME = "Evelyn Sobrino"
+_SIG_TITLE = "Virtual Assistant, Alphalete Marketing"
+_SIG_EMAIL = "alphaletereporting@gmail.com"
 
 # Plain-text fallback only (clients that don't render HTML/images).
 _SIGNATURE_TEXT = (
     "Best,\n\n"
-    "Evelyn Sobrino\n"
-    "Virtual Assistant, Alphalete Marketing\n"
-    "alphaletereporting@gmail.com"
+    f"{_SIG_NAME}\n{_SIG_TITLE}\n{_SIG_EMAIL}"
 )
+
+
+def _circular_photo_png(path: Path, px: int) -> bytes:
+    """Resize `path` to px×px and crop to a circle (transparent corners), so the
+    photo renders round in every client — not just ones that honor CSS
+    border-radius. Returns PNG bytes."""
+    im = Image.open(path).convert("RGBA").resize((px, px), Image.LANCZOS)
+    mask = Image.new("L", (px, px), 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, px, px), fill=255)
+    im.putalpha(mask)
+    buf = io.BytesIO()
+    im.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _signature_html(cid_photo: str) -> str:
+    """Photo (left) + name/title/email (right), as an email-safe table."""
+    d = PHOTO_DISPLAY_PX
+    return (
+        '<table cellpadding="0" cellspacing="0" border="0"><tr>'
+        f'<td valign="middle"><img src="cid:{cid_photo[1:-1]}" width="{d}" '
+        f'height="{d}" style="display:block;border-radius:50%"/></td>'
+        '<td valign="middle" style="padding-left:14px;'
+        'font-family:Arial,Helvetica,sans-serif">'
+        f'<div style="font-size:16px;font-weight:bold;color:#000">{_SIG_NAME}</div>'
+        f'<div style="font-size:13px;color:#555">{_SIG_TITLE}</div>'
+        f'<div style="font-size:13px"><a href="mailto:{_SIG_EMAIL}" '
+        f'style="color:#1a73e8;text-decoration:none">{_SIG_EMAIL}</a></div>'
+        '</td></tr></table>'
+    )
 
 
 class EmailSendError(RuntimeError):
@@ -106,12 +141,13 @@ def app_password() -> str:
 def build_message(subject: str, png_path: Path,
                   to_addrs: List[str]) -> EmailMessage:
     """Build an HTML email with the captainship PNG inline in the body, then
-    'Best,' and Eve's signature IMAGE. Both images are embedded inline (CID).
-    A plain-text alternative is included for clients that can't render HTML."""
-    if not SIGNATURE_IMG.exists():
+    'Best,' and Eve's signature (circular photo + text). Both images are
+    embedded inline (CID). A plain-text alternative is included for clients
+    that can't render HTML."""
+    if not PHOTO_IMG.exists():
         raise EmailSendError(
-            f"Signature image not found at {SIGNATURE_IMG}. Put Eve's signature "
-            "PNG there (see assets/).")
+            f"Signature photo not found at {PHOTO_IMG}. Put Eve's photo there "
+            "(see assets/eve_photo.png).")
 
     msg = EmailMessage()
     msg["Subject"] = subject
@@ -124,15 +160,14 @@ def build_message(subject: str, png_path: Path,
     )
 
     cid_report = make_msgid()   # includes angle brackets
-    cid_sig = make_msgid()
+    cid_photo = make_msgid()
     html = (
         "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;"
         "color:#000\">"
         f'<img src="cid:{cid_report[1:-1]}" '
         'style="max-width:100%;border:1px solid #ddd"/><br><br>'
         "Best,<br><br>"
-        f'<img src="cid:{cid_sig[1:-1]}" width="{SIGNATURE_WIDTH}" '
-        'style="max-width:100%;height:auto"/>'
+        f"{_signature_html(cid_photo)}"
         "</div>"
     )
     msg.add_alternative(html, subtype="html")
@@ -140,8 +175,8 @@ def build_message(subject: str, png_path: Path,
     html_part = msg.get_payload()[1]
     html_part.add_related(png_path.read_bytes(),
                           maintype="image", subtype="png", cid=cid_report)
-    html_part.add_related(SIGNATURE_IMG.read_bytes(),
-                          maintype="image", subtype="png", cid=cid_sig)
+    html_part.add_related(_circular_photo_png(PHOTO_IMG, PHOTO_EMBED_PX),
+                          maintype="image", subtype="png", cid=cid_photo)
     return msg
 
 

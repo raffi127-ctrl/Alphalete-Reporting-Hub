@@ -1582,7 +1582,7 @@ AUTOMATED_REPORTS = [
                 "icon": "📅",
                 "help": "Re-run just Sales Scheduled 6+ Days Out.",
                 "module": "automations.scheduled_6_days_out.run",
-                "args_fn": lambda: ["--post-slack"],
+                "args_fn": lambda: ["--post-slack", "--send-email"],
             },
             {
                 "label": "Canceled Orders",
