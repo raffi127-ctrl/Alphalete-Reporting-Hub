@@ -2003,19 +2003,30 @@ AUTOMATED_REPORTS = [
         "emoji": "🎯",
         "color": "#2563EB",
         "category": "🎯 Recruiting",
-        "description": "Weekly per-recruiter 1st-round interview retention for Raf's office — Booked / Scheduled / Showed Up + Retention % (Showed ÷ Scheduled), one week-total block per week on the '1st rd Recruiter %' tab. (% color-coded: <45% red, 45–49.9% grey, ≥50% green.)",
+        "description": "Weekly per-recruiter 1st-round retention for Raf's office — Scheduled / Showed Up / Retention % (Showed ÷ Scheduled) per week on the '1st rd Recruiter %' tab. Columns are week-ending Sundays; % color-coded (<45% red, 45–49.9% grey, ≥50% green); active schedulers highlighted.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Pulls AppStream's Retention Report (admin breakdown) for Raf's "
-            "office and fills one Week-Total block per week per recruiter: "
-            "Booked, Scheduled, Showed Up, and Retention % (Showed ÷ Scheduled).\n\n"
+            "office and fills one block per week per recruiter: Scheduled (Sch), "
+            "Showed Up (SU), and Retention % (Showed ÷ Scheduled).\n\n"
+            "WEEKS\n"
+            "Each column is a week ENDING on Sunday. AppStream only reports "
+            "Sun–Sat weeks, so a column uses the AppStream week that ends the day "
+            "before it — a ~1-week shift (Sundays are near-zero, so the weekly "
+            "totals line up).\n\n"
+            "COLORS & HIGHLIGHTS\n"
+            "• Retention %: under 45% red, 45–49.9% grey, 50%+ green.\n"
+            "• A recruiter's NAME turns yellow if they scheduled an interview in "
+            "the latest week (active schedulers that week).\n"
+            "• AI Messaging and Self Scheduled rows are tinted — interviews not "
+            "booked by a person.\n\n"
             "ROWS\n"
-            "Recruiters who booked an interview in the last 2 weeks show on top, "
-            "sorted by the latest week's retention (high → low). Recruiters with "
-            "no bookings in the last 2 weeks drop to the bottom and are hidden.\n\n"
+            "Recruiters who scheduled an interview in the last 2 weeks sit on top, "
+            "sorted by the latest week's retention (high → low). Those with none "
+            "in the last 2 weeks drop to the bottom and are hidden.\n\n"
             "WHEN IT RUNS\n"
-            "Mondays. Each run pulls the last full completed week and refreshes "
-            "the tab (history stays as-is)."
+            "Mondays. Each run fills the latest week and catches up any missed "
+            "weeks; existing history stays as-is."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
