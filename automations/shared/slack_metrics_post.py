@@ -122,8 +122,23 @@ def ensure_metrics_thread(today: dt.date | None = None,
     in the exact 'Metrics for: <Month> <ordinal> <year>' format that
     find_metrics_thread_ts recognises (so the replies still match it)."""
     today = today or dt.date.today()
-    header_text = (f"Metrics for: {today.strftime('%B')} "
-                   f"{_ordinal(today.day)} {today.year}")
+    # Match the Slack Workflow bot's header: the dated first line (which
+    # find_metrics_thread_ts recognises) + the 9-metric checklist with the
+    # same emoji shortcodes the bot uses, so a fallback-posted header reads
+    # identically to the normal one.
+    header_text = "\n".join([
+        f"Metrics for: {today.strftime('%B')} {_ordinal(today.day)} {today.year}",
+        "",
+        ":door: Telemapper Knocks",
+        ":clock1: Time Gaps",
+        ":clipboard: Order Log",
+        ":date: Sales scheduled 6+ days out",
+        ":no_entry_sign: Canceled Orders",
+        ":arrows_counterclockwise: Ongoing Cancel",
+        ":negative_squared_cross_mark: Disconnected New Internets",
+        ":globe_with_meridians: New Internet Churn",
+        ":bar_chart: Wireless Churn",
+    ])
     if dry_run:
         return {"dry_run": True, "header_text": header_text,
                 "to_channel": CHANNEL_ID}
