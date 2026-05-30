@@ -21,6 +21,14 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import re
+import sys
+
+# Make emoji / checkmarks safe on the Windows console (cp1252 default) —
+# same guard every other report uses so the Hub can run this on Eve's machine.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 
 from automations.shared.tableau_patchright import appstream_direct_session
 from automations.recruiting_report import fetch_office as fo
@@ -352,13 +360,6 @@ def _cf_rules(sid, sh, pct_cols):
 
 
 # --------------------------------------------------------------------------- main
-def _last_completed_sunday(today):
-    """The Sunday that starts the most recent FULLY-completed Sun-Sat week
-    (the current week containing `today` is still in progress)."""
-    this_sun = today - dt.timedelta(days=(today.weekday() + 1) % 7)
-    return this_sun - dt.timedelta(days=7)
-
-
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="recruiter_retention")
     ap.add_argument("--dry-run", action="store_true", help="pull + preview, no Sheet writes")
@@ -369,14 +370,17 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
+    cur_sun = today - dt.timedelta(days=(today.weekday() + 1) % 7)   # current week's Sunday
     if args.backfill:
-        cur_sun = today - dt.timedelta(days=(today.weekday() + 1) % 7)
         weeks, w = [], FIRST_WEEK
         while w <= cur_sun:
             weeks.append(w)
             w += dt.timedelta(days=7)
     else:
-        weeks = [_last_completed_sunday(today)]   # weekly run: just last full week
+        # weekly run: the last FULLY-completed week (the week before the current
+        # one). On the Monday 8am schedule this lands on the just-finished week
+        # — e.g. Mon 6/1 -> 5/24. (Megan, after weighing vs current-week.)
+        weeks = [cur_sun - dt.timedelta(days=7)]
 
     print(f"=== Ongoing 1st Round Recruiter Retention — "
           f"{'BACKFILL ' if args.backfill else ''}pulling {len(weeks)} week(s) "

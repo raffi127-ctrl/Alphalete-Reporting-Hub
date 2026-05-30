@@ -465,7 +465,7 @@ def _try_parse_date(s: str) -> Optional[dt.date]:
     """Parse common date formats found in the Sheet's column headers."""
     if not s:
         return None
-    for fmt in ("%m/%d/%y", "%m/%d/%Y", "%-m/%-d/%y", "%-m/%-d/%Y"):
+    for fmt in ("%m/%d/%y", "%m/%d/%Y"):   # %m/%d already match unpadded 5/24/26
         try:
             return dt.datetime.strptime(s, fmt).date()
         except ValueError:

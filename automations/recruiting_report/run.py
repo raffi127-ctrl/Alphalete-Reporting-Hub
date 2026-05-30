@@ -33,6 +33,13 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
+# Make emoji / checkmarks safe on the Windows console (cp1252 default), so the
+# Hub can run this on Eve's machine — same guard the other reports use.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 from patchright.sync_api import sync_playwright
 
 from . import fetch_office, fill
