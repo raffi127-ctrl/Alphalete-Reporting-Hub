@@ -56,7 +56,7 @@ METRICS = [
     ("order_log", "📋 Order Log",
      "automations.uploaded.order_log", []),
     ("sales_6plus", "📅 Sales Scheduled 6+ Days Out",
-     "automations.scheduled_6_days_out.run", ["--post-slack"]),
+     "automations.scheduled_6_days_out.run", ["--post-slack", "--send-email"]),
     ("cancels", "🚫 Canceled Orders",
      "automations.canceled_orders.run", []),
     ("ongoing_cancel", "🔁 Ongoing Cancel",
