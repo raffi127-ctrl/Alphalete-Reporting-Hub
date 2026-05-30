@@ -221,11 +221,18 @@ def write_daily(
         anchors["rolling_cell"]: raf_rolling_4w,
     }
 
-    # Tuesday is the last day of the Wed-Tue cycle, so the J col ("Activations")
-    # gets the same value as H col (Tuesday daily). Matches the pattern on
-    # historical rows where H=J on Tuesday.
-    if dow == 1:  # Python weekday() Tuesday == 1
-        writes[f"{COL_ACTIVATIONS_PURPLE}{row}"] = raf_today_activations
+    # 'Activations' (col J) auto-fills with the LATEST non-empty day in this
+    # row's Wed→Tue span (B:H) — the most recent daily cumulative available.
+    # Written as a sheet formula (not a static value) so it tracks each day's
+    # fill and any manual edits, regardless of which day the script last ran.
+    # LOOKUP(<huge number>, range) returns the last NUMERIC cell in the range:
+    # gap-safe (unlike INDEX+COUNT) for rows with a skipped day, and reliable
+    # in Google Sheets (the 1/(range<>"") variant evaluates blank here). The
+    # day cells are always numbers, so this lands on the most recent day. On
+    # Tuesday that's H, preserving the historical H=J invariant.
+    writes[f"{COL_ACTIVATIONS_PURPLE}{row}"] = (
+        f'=IFERROR(LOOKUP(9.99999999999999E+307,B{row}:H{row}),"")'
+    )
 
     if dry_run:
         return writes

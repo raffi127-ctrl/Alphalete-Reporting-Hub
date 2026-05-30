@@ -1658,13 +1658,20 @@ AUTOMATED_REPORTS = [
         "emoji": "🎯",
         "color": "#A78BFA",
         "category": "🎯 Fiber",
-        "description": "Daily Wed→Tue fill on the 'Captainship Activations' tab — Raf's team activations + country activations + EOW sales + 60-day churn + activation rate.",
+        "description": "Daily Wed→Tue fill on the 'Captainship Activations' tab — Raf's team activations + country activations + EOW sales + 60-day churn + activation rate. Then posts the blue + orange screenshots to Slack.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Pulls 6 Tableau numbers daily into the 'Captainship Activations' tab.\n\n"
+            "Pulls 6 Tableau numbers daily into the 'Captainship Activations' "
+            "tab, then renders two PNGs (blue Fiber table + secondary tables, "
+            "orange Country table) and posts them to #level10-alphalete.\n\n"
             "WHEN IT RUNS\n"
             "**Every day, Wed–Tue.** Each Wednesday inserts a new row for the "
-            "new cycle."
+            "new cycle.\n\n"
+            "SLACK\n"
+            "Replies in the weekly **'Activations Report Tracker WE MM.DD'** "
+            "thread (created automatically each Wednesday, under Eve). Post "
+            "name = PNG file name; Wednesday's Fiber post tags Rafael, Maud "
+            "& Dylan."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
@@ -1676,7 +1683,7 @@ AUTOMATED_REPORTS = [
         },
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Fiber Activations done — today's day-of-week cell + EOW Sales + Churn + Activation Rate all updated.",
+            "message_success": "✅ Fiber Activations done — sheet updated (day cell + Activations + EOW Sales + Churn + Activation Rate) and both screenshots posted to the WE tracker thread in #level10-alphalete.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
         },
         "actions": [
@@ -1684,7 +1691,7 @@ AUTOMATED_REPORTS = [
                 "label": "Run Today's Fill",
                 "icon": "▶",
                 "primary": True,
-                "help": "Fills today's day-of-week cell. Wednesday also inserts the new row for the new cycle.",
+                "help": "Fills today's day-of-week cell (Wednesday also inserts the new row), then posts the blue + orange screenshots to the weekly tracker thread in #level10-alphalete.",
                 "module": "automations.fiber_activations.run",
                 "args_fn": lambda: [],
             },

@@ -25,7 +25,18 @@ from pathlib import Path
 
 from automations.fiber_activations.pull import pull_all, DAYS
 from automations.fiber_activations import fill as fa_fill
+from automations.fiber_activations import render as fa_render
+from automations.fiber_activations import slack_post as fa_slack
 from automations.recruiting_report import fill as rfill
+
+# Windows consoles default to cp1252; printing the ✅/❌ status lines would
+# raise UnicodeEncodeError and exit non-zero AFTER the sheet write already
+# succeeded (the Hub would then mis-report the run as failed). Force UTF-8.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
 SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
 TAB_NAME = "Captainship Activations"
@@ -82,21 +93,46 @@ def _print_dry_run(today: dt.date, pull) -> None:
     print(f"  {TAB_NAME}!{purple_col}<new-row>  =  {raf_today:>5,}   (Raf today activations)")
     print(f"  {TAB_NAME}!{orange_col}<new-row>  =  {country_today:>5,}   (Country today activations)")
     print(f"  {TAB_NAME}!I<new-row>            =  {(pull.raf_eow_sales or 0):>5,}   (Raf EOW Sales)")
+    print(f"  {TAB_NAME}!J<data-row>          =  =LOOKUP(9.99E+307,B:H)   "
+          f"(Activations = latest non-empty Wed→Tue, today: {raf_today:,})")
     print(f"  {TAB_NAME}!Y<new-row>            =  {(pull.country_eow_sales or 0):>5,}   (Country EOW Sales excl UPGRADE)")
     print(f"  {TAB_NAME}!G<churn-row>          =  {pull.raf_60d_churn}")
     print(f"  {TAB_NAME}!H<rolling-row>        =  {pull.raf_rolling_4w}")
-    print()
-    print("Still pending wiring:")
-    print("  - Actually insert new row + write to sheet (currently dry-run only)")
-    print("  - 'Last 4 week AVG' re-derive + 4-row highlight")
+
+
+OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
+
+
+def _do_screenshots_and_slack(ws, today, *, no_slack: bool) -> None:
+    """Render the two PNGs from the just-written sheet and post them in this
+    week's tracker thread in #level10-alphalete (post name == file name)."""
+    imgs = fa_render.render_both(ws, today, OUTPUT_DIR)
+    print("\n  Rendered:")
+    for k, pth in imgs.items():
+        print(f"    {k:8s} = {pth}")
+    if no_slack:
+        print("\n  (--no-slack) Skipped Slack post.")
+        return
+    result = fa_slack.post_daily(imgs["fiber"], imgs["country"], today)
+    if result.get("ok"):
+        verb = "Created thread +" if result["thread_created"] else "Posted in"
+        print(f"\n  Slack: {verb} '{result['thread_title']}' — both screenshots "
+              f"posted to #level10-alphalete.")
+        if result["tagged"]:
+            print(f"         Tagged on Fiber (Wed): {', '.join(result['tagged'])}")
+    else:
+        print(f"\n  ⚠ Slack post issue: {result}")
 
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="fiber_activations")
     p.add_argument("--dry-run", action="store_true",
-                   help="Print what would be written; don't touch the sheet.")
+                   help="Print what would be written + render PNGs; don't "
+                        "touch the sheet or post to Slack.")
     p.add_argument("--date", default=None,
                    help="Override today's date (YYYY-MM-DD). For testing.")
+    p.add_argument("--no-slack", action="store_true",
+                   help="Do the fill + render the PNGs, but don't post to Slack.")
     args = p.parse_args(argv)
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
@@ -105,6 +141,24 @@ def main(argv=None) -> int:
 
     if args.dry_run:
         _print_dry_run(today, pull)
+        # Render the PNGs from the live sheet (read-only) + show what WOULD be
+        # posted to Slack, without writing or posting.
+        sh = rfill.open_by_key(SHEET_ID)
+        ws = sh.worksheet(TAB_NAME)
+        imgs = fa_render.render_both(ws, today, OUTPUT_DIR)
+        print("\n--- Rendered preview PNGs (no Slack post): ---")
+        for k, pth in imgs.items():
+            print(f"  {k}: {pth}")
+        plan = fa_slack.post_daily(imgs["fiber"], imgs["country"], today,
+                                   dry_run=True)
+        print("\n--- WOULD POST to Slack: ---")
+        print(f"  channel: #level10-alphalete ({plan['channel']})")
+        print(f"  thread : {plan['thread_title']}  "
+              f"(create if missing — new every Wed)")
+        for post in plan["posts"]:
+            print(f"    reply: {post['comment']}  [{post['file']}]")
+        if plan["tags_on_fiber"]:
+            print(f"  tags on Fiber (Wed): {plan['tags_on_fiber']}")
         return 0
 
     # Actual sheet write.
@@ -132,6 +186,9 @@ def main(argv=None) -> int:
     print("\n  Wrote:")
     for cell, val in writes.items():
         print(f"    {cell:8s} = {val}")
+
+    _do_screenshots_and_slack(ws, today, no_slack=args.no_slack)
+
     print("\n✅ Done.")
     return 0
 
