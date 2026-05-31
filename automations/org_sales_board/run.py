@@ -1,0 +1,127 @@
+"""Alphalete ORG Sales Board — build steps (work in progress).
+
+Multi-section board on the 'Alphalete ORG Sales Board' tab. Being built
+section by section from Megan's walkthrough videos; practice on the duplicated
+'Copy of Alphalete ORG Sales Board' tab until told to point at the real one.
+
+Sections (top to bottom):
+  1. Product Summary - This Week   (Product Type x Mon-Sun + Grand Total)
+  2. RAF ORG - Current vs Prior Weeks
+  3. ICD leaderboard by campaign x week-ending columns
+  4. CAPTAIN TEAM rollups
+  5. historical week-list
+
+STEP 1 (this file): a new week starts by CLEARING the Product Summary table's
+day + grand-total values (labels + headers kept).
+
+  python -m automations.org_sales_board.run --step clear-summary --dry-run
+  python -m automations.org_sales_board.run --step clear-summary       # sandbox
+"""
+from __future__ import annotations
+
+import argparse
+import sys
+
+from automations.recruiting_report.fill import open_by_key
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
+SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
+SANDBOX_TAB = "Copy of Alphalete ORG Sales Board"
+PROD_TAB = "Alphalete ORG Sales Board"          # real tab — only when told
+
+SUMMARY_TITLE = "Product Summary - This Week"
+SUMMARY_END = "RAF ORG"                          # next section (prefix match)
+HEADER_LABEL = "Product Type"                    # day-header rows in the section
+GRAND_TOTAL_HDR = "Grand Total"
+
+
+def _col(n: int) -> str:
+    s = ""
+    while n > 0:
+        n, r = divmod(n - 1, 26)
+        s = chr(65 + r) + s
+    return s
+
+
+def _find(colB, pred, start=1):
+    for i in range(start, len(colB) + 1):
+        if pred((colB[i - 1] or "").strip()):
+            return i
+    return None
+
+
+def clear_product_summary(ws, *, dry_run=False, logfn=print):
+    """Blank the day + Grand-Total values of the Product Summary table (new
+    week reset). Label-anchored: section runs from the SUMMARY_TITLE row to the
+    next section (SUMMARY_END); data rows = any labelled row that isn't a
+    'Product Type' header; data columns = first day col through 'Grand Total'."""
+    colB = ws.col_values(2)
+    r_title = _find(colB, lambda v: v.lower() == SUMMARY_TITLE.lower())
+    if not r_title:
+        raise ValueError(f"Couldn't find '{SUMMARY_TITLE}' in column B.")
+    r_end = _find(colB, lambda v: v.upper().startswith(SUMMARY_END.upper()),
+                  start=r_title + 1) or (len(colB) + 1)
+
+    # data-column span from a header row (B='Product Type' .. 'Grand Total')
+    r_hdr = _find(colB, lambda v: v.lower() == HEADER_LABEL.lower(),
+                  start=r_title)
+    hdr = ws.row_values(r_hdr)
+    first_col = 3                                  # col C — first day, right of B
+    gt_col = next((i + 1 for i, c in enumerate(hdr)
+                   if c.strip().lower() == GRAND_TOTAL_HDR.lower()), 10)
+
+    # data rows: labelled, not a header, within the section
+    data_rows = [r for r in range(r_title + 1, r_end)
+                 if (colB[r - 1] or "").strip()
+                 and (colB[r - 1] or "").strip().lower() != HEADER_LABEL.lower()
+                 and (colB[r - 1] or "").strip().lower() != SUMMARY_TITLE.lower()]
+
+    # contiguous runs -> one clear range each (skips interior header rows)
+    runs, run = [], []
+    for r in data_rows:
+        if run and r == run[-1] + 1:
+            run.append(r)
+        else:
+            if run:
+                runs.append(run)
+            run = [r]
+    if run:
+        runs.append(run)
+    ranges = [f"{_col(first_col)}{run[0]}:{_col(gt_col)}{run[-1]}" for run in runs]
+
+    logfn(f"  Product Summary: rows {data_rows[0]}-{data_rows[-1]} "
+          f"({len(data_rows)} data rows), cols {_col(first_col)}-{_col(gt_col)}")
+    logfn(f"  clear ranges: {ranges}")
+    if dry_run:
+        logfn("  (dry-run — nothing cleared)")
+        return ranges
+    ws.batch_clear(ranges)
+    logfn(f"  cleared {len(ranges)} range(s) ✓")
+    return ranges
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(prog="org_sales_board")
+    ap.add_argument("--step", default="clear-summary",
+                    choices=["clear-summary"])
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--real", action="store_true",
+                    help="Target the REAL tab instead of the sandbox copy.")
+    args = ap.parse_args(argv)
+
+    tab = PROD_TAB if args.real else SANDBOX_TAB
+    print(f"=== ORG Sales Board — {args.step} — tab={tab!r} "
+          f"({'DRY-RUN' if args.dry_run else 'LIVE'}) ===")
+    ws = open_by_key(SHEET_ID).worksheet(tab)
+    if args.step == "clear-summary":
+        clear_product_summary(ws, dry_run=args.dry_run)
+    print("=== done ===")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
