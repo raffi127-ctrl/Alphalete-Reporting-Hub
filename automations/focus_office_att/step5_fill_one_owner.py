@@ -517,7 +517,14 @@ def write_weekly_formulas(ws, layout: Layout) -> int:
         return 0
 
     rep_col_vals = ws.col_values(layout.rep_name_col)
-    rep_rows = [i for i, v in enumerate(rep_col_vals, start=1) if i >= 3 and v.strip()]
+    # ONLY real rep rows — never the OFFICE TOTALS / TOTAL REPS IN FIELD / SOLD
+    # / ROLLED 0 / % ON BOARD rows. Writing the rep SUM/AVG formula into those
+    # turns e.g. TOTAL REPS IN FIELD into =SUM(daily counts) (74 instead of the
+    # unique weekly count). The full design pass masked it by rewriting the
+    # summary block afterward, but running this standalone left it clobbered
+    # (Megan 2026-05-31).
+    rep_rows = [i for i, v in enumerate(rep_col_vals, start=1)
+                if i >= 3 and v.strip() and not _is_summary_label(v)]
     if not rep_rows:
         return 0
 
