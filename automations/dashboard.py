@@ -2214,7 +2214,12 @@ def _next_due(report: dict, today: dt.date):
         except ValueError:
             return None
     if sched.get("frequency") == "daily":
-        return today + dt.timedelta(days=1)
+        wd = sched.get("weekdays")
+        if not wd:
+            return today + dt.timedelta(days=1)
+        # Daily-but-weekday-restricted: next allowed weekday.
+        deltas = [((d - today.weekday()) % 7) or 7 for d in wd]
+        return today + dt.timedelta(days=min(deltas))
     weekdays = sched.get("weekdays", [])
     if not weekdays:
         return None
@@ -2230,7 +2235,11 @@ def _was_due_on(report: dict, day: dt.date) -> bool:
     if sched.get("frequency") == "monthly":
         return day.day == sched.get("day_of_month")
     if sched.get("frequency") == "daily":
-        return True
+        # A daily report may restrict to certain weekdays (e.g. Daily
+        # Recruiter Retention runs Mon–Fri only). Honor the list if present;
+        # no list = every day.
+        wd = sched.get("weekdays")
+        return day.weekday() in wd if wd else True
     return day.weekday() in sched.get("weekdays", [])
 
 

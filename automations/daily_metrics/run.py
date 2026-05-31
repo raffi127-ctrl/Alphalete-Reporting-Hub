@@ -157,6 +157,11 @@ def main(argv=None) -> int:
               f"--only <slug>. Failed: {failed}")
         return 1
     print("\nAll metrics posted ✓")
+    # Canonical success sentinel — the Hub classifies a run done by finding
+    # '=== done ===' in the log (see dashboard _read_active_runs). Without it
+    # this report ran successfully but never showed done on the left-side
+    # task list / shared Hub Activity (Eve, 2026-05-31).
+    print("=== done ===")
     return 0
 
 
