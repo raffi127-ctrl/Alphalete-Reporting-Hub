@@ -193,7 +193,18 @@ def wipe_all_owner_tabs(sh) -> int:
     tabs = [t for t in sh.worksheets() if t.title not in NON_OWNER_TABS]
     if not tabs:
         return 0
-    last = CURRENT_ZONE_LAST_ROW   # 59 — current week occupies rows 3..59
+    last = CURRENT_ZONE_LAST_ROW   # current week occupies rows 3..last
+    # A basic FILTER (the report recycles inactive reps via a filter) makes
+    # values_batch_clear SKIP the filter-hidden rows — so stale/aggregate reps
+    # survive the wipe and linger. Capture + clear every tab's filter first,
+    # wipe, then restore.
+    meta = sh.fetch_sheet_metadata(
+        {"fields": "sheets(properties.sheetId,basicFilter)"})
+    filters = {s["properties"]["sheetId"]: s["basicFilter"]
+               for s in meta.get("sheets", []) if s.get("basicFilter")}
+    if filters:
+        sh.batch_update({"requests": [{"clearBasicFilter": {"sheetId": sid}}
+                                      for sid in filters]})
     sh.values_batch_clear(body={"ranges": [f"{_q(t.title)}!A3:CR{last}" for t in tabs]})
     sh.batch_update({"requests": [
         {"updateCells": {
@@ -203,6 +214,9 @@ def wipe_all_owner_tabs(sh) -> int:
         }}
         for t in tabs
     ]})
+    if filters:
+        sh.batch_update({"requests": [{"setBasicFilter": {"filter": bf}}
+                                      for bf in filters.values()]})
     return len(tabs)
 
 
