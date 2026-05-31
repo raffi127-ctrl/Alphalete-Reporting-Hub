@@ -207,15 +207,15 @@ def wipe_all_owner_tabs(sh) -> int:
 
 
 LAST_WEEK_LABEL = "LAST WEEK"
-# FIXED layout (Megan 2026-05-31, sized for 50 reps): header r2 + up to 50 rep
-# rows (3-52) + OFFICE TOTALS + 4 summary rows all land at/above row 57, so the
-# LAST WEEK separator pins at row 60 with headroom. Header of the frozen block
-# is row 61; the snapshot fills row 61 down. The current-week wipe is scoped to
-# stop above row 60 so the frozen block survives.
-LAST_WEEK_LABEL_ROW = 60        # 1-based
-LAST_WEEK_HEADER_ROW = 61       # frozen block's 'Rep Name' header row
-CURRENT_ZONE_LAST_ROW = 59      # current week occupies rows 3..59
-COND_LASTWEEK_END_ROW = 130     # conditional coloring for the frozen block ends here
+# FIXED layout (Megan 2026-05-31, sized for 100 reps — the unused headroom is
+# hidden anyway, so a big allowance costs nothing visually): header r2 + up to
+# 100 rep rows (3-102) + OFFICE TOTALS + 4 summary all land at/above row 107,
+# so the LAST WEEK separator pins at row 110 with headroom. The current-week
+# wipe is scoped to stop above row 110 so the frozen block survives.
+LAST_WEEK_LABEL_ROW = 110       # 1-based
+LAST_WEEK_HEADER_ROW = 111      # frozen block's first row
+CURRENT_ZONE_LAST_ROW = 109     # current week occupies rows 3..109
+COND_LASTWEEK_END_ROW = 230     # conditional coloring for the frozen block ends here
 
 
 def _find_label_row(col_b, label: str):
@@ -227,11 +227,11 @@ def _find_label_row(col_b, label: str):
     return None
 
 
-# Frozen block layout (row 1-based): 60 = LAST WEEK label, 61 = dates (copy of
-# row 1), 62 = column header (copy of row 2), 63+ = frozen reps/totals/summary.
-LAST_WEEK_DATES_ROW = 61
-LAST_WEEK_COLHDR_ROW = 62
-LAST_WEEK_DATA_ROW = 63
+# Frozen block layout (row 1-based): 110 = LAST WEEK label, 111 = dates (copy of
+# row 1), 112 = column header (copy of row 2), 113+ = frozen reps/totals/summary.
+LAST_WEEK_DATES_ROW = 111
+LAST_WEEK_COLHDR_ROW = 112
+LAST_WEEK_DATA_ROW = 113
 
 
 def _normalize_lastweek_conditional(ws) -> None:
@@ -296,23 +296,26 @@ def rollover_to_last_week(sh, only=None, logfn=print) -> int:
         frozen_rep_end = LAST_WEEK_DATES_ROW + (cur_office_totals - 1) - 1  # last frozen rep
         THICK = {"style": "SOLID_THICK", "color": {"red": 0, "green": 0, "blue": 0}}
         WHITE = {"red": 1, "green": 1, "blue": 1}
-        # Wipe the whole frozen-block region first (values + format).
+        # Wipe everything below the current block (headroom + old frozen block)
+        # first — values + format — so re-running at a new position can't leave
+        # an old block orphaned in the (hidden) headroom.
+        clear_from = end_row + 1
         ws.spreadsheet.values_batch_clear(
-            body={"ranges": [f"{_q(ws.title)}!A{LAST_WEEK_LABEL_ROW}:CR400"]})
+            body={"ranges": [f"{_q(ws.title)}!A{clear_from}:CR400"]})
         src = {"sheetId": sid, "startRowIndex": 0, "endRowIndex": end_row,
                "startColumnIndex": 0, "endColumnIndex": 96}
         dst = {"sheetId": sid, "startRowIndex": LAST_WEEK_DATES_ROW - 1,
                "endRowIndex": LAST_WEEK_DATES_ROW - 1 + block_rows,
                "startColumnIndex": 0, "endColumnIndex": 96}
         requests = [
-            # Unmerge the whole frozen region first — stale merges (esp. on the
-            # label row) would swallow the label write; the copyPaste re-creates
-            # the correct date-header merges afterward.
+            # Unmerge everything below the current block — stale merges (esp. on
+            # the label row) would swallow the label write; the copyPaste
+            # re-creates the correct date-header merges afterward.
             {"unmergeCells": {
-                "range": {"sheetId": sid, "startRowIndex": LAST_WEEK_LABEL_ROW - 1,
+                "range": {"sheetId": sid, "startRowIndex": clear_from - 1,
                           "endRowIndex": 400, "startColumnIndex": 0, "endColumnIndex": 96}}},
             {"updateCells": {
-                "range": {"sheetId": sid, "startRowIndex": LAST_WEEK_LABEL_ROW - 1,
+                "range": {"sheetId": sid, "startRowIndex": clear_from - 1,
                           "endRowIndex": 400, "startColumnIndex": 0, "endColumnIndex": 96},
                 "fields": "userEnteredFormat"}},
             {"copyPaste": {"source": src, "destination": dst, "pasteType": "PASTE_VALUES"}},
