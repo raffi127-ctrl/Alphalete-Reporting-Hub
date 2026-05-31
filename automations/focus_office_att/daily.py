@@ -343,20 +343,24 @@ def rollover_to_last_week(sh, only=None, logfn=print) -> int:
                 "range": {"sheetId": sid, "startRowIndex": LAST_WEEK_DATES_ROW - 1,
                           "endRowIndex": frozen_bottom, "startColumnIndex": 0, "endColumnIndex": 96},
                 "top": THICK, "bottom": THICK, "left": THICK, "right": THICK}},
-            # Collapse the headroom: current block + 1 spacer visible, the unused
-            # rows hidden, the frozen block visible.
+            # Collapse the headroom: current block + 1 spacer visible, the
+            # frozen block visible.
             {"updateDimensionProperties": {
                 "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": 2, "endIndex": end_row + 1},
                 "properties": {"hiddenByUser": False}, "fields": "hiddenByUser"}},
             {"updateDimensionProperties": {
                 "range": {"sheetId": sid, "dimension": "ROWS",
-                          "startIndex": end_row + 1, "endIndex": LAST_WEEK_LABEL_ROW - 1},
-                "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}},
-            {"updateDimensionProperties": {
-                "range": {"sheetId": sid, "dimension": "ROWS",
                           "startIndex": LAST_WEEK_LABEL_ROW - 1, "endIndex": frozen_bottom + 2},
                 "properties": {"hiddenByUser": False}, "fields": "hiddenByUser"}},
         ]
+        # Hide the unused headroom ONLY if there is any — a near-50-rep office
+        # (e.g. Rafael, 52 reps) fills the zone to row 59 with no gap, and an
+        # empty hide range is a 400 error.
+        if end_row + 1 < LAST_WEEK_LABEL_ROW - 1:
+            requests.append({"updateDimensionProperties": {
+                "range": {"sheetId": sid, "dimension": "ROWS",
+                          "startIndex": end_row + 1, "endIndex": LAST_WEEK_LABEL_ROW - 1},
+                "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}})
         ws.spreadsheet.batch_update({"requests": requests})
         # Normalize conditional ranges LAST (the copy auto-splits them).
         _normalize_lastweek_conditional(ws)
@@ -385,19 +389,21 @@ def collapse_headroom(sh, only=None, logfn=print) -> int:
                    for v in col_b[LAST_WEEK_LABEL_ROW - 1:]):
             continue   # no frozen block below → nothing to collapse
         sid = ws.id
-        ws.spreadsheet.batch_update({"requests": [
+        reqs = [
             {"updateDimensionProperties": {     # current zone + 1 spacer → visible
                 "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": 2, "endIndex": end_row + 1},
                 "properties": {"hiddenByUser": False}, "fields": "hiddenByUser"}},
-            {"updateDimensionProperties": {     # unused headroom → hidden
-                "range": {"sheetId": sid, "dimension": "ROWS",
-                          "startIndex": end_row + 1, "endIndex": LAST_WEEK_LABEL_ROW - 1},
-                "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}},
             {"updateDimensionProperties": {     # frozen block → visible
                 "range": {"sheetId": sid, "dimension": "ROWS",
                           "startIndex": LAST_WEEK_LABEL_ROW - 1, "endIndex": 200},
                 "properties": {"hiddenByUser": False}, "fields": "hiddenByUser"}},
-        ]})
+        ]
+        if end_row + 1 < LAST_WEEK_LABEL_ROW - 1:   # only if there's headroom
+            reqs.append({"updateDimensionProperties": {
+                "range": {"sheetId": sid, "dimension": "ROWS",
+                          "startIndex": end_row + 1, "endIndex": LAST_WEEK_LABEL_ROW - 1},
+                "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}})
+        ws.spreadsheet.batch_update({"requests": reqs})
         n += 1
     return n
 
