@@ -351,13 +351,21 @@ def rollover_to_last_week(sh, only=None, logfn=print) -> int:
                 "range": {"sheetId": sid, "startRowIndex": frozen_rep_start - 1,
                           "endRowIndex": frozen_rep_end, "startColumnIndex": 0, "endColumnIndex": 96},
                 "sortSpecs": [{"dimensionIndex": 2, "sortOrder": "DESCENDING"}]}},
-            # 'LAST WEEK' yellow label in B61 (A–B highlighted) — KEEPS the
-            # weekly date-range banner (C61, with the weekend-hours note) + the
-            # day-block dates to its right (Megan's template).
+            # Unmerge the label cells (A–B) — if row 1 carried an A1:B1 access/
+            # error banner, the format paste copies that merge here and would
+            # swallow the label write (Rafael). Then clear A + write the label
+            # in B.
+            {"unmergeCells": {
+                "range": {"sheetId": sid, "startRowIndex": LAST_WEEK_DATES_ROW - 1,
+                          "endRowIndex": LAST_WEEK_DATES_ROW, "startColumnIndex": 0, "endColumnIndex": 2}}},
+            # 'LAST WEEK' yellow label in B (A cleared of any copied banner) —
+            # KEEPS the weekly date-range banner (C, with the weekend-hours note)
+            # + the day-block dates to its right (Megan's template).
             {"updateCells": {
                 "range": {"sheetId": sid, "startRowIndex": LAST_WEEK_DATES_ROW - 1,
-                          "endRowIndex": LAST_WEEK_DATES_ROW, "startColumnIndex": 1, "endColumnIndex": 2},
+                          "endRowIndex": LAST_WEEK_DATES_ROW, "startColumnIndex": 0, "endColumnIndex": 2},
                 "rows": [{"values": [
+                    {"userEnteredValue": {"stringValue": ""}},
                     {"userEnteredValue": {"stringValue": LAST_WEEK_LABEL},
                      "userEnteredFormat": {"textFormat": {"bold": True, "fontSize": 11}}},
                 ]}],
