@@ -11,7 +11,9 @@ by one before the new week is filled:
 - **Comparison block (below the ICD rows):** This week's Totals → Last Week →
   Prior Week → 2 Weeks Prior → 3 Weeks Prior (oldest drops off).
 - **Per-ICD total columns (right side):** Running Week Totals → Last Week's
-  Totals → Previous Week's Totals (oldest drops off).
+  Totals → Previous Week's Totals (oldest drops off). Present on the daily
+  sections AND **every captainship daily chart** (e.g. Carlos rows 408–422,
+  Raf's 240–270) — all must shift each Monday.
 - Capture the **values before clearing** (running totals are live formulas that
   would zero out), and shift the per-ICD totals **by ICD name** (not by row
   position), since rows get re-sorted.
@@ -84,6 +86,16 @@ team (instead of the org-level filter); set the current week-ending date.
 | Raf's, Wayne's, Starr's, Aaron's (all Fiber) | PRODUCT SALES SUMMARY 4WK (ATT Tracker 2.1 D2D V2) — Raf's view: `.../PRODUCTSALESSUMMARY4WK/ab2eca72-395f-48d5-a254-9d99739b88d4/AllproductsRafsteam`; others = same view, swap Captain's Bonus Team | ALL products **incl. Voice** (per-ICD Total). Filters: Captain's Bonus Team = that captain's team, Sale Date Week Ending = current WE, Product Type = (Todo). Raf's "Fiber - All Units" chart = **rows 238–375**. |
 | Carlos's, Evelis's | B2B tracker (ATT TRACKER - B2B) | B2B |
 | Khalil's, Colten's | NDS Product Sales Summary (NDS-SN workbook) | ALL units |
+
+**Each captainship MIRRORS the org-level structure** (confirmed on Carlos, rows
+377–406): a daily per-ICD chart (with hidden week-log) → a **formula-driven**
+"Product Summary / Current vs Prior Weeks" block (e.g. `=C422`, `=C$423`,
+`=AVERAGE(C$423:C$426)` — auto-derives, don't clear) → a **"CAPTAIN TEAM"
+leaderboard** with WE columns that `SUMIF`-pull the chart's running totals
+(newest column = live formula, history = frozen values). The same
+rollover/freeze/sort logic as the org-level sections applies 1:1 — each Monday:
+freeze the finished WE column to values, insert a new WE column with the
+formulas.
 
 **Hidden week-log under each captainship chart:** below the current-week
 per-ICD chart (e.g. Raf's chart rows 240–271) sits a vertical log of completed
