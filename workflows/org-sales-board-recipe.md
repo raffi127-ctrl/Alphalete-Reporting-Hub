@@ -75,14 +75,25 @@ Weekly rollover for this section:
 3. Double-check the numbers vs the sections.
 
 ## Captainships (lower section)
-Each captainship filled from a product-sales-summary workbook filtered by the
-**Captain Bonus Team** filter:
-- Raf's (D2D Product Sales Summary, all products), Carlos's (B2B tracker),
-  Evelis's, Wayne's (fiber), Starr's (fiber), Aaron's (fiber), Khalil's (NDS),
-  Colton's (NDS).
-- Movers: people leave/join captainships (e.g. "All In" removed from Raf's);
-  new people inserted in the middle; nicknames vs full names (Tony Chavez = Jose
-  Antonio Chavez, Trail Mitchell = Lamar Mitchell) → **ICD aliases**.
+Each captainship pulls from the **same workbook as its campaign's daily
+section**, but with the **Captain Bonus Team** filter set to that captain's
+team (instead of the org-level filter); set the current week-ending date.
+
+| Captainship | Workbook | Products |
+|---|---|---|
+| Raf's, Wayne's, Starr's, Aaron's (all Fiber) | D2D Product Sales Summary (ATT Tracker 2.1 D2D V2) | ALL products (nothing excluded) |
+| Carlos's, Evelis's | B2B tracker (ATT TRACKER - B2B) | B2B |
+| Khalil's, Colten's | NDS Product Sales Summary (NDS-SN workbook) | ALL units |
+
+Process per captainship (from transcript):
+- **Sort by name (col B) first** to line up with the fixed list, fill, then
+  **sort by total** after.
+- **Movers:** people leave/join (e.g. "All In" removed from Raf's); add new
+  people **in the middle** (insert row, copy a neighbor's formulas, fix name).
+- **Nicknames vs full names** → ICD aliases (Tony Chavez = Jose Antonio Chavez,
+  Trail Mitchell = Lamar Mitchell, etc.).
+- Exact per-captainship view URLs come from Megan at build time (same workbooks
+  as the daily sections — just swap to the Captain Bonus Team filter).
 
 ## Sorting (after fill)
 - Sort each chart by the **weekly running total** (col J for leaderboard, col C
