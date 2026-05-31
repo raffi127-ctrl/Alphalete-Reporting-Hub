@@ -73,31 +73,40 @@ DAILY_SOURCES: List[Source] = [
         method=SCRAPE, date_mode=WEEK_ENDING,
         workbook="ATTTRACKER2_1-D2D", view="FiberTeamnovoice",
         shared_key="fiber",
-        notes="Per-ICD Total/day = AIR+New Internet+Upgrade Internet+Video+"
-              "Wireless (Voice excluded). Custom view — scrape View Data; "
-              "confirm per-day columns live."),
+        notes="Cols CONFIRMED live 2026-05-31: Owner Name | Product Type "
+              "(Broken Out) | Weekday of sp.Order Date (Weekday) | Sales "
+              "(All). Day = WEEKDAY NAME (map to sheet day col). Total/day = "
+              "SUM of Sales across all product-type rows per (owner,weekday); "
+              "Voice already excluded by the view."),
     Source(
         label="ATT NDS Team", metric="Wireless",
         method=SCRAPE, date_mode=RELATIVE,
         workbook="NDS-SNRES-ATT-OOFWorkbook", view="Wirelessthisweek",
         shared_key="nds",
-        notes="Per-ICD Wireless Total/weekday. Custom view — scrape View "
-              "Data; confirm per-day columns live."),
+        notes="Cols CONFIRMED live 2026-05-31: Owner & Office | Rep Name | "
+              "Product Type (Broken Out) | Sales Week Ending. | Weekday of "
+              "sp.Order Date (Weekday) | Sales (All) (1). ICD = Owner & "
+              "Office (strip [company]); SUM Sales across reps per "
+              "(owner,weekday). All rows WIRELESS."),
     Source(
         label="B2B", metric="count",
         method=SCRAPE, date_mode=RELATIVE,
         workbook="ATTTRACKER-B2B", view="LuissCaptainship",
         shared_key="b2b",
-        notes="Per-ICD count/weekday. Excludes Wireless Tablets/Wearables/"
-              "Upgrades. Custom view — scrape; confirm columns live."),
+        notes="Cols CONFIRMED live 2026-05-31: ICD Owner Name | Office Name | "
+              "ST,City | Time Frame (This Week) | sp.Order Date (copy) | Sales "
+              "(All). Day = DATE (m/d/Y). count = Sales per (owner,date). "
+              "View excludes Tablets/Wearables/Upgrades."),
     Source(
         label="BOX", metric="count",
         method=SCRAPE, date_mode=RELATIVE,
         workbook="B2BBOXEnergy", view="B2BBOXEnergyDailyTracker",
         shared_key="box",
-        notes="Per-ICD count/weekday (ICD Owner & Office x day -> Total "
-              "general). Owner names carry '|company, Inc.|' suffix -> strip+"
-              "alias. Custom view — scrape; confirm columns live."),
+        notes="NEEDS WORKSHEET FIX: activate_xy=(0.5,0.5) landed on the WTD "
+              "Metrics sheet (ICD Name|Measure Names|Measure Values, Accepted "
+              "% etc.) — NOT the per-day tracker. Find the click point / "
+              "worksheet that yields ICD Owner & Office x day -> Total "
+              "general. Owner names carry '|company, Inc.|' suffix."),
     Source(
         label="Retail JE", metric="Closed Won",
         method=MANUAL, date_mode=MANUAL_DATE, column_verified=True,

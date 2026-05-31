@@ -159,15 +159,27 @@ def find_daily_section(grid: List[List[str]], label: str) -> SectionAnchor:
 
 # ----------------------------------------------------------- name matching
 
+# Board-local owner aliases — for ICDs whose Org-board ROW name differs from
+# the Tableau owner name in a way we deliberately keep OUT of the shared ICD
+# Aliases list. Akib & MJ share ONE tab on another report, so the shared
+# canonical 'Boaktear Chowdhury (Akib/MJ) - Retail' conflates the two — but
+# on THIS board Akib has his own row, so we map him board-locally instead of
+# polluting the shared list ([[feedback_alias_list]] — exception is scoped +
+# documented). Board row name -> extra Tableau owner forms to match.
+BOARD_NAME_ALIASES = {
+    "Akib Chowdhury": ["Boaktear Chowdhury"],
+}
+
+
 def _candidates_for(name: str, raw_aliases: dict) -> set[str]:
     """All normalized name forms a board ICD could appear under in the
-    pull: the board label, its canonical tab name, and every alias of that
-    canonical. Lets 'Akib Chowdhury' match a Tableau 'Boaktear Chowdhury'
-    when the alias list ties them together
-    ([[feedback_alias_list]])."""
+    pull: the board label, its canonical tab name, every alias of that
+    canonical, and any board-local override. Lets 'Akib Chowdhury' match a
+    Tableau 'Boaktear Chowdhury'."""
     canon = alias_to_canonical(name, raw_aliases)
     forms = {name, canon}
     forms.update(raw_aliases.get(canon, []))
+    forms.update(BOARD_NAME_ALIASES.get(name, []))
     return {_norm_owner(f) for f in forms if f}
 
 
