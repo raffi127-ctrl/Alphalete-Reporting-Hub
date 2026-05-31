@@ -81,9 +81,16 @@ team (instead of the org-level filter); set the current week-ending date.
 
 | Captainship | Workbook | Products |
 |---|---|---|
-| Raf's, Wayne's, Starr's, Aaron's (all Fiber) | D2D Product Sales Summary (ATT Tracker 2.1 D2D V2) | ALL products (nothing excluded) |
+| Raf's, Wayne's, Starr's, Aaron's (all Fiber) | PRODUCT SALES SUMMARY 4WK (ATT Tracker 2.1 D2D V2) — Raf's view: `.../PRODUCTSALESSUMMARY4WK/ab2eca72-395f-48d5-a254-9d99739b88d4/AllproductsRafsteam`; others = same view, swap Captain's Bonus Team | ALL products **incl. Voice** (per-ICD Total). Filters: Captain's Bonus Team = that captain's team, Sale Date Week Ending = current WE, Product Type = (Todo). Raf's "Fiber - All Units" chart = **rows 238–375**. |
 | Carlos's, Evelis's | B2B tracker (ATT TRACKER - B2B) | B2B |
 | Khalil's, Colten's | NDS Product Sales Summary (NDS-SN workbook) | ALL units |
+
+**Hidden week-log under each captainship chart:** below the current-week
+per-ICD chart (e.g. Raf's chart rows 240–271) sits a vertical log of completed
+weeks — one row per WE (WE 5.24, WE 5.17, …) holding that week's daily totals +
+running total (Raf's log ≈ rows 272–374). Every Monday rollover: **insert a new
+WE row at the TOP of the log** (the just-finished week's totals) and **hide it**.
+The log is normally hidden on the sheet.
 
 Process per captainship (from transcript):
 - **Sort by name (col B) first** to line up with the fixed list, fill, then
@@ -96,8 +103,10 @@ Process per captainship (from transcript):
   as the daily sections — just swap to the Captain Bonus Team filter).
 
 ## Sorting (after fill)
-- Sort each chart by the **weekly running total** (col J for leaderboard, col C
-  for the day tables), **highest → lowest**.
+- **Every chart** — daily sections, captainship charts, AND the leaderboard —
+  is sorted by **that week's production / running total, highest → lowest**
+  (col J for leaderboard, col C / Running Week Totals for the day + captainship
+  charts).
 - ALWAYS select from **outside the box** (incl. the name/label column) so each
   ICD's whole row of days moves together — never sort just the numbers.
 - Box / Frontier groups already tend to be in order; verify anyway.
