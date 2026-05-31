@@ -1,6 +1,9 @@
 # Alphalete ORG Sales Board — build recipe (from walkthrough video 1)
 
 Tab: `Alphalete ORG Sales Board` (practice on `Copy of Alphalete ORG Sales Board`).
+⚠ **Row numbers drift** between the real tab + sandbox + hidden week-log states —
+every row reference here is approximate. **Label-anchor everything** (find each
+section/chart by its col-B header), never hardcode rows.
 Week runs **Mon–Sun** (Frontier & Verizon: Sun–Sat). Filled **day by day** — each
 day adds that weekday's numbers; a new week starts by **clearing** the prior data.
 Backlog: "Org Sales Board" (In Progress / Megan). Daily runner = Eve.
@@ -84,7 +87,7 @@ team (instead of the org-level filter); set the current week-ending date.
 | Captainship | Workbook | Products |
 |---|---|---|
 | Raf's, Wayne's, Starr's, Aaron's (all Fiber) | PRODUCT SALES SUMMARY 4WK (ATT Tracker 2.1 D2D V2) — Raf's view: `.../PRODUCTSALESSUMMARY4WK/ab2eca72-395f-48d5-a254-9d99739b88d4/AllproductsRafsteam`; others = same view, swap Captain's Bonus Team | ALL products **incl. Voice** (per-ICD Total). Filters: Captain's Bonus Team = that captain's team, Sale Date Week Ending = current WE, Product Type = (Todo). Raf's "Fiber - All Units" chart = **rows 238–375**. |
-| Carlos's, Evelis's | B2B tracker (ATT TRACKER - B2B) | B2B |
+| Carlos's, Evelis's | B2B 1-PAGER V3 (ATT TRACKER - B2B) — Carlos's view: `.../ATTTRACKER-B2B/D2D1-PAGERV3/32440800-0a5a-4f21-be33-f807ba5930a7/CarlosTeam`; Evelis's = same view, swap team | B2B. Carlos's "B2B - All Units" chart = rows 408–491. Rollover adds the completed week's row to the hidden week-log underneath each Monday. |
 | Khalil's, Colten's | NDS Product Sales Summary (NDS-SN workbook) | ALL units |
 
 **Each captainship MIRRORS the org-level structure** (confirmed on Carlos, rows
