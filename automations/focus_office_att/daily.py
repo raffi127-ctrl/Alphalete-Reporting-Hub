@@ -183,29 +183,223 @@ def set_day_column_collapsed(sh, today: "dt.date") -> int:
 # Monday wipe
 # ----------------------------------------------------------------------
 def wipe_all_owner_tabs(sh) -> int:
-    """Clear rep rows + static formatting on every owner tab (rows 3-200,
-    cols A-CR). Leaves rows 1-2 (banners + headers) + conditional rules.
-    Returns the count of tabs wiped. Monday-only.
+    """Clear the CURRENT-week block (rows 3..59) + its formatting on every
+    owner tab. Scoped to row 59 so the frozen LAST WEEK block (rows 60+) is
+    NEVER erased — the rollover runs first to freeze last week, then this
+    clears only the current week for the fresh fill. Leaves rows 1-2 (banners
+    + headers) + conditional rules. Monday-only.
 
-    Batched: one values-clear call + one format-clear call covering ALL
-    tabs, instead of two calls (plus a 2s sleep) per tab."""
+    Batched: one values-clear + one format-clear covering ALL tabs."""
     tabs = [t for t in sh.worksheets() if t.title not in NON_OWNER_TABS]
     if not tabs:
         return 0
-    # One values-clear covering A3:CR200 on every owner tab. gspread's
-    # values_batch_clear takes the ranges in the request body (its first
-    # positional arg is `params`, not `ranges`).
-    sh.values_batch_clear(body={"ranges": [f"{_q(t.title)}!A3:CR200" for t in tabs]})
-    # One format-clear (updateCells) covering rows 3-200 on every owner tab.
+    last = CURRENT_ZONE_LAST_ROW   # 59 — current week occupies rows 3..59
+    sh.values_batch_clear(body={"ranges": [f"{_q(t.title)}!A3:CR{last}" for t in tabs]})
     sh.batch_update({"requests": [
         {"updateCells": {
-            "range": {"sheetId": t.id, "startRowIndex": 2, "endRowIndex": 200,
+            "range": {"sheetId": t.id, "startRowIndex": 2, "endRowIndex": last,
                       "startColumnIndex": 0, "endColumnIndex": 96},
             "fields": "userEnteredFormat",
         }}
         for t in tabs
     ]})
     return len(tabs)
+
+
+LAST_WEEK_LABEL = "LAST WEEK"
+# FIXED layout (Megan 2026-05-31, sized for 50 reps): header r2 + up to 50 rep
+# rows (3-52) + OFFICE TOTALS + 4 summary rows all land at/above row 57, so the
+# LAST WEEK separator pins at row 60 with headroom. Header of the frozen block
+# is row 61; the snapshot fills row 61 down. The current-week wipe is scoped to
+# stop above row 60 so the frozen block survives.
+LAST_WEEK_LABEL_ROW = 60        # 1-based
+LAST_WEEK_HEADER_ROW = 61       # frozen block's 'Rep Name' header row
+CURRENT_ZONE_LAST_ROW = 59      # current week occupies rows 3..59
+COND_LASTWEEK_END_ROW = 130     # conditional coloring for the frozen block ends here
+
+
+def _find_label_row(col_b, label: str):
+    """1-based row of `label` in column-B values, or None."""
+    up = label.strip().upper()
+    for i, v in enumerate(col_b, start=1):
+        if isinstance(v, str) and v.strip().upper() == up:
+            return i
+    return None
+
+
+# Frozen block layout (row 1-based): 60 = LAST WEEK label, 61 = dates (copy of
+# row 1), 62 = column header (copy of row 2), 63+ = frozen reps/totals/summary.
+LAST_WEEK_DATES_ROW = 61
+LAST_WEEK_COLHDR_ROW = 62
+LAST_WEEK_DATA_ROW = 63
+
+
+def _normalize_lastweek_conditional(ws) -> None:
+    """Re-range every conditional-format rule so the day-block/weekly colors
+    cover the current-week zone (rows 3..59) AND the frozen DATA (rows
+    63..130) but SKIP the LAST WEEK label (60) + the frozen date row (61) +
+    the frozen column-header row (62) — so the label row is white past C and
+    the two frozen header rows keep their own styling. Preserves each rule's
+    column spans + format; only the ROW spans change. Run after the snapshot
+    copy (which otherwise leaves the rules auto-extended/split)."""
+    meta = ws.spreadsheet.fetch_sheet_metadata(
+        {"ranges": [ws.title], "fields": "sheets.conditionalFormats"})
+    cfs = meta["sheets"][0].get("conditionalFormats", [])
+    requests = []
+    for idx, cf in enumerate(cfs):
+        # Unique column spans this rule paints (dedupe across its sub-ranges).
+        col_spans = sorted({(r.get("startColumnIndex", 0), r.get("endColumnIndex", 96))
+                            for r in cf.get("ranges", [])})
+        new_ranges = []
+        for c0, c1 in col_spans:
+            new_ranges.append({"sheetId": ws.id, "startRowIndex": 2,
+                               "endRowIndex": CURRENT_ZONE_LAST_ROW,
+                               "startColumnIndex": c0, "endColumnIndex": c1})
+            new_ranges.append({"sheetId": ws.id, "startRowIndex": LAST_WEEK_DATA_ROW - 1,
+                               "endRowIndex": COND_LASTWEEK_END_ROW,
+                               "startColumnIndex": c0, "endColumnIndex": c1})
+        rule = {k: v for k, v in cf.items() if k != "ranges"}
+        rule["ranges"] = new_ranges
+        requests.append({"updateConditionalFormatRule":
+                         {"sheetId": ws.id, "index": idx, "rule": rule}})
+    if requests:
+        ws.spreadsheet.batch_update({"requests": requests})
+
+
+def rollover_to_last_week(sh, only=None, logfn=print) -> int:
+    """Freeze each tab's current-week block (reps + OFFICE TOTALS + summary)
+    into a fixed 'LAST WEEK' block at row 60, so last week's data 'stays
+    there' when the new week is wiped (Raf, 2026-05-31). The snapshot is
+    static VALUES (formulas frozen to numbers) + the formatting, so it
+    survives the current-week wipe. Current + last week only — the new
+    snapshot overwrites the prior LAST WEEK block.
+
+    Returns the count of tabs rolled over. Run on Monday BEFORE the (scoped)
+    current-week clear."""
+    tabs = [t for t in sh.worksheets() if t.title not in NON_OWNER_TABS]
+    if only:
+        tabs = [t for t in tabs if t.title in only]
+    n = 0
+    for ws in tabs:
+        col_b = ws.col_values(2)
+        end_row = _find_label_row(col_b, "% ON BOARD")   # current block's last row
+        if not end_row:
+            logfn(f"  {ws.title}: no summary block — skipping rollover")
+            continue
+        sid = ws.id
+        # Snapshot includes the date header (row 1) so the frozen block carries
+        # last week's dates. Source rows 1..end_row → dest from row 61.
+        block_rows = end_row                             # rows 1..end_row inclusive
+        frozen_bottom = LAST_WEEK_DATES_ROW - 1 + block_rows   # last frozen row
+        cur_office_totals = end_row - 4                  # OFFICE TOTALS in current block
+        frozen_rep_start = LAST_WEEK_DATA_ROW            # 63
+        frozen_rep_end = LAST_WEEK_DATES_ROW + (cur_office_totals - 1) - 1  # last frozen rep
+        THICK = {"style": "SOLID_THICK", "color": {"red": 0, "green": 0, "blue": 0}}
+        WHITE = {"red": 1, "green": 1, "blue": 1}
+        # Wipe the whole frozen-block region first (values + format).
+        ws.spreadsheet.values_batch_clear(
+            body={"ranges": [f"{_q(ws.title)}!A{LAST_WEEK_LABEL_ROW}:CR400"]})
+        src = {"sheetId": sid, "startRowIndex": 0, "endRowIndex": end_row,
+               "startColumnIndex": 0, "endColumnIndex": 96}
+        dst = {"sheetId": sid, "startRowIndex": LAST_WEEK_DATES_ROW - 1,
+               "endRowIndex": LAST_WEEK_DATES_ROW - 1 + block_rows,
+               "startColumnIndex": 0, "endColumnIndex": 96}
+        requests = [
+            # Unmerge the whole frozen region first — stale merges (esp. on the
+            # label row) would swallow the label write; the copyPaste re-creates
+            # the correct date-header merges afterward.
+            {"unmergeCells": {
+                "range": {"sheetId": sid, "startRowIndex": LAST_WEEK_LABEL_ROW - 1,
+                          "endRowIndex": 400, "startColumnIndex": 0, "endColumnIndex": 96}}},
+            {"updateCells": {
+                "range": {"sheetId": sid, "startRowIndex": LAST_WEEK_LABEL_ROW - 1,
+                          "endRowIndex": 400, "startColumnIndex": 0, "endColumnIndex": 96},
+                "fields": "userEnteredFormat"}},
+            {"copyPaste": {"source": src, "destination": dst, "pasteType": "PASTE_VALUES"}},
+            {"copyPaste": {"source": src, "destination": dst, "pasteType": "PASTE_FORMAT"}},
+            # Sort the frozen reps by SUM Total Apps (col C) highest→lowest.
+            {"sortRange": {
+                "range": {"sheetId": sid, "startRowIndex": frozen_rep_start - 1,
+                          "endRowIndex": frozen_rep_end, "startColumnIndex": 0, "endColumnIndex": 96},
+                "sortSpecs": [{"dimensionIndex": 2, "sortOrder": "DESCENDING"}]}},
+            # 'LAST WEEK' yellow label in B61 (A–B highlighted) — KEEPS the
+            # weekly date-range banner (C61, with the weekend-hours note) + the
+            # day-block dates to its right (Megan's template).
+            {"updateCells": {
+                "range": {"sheetId": sid, "startRowIndex": LAST_WEEK_DATES_ROW - 1,
+                          "endRowIndex": LAST_WEEK_DATES_ROW, "startColumnIndex": 1, "endColumnIndex": 2},
+                "rows": [{"values": [
+                    {"userEnteredValue": {"stringValue": LAST_WEEK_LABEL},
+                     "userEnteredFormat": {"textFormat": {"bold": True, "fontSize": 11}}},
+                ]}],
+                "fields": "userEnteredValue,userEnteredFormat.textFormat"}},
+            {"repeatCell": {
+                "range": {"sheetId": sid, "startRowIndex": LAST_WEEK_DATES_ROW - 1,
+                          "endRowIndex": LAST_WEEK_DATES_ROW, "startColumnIndex": 0, "endColumnIndex": 2},
+                "cell": {"userEnteredFormat": {"backgroundColor": {"red": 1, "green": 1, "blue": 0}}},
+                "fields": "userEnteredFormat.backgroundColor"}},
+            # Bold border box around the whole frozen block (Megan's template).
+            {"updateBorders": {
+                "range": {"sheetId": sid, "startRowIndex": LAST_WEEK_DATES_ROW - 1,
+                          "endRowIndex": frozen_bottom, "startColumnIndex": 0, "endColumnIndex": 96},
+                "top": THICK, "bottom": THICK, "left": THICK, "right": THICK}},
+            # Collapse the headroom: current block + 1 spacer visible, the unused
+            # rows hidden, the frozen block visible.
+            {"updateDimensionProperties": {
+                "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": 2, "endIndex": end_row + 1},
+                "properties": {"hiddenByUser": False}, "fields": "hiddenByUser"}},
+            {"updateDimensionProperties": {
+                "range": {"sheetId": sid, "dimension": "ROWS",
+                          "startIndex": end_row + 1, "endIndex": LAST_WEEK_LABEL_ROW - 1},
+                "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}},
+            {"updateDimensionProperties": {
+                "range": {"sheetId": sid, "dimension": "ROWS",
+                          "startIndex": LAST_WEEK_LABEL_ROW - 1, "endIndex": frozen_bottom + 2},
+                "properties": {"hiddenByUser": False}, "fields": "hiddenByUser"}},
+        ]
+        ws.spreadsheet.batch_update({"requests": requests})
+        # Normalize conditional ranges LAST (the copy auto-splits them).
+        _normalize_lastweek_conditional(ws)
+        n += 1
+        logfn(f"  {ws.title}: froze rows 1-{end_row} → LAST WEEK (dates r{LAST_WEEK_DATES_ROW}, "
+              f"sorted by app sum), border + dates")
+    return n
+
+
+def collapse_headroom(sh, only=None, logfn=print) -> int:
+    """Re-hide the unused rows between the current-week summary (+1 spacer) and
+    the fixed LAST WEEK block, so each tab reads current → spacer → LAST WEEK
+    with the 50-rep headroom collapsed. Runs at the END of every run because
+    the day's fill changes the rep count (and the summary's row). No-op on
+    tabs that don't yet have a frozen LAST WEEK block."""
+    tabs = [t for t in sh.worksheets() if t.title not in NON_OWNER_TABS]
+    if only:
+        tabs = [t for t in tabs if t.title in only]
+    n = 0
+    for ws in tabs:
+        col_b = ws.col_values(2)
+        end_row = _find_label_row(col_b, "% ON BOARD")   # current block's last row
+        if not end_row:
+            continue
+        if not any(isinstance(v, str) and v.strip().upper() == LAST_WEEK_LABEL
+                   for v in col_b[LAST_WEEK_LABEL_ROW - 1:]):
+            continue   # no frozen block below → nothing to collapse
+        sid = ws.id
+        ws.spreadsheet.batch_update({"requests": [
+            {"updateDimensionProperties": {     # current zone + 1 spacer → visible
+                "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": 2, "endIndex": end_row + 1},
+                "properties": {"hiddenByUser": False}, "fields": "hiddenByUser"}},
+            {"updateDimensionProperties": {     # unused headroom → hidden
+                "range": {"sheetId": sid, "dimension": "ROWS",
+                          "startIndex": end_row + 1, "endIndex": LAST_WEEK_LABEL_ROW - 1},
+                "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}},
+            {"updateDimensionProperties": {     # frozen block → visible
+                "range": {"sheetId": sid, "dimension": "ROWS",
+                          "startIndex": LAST_WEEK_LABEL_ROW - 1, "endIndex": 200},
+                "properties": {"hiddenByUser": False}, "fields": "hiddenByUser"}},
+        ]})
+        n += 1
+    return n
 
 
 # ----------------------------------------------------------------------
@@ -605,10 +799,20 @@ def main() -> int:
 
         # 2. Monday wipe (or future-day wipe Tue-Sat)
         if is_monday:
-            say("Monday: wiping all owner tabs for a clean week...")
+            # Freeze the just-finished week into each tab's LAST WEEK block
+            # BEFORE wiping the current week (Raf: keep last week's data). The
+            # snapshot is static values, so the scoped wipe below can't touch
+            # it. Non-fatal: a rollover hiccup shouldn't block the week's run.
+            say("Monday: freezing last week into the LAST WEEK block...")
+            try:
+                n = rollover_to_last_week(sh, logfn=say)
+                say(f"  froze last week on {n} tab(s)")
+            except Exception as e:
+                say(f"  rollover failed (non-fatal): {e}")
+            say("Monday: clearing the current week (rows 3-59 only)...")
             try:
                 n = wipe_all_owner_tabs(sh)
-                say(f"  wiped {n} tab(s)")
+                say(f"  wiped current week on {n} tab(s)")
                 # A wipe blanks the sheet — any leftover Phase-2 checkpoint
                 # is now invalid, so the scrape must start fresh.
                 try:
@@ -719,6 +923,15 @@ def main() -> int:
                 f"plain={counts['none']}")
         except Exception as e:
             say(f"  tab-color refresh failed (non-fatal): {e}")
+
+        # Re-collapse the headroom now the new fill set the rep count / summary
+        # row, so each tab reads current → spacer → LAST WEEK cleanly.
+        say("Collapsing LAST WEEK headroom...")
+        try:
+            n = collapse_headroom(sh, logfn=say)
+            say(f"  collapsed on {n} tab(s)")
+        except Exception as e:
+            say(f"  headroom collapse failed (non-fatal): {e}")
 
         # (Banners already refreshed right after Phase 2 — see above.)
         say("=== DONE ===")

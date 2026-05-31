@@ -84,11 +84,14 @@ def _day_formula(day_short: str, day_offset: int) -> str:
 
 
 def _weekly_total_formula() -> str:
-    """="Weekly Total Mon 5/11 - Sun 5/17" — auto-updating range."""
+    """="Weekly Total Mon 5/11 - Sun 5/17 (weekend hrs excluded from avgs)" —
+    auto-updating range. The weekend note flags that Doors Knocked + the two
+    knock-time averages factor Mon–Fri only (Raf: Sat/Sun hours skew them)."""
     return (
         '="Weekly Total "&'
         '"Mon "&TEXT(TODAY()-WEEKDAY(TODAY(),2)+1,"M/d")&'
-        '" - Sun "&TEXT(TODAY()-WEEKDAY(TODAY(),2)+7,"M/d")'
+        '" - Sun "&TEXT(TODAY()-WEEKDAY(TODAY(),2)+7,"M/d")&'
+        '" (Weekend hours excluded from averages)"'
     )
 
 
