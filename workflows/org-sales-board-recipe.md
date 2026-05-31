@@ -5,11 +5,27 @@ Week runs **Mon–Sun** (Frontier & Verizon: Sun–Sat). Filled **day by day** �
 day adds that weekday's numbers; a new week starts by **clearing** the prior data.
 Backlog: "Org Sales Board" (In Progress / Megan). Daily runner = Eve.
 
+## NEW-WEEK ROLLOVER — do this FIRST, before clearing/filling
+Every chart with the comparison block + total columns must "shift" history over
+by one before the new week is filled:
+- **Comparison block (below the ICD rows):** This week's Totals → Last Week →
+  Prior Week → 2 Weeks Prior → 3 Weeks Prior (oldest drops off).
+- **Per-ICD total columns (right side):** Running Week Totals → Last Week's
+  Totals → Previous Week's Totals (oldest drops off).
+- Capture the **values before clearing** (running totals are live formulas that
+  would zero out), and shift the per-ICD totals **by ICD name** (not by row
+  position), since rows get re-sorted.
+- Then: clear this week's day cells + running total, then fill day by day.
+- Applies to ALL charts on the tab that have these blocks/columns.
+
 ## Fill rules (all sections)
 - The **sheet's ICD list drives the rows** — fill a value for every listed ICD.
 - An ICD with **no data** in the pull → enter **0** (never leave blank). e.g.
   Ronald Dawson absent from the pull = 0 for that day.
 - Cross-check each section: the filled day total should match the source's total.
+- **Running Week Totals** column = a live **SUM formula** over that ICD's
+  Mon–Sun cells — calculated, never hardcoded. (Only Last Week's / Previous
+  Week's Totals are static values, captured during the rollover.)
 
 ## Sections + their data sources
 
