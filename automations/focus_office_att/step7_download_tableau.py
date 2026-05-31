@@ -200,20 +200,58 @@ def download_crosstab(out_path: Path, verbose: bool = True,
     from automations.shared.tableau_patchright import tableau_session
     with tableau_session(verbose=verbose) as page:
         url = _build_view_url(week_ending)
-        if verbose:
-            print(f"Navigating Tableau tab to: {url}", flush=True)
-        page.goto(url, wait_until="domcontentloaded")
-
         # Viz iframe has title="Data Visualization" (verified via DOM dump).
         viz = page.frame_locator('iframe[title="Data Visualization"]')
+        dl_btn = '[data-tb-test-id="viz-viewer-toolbar-button-download"]'
 
-        # Wait for the Download button to exist + extra time for Tableau to
-        # hydrate the data behind the viz. Under-waiting → wrong sheet picked.
-        if verbose:
-            print(f"Waiting for viz Download button to be visible...", flush=True)
-        viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-download"]').wait_for(
-            state="visible", timeout=30_000,
-        )
+        # Navigate + wait for the viz toolbar, with a render pause and a
+        # reload-retry. A cold Tableau viz can take well over 30s to hydrate
+        # its toolbar; the old single 30s wait timed out Eve's run and failed
+        # the whole Tableau pull (2026-05-31). A reload almost always fixes a
+        # slow first load.
+        last_err = None
+        for attempt in (1, 2, 3):
+            if verbose:
+                print(f"Navigating Tableau tab to: {url} (attempt {attempt})",
+                      flush=True)
+            page.goto(url, wait_until="domcontentloaded")
+            page.wait_for_timeout(5_000)  # let the iframe attach + render
+            # A stale/missing custom view renders Tableau's error page (no viz
+            # iframe at all) — retrying or waiting for a Download button that
+            # will never appear just burns minutes. Detect it and fail with an
+            # actionable message. This is what broke Eve's Phase 3 (2026-05-31):
+            # the AUTOMATIONPULL view URL returns "page could not be accessed".
+            try:
+                body = (page.inner_text("body", timeout=5_000) or "").lower()
+            except Exception:
+                body = ""
+            if ("could not be accessed" in body
+                    or "necessary permissions" in body
+                    or "view does not exist" in body):
+                raise RuntimeError(
+                    "Tableau view not accessible — the AUTOMATION PULL custom "
+                    f"view ({url.split('?')[0]}) returned 'page could not be "
+                    "accessed'. The custom view was most likely deleted or "
+                    "recreated (its GUID changes) or lost permissions. Recreate "
+                    "the AUTOMATION PULL view (rep expansion + Product Type "
+                    "filter, 'Sales By ICD (Weekly View)' worksheet) and update "
+                    "TABLEAU_VIEW_URL in step7_download_tableau, or point it "
+                    "at a current view.")
+            try:
+                if verbose:
+                    print("Waiting for viz Download button to be visible...",
+                          flush=True)
+                viz.locator(dl_btn).wait_for(state="visible", timeout=60_000)
+                last_err = None
+                break
+            except Exception as e:
+                last_err = e
+                if verbose:
+                    print(f"  viz toolbar didn't appear on attempt {attempt} "
+                          f"({type(e).__name__}); reloading…", flush=True)
+                page.wait_for_timeout(3_000)
+        if last_err is not None:
+            raise last_err
         if verbose:
             print(f"Download button visible. Waiting {VIZ_RENDER_WAIT_MS/1000:.0f}s for data hydration...", flush=True)
         page.wait_for_timeout(VIZ_RENDER_WAIT_MS)
