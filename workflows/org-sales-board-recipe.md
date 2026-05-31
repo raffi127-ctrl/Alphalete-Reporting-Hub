@@ -47,9 +47,9 @@ These auto-derive from the daily sections; just keep the formulas intact + verif
 | Section | Source | Metric / notes |
 |---|---|---|
 | **Retail NL** | Tableau purpose-built view **"Retail NL Org Sales Board"** (Dropship V_2 / SARA PLUS SALES SUMMARY BY DAY): `.../DropshipV_2/SARAPLUSSALESSUMMARYBYDAY/2eaaea0a-8456-44d9-8852-edd8034e4ee7/RetailNLOrgSalesBoard` | **Wireless Lines** per owner/day = **new lines only**. Set date=this week; view is pre-scoped to the Retail NL ICDs + Wireless Type=Phone. **TN Type must EXCLUDE "upgrade"** (upgrades don't count) — verify the purpose-built view already does, else un-click upgrade. Cross-check: day total matches. |
-| **Retail Internet** (bottom) | same SARA PLUS view, same people | **Internet** metric per owner/day |
-| **ATT Fiber Team** | Tableau **PRODUCT SALES SUMMARY** (AT&T Tracker D2D **v2**) | all products **except Voice**; owners on the sheet's Fiber list |
-| **Retail JE** | **emailed screenshot** (sent manually) | the **"Closed"** column number — NOT pullable; needs a manual/upload path |
+| **Retail Internet** (bottom, rows ~177–186) | **SAME pull as Retail NL** (one SARA PLUS pass) | read the **Internet** metric row (vs Wireless Lines for Retail NL); same 3 ICDs. Note a static-looking **"Org Head"** column on the right (Carlos/Raf) — confirm manual vs derived. |
+| **ATT Fiber Team** (rows 92–107) | Tableau purpose-built view **"Fiber Team no voice"** (ATT Tracker 2.1 D2D V2 / PRODUCT SALES SUMMARY 4WK): `.../ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK/ae3a6f98-e68f-4c83-9620-50ea60d6c61a/FiberTeamnovoice` | per-ICD **Total** per weekday = AIR+New Internet+Upgrade Internet+Video+Wireless (**Voice excluded** — view pre-drops it; verify Product Type = all-except-Voice). Date filter = **Sale Date Week Ending** dropdown (not a min/max range). Owners = the Fiber list on the sheet. |
+| **Retail JE** (rows 107–114) | **manually-sent screenshot** | **"Closed Won"** per Regional Office (SCI_TX_CinthyaReyes 26, SCI_TX_DavidMartinez 9, SCI_TX_TJGoodwin 1). NOT pullable — **hand-keyed**. ICDs: David Martinez, TJ Goodwin, Cinthya Reyes, Magdalena Alfaro. ⚠ The automation must still **freeze/save Retail JE's totals into the leaderboard during the Monday rollover** (don't skip the manual section) so its weekly numbers persist. |
 | **ATT NDS Team** | **NDS Product Sales Summary** (different workbook — NDS campaign) | filter **Wireless** products (wireless = NDS new lines) |
 | **B2B** | Tableau **V2V page** workbook | per owner/day |
 | **BOX** | **Box daily tracker** | per owner/day |
