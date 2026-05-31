@@ -87,7 +87,7 @@ team (instead of the org-level filter); set the current week-ending date.
 | Captainship | Workbook | Products |
 |---|---|---|
 | Raf's, Wayne's, Starr's, Aaron's (all Fiber) | PRODUCT SALES SUMMARY 4WK (ATT Tracker 2.1 D2D V2) — Raf's view: `.../PRODUCTSALESSUMMARY4WK/ab2eca72-395f-48d5-a254-9d99739b88d4/AllproductsRafsteam`; others = same view, swap Captain's Bonus Team | ALL products **incl. Voice** (per-ICD Total). Filters: Captain's Bonus Team = that captain's team, Sale Date Week Ending = current WE, Product Type = (Todo). Raf's "Fiber - All Units" chart = **rows 238–375**. |
-| Carlos's, Evelis's | B2B 1-PAGER V3 (ATT TRACKER - B2B) — Carlos's view: `.../ATTTRACKER-B2B/D2D1-PAGERV3/32440800-0a5a-4f21-be33-f807ba5930a7/CarlosTeam`; Evelis's = same view, swap team | B2B. Carlos's "B2B - All Units" chart = rows 408–491. Rollover adds the completed week's row to the hidden week-log underneath each Monday. |
+| Carlos's, Eveliz's | B2B 1-PAGER V3 (ATT TRACKER - B2B) — **dedicated per-team views** (no filter-setting): Carlos `.../D2D1-PAGERV3/32440800-0a5a-4f21-be33-f807ba5930a7/CarlosTeam`, Eveliz `.../D2D1-PAGERV3/48735d6e-cf6a-48fa-8d24-6f790d2ba3b7/EvelizsTeam` | B2B (Sales By ICD – This Week, current week). Rollover adds the completed week's row to the hidden week-log underneath each Monday. |
 | Khalil's, Colten's | NDS Product Sales Summary (NDS-SN workbook) | ALL units |
 
 **Each captainship MIRRORS the org-level structure** (confirmed on Carlos, rows
