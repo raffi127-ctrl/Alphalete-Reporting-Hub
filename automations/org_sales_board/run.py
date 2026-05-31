@@ -11,11 +11,13 @@ Sections (top to bottom):
   4. CAPTAIN TEAM rollups
   5. historical week-list
 
-STEP 1 (this file): a new week starts by CLEARING the Product Summary table's
-day + grand-total values (labels + headers kept).
-
-  python -m automations.org_sales_board.run --step clear-summary --dry-run
-  python -m automations.org_sales_board.run --step clear-summary       # sandbox
+CORRECTION (2026-05-30): the Product Summary AND the RAF ORG vs-Prior tables are
+FORMULA-DRIVEN — they auto-derive from the daily sections (Product Summary pulls
+each section's Totals row: `=C85`, `=C103`, …; Grand Total `=SUM`; RAF ORG
+references section history rows). They must NOT be cleared/hardcoded. The
+new-week reset belongs on the daily SECTION fill areas + the section-history
+shift, not here. `clear_product_summary` below is SUPERSEDED and guarded off.
+See workflows/org-sales-board-recipe.md.
 """
 from __future__ import annotations
 
@@ -55,11 +57,16 @@ def _find(colB, pred, start=1):
 
 
 def clear_product_summary(ws, *, dry_run=False, logfn=print):
-    """Blank the day + Grand-Total values of the Product Summary table (new
-    week reset). Label-anchored: section runs from the SUMMARY_TITLE row to the
-    next section (SUMMARY_END); data rows = any labelled row that isn't a
-    'Product Type' header; data columns = first day col through 'Grand Total'."""
-    colB = ws.col_values(2)
+    """SUPERSEDED — the Product Summary is formula-driven (auto-pulls each
+    daily section's Totals row); clearing it would wipe live formulas. Kept
+    only for reference; guarded off. Label-anchored clear logic is reusable
+    for the daily SECTION fill areas later."""
+    raise RuntimeError(
+        "clear_product_summary is retired: the Product Summary is "
+        "formula-driven and must not be cleared. The new-week reset belongs on "
+        "the daily section fill areas + history shift (see recipe)."
+    )
+    colB = ws.col_values(2)  # noqa: unreachable — retained for reuse
     r_title = _find(colB, lambda v: v.lower() == SUMMARY_TITLE.lower())
     if not r_title:
         raise ValueError(f"Couldn't find '{SUMMARY_TITLE}' in column B.")

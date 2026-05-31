@@ -18,6 +18,21 @@ by one before the new week is filled:
 - Then: clear this week's day cells + running total, then fill day by day.
 - Applies to ALL charts on the tab that have these blocks/columns.
 
+## FORMULA-DRIVEN summaries — DO NOT clear or hardcode
+These auto-derive from the daily sections; just keep the formulas intact + verify:
+- **Product Summary (rows 3–14):** each product type's day cell = its daily
+  section's **Totals row** (Retail NL `=C85`, Fiber `=C103`, Retail JE `=C114`,
+  NDS `=C133`, B2B `=C148`, BOX `=C160`, Retail Internet `=C182`, Frontier
+  `=C170`). Grand Total = `=SUM(C5:C11)+SUM(C13)`. Labels in col B also auto-pull
+  (`=A80`, …).
+- **RAF ORG – vs Prior/4-wk (rows 16–22):** `Sales This Week =C14`,
+  `vs Prior =(C18-C21)/C21`, `vs 4-wk =(C18-C22)/C22`,
+  `Last Week =C86+C104+C115+C134+C149+C171+C183+C161`, `4-Wk Avg =AVERAGE(...)`
+  over the sections' Last/Prior/2/3-week history rows.
+- ⚠ EARLIER MISTAKE: a "clear Product Summary" step was built + blanked these on
+  the sandbox; restored from the real tab. The new-week reset is **not** here —
+  it's the **daily section fill areas** + the section-history shift.
+
 ## Fill rules (all sections)
 - The **sheet's ICD list drives the rows** — fill a value for every listed ICD.
 - An ICD with **no data** in the pull → enter **0** (never leave blank). e.g.
@@ -39,6 +54,22 @@ by one before the new week is filled:
 | **B2B** | Tableau **V2V page** workbook | per owner/day |
 | **BOX** | **Box daily tracker** | per owner/day |
 | **Frontier** | **emailed Verizon PDF** ("Taylor Sales Frontier Events") | look up person (e.g. Abel) → Monday sales. PDF parse — cf. existing Frontier OPT report |
+
+## ALPHALETE ORG leaderboard (rows 24+) — auto-derives from the daily sections
+Don't pull this separately — it references the daily sections we fill:
+- Per-ICD cell in a WE column = `=SUMIF($B$<sec_names>, B<row>, $J$<sec_run_totals>)`
+  — pulls that ICD's **Running Week Total (col J)** from its daily section, by name.
+- Group **TOTALS** = `SUM` of the group's ICD rows.
+- **ALL TOTALS** (r25) = `SUM` of all campaign TOTALS rows
+  (`=SUM(C30+C41+C45+C57+C65+C70+C73+C78)`).
+- **Newest WE column = live formulas; all older WE columns = frozen static values.**
+
+Weekly rollover for this section:
+1. **Freeze** the just-finished newest column: convert its formulas → the actual
+   (verified) numbers, so it stays put when the sections roll next week.
+2. **Insert a new WE column** on the left (new WE date) carrying the SUMIF/SUM
+   formulas + the ALL TOTALS formula — auto-pulls the fresh week as it fills.
+3. Double-check the numbers vs the sections.
 
 ## Captainships (lower section)
 Each captainship filled from a product-sales-summary workbook filtered by the
