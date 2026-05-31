@@ -388,41 +388,76 @@ def rollover_to_last_week(sh, only=None, logfn=print) -> int:
     return n
 
 
+def rollover_all_tabs(sh, logfn=print) -> int:
+    """Freeze EVERY owner tab's last week, one tab at a time with 429 backoff +
+    pacing. Doing it per-tab means a rate-limit or one bad tab can't abort the
+    whole freeze — which, on Monday BEFORE the scoped wipe, would otherwise
+    leave un-frozen tabs and lose their last week. Returns tabs frozen."""
+    import time
+    titles = [t.title for t in sh.worksheets() if t.title not in NON_OWNER_TABS]
+    n = 0
+    for title in titles:
+        for attempt in range(5):
+            try:
+                n += rollover_to_last_week(sh, only=[title], logfn=logfn)
+                break
+            except Exception as e:
+                if "429" in str(e) and attempt < 4:
+                    time.sleep(30)
+                    continue
+                logfn(f"  {title}: rollover ERROR (skipped) — "
+                      f"{type(e).__name__}: {str(e)[:80]}")
+                break
+        time.sleep(1)
+    return n
+
+
 def collapse_headroom(sh, only=None, logfn=print) -> int:
     """Re-hide the unused rows between the current-week summary (+1 spacer) and
     the fixed LAST WEEK block, so each tab reads current → spacer → LAST WEEK
-    with the 50-rep headroom collapsed. Runs at the END of every run because
-    the day's fill changes the rep count (and the summary's row). No-op on
-    tabs that don't yet have a frozen LAST WEEK block."""
+    with the headroom collapsed. Runs at the END of every run (the day's fill
+    moves the summary row). Per-tab 429 backoff + pacing so a rate-limit
+    doesn't abort the whole pass. No-op on tabs without a frozen block."""
+    import time
     tabs = [t for t in sh.worksheets() if t.title not in NON_OWNER_TABS]
     if only:
         tabs = [t for t in tabs if t.title in only]
     n = 0
     for ws in tabs:
-        col_b = ws.col_values(2)
-        end_row = _find_label_row(col_b, "% ON BOARD")   # current block's last row
-        if not end_row:
-            continue
-        if not any(isinstance(v, str) and v.strip().upper() == LAST_WEEK_LABEL
-                   for v in col_b[LAST_WEEK_LABEL_ROW - 1:]):
-            continue   # no frozen block below → nothing to collapse
-        sid = ws.id
-        reqs = [
-            {"updateDimensionProperties": {     # current zone + 1 spacer → visible
-                "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": 2, "endIndex": end_row + 1},
-                "properties": {"hiddenByUser": False}, "fields": "hiddenByUser"}},
-            {"updateDimensionProperties": {     # frozen block → visible
-                "range": {"sheetId": sid, "dimension": "ROWS",
-                          "startIndex": LAST_WEEK_LABEL_ROW - 1, "endIndex": 200},
-                "properties": {"hiddenByUser": False}, "fields": "hiddenByUser"}},
-        ]
-        if end_row + 1 < LAST_WEEK_LABEL_ROW - 1:   # only if there's headroom
-            reqs.append({"updateDimensionProperties": {
-                "range": {"sheetId": sid, "dimension": "ROWS",
-                          "startIndex": end_row + 1, "endIndex": LAST_WEEK_LABEL_ROW - 1},
-                "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}})
-        ws.spreadsheet.batch_update({"requests": reqs})
-        n += 1
+        for attempt in range(4):
+            try:
+                col_b = ws.col_values(2)
+                end_row = _find_label_row(col_b, "% ON BOARD")
+                if not end_row:
+                    break
+                if not any(isinstance(v, str) and v.strip().upper() == LAST_WEEK_LABEL
+                           for v in col_b[LAST_WEEK_LABEL_ROW - 1:]):
+                    break   # no frozen block below → nothing to collapse
+                sid = ws.id
+                reqs = [
+                    {"updateDimensionProperties": {
+                        "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": 2, "endIndex": end_row + 1},
+                        "properties": {"hiddenByUser": False}, "fields": "hiddenByUser"}},
+                    {"updateDimensionProperties": {
+                        "range": {"sheetId": sid, "dimension": "ROWS",
+                                  "startIndex": LAST_WEEK_LABEL_ROW - 1, "endIndex": 200},
+                        "properties": {"hiddenByUser": False}, "fields": "hiddenByUser"}},
+                ]
+                if end_row + 1 < LAST_WEEK_LABEL_ROW - 1:
+                    reqs.append({"updateDimensionProperties": {
+                        "range": {"sheetId": sid, "dimension": "ROWS",
+                                  "startIndex": end_row + 1, "endIndex": LAST_WEEK_LABEL_ROW - 1},
+                        "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}})
+                ws.spreadsheet.batch_update({"requests": reqs})
+                n += 1
+                break
+            except Exception as e:
+                if "429" in str(e) and attempt < 3:
+                    time.sleep(20)
+                    continue
+                logfn(f"  {ws.title}: collapse skipped — {type(e).__name__}")
+                break
+        time.sleep(0.5)
     return n
 
 
@@ -829,7 +864,7 @@ def main() -> int:
             # it. Non-fatal: a rollover hiccup shouldn't block the week's run.
             say("Monday: freezing last week into the LAST WEEK block...")
             try:
-                n = rollover_to_last_week(sh, logfn=say)
+                n = rollover_all_tabs(sh, logfn=say)
                 say(f"  froze last week on {n} tab(s)")
             except Exception as e:
                 say(f"  rollover failed (non-fatal): {e}")
