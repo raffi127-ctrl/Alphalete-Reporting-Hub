@@ -302,15 +302,27 @@ def rollover_to_last_week(sh, only=None, logfn=print) -> int:
         clear_from = end_row + 1
         ws.spreadsheet.values_batch_clear(
             body={"ranges": [f"{_q(ws.title)}!A{clear_from}:CR400"]})
+        # The tab carries a basic FILTER (the report filters inactive reps out
+        # of view). copyPaste skips filtered rows then tiles to fill the dest —
+        # which duplicated the whole block on a filtered tab (Rafael) — and
+        # sortRange/copyPaste even error on a filtered range. Capture + clear
+        # the filter for the snapshot, restore it after.
+        bf = ws.spreadsheet.fetch_sheet_metadata(
+            {"ranges": [ws.title], "fields": "sheets.basicFilter"}
+        )["sheets"][0].get("basicFilter")
+        if bf:
+            ws.spreadsheet.batch_update({"requests": [{"clearBasicFilter": {"sheetId": sid}}]})
+        # Snapshot VALUES by read+write (row-exact; UNFORMATTED freezes formulas
+        # to their computed values).
+        cur_vals = ws.get(f"A1:CR{end_row}", value_render_option="UNFORMATTED_VALUE")
+        cur_vals = [(r + [""] * (96 - len(r)))[:96] for r in cur_vals]
+        ws.update(cur_vals, f"A{LAST_WEEK_DATES_ROW}", value_input_option="RAW")
         src = {"sheetId": sid, "startRowIndex": 0, "endRowIndex": end_row,
                "startColumnIndex": 0, "endColumnIndex": 96}
         dst = {"sheetId": sid, "startRowIndex": LAST_WEEK_DATES_ROW - 1,
                "endRowIndex": LAST_WEEK_DATES_ROW - 1 + block_rows,
                "startColumnIndex": 0, "endColumnIndex": 96}
         requests = [
-            # Unmerge everything below the current block — stale merges (esp. on
-            # the label row) would swallow the label write; the copyPaste
-            # re-creates the correct date-header merges afterward.
             {"unmergeCells": {
                 "range": {"sheetId": sid, "startRowIndex": clear_from - 1,
                           "endRowIndex": 400, "startColumnIndex": 0, "endColumnIndex": 96}}},
@@ -318,7 +330,7 @@ def rollover_to_last_week(sh, only=None, logfn=print) -> int:
                 "range": {"sheetId": sid, "startRowIndex": clear_from - 1,
                           "endRowIndex": 400, "startColumnIndex": 0, "endColumnIndex": 96},
                 "fields": "userEnteredFormat"}},
-            {"copyPaste": {"source": src, "destination": dst, "pasteType": "PASTE_VALUES"}},
+            # With the filter cleared, the bulk format paste is row-exact (1:1).
             {"copyPaste": {"source": src, "destination": dst, "pasteType": "PASTE_FORMAT"}},
             # Sort the frozen reps by SUM Total Apps (col C) highest→lowest.
             {"sortRange": {
@@ -365,8 +377,11 @@ def rollover_to_last_week(sh, only=None, logfn=print) -> int:
                           "startIndex": end_row + 1, "endIndex": LAST_WEEK_LABEL_ROW - 1},
                 "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}})
         ws.spreadsheet.batch_update({"requests": requests})
-        # Normalize conditional ranges LAST (the copy auto-splits them).
+        # Normalize conditional ranges LAST (the format paste auto-splits them).
         _normalize_lastweek_conditional(ws)
+        # Restore the basic filter we cleared for the snapshot.
+        if bf:
+            ws.spreadsheet.batch_update({"requests": [{"setBasicFilter": {"filter": bf}}]})
         n += 1
         logfn(f"  {ws.title}: froze rows 1-{end_row} → LAST WEEK (dates r{LAST_WEEK_DATES_ROW}, "
               f"sorted by app sum), border + dates")
