@@ -1445,30 +1445,37 @@ def write_office_summary_block(ws, layout: Layout) -> None:
             "data": update_data,
         })
 
-    # Apply % number format on the % ON BOARD row's per-day cells, plus
-    # day-block left borders on all 4 new rows (matches the OFFICE TOTALS
-    # row's separators so the navy bar reads as one continuous block).
-    pct_row = totals_row + 4
+    # Number formats + day-block left borders on the 4 new rows. Set EVERY
+    # row's format explicitly (not just % ON BOARD): the 3 count rows are
+    # whole numbers, % ON BOARD is the only percent. Without forcing the
+    # count rows to NUMBER, a cell that inherited a PERCENT format (from a
+    # prior run or a row shift) renders e.g. 7 as "700%" — exactly the
+    # TOTAL REPS SOLD bug Megan flagged 2026-05-31. Borders match the
+    # OFFICE TOTALS separators so the navy bar reads as one block.
+    NUM_FMT = {"type": "NUMBER", "pattern": "0"}        # whole numbers
+    PCT_FMT = {"type": "PERCENT", "pattern": "0%"}      # % ON BOARD only
     THIN_BLACK = {"style": "SOLID_MEDIUM", "color": {"red": 0, "green": 0, "blue": 0}}
 
     fmt_requests = []
-    # Apply % format to col C (weekly aggregate) + each day's TA col on
-    # the % ON BOARD row.
-    pct_cols = [3] + list(day_ta_cols.values())  # col C + day TA cols
-    for c in pct_cols:
-        fmt_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws.id,
-                    "startRowIndex": pct_row - 1,
-                    "endRowIndex": pct_row,
-                    "startColumnIndex": c - 1,
-                    "endColumnIndex": c,
+    fmt_cols = [3] + list(day_ta_cols.values())  # col C (weekly) + day TA cols
+    for offset in range(1, 5):
+        target_row = totals_row + offset
+        # offset 4 = % ON BOARD; 1–3 = the count rows (IN FIELD/SOLD/ROLLED 0).
+        fmt = PCT_FMT if offset == 4 else NUM_FMT
+        for c in fmt_cols:
+            fmt_requests.append({
+                "repeatCell": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "startRowIndex": target_row - 1,
+                        "endRowIndex": target_row,
+                        "startColumnIndex": c - 1,
+                        "endColumnIndex": c,
+                    },
+                    "cell": {"userEnteredFormat": {"numberFormat": fmt}},
+                    "fields": "userEnteredFormat.numberFormat",
                 },
-                "cell": {"userEnteredFormat": {"numberFormat": {"type": "PERCENT", "pattern": "0%"}}},
-                "fields": "userEnteredFormat.numberFormat",
-            },
-        })
+            })
     for offset in range(1, 5):
         target_row = totals_row + offset
         for ta_col in day_ta_cols.values():

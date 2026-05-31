@@ -443,24 +443,110 @@ def _notify_failure(headline: str, detail: str, log_file: str) -> None:
 # ----------------------------------------------------------------------
 # Phase runners (subprocess — each phase has its own CLI entrypoint)
 # ----------------------------------------------------------------------
-def _run_phase(module: str, extra_args: list[str], log_fh) -> int:
+# Phase-level hard caps. A phase that exceeds these is killed (the scrape
+# resumes from its checkpoint on the next run) so a single hung owner or a
+# stuck Tableau load can never silently stall the whole report for an hour
+# (Eve's run sat at 62 min before someone stopped it, 2026-05-31). Generous
+# vs. the ~15 min normal total, so a legit slow Monday won't false-trip.
+PHASE_TIMEOUT_EXIT = 124  # conventional "timed out" exit code
+PHASE2_TIMEOUT_S = 40 * 60
+PHASE3_TIMEOUT_S = 20 * 60
+
+
+def _kill_process_tree(proc: "subprocess.Popen") -> None:
+    """Kill a subprocess AND its descendants (the patchright browser),
+    cross-platform. Killing just the direct child leaves the browser holding
+    the stdout pipe, so the parent's read never returns."""
+    import os
+    import signal as _signal
+    pid = proc.pid
+    if _IS_WINDOWS:
+        # /T = whole tree, /F = force. taskkill is always present on Windows.
+        try:
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                           capture_output=True, timeout=20)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        return
+    # POSIX: the child was started with start_new_session=True, so its PGID
+    # == its PID; signal the whole group.
+    try:
+        os.killpg(os.getpgid(pid), _signal.SIGTERM)
+    except Exception:
+        pass
+    try:
+        proc.wait(timeout=5)
+        return
+    except Exception:
+        pass
+    try:
+        os.killpg(os.getpgid(pid), _signal.SIGKILL)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
+def _run_phase(module: str, extra_args: list[str], log_fh,
+               timeout_s: int | None = None) -> int:
     """Run a pipeline module as a subprocess. Streams its output line by
     line to BOTH the run log file and this process's stdout — so the Hub,
     which captures daily.py's stdout, shows live per-owner progress (the
     scraper's "[i/N]" markers) instead of just the phase headline.
+
+    If `timeout_s` is set, a watchdog kills the subprocess after that many
+    seconds and we return PHASE_TIMEOUT_EXIT — never blocking forever.
     Returns the process exit code."""
     cmd = [PYTHON, "-m", module, *extra_args]
     header = f"\n$ {' '.join(cmd)}\n"
     log_fh.write(header)
     log_fh.flush()
     print(header, end="", flush=True)
+    # Start the child in its OWN process group/session so the watchdog can
+    # kill the whole TREE — the scraper spawns a patchright browser as a
+    # grandchild, and killing only the direct child leaves the browser alive
+    # holding the stdout pipe open (the read below would block forever, so the
+    # timeout wouldn't actually unstick us). Eve runs this on Windows, so the
+    # tree-kill has to work there too (taskkill /T), not just on macOS.
+    popen_kw = {}
+    if _IS_WINDOWS:
+        popen_kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        popen_kw["start_new_session"] = True
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, bufsize=1, cwd=str(WORKSPACE))
-    for line in proc.stdout:
-        log_fh.write(line)
+                            text=True, bufsize=1, cwd=str(WORKSPACE), **popen_kw)
+    timed_out = {"hit": False}
+    timer = None
+    if timeout_s:
+        import threading
+
+        def _kill_hung():
+            timed_out["hit"] = True
+            _kill_process_tree(proc)
+
+        timer = threading.Timer(timeout_s, _kill_hung)
+        timer.daemon = True
+        timer.start()
+    try:
+        for line in proc.stdout:
+            log_fh.write(line)
+            log_fh.flush()
+            print(line, end="", flush=True)
+        proc.wait()
+    finally:
+        if timer:
+            timer.cancel()
+    if timed_out["hit"]:
+        msg = (f"\n⏱ phase '{module}' exceeded {timeout_s // 60} min — killed. "
+               f"Progress is checkpointed; click Run Again to resume.\n")
+        log_fh.write(msg)
         log_fh.flush()
-        print(line, end="", flush=True)
-    proc.wait()
+        print(msg, end="", flush=True)
+        return PHASE_TIMEOUT_EXIT
     return proc.returncode
 
 
@@ -532,7 +618,17 @@ def main() -> int:
         say("Phase 2: ownerville scrape...")
         phase2_args = [] if is_monday else ["--daily-window"]
         rc2 = _run_phase("automations.focus_office_att.run_all_owners",
-                         phase2_args, log)
+                         phase2_args, log, timeout_s=PHASE2_TIMEOUT_S)
+        if rc2 == PHASE_TIMEOUT_EXIT:
+            say(f"  Phase 2 TIMED OUT after {PHASE2_TIMEOUT_S // 60} min — "
+                f"likely one owner hung the scrape.")
+            _notify_failure(
+                "Focus Office scrape (Phase 2) timed out.",
+                f"The ownerville scrape ran past {PHASE2_TIMEOUT_S // 60} min "
+                "and was stopped — usually one owner's page hung. Progress is "
+                "checkpointed, so click Run Again to resume where it left off.",
+                str(log_path))
+            return 1
         # run_all_owners exits non-zero when SOME owners were skipped — that's
         # expected (pending-access owners). A genuine failure = no results
         # file written.
@@ -548,7 +644,20 @@ def main() -> int:
         # 4. Phase 3 — Tableau download + fill
         say("Phase 3: Tableau auto-download (CSV) + Sheet fill...")
         rc3 = _run_phase("automations.focus_office_att.step7_download_tableau",
-                         ["--format", "csv", "--fill"], log)
+                         ["--format", "csv", "--fill"], log,
+                         timeout_s=PHASE3_TIMEOUT_S)
+        if rc3 == PHASE_TIMEOUT_EXIT:
+            say(f"  Phase 3 TIMED OUT after {PHASE3_TIMEOUT_S // 60} min.")
+            _notify_failure(
+                "Focus Office Tableau pull (Phase 3) timed out.",
+                "The ownerville scrape completed; only the Tableau sale-type "
+                "pull hung. Click Run Again — Phase 2 won't re-scrape.",
+                str(log_path))
+            try:
+                refresh_tab_colors(sh)
+            except Exception:
+                pass
+            return 1
         if rc3 != 0:
             say(f"  Phase 3 failed (exit {rc3}).")
             _notify_failure(
