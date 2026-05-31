@@ -199,9 +199,25 @@ def _read_active_runs() -> list[dict]:
         status = "unknown"
         if log_path and Path(log_path).exists():
             try:
-                tail = Path(log_path).read_text(errors="replace").lower().splitlines()[-10:]
-                tail_text = "\n".join(tail)
-                # Failure signatures — include scraper-style markers ("✗",
+                full_low = Path(log_path).read_text(errors="replace").lower()
+                tail_text = "\n".join(full_low.splitlines()[-10:])
+                # Canonical end-markers FIRST, searched across the WHOLE log:
+                # every report's run.py prints '=== done ===' on success, and
+                # an uncaught crash prints a Python traceback. Scanning the
+                # full text (not just the last 10 lines) fixes the
+                # false-failure Eve hit 2026-05-31: churn/cancel reports
+                # (Captainship Churn - Owners Metrics, Ongoing Cancel) dump
+                # tables AFTER '=== done ===', pushing the sentinel out of the
+                # 10-line tail so a benign word ('error', '✗', "couldn't
+                # find") in the trailing data flipped the run to 'failed'.
+                if "=== done ===" in full_low or "=== done (dry-run) ===" in full_low:
+                    status = "success"
+                elif "traceback (most recent call last)" in full_low:
+                    status = "failed"
+                # Fuzzy tail heuristic — fallback only when neither explicit
+                # sentinel is present (older reports, or a hard kill mid-run).
+                #
+                # Failure signatures include scraper-style markers ("✗",
                 # "couldn't find", "couldn't be found", "auto-skipping") so a
                 # run that stalled or auto-skipped reps still gets classified
                 # as failed (the orphan path then auto-files a glitch row).
@@ -211,7 +227,7 @@ def _read_active_runs() -> list[dict]:
                 # the substring "error" inside "Errors: 0" — Eve's 2026-05-26
                 # Frontier OPT run was wrongly auto-filed as failed because
                 # "errors: 0" tripped the "error" substring match.
-                if any(s in tail_text for s in (
+                elif any(s in tail_text for s in (
                     "done", "[ok]", "errors: 0", "0 errors", "filled:",
                 )):
                     status = "success"
