@@ -37,13 +37,17 @@ from pathlib import Path
 
 from patchright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
-# 'AUTOMATION PULL' custom view of ATT Tracker 2.1 D2D / PRODUCT SALES SUMMARY 4WK.
-# Saved by Megan 2026-05-14 with rep dimension expanded + 4 product types selected.
-# The UUID + name are stable; we override Sale Date Week Ending via URL param.
+# 'DailyRepBDreportpull' custom view of ATT Tracker 2.1 D2D / PRODUCT SALES
+# SUMMARY 4WK — rep dimension expanded + 4 product types (NEW INTERNET /
+# UPGRADE INTERNET / VIDEO / WIRELESS) selected. We override Sale Date Week
+# Ending via URL param at runtime. NOTE: this is a custom-view GUID — if the
+# view is re-saved the GUID changes and this link dies (the prior
+# 'AUTOMATIONPULL' view broke this way 2026-05-31); replaced by Megan with
+# the URL below.
 TABLEAU_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK/"
-    "b2da26b8-8971-4a45-9e42-bd04af46f0fa/AUTOMATIONPULL"
+    "f081e40f-dd21-4a09-8981-c7cce17b5381/DailyRepBDreportpull"
 )
 
 
