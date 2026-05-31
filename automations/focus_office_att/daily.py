@@ -225,12 +225,15 @@ def _banner_text_for(status: str) -> str:
     shouldn't have to decode raw status strings like 'exception:
     TimeoutError:...'; the log has those for debugging."""
     s = (status or "").lower()
-    # OV's "Office Access" table only lists offices the current login HAS
-    # access to. If a name isn't in the table, the user doesn't have
-    # access — not a name drift. Same banner as an explicit impersonate
-    # denial; the actionable fix is the same (request OV access).
-    if "name not found" in s or "no ov access" in s or "impersonate denied" in s:
+    # An explicit impersonate denial = definitely no access.
+    if "no ov access" in s or "impersonate denied" in s:
         return "❌ NO OWNERVILLE ACCESS — request access"
+    # "name not found" is AMBIGUOUS: the owner may genuinely lack access, OR
+    # (often) their tab name just doesn't match their ownerville spelling and
+    # needs an alias. Don't assert "NO ACCESS" — Megan flagged that reps who
+    # clearly HAVE access were shown it (2026-05-31). Name the real next step.
+    if "name not found" in s:
+        return "❌ NOT FOUND IN OWNERVILLE — check name/alias (or request access)"
     if "access request pending" in s or "request sent" in s:
         return "⏳ OWNERVILLE ACCESS REQUEST PENDING — waiting on approval"
     if "no impersonate button" in s or "office may be disabled" in s:
@@ -313,6 +316,27 @@ def mark_no_access_tabs(sh, pending_results: dict) -> dict:
             cleared += 1
     sh.batch_update({"requests": requests})
     return {"marked": marked, "cleared": cleared}
+
+
+def _refresh_pending_banners(sh, say) -> None:
+    """Stamp/clear the per-owner OV-access banners from Phase-2 scrape
+    results. Banners depend on ownerville access (Phase 2) only, so this is
+    safe to run before Phase 3 — and MUST, so a Phase-3 failure can't leave
+    a good scrape's tabs showing stale 'NO OWNERVILLE ACCESS' banners."""
+    try:
+        pending_results: dict = {}
+        if SCRAPE_RESULTS.exists():
+            try:
+                data = json.loads(SCRAPE_RESULTS.read_text())
+                pending_results = {o: s for o, s in data.get("results", {}).items()
+                                   if s != "ok" and o not in NON_OWNER_TABS}
+            except Exception:
+                pending_results = {}
+        counts = mark_no_access_tabs(sh, pending_results)
+        say(f"  banner marked on {counts['marked']} tab(s), "
+            f"cleared on {counts['cleared']} tab(s)")
+    except Exception as e:
+        say(f"  banner refresh failed (non-fatal): {e}")
 
 
 # ----------------------------------------------------------------------
@@ -501,7 +525,11 @@ def _run_phase(module: str, extra_args: list[str], log_fh,
     If `timeout_s` is set, a watchdog kills the subprocess after that many
     seconds and we return PHASE_TIMEOUT_EXIT — never blocking forever.
     Returns the process exit code."""
-    cmd = [PYTHON, "-m", module, *extra_args]
+    # -u (unbuffered) so the child's per-owner progress streams live instead
+    # of sitting in a block buffer until the pipe fills — otherwise the Hub's
+    # live log looks frozen on a perfectly healthy run, and a real stall gives
+    # no clue where it stopped.
+    cmd = [PYTHON, "-u", "-m", module, *extra_args]
     header = f"\n$ {' '.join(cmd)}\n"
     log_fh.write(header)
     log_fh.flush()
@@ -641,6 +669,14 @@ def main() -> int:
             return 1
         say(f"  Phase 2 done (exit {rc2}).")
 
+        # Clear/stamp the OV-access banners NOW, from Phase-2 results. These
+        # reflect ownerville access (Phase 2) — NOT the Tableau pull (Phase 3)
+        # — so they must run before Phase 3 can return early. Otherwise a good
+        # scrape whose Phase 3 fails leaves every tab showing a stale
+        # "NO OWNERVILLE ACCESS" banner (Megan 2026-05-31).
+        say("Stamping per-failure banners on pending tabs...")
+        _refresh_pending_banners(sh, say)
+
         # 4. Phase 3 — Tableau download + fill
         say("Phase 3: Tableau auto-download (CSV) + Sheet fill...")
         rc3 = _run_phase("automations.focus_office_att.step7_download_tableau",
@@ -684,26 +720,7 @@ def main() -> int:
         except Exception as e:
             say(f"  tab-color refresh failed (non-fatal): {e}")
 
-        # 6. Per-failure banners on the sheet tabs — each pending owner
-        # gets an actionable banner ("add alias" vs "request access" vs
-        # "retry later") based on their failure status. Everyone else has
-        # the banner cleared. Idempotent.
-        say("Stamping per-failure banners on pending tabs...")
-        try:
-            pending_results: dict = {}
-            if SCRAPE_RESULTS.exists():
-                try:
-                    data = json.loads(SCRAPE_RESULTS.read_text())
-                    pending_results = {o: s for o, s in data.get("results", {}).items()
-                                       if s != "ok" and o not in NON_OWNER_TABS}
-                except Exception:
-                    pending_results = {}
-            banner_counts = mark_no_access_tabs(sh, pending_results)
-            say(f"  banner marked on {banner_counts['marked']} tab(s), "
-                f"cleared on {banner_counts['cleared']} tab(s)")
-        except Exception as e:
-            say(f"  banner refresh failed (non-fatal): {e}")
-
+        # (Banners already refreshed right after Phase 2 — see above.)
         say("=== DONE ===")
         # Pipeline finished cleanly — clear the Phase-2 resume checkpoint
         # so the next run starts fresh instead of resuming.
