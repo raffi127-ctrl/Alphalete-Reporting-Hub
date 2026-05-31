@@ -483,6 +483,11 @@ WEEKLY_SUM_METRICS = {
     "SUM Total Apps", "SUM Doors Knocked",
     "SUM New INT", "SUM Upgrades", "SUM DTV", "SUM New Lines",
 }
+# Weekly cells that should factor MON–FRI ONLY — Saturday/Sunday hours run
+# completely different, which skews these per-rep weekly numbers (Raf, via
+# Megan 2026-05-31). Doors Knocked sum + the two knock-time averages drop the
+# weekend days; everything else still spans the full Mon–Sun week.
+WEEKLY_MON_FRI_ONLY = {"SUM Doors Knocked", "AVG 1st Knock", "AVG Last Knock"}
 WEEKLY_SALE_METRICS = ["New INT", "Upgrades", "DTV", "New Lines"]  # used for Total Apps roll-up
 
 
@@ -532,8 +537,13 @@ def write_weekly_formulas(ws, layout: Layout) -> int:
                 formula = f"=SUM({','.join(cells)})"
             else:
                 perday = WEEKLY_TO_PERDAY[weekly_canonical]
+                # Mon=0 … Sun=6. Some weekly cells exclude the weekend (Raf:
+                # weekend hours skew the average / total).
+                wds = sorted(layout.day_cols.keys())
+                if weekly_canonical in WEEKLY_MON_FRI_ONLY:
+                    wds = [wd for wd in wds if wd <= 4]   # Mon–Fri only
                 cells = []
-                for wd in sorted(layout.day_cols.keys()):
+                for wd in wds:
                     c = layout.day_cols[wd].get(perday)
                     if c:
                         cells.append(f"{_col_letter(c)}{r}")
