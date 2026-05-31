@@ -7,43 +7,65 @@ purpose-built view:
   DropshipV_2 / SARAPLUSSALESSUMMARYBYDAY / RetailNLOrgSalesBoard
   .../2eaaea0a-8456-44d9-8852-edd8034e4ee7/RetailNLOrgSalesBoard
 
-The named view is PRE-SCOPED on Tableau: Retail NL ICDs only, Wireless
-Type = Phone, and TN Type excludes "upgrade" (upgrades don't count). We
-just pin the week via Min/Max Date URL params — the same .csv endpoint
-opt_nds already uses for SARAPLUSSALESSUMMARYBYDAY (it honors the params,
-unlike NDSDailyTracker).
+RetailNLOrgSalesBoard is a Tableau CUSTOM (saved) view — the .csv export
+endpoint can't address a custom view by name (it 404s; it only serves the
+base worksheet, which would drop the view's exclude-upgrade / Phone
+scoping). So we navigate patchright to the FULL custom-view URL and scrape
+its "Download → Data → View Data" grid (the path the recipe anticipated
+for SARA). The view is relative to the current week, so there's no date to
+set — the scrape returns this week's days.
+
+Confirmed live 2026-05-31 — the View-Data grid columns are:
+  Owner & Office | ICD Owner Name | Measure Names | Order Date | Measure
+  Values   (tab-delimited, UTF-8; metrics: Wireless Lines, AIA, Internet,
+  DTV, ATV). 'Download → Data' is disabled until a worksheet is active, so
+  the scrape clicks into the viz first (activate_xy).
 
 The existing `tableau_http.parse_sara_plus_byday` SUMS across days to a
-week-to-date total. The ORG board fills each weekday column separately,
-so we need PER-DAY granularity — `parse_sara_byday_perday` keeps the
-Order Date dimension: {owner_norm: {metric: {date: value}}}.
-
-⚠ The exact "Order Date" cell format + that "Internet"/"Wireless Lines"
-are the literal Measure Names on THIS view still need a live-pull
-confirm (the column NAMES are reused from the generic SARA byday view,
-2026-05-21: ICD Owner Name | Measure Names | Order Date | Owner & Office
-| Measure Values). Date parsing below is format-tolerant so a live pull
-in m/d/Y, ISO, or 'May 26, 2026' all map correctly.
+week-to-date total. The ORG board fills each weekday column separately, so
+`parse_sara_byday_perday` keeps the Order Date dimension:
+{owner_norm: {metric: {date: value}}}.
 """
 from __future__ import annotations
 
+import csv
 import datetime as dt
+import io
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from automations.alphalete_org_report import tableau_http
-from automations.alphalete_org_report.opt_nds import (
-    _current_target_week_end,
-    _target_week_date_range,
-)
 
-# Purpose-built view (named view under the SARA-by-day workbook).
-SARA_WORKBOOK = "DropshipV_2"
-RETAIL_NL_VIEW = "RetailNLOrgSalesBoard"
+# Full custom-view URL + the click point that activates the worksheet so
+# Download → Data enables (multi-worksheet dashboard).
+RETAIL_NL_VIEW_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/DropshipV_2/"
+    "SARAPLUSSALESSUMMARYBYDAY/2eaaea0a-8456-44d9-8852-edd8034e4ee7/"
+    "RetailNLOrgSalesBoard")
+ACTIVATE_XY = (0.5, 0.5)
 
 # Measure Names → which ORG-board section the metric feeds.
 METRIC_WIRELESS_LINES = "Wireless Lines"   # → Retail NL
 METRIC_INTERNET = "Internet"               # → Retail Internet
+
+
+def _read_rows(path: Path) -> List[List[str]]:
+    """Read a scraped View-Data file (tab-delimited UTF-8) OR a comma CSV
+    (offline test fixtures). Sniffs the delimiter off the header line."""
+    if not path.exists() or path.stat().st_size == 0:
+        return []
+    data = path.read_bytes()
+    for enc in ("utf-8-sig", "utf-8", "utf-16", "iso-8859-1"):
+        try:
+            text = data.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        text = data.decode("utf-8", errors="replace")
+    first = text.splitlines()[0] if text.splitlines() else ""
+    delim = "\t" if "\t" in first else ","
+    return list(csv.reader(io.StringIO(text), delimiter=delim))
 
 
 def _parse_order_date(raw: str) -> Optional[dt.date]:
@@ -82,7 +104,7 @@ def parse_sara_byday_perday(
     Columns are found by header label, never by position
     ([[feedback_no_hardcoded_columns]]).
     """
-    rows = tableau_http.parse_csv(path)
+    rows = _read_rows(path)
     if not rows:
         return {}
     header = rows[0]
@@ -121,22 +143,20 @@ def parse_sara_byday_perday(
 
 def pull_retail_nl_byday(
     out_dir: Path,
+    page,
     today: Optional[dt.date] = None,
-    session=None,
     logfn=print,
 ) -> Path:
-    """Download the RetailNLOrgSalesBoard view (week-pinned) to a CSV and
-    return its path. Reuses the same HTTP .csv endpoint + week date params
-    opt_nds uses for SARA by-day. Caller may pass a requests.Session to
-    reuse auth across pulls."""
+    """Scrape the RetailNLOrgSalesBoard custom view's View-Data grid to a
+    tab-delimited file and return its path. `page` is a live patchright
+    tableau_session() Page (the view is relative to the current week — no
+    date to set)."""
+    from automations.shared.tableau_patchright import scrape_view_data_patchright
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "org_sales_board_retail_nl_byday.csv"
-    params = _target_week_date_range(today)
-    end = _current_target_week_end(today)
-    logfn(f"  SARA Retail NL pull → week {params['Min Date']}..{params['Max Date']} "
-          f"(WE {end.isoformat()})")
-    tableau_http.download_view_csv(
-        SARA_WORKBOOK, RETAIL_NL_VIEW, out_path,
-        session=session, params=params)
+    logfn("  scraping Retail NL custom view (Download → Data)…")
+    scrape_view_data_patchright(
+        RETAIL_NL_VIEW_URL, out_path, page=page, verbose=False,
+        activate_xy=ACTIVATE_XY)
     logfn(f"  saved {out_path}")
     return out_path

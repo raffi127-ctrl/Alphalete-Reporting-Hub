@@ -20,15 +20,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional
 
-# Pull methods
-HTTP = "http"        # tableau_http.download_view_csv (.csv endpoint)
-XTAB = "crosstab"    # download_crosstab_patchright / scrape_view_data_patchright
+# Pull methods. The purpose-built Org-board views are Tableau CUSTOM (saved)
+# views — the .csv endpoint can't address them by name (404), so they're
+# pulled by navigating patchright to the full custom-view URL and scraping
+# Download → Data (View Data). Confirmed for Retail NL 2026-05-31.
+SCRAPE = "scrape"    # scrape_view_data_patchright(full custom-view URL)
+XTAB = "crosstab"    # download_crosstab_patchright (named worksheet)
 MANUAL = "manual"    # hand-keyed screenshot / emailed PDF
 
 # Date modes
-WEEK_RANGE = "http_week_range"     # Min/Max Date URL params (Mon..Sun)
-WEEK_ENDING = "week_ending_param"  # 'Sale Date Week Ending (mon-sun)' param
 RELATIVE = "relative_this_week"    # view is pinned to This Week; nothing to set
+WEEK_ENDING = "week_ending_param"  # view exposes a Week Ending dropdown
 MANUAL_DATE = "manual"
 
 
@@ -54,47 +56,48 @@ class Source:
 DAILY_SOURCES: List[Source] = [
     Source(
         label="Retail NL", metric="Wireless Lines",
-        method=HTTP, date_mode=WEEK_RANGE,
+        method=SCRAPE, date_mode=RELATIVE,
         workbook="DropshipV_2", view="RetailNLOrgSalesBoard",
         shared_key="sara_retail", column_verified=True,
-        notes="Pre-scoped: Retail NL ICDs, Wireless Type=Phone, excl upgrade."),
+        notes="VERIFIED live 2026-05-31. Scrape View Data; cols ICD Owner "
+              "Name|Measure Names|Order Date|Measure Values. Wireless Lines "
+              "metric. View is relative to this week."),
     Source(
         label="Retail Internet", metric="Internet",
-        method=HTTP, date_mode=WEEK_RANGE,
+        method=SCRAPE, date_mode=RELATIVE,
         workbook="DropshipV_2", view="RetailNLOrgSalesBoard",
         shared_key="sara_retail", column_verified=True,
-        notes="Same SARA pass as Retail NL; read the Internet measure."),
+        notes="Same SARA scrape as Retail NL; read the Internet measure."),
     Source(
         label="ATT Fiber Team", metric="Total",
-        method=HTTP, date_mode=WEEK_ENDING,
+        method=SCRAPE, date_mode=WEEK_ENDING,
         workbook="ATTTRACKER2_1-D2D", view="FiberTeamnovoice",
         shared_key="fiber",
         notes="Per-ICD Total/day = AIR+New Internet+Upgrade Internet+Video+"
-              "Wireless (Voice excluded — view pre-drops it). Confirm per-day "
-              "columns exist on this named view."),
+              "Wireless (Voice excluded). Custom view — scrape View Data; "
+              "confirm per-day columns live."),
     Source(
         label="ATT NDS Team", metric="Wireless",
-        method=HTTP, date_mode=RELATIVE,
+        method=SCRAPE, date_mode=RELATIVE,
         workbook="NDS-SNRES-ATT-OOFWorkbook", view="Wirelessthisweek",
-        worksheet="Sales By ICD (Weekly View)", shared_key="nds",
-        notes="Per-ICD Wireless Total/weekday. opt_nds's existing weekly "
-              "worksheet HAS per-weekday cols (Mon-Fri+); confirm this named "
-              "view exports via HTTP .csv (else fall back to XTAB)."),
+        shared_key="nds",
+        notes="Per-ICD Wireless Total/weekday. Custom view — scrape View "
+              "Data; confirm per-day columns live."),
     Source(
         label="B2B", metric="count",
-        method=XTAB, date_mode=RELATIVE,
+        method=SCRAPE, date_mode=RELATIVE,
         workbook="ATTTRACKER-B2B", view="LuissCaptainship",
-        worksheet="Sales By ICD - This Week", shared_key="b2b",
+        shared_key="b2b",
         notes="Per-ICD count/weekday. Excludes Wireless Tablets/Wearables/"
-              "Upgrades. opt_b2b uses crosstab UI for this workbook."),
+              "Upgrades. Custom view — scrape; confirm columns live."),
     Source(
         label="BOX", metric="count",
-        method=XTAB, date_mode=RELATIVE,
+        method=SCRAPE, date_mode=RELATIVE,
         workbook="B2BBOXEnergy", view="B2BBOXEnergyDailyTracker",
-        worksheet="Box Daily Tracker", shared_key="box",
+        shared_key="box",
         notes="Per-ICD count/weekday (ICD Owner & Office x day -> Total "
               "general). Owner names carry '|company, Inc.|' suffix -> strip+"
-              "alias. Same tracker as BOX OPT (opt_box) — reuse session."),
+              "alias. Custom view — scrape; confirm columns live."),
     Source(
         label="Retail JE", metric="Closed Won",
         method=MANUAL, date_mode=MANUAL_DATE, column_verified=True,
@@ -124,16 +127,18 @@ def shared_groups() -> dict[str, List[Source]]:
 def run_order() -> List[List[Source]]:
     """Fastest pull order, grouped into stages ([[feedback_report_runtime]]):
 
-      Stage 1 — HTTP pulls (cheap, ~1-2s, can run concurrently on a shared
-                requests.Session whose cookies are lifted ONCE).
-      Stage 2 — XTAB pulls (expensive UI, ~60-90s) back-to-back in ONE
-                reused patchright browser session — no re-auth between them.
-      Stage 3 — MANUAL fills (no network) from hand-keyed input.
+      Stage 1 — Tableau SCRAPE pulls (custom views via View Data), all
+                back-to-back in ONE reused patchright session — login once,
+                no re-auth between pulls.
+      Stage 2 — MANUAL fills (no network) from hand-keyed input.
 
-    Within each stage, sections sharing a pull (shared_key) are pulled once.
-    The big wins are (a) HTTP-before-XTAB, (b) one auth/session reused for
-    all pulls, (c) one pull feeding multiple sections. Crosstabs dominate
-    wall-clock, so anything we can move to HTTP shortens the whole run.
+    Within each stage, sections sharing a pull (shared_key) are pulled once
+    (Retail NL + Retail Internet = one SARA scrape). The wins are (a) ONE
+    auth/session reused for every pull, (b) one pull feeding multiple
+    sections. (Future optimization: any view whose base worksheet + filter
+    URL-params reproduce the custom view could move to the ~1s HTTP .csv
+    endpoint — but the scrape is what's verified to respect the saved
+    filters today.)
     """
     def dedup(sources: List[Source]) -> List[Source]:
         seen, out = set(), []
@@ -144,7 +149,6 @@ def run_order() -> List[List[Source]]:
                 out.append(s)
         return out
 
-    http = dedup([s for s in DAILY_SOURCES if s.method == HTTP])
-    xtab = dedup([s for s in DAILY_SOURCES if s.method == XTAB])
+    scrape = dedup([s for s in DAILY_SOURCES if s.method == SCRAPE])
     manual = [s for s in DAILY_SOURCES if s.method == MANUAL]
-    return [http, xtab, manual]
+    return [scrape, manual]

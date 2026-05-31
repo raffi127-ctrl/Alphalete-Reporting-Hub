@@ -67,8 +67,7 @@ def _adapter_sara_retail(ctx: AdapterContext) -> PullDict:
         ctx.logfn(f"  [sara_retail] offline CSV {csv_path}")
     else:
         csv_path = sara_pull.pull_retail_nl_byday(
-            ctx.out_dir, today=ctx.today, session=ctx.http_session(),
-            logfn=ctx.logfn)
+            ctx.out_dir, ctx.page, today=ctx.today, logfn=ctx.logfn)
     return sara_pull.parse_sara_byday_perday(
         csv_path, metrics=[sara_pull.METRIC_WIRELESS_LINES,
                            sara_pull.METRIC_INTERNET])
@@ -120,11 +119,12 @@ def _run_daily_inner(ws, *, page, dry_run, today, from_csv, only,
                          from_csv=from_csv, page=page, logfn=logfn)
     summary = {"filled": [], "skipped": [], "manual": []}
 
-    stage_names = ["HTTP (fast)", "CROSSTAB (slow)", "MANUAL"]
+    stage_names = ["Tableau scrape (one session)", "MANUAL"]
     for stage_idx, group in enumerate(src.run_order()):
         if not group:
             continue
-        logfn(f"--- Stage {stage_idx + 1}: {stage_names[stage_idx]} ---")
+        name = stage_names[stage_idx] if stage_idx < len(stage_names) else "?"
+        logfn(f"--- Stage {stage_idx + 1}: {name} ---")
         for source in group:
             if only and source.label not in only:
                 continue
