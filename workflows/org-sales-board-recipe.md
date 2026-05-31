@@ -86,9 +86,9 @@ team (instead of the org-level filter); set the current week-ending date.
 
 | Captainship | Workbook | Products |
 |---|---|---|
-| Raf's, Wayne's, Starr's, Aaron's (all Fiber) | PRODUCT SALES SUMMARY 4WK (ATT Tracker 2.1 D2D V2) — Raf's view: `.../PRODUCTSALESSUMMARY4WK/ab2eca72-395f-48d5-a254-9d99739b88d4/AllproductsRafsteam`; others = same view, swap Captain's Bonus Team | ALL products **incl. Voice** (per-ICD Total). Filters: Captain's Bonus Team = that captain's team, Sale Date Week Ending = current WE, Product Type = (Todo). Raf's "Fiber - All Units" chart = **rows 238–375**. |
+| Raf's, Wayne's, Starr's, Aaron's (all Fiber) | PRODUCT SALES SUMMARY 4WK (ATT Tracker 2.1 D2D V2) — **dedicated `Allproducts<Captain>team` view each**: Raf `.../PRODUCTSALESSUMMARY4WK/ab2eca72-395f-48d5-a254-9d99739b88d4/AllproductsRafsteam`, Wayne `.../PRODUCTSALESSUMMARY4WK/70f6a2a1-af9e-409b-9e9c-ac3ac20a85ab/AllproductsWaynesteam`, Starr `.../PRODUCTSALESSUMMARY4WK/c29a4154-c77c-4416-8e06-379e7b431b60/AllproductsStarsteam`, Aron `.../PRODUCTSALESSUMMARY4WK/24a8fb79-eb02-4cf1-9a25-d2a6b0f3d5b2/AllproductsAronsteam` | ALL products **incl. Voice** (per-ICD Total), current WE. Raf's chart = rows 238–375; Wayne's = rows ~597–622+. |
 | Carlos's, Eveliz's | B2B 1-PAGER V3 (ATT TRACKER - B2B) — **dedicated per-team views** (no filter-setting): Carlos `.../D2D1-PAGERV3/32440800-0a5a-4f21-be33-f807ba5930a7/CarlosTeam`, Eveliz `.../D2D1-PAGERV3/48735d6e-cf6a-48fa-8d24-6f790d2ba3b7/EvelizsTeam` | B2B (Sales By ICD – This Week, current week). Rollover adds the completed week's row to the hidden week-log underneath each Monday. |
-| Khalil's, Colten's | NDS Product Sales Summary (NDS-SN workbook) | ALL units |
+| Khalil's, Colten's | NDS-SN (RES-ATT-OOF) Workbook / Product Sales Summary (Rep) — **dedicated per-captain views**: Khalil `.../NDS-SNRES-ATT-OOFWorkbook/ProductSalesSummaryRep/7f7d9a86-425b-438a-8838-ffb1d16cde63/KHALILSTEAM`, Colten `.../NDS-SNRES-ATT-OOFWorkbook/ProductSalesSummaryRep/f6e61d86-e503-4c7d-9230-56b85048f402/COLTENSTEAM` | per-ICD **Total** per weekday, **ALL products** (NOT just Wireless like the NDS *daily* section), filters: captain's Team / all products / **This Week** (relative). Khalil ICDs: Khalil Mansour, Mohammed Altom, Juan Lucio, Isaiah Revelle, Ayleen Gonzalez, Zaid Arabiyat. |
 
 **Each captainship MIRRORS the org-level structure** (confirmed on Carlos, rows
 377–406): a daily per-ICD chart (with hidden week-log) → a **formula-driven**
@@ -110,8 +110,11 @@ The log is normally hidden on the sheet.
 Process per captainship (from transcript):
 - **Sort by name (col B) first** to line up with the fixed list, fill, then
   **sort by total** after.
-- **Movers:** people leave/join (e.g. "All In" removed from Raf's); add new
-  people **in the middle** (insert row, copy a neighbor's formulas, fix name).
+- **Roster is TABLEAU-DRIVEN (captainships only):** if a **new ICD appears
+  under the captain's filter, ADD them** to the chart (insert a row in the
+  middle, copy a neighbor's formulas, set the name) and fill. This is the
+  OPPOSITE of the daily sections (which are sheet-driven, fixed list, 0 if
+  absent). Also remove people who leave a captainship (e.g. "All In" off Raf's).
 - **Nicknames vs full names** → ICD aliases (Tony Chavez = Jose Antonio Chavez,
   Trail Mitchell = Lamar Mitchell, etc.).
 - Exact per-captainship view URLs come from Megan at build time (same workbooks
