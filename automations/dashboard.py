@@ -2338,12 +2338,40 @@ def _hub_log_run_end(run_id: str, status: str) -> None:
         cell = ws.find(str(run_id))
         if not cell:
             return
-        # Status is column 8, Ended At is column 9.
+        # Status is column 8, Ended At is column 9. Write the timestamp RAW
+        # so Sheets stores the literal ISO string instead of auto-parsing it
+        # into its own date format (which breaks fromisoformat on read; see
+        # _parse_hub_ts).
         ws.update_cell(cell.row, 8, status)
-        ws.update_cell(cell.row, 9, dt.datetime.now().isoformat(timespec="seconds"))
+        ws.update(
+            [[dt.datetime.now().isoformat(timespec="seconds")]],
+            f"I{cell.row}", value_input_option="RAW")
         _hub_activity_rows.clear()
     except Exception as ex:
         _log_hub_sync_error("hub_log_run_end", ex)
+
+
+def _parse_hub_ts(raw) -> dt.datetime | None:
+    """Parse a Hub Activity timestamp tolerantly. We write ISO 8601, but
+    Google Sheets auto-parses the cell and re-renders it WITHOUT the 'T' and
+    without a zero-padded hour (e.g. '2026-05-31 9:55:19'), which
+    dt.fromisoformat rejects. That silently dropped finished rows from the
+    cross-machine 'ran today' view — a successful run on a teammate's Mac
+    never showed done (Eve's 9 Daily Metrics, 2026-05-31). Accept both."""
+    s = str(raw or "").strip()
+    if not s:
+        return None
+    try:
+        return dt.datetime.fromisoformat(s)
+    except ValueError:
+        pass
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S",
+                "%Y-%m-%d %I:%M:%S %p", "%m/%d/%Y %H:%M:%S"):
+        try:
+            return dt.datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+    return None
 
 
 def _hub_active_runs() -> list[dict]:
@@ -2355,9 +2383,8 @@ def _hub_active_runs() -> list[dict]:
             continue
         if r.get("Ended At"):
             continue
-        try:
-            started = dt.datetime.fromisoformat(str(r.get("Started At", "")))
-        except Exception:
+        started = _parse_hub_ts(r.get("Started At"))
+        if started is None:
             continue
         if started < cutoff:
             continue
@@ -2383,12 +2410,8 @@ def _hub_recent_runs(days: int = 14) -> list[dict]:
         status = str(r.get("Status", "")).lower()
         if status not in ("success", "failed", "stopped"):
             continue
-        ts_raw = r.get("Ended At") or r.get("Started At") or ""
-        try:
-            ts = dt.datetime.fromisoformat(str(ts_raw))
-        except Exception:
-            continue
-        if ts < cutoff:
+        ts = _parse_hub_ts(r.get("Ended At") or r.get("Started At"))
+        if ts is None or ts < cutoff:
             continue
         out.append({
             "ts": ts.isoformat(timespec="seconds"),
