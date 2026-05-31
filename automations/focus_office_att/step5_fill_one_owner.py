@@ -1296,6 +1296,41 @@ def write_office_totals_row(ws, layout: Layout) -> None:
         ws.spreadsheet.batch_update({"requests": border_requests})
 
 
+def apply_summary_number_formats(ws) -> bool:
+    """Force the OFFICE-TOTALS summary block's number formats, label-anchored:
+    TOTAL REPS IN FIELD / TOTAL REPS SOLD / REPS ROLLED 0 = whole numbers,
+    % ON BOARD = the only percent. Idempotent + scrape-free, so it can fix
+    tabs whose cells inherited a stray PERCENT format (7 -> '700%') without a
+    full design pass. Returns True if any summary row was formatted."""
+    NUM_FMT = {"type": "NUMBER", "pattern": "0"}
+    PCT_FMT = {"type": "PERCENT", "pattern": "0%"}
+    LABEL_FMT = {
+        "TOTAL REPS IN FIELD": NUM_FMT,
+        "TOTAL REPS SOLD": NUM_FMT,
+        "REPS ROLLED 0": NUM_FMT,
+        "% ON BOARD": PCT_FMT,
+    }
+    FIRST_DATA_COL = 3   # col C (weekly aggregate); day TA cols are further right
+    LAST_DATA_COL = 96   # CR
+    col_b = ws.col_values(2)
+    requests = []
+    for i, v in enumerate(col_b, start=1):
+        label = v.strip().upper() if isinstance(v, str) else ""
+        fmt = LABEL_FMT.get(label)
+        if not fmt:
+            continue
+        requests.append({"repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": i - 1, "endRowIndex": i,
+                      "startColumnIndex": FIRST_DATA_COL - 1, "endColumnIndex": LAST_DATA_COL},
+            "cell": {"userEnteredFormat": {"numberFormat": fmt}},
+            "fields": "userEnteredFormat.numberFormat",
+        }})
+    if not requests:
+        return False
+    ws.spreadsheet.batch_update({"requests": requests})
+    return True
+
+
 def write_office_summary_block(ws, layout: Layout) -> None:
     """Append 4 office-level metric rows below OFFICE TOTALS. Per Raf
     Loom 2026-05-15:

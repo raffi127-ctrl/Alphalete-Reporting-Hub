@@ -225,15 +225,15 @@ def _banner_text_for(status: str) -> str:
     shouldn't have to decode raw status strings like 'exception:
     TimeoutError:...'; the log has those for debugging."""
     s = (status or "").lower()
-    # An explicit impersonate denial = definitely no access.
-    if "no ov access" in s or "impersonate denied" in s:
+    # OV's "Office Access" table only lists offices the current login HAS
+    # access to. If a name isn't in the table, the user doesn't have
+    # access — confirmed by Megan 2026-05-31 (Melik El Jaiez, Salik Mallick
+    # are genuine access gaps). Same banner as an explicit impersonate
+    # denial; the fix is the same (request OV access). The "all tabs showed
+    # this" complaint was a stale-banner bug (Phase-3 failure skipped the
+    # clear), now fixed — not a wording problem.
+    if "name not found" in s or "no ov access" in s or "impersonate denied" in s:
         return "❌ NO OWNERVILLE ACCESS — request access"
-    # "name not found" is AMBIGUOUS: the owner may genuinely lack access, OR
-    # (often) their tab name just doesn't match their ownerville spelling and
-    # needs an alias. Don't assert "NO ACCESS" — Megan flagged that reps who
-    # clearly HAVE access were shown it (2026-05-31). Name the real next step.
-    if "name not found" in s:
-        return "❌ NOT FOUND IN OWNERVILLE — check name/alias (or request access)"
     if "access request pending" in s or "request sent" in s:
         return "⏳ OWNERVILLE ACCESS REQUEST PENDING — waiting on approval"
     if "no impersonate button" in s or "office may be disabled" in s:
