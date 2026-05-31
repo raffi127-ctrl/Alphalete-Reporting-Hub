@@ -35,6 +35,9 @@ These auto-derive from the daily sections; just keep the formulas intact + verif
 
 ## Fill rules (all sections)
 - The **sheet's ICD list drives the rows** — fill a value for every listed ICD.
+  Never transcribe the source's name list (it can be stale/incomplete — e.g. the
+  Frontier email predates ICDs added to the sheet since). Go down the SHEET's
+  current ICDs, look each up in the source, enter their number (0 if absent).
 - An ICD with **no data** in the pull → enter **0** (never leave blank). e.g.
   Ronald Dawson absent from the pull = 0 for that day.
 - Cross-check each section: the filled day total should match the source's total.
@@ -50,10 +53,10 @@ These auto-derive from the daily sections; just keep the formulas intact + verif
 | **Retail Internet** (bottom, rows ~177–186) | **SAME pull as Retail NL** (one SARA PLUS pass) | read the **Internet** metric row (vs Wireless Lines for Retail NL); same 3 ICDs. Note a static-looking **"Org Head"** column on the right (Carlos/Raf) — confirm manual vs derived. |
 | **ATT Fiber Team** (rows 92–107) | Tableau purpose-built view **"Fiber Team no voice"** (ATT Tracker 2.1 D2D V2 / PRODUCT SALES SUMMARY 4WK): `.../ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK/ae3a6f98-e68f-4c83-9620-50ea60d6c61a/FiberTeamnovoice` | per-ICD **Total** per weekday = AIR+New Internet+Upgrade Internet+Video+Wireless (**Voice excluded** — view pre-drops it; verify Product Type = all-except-Voice). Date filter = **Sale Date Week Ending** dropdown (not a min/max range). Owners = the Fiber list on the sheet. |
 | **Retail JE** (rows 107–114) | **manually-sent screenshot** | **"Closed Won"** per Regional Office (SCI_TX_CinthyaReyes 26, SCI_TX_DavidMartinez 9, SCI_TX_TJGoodwin 1). NOT pullable — **hand-keyed**. ICDs: David Martinez, TJ Goodwin, Cinthya Reyes, Magdalena Alfaro. ⚠ The automation must still **freeze/save Retail JE's totals into the leaderboard during the Monday rollover** (don't skip the manual section) so its weekly numbers persist. |
-| **ATT NDS Team** | **NDS Product Sales Summary** (different workbook — NDS campaign) | filter **Wireless** products (wireless = NDS new lines) |
-| **B2B** | Tableau **V2V page** workbook | per owner/day |
-| **BOX** | **Box daily tracker** | per owner/day |
-| **Frontier** | **emailed Verizon PDF** ("Taylor Sales Frontier Events") | look up person (e.g. Abel) → Monday sales. PDF parse — cf. existing Frontier OPT report |
+| **ATT NDS Team** (rows 121–137) | Tableau purpose-built view **"Wireless this week"** (NDS-SN (RES-ATT-OOF) Workbook / Product Sales Summary (Rep)): `.../NDS-SNRES-ATT-OOFWorkbook/ProductSalesSummaryRep/c51c9e8b-474e-4747-aa39-3bc5bd4545b5/Wirelessthisweek` | per-ICD **Wireless Total** per weekday (wireless = NDS new lines). Filters: Product Type=**WIRELESS**, **Sales Week="This Week"** (relative — no date to set). ICDs: Colten Wright, Jairo Ruiz, Joseph Delgado, Drew Tepper, Khalil Mansour, George Delgado, Selena Powers, Isaiah Revelle, Carl Foss. |
+| **B2B** (rows 138–145) | Tableau **B2B 1-PAGER V3** (ATT TRACKER - B2B): `.../ATTTRACKER-B2B/D2D1-PAGERV3/e52b4954-dc0b-4f2a-a588-d218942f23a0/LuissCaptainship` | per-ICD count per weekday (Sales By ICD – This Week); **always current-week** (relative, no date to set). ⚠ View note: count **excludes Wireless Tablets / Wearables / Upgrades**. ICDs: Eveliz Wright, Kevin Driggs, Carlos Hidalgo, Lizette Ruiz (+ Atef Choudhury, Valeria Tristan on the leaderboard). |
+| **BOX** (rows 151–158) | Tableau **BOX Daily Tracker** (B2B BOX / B2BBOXEnergyTracker): `.../B2BBOXEnergyTracker/BoxDailyTracker` | per-ICD count per weekday (ICD Owner & Office × day → Total general). ⚠ **Set the current week** on the date filter (not relative). Tableau owner names carry a `|company, Inc.|` suffix → strip + alias. ICDs: Roshan Amin Ahmad, Ryan Mcspadden, Zachary Hogue, Benjamin Burden. **Same tracker as the existing BOX OPT report — reuse that pull infra.** |
+| **Frontier** (rows 164–168, **Sun–Sat**) | **emailed Verizon PDF** ("Taylor Sales Frontier Events") | **MANUAL** — only **1 ICD (Abel Draper)**; hand-key his per-day sales from the PDF. Not worth automating now; Eve can add later (cf. existing Frontier OPT PDF parser). ⚠ Rollover must still **freeze/save Frontier's totals into the leaderboard each Monday** (like Retail JE). |
 
 ## ALPHALETE ORG leaderboard (rows 24+) — auto-derives from the daily sections
 Don't pull this separately — it references the daily sections we fill:
