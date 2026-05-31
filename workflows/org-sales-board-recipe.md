@@ -5,6 +5,12 @@ Week runs **Mon–Sun** (Frontier & Verizon: Sun–Sat). Filled **day by day** �
 day adds that weekday's numbers; a new week starts by **clearing** the prior data.
 Backlog: "Org Sales Board" (In Progress / Megan). Daily runner = Eve.
 
+## Fill rules (all sections)
+- The **sheet's ICD list drives the rows** — fill a value for every listed ICD.
+- An ICD with **no data** in the pull → enter **0** (never leave blank). e.g.
+  Ronald Dawson absent from the pull = 0 for that day.
+- Cross-check each section: the filled day total should match the source's total.
+
 ## Sections + their data sources
 
 | Section | Source | Metric / notes |
