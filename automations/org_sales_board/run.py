@@ -115,51 +115,16 @@ def clear_product_summary(ws, *, dry_run=False, logfn=print):
     return ranges
 
 
-def run_retail_nl(ws, *, dry_run=True, today=None, from_csv=None,
-                  out_dir=OUT_DIR, logfn=print):
-    """Fill the Retail NL + Retail Internet daily sections from ONE SARA
-    PLUS pull (Wireless Lines → Retail NL, Internet → Retail Internet).
-
-    `from_csv` skips the live Tableau pull and parses a saved by-day CSV
-    instead — used to validate the fill engine offline (no auth, no
-    writes). Otherwise pulls the week-pinned RetailNLOrgSalesBoard view.
-    Both sections are SHEET-DRIVEN (fill every listed ICD, 0 if absent).
-    """
-    # Local imports so `clear-summary` / `--help` don't drag in patchright.
-    from automations.org_sales_board import fill_section as fs
-    from automations.org_sales_board import sara_pull
-
-    if from_csv:
-        csv_path = Path(from_csv)
-        logfn(f"  reading SARA by-day from {csv_path} (offline, no pull)")
-    else:
-        csv_path = sara_pull.pull_retail_nl_byday(out_dir, today=today,
-                                                  logfn=logfn)
-    pull = sara_pull.parse_sara_byday_perday(
-        csv_path, metrics=[sara_pull.METRIC_WIRELESS_LINES,
-                           sara_pull.METRIC_INTERNET])
-    logfn(f"  parsed {len(pull)} owner(s) from the pull")
-
-    grid = ws.get_all_values()
-    raw_aliases = fs.load_aliases()
-    for spec in (fs.RETAIL_NL, fs.RETAIL_INTERNET):
-        plan = fs.plan_section_fill(grid, spec, pull, raw_aliases=raw_aliases)
-        fs.apply_plan(ws, plan, dry_run=dry_run, logfn=logfn)
-    return 0
-
-
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="org_sales_board")
-    ap.add_argument("--step", default="retail-nl",
-                    choices=["clear-summary", "retail-nl"])
+    ap.add_argument("--step", default="daily",
+                    choices=["clear-summary", "retail-nl", "daily"])
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--real", action="store_true",
                     help="Target the REAL tab instead of the sandbox copy.")
     ap.add_argument("--from-csv",
                     help="Parse a saved SARA by-day CSV instead of pulling "
                          "live (offline engine validation).")
-    ap.add_argument("--out-dir", default=str(OUT_DIR),
-                    help="Where to drop pulled CSVs (default: output/).")
     args = ap.parse_args(argv)
 
     tab = PROD_TAB if args.real else SANDBOX_TAB
@@ -168,9 +133,15 @@ def main(argv=None) -> int:
     ws = open_by_key(SHEET_ID).worksheet(tab)
     if args.step == "clear-summary":
         clear_product_summary(ws, dry_run=args.dry_run)
-    elif args.step == "retail-nl":
-        run_retail_nl(ws, dry_run=args.dry_run, from_csv=args.from_csv,
-                      out_dir=Path(args.out_dir))
+    else:
+        # Both 'daily' (all sections) and 'retail-nl' (just the SARA pair)
+        # run through the ONE patchright-session orchestrator — no CDP.
+        from automations.org_sales_board import orchestrate
+        only = (["Retail NL", "Retail Internet"]
+                if args.step == "retail-nl" else None)
+        from_csv = Path(args.from_csv) if args.from_csv else None
+        orchestrate.run_daily(ws, dry_run=args.dry_run, only=only,
+                              from_csv=from_csv)
     print("=== done ===")
     return 0
 
