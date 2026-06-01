@@ -1028,14 +1028,13 @@ AUTOMATED_REPORTS = [
                 "label": "Run This Week",
                 "icon": "▶",
                 "primary": True,
-                "help": "Fills the most recent WE Sunday column on Carlos's sheet",
-                "module": "automations.recruiting_report.run",
-                # --no-opt: Carlos's B2B owners aren't in the main ATT OPT views,
-                # so the shared opt_phase skips all 33 tabs + crashes the PB on a
-                # main-report tab (glitch 2026-06-01). Carlos's OPT is its own
-                # module (opt_phase_carlos, B2B views) and isn't wired in yet —
-                # run AppStream-only until it is. [[project_focus_report_build]]
-                "args_fn": lambda: ["--week", _last_completed_as_picker().isoformat(), "--no-opt"],
+                "help": "ONE run: recruiting pull + all 7 Carlos B2B OPT views.",
+                # Chains recruiting (--no-opt) + each opt_phase_carlos B2B view
+                # as its own subprocess (carlos_opt_all), so one bad view can't
+                # abort the rest. The shared ATT opt_phase is NOT used — Carlos's
+                # B2B owners aren't in those views (glitch 2026-06-01).
+                "module": "automations.recruiting_report.carlos_opt_all",
+                "args_fn": lambda: ["--week", _last_completed_as_picker().isoformat()],
             },
             {
                 "label": "Run a Specific Past Week",
