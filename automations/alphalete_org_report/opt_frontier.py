@@ -537,10 +537,21 @@ def fill_frontier_tab(ws: gspread.Worksheet, icd_name: str,
             city = s.get("city") or ""
             log.append(f"  [new-store] would add row {city} {key!r}")
 
+    def _row_any(*labels):
+        for lab in labels:
+            r = _find_row_by_label(grid, lab)
+            if r is not None:
+                return r
+        return None
+
     ts_row = _find_row_by_label(grid, "Total Sales Frontier")
     tsc_row = _find_row_by_label(grid, "Total Store Count Frontier")
     aps_row = _find_row_by_label(grid, "AVG Sales per Store")
-    hc_row = _find_row_by_label(grid, "Active Headcount on Scorecard")
+    # The Frontier tabs label the headcount row "Active Headcount on Tableau"
+    # (shared Org-sheet convention), even though the value is the Scoring HC
+    # parsed from the Quality Scorecard PDF — not Tableau. Older tabs may use
+    # "Active Headcount on Scorecard"; try both (mirrors opt_box._row_any).
+    hc_row = _row_any("Active Headcount on Scorecard", "Active Headcount on Tableau")
     qual_rows = {"gig": _find_row_by_label(grid, "GIG %"),
                  "vas": _find_row_by_label(grid, "VAS %"),
                  "abp": _find_row_by_label(grid, "ABP %")}
@@ -584,7 +595,7 @@ def fill_frontier_tab(ws: gspread.Worksheet, icd_name: str,
             if hc_row is not None:
                 a1 = gspread.utils.rowcol_to_a1(hc_row + 1, week_col + 1)
                 updates.append({"range": a1, "values": [[str(wk["active_hc"])]]})
-                log.append(f"    {a1} Active Headcount on Scorecard <- {wk['active_hc']}")
+                log.append(f"    {a1} Active Headcount <- {wk['active_hc']}")
 
         # --- GIG / VAS / ABP (Events PDF) ---
         wq = quality.get(week_label, {})
