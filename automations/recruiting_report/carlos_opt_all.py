@@ -118,10 +118,20 @@ def main() -> int:
         print(f"  {'✅' if rc == 0 else '❌'} {name}"
               + ("" if rc == 0 else f" (exit {rc})"), flush=True)
     if any_fail:
-        print("\n⚠️ One or more steps failed — see the logs above. The steps "
+        print("\n⚠️ One or more steps FAILED — see the logs above. The steps "
               "that succeeded DID fill; re-run a failed view by re-running "
               "this wrapper, or manually with `opt_phase_carlos --test-view "
               "<key>` then `--apply-view <key>`.", flush=True)
+    else:
+        # Authoritative success sentinel. The Hub classifies a run as success
+        # ONLY when it sees '=== done ===' (checked BEFORE the traceback scan),
+        # so a fully-successful run is no longer mis-filed as a glitch just
+        # because a recovered, non-fatal error printed a traceback earlier in
+        # the log (e.g. a per-ICD retry inside the recruiting pull). When a
+        # step truly fails we deliberately DON'T print this — the 'FAILED'
+        # line above keeps the run classified as failed so a real break still
+        # files a glitch.
+        print("\n=== done ===", flush=True)
     # Exit 0 even if a step failed: the run as a whole did useful work, and the
     # per-step summary flags what to re-run.
     return 0

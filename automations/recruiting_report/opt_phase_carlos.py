@@ -116,6 +116,15 @@ class ViewConfig:
     # yet for new offices) — Megan wants the cells filled with a clear
     # text marker rather than left blank.
     empty_placeholder: Optional[str] = None
+    # Tableau filter field that pins the view to a specific week. WITHOUT
+    # this the crosstab exports whatever week Tableau shows at download time
+    # — on a Monday that's the brand-new in-progress week, so churn comes
+    # back empty ('No Data In Tableau') and sales bleed in from the prior
+    # week (Eve 2026-06-01). Default matches the ATT workbooks' shared
+    # 'Sale Date Week Ending (mon-sun)' filter (same one opt_phase._week_url
+    # and focus_office_att use). Set to None for views with no week filter
+    # (e.g. cumulative Direct Deposit).
+    week_filter_field: Optional[str] = "Sale Date Week Ending (mon-sun)"
 
 
 # All 6 Carlos OPT-phase Tableau views, per
@@ -676,9 +685,14 @@ def apply_view_to_icd(view: ViewConfig, csv_path: Path, ws,
 # Download helper — connects to debug Chrome, navigates view, downloads CSV
 # ---------------------------------------------------------------------------
 def download_view_crosstab(view: ViewConfig, out_path: Path,
-                           verbose: bool = True) -> Path:
+                           verbose: bool = True, week=None) -> Path:
     """Open `view.url` in the debug-Chrome Tableau tab, click Download →
     Crosstab → pick the right sheet thumbnail → save CSV at `out_path`.
+
+    `week` (a date) pins the view to that WE Sunday via the view's
+    `week_filter_field` URL param, so the export is the completed week's
+    data — not whatever in-progress week Tableau happens to show at
+    download time.
 
     Reuses the pattern from focus_office_att/step7_download_tableau.py:
     Tableau viz lives in an iframe `[title="Data Visualization"]`; toolbar
@@ -703,13 +717,26 @@ def download_view_crosstab(view: ViewConfig, out_path: Path,
         # leave no evidence, which is how this glitch reached the Bug tab).
         download_btn = '[data-tb-test-id="viz-viewer-toolbar-button-download"]'
         viz = page.frame_locator('iframe[title="Data Visualization"]')
+        # Pin the view to the target week via its URL filter. Without this the
+        # export is whatever week Tableau shows at download time (the broken
+        # default). Skipped when the view has no week filter (week_filter_field
+        # is None) or no week was passed.
+        nav_url = view.url
+        if week is not None and view.week_filter_field:
+            from urllib.parse import quote
+            sep = "&" if "?" in nav_url else "?"
+            nav_url = (f"{nav_url}{sep}{quote(view.week_filter_field)}"
+                       f"={quote(str(week))}")
+            if verbose:
+                print(f"  → week-pinned to {week} via "
+                      f"'{view.week_filter_field}'", flush=True)
         last_err = None
         for attempt, timeout_ms in enumerate((30_000, 60_000), start=1):
             if verbose:
                 tag = f"  (attempt {attempt})" if attempt > 1 else ""
-                print(f"  → navigating Tableau tab to: {view.url}{tag}",
+                print(f"  → navigating Tableau tab to: {nav_url}{tag}",
                       flush=True)
-            page.goto(view.url, wait_until="domcontentloaded")
+            page.goto(nav_url, wait_until="domcontentloaded")
             viz = page.frame_locator('iframe[title="Data Visualization"]')
             if verbose:
                 print(f"  → waiting for viz Download button… "
@@ -919,8 +946,12 @@ def main() -> int:
     if args.test_view:
         view = next(v for v in VIEWS if v.key == args.test_view)
         out = DOWNLOAD_DIR / f"{view.key}.csv"
-        print(f"Test-downloading view '{view.key}'…")
-        download_view_crosstab(view, out)
+        # Pin the download to the SAME completed week the apply step targets
+        # (_current_we_sunday), so churn isn't empty and sales don't bleed in
+        # from the prior week. On a Monday this is the just-ended Sunday.
+        we = _current_we_sunday()
+        print(f"Test-downloading view '{view.key}' (week ending {we})…")
+        download_view_crosstab(view, out, week=we)
         print(f"\nDone. CSV: {out}")
         # Parse + show Adrian Sarabia's resolved values for this view as
         # a canary. If columns don't match, this is where we find out.
@@ -936,7 +967,26 @@ def main() -> int:
         print(f"  Rows: {len(by_owner)} ICDs + "
               f"{'grand total ✓' if grand_total else 'no grand total'}")
         canary = "adrian sarabia"
-        if canary in by_owner:
+        if view.key == "personal_production":
+            # Personal Production is a per-REP view (REPEXPANDED), so the
+            # owner-grouped `by_owner` is legitimately empty — the apply path
+            # parses by REP instead. Run the canary against the rep rows so
+            # the diagnostic reflects what we actually fill (and never prints
+            # a scary 'Canary not found / 0 ICDs / []' on a healthy view).
+            import csv as _csv
+            rep_idx = next((i for i, h in enumerate(headers)
+                            if h.strip().lower() == "rep"), 1)
+            with open(out, encoding="utf-16") as f:
+                rrows = list(_csv.reader(f, delimiter="\t"))
+            reps = {(r[rep_idx] or "").strip().lower()
+                    for r in rrows[1:] if len(r) > rep_idx and r[rep_idx].strip()}
+            print(f"  Per-rep view: {len(reps)} rep row(s)")
+            if canary in reps:
+                print(f"  Canary '{canary}' present as a rep ✓")
+            else:
+                print(f"  note: canary '{canary}' not among reps (may not have "
+                      f"sold this week) — first 5 reps: {sorted(reps)[:5]}")
+        elif canary in by_owner:
             values = values_for_icd(canary, by_owner, grand_total, view)
             print(f"\nAdrian Sarabia raw values from this view:")
             for row, val in sorted(values.items()):
