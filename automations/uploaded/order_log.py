@@ -33,6 +33,22 @@ WORKBOOK_NAME = "ATT Tracker 2.1 - D2D"
 TAB_NAME = "ORDER LOG"
 OWNER_NAME = "Rafael Hidalgo"
 
+# Saved Tableau Custom View that already has Owner Name, Product Type and
+# Captain's Bonus Teams v2 filtered correctly for the default owner. When the
+# run is for OWNER_NAME we navigate straight to this view's URL and only adjust
+# the date range; the manual filter steps stay as a fallback if the view can't
+# be loaded. A non-default --owner skips it, since the view is owner-specific.
+CUSTOM_VIEW_NAME = "Order Log - Rafael Hidalgo"
+# Direct URL to the Custom View on the ORDER LOG sheet (per-user, lives under
+# Rafael's account raffi127@gmail.com — the account the bot logs in as).
+# Navigating to it loads the view with its filters already applied, which is
+# simpler and more robust than driving the Manage Custom Views dialog.
+CUSTOM_VIEW_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER2_1-D2D/ORDERLOG/148bb0d6-3513-4fb1-9bf7-30a8ed2e166d/"
+    "OrderLog-RafaelHidalgo?:iid=1"
+)
+
 # ====================================================================
 #  Implementation — no changes needed below this line for normal use.
 # ====================================================================
@@ -41,7 +57,7 @@ import asyncio
 import re
 import tempfile
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import AsyncIterator, Optional
 
@@ -57,8 +73,11 @@ from patchright.async_api import (
 )
 
 
-# === Date range — last 1 month → today (calendar-month aware) =======
-END_DATE = date.today()
+# === Date range — last 1 month → yesterday (calendar-month aware) ===
+# End on yesterday, not today: the current day's orders are still landing /
+# syncing in Tableau, so a today-bound pull captures a partial, churning
+# last day (Eve 2026-05-31).
+END_DATE = date.today() - timedelta(days=1)
 START_DATE = END_DATE - relativedelta(months=1)
 
 
@@ -523,6 +542,64 @@ async def navigate_to_workbook(
 
 
 # ====================================================================
+#  Custom View (saved per-owner filter state)
+# ====================================================================
+
+async def apply_custom_view(page: Page, view_url: str, view_name: str) -> bool:
+    """Load the saved Custom View by navigating straight to its Tableau URL.
+
+    'Order Log - Rafael Hidalgo' is a per-user Custom View on the ORDER LOG
+    sheet under Rafael's account (raffi127@gmail.com — the account the bot logs
+    in as). Going directly to the view's URL loads it with its Owner Name /
+    Product Type / Captain's Bonus Teams v2 filters already applied — simpler
+    and more robust than driving the Manage Custom Views dialog (which didn't
+    even list the view). Returns True if the view loaded, False otherwise, in
+    which case the caller falls back to setting the filters manually."""
+    print(f"-> Loading Custom View {view_name!r} via URL")
+
+    # The current page (ORDER LOG sheet) and the custom-view URL share the same
+    # origin+path and differ only in the hash fragment — and a hash-only goto
+    # does NOT reload Tableau's single-page app. So navigate, then reload to
+    # force the SPA to actually load the custom-view route.
+    try:
+        await page.goto(view_url, wait_until="domcontentloaded")
+        await page.reload(wait_until="domcontentloaded")
+    except Exception as e:
+        print(f"   (navigation to the custom-view URL failed: {e} — "
+              "falling back)")
+        return False
+
+    # Wait for the viz to come up.
+    try:
+        await page.wait_for_selector(TABLEAU_VIZ_SELECTOR, timeout=45_000)
+    except Exception:
+        pass
+    viz = await _viz_scope(page)
+    await _wait_for_viz_ready(viz, page)
+    await page.wait_for_timeout(1500)
+
+    # Verify the custom view actually applied: the toolbar's "View:" label
+    # names the current view. If it still reads 'Original', the view didn't
+    # load — fall back rather than silently pull the wrong (unfiltered) data.
+    label = ""
+    try:
+        scope = await _resolve_toolbar_scope(page)
+        label = (await scope.locator(
+            '[data-tb-test-id="viz-viewer-toolbar-button-manage-customviews"]'
+        ).first.inner_text()).strip()
+        print(f"   toolbar view label: {label!r}")
+    except Exception:
+        pass
+    if re.search(r"\boriginal\b", label, re.IGNORECASE):
+        print("   (view label still 'Original' — custom view didn't load; "
+              "falling back to manual filters)")
+        return False
+
+    print(f"   loaded custom view {view_name!r}")
+    return True
+
+
+# ====================================================================
 #  Filter automation (Owner Name + Date Range)
 # ====================================================================
 
@@ -625,6 +702,13 @@ async def set_owner_name_filter(page: Page, owner_name: str) -> None:
 
     all_item = viz.locator(".FIItem.all-item").first
     await all_item.wait_for(state="visible", timeout=5000)
+    # Normalize to a clean slate before selecting the owner: SELECT (All) so
+    # every value is checked, THEN deselect (All) so nothing is. This clears
+    # whatever owner the shared dashboard loaded pre-selected — otherwise just
+    # "deselect (All) + add Rafael" ADDS Rafael to a pinned subset and leaks
+    # other offices' reps (Eve 2026-05-31). Each step no-ops when the row is
+    # already in the target state.
+    await _toggle_filter_row(page, all_item, "(All)", want_checked=True)
     await _toggle_filter_row(page, all_item, "(All)", want_checked=False)
 
     owner_row = viz.locator(
@@ -647,20 +731,26 @@ async def set_owner_name_filter(page: Page, owner_name: str) -> None:
 
 
 async def reset_team_filter_to_all(page: Page) -> None:
-    """Force the 'Captain's Bonus Teams' filter to (All).
+    """Force the 'Captain's Bonus Teams v2' filter to (All).
 
     The shared ORDER LOG dashboard can load with this filter pinned to a
     specific team (e.g. 'Starr's Team'), which excludes the requested
     owner's orders and leaves the data table empty — the Crosstab dialog
     then only offers the 'Last Refresh' caption sheet, so the export has no
     data (Eve/Megan 2026-05-30). Resetting to (All) makes the pull immune to
-    whatever the dashboard's saved filter state happens to be. Matched by a
-    title prefix so a wording tweak ('Team' vs 'Teams') still resolves."""
-    print("-> Resetting 'Captain's Bonus Teams' filter to (All)")
+    whatever the dashboard's saved filter state happens to be.
+
+    The dashboard carries a legacy 'Captain's Bonus Teams' AND the current
+    'Captain's Bonus Teams v2'; the bare 'Captain' prefix is ambiguous and can
+    grab the wrong (hidden) one, so the dropdown never opens and the reset
+    silently no-ops (Eve 2026-05-31). Pin the match to the 'v2' filter, retry
+    the open (it sits far right and can load partially off-screen), and read
+    back that (All) actually took so a stuck filter can't pass unnoticed."""
+    print("-> Resetting 'Captain's Bonus Teams v2' filter to (All)")
     viz = await _viz_scope(page)
 
     team_filter = viz.locator(
-        '.CategoricalFilter:has(h3.FilterTitle[title^="Captain"])'
+        '.CategoricalFilter:has(h3.FilterTitle[title^="Captain"][title*="v2"])'
     ).first
     try:
         await team_filter.wait_for(state="visible", timeout=15_000)
@@ -669,18 +759,38 @@ async def reset_team_filter_to_all(page: Page) -> None:
         return
 
     combobox = team_filter.locator('[role="combobox"]').first
-    # This filter sits far right on the dashboard and can be partially
-    # off-screen → plain click isn't actionable. Scroll in + force-click.
-    await combobox.scroll_into_view_if_needed()
-    await combobox.click(force=True, timeout=10_000)
-    await page.wait_for_timeout(800)
 
+    # The filter sits far right and can load partially off-screen, so a single
+    # force-click sometimes fails to open the dropdown — retry until the (All)
+    # row is actually visible.
     all_item = viz.locator(".FIItem.all-item").first
-    try:
-        await all_item.wait_for(state="visible", timeout=5000)
-        await _toggle_filter_row(page, all_item, "(All)", want_checked=True)
-    except Exception as e:
-        print(f"   (could not select (All) on the team filter: {e})")
+    opened = False
+    for attempt in (1, 2, 3):
+        await combobox.scroll_into_view_if_needed()
+        await combobox.click(force=True, timeout=10_000)
+        await page.wait_for_timeout(800)
+        try:
+            await all_item.wait_for(state="visible", timeout=5000)
+            opened = True
+            break
+        except PlaywrightTimeoutError:
+            print(f"   (dropdown didn't open on attempt {attempt} — retrying)")
+
+    if opened:
+        try:
+            await _toggle_filter_row(page, all_item, "(All)", want_checked=True)
+        except Exception as e:
+            print(f"   (could not select (All) on the team filter: {e})")
+        # Read back so a stuck filter can't pass silently.
+        state = await all_item.get_attribute("aria-checked")
+        if state == "true":
+            print("   verified: team filter '(All)' is selected")
+        else:
+            print(f"   WARNING: team filter '(All)' aria-checked={state!r} after "
+                  "reset — it may still be pinned to a subset")
+    else:
+        print("   WARNING: could not open the team filter dropdown after 3 tries "
+              "— it may still be pinned to a subset")
 
     # Commit + CLOSE the dropdown — otherwise the open overlay covers the
     # next filter's combobox. 'Show Apply button' filters expose an Apply
@@ -698,6 +808,62 @@ async def reset_team_filter_to_all(page: Page) -> None:
     if not applied:
         await page.keyboard.press("Escape")
         print("   closed team dropdown (apply-immediate)")
+
+    await page.wait_for_timeout(500)
+    await _wait_for_viz_ready(viz, page)
+    await page.wait_for_timeout(1000)
+
+
+async def reset_product_type_filter_to_all(page: Page) -> None:
+    """Force the 'Product Type' filter to (All).
+
+    The shared ORDER LOG dashboard loads with this filter pinned to a single
+    product (observed: 'NEW INTERNET'), so an export silently contains only
+    that product type even though the script applies no product filter
+    (Eve 2026-05-31). Resetting to (All) makes the pull immune to whatever the
+    dashboard's saved filter state happens to be. Matched by a title prefix so
+    'Product Type' vs 'Product Type (Broken Out)' both resolve."""
+    print("-> Resetting 'Product Type' filter to (All)")
+    viz = await _viz_scope(page)
+
+    product_filter = viz.locator(
+        '.CategoricalFilter:has(h3.FilterTitle[title^="Product Type"])'
+    ).first
+    try:
+        await product_filter.wait_for(state="visible", timeout=15_000)
+    except PlaywrightTimeoutError:
+        print("   (filter not found — skipping; dashboard layout may differ)")
+        return
+
+    combobox = product_filter.locator('[role="combobox"]').first
+    # Like the team filter, this one can sit partially off-screen → scroll in
+    # and force-click past Tableau's transparent click-capture.
+    await combobox.scroll_into_view_if_needed()
+    await combobox.click(force=True, timeout=10_000)
+    await page.wait_for_timeout(800)
+
+    all_item = viz.locator(".FIItem.all-item").first
+    try:
+        await all_item.wait_for(state="visible", timeout=5000)
+        await _toggle_filter_row(page, all_item, "(All)", want_checked=True)
+    except Exception as e:
+        print(f"   (could not select (All) on the product type filter: {e})")
+
+    # Commit + CLOSE the dropdown so its overlay doesn't cover the next widget.
+    applied = False
+    apply = product_filter.locator(
+        'button[title="Apply"]:not([disabled])'
+    ).first
+    try:
+        await apply.wait_for(state="visible", timeout=4000)
+        await apply.click()
+        applied = True
+        print("   clicked Apply on product type filter")
+    except PlaywrightTimeoutError:
+        pass
+    if not applied:
+        await page.keyboard.press("Escape")
+        print("   closed product type dropdown (apply-immediate)")
 
     await page.wait_for_timeout(500)
     await _wait_for_viz_ready(viz, page)
@@ -950,7 +1116,17 @@ def csv_to_xlsx(csv_path: Path, output_dir: Path) -> Path:
     _autosize_columns(ws, df)
     ws.freeze_panes = "A2"
 
-    wb.save(out_path)
+    # Resilient save: if today's file is still open in Excel, Windows locks it
+    # and wb.save() raises PermissionError. Fall back to a timestamped name so
+    # the run still produces a deliverable instead of crashing (Eve 2026-06-01).
+    try:
+        wb.save(out_path)
+    except PermissionError:
+        timestamp = datetime.now().strftime("%H%M%S")
+        out_path = output_dir / f"Order Log {date.today():%m-%d-%Y} {timestamp}.xlsx"
+        print(f"  (target .xlsx was locked — likely open in Excel; saving to "
+              f"{out_path.name} instead)")
+        wb.save(out_path)
     return out_path
 
 
@@ -975,10 +1151,27 @@ async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True) -> None
                 screenshot_dir=SCREENSHOT_DIR,
             )
 
-            # Owner Name first — proves the filter panel has rendered, so the
-            # team-filter reset below reliably finds its dropdown.
-            await set_owner_name_filter(tableau_page, owner_name)
-            await reset_team_filter_to_all(tableau_page)
+            # Prefer the saved per-owner Custom View: it already has Owner Name,
+            # Product Type and Captain's Bonus Teams v2 set correctly, so we
+            # only adjust dates. The view is owner-specific, so try it only for
+            # the default owner; any other --owner uses the manual filter path.
+            # If the view can't be loaded, fall back to driving the filters by
+            # hand (the original, self-contained path).
+            view_applied = False
+            if owner_name == OWNER_NAME:
+                view_applied = await apply_custom_view(
+                    tableau_page, CUSTOM_VIEW_URL, CUSTOM_VIEW_NAME
+                )
+
+            if not view_applied:
+                # Owner Name first — proves the filter panel has rendered, so
+                # the team-filter reset below reliably finds its dropdown.
+                await set_owner_name_filter(tableau_page, owner_name)
+                await reset_team_filter_to_all(tableau_page)
+                await reset_product_type_filter_to_all(tableau_page)
+
+            # Dates always get set last — the Custom View may bake in its own
+            # range, so we override regardless of which path ran above.
             await set_date_range(tableau_page, START_DATE, END_DATE)
 
             csv_path = await download_dashboard_csv(
