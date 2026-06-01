@@ -229,6 +229,18 @@ NDS_METRIC_LABELS = {
 }
 
 
+# Some NDS tabs label a metric's row differently than its `values` key. Most
+# notably the headcount row is "Active Headcount on Tableau" on tabs that
+# follow the B2B/Retail/Frontier layout, not "Active Selling Heads" (verified
+# 2026-06-01: Colten Wright / Drew Tepper - NDS both carry the former). The
+# writer tries each spelling in order (mirrors opt_box._row_any). Add an entry
+# here only when a tab's row LABEL differs — NOT when the row is simply absent
+# (e.g. ABP %, which most NDS tabs have no row for at all).
+NDS_ROW_LABEL_ALTERNATES = {
+    "Active Selling Heads": ["Active Selling Heads", "Active Headcount on Tableau"],
+}
+
+
 # ------------------------------------------------------------ parsers
 
 
@@ -1142,10 +1154,16 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
     if not values:
         return [f"[skip] {ws.title}: no metrics available for {owner_norm}"]
 
-    # Build batch update — only writes cells where we found a row
+    # Build batch update — only writes cells where we found a row. Some tabs
+    # label a row differently than its `values` key (see NDS_ROW_LABEL_
+    # ALTERNATES); try each known spelling before giving up.
     updates = []
     for label, val in values.items():
-        row = _find_row_by_label(grid, label)
+        row = None
+        for cand in NDS_ROW_LABEL_ALTERNATES.get(label, [label]):
+            row = _find_row_by_label(grid, cand)
+            if row is not None:
+                break
         if row is None:
             log.append(f"  [miss] {ws.title}: no row for {label!r}")
             continue
