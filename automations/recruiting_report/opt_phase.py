@@ -43,30 +43,38 @@ from automations.shared import sheet_flags as _sheet_flags
 
 WORKSPACE = Path(__file__).resolve().parent.parent.parent
 
-# ATT crosstab — AUTOMATION PULL view of ATT TRACKER 2.1 - D2D / D2D 1-PAGER V4.
+# ATT crosstab — D2D 1-PAGER V4. The "AUTOMATIONPULL" custom view was deleted
+# 2026-06-01 (caught on Eve's run); the BASE dashboard still holds the same
+# "ICD Summary - ATT (V2)" worksheet with current data, so we point at the base
+# view. (Recreate an AUTOMATIONPULL saved view + restore the GUID URL if a
+# non-default filter is ever needed.)
 ATT_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
-    "ATTTRACKER2_1-D2D/D2D1-PAGERV4/"
-    "05356558-3732-4a96-af9d-99ee56f98138/AUTOMATIONPULL"
+    "ATTTRACKER2_1-D2D/D2D1-PAGERV4"
 )
 ATT_SHEET = "ICD Summary - ATT (V2)"
 ATT_PATH = WORKSPACE / "output" / "opt_icd_summary_att.csv"
 
-# INT crosstab — AUTOMATION PULL view of D2D 1-PAGER V2 (Internet Only).
+# INT crosstab — D2D 1-PAGER V2 (Internet Only). AUTOMATIONPULL deleted
+# 2026-06-01 → base dashboard (same "ICD Summary - ATT (V2) (2)" worksheet).
 INT_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
-    "ATTTRACKER2_1-D2D/D2D1-PAGERV2InternetOnly/"
-    "9a35d92c-65c1-4d12-ba6c-ebc381e1d00c/AUTOMATIONPULL"
+    "ATTTRACKER2_1-D2D/D2D1-PAGERV2InternetOnly"
 )
 INT_SHEET = "ICD Summary - ATT (V2) (2)"
 INT_PATH = WORKSPACE / "output" / "opt_icd_summary_int.csv"
 
-# Product Sales crosstab — AUTOMATION PULL view of PRODUCT SALES SUMMARY 4WK.
-# Per-rep per-product per-day; used for each ICD's Personal Production.
+# Product Sales crosstab — PRODUCT SALES SUMMARY 4WK. Per-REP per-product
+# per-day for each ICD's Personal Production. The "AUTOMATIONPULL" view (deleted
+# 2026-06-01) had the Rep dimension EXPANDED; the base dashboard collapses reps
+# (ICD-level), which the parser can't use. Point instead at the existing
+# 'DailyRepBDreportpull' rep-level view (same workbook + "Sales By ICD (Weekly
+# View)" worksheet; already used by the daily-rep-breakdown report) — it yields
+# Owner | Rep | Product | Mon-Sun, current week. Verified parses 1112 reps.
 PRODUCT_SALES_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK/"
-    "b2da26b8-8971-4a45-9e42-bd04af46f0fa/AUTOMATIONPULL"
+    "f081e40f-dd21-4a09-8981-c7cce17b5381/DailyRepBDreportpull"
 )
 PRODUCT_SALES_SHEET = "Sales By ICD (Weekly View)"
 PRODUCT_SALES_PATH = WORKSPACE / "output" / "opt_personal_production.csv"
