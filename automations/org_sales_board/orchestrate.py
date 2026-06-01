@@ -73,13 +73,30 @@ def _adapter_sara_retail(ctx: AdapterContext) -> PullDict:
                            sara_pull.METRIC_INTERNET])
 
 
+def _make_section_adapter(spec_key: str):
+    """Build an adapter for a single-metric scraped section (Fiber/NDS/B2B)
+    off its ScrapeSpec. One scrape → engine shape via section_pull."""
+    def _adapter(ctx: AdapterContext) -> PullDict:
+        from automations.org_sales_board import section_pull
+        spec = section_pull.SPECS[spec_key]
+        today = ctx.today or dt.date.today()
+        if ctx.from_csv:
+            csv_path = ctx.from_csv
+            ctx.logfn(f"  [{spec_key}] offline CSV {csv_path}")
+        else:
+            csv_path = section_pull.pull_section_byday(
+                spec, ctx.out_dir, ctx.page, logfn=ctx.logfn)
+        return section_pull.parse_byday(spec, csv_path, today)
+    return _adapter
+
+
 # shared_key -> adapter. Unlisted keys are not yet implemented.
 ADAPTERS: Dict[str, Callable[[AdapterContext], PullDict]] = {
     "sara_retail": _adapter_sara_retail,
-    # "fiber":  pending live column confirm (FiberTeamnovoice)
-    # "nds":    pending live column confirm (Wirelessthisweek)
-    # "b2b":    pending live column confirm (LuissCaptainship, crosstab)
-    # "box":    pending live column confirm (BoxDailyTracker, crosstab)
+    "fiber": _make_section_adapter("fiber"),
+    "nds": _make_section_adapter("nds"),
+    "b2b": _make_section_adapter("b2b"),
+    "box": _make_section_adapter("box"),
 }
 
 

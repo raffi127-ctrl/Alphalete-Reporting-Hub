@@ -155,8 +155,14 @@ def pull_retail_nl_byday(
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "org_sales_board_retail_nl_byday.csv"
     logfn("  scraping Retail NL custom view (Download → Data)…")
+    # This is a SPARSE grid (only 3-5 owners). The default alternating
+    # incremental+jump scroll strategy SKIPS middle rows on sparse grids —
+    # which dropped entire owners (Akib/Boaktear, Ronald) 2026-05-31. The
+    # slow steady-scroll knobs capture every row ([[reference_tableau_*]]).
     scrape_view_data_patchright(
         RETAIL_NL_VIEW_URL, out_path, page=page, verbose=False,
-        activate_xy=ACTIVATE_XY)
+        activate_xy=ACTIVATE_XY,
+        scrape_kwargs={"jump_every": None, "scroll_step": 0.35,
+                       "scroll_wait_ms": 1800, "stale_max": 30})
     logfn(f"  saved {out_path}")
     return out_path
