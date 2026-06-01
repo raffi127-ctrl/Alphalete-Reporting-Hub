@@ -14,12 +14,17 @@ This wrapper chains the whole report:
        B2B 1-Pager, Cancel Rates, Activation, Churn, Penetration, Personal
        Production, Direct Deposit.
 
-Mirrors automations/alphalete_org_report/opt_all: each step is its OWN
-subprocess so one failing view can NEVER abort the rest, and a per-step summary
-flags what to re-run. CAPTAINSHIP=Carlos is set on every step so the shared
-recruiting_report module points at Carlos's sheet/mapping. The OPT views
-auto-target the current week internally, so only the recruiting step takes
---week.
+Each step is its OWN subprocess in its OWN PROCESS GROUP. The process-group
+isolation is critical on Windows: when a step's patchright/Chrome closes it can
+raise a console CTRL_BREAK that, without isolation, propagates to THIS parent
+and kills the chain right after the recruiting step "done" (glitch 2026-06-01,
+Eve's Windows run — the OPT views never ran). With CREATE_NEW_PROCESS_GROUP the
+signal stays inside the child. Every step is also wrapped in catch-everything +
+explicit markers so a stop point is always visible in the log.
+
+CAPTAINSHIP=Carlos is set on every step so the shared recruiting_report module
+points at Carlos's sheet/mapping. The OPT views auto-target the current week, so
+only the recruiting step takes --week.
 
 Usage (the Hub runs this; --week comes from the card's args_fn):
   python -m automations.recruiting_report.carlos_opt_all --week 2026-05-24
@@ -32,8 +37,6 @@ import os
 import subprocess
 import sys
 
-# Order matters only for readability — each runs independently. Keys must match
-# opt_phase_carlos.VIEWS.
 CARLOS_OPT_VIEWS = [
     ("B2B 1-Pager",        "d2d1"),
     ("Cancel Rates",       "cancel"),
@@ -44,16 +47,23 @@ CARLOS_OPT_VIEWS = [
     ("Direct Deposit",     "dd"),
 ]
 
+# Windows: give each step its own process group so a child's console
+# CTRL_BREAK (patchright/Chrome teardown) can't propagate up and kill us.
+_POPEN_KW = {}
+if os.name == "nt":
+    _POPEN_KW["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+
 
 def _step(name: str, cmd: list[str], env: dict | None = None) -> int:
-    """Run one step as a subprocess, streaming output to this run's log.
-    Returns the exit code (0 = ok). Never raises — a launch failure returns 1
-    so the chain keeps going."""
+    """Run one step as a subprocess in its own process group, streaming output
+    to this run's log. Returns the exit code (0 = ok). NEVER raises — catches
+    everything (incl. KeyboardInterrupt/console signals) so the chain always
+    continues to the next step."""
     print(f"\n{'=' * 64}\n=== {name} ===\n{'=' * 64}", flush=True)
     try:
-        return subprocess.run(cmd, env=env).returncode
-    except Exception as e:
-        print(f"✗ {name}: couldn't start — {type(e).__name__}: {e}", flush=True)
+        return subprocess.run(cmd, env=env, **_POPEN_KW).returncode
+    except BaseException as e:   # noqa: BLE001 — keep the chain alive no matter what
+        print(f"✗ {name}: {type(e).__name__}: {e}", flush=True)
         return 1
 
 
@@ -90,6 +100,11 @@ def main() -> int:
 
     rec_cmd = (py + ["automations.recruiting_report.run", "--no-opt"]
                + (["--week", args.week] if args.week else []) + dry)
+
+    print(f"Carlos full run: recruiting + {len(CARLOS_OPT_VIEWS)} OPT views "
+          f"(each view = download then apply). This keeps going for ~15 min "
+          f"AFTER the recruiting 'done' — do NOT stop it early.", flush=True)
+
     results = [("Recruiting pull", _step("Recruiting pull", rec_cmd, env))]
     for label, key in CARLOS_OPT_VIEWS:
         results.append(_run_view(label, key, py, dry, env))
