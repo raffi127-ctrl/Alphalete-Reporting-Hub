@@ -1,7 +1,7 @@
 {
   "confirmed_count": 54,
   "needs_review_count": 0,
-  "skip_count": 29,
+  "skip_count": 28,
   "confirmed": [
     {
       "sheet_tab": "Raf Hidalgo",
@@ -382,9 +382,9 @@
     },
     {
       "sheet_tab": "William Sassenberg",
-      "office_id": "",
+      "office_id": "23496",
       "as_owner": "William Sassenberg",
-      "as_company": "",
+      "as_company": "Optima Business Management, Inc.",
       "confidence": 1.0
     },
     {
@@ -452,10 +452,6 @@
     },
     {
       "sheet_tab": "Zach Hogue",
-      "reason": "admin tab"
-    },
-    {
-      "sheet_tab": "Eric Zech",
       "reason": "admin tab"
     },
     {
