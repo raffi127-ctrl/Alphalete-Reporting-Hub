@@ -1,5 +1,5 @@
 {
-  "confirmed_count": 32,
+  "confirmed_count": 33,
   "needs_review_count": 0,
   "skip_count": 1,
   "confirmed": [
@@ -226,6 +226,14 @@
       "as_owner": "Alexander Badawi",
       "as_company": "Mountain Peak Marketing, Inc.",
       "confidence": 0.81
+    },
+    {
+      "sheet_tab": "Kevin Baham",
+      "office_id": "16744",
+      "as_owner": "Kevin\u00a0 Baham",
+      "as_company": "Ludach Inc",
+      "confidence": 1.0,
+      "auto_onboarded": true
     }
   ],
   "needs_review": [],
