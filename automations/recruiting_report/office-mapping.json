@@ -263,13 +263,6 @@
       "confidence": 1.0
     },
     {
-      "sheet_tab": "Jacob Dover (Tevin Sterling)",
-      "office_id": "22990",
-      "as_owner": "Tevin Sterling",
-      "as_company": "Kingsford Acquisitions, Inc",
-      "confidence": 0.67
-    },
-    {
       "sheet_tab": "Hammad Haque",
       "office_id": "21328",
       "as_owner": "Muhammad UI Haque",
@@ -393,6 +386,14 @@
       "as_owner": "William Sassenberg",
       "as_company": "",
       "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Jacob Dover",
+      "office_id": "23607",
+      "as_owner": "Jacob Dover",
+      "as_company": "Rockstarworld Incorporated",
+      "confidence": 1.0,
+      "auto_onboarded": true
     }
   ],
   "needs_review": [],
