@@ -1004,7 +1004,11 @@ def main() -> int:
                 # Batch-clear those cells
                 clear_body = [{"range": f"{col_a1}{r}", "values": [[""]]}
                               for r in stale]
-                ws = sh.worksheet(tab)
+                try:
+                    ws = sh.worksheet(tab)
+                except Exception as e:
+                    print(f"  ⚠ couldn't open {tab!r}: {e}")
+                    continue
                 ws.batch_update(clear_body, value_input_option="USER_ENTERED")
                 print(f"  [OK] {tab}: cleared {len(stale)} stale cell(s) "
                       f"({col_a1}{stale})")
