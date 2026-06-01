@@ -2185,6 +2185,31 @@ def _list_recent_logs(n: int = 6) -> list[Path]:
     return sorted(LOG_DIR.glob("*.log"), key=lambda p: p.stat().st_mtime, reverse=True)[:n]
 
 
+def _recent_run_logs(n: int = 8) -> list[dict]:
+    """The most-recently-run reports' logs. Each run writes (truncating) to
+    active/<report_id>.log, so that file persists after the run finishes — it's
+    exactly the log the Hub streamed live, just no longer in the active panel.
+    Newest first; report name resolved from AUTOMATED_REPORTS. Lets a finished
+    run's log be viewed on the Hub instead of digging it out of the terminal
+    (Eve 2026-06-01)."""
+    if not ACTIVE_RUNS_LOG_DIR.exists():
+        return []
+    try:
+        id_to_name = {r["id"]: r["name"] for r in AUTOMATED_REPORTS}
+    except Exception:
+        id_to_name = {}
+    out = []
+    for p in sorted(ACTIVE_RUNS_LOG_DIR.glob("*.log"),
+                    key=lambda p: p.stat().st_mtime, reverse=True)[:n]:
+        out.append({
+            "report_id": p.stem,
+            "name": id_to_name.get(p.stem, p.stem),
+            "path": p,
+            "mtime": dt.datetime.fromtimestamp(p.stat().st_mtime),
+        })
+    return out
+
+
 def _is_due_today(report: dict, today: dt.date) -> bool:
     return _was_due_on(report, today)
 
@@ -6816,6 +6841,29 @@ with st.sidebar:
     if st.button("📊 7-Day Overview", use_container_width=True, key="nav_overview"):
         _go_overview()
         st.rerun()
+
+    # --- Recent run logs: view a FINISHED run's log on the Hub (so you don't
+    # have to open the terminal once it leaves the live panel — Eve 2026-06-01).
+    _recent_logs = _recent_run_logs()
+    if _recent_logs:
+        with st.expander("📄 Recent run logs"):
+            _opts = {f"{r['name']} · {r['mtime'].strftime('%b %d  %H:%M')}": r
+                     for r in _recent_logs}
+            _pick = st.selectbox("Pick a finished run", list(_opts.keys()),
+                                 key="recent_log_pick",
+                                 label_visibility="collapsed")
+            _r = _opts.get(_pick)
+            if _r:
+                try:
+                    _txt = _r["path"].read_text(errors="replace")
+                except Exception as e:
+                    _txt = f"(couldn't read log: {e})"
+                st.download_button(
+                    "⬇ Download full log", _txt,
+                    file_name=f"{_r['report_id']}.log",
+                    use_container_width=True, key="recent_log_dl")
+                _tail = "\n".join(_txt.splitlines()[-300:]) or "(empty)"
+                st.code(_tail)
 
     # Version/health badge — "are you on the latest code?" Would have caught
     # Eve running week-old code on the wrong branch for hours (2026-05-25).
