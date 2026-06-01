@@ -152,6 +152,30 @@ def parse_section_byday(
     return out
 
 
+def _day_for_header(h: str, monday: dt.date) -> Optional[dt.date]:
+    """Map a crosstab day-column header to its date. Handles every shape seen
+    across the board's views:
+      • "Monday" / "Sunday"        (Fiber/NDS)  → exact weekday name
+      • "5/25 Mon"                 (BOX)        → m/d date
+      • "Mon (05-25)"              (B2B)        → m-d date
+    An explicit date wins over the weekday token; falls back to the weekday."""
+    hl = (h or "").strip().lower()
+    if not hl:
+        return None
+    if hl in _WEEKDAY_INDEX:
+        return monday + dt.timedelta(days=_WEEKDAY_INDEX[hl])
+    m = re.search(r"(\d{1,2})[-/](\d{1,2})", hl)
+    if m:
+        try:
+            return dt.date(monday.year, int(m.group(1)), int(m.group(2)))
+        except ValueError:
+            return None
+    tok = re.split(r"[ (]", hl, 1)[0]
+    if tok in _WEEKDAY_INDEX:
+        return monday + dt.timedelta(days=_WEEKDAY_INDEX[tok])
+    return None
+
+
 def parse_crosstab_byday(
     spec: ScrapeSpec,
     path: Path,
@@ -169,13 +193,17 @@ def parse_crosstab_byday(
     rows = sara_pull._read_rows(path)
     if not rows:
         return {}
-    # Some crosstabs prepend a date-only header row above the real column
-    # header (NDS). Find the header row = the first row carrying weekday
-    # names; everything before it is header chrome, everything after is data.
-    hdr_idx = next(
-        (i for i, r in enumerate(rows[:6])
-         if any((c or "").strip().lower() in _WEEKDAY_INDEX for c in r)),
-        0)
+    # Some crosstabs prepend a date-only chrome row above the real column
+    # header (NDS: a row of the week-ending date repeated). The REAL header is
+    # the row whose day columns map to the most DISTINCT dates (7 = Mon-Sun);
+    # the chrome row repeats one date. Pick by distinct-day count.
+    monday = today - dt.timedelta(days=today.weekday())
+    def _distinct_days(r):
+        return len({d for c in r if (d := _day_for_header(c, monday))})
+    scan = min(6, len(rows))
+    hdr_idx = max(range(scan), key=lambda i: _distinct_days(rows[i]))
+    if _distinct_days(rows[hdr_idx]) == 0:
+        hdr_idx = 0
     header = [h.strip() for h in rows[hdr_idx]]
     data_rows = rows[hdr_idx + 1:]
     oi = tableau_http.col_idx(header, spec.owner_col)
@@ -183,26 +211,13 @@ def parse_crosstab_byday(
         raise ValueError(
             f"{spec.section_label}: crosstab missing {spec.owner_col!r}. "
             f"Header: {header}")
-    # Weekday columns, by header name → that weekday's date this week.
-    monday = today - dt.timedelta(days=today.weekday())
-    day_cols = {}
-    for i, h in enumerate(header):
-        idx = _WEEKDAY_INDEX.get(h.lower())
-        if idx is not None:
-            day_cols[i] = monday + dt.timedelta(days=idx)
-            continue
-        # Date-prefixed column header (BOX: "5/25 Mon"). Pull the m/d and
-        # stamp it with this year — the engine maps by day-of-month anyway.
-        m = re.search(r"(\d{1,2})/(\d{1,2})", h)
-        if m:
-            try:
-                day_cols[i] = dt.date(today.year, int(m.group(1)),
-                                      int(m.group(2)))
-            except ValueError:
-                pass
+    # Day columns → that day's date this week (handles Monday / 5/25 Mon /
+    # Mon (05-25)).
+    day_cols = {i: d for i, h in enumerate(header)
+                if (d := _day_for_header(h, monday))}
     if not day_cols:
         raise ValueError(
-            f"{spec.section_label}: no weekday columns in crosstab header "
+            f"{spec.section_label}: no day columns in crosstab header "
             f"{header}")
     # Per-row product-type column (for total-row selection / voice exclusion).
     ti = tableau_http.col_idx(header, spec.product_col)
