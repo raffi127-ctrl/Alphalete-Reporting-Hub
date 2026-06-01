@@ -1749,15 +1749,23 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
                       f"({type(e).__name__}: {str(e)[:140]})")
 
         with tableau_session(verbose=False) as _pg:
+            # ATT / INT / METRICS are BASE dashboards (no saved custom view in
+            # the URL) after the AUTOMATIONPULL repoint (2cbd9d0), so they
+            # default to the in-progress week and export blank on a Monday —
+            # "metrics and sales columns blank, recruiting fine, no glitch"
+            # (Eve 2026-06-01). Pin them to the target week like product does.
             _dl("att", "ATT", lambda: download_crosstab(
-                ATT_VIEW_URL, ATT_SHEET, ATT_PATH, verbose=False, page=_pg))
+                _week_url(ATT_VIEW_URL, we_sunday),
+                ATT_SHEET, ATT_PATH, verbose=False, page=_pg))
             _dl("int", "INT", lambda: download_crosstab(
-                INT_VIEW_URL, INT_SHEET, INT_PATH, verbose=False, page=_pg))
+                _week_url(INT_VIEW_URL, we_sunday),
+                INT_SHEET, INT_PATH, verbose=False, page=_pg))
             _dl("product", "Product Sales", lambda: download_crosstab(
                 _week_url(PRODUCT_SALES_VIEW_URL, we_sunday),
                 PRODUCT_SALES_SHEET, PRODUCT_SALES_PATH, verbose=False, page=_pg))
             _dl("metrics", "Metrics", lambda: download_crosstab(
-                METRICS_VIEW_URL, METRICS_SHEET, METRICS_PATH, verbose=False, page=_pg))
+                _week_url(METRICS_VIEW_URL, we_sunday),
+                METRICS_SHEET, METRICS_PATH, verbose=False, page=_pg))
             _dl("churn", "Churn", lambda: download_crosstab(
                 CHURN_VIEW_URL, CHURN_SHEET, CHURN_PATH, verbose=False, page=_pg))
             _dl("wmetrics", "Wireless Metrics", lambda: download_crosstab(
