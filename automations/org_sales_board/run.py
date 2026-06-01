@@ -126,6 +126,9 @@ def main(argv=None) -> int:
     ap.add_argument("--from-csv",
                     help="Parse a saved SARA by-day CSV instead of pulling "
                          "live (offline engine validation).")
+    ap.add_argument("--with-captainships", action="store_true",
+                    help="On the 'daily' step, also fill the 10 captainship "
+                         "leaderboards in the SAME login (one full-board run).")
     args = ap.parse_args(argv)
 
     tab = PROD_TAB if args.real else SANDBOX_TAB
@@ -155,7 +158,8 @@ def main(argv=None) -> int:
                 if args.step == "retail-nl" else None)
         from_csv = Path(args.from_csv) if args.from_csv else None
         orchestrate.run_daily(ws, dry_run=args.dry_run, only=only,
-                              from_csv=from_csv)
+                              from_csv=from_csv,
+                              include_captainships=args.with_captainships)
     print("=== done ===")
     return 0
 

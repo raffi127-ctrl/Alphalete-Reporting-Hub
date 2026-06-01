@@ -105,31 +105,37 @@ ADAPTERS: Dict[str, Callable[[AdapterContext], PullDict]] = {
 def run_daily(ws, *, dry_run: bool = True, today=None,
               from_csv: Optional[Path] = None,
               only: Optional[list[str]] = None,
+              include_captainships: bool = False,
               logfn: Callable[[str], None] = print) -> dict:
     """Execute the daily sections in fastest order under ONE patchright
     session. Returns a summary {filled, skipped, manual}. `only` restricts
     to specific section labels; `from_csv` feeds the SARA adapter offline
-    (no browser opened) for engine validation."""
+    (no browser opened) for engine validation. `include_captainships` runs
+    the 10 captainship leaderboards in the SAME session after the sections
+    (one login for the whole board) — always needs a live pull."""
     # Does this run actually need a live pull? (Offline if from_csv covers
-    # everything, or only manual sections were requested.)
-    needs_pull = from_csv is None and any(
+    # everything, or only manual sections were requested.) Captainships
+    # always pull live, so they force the session open.
+    needs_pull = include_captainships or (from_csv is None and any(
         s.method != src.MANUAL and src.shared_groups().get(s.shared_key)
         and (not only or s.label in only)
         and s.shared_key in ADAPTERS
-        for s in src.DAILY_SOURCES)
+        for s in src.DAILY_SOURCES))
 
     if not needs_pull:
         return _run_daily_inner(ws, page=None, dry_run=dry_run, today=today,
-                                from_csv=from_csv, only=only, logfn=logfn)
+                                from_csv=from_csv, only=only, logfn=logfn,
+                                include_captainships=include_captainships)
 
     from automations.shared.tableau_patchright import tableau_session
     with tableau_session(verbose=False) as page:
         return _run_daily_inner(ws, page=page, dry_run=dry_run, today=today,
-                                from_csv=from_csv, only=only, logfn=logfn)
+                                from_csv=from_csv, only=only, logfn=logfn,
+                                include_captainships=include_captainships)
 
 
 def _run_daily_inner(ws, *, page, dry_run, today, from_csv, only,
-                     logfn) -> dict:
+                     logfn, include_captainships=False) -> dict:
     grid = ws.get_all_values()
     raw_aliases = fs.load_aliases()
     ctx = AdapterContext(today=today, out_dir=Path("output"),
@@ -179,4 +185,17 @@ def _run_daily_inner(ws, *, page, dry_run, today, from_csv, only,
 
     logfn(f"=== daily summary: filled={summary['filled']} "
           f"skipped={summary['skipped']} manual={summary['manual']} ===")
+
+    # Captainship leaderboards reuse THIS session's page — one login for the
+    # whole board instead of a second --step captainships pass.
+    if include_captainships:
+        if page is None:
+            logfn("  captainships SKIPPED — no live session (offline run)")
+        else:
+            from automations.org_sales_board import captainship
+            logfn("--- Captainships (same session) ---")
+            cap = captainship.run_captainships(ws, page, today=today,
+                                               dry_run=dry_run, logfn=logfn)
+            summary["captainships"] = cap
+
     return summary
