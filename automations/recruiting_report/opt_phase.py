@@ -80,10 +80,12 @@ PRODUCT_SALES_SHEET = "Sales By ICD (Weekly View)"
 PRODUCT_SALES_PATH = WORKSPACE / "output" / "opt_personal_production.csv"
 
 # Metrics crosstab — the Metrics view (Office-Metrics-section rates).
+# AUTOMATIONPULL-METRICS was deleted (caught 2026-06-01, Eve's run — 6+ days /
+# cancel rate / 1 GIG% / activation% were blank). Base Metrics dashboard holds
+# the same "Metrics Call Last week data (Internet)" worksheet with all fields.
 METRICS_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
-    "ATTTRACKER2_1-D2D/Metrics/"
-    "14b823c9-0ce7-4757-ba1b-4eb7a54a656f/AUTOMATIONPULL-METRICS"
+    "ATTTRACKER2_1-D2D/Metrics"
 )
 METRICS_SHEET = "Metrics Call Last week data (Internet)"
 METRICS_PATH = WORKSPACE / "output" / "opt_metrics.csv"
@@ -1443,9 +1445,12 @@ def fill_opt_for_tab(
     wireless_metrics_by_owner: dict, wireless_churn_by_owner: dict,
     captains_by_owner: dict, program_summary: dict, fiber_by_owner: dict,
     aliases_map: dict, week_sunday: dt.date, dry_run: bool,
+    fill_empty_only: bool = False,
 ) -> List[str]:
     """Write the OPT + Office-Metrics values for one ICD tab from the ATT and
-    INT crosstabs. Returns log lines. Only writes mapped cells — never clears."""
+    INT crosstabs. Returns log lines. Only writes mapped cells — never clears.
+    fill_empty_only=True skips any cell that already has a value (used to fill
+    gaps from a previously-failed source without overwriting entered data)."""
     try:
         ws = fill._retry(sh.worksheet, tab_name)
     except Exception as e:
@@ -1479,6 +1484,12 @@ def fill_opt_for_tab(
             r = label_rows.get(_norm(lbl))
             if r:
                 a1 = gspread.utils.rowcol_to_a1(r, col)
+                if fill_empty_only:
+                    cur = (grid[r - 1][col - 1]
+                           if r - 1 < len(grid) and col - 1 < len(grid[r - 1])
+                           else "")
+                    if str(cur).strip() != "":
+                        return True   # already filled — don't overwrite
                 updates.append((a1, value))
                 # Universal fill-but-flag: any percentage that lands outside
                 # 0–100% (e.g. a churn or penetration >100%) is written but
@@ -1694,6 +1705,7 @@ def _most_recent_sunday(today: Optional[dt.date] = None) -> dt.date:
 
 def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = None,
                   dry_run: bool = False, skip_download: bool = False,
+                  fill_empty_only: bool = False, skip_breakdowns: bool = False,
                   logfn=print) -> dict:
     """Download the ATT + INT ICD Summary crosstabs from Tableau and fill the
     OPT section on the target ICD tabs. Entry point the weekly report's run.py
@@ -1837,7 +1849,8 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
                                  wireless_metrics_by_owner,
                                  wireless_churn_by_owner, captains_by_owner,
                                  program_summary, fiber_by_owner,
-                                 aliases_map, we_sunday, dry_run)
+                                 aliases_map, we_sunday, dry_run,
+                                 fill_empty_only=fill_empty_only)
         for ln in lines:
             logfn("OPT: " + ln)
             if ln.startswith("[SKIP]") or ln.startswith("[gap]"):
@@ -1854,7 +1867,7 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
 
     # ----- Production Breakdown by Rep (combined NI+WIRELESS chart) -----
     # Uses the PRODUCT SALES SUMMARY crosstab we already downloaded.
-    if not dry_run:
+    if not dry_run and not skip_breakdowns:
         try:
             from automations.production_breakdown.run import run_production_breakdown
             logfn("")
@@ -1864,7 +1877,7 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
             logfn(f"OPT: Production Breakdown failed: {type(e).__name__}: {e}")
 
     # ----- Team Breakdowns ('Next Promotion' sections) ------------------
-    if not dry_run:
+    if not dry_run and not skip_breakdowns:
         try:
             from automations.team_breakdowns.run import run_team_breakdowns
             logfn("")
@@ -1884,13 +1897,22 @@ def main() -> int:
                     help="Don't write to the Sheet — just print what would change.")
     ap.add_argument("--skip-download", action="store_true",
                     help="Reuse the last downloaded crosstabs instead of re-pulling.")
+    ap.add_argument("--fill-empty-only", action="store_true",
+                    help="Only fill cells that are currently EMPTY — never "
+                         "overwrite a value already in the Sheet. Use to fill "
+                         "gaps from a previously-failed source.")
+    ap.add_argument("--skip-breakdowns", action="store_true",
+                    help="Skip the Production + Team breakdown steps (when "
+                         "they already ran fine and only metrics need filling).")
     args = ap.parse_args()
 
     week = dt.date.fromisoformat(args.week) if args.week else _most_recent_sunday()
     print(f"OPT phase — target week (WE Sunday): {week.isoformat()}  dry_run={args.dry_run}")
     try:
         result = run_opt_phase(week, only=args.only, dry_run=args.dry_run,
-                               skip_download=args.skip_download)
+                               skip_download=args.skip_download,
+                               fill_empty_only=args.fill_empty_only,
+                               skip_breakdowns=args.skip_breakdowns)
     except Exception as e:
         print(f"FAIL: {type(e).__name__}: {e}")
         return 1
