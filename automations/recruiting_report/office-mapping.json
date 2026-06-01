@@ -1,5 +1,5 @@
 {
-  "confirmed_count": 54,
+  "confirmed_count": 53,
   "needs_review_count": 0,
   "skip_count": 28,
   "confirmed": [
@@ -374,13 +374,6 @@
       "confidence": 1.0
     },
     {
-      "sheet_tab": "Salik Mallick",
-      "office_id": "",
-      "as_owner": "Salik Mallick",
-      "as_company": "",
-      "confidence": 1.0
-    },
-    {
       "sheet_tab": "William Sassenberg",
       "office_id": "23496",
       "as_owner": "William Sassenberg",
@@ -408,7 +401,7 @@
     },
     {
       "sheet_tab": "Salik Mallick",
-      "reason": "admin tab"
+      "reason": "no AppStream office (sales-only, no recruiting)"
     },
     {
       "sheet_tab": "Template 1",
