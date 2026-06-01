@@ -132,7 +132,14 @@ class ViewConfig:
 VIEWS: List[ViewConfig] = [
     ViewConfig(
         key="d2d1",
-        url="https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/D2D1-PAGERV3",
+        # ALLTEAMS custom view (team filter = All) saved 2026-06-01. The base
+        # view kept auto-restoring a broken 'Luis's Team' custom view that
+        # filtered OUT every Carlos ICD not on Luis's team (→ wrong/duplicated
+        # numbers). This view pins the team filter to All; the parser still
+        # narrows to Carlos's tab list. No week filter — the dashboard is
+        # hardwired to "B2B - Current Week" (week_filter_field=None).
+        url="https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/D2D1-PAGERV3/49e48afc-de23-4d5d-98ad-e8b1b246d640/ALLTEAMS",
+        week_filter_field=None,
         # The workbook holds 14 worksheets; the one with our per-ICD
         # metrics (Rep Count / voice / wireless / AIR/AWB / totals / rank)
         # is "ICD Summary - ATT (V2) (TW) (3)" — TW = This Week. The
@@ -193,7 +200,13 @@ VIEWS: List[ViewConfig] = [
     ),
     ViewConfig(
         key="churn",
-        url="https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/CHURNRATES",
+        # ALLTEAMCHURN custom view (team filter = All) saved 2026-06-01 — same
+        # fix as d2d1: the base view auto-restored a broken 'Luis's Team'
+        # custom view that excluded every Carlos ICD not on Luis's team, so
+        # their churn came back empty ('No Data In Tableau'). Office-age churn
+        # cohorts, not weekly → no week filter (week_filter_field=None).
+        url="https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/CHURNRATES/429cb06d-a32e-4d0e-bf06-9acb77587afd/ALLTEAMCHURN",
+        week_filter_field=None,
         sheet_thumbnail_match="ICD Churn",
         # Owner & Office; multi-row per ICD ('Activated SPE/SP' / 'Calculation1 (1)'
         # / 'Churn Rate'); we want 'Churn Rate'. Columns DON'T have the 'Churn'
