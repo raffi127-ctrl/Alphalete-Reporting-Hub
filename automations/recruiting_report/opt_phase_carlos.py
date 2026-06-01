@@ -685,7 +685,7 @@ def apply_view_to_icd(view: ViewConfig, csv_path: Path, ws,
 # Download helper — connects to debug Chrome, navigates view, downloads CSV
 # ---------------------------------------------------------------------------
 def download_view_crosstab(view: ViewConfig, out_path: Path,
-                           verbose: bool = True, week=None) -> Path:
+                           verbose: bool = True, week=None, page=None) -> Path:
     """Open `view.url` in the debug-Chrome Tableau tab, click Download →
     Crosstab → pick the right sheet thumbnail → save CSV at `out_path`.
 
@@ -699,14 +699,27 @@ def download_view_crosstab(view: ViewConfig, out_path: Path,
     buttons + the crosstab modal use `data-tb-test-id` attributes."""
     # Unattended Tableau login via patchright (ownerville SSO) — replaces the
     # debug-Chrome CDP attach (broken on Chrome 148). Megan 2026-05-25.
+    # When a caller passes a shared `page` (one login for the whole Carlos OPT
+    # run), reuse it and don't close it; otherwise open a one-shot session.
+    # Repeated per-view logins were tripping ownerville's Cloudflare — the
+    # login click timed out behind a CF challenge overlay (Eve 2026-06-01).
+    import contextlib
     from automations.shared.tableau_patchright import tableau_session
+
+    @contextlib.contextmanager
+    def _session_or_shared():
+        if page is not None:
+            yield page
+        else:
+            with tableau_session(verbose=verbose) as pg:
+                yield pg
 
     VIZ_RENDER_WAIT_MS = 10_000
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     debug_dir = out_path.parent / "_debug" / view.key
     debug_dir.mkdir(parents=True, exist_ok=True)
-    with tableau_session(verbose=verbose) as page:
+    with _session_or_shared() as page:
 
         # The viz toolbar (Download button) sometimes never renders: a heavy
         # rep-expanded workbook can need >30s, OR a saved custom view in the
@@ -941,7 +954,60 @@ def main() -> int:
                          "row (canonical position holds a value matching what "
                          "now lives at the correct position), and clear the "
                          "wrong-row cell. Safe to re-run (idempotent).")
+    ap.add_argument("--download-all", action="store_true",
+                    help="Download EVERY OPT view (crosstabs + dd View Data) "
+                         "to the cache under ONE ownerville login. Run this "
+                         "once, then --apply-view <key> --no-download per view "
+                         "(no further logins). Avoids the per-view logins that "
+                         "trip Cloudflare.")
+    ap.add_argument("--no-download", action="store_true",
+                    help="On --apply-view, never hit Tableau live — use the "
+                         "cached CSV (paired with a prior --download-all). "
+                         "Currently only dd does a live scrape; this makes it "
+                         "read the cache instead.")
     args = ap.parse_args()
+
+    if args.download_all:
+        # ONE ownerville login for the whole Carlos OPT phase. Per-view logins
+        # (a fresh browser per view) were tripping Cloudflare's challenge so
+        # the login click never completed (Eve 2026-06-01). Download every
+        # crosstab + scrape dd through a single shared page.
+        from automations.shared.tableau_patchright import tableau_session
+        from automations.recruiting_report.opt_phase import scrape_view_data
+        we = _current_we_sunday()
+        crosstab_views = [v for v in VIEWS if v.key != "dd"]
+        ok, fails = [], []
+        print(f"Downloading ALL Carlos OPT views in ONE login "
+              f"(week ending {we})…", flush=True)
+        with tableau_session(verbose=True) as page:
+            for v in crosstab_views:
+                out = DOWNLOAD_DIR / f"{v.key}.csv"
+                try:
+                    download_view_crosstab(v, out, week=we, page=page)
+                    ok.append(v.key)
+                except Exception as e:
+                    print(f"  ✗ {v.key}: {type(e).__name__}: {str(e)[:160]}",
+                          flush=True)
+                    fails.append(v.key)
+            dd_view = next(v for v in VIEWS if v.key == "dd")
+            try:
+                fields, records = scrape_view_data(dd_view.url, verbose=True,
+                                                   page=page)
+                dd_path = DOWNLOAD_DIR / "dd_view_data.csv"
+                dd_path.parent.mkdir(parents=True, exist_ok=True)
+                dd_path.write_text(
+                    "\n".join(["\t".join(fields)]
+                              + ["\t".join(r) for r in records]),
+                    encoding="utf-8")
+                print(f"  → dd: scraped {len(records)} View Data row(s)",
+                      flush=True)
+                ok.append("dd")
+            except Exception as e:
+                print(f"  ✗ dd: {type(e).__name__}: {str(e)[:160]}", flush=True)
+                fails.append("dd")
+        print(f"\nDownloaded {len(ok)}/{len(VIEWS)}: {ok}"
+              + (f"  | FAILED: {fails}" if fails else ""), flush=True)
+        return 1 if fails else 0
 
     if args.test_view:
         view = next(v for v in VIEWS if v.key == args.test_view)
@@ -1240,8 +1306,12 @@ def main() -> int:
         print(f"Applying view 'dd' to {len(icd_tabs)} ICD tab(s); "
               f"target WE {we.isoformat()}; dry_run={args.dry_run}")
 
-        # Refresh the View Data CSV from Carlos's URL (downline filter).
-        if not args.dry_run or not carlos_dd_path.exists():
+        # Refresh the View Data CSV from Carlos's URL (downline filter) —
+        # unless --no-download says a prior --download-all already cached it
+        # (so the apply needs no ownerville login of its own).
+        if args.no_download and carlos_dd_path.exists():
+            print(f"  → using cached dd View Data ({carlos_dd_path.name})")
+        elif not args.dry_run or not carlos_dd_path.exists():
             print(f"  → scraping View Data from {dd_view.url}")
             fields, records = scrape_view_data(dd_view.url, verbose=True)
             carlos_dd_path.parent.mkdir(parents=True, exist_ok=True)
