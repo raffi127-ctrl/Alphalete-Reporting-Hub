@@ -694,17 +694,50 @@ def download_view_crosstab(view: ViewConfig, out_path: Path,
     debug_dir.mkdir(parents=True, exist_ok=True)
     with tableau_session(verbose=verbose) as page:
 
-        if verbose:
-            print(f"  → navigating Tableau tab to: {view.url}", flush=True)
-        page.goto(view.url, wait_until="domcontentloaded")
-
+        # The viz toolbar (Download button) sometimes never renders: a heavy
+        # rep-expanded workbook can need >30s, OR a saved custom view in the
+        # URL (GUID) was deleted — a recurring Tableau problem — and the page
+        # shows "view not found" with no toolbar at all. Retry once with a
+        # longer timeout to absorb a slow render; on every miss, screenshot
+        # the page so a real deletion is diagnosable (the bare timeout used to
+        # leave no evidence, which is how this glitch reached the Bug tab).
+        download_btn = '[data-tb-test-id="viz-viewer-toolbar-button-download"]'
         viz = page.frame_locator('iframe[title="Data Visualization"]')
-
-        if verbose:
-            print("  → waiting for viz Download button…", flush=True)
-        viz.locator(
-            '[data-tb-test-id="viz-viewer-toolbar-button-download"]'
-        ).wait_for(state="visible", timeout=30_000)
+        last_err = None
+        for attempt, timeout_ms in enumerate((30_000, 60_000), start=1):
+            if verbose:
+                tag = f"  (attempt {attempt})" if attempt > 1 else ""
+                print(f"  → navigating Tableau tab to: {view.url}{tag}",
+                      flush=True)
+            page.goto(view.url, wait_until="domcontentloaded")
+            viz = page.frame_locator('iframe[title="Data Visualization"]')
+            if verbose:
+                print(f"  → waiting for viz Download button… "
+                      f"(timeout {timeout_ms // 1000}s)", flush=True)
+            try:
+                viz.locator(download_btn).wait_for(
+                    state="visible", timeout=timeout_ms)
+                last_err = None
+                break
+            except Exception as e:   # patchright TimeoutError + friends
+                last_err = e
+                shot = debug_dir / f"00_no_toolbar_attempt{attempt}.png"
+                try:
+                    page.screenshot(path=str(shot), full_page=True)
+                    if verbose:
+                        print(f"  ⚠ Download button not visible after "
+                              f"{timeout_ms // 1000}s — saved {shot}",
+                              flush=True)
+                except Exception:
+                    pass
+        if last_err is not None:
+            raise RuntimeError(
+                f"Viz toolbar never rendered for view '{view.key}' at "
+                f"{view.url} — the viz failed to load. If the URL ends in a "
+                f"custom-view name (e.g. /REPEXPANDED), that saved view was "
+                f"likely deleted in Tableau; re-save it (or repoint to a base "
+                f"view). Screenshots: {debug_dir}"
+            ) from last_err
         page.wait_for_timeout(VIZ_RENDER_WAIT_MS)
 
         if verbose:
