@@ -1030,7 +1030,12 @@ AUTOMATED_REPORTS = [
                 "primary": True,
                 "help": "Fills the most recent WE Sunday column on Carlos's sheet",
                 "module": "automations.recruiting_report.run",
-                "args_fn": lambda: ["--week", _last_completed_as_picker().isoformat()],
+                # --no-opt: Carlos's B2B owners aren't in the main ATT OPT views,
+                # so the shared opt_phase skips all 33 tabs + crashes the PB on a
+                # main-report tab (glitch 2026-06-01). Carlos's OPT is its own
+                # module (opt_phase_carlos, B2B views) and isn't wired in yet —
+                # run AppStream-only until it is. [[project_focus_report_build]]
+                "args_fn": lambda: ["--week", _last_completed_as_picker().isoformat(), "--no-opt"],
             },
             {
                 "label": "Run a Specific Past Week",
@@ -1038,7 +1043,7 @@ AUTOMATED_REPORTS = [
                 "needs_date": True,
                 "help": "Pick a WE Sunday to fill",
                 "module": "automations.recruiting_report.run",
-                "args_fn": lambda d: ["--week", (d - dt.timedelta(days=7)).isoformat()],
+                "args_fn": lambda d: ["--week", (d - dt.timedelta(days=7)).isoformat(), "--no-opt"],
             },
             {
                 "label": "Run for One ICD (pick a week)",
@@ -1048,7 +1053,7 @@ AUTOMATED_REPORTS = [
                 "text_label": "ICD tab name (exact match)",
                 "help": "Just refill ONE ICD's tab for any week.",
                 "module": "automations.recruiting_report.run",
-                "args_fn": lambda d, name: ["--week", (d - dt.timedelta(days=7)).isoformat(), "--only", name],
+                "args_fn": lambda d, name: ["--week", (d - dt.timedelta(days=7)).isoformat(), "--only", name, "--no-opt"],
             },
         ],
     },
