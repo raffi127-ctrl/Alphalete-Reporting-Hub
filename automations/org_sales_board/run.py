@@ -119,7 +119,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="org_sales_board")
     ap.add_argument("--step", default="daily",
                     choices=["clear-summary", "retail-nl", "daily",
-                             "captainships"])
+                             "captainships", "rollover"])
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--real", action="store_true",
                     help="Target the REAL tab instead of the sandbox copy.")
@@ -134,6 +134,12 @@ def main(argv=None) -> int:
     ws = open_by_key(SHEET_ID).worksheet(tab)
     if args.step == "clear-summary":
         clear_product_summary(ws, dry_run=args.dry_run)
+    elif args.step == "rollover":
+        # Monday freeze: shift each leaderboard's current week into history
+        # (grow a column), freeze each delta table's "this week" -> "last
+        # week", then blank the daily day-cells for the fresh week.
+        from automations.org_sales_board import rollover
+        rollover.run_rollover(ws, dry_run=args.dry_run)
     elif args.step == "captainships":
         # All 10 captainships under ONE patchright session: each captain's
         # TEAM view + org-wide all-products fallback, filled worksheet-scoped.
