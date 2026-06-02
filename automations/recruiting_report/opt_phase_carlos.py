@@ -204,6 +204,7 @@ VIEWS: List[ViewConfig] = [
         key_clean=_strip_office_suffix,
         subrow_column="",
         subrow_value="Activation %",
+        keep_percent_string=True,   # '78%' -> 78.00%, not raw 0.78
         # ICDs whose offices are too new for the 31-60 day window to have
         # closed get the visible 'No Data In Tableau' marker.
         empty_placeholder="No Data In Tableau",
