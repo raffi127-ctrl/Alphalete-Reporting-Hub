@@ -1,5 +1,5 @@
 {
   "_note": "Tableau ORDER LOG custom views, each pre-filtered server-side to Captain's bonus Team + Product Type = New Internet. Created manually in Tableau (Eve, 2026-05-30). Only the Start/End Date range is added by URL at run time (pull.build_url). Re-paste here if a view is renamed/recreated.",
-  "raf": "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/ORDERLOG/94a7f8fa-e70c-4a72-a6a0-feb57b66821f/Rafsscheduled6daysout?:iid=1",
-  "starr": "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/ORDERLOG/c6021388-de21-4c9a-9377-d84d444c119d/Starrsscheduled6daysout?:iid=1"
+  "raf": "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/ORDERLOG/0dc4fcdd-d3ab-4098-b7da-df9ad48b58a1/Rafsscheduled6daysout?:iid=1",
+  "starr": "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/ORDERLOG/a078a28b-89f3-49e2-9ad3-ca2f69579d7c/Starrsscheduled6daysout?:iid=1"
 }
