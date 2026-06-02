@@ -202,7 +202,18 @@ def _drive_login_form(page: Page, verbose: bool,
 
     if verbose:
         print("-> Submitting", flush=True)
-    page.get_by_role("button", name=_FINAL_SUBMIT_NAME).first.click()
+    # The submit fires a Cloudflare->SSO redirect chain that can outlast
+    # patchright's 30s post-click navigation auto-wait, so .click() would raise
+    # a TimeoutError even though the form already submitted. no_wait_after skips
+    # that auto-wait; the explicit waits below handle settling. The try/except is
+    # belt-and-suspenders in case a future patchright still auto-waits.
+    try:
+        page.get_by_role("button", name=_FINAL_SUBMIT_NAME).first.click(
+            no_wait_after=True)
+    except PWTimeout:
+        if verbose:
+            print("-> submit click navigation-wait timed out; continuing",
+                  flush=True)
     page.wait_for_load_state("domcontentloaded")
     page.wait_for_timeout(5_000)
 

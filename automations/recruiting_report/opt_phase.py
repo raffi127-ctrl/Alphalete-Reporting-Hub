@@ -422,8 +422,54 @@ def drive_crosstab_dialog(page, view_url: str, crosstab_sheet: str,
     # until the underlying data is in. Bumped from 10s to 25s.
     page.wait_for_timeout(25_000)
 
+    def _clear_error_toast() -> None:
+        """Tableau intermittently raises a viz error toast
+        (banner-error-toast-widget) that overlays the toolbar and intercepts
+        clicks on the Download button, so dl_btn.click() times out after 30s
+        even though the button is visible + enabled. Seen persistently on the
+        Fiber PSS-country view (2026-06-02). When a toast is present: log its
+        text (so the actual Tableau error shows up in the run log instead of an
+        opaque click timeout) and dismiss it so the click can land. No-op when
+        there's no toast — the normal download path is byte-for-byte unchanged."""
+        toast = viz.locator('[data-tb-test-id="banner-error-toast-widget"]')
+        try:
+            if toast.count() == 0:
+                return
+        except Exception:
+            return
+        try:
+            msg = toast.first.inner_text(timeout=2_000).strip()
+        except Exception:
+            msg = "(toast text unreadable)"
+        if verbose:
+            print(f"  ⚠ Tableau error toast over Download: {msg!r} — dismissing",
+                  flush=True)
+        for sel in ('button[aria-label*="lose" i]',
+                    'button[aria-label*="ismiss" i]',
+                    '[data-tb-test-id*="dismiss" i]',
+                    '[data-tb-test-id*="close" i]'):
+            try:
+                btn = toast.locator(sel)
+                if btn.count() > 0:
+                    btn.first.click(timeout=3_000)
+                    page.wait_for_timeout(500)
+                    return
+            except Exception:
+                continue
+        # No close control found — remove the toaster container from the DOM so
+        # it stops intercepting pointer events. Cosmetic only; doesn't touch the
+        # viz or its data.
+        try:
+            toast.first.evaluate(
+                "el => { (el.closest('.tab-shared-widget-toaster') || el)"
+                ".remove(); }")
+        except Exception:
+            pass
+        page.wait_for_timeout(500)
+
     if verbose:
         print(f"Download → Crosstab → {crosstab_sheet!r} → CSV…", flush=True)
+    _clear_error_toast()
     dl_btn.click()
     page.wait_for_timeout(1800)
     viz.locator('[data-tb-test-id="download-flyout-download-crosstab-MenuItem"]').click()
@@ -451,6 +497,7 @@ def drive_crosstab_dialog(page, view_url: str, crosstab_sheet: str,
         except Exception:
             pass
         page.wait_for_timeout(20_000)
+        _clear_error_toast()
         dl_btn.click()
         page.wait_for_timeout(1800)
         viz.locator('[data-tb-test-id="download-flyout-download-crosstab-MenuItem"]').click()
