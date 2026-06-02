@@ -579,6 +579,18 @@ def _current_we_sunday(today: Optional["dt.date"] = None) -> "dt.date":
     return today - dt.timedelta(days=days_back)
 
 
+def _dd_week_url(url: str, we_sunday: "dt.date") -> str:
+    """Pin the Direct Deposit view to a week via its 'Processed Week' filter.
+    The filter value is the week's MONDAY in ISO (YYYY-MM-DD) — verified
+    2026-06-01: ISO works, MM/DD/YYYY is silently ignored. Works on both the
+    base view and the DOWNLINEVIEW custom view, so DD no longer depends on the
+    view being hand-advanced each week."""
+    from urllib.parse import quote
+    monday = we_sunday - dt.timedelta(days=6)
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}{quote('Processed Week')}={quote(monday.isoformat())}"
+
+
 def write_icd_values(ws, icd_values: dict[int, object],
                      target_col: int, dry_run: bool = False,
                      row_remap: Optional[dict] = None) -> list[str]:
@@ -978,7 +990,16 @@ def main() -> int:
                          "cached CSV (paired with a prior --download-all). "
                          "Currently only dd does a live scrape; this makes it "
                          "read the cache instead.")
+    ap.add_argument("--week",
+                    help="WE Sunday (YYYY-MM-DD) to target instead of the "
+                         "current completed week. Use to BACKFILL a prior "
+                         "column, e.g. `--apply-view dd --week 2026-05-24` "
+                         "pins DD's Processed Week to that week's Monday and "
+                         "writes the 5/24 column. (dd is the only view that "
+                         "can pin an arbitrary week — d2d1/etc. are "
+                         "current-week-only, so don't backfill those.)")
     args = ap.parse_args()
+    week_override = dt.date.fromisoformat(args.week) if args.week else None
 
     if args.download_all:
         # ONE ownerville login for the whole Carlos OPT phase. Per-view logins
@@ -1004,8 +1025,8 @@ def main() -> int:
                     fails.append(v.key)
             dd_view = next(v for v in VIEWS if v.key == "dd")
             try:
-                fields, records = scrape_view_data(dd_view.url, verbose=True,
-                                                   page=page)
+                fields, records = scrape_view_data(
+                    _dd_week_url(dd_view.url, we), verbose=True, page=page)
                 dd_path = DOWNLOAD_DIR / "dd_view_data.csv"
                 dd_path.parent.mkdir(parents=True, exist_ok=True)
                 dd_path.write_text(
@@ -1315,18 +1336,21 @@ def main() -> int:
         sh = fill.open_sheet()
         icd_tabs = _carlos_icd_tabs()
         as_owner_map = _as_owner_by_tab()
-        we = _current_we_sunday()
+        we = week_override or _current_we_sunday()
         print(f"Applying view 'dd' to {len(icd_tabs)} ICD tab(s); "
               f"target WE {we.isoformat()}; dry_run={args.dry_run}")
 
         # Refresh the View Data CSV from Carlos's URL (downline filter) —
         # unless --no-download says a prior --download-all already cached it
-        # (so the apply needs no ownerville login of its own).
+        # (so the apply needs no ownerville login of its own). The scrape is
+        # week-pinned via 'Processed Week' so it targets THIS week, not the
+        # frozen one — and --week backfills a prior column.
         if args.no_download and carlos_dd_path.exists():
             print(f"  → using cached dd View Data ({carlos_dd_path.name})")
         elif not args.dry_run or not carlos_dd_path.exists():
-            print(f"  → scraping View Data from {dd_view.url}")
-            fields, records = scrape_view_data(dd_view.url, verbose=True)
+            dd_url = _dd_week_url(dd_view.url, we)
+            print(f"  → scraping View Data from {dd_url}")
+            fields, records = scrape_view_data(dd_url, verbose=True)
             carlos_dd_path.parent.mkdir(parents=True, exist_ok=True)
             lines = ["\t".join(fields)] + ["\t".join(r) for r in records]
             carlos_dd_path.write_text("\n".join(lines), encoding="utf-8")
