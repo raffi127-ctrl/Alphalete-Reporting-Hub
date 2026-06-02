@@ -23,6 +23,7 @@ from pathlib import Path
 
 from automations.shared.tableau_patchright import tableau_session
 from automations.captainship_churn import pull, fill
+from automations.focus_office_att.aliases import load_aliases, alias_to_canonical
 
 
 REPORTS = [
@@ -34,6 +35,30 @@ REPORTS = [
      pull.fetch_wireless, fill.open_ws_wireless,
      "captainship_wireless_churn.csv"),
 ]
+
+
+def _apply_aliases(parsed: dict, aliases: dict) -> dict:
+    """Map every parsed rep name through the ICD Aliases sheet to its
+    canonical sheet-tab name BEFORE the fill, so a Tableau spelling that
+    differs from the sheet (e.g. 'Muhammad Haque' -> 'Hammad Haque') matches
+    the existing row instead of inserting a duplicate. Mirrors
+    owners_metrics_churn.run; captainship previously had NO alias step, which
+    is why Hammad/Muhammad Haque, Josep/Joseph Logan, Aya Al-Khafaji/Alkhafaji
+    and Tony Chavez/Jose Antonio Chavez ended up duplicated on Raf's
+    Captainship (Eve 2026-06-02)."""
+    if not aliases:
+        return parsed
+    new_reps: dict = {}
+    for name, periods in parsed.get("reps", {}).items():
+        canonical = alias_to_canonical(name, aliases)
+        if canonical in new_reps:
+            # Merge same-period slots if both spellings carried data.
+            for p, slot in periods.items():
+                new_reps[canonical].setdefault(p, {}).update(slot)
+        else:
+            new_reps[canonical] = periods
+    parsed["reps"] = new_reps
+    return parsed
 
 
 def _run_fill_phase(label: str, open_ws_fn, parsed: dict,
@@ -166,9 +191,17 @@ def main(argv=None) -> int:
                 print(f"    ✓ {csvs[slug]}")
 
     # --- Phase 2: parse + fill each ---
+    # Load ICD aliases once and canonicalize every parsed rep name BEFORE the
+    # fill, so a Tableau spelling that differs from the sheet matches the
+    # existing row instead of inserting a duplicate (mirrors owners_metrics).
     print("\nPhase 2: fill destination tabs")
+    aliases = load_aliases()
+    if aliases:
+        print(f"  Loaded {sum(len(v) for v in aliases.values())} aliases "
+              f"({len(aliases)} canonical names).")
     for slug, label, _fetch_fn, open_ws_fn, _csv_name in selected:
         parsed = pull.parse(csvs[slug])
+        parsed = _apply_aliases(parsed, aliases)
         _run_fill_phase(label, open_ws_fn, parsed, today, args)
 
     # No Slack post — Captainship is sheet-only (Megan 2026-05-29).
