@@ -53,6 +53,12 @@ ATT_VIEW_URL = (
     "ATTTRACKER2_1-D2D/D2D1-PAGERV4"
 )
 ATT_SHEET = "ICD Summary - ATT (V2)"
+# The (LW) "last week" worksheet — the most recent COMPLETED week. Charts were
+# added to D2D1-PAGERV4 (2026-06-02) and the week-filter URL now renders only
+# the (LW) sheets, hiding the current ATT_SHEET; we pull (LW) off the bare view
+# instead (it's also never blank mid-week, unlike the in-progress sheet). See
+# the _dl note in run_opt_phase. Megan-confirmed: the report fills last week.
+ATT_SHEET_LW = "ICD Summary - ATT (V2) (LW) (2)"
 ATT_PATH = WORKSPACE / "output" / "opt_icd_summary_att.csv"
 
 # INT crosstab — D2D 1-PAGER V2 (Internet Only). AUTOMATIONPULL deleted
@@ -62,6 +68,7 @@ INT_VIEW_URL = (
     "ATTTRACKER2_1-D2D/D2D1-PAGERV2InternetOnly"
 )
 INT_SHEET = "ICD Summary - ATT (V2) (2)"
+INT_SHEET_LW = "ICD Summary - ATT (V2) (LW) (3)"  # see ATT_SHEET_LW note
 INT_PATH = WORKSPACE / "output" / "opt_icd_summary_int.csv"
 
 # Product Sales crosstab — PRODUCT SALES SUMMARY 4WK. Per-REP per-product
@@ -1818,17 +1825,28 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
                       f"({type(e).__name__}: {str(e)[:140]})")
 
         with tableau_session(verbose=False) as _pg:
-            # ATT / INT / METRICS are BASE dashboards (no saved custom view in
-            # the URL) after the AUTOMATIONPULL repoint (2cbd9d0), so they
-            # default to the in-progress week and export blank on a Monday —
-            # "metrics and sales columns blank, recruiting fine, no glitch"
-            # (Eve 2026-06-01). Pin them to the target week like product does.
-            _dl("att", "ATT", lambda: download_crosstab(
-                _week_url(ATT_VIEW_URL, we_sunday),
-                ATT_SHEET, ATT_PATH, verbose=False, page=_pg))
-            _dl("int", "INT", lambda: download_crosstab(
-                _week_url(INT_VIEW_URL, we_sunday),
-                INT_SHEET, INT_PATH, verbose=False, page=_pg))
+            # ATT / INT: charts were added to these two base dashboards
+            # (2026-06-02), and the week-filter URL now renders only the (LW)
+            # last-week worksheets — the current ATT_SHEET never appears
+            # (measured: stuck at 11 chart thumbs for 120s). So pull the bare
+            # dashboard's (LW) sheet, which IS the most recent COMPLETED week
+            # (matches what the filtered current sheet used to give, and is never
+            # blank mid-week). The other sources still week-pin normally.
+            #   This only serves the current run (we_sunday == last completed
+            # week). A backfill of an OLDER week can't be served by (LW), so skip
+            # it rather than write the wrong week's numbers. METRICS is unchanged
+            # — its view wasn't chart-cluttered.
+            if we_sunday == _most_recent_sunday():
+                _dl("att", "ATT", lambda: download_crosstab(
+                    ATT_VIEW_URL, ATT_SHEET_LW, ATT_PATH, verbose=False, page=_pg))
+                _dl("int", "INT", lambda: download_crosstab(
+                    INT_VIEW_URL, INT_SHEET_LW, INT_PATH, verbose=False, page=_pg))
+            else:
+                logfn(f"OPT: ⚠️ ATT/INT skipped — the bare-view (LW) sheet only "
+                      f"serves the most recent completed week; {we_sunday} is a "
+                      f"backfill, so those cells are left as-is.")
+                dl_ok["att"] = dl_ok["int"] = False
+                dl_gaps.extend(["ATT", "INT"])
             _dl("product", "Product Sales", lambda: download_crosstab(
                 _week_url(PRODUCT_SALES_VIEW_URL, we_sunday),
                 PRODUCT_SALES_SHEET, PRODUCT_SALES_PATH, verbose=False, page=_pg))
