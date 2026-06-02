@@ -34,7 +34,7 @@ import time
 from typing import Optional
 
 from automations.new_internet_churn import pull
-from automations.recruiting_report.fill import open_by_key
+from automations.recruiting_report.fill import open_by_key, _retry
 
 SHEET_ID = "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8"
 TAB_LOCAL_OFFICE = "Local Office - New Internet Churn"
@@ -107,7 +107,7 @@ def find_sections(ws) -> dict:
 
     Called BEFORE the 2-col insert so the returned row numbers are still
     valid (insert shifts columns, not rows)."""
-    grid = ws.get_all_values()
+    grid = _retry(ws.get_all_values)
     col_a = [(r[0] if r else "") for r in grid]
     n_rows = len(col_a)
 
@@ -887,7 +887,7 @@ def sort_sections_via_sortrange(
             continue
         first_row = max(min(rep_rows.values()), sect["rep_header_row"] + 1)
         last_row  = max(rep_rows.values())
-        col_a = ws.range(f"A{first_row}:A{last_row}")
+        col_a = _retry(ws.range, f"A{first_row}:A{last_row}")
         new_map: dict[str, int] = {}
         for offset, cell in enumerate(col_a):
             name = (cell.value or "").strip()
@@ -1245,7 +1245,7 @@ def clear_empty_cell_backgrounds(
             # null + '0.00%' format → 0. FORMATTED_VALUE returns
             # '0.00%' literal which my code can't distinguish from a
             # written 0%.
-            values = ws.get(rng, value_render_option="FORMULA")
+            values = _retry(ws.get, rng, value_render_option="FORMULA")
         except Exception:
             continue
 
@@ -1378,7 +1378,7 @@ def hide_after_5_zero_pulls(
         # would otherwise look like a real zero in formatted output).
         rng = f"B{first_row}:J{last_row}"
         try:
-            values = ws.get(rng, value_render_option="UNFORMATTED_VALUE")
+            values = _retry(ws.get, rng, value_render_option="UNFORMATTED_VALUE")
         except Exception:
             continue
 
