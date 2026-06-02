@@ -486,13 +486,32 @@ def drive_crosstab_dialog(page, view_url: str, crosstab_sheet: str,
     page.wait_for_timeout(1800)
     viz.locator('[data-tb-test-id="download-flyout-download-crosstab-MenuItem"]').click()
 
-    # Wait for thumbnails to actually populate — some views' Crosstab
-    # dialogs hydrate slowly. Poll for up to 30s with retries.
+    # Wait for thumbnails to populate. Heavy multi-worksheet views hydrate
+    # their thumbnails PROGRESSIVELY, so wait for the count to STOP GROWING,
+    # not just for the first one to appear.
     thumbs = viz.locator('[data-tb-test-id^="sheet-thumbnail-"]')
-    for _ in range(30):
-        page.wait_for_timeout(1000)
-        if thumbs.count() > 0:
-            break
+
+    def _wait_thumbs_stable(max_s: int = 30, stable_needed: int = 3) -> int:
+        """Poll until the thumbnail count is unchanged for `stable_needed`
+        consecutive 1s checks (fully hydrated), not just > 0. The ATT 1-PAGER
+        view now has 14 worksheets (charts were added); reading the list the
+        instant any appeared grabbed only the first ~11 and missed later-loading
+        worksheets like 'ICD Summary - ATT (V2)', so the pull failed
+        intermittently (2026-06-02). Returns the final count."""
+        prev, stable = -1, 0
+        for _ in range(max_s):
+            page.wait_for_timeout(1000)
+            n = thumbs.count()
+            if n > 0 and n == prev:
+                stable += 1
+                if stable >= stable_needed:
+                    return n
+            else:
+                stable = 0
+            prev = n
+        return thumbs.count()
+
+    _wait_thumbs_stable()
 
     # If thumbs are still empty, the dialog opened before Tableau finished
     # hydrating the underlying viz data — Tableau snapshots worksheet state
@@ -513,10 +532,7 @@ def drive_crosstab_dialog(page, view_url: str, crosstab_sheet: str,
         dl_btn.click()
         page.wait_for_timeout(1800)
         viz.locator('[data-tb-test-id="download-flyout-download-crosstab-MenuItem"]').click()
-        for _ in range(30):
-            page.wait_for_timeout(1000)
-            if thumbs.count() > 0:
-                break
+        _wait_thumbs_stable()
 
     available = [thumbs.nth(i).inner_text().strip() for i in range(thumbs.count())]
     idx = _match_crosstab_sheet(available, crosstab_sheet, verbose=verbose)
