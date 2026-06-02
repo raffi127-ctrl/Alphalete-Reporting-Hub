@@ -125,6 +125,13 @@ class ViewConfig:
     # and focus_office_att use). Set to None for views with no week filter
     # (e.g. cumulative Direct Deposit).
     week_filter_field: Optional[str] = "Sale Date Week Ending (mon-sun)"
+    # When True, write a '%' value as its ORIGINAL string ('4.0%') instead of
+    # the _to_number decimal (0.04). USER_ENTERED then stores it as a real
+    # percent-formatted number, so it shows '4.00%' even when the target cell
+    # has no percent format (churn's new-week cells don't — they were showing
+    # raw 0.04, Megan 2026-06-01). Cancel/activation cells ARE pre-formatted,
+    # so they don't need this.
+    keep_percent_string: bool = False
 
 
 # All 6 Carlos OPT-phase Tableau views, per
@@ -207,6 +214,7 @@ VIEWS: List[ViewConfig] = [
         # cohorts, not weekly → no week filter (week_filter_field=None).
         url="https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/CHURNRATES/429cb06d-a32e-4d0e-bf06-9acb77587afd/ALLTEAMCHURN",
         week_filter_field=None,
+        keep_percent_string=True,   # write '4.0%' so cells show 4.00%, not 0.04
         sheet_thumbnail_match="ICD Churn",
         # Owner & Office; multi-row per ICD ('Activated SPE/SP' / 'Calculation1 (1)'
         # / 'Churn Rate'); we want 'Churn Rate'. Columns DON'T have the 'Churn'
@@ -534,7 +542,11 @@ def values_for_icd(icd_name: str, by_owner: dict, grand_total: dict,
                 if view.empty_placeholder is not None:
                     out[m.sheet_row] = view.empty_placeholder
                 continue
-            out[m.sheet_row] = _to_number(raw)
+            if (view.keep_percent_string and isinstance(raw, str)
+                    and raw.strip().endswith("%")):
+                out[m.sheet_row] = raw.strip()   # '4.0%' -> percent-formatted
+            else:
+                out[m.sheet_row] = _to_number(raw)
     return out
 
 
@@ -808,16 +820,21 @@ def download_view_crosstab(view: ViewConfig, out_path: Path,
         if verbose:
             print("  → Download → Crosstab → (pick thumbnail) → CSV", flush=True)
 
-        with page.expect_download(timeout=60_000) as dl_info:
+        with page.expect_download(timeout=90_000) as dl_info:
+            # force=True + a longer timeout: on a heavy viz (REPEXPANDED, ~940
+            # rows) the toolbar renders but a tab-glass overlay intercepts the
+            # click, so the default 30s click times out and the whole download
+            # fails — leaving a stale cached CSV (PP was 10 days stale, Megan
+            # 2026-06-01). Force-click punches through the overlay.
             viz.locator(
                 '[data-tb-test-id="viz-viewer-toolbar-button-download"]'
-            ).click()
+            ).click(force=True, timeout=60_000)
             page.wait_for_timeout(1500)
             page.screenshot(path=str(debug_dir / "01_download_menu.png"), full_page=True)
 
             viz.locator(
                 '[data-tb-test-id="download-flyout-download-crosstab-MenuItem"]'
-            ).click()
+            ).click(force=True, timeout=60_000)
             page.wait_for_timeout(2000)
             page.screenshot(path=str(debug_dir / "02_crosstab_modal.png"), full_page=True)
 
@@ -919,7 +936,7 @@ def download_view_crosstab(view: ViewConfig, out_path: Path,
             # CSV radio
             viz.locator(
                 '[data-tb-test-id="crosstab-options-dialog-radio-csv-Label"]'
-            ).click()
+            ).click(force=True, timeout=60_000)
             page.wait_for_timeout(500)
             page.screenshot(path=str(debug_dir / "04_after_csv.png"), full_page=True)
 
