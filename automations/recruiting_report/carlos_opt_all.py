@@ -38,6 +38,7 @@ import argparse
 import os
 import subprocess
 import sys
+import time
 
 CARLOS_OPT_VIEWS = [
     ("B2B 1-Pager",        "d2d1"),
@@ -101,7 +102,15 @@ def main() -> int:
                           py + [mod, "--download-all"], env)))
 
     # Apply each view from the cache — no further ownerville logins.
-    for label, key in CARLOS_OPT_VIEWS:
+    # Apply from cache, back-to-back. Each apply writes ~33 cells (one per ICD
+    # tab); firing them with no gap blows past Google Sheets' "write requests
+    # per minute per user" cap → 429 on later views (the old per-view flow
+    # never hit this because each download interleaved natural delay). Pause
+    # between applies to stay under the quota.
+    APPLY_GAP_SEC = 45
+    for i, (label, key) in enumerate(CARLOS_OPT_VIEWS):
+        if i:
+            time.sleep(APPLY_GAP_SEC)
         rc = _step(f"OPT view — {label} (apply)",
                    py + [mod, "--apply-view", key, "--no-download"] + dry, env)
         results.append((f"OPT view — {label}", rc))
