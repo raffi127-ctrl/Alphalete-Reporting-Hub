@@ -551,7 +551,13 @@ def values_for_icd(icd_name: str, by_owner: dict, grand_total: dict,
                 continue
             if (view.keep_percent_string and isinstance(raw, str)
                     and raw.strip().endswith("%")):
-                out[m.sheet_row] = raw.strip()   # '4.0%' -> percent-formatted
+                # Normalize to 2-decimal percent so it matches the prior-week
+                # columns ('83.00%', '5.00%') exactly — source decimals vary
+                # ('78%' vs '4.0%'). USER_ENTERED stores it percent-formatted.
+                num = _to_number(raw)
+                out[m.sheet_row] = (f"{num * 100:.2f}%"
+                                    if isinstance(num, (int, float))
+                                    else raw.strip())
             else:
                 out[m.sheet_row] = _to_number(raw)
     return out
