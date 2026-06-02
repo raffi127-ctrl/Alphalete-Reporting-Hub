@@ -125,13 +125,12 @@ class ViewConfig:
     # and focus_office_att use). Set to None for views with no week filter
     # (e.g. cumulative Direct Deposit).
     week_filter_field: Optional[str] = "Sale Date Week Ending (mon-sun)"
-    # When True, write a '%' value as its ORIGINAL string ('4.0%') instead of
-    # the _to_number decimal (0.04). USER_ENTERED then stores it as a real
-    # percent-formatted number, so it shows '4.00%' even when the target cell
-    # has no percent format (churn's new-week cells don't — they were showing
-    # raw 0.04, Megan 2026-06-01). Cancel/activation cells ARE pre-formatted,
-    # so they don't need this.
-    keep_percent_string: bool = False
+    # numberFormat pattern to STAMP on this view's metric cells after writing,
+    # so percents render consistently regardless of the cell's prior format
+    # (some tabs were '0.00%', some '0%', some unformatted -> raw 0.04). Values
+    # are stored as plain decimals; the format controls display. Megan
+    # 2026-06-01: churn keeps 2 decimals ('0.00%'), the rest are whole ('0%').
+    percent_format: Optional[str] = None
 
 
 # All 6 Carlos OPT-phase Tableau views, per
@@ -173,6 +172,7 @@ VIEWS: List[ViewConfig] = [
     ViewConfig(
         key="cancel",
         url="https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/B2BCancelRates",
+        percent_format="0%",   # whole-number percent
         sheet_thumbnail_match="Cancel Rates Sheet",
         # Owner & Office cell looks like 'AARON CORSO\n [cor consulting agency, inc.]';
         # 3 rows per ICD (Cancel Rates / Canceled Orders / Unit Count) — pick the
@@ -204,7 +204,7 @@ VIEWS: List[ViewConfig] = [
         key_clean=_strip_office_suffix,
         subrow_column="",
         subrow_value="Activation %",
-        keep_percent_string=True,   # '78%' -> 78.00%, not raw 0.78
+        percent_format="0%",   # whole-number percent (78%)
         # ICDs whose offices are too new for the 31-60 day window to have
         # closed get the visible 'No Data In Tableau' marker.
         empty_placeholder="No Data In Tableau",
@@ -221,7 +221,7 @@ VIEWS: List[ViewConfig] = [
         # cohorts, not weekly → no week filter (week_filter_field=None).
         url="https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/CHURNRATES/429cb06d-a32e-4d0e-bf06-9acb77587afd/ALLTEAMCHURN",
         week_filter_field=None,
-        keep_percent_string=True,   # write '4.0%' so cells show 4.00%, not 0.04
+        percent_format="0.00%",   # churn keeps 2 decimals (4.00%)
         sheet_thumbnail_match="ICD Churn",
         # Owner & Office; multi-row per ICD ('Activated SPE/SP' / 'Calculation1 (1)'
         # / 'Churn Rate'); we want 'Churn Rate'. Columns DON'T have the 'Churn'
@@ -246,6 +246,7 @@ VIEWS: List[ViewConfig] = [
     ViewConfig(
         key="penetration",
         url="https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/MARKETPERFORMANCEZIPLEVEL",
+        percent_format="0%",   # whole-number percent
         sheet_thumbnail_match="Office/Zip Lead Penetration",
         # ZIP-level data — 9608 rows, MANY per owner (~37 rows per ICD,
         # one per ZIP). Per-ZIP 'Actual Pen %' varies; Tableau's owner-
@@ -549,17 +550,12 @@ def values_for_icd(icd_name: str, by_owner: dict, grand_total: dict,
                 if view.empty_placeholder is not None:
                     out[m.sheet_row] = view.empty_placeholder
                 continue
-            if (view.keep_percent_string and isinstance(raw, str)
-                    and raw.strip().endswith("%")):
-                # Normalize to 2-decimal percent so it matches the prior-week
-                # columns ('83.00%', '5.00%') exactly — source decimals vary
-                # ('78%' vs '4.0%'). USER_ENTERED stores it percent-formatted.
-                num = _to_number(raw)
-                out[m.sheet_row] = (f"{num * 100:.2f}%"
-                                    if isinstance(num, (int, float))
-                                    else raw.strip())
-            else:
-                out[m.sheet_row] = _to_number(raw)
+            # Always store the decimal (0.04). Percent VIEWS get a '0%'
+            # number format set on their cells after the write (percent_format
+            # views), so the decimal renders as a whole-number percent ('4%')
+            # — consistent across all tabs regardless of the cell's prior
+            # format (Megan 2026-06-01: show '78%', not '78.00%' or raw 0.78).
+            out[m.sheet_row] = _to_number(raw)
     return out
 
 
@@ -1544,6 +1540,34 @@ def main() -> int:
                                          row_remap=row_remap_by_tab.get(tab)):
                 print(line)
             wrote += 1
+
+        # Stamp the percent number format on this view's metric cells so they
+        # render consistently (whole '0%' or churn's '0.00%') no matter the
+        # cell's prior format. ONE batched call (avoids per-tab 429).
+        if view.percent_format and not args.dry_run:
+            fmt = {"numberFormat": {"type": "PERCENT",
+                                    "pattern": view.percent_format}}
+            sheet_ids = {w.title: w.id for w in sh.worksheets()}
+            reqs = []
+            for tab in icd_tabs:
+                col = target_col_by_tab.get(tab)
+                sid = sheet_ids.get(tab)
+                remap = row_remap_by_tab.get(tab) or {}
+                if not col or sid is None:
+                    continue
+                for m in view.metrics:
+                    r = remap.get(m.sheet_row, m.sheet_row)
+                    reqs.append({"repeatCell": {
+                        "range": {"sheetId": sid, "startRowIndex": r - 1,
+                                  "endRowIndex": r, "startColumnIndex": col - 1,
+                                  "endColumnIndex": col},
+                        "cell": {"userEnteredFormat": fmt},
+                        "fields": "userEnteredFormat.numberFormat"}})
+            if reqs:
+                sh.batch_update({"requests": reqs})
+                print(f"  → stamped {view.percent_format!r} on {len(reqs)} "
+                      f"percent cell(s)")
+
         print(f"\nSummary: {wrote} written/previewed, "
               f"{skipped} skipped (no data), {errored} errored")
         return 0
