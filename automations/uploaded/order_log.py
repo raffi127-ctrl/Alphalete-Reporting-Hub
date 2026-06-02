@@ -45,7 +45,7 @@ CUSTOM_VIEW_NAME = "Order Log - Rafael Hidalgo"
 # simpler and more robust than driving the Manage Custom Views dialog.
 CUSTOM_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
-    "ATTTRACKER2_1-D2D/ORDERLOG/148bb0d6-3513-4fb1-9bf7-30a8ed2e166d/"
+    "ATTTRACKER2_1-D2D/ORDERLOG/c942259a-61b6-47f3-b16f-1ba634c04140/"
     "OrderLog-RafaelHidalgo?:iid=1"
 )
 
