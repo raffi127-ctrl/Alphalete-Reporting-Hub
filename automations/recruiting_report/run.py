@@ -187,7 +187,44 @@ def main() -> int:
     # a full AppStream console with the #searchMC office switcher.
     from automations.shared.tableau_patchright import appstream_direct_session
     log.info("logging into AppStream via patchright (rcaptain) — unattended")
-    with appstream_direct_session(verbose=True) as target_page:
+
+    # Manage the AppStream session manually (not a `with`) so the per-owner loop
+    # can RELAUNCH it if the browser/page dies mid-run. Previously one transient
+    # #searchMC stall closed the Chrome tab, and every remaining owner then
+    # failed instantly with TargetClosedError, leaving the report unfilled (Eve,
+    # 2026-06-02). The persistent profile means a relaunch reuses the login.
+    _appstream_cm = appstream_direct_session(verbose=True)
+    target_page = _appstream_cm.__enter__()
+    appstream_dead = False
+
+    def _relaunch_appstream():
+        """Close the dead session and open a fresh one (reusing the logged-in
+        profile — no re-auth). Returns the new page, or None if relaunch fails."""
+        nonlocal _appstream_cm
+        try:
+            _appstream_cm.__exit__(None, None, None)
+        except Exception:
+            pass
+        try:
+            _appstream_cm = appstream_direct_session(verbose=True)
+            return _appstream_cm.__enter__()
+        except Exception as exc:
+            log.error("AppStream relaunch failed: %s", exc)
+            return None
+
+    def _appstream_page_dead(page, exc) -> bool:
+        """True when the error means the page/context/browser is gone (vs. a
+        recoverable per-owner issue like a missing office)."""
+        try:
+            if page.is_closed():
+                return True
+        except Exception:
+            return True
+        msg = str(exc).lower()
+        return ("has been closed" in msg or "target page" in msg
+                or "browser has been closed" in msg or "target closed" in msg)
+
+    try:
 
         # Steps 2-4 (office-list refresh, onboard, prune, categorize) are
         # skipped on a --retry-missing pass: a different login sees a narrower
@@ -339,6 +376,28 @@ def main() -> int:
                             break
                     except Exception as e:
                         log.exception("  fetch failed for %s week %s: %s", section_label, w, e)
+                        # If the browser/page died, relaunch the session once and
+                        # retry this week — otherwise every remaining owner fails
+                        # instantly on the dead page (Eve, 2026-06-02).
+                        if _appstream_page_dead(target_page, e):
+                            log.warning("  AppStream page/browser closed — relaunching session…")
+                            target_page = _relaunch_appstream()
+                            if target_page is None:
+                                appstream_dead = True
+                                break
+                            try:
+                                metrics = fetch_office.fetch_one(target_page, section_id, owner, w)
+                                if metrics:
+                                    week_data[w] = metrics
+                                elif metrics == {}:
+                                    inaccessible = True
+                                    break
+                            except Exception as e2:
+                                log.exception("  retry after relaunch failed for %s week %s: %s",
+                                              section_label, w, e2)
+
+                if appstream_dead:
+                    break
 
                 if section_id == primary_id:
                     if inaccessible:
@@ -355,11 +414,24 @@ def main() -> int:
                 ):
                     log.info(line)
 
+            if appstream_dead:
+                break
+
             if primary_status == "filled":
                 filled_in_run.add(tab_name)
             elif primary_status == "inaccessible":
                 inaccessible_in_run.add(tab_name)
-    # (appstream_direct_session closes the browser on exit — no manual teardown)
+
+        if appstream_dead:
+            log.error("AppStream session was unrecoverable — stopped the fetch "
+                      "phase early; remaining tabs will show as missing and can "
+                      "be filled with a --retry-missing run.")
+    finally:
+        # Close the AppStream session (replaces the old `with`'s auto-teardown).
+        try:
+            _appstream_cm.__exit__(None, None, None)
+        except Exception:
+            pass
 
     # Write the cumulative weekly results so the dashboard can alert on tabs
     # that couldn't be filled by any run this week. Hidden tabs (retired

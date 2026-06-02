@@ -94,14 +94,51 @@ def _dismiss_overlays(page: Page) -> None:
         pass
 
 
+def _focus_search_box(page: Page) -> bool:
+    """Click into #searchMC so we can type into it. Returns False if the box
+    isn't on the page (caller should reload the console). The force-click
+    fallback is bounded to 8s so a genuinely-missing box fails fast instead of
+    burning the default 30s (Eve, 2026-06-02)."""
+    if page.locator("#searchMC").count() == 0:
+        return False
+    try:
+        page.locator("#searchMC").click(timeout=8000)
+        return True
+    except Exception:
+        # Hover-menu re-opened over it — force-click ignores the intercept.
+        try:
+            page.locator("#searchMC").click(force=True, timeout=8000)
+            return True
+        except Exception:
+            return False
+
+
+def _reload_console(page: Page) -> None:
+    """Navigate back to a page that carries the #searchMC switcher, reusing the
+    session's rqst token. Used when the switcher has gone missing (the page
+    drifted off the AppStream console)."""
+    m = re.search(r"rqst=([A-Z0-9-]+)", page.url or "", re.I)
+    if m:
+        page.goto(f"https://applicantstream.com/index.cfm?rqst={m.group(1)}&p=701",
+                  wait_until="domcontentloaded")
+    else:
+        page.goto("https://applicantstream.com/index.cfm",
+                  wait_until="domcontentloaded")
+    page.wait_for_timeout(1500)
+
+
 def _switch_office(page: Page, office_id: str, owner_hint: str = "") -> bool:
     """Type into searchMC and select the matching office. Wait for page load."""
     _dismiss_overlays(page)
-    try:
-        page.locator("#searchMC").click(timeout=8000)
-    except Exception:
-        # Menu re-opened (hover-trigger) — force-click ignores intercept.
-        page.locator("#searchMC").click(force=True)
+    if not _focus_search_box(page):
+        # #searchMC absent — the page drifted off the AppStream console. Reload
+        # the console once (reusing the rqst token) and retry before giving up.
+        # Without this, one missing switcher 30s-timed-out the whole run and the
+        # dead tab cascaded into every later owner (Eve, 2026-06-02).
+        _reload_console(page)
+        _dismiss_overlays(page)
+        if not _focus_search_box(page):
+            raise PWTimeout("#searchMC not present even after a console reload")
     page.locator("#searchMC").fill("")
     # Type the office_id — most specific search term.
     page.locator("#searchMC").type(office_id, delay=30)
