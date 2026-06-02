@@ -212,13 +212,19 @@ def main(argv=None) -> int:
     elif args.skip_slack:
         print("\nPhase 3: (--skip-slack, sheet fill only)")
     else:
-        _post_to_slack(selected, today)
+        post_failures = _post_to_slack(selected, today)
+        if post_failures:
+            print(f"\n✗ {post_failures} Slack post(s) FAILED — the sheets were "
+                  f"filled but those metric(s) did NOT reach the thread. Exiting "
+                  f"non-zero so the daily orchestrator flags it instead of "
+                  f"counting a silent success.")
+            return 1
 
     print("\n=== done ===")
     return 0
 
 
-def _post_to_slack(selected, today: dt.date) -> None:
+def _post_to_slack(selected, today: dt.date) -> int:
     """For each selected report: render 4 multi-week PNGs from the
     freshly-filled sheet + post each as a reply in today's 7am Metrics
     workflow thread. Adds the matching workflow-header reaction on the
@@ -228,6 +234,7 @@ def _post_to_slack(selected, today: dt.date) -> None:
     PERIODS = ("0-30", "30", "60", "90")
     out_dir = Path(tempfile.gettempdir()) / "churn_slack_post"
     out_dir.mkdir(parents=True, exist_ok=True)
+    failures = 0  # Slack posts that raised or came back ok=False
 
     for slug, label, _pull_mod, fill_mod in selected:
         title_prefix, render_mod, react_emoji = SLACK_CONFIG[slug]
@@ -258,8 +265,13 @@ def _post_to_slack(selected, today: dt.date) -> None:
                     file_name=file_name,
                 )
                 print(f"      {period}-day: posted (file={result.get('file')})")
+                if not result.get("ok", True):
+                    failures += 1
             except SlackPostError as e:
+                failures += 1
                 print(f"      {period}-day: ⚠ Slack post failed: {e}")
+
+    return failures
 
 
 if __name__ == "__main__":

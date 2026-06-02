@@ -415,7 +415,15 @@ def drive_crosstab_dialog(page, view_url: str, crosstab_sheet: str,
 
     viz = page.frame_locator('iframe[title="Data Visualization"]')
     dl_btn = viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-download"]')
-    dl_btn.wait_for(state="visible", timeout=35_000)
+    # Heavy views render their toolbar LATE: the all-reps ORDER LOG / CHURN
+    # views (canceled_orders, disconnects, churn) sit on an "Opening workbook
+    # → Computing models" overlay for ~50s before the toolbar — and thus the
+    # Download button — even exists in the DOM (Eve measured ~50s, 2026-06-02).
+    # The old 35s timeout fired first, so the pull died with
+    # "viz-viewer-toolbar-button-download not visible" though the button was
+    # fine. wait_for returns the instant it appears, so the generous ceiling
+    # doesn't slow the light single-owner views (≈15s, e.g. order_log).
+    dl_btn.wait_for(state="visible", timeout=120_000)
     # Let Tableau hydrate the data behind the viz before exporting.
     # Complex per-rep views (NDS Weekly Metrics, Activation Rates) take
     # longer to load; their crosstab Download button stays disabled

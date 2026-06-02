@@ -116,6 +116,7 @@ def main(argv=None) -> int:
     print(f"  ✓ Starr+Sahil:   {r3}")
 
     print("Step 4: Slack post to today's Metrics thread (Local Office only)...")
+    slack_ok = True
     try:
         if local_rows_new:
             img_path = Path(tempfile.gettempdir()) / "canceled_orders_local_office.png"
@@ -133,9 +134,17 @@ def main(argv=None) -> int:
                 dry_run=args.dry_run,
             )
         print(f"  ✓ Slack: {slack_result}")
+        if not slack_result.get("dry_run") and not slack_result.get("ok", True):
+            slack_ok = False
     except slack_metrics_post.SlackPostError as e:
+        slack_ok = False
         print(f"  ⚠ Slack post failed: {e}")
 
+    if not slack_ok:
+        print("✗ Slack post FAILED — the sheet fill succeeded but this metric "
+              "did NOT reach the Metrics thread. Exiting non-zero so the daily "
+              "orchestrator flags it instead of counting a silent success.")
+        return 1
     print("=== done ===")
     return 0
 
