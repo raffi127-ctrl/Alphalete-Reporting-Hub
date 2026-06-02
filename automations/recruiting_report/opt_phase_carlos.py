@@ -191,6 +191,12 @@ VIEWS: List[ViewConfig] = [
     ViewConfig(
         key="activation",
         url="https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/ACTIVATIONRATES",
+        # NO week pin: activation is a rolling day-bucket view (0-7 / 8-14 /
+        # ... / 31-60 Days since sale). Pinning it to one week (the blanket
+        # default) collapsed it to only the recent buckets, dropping the
+        # '31-60 Days' column the report reads → 'No Data In Tableau' for
+        # everyone (Megan 2026-06-01). It reads a rolling window, not a week.
+        week_filter_field=None,
         sheet_thumbnail_match="Activation Office",
         # Owner & Office; multi-row per ICD ('Activation %' / 'Total Activations' /
         # 'Total Volume'); we want 'Activation %'.
