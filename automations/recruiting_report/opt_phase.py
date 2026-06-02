@@ -423,15 +423,19 @@ def drive_crosstab_dialog(page, view_url: str, crosstab_sheet: str,
     page.wait_for_timeout(25_000)
 
     def _clear_error_toast() -> None:
-        """Tableau intermittently raises a viz error toast
-        (banner-error-toast-widget) that overlays the toolbar and intercepts
-        clicks on the Download button, so dl_btn.click() times out after 30s
-        even though the button is visible + enabled. Seen persistently on the
-        Fiber PSS-country view (2026-06-02). When a toast is present: log its
-        text (so the actual Tableau error shows up in the run log instead of an
-        opaque click timeout) and dismiss it so the click can land. No-op when
-        there's no toast — the normal download path is byte-for-byte unchanged."""
-        toast = viz.locator('[data-tb-test-id="banner-error-toast-widget"]')
+        """Tableau intermittently raises a viz error toast that overlays the
+        toolbar and intercepts clicks on the Download button, so dl_btn.click()
+        times out (then the page can close) even though the button is visible +
+        enabled. Tableau renders the toast with more than one test-id —
+        'banner-error-toast-widget' (Fiber PSS-country view) and
+        'banner-error-toast-message' (scheduled-6-days-out Order Log) — so match
+        any 'banner-error-toast*' (both live in the same .tab-shared-widget-
+        toaster container, which is what actually intercepts the pointer). When
+        a toast is present: log its text (so the real Tableau error shows up in
+        the run log instead of an opaque click timeout) and dismiss it so the
+        click can land. No-op when there's no toast — the normal download path
+        is byte-for-byte unchanged. (2026-06-02)"""
+        toast = viz.locator('[data-tb-test-id^="banner-error-toast"]')
         try:
             if toast.count() == 0:
                 return
