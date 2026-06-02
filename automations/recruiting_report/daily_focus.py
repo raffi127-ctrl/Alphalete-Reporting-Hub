@@ -1138,6 +1138,16 @@ def main() -> int:
                      len(skipped), _state_file().name)
         else:
             log.info("all ICDs pulled — cleared retry state")
+
+    # Canonical success sentinel the Hub scans for to classify the run
+    # (dashboard.py: '=== done ===' in the log => success, BEFORE the
+    # full-log traceback scan). Without it, a benign caught-and-logged
+    # per-ICD traceback (e.g. a transient next-week fetch error that we
+    # recover from) flips the whole run to 'failed' even though it
+    # completed and the data is correct (Maud, 2026-06-02). Only emitted
+    # on rc == 0 so genuine failures still fall through to the scan.
+    if rc == 0:
+        log.info("=== done ===")
     return rc
 
 
