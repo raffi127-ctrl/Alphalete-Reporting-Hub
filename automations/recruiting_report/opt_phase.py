@@ -486,43 +486,39 @@ def drive_crosstab_dialog(page, view_url: str, crosstab_sheet: str,
     page.wait_for_timeout(1800)
     viz.locator('[data-tb-test-id="download-flyout-download-crosstab-MenuItem"]').click()
 
-    # Wait for thumbnails to populate. Heavy multi-worksheet views hydrate
-    # their thumbnails PROGRESSIVELY, so wait for the count to STOP GROWING,
-    # not just for the first one to appear.
+    # Find the requested worksheet in the Crosstab dialog. Heavy views hydrate
+    # their thumbnails PROGRESSIVELY and with gaps — the ATT 1-PAGER loads its
+    # 11 chart thumbnails, pauses several seconds, THEN the summary sheets — so
+    # any "wait until the count stops changing" heuristic settles too early and
+    # misses later-loading sheets like 'ICD Summary - ATT (V2)'. Poll for the
+    # TARGET sheet name directly instead; immune to hydration gaps (2026-06-02).
     thumbs = viz.locator('[data-tb-test-id^="sheet-thumbnail-"]')
 
-    def _wait_thumbs_stable(max_s: int = 30, stable_needed: int = 3) -> int:
-        """Poll until the thumbnail count is unchanged for `stable_needed`
-        consecutive 1s checks (fully hydrated), not just > 0. The ATT 1-PAGER
-        view now has 14 worksheets (charts were added); reading the list the
-        instant any appeared grabbed only the first ~11 and missed later-loading
-        worksheets like 'ICD Summary - ATT (V2)', so the pull failed
-        intermittently (2026-06-02). Returns the final count."""
-        prev, stable = -1, 0
+    def _poll_for_target(max_s: int = 45):
+        """Poll the dialog up to max_s seconds until the requested worksheet
+        thumbnail appears. Returns (idx, available, count); idx is None if it
+        never showed."""
+        avail = []
         for _ in range(max_s):
             page.wait_for_timeout(1000)
             n = thumbs.count()
-            if n > 0 and n == prev:
-                stable += 1
-                if stable >= stable_needed:
-                    return n
-            else:
-                stable = 0
-            prev = n
-        return thumbs.count()
+            if n == 0:
+                continue
+            avail = [thumbs.nth(i).inner_text().strip() for i in range(n)]
+            hit = _match_crosstab_sheet(avail, crosstab_sheet, verbose=False)
+            if hit is not None:
+                return hit, avail, n
+        return None, avail, thumbs.count()
 
-    _wait_thumbs_stable()
+    idx, available, count = _poll_for_target()
 
-    # If thumbs are still empty, the dialog opened before Tableau finished
-    # hydrating the underlying viz data — Tableau snapshots worksheet state
-    # at open-time, so they will NOT appear no matter how long we keep
-    # polling. Close the dialog, give the viz another 20s to hydrate, and
-    # reopen once. Adaptive: fast machines never enter this branch; slow
-    # ones (Eve's Windows, 2026-05-28) self-heal without bumping the
-    # baseline hydration wait for everyone.
-    if thumbs.count() == 0:
+    # If the dialog opened completely empty, the viz hadn't hydrated when
+    # Tableau snapshotted worksheet state at open-time — sheets won't appear no
+    # matter how long we wait. Close, give the viz 20s more, reopen once, poll
+    # again. (Slow machines — Eve's Windows, 2026-05-28 — self-heal here.)
+    if idx is None and count == 0:
         if verbose:
-            print("  ⚠ Crosstab dialog opened empty — closing + retrying once after extra hydration…", flush=True)
+            print("  ⚠ Crosstab dialog opened empty — reopening once after extra hydration…", flush=True)
         try:
             page.keyboard.press("Escape")
         except Exception:
@@ -532,10 +528,8 @@ def drive_crosstab_dialog(page, view_url: str, crosstab_sheet: str,
         dl_btn.click()
         page.wait_for_timeout(1800)
         viz.locator('[data-tb-test-id="download-flyout-download-crosstab-MenuItem"]').click()
-        _wait_thumbs_stable()
+        idx, available, count = _poll_for_target()
 
-    available = [thumbs.nth(i).inner_text().strip() for i in range(thumbs.count())]
-    idx = _match_crosstab_sheet(available, crosstab_sheet, verbose=verbose)
     if idx is None:
         raise RuntimeError(
             f"Couldn't find the {crosstab_sheet!r} sheet in the Crosstab "
