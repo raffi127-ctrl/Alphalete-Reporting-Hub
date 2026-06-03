@@ -2053,6 +2053,11 @@ AUTOMATED_REPORTS = [
             "(freezes the finished week + shifts the 4-week history), then fills. "
             "Nothing extra to do; safe to re-run (the rollover skips if already "
             "done).\n\n"
+            "MATCH CHECK\n"
+            "Every daily fill ends by **auto-comparing** the copy to the live VA "
+            "tab (by ICD, completed days) and flags any real mismatch — so a "
+            "glitch never slips by. Use **Compare to VA Tab** anytime for a "
+            "read-only check.\n\n"
             "STILL MANUAL (not yet automated)\n"
             "**Retail JE** (Closed Won) and **Frontier** (Verizon PDF) are still "
             "keyed by hand.\n\n"
@@ -2078,9 +2083,16 @@ AUTOMATED_REPORTS = [
                 "label": "Run Daily Fill (Copy Tab)",
                 "icon": "▶",
                 "primary": True,
-                "help": "Fills the copy tab's 6 daily sections + 10 captainships for the completed days this week. On Tuesdays it rolls the week over first automatically (freezes last week + shifts the 4-week history). Copy tab only — never the live VA tab.",
+                "help": "Fills the copy tab's 6 daily sections + 10 captainships for the completed days this week, then auto-compares to the live VA tab and flags any real mismatch. On Tuesdays it rolls the week over first automatically. Copy tab only — never the live VA tab.",
                 "module": "automations.org_sales_board.run",
                 "args_fn": lambda: ["--step", "daily", "--with-captainships"],
+            },
+            {
+                "label": "Compare to VA Tab",
+                "icon": "🔍",
+                "help": "Read-only check: compares the copy tab to the live VA tab by ICD name on completed days. ✅ if it matches; otherwise flags real glitches (automation behind / mismatched / a VA ICD with no copy row). Ignores the intentional NS-vs-0 and the automation simply running more current.",
+                "module": "automations.org_sales_board.compare",
+                "args_fn": lambda: [],
             },
         ],
     },

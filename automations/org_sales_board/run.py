@@ -169,6 +169,15 @@ def main(argv=None) -> int:
         orchestrate.run_daily(ws, dry_run=args.dry_run, only=only,
                               from_csv=from_csv,
                               include_captainships=args.with_captainships)
+        # Auto match-check vs the live VA tab (Megan 2026-06-03): every daily
+        # fill ends by confirming the copy matches the VAs. A real glitch
+        # (automation behind / mismatched / missing-row) flags the run.
+        if args.step == "daily" and not args.dry_run and not args.real:
+            from automations.org_sales_board import compare
+            if not compare.run_compare()["clean"]:
+                print("=== daily fill complete — COMPARE FLAGGED DIFFERENCES "
+                      "(see above); not marking clean ===")
+                return 1
     print("=== done ===")
     return 0
 
