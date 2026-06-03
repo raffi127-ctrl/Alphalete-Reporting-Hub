@@ -169,6 +169,7 @@ def _spec(label, view_url, parse, metric):
         exclude_products=parse.get("exclude_products", ()),
         strip_office=parse.get("strip_office", False),
         skip_owners=("Grand Total", "Sales Total"),
+        week_pin=True,   # team/org views default to LAST week — pin to current
         out_name=f"org_sales_board_cap_{label}.csv")
 
 
@@ -193,7 +194,7 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
         if resolve_csv:
             csv = resolve_csv(label, spec)
         else:
-            csv = sp.pull_section_byday(spec, Path("output"), page, logfn=lambda m: None)
+            csv = sp.pull_section_byday(spec, Path("output"), page, logfn=lambda m: None, today=today)
         return sp.parse_byday(spec, csv, today)
 
     # Org-wide fallback pulls, once per type.
