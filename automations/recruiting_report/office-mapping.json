@@ -1,5 +1,5 @@
 {
-  "confirmed_count": 53,
+  "confirmed_count": 51,
   "needs_review_count": 0,
   "skip_count": 28,
   "confirmed": [
@@ -43,20 +43,6 @@
       "office_id": "23265",
       "as_owner": "Melik El Jaiez",
       "as_company": "Uniq Strategies, Inc.",
-      "confidence": 1.0
-    },
-    {
-      "sheet_tab": "Jacob Morgan",
-      "office_id": "22597",
-      "as_owner": "Jacob Morgan",
-      "as_company": "Emerald Edge Promotions, Inc.",
-      "confidence": 1.0
-    },
-    {
-      "sheet_tab": "Kiarri McBroom",
-      "office_id": "23139",
-      "as_owner": "Kiarri McBroom",
-      "as_company": "Apex Innovations & Marketing, Inc",
       "confidence": 1.0
     },
     {
