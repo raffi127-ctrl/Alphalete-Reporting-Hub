@@ -2056,8 +2056,7 @@ AUTOMATED_REPORTS = [
             "MATCH CHECK\n"
             "Every daily fill ends by **auto-comparing** the copy to the live VA "
             "tab (by ICD, completed days) and flags any real mismatch — so a "
-            "glitch never slips by. Use **Compare to VA Tab** anytime for a "
-            "read-only check.\n\n"
+            "glitch never slips by.\n\n"
             "STILL MANUAL (not yet automated)\n"
             "**Retail JE** (Closed Won) and **Frontier** (Verizon PDF) are still "
             "keyed by hand.\n\n"
@@ -2086,13 +2085,6 @@ AUTOMATED_REPORTS = [
                 "help": "Fills the copy tab's 6 daily sections + 10 captainships for the completed days this week, then auto-compares to the live VA tab and flags any real mismatch. On Tuesdays it rolls the week over first automatically. Copy tab only — never the live VA tab.",
                 "module": "automations.org_sales_board.run",
                 "args_fn": lambda: ["--step", "daily", "--with-captainships"],
-            },
-            {
-                "label": "Compare to VA Tab",
-                "icon": "🔍",
-                "help": "Read-only check: compares the copy tab to the live VA tab by ICD name on completed days. ✅ if it matches; otherwise flags real glitches (automation behind / mismatched / a VA ICD with no copy row). Ignores the intentional NS-vs-0 and the automation simply running more current.",
-                "module": "automations.org_sales_board.compare",
-                "args_fn": lambda: [],
             },
         ],
     },
