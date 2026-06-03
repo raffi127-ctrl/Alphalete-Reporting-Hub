@@ -2035,14 +2035,12 @@ AUTOMATED_REPORTS = [
         "emoji": "🏆",
         "color": "#10B981",
         "category": "📊 Metrics",
-        "description": "Fills the Alphalete Org Sales Board COPY TAB — 6 daily product sections (Retail NL/Internet, Fiber, NDS, B2B, BOX) + all 10 captainship leaderboards, pulled BY PROGRAM from Tableau and assigned to each captainship via the sheet roster. Writes ONLY to the copy tab (validation), never the live VA tab.",
+        "description": "Fills the Alphalete Org Sales Board COPY TAB — 6 daily product sections (Retail NL/Internet, Fiber, NDS, B2B, BOX) + all 10 captainship leaderboards from Tableau. Writes ONLY to the copy tab (validation), never the live VA tab.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Fills the **copy tab** of the Alphalete Org Sales Board: all 6 "
             "daily product sections (Retail NL, Retail Internet, ATT Fiber, "
-            "ATT NDS, B2B, BOX) and all 10 captainship leaderboards. Each ICD "
-            "is pulled **by program** (all teams) and placed on its captainship "
-            "from the sheet roster.\n\n"
+            "ATT NDS, B2B, BOX) and all 10 captainship leaderboards.\n\n"
             "WHERE IT WRITES\n"
             "**COPY TAB ONLY** — \"Copy of Alphalete ORG Sales Board\". It never "
             "touches the live VA tab. This is the validation pass: run it daily, "
