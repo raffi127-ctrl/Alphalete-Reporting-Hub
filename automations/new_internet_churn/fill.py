@@ -426,7 +426,20 @@ def insert_two_cols_at_b(ws, sections: Optional[dict] = None) -> None:
         conditional rules.
     """
     last_row = ws.row_count
-    preserve_top_rows = _detect_preserve_top_rows(ws)
+    # Preserve EVERYTHING above the first section's date-header row, not
+    # just the CHURN TIERS block. On Captainship/Owners tabs there's a
+    # merged divider band on the row right below CHURN TIERS (e.g. row 4:
+    # a B:G merge, plus the CHURN TIERS H:Q block spans down into it).
+    # _detect_preserve_top_rows returns 3 (CHURN TIERS rows 1-3), which
+    # left that row inside the insert band — the B:C insertRange split
+    # the B:G merge and tore the H:Q block across the preserve boundary,
+    # so Sheets rejected the request with APIError 400 (Eve 2026-06-03).
+    # The first section header is found by label (find_sections), never
+    # hardcoded, so this tracks template drift.
+    if sections:
+        preserve_top_rows = min(s["header_row"] for s in sections.values()) - 1
+    else:
+        preserve_top_rows = _detect_preserve_top_rows(ws)
 
     # Pass 1: insert a 2-col-wide blank range at rows
     # (preserve_top_rows..end) cols B-C, shifting existing cells right
