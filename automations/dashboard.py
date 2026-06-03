@@ -1966,6 +1966,68 @@ AUTOMATED_REPORTS = [
             },
         ],
     },
+    {
+        "id": "int-wow-penetration",
+        "name": "Int WoW Report - Penetration %",
+        "creator": "Eve",
+        "emoji": "📶",
+        "color": "#0EA5E9",
+        "category": "📊 Metrics",
+        "description": "Weekly Fiber Lead penetration % per owner on the Int WoW Report sheet. Each Tuesday inserts a new weekending column (newest first) in the 'Penetration %' table from Tableau's Fiber Lead Performance view.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Pulls per-owner Fiber Lead penetration % from Tableau (ATT "
+            "Tracker 2.1 - D2D / Fiber Lead Performance) and inserts a new "
+            "weekending column at the LEFT (B) of the 'Penetration %' table "
+            "— newest week first, older weeks shift right.\n\n"
+            "WHEN IT RUNS\n"
+            "**Tuesdays.** The weekending is the previous Sunday (Central).\n\n"
+            "OWNER MATCHING\n"
+            "Owner names are matched to the sheet through the ICD Aliases "
+            "sheet, so spelling variants collapse to one person. Owners on "
+            "the sheet that Tableau didn't report get '-%'. New owners are "
+            "inserted alphabetically; look-alike names are logged (not "
+            "inserted) so you can add an alias.\n\n"
+            "TOTAL ROW\n"
+            "The NATIONAL row = Tableau's 'Total general' Assigned Fiber Lead "
+            "Penetration with Owner = (All).\n\n"
+            "WATCH FOR\n"
+            "Any % above 50% is logged as a WARNING (likely a Tableau glitch) "
+            "but still written."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit#gid=164937446"),
+        "assignees": ["Eve"],
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [1],  # Tuesday
+            "time": "8:00 AM",
+            "estimated_minutes": 5,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Int WoW Penetration % done — new weekending column inserted at B, owners matched, '-%' filled, NATIONAL total set.",
+            "message_failed": "❌ Run failed. Check the log above (a stale Tableau/ownerville session usually clears on a retry), then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run This Week",
+                "icon": "▶",
+                "primary": True,
+                "help": "Pulls Fiber Lead Performance from Tableau and inserts this week's column (weekending = last Sunday). Re-running the same week overwrites that column.",
+                "module": "automations.int_wow_penetration.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Run a Specific Week",
+                "icon": "📆",
+                "needs_date": True,
+                "help": "Pick any date in the target week; the weekending Sunday is computed automatically.",
+                "module": "automations.int_wow_penetration.run",
+                "args_fn": lambda d: ["--date", d.isoformat()],
+            },
+        ],
+    },
 ]
 
 # Merge in user-uploaded reports (saved by the Wire-Up dialog)
