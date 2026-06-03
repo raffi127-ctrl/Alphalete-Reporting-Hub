@@ -97,8 +97,14 @@ def fill_captainship(ws, anchor: CaptainAnchor, today, per_for,
     for row, name in anchor.daily:
         per = per_for(name)
         if not per:
+            # No sales found in any view this week — write "NS" (No Sales)
+            # across the row instead of 0 (Megan 2026-06-03), so a zero-
+            # production rep reads clearly rather than looking like missing data.
             missing.append(name)
-            per = {}
+            updates.append({"range": f"{L0}{row}:{L1}{row}",
+                            "values": [["NS"] * len(days)]})
+            updates.append({"range": f"{runL}{row}", "values": [["NS"]]})
+            continue
         updates.append({"range": f"{L0}{row}:{L1}{row}",
                         "values": [[int(per.get(d, 0)) for d in days]]})
         updates.append({"range": f"{runL}{row}",
