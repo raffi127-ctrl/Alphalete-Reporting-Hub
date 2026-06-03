@@ -23,7 +23,7 @@ import tempfile
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from automations.int_wow_penetration import pull, fill
+from automations.int_wow_penetration import pull, fill, slack_post
 from automations.focus_office_att.aliases import load_aliases
 
 CENTRAL = ZoneInfo("America/Chicago")
@@ -44,6 +44,9 @@ def main(argv=None) -> int:
     ap.add_argument("--force", action="store_true",
                     help="Insert a new column even if this week's label is "
                          "already at column B.")
+    ap.add_argument("--no-slack", action="store_true",
+                    help="Skip the Slack 'report updated' post (use for "
+                         "historical backfills).")
     args = ap.parse_args(argv)
 
     # --- weekending label ---
@@ -97,6 +100,21 @@ def main(argv=None) -> int:
         print("  ⚠ pull warnings:")
         for w in data["warnings"]:
             print(f"      {w}")
+
+    # --- Slack note (best-effort; never fails the run) ---
+    if args.no_slack:
+        print("  (Slack post skipped — --no-slack.)")
+    else:
+        res = slack_post.post_update(label, dry_run=args.dry_run)
+        if args.dry_run:
+            pass  # post_update already printed the dry-run line
+        elif res.get("ok"):
+            print(f"  ✓ Slack: posted to #level10-alphalete thread "
+                  f"({res.get('ts')})")
+        else:
+            print(f"  ⚠ Slack post FAILED (sheet fill is done — run still OK): "
+                  f"{res.get('error')}")
+
     print("\n=== done ===")
     return 0
 
