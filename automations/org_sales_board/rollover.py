@@ -227,7 +227,41 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     if not dry_run:
         ws.batch_clear(ranges)
     summary["cleared_ranges"] = len(ranges)
-    logfn(f"  4/4 daily charts cleared ({len(ranges)} ranges) — new week blank")
+    logfn(f"  4/5 daily charts cleared ({len(ranges)} ranges) — new week blank")
+
+    # 5/5 Advance the daily-section week dates. Each daily section's day-of-month
+    # row derives from ONE static anchor cell (the first/Retail NL section's
+    # Monday); every other section references it (=C81…), so setting that single
+    # cell rolls all the daily sections to the new week. Without this the daily
+    # fill skips the new week's pulls ("not on the sheet's current week → 0
+    # cells") and the whole current week stays blank (found 2026-06-02).
+    from automations.org_sales_board import fill_section as fs
+    new_monday = new_week_ending(today) - dt.timedelta(days=6)
+    anchor_cell = None
+    for label in DAILY_SECTION_LABELS:
+        try:
+            a = fs.find_daily_section(grid, label)
+        except Exception:
+            continue
+        cell = f"{a1col(min(a.day_col_by_daynum.values()))}{a.daynum_row}"
+        try:
+            fcur = ws.get(cell, value_render_option="FORMULA")
+            cur = (fcur[0][0] if fcur and fcur[0] else "")
+        except Exception:
+            cur = ""
+        if not str(cur).startswith("="):          # the static master anchor
+            if not dry_run:
+                ws.update(cell, [[new_monday.day]],
+                          value_input_option="USER_ENTERED")
+            anchor_cell = cell
+            break
+    if anchor_cell:
+        summary["daily_anchor"] = anchor_cell
+        logfn(f"  5/5 daily date anchor {anchor_cell} → {new_monday.day} "
+              f"(week of {new_monday.isoformat()})")
+    else:
+        logfn("  ⚠ 5/5 no static daily date anchor found — daily dates may not "
+              "have advanced (daily fill could skip the new week)")
     logfn("=== rollover done ===")
     return summary
 

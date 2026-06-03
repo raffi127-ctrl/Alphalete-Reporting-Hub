@@ -85,7 +85,7 @@ def _make_section_adapter(spec_key: str):
             ctx.logfn(f"  [{spec_key}] offline CSV {csv_path}")
         else:
             csv_path = section_pull.pull_section_byday(
-                spec, ctx.out_dir, ctx.page, logfn=ctx.logfn)
+                spec, ctx.out_dir, ctx.page, logfn=ctx.logfn, today=today)
         return section_pull.parse_byday(spec, csv_path, today)
     return _adapter
 

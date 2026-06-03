@@ -86,6 +86,11 @@ class ScrapeSpec:
     product_col: str = "Product Type (Broken Out)"  # the per-row product label
     skip_owners: tuple = ()      # crosstab grand-total rows to drop (e.g.
     #   "Sales Total"). Matched case-insensitively against the owner cell.
+    week_pin: bool = False       # append the current "Sale Date Week Ending
+    #   (mon-sun)" filter to view_url so the view shows THIS week, not whatever
+    #   week the saved view defaults to. Fiber's AllproductsRafsteam view was
+    #   stuck on last week (WE 5/31), writing last week's numbers into this
+    #   week's columns (Megan 2026-06-02).
 
 
 def _norm_section_owner(raw: str, strip_office: bool) -> str:
@@ -268,24 +273,37 @@ def pull_section_byday(
     out_dir: Path,
     page,
     logfn=print,
+    today: Optional[dt.date] = None,
 ) -> Path:
     """Pull `spec`'s view to a file and return its path (CROSSTAB or VIEWDATA).
     `page` is a live patchright tableau_session() Page."""
     out_dir.mkdir(parents=True, exist_ok=True)
     name = spec.out_name or f"org_sales_board_{spec.metric.lower()}_byday.csv"
     out_path = out_dir / name
+    view_url = spec.view_url
+    if spec.week_pin:
+        # Pin to THIS week's ending Sunday so the view stops serving its saved
+        # default week. ISO date — Tableau silently ignores MM/DD/YYYY.
+        from urllib.parse import quote
+        td = today or dt.date.today()
+        we_sunday = td + dt.timedelta(days=6 - td.weekday())   # Mon-anchored
+        sep = "&" if "?" in view_url else "?"
+        view_url = (f"{view_url}{sep}"
+                    f"{quote('Sale Date Week Ending (mon-sun)')}"
+                    f"={quote(we_sunday.isoformat())}")
+        logfn(f"  [{spec.section_label}] week-pinned to WE {we_sunday.isoformat()}")
     if spec.method == CROSSTAB:
         from automations.shared.tableau_patchright import download_crosstab_patchright
         logfn(f"  downloading {spec.section_label} crosstab "
               f"({spec.crosstab_sheet})…")
         download_crosstab_patchright(
-            spec.view_url, spec.crosstab_sheet, out_path, page=page,
+            view_url, spec.crosstab_sheet, out_path, page=page,
             verbose=False)
     else:
         from automations.shared.tableau_patchright import scrape_view_data_patchright
         logfn(f"  scraping {spec.section_label} custom view (Download → Data)…")
         scrape_view_data_patchright(
-            spec.view_url, out_path, page=page, verbose=False,
+            view_url, out_path, page=page, verbose=False,
             activate_xy=spec.activate_xy, scrape_kwargs=SPARSE_SCRAPE_KWARGS)
     logfn(f"  saved {out_path}")
     return out_path
@@ -321,8 +339,9 @@ FIBER_SPEC = ScrapeSpec(
     method=CROSSTAB,
     crosstab_sheet="Sales By ICD (Weekly View)",
     total_label="Total",            # the pre-summed row to skip
-    exclude_products=("VOICE",),    # sum every product EXCEPT Voice
+    exclude_products=("VOICE",),    # ALL units except Voice = what the VAs key
     skip_owners=("Sales Total",),
+    week_pin=True,                   # view defaults to LAST week — pin to current
     out_name="org_sales_board_fiber_byday.csv",
 )
 
