@@ -2028,6 +2028,67 @@ AUTOMATED_REPORTS = [
             },
         ],
     },
+    {
+        "id": "org-sales-board",
+        "name": "Alphalete Org Sales Board (Copy Tab)",
+        "creator": "Megan",
+        "emoji": "🏆",
+        "color": "#10B981",
+        "category": "📊 Metrics",
+        "description": "Fills the Alphalete Org Sales Board COPY TAB — 6 daily product sections (Retail NL/Internet, Fiber, NDS, B2B, BOX) + all 10 captainship leaderboards, pulled BY PROGRAM from Tableau and assigned to each captainship via the sheet roster. Writes ONLY to the copy tab (validation), never the live VA tab.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Fills the **copy tab** of the Alphalete Org Sales Board: all 6 "
+            "daily product sections (Retail NL, Retail Internet, ATT Fiber, "
+            "ATT NDS, B2B, BOX) and all 10 captainship leaderboards. Each ICD "
+            "is pulled **by program** (all teams) and placed on its captainship "
+            "from the sheet roster.\n\n"
+            "WHERE IT WRITES\n"
+            "**COPY TAB ONLY** — \"Copy of Alphalete ORG Sales Board\". It never "
+            "touches the live VA tab. This is the validation pass: run it daily, "
+            "compare to what the VAs key, confirm it matches before going live.\n\n"
+            "WHEN IT RUNS\n"
+            "**Daily.** Only completed days fill; today + future stay blank.\n"
+            "**Tuesday** — run the **Rollover** action FIRST (freezes the finished "
+            "week + shifts the 4-week history), then the daily fill.\n\n"
+            "STILL MANUAL (not yet automated)\n"
+            "**Retail JE** (Closed Won) and **Frontier** (Verizon PDF) are still "
+            "keyed by hand.\n\n"
+            "ZERO-SALES ICDs\n"
+            "An ICD with no sales this week shows **NS** — that's correct (it "
+            "matches the VAs' 0) and it fills the moment they sell."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit#gid=1819006464"),
+        "assignees": ["Eve"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "6:00 AM",
+            "estimated_minutes": 20,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Org Sales Board (copy tab) filled — 6 daily sections + 10 captainships, by program. Compare to the VA tab to confirm the match.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run Daily Fill (Copy Tab)",
+                "icon": "▶",
+                "primary": True,
+                "help": "Fills the copy tab's 6 daily sections + 10 captainships for the completed days this week. Copy tab only — never the live VA tab.",
+                "module": "automations.org_sales_board.run",
+                "args_fn": lambda: ["--step", "daily", "--with-captainships"],
+            },
+            {
+                "label": "Run Tuesday Rollover (Copy Tab)",
+                "icon": "🔁",
+                "help": "TUESDAY ONLY, before the daily fill: freezes last week + shifts the 4-week history down. Copy tab only.",
+                "module": "automations.org_sales_board.run",
+                "args_fn": lambda: ["--step", "rollover"],
+            },
+        ],
+    },
 ]
 
 # Merge in user-uploaded reports (saved by the Wire-Up dialog)
