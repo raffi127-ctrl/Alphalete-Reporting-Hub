@@ -235,7 +235,17 @@ def plan_section_fill(
         if owner_key is None:
             plan.unmatched.append(name)
 
+        no_sales = owner_key is None
         for day, col in sorted(fill_cols.items(), key=lambda kv: kv[1]):
+            if no_sales:
+                # No sales in the pull this week — write "NS" (No Sales) instead
+                # of 0 (Megan 2026-06-03). Only the day DATA cells change; the
+                # running total stays a =SUM formula and SUM/SUMIF treat the
+                # text "NS" as 0, so the Totals row + leaderboard SUMIFs are
+                # untouched. (Day cells only — never a formula cell.)
+                plan.updates.append({
+                    "range": f"{_col(col)}{row}", "values": [["NS"]]})
+                continue
             val = int(per_day.get(day, 0))   # SHEET-DRIVEN: 0 if absent
             plan.updates.append({
                 "range": f"{_col(col)}{row}",
