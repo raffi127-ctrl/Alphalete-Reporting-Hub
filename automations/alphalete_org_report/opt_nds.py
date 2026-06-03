@@ -390,7 +390,15 @@ def parse_personal_production(path: Path) -> Dict[str, str]:
         _aliases = {}
         def alias_to_canonical(name, raw):
             return name
-    OWNER_I, REP_I, TYPE_I, TOTAL_I = 0, 1, 2, 8
+    OWNER_I, REP_I, TYPE_I = 0, 1, 2
+    # The view's day-column count varies with the week's progress (only Mon-Wed
+    # early in the week, full Mon-Sun later), so the Total is NOT at a fixed
+    # index. Find it from the header — the rightmost 'Total'/'Grand Total'
+    # column. (Hardcoding 8 silently skipped EVERY row when the current week had
+    # < 5 days → 0 PP for all NDS ICDs. Found 2026-06-03.)
+    _hdr = rows[1] if len(rows) > 1 else []
+    _totals = [i for i, c in enumerate(_hdr) if "total" in (c or "").lower()]
+    TOTAL_I = _totals[-1] if _totals else (len(_hdr) - 1 if _hdr else 8)
     bucket: Dict[str, Dict[str, int]] = {}
     seen_owners: set = set()
     for r in rows[2:]:
