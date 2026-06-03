@@ -25,7 +25,8 @@ TITLE_BY_PERIOD = {
 
 
 def render_multi_week(ws, section, period, today, out_path,
-                      n_weeks: int = _shared.N_WEEKS) -> Path:
+                      n_weeks: int = _shared.N_WEEKS,
+                      show_subtitle: bool = True) -> Path:
     # Temporarily monkey-patch the shared module's section-header band
     # so the blue palette propagates through the date-row.
     saved = _shared.SECTION_HDR_BG
@@ -37,6 +38,7 @@ def render_multi_week(ws, section, period, today, out_path,
             title_bg=TITLE_BG,
             office_avg_bg=OFFICE_AVG_BG,
             title_text=TITLE_BY_PERIOD.get(period, f"WIRELESS CHURN — {period} DAY"),
+            show_subtitle=show_subtitle,
         )
     finally:
         _shared.SECTION_HDR_BG = saved

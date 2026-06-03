@@ -34,9 +34,10 @@ ROW_H = 24
 TITLE_H = 56
 HEADER_BAR_H = 28
 NAME_COL_W = 180
-WEEK_COL_W = 100   # split into 60 (pct) + 40 (units) per week-pair
+WEEK_COL_W = 120   # split into 60 (pct) + 60 (units) per week-pair
 PCT_SUB_W  = 60
-UNIT_SUB_W = 40
+UNIT_SUB_W = 60    # widened so units like '69/2,768' aren't clipped
+                   # (esp. the last column, which hit the image edge)
 
 # Palette — orange (New Internet)
 TITLE_BG       = (234, 144, 60)
@@ -57,6 +58,7 @@ THRESHOLDS = {
     "30":   (5.0, 8.0),
     "60":   (5.0, 8.0),
     "90":   (5.0, 8.0),
+    "120":  (5.0, 8.0),   # B2B 5th bucket — same band as 30/60/90
 }
 
 TITLE_BY_PERIOD = {
@@ -64,15 +66,42 @@ TITLE_BY_PERIOD = {
     "30":   "NEW INTERNET CHURN — 30 DAY",
     "60":   "NEW INTERNET CHURN — 60 DAY",
     "90":   "NEW INTERNET CHURN — 90 DAY",
+    "120":  "NEW INTERNET CHURN — 120 DAY",
 }
 
 
+# Font candidates in preference order — first that loads wins. Mirrors
+# scheduled_6_days_out/render.py so the churn PNGs render with real Arial
+# on BOTH Windows (Eve's Hub) and macOS, not the bitmap fallback. The old
+# Mac-only path fell back to load_default() on Windows (tiny, illegible).
+_FONT_REG = ["arial.ttf", "Arial.ttf",
+             "/System/Library/Fonts/Supplemental/Arial.ttf",
+             "C:/Windows/Fonts/arial.ttf", "DejaVuSans.ttf"]
+_FONT_BOLD = ["arialbd.ttf", "Arial Bold.ttf",
+              "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+              "C:/Windows/Fonts/arialbd.ttf", "DejaVuSans-Bold.ttf"]
+
+
 def _font(size: int, bold: bool = False):
-    name = "Arial Bold.ttf" if bold else "Arial.ttf"
-    try:
-        return ImageFont.truetype(f"/System/Library/Fonts/Supplemental/{name}", size)
-    except Exception:
-        return ImageFont.load_default()
+    for name in (_FONT_BOLD if bold else _FONT_REG):
+        try:
+            return ImageFont.truetype(name, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
+
+def contrast_fg(bg) -> Tuple[int, int, int]:
+    """Pick black or white text for best legibility on `bg` (a '#rrggbb'
+    string or an (r,g,b) tuple). Used so pale brand title bars (e.g. Luis
+    '#B4B3F8') get dark text instead of unreadable white."""
+    if isinstance(bg, str):
+        c = bg.lstrip("#")
+        r, g, b = (int(c[i:i + 2], 16) for i in (0, 2, 4))
+    else:
+        r, g, b = bg[:3]
+    luminance = 0.299 * r + 0.587 * g + 0.114 * b
+    return (0, 0, 0) if luminance > 150 else (255, 255, 255)
 
 
 def _color_for(period: str, pct_str: str) -> Tuple[int, int, int]:
@@ -204,6 +233,8 @@ def render_multi_week(
     title_bg=TITLE_BG,
     office_avg_bg=OFFICE_AVG_BG,
     title_text=None,
+    show_subtitle: bool = True,
+    title_fg=None,
 ) -> Path:
     """Render one section as a multi-week PNG. `section` is one of the
     dicts find_sections() returns. `period` is '0-30' / '30' / etc."""
@@ -213,7 +244,10 @@ def render_multi_week(
     reps = data["reps"]
 
     total_w = NAME_COL_W + WEEK_COL_W * n_weeks + PAD * 2
-    h = (TITLE_H + ROW_H * 2 + HEADER_BAR_H        # title + section-hdr + avg + col-hdr
+    # Shorter title bar when the subtitle is suppressed (captainship email
+    # drafts drop it; the Slack post keeps it).
+    title_h = TITLE_H if show_subtitle else 36
+    h = (title_h + ROW_H * 2 + HEADER_BAR_H        # title + section-hdr + avg + col-hdr
          + ROW_H * max(len(reps), 1) + PAD * 2)
 
     img = Image.new("RGB", (total_w, h), "white")
@@ -228,13 +262,17 @@ def render_multi_week(
     y = PAD
 
     # 1. Title bar
-    d.rectangle([x, y, x + total_w - PAD * 2, y + TITLE_H], fill=title_bg)
+    d.rectangle([x, y, x + total_w - PAD * 2, y + title_h], fill=title_bg)
     title = title_text or TITLE_BY_PERIOD.get(period, f"CHURN — {period} DAY")
-    d.text((x + 12, y + 6), title, fill=TITLE_FG, font=f16b)
-    sub = f"Last {n_weeks} fills (most recent first) · " \
-          f"{today.strftime('%a')} {today.month}/{today.day}/{today.year % 100}"
-    d.text((x + 12, y + 30), sub, fill=TITLE_FG, font=f11b)
-    y += TITLE_H
+    title_y = y + 6 if show_subtitle else y + (title_h - 18) // 2
+    # title_fg defaults to white (Slack post unchanged); captainship drafts
+    # pass an auto-contrast color so pale brand bars get dark text.
+    d.text((x + 12, title_y), title, fill=title_fg or TITLE_FG, font=f16b)
+    if show_subtitle:
+        sub = f"Last {n_weeks} fills (most recent first) · " \
+              f"{today.strftime('%a')} {today.month}/{today.day}/{today.year % 100}"
+        d.text((x + 12, y + 30), sub, fill=TITLE_FG, font=f11b)
+    y += title_h
 
     # 2. Section-header row (date labels per week-pair)
     d.rectangle([x, y, x + total_w - PAD * 2, y + ROW_H], fill=SECTION_HDR_BG)
@@ -245,7 +283,9 @@ def render_multi_week(
         # short date: strip 'Thu ' prefix and year
         short = re.sub(r"^\w+ ", "", date_str)
         short = re.sub(r"/\d+$", "", short)
-        d.text((cx + 6, y + 4), short, fill=TEXT, font=f11b)
+        # Center the date over its full week-pair (% + units columns).
+        tw = d.textlength(short, font=f11b)
+        d.text((cx + (WEEK_COL_W - tw) / 2, y + 4), short, fill=TEXT, font=f11b)
         cx += WEEK_COL_W
     y += ROW_H
 
