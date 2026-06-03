@@ -368,12 +368,20 @@ NDS_SPEC = ScrapeSpec(
 
 B2B_SPEC = ScrapeSpec(
     section_label="B2B", metric="count",
+    # The LuissCaptainship custom view is corrupted ("error loading the custom
+    # view" banner) so the View-Data scrape can't activate the worksheet. The
+    # CROSSTAB download reads the worksheet directly (the toast/banner is
+    # dismissed) — same 'Sales By ICD (ATT) (V2)' worksheet the captainships
+    # already pull. week_pin keeps it on the current week (Megan 2026-06-02).
     view_url=_BASE + ("ATTTRACKER-B2B/D2D1-PAGERV3/"
                       "e52b4954-dc0b-4f2a-a588-d218942f23a0/LuissCaptainship"),
     owner_col="ICD Owner Name",
-    value_col="Sales (All)",
-    day_col="sp.Order Date (copy)",
-    day_kind=DATE,
+    value_col="",
+    day_col="",
+    method=CROSSTAB,
+    crosstab_sheet="Sales By ICD (ATT) (V2)",
+    skip_owners=("Grand Total",),
+    week_pin=True,
     out_name="org_sales_board_b2b_byday.csv",
 )
 
