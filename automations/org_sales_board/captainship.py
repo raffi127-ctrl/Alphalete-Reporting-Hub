@@ -168,6 +168,22 @@ CAPTAINS = [
     ("JAIRO", "nds", _V + "NDS-SNRES-ATT-OOFWorkbook/ProductSalesSummaryRep/99c40989-62fd-4ffd-bc6e-c6e7fe78c0d7/JAIROSTEAM"),
 ]
 
+# All-teams, all-products per-PROGRAM views (Megan 2026-06-03). Pull every ICD
+# once per program, then assign each to its captainship via the SHEET roster —
+# faster (3 pulls vs 10 team pulls) AND catches an ICD no matter which Tableau
+# team it's filed under, closing the silent-miss gap the per-team pulls had.
+# An ICD absent here genuinely has 0 sales this week (the crosstab omits zero
+# rows) → filled NS, which matches the VAs' 0.
+# [[feedback_captainship_roster_truth]] [[feedback_flag_nonmatched_icds]]
+PROGRAMS = {
+    "fiber": _V + ("ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK/"
+                   "c287b023-03c1-489b-9d44-978200018569/AllproductsALLTEAMS"),
+    "b2b":   _V + ("ATTTRACKER-B2B/D2D1-PAGERV3/"
+                   "49e48afc-de23-4d5d-98ad-e8b1b246d640/ALLTEAMS"),
+    "nds":   _V + ("NDS-SNRES-ATT-OOFWorkbook/ProductSalesSummaryRep/"
+                   "c6d0a461-f8ac-49ed-bb38-27a807328a70/ALLPRODUCTS-EXPANDEDREPS"),
+}
+
 
 def _spec(label, view_url, parse, metric):
     from automations.org_sales_board import section_pull as sp
@@ -207,40 +223,37 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
             csv = sp.pull_section_byday(spec, Path("output"), page, logfn=lambda m: None, today=today)
         return sp.parse_byday(spec, csv, today)
 
-    # Org-wide fallback pulls, once per type.
-    org = {}
-    for tkey, t in TYPES.items():
-        if t["org"]:
-            logfn(f"  org fallback pull: {tkey}")
-            org[tkey] = _pull(f"ORG_{tkey}", t["org"], t["parse"], t["metric"])
+    # Pull each PROGRAM's all-teams view ONCE (fiber, b2b, nds) — every ICD in
+    # that program, no team filter.
+    prog = {}
+    for tkey, view_url in PROGRAMS.items():
+        t = TYPES[tkey]
+        logfn(f"  program pull: {tkey}")
+        prog[tkey] = _pull(f"PROG_{tkey}", view_url, t["parse"], t["metric"])
 
     summary = {"filled": [], "missing": {}}
-    for title, tkey, view_url in CAPTAINS:
+    for title, tkey, _team_url in CAPTAINS:
         t = TYPES[tkey]
         metric = t["metric"]
+        pull = prog.get(tkey, {})
         logfn(f"  captainship {title} ({tkey})…")
-        team = _pull(title, view_url, t["parse"], metric)
-        org_pull = org.get(tkey, {})
         anchor = find_captainship(grid, title)
 
-        def per_for(name, team=team, org_pull=org_pull):
+        # Roster-driven: each ICD on this captainship's sheet rows is matched by
+        # name (+ aliases) in its program pull. Absent = 0 sales this week → NS.
+        def per_for(name, pull=pull, metric=metric):
             cands = _candidates_for_name(name, aliases)
-            k = next((x for x in team if x in cands), None)
-            if k:
-                return team[k].get(metric, {})
-            k = next((x for x in org_pull if x in cands), None)
-            if k:
-                return org_pull[k].get(metric, {})
-            return {}
+            k = next((x for x in pull if x in cands), None)
+            return pull[k].get(metric, {}) if k else {}
 
         missing = fill_captainship(ws, anchor, today, per_for, dry_run=dry_run)
         summary["filled"].append(title)
         if missing:
             summary["missing"][title] = missing
         logfn(f"    {title}: {len(anchor.daily)} ICDs"
-              + (f", not in any view: {missing}" if missing else ""))
+              + (f", 0-sales/not in program view (NS): {missing}" if missing else ""))
     logfn(f"=== captainships filled: {summary['filled']} "
-          f"| missing: {summary['missing']} ===")
+          f"| 0-sales (NS): {summary['missing']} ===")
     return summary
 
 
