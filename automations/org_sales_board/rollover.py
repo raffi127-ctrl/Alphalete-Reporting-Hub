@@ -1,7 +1,12 @@
-"""Weekly Monday rollover for the Alphalete ORG Sales Board.
+"""Weekly TUESDAY rollover for the Alphalete ORG Sales Board.
 
-Run FIRST thing Monday, BEFORE the new week's daily fill, so the just-finished
-week is frozen before the daily areas reset. Three mechanics:
+Run FIRST thing TUESDAY, BEFORE the new week's daily fill (Megan 2026-06-03).
+NOT Monday: Monday is when the VAs enter the prior week's SUNDAY production, so
+the just-finished week isn't complete until Monday's entry is done. Running the
+rollover Tuesday freezes a COMPLETE week; running it Monday would freeze a week
+still missing Sunday. (The week math — new_week_ending — resolves the same
+Mon–Sun week for any weekday, so only the run-DAY matters, not the code.)
+Three mechanics:
 
 1. LEADERBOARDS (the ALPHALETE ORG weekly-history block + the 10 captainship
    strips): col C = the live current week (a =SUM/=SUMIF formula for ORG, a
@@ -165,7 +170,7 @@ CAPTAIN_NAMES = ["RAF", "WAYNE", "STARR", "ARON", "CARLOS", "EVELIZ",
 
 
 def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
-    """The whole Monday rollover in order — run BEFORE the new week's daily
+    """The whole TUESDAY rollover in order — run BEFORE the new week's daily
     fill, AFTER a fresh pull has finalized the just-finished week:
 
       1. ORG leaderboard      — shift right, new col-C week header, freeze col C.
@@ -182,8 +187,12 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     import datetime as _dt
     from automations.org_sales_board import captainship as cap
     today = today or _dt.date.today()
+    if today.weekday() != 1:   # 1 == Tuesday
+        logfn(f"  ⚠ rollover is meant to run TUESDAY (after Monday's Sunday "
+              f"entry); today is {today:%A} {today.isoformat()} — double-check "
+              f"the just-finished week is complete before relying on this.")
     new_label = we_label(new_week_ending(today))
-    logfn(f"=== ORG board Monday rollover — new week {new_label} "
+    logfn(f"=== ORG board Tuesday rollover — new week {new_label} "
           f"(dry_run={dry_run}) ===")
     summary = {"new_label": new_label, "captainships": 0, "delta_tables": 0,
                "cleared_ranges": 0}

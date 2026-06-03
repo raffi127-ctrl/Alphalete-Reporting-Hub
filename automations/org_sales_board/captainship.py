@@ -101,12 +101,16 @@ def fill_captainship(ws, anchor: CaptainAnchor, today, per_for,
             # across the row instead of 0 (Megan 2026-06-03), so a zero-
             # production rep reads clearly rather than looking like missing data.
             missing.append(name)
+            # NS only on completed days (< today); today + future blank out —
+            # they haven't happened yet (Megan 2026-06-03).
             updates.append({"range": f"{L0}{row}:{L1}{row}",
-                            "values": [["NS"] * len(days)]})
+                            "values": [["" if d >= today else "NS"
+                                        for d in days]]})
             updates.append({"range": f"{runL}{row}", "values": [["NS"]]})
             continue
         updates.append({"range": f"{L0}{row}:{L1}{row}",
-                        "values": [[int(per.get(d, 0)) for d in days]]})
+                        "values": [["" if d >= today else int(per.get(d, 0))
+                                    for d in days]]})
         updates.append({"range": f"{runL}{row}",
                         "values": [[f"=SUM({L0}{row}:{L1}{row})"]]})
     for row, name in anchor.leaderboard:

@@ -199,13 +199,25 @@ def plan_section_fill(
     spec: SectionSpec,
     pull: Dict[str, Dict[str, Dict[dt.date, int]]],
     raw_aliases: Optional[dict] = None,
+    today: Optional[dt.date] = None,
 ) -> FillPlan:
     """Build the batch of cell writes for one daily section. Pure: no Sheet
     or network I/O — feed it a grid (`ws.get_all_values()`) + a parsed pull
     and it returns the planned updates so they can be previewed first."""
     raw_aliases = raw_aliases if raw_aliases is not None else load_aliases()
+    today = today or dt.date.today()
     anchor = find_daily_section(grid, spec.label)
     plan = FillPlan(section=spec.label)
+
+    # Day columns for dates that haven't happened yet (TODAY + future) must be
+    # blanked, not left as-is — otherwise stale numbers from a prior run/week
+    # linger in the future-day cells (Megan 2026-06-03: "wed-Sunday should be
+    # cleared, it hasn't happened yet"). Only COMPLETED days (< today) carry
+    # data; today itself is in-progress, so it's cleared too until it closes.
+    monday = today - dt.timedelta(days=today.weekday())
+    week_dates = [monday + dt.timedelta(days=i) for i in range(7)]
+    future_cols = [anchor.day_col_by_daynum[d.day] for d in week_dates
+                   if d >= today and d.day in anchor.day_col_by_daynum]
 
     # Which days are present in this pull (any owner) for this metric?
     present_days: set[dt.date] = set()
@@ -237,6 +249,8 @@ def plan_section_fill(
 
         no_sales = owner_key is None
         for day, col in sorted(fill_cols.items(), key=lambda kv: kv[1]):
+            if day >= today:
+                continue   # today/future cleared below — never write partial days
             if no_sales:
                 # No sales in the pull this week — write "NS" (No Sales) instead
                 # of 0 (Megan 2026-06-03). Only the day DATA cells change; the
@@ -252,6 +266,11 @@ def plan_section_fill(
                 "values": [[val]],
             })
             plan.day_totals[day.day] = plan.day_totals.get(day.day, 0) + val
+
+        # Blank today + future day cells (haven't happened — clear stale values).
+        for col in future_cols:
+            plan.updates.append({
+                "range": f"{_col(col)}{row}", "values": [[""]]})
 
         # Running Week Total = live SUM over the day cells (never hardcoded).
         plan.updates.append({

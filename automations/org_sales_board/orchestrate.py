@@ -179,7 +179,8 @@ def _run_daily_inner(ws, *, page, dry_run, today, from_csv, only,
             for sec in sections:
                 spec = fs.SectionSpec(label=sec.label, metric=sec.metric)
                 plan = fs.plan_section_fill(grid, spec, pull,
-                                            raw_aliases=raw_aliases)
+                                            raw_aliases=raw_aliases,
+                                            today=today)
                 fs.apply_plan(ws, plan, dry_run=dry_run, logfn=logfn)
                 summary["filled"].append(sec.label)
 
