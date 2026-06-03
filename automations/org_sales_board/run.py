@@ -157,6 +157,15 @@ def main(argv=None) -> int:
         only = (["Retail NL", "Retail Internet"]
                 if args.step == "retail-nl" else None)
         from_csv = Path(args.from_csv) if args.from_csv else None
+        # On TUESDAY the full daily run rolls the week over FIRST (Megan
+        # 2026-06-03: no separate card — it's folded into the Tuesday run).
+        # run_rollover self-guards (skips if already done this week), so it's
+        # safe to re-run. Pure sheet ops — no Tableau session needed.
+        import datetime as _dt
+        if args.step == "daily" and _dt.date.today().weekday() == 1:
+            from automations.org_sales_board import rollover
+            print("--- Tuesday: weekly rollover first ---")
+            rollover.run_rollover(ws, dry_run=args.dry_run)
         orchestrate.run_daily(ws, dry_run=args.dry_run, only=only,
                               from_csv=from_csv,
                               include_captainships=args.with_captainships)

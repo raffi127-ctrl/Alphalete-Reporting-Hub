@@ -199,6 +199,13 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
 
     grid = ws.get_all_values()
     org = find_org_block(grid)
+    # Idempotency: if the leaderboard's col-C header is ALREADY this week's WE
+    # label, the rollover ran already this week — skip (re-running would double-
+    # shift the history). Lets the Tuesday daily run call this safely every time.
+    if _cell(grid, org.header_row - 1, org.first_col - 1).strip() == new_label:
+        logfn(f"  rollover already done this week (col C = {new_label!r}) — skip")
+        summary["skipped"] = True
+        return summary
     upd, _ = plan_leaderboard_rollover(ws, org, new_label)
     if not dry_run:
         ws.batch_update(upd, value_input_option="USER_ENTERED")

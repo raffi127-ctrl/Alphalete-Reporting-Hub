@@ -2049,8 +2049,10 @@ AUTOMATED_REPORTS = [
             "compare to what the VAs key, confirm it matches before going live.\n\n"
             "WHEN IT RUNS\n"
             "**Daily.** Only completed days fill; today + future stay blank.\n"
-            "**Tuesday** — run the **Rollover** action FIRST (freezes the finished "
-            "week + shifts the 4-week history), then the daily fill.\n\n"
+            "**Tuesday** — the run rolls the week over **automatically** first "
+            "(freezes the finished week + shifts the 4-week history), then fills. "
+            "Nothing extra to do; safe to re-run (the rollover skips if already "
+            "done).\n\n"
             "STILL MANUAL (not yet automated)\n"
             "**Retail JE** (Closed Won) and **Frontier** (Verizon PDF) are still "
             "keyed by hand.\n\n"
@@ -2076,16 +2078,9 @@ AUTOMATED_REPORTS = [
                 "label": "Run Daily Fill (Copy Tab)",
                 "icon": "▶",
                 "primary": True,
-                "help": "Fills the copy tab's 6 daily sections + 10 captainships for the completed days this week. Copy tab only — never the live VA tab.",
+                "help": "Fills the copy tab's 6 daily sections + 10 captainships for the completed days this week. On Tuesdays it rolls the week over first automatically (freezes last week + shifts the 4-week history). Copy tab only — never the live VA tab.",
                 "module": "automations.org_sales_board.run",
                 "args_fn": lambda: ["--step", "daily", "--with-captainships"],
-            },
-            {
-                "label": "Run Tuesday Rollover (Copy Tab)",
-                "icon": "🔁",
-                "help": "TUESDAY ONLY, before the daily fill: freezes last week + shifts the 4-week history down. Copy tab only.",
-                "module": "automations.org_sales_board.run",
-                "args_fn": lambda: ["--step", "rollover"],
             },
         ],
     },
