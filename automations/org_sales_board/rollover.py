@@ -195,7 +195,7 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     logfn(f"=== ORG board Tuesday rollover — new week {new_label} "
           f"(dry_run={dry_run}) ===")
     summary = {"new_label": new_label, "captainships": 0, "delta_tables": 0,
-               "cleared_ranges": 0}
+               "org_history_tables": 0, "cleared_ranges": 0}
 
     grid = ws.get_all_values()
     org = find_org_block(grid)
@@ -231,6 +231,19 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
             ws.batch_update(upd, value_input_option="USER_ENTERED")
     summary["delta_tables"] = len(tables)
     logfn(f"  3/4 {len(tables)} delta tables frozen (this week -> last week)")
+
+    # 3b. 'X ORG - Current vs Prior Weeks' summary tables (CARLOS/COLTEN/BEN):
+    # shift the static 4-week history down + seed Last Week from this week.
+    # MUST run before the daily clear (their 'Sales - This Week' is a live
+    # SUMIF over the daily area). Feeds the 4-Week AVG. (Megan 2026-06-03.)
+    org_tables = find_org_history_tables(grid)
+    for t in org_tables:
+        upd = plan_org_history_rollover(ws, t)
+        if upd and not dry_run:
+            ws.batch_update(upd, value_input_option="USER_ENTERED")
+    summary["org_history_tables"] = len(org_tables)
+    logfn(f"  3b/5 {len(org_tables)} ORG history table(s) shifted down "
+          f"(this wk → Last Week → Prior → 2 Weeks → 3 Weeks)")
 
     ranges = plan_daily_clear(ws, grid)
     if not dry_run:
@@ -353,4 +366,76 @@ def plan_delta_rollover(ws, table: dict):
             v = vals[tc - c0] if (tc - c0) < len(vals) else ""
             updates.append({"range": f"{a1col(tc + 1)}{row}",
                             "values": [[v if v != "" else 0]]})
+    return updates
+
+
+_ORG_WEEKDAYS = {"monday", "tuesday", "wednesday", "thursday",
+                 "friday", "saturday", "sunday"}
+
+
+def find_org_history_tables(grid: List[List[str]]) -> List[dict]:
+    """Find each 'X ORG - Current vs Prior Weeks' summary table that carries a
+    STATIC 4-week history — Last Week / Prior Week / 2 Weeks Prior / 3 Weeks
+    Prior — plus a 'Sales - This Week' row (CARLOS / COLTEN / BEN). RAF ORG is
+    formula-driven (its 'Sales (Last Week)' is a live =SUM over the daily
+    sections, with no static history rows), so it lacks these labels and is
+    skipped. These four rows are the VAs' manual weekly shift-down that feeds
+    the 4-Week AVG (=AVERAGE of the four); the Tuesday rollover replicates it.
+    Returns dicts with each row's 1-based number + the column span (first
+    weekday col .. Grand-Total col)."""
+    tables = []
+    for i, row in enumerate(grid):
+        if not any("ORG - Current vs Prior" in (c or "") for c in row[:6]):
+            continue
+        hdr = i + 1
+        rows, dayrow = {}, None
+        for r in range(hdr, min(hdr + 15, len(grid) + 1)):
+            lab = (_cell(grid, r - 1, 0) or _cell(grid, r - 1, 1)).strip().lower()
+            if lab == "sales - this week":
+                rows["this"] = r
+            elif lab == "last week":
+                rows["lw"] = r
+            elif lab == "prior week":
+                rows["pw"] = r
+            elif lab == "2 weeks prior":
+                rows["2wp"] = r
+            elif lab == "3 weeks prior":
+                rows["3wp"] = r
+            if dayrow is None and sum(
+                    1 for c in grid[r - 1]
+                    if (c or "").strip().lower() in _ORG_WEEKDAYS) >= 4:
+                dayrow = r
+        if not all(k in rows for k in ("this", "lw", "pw", "2wp", "3wp")):
+            continue
+        if dayrow is None:
+            continue
+        daycols = [c + 1 for c, v in enumerate(grid[dayrow - 1])
+                   if (v or "").strip().lower() in _ORG_WEEKDAYS]
+        tables.append({"header_row": hdr, "c0": min(daycols),
+                       "cN": max(daycols) + 1, **rows})   # cN = Grand-Total col
+    return tables
+
+
+def plan_org_history_rollover(ws, table: dict):
+    """Shift the static 4-week history DOWN one row, seeding Last Week from the
+    just-finished week's 'Sales - This Week' (read as VALUES before the daily
+    area is cleared): Last Week ← this week, Prior Week ← Last Week, 2 Weeks
+    Prior ← Prior Week, 3 Weeks Prior ← 2 Weeks Prior. Every source is read
+    BEFORE any write, so the cascade can't corrupt. All written as static
+    values (Grand-Total column included — it's static, not a formula). Read-only
+    until applied."""
+    c0, cN = table["c0"], table["cN"]
+
+    def span(r):
+        return f"{a1col(c0)}{r}:{a1col(cN)}{r}"
+
+    src = [table["this"], table["lw"], table["pw"], table["2wp"]]
+    dst = [table["lw"], table["pw"], table["2wp"], table["3wp"]]
+    got = ws.batch_get([span(r) for r in src],
+                       value_render_option="UNFORMATTED_VALUE")
+    updates = []
+    for d, block in zip(dst, got):
+        vals = list(block[0]) if block else []
+        if vals:
+            updates.append({"range": span(d), "values": [vals]})
     return updates
