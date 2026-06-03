@@ -18,3 +18,7 @@ python-dateutil>=2.8
 pdfplumber>=0.11
 slack_sdk
 certifi
+# Gmail API client — used to create email drafts via the Gmail API
+# (users().drafts().create()), authorized by automations/shared/gmail_auth.py
+# with a separate gmail.compose token. SMTP can only send, not draft.
+google-api-python-client>=2.100
