@@ -387,7 +387,23 @@ def _detect_preserve_top_rows(ws) -> int:
         a1 = (ws.acell("A1").value or "").upper()
     except Exception:
         return 0
-    return _CHURN_TIERS_PRESERVE_ROWS if "CHURN TIERS" in a1 else 0
+    base = _CHURN_TIERS_PRESERVE_ROWS if "CHURN TIERS" in a1 else 0
+    # Advance past any fully-empty spacer row(s) right after the preserved block.
+    # Such a row can hold a wide B..G merge (a visual separator) that the B-C
+    # column insert would only PARTIALLY intersect — which Sheets rejects with
+    # "partially intersects a merge". Starting the insert at the first real
+    # section row keeps that merge out of the insert range (Eve glitch
+    # 2026-06-03).
+    try:
+        nxt = ws.get(f"A{base + 1}:H{base + 8}")
+    except Exception:
+        return base
+    extra = 0
+    for r in nxt:
+        if any((c or "").strip() for c in r):
+            break
+        extra += 1
+    return base + extra
 
 
 def insert_two_cols_at_b(ws, sections: Optional[dict] = None) -> None:
