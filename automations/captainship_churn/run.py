@@ -89,19 +89,25 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict,
     skip_insert = already_filled and not args.force_insert
     if skip_insert:
         print(f"  ⚠ '{fill._date_label(today)}' already in B+C — skipping "
-              f"INSERT (idempotent). write_today + cleanup pass still "
-              f"runs so today's values get refreshed from the latest "
-              f"pull (matters when the source URL changed mid-day, "
-              f"e.g. Eve's wireless-URL fix 2026-05-29).")
+              f"COLUMN insert (idempotent). insert_missing_reps + "
+              f"write_today + cleanup still run so today's values get "
+              f"refreshed from the latest pull (matters when the source "
+              f"URL changed mid-day, e.g. Eve's wireless-URL fix "
+              f"2026-05-29).")
+    # insert_missing_reps runs EVERY run, including same-day refreshes
+    # (Megan 2026-06-04): a row that goes missing after the day's first
+    # fill (e.g. deleted in a manual dup cleanup — Jairo Ruiz 60-day /
+    # Drew Tepper 90-day on the Owners tabs) was never re-created
+    # because the insert only ran on the first run of the day.
+    added = fill.insert_missing_reps(ws, sections, parsed,
+                                     dry_run=args.dry_run, logfn=print)
+    if added:
+        for p, names in added.items():
+            print(f"  + {p}-day: added {len(names)} new ICD(s): {names[:5]}"
+                  + (" …" if len(names) > 5 else ""))
     else:
-        added = fill.insert_missing_reps(ws, sections, parsed,
-                                         dry_run=args.dry_run, logfn=print)
-        if added:
-            for p, names in added.items():
-                print(f"  + {p}-day: added {len(names)} new ICD(s): {names[:5]}"
-                      + (" …" if len(names) > 5 else ""))
-        else:
-            print("  (no new ICDs to add)")
+        print("  (no new ICDs to add)")
+    if not skip_insert:
         if args.dry_run:
             print("  (dry-run, skipping column insert + merge)")
         else:
@@ -138,15 +144,14 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict,
     # Megan 2026-05-29: clear leftover bg on empty cells under each
     # section (was bleeding red/green/yellow into rows below the last
     # visible rep), repaint rep-row top+bottom borders (sortRange can
-    # carry a no-border row into the visible block), then hide ICDs
-    # that have been 0% for 5 consecutive pulls (not actionable to
-    # track).
+    # carry a no-border row into the visible block).
+    # NOTE: hide_after_5_zero_pulls was REMOVED from this pipeline
+    # (Megan 2026-06-04 visibility rule): 0% is data — show the rep.
+    # Only reps with NO pct this bucket are hidden (hide_blanks_today).
     fill.clear_empty_cell_backgrounds(ws, sections,
                                       dry_run=args.dry_run, logfn=print)
     fill.apply_rep_row_borders(ws, sections,
                                dry_run=args.dry_run, logfn=print)
-    fill.hide_after_5_zero_pulls(ws, sections,
-                                 dry_run=args.dry_run, logfn=print)
     return 0
 
 

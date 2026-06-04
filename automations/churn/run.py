@@ -77,19 +77,23 @@ def _run_fill_phase(label: str, pull_mod, fill_mod, parsed: dict,
 
     if skip_insert:
         print(f"  ⚠ '{fill_mod._date_label(today)}' already in B+C — skipping "
-              f"INSERT (idempotent). write_today + cleanup pass still runs "
-              f"so today's values get refreshed from the latest pull "
-              f"(matters when the source URL changed mid-day, e.g. Eve's "
-              f"wireless-URL fix 2026-05-29).")
+              f"COLUMN insert (idempotent). insert_missing_reps + "
+              f"write_today + cleanup pass still run so today's values "
+              f"get refreshed from the latest pull (matters when the "
+              f"source URL changed mid-day, e.g. Eve's wireless-URL fix "
+              f"2026-05-29).")
+    # insert_missing_reps runs EVERY run, including same-day refreshes
+    # (Megan 2026-06-04, mirrors captainship/owners): rows that go
+    # missing after the day's first fill get re-created on refresh.
+    added = fill_mod.insert_missing_reps(ws, sections, parsed,
+                                          dry_run=args.dry_run, logfn=print)
+    if added:
+        for p, names in added.items():
+            print(f"  + {p}-day: added {len(names)} new rep(s): {names[:5]}"
+                  + (" …" if len(names) > 5 else ""))
     else:
-        added = fill_mod.insert_missing_reps(ws, sections, parsed,
-                                              dry_run=args.dry_run, logfn=print)
-        if added:
-            for p, names in added.items():
-                print(f"  + {p}-day: added {len(names)} new rep(s): {names[:5]}"
-                      + (" …" if len(names) > 5 else ""))
-        else:
-            print("  (no new reps to add)")
+        print("  (no new reps to add)")
+    if not skip_insert:
         if args.dry_run:
             print("  (dry-run, skipping column insert + merge)")
         else:

@@ -65,18 +65,13 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip().upper())
 
 
-def _has_nonzero_pct(slot: Optional[dict]) -> bool:
-    """True if `slot` carries a non-zero churn %. Used by auto-insert to
-    skip 0% reps (Megan: only add reps with at least one meaningful churn)."""
+def _has_pct(slot: Optional[dict]) -> bool:
+    """True if `slot` carries ANY churn % value — including an explicit
+    0%. Megan 2026-06-04 visibility rule: 0% is DATA (show the rep);
+    only a missing/blank pct means 'no entry this bucket'."""
     if not slot:
         return False
-    pct_raw = (slot.get("pct") or "").strip().rstrip("%")
-    if not pct_raw:
-        return False
-    try:
-        return float(pct_raw) > 0
-    except ValueError:
-        return False
+    return bool((slot.get("pct") or "").strip())
 
 
 def _col_index_to_letter(idx_0: int) -> str:
@@ -235,14 +230,12 @@ def insert_missing_reps(
             rep_name for rep_name, periods in reps.items()
             if rep_name.lower() not in existing_lc
         )
-        # Only auto-insert when the rep has a NON-ZERO churn % for THIS
-        # period (Megan 2026-05-28: "skip 0% inserts"). Rationale: a 0%
-        # churn rep is technically active but not actionable — keep them
-        # out of the roster until they actually churn at least once.
-        # They still get included in the Office Avg calculation upstream
-        # (Tableau already aggregated the totals), and can be added by
-        # hand later if Megan ever wants them tracked.
-        missing = [m for m in missing if _has_nonzero_pct(reps[m].get(period))]
+        # Auto-insert any rep with a pct for THIS period — INCLUDING an
+        # explicit 0% (Megan 2026-06-04 reversal of the 2026-05-28 skip
+        # rule: "show everyone with a percentage, 0% included; hide only
+        # reps with no percentage at all"). Reps with no pct this period
+        # still don't get a row here — hide_blanks_today keeps them out.
+        missing = [m for m in missing if _has_pct(reps[m].get(period))]
         if not missing:
             continue
         # Anchor row = max existing rep row in this section.
@@ -283,15 +276,31 @@ def insert_missing_reps(
             }
         })
     ws.spreadsheet.batch_update({"requests": batch_requests})
+    # Let the row inserts commit server-side before writing names into
+    # the new rows (mirrors the wait in insert_two_cols_at_b).
+    time.sleep(1)
 
-    # Write the rep names into col A of the freshly-inserted rows.
+    # FINAL position of each request's inserted block: its original
+    # anchor shifted DOWN by the deltas of every insert that happened
+    # ABOVE it (lower anchor). The batch above applies bottom-up, so
+    # each request's startIndex was correct AT APPLY TIME — but once
+    # the whole batch lands, every lower section has moved down by the
+    # upper sections' insert counts. Writing names at the ORIGINAL
+    # anchors sprayed them N rows too high, onto OTHER reps' rows
+    # (this was the 2026-05-29 'Khalil 90-day corruption', re-triggered
+    # at scale on 2026-06-04 by the Local Office 0% inserts).
+    def _shift_above(req) -> int:
+        return sum(len(r["_names"]) for r in insert_requests
+                   if r["_anchor"] < req["_anchor"])
+
+    # Write the rep names into col A of the freshly-inserted rows,
+    # at their FINAL (post-batch) positions.
     name_cells: list[dict] = []
     for req in insert_requests:
-        anchor = req["_anchor"]
+        base = req["_anchor"] + _shift_above(req)
         for i, name in enumerate(req["_names"]):
-            row_num = anchor + 1 + i
             name_cells.append({
-                "range": f"{ws.title}!A{row_num}",
+                "range": f"{ws.title}!A{base + 1 + i}",
                 "values": [[name]],
             })
     ws.spreadsheet.values_batch_update({
@@ -314,10 +323,13 @@ def insert_missing_reps(
                     name: (row + delta if row > req["_anchor"] else row)
                     for name, row in s["rep_rows"].items()
                 }
-        # Add the freshly-inserted reps to their section's rep_rows map.
+    # Add the freshly-inserted reps to their section's rep_rows map at
+    # the same FINAL positions the names were written to.
+    for req in insert_requests:
+        base = req["_anchor"] + _shift_above(req)
         p = req["_period"]
         for i, name in enumerate(req["_names"]):
-            sections[p]["rep_rows"][name.lower()] = req["_anchor"] + 1 + i
+            sections[p]["rep_rows"][name.lower()] = base + 1 + i
     return added
 
 
@@ -566,27 +578,29 @@ def write_today(
             "values": [[pull.fmt_units(odata)]],
         })
 
-        # 3. Per-rep rows — only consider reps with actual data for THIS
-        # period. The newly-inserted B+C are already empty, so reps with
-        # no data this period just stay blank (no explicit write needed).
-        sect_summary = {"filled": 0, "unmatched": []}
+        # 3. Per-rep rows. Reps with data for THIS period (an explicit
+        # 0% counts as data) get today's pct + units. Every OTHER roster
+        # row gets B+C explicitly CLEARED — required because
+        # insert_two_cols_at_b copies D+E onto the new B+C with
+        # PASTE_NORMAL, which brings YESTERDAY'S VALUES along with the
+        # formatting. Without the clear, a rep who dropped out of
+        # Tableau's window still shows yesterday's number under today's
+        # date label, and hide_blanks_today can't hide them (B isn't
+        # blank). Megan 2026-06-04: Tomas Meza's stale 25% in the 60-day
+        # bucket / Van's frozen 0% in the 90-day bucket.
+        sect_summary = {"filled": 0, "cleared": 0, "unmatched": []}
         rep_rows = sect["rep_rows"]
+        filled_rows: set = set()
         for rep_name, rep_periods in reps.items():
             pdata = rep_periods.get(period)
             if not pdata or not pdata.get("pct"):
-                continue   # rep has no data here; B+C already blank
-            # Write 0.00% + units too (Megan 2026-05-29 reversal of the
-            # 2026-05-28 skip rule — the team wants 0% reps SHOWN with
-            # their unit count, not left blank). Auto-insert still
-            # filters 0%-only reps to avoid roster bloat — they appear
-            # here only if they're already in the existing roster.
+                continue   # no pct this period → row cleared below
             row = rep_rows.get(rep_name.lower())
             if row is None:
-                # Has data but no row. With auto-insert keeping its
-                # non-zero-only rule, this path is for 0% reps the team
-                # hasn't added to the roster yet. Skip silently (would
-                # otherwise be noisy); flag genuine surprises only.
-                if _has_nonzero_pct(pdata):
+                # Has a pct but no roster row. insert_missing_reps now
+                # runs every run (incl. refresh) and inserts 0% reps
+                # too, so this is genuinely exceptional — flag it.
+                if _has_pct(pdata):
                     sect_summary["unmatched"].append(rep_name)
                 continue
             pct_cells.append({
@@ -597,7 +611,19 @@ def write_today(
                 "range": f"{ws.title}!C{row}",
                 "values": [[pull.fmt_units(pdata)]],
             })
+            filled_rows.add(row)
             sect_summary["filled"] += 1
+        # 3b. Clear B+C on roster rows with NO data this period. A
+        # legitimate 0% never lands here — it was written above
+        # (pct '0.00%' is a non-empty string → filled).
+        for row in rep_rows.values():
+            if row in filled_rows:
+                continue
+            raw_cells.append({
+                "range": f"{ws.title}!B{row}:C{row}",
+                "values": [["", ""]],
+            })
+            sect_summary["cleared"] += 1
         summary[period] = sect_summary
 
     if dry_run:

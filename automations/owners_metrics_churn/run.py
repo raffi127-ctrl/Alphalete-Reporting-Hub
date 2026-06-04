@@ -114,17 +114,23 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
     skip_insert = already_filled and not args.force_insert
     if skip_insert:
         print(f"  ⚠ '{fill._date_label(today)}' already in B+C — skipping "
-              f"INSERT (idempotent). write_today + cleanup still runs "
-              f"so today's values get refreshed from the latest pull.")
+              f"COLUMN insert (idempotent). insert_missing_reps + "
+              f"write_today + cleanup still run so today's values get "
+              f"refreshed from the latest pull.")
+    # insert_missing_reps runs EVERY run, including same-day refreshes
+    # (Megan 2026-06-04): a row that goes missing after the day's first
+    # fill (Jairo Ruiz 60-day / Drew Tepper 90-day, deleted in a manual
+    # dup cleanup) was never re-created because the insert only ran on
+    # the first run of the day.
+    added = fill.insert_missing_reps(ws, sections, parsed,
+                                     dry_run=args.dry_run, logfn=print)
+    if added:
+        for p, names in added.items():
+            print(f"  + {p}-day: added {len(names)} new ICD(s): "
+                  f"{names[:5]}" + (" …" if len(names) > 5 else ""))
     else:
-        added = fill.insert_missing_reps(ws, sections, parsed,
-                                         dry_run=args.dry_run, logfn=print)
-        if added:
-            for p, names in added.items():
-                print(f"  + {p}-day: added {len(names)} new ICD(s): "
-                      f"{names[:5]}" + (" …" if len(names) > 5 else ""))
-        else:
-            print("  (no new ICDs to add)")
+        print("  (no new ICDs to add)")
+    if not skip_insert:
         if args.dry_run:
             print("  (dry-run, skipping column insert + merge)")
         else:
@@ -157,8 +163,9 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
                                       dry_run=args.dry_run, logfn=print)
     fill.apply_rep_row_borders(ws, sections,
                                dry_run=args.dry_run, logfn=print)
-    fill.hide_after_5_zero_pulls(ws, sections,
-                                 dry_run=args.dry_run, logfn=print)
+    # hide_after_5_zero_pulls REMOVED (Megan 2026-06-04 visibility
+    # rule): 0% is data — show the rep. Only reps with NO pct this
+    # bucket stay hidden (hide_blanks_today).
     return 0
 
 

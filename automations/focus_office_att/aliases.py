@@ -60,8 +60,12 @@ def load_aliases() -> dict[str, list[str]]:
 
 def _norm_name(s: str) -> str:
     """lower + strip + collapse internal whitespace, so a stray double
-    space in the alias Sheet ('Tony  Chavez') still matches 'Tony Chavez'."""
-    return re.sub(r"\s+", " ", (s or "").strip().lower())
+    space in the alias Sheet ('Tony  Chavez') still matches 'Tony Chavez'.
+    Also unify apostrophe variants (curly ’/‘ and backtick → straight ')
+    so \"D'Mari Longmire\" typed with a smart quote in the Sheet still
+    matches Tableau's ASCII apostrophe (Megan 2026-06-04)."""
+    s = (s or "").replace("’", "'").replace("‘", "'").replace("`", "'")
+    return re.sub(r"\s+", " ", s.strip().lower())
 
 
 def alias_to_canonical(name: str, raw: dict) -> str:
@@ -99,11 +103,23 @@ def alias_to_canonical(name: str, raw: dict) -> str:
 
 def get_search_candidates(sheet_tab_name: str, raw: dict) -> list[str]:
     """Return the search-name candidates to try when looking this person up
-    in an external system. Sheet tab name first, then aliases."""
+    in an external system. Sheet tab name first, then aliases.
+
+    Resolves in BOTH directions: if the tab name is itself listed as an
+    ALIAS of some canonical (e.g. a Focus tab still named with an old
+    spelling after the 2026-06-04 alias-direction cleanup), the canonical
+    + its sibling aliases are included too — so flipping an alias row's
+    direction never silently breaks another report's lookups."""
     candidates = [sheet_tab_name]
     for alias in raw.get(sheet_tab_name, []):
         if alias not in candidates:
             candidates.append(alias)
+    n = _norm_name(sheet_tab_name)
+    for canonical, aliases in raw.items():
+        if any(_norm_name(a) == n for a in aliases):
+            for cand in (canonical, *aliases):
+                if cand not in candidates and _norm_name(cand) != n:
+                    candidates.append(cand)
     return candidates
 
 
