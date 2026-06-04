@@ -337,6 +337,24 @@ def _find_tableau_page(browser):
     return None
 
 
+# A Tableau crosstab pull can time out mid-click when the viz is slow to
+# render or a transient error toast intercepts the Download button (Eve scrape
+# glitches: rows 18-64). drive_crosstab_dialog re-navigates to the view on
+# entry, so re-driving it from scratch is a clean recovery. INERT on a healthy
+# pull — download_crosstab returns on the first attempt and never loops.
+_CROSSTAB_RETRIES = 3
+
+
+def _is_scrape_timeout(exc: Exception) -> bool:
+    return "timeout" in str(exc).lower()
+
+
+def _is_target_closed(exc: Exception) -> bool:
+    s = str(exc).lower()
+    return ("target page" in s or "target closed" in s
+            or "has been closed" in s)
+
+
 def download_crosstab(view_url: str, crosstab_sheet: str, out_path: Path,
                       verbose: bool = True, page=None) -> Path:
     """Drive Tableau's Download → Crosstab on `view_url` and save the
@@ -353,15 +371,38 @@ def download_crosstab(view_url: str, crosstab_sheet: str, out_path: Path,
     reuse ONE login. If `page` is None, opens its own one-shot session.
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    if page is not None:
-        return drive_crosstab_dialog(page, view_url, crosstab_sheet, out_path,
-                                     verbose=verbose)
-    # Lazy import — tableau_patchright imports drive_crosstab_dialog from this
-    # module, so a top-level import would be circular.
-    from automations.shared.tableau_patchright import tableau_session
-    with tableau_session(verbose=verbose) as pg:
-        return drive_crosstab_dialog(pg, view_url, crosstab_sheet, out_path,
-                                     verbose=verbose)
+    last: Optional[Exception] = None
+    for attempt in range(_CROSSTAB_RETRIES):
+        try:
+            if page is not None:
+                return drive_crosstab_dialog(page, view_url, crosstab_sheet,
+                                             out_path, verbose=verbose)
+            # Lazy import — tableau_patchright imports drive_crosstab_dialog
+            # from this module, so a top-level import would be circular.
+            from automations.shared.tableau_patchright import tableau_session
+            with tableau_session(verbose=verbose) as pg:
+                return drive_crosstab_dialog(pg, view_url, crosstab_sheet,
+                                             out_path, verbose=verbose)
+        except Exception as e:
+            last = e
+            shared = page is not None
+            # Retry a transient scrape timeout — drive_crosstab_dialog
+            # re-navigates to view_url on entry, so the next attempt starts
+            # clean. For a fresh one-shot session we can also retry a closed
+            # target; on a SHARED page (run_opt_phase owns the session) a
+            # closed target can't be recovered here, so don't mask it.
+            retryable = (_is_scrape_timeout(e)
+                         or (not shared and _is_target_closed(e)))
+            if retryable and attempt < _CROSSTAB_RETRIES - 1:
+                if verbose:
+                    print(f"  ⚠ crosstab {crosstab_sheet!r} attempt "
+                          f"{attempt + 1}/{_CROSSTAB_RETRIES} failed "
+                          f"({type(e).__name__}) — re-navigating and retrying",
+                          flush=True)
+                continue
+            raise
+    assert last is not None
+    raise last
 
 
 def _norm_crosstab_sheet(s: str) -> str:

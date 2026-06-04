@@ -25,6 +25,7 @@ in the profile and skip straight to Tableau.
 from __future__ import annotations
 
 import re
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, Optional
@@ -75,6 +76,63 @@ _PRE_SUBMIT_PAUSE_MS = 3_000
 # Tableau tab. Matches what _reauth_tableau already targets in opt_phase.
 _TABLEAU_SSO_HREF_RE = re.compile(r"viewable\.cfm.*tableau", re.IGNORECASE)
 
+# Browser-launch collision handling. When two reports run at once they share
+# one persistent profile dir; the second launch fails with "profile already
+# in use" / "existing browser session" and the run crashes (Eve glitches:
+# rows 7,23,46,58,60,61,65,66). Wait + retry so the second run rides out the
+# first's release instead of failing.
+_LAUNCH_RETRIES = 4
+_LAUNCH_WAIT_S = 8.0
+
+
+def _is_profile_in_use(exc: Exception) -> bool:
+    s = str(exc).lower()
+    return ("already in use" in s or "existing browser session" in s
+            or "processsingleton" in s
+            or ("profile" in s and "in use" in s))
+
+
+def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
+                       verbose: bool = True):
+    """launch_persistent_context with the existing system-chrome → bundled-
+    chromium fallback UNCHANGED, wrapped in a wait+retry for the "profile
+    already in use" collision.
+
+    INERT on a normal launch: a healthy launch returns on the first try with
+    byte-identical behavior to before. The retry only triggers on the exact
+    profile-in-use failure that otherwise crashes the run — so it cannot
+    affect a working patchright run."""
+    base = dict(user_data_dir=str(user_data_dir), headless=headless,
+                no_viewport=True)
+    prefer_chrome = True
+    last: Optional[Exception] = None
+    for attempt in range(_LAUNCH_RETRIES):
+        try:
+            if prefer_chrome:
+                try:
+                    return p.chromium.launch_persistent_context(
+                        channel="chrome", **base)
+                except Exception as e:
+                    if _is_profile_in_use(e):
+                        raise  # bundled won't help (same profile); wait+retry
+                    if verbose:
+                        print(f"[{label}] system Chrome unavailable ({e!r}) — "
+                              "falling back to bundled Chromium", flush=True)
+                    prefer_chrome = False
+            return p.chromium.launch_persistent_context(**base)
+        except Exception as e:
+            last = e
+            if _is_profile_in_use(e) and attempt < _LAUNCH_RETRIES - 1:
+                if verbose:
+                    print(f"[{label}] browser profile is in use by another run "
+                          f"— waiting {_LAUNCH_WAIT_S:.0f}s then retrying "
+                          f"({attempt + 1}/{_LAUNCH_RETRIES})", flush=True)
+                time.sleep(_LAUNCH_WAIT_S)
+                continue
+            raise
+    assert last is not None
+    raise last
+
 
 @contextmanager
 def tableau_session(headless: bool = False, verbose: bool = True) -> Iterator[Page]:
@@ -85,22 +143,8 @@ def tableau_session(headless: bool = False, verbose: bool = True) -> Iterator[Pa
     skip straight to the post-login state."""
     PROFILE_DIR.mkdir(exist_ok=True, parents=True)
     with sync_playwright() as p:
-        try:
-            ctx = p.chromium.launch_persistent_context(
-                user_data_dir=str(PROFILE_DIR),
-                channel="chrome",
-                headless=headless,
-                no_viewport=True,
-            )
-        except Exception as e:
-            if verbose:
-                print(f"[tableau_patchright] system Chrome unavailable ({e!r}) — "
-                      "falling back to bundled Chromium", flush=True)
-            ctx = p.chromium.launch_persistent_context(
-                user_data_dir=str(PROFILE_DIR),
-                headless=headless,
-                no_viewport=True,
-            )
+        ctx = _launch_persistent(p, PROFILE_DIR, headless=headless,
+                                 label="tableau_patchright", verbose=verbose)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
             _ensure_tableau_authenticated(page, verbose=verbose)
@@ -366,16 +410,8 @@ def appstream_session(headless: bool = False, verbose: bool = True) -> Iterator[
     UNVERIFIED LIVE (2026-05-25) — smoke-test before wiring it in."""
     PROFILE_DIR.mkdir(exist_ok=True, parents=True)
     with sync_playwright() as p:
-        try:
-            ctx = p.chromium.launch_persistent_context(
-                user_data_dir=str(PROFILE_DIR), channel="chrome",
-                headless=headless, no_viewport=True)
-        except Exception as e:
-            if verbose:
-                print(f"[appstream_session] system Chrome unavailable ({e!r}) — "
-                      "falling back to bundled Chromium", flush=True)
-            ctx = p.chromium.launch_persistent_context(
-                user_data_dir=str(PROFILE_DIR), headless=headless, no_viewport=True)
+        ctx = _launch_persistent(p, PROFILE_DIR, headless=headless,
+                                 label="appstream_session", verbose=verbose)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
             # Ensure ownerville is logged in (drives the form if not), then SSO.
@@ -403,14 +439,8 @@ def ownerville_session(headless: bool = False,
     tableau_session; the caller navigates to the ownerville URLs it needs."""
     PROFILE_DIR.mkdir(exist_ok=True, parents=True)
     with sync_playwright() as p:
-        try:
-            ctx = p.chromium.launch_persistent_context(
-                user_data_dir=str(PROFILE_DIR), channel="chrome",
-                headless=headless, no_viewport=True)
-        except Exception:
-            ctx = p.chromium.launch_persistent_context(
-                user_data_dir=str(PROFILE_DIR), headless=headless,
-                no_viewport=True)
+        ctx = _launch_persistent(p, PROFILE_DIR, headless=headless,
+                                 label="ownerville_session", verbose=verbose)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
             if verbose:
@@ -465,17 +495,8 @@ def appstream_direct_session(headless: bool = False,
     user = username or creds.appstream_username()
     pwd  = password or creds.appstream_password()
     with sync_playwright() as p:
-        try:
-            ctx = p.chromium.launch_persistent_context(
-                user_data_dir=str(profile), channel="chrome",
-                headless=headless, no_viewport=True)
-        except Exception as e:
-            if verbose:
-                print(f"[appstream_direct] system Chrome unavailable ({e!r}) — "
-                      "bundled Chromium", flush=True)
-            ctx = p.chromium.launch_persistent_context(
-                user_data_dir=str(profile), headless=headless,
-                no_viewport=True)
+        ctx = _launch_persistent(p, profile, headless=headless,
+                                 label="appstream_direct", verbose=verbose)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
             if verbose:
