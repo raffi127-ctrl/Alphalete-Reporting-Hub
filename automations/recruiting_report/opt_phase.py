@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import re
 import sys
 from pathlib import Path
@@ -157,6 +158,70 @@ PROGRAM_SUMMARY_VIEW_URL = (
     "639b7ff1-d2ed-49ae-a85d-b96a0787a1e9/CAPTAINVIEW"
 )
 PROGRAM_SUMMARY_PATH = WORKSPACE / "output" / "opt_program_summary.csv"
+
+# Direct Deposit roster — the set of ICD owners ever seen in the DD view
+# (PROGRAM SUMMARY / CAPTAINVIEW). It lets the fill distinguish an owner who is
+# KNOWN to the DD view but has no DD this week (-> "No DD") from one who never
+# appears in it at all (-> "Not in Tableau"). Megan's rule, 2026-06-04. The
+# roster self-maintains: every run adds the week's owners. Lives in the package
+# dir (committed) so the classification is shared, not per-machine.
+DD_ROSTER_PATH = Path(__file__).resolve().parent / "dd_roster.json"
+DD_NO_DD = "No DD"            # in the DD view's roster, but no DD this week
+DD_NOT_IN_TABLEAU = "Not in Tableau"  # never seen in the DD view
+
+
+def load_dd_roster() -> Dict[str, dict]:
+    """Read dd_roster.json -> {normalized owner: {"owner": display}} so it
+    plugs straight into _match_owner. Missing/corrupt file -> {}."""
+    try:
+        names = json.loads(DD_ROSTER_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return {_norm(n): {"owner": n} for n in names if str(n).strip()}
+
+
+def update_dd_roster(roster: Dict[str, dict], program_summary: Dict[str, dict]
+                     ) -> Dict[str, dict]:
+    """Fold this run's DD-view owners into the roster and persist it. Append-
+    only — an owner is never dropped, so a one-week absence doesn't demote a
+    known ICD to 'Not in Tableau'. No-op write when nothing new appeared."""
+    merged = dict(roster)
+    added = False
+    for k, v in (program_summary or {}).items():
+        if k not in merged:
+            merged[k] = {"owner": v.get("owner", k)}
+            added = True
+    if added:
+        try:
+            names = sorted(v["owner"] for v in merged.values())
+            DD_ROSTER_PATH.write_text(json.dumps(names, indent=2) + "\n",
+                                      encoding="utf-8")
+        except Exception:
+            pass   # persistence is best-effort; classification still works
+    return merged
+
+
+def _dd_value(tab_name: str, program_summary: Dict[str, dict],
+              dd_roster: Optional[Dict[str, dict]], aliases_map: dict):
+    """The Direct Deposit cell value for a tab, or None to leave the cell as-is.
+
+      - owner has a DD row this week        -> the dollar amount
+      - owner in the DD roster, none this wk -> "No DD"
+      - owner never in the DD view          -> "Not in Tableau"
+      - no DD data loaded this run / roster  -> None (don't touch the cell)
+
+    Only ever drives the CURRENT week's column, so prior weeks' (possibly hand-
+    entered) DD is never disturbed."""
+    ps_row = _match_owner(tab_name, program_summary, aliases_map)
+    if ps_row:
+        return round(ps_row["total"], 2)
+    # No DD this week. Only label if we actually pulled DD data this run AND we
+    # have a roster to classify against — otherwise leave the cell untouched
+    # (a failed/empty DD pull must never blanket-label every tab).
+    if not program_summary or dd_roster is None:
+        return None
+    known = _match_owner(tab_name, dd_roster, aliases_map)
+    return DD_NO_DD if known else DD_NOT_IN_TABLEAU
 
 # Fiber Lead Performance — per-ICD pull. The report filters the view to ONE ICD
 # at a time (Owner Name filter) and scrapes that ICD's "Program Overview" box —
@@ -1580,7 +1645,7 @@ def fill_opt_for_tab(
     wireless_metrics_by_owner: dict, wireless_churn_by_owner: dict,
     captains_by_owner: dict, program_summary: dict, fiber_by_owner: dict,
     aliases_map: dict, week_sunday: dt.date, dry_run: bool,
-    fill_empty_only: bool = False,
+    fill_empty_only: bool = False, dd_roster: Optional[dict] = None,
 ) -> List[str]:
     """Write the OPT + Office-Metrics values for one ICD tab from the ATT and
     INT crosstabs. Returns log lines. Only writes mapped cells — never clears.
@@ -1711,9 +1776,13 @@ def fill_opt_for_tab(
             _queue(om_rows, "30-60 Day Cancel Rate", f"{round(100 - appr, 1)}%")
 
     # --- Program Summary (Direct Deposit) ---
-    ps_row = _match_owner(tab_name, program_summary, aliases_map)
-    if ps_row:
-        _queue(om_rows, "Direct Deposit", round(ps_row["total"], 2))
+    # Amount if the ICD has DD this week; else "No DD" (known to the DD view but
+    # none this week) or "Not in Tableau" (never in it). Current-week cell only;
+    # None = leave the cell untouched (e.g. DD source didn't load). Megan's rule
+    # 2026-06-04.
+    dd_val = _dd_value(tab_name, program_summary, dd_roster, aliases_map)
+    if dd_val is not None:
+        _queue(om_rows, "Direct Deposit", dd_val)
 
     # --- Fiber Lead (Office Metrics section) — keyed by tab name ---
     # All from the Fiber view's Program Overview box: Penetration Rate, Total
@@ -1952,6 +2021,13 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
                          if dl_ok.get("captains", True) else {})
     program_summary = (parse_program_summary(PROGRAM_SUMMARY_PATH)
                        if dl_ok.get("program", True) else {})
+    # DD roster: load, fold in this week's DD-view owners (persisted), and pass
+    # to the fill so non-matched tabs get "No DD" (known to the view) vs "Not in
+    # Tableau" (never in it). Only when DD actually loaded this run.
+    dd_roster = load_dd_roster()
+    if program_summary:
+        dd_roster = update_dd_roster(dd_roster, program_summary)
+        logfn(f"OPT: DD roster now {len(dd_roster)} owner(s)")
     logfn(f"OPT: parsed {len(att_by_owner)} ATT, {len(int_by_owner)} INT, "
           f"{len(metrics_by_owner)} Metrics, {len(churn_by_owner)} Churn, "
           f"{len(wireless_metrics_by_owner)} Wireless Metrics, "
@@ -2005,7 +2081,8 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
                                  wireless_churn_by_owner, captains_by_owner,
                                  program_summary, fiber_by_owner,
                                  aliases_map, we_sunday, dry_run,
-                                 fill_empty_only=fill_empty_only)
+                                 fill_empty_only=fill_empty_only,
+                                 dd_roster=dd_roster)
         for ln in lines:
             logfn("OPT: " + ln)
             if ln.startswith("[SKIP]") or ln.startswith("[gap]"):
