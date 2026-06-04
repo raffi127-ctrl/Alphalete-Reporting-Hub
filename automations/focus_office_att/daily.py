@@ -183,8 +183,8 @@ def set_day_column_collapsed(sh, today: "dt.date") -> int:
 # Monday wipe
 # ----------------------------------------------------------------------
 def wipe_all_owner_tabs(sh) -> int:
-    """Clear the CURRENT-week block (rows 3..59) + its formatting on every
-    owner tab. Scoped to row 59 so the frozen LAST WEEK block (rows 60+) is
+    """Clear the CURRENT-week block (rows 3..CURRENT_ZONE_LAST_ROW=109) + its
+    formatting on every owner tab. Scoped to 109 so the frozen LAST WEEK block (rows 110+) is
     NEVER erased — the rollover runs first to freeze last week, then this
     clears only the current week for the fresh fill. Leaves rows 1-2 (banners
     + headers) + conditional rules. Monday-only.
@@ -250,9 +250,9 @@ LAST_WEEK_DATA_ROW = 113
 
 def _normalize_lastweek_conditional(ws) -> None:
     """Re-range every conditional-format rule so the day-block/weekly colors
-    cover the current-week zone (rows 3..59) AND the frozen DATA (rows
-    63..130) but SKIP the LAST WEEK label (60) + the frozen date row (61) +
-    the frozen column-header row (62) — so the label row is white past C and
+    cover the current-week zone (rows 3..109) AND the frozen DATA (rows
+    113..230) but SKIP the LAST WEEK label (110) + the frozen date row (111) +
+    the frozen column-header row (112) — so the label row is white past C and
     the two frozen header rows keep their own styling. Preserves each rule's
     column spans + format; only the ROW spans change. Run after the snapshot
     copy (which otherwise leaves the rules auto-extended/split)."""
@@ -282,7 +282,7 @@ def _normalize_lastweek_conditional(ws) -> None:
 
 def rollover_to_last_week(sh, only=None, logfn=print) -> int:
     """Freeze each tab's current-week block (reps + OFFICE TOTALS + summary)
-    into a fixed 'LAST WEEK' block at row 60, so last week's data 'stays
+    into a fixed 'LAST WEEK' block at LAST_WEEK_LABEL_ROW (110), so last week's data 'stays
     there' when the new week is wiped (Raf, 2026-05-31). The snapshot is
     static VALUES (formulas frozen to numbers) + the formatting, so it
     survives the current-week wipe. Current + last week only — the new
@@ -302,11 +302,11 @@ def rollover_to_last_week(sh, only=None, logfn=print) -> int:
             continue
         sid = ws.id
         # Snapshot includes the date header (row 1) so the frozen block carries
-        # last week's dates. Source rows 1..end_row → dest from row 61.
+        # last week's dates. Source rows 1..end_row → dest from LAST_WEEK_DATES_ROW (111).
         block_rows = end_row                             # rows 1..end_row inclusive
         frozen_bottom = LAST_WEEK_DATES_ROW - 1 + block_rows   # last frozen row
         cur_office_totals = end_row - 4                  # OFFICE TOTALS in current block
-        frozen_rep_start = LAST_WEEK_DATA_ROW            # 63
+        frozen_rep_start = LAST_WEEK_DATA_ROW            # 113
         frozen_rep_end = LAST_WEEK_DATES_ROW + (cur_office_totals - 1) - 1  # last frozen rep
         THICK = {"style": "SOLID_THICK", "color": {"red": 0, "green": 0, "blue": 0}}
         WHITE = {"red": 1, "green": 1, "blue": 1}

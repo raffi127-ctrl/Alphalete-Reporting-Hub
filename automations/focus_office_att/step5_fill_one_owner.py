@@ -793,9 +793,22 @@ def alphabetize_reps(ws, layout: Layout) -> None:
         for the sorted order.
     """
     rep_col_values = ws.col_values(layout.rep_name_col)
+    # Ceiling: NEVER sort the frozen LAST WEEK block. Its label, its repeated
+    # header, and its frozen reps all carry col-B text, and _is_summary_label
+    # doesn't catch them — so without this guard they get sorted up into the
+    # current week (the corruption introduced when the LAST WEEK rollover
+    # feature added rep names below the current zone, 2026-05-31). Anchor on the
+    # "LAST WEEK" label wherever it sits, so the cap survives the row-60→110
+    # layout drift; fall back to the full column when no block exists.
+    lw_row = next(
+        (i for i, v in enumerate(rep_col_values, start=1)
+         if isinstance(v, str)
+         and v.strip().upper().rstrip(TABLEAU_ONLY_MARK).strip() == LAST_WEEK_LABEL),
+        None)
+    ceiling = (lw_row - 1) if lw_row else len(rep_col_values)
     rep_row_idxs = [
         i for i, v in enumerate(rep_col_values, start=1)
-        if i >= 3 and v.strip() and not _is_summary_label(v)
+        if 3 <= i <= ceiling and v.strip() and not _is_summary_label(v)
     ]
     if len(rep_row_idxs) < 2:
         return  # nothing to sort
@@ -888,6 +901,10 @@ def reset_conditional_formatting(ws) -> tuple[int, int]:
 
 
 TABLEAU_ONLY_MARK = "🔹"
+# Frozen-block divider label. alphabetize_reps caps its sort ABOVE this row so
+# the LAST WEEK block is never sorted into the current week. Must match
+# daily.LAST_WEEK_LABEL.
+LAST_WEEK_LABEL = "LAST WEEK"
 
 # Office summary labels (live in col B below the rep rows). Any function
 # that iterates "reps" by col B values needs to filter these out — they
