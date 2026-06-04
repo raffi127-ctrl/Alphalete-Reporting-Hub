@@ -1,5 +1,5 @@
 {
-  "confirmed_count": 17,
+  "confirmed_count": 18,
   "needs_review_count": 0,
   "skip_count": 25,
   "confirmed": [
@@ -141,6 +141,13 @@
       "as_company": "Motiv8 Management Inc",
       "confidence": 1.0,
       "campaign": "Retail"
+    },
+    {
+      "sheet_tab": "Carlos Hidalgo -B2B",
+      "office_id": "11580",
+      "as_owner": "Carlos Hidalgo",
+      "as_company": "",
+      "confidence": 1.0
     }
   ],
   "needs_review": [],
