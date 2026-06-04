@@ -983,13 +983,31 @@ def scrape_view_data(view_url: str, verbose: bool = True,
         return _scrape_one_view_data(pg, pg.context, view_url, verbose, activate_xy)
 
 
+def _program_summary_url(we_sunday: Optional[dt.date] = None) -> str:
+    """PROGRAM SUMMARY view URL, pinned to a week via its 'Processed Week'
+    filter. The filter value is the week's MONDAY in ISO (YYYY-MM-DD) — ISO
+    works, MM/DD/YYYY is silently ignored (same as the Carlos DD view, verified
+    2026-06-01). Without a pin the view returns whatever week it was last
+    hand-advanced to, which silently wrote one week's DD into another week's
+    column (the 5/24/5/31 duplication, fixed 2026-06-04)."""
+    if we_sunday is None:
+        return PROGRAM_SUMMARY_VIEW_URL
+    from urllib.parse import quote
+    monday = we_sunday - dt.timedelta(days=6)
+    sep = "&" if "?" in PROGRAM_SUMMARY_VIEW_URL else "?"
+    return (f"{PROGRAM_SUMMARY_VIEW_URL}{sep}"
+            f"{quote('Processed Week')}={quote(monday.isoformat())}")
+
+
 def download_program_summary(out_path: Path = PROGRAM_SUMMARY_PATH,
-                             verbose: bool = True, page=None) -> Path:
+                             verbose: bool = True, page=None,
+                             we_sunday: Optional[dt.date] = None) -> Path:
     """Scrape the Program Summary View Data and save it tab-delimited so the
-    parse step (and --skip-download) can reuse it."""
+    parse step (and --skip-download) can reuse it. Pinned to `we_sunday`'s week
+    via the view's 'Processed Week' filter when given."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fields, records = scrape_view_data(PROGRAM_SUMMARY_VIEW_URL, verbose=verbose,
-                                       page=page)
+    fields, records = scrape_view_data(_program_summary_url(we_sunday),
+                                       verbose=verbose, page=page)
     lines = ["\t".join(fields)] + ["\t".join(r) for r in records]
     out_path.write_text("\n".join(lines), encoding="utf-8")
     if verbose:
@@ -1906,7 +1924,8 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
                 CAPTAINS_VIEW_URL, sheet, _captains_path(sheet),
                 verbose=False, page=_pg) for sheet in CAPTAINS_SHEETS])
             _dl("program", "Program Summary",
-                lambda: download_program_summary(verbose=False, page=_pg))
+                lambda: download_program_summary(verbose=False, page=_pg,
+                                                 we_sunday=we_sunday))
         _n_ok = sum(1 for v in dl_ok.values() if v)
         logfn(f"OPT: downloaded {_n_ok}/{len(dl_ok)} source(s)"
               + (f" — FAILED: {dl_gaps}" if dl_gaps else ""))
