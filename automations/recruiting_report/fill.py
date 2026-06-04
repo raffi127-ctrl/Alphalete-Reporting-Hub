@@ -204,6 +204,33 @@ PERCENT_METRICS = {
 }
 
 
+_global_retry_installed = False
+
+
+def _install_global_retry() -> None:
+    """Wrap gspread's single HTTP chokepoint so EVERY Sheets call — reads,
+    writes, opens — retries transient 429/5xx, not just the calls explicitly
+    routed through _retry(). A lone Google 503 ("service unavailable") mid-run
+    otherwise crashes the whole report. Retry-only: never alters a request or
+    response, no pacing/cache. Idempotent, and stands down if focus_office's
+    fuller _ratelimit layer is already wrapping the same chokepoint."""
+    global _global_retry_installed
+    if _global_retry_installed:
+        return
+    import gspread.http_client as _hc
+    if getattr(_hc.HTTPClient.request, "_sheets_retry_wrapped", False):
+        _global_retry_installed = True  # _ratelimit already covers retry
+        return
+    _orig = _hc.HTTPClient.request
+
+    def _wrapped(self, method, *args, **kwargs):
+        return _retry(_orig, self, method, *args, **kwargs)
+
+    _wrapped._sheets_retry_wrapped = True  # type: ignore[attr-defined]
+    _hc.HTTPClient.request = _wrapped
+    _global_retry_installed = True
+
+
 def _client() -> gspread.Client:
     if not OAUTH_CLIENT_PATH.exists():
         # RuntimeError (not SystemExit) so try/except Exception blocks in
@@ -216,6 +243,7 @@ def _client() -> gspread.Client:
             "Ask Megan to share her oauth-client.json + save it there, "
             "then relaunch the hub."
         )
+    _install_global_retry()
     return gspread.oauth(
         scopes=SCOPES,
         credentials_filename=str(OAUTH_CLIENT_PATH),

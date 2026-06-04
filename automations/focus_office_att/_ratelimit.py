@@ -13,6 +13,9 @@ three layers, all invisible to callers:
   * RETRY — if a 429 slips through anyway (other tabs/teammates also
     consume the same quota), wait out the window and retry. So a 429
     can never reach the design code — worst case it's a short wait.
+    Transient Google 5xx errors (500/502/503 "service unavailable"/504)
+    are also retried with a short backoff — they're momentary server
+    blips that succeed on a quick re-try, so one shouldn't fail a run.
   * CACHE — a repeated GET for the same range is served from memory.
     ANY write clears the whole cache first, so a read after a write is
     always fresh; the cache can never serve stale data.
@@ -33,6 +36,13 @@ _WINDOW = 60.0
 # retry, up to this many times.
 _RETRY_SLEEP = 40.0
 _MAX_RETRIES = 5
+
+# On a transient 5xx (Google-side blip, not a quota issue): short exponential
+# backoff instead of the full per-minute wait — these clear in seconds. Give
+# it a deeper budget than 429 so a longer outage (~1.5 min of 503s) still
+# rides through instead of failing the run. Backoff: 1,2,4,8,16,30,30s.
+_5XX_BACKOFF_CAP = 30.0
+_5XX_MAX_RETRIES = 8
 
 _lock = threading.Lock()
 _calls: dict[str, list[float]] = {"read": [], "write": []}
@@ -66,6 +76,13 @@ def _is_quota_429(exc: Exception) -> bool:
     return "429" in s and "quota" in s.lower()
 
 
+def _is_transient_5xx(exc: Exception) -> bool:
+    """Transient Google-side server errors that succeed on a quick retry
+    (e.g. APIError: [503]: The service is currently unavailable)."""
+    s = str(exc)
+    return any(code in s for code in ("[500]", "[502]", "[503]", "[504]"))
+
+
 def install() -> None:
     """Wrap gspread's HTTP layer with pacing + retry + a read-cache.
     Idempotent — safe to call from every entrypoint."""
@@ -77,13 +94,22 @@ def install() -> None:
     _orig_request = _hc.HTTPClient.request
 
     def _call(self, method, args, kwargs):
-        """Do the real request; on a 429, wait out the window and retry."""
-        for attempt in range(_MAX_RETRIES):
+        """Do the real request; retry transient failures.
+        A 429 waits out the per-minute quota window (up to _MAX_RETRIES);
+        a 5xx server blip gets a short exponential backoff with a deeper
+        budget (_5XX_MAX_RETRIES). Anything else raises immediately."""
+        attempt = 0
+        while True:
             try:
                 return _orig_request(self, method, *args, **kwargs)
             except Exception as exc:
                 if _is_quota_429(exc) and attempt < _MAX_RETRIES - 1:
                     time.sleep(_RETRY_SLEEP)
+                    attempt += 1
+                    continue
+                if _is_transient_5xx(exc) and attempt < _5XX_MAX_RETRIES - 1:
+                    time.sleep(min(2 ** attempt, _5XX_BACKOFF_CAP))
+                    attempt += 1
                     continue
                 raise
 
@@ -105,5 +131,9 @@ def install() -> None:
         _pace(method)
         return _call(self, method, args, kwargs)
 
+    # Marker so other entrypoints' lighter retry-only wrappers (e.g.
+    # recruiting_report.fill) detect this fuller pacing+cache+retry layer
+    # is already active and don't double-wrap the same chokepoint.
+    _wrapped_request._sheets_retry_wrapped = True  # type: ignore[attr-defined]
     _hc.HTTPClient.request = _wrapped_request
     _installed = True
