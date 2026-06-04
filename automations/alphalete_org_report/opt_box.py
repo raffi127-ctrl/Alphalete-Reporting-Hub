@@ -73,6 +73,42 @@ BOX_WTD_SHEET = "WTD Metrics"
 BOX_WTD_FILENAME = "opt_box_wtd_metrics.csv"
 BOX_DD_FILENAME = "opt_box_direct_deposit.csv"
 
+# Personal Production source — the per-rep 'WoW Rep Metrics' view (Megan
+# 2026-06-03). Per ICD = the self-row (ICD Name == Rep Name) Total Sales: the
+# ICD's OWN box sales, not their team total. Current-week snapshot like the
+# tracker, so the Monday run captures the finished week.
+BOX_PP_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+              "B2BBOXEnergy/WoWMetricsbyRep")
+BOX_PP_SHEET = "WoW Rep Metrics"
+BOX_PP_FILENAME = "opt_box_personal_production.csv"
+
+
+def parse_box_pp(path) -> Dict[str, int]:
+    """WoW Rep Metrics crosstab → {normalized ICD: own Total Sales} — only the
+    ICD's self-row (ICD Name == Rep Name)."""
+    from automations.alphalete_org_report.opt_nds import _read_tab_csv
+    rows = _read_tab_csv(path)
+    if not rows or len(rows) < 2:
+        return {}
+    header = rows[0]
+    c_icd = _col(header, "icd", "name")
+    c_rep = _col(header, "rep", "name")
+    c_sales = _col(header, "total", "sales")
+    if c_icd is None or c_rep is None or c_sales is None:
+        return {}
+    pp: Dict[str, int] = {}
+    for r in rows[1:]:
+        if max(c_icd, c_rep, c_sales) >= len(r):
+            continue
+        icd = (r[c_icd] or "").strip()
+        rep = (r[c_rep] or "").strip()
+        if not icd or not rep or _norm_owner(icd) != _norm_owner(rep):
+            continue
+        v = _int(r[c_sales])
+        if v is not None:
+            pp[_norm_owner(icd)] = v
+    return pp
+
 
 def _box_week_label(today: Optional[dt.date] = None) -> str:
     """Sheet week label (M/D/YY) for the week we're filling = the most recent
@@ -153,7 +189,8 @@ def parse_box_wtd_metrics(path: Path) -> Tuple[Dict[str, Optional[float]],
 
 def fill_box_tab(ws: gspread.Worksheet, rep: Dict, national: Dict,
                  week_col_label: str, dry_run: bool = False,
-                 logfn=print, direct_deposit: Optional[str] = None) -> List[str]:
+                 logfn=print, direct_deposit: Optional[str] = None,
+                 personal_production: Optional[int] = None) -> List[str]:
     """Fill the 7 BOX tracker metrics (+ Direct Deposit) into the target week
     column for one rep. Rows are looked up by label (tabs differ in layout)."""
     log: List[str] = []
@@ -212,6 +249,11 @@ def fill_box_tab(ws: gspread.Worksheet, rep: Dict, national: Dict,
     if direct_deposit:
         put(_find_row_by_label(grid, "Direct Deposit"), direct_deposit,
             "Direct Deposit")
+    # Personal Production — the ICD's OWN box sales (self-row). 0 when they ran
+    # a team but didn't personally sell (Megan 2026-06-03).
+    if personal_production is not None:
+        put(_find_row_by_label(grid, "Personal Production"),
+            personal_production, "Personal Production")
 
     if dry_run:
         return [f"[DRY-RUN box] {ws.title}: would write {len(updates)} cells"] + log
@@ -234,7 +276,10 @@ def run_box_opt(dry_run: bool = False, only_rep: Optional[str] = None,
 
     out = OUTPUT_DIR / BOX_WTD_FILENAME
     dd_out = OUTPUT_DIR / BOX_DD_FILENAME
+    pp_out = OUTPUT_DIR / BOX_PP_FILENAME
     direct_deposit: Dict[str, float] = {}
+    box_pp: Dict[str, int] = {}
+    pp_ok = False
     try:
         with tableau_session(verbose=False) as page:
             logfn("OPT BOX: Crosstab → 'WTD Metrics'...")
@@ -249,6 +294,17 @@ def run_box_opt(dry_run: bool = False, only_rep: Optional[str] = None,
             except Exception as e:
                 logfn(f"OPT BOX: ⚠ Direct Deposit pull failed "
                       f"({type(e).__name__}) — DD left as-is this run")
+            # Personal Production — per-rep 'WoW Rep Metrics' view.
+            try:
+                logfn("OPT BOX: Crosstab → 'WoW Rep Metrics' (PP)...")
+                download_crosstab_patchright(BOX_PP_URL, BOX_PP_SHEET,
+                                             pp_out, verbose=False, page=page)
+                box_pp = parse_box_pp(pp_out)
+                pp_ok = True
+                logfn(f"OPT BOX: personal production: {len(box_pp)} self-row(s)")
+            except Exception as e:
+                logfn(f"OPT BOX: ⚠ Personal Production pull failed "
+                      f"({type(e).__name__}) — PP left as-is this run")
     except Exception as e:
         msg = f"WTD Metrics download: {type(e).__name__}: {str(e)[:120]}"
         logfn(f"OPT BOX: ✗ {msg}")
@@ -281,8 +337,9 @@ def run_box_opt(dry_run: bool = False, only_rep: Optional[str] = None,
             continue
         dd_val = match_dd_owner(direct_deposit, rep_name)
         dd_str = f"${dd_val:,.2f}" if dd_val is not None else None
+        pp_val = (box_pp.get(_norm_owner(rep_name), 0) if pp_ok else None)
         for ln in fill_box_tab(ws, rep, national, week_col_label, dry_run, logfn,
-                               direct_deposit=dd_str):
+                               direct_deposit=dd_str, personal_production=pp_val):
             logfn(f"OPT BOX: {ln}")
             if ln.startswith(("[OK", "[DRY-RUN")):
                 filled.append(title)
