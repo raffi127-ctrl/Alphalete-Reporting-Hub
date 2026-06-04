@@ -1132,9 +1132,22 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
     # teams sell but who don't personally). NOT the office total — that
     # was the SARA By Day bug Megan caught 2026-05-24. ProductSalesSummaryRep
     # has no date control, so it's skipped on a past-week backfill.
-    if (personal_production and personal_production.get(owner_norm)
-            and not backfill):
-        values["Personal Production"] = personal_production[owner_norm]
+    # Personal Production is keyed by the alias-resolved CANONICAL name, but
+    # `owner_norm` here is the matched Tableau spelling (e.g. 'maxamad aden'),
+    # so resolve it to canonical before the lookup (Megan 2026-06-04: Maxamed's
+    # PP came back blank because 'maxamad aden' != canonical 'maxamed aden',
+    # even though every other metric matched the raw spelling).
+    if personal_production and not backfill:
+        pp_val = personal_production.get(owner_norm)
+        if not pp_val:
+            amap = aliases_map
+            if amap is None:
+                from automations.focus_office_att.aliases import load_aliases as _la
+                amap = _la()
+            from automations.focus_office_att.aliases import alias_to_canonical as _a2c
+            pp_val = personal_production.get(_norm_owner(_a2c(owner_norm, amap)))
+        if pp_val:
+            values["Personal Production"] = pp_val
 
     # Direct Deposit — per-ICD-owner dollar total. Skipped on backfill —
     # the DD dashboard isn't date-pinnable (Megan 2026-05-24).
