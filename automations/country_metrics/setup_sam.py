@@ -39,7 +39,7 @@ SAM_COLOR = {"red": 0.9137255, "green": 0.1176471, "blue": 0.3882353}
 
 # Row offsets inside a section block (0 = the section-name/date header row).
 OFF_FIRST_METRIC = 1       # Rolling 4 weeks
-OFF_WIRELESS = 12          # last product row (AT&T AIR is offset 11, left blank)
+OFF_WIRELESS = 12          # last product row (AT&T AIR is offset 11)
 OFF_TOTAL_OWNERS = 14
 OFF_OWNERS_OVER_100 = 16
 

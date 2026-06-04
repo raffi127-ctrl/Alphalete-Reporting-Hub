@@ -3,9 +3,9 @@
 Label-driven (no hardcoded rows/cols): section anchors are found by the
 section name in column A; metric rows by their column-A label within the
 section; the week column by matching the date header in row 1. Only the mapped
-metric cells are written; AT&T AIR and every formula cell (Sales (ALL), AVG
-Units, % of Owners over 100, COUNTRY's owner counts) are skipped — both by
-design (we never produce those keys) and by a hard formula-cell guard.
+metric cells are written; every formula cell (Sales (ALL), AVG Units, % of
+Owners over 100, COUNTRY's owner counts) is skipped — both by design (we
+never produce those keys) and by a hard formula-cell guard.
 """
 from __future__ import annotations
 
@@ -59,8 +59,8 @@ def classify(label: str) -> Optional[str]:
         return "upgrade"
     if l == "video sales":
         return "video"
-    if "at&t air" in l:
-        return "air"          # intentionally left blank
+    if "at&t air" in l or l == "air":
+        return "air"
     if l == "wireless":
         return "wireless"
     if l.startswith("sales (all)"):
@@ -77,7 +77,8 @@ def classify(label: str) -> Optional[str]:
 
 
 WRITE_KEYS = {"rolling4", "act3060", "churn030", "abp", "gig1", "jep", "sched6",
-              "newint", "upgrade", "video", "wireless", "totalowners", "ownersover100"}
+              "air", "newint", "upgrade", "video", "wireless",
+              "totalowners", "ownersover100"}
 
 
 def find_week_col(row1: list[str], week: dt.date) -> Optional[int]:

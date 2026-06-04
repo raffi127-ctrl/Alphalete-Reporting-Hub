@@ -30,8 +30,8 @@ matching its date in row 1 — never by a fixed index.
 | Source | View / sheet | Notes |
 |---|---|---|
 | **Metrics** | `ATTTRACKER2_1-D2D/Metrics`, crosstab sheet **"Metrics Call Last week data (Internet)"** | Grouped by `Captain's Bonus Teams` (Grand Total + one `… \| Total` row per team). **Filter `Week's Metrics` MUST be `Last Week`** (URL param `?Week's Metrics=Last Week`) — we fill one week behind. Also supplies the owner→team roster. |
-| **PRODUCT SALES SUMMARY 4WK** | `.../PRODUCTSALESSUMMARY4WK/3a00519d-…/ALLREPS`, week-filtered via `Sale Date Week Ending (mon-sun)=<WE Sunday>` | sheet **"Product Sales Summary by ORG"** = COUNTRY product totals; sheet **"Sales By ICD (Weekly View)"** = per-owner products + per-owner weekly total. |
-| **Order Log** | `.../ORDERLOG/117748c0-…/ALLREPS`, `Start/End Date` params | ONLY to add each owner's **AIR** orders to the >=100 threshold (PRODUCT SALES omits AIR + VOICE). |
+| **PRODUCT SALES SUMMARY 4WK** | `.../PRODUCTSALESSUMMARY4WK/3a00519d-…/ALLREPS`, week-filtered via `Sale Date Week Ending (mon-sun)=<WE Sunday>` **+ forced product filter** `Product Type (Broken Out)=AIR,NEW INTERNET,UPGRADE INTERNET,VIDEO,WIRELESS` (the published quick-filter omits AIR; the datasource carries it since Tableau's fix, 2026-06-04 — commas literal) | sheet **"Product Sales Summary by ORG"** = COUNTRY product totals; sheet **"Sales By ICD (Weekly View)"** = per-owner products + per-owner weekly total (Total row now includes net AIR). |
+| **Order Log** | `.../ORDERLOG/117748c0-…/ALLREPS`, `Start/End Date` params | ONLY to add each owner's **AIR** orders (gross) to the >=100 threshold — kept as the threshold's AIR source (Eve, 2026-06-04: don't change who passes). Net AIR is backed out of the by-ICD Total row so it isn't double-counted. |
 
 ---
 
@@ -51,6 +51,7 @@ Written for **all 7 sections** (COUNTRY = Grand Total row; others = team `Total`
 | New Internet Count | PRODUCT SALES — `NEW INTERNET` (COUNTRY: by-ORG; teams: by-ICD summed via roster) |
 | Upgrade Internet Count | PRODUCT SALES — `UPGRADE INTERNET` |
 | Video Sales | PRODUCT SALES — `VIDEO` |
+| AT&T AIR | PRODUCT SALES — `AIR` (connected 2026-06-04; needs the forced product filter, see Sources) |
 | Wireless | PRODUCT SALES — `WIRELESS` |
 
 Written for **captainships + SAM only** (COUNTRY rolls up by formula):
@@ -58,13 +59,12 @@ Written for **captainships + SAM only** (COUNTRY rolls up by formula):
 | Sheet row | Source |
 |---|---|
 | Total Owners in Captainship | count of the team's owners present in PRODUCT SALES by-ICD |
-| Owners Over 100 | count of those owners whose weekly units (4 PRODUCT SALES products **+ AIR** orders) >= 100 |
+| Owners Over 100 | count of those owners whose weekly units (4 non-AIR PRODUCT SALES products **+ Order Log AIR** orders, gross) >= 100 |
 
 ---
 
 ## Never written (Sheet formulas / intentional blanks)
 
-- **AT&T AIR** — left blank (Eve, 2026-05-28). AIR exists only in the Order Log; not broken out in PRODUCT SALES.
 - **VOICE** — no row; not counted anywhere.
 - **Sales (ALL)** — Sheet formula `=sum(<products>)`.
 - **AVG Units per Owner** — Sheet formula `=IFERROR(SalesAll/TotalOwners,0)`.

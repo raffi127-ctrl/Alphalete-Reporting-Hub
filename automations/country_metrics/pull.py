@@ -13,9 +13,8 @@ Two source views (reuse the OPT phase's unattended patchright crosstab driver):
         per captainship via the roster).
 
 Returns {section: {metric_key: value}} where section ∈ COUNTRY/RAF/STARR/ARON/
-PAT/WAYNE/SAM. AT&T AIR is intentionally never produced (left blank in the
-Sheet). Sales (ALL), AVG Units, % of Owners over 100, and COUNTRY's owner
-counts are Sheet formulas — never produced here.
+PAT/WAYNE/SAM. Sales (ALL), AVG Units, % of Owners over 100, and COUNTRY's
+owner counts are Sheet formulas — never produced here.
 """
 from __future__ import annotations
 
@@ -45,10 +44,10 @@ PRODUCT_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
 ORG_SHEET = "Product Sales Summary by ORG"
 ICD_SHEET = "Sales By ICD (Weekly View)"
 
-# Order Log ALLREPS view — the only source that carries the AIR product per
-# owner (PRODUCT SALES SUMMARY's Product Type filter omits AIR + VOICE). Used
-# ONLY to add each owner's AIR orders to their weekly total for the
-# "Owners Over 100" count (Eve, 2026-05-28: that count must include AIR).
+# Order Log ALLREPS view — source of each owner's AIR orders for the
+# "Owners Over 100" count (Eve, 2026-05-28: that count must include AIR;
+# Eve, 2026-06-04: keep counting Order Log GROSS orders for the threshold even
+# though PRODUCT SALES now carries net AIR — don't change who passes).
 # These are gross orders (all DTR statuses), not net sales — fine for the
 # threshold. VOICE is intentionally NOT counted.
 ORDERLOG_URL_TMPL = (
@@ -79,13 +78,20 @@ METRICS_RATE_COLS = {
 }
 METRICS_COUNT_COLS = {"jep": "Jep New Internet Count (4 wk)"}
 
-# Product Type (Broken Out) value -> Sheet metric_key. (No AT&T AIR.)
+# Product Type (Broken Out) value -> Sheet metric_key.
 PRODUCT_KEYS = {
+    "AIR": "air",
     "NEW INTERNET": "newint",
     "UPGRADE INTERNET": "upgrade",
     "VIDEO": "video",
     "WIRELESS": "wireless",
 }
+
+# The PRODUCT SALES view's published quick-filter omits AIR, but the datasource
+# carries it (Tableau fix, confirmed 2026-06-04) — force the filter to all 5
+# products on every download. Commas must stay literal (value separators).
+PRODUCT_FILTER_PARAM = (quote("Product Type (Broken Out)") + "="
+                        + quote(",".join(PRODUCT_KEYS), safe=","))
 
 PERCENT_KEYS = {"rolling4", "act3060", "churn030", "abp", "gig1", "sched6"}
 
@@ -128,6 +134,7 @@ def _download(week: dt.date, page, logfn) -> dict:
     OUT.mkdir(parents=True, exist_ok=True)
     paths = _paths()
     week_url = opt_phase._week_url(PRODUCT_URL, week)
+    week_url += ("&" if "?" in week_url else "?") + PRODUCT_FILTER_PARAM
     logfn(f"  Metrics crosstab (Last Week filter)…")
     opt_phase.download_crosstab(METRICS_URL + METRICS_WEEK_FILTER, METRICS_SHEET,
                                 paths["metrics"], verbose=False, page=page)
@@ -229,10 +236,12 @@ def _parse_orderlog_air(rows: list[list[str]], alias_raw: dict) -> dict:
 
 def _parse_icd(rows: list[list[str]], roster: dict, alias_raw: dict, air_by_canon: dict):
     """Per-section product counts + owner counts, aggregated via the roster.
-    Owners Over 100 counts owners whose weekly units (4 PRODUCT SALES products
-    + AIR orders) reach 100. Returns (per_section: {section: {newint,upgrade,
-    video,wireless,totalowners,ownersover100}}, unmatched: [owner,...])."""
-    # Owner grand totals (Rep == Total, Product == Total).
+    Owners Over 100 counts owners whose weekly units (4 non-AIR PRODUCT SALES
+    products + Order Log AIR orders) reach 100. Returns (per_section: {section:
+    {air,newint,upgrade,video,wireless,totalowners,ownersover100}},
+    unmatched: [owner,...])."""
+    # Owner grand totals (Rep == Total, Product == Total). With the forced
+    # product filter these now INCLUDE net AIR.
     owner_total: dict[str, float] = {}
     for r in rows[1:]:
         if len(r) > 10 and r[1].strip() == "Total" and r[2].strip() == "Total":
@@ -242,11 +251,13 @@ def _parse_icd(rows: list[list[str]], roster: dict, alias_raw: dict, air_by_cano
             owner_total[owner] = _num(r[10]) or 0
 
     sections = ("ARON", "PAT", "RAF", "SAM", "STARR", "WAYNE")
-    per = {s: {"newint": 0, "upgrade": 0, "video": 0, "wireless": 0,
+    per = {s: {"air": 0, "newint": 0, "upgrade": 0, "video": 0, "wireless": 0,
                "totalowners": 0, "ownersover100": 0} for s in sections}
 
-    # Per-rep product rows → add to owner's team.
+    # Per-rep product rows → add to owner's team. Also track each owner's net
+    # AIR so the >=100 threshold can back it out of the Total row.
     unmatched = set()
+    owner_air_net: dict[str, float] = {}
     for r in rows[1:]:
         if len(r) <= 10 or r[1].strip() == "Total":
             continue
@@ -254,6 +265,8 @@ def _parse_icd(rows: list[list[str]], roster: dict, alias_raw: dict, air_by_cano
         prod_key = PRODUCT_KEYS.get((r[2] or "").strip().upper())
         if not prod_key:
             continue
+        if prod_key == "air":
+            owner_air_net[owner] = owner_air_net.get(owner, 0) + (_num(r[10]) or 0)
         section = roster.get(_canon(owner, alias_raw))
         if not section:
             unmatched.add(owner)
@@ -261,7 +274,10 @@ def _parse_icd(rows: list[list[str]], roster: dict, alias_raw: dict, air_by_cano
         per[section][prod_key] += _num(r[10]) or 0
 
     # Owner counts per team (owners appearing in the product data). The
-    # >=100 threshold counts the 4 PRODUCT SALES products PLUS AIR orders.
+    # >=100 threshold counts the 4 non-AIR PRODUCT SALES products PLUS the
+    # owner's Order Log AIR orders (gross — Eve, 2026-06-04: keep the
+    # threshold's AIR source unchanged). Net AIR is backed out of the Total
+    # row so it isn't double-counted against the Order Log number.
     for owner, total in owner_total.items():
         c = _canon(owner, alias_raw)
         section = roster.get(c)
@@ -269,7 +285,7 @@ def _parse_icd(rows: list[list[str]], roster: dict, alias_raw: dict, air_by_cano
             unmatched.add(owner)
             continue
         per[section]["totalowners"] += 1
-        if (total + air_by_canon.get(c, 0)) >= 100:
+        if (total - owner_air_net.get(owner, 0) + air_by_canon.get(c, 0)) >= 100:
             per[section]["ownersover100"] += 1
 
     return per, sorted(unmatched)
