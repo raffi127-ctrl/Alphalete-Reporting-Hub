@@ -164,6 +164,38 @@ def _find_tableau_tab(browser, verbose: bool = True):
     return _bootstrap_tableau_via_ov(browser, verbose=verbose)
 
 
+class DownloadValidationError(Exception):
+    """Raised when the Tableau download is missing, empty, or header-only."""
+
+
+def _validate_download(path, *, min_data_rows: int = 1, min_bytes: int = 64):
+    """Fail fast on an empty / header-only crosstab so a bad Tableau export
+    (e.g. an error toast got dismissed and the click went through anyway)
+    never reaches the Sheet fill. Returns the non-empty line count for CSVs,
+    None otherwise."""
+    import os
+    if not path or not os.path.exists(path):
+        raise DownloadValidationError(f"Download not found on disk: {path!r}")
+    size = os.path.getsize(path)
+    if size < min_bytes:
+        raise DownloadValidationError(
+            f"Download is empty/suspiciously small: {size} bytes ({path})"
+        )
+    if str(path).lower().endswith(".csv"):
+        try:
+            with open(path, "r", encoding="utf-8-sig", newline="") as fh:
+                non_empty = sum(1 for line in fh if line.strip())
+        except UnicodeDecodeError:
+            non_empty = None  # odd encoding; size gate already confirmed non-empty
+        if non_empty is not None and non_empty <= min_data_rows:
+            raise DownloadValidationError(
+                f"CSV has no data rows (only {non_empty} non-empty line(s) incl. "
+                f"header): {path}. Tableau likely failed to build the crosstab."
+            )
+        return non_empty
+    return None
+
+
 def _validate_per_rep_file(path: Path) -> None:
     """Raise if the downloaded file is owner-level (missing Rep column).
 
@@ -260,12 +292,62 @@ def download_crosstab(out_path: Path, verbose: bool = True,
             print(f"Download button visible. Waiting {VIZ_RENDER_WAIT_MS/1000:.0f}s for data hydration...", flush=True)
         page.wait_for_timeout(VIZ_RENDER_WAIT_MS)
 
+        def _clear_error_toast() -> None:
+            """Tableau intermittently raises a viz error toast that overlays the
+            toolbar and intercepts clicks on the Download button, so the click
+            times out (then the page can close) even though the button is
+            visible + enabled. Tableau renders the toast with more than one
+            test-id — 'banner-error-toast-widget' and
+            'banner-error-toast-message' — so match any 'banner-error-toast*'
+            (both live in the same .tab-shared-widget-toaster container, which
+            is what actually intercepts the pointer). When a toast is present:
+            log its text (so the real Tableau error shows up in the run log
+            instead of an opaque click timeout) and dismiss it so the click can
+            land. No-op when there's no toast — the normal download path is
+            byte-for-byte unchanged. Ported from opt_phase.py (2026-06-03)."""
+            toast = viz.locator('[data-tb-test-id^="banner-error-toast"]')
+            try:
+                if toast.count() == 0:
+                    return
+            except Exception:
+                return
+            try:
+                msg = toast.first.inner_text(timeout=2_000).strip()
+            except Exception:
+                msg = "(toast text unreadable)"
+            if verbose:
+                print(f"  ⚠ Tableau error toast over Download: {msg!r} — dismissing",
+                      flush=True)
+            for sel in ('button[aria-label*="lose" i]',
+                        'button[aria-label*="ismiss" i]',
+                        '[data-tb-test-id*="dismiss" i]',
+                        '[data-tb-test-id*="close" i]'):
+                try:
+                    btn = toast.locator(sel)
+                    if btn.count() > 0:
+                        btn.first.click(timeout=3_000)
+                        page.wait_for_timeout(500)
+                        return
+                except Exception:
+                    continue
+            # No close control found — remove the toaster container from the
+            # DOM so it stops intercepting pointer events. Cosmetic only;
+            # doesn't touch the viz or its data.
+            try:
+                toast.first.evaluate(
+                    "el => { (el.closest('.tab-shared-widget-toaster') || el)"
+                    ".remove(); }")
+            except Exception:
+                pass
+            page.wait_for_timeout(500)
+
         if verbose:
             print("Clicking Download → Crosstab → Sales By ICD (Weekly View) → Excel...", flush=True)
 
         debug_dir = out_path.parent / "_phase3_debug"
         debug_dir.mkdir(parents=True, exist_ok=True)
 
+        _clear_error_toast()
         with page.expect_download(timeout=60_000) as dl_info:
             # Open Download menu (in viz toolbar)
             viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-download"]').click()
@@ -314,9 +396,12 @@ def download_crosstab(out_path: Path, verbose: bool = True,
         dl = dl_info.value
         if verbose:
             print(f"Download fired: {dl.suggested_filename}", flush=True)
+        # save_as() returns None — validate the target path we wrote to.
         dl.save_as(str(out_path))
+        rows = _validate_download(out_path)
         if verbose:
-            print(f"Saved: {out_path} ({out_path.stat().st_size:,} bytes)", flush=True)
+            detail = f"{rows} non-empty lines" if rows is not None else f"{out_path.stat().st_size:,} bytes"
+            print(f"Tableau download OK: {out_path} ({detail})", flush=True)
 
     return out_path
 
