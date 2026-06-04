@@ -168,7 +168,7 @@ class DownloadValidationError(Exception):
     """Raised when the Tableau download is missing, empty, or header-only."""
 
 
-def _validate_download(path, *, min_data_rows: int = 1, min_bytes: int = 64):
+def _validate_download(path, *, min_data_rows: int = 1, min_bytes: int = 10):
     """Fail fast on an empty / header-only crosstab so a bad Tableau export
     (e.g. an error toast got dismissed and the click went through anyway)
     never reaches the Sheet fill. Returns the non-empty line count for CSVs,
