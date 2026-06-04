@@ -161,19 +161,7 @@ def _ensure_tableau_authenticated(page: Page, verbose: bool = True) -> None:
          subsequent goto() to a Tableau view URL will load the viz
          instead of bouncing to login.
     """
-    if verbose:
-        print(f"-> Loading {LOGIN_URL}", flush=True)
-    page.goto(LOGIN_URL, wait_until="domcontentloaded")
-    page.wait_for_timeout(3_000)
-
-    # Drive the form if either the password OR the standalone username
-    # field is visible (some flows split into two pages).
-    if (page.locator(_PASSWORD_SELECTOR).count() > 0
-            or page.locator(_USERNAME_SELECTOR).count() > 0):
-        _drive_login_form(page, verbose=verbose)
-    elif verbose:
-        print("-> ownerville session reused from profile", flush=True)
-
+    _ensure_ownerville_logged_in(page, verbose=verbose)
     _sso_to_tableau(page, verbose=verbose)
 
 
@@ -260,6 +248,84 @@ def _drive_login_form(page: Page, verbose: bool,
                   flush=True)
     page.wait_for_load_state("domcontentloaded")
     page.wait_for_timeout(5_000)
+
+
+def _ownerville_session_valid(page: Page, verbose: bool = True) -> bool:
+    """True only if the ownerville session is GENUINELY authenticated — i.e.
+    visiting v2.ownerville.com yields a real rqst SSO token (in the URL or an
+    in-page SSO link). A 'reused from profile' landing page with no rqst is a
+    STALE cookie, not a live session — the bug behind the 'no rqst' glitches
+    (Eve rows 38/69). This is the same token _sso_to_tableau relies on."""
+    try:
+        page.goto(OWNERVILLE_V2_URL, wait_until="domcontentloaded")
+        page.wait_for_timeout(4_000)
+    except Exception:
+        return False
+    if re.search(r"rqst=([A-Za-z0-9_]+)", page.url or ""):
+        return True
+    try:
+        href = page.evaluate(
+            "() => { const a=[...document.querySelectorAll('a')]"
+            ".find(x=>/rqst=/.test(x.getAttribute('href')||'')); "
+            "return a?a.getAttribute('href'):''; }")
+        return bool(re.search(r"rqst=([A-Za-z0-9_]+)", href or ""))
+    except Exception:
+        return False
+
+
+def _ensure_ownerville_logged_in(page: Page, verbose: bool = True) -> None:
+    """Guarantee a LIVE ownerville session, re-logging in from saved creds when
+    the persisted cookie has gone stale.
+
+    The old logic treated 'no login form visible' as 'logged in'. But an
+    expired cookie shows no form AND has no live session, so every downstream
+    pull failed with 'no rqst' (Eve rows 38/69) and a human had to re-sign-in.
+    Now we VALIDATE against a real rqst token and, if it's missing, clear the
+    dead cookie and drive a fresh login (creds from ownerville-creds.json) —
+    the key piece that makes unattended/scheduled runs reliable.
+
+    Stays loud on a real failure (bad creds / Cloudflare block) so the glitch
+    filer still captures it; it only self-heals the expired-cookie case."""
+    if verbose:
+        print(f"-> Loading {LOGIN_URL}", flush=True)
+    page.goto(LOGIN_URL, wait_until="domcontentloaded")
+    page.wait_for_timeout(3_000)
+    if (page.locator(_PASSWORD_SELECTOR).count() > 0
+            or page.locator(_USERNAME_SELECTOR).count() > 0):
+        _drive_login_form(page, verbose=verbose)
+    elif verbose:
+        print("-> ownerville session reused from profile", flush=True)
+
+    if _ownerville_session_valid(page, verbose=verbose):
+        if verbose:
+            print("-> ownerville session validated (rqst present)", flush=True)
+        return
+
+    # Stale cookie: clear it and force a clean login from saved creds.
+    if verbose:
+        print("-> ownerville session STALE (no rqst) — clearing cookies and "
+              "re-logging in from saved creds", flush=True)
+    try:
+        page.context.clear_cookies()
+    except Exception:
+        pass
+    page.goto(LOGIN_URL, wait_until="domcontentloaded")
+    page.wait_for_timeout(3_000)
+    # With cookies cleared the login form should appear; wait for it, drive it.
+    try:
+        page.wait_for_selector(
+            f"{_PASSWORD_SELECTOR}, {_USERNAME_SELECTOR}", timeout=20_000)
+    except Exception:
+        pass
+    _drive_login_form(page, verbose=verbose)
+    if _ownerville_session_valid(page, verbose=verbose):
+        if verbose:
+            print("-> ownerville re-login succeeded (rqst present)", flush=True)
+        return
+    raise RuntimeError(
+        "ownerville auto-relogin failed — still no rqst after a fresh login. "
+        "Check ownerville-creds.json (username/password) or a Cloudflare block. "
+        f"Profile: {PROFILE_DIR}")
 
 
 def download_crosstab_patchright(
@@ -414,16 +480,7 @@ def appstream_session(headless: bool = False, verbose: bool = True) -> Iterator[
                                  label="appstream_session", verbose=verbose)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
-            # Ensure ownerville is logged in (drives the form if not), then SSO.
-            if verbose:
-                print(f"-> Loading {LOGIN_URL}", flush=True)
-            page.goto(LOGIN_URL, wait_until="domcontentloaded")
-            page.wait_for_timeout(3_000)
-            if (page.locator(_PASSWORD_SELECTOR).count() > 0
-                    or page.locator(_USERNAME_SELECTOR).count() > 0):
-                _drive_login_form(page, verbose=verbose)
-            elif verbose:
-                print("-> ownerville session reused from profile", flush=True)
+            _ensure_ownerville_logged_in(page, verbose=verbose)
             _sso_to_appstream(page, verbose=verbose)
             yield page
         finally:
@@ -443,15 +500,7 @@ def ownerville_session(headless: bool = False,
                                  label="ownerville_session", verbose=verbose)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
-            if verbose:
-                print(f"-> Loading {LOGIN_URL}", flush=True)
-            page.goto(LOGIN_URL, wait_until="domcontentloaded")
-            page.wait_for_timeout(3_000)
-            if (page.locator(_PASSWORD_SELECTOR).count() > 0
-                    or page.locator(_USERNAME_SELECTOR).count() > 0):
-                _drive_login_form(page, verbose)
-            elif verbose:
-                print("-> ownerville session reused from profile", flush=True)
+            _ensure_ownerville_logged_in(page, verbose=verbose)
             yield page
         finally:
             ctx.close()
