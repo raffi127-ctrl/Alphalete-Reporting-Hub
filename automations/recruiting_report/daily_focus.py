@@ -279,6 +279,17 @@ def _rebuild_sections_from_list(
             seen.add(key)
             desired.append(icd)
 
+    # Empty col V → refuse to rebuild. Rebuilding to zero sections would
+    # blank A1:T0 (an invalid range → APIError 400, Eve glitch 2026-05-26)
+    # AND would wipe every existing section. Empty almost always means the
+    # ICD source/col V didn't populate this run, not that the tab should be
+    # emptied — flag it and leave the tab untouched.
+    if not desired:
+        log.warning("col V has no ICDs for this tab — skipping section "
+                    "rebuild (refusing to blank all sections). Check the "
+                    "tab's col V / ICD source.")
+        return col3
+
     existing = _read_all_sections(ws, col3)
     existing_names = [e[0] for e in existing]
 
