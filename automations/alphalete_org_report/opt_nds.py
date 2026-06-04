@@ -152,7 +152,11 @@ NDS_VIEWS: List[Tuple[str, str, str]] = [
         # Personal Production — per-rep breakdown across all sale types.
         # Custom view 'ALLPRODUCTS-EXPANDEDREPS' filters Product Type to
         # (All) and expands the Rep dimension.
-        "https://us-east-1.online.tableau.com/#/site/sci/views/NDS-SNRES-ATT-OOFWorkbook/ProductSalesSummaryRep/c6d0a461-f8ac-49ed-bb38-27a807328a70/ALLPRODUCTS-EXPANDEDREPS?:iid=1",
+        # 'This week and last' view (Megan 2026-06-03): shows LAST week (the
+        # report's target) + this week. The PP/rep-breakdown parsers read the
+        # FIRST week's Total so PP reflects the finished week, not the in-
+        # progress one. (Old ALLPRODUCTS-EXPANDEDREPS only had the current week.)
+        "https://us-east-1.online.tableau.com/#/site/sci/views/NDS-SNRES-ATT-OOFWorkbook/ProductSalesSummaryRep/5e31de75-1d1c-4f23-b234-4148516134c0/Thisweekandlast?:iid=1",
         "Sales By ICD (Weekly View)",
         "opt_nds_personal_production.csv",
     ),
@@ -396,9 +400,13 @@ def parse_personal_production(path: Path) -> Dict[str, str]:
     # index. Find it from the header — the rightmost 'Total'/'Grand Total'
     # column. (Hardcoding 8 silently skipped EVERY row when the current week had
     # < 5 days → 0 PP for all NDS ICDs. Found 2026-06-03.)
+    # The 'This week and last' view lists LAST week (the report's target) first,
+    # then this week, then a Grand Total — so take the FIRST 'Total' column
+    # (= last completed week), not the last (which would be both weeks summed).
+    # For the old single-week view first==last==the only Total, so this is safe.
     _hdr = rows[1] if len(rows) > 1 else []
     _totals = [i for i, c in enumerate(_hdr) if "total" in (c or "").lower()]
-    TOTAL_I = _totals[-1] if _totals else (len(_hdr) - 1 if _hdr else 8)
+    TOTAL_I = _totals[0] if _totals else (len(_hdr) - 1 if _hdr else 8)
     bucket: Dict[str, Dict[str, int]] = {}
     seen_owners: set = set()
     for r in rows[2:]:
@@ -476,10 +484,14 @@ def parse_rep_breakdown_per_owner(path: Path,
     header = rows[1]
     OWNER_I, REP_I, TYPE_I = 0, 1, 2
     # Map day name → column index
+    # Keep the FIRST occurrence of each weekday. The 'This week and last' view
+    # repeats Mon..Sun for both weeks; the first block is LAST week (the target),
+    # so first-occurrence picks the right week. (Old single-week view: only one
+    # block, so unaffected.)
     day_cols: Dict[str, int] = {}
     for j, h in enumerate(header):
         h_clean = (h or "").strip()
-        if h_clean in DAY_ORDER:
+        if h_clean in DAY_ORDER and h_clean not in day_cols:
             day_cols[h_clean] = j
     # First "Total" column AFTER the day columns is the per-rep weekly total
     max_day_col = max(day_cols.values()) if day_cols else TYPE_I
