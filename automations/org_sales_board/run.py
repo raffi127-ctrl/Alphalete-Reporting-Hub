@@ -138,7 +138,8 @@ def main(argv=None) -> int:
     if args.step == "clear-summary":
         clear_product_summary(ws, dry_run=args.dry_run)
     elif args.step == "rollover":
-        # Monday freeze: shift each leaderboard's current week into history
+        # Tuesday freeze (run_rollover self-guards to weekday==1): shift each
+        # leaderboard's current week into history
         # (grow a column), freeze each delta table's "this week" -> "last
         # week", then blank the daily day-cells for the fresh week.
         from automations.org_sales_board import rollover
