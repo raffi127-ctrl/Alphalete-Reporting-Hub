@@ -11,6 +11,8 @@ WE headers) is found by label, never by hardcoded offsets.
 """
 from __future__ import annotations
 
+import contextlib
+
 from automations.recruiting_report import fill as _rf
 
 SALES_BOARD_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
@@ -54,6 +56,48 @@ def _to_num(s: str):
         return float(s)
     except ValueError:
         return None
+
+
+@contextlib.contextmanager
+def ps_groups_expanded(captain_key: str):
+    """Temporarily EXPAND every collapsed row group overlapping the
+    captain's Product Summary block (the vertical weekly historicals live
+    in those groups), restoring the exact prior collapsed state on exit.
+
+    Group collapse state is SHARED — anyone viewing the Sales Board sees
+    the groups expanded while the screenshot runs (~30-60s). Approved by
+    Megan 2026-06-04. Per the API, updating `collapsed` also sets the
+    contained rows hidden/visible, so no separate visibility request is
+    needed. Yields the number of groups expanded."""
+    ws = _open_ws()
+    start, end = PS_ROWS[captain_key]
+    meta = ws.spreadsheet.fetch_sheet_metadata(
+        {"fields": "sheets(properties(sheetId),rowGroups)"})
+    groups = next((sh.get("rowGroups", []) for sh in meta["sheets"]
+                   if sh["properties"]["sheetId"] == ws.id), [])
+    to_expand = [g for g in groups
+                 if g.get("collapsed", False)
+                 and g["range"].get("startIndex", 0) < end
+                 and g["range"].get("endIndex", 0) > start - 1]
+
+    def _set(collapsed: bool):
+        reqs = []
+        for g in to_expand:
+            rng = dict(g["range"])
+            rng.setdefault("sheetId", ws.id)
+            rng.setdefault("dimension", "ROWS")
+            reqs.append({"updateDimensionGroup": {
+                "dimensionGroup": {"range": rng, "depth": g["depth"],
+                                   "collapsed": collapsed},
+                "fields": "collapsed"}})
+        if reqs:
+            ws.spreadsheet.batch_update({"requests": reqs})
+
+    _set(False)
+    try:
+        yield len(to_expand)
+    finally:
+        _set(True)   # restore — only groups that WERE collapsed
 
 
 def units_day_columns(captain_key: str):

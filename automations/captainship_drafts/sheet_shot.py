@@ -37,7 +37,7 @@ from patchright.sync_api import sync_playwright
 
 from automations.captainship_drafts.sales_board import (
     PS_END_COL, PS_ROWS, SALES_BOARD_ID, UNITS_ROWS, _open_ws,
-    units_day_columns,
+    ps_groups_expanded, units_day_columns,
 )
 
 SHEETS_PROFILE_DIR = (
@@ -292,8 +292,9 @@ def captain_shots(captain_key: str, out_dir: Path, *,
                   scale: float = 2.0) -> dict:
     """Product Summary + Captainship Units PNGs for one captain.
 
-    Product Summary: the A:K block (the vertical weekly-historical row
-    groups inside it must be EXPANDED for the shot — pending wiring).
+    Product Summary: the A:K block with its vertical weekly-historical
+    row groups EXPANDED for the shot (shared view state — expanded only
+    while this captain's PS capture runs, then restored).
     Units: names+'Total for week' (B:E) spliced next to the most recent
     day group with data — the in-between days are not shown.
 
@@ -307,8 +308,12 @@ def captain_shots(captain_key: str, out_dir: Path, *,
     u_left = out_dir / f"_{captain_key}_units_left.tmp.png"
     u_day = out_dir / f"_{captain_key}_units_day.tmp.png"
     try:
-        capture_ranges([(f"A{ps_s}:{PS_END_COL}{ps_e}", ps_path),
-                        (f"B{u_s}:E{u_e}", u_left),
+        # PS alone inside the expanded window, so the shared sheet spends
+        # the least possible time with the groups open.
+        with ps_groups_expanded(captain_key):
+            capture_ranges([(f"A{ps_s}:{PS_END_COL}{ps_e}", ps_path)],
+                           scale=scale)
+        capture_ranges([(f"B{u_s}:E{u_e}", u_left),
                         (f"{d_first}{u_s}:{d_last}{u_e}", u_day)],
                        scale=scale)
         _hstack([u_left, u_day], u_path)
