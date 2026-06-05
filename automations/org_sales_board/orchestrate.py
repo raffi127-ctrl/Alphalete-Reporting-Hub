@@ -60,17 +60,21 @@ class AdapterContext:
 # ----------------------------------------------------------- adapters
 
 def _adapter_sara_retail(ctx: AdapterContext) -> PullDict:
-    """Retail NL + Retail Internet — ONE SARA pull, two metrics. Verified."""
+    """Retail NL + Retail Internet — ONE SARA pull, two metrics.
+
+    Uses the Download → Crosstab worksheet (Eve 2026-06-04): the old View-Data
+    scroll-scrape intermittently couldn't activate the worksheet and silently
+    dropped a day (Wednesday). The crosstab reads the worksheet directly — the
+    same reliable path B2B / NDS / Fiber already use — and the by-day crosstab
+    carries every weekday column."""
     from automations.org_sales_board import sara_pull
     if ctx.from_csv:
         csv_path = ctx.from_csv
         ctx.logfn(f"  [sara_retail] offline CSV {csv_path}")
     else:
-        csv_path = sara_pull.pull_retail_nl_byday(
+        csv_path = sara_pull.pull_retail_crosstab(
             ctx.out_dir, ctx.page, today=ctx.today, logfn=ctx.logfn)
-    return sara_pull.parse_sara_byday_perday(
-        csv_path, metrics=[sara_pull.METRIC_WIRELESS_LINES,
-                           sara_pull.METRIC_INTERNET])
+    return sara_pull.parse_sara_crosstab_byday(csv_path, today=ctx.today)
 
 
 def _make_section_adapter(spec_key: str):

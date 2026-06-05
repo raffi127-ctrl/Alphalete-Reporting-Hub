@@ -166,3 +166,67 @@ def pull_retail_nl_byday(
                        "scroll_wait_ms": 1800, "stale_max": 30})
     logfn(f"  saved {out_path}")
     return out_path
+
+
+# CROSSTAB path (Eve 2026-06-04): the View-Data scroll-scrape above intermittently
+# can't activate the worksheet (so it silently dropped Wednesday). The Crosstab
+# download reads the worksheet directly and is reliable — the same migration B2B /
+# NDS / Fiber already got. The 'Sara Plus Sales ICD (by day)' worksheet pivots
+# Order Date into weekday columns ('Mon (06-01)' …), one row per ICD × measure.
+RETAIL_CROSSTAB_SHEET = "Sara Plus Sales ICD (by day)"
+
+
+def pull_retail_crosstab(out_dir: Path, page, today: Optional[dt.date] = None,
+                         logfn=print) -> Path:
+    """Download the SARA 'Sara Plus Sales ICD (by day)' crosstab worksheet."""
+    from automations.shared.tableau_patchright import download_crosstab_patchright
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "org_sales_board_retail_crosstab.csv"
+    logfn(f"  Retail: Download → Crosstab ('{RETAIL_CROSSTAB_SHEET}')…")
+    download_crosstab_patchright(RETAIL_NL_VIEW_URL, RETAIL_CROSSTAB_SHEET,
+                                 out_path, page=page, verbose=False)
+    logfn(f"  saved {out_path}")
+    return out_path
+
+
+def parse_sara_crosstab_byday(path: Path, today: Optional[dt.date] = None
+                              ) -> Dict[str, Dict[str, Dict[dt.date, int]]]:
+    """Parse the SARA by-day CROSSTAB → {normalized owner: {measure: {date: n}}}
+    (same shape as parse_sara_byday_perday). Layout: 'ICD Owner Name' col, then a
+    blank-header MEASURE col (Wireless Lines / Internet / …) right after it, then
+    weekday-date columns 'Mon (06-01)' …."""
+    from automations.org_sales_board.section_pull import _day_for_header
+    today = today or dt.date.today()
+    monday = today - dt.timedelta(days=today.weekday())
+    rows = _read_rows(path)
+    if not rows:
+        return {}
+    hdr_idx = next((i for i, r in enumerate(rows)
+                    if any("ICD Owner Name" in (c or "") for c in r)), None)
+    if hdr_idx is None:
+        return {}
+    header = rows[hdr_idx]
+    owner_i = next(i for i, c in enumerate(header) if "ICD Owner Name" in (c or ""))
+    measure_i = owner_i + 1     # blank-header measure column sits right after
+    day_cols = {i: d for i, c in enumerate(header)
+                if (d := _day_for_header(c, monday))}
+    out: Dict[str, Dict[str, Dict[dt.date, int]]] = {}
+    for r in rows[hdr_idx + 1:]:
+        if len(r) <= measure_i:
+            continue
+        owner = tableau_http._norm_owner(r[owner_i])
+        measure = (r[measure_i] or "").strip()
+        if not owner or not measure:
+            continue
+        m = out.setdefault(owner, {}).setdefault(measure, {})
+        for ci, day in day_cols.items():
+            if ci >= len(r):
+                continue
+            cell = (r[ci] or "").strip().replace(",", "")
+            if not cell:
+                continue
+            try:
+                m[day] = m.get(day, 0) + int(float(cell))
+            except ValueError:
+                continue
+    return out
