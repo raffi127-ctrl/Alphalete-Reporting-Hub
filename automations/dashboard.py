@@ -2688,6 +2688,28 @@ _PARTIAL_RUN_MARKERS = [
 
 
 def _run_outcome(report_id: str) -> dict:
+    """Classify the last run's outcome, with a cross-machine staleness guard.
+
+    `_run_outcome_raw` reads THIS machine's local log — but when a report runs on
+    a teammate's Mac, the local log never updates and can show a failure forever
+    (a frozen 'LAST RUN FAILED' next to a green 'DONE TODAY', 2026-06-04). So if
+    the local verdict is failed/partial but a NEWER successful run exists in the
+    merged cross-machine history, the local log is stale → report healthy."""
+    result = _run_outcome_raw(report_id)
+    if result.get("status") in ("failed", "partial"):
+        try:
+            log_path = ACTIVE_RUNS_LOG_DIR / f"{report_id}.log"
+            log_mtime = dt.datetime.fromtimestamp(log_path.stat().st_mtime)
+            if any(r.get("report_id") == report_id
+                   and r.get("status") == "success" and r["_dt"] > log_mtime
+                   for r in _all_runs_merged(14)):
+                return {"status": "full", "issues": []}
+        except Exception:
+            pass
+    return result
+
+
+def _run_outcome_raw(report_id: str) -> dict:
     """Classify the LAST run of `report_id` from its persisted log:
     {'status': 'full'|'partial'|'failed'|None, 'issues': [...]}. None = no log.
     Powers the card's last-run badge — so a run that quietly skipped a phase

@@ -304,6 +304,15 @@ def _rebuild_sections_from_list(
 
     log.info("rebuilding sections to match col V: %s -> %s",
              existing_names, desired)
+    # Empty col V -> rebuilding to 0 sections would (a) crash on the empty
+    # 'A1:T0' range and (b) wipe every section on the tab. An empty list is
+    # almost always a transient/empty-tab read, not a real "remove all ICDs" —
+    # so skip the rebuild and leave the tab as-is (fixes the 'Unable to parse
+    # range: …A1:T0' crash seen on a captainship with 0 ICDs to process).
+    if not desired:
+        log.warning("  col V resolved to 0 ICDs — skipping rebuild (won't wipe "
+                    "existing sections; check this tab's col V list)")
+        return col3
     if dry_run:
         log.info("  [DRY-RUN] would rewrite %d section header(s) + blank "
                  "metric cells (next fetch fills)", len(desired))
