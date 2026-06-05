@@ -1113,6 +1113,9 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--no-copy", action="store_true",
                     help="Skip the Wednesday copy-current-to-last step.")
+    ap.add_argument("--no-slack", action="store_true",
+                    help="Skip the Carlos-tab screenshot group DM "
+                         "(Carlos + Elena + Valeria + Eve).")
     ap.add_argument("--alt-appstream", action="store_true",
                     help="Log in with the ALTERNATE AppStream account (read "
                          "from env APPLICANTSTREAM_USERNAME / "
@@ -1141,12 +1144,15 @@ def main() -> int:
     skipped: List[str] = []
     denied: List[str] = []
     fetch_errors: List[str] = []
+    carlos_result = None
     for cs in targets:
         cs_rc, cs_result = run_captainship(cs, args, week_start, log)
         rc |= cs_rc
         skipped       += cs_result.get("inaccessible", [])
         denied        += cs_result.get("denied", [])
         fetch_errors  += cs_result.get("fetch_errors", [])
+        if cs == "Carlos":
+            carlos_result = cs_result
 
     # One shared retry-state file for the whole run — the Hub reads it to list
     # the skipped ICDs and power the "Retry the skipped ICDs" button. Not
@@ -1166,6 +1172,34 @@ def main() -> int:
     # recover from) flips the whole run to 'failed' even though it
     # completed and the data is correct (Maud, 2026-06-02). Only emitted
     # on rc == 0 so genuine failures still fall through to the scan.
+    # Carlos screenshot DM — after the Carlos tab is filled, render it to a
+    # PNG and DM it to the recruiting group (Carlos + Elena + Valeria + Eve).
+    # Best-effort: a Slack failure logs a warning but never fails the run or
+    # blocks the success sentinel (the data fill already succeeded). Skipped
+    # on --dry-run / --only (partial views) and with --no-slack.
+    if ("Carlos" in targets and not args.dry_run
+            and not args.only and not args.no_slack):
+        try:
+            from automations.recruiting_report import focus_render, focus_slack
+            sh = fill.open_by_key(DAILY_FOCUS_SPREADSHEET_ID)
+            ws = find_captainship_worksheet(sh, "Carlos")
+            if ws is None:
+                raise RuntimeError("Carlos tab not found — skipping Slack DM.")
+            # Split into one image per 3 owners so the DM is easy to read.
+            pngs = focus_render.render_tab_grouped(
+                sh, ws.title, _OUTPUT_DIR,
+                prefix=f"daily-focus-carlos-{today.isoformat()}", per=3)
+            summary = None
+            inaccessible = (carlos_result or {}).get("inaccessible", [])
+            if inaccessible:
+                summary = (f"⚠️ {len(inaccessible)} ICD(s) couldn't be pulled: "
+                           + ", ".join(inaccessible))
+            res = focus_slack.post_carlos_screenshots(pngs, today, summary=summary)
+            log.info("Slack DM sent — %d Carlos screenshot(s) → %s",
+                     len(pngs), ", ".join(res["recipients"]))
+        except Exception as e:  # noqa: BLE001 — post is best-effort
+            log.warning("Carlos screenshot DM failed (run still OK): %s", e)
+
     if rc == 0:
         log.info("=== done ===")
     return rc

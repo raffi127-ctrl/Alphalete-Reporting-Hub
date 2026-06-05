@@ -1248,14 +1248,14 @@ AUTOMATED_REPORTS = [
             "prompts you to map it at the top — confirm the match, then re-run."
         ),
         "sheet_url": DAILY_FOCUS_SHEET_URL,
-        "assignees": ["Maud"],
+        "assignees": ["Eve"],  # moved from Maud → Eve 2026-06-05
         "schedule": {
             # Weekly with weekdays [1..5] = Tue–Sat. (frequency 'daily' would
             # short-circuit and ignore the weekdays filter, so it'd appear
             # 7 days a week on the calendar.)
             "frequency": "weekly",
             "weekdays": [1, 2, 3, 4, 5],  # Tue–Sat
-            "time": "8:00 AM",
+            "time": "7:00 AM",  # 7am CST (Eve) — moved from 8:00 2026-06-05
             "estimated_minutes": 10,
         },
         # Fully unattended via patchright (rcaptain AppStream) — no pre-flight
