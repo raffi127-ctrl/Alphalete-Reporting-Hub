@@ -174,6 +174,11 @@ def main(argv=None) -> int:
         # this week — the VAs do this by hand each day; the automation now
         # matches, so Wednesday is no longer dropped (Eve 2026-06-04).
         if args.step == "daily":
+            # Sort every leaderboard high->low (campaigns + all captainships),
+            # then extend the elapsed-day comparison formulas — both things the
+            # VAs do by hand each day (Eve 2026-06-04).
+            from automations.org_sales_board import sort as _sort
+            _sort.apply_sort(ws, dry_run=args.dry_run)
             from automations.org_sales_board.elapsed_totals import apply_elapsed_totals
             apply_elapsed_totals(ws, dry_run=args.dry_run)
         # Auto match-check vs the live VA tab (Megan 2026-06-03): every daily
