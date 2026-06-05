@@ -252,13 +252,13 @@ def plan_section_fill(
             if day >= today:
                 continue   # today/future cleared below — never write partial days
             if no_sales:
-                # No sales in the pull this week — write "NS" (No Sales) instead
-                # of 0 (Megan 2026-06-03). Only the day DATA cells change; the
-                # running total stays a =SUM formula and SUM/SUMIF treat the
-                # text "NS" as 0, so the Totals row + leaderboard SUMIFs are
-                # untouched. (Day cells only — never a formula cell.)
+                # No sales in the pull this week — write 0 to MATCH THE VAs
+                # (Eve 2026-06-04; supersedes the earlier "NS" choice). A
+                # completed day with no sales is a real 0, not blank. Only day
+                # DATA cells change; the running total stays a =SUM formula
+                # (SUM treats 0 the same as it did the text "NS").
                 plan.updates.append({
-                    "range": f"{_col(col)}{row}", "values": [["NS"]]})
+                    "range": f"{_col(col)}{row}", "values": [[0]]})
                 continue
             val = int(per_day.get(day, 0))   # SHEET-DRIVEN: 0 if absent
             plan.updates.append({

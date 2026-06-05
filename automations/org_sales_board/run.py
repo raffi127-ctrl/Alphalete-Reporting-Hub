@@ -169,6 +169,13 @@ def main(argv=None) -> int:
         orchestrate.run_daily(ws, dry_run=args.dry_run, only=only,
                               from_csv=from_csv,
                               include_captainships=args.with_captainships)
+        # Extend the elapsed-day grand-total formulas on the 'Current vs Prior'
+        # tables (Sales Last Week / 4 Week AVG) to sum the days completed so far
+        # this week — the VAs do this by hand each day; the automation now
+        # matches, so Wednesday is no longer dropped (Eve 2026-06-04).
+        if args.step == "daily":
+            from automations.org_sales_board.elapsed_totals import apply_elapsed_totals
+            apply_elapsed_totals(ws, dry_run=args.dry_run)
         # Auto match-check vs the live VA tab (Megan 2026-06-03): every daily
         # fill ends by confirming the copy matches the VAs. A real glitch
         # (automation behind / mismatched / missing-row) flags the run.
