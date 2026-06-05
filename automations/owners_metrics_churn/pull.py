@@ -47,17 +47,17 @@ def _apply_alias(name: str, aliases: Optional[dict]) -> str:
 FIBER_WAYNE_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/CHURN/"
-    "4fc5da75-b66c-42ab-9a5e-e329683f79a2/WAYNESCAPTAINSHIP?:iid=1"
+    "2ad705af-af9a-4ae6-89e8-75dc9f3e4707/WAYNESTEAMCHURN?:iid=1"  # re-saved 2026-06-05 (old view corrupted)
 )
 FIBER_STARR_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/CHURN/"
-    "12e37fa3-cfaf-43cb-b517-b9879f65ec53/STARSCAPTAINSHIP?:iid=1"
+    "ed79d85b-5a5d-45c6-9610-e7a3c3b29086/STARSTEAMCHURN?:iid=1"  # re-saved 2026-06-05 (old view corrupted)
 )
 FIBER_ARON_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/CHURN/"
-    "9fa23e5b-936d-474b-9f50-ccfa6661fdb3/ARONSCAPTAINSHIP?:iid=1"
+    "a1726231-fd1a-434a-8172-ede2567df3c0/ARONSTEAMCHURN?:iid=1"  # re-saved 2026-06-05 (old view corrupted)
 )
 
 WORKSHEET = "ICD Churn"
