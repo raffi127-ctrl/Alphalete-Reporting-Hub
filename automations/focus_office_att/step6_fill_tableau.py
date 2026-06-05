@@ -44,7 +44,8 @@ from pathlib import Path
 import openpyxl
 
 from automations.recruiting_report import fill as _fill
-from automations.focus_office_att.aliases import load_aliases, alias_to_canonical
+from automations.focus_office_att.aliases import (
+    load_aliases, alias_to_canonical, get_search_candidates)
 from automations.focus_office_att.columns import resolve_layout, _normalize
 from automations.focus_office_att.step5_fill_one_owner import (
     _col_letter, design_cosmetic_ops, strip_rep_mark,
@@ -306,6 +307,20 @@ def main() -> int:
         total = sum(len(v) for v in aliases_raw.values())
         print(f"  Loaded {total} alias(es) for {len(aliases_raw)} ICD(s) from shared Sheet")
 
+    def _resolve_tab(owner: str) -> str:
+        """Tableau owner name → actual Sheet tab name. The shared ICD Aliases
+        sheet's canonical may be EITHER form: the DD report names its tabs with
+        the canonical (Tableau) name, but this Daily report names them with the
+        alias spelling (tab 'Lamar Mitchell' for Tableau 'Tre Mitchell', etc.).
+        So resolve to the canonical, then pick whichever candidate name
+        (canonical OR any alias) is a real tab here. Falls back to the canonical
+        when none match, so the 'no Sheet tab' report still reads sensibly."""
+        canonical = alias_to_canonical(owner, aliases_raw)
+        for cand in get_search_candidates(canonical, aliases_raw):
+            if cand in all_tabs:
+                return cand
+        return canonical
+
     summary: dict[str, dict] = {}
     metrics_for_layout = (
         list(TT_FIELD_TO_CANONICAL.values())
@@ -355,8 +370,9 @@ def main() -> int:
                 raise
 
     for owner, owner_data in tableau.items():
-        # Apply alias: Tableau name → Sheet tab name (via the shared ICD Aliases Sheet).
-        sheet_tab_name = alias_to_canonical(owner, aliases_raw)
+        # Tableau name → actual Sheet tab name (handles tabs named with either
+        # the canonical or an alias spelling — see _resolve_tab).
+        sheet_tab_name = _resolve_tab(owner)
         if only and sheet_tab_name not in only:
             continue
         if sheet_tab_name not in all_tabs:
@@ -399,7 +415,7 @@ def main() -> int:
     # access gaps) in the report's review email so access can be re-pinged.
     _NON_OWNER_TABS = {"Template", "Raf play"}
     sheet_owner_tabs = {t for t in all_tabs if t not in _NON_OWNER_TABS}
-    in_tableau = {alias_to_canonical(o, aliases_raw) for o in tableau}
+    in_tableau = {_resolve_tab(o) for o in tableau}
     missing_from_tableau = sorted(sheet_owner_tabs - in_tableau)
     try:
         results_path = (Path(__file__).resolve().parents[2]
