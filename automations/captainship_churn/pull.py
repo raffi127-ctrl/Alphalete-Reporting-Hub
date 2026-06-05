@@ -44,7 +44,7 @@ NEW_INT_VIEW_URL = (
 WIRELESS_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/CHURN/"
-    "5a9ebd21-67c0-42c7-bf9f-38ba34b0b750/WirelessCAPTAINSHIP?:iid=1"
+    "5ac5e7e6-50e0-4965-b619-8031c65e96cd/RafWirelessTeam?:iid=1"  # re-saved 2026-06-05 (old view showed 1 rep only)
 )
 WORKSHEET = "ICD Churn"
 
