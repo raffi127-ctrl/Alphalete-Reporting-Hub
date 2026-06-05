@@ -273,7 +273,14 @@ def _write(active_cards, this_mon, today):
     new_week = (marker != last_mon.isoformat())
     listed = sorted(
         [(name, last["pct"]["total"]) for name, _, last in active_cards
-         if isinstance(last["pct"]["total"], (int, float))
+         # Only a week with LOGGED data counts: the recruiter must have had
+         # interviews scheduled that week (Sch > 0). A no-data week yields a
+         # text "0%" (not a number) for pct, so it's excluded — it never lands
+         # on the list or bumps the streak count. Guard on Sch>0 explicitly so
+         # this can't regress if _frac ever changes. (Megan 2026-06-04)
+         if isinstance(last["Sch"]["total"], (int, float))
+         and last["Sch"]["total"] > 0
+         and isinstance(last["pct"]["total"], (int, float))
          and last["pct"]["total"] <= 0.5],
         key=lambda x: x[1], reverse=True)              # greatest -> least
     chart_rows = []
