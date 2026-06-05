@@ -206,6 +206,7 @@ def main(argv=None) -> int:
 
     # --- Phase 1: pull each CSV (shared Tableau session) ---
     csvs: dict = {}
+    failed: list = []
     if args.skip_download:
         for slug, label, _fetch_fn, _open_ws_fn, csv_name, _parse_fn, _periods in selected:
             default = Path(tempfile.gettempdir()) / csv_name
@@ -219,8 +220,18 @@ def main(argv=None) -> int:
         with tableau_session(verbose=False) as page:
             for slug, label, fetch_fn, _open_ws_fn, _csv_name, _parse_fn, _periods in selected:
                 print(f"  → pulling {label}...")
-                csvs[slug] = fetch_fn(verbose=False, page=page)
-                print(f"    ✓ {csvs[slug]}")
+                try:
+                    csvs[slug] = fetch_fn(verbose=False, page=page)
+                    print(f"    ✓ {csvs[slug]}")
+                except Exception as e:
+                    # One captain's pull failing — e.g. a corrupted Tableau
+                    # custom view ("Couldn't find the 'ICD Churn' sheet…") —
+                    # must NOT kill the other captainships. Skip + flag it; the
+                    # rest still pull and fill (Eve glitch 2026-06-05).
+                    msg = str(e).splitlines()[0][:160]
+                    print(f"    ⚠ {label}: pull FAILED — skipping (the rest "
+                          f"continue). {msg}")
+                    failed.append(label)
 
     # --- Phase 2: parse + fill each ---
     # Load aliases once per run — applied to every parser's output so
@@ -233,12 +244,21 @@ def main(argv=None) -> int:
               f"({len(aliases)} canonical names).")
 
     for slug, label, _fetch_fn, open_ws_fn, _csv_name, parse_fn, periods in selected:
+        if slug not in csvs:
+            continue   # pull failed/skipped above — already flagged
         parsed = parse_fn(csvs[slug])
         parsed = _apply_aliases(parsed, aliases)
         _run_fill_phase(label, open_ws_fn, parsed, periods, today, args)
 
     # No Slack post — sheet-only (matches existing Captainship pattern).
 
+    if failed:
+        print(f"\n=== done — {len(selected) - len(failed)}/{len(selected)} "
+              f"filled; SKIPPED {len(failed)}: {failed} ===")
+        print("  A skipped captainship is almost always a corrupted Tableau "
+              "custom view — re-create it in Tableau (the view shows an "
+              "'error loading the custom view' toast). The rest filled fine.")
+        return 1   # non-zero so the Hub flags it — but healthy tabs ARE filled
     print("\n=== done ===")
     return 0
 
