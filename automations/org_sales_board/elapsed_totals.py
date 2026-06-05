@@ -64,13 +64,48 @@ def plan_elapsed_totals(grid: List[List[str]], today: dt.date) -> List[dict]:
     return updates
 
 
+def plan_delta_lastweek(grid: List[List[str]], today: dt.date) -> List[dict]:
+    """Return [{range, formula}] for every per-captainship DELTA table's
+    'Last week' TOTAL cell (col D under 'Total for week'). It must sum the
+    per-day 'Last week' sub-columns (G, J, M, ...) for the days completed so
+    far — currently it drops the latest day (=G+J on a Wednesday). 'Total this
+    week' (col C) already sums every day (future = 0) so it needs no fix."""
+    n = elapsed_day_count(today)
+    updates: List[dict] = []
+    for i, row in enumerate(grid):
+        if not any("Total for week" in (c or "") for c in row[:6]):
+            continue
+        sub = i + 1                                  # sub-header row (0-based i = header; +1 = next)
+        if sub >= len(grid):
+            continue
+        lw_cols = [c + 1 for c, v in enumerate(grid[sub])
+                   if (v or "").strip().lower() == "last week"]
+        if len(lw_cols) < 2:
+            continue
+        total_col, per_day = lw_cols[0], lw_cols[1:]   # D = total; G/J/M.. = per-day
+        elapsed = per_day[:n]
+        if not elapsed:
+            continue
+        r = sub + 2                                   # first data row (1-based)
+        while r <= len(grid):
+            rv = grid[r - 1]
+            b = (rv[1] if len(rv) > 1 else "").strip()
+            if not b or any("Total for week" in (c or "") for c in rv[:6]):
+                break
+            formula = "=" + "+".join(f"{_a1(c)}{r}" for c in elapsed)
+            updates.append({"range": f"{_a1(total_col)}{r}", "values": [[formula]]})
+            r += 1
+    return updates
+
+
 def apply_elapsed_totals(ws, today: dt.date | None = None,
                          dry_run: bool = False, logfn=print) -> List[dict]:
-    """Find + set the elapsed-day grand-total formulas on `ws`. COPY/REAL tab
-    chosen by the caller; refuses nothing here, but the planner is pure."""
+    """Find + set the elapsed-day grand-total formulas on `ws`: the 'Current vs
+    Prior' tables (Sales Last Week / 4 Week AVG) AND the per-captainship delta
+    tables ('Last week' total). COPY/REAL tab chosen by the caller."""
     today = today or dt.date.today()
     grid = ws.get_all_values()
-    updates = plan_elapsed_totals(grid, today)
+    updates = plan_elapsed_totals(grid, today) + plan_delta_lastweek(grid, today)
     n = elapsed_day_count(today)
     logfn(f"  elapsed-day totals ({n} day(s) completed): {len(updates)} cell(s)")
     for u in updates:
