@@ -473,7 +473,10 @@ def main() -> int:
         except Exception as e:
             log.warning("OPT phase skipped (is Tableau open + logged in?): %s", e)
 
-    log.info("done")
+    # '=== done ===' is the Hub's success sentinel (dashboard.py checks it
+    # BEFORE scanning for tracebacks) — plain 'done' let recovered fetch-retry
+    # tracebacks flip a clean run to 'failed' (badge bug, 2026-06-05).
+    log.info("=== done ===")
     return 0
 
 
