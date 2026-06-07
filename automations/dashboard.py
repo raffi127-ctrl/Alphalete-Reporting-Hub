@@ -212,7 +212,16 @@ def _read_active_runs() -> list[dict]:
                 # find") in the trailing data flipped the run to 'failed'.
                 if "=== done ===" in full_low or "=== done (dry-run) ===" in full_low:
                     status = "success"
-                elif "traceback (most recent call last)" in full_low:
+                elif ("traceback (most recent call last)" in full_low
+                      or "timed out after" in full_low
+                      or "— killed" in full_low):
+                    # A phase-watchdog kill (daily.py prints
+                    # 'Phase N TIMED OUT after M min' and
+                    # '... exceeded M min — killed') is a REAL failure: the run
+                    # is incomplete. Catch it here, before the optimistic
+                    # 'unknown -> success' default below — which was silently
+                    # marking timed-out focus-office runs as 'completed'
+                    # (Megan 2026-06-07).
                     status = "failed"
                 # Fuzzy tail heuristic — fallback only when neither explicit
                 # sentinel is present (older reports, or a hard kill mid-run).
@@ -234,13 +243,17 @@ def _read_active_runs() -> list[dict]:
                 elif any(s in tail_text for s in (
                     "error", "failed", "traceback",
                     "✗", "couldn't find", "couldn't be found",
-                    "auto-skipping",
+                    "auto-skipping", "timed out", "— killed",
                 )):
                     status = "failed"
             except Exception:
                 pass
         try:
-            _save_run_state_for(report_id, status if status != "unknown" else "success",
+            # Unverified runs default to FAILED, not success: an orphan with
+            # no '=== done ===' sentinel and no recognizable success marker did
+            # NOT verifiably complete, so it must not show as 'completed'
+            # (Megan 2026-06-07 — timed-out runs were reading as done).
+            _save_run_state_for(report_id, status if status != "unknown" else "failed",
                                 user=orphan.get("user"))
             _log_run(
                 report_id=report_id,
@@ -2747,6 +2760,15 @@ def _run_outcome_raw(report_id: str) -> dict:
         return {"status": "partial", "issues": issues}
     if "traceback (most recent call last)" in low:
         return {"status": "failed", "issues": ["the run crashed — see the log"]}
+    # A phase-watchdog kill ('... TIMED OUT after N min', 'exceeded N min —
+    # killed') is a real, incomplete run — never let it read as 'full'.
+    if "timed out after" in low or "— killed" in low:
+        return {"status": "failed", "issues": ["the run timed out before finishing — click Run Again to resume"]}
+    # Trust a saved 'failed' (non-zero exit code) — don't optimistically
+    # upgrade it to 'full' just because the log lacks a traceback. The old
+    # fall-through to 'full' was masking failed/timed-out runs (Megan 2026-06-07).
+    if saved_status == "failed":
+        return {"status": "failed", "issues": ["the run did not finish — see the log"]}
     return {"status": "full", "issues": []}
 
 

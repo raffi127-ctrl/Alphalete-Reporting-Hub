@@ -749,7 +749,7 @@ def _notify_failure(headline: str, detail: str, log_file: str) -> None:
 # vs. the ~15 min normal total, so a legit slow Monday won't false-trip.
 PHASE_TIMEOUT_EXIT = 124  # conventional "timed out" exit code
 PHASE2_TIMEOUT_S = 40 * 60
-PHASE3_TIMEOUT_S = 20 * 60
+PHASE3_TIMEOUT_S = 35 * 60  # was 20 — heavy days (big fills + Tableau retries) ran over (Megan 2026-06-07)
 
 
 def _kill_process_tree(proc: "subprocess.Popen") -> None:

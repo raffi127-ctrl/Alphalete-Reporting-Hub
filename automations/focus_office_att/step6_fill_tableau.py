@@ -36,6 +36,7 @@ import argparse
 import csv
 import datetime as dt
 import json
+import os
 import sys
 import time
 from collections import defaultdict
@@ -340,9 +341,27 @@ def main() -> int:
                 if stats.get("new_reps"):
                     print(f"    + added {len(stats['new_reps'])} new rep row(s): {stats['new_reps']}")
                 if not args.dry_run and stats["written"] > 0:
-                    # Same consolidated design pass as Phase 2 — one source
-                    # of truth so Phase 3 reproduces the full design too.
-                    for label, fn in design_cosmetic_ops(ws, layout):
+                    # SPEED (Megan 2026-06-07): Phase 2 already applied each
+                    # tab's full design (cosmetic + structure), formatting
+                    # persists day-to-day, the live '=' formulas + persistent
+                    # conditional-format rules auto-recompute when we write
+                    # production, and Phase 2 skips design on no-change owners
+                    # anyway. So in Phase 3 the ONLY thing that must re-run for
+                    # an unchanged owner is the STATIC aggregate rows that are
+                    # computed from the production we just wrote (office totals
+                    # + summary, written RAW). Run the FULL pass only when a new
+                    # rep row was appended (then sort/format/formulas must be
+                    # re-laid). This cuts ~16 ops/owner → 2 for most owners,
+                    # which is what was blowing the Phase-3 time cap.
+                    # Escape hatch: FOCUS_PHASE3_FULL_DESIGN=1 forces the old
+                    # full pass on every owner.
+                    ops = design_cosmetic_ops(ws, layout)
+                    if (not stats.get("new_reps")
+                            and not os.environ.get("FOCUS_PHASE3_FULL_DESIGN")):
+                        _keep = {"write_office_totals_row",
+                                 "write_office_summary_block"}
+                        ops = [(l, f) for l, f in ops if l in _keep]
+                    for label, fn in ops:
                         try:
                             fn()
                         except Exception as e:
