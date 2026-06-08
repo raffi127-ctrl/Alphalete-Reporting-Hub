@@ -481,19 +481,35 @@ def parse_rep_breakdown_per_owner(path: Path,
     rows = _read_tab_csv(path)
     if not rows or len(rows) < 3:
         return {}
-    header = rows[1]
+    date_row = rows[0]          # week-ending date per column (e.g. '6/7/2026')
+    header = rows[1]            # Monday..Sunday / Total
     OWNER_I, REP_I, TYPE_I = 0, 1, 2
-    # Map day name → column index
-    # Keep the FIRST occurrence of each weekday. The 'This week and last' view
-    # repeats Mon..Sun for both weeks; the first block is LAST week (the target),
-    # so first-occurrence picks the right week. (Old single-week view: only one
-    # block, so unaffected.)
+    # The 'This week and last' view can return TWO Mon..Sun blocks, each tagged
+    # with its week-ending date in the top row. We want THIS week = the LATEST
+    # (max) week-ending date. The old code read the FIRST occurrence of each day
+    # = the FIRST block = LAST week, so the box silently showed 5/31 under a
+    # 'WE 6.7' label whenever the view returned both blocks (Megan 2026-06-08).
+    # Select columns by the newest row-0 date; fall back to first-occurrence
+    # when the top row carries no dates (older single-week view).
+    def _col_date(j: int) -> Optional[dt.date]:
+        cell = (date_row[j] or "").strip() if j < len(date_row) else ""
+        try:
+            return dt.datetime.strptime(cell, "%m/%d/%Y").date()
+        except ValueError:
+            return None
+    col_dates = {j: _col_date(j) for j in range(len(header))}
+    _dated = [d for d in col_dates.values() if d is not None]
+    target_date = max(_dated) if _dated else None
+
     day_cols: Dict[str, int] = {}
     for j, h in enumerate(header):
         h_clean = (h or "").strip()
-        if h_clean in DAY_ORDER and h_clean not in day_cols:
+        if h_clean not in DAY_ORDER or h_clean in day_cols:
+            continue
+        if target_date is None or col_dates.get(j) == target_date:
             day_cols[h_clean] = j
-    # First "Total" column AFTER the day columns is the per-rep weekly total
+    # First "Total" column AFTER the (latest) day block is the per-rep weekly
+    # total; the next "Total" after that is the Grand Total.
     max_day_col = max(day_cols.values()) if day_cols else TYPE_I
     total_i: Optional[int] = None
     for j in range(max_day_col + 1, len(header)):
