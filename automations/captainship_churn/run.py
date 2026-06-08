@@ -179,6 +179,7 @@ def main(argv=None) -> int:
 
     # --- Phase 1: pull both CSVs (single Tableau session) ---
     csvs: dict = {}
+    failed: list = []
     if args.skip_download:
         for slug, label, _fetch_fn, _open_ws_fn, csv_name in selected:
             default = Path(tempfile.gettempdir()) / csv_name
@@ -192,8 +193,26 @@ def main(argv=None) -> int:
         with tableau_session(verbose=False) as page:
             for slug, label, fetch_fn, _open_ws_fn, _csv_name in selected:
                 print(f"  → pulling {label}...")
-                csvs[slug] = fetch_fn(verbose=False, page=page)
-                print(f"    ✓ {csvs[slug]}")
+                # SELF-HEAL + RESILIENCE (Megan 2026-06-08): retry once before
+                # skipping, and never let one pull's failure crash the run.
+                # Most failures are a transient slow/flaky Tableau load; a
+                # genuinely corrupted view fails both attempts → skip + flag.
+                last_err = None
+                for attempt in (1, 2):
+                    try:
+                        csvs[slug] = fetch_fn(verbose=False, page=page)
+                        print(f"    ✓ {csvs[slug]}")
+                        last_err = None
+                        break
+                    except Exception as e:
+                        last_err = e
+                        if attempt == 1:
+                            print(f"    ⚠ {label}: pull attempt 1 failed "
+                                  f"({str(e).splitlines()[0][:80]}) — retrying once…")
+                if last_err is not None:
+                    print(f"    ⚠ {label}: pull FAILED after retry — skipping "
+                          f"(the rest continue). {str(last_err).splitlines()[0][:160]}")
+                    failed.append(label)
 
     # --- Phase 2: parse + fill each ---
     # Load ICD aliases once and canonicalize every parsed rep name BEFORE the
@@ -205,12 +224,24 @@ def main(argv=None) -> int:
         print(f"  Loaded {sum(len(v) for v in aliases.values())} aliases "
               f"({len(aliases)} canonical names).")
     for slug, label, _fetch_fn, open_ws_fn, _csv_name in selected:
+        if slug not in csvs:
+            continue   # pull failed/skipped above — already flagged
         parsed = pull.parse(csvs[slug])
         parsed = _apply_aliases(parsed, aliases)
         _run_fill_phase(label, open_ws_fn, parsed, today, args)
 
     # No Slack post — Captainship is sheet-only (Megan 2026-05-29).
 
+    if failed:
+        # NEVER read 'done' when data is missing (Megan 2026-06-08). No 'done'
+        # wording on this path so the Hub doesn't mark it completed.
+        print(f"\n=== run INCOMPLETE — NOT marking complete. "
+              f"{len(selected) - len(failed)}/{len(selected)} filled; "
+              f"MISSING {len(failed)}: {failed} ===")
+        print("  Usually a flaky/slow Tableau load (often clears on a re-run) "
+              "or a corrupted custom view (re-create it). The healthy tab(s) "
+              "ARE filled.")
+        return 1
     print("\n=== done ===")
     return 0
 
