@@ -80,11 +80,11 @@ def _adapter_sara_retail(ctx: AdapterContext) -> PullDict:
 def _adapter_je_retail(ctx: AdapterContext) -> PullDict:
     """Just Energy retail production (Retail JE section).
 
-    Pulls 'Daily Sales by ICD' (Total Sales per ICD per day) from JE's pinned
-    'Thisweek' custom view. STALENESS GUARD: that custom view is pinned to a
-    specific week (URL params can't drive JE's week selector), so if the view
-    shows a week other than the current one, fill NOTHING and flag loudly —
-    the custom view needs re-saving rather than writing stale numbers."""
+    Pulls 'Daily Sales by ICD' (Total Sales per ICD per day) from JE's
+    'Thisweek' custom view, which auto-rolls to the latest week (Top-1-by-MAX
+    filter — URL params can't drive JE's week selector). STALENESS GUARD: at a
+    week's start JE runs a day behind, so if the latest posted week isn't the
+    current one, fill NOTHING and flag — never write last week's numbers."""
     from automations.org_sales_board import je_pull
     if ctx.from_csv:
         csv_path = ctx.from_csv

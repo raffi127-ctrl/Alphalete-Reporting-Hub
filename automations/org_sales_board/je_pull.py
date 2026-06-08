@@ -5,17 +5,22 @@ Source: the JE 'Weekly Metrics by ICD' Tableau view, worksheet
 dashboard), measure 'Total Sales'. We read each ICD's per-day values + the
 weekly Total ("overall production per ICD", per Megan 2026-06-07).
 
-WEEK SELECTION GOTCHA (hard-won 2026-06-07): the view's 'Sales Week Ending'
-selector can NOT be driven by a URL parameter — an ISO param blanks the
-sheet, an M/D param is ignored, and the viz is canvas (no DOM dropdown).
-The reliable path is a SAVED CUSTOM VIEW pinned to the week:
+WEEK SELECTION (resolved 2026-06-07): the view's week control can NOT be
+driven by a URL param (ISO blanks the sheet, M/D is ignored) and the viz is
+canvas (no DOM dropdown). The reliable path is the SAVED CUSTOM VIEW:
   .../WeeklyMetricsbyICD/4d55c69f-.../Thisweek
-Because that custom view is pinned to a specific week, it can go STALE — so
-parse() also returns the week-ending Sunday it actually shows, and the
-caller (orchestrate) guards: if the shown week != the current week, DON'T
-fill (the custom view needs re-saving to the new week) and flag it loudly.
-Blank day cells mean "not posted yet" (JE runs a day behind) — leave empty,
-never write 0.
+That custom view filters on the calculated field 'Sales Weekending Selected'
+with limit "Top 1 by MAX(...)" — i.e. it auto-selects the MOST RECENT week
+ending (confirmed in Tableau's bootstrap). So it AUTO-ROLLS to the current
+week on every pull — no weekly re-save needed.
+
+Staleness guard (belt + suspenders, also handles JE's 1-day lag): parse()
+returns the week-ending it actually shows + whether that's the current
+week. At a week's start, the latest posted week can still be last week
+(JE runs a day behind) — when shown week != current week, the caller
+(orchestrate) SKIPS the fill and flags rather than writing last week's
+numbers into this week. Blank day cells mean "not posted yet" — leave
+empty, never write 0.
 """
 from __future__ import annotations
 
@@ -28,8 +33,9 @@ from typing import Optional
 
 from automations.shared.tableau_patchright import download_crosstab_patchright
 
-# Saved custom view pinned to the current week ("Thisweek"). Re-save it in
-# Tableau when it rolls to a new week (Save Custom View, same name).
+# Saved custom view "Thisweek" — its week filter is "Top 1 by MAX(Sales
+# Weekending Selected)", so it auto-rolls to the latest week every pull
+# (no re-save needed). See module docstring.
 CV_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "JustEnergyRTL-SalesStaffingProductivityWorkbook/WeeklyMetricsbyICD/"

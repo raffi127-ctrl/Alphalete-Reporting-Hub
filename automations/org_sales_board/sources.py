@@ -114,12 +114,15 @@ DAILY_SOURCES: List[Source] = [
         view="Thisweek", shared_key="je",
         notes="Pulled (je_pull) from the JE 'Weekly Metrics by ICD' view, "
               "worksheet 'Daily Sales by ICD' = Total Sales per ICD per day, "
-              "via the pinned 'Thisweek' custom view (URL params can't drive "
-              "the week — verified 2026-06-07). Board section is a CURATED set "
+              "via the 'Thisweek' custom view (URL params can't drive the week "
+              "— verified 2026-06-07). That view filters 'Sales Weekending "
+              "Selected' Top-1-by-MAX, so it AUTO-ROLLS to the latest week "
+              "every pull — no re-save needed. Board section is a CURATED set "
               "of ICDs (Megan 2026-06-07) — only existing rows are filled, the "
               "fuller 26-ICD JE roster is intentionally not all listed. "
-              "STALENESS-GUARDED: skips + flags if the custom view rolls out "
-              "of the current week (re-save the custom view weekly)."),
+              "STALENESS-GUARDED: at a week's start JE runs a day behind, so "
+              "if the latest posted week != the current week the fill SKIPS + "
+              "flags (never writes last week's numbers into this week)."),
     Source(
         label="Frontier", metric="sales",
         method=MANUAL, date_mode=MANUAL_DATE, column_verified=True,
