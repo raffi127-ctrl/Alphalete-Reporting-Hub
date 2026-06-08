@@ -214,14 +214,19 @@ def _read_active_runs() -> list[dict]:
                     status = "success"
                 elif ("traceback (most recent call last)" in full_low
                       or "timed out after" in full_low
-                      or "— killed" in full_low):
+                      or "— killed" in full_low
+                      or "fill incomplete" in full_low
+                      or "run incomplete" in full_low):
                     # A phase-watchdog kill (daily.py prints
                     # 'Phase N TIMED OUT after M min' and
                     # '... exceeded M min — killed') is a REAL failure: the run
                     # is incomplete. Catch it here, before the optimistic
                     # 'unknown -> success' default below — which was silently
                     # marking timed-out focus-office runs as 'completed'
-                    # (Megan 2026-06-07).
+                    # (Megan 2026-06-07). Likewise any report that ends
+                    # '... INCOMPLETE ...' because a pull was skipped/failed —
+                    # a report must NEVER read as completed when missing data
+                    # (Megan 2026-06-08).
                     status = "failed"
                 # Fuzzy tail heuristic — fallback only when neither explicit
                 # sentinel is present (older reports, or a hard kill mid-run).

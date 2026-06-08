@@ -253,12 +253,17 @@ def main(argv=None) -> int:
     # No Slack post — sheet-only (matches existing Captainship pattern).
 
     if failed:
-        print(f"\n=== done — {len(selected) - len(failed)}/{len(selected)} "
-              f"filled; SKIPPED {len(failed)}: {failed} ===")
-        print("  A skipped captainship is almost always a corrupted Tableau "
-              "custom view — re-create it in Tableau (the view shows an "
-              "'error loading the custom view' toast). The rest filled fine.")
-        return 1   # non-zero so the Hub flags it — but healthy tabs ARE filled
+        # NEVER say "done" when data is missing (Megan 2026-06-08: a report
+        # must not read as completed on the Hub if it's missing data). Avoid
+        # the word "done" entirely on this path so the Hub's success markers
+        # don't trip; this run is INCOMPLETE.
+        print(f"\n=== run INCOMPLETE — NOT marking complete. "
+              f"{len(selected) - len(failed)}/{len(selected)} captainship(s) "
+              f"filled; MISSING {len(failed)}: {failed} ===")
+        print("  A skipped captainship is usually a flaky/slow Tableau load "
+              "(often clears on a re-run) or a corrupted custom view (re-create "
+              "it in Tableau if it keeps failing). The healthy tabs ARE filled.")
+        return 1   # non-zero so the Hub flags it as incomplete
     print("\n=== done ===")
     return 0
 

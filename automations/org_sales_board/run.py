@@ -167,9 +167,9 @@ def main(argv=None) -> int:
             from automations.org_sales_board import rollover
             print("--- Tuesday: weekly rollover first ---")
             rollover.run_rollover(ws, dry_run=args.dry_run)
-        orchestrate.run_daily(ws, dry_run=args.dry_run, only=only,
+        _summary = orchestrate.run_daily(ws, dry_run=args.dry_run, only=only,
                               from_csv=from_csv,
-                              include_captainships=args.with_captainships)
+                              include_captainships=args.with_captainships) or {}
         # Extend the elapsed-day grand-total formulas on the 'Current vs Prior'
         # tables (Sales Last Week / 4 Week AVG) to sum the days completed so far
         # this week — the VAs do this by hand each day; the automation now
@@ -185,11 +185,27 @@ def main(argv=None) -> int:
         # Auto match-check vs the live VA tab (Megan 2026-06-03): every daily
         # fill ends by confirming the copy matches the VAs. A real glitch
         # (automation behind / mismatched / missing-row) flags the run.
-        if args.step == "daily" and not args.dry_run and not args.real:
-            from automations.org_sales_board import compare
-            if not compare.run_compare()["clean"]:
-                print("=== daily fill complete — COMPARE FLAGGED DIFFERENCES "
-                      "(see above); not marking clean ===")
+        if args.step == "daily":
+            # COMPLETENESS GATE — never report 'done' when data is MISSING
+            # (Megan 2026-06-08: a report must NOT say completed if it's
+            # missing data). A skipped section pull or a failed captainship
+            # program pull = missing data, even if the compare passes (e.g. a
+            # Monday run with no completed days to compare).
+            _skipped = list(_summary.get("skipped") or [])
+            _failed_prog = list(
+                (_summary.get("captainships") or {}).get("failed_programs") or [])
+            _compare_clean = True
+            if not args.dry_run and not args.real:
+                from automations.org_sales_board import compare
+                _compare_clean = compare.run_compare()["clean"]
+            if _skipped or _failed_prog or not _compare_clean:
+                # No "done"/"complete" wording on this path — missing data must
+                # never read as completed on the Hub (Megan 2026-06-08).
+                print("=== daily fill INCOMPLETE — missing data. "
+                      f"skipped/failed section pull(s)={_skipped or 'none'}; "
+                      f"failed captainship program pull(s)={_failed_prog or 'none'}; "
+                      f"compare={'clean' if _compare_clean else 'FLAGGED differences'}. "
+                      "Re-run to retry the missing pull(s). ===")
                 return 1
     print("=== done ===")
     return 0
