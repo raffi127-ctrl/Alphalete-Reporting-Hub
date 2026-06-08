@@ -193,25 +193,16 @@ def main(argv=None) -> int:
         with tableau_session(verbose=False) as page:
             for slug, label, fetch_fn, _open_ws_fn, _csv_name in selected:
                 print(f"  → pulling {label}...")
-                # SELF-HEAL + RESILIENCE (Megan 2026-06-08): retry once before
-                # skipping, and never let one pull's failure crash the run.
-                # Most failures are a transient slow/flaky Tableau load; a
-                # genuinely corrupted view fails both attempts → skip + flag.
-                last_err = None
-                for attempt in (1, 2):
-                    try:
-                        csvs[slug] = fetch_fn(verbose=False, page=page)
-                        print(f"    ✓ {csvs[slug]}")
-                        last_err = None
-                        break
-                    except Exception as e:
-                        last_err = e
-                        if attempt == 1:
-                            print(f"    ⚠ {label}: pull attempt 1 failed "
-                                  f"({str(e).splitlines()[0][:80]}) — retrying once…")
-                if last_err is not None:
-                    print(f"    ⚠ {label}: pull FAILED after retry — skipping "
-                          f"(the rest continue). {str(last_err).splitlines()[0][:160]}")
+                # RESILIENCE (Megan 2026-06-08): one pull failing must NOT crash
+                # the run. The pull self-heals a transient flake via the shared
+                # retry in download_crosstab_patchright; a genuinely corrupted
+                # view still fails → skip + flag here, the rest continue.
+                try:
+                    csvs[slug] = fetch_fn(verbose=False, page=page)
+                    print(f"    ✓ {csvs[slug]}")
+                except Exception as e:
+                    print(f"    ⚠ {label}: pull FAILED — skipping (the rest "
+                          f"continue). {str(e).splitlines()[0][:160]}")
                     failed.append(label)
 
     # --- Phase 2: parse + fill each ---

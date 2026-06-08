@@ -220,31 +220,17 @@ def main(argv=None) -> int:
         with tableau_session(verbose=False) as page:
             for slug, label, fetch_fn, _open_ws_fn, _csv_name, _parse_fn, _periods in selected:
                 print(f"  → pulling {label}...")
-                # SELF-HEAL: retry once before skipping. Most pull failures are
-                # transient — a slow/flaky Tableau load (Khalil's NDS view timed
-                # out at 120s once then pulled fine on a manual re-run, Megan
-                # 2026-06-08). The retry re-navigates fresh, so a one-off slow
-                # load no longer drops a captainship + needs a hand re-run.
-                last_err = None
-                for attempt in (1, 2):
-                    try:
-                        csvs[slug] = fetch_fn(verbose=False, page=page)
-                        print(f"    ✓ {csvs[slug]}")
-                        last_err = None
-                        break
-                    except Exception as e:
-                        last_err = e
-                        if attempt == 1:
-                            print(f"    ⚠ {label}: pull attempt 1 failed "
-                                  f"({str(e).splitlines()[0][:80]}) — retrying once…")
-                if last_err is not None:
-                    # Both attempts failed — e.g. a genuinely corrupted Tableau
-                    # custom view ("Couldn't find the 'ICD Churn' sheet…"). Must
-                    # NOT kill the other captainships. Skip + flag; the rest
-                    # still pull and fill (Eve glitch 2026-06-05).
-                    msg = str(last_err).splitlines()[0][:160]
-                    print(f"    ⚠ {label}: pull FAILED after retry — skipping "
-                          f"(the rest continue). {msg}")
+                # Resilient: one captain's pull failing must NOT kill the rest.
+                # The pull self-heals a transient flake via the shared retry in
+                # download_crosstab_patchright; a genuinely corrupted view still
+                # fails both attempts → skip + flag here (Eve glitch 2026-06-05).
+                try:
+                    csvs[slug] = fetch_fn(verbose=False, page=page)
+                    print(f"    ✓ {csvs[slug]}")
+                except Exception as e:
+                    msg = str(e).splitlines()[0][:160]
+                    print(f"    ⚠ {label}: pull FAILED — skipping (the rest "
+                          f"continue). {msg}")
                     failed.append(label)
 
     # --- Phase 2: parse + fill each ---

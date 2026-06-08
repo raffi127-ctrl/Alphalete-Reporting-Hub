@@ -340,13 +340,30 @@ def download_crosstab_patchright(
     If `page` is provided, reuses it (caller manages browser lifecycle —
     use this when downloading multiple crosstabs in one run to avoid
     relaunching Chrome each time). Otherwise launches its own session,
-    runs the download, and closes."""
-    if page is not None:
-        return drive_crosstab_dialog(page, view_url, crosstab_sheet, out_path,
-                                     verbose=verbose)
-    with tableau_session(verbose=verbose) as pg:
-        return drive_crosstab_dialog(pg, view_url, crosstab_sheet, out_path,
-                                     verbose=verbose)
+    runs the download, and closes.
+
+    SELF-HEAL (Megan 2026-06-08): retry ONCE on any failure. The dominant
+    failure mode across every report is a transient Tableau load/render
+    flake — '0 thumbs', a 120s toolbar timeout, a half-rendered crosstab —
+    that clears on a fresh attempt. drive_crosstab_dialog re-navigates
+    (about:blank → goto) each call, so the retry is a clean reload. A
+    genuinely broken/stale view fails both attempts and the error still
+    propagates, so callers' skip+flag resilience is unchanged."""
+    last_err = None
+    for attempt in (1, 2):
+        try:
+            if page is not None:
+                return drive_crosstab_dialog(page, view_url, crosstab_sheet,
+                                             out_path, verbose=verbose)
+            with tableau_session(verbose=verbose) as pg:
+                return drive_crosstab_dialog(pg, view_url, crosstab_sheet,
+                                             out_path, verbose=verbose)
+        except Exception as e:
+            last_err = e
+            if attempt == 1 and verbose:
+                print(f"  ⚠ crosstab pull failed ({str(e).splitlines()[0][:90]})"
+                      " — retrying once…", flush=True)
+    raise last_err
 
 
 def requests_session_from_page(page: Page):
