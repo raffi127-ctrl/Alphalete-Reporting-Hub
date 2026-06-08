@@ -252,12 +252,21 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
         logfn(f"  captainship {title} ({tkey})…")
         anchor = find_captainship(grid, title)
 
-        # Roster-driven: each ICD on this captainship's sheet rows is matched by
-        # name (+ aliases) in its program pull. Absent = 0 sales this week → NS.
-        def per_for(name, pull=pull, metric=metric):
+        # Roster-driven: each ICD on this captainship's sheet rows is matched
+        # by name (+ aliases). Match the captainship's OWN program first; if
+        # the ICD isn't there, fall back to ANY other program and pull its
+        # numbers anyway — some reps sit on a captainship whose Tableau team
+        # doesn't include them (e.g. Preppie Olison is on ARON/fiber but his
+        # sales are in NDS — pull them regardless, Megan 2026-06-08). Absent
+        # from EVERY program = 0 sales this week → NS.
+        def per_for(name, prog=prog, tkey=tkey):
             cands = _candidates_for_name(name, aliases)
-            k = next((x for x in pull if x in cands), None)
-            return pull[k].get(metric, {}) if k else {}
+            for tk in [tkey] + [k for k in prog if k != tkey]:
+                pdata = prog.get(tk, {})
+                k = next((x for x in pdata if x in cands), None)
+                if k:
+                    return pdata[k].get(TYPES[tk]["metric"], {})
+            return {}
 
         missing = fill_captainship(ws, anchor, today, per_for, dry_run=dry_run)
         summary["filled"].append(title)
