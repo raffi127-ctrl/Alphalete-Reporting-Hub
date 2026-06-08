@@ -1127,6 +1127,14 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
             except (ValueError, TypeError):
                 pass
 
+    # AIR = the office's 'AIA' total from the SARA Plus By Day data — same
+    # per-owner source + office-selection path as New Lines (which reads
+    # 'Wireless Lines'). The 'AIR' row is filled by label like every other
+    # value. (Megan 2026-06-08.)
+    air_rep = rep_byday.get("AIA")
+    if air_rep is not None:
+        values["AIR"] = str(air_rep)
+
     # Personal Production — the ICD's OWN per-rep production from
     # ProductSalesSummaryRep (0 for managers like Jairo/Isaiah, whose
     # teams sell but who don't personally). NOT the office total — that
