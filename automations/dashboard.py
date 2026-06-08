@@ -1263,12 +1263,12 @@ AUTOMATED_REPORTS = [
         "sheet_url": DAILY_FOCUS_SHEET_URL,
         "assignees": ["Eve"],  # moved from Maud → Eve 2026-06-05
         "schedule": {
-            # Weekly with weekdays [1..5] = Tue–Sat. (frequency 'daily' would
+            # Weekly with weekdays [0..4] = Mon–Fri. (frequency 'daily' would
             # short-circuit and ignore the weekdays filter, so it'd appear
             # 7 days a week on the calendar.)
             "frequency": "weekly",
-            "weekdays": [1, 2, 3, 4, 5],  # Tue–Sat
-            "time": "7:00 AM",  # 7am CST (Eve) — moved from 8:00 2026-06-05
+            "weekdays": [0, 1, 2, 3, 4],  # Mon–Fri (Megan 2026-06-07)
+            "time": "7:00 AM",  # 7am CST (Eve)
             "estimated_minutes": 10,
         },
         # Fully unattended via patchright (rcaptain AppStream) — no pre-flight
