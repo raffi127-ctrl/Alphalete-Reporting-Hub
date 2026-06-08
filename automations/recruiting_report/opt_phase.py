@@ -103,11 +103,14 @@ METRICS_VIEW_URL = (
 METRICS_SHEET = "Metrics Call Last week data (Internet)"
 METRICS_PATH = WORKSPACE / "output" / "opt_metrics.csv"
 
-# Churn crosstab — AUTOMATION PULL custom view of CHURN (New Internet).
+# Churn crosstab — AUTOMATION-NIChurn custom view of CHURN (New Internet).
+# Replaces AUTOMATIONPULL-NICHURNVIEW, which got stuck returning a SINGLE ICD
+# (Nicholas Weldon) from a persisted filter — caught 2026-06-08; Eve rebuilt
+# this view to return all ICDs (88). No date filter (churn is ongoing).
 CHURN_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/CHURN/"
-    "874bceda-72bf-4571-976b-9d998abacdbf/AUTOMATIONPULL-NICHURNVIEW"
+    "2a8afd55-5eac-4217-94d1-17e62cd0feec/AUTOMATION-NIChurn?:iid=1"
 )
 CHURN_SHEET = "ICD Churn"
 CHURN_PATH = WORKSPACE / "output" / "opt_churn.csv"
@@ -121,17 +124,16 @@ WIRELESS_METRICS_VIEW_URL = (
 WIRELESS_METRICS_SHEET = "Metrics Call Last week data (Wireless)"
 WIRELESS_METRICS_PATH = WORKSPACE / "output" / "opt_wireless_metrics.csv"
 
-# Wireless Churn crosstab — AP-WIRELESSCHURN custom view of CHURN.
+# Wireless Churn crosstab — AUTOMATION-WirelessChurn custom view of CHURN.
+# Replaces AP-WIRELESSCHURN (also stuck at 1 ICD); Eve rebuilt 2026-06-08 to
+# return all ICDs (84). Its worksheet is "ICD Churn (Wireless)" — distinct from
+# the NI-churn "ICD Churn" sheet. No date filter (churn is ongoing).
 WIRELESS_CHURN_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/CHURN/"
-    "e4e438a7-c289-4128-a89a-8b5beec41baa/AP-WIRELESSCHURN"
+    "67ab7e84-5a66-43c9-a6e5-df2edcaf95e6/AUTOMATION-WirelessChurn?:iid=1"
 )
-# Tableau renamed this sheet from "ICD Churn (Wireless)" → "ICD Churn"
-# (2026-05-25, caught on Eve's run). The wireless churn data lives on a
-# DIFFERENT view (WIRELESS_CHURN_VIEW_URL) than the regular churn "ICD Churn",
-# so the same sheet name on two different views is fine.
-WIRELESS_CHURN_SHEET = "ICD Churn"
+WIRELESS_CHURN_SHEET = "ICD Churn (Wireless)"
 WIRELESS_CHURN_PATH = WORKSPACE / "output" / "opt_wireless_churn.csv"
 
 # Captain's Bonus crosstab — AUTOMATIONPULL-CAPTAINS custom view. The Crosstab
@@ -2012,18 +2014,16 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
                       f"backfill, so those cells are left as-is.")
                 dl_ok["att"] = dl_ok["int"] = False
                 dl_gaps.extend(["ATT", "INT"])
-            # Product Sales + Metrics: same Monday rule -- bare view (This Week)
-            # on Mondays, else the pinned finished week. The 'Sale Date Week
-            # Ending' filter falls back to the prior week before Tableau rolls;
-            # the bare view tracks the live current week.
-            _ps_url = (PRODUCT_SALES_VIEW_URL if _is_monday
-                       else _week_url(PRODUCT_SALES_VIEW_URL, we_sunday))
-            logfn("OPT: Product Sales source -- "
-                  + ("THIS WEEK (bare view, Monday)" if _is_monday
-                     else f"pinned week-ending {we_sunday.isoformat()}"))
+            # Product Sales: ALWAYS pin to the target week-ending. The per-rep
+            # box + breakdowns want the latest COMPLETED week (WE 6/7 -> Cody
+            # Cannon = 99, verified 2026-06-08); the bare "This Week" view returns
+            # a different (wrong) week. Unlike ATT/INT ((LW) sheets) and Metrics,
+            # this source is week-pinned, so a stale Monday-AM pull self-corrects
+            # once Tableau has loaded the week -- just re-run later that day.
+            logfn(f"OPT: Product Sales source -- pinned week-ending {we_sunday.isoformat()}")
             _dl("product", "Product Sales", lambda: download_crosstab(
-                _ps_url, PRODUCT_SALES_SHEET, PRODUCT_SALES_PATH,
-                verbose=False, page=_pg))
+                _week_url(PRODUCT_SALES_VIEW_URL, we_sunday),
+                PRODUCT_SALES_SHEET, PRODUCT_SALES_PATH, verbose=False, page=_pg))
             _ptot = _crosstab_grand_total(PRODUCT_SALES_PATH)
             if _ptot:
                 logfn(f"OPT: Product Sales grand total = {_ptot}")
