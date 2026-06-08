@@ -1982,41 +1982,44 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
                       f"({type(e).__name__}: {str(e)[:140]})")
 
         with tableau_session(verbose=False) as _pg:
-            # ATT / INT: charts were added to these two base dashboards
-            # (2026-06-02), and the week-filter URL now renders only the (LW)
-            # last-week worksheets — the current ATT_SHEET never appears
-            # (measured: stuck at 11 chart thumbs for 120s). So pull the bare
-            # dashboard's (LW) sheet, which IS the most recent COMPLETED week
-            # (matches what the filtered current sheet used to give, and is never
-            # blank mid-week). The other sources still week-pin normally.
-            #   This only serves the current run (we_sunday == last completed
-            # week). A backfill of an OLDER week can't be served by (LW), so skip
-            # it rather than write the wrong week's numbers. METRICS is unchanged
-            # — its view wasn't chart-cluttered.
+            # On MONDAYS Tableau hasn't rolled the just-closed week into its
+            # "last week" / week-ending sources yet, so the normal (LW)/pinned
+            # path silently serves the PRIOR week -> the 5/31->6/7 duplication
+            # (Eve 2026-06-08). The bare-view CURRENT-week sheets DO carry the
+            # live week (verified reachable 2026-06-08; the 2026-06-02 chart
+            # clutter only blocked the *week-filtered* URL, not the bare view).
+            # So on Mondays pull This Week (may be partial); Tue-Sun keep the
+            # finished-week behavior. Anchored to Central (Raf's TX offices).
+            _is_monday = dt.datetime.now(CENTRAL).weekday() == 0
+
+            # ATT / INT: bare dashboard, CURRENT sheet on Mondays else the (LW)
+            # "last week" sheet. (LW) IS the most recent COMPLETED week and is
+            # never blank mid-week; it can't serve a backfill of an OLDER week,
+            # so a backfill still skips ATT/INT rather than write the wrong week.
             if we_sunday == _most_recent_sunday():
+                _att_sheet = ATT_SHEET if _is_monday else ATT_SHEET_LW
+                _int_sheet = INT_SHEET if _is_monday else INT_SHEET_LW
+                logfn("OPT: ATT/INT source -- "
+                      + ("THIS WEEK (bare current sheet, Monday)" if _is_monday
+                         else "(LW) last completed week"))
                 _dl("att", "ATT", lambda: download_crosstab(
-                    ATT_VIEW_URL, ATT_SHEET_LW, ATT_PATH, verbose=False, page=_pg))
+                    ATT_VIEW_URL, _att_sheet, ATT_PATH, verbose=False, page=_pg))
                 _dl("int", "INT", lambda: download_crosstab(
-                    INT_VIEW_URL, INT_SHEET_LW, INT_PATH, verbose=False, page=_pg))
+                    INT_VIEW_URL, _int_sheet, INT_PATH, verbose=False, page=_pg))
             else:
                 logfn(f"OPT: ⚠️ ATT/INT skipped — the bare-view (LW) sheet only "
                       f"serves the most recent completed week; {we_sunday} is a "
                       f"backfill, so those cells are left as-is.")
                 dl_ok["att"] = dl_ok["int"] = False
                 dl_gaps.extend(["ATT", "INT"])
-            # Product Sales: on MONDAYS Tableau hasn't rolled the just-closed
-            # week into the 'Sale Date Week Ending' filter yet, so a _week_url
-            # pin silently falls back to the PRIOR week's numbers (the 5/31->6/7
-            # duplication, Eve 2026-06-08). The bare view's "Sales By ICD
-            # (Weekly View)" sheet tracks the live current week, so on Mondays
-            # pull it bare (This Week -- may be partial) instead of pinning.
-            # Tue-Sun keep the pinned finished-week behavior. (Metrics unchanged
-            # -- its sheet is Last Week by design.)
-            _ps_monday = dt.datetime.now(CENTRAL).weekday() == 0
-            _ps_url = (PRODUCT_SALES_VIEW_URL if _ps_monday
+            # Product Sales + Metrics: same Monday rule -- bare view (This Week)
+            # on Mondays, else the pinned finished week. The 'Sale Date Week
+            # Ending' filter falls back to the prior week before Tableau rolls;
+            # the bare view tracks the live current week.
+            _ps_url = (PRODUCT_SALES_VIEW_URL if _is_monday
                        else _week_url(PRODUCT_SALES_VIEW_URL, we_sunday))
             logfn("OPT: Product Sales source -- "
-                  + ("THIS WEEK (bare view, Monday)" if _ps_monday
+                  + ("THIS WEEK (bare view, Monday)" if _is_monday
                      else f"pinned week-ending {we_sunday.isoformat()}"))
             _dl("product", "Product Sales", lambda: download_crosstab(
                 _ps_url, PRODUCT_SALES_SHEET, PRODUCT_SALES_PATH,
@@ -2024,9 +2027,13 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
             _ptot = _crosstab_grand_total(PRODUCT_SALES_PATH)
             if _ptot:
                 logfn(f"OPT: Product Sales grand total = {_ptot}")
+            _metrics_url = (METRICS_VIEW_URL if _is_monday
+                            else _week_url(METRICS_VIEW_URL, we_sunday))
+            logfn("OPT: Metrics source -- "
+                  + ("THIS WEEK (bare view, Monday)" if _is_monday
+                     else f"pinned week-ending {we_sunday.isoformat()}"))
             _dl("metrics", "Metrics", lambda: download_crosstab(
-                _week_url(METRICS_VIEW_URL, we_sunday),
-                METRICS_SHEET, METRICS_PATH, verbose=False, page=_pg))
+                _metrics_url, METRICS_SHEET, METRICS_PATH, verbose=False, page=_pg))
             _dl("churn", "Churn", lambda: download_crosstab(
                 CHURN_VIEW_URL, CHURN_SHEET, CHURN_PATH, verbose=False, page=_pg))
             _dl("wmetrics", "Wireless Metrics", lambda: download_crosstab(
