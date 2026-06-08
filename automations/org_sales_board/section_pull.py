@@ -109,7 +109,8 @@ def _weekday_to_date(name: str, today: dt.date) -> Optional[dt.date]:
     idx = _WEEKDAY_INDEX.get((name or "").strip().lower())
     if idx is None:
         return None
-    monday = today - dt.timedelta(days=today.weekday())
+    from automations.org_sales_board import week as _wk
+    monday = _wk.reporting_monday(today)  # rolls Tuesday — Monday = last week
     return monday + dt.timedelta(days=idx)
 
 
@@ -202,7 +203,8 @@ def parse_crosstab_byday(
     # header (NDS: a row of the week-ending date repeated). The REAL header is
     # the row whose day columns map to the most DISTINCT dates (7 = Mon-Sun);
     # the chrome row repeats one date. Pick by distinct-day count.
-    monday = today - dt.timedelta(days=today.weekday())
+    from automations.org_sales_board import week as _wk
+    monday = _wk.reporting_monday(today)  # rolls Tuesday — Monday = last week
     def _distinct_days(r):
         return len({d for c in r if (d := _day_for_header(c, monday))})
     scan = min(6, len(rows))
@@ -282,11 +284,15 @@ def pull_section_byday(
     out_path = out_dir / name
     view_url = spec.view_url
     if spec.week_pin:
-        # Pin to THIS week's ending Sunday so the view stops serving its saved
-        # default week. ISO date — Tableau silently ignores MM/DD/YYYY.
+        # Pin to the REPORTING week's ending Sunday (rolls Tuesday — on Monday
+        # this is LAST week's Sunday, so the view returns the just-finished
+        # week's COMPLETE data, not the new week's partial. Verified 2026-06-08:
+        # pinning WE 6/7 on Monday returned all 54 owners vs 2 for the this-week
+        # pin). ISO date — Tableau silently ignores MM/DD/YYYY.
         from urllib.parse import quote
+        from automations.org_sales_board import week as _wk
         td = today or dt.date.today()
-        we_sunday = td + dt.timedelta(days=6 - td.weekday())   # Mon-anchored
+        we_sunday = _wk.reporting_sunday(td)
         sep = "&" if "?" in view_url else "?"
         view_url = (f"{view_url}{sep}"
                     f"{quote('Sale Date Week Ending (mon-sun)')}"
@@ -363,6 +369,9 @@ NDS_SPEC = ScrapeSpec(
     total_label="Total",
     skip_owners=("Grand Total",),
     strip_office=True,
+    week_pin=True,    # pin to the reporting week so Monday = last week (else
+    #   it served this-week's empty Monday → 0 cells filled, Megan 2026-06-08).
+    #   No-op if this workbook ignores the filter; harmless either way.
     out_name="org_sales_board_nds_byday.csv",
 )
 
@@ -400,6 +409,8 @@ BOX_SPEC = ScrapeSpec(
     method=CROSSTAB,
     crosstab_sheet="BOX Daily Tracker",
     skip_owners=("Grand Total", "Total"),
+    week_pin=True,    # pin to the reporting week (Monday = last week). No-op if
+    #   this workbook ignores the filter; harmless either way.
     out_name="org_sales_board_box_byday.csv",
 )
 

@@ -64,10 +64,11 @@ def run_compare(logfn=print) -> dict:
     sh = open_by_key(SHEET_ID)
     copy = _retry(sh.worksheet(SANDBOX_TAB).get_all_values)
     va = _retry(sh.worksheet(PROD_TAB).get_all_values)
-    monday = today - dt.timedelta(days=today.weekday())
-    completed = [monday + dt.timedelta(days=i) for i in range(today.weekday())]
+    from automations.org_sales_board import week as _wk
+    monday = _wk.reporting_monday(today)
+    completed = _wk.completed_days(today)
     logfn(f"=== ORG board compare — copy vs VA — completed days "
-          f"{[d.isoformat() for d in completed] or '(none yet — Monday)'} ===")
+          f"{[d.isoformat() for d in completed] or '(none yet)'} ===")
 
     tally = {k: 0 for k in
              ("exact", "ns0", "auto_ahead", "va_ahead", "mismatch")}

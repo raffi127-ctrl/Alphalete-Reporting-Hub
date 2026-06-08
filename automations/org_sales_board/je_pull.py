@@ -133,8 +133,10 @@ def parse(csv_path: Path, today: Optional[dt.date] = None) -> dict:
     if week_ending is None and col_date:
         latest = max(col_date.values())
         week_ending = latest + dt.timedelta(days=(6 - latest.weekday()))
-    # This week's Sunday (Mon–Sun week containing today).
-    cur_sunday = today + dt.timedelta(days=(6 - today.weekday()))
+    # The board's active reporting week-ending Sunday (rolls Tuesday — on
+    # Monday this is last week's Sunday, so JE fills the just-finished week).
+    from automations.org_sales_board import week as _wk
+    cur_sunday = _wk.reporting_sunday(today)
     is_current = (week_ending == cur_sunday)
 
     def _num(s: str):

@@ -89,7 +89,8 @@ def fill_captainship(ws, anchor: CaptainAnchor, today, per_for,
     Every no-sale day is written as 0 (Megan: insert 0, never blank).
     WORKSHEET-SCOPED. Returns ICDs found in NO pull (filled 0)."""
     assert ws.title == "Copy of Alphalete ORG Sales Board", ws.title
-    monday = today - dt.timedelta(days=today.weekday())
+    from automations.org_sales_board import week as _wk
+    monday = _wk.reporting_monday(today)  # rolls Tuesday — Monday = last week
     days = [monday + dt.timedelta(days=i) for i in range(len(anchor.day_cols))]
     L0, L1 = _a1col(anchor.day_cols[0]), _a1col(anchor.day_cols[-1])
     runL, wkL = _a1col(anchor.running_col), _a1col(anchor.week_total_col)

@@ -214,8 +214,10 @@ def plan_section_fill(
     # linger in the future-day cells (Megan 2026-06-03: "wed-Sunday should be
     # cleared, it hasn't happened yet"). Only COMPLETED days (< today) carry
     # data; today itself is in-progress, so it's cleared too until it closes.
-    monday = today - dt.timedelta(days=today.weekday())
-    week_dates = [monday + dt.timedelta(days=i) for i in range(7)]
+    # Reporting week (rolls Tuesday — on Monday this is last week). Future =
+    # vs the REAL today, so on Monday all of last week reads as completed.
+    from automations.org_sales_board import week as _wk
+    week_dates = _wk.reporting_week(today)
     future_cols = [anchor.day_col_by_daynum[d.day] for d in week_dates
                    if d >= today and d.day in anchor.day_col_by_daynum]
 

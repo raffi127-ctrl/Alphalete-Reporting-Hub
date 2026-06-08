@@ -196,8 +196,9 @@ def parse_sara_crosstab_byday(path: Path, today: Optional[dt.date] = None
     blank-header MEASURE col (Wireless Lines / Internet / …) right after it, then
     weekday-date columns 'Mon (06-01)' …."""
     from automations.org_sales_board.section_pull import _day_for_header
+    from automations.org_sales_board import week as _wk
     today = today or dt.date.today()
-    monday = today - dt.timedelta(days=today.weekday())
+    monday = _wk.reporting_monday(today)  # rolls Tuesday — Monday = last week
     rows = _read_rows(path)
     if not rows:
         return {}

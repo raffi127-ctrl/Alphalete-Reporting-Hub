@@ -30,9 +30,11 @@ def _a1(col: int) -> str:
 
 
 def elapsed_day_count(today: dt.date) -> int:
-    """How many days of THIS week have completed (Mon..yesterday). Mon=0 →
-    0 completed, Thu=3 → Mon/Tue/Wed = 3. Today itself is in-progress."""
-    return today.weekday()
+    """How many days of the active reporting week have completed. Uses the
+    board's reporting-week model (rolls Tuesday), so on MONDAY all 7 of last
+    week count (the week is finished); Tue=1 … Sun=6. Today is in-progress."""
+    from automations.org_sales_board import week as _wk
+    return len(_wk.completed_days(today))
 
 
 def plan_elapsed_totals(grid: List[List[str]], today: dt.date) -> List[dict]:
