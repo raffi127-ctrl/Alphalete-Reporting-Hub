@@ -40,6 +40,7 @@ import datetime as dt
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import gspread
 import pdfplumber
@@ -50,6 +51,34 @@ from automations.alphalete_org_report.opt_nds import (
     _find_week_col,
     _find_row_by_label,
 )
+
+_CENTRAL = ZoneInfo("America/Chicago")
+
+
+def _parse_week_label(lbl: str) -> dt.date:
+    """Reverse of _week_label: '6/7/26' -> date(2026, 6, 7)."""
+    return dt.datetime.strptime(lbl, "%m/%d/%y").date()
+
+
+def _latest_week_only(d: Dict) -> Dict:
+    """Keep only the most-recent week. The by-store / events PDFs carry the
+    Current + Prior + 2nd-Prior weeks (one per page); we only want the latest
+    COMPLETED weekending — the 'Prior Sales Week' page — never the older ones
+    (Megan 2026-06-08)."""
+    if len(d) <= 1:
+        return d
+    latest = max(d, key=_parse_week_label)
+    return {latest: d[latest]}
+
+
+def _run_week_label() -> str:
+    """The week the report is being run for = the most-recent COMPLETED WE
+    Sunday, anchored to Central. The Quality Scorecard arrives ~2 weeks late
+    but must ALWAYS land on this column regardless of its internal date
+    (Megan 2026-06-08)."""
+    today = dt.datetime.now(_CENTRAL).date()
+    sunday = today - dt.timedelta(days=(today.weekday() + 1) % 7)
+    return _week_label(sunday)
 
 
 # Where the Hub drops the uploaded Frontier PDFs (mirrors the Financial Pull
@@ -72,9 +101,16 @@ QUALITY_GLOB = "Quality Scorecard - Frontier*.pdf"
 
 OPT_SECTION_LABEL = "OPT - Frontier Retail"
 
-_MONTHS = {m: i for i, m in enumerate(
-    ["January", "February", "March", "April", "May", "June", "July",
-     "August", "September", "October", "November", "December"], start=1)}
+# Accept BOTH full ("June") and 3-letter ("Jun") month names — the Frontier
+# PDFs use the abbreviation, and "May" only worked by coincidence (its
+# abbreviation == full name). Caught 2026-06-08 when June pages ("Jun 06/13")
+# stopped parsing and only "May 30" survived.
+_MONTHS = {}
+for _i, _m in enumerate(
+        ["January", "February", "March", "April", "May", "June", "July",
+         "August", "September", "October", "November", "December"], start=1):
+    _MONTHS[_m] = _i
+    _MONTHS[_m[:3]] = _i
 
 _PID_RE = re.compile(r"\b(\d{6})\b")
 _PCT_RE = re.compile(r"%$")
@@ -366,18 +402,15 @@ def aggregate_quality(pages: List[Tuple[dt.date, bool, dt.datetime, Dict[str, st
 
 # ----- "Quality Scorecard" PDF → Approval / Canceled / Pending -----------
 # Single page; per-owner row; 9 percent columns (3 windows × appr/canc/pend).
-# We read the leftmost window (Four Weeks Rolling = columns 0,1,2) and map it
-# to the sheet column 2 weeks AHEAD of the rolling window's end-Saturday.
+# We read the leftmost window (Four Weeks Rolling = columns 0,1,2).
 #
-# Why 2 weeks ahead: Quality Scorecard PDFs arrive ~2 weeks behind reality.
-# A PDF received 5/19 (filename "5/19/26") internally reads "Sales Range
-# 4/12/26 to 5/9/26" — its data covers the period ending 5/9. If the script
-# keys off that internal 5/9, the most recent 1-2 WE Sunday columns NEVER
-# fill, because the PDF covering those weeks "doesn't exist yet" — we'd be
-# permanently behind. Eve's rule (2026-05-26): the latest scorecard
-# received always fills the latest WE Sunday column. Empirically that's
-# rolling we_sat + 14 days = the target Saturday, +1 day = Sunday column.
-_SCORECARD_LAG_DAYS = 14
+# Column: the Quality Scorecard arrives ~2 weeks behind reality (its internal
+# rolling window ends well before the file is received). Megan's rule
+# (2026-06-08): the latest scorecard ALWAYS fills the CURRENT RUN WEEK's column,
+# regardless of the PDF's internal date — aggregate_scorecard maps it to
+# _run_week_label() (the most-recent completed WE Sunday). This replaces the old
+# fixed "rolling we_sat + 14 days" roll, which broke whenever the lag wasn't
+# exactly 2 weeks.
 
 _RANGE_RE = re.compile(r"(\d{1,2}/\d{1,2}/\d{2})\s+to\s+(\d{1,2}/\d{1,2}/\d{2})")
 
@@ -449,17 +482,17 @@ def _pct_columns_n(words: List[dict], n: int) -> Optional[List[float]]:
     return cols if len(cols) == n else None
 
 
-def aggregate_scorecard(entries: List[Tuple[dt.date, dt.datetime, Dict[str, str]]]
-                        ) -> Dict[str, Dict[str, str]]:
-    """Collapse scorecard files to {sheet_week: {approval,canceled,pending}},
-    most-recently-modified file winning per rolling week-ending."""
-    best: Dict[dt.date, Tuple[dt.datetime, Dict[str, str]]] = {}
-    for we_sat, mtime, qual in entries:
-        cur = best.get(we_sat)
-        if cur is None or mtime > cur[0]:
-            best[we_sat] = (mtime, qual)
-    return {_week_label(we_sat + dt.timedelta(days=_SCORECARD_LAG_DAYS + 1)): qual
-            for we_sat, (_m, qual) in best.items()}
+def aggregate_scorecard(entries: List[Tuple[dt.date, dt.datetime, Dict[str, str]]],
+                        target_week: str) -> Dict[str, Dict[str, str]]:
+    """Collapse scorecard files to {target_week: {approval,canceled,pending}}.
+    The scorecard arrives ~2 weeks late, but Megan's rule (2026-06-08) is it
+    ALWAYS fills the current run week's column regardless of its internal date
+    — so the most-recently-modified file's values map to `target_week`, NOT to a
+    date derived from the PDF (the old +14-day roll)."""
+    if not entries:
+        return {}
+    _we, _mtime, qual = max(entries, key=lambda e: e[1])
+    return {target_week: qual}
 
 
 def _opt_section_start(grid: List[List[str]]) -> int:
@@ -682,17 +715,19 @@ def run_frontier_opt(dry_run: bool = False, only_rep: Optional[str] = None,
             pages: List[_PageWeek] = []
             for p in pdfs:
                 pages.extend(parse_frontier_pdf(p, icd_name))
-            weeks = aggregate_weeks(pages, include_current=include_current)
+            weeks = _latest_week_only(
+                aggregate_weeks(pages, include_current=include_current))
             qpages = []
             for p in event_pdfs:
                 qpages.extend(parse_frontier_events_pdf(p, icd_name))
-            quality = aggregate_quality(qpages, include_current=include_current)
+            quality = _latest_week_only(
+                aggregate_quality(qpages, include_current=include_current))
             sc_entries = []
             for p in quality_pdfs:
                 e = parse_frontier_quality_pdf(p, icd_name)
                 if e:
                     sc_entries.append(e)
-            scorecard = aggregate_scorecard(sc_entries)
+            scorecard = aggregate_scorecard(sc_entries, _run_week_label())
         except Exception as e:
             msg = f"{title}: {type(e).__name__}: {str(e)[:120]}"
             logfn(f"Frontier OPT Data Pull: ✗ {msg}")
