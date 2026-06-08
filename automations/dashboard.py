@@ -2048,12 +2048,13 @@ AUTOMATED_REPORTS = [
         "emoji": "🏆",
         "color": "#10B981",
         "category": "📊 Metrics",
-        "description": "Fills the Alphalete Org Sales Board COPY TAB — 6 daily product sections (Retail NL/Internet, Fiber, NDS, B2B, BOX) + all 10 captainship leaderboards from Tableau. Writes ONLY to the copy tab (validation), never the live VA tab.",
+        "description": "Fills the Alphalete Org Sales Board COPY TAB — 7 daily product sections (Retail NL/Internet, Fiber, NDS, B2B, BOX, Retail JE) + all 10 captainship leaderboards from Tableau. Writes ONLY to the copy tab (validation), never the live VA tab.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Fills the **copy tab** of the Alphalete Org Sales Board: all 6 "
+            "Fills the **copy tab** of the Alphalete Org Sales Board: all 7 "
             "daily product sections (Retail NL, Retail Internet, ATT Fiber, "
-            "ATT NDS, B2B, BOX) and all 10 captainship leaderboards.\n\n"
+            "ATT NDS, B2B, BOX, Retail JE) and all 10 captainship "
+            "leaderboards.\n\n"
             "WHERE IT WRITES\n"
             "**COPY TAB ONLY** — \"Copy of Alphalete ORG Sales Board\". It never "
             "touches the live VA tab. This is the validation pass: run it daily, "
@@ -2069,8 +2070,10 @@ AUTOMATED_REPORTS = [
             "tab (by ICD, completed days) and flags any real mismatch — so a "
             "glitch never slips by.\n\n"
             "STILL MANUAL (not yet automated)\n"
-            "**Retail JE** (Closed Won) and **Frontier** (Verizon PDF) are still "
-            "keyed by hand.\n\n"
+            "Only **Frontier** (Verizon PDF) is keyed by hand now. **Retail JE** "
+            "is automated — it pulls from Just Energy (Daily Sales by ICD) and "
+            "auto-rolls to the current week (filled for the ICDs already on the "
+            "board).\n\n"
             "ZERO-SALES ICDs\n"
             "An ICD with no sales this week shows **NS** — that's correct (it "
             "matches the VAs' 0) and it fills the moment they sell."
@@ -2085,7 +2088,7 @@ AUTOMATED_REPORTS = [
         },
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Org Sales Board (copy tab) filled — 6 daily sections + 10 captainships, by program. Compare to the VA tab to confirm the match.",
+            "message_success": "✅ Org Sales Board (copy tab) filled — 7 daily sections + 10 captainships, by program. Compare to the VA tab to confirm the match.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
         },
         "actions": [
@@ -2093,7 +2096,7 @@ AUTOMATED_REPORTS = [
                 "label": "Run Daily Fill (Copy Tab)",
                 "icon": "▶",
                 "primary": True,
-                "help": "Fills the copy tab's 6 daily sections + 10 captainships for the completed days this week, then auto-compares to the live VA tab and flags any real mismatch. On Tuesdays it rolls the week over first automatically. Copy tab only — never the live VA tab.",
+                "help": "Fills the copy tab's 7 daily sections + 10 captainships for the completed days this week, then auto-compares to the live VA tab and flags any real mismatch. On Tuesdays it rolls the week over first automatically. Copy tab only — never the live VA tab.",
                 "module": "automations.org_sales_board.run",
                 "args_fn": lambda: ["--step", "daily", "--with-captainships"],
             },
