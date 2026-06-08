@@ -224,14 +224,26 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
         return sp.parse_byday(spec, csv, today)
 
     # Pull each PROGRAM's all-teams view ONCE (fiber, b2b, nds) — every ICD in
-    # that program, no team filter.
+    # that program, no team filter. RESILIENT: a single program view that
+    # fails to render (Tableau load/render flake → "0 thumbs", or a stale
+    # custom view) must NOT crash the whole board run. Skip + flag it; its
+    # captainship numbers stay blank this run and the rest still fills.
+    # (Megan 2026-06-08: a PROG pull "0 thumbs" killed the entire run.)
     prog = {}
+    failed_programs = []
     for tkey, view_url in PROGRAMS.items():
         t = TYPES[tkey]
         logfn(f"  program pull: {tkey}")
-        prog[tkey] = _pull(f"PROG_{tkey}", view_url, t["parse"], t["metric"])
+        try:
+            prog[tkey] = _pull(f"PROG_{tkey}", view_url, t["parse"], t["metric"])
+        except Exception as e:
+            logfn(f"  ⚠ program pull {tkey} FAILED ({type(e).__name__}: "
+                  f"{str(e)[:90]}) — skipping; {tkey} stays blank for all "
+                  f"captainships this run. Re-run to retry.")
+            prog[tkey] = {}
+            failed_programs.append(tkey)
 
-    summary = {"filled": [], "missing": {}}
+    summary = {"filled": [], "missing": {}, "failed_programs": failed_programs}
     for title, tkey, _team_url in CAPTAINS:
         t = TYPES[tkey]
         metric = t["metric"]
@@ -254,6 +266,9 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
               + (f", 0-sales/not in program view (NS): {missing}" if missing else ""))
     logfn(f"=== captainships filled: {summary['filled']} "
           f"| 0-sales (NS): {summary['missing']} ===")
+    if failed_programs:
+        logfn(f"  ⚠ PROGRAM PULL(S) FAILED this run: {failed_programs} — those "
+              f"programs are blank for all captainships; re-run to retry.")
     return summary
 
 
