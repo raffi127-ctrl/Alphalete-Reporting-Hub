@@ -35,6 +35,7 @@ import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import gspread
 from patchright.sync_api import sync_playwright
@@ -43,6 +44,10 @@ from . import fetch_office, fill
 from automations.shared import sheet_flags as _sheet_flags
 
 WORKSPACE = Path(__file__).resolve().parent.parent.parent
+
+# Raf's offices are in Texas — anchor "is it Monday?" to Central Time, not the
+# machine clock (which may run in another tz).
+CENTRAL = ZoneInfo("America/Chicago")
 
 # ATT crosstab — D2D 1-PAGER V4. The "AUTOMATIONPULL" custom view was deleted
 # 2026-06-01 (caught on Eve's run); the BASE dashboard still holds the same
@@ -1908,6 +1913,23 @@ def _week_url(base_url: str, we_sunday: dt.date) -> str:
             f"={quote(str(we_sunday))}")
 
 
+def _crosstab_grand_total(path: Path) -> str:
+    """Best-effort 'Sales Total' (last column) from a Product Sales crosstab,
+    for an at-a-glance audit log. Returns '' if not parseable."""
+    try:
+        txt = path.read_text(encoding="utf-16")
+    except Exception:
+        try:
+            txt = path.read_text(encoding="utf-8", errors="replace").replace("\x00", "")
+        except Exception:
+            return ""
+    for ln in txt.splitlines():
+        cells = ln.split("\t")
+        if cells and cells[0].strip().lower() == "sales total":
+            return cells[-1].strip()
+    return ""
+
+
 def _most_recent_sunday(today: Optional[dt.date] = None) -> dt.date:
     """The most recent Sunday on or before today — the week that just ended."""
     today = today or dt.date.today()
@@ -1982,9 +2004,26 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
                       f"backfill, so those cells are left as-is.")
                 dl_ok["att"] = dl_ok["int"] = False
                 dl_gaps.extend(["ATT", "INT"])
+            # Product Sales: on MONDAYS Tableau hasn't rolled the just-closed
+            # week into the 'Sale Date Week Ending' filter yet, so a _week_url
+            # pin silently falls back to the PRIOR week's numbers (the 5/31->6/7
+            # duplication, Eve 2026-06-08). The bare view's "Sales By ICD
+            # (Weekly View)" sheet tracks the live current week, so on Mondays
+            # pull it bare (This Week -- may be partial) instead of pinning.
+            # Tue-Sun keep the pinned finished-week behavior. (Metrics unchanged
+            # -- its sheet is Last Week by design.)
+            _ps_monday = dt.datetime.now(CENTRAL).weekday() == 0
+            _ps_url = (PRODUCT_SALES_VIEW_URL if _ps_monday
+                       else _week_url(PRODUCT_SALES_VIEW_URL, we_sunday))
+            logfn("OPT: Product Sales source -- "
+                  + ("THIS WEEK (bare view, Monday)" if _ps_monday
+                     else f"pinned week-ending {we_sunday.isoformat()}"))
             _dl("product", "Product Sales", lambda: download_crosstab(
-                _week_url(PRODUCT_SALES_VIEW_URL, we_sunday),
-                PRODUCT_SALES_SHEET, PRODUCT_SALES_PATH, verbose=False, page=_pg))
+                _ps_url, PRODUCT_SALES_SHEET, PRODUCT_SALES_PATH,
+                verbose=False, page=_pg))
+            _ptot = _crosstab_grand_total(PRODUCT_SALES_PATH)
+            if _ptot:
+                logfn(f"OPT: Product Sales grand total = {_ptot}")
             _dl("metrics", "Metrics", lambda: download_crosstab(
                 _week_url(METRICS_VIEW_URL, we_sunday),
                 METRICS_SHEET, METRICS_PATH, verbose=False, page=_pg))
