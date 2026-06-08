@@ -178,12 +178,26 @@ RETAIL_CROSSTAB_SHEET = "Sara Plus Sales ICD (by day)"
 
 def pull_retail_crosstab(out_dir: Path, page, today: Optional[dt.date] = None,
                          logfn=print) -> Path:
-    """Download the SARA 'Sara Plus Sales ICD (by day)' crosstab worksheet."""
+    """Download the SARA 'Sara Plus Sales ICD (by day)' crosstab worksheet.
+
+    Pin the view's Min Date / Max Date filters to the REPORTING week's
+    Mon..Sun (rolls Tuesday — on Monday this is LAST week, so the just-
+    finished week incl. the weekend is served, not the new week's empty
+    Monday). SARA ignores 'Sale Date Week Ending'; Min/Max Date is its real
+    date control (Megan 2026-06-08; verified: 6/1–6/7 returned all 7 days /
+    110 rows incl. Sat+Sun, vs 50 for the this-week default)."""
     from automations.shared.tableau_patchright import download_crosstab_patchright
+    from automations.org_sales_board import week as _wk
+    from urllib.parse import quote
+    td = today or dt.date.today()
+    lo, hi = _wk.reporting_monday(td), _wk.reporting_sunday(td)
+    url = (f"{RETAIL_NL_VIEW_URL}?{quote('Min Date')}={lo.isoformat()}"
+           f"&{quote('Max Date')}={hi.isoformat()}")
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "org_sales_board_retail_crosstab.csv"
-    logfn(f"  Retail: Download → Crosstab ('{RETAIL_CROSSTAB_SHEET}')…")
-    download_crosstab_patchright(RETAIL_NL_VIEW_URL, RETAIL_CROSSTAB_SHEET,
+    logfn(f"  Retail: Download → Crosstab ('{RETAIL_CROSSTAB_SHEET}') "
+          f"— date range {lo.isoformat()}..{hi.isoformat()}…")
+    download_crosstab_patchright(url, RETAIL_CROSSTAB_SHEET,
                                  out_path, page=page, verbose=False)
     logfn(f"  saved {out_path}")
     return out_path
