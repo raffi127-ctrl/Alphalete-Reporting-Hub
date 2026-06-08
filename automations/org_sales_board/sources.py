@@ -109,9 +109,17 @@ DAILY_SOURCES: List[Source] = [
               "general. Owner names carry '|company, Inc.|' suffix."),
     Source(
         label="Retail JE", metric="Closed Won",
-        method=MANUAL, date_mode=MANUAL_DATE, column_verified=True,
-        notes="Hand-keyed from screenshot ('Closed Won' per Regional Office). "
-              "Not pullable. Rollover must still freeze its weekly total."),
+        method=SCRAPE, date_mode=RELATIVE, column_verified=True,
+        workbook="JustEnergyRTL-SalesStaffingProductivityWorkbook",
+        view="Thisweek", shared_key="je",
+        notes="Pulled (je_pull) from the JE 'Weekly Metrics by ICD' view, "
+              "worksheet 'Daily Sales by ICD' = Total Sales per ICD per day, "
+              "via the pinned 'Thisweek' custom view (URL params can't drive "
+              "the week — verified 2026-06-07). Board section is a CURATED set "
+              "of ICDs (Megan 2026-06-07) — only existing rows are filled, the "
+              "fuller 26-ICD JE roster is intentionally not all listed. "
+              "STALENESS-GUARDED: skips + flags if the custom view rolls out "
+              "of the current week (re-save the custom view weekly)."),
     Source(
         label="Frontier", metric="sales",
         method=MANUAL, date_mode=MANUAL_DATE, column_verified=True,

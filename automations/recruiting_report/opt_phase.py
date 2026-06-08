@@ -508,23 +508,30 @@ def _match_crosstab_sheet(available: List[str], wanted: str,
 
 
 def drive_crosstab_dialog(page, view_url: str, crosstab_sheet: str,
-                          out_path: Path, verbose: bool = True) -> Path:
+                          out_path: Path, verbose: bool = True,
+                          skip_nav: bool = False) -> Path:
     """The Page-level Crosstab driver: navigates to `view_url`, opens the
     Download → Crosstab dialog, picks `crosstab_sheet`, exports CSV.
 
     Reusable across browser-launch strategies (CDP-attached or patchright).
-    Caller is responsible for browser lifecycle + Tableau auth state."""
+    Caller is responsible for browser lifecycle + Tableau auth state.
+
+    skip_nav: when True, do NOT navigate — assume the caller already loaded
+    the view AND set up any interactive state (e.g. a week selection) that a
+    fresh navigation would reset. Used by views whose week can't be driven by
+    a URL param (JE 'Sales Week Ending')."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     # Navigate to about:blank first to force a clean DOM (avoids
     # leftover modal state from a previous crashed download). Then
     # navigate to the actual view. page.reload triggers an asyncio
     # race on Python 3.9 / Playwright's sync API; this is the
     # workaround.
-    try:
-        page.goto("about:blank", wait_until="domcontentloaded", timeout=10_000)
-    except Exception:
-        pass
-    page.goto(view_url, wait_until="domcontentloaded")
+    if not skip_nav:
+        try:
+            page.goto("about:blank", wait_until="domcontentloaded", timeout=10_000)
+        except Exception:
+            pass
+        page.goto(view_url, wait_until="domcontentloaded")
 
     viz = page.frame_locator('iframe[title="Data Visualization"]')
     dl_btn = viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-download"]')

@@ -77,6 +77,32 @@ def _adapter_sara_retail(ctx: AdapterContext) -> PullDict:
     return sara_pull.parse_sara_crosstab_byday(csv_path, today=ctx.today)
 
 
+def _adapter_je_retail(ctx: AdapterContext) -> PullDict:
+    """Just Energy retail production (Retail JE section).
+
+    Pulls 'Daily Sales by ICD' (Total Sales per ICD per day) from JE's pinned
+    'Thisweek' custom view. STALENESS GUARD: that custom view is pinned to a
+    specific week (URL params can't drive JE's week selector), so if the view
+    shows a week other than the current one, fill NOTHING and flag loudly —
+    the custom view needs re-saving rather than writing stale numbers."""
+    from automations.org_sales_board import je_pull
+    if ctx.from_csv:
+        csv_path = ctx.from_csv
+        ctx.logfn(f"  [je] offline CSV {csv_path}")
+    else:
+        csv_path = je_pull.fetch(page=ctx.page)
+    parsed = je_pull.parse(csv_path, today=ctx.today)
+    we = parsed.get("week_ending")
+    if not parsed.get("is_current_week"):
+        ctx.logfn(
+            f"  ⚠ JE 'Thisweek' custom view shows week ending {we}, NOT the "
+            f"current week — skipping JE fill so stale numbers aren't written. "
+            f"Re-save the 'Thisweek' custom view to the current week + re-run.")
+        return {}
+    ctx.logfn(f"  [je] week ending {we} (current) — {len(parsed['reps'])} ICD(s)")
+    return je_pull.to_board_pull(parsed)
+
+
 def _make_section_adapter(spec_key: str):
     """Build an adapter for a single-metric scraped section (Fiber/NDS/B2B)
     off its ScrapeSpec. One scrape → engine shape via section_pull."""
@@ -97,6 +123,7 @@ def _make_section_adapter(spec_key: str):
 # shared_key -> adapter. Unlisted keys are not yet implemented.
 ADAPTERS: Dict[str, Callable[[AdapterContext], PullDict]] = {
     "sara_retail": _adapter_sara_retail,
+    "je": _adapter_je_retail,
     "fiber": _make_section_adapter("fiber"),
     "nds": _make_section_adapter("nds"),
     "b2b": _make_section_adapter("b2b"),
