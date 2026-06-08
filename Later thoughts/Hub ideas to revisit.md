@@ -97,3 +97,27 @@ When we circle back: catalog every function the Hub performs, cross-
 reference each against Cowork's capabilities, then decide whether to
 migrate. Megan likes the Hub's deep customization to their D2D ops, so
 the bar to move is real.
+
+---
+
+## Re-run only the failed part of an automation (not the whole report)
+Logged: 2026-06-07
+
+**What:** every Hub report should let you re-run **just the part/phase/ICD
+that failed**, instead of re-running the entire automation from scratch.
+
+**Why:** today a single failed phase (e.g. Daily Rep Breakdown Phase 3, or
+one timed-out section of the Org Sales Board) forces a full re-run — slow,
+and it re-does work that already succeeded.
+
+**Notes / prior art to generalize:**
+- Some reports already do a version of this per-report: daily_focus
+  `--retry-inaccessible`, focus_office Phase-2 resume checkpoint,
+  org_sales_board `--only <section>`, JE staleness skip.
+- The ask is to make this a **consistent, Hub-wide** capability — a
+  standard "Run just what failed" action on every card, driven by each
+  report's saved run-state (which phase/section/ICD failed).
+
+**When we pick it up (tomorrow+):**
+- Standard per-report failure manifest (phase/section/ICD list) written on
+  every run; a generic "Retry failed only" Hub action that reads it.
