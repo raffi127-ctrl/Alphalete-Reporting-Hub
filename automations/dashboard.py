@@ -2775,12 +2775,19 @@ def _run_outcome_raw(report_id: str) -> dict:
     return {"status": "full", "issues": []}
 
 
-def _ran_within_24h(report_id: str) -> tuple[bool, str | None, str | None]:
-    """Was this report successfully run in the last 24h by anyone?
-    Returns (yes/no, user, time_str)."""
-    cutoff = dt.datetime.now() - dt.timedelta(hours=24)
+def _ran_today(report_id: str, today: dt.date | None = None) -> tuple[bool, str | None, str | None]:
+    """Was this report successfully run TODAY (calendar day) by anyone?
+    Returns (yes/no, user, time_str).
+
+    Calendar-day — NOT a rolling 24h window. The old 24h version flagged a
+    run from YESTERDAY (e.g. 10am) as "already ran today" the next morning,
+    blocking a legitimate fresh run and showing stale numbers (Megan
+    2026-06-08, noticed across multiple reports). 'Already ran today' must
+    mean ran on today's date."""
+    today = today or dt.date.today()
     for r in _all_runs_merged(days=2):
-        if r.get("report_id") == report_id and r.get("status") == "success" and r["_dt"] >= cutoff:
+        if (r.get("report_id") == report_id and r.get("status") == "success"
+                and r["_dt"].date() == today):
             return True, r.get("user", "someone"), r["_dt"].strftime("%I:%M %p").lstrip("0")
     return False, None, None
 
@@ -3630,7 +3637,7 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
             disabled=run_disabled,
             help=run_help,
         ):
-            recent, recent_user, recent_time = _ran_within_24h(report["id"])
+            recent, recent_user, recent_time = _ran_today(report["id"])
             if recent:
                 st.session_state[confirm_key] = True
                 st.session_state[confirm_meta_key] = (recent_user, recent_time)
