@@ -175,25 +175,21 @@ RETAIL_ACTIVATION_URL = (
 )
 RETAIL_ACTIVATION_FILENAME = "opt_retail_activation.csv"
 
-# Money Lost from TMP — Megan 2026-05-22 mapped this to the
-# 'Missed EC Bonus' row x 'Grand Total to ICD' column in the
-# ECBONUSAWARENESS dashboard's DOWNLINEVIEW custom view. Sheet's
-# DZ85 = $0.00 for Boaktear, matching the Tableau screenshot.
-# This is a multi-worksheet dashboard (PROGRAM SUMMARY / DD BY REP /
-# DD BY OWNER (ORG) / EC BONUS AWARENESS / DD DETAIL / etc), so we
-# go through the UI Crosstab path - the worksheet name to pick is
-# TBD until we run the dialog (the Crosstab dialog lists every
-# worksheet by name; we pick the EC BONUS AWARENESS one).
+# Money Lost from TMP = the 'Missed EC Bonus' measure per downline ICD, from
+# the EC BONUS AWARENESS dashboard (Megan 2026-05-22).
+#   The old DOWNLINEVIEW custom view returned only Rafael's own row — its
+# 'Downline or Captain' filter wasn't saved as Downline, and the view IGNORES
+# a URL filter param (probed 2026-06-08). Eve rebuilt it as AUTOMATION-MoneyLost
+# with Downline saved. The full downline (48 ICDs) lives on the 'ORG EC Bonus'
+# worksheet, which downloads cleanly via the Crosstab dialog BY NAME — the old
+# View Data + activate_xy scrape only ever reached Rafael's 'ICD EC Bonus'
+# table. parse_money_lost_crosstab reads the 'Missed EC Bonus' measure row.
 RETAIL_MONEY_LOST_URL = (
-    # Money Lost = sum of 'Missed EC Bonus' across campaigns per downline
-    # ICD. Crosstab dialog silently no-ops on 'Consultant ORG Title' even
-    # in patchright; pivoted to View Data scrape with activate_xy=(0.4,0.7)
-    # that clicks into the lower 'Rafael Hidalgo ORGANIZATION' table to
-    # enable Download → Data on this multi-worksheet dashboard.
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "DirectDepositICDVIEWVersion2_0/ECBONUSAWARENESS/"
-    "538e62a7-3c2a-45cd-9a91-6784fbc4c7d8/DOWNLINEVIEW?:iid=2"
+    "dac7cf77-5d4c-4156-ab84-c2f2cce14478/AUTOMATION-MoneyLost?:iid=2"
 )
+RETAIL_MONEY_LOST_SHEET = "ORG EC Bonus"
 RETAIL_MONEY_LOST_FILENAME = "opt_retail_money_lost.csv"
 RETAIL_DD_FILENAME = "opt_retail_direct_deposit.csv"
 
@@ -571,39 +567,37 @@ def _personal_production_text(per_rep: Dict[str, Dict[str, int]],
     return ", ".join(parts) if parts else "0"
 
 
-def parse_money_lost_view_data(path: Path) -> Dict[str, str]:
-    """Parse Money Lost View Data scrape (long format) → {icd_norm: dollar_str}.
+def parse_money_lost_crosstab(path: Path) -> Dict[str, str]:
+    """Parse the AUTOMATION-MoneyLost 'ORG EC Bonus' Crosstab → {icd_norm:
+    dollar_str}, for all downline ICDs.
 
-    Layout: ICD.Corporation Name | ICD.Full Name | Measure Names |
-            cl.Campaign__c | Measure Values
-    Sum 'Missed EC Bonus' across all campaigns per ICD.Full Name. The
-    sum is the per-ICD Money Lost from TMP value (matches the dashboard's
-    'Missed EC Bonus' row totals visible in the ORG table)."""
+    Each ICD spans FOUR measure rows; layout:
+      ICD.Corporation Name | ICD.Full Name | <measure name> | Grand Total to ICD | <campaign cols...>
+    The measure-name column has a BLANK header (it sits just left of 'Grand
+    Total to ICD'). Money Lost = the 'Missed EC Bonus' row's 'Grand Total to
+    ICD' value, written verbatim (e.g. '$0.00', '($560.00)'). Verified
+    2026-06-08: 48 downline ICDs (the old DOWNLINEVIEW View Data scrape only
+    ever reached Rafael's own row)."""
     rows = _read_tab_csv(path)
     if not rows or len(rows) < 2:
         return {}
     header = rows[0]
     name_i = tableau_http.col_idx(header, "ICD.Full Name")
-    meas_i = tableau_http.col_idx(header, "Measure Names")
-    val_i = tableau_http.col_idx(header, "Measure Values")
-    if None in (name_i, meas_i, val_i):
+    total_i = tableau_http.col_idx(header, "Grand Total to ICD")
+    if name_i is None or total_i is None or total_i == 0:
         return {}
-    sums: Dict[str, float] = {}
+    meas_i = total_i - 1   # blank-header measure column, just left of the total
+    out: Dict[str, str] = {}
     for r in rows[1:]:
-        if max(name_i, meas_i, val_i) >= len(r):
+        if max(name_i, meas_i, total_i) >= len(r):
             continue
         if (r[meas_i] or "").strip().lower() != "missed ec bonus":
             continue
         owner = _norm_owner(r[name_i])
-        raw_val = (r[val_i] or "").strip().replace("$", "").replace(",", "")
-        if not owner or not raw_val:
-            continue
-        try:
-            num = float(raw_val)
-        except ValueError:
-            continue
-        sums[owner] = sums.get(owner, 0.0) + num
-    return {k: f"${v:,.2f}" for k, v in sums.items()}
+        val = (r[total_i] or "").strip()
+        if owner and val:
+            out[owner] = val
+    return out
 
 
 def parse_abp_conversions(path: Path) -> Dict[str, str]:
@@ -1261,12 +1255,10 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
 
                 money_target = OUTPUT_DIR / RETAIL_MONEY_LOST_FILENAME
                 money_lost_path = _try_with_retry(
-                    "patchright View Data", RETAIL_MONEY_LOST_FILENAME, 2,
-                    lambda: scrape_view_data_patchright(
-                        RETAIL_MONEY_LOST_URL, money_target,
-                        verbose=False, page=page,
-                        activate_xy=(0.4, 0.7),
-                        scrape_kwargs=_VIEWDATA_SCRAPE_KWARGS))
+                    "patchright Crosstab", RETAIL_MONEY_LOST_FILENAME, 2,
+                    lambda: download_crosstab_patchright(
+                        RETAIL_MONEY_LOST_URL, RETAIL_MONEY_LOST_SHEET,
+                        money_target, verbose=False, page=page))
 
                 # Direct Deposit — org-wide DD view (same source every campaign
                 # uses; Megan 2026-05-25). Crosstab path like NDS.
@@ -1314,7 +1306,7 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
     logfn(f"OPT Retail: parsed Activation % (60+ Days) for "
           f"{len(activation)} office(s): {sorted(activation.keys())}")
 
-    money_lost = parse_money_lost_view_data(money_lost_path) if money_lost_path else {}
+    money_lost = parse_money_lost_crosstab(money_lost_path) if money_lost_path else {}
     logfn(f"OPT Retail: parsed Money Lost from TMP for {len(money_lost)} office(s): "
           f"{sorted(money_lost.keys())}")
 
