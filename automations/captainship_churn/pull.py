@@ -36,15 +36,20 @@ def _smart_title(name: str) -> str:
     )
 
 
+# TEMP (2026-06-09) — apuntando a custom views temporales mientras Sistemas
+# arregla el filtro "Captain's Bonus Teams v2". REVERTIR cuando esté arreglado.
+# View ID originales para revertir:
+#   NI:       6ec93f81-ef80-4604-ab2f-1b2fe55f8198/RAFSTEAMCHURN
+#   Wireless: 5ac5e7e6-50e0-4965-b619-8031c65e96cd/RafWirelessTeam
 NEW_INT_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/CHURN/"
-    "6ec93f81-ef80-4604-ab2f-1b2fe55f8198/RAFSTEAMCHURN?:iid=1"  # re-saved 2026-06-05 (old view corrupted)
+    "1210250e-1ebc-4090-839f-ba35541c3cae/RAFSTEAMCHURN_TEMP_0609?:iid=1"  # TEMP — orig: 6ec93f81-ef80-4604-ab2f-1b2fe55f8198/RAFSTEAMCHURN
 )
 WIRELESS_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/CHURN/"
-    "5ac5e7e6-50e0-4965-b619-8031c65e96cd/RafWirelessTeam?:iid=1"  # re-saved 2026-06-05 (old view showed 1 rep only)
+    "d7f7af0b-4835-4a74-bb4e-c8c4285a71ea/RafWirelessTeam_TEMP_0609?:iid=1"  # TEMP — orig: 5ac5e7e6-50e0-4965-b619-8031c65e96cd/RafWirelessTeam
 )
 WORKSHEET = "ICD Churn"
 
