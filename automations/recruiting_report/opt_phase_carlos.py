@@ -125,6 +125,12 @@ class ViewConfig:
     # and focus_office_att use). Set to None for views with no week filter
     # (e.g. cumulative Direct Deposit).
     week_filter_field: Optional[str] = "Sale Date Week Ending (mon-sun)"
+    # Extra render wait (ms) before opening Download → Crosstab. HEAVY sheets
+    # (the base B2BATTSalesMetrics dashboard's 'Sales.Quality Metrics') render a
+    # few seconds AFTER the toolbar appears; opening the dialog too early lists
+    # only the light sheets and the target thumbnail is missing. None = use the
+    # global VIZ_RENDER_WAIT_MS. (Belt-and-suspenders with the reopen-retry.)
+    render_wait_ms: Optional[int] = None
     # numberFormat pattern to STAMP on this view's metric cells after writing,
     # so percents render consistently regardless of the cell's prior format
     # (some tabs were '0.00%', some '0%', some unformatted -> raw 0.04). Values
@@ -265,13 +271,30 @@ VIEWS: List[ViewConfig] = [
     ),
     ViewConfig(
         key="personal_production",
-        # Saved custom view 'REPEXPANDED' — all owner rows expanded to show
-        # per-rep breakdowns. Without this, the default collapsed view
-        # only exports owner totals (not what Personal Production means).
+        # BASE view 'B2BATTSalesMetrics' (was the saved custom view
+        # /REPEXPANDED, which BROKE in Tableau — "An error occurred while
+        # loading the custom view REP EXPANDED. Re-create the custom view" —
+        # so its viz rendered blank and every download/scrape failed, leaving
+        # PP stuck at a May-20 cache: identical every week, Megan 2026-06-08).
+        # The base 'Sales.Quality Metrics' worksheet is ALREADY rep-level
+        # (dimensions Owner Name + Rep — verified live 2026-06-08), and a
+        # CROSSTAB export returns the worksheet's full level of detail
+        # regardless of visual collapse, so it gives the same per-rep rows the
+        # custom view used to. The base view's Download→Crosstab flyout opens
+        # cleanly (the custom view's didn't). Week is pinned via the URL
+        # 'Sale Date Week Ending (mon-sun)' filter below.
         url="https://us-east-1.online.tableau.com/#/site/sci/views/"
-            "ATTTRACKER-B2B/B2BATTSalesMetrics/"
-            "7bf76a9d-5c0f-4ad6-8a29-5c8ae6c34f82/REPEXPANDED",
+            "ATTTRACKER-B2B/B2BATTSalesMetrics",
         sheet_thumbnail_match="Sales.Quality Metrics",
+        render_wait_ms=22_000,  # heavy base dashboard — let the rep table render
+        # NO URL week filter. The base dashboard's week control is its canvas
+        # "Time Frame" quick filter (defaults to "Last Week" = the just-finished
+        # reporting week, which is exactly what the weekly run needs). Appending
+        # the ATT workbooks' 'Sale Date Week Ending (mon-sun)' param BLANKS the
+        # Sales.Quality Metrics sheet (it isn't a real filter on this dashboard;
+        # verified 2026-06-08 — the sheet never renders, so the crosstab can't
+        # find it). week_filter_field=None keeps the URL clean.
+        week_filter_field=None,
         metrics=[
             ViewMetric(sheet_row=42, tableau_column="Total"),  # placeholder
         ],
@@ -600,6 +623,69 @@ def _current_we_sunday(today: Optional["dt.date"] = None) -> "dt.date":
     return today - dt.timedelta(days=days_back)
 
 
+def select_time_frame_week(target: "dt.date", verbose: bool = True):
+    """Build a pre_download_hook that drives the base B2BATTSalesMetrics
+    dashboard's on-canvas 'Time Frame' quick filter to a single week-ending
+    Sunday (`target`), for Personal Production back-fills.
+
+    WHY a hook, not a URL param: this dashboard ignores '?Time Frame=…' and
+    blanks on '?Sale Date Week Ending (mon-sun)=…' (verified 2026-06-08), so the
+    only way to pick a historical week is to click the quick filter:
+      open the dropdown → check the target date → UNCHECK 'Last Week' → Apply.
+    Clicks target the CHECKBOX (~14px left of the date label) because clicking
+    the label text alone doesn't toggle it. The date options render as text
+    'YYYY-MM-DD' (Sundays). Never press Escape afterwards — Escape clears the
+    applied filter and silently widens the export to every week.
+    """
+    iso = target.isoformat()
+
+    def _click_checkbox(page, viz, label):
+        loc = viz.locator(f'text="{label}"')
+        boxes = sorted([b for i in range(loc.count())
+                        if (b := loc.nth(i).bounding_box())], key=lambda b: b["y"])
+        if not boxes:
+            raise RuntimeError(f"Time Frame option '{label}' not found")
+        b = boxes[-1]                              # in-list option = lowest on screen
+        page.mouse.click(b["x"] - 14, b["y"] + b["height"] / 2)
+        page.wait_for_timeout(900)
+
+    def hook(page, viz):
+        if verbose:
+            print(f"  → Time Frame: selecting week-ending {iso}", flush=True)
+        # The hook runs as soon as the Download toolbar button is visible, which
+        # can be BEFORE the canvas 'Time Frame' quick filter has rendered. Wait
+        # for the filter's 'Last Week' label to appear first (else the open-box
+        # lookup finds nothing → "filter box not found").
+        try:
+            viz.locator('text="Last Week"').first.wait_for(
+                state="visible", timeout=25_000)
+        except Exception:
+            page.wait_for_timeout(4000)   # last resort — give it a beat
+        page.wait_for_timeout(1500)
+        # Open the collapsed value box (top-most 'Last Week').
+        lw = viz.locator('text="Last Week"')
+        boxes = sorted([b for i in range(lw.count())
+                        if (b := lw.nth(i).bounding_box())], key=lambda b: b["y"])
+        if not boxes:
+            raise RuntimeError("Time Frame filter box not found")
+        top = boxes[0]
+        page.mouse.click(top["x"] + top["width"] / 2, top["y"] + top["height"] / 2)
+        page.wait_for_timeout(2500)
+        _click_checkbox(page, viz, iso)            # check the target week
+        _click_checkbox(page, viz, "Last Week")    # uncheck the default
+        apply = viz.locator('text="Apply"').first
+        if not apply.is_enabled(timeout=3000):
+            raise RuntimeError(
+                f"Time Frame 'Apply' never enabled selecting {iso} — the "
+                f"checkbox clicks didn't register a change.")
+        apply.click(timeout=6000)
+        page.wait_for_timeout(9000)                # let the heavy sheet re-render
+        if verbose:
+            print(f"  → Time Frame applied: {iso}", flush=True)
+
+    return hook
+
+
 def _dd_week_url(url: str, we_sunday: "dt.date") -> str:
     """Pin the Direct Deposit view to a week via its 'Processed Week' filter.
     The filter value is the week's MONDAY in ISO (YYYY-MM-DD) — verified
@@ -731,7 +817,8 @@ def apply_view_to_icd(view: ViewConfig, csv_path: Path, ws,
 # Download helper — connects to debug Chrome, navigates view, downloads CSV
 # ---------------------------------------------------------------------------
 def download_view_crosstab(view: ViewConfig, out_path: Path,
-                           verbose: bool = True, week=None, page=None) -> Path:
+                           verbose: bool = True, week=None, page=None,
+                           pre_download_hook=None) -> Path:
     """Open `view.url` in the debug-Chrome Tableau tab, click Download →
     Crosstab → pick the right sheet thumbnail → save CSV at `out_path`.
 
@@ -824,48 +911,86 @@ def download_view_crosstab(view: ViewConfig, out_path: Path,
                 f"likely deleted in Tableau; re-save it (or repoint to a base "
                 f"view). Screenshots: {debug_dir}"
             ) from last_err
-        page.wait_for_timeout(VIZ_RENDER_WAIT_MS)
+        # Optional hook to manipulate on-canvas filters (e.g. drive the base
+        # dashboard's 'Time Frame' quick filter to a specific week-ending date
+        # for the backfill) AFTER the viz loads but BEFORE the crosstab dialog
+        # opens. The hook should leave the target week applied; the render wait
+        # below then lets the heavy sheet re-render before we read it.
+        if pre_download_hook is not None:
+            pre_download_hook(page, viz)
+        page.wait_for_timeout(view.render_wait_ms or VIZ_RENDER_WAIT_MS)
 
         if verbose:
             print("  → Download → Crosstab → (pick thumbnail) → CSV", flush=True)
 
-        with page.expect_download(timeout=90_000) as dl_info:
-            # force=True + a longer timeout: on a heavy viz (REPEXPANDED, ~940
-            # rows) the toolbar renders but a tab-glass overlay intercepts the
-            # click, so the default 30s click times out and the whole download
-            # fails — leaving a stale cached CSV (PP was 10 days stale, Megan
-            # 2026-06-01). Force-click punches through the overlay.
-            viz.locator(
-                '[data-tb-test-id="viz-viewer-toolbar-button-download"]'
-            ).click(force=True, timeout=60_000)
-            page.wait_for_timeout(1500)
-            page.screenshot(path=str(debug_dir / "01_download_menu.png"), full_page=True)
-
-            viz.locator(
-                '[data-tb-test-id="download-flyout-download-crosstab-MenuItem"]'
-            ).click(force=True, timeout=60_000)
-            page.wait_for_timeout(2000)
-            page.screenshot(path=str(debug_dir / "02_crosstab_modal.png"), full_page=True)
-
-            # Find any sheet thumbnails. If the view has only one sheet
-            # Tableau may auto-select it (no picker shown); if many, we
-            # match by `sheet_thumbnail_match` or fall back to first.
+        with page.expect_download(timeout=180_000) as dl_info:
+            # Open Download → Crosstab, then make sure the TARGET worksheet is
+            # actually listed before proceeding. On the base B2BATTSalesMetrics
+            # dashboard 'Sales.Quality Metrics' is heavy and renders a few
+            # seconds after the toolbar — opening the dialog too early lists only
+            # the light sheets ('zzz Last Refresh') and the target thumbnail is
+            # missing (Megan 2026-06-08). So we CLOSE + wait + REOPEN (escalating
+            # wait) until it appears. force=True punches through Tableau's
+            # tab-glass overlay (the click-intercept that left PP stale before).
+            dl_btn = viz.locator(
+                '[data-tb-test-id="viz-viewer-toolbar-button-download"]')
+            xtab_item = viz.locator(
+                '[data-tb-test-id="download-flyout-download-crosstab-MenuItem"]')
             thumbs = viz.locator('[data-tb-test-id^="sheet-thumbnail-"]')
-            thumb_count = thumbs.count()
-            if verbose:
-                print(f"  → modal shows {thumb_count} sheet thumbnail(s)",
-                      flush=True)
-            # Enumerate names so we know which one to target. Tableau puts
-            # the sheet title inside the thumbnail tile as visible text.
-            for i in range(thumb_count):
+            target = view.sheet_thumbnail_match
+            thumb_count = 0
+            # NEVER press Escape in these retries: on this canvas dashboard Escape
+            # CLEARS the applied 'Time Frame' quick filter, which silently widened
+            # the crosstab export from one week to every week (137 owners / ~7k
+            # rep rows, Megan 2026-06-08). Recover the flyout by re-clicking the
+            # toolbar Download button instead — but only when it isn't already
+            # open (a blind re-click would TOGGLE an open flyout shut).
+            for open_attempt in range(1, 8):
+                # Open the Download flyout → Crosstab. On this heavy view the
+                # toolbar's download button click intermittently doesn't open the
+                # flyout (a tab-glass overlay swallows it). Short timeout + retry
+                # the open rather than blocking on a flyout that won't show.
                 try:
-                    text = thumbs.nth(i).inner_text(timeout=2000).strip()
-                    tid = thumbs.nth(i).get_attribute("data-tb-test-id") or "?"
+                    if not xtab_item.is_visible(timeout=1500):
+                        dl_btn.click(force=True, timeout=30_000)
+                        page.wait_for_timeout(1800)
+                    page.screenshot(path=str(debug_dir / "01_download_menu.png"), full_page=True)
+                    xtab_item.click(force=True, timeout=10_000)
+                    page.wait_for_timeout(2000)
                 except Exception as e:
-                    text, tid = f"<error: {e}>", "?"
+                    if verbose:
+                        print(f"  ↻ download flyout didn't open "
+                              f"(attempt {open_attempt}/7): {type(e).__name__}; "
+                              f"retrying…", flush=True)
+                    page.wait_for_timeout(3500 * open_attempt)
+                    continue
+                page.screenshot(path=str(debug_dir / "02_crosstab_modal.png"), full_page=True)
+                thumb_count = thumbs.count()
+                names = []
+                for i in range(thumb_count):
+                    try:
+                        names.append(thumbs.nth(i).inner_text(timeout=2000).strip())
+                    except Exception as e:
+                        names.append(f"<error: {e}>")
                 if verbose:
-                    print(f"    thumb #{i}: {tid}  text={text[:80]!r}",
+                    print(f"  → modal shows {thumb_count} sheet thumbnail(s): "
+                          f"{names}", flush=True)
+                present = (not target) or any(target in n for n in names)
+                if present:
+                    break
+                if verbose:
+                    print(f"  ↻ target sheet '{target}' not rendered yet "
+                          f"(attempt {open_attempt}/7); waiting to reopen…",
                           flush=True)
+                # Close the crosstab modal via its Cancel button (filter-safe;
+                # NOT Escape) so the next attempt can reopen it after the sheet
+                # finishes rendering.
+                try:
+                    viz.locator('[data-tb-test-id="export-crosstab-cancel-Button"]'
+                                ).click(force=True, timeout=4000)
+                except Exception:
+                    pass
+                page.wait_for_timeout(6000 * open_attempt)
             if thumb_count > 0:
                 # Tableau auto-selects the first thumbnail by default. If
                 # the user's target IS the first thumbnail, our "click to
@@ -1236,6 +1361,23 @@ def main() -> int:
         csv_path = DOWNLOAD_DIR / "personal_production.csv"
         if not csv_path.exists():
             print(f"No cached CSV at {csv_path}. Run --test-view personal_production first.")
+            return 1
+        # STALENESS GATE — the PP CSV has NO date column, so a failed download
+        # (the heavy REPEXPANDED crosstab flyout chronically won't open) leaves
+        # an OLD cache that we'd otherwise fill silently, making PP identical
+        # every week (Megan 2026-06-08: "same every week → incorrect"; cache was
+        # stuck at May 20). The download runs in the SAME run as the apply, so a
+        # cache not refreshed TODAY means this week's download failed. Refuse to
+        # write stale numbers — skip + flag, leave the cell as-is (blank/last
+        # good) rather than presenting wrong data as complete.
+        import datetime as _dt
+        cache_day = _dt.date.fromtimestamp(csv_path.stat().st_mtime)
+        if not args.dry_run and cache_day < _dt.date.today():
+            print(f"❌ Personal Production cache is STALE (downloaded "
+                  f"{cache_day.isoformat()}, not today) — the REPEXPANDED "
+                  f"crosstab download failed this run. SKIPPING the PP fill so "
+                  f"stale numbers aren't written. Fix the download, then re-run "
+                  f"`--download-all` + `--apply-view personal_production`.")
             return 1
         with open(csv_path, encoding="utf-16") as f:
             rows = list(_csv.reader(f, delimiter="\t"))
