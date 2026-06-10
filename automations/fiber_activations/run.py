@@ -4,11 +4,11 @@ Each daily run:
   1. Opens the 'Captainship Activations' tab on Megan's Sheet.
   2. Finds the current week's row (last row with a WE date in col A).
   3. If today is Wednesday, inserts a new row below it (new WE cycle).
-  4. Pulls Captain's Bonus dashboard via patchright (5 teams' CB
+  4. Pulls Captain's Bonus dashboard via patchright (4 teams' CB
      Activations + Raf's CB Appr + Churn).
   5. Writes today's column with the current Grand Total cumulative.
      - col H93 (Tue) ← Raf Grand Total
-     - col X93 (Tue) ← Country (5-team sum) Grand Total
+     - col X93 (Tue) ← Country (4-team sum) Grand Total
      - G99 / H99   ← Raf's 60-Day Churn / Rolling 4 Weeks (overwritten daily)
   6. Re-derives the 'Last 4 week AVG' row using AVERAGEIF/Sheets formulas
      and reapplies the light-purple/orange highlight on the 4 most-recent
@@ -87,7 +87,7 @@ def _print_dry_run(today: dt.date, pull) -> None:
         marker = "  <-- Raf today" if team == "Raf" else ""
         print(f"  {team:6s}  Total Activations = {ta.grand_total:>5,}{marker}")
     print()
-    print(f"  COUNTRY (sum 5 teams)         = {country_today:>5,}  <-- country today")
+    print(f"  COUNTRY (sum 4 teams)         = {country_today:>5,}  <-- country today")
     print()
     print("--- WOULD WRITE: ---")
     print(f"  {TAB_NAME}!{purple_col}<new-row>  =  {raf_today:>5,}   (Raf today activations)")

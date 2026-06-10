@@ -80,7 +80,7 @@ def cycle_saturday(today) -> "datetime.date":
 def build_cb_url(today) -> str:
     return CB_VIEW_URL_TMPL.format(weekending=cycle_saturday(today).isoformat())
 
-TEAMS = ["Aron", "Pat", "Raf", "Starr", "Wayne"]
+TEAMS = ["Pat", "Raf", "Starr", "Wayne"]
 
 # Wayne's worksheet uses 'Grand Total' as its totals column header
 # instead of 'Total Activations' — extractor tries both.
@@ -182,7 +182,7 @@ def _extract_pss_sales_total(path: Path, exclude_upgrade: bool) -> int:
 
 
 def pull_all(today, scratch_dir: Optional[Path] = None, verbose: bool = False) -> FiberActivationsPull:
-    """Single-session pull: opens patchright once, downloads all 6 crosstabs.
+    """Single-session pull: opens patchright once, downloads all 5 crosstabs.
 
     `today` is the date driving the Weekending URL filter (the Saturday of
     today's Wed-Tue cycle is computed automatically). Returns a
