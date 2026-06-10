@@ -138,13 +138,14 @@ WIRELESS_CHURN_PATH = WORKSPACE / "output" / "opt_wireless_churn.csv"
 
 # Captain's Bonus crosstab — AUTOMATIONPULL-CAPTAINS custom view. The Crosstab
 # dialog splits data into one "CB Appr + Churn (<captain>)" sheet per
-# captainship team; all five are pulled and merged into one ICD lookup.
+# captainship team; the four remaining (Aron's captainship dissolved
+# 2026-06-10) are pulled and merged into one ICD lookup.
 CAPTAINS_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/CaptainsBonus/"
     "96f8a0ef-a1fc-48c8-9669-e39cdffa4d7e/AUTOMATIONPULL-CAPTAINS"
 )
-CAPTAINS_SHEETS = ["CB Appr + Churn (Aron)", "CB Appr + Churn (Pat)",
+CAPTAINS_SHEETS = ["CB Appr + Churn (Pat)",
                    "CB Appr + Churn (Raf)", "CB Appr + Churn (Starr)",
                    "CB Appr + Churn (Wayne)"]
 
@@ -520,7 +521,8 @@ def list_crosstab_sheets(view_url: str, page=None, verbose: bool = False,
     thumbnail names (no download). Lets callers AUTO-DETECT which sheets a
     dashboard currently offers — e.g. the Fiber report's per-captainship
     'CB Activations (<team>)' sheets — so a hardcoded team list can't go stale
-    when a captainship is added or removed in Tableau (Aron dropped 2026-06-10).
+    when a captainship is added or removed in Tableau (Aron's captainship
+    dissolved 2026-06-10).
 
     Heavy dashboards hydrate thumbnails progressively, so we poll until the
     count holds steady for `settle_s` seconds (capped at `max_s`) rather than
