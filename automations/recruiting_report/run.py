@@ -454,6 +454,42 @@ def main() -> int:
     else:
         log.info("MISSING TABS: none ✓ (all %d confirmed offices filled this week)", len(confirmed_names))
 
+    # Standard failure manifest → Hub "Retry failed only" (re-pull just the
+    # missing office tabs via --retry-missing) + failure-help callout. Keyed by
+    # the card the CAPTAINSHIP maps to (Carlos's card runs the orchestrator, not
+    # this module, so it's handled there). Skip --only (a single-office run
+    # doesn't represent the full missing list) and --dry-run. Runs on both full
+    # and --retry-missing passes (both recompute still_missing above), so the
+    # button self-clears once everything's filled. Best-effort.
+    _card_id = {"Raf": "recruiting",
+                "Alphalete-Org": "recruiting-alphalete-org"}.get(fill.CAPTAINSHIP)
+    if _card_id and not args.only and not args.dry_run:
+        try:
+            from automations.shared import run_manifest as _rm
+            if still_missing:
+                _rm.write_manifest(
+                    _card_id, failed=list(still_missing),
+                    retry_args=["--retry-missing"], kind="tab",
+                    note=f"{len(still_missing)} office tab(s) still missing.",
+                    remediation=_rm.make_remediation(
+                        reason=f"{len(still_missing)} office tab(s) couldn't be "
+                               f"filled this run — usually AppStream/ownerville "
+                               f"access for those offices isn't granted yet.",
+                        fix="Once access is granted, use 'Retry failed only' — a "
+                            "--retry-missing pass re-fetches just the missing "
+                            "offices under a fresh login. The filled tabs stay "
+                            "put.",
+                        link="",
+                        message=f"The recruiting report couldn't fill these "
+                                f"office tabs this week (likely pending "
+                                f"AppStream access): {', '.join(still_missing)}. "
+                                f"Can someone confirm access is granted so we "
+                                f"can re-pull just those?"))
+            else:
+                _rm.mark_clean(_card_id, kind="tab")
+        except Exception:
+            pass
+
     # OPT phase — pull the ATT ICD Summary from Tableau and fill each tab's
     # OPT + Office-Metrics section. Runs after the AppStream phase (its
     # Playwright context is already closed). Wrapped so a Tableau hiccup
