@@ -100,6 +100,12 @@ def _chk_metadata(script: str, meta: dict) -> Tuple[bool, str]:
         missing.append("schedule")
     if "needs_login" not in meta:
         missing.append("'needs a browser login?' flag")
+    _assignees = meta.get("assignees")
+    _has_assignee = (bool(_assignees) if isinstance(_assignees, (list, tuple))
+                     else bool(str(_assignees or "").strip())) \
+        or bool(str(meta.get("assignee") or "").strip())
+    if not _has_assignee:
+        missing.append("assignee")
     if missing:
         return False, "Missing required info: " + ", ".join(missing)
     return True, ""
@@ -122,7 +128,7 @@ RULES: List[Rule] = [
     Rule("syntax",   "Valid Python",                                  "auto", "block", _chk_syntax),
     Rule("size",     "Fits the shared library (<49k chars)",          "auto", "block", _chk_size),
     Rule("windows",  "Runs on Windows (no Mac-only paths/dates/imports)", "auto", "block", _chk_windows),
-    Rule("metadata", "Has name, Sheet URL, schedule, login flag",     "auto", "block", _chk_metadata),
+    Rule("metadata", "Has name, Sheet URL, schedule, assignee, login flag", "auto", "block", _chk_metadata),
     Rule("est_min",  "Declares a run-time estimate",                  "auto", "warn",  _chk_estimated_minutes),
     Rule("breakdown","Has a 'how it works' breakdown",                "auto", "warn",  _chk_breakdown),
     # Attestations — a computer can't prove these; the uploader ticks them.
@@ -132,6 +138,10 @@ RULES: List[Rule] = [
          help="Scoped to a single owner (e.g. Marcellus) and checked the numbers before rolling out to all tabs."),
     Rule("names_checked", "Owner names checked against the alias list", "attest", "block",
          help="Every owner/ICD name the report matches on is in the shared ICD alias sheet — catches silent blank tabs."),
+    Rule("access_gaps", "Access gaps reviewed + requests sent", "attest", "block",
+         help="If any owner/ICD can't be scraped yet (no access), the gap list "
+              "was reviewed and the access requests were actually sent. Tick it "
+              "if the report has no access gaps."),
 ]
 
 
@@ -205,10 +215,12 @@ if __name__ == "__main__":
     # Quick self-check of the engine against a couple of fixtures.
     good = "ESTIMATED_MINUTES = 5\nREPORT_BREAKDOWN = 'does a thing'\nimport sys\nprint(sys.executable)\n"
     bad = "import fcntl\np = '/Users/megan/x'\nt = d.strftime('%-I %p')\n"
-    gmeta = {"name": "X", "sheet_url": "http://s",
+    gmeta = {"name": "X", "sheet_url": "http://s", "assignees": ["Eve"],
              "schedule": {"frequency": "weekly"}, "needs_login": False}
     print("GOOD report:")
-    rg = validate_report(good, gmeta, attestations={"clean_run": True, "preview": True, "names_checked": True})
+    rg = validate_report(good, gmeta, attestations={
+        "clean_run": True, "preview": True, "names_checked": True,
+        "access_gaps": True})
     print("  blocked:", rg.blocked, "| warnings:", [w.label for w in rg.warnings])
     print("BAD report (no attestations):")
     rb = validate_report(bad, {})
