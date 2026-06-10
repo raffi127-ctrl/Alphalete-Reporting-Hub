@@ -252,6 +252,41 @@ def main(argv=None) -> int:
 
     # No Slack post — sheet-only (matches existing Captainship pattern).
 
+    # Standard failure manifest → powers the Hub's "Retry failed only" button
+    # (re-pull just the failed captainships via --only) + the failure-help
+    # callout (why/fix/link/message). Only on a FULL run — an --only run is
+    # itself the retry and shouldn't rewrite the full-run failure list.
+    if not args.dry_run and not args.only:
+        try:
+            from automations.shared import run_manifest as _rm
+            if failed:
+                _slug_by_label = {label: slug for slug, label, *_ in selected}
+                _fslugs = [_slug_by_label[l] for l in failed if l in _slug_by_label]
+                _rm.write_manifest(
+                    "owners-metrics-churn", failed=list(failed),
+                    retry_args=(["--only", ",".join(_fslugs)] if _fslugs else []),
+                    kind="captainship",
+                    note=f"{len(failed)} captainship churn pull(s) failed.",
+                    remediation=_rm.make_remediation(
+                        reason=f"{len(failed)} captainship churn pull(s) failed "
+                               f"in Tableau: {', '.join(failed)}.",
+                        fix="Usually a flaky/slow Tableau load (a re-run often "
+                            "clears it) or a corrupted custom view (re-create it "
+                            "in Tableau if it keeps failing). The healthy tabs "
+                            "already filled — use 'Retry failed only' to re-pull "
+                            "just these.",
+                        link="https://us-east-1.online.tableau.com/#/site/sci/"
+                             "views/ATTTRACKER2_1-D2D/CHURN",
+                        message=f"The Owners Metrics Churn report couldn't pull "
+                                f"these captainships from Tableau today: "
+                                f"{', '.join(failed)}. Can someone check those "
+                                f"churn views are loading? A re-run often clears "
+                                f"a flaky load."))
+            else:
+                _rm.mark_clean("owners-metrics-churn", kind="captainship")
+        except Exception:
+            pass
+
     if failed:
         # NEVER say "done" when data is missing (Megan 2026-06-08: a report
         # must not read as completed on the Hub if it's missing data). Avoid

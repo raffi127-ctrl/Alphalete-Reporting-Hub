@@ -198,6 +198,51 @@ def main(argv=None) -> int:
             if not args.dry_run and not args.real:
                 from automations.org_sales_board import compare
                 _compare_clean = compare.run_compare()["clean"]
+            # Standard failure manifest → Hub failure-help callout + a granular
+            # "Retry failed only" button where the failure is one clean category
+            # (--step captainships / --step daily); mixed/compare failures show
+            # the help with no granular button (re-run via the normal Run).
+            if not args.dry_run:
+                try:
+                    from automations.shared import run_manifest as _rm
+                    if _skipped or _failed_prog or not _compare_clean:
+                        _failed_all = (
+                            [f"section: {s}" for s in _skipped]
+                            + [f"captainship: {c}" for c in _failed_prog]
+                            + ([] if _compare_clean
+                               else ["compare: differences vs the VA tab"]))
+                        if _failed_prog and not _skipped and _compare_clean:
+                            _ra = ["--step", "captainships"]
+                        elif _skipped and not _failed_prog and _compare_clean:
+                            _ra = ["--step", "daily"]
+                        else:
+                            _ra = []
+                        _rm.write_manifest(
+                            "org-sales-board", failed=_failed_all, retry_args=_ra,
+                            kind="section",
+                            note=f"{len(_failed_all)} part(s) missing this run.",
+                            remediation=_rm.make_remediation(
+                                reason=("Org Sales Board run is missing data — "
+                                        + "; ".join(_failed_all) + "."),
+                                fix="A skipped section/captainship pull is "
+                                    "usually a flaky/slow Tableau load (a re-run "
+                                    "often clears it) or a corrupted custom view "
+                                    "(re-create it in Tableau if it keeps "
+                                    "failing). A compare mismatch means the copy "
+                                    "tab disagrees with the VA tab — check those "
+                                    "cells. The parts that pulled cleanly ARE "
+                                    "filled.",
+                                link="",
+                                message=("The Org Sales Board couldn't fully "
+                                         "complete today — missing: "
+                                         + "; ".join(_failed_all) + ". A re-run "
+                                         "often clears a flaky Tableau load; if a "
+                                         "view keeps failing it may need "
+                                         "re-creating in Tableau.")))
+                    else:
+                        _rm.mark_clean("org-sales-board", kind="section")
+                except Exception:
+                    pass
             if _skipped or _failed_prog or not _compare_clean:
                 # No "done"/"complete" wording on this path — missing data must
                 # never read as completed on the Hub (Megan 2026-06-08).

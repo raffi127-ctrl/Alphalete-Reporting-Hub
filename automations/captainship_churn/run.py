@@ -223,6 +223,40 @@ def main(argv=None) -> int:
 
     # No Slack post — Captainship is sheet-only (Megan 2026-05-29).
 
+    # Standard failure manifest → Hub "Retry failed only" + failure-help callout.
+    # Only on a FULL run (an --only run is itself the retry). --only is a single
+    # choice, so retry just the one when exactly one failed, else full re-run.
+    if not args.dry_run and not args.only:
+        try:
+            from automations.shared import run_manifest as _rm
+            if failed:
+                _slug_by_label = {label: slug for slug, label, *_ in selected}
+                _fslugs = [_slug_by_label[l] for l in failed if l in _slug_by_label]
+                _rm.write_manifest(
+                    "captainship-new-internet-wireless-churn",
+                    failed=list(failed),
+                    retry_args=(["--only", _fslugs[0]] if len(_fslugs) == 1 else []),
+                    kind="report",
+                    note=f"{len(failed)} churn report(s) failed: {failed}.",
+                    remediation=_rm.make_remediation(
+                        reason=f"{len(failed)} churn report(s) failed in "
+                               f"Tableau: {', '.join(failed)}.",
+                        fix="Usually a flaky/slow Tableau load (a re-run often "
+                            "clears it) or a corrupted custom view (re-create it "
+                            "in Tableau if it keeps failing). The healthy tab(s) "
+                            "already filled.",
+                        link="https://us-east-1.online.tableau.com/#/site/sci/"
+                             "views/ATTTRACKER2_1-D2D/CHURN",
+                        message=f"The Captainship Churn report couldn't pull "
+                                f"these from Tableau today: {', '.join(failed)}. "
+                                f"Can someone check those churn views are "
+                                f"loading? A re-run often clears a flaky load."))
+            else:
+                _rm.mark_clean("captainship-new-internet-wireless-churn",
+                               kind="report")
+        except Exception:
+            pass
+
     if failed:
         # NEVER read 'done' when data is missing (Megan 2026-06-08). No 'done'
         # wording on this path so the Hub doesn't mark it completed.
