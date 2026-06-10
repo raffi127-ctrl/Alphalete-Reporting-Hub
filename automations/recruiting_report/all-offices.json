@@ -1,5 +1,5 @@
 {
-  "count": 412,
+  "count": 413,
   "offices": [
     {
       "office_id": "1366Joseph EckhartVincero Inc",
@@ -2070,6 +2070,12 @@
       "owner": "Nigel Gilbert",
       "company": "Premier Marketing Solutions, Inc.",
       "raw": "22435\nNigel Gilbert\nPremier Marketing Solutions, Inc."
+    },
+    {
+      "office_id": "23530",
+      "owner": "Nigel Gilbert",
+      "company": "Premier Marketing Solutions, Inc.",
+      "raw": "23530\nNigel Gilbert\nPremier Marketing Solutions, Inc."
     },
     {
       "office_id": "23275",
