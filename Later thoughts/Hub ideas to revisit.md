@@ -26,9 +26,22 @@ logged-in browser session can be kept alive or the login automated.
 ---
 
 ## Upload validation checklist
-Logged: 2026-05-15
+Logged: 2026-05-15 · **DONE 2026-06-10** (verified live)
 
-**What:** when someone uploads / wires up an automation, the Hub runs it
+**SHIPPED + wired.** `automations/shared/report_validation.py` is the engine
+(auto-checks: syntax, size, Windows-compat, required metadata; attestations:
+clean run / preview-first / names-checked). It's the HARD GATE in
+`_save_uploaded_report` (dashboard.py) — blocks any upload until it passes,
+returns the plain-English reasons. The upload UI renders the attestation
+checkboxes + live validation, and the 🛡️ Validation Audit view re-runs the
+auto rules across every report when a new rule is added. Extend by appending one
+`Rule` to `RULES`. Self-test passes (`python -m automations.shared.report_validation`).
+
+Minor wishlist gaps still open (small Rule additions if wanted): require an
+ASSIGNEE in metadata, and an attestation that access-gaps were reviewed + the
+access requests sent. The substantive checks are all in.
+
+**What (original):** when someone uploads / wires up an automation, the Hub runs it
 through a checklist of pre-flight checks before it's added to the Report
 Library — so broken or half-ready reports don't go live.
 
