@@ -514,6 +514,74 @@ def _match_crosstab_sheet(available: List[str], wanted: str,
     return None
 
 
+def list_crosstab_sheets(view_url: str, page=None, verbose: bool = False,
+                         settle_s: int = 6, max_s: int = 60) -> List[str]:
+    """Open `view_url`'s Download → Crosstab dialog and RETURN the worksheet
+    thumbnail names (no download). Lets callers AUTO-DETECT which sheets a
+    dashboard currently offers — e.g. the Fiber report's per-captainship
+    'CB Activations (<team>)' sheets — so a hardcoded team list can't go stale
+    when a captainship is added or removed in Tableau (Aron dropped 2026-06-10).
+
+    Heavy dashboards hydrate thumbnails progressively, so we poll until the
+    count holds steady for `settle_s` seconds (capped at `max_s`) rather than
+    reading once. Opens its own tableau_session when `page` is None."""
+    import contextlib
+    from automations.shared.tableau_patchright import tableau_session
+
+    @contextlib.contextmanager
+    def _sess():
+        if page is not None:
+            yield page
+        else:
+            with tableau_session(verbose=verbose) as pg:
+                yield pg
+
+    with _sess() as pg:
+        try:
+            pg.goto("about:blank", wait_until="domcontentloaded", timeout=10_000)
+        except Exception:
+            pass
+        pg.goto(view_url, wait_until="domcontentloaded")
+        viz = pg.frame_locator('iframe[title="Data Visualization"]')
+        dl_btn = viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-download"]')
+        dl_btn.wait_for(state="visible", timeout=120_000)
+        pg.wait_for_timeout(25_000)
+        # Dismiss any error toast overlaying the toolbar (same as drive_crosstab_dialog).
+        try:
+            toast = viz.locator('[data-tb-test-id^="banner-error-toast"]')
+            if toast.count():
+                toast.first.evaluate(
+                    "el => { (el.closest('.tab-shared-widget-toaster') || el).remove(); }")
+                pg.wait_for_timeout(500)
+        except Exception:
+            pass
+        dl_btn.click()
+        pg.wait_for_timeout(1800)
+        viz.locator(
+            '[data-tb-test-id="download-flyout-download-crosstab-MenuItem"]').click()
+        thumbs = viz.locator('[data-tb-test-id^="sheet-thumbnail-"]')
+        last, stable = -1, 0
+        for _ in range(max_s):
+            pg.wait_for_timeout(1000)
+            n = thumbs.count()
+            if n and n == last:
+                stable += 1
+                if stable >= settle_s:
+                    break
+            else:
+                stable = 0
+            last = n
+        n = thumbs.count()
+        names = [thumbs.nth(i).inner_text().strip() for i in range(n)]
+        if verbose:
+            print(f"  crosstab dialog offers {n} sheet(s): {names}", flush=True)
+        try:
+            pg.keyboard.press("Escape")
+        except Exception:
+            pass
+        return names
+
+
 def drive_crosstab_dialog(page, view_url: str, crosstab_sheet: str,
                           out_path: Path, verbose: bool = True,
                           skip_nav: bool = False) -> Path:

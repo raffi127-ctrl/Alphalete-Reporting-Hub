@@ -87,7 +87,7 @@ def _print_dry_run(today: dt.date, pull) -> None:
         marker = "  <-- Raf today" if team == "Raf" else ""
         print(f"  {team:6s}  Total Activations = {ta.grand_total:>5,}{marker}")
     print()
-    print(f"  COUNTRY (sum 4 teams)         = {country_today:>5,}  <-- country today")
+    print(f"  COUNTRY (sum {len(pull.teams)} teams)         = {country_today:>5,}  <-- country today")
     print()
     print("--- WOULD WRITE: ---")
     print(f"  {TAB_NAME}!{purple_col}<new-row>  =  {raf_today:>5,}   (Raf today activations)")
@@ -138,6 +138,13 @@ def main(argv=None) -> int:
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
 
     pull = pull_all(today, verbose=False)
+
+    if pull.missing_teams:
+        print(f"\n⚠️  Captainship(s) with NO data on the Captain's Bonus "
+              f"dashboard this run: {', '.join(pull.missing_teams)} — counted "
+              f"as 0 in the country total. If that's unexpected, their metrics "
+              f"likely aren't loaded in Tableau yet (the section exists but is "
+              f"empty).")
 
     if args.dry_run:
         _print_dry_run(today, pull)

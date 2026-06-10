@@ -13,6 +13,7 @@ is what gets written into today's day-of-week column on the sheet.
 from __future__ import annotations
 
 import csv
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Optional
@@ -80,7 +81,28 @@ def cycle_saturday(today) -> "datetime.date":
 def build_cb_url(today) -> str:
     return CB_VIEW_URL_TMPL.format(weekending=cycle_saturday(today).isoformat())
 
-TEAMS = ["Pat", "Raf", "Starr", "Wayne"]
+# The live team list is AUTO-DETECTED from the dashboard each run (see
+# discover_teams) — the pull no longer depends on this constant. TEAMS is now
+# only the set of EXPECTED captainships used to flag a team that's missing its
+# metrics (Aron's section went empty 2026-06-10 and crashed the old hardcoded
+# loop). Keep Aron here so an empty Aron is flagged, not silently dropped.
+TEAMS = ["Aron", "Pat", "Raf", "Starr", "Wayne"]
+
+_TEAM_SHEET_RE = re.compile(r"^CB Activations \((.+)\)$")
+
+
+def discover_teams(url: str, verbose: bool = False) -> list[str]:
+    """Read the Captain's Bonus Crosstab dialog and return the captainship
+    names it currently offers as 'CB Activations (<team>)' sheets — so the
+    report follows the dashboard instead of a hardcoded list."""
+    from automations.recruiting_report.opt_phase import list_crosstab_sheets
+    names = list_crosstab_sheets(url, verbose=verbose)
+    teams: list[str] = []
+    for nm in names:
+        m = _TEAM_SHEET_RE.match(nm.strip())
+        if m:
+            teams.append(m.group(1).strip())
+    return teams
 
 # Wayne's worksheet uses 'Grand Total' as its totals column header
 # instead of 'Total Activations' — extractor tries both.
@@ -103,6 +125,11 @@ class FiberActivationsPull:
     raf_rolling_4w: Optional[str] = None    # raw string, e.g. "80.0%"
     raf_eow_sales: Optional[int] = None     # PSS Sales Total, Raf-team filtered (I94)
     country_eow_sales: Optional[int] = None # PSS Sales Total minus UPGRADE leaves (Y94)
+    # Expected captainships (TEAMS) that the dashboard didn't offer this run —
+    # e.g. a team whose metrics aren't loaded yet (Aron, 2026-06-10). They
+    # contribute 0 to the country total; surfaced so an empty section is never
+    # silent (could be a real zero OR a Tableau data gap).
+    missing_teams: list = field(default_factory=list)
 
     @property
     def country_grand_total(self) -> int:
@@ -194,16 +221,43 @@ def pull_all(today, scratch_dir: Optional[Path] = None, verbose: bool = False) -
     url = build_cb_url(today)
     result = FiberActivationsPull()
 
-    # One fresh patchright session per Crosstab download. Slower (~6 × ~30s
-    # = ~3min total) but reliable: sharing one session across multiple
-    # downloads triggers a Tableau state bug where the Weekending URL filter
-    # silently stops applying on the 3rd+ call (verified 2026-05-27 with
-    # Raf: first 2 calls return correct current-week 221, 3rd call returns
-    # last-completed-week 3,072). about:blank between calls didn't help —
-    # full session restart does.
-    for team in TEAMS:
+    # AUTO-DETECT the captainship teams from the dashboard instead of a
+    # hardcoded list — a captainship being added/removed in Tableau (Aron
+    # dropped 2026-06-10, crashing the run) must NOT break the report. One
+    # enumeration pass reads the Crosstab dialog's 'CB Activations (<team>)'
+    # sheets; COUNTRY = sum of whatever the dashboard currently has.
+    teams = discover_teams(url, verbose=verbose)
+    if not teams:
+        raise RuntimeError(
+            "No 'CB Activations (<team>)' sheets found in the Captain's Bonus "
+            "Crosstab dialog — the view may have changed; can't pull activations.")
+    if "Raf" not in teams:
+        raise RuntimeError(
+            f"'Raf' captainship missing from the dashboard (found: {teams}). "
+            "The report's Raf column depends on it — aborting rather than "
+            "writing a wrong number.")
+    # Flag any EXPECTED captainship that the dashboard didn't offer (a team
+    # with no metrics loaded, e.g. Aron's empty section 2026-06-10). It's not
+    # fatal — an empty team contributes 0 to the country total — but it must be
+    # surfaced, never silently dropped ([[feedback_flag_nonmatched_icds]]).
+    result.missing_teams = [t for t in TEAMS if t not in teams]
+    if result.missing_teams:
+        print(f"  ⚠ expected captainship(s) with NO data on the dashboard: "
+              f"{result.missing_teams} — they contribute 0 to the country "
+              f"total this run. Confirm it's a real zero, not a Tableau data "
+              f"gap.", flush=True)
+    if verbose:
+        print(f"  captainships detected: {teams}", flush=True)
+
+    # One fresh patchright session per Crosstab download. Slower (~30s each)
+    # but reliable: sharing one session across multiple downloads triggers a
+    # Tableau state bug where the Weekending URL filter silently stops applying
+    # on the 3rd+ call (verified 2026-05-27 with Raf: first 2 calls return
+    # correct current-week 221, 3rd returns last-completed-week 3,072).
+    # about:blank between calls didn't help — full session restart does.
+    for team in teams:
         sheet = f"CB Activations ({team})"
-        out = scratch_dir / f"cb_act_{team.lower()}.csv"
+        out = scratch_dir / f"cb_act_{team.lower().replace(' ', '_')}.csv"
         download_crosstab_patchright(url, sheet, out, verbose=verbose)
         result.teams[team] = _extract_team_activations(out, team)
 
