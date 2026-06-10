@@ -78,9 +78,25 @@ with items the creator ticks to confirm.
 ---
 
 ## Test the run-experience features across the whole Library
-Logged: 2026-05-16
+Logged: 2026-05-16 · **AUDITED 2026-06-10**
 
-**What:** resume, the progress bar, retry, and failure alerts are now
+**Audit verdict — Library is in good shape.** Static coverage audit across all
+~18 cards (2026-06-10):
+- **Failure alerts** = GLOBAL (every failed run auto-files to Bug Reports +
+  emails Megan) — no per-report gap.
+- **Progress bar + ETA** = GLOBAL (time-based via estimated_minutes on every
+  card); live per-step [X/Y] only on daily-rep-breakdown (nice-to-have).
+- **Retry failed only** (manifest) = now on every multi-part report:
+  daily-focus, owners/captainship churn, org-sales-board, daily-rep-breakdown,
+  fiber-activations, AND recruiting + recruiting-alphalete-org (closed
+  2026-06-10, commit f6ed77d). The remaining manifest-less cards are
+  single-pull / upload reports where "retry failed only" == just re-run.
+- **Resume checkpoint** = only daily-rep-breakdown. Worth adding to the long
+  recruiting reports someday; everything else is short enough not to need it.
+  recruiting-carlos manifest still TODO (its primary is the carlos_opt_all
+  orchestrator, not the shared run.py).
+
+**What (original):** resume, the progress bar, retry, and failure alerts are now
 built. Go through every report in the Report Library and confirm they
 all behave correctly — not just the report the features were built
 against.
