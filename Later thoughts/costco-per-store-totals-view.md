@@ -1,11 +1,16 @@
 # Costco per-store wireless-line totals — Tableau view needed
 
-**Status 2026-05-26: per-Costco-store fill is DISABLED** in
-`automations/alphalete_org_report/opt_retail.py` (gated behind
-`_COSTCO_FILL_ENABLED = False`). Megan fills the cells manually until
-the Tableau-side change below is in.
+**STATUS 2026-06-10: DONE / LIVE.** The per-Costco-store fill is ENABLED
+(`_COSTCO_FILL_ENABLED = True` in
+`automations/alphalete_org_report/opt_retail.py`). The Tableau-side ask below
+was fulfilled: the `CLUBBREAKDOWN-MJAKIB` custom view on the
+`DropshipV_2/LOCATIONSALESSUMMARY` dashboard (Megan set up 2026-05-27)
+pre-filters to MJ + Akib and breaks each Costco location out per-owner; the
+pull (`_RETAIL_BY_CLUB_BASE_URL`, `_by_club_view_url` with Min/Max Date)
+sums New/Port Lines per store. No more manual fill. The notes below are kept
+for history.
 
-## Why disabled
+## Why it was disabled (historical)
 
 The fill writes the WK Total for each Costco store on the Akib/MJ
 shared tab (`Boaktear Chowdhury (Akib/MJ) - Retail`) for stores like
