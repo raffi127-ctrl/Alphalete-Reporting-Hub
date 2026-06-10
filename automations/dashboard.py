@@ -343,6 +343,41 @@ def _record_active_run(report_id: str, report_name: str, user: str, log_path: Pa
     ACTIVE_RUNS_FILE.write_text(json.dumps(active, indent=2))
 
 
+def _manifest_retry(report: dict):
+    """STANDARD failure-manifest retry context for a card, or None.
+
+    Any report can opt into the Hub's 'Retry failed only' button just by writing
+    a manifest (automations.shared.run_manifest) on each run — no per-card
+    again_state_file / again_state_key / again_action config needed. The
+    manifest carries the failed parts + the exact CLI args to re-run only those;
+    we synthesize an again_action that runs the card's PRIMARY module with those
+    args. Returns None when there's nothing to retry (so the button stays
+    hidden), so the legacy again_state_file path still applies for cards that
+    haven't been migrated. Best-effort — never raises into the UI."""
+    try:
+        from automations.shared import run_manifest as _rm
+        spec = _rm.retry_spec(report.get("id", ""))
+    except Exception:
+        return None
+    if not spec:
+        return None
+    actions = report.get("actions") or []
+    primary = next((a for a in actions if a.get("primary")),
+                   actions[0] if actions else None)
+    if not primary or not primary.get("module"):
+        return None
+    retry_args = list(spec["retry_args"])
+    return {
+        "failed": list(spec["failed"]),
+        "kind": spec.get("kind", "part"),
+        "action": {
+            "label": "Retry failed only",
+            "module": primary["module"],
+            "args_fn": (lambda ra=retry_args: list(ra)),
+        },
+    }
+
+
 def _clear_active_run(report_id: str, status: str = "success") -> None:
     """Remove the local active-run entry AND mark the matching Hub Activity
     row finished. `status` should be 'success', 'failed', or 'stopped' so
@@ -428,26 +463,65 @@ def _tail_log(log_path: str | Path, lines: int = 40) -> str:
 # (substrings to look for, headline, what-to-do). First match wins; the
 # match is case-insensitive against the failed run's log tail. Order
 # matters — the specific causes are listed before the catch-alls.
-_FAILURE_SIGNATURES: list[tuple[tuple[str, ...], str, str]] = [
-    (("port 9222", "no ownerville tab", "debug chrome isn't running",
-      "no ownerville tab found", "chrome is open but no ownerville"),
-     "Report Chrome isn't running, or the site got logged out.",
-     "Launch Report Chrome from the sidebar, log into the report's "
-     "website, then click Run Again."),
-    (("invalid_grant", "refresherror", "token has been expired",
-      "token has been revoked", "invalid credentials"),
-     "The Google sign-in for the Sheet expired.",
-     "Re-authorize Google access (the OAuth login), then click Run Again. "
-     "Ask Megan if you're not sure how."),
-    (("429", "quota exceeded", "resource_exhausted", "rate limit"),
-     "Google Sheets hit its per-minute limit.",
-     "Wait about 2 minutes, then click Run Again — the run picks up where "
-     "it stopped, so nothing already done is lost."),
-    (("phase 3 failed", "tableau pull (phase 3) failed",
-      "tableau download failed", "tableau (phase 3)"),
-     "The Tableau step couldn't load.",
-     "The scrape itself already finished — only the Tableau sale-type data "
-     "is missing. Open the Tableau tab, sign in, then click Run Again."),
+# Each signature: needles (log substrings) → headline (WHY), fix (WHAT to do),
+# optional link (Tableau/help URL), and message (a neutral, copy-paste note the
+# user can send to whoever can fix it — shown with a Copy button). The link for
+# a Tableau-specific failure is usually supplied by the REPORT's manifest
+# remediation (it knows its exact source); these generic messages cover the rest.
+_FAILURE_SIGNATURES: list[dict] = [
+    {"needles": ("port 9222", "no ownerville tab", "debug chrome isn't running",
+                 "no ownerville tab found", "chrome is open but no ownerville"),
+     "headline": "Report Chrome isn't running, or the site got logged out.",
+     "fix": "Launch Report Chrome from the sidebar, log into the report's "
+            "website, then click Run Again.",
+     "link": "",
+     "message": "A report run failed because Report Chrome wasn't running (or "
+                "the site had logged out), so it couldn't reach the report's "
+                "website. Launching Report Chrome, signing in, and re-running "
+                "should fix it."},
+    {"needles": ("invalid_grant", "refresherror", "token has been expired",
+                 "token has been revoked", "invalid credentials"),
+     "headline": "The Google sign-in for the Sheet expired.",
+     "fix": "Re-authorize Google access (the OAuth login), then click Run "
+            "Again. Ask Megan if you're not sure how.",
+     "link": "",
+     "message": "A report run failed because the Google sign-in for the Sheet "
+                "expired. The OAuth token needs re-authorizing before the "
+                "report can write to the Sheet again."},
+    {"needles": ("429", "quota exceeded", "resource_exhausted", "rate limit"),
+     "headline": "Google Sheets hit its per-minute limit.",
+     "fix": "Wait about 2 minutes, then click Run Again — the run picks up "
+            "where it stopped, so nothing already done is lost.",
+     "link": "",
+     "message": "A report run hit Google Sheets' per-minute write limit (429). "
+                "Waiting ~2 minutes and re-running should clear it; the run "
+                "resumes where it stopped."},
+    {"needles": ("couldn't find the", "saw 0 thumb", "the view may have changed",
+                 "sheet in the crosstab dialog", "custom view", "re-create the "
+                 "custom view", "view not found"),
+     "headline": "A Tableau worksheet the report needs is missing (the view may "
+                 "have changed).",
+     "fix": "Open the report's Tableau source and confirm the worksheet it "
+            "pulls still exists and has data for this week. A renamed/removed "
+            "section or team, a broken saved view, or data not loaded yet are "
+            "the usual causes. Then re-run.",
+     "link": "",
+     "message": "A report run failed because a Tableau worksheet it needs is "
+                "missing or empty — it couldn't find the expected sheet in the "
+                "Crosstab dialog. This usually means the view changed, a "
+                "section/team was renamed or removed, or that week's data isn't "
+                "loaded yet. Please check the Tableau source has that worksheet "
+                "with data for the current week, then re-run."},
+    {"needles": ("phase 3 failed", "tableau pull (phase 3) failed",
+                 "tableau download failed", "tableau (phase 3)"),
+     "headline": "The Tableau step couldn't load.",
+     "fix": "The scrape itself already finished — only the Tableau sale-type "
+            "data is missing. Open the Tableau tab, sign in, then click Run "
+            "Again.",
+     "link": "",
+     "message": "A report run failed at its Tableau step (the rest finished). "
+                "Only the Tableau sale-type data is missing — opening the "
+                "Tableau view, signing in, and re-running should complete it."},
 ]
 
 
@@ -456,9 +530,34 @@ def _diagnose_run_failure(log_text: str) -> tuple[str, str] | None:
     Returns None when nothing recognizable matched — the caller then
     falls back to the report's generic failure message."""
     low = (log_text or "").lower()
-    for needles, headline, fix in _FAILURE_SIGNATURES:
-        if any(n in low for n in needles):
-            return headline, fix
+    for sig in _FAILURE_SIGNATURES:
+        if any(n in low for n in sig["needles"]):
+            return sig["headline"], sig["fix"]
+    return None
+
+
+def _failure_remediation(report_id: str, log_text: str) -> dict | None:
+    """Richer failure help: {reason, fix, link, message}, or None.
+
+    Prefers the REPORT's own manifest remediation (it knows the exact Tableau
+    link + a tailored message); falls back to the generic log-signature match.
+    `link` is "" when unknown; `message` is neutral copy-paste text. Powers the
+    Hub's failure callout (why → fix → link → message-to-send)."""
+    # 1) Report-provided remediation from the standard manifest (most specific).
+    try:
+        from automations.shared import run_manifest as _rm
+        rem = _rm.failure_remediation(report_id) if report_id else None
+    except Exception:
+        rem = None
+    if rem:
+        return {"reason": rem.get("reason", ""), "fix": rem.get("fix", ""),
+                "link": rem.get("link", ""), "message": rem.get("message", "")}
+    # 2) Generic signature match on the log.
+    low = (log_text or "").lower()
+    for sig in _FAILURE_SIGNATURES:
+        if any(n in low for n in sig["needles"]):
+            return {"reason": sig["headline"], "fix": sig["fix"],
+                    "link": sig.get("link", ""), "message": sig.get("message", "")}
     return None
 
 
@@ -3752,6 +3851,11 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
             # she knows every cell is accounted for.
             again_state_rel = post_run_cfg.get("again_state_file")
             again_state_key = post_run_cfg.get("again_state_key")
+            # STANDARD failure manifest (output/manifests/<id>.json) takes
+            # precedence over the legacy per-card again_state_file: any report
+            # that writes one gets this retry button generically, no per-card
+            # config. _mr carries the failed parts + a synthesized again_action.
+            _mr = _manifest_retry(report)
             missing_items: list[str] = []
             # New (post 2026-05-20): the state file may also carry a
             # 'denied' list (real access denials) and 'fetch_errors'
@@ -3761,7 +3865,10 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
             denied_items: list[str] = []
             fetch_error_items: list[str] = []
             state_file_exists = False
-            if again_state_rel and again_state_key:
+            if _mr:
+                state_file_exists = True
+                missing_items = list(_mr["failed"])
+            elif again_state_rel and again_state_key:
                 state_path = WORKSPACE / again_state_rel
                 try:
                     if state_path.exists():
@@ -3939,17 +4046,37 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                     # recognize the cause, show it prominently in place of
                     # the report's generic failure message.
                     _diag = _diagnose_run_failure(_log_tail_text)
-                    if _diag:
+                    # Richer remediation: prefers the report's own manifest
+                    # remediation (exact Tableau link + tailored message), falls
+                    # back to the generic signature. why → fix → link → message.
+                    _rem = _failure_remediation(report["id"], _log_tail_text)
+                    if _diag or _rem:
+                        _why = (_rem.get("reason") if _rem and _rem.get("reason")
+                                else (_diag[0] if _diag else "The run failed."))
+                        _fix = (_rem.get("fix") if _rem and _rem.get("fix")
+                                else (_diag[1] if _diag else
+                                      "Check the log below, then run again."))
                         st.markdown(
                             "<div style='background:linear-gradient(135deg,#FFE4E0 0%,#FFCEC7 100%);"
                             "border:2px solid #D8261C;border-radius:10px;"
                             "padding:14px 18px;margin:4px 0 10px;color:#5C1A14;'>"
                             "<div style='font-weight:800;font-size:1.1rem;'>"
-                            f"❌ {_diag[0]}</div>"
+                            f"❌ {_why}</div>"
                             "<div style='margin-top:6px;font-size:0.95rem;'>"
-                            f"<b>What to do:</b> {_diag[1]}</div></div>",
+                            f"<b>What to do:</b> {_fix}</div></div>",
                             unsafe_allow_html=True,
                         )
+                        # If it's a Tableau (or other) issue with a known link,
+                        # show exactly where the missing info lives.
+                        if _rem and _rem.get("link"):
+                            st.markdown(
+                                f"🔗 **Where to look:** [{_rem['link']}]({_rem['link']})")
+                        # Copy-paste message to send to whoever can fix it.
+                        # st.code gives a one-click Copy icon (top-right).
+                        if _rem and _rem.get("message"):
+                            st.caption("💬 Message to send (hover the box → click "
+                                       "the Copy icon):")
+                            st.code(_rem["message"], language=None)
                         # Self-heal for OAuth lockouts — one-click reset
                         # instead of asking teammates to dig into a hidden
                         # folder. Added 2026-05-21 after Maud got stuck.
@@ -4014,7 +4141,10 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                                        "already done")
                 # Optional: a separate action to fire on Run Again (e.g. retry
                 # mode that only re-processes the items that failed last time).
-                again_action = post_run_cfg.get("again_action") or primary
+                # Standard manifest wins, then a per-card again_action, then the
+                # full primary run.
+                again_action = (_mr["action"] if _mr
+                                else post_run_cfg.get("again_action") or primary)
                 again_empty_msg = post_run_cfg.get(
                     "again_empty_message",
                     "✅ Nothing to retry from the previous run.",
@@ -7971,10 +8101,12 @@ else:  # st.session_state.view == "user"
                             if not all_filled:
                                 if st.button(again_label, key=f"continue_{report['id']}", use_container_width=True, type="primary", disabled=not chrome_ok):
                                     primary = next((a for a in report["actions"] if a.get("primary")), report["actions"][0])
-                                    # If post_run defines a separate retry action
-                                    # (e.g. daily-focus's --retry-inaccessible),
-                                    # prefer it over re-running the full primary.
-                                    again_action = post_run_cfg.get("again_action") or primary
+                                    # Standard failure manifest wins; else a
+                                    # per-card again_action (e.g. daily-focus's
+                                    # --retry-inaccessible); else the full primary.
+                                    _mr = _manifest_retry(report)
+                                    again_action = (_mr["action"] if _mr
+                                                    else post_run_cfg.get("again_action") or primary)
                                     again_state_rel = post_run_cfg.get("again_state_file")
                                     again_state_key = post_run_cfg.get("again_state_key")
                                     again_empty_msg = post_run_cfg.get(
@@ -7982,7 +8114,9 @@ else:  # st.session_state.view == "user"
                                         "✅ Nothing to retry from the previous run.",
                                     )
                                     nothing_to_retry = False
-                                    if again_state_rel and again_state_key:
+                                    if _mr:
+                                        nothing_to_retry = False   # manifest exists = there IS something to retry
+                                    elif again_state_rel and again_state_key:
                                         state_path = WORKSPACE / again_state_rel
                                         try:
                                             if state_path.exists():

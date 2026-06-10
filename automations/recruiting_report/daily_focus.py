@@ -1164,6 +1164,24 @@ def main() -> int:
                      len(skipped), _state_file().name)
         else:
             log.info("all ICDs pulled — cleared retry state")
+        # Standard failure manifest for the Hub's generic "Retry failed only"
+        # action: the failed parts are the inaccessible ICDs, and re-running
+        # ONLY those is exactly what --retry-inaccessible does. mark_clean when
+        # none failed so the Hub hides the retry button. Best-effort — a
+        # manifest hiccup must never fail the run. report_id matches the card
+        # id 'daily-focus' in dashboard.py.
+        try:
+            from automations.shared import run_manifest as _rm
+            uniq = sorted(set(skipped))
+            if uniq:
+                _rm.write_manifest(
+                    "daily-focus", failed=uniq,
+                    retry_args=["--retry-inaccessible"], kind="ICD",
+                    note=f"{len(uniq)} ICD(s) not pulled (no AppStream access).")
+            else:
+                _rm.mark_clean("daily-focus", kind="ICD")
+        except Exception as e:  # noqa: BLE001 — manifest is best-effort
+            log.warning("run manifest write failed (run still OK): %s", e)
 
     # Canonical success sentinel the Hub scans for to classify the run
     # (dashboard.py: '=== done ===' in the log => success, BEFORE the

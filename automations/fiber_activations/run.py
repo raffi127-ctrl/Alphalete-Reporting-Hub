@@ -137,7 +137,35 @@ def main(argv=None) -> int:
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
 
-    pull = pull_all(today, verbose=False)
+    try:
+        pull = pull_all(today, verbose=False)
+    except Exception as e:
+        # Record remediation so the Hub's failure callout tells the user WHY,
+        # WHAT to do, WHERE to look (the Captain's Bonus dashboard), and gives a
+        # copy-paste message. Most Fiber failures are Tableau source changes —
+        # a worksheet renamed / removed / empty for the week. Best-effort.
+        try:
+            from automations.shared import run_manifest as _rm
+            _rm.write_manifest(
+                "fiber-activations", failed=[], retry_args=[],
+                remediation=_rm.make_remediation(
+                    reason=f"The Fiber pull failed — {type(e).__name__}: "
+                           f"{str(e)[:200]}",
+                    fix="This usually means a worksheet the report pulls from "
+                        "the Captain's Bonus dashboard was renamed, removed, or "
+                        "has no data for this week. Open the dashboard and "
+                        "confirm the per-team 'CB Activations' / churn / sales "
+                        "sheets are present with data, then re-run.",
+                    link="https://us-east-1.online.tableau.com/#/site/sci/"
+                         "views/ATTTRACKER2_1-D2D/CaptainsBonus",
+                    message="The Fiber Activations report failed because a "
+                            "Tableau worksheet it pulls from the Captain's "
+                            "Bonus dashboard is missing or empty for this week. "
+                            "Can someone confirm the per-team CB Activations / "
+                            "churn / sales sheets are present with data?"))
+        except Exception:
+            pass
+        raise
 
     if pull.missing_teams:
         print(f"\n⚠️  Captainship(s) with NO data on the Captain's Bonus "
@@ -195,6 +223,15 @@ def main(argv=None) -> int:
         print(f"    {cell:8s} = {val}")
 
     _do_screenshots_and_slack(ws, today, no_slack=args.no_slack)
+
+    # Successful run — clear any prior failure remediation so the Hub's
+    # failure callout disappears. (Aron-style missing-team is a soft flag, not
+    # a failure, so it deliberately doesn't write remediation here.)
+    try:
+        from automations.shared import run_manifest as _rm
+        _rm.mark_clean("fiber-activations")
+    except Exception:
+        pass
 
     print("\n✅ Done.")
     return 0
