@@ -37,9 +37,8 @@ checkboxes + live validation, and the 🛡️ Validation Audit view re-runs the
 auto rules across every report when a new rule is added. Extend by appending one
 `Rule` to `RULES`. Self-test passes (`python -m automations.shared.report_validation`).
 
-Minor wishlist gaps still open (small Rule additions if wanted): require an
-ASSIGNEE in metadata, and an attestation that access-gaps were reviewed + the
-access requests sent. The substantive checks are all in.
+Wishlist fully closed 2026-06-10: assignee is now a required-metadata auto-check
+and "Access gaps reviewed + requests sent" is an attestation (commit 9145655).
 
 **What (original):** when someone uploads / wires up an automation, the Hub runs it
 through a checklist of pre-flight checks before it's added to the Report
