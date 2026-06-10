@@ -101,10 +101,21 @@ the bar to move is real.
 ---
 
 ## Re-run only the failed part of an automation (not the whole report)
-Logged: 2026-06-07
+Logged: 2026-06-07 · **DONE 2026-06-10**
 
-**What:** every Hub report should let you re-run **just the part/phase/ICD
-that failed**, instead of re-running the entire automation from scratch.
+**SHIPPED.** Built `automations/shared/run_manifest.py` (standard per-report
+failure manifest: failed parts + retry_args + a {reason, fix, link, message}
+remediation block). `dashboard.py` reads it generically — a "Retry failed only"
+button (runs the card's module with the manifest's retry_args) + a failure-help
+callout (why → fix → 🔗 Tableau link → 💬 copy-paste message). Rolled out to:
+daily_focus (--retry-inaccessible), owners/captainship churn (--only), org sales
+board (--step), focus_office/Daily Rep Breakdown (per-phase remediation). Any
+new report opts in just by writing a manifest. Commits 629ab8d + f100465.
+Remaining polish if wanted: granular retry for org board MIXED failures (today
+falls back to a full re-run) and per-failed-section Tableau links.
+
+**What (original):** every Hub report should let you re-run **just the
+part/phase/ICD that failed**, instead of re-running the entire automation.
 
 **Why:** today a single failed phase (e.g. Daily Rep Breakdown Phase 3, or
 one timed-out section of the Org Sales Board) forces a full re-run — slow,
