@@ -1,5 +1,5 @@
 {
-  "count": 413,
+  "count": 414,
   "offices": [
     {
       "office_id": "1366Joseph EckhartVincero Inc",
@@ -1038,6 +1038,12 @@
       "owner": "Alexis Herrera",
       "company": "Alera Solutions, Inc.",
       "raw": "22245\nAlexis Herrera\nAlera Solutions, Inc."
+    },
+    {
+      "office_id": "22041",
+      "owner": "Andre Burton Jr",
+      "company": "Kaizen Solutions, Inc.",
+      "raw": "22041\nAndre Burton Jr\nKaizen Solutions, Inc."
     },
     {
       "office_id": "23181",
