@@ -24,6 +24,7 @@ RECIPIENTS = {
     "Elena Camargo":    "U0B1G4T0MUN",
     "Valeria Rodea":    "U06JQ4S1MRA",
     "Evelyn Sobrino":   "U088E2KJEV8",
+    "Maud Miller":      "U045USN7NCD",
 }
 
 
