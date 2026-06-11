@@ -1,10 +1,11 @@
 """Combined runner for the Owners Metrics Report churn tabs.
 
-Phase 1 (Fiber): pulls Wayne / Starr Rodenhurst / Aron Corral —
-one Tableau patchright session, three Crosstab downloads, three
-sheet fills. Sheet-only (no Slack post). All three tabs share the
-same column / section layout (CHURN TIERS at rows 1-3, captain name
-at row 7, sections from row 8 with 0-30 / 30 / 60 / 90 buckets).
+Phase 1 (Fiber): pulls Wayne / Starr Rodenhurst / Chan Park /
+Tony Chavez / Sahil Multani — one Tableau patchright session, five
+Crosstab downloads, five sheet fills. Sheet-only (no Slack post).
+All five tabs share the same column / section layout (CHURN TIERS at
+rows 1-3, captain name at row 7, sections from row 8 with
+0-30 / 30 / 60 / 90 buckets).
 
 Phases 2 (B2B) and 3 (NDS) plug in as additional REPORTS entries
 when megan sends those URLs.
@@ -64,9 +65,15 @@ REPORTS = [
     ("starr", "Starr Rodenhurst (ATT Fiber)",
      pull.fetch_fiber_starr, fill.open_ws_fiber_starr,
      "owners_fiber_starr.csv", pull.parse, pull.PERIODS),
-    ("aron", "Aron Corral (ATT Fiber)",
-     pull.fetch_fiber_aron, fill.open_ws_fiber_aron,
-     "owners_fiber_aron.csv", pull.parse, pull.PERIODS),
+    ("chan", "Chan Park (ATT Fiber)",
+     pull.fetch_fiber_chan, fill.open_ws_fiber_chan,
+     "owners_fiber_chan.csv", pull.parse, pull.PERIODS),
+    ("tony", "Tony Chavez (ATT Fiber)",
+     pull.fetch_fiber_tony, fill.open_ws_fiber_tony,
+     "owners_fiber_tony.csv", pull.parse, pull.PERIODS),
+    ("sahil", "Sahil Multani (ATT Fiber)",
+     pull.fetch_fiber_sahil, fill.open_ws_fiber_sahil,
+     "owners_fiber_sahil.csv", pull.parse, pull.PERIODS),
     # ----- B2B (Phase 2) -----
     ("carlos", "Carlos Hidalgo (B2B)",
      pull.fetch_b2b_carlos, fill.open_ws_b2b_carlos,
@@ -188,8 +195,8 @@ def main(argv=None) -> int:
                          "label is already present.")
     ap.add_argument("--only", default=None,
                     help="Comma-separated slugs to run. Fiber: wayne, "
-                         "starr, aron. B2B: carlos, eveliz. NDS: khalil, "
-                         "colten, jairo. Defaults to all.")
+                         "starr, chan, tony, sahil. B2B: carlos, eveliz. "
+                         "NDS: khalil, colten, jairo. Defaults to all.")
     args = ap.parse_args(argv)
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()

@@ -16,6 +16,9 @@ SHEET_ID = "1uFrT0EkkGT0QqlYTxw_uevZD3ObKxaVjWsvZAUDxK6c"
 TAB_FIBER_WAYNE = "Churn - Wayne (ATT Fiber)"
 TAB_FIBER_STARR = "Churn - Starr Rodenhurst (ATT Fiber)"
 TAB_FIBER_ARON  = "Churn - Aron Corral (ATT Fiber)"
+TAB_FIBER_CHAN  = "Churn - Chan Park (ATT Fiber)"
+TAB_FIBER_TONY  = "Churn - Tony Chavez (ATT Fiber)"
+TAB_FIBER_SAHIL = "Churn - Sahil Multani (ATT Fiber)"
 
 
 def open_ws_fiber_wayne():
@@ -28,6 +31,18 @@ def open_ws_fiber_starr():
 
 def open_ws_fiber_aron():
     return _shared.open_by_key(SHEET_ID).worksheet(TAB_FIBER_ARON)
+
+
+def open_ws_fiber_chan():
+    return _shared.open_by_key(SHEET_ID).worksheet(TAB_FIBER_CHAN)
+
+
+def open_ws_fiber_tony():
+    return _shared.open_by_key(SHEET_ID).worksheet(TAB_FIBER_TONY)
+
+
+def open_ws_fiber_sahil():
+    return _shared.open_by_key(SHEET_ID).worksheet(TAB_FIBER_SAHIL)
 
 
 # ----- B2B tabs (Phase 2) --------------------------------------------

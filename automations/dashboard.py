@@ -1997,7 +1997,7 @@ AUTOMATED_REPORTS = [
         "emoji": "📑",
         "color": "#F59E0B",
         "category": "📊 Metrics",
-        "description": "Daily per-ICD churn fills across the Owners Metrics Report sheet — one tab per captainship. Covers ATT Fiber (Wayne / Starr Rodenhurst / Aron Corral), B2B (Carlos Hidalgo / Eveliz Wright / Luis Salazar), and NDS (Khalil Mansour / Colten Wright / Jairo Ruiz).",
+        "description": "Daily per-ICD churn fills across the Owners Metrics Report sheet — one tab per captainship. Covers ATT Fiber (Wayne / Starr Rodenhurst / Chan Park / Tony Chavez / Sahil Multani), B2B (Carlos Hidalgo / Eveliz Wright / Luis Salazar), and NDS (Khalil Mansour / Colten Wright / Jairo Ruiz).",
         "breakdown": (
             "WHAT IT DOES\n"
             "Fills per-ICD churn rates on every captainship tab of "
@@ -2005,7 +2005,9 @@ AUTOMATED_REPORTS = [
             "TABS FILLED — ATT Fiber (4 buckets: 0-30 / 30 / 60 / 90)\n"
             "• Churn - Wayne (ATT Fiber)\n"
             "• Churn - Starr Rodenhurst (ATT Fiber)\n"
-            "• Churn - Aron Corral (ATT Fiber)\n\n"
+            "• Churn - Chan Park (ATT Fiber)\n"
+            "• Churn - Tony Chavez (ATT Fiber)\n"
+            "• Churn - Sahil Multani (ATT Fiber)\n\n"
             "TABS FILLED — B2B (5 buckets: 0-30 / 30 / 60 / 90 / 120)\n"
             "• Churn - Carlos Hidalgo (B2B)\n"
             "• Churn - Eveliz Wright (B2B)\n"

@@ -59,6 +59,21 @@ FIBER_ARON_URL = (
     "ATTTRACKER2_1-D2D/CHURN/"
     "a1726231-fd1a-434a-8172-ede2567df3c0/ARONSTEAMCHURN?:iid=1"  # re-saved 2026-06-05 (old view corrupted)
 )
+FIBER_CHAN_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER2_1-D2D/CHURN/"
+    "42938560-8c7b-43c5-a897-2a851dda252e/CHANSTEAMCHURN?:iid=1"
+)
+FIBER_TONY_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER2_1-D2D/CHURN/"
+    "5115611a-86e9-4a5c-bab1-ccb5b85c546c/TONY%E2%80%99S%20TEAM%20CHURN?:iid=1"
+)
+FIBER_SAHIL_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER2_1-D2D/CHURN/"
+    "e8557aee-2a5b-4c68-a6ad-a1da1394e198/SAHIL%E2%80%99S%20TEAM%20CHURN?:iid=1"
+)
 
 WORKSHEET = "ICD Churn"
 
@@ -87,6 +102,30 @@ def fetch_fiber_aron(out_path: Optional[Path] = None,
                     verbose: bool = False, page=None) -> Path:
     out_path = out_path or Path(tempfile.gettempdir()) / "owners_fiber_aron.csv"
     download_crosstab_patchright(FIBER_ARON_URL, WORKSHEET, out_path,
+                                  verbose=verbose, page=page)
+    return out_path
+
+
+def fetch_fiber_chan(out_path: Optional[Path] = None,
+                    verbose: bool = False, page=None) -> Path:
+    out_path = out_path or Path(tempfile.gettempdir()) / "owners_fiber_chan.csv"
+    download_crosstab_patchright(FIBER_CHAN_URL, WORKSHEET, out_path,
+                                  verbose=verbose, page=page)
+    return out_path
+
+
+def fetch_fiber_tony(out_path: Optional[Path] = None,
+                    verbose: bool = False, page=None) -> Path:
+    out_path = out_path or Path(tempfile.gettempdir()) / "owners_fiber_tony.csv"
+    download_crosstab_patchright(FIBER_TONY_URL, WORKSHEET, out_path,
+                                  verbose=verbose, page=page)
+    return out_path
+
+
+def fetch_fiber_sahil(out_path: Optional[Path] = None,
+                     verbose: bool = False, page=None) -> Path:
+    out_path = out_path or Path(tempfile.gettempdir()) / "owners_fiber_sahil.csv"
+    download_crosstab_patchright(FIBER_SAHIL_URL, WORKSHEET, out_path,
                                   verbose=verbose, page=page)
     return out_path
 
