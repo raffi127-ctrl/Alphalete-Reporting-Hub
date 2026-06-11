@@ -108,9 +108,54 @@ def _col_a1(n: int) -> str:
 
 
 def _pid_alive(pid: int) -> bool:
+    """Cross-platform 'is this PID still running?' check.
+
+    os.kill(pid, 0) is the POSIX liveness idiom and is correct on macOS/Linux,
+    but on Windows os.kill routes signal 0 through TerminateProcess — it is NOT
+    a safe existence probe there. So a finished run never migrated out of
+    active_runs.json and the Hub showed it 'Running' forever; because
+    _pid_alive is shared, EVERY report got stuck this way on Windows
+    (Eve, 2026-06-11: daily-rep-breakdown, pid 11652, dead but still 'Running').
+
+    Order: psutil if installed (cleanest, never touches the process) → a
+    read-only Windows ctypes probe → the POSIX os.kill path. psutil is optional,
+    not a hard dependency, so teammates without it still get a correct answer.
+    """
     try:
-        import os
-        os.kill(int(pid), 0)
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+
+    try:
+        import psutil  # optional — absent on most teammate machines
+        return psutil.pid_exists(pid)
+    except Exception:
+        pass
+
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        kernel32 = ctypes.windll.kernel32
+        # OpenProcess only opens; it never signals/terminates the target.
+        handle = kernel32.OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return False  # no such pid (or no rights) → treat as gone
+        try:
+            exit_code = wintypes.DWORD()
+            if kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                # A pid can stay openable after exit; STILL_ACTIVE means live.
+                return exit_code.value == STILL_ACTIVE
+            return True  # couldn't read exit code — don't falsely orphan it
+        finally:
+            kernel32.CloseHandle(handle)
+
+    try:
+        os.kill(pid, 0)
         return True
     except (OSError, ValueError):
         return False
@@ -430,7 +475,11 @@ def _kill_active_run(report_id: str, user: str | None = None) -> tuple[bool, str
                     break
                 _time.sleep(0.1)
             if _pid_alive(int(pid)):
-                os.kill(int(pid), signal.SIGKILL)
+                # Windows signal has no SIGKILL; os.kill(SIGTERM) there already
+                # routes through TerminateProcess (a hard kill), so SIGTERM is
+                # the strongest escalation available. getattr keeps this from
+                # raising AttributeError (uncaught below) on Windows.
+                os.kill(int(pid), getattr(signal, "SIGKILL", signal.SIGTERM))
             killed_pid = True
         except (OSError, ValueError):
             pass
