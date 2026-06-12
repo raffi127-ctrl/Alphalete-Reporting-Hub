@@ -20,16 +20,18 @@ from typing import Dict, Optional
 
 from automations.shared.tableau_patchright import download_crosstab_patchright
 
-# Captain's Bonus custom view (AUTOMATIONPULL-NICHURNVIEW). The Weekending
-# URL param is REQUIRED — without it, Crosstab returns the underlying
-# worksheet's full data range (last completed week, ~3,000 activations)
-# instead of the dashboard-filtered current week. Param name verified
-# 2026-05-27: 'Weekending' works; 'Week Ending', 'Sale Date Week End',
+# Captain's Bonus DEFAULT view. The old AUTOMATIONPULL-NICHURNVIEW custom
+# view corrupted (stuck not rendering / falling back to a single-ICD filter,
+# caught 2026-06-12) — swapped to the workbook's default view, which the
+# Crosstab dialog lists every 'CB Activations (<team>)' worksheet from anyway.
+# The Weekending URL param is REQUIRED — without it, Crosstab returns the
+# underlying worksheet's full data range (last completed week, ~3,000
+# activations) instead of the dashboard-filtered current week. Param name
+# verified 2026-05-27: 'Weekending' works; 'Week Ending', 'Sale Date Week End',
 # 'Weekending Date' all silently no-op.
 CB_VIEW_URL_TMPL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
-    "ATTTRACKER2_1-D2D/CaptainsBonus/4ad1e1ef-9e3c-40cb-9f9c-858195ee57ee/"
-    "AUTOMATIONPULL-NICHURNVIEW?:iid=1&Weekending={weekending}"
+    "ATTTRACKER2_1-D2D/CaptainsBonus?:iid=1&Weekending={weekending}"
 )
 
 # PRODUCT SALES SUMMARY 4WK ALLREPS custom view. Filter names from DOM probe:
@@ -83,10 +85,10 @@ def build_cb_url(today) -> str:
 
 # The live team list is AUTO-DETECTED from the dashboard each run (see
 # discover_teams) — the pull no longer depends on this constant. TEAMS is now
-# only the set of EXPECTED captainships used to flag a team that's missing its
-# metrics (Aron's section went empty 2026-06-10 and crashed the old hardcoded
-# loop). Keep Aron here so an empty Aron is flagged, not silently dropped.
-TEAMS = ["Aron", "Pat", "Raf", "Starr", "Wayne"]
+# only the set of EXPECTED captainships, used to flag one that's missing its
+# metrics (missing_teams) so an empty section is surfaced, not silently
+# dropped. Aron and Sam captainships dissolved and are out of the list.
+TEAMS = ["Chan", "Jess", "Pat", "Raf", "Sahil", "Starr", "Tony", "Wayne"]
 
 _TEAM_SHEET_RE = re.compile(r"^CB Activations \((.+)\)$")
 
