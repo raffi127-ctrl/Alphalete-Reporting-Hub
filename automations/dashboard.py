@@ -2160,7 +2160,7 @@ AUTOMATED_REPORTS = [
         "emoji": "🌎",
         "color": "#0EA5E9",
         "category": "📊 Metrics",
-        "description": "Weekly New Internet Country Metrics + Sales/breakdown per captainship (Raf / Starr / Aron / Pat / Wayne / Sam) on the 'Country Metrics' tab.",
+        "description": "Weekly New Internet Country Metrics + Sales/breakdown per captainship (Raf / Starr / Aron / Pat / Wayne / Sam / Chan / Tony / Sahil) on the 'Country Metrics' tab.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Pulls New Internet Country Metrics and Sales + Breakdown per "
@@ -2183,7 +2183,7 @@ AUTOMATED_REPORTS = [
         },
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Country Metrics done — all 7 sections (COUNTRY + 5 captainships + SAM) filled for the latest weekending.",
+            "message_success": "✅ Country Metrics done — all 10 sections (COUNTRY + 9 captainships) filled for the latest weekending.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
         },
         "actions": [

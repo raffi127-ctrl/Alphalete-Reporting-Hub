@@ -13,7 +13,7 @@ Two source views (reuse the OPT phase's unattended patchright crosstab driver):
         per captainship via the roster).
 
 Returns {section: {metric_key: value}} where section ∈ COUNTRY/RAF/STARR/ARON/
-PAT/WAYNE/SAM. Sales (ALL), AVG Units, % of Owners over 100, and COUNTRY's
+PAT/WAYNE/SAM/CHAN/TONY/SAHIL. Sales (ALL), AVG Units, % of Owners over 100, and COUNTRY's
 owner counts are Sheet formulas — never produced here.
 """
 from __future__ import annotations
@@ -60,10 +60,13 @@ ORDERLOG_SHEET = "A.Order Log"
 TEAM_TO_SECTION = {
     "Grand Total": "COUNTRY",
     "Aron's Team": "ARON",
+    "Chan's Team": "CHAN",
     "Pat's Team": "PAT",
     "Raf's Team": "RAF",
+    "Sahil's Team": "SAHIL",
     "Sam's Team": "SAM",
     "Starr's Team": "STARR",
+    "Tony's Team": "TONY",
     "Wayne's Team": "WAYNE",
 }
 
@@ -250,7 +253,7 @@ def _parse_icd(rows: list[list[str]], roster: dict, alias_raw: dict, air_by_cano
                 continue
             owner_total[owner] = _num(r[10]) or 0
 
-    sections = ("ARON", "PAT", "RAF", "SAM", "STARR", "WAYNE")
+    sections = ("ARON", "CHAN", "PAT", "RAF", "SAHIL", "SAM", "STARR", "TONY", "WAYNE")
     per = {s: {"air": 0, "newint": 0, "upgrade": 0, "video": 0, "wireless": 0,
                "totalowners": 0, "ownersover100": 0} for s in sections}
 
@@ -319,7 +322,7 @@ def gather(week: dt.date, page=None, skip_download: bool = False, logfn=print) -
     # COUNTRY: rates from Grand Total + products from ORG (no owner counts — formula).
     data["COUNTRY"] = {**rates.get("COUNTRY", {}), **org}
     # Captainships + SAM: rates from team Total + products/owners from by-ICD.
-    for section in ("RAF", "STARR", "ARON", "PAT", "WAYNE", "SAM"):
+    for section in ("RAF", "STARR", "ARON", "PAT", "WAYNE", "SAM", "CHAN", "TONY", "SAHIL"):
         d = dict(rates.get(section, {}))
         d.update(per_icd.get(section, {}))
         data[section] = d

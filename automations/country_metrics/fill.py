@@ -20,7 +20,7 @@ from automations.recruiting_report import fill as rfill
 SHEET_ID = "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE"
 TAB = "Country Metrics"
 
-SECTIONS = ("COUNTRY", "RAF", "STARR", "ARON", "PAT", "WAYNE", "SAM")
+SECTIONS = ("COUNTRY", "RAF", "STARR", "ARON", "PAT", "WAYNE", "SAM", "CHAN", "TONY", "SAHIL")
 PERCENT_KEYS = {"rolling4", "act3060", "churn030", "abp", "gig1", "sched6"}
 
 
