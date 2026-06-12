@@ -11,6 +11,8 @@ from typing import Optional
 
 import gspread
 
+from automations.fiber_activations.pull import cycle_sunday
+
 SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
 TAB_NAME = "Captainship Activations"
 
@@ -39,6 +41,24 @@ def _find_avg_row(ws: gspread.Worksheet) -> int:
         if v.strip() == AVG_LABEL:
             return i
     raise RuntimeError(f"Could not find '{AVG_LABEL}' row in col A")
+
+
+# Google Sheets serial-date epoch (day 0 = 1899-12-30). Used to compare col-A
+# WE dates by value, locale-proof (avoids parsing '6/14/2026' strings).
+_SHEETS_EPOCH = dt.date(1899, 12, 30)
+
+
+def _find_we_row(ws: gspread.Worksheet, we_sunday: dt.date,
+                 avg_row: int) -> Optional[int]:
+    """1-based row whose col-A WE date == we_sunday, searching above AVG.
+    Reads col A as serial numbers so it's independent of cell display format."""
+    col_a = ws.get(f"A1:A{avg_row}", value_render_option="UNFORMATTED_VALUE")
+    for i, cell in enumerate(col_a, 1):
+        v = cell[0] if cell else None
+        if isinstance(v, (int, float)) and \
+                _SHEETS_EPOCH + dt.timedelta(days=int(v)) == we_sunday:
+            return i
+    return None
 
 
 def _find_metric_cells(ws: gspread.Worksheet, avg_row: int) -> dict:
@@ -169,17 +189,29 @@ def find_anchors_and_maybe_insert(
     today: dt.date,
     dry_run: bool = True,
 ) -> dict:
-    """Resolve all anchor positions. If today is Wednesday, also insert a new
-    row above the AVG row (unless dry_run)."""
+    """Resolve all anchor positions. Selects the data row by WE date
+    (cycle_sunday(today) matched in col A) — idempotent. If that row doesn't
+    exist yet (first run of the cycle), inserts a new row above AVG."""
     avg_row = _find_avg_row(ws)
-    data_row = avg_row - 1
-    today_is_wed = today.weekday() == 2
+    we_sunday = cycle_sunday(today)
+    existing = _find_we_row(ws, we_sunday, avg_row)
 
     inserted = False
-    if today_is_wed:
+    if existing is not None:
+        # IDEMPOTENT: this cycle's WE row already exists — write to IT, never
+        # insert a duplicate. Fixes the 6/21 ghost from a 2nd Wednesday run,
+        # and (selecting by date, not avg_row-1) keeps every day of the cycle
+        # landing on the right row even if an extra row sits above AVG.
+        data_row = existing
+    else:
+        # First run of this WE cycle — create the row above AVG. (Normally the
+        # Wednesday run; if Wed was skipped, the first run that day creates it.)
         if dry_run:
+            data_row = avg_row - 1
             inserted = "would_insert"
         else:
+            print(f"  ↪ no WE {we_sunday.isoformat()} row found — inserting a "
+                  f"new row above AVG (row {avg_row}).", flush=True)
             data_row = _insert_new_we_row(ws, avg_row)
             avg_row += 1  # AVG row pushed down by 1
             inserted = True
