@@ -165,8 +165,8 @@ DAILY_SECTION_LABELS = [
     "BOX", "Frontier", "Retail Internet",
 ]
 
-CAPTAIN_NAMES = ["RAF", "WAYNE", "STARR", "ARON", "CARLOS", "EVELIZ",
-                 "LUIS", "KHALIL", "COLTEN", "JAIRO"]
+CAPTAIN_NAMES = ["RAF", "WAYNE", "STARR", "CHAN", "TONY", "SAHIL",
+                 "CARLOS", "EVELIZ", "LUIS", "KHALIL", "COLTEN", "JAIRO"]
 
 
 def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
@@ -316,8 +316,8 @@ def plan_daily_clear(ws, grid) -> List[str]:
         if rows and cols:
             ranges.append(f"{a1col(cols[0])}{min(rows)}:"
                           f"{a1col(cols[-1])}{max(rows)}")
-    for name in ("RAF", "WAYNE", "STARR", "ARON", "CARLOS", "EVELIZ",
-                 "LUIS", "KHALIL", "COLTEN", "JAIRO"):
+    for name in ("RAF", "WAYNE", "STARR", "CHAN", "TONY", "SAHIL",
+                 "CARLOS", "EVELIZ", "LUIS", "KHALIL", "COLTEN", "JAIRO"):
         try:
             a = cap.find_captainship(grid, name)
         except Exception:

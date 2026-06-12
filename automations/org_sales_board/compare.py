@@ -33,7 +33,7 @@ from automations.alphalete_org_report.tableau_http import _norm_owner
 
 SECTIONS = ["Retail NL", "Retail Internet", "ATT Fiber Team",
             "ATT NDS Team", "B2B", "BOX"]
-CAPS = ["RAF", "WAYNE", "STARR", "ARON", "CARLOS",
+CAPS = ["RAF", "WAYNE", "STARR", "CHAN", "TONY", "SAHIL", "CARLOS",
         "EVELIZ", "LUIS", "KHALIL", "COLTEN", "JAIRO"]
 _ZERO = {"", "0", "0.0", "0%", "0.00%"}
 

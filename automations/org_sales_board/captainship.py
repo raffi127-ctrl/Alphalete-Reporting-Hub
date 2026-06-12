@@ -160,7 +160,13 @@ CAPTAINS = [
     ("RAF", "fiber", _V + "ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK/ab2eca72-395f-48d5-a254-9d99739b88d4/AllproductsRafsteam"),
     ("WAYNE", "fiber", _V + "ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK/70f6a2a1-af9e-409b-9e9c-ac3ac20a85ab/AllproductsWaynesteam"),
     ("STARR", "fiber", _V + "ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK/c29a4154-c77c-4416-8e06-379e7b431b60/AllproductsStarsteam"),
-    ("ARON", "fiber", _V + "ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK/24a8fb79-eb02-4cf1-9a25-d2a6b0f3d5b2/AllproductsAronsteam"),
+    # New fiber captainships (Aron's captainship dissolved 2026-06; its sheet
+    # block is already gone). The per-captain team-view URL is VESTIGIAL —
+    # _team_url is unused below; every captainship's sales come from the fiber
+    # PROGRAMS all-teams pull. Placeholder until/if a real team view is wired.
+    ("CHAN", "fiber", "VESTIGIAL-UNUSED-team-view-url"),
+    ("TONY", "fiber", "VESTIGIAL-UNUSED-team-view-url"),
+    ("SAHIL", "fiber", "VESTIGIAL-UNUSED-team-view-url"),
     ("CARLOS", "b2b", _V + "ATTTRACKER-B2B/D2D1-PAGERV3/32440800-0a5a-4f21-be33-f807ba5930a7/CarlosTeam"),
     ("EVELIZ", "b2b", _V + "ATTTRACKER-B2B/D2D1-PAGERV3/48735d6e-cf6a-48fa-8d24-6f790d2ba3b7/EvelizsTeam"),
     ("LUIS", "b2b", _V + "ATTTRACKER-B2B/D2D1-PAGERV3/8f51c40d-46c3-4ddc-bf64-ec769777f3eb/LuissTeam"),
@@ -250,7 +256,17 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
         metric = t["metric"]
         pull = prog.get(tkey, {})
         logfn(f"  captainship {title} ({tkey})…")
-        anchor = find_captainship(grid, title)
+        # A captainship in CAPTAINS with no matching block on the board must NOT
+        # crash the whole run — skip it with a flag (mirrors rollover.py's
+        # find_captainship guard). Happens when a captainship is dissolved (its
+        # block removed) but still listed, or added to CAPTAINS before its sheet
+        # block exists. Re-add the block (or remove it from CAPTAINS) to clear.
+        try:
+            anchor = find_captainship(grid, title)
+        except Exception as e:
+            logfn(f"    ⚠ no '{title} CAPTAINSHIP' block on the board "
+                  f"({type(e).__name__}: {str(e)[:80]}) — skipping {title}.")
+            continue
 
         # Roster-driven: each ICD on this captainship's sheet rows is matched
         # by name (+ aliases). Match the captainship's OWN program first; if
