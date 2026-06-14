@@ -119,10 +119,25 @@ def fill_captainship(ws, anchor: CaptainAnchor, today, per_for,
                                     for d in days]]})
         updates.append({"range": f"{runL}{row}",
                         "values": [[f"=SUM({L0}{row}:{L1}{row})"]]})
-    for row, name in anchor.leaderboard:
-        per = per_for(name) or {}
-        updates.append({"range": f"{wkL}{row}",
-                        "values": [[sum(int(per.get(d, 0)) for d in days)]]})
+    # Leaderboard "this week" total: write the SAME live =SUMIF the VAs use
+    # (over THIS captainship's daily table, keyed by the rep's name in col B)
+    # instead of a frozen static sum. Keeps the leaderboard self-consistent with
+    # the daily numbers + recomputing if a daily cell is edited, so the formula
+    # regions match the VA tab (goal: automation owns the live tab). sort.py
+    # auto-detects the formula in C and preserves it on re-sort. Falls back to a
+    # static sum only if the daily table is empty (no range to SUMIF over).
+    if anchor.daily:
+        d0 = min(r for r, _ in anchor.daily)
+        d1 = max(r for r, _ in anchor.daily)
+        jcol = _a1col(anchor.running_col)
+        for row, name in anchor.leaderboard:
+            updates.append({"range": f"{wkL}{row}", "values": [[
+                f"=SUMIF($B${d0}:$B${d1},B{row},${jcol}${d0}:${jcol}${d1})"]]})
+    else:
+        for row, name in anchor.leaderboard:
+            per = per_for(name) or {}
+            updates.append({"range": f"{wkL}{row}",
+                            "values": [[sum(int(per.get(d, 0)) for d in days)]]})
     if not dry_run:
         ws.batch_update(updates, value_input_option="USER_ENTERED")
     return missing
