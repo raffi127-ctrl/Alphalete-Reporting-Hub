@@ -89,8 +89,11 @@ def fill_captainship(ws, anchor: CaptainAnchor, today, per_for,
     {date: value} dict (team view first, org-wide fallback) or {} if nowhere.
     Every no-sale day is written as 0 (Megan: insert 0, never blank).
     WORKSHEET-SCOPED. Returns ICDs found in NO pull (filled 0)."""
-    assert ws.title in ("Alphalete ORG Sales Board",
-                        "Copy of Alphalete ORG Sales Board"), ws.title
+    # HARD GUARD: only ever write to the sandbox copy. Megan 2026-06-14: "DO
+    # NOT change anything on the real tab." Auto-discovery still READS the real
+    # tab fine; this just blocks the WRITE path from touching it. Re-enable a
+    # real-tab target only on her explicit say-so.
+    assert ws.title == "Copy of Alphalete ORG Sales Board", ws.title
     from automations.org_sales_board import week as _wk
     monday = _wk.reporting_monday(today)  # rolls Tuesday — Monday = last week
     days = [monday + dt.timedelta(days=i) for i in range(len(anchor.day_cols))]

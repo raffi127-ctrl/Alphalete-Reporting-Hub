@@ -131,6 +131,16 @@ def main(argv=None) -> int:
                          "leaderboards in the SAME login (one full-board run).")
     args = ap.parse_args(argv)
 
+    # HARD GUARD (Megan 2026-06-14: "DO NOT change anything on the real tab").
+    # A live --real run is refused outright. --real --dry-run is still allowed:
+    # it READS the real tab to preview/validate but writes nothing.
+    if args.real and not args.dry_run:
+        print("Refusing to run LIVE against the REAL tab "
+              f"({PROD_TAB!r}). Megan: do not change the real tab. "
+              "Run on the sandbox copy, or add --dry-run for a read-only "
+              "real-tab preview.")
+        return 2
+
     tab = PROD_TAB if args.real else SANDBOX_TAB
     print(f"=== ORG Sales Board — {args.step} — tab={tab!r} "
           f"({'DRY-RUN' if args.dry_run else 'LIVE'}) ===")
