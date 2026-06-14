@@ -58,6 +58,61 @@ def _classify(c, v):
     return "mismatch"                  # GLITCH: both have values, differ
 
 
+def check_formula_drift(logfn=print) -> list:
+    """Flag cells the automation should keep as LIVE formulas but wrote as a
+    static value — the 'clobbered formula' regression (e.g. a captainship
+    leaderboard total written as a frozen number instead of =SUMIF, fixed
+    2026-06-14). Positional vs the VA tab (both tabs are structurally identical,
+    and formula-PRESENCE at a position doesn't depend on who's sorted into the
+    row, so sort-order can't create false positives).
+
+    Reports ONLY 'VA has a formula here, copy has a static non-blank value' —
+    the real drift signal. Deliberately ignores:
+      • col A (rank — intentionally static, re-ranked correctly every run)
+      • copy == 'NS' (intended no-sales marker over a VA =SUM that would be 0)
+      • blank copy cells (cleared today/future days, not a clobber)
+      • 'both are formulas but differ' (those are equivalent: =SUM(C:I) vs VA's
+        explicit list, and delta =SUMIFs that differ only by the sorted name)
+    Read-only. Returns the flagged cell list."""
+    sh = open_by_key(SHEET_ID)
+    cF = _retry(lambda: sh.worksheet(SANDBOX_TAB).get_all_values(
+        value_render_option="FORMULA"))
+    vF = _retry(lambda: sh.worksheet(PROD_TAB).get_all_values(
+        value_render_option="FORMULA"))
+
+    def isf(x):
+        return isinstance(x, str) and x.startswith("=")
+
+    def fcell(g, r, c):
+        # FORMULA render returns ints/floats for numeric cells, not just str —
+        # so don't assume .strip() exists; coerce to a string.
+        return str(g[r][c]) if (0 <= r < len(g) and 0 <= c < len(g[r])) else ""
+
+    flagged = []
+    for r in range(min(len(cF), len(vF))):
+        width = max(len(cF[r]) if r < len(cF) else 0,
+                    len(vF[r]) if r < len(vF) else 0)
+        for c in range(1, width):          # skip col A (index 0) = rank
+            vv = fcell(vF, r, c)
+            cc = fcell(cF, r, c)
+            if isf(vv) and not isf(cc) and cc.strip() and cc.strip().upper() != "NS":
+                flagged.append((r + 1, c + 1, fcell(vF, r, 1), cc, vv))
+    if flagged:
+        logfn(f"  ❌ FORMULA DRIFT — {len(flagged)} cell(s) the report wrote as a "
+              f"static value where the VA tab keeps a live formula "
+              f"(formula clobbered — it'll freeze/drift):")
+        for r, c, lbl, cc, vv in flagged[:30]:
+            from gspread.utils import rowcol_to_a1
+            logfn(f"      {rowcol_to_a1(r, c)} [{lbl[:24]}] static={cc[:14]!r} "
+                  f"expected formula={vv[:40]!r}")
+        if len(flagged) > 30:
+            logfn(f"      …and {len(flagged) - 30} more")
+    else:
+        logfn("  ✅ no formula drift — every VA formula cell is still a live "
+              "formula on the copy.")
+    return flagged
+
+
 def run_compare(logfn=print) -> dict:
     today = dt.date.today()
     aliases = load_aliases()
@@ -135,7 +190,10 @@ def run_compare(logfn=print) -> dict:
 
     logfn(f"  exact={tally['exact']}  NS-vs-0={tally['ns0']}  "
           f"automation-ahead={tally['auto_ahead']}")
-    clean = not glitches and not copy_missing
+    # Formula-region integrity: catch any live VA formula the report clobbered
+    # with a static value (separate from the value compare above).
+    formula_drift = check_formula_drift(logfn)
+    clean = not glitches and not copy_missing and not formula_drift
     if glitches:
         logfn(f"  ❌ {len(glitches)} REAL mismatch(es) (automation wrong/behind):")
         for g in glitches:
@@ -149,7 +207,7 @@ def run_compare(logfn=print) -> dict:
         logfn("  ❌ COMPARISON FOUND DIFFERENCES — review the flagged items "
               "above before trusting the copy.")
     return {"tally": tally, "glitches": glitches, "copy_missing": copy_missing,
-            "clean": clean}
+            "formula_drift": formula_drift, "clean": clean}
 
 
 def main():
