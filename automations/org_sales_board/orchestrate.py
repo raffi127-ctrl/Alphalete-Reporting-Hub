@@ -6,8 +6,10 @@ Runs the daily sections in the FASTEST order (sources.run_order):
                            (Retail NL + Retail Internet) pull together.
   Stage 2  CROSSTAB pulls — expensive UI (~60-90s), one reused patchright
                            browser session, no re-auth between pulls.
-  Stage 3  MANUAL         — hand-keyed (Retail JE, Frontier); filled from
-                           a supplied dict, otherwise left for manual entry.
+  Stage 3  MANUAL         — Frontier only (hand-keyed; filled from a supplied
+                           dict, otherwise left for manual entry). Retail JE is
+                           now AUTOMATED via je_pull (2026-06-07), pulled in
+                           Stage 2's session.
 
 Auth is PATCHRIGHT ONLY, like every other report ([[project_recruiting_
 cdp_fragile]]): ONE tableau_session() patchright page for the whole run.
