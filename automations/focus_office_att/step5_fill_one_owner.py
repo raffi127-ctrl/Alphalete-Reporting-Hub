@@ -143,15 +143,26 @@ def parse_gap_time(s) -> "Optional[float]":
 
 
 # ---- Time Tracker scraping ----
-def _set_date_and_pagesize(page, target_mdy: str) -> None:
-    """Set the date picker, swallow the navigation it triggers, then set Show 100."""
+def _same_mdy(a: str, b: str) -> bool:
+    """Lenient MM/DD/YYYY date compare — '6/1/2026' == '06/01/2026'.
+    strptime accepts missing leading zeros, so one format covers both."""
+    def _p(s):
+        try:
+            return dt.datetime.strptime((s or "").strip(), "%m/%d/%Y").date()
+        except Exception:
+            return None
+    da, db = _p(a), _p(b)
+    return da is not None and da == db
+
+
+def _dispatch_datepicker(page, target_mdy: str) -> None:
+    """Set #datepicker.value and fire the events that trigger date navigation.
+    Vanilla DOM only — no jQuery `$`. Under patchright, page.evaluate runs in
+    an isolated world where the site's `$` global is invisible, so the old
+    `$('#datepicker')...` threw "ReferenceError: $ is not defined". Setting
+    .value + dispatching native input/change/blur fires the same handlers
+    jQuery's .on('change') binds (jQuery listens via addEventListener)."""
     try:
-        # Vanilla DOM only — no jQuery `$`. Under patchright, page.evaluate
-        # runs in an isolated world where the site's `$` global is invisible,
-        # so the old `$('#datepicker')...` threw "ReferenceError: $ is not
-        # defined". Setting .value + dispatching native input/change/blur
-        # fires the same handlers jQuery's .on('change') binds (jQuery listens
-        # via addEventListener), which is what triggers the date navigation.
         page.evaluate(
             """(targetDate) => {
                 const el = document.querySelector('#datepicker');
@@ -170,11 +181,50 @@ def _set_date_and_pagesize(page, target_mdy: str) -> None:
         page.wait_for_load_state("networkidle", timeout=15000)
     except Exception:
         pass
+
+
+def _active_datepicker_value(page):
+    """The date the Time Tracker is currently showing (the #datepicker value),
+    or None if the field isn't present / readable."""
+    try:
+        return page.evaluate(
+            "() => { const el = document.querySelector('#datepicker');"
+            " return el ? el.value : null; }"
+        )
+    except Exception:
+        return None
+
+
+def _set_date_and_pagesize(page, target_mdy: str) -> bool:
+    """Navigate the Time Tracker to `target_mdy`, then set Show 100. Returns
+    True iff the picker confirms it landed on the target date.
+
+    WHY THE VERIFY: knock times (First/Last Knock) come ONLY from this view,
+    and it navigates via an on-page datepicker, not a URL param like the
+    Disposition view does. If the change event fires before the field is ready
+    (or the navigation races), the table silently stays on the WRONG/default
+    day — so the scrape returns no rows for the requested past day and that
+    day's knock-time cells stay blank (Mon–Thu empty, Megan 2026-05-31). We
+    re-dispatch once if the picker didn't land on the target, so a missed
+    navigation self-heals instead of silently dropping the day."""
+    confirmed = False
+    for _attempt in (1, 2):
+        _dispatch_datepicker(page, target_mdy)
+        if _same_mdy(_active_datepicker_value(page), target_mdy):
+            confirmed = True
+            break
+    if not confirmed:
+        # Best-effort: scrape whatever loaded, but make the miss visible in the
+        # run log rather than silently writing a blank/wrong day.
+        print(f"  ⚠ Time Tracker datepicker did not confirm {target_mdy} "
+              f"(showing {_active_datepicker_value(page)!r}) — knock times for "
+              f"that day may be missing.", flush=True)
     try:
         page.locator("select[name='timeTrackingTable_length']").select_option("100")
         page.wait_for_load_state("networkidle", timeout=8000)
     except Exception:
         pass
+    return confirmed
 
 
 def _scrape_current_view(page) -> list[dict]:
