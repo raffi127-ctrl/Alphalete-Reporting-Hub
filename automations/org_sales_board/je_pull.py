@@ -33,17 +33,20 @@ from typing import Optional
 
 from automations.shared.tableau_patchright import download_crosstab_patchright
 
-# Saved custom view "Thisweek" — its week filter is "Top 1 by MAX(Sales
-# Weekending Selected)", so it auto-rolls to the latest week every pull
-# (no re-save needed). See module docstring.
+# Saved custom view "ThisWeek" (rebuilt 2026-06; the old 4d55c69f/'Thisweek'
+# corrupted and stopped rendering). Its week filter auto-rolls to the latest
+# week every pull (no re-save needed). NOTE: this view puts the per-day labels
+# ('6/08 Mon' …) on the row ABOVE the 'ICD Office Name' row and repeats the
+# week-ending date ('6/14/2026') on it — parse() handles both layouts.
 CV_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "JustEnergyRTL-SalesStaffingProductivityWorkbook/WeeklyMetricsbyICD/"
-    "4d55c69f-ff38-4293-8a40-d29a2994d0e4/Thisweek?:iid=1"
+    "828a12c2-023e-482d-a8d3-e41c896312a8/ThisWeek?:iid=1"
 )
 WORKSHEET = "Daily Sales by ICD"
 
 _DAY_RE = re.compile(r"(\d{1,2})/(\d{1,2})\s+(Mon|Tue|Wed|Thu|Fri|Sat|Sun)")
+_WE_RE = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})")   # week-ending M/D/YYYY
 # weekday name -> Python weekday() index (Mon=0 .. Sun=6)
 _WD = {"Mon": 0, "Tue": 1, "Wed": 2, "Thu": 3, "Fri": 4, "Sat": 5, "Sun": 6}
 
@@ -105,7 +108,10 @@ def parse(csv_path: Path, today: Optional[dt.date] = None) -> dict:
         return {"week_ending": None, "is_current_week": False,
                 "reps": {}, "office_total": {}}
 
-    # Find the header row (has 'ICD Office Name') and the day columns.
+    # Find the header row (has 'ICD Office Name'). The per-day labels
+    # ('6/08 Mon' …) may sit ON this row OR on a row just above it — the
+    # 'ThisWeek' view puts them one row up and repeats the week-ending date
+    # ('6/14/2026') on the 'ICD Office Name' row.
     hdr_i = next((i for i, r in enumerate(rows)
                   if any(c.strip() == "ICD Office Name" for c in r)), None)
     if hdr_i is None:
@@ -117,19 +123,40 @@ def parse(csv_path: Path, today: Optional[dt.date] = None) -> dict:
     total_i = header.index("Total") if "Total" in header else None
 
     today = today or dt.date.today()
+    # Day columns: take each column's 'm/d Mon' label from the header row OR
+    # the rows just above it (whichever carries it).
     col_date: dict[int, dt.date] = {}   # column index -> actual date
     sun_date: Optional[dt.date] = None
-    for ci, cell in enumerate(header):
-        m = _DAY_RE.search(cell)
-        if m:
-            d = _infer_date(int(m.group(1)), int(m.group(2)), today)
-            if d is not None:
-                col_date[ci] = d
-                if m.group(3) == "Sun":
-                    sun_date = d
+    hdr_rows = [r for r in (hdr_i, hdr_i - 1, hdr_i - 2) if 0 <= r < len(rows)]
+    ncols = max((len(rows[r]) for r in hdr_rows), default=0)
+    for ci in range(ncols):
+        for hr in hdr_rows:
+            if ci >= len(rows[hr]):
+                continue
+            m = _DAY_RE.search((rows[hr][ci] or "").strip())
+            if m:
+                d = _infer_date(int(m.group(1)), int(m.group(2)), today)
+                if d is not None:
+                    col_date[ci] = d
+                    if m.group(3) == "Sun":
+                        sun_date = d
+                break
 
-    # Week-ending = the Sunday column's date (fallback: latest day + roll to Sun).
-    week_ending = sun_date
+    # Week-ending: prefer an explicit M/D/YYYY on the header row (the view
+    # repeats the week-ending Sunday across the day columns, e.g. '6/14/2026');
+    # else the Sunday column's date; else latest day rolled forward to Sunday.
+    week_ending: Optional[dt.date] = None
+    for cell in header:
+        m = _WE_RE.search(cell)
+        if m:
+            try:
+                week_ending = dt.date(int(m.group(3)), int(m.group(1)), int(m.group(2)))
+            except ValueError:
+                week_ending = None
+            if week_ending:
+                break
+    if week_ending is None:
+        week_ending = sun_date
     if week_ending is None and col_date:
         latest = max(col_date.values())
         week_ending = latest + dt.timedelta(days=(6 - latest.weekday()))
