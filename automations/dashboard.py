@@ -571,6 +571,25 @@ _FAILURE_SIGNATURES: list[dict] = [
      "message": "A report run failed at its Tableau step (the rest finished). "
                 "Only the Tableau sale-type data is missing — opening the "
                 "Tableau view, signing in, and re-running should complete it."},
+    # Generic transient browser/Tableau timeout — LAST so the specific
+    # crosstab ("couldn't find the … sheet") and phase-3 signatures above win
+    # first. Without this, a raw patchright TimeoutError / TargetClosedError
+    # fell through to None: no help message AND no dedup key, so the same flaky
+    # load filed a fresh row every run (Fiber Activations, 2026-06-11/12).
+    {"needles": ("timeouterror", "wait_for: timeout", "locator.click: timeout",
+                 "wait_for_function: timeout", "wait_for_selector: timeout",
+                 "timeout 30000ms", "timeout 120000ms", "targetclosederror",
+                 "target page, context or browser has been closed"),
+     "headline": "Tableau was slow or flaky and the step timed out.",
+     "fix": "This is almost always a transient Tableau load — click Run Again. "
+            "The Hub already auto-retries each pull a few times; if the SAME "
+            "section keeps timing out across several runs, its saved/custom "
+            "view may be corrupted — re-create it in Tableau.",
+     "link": "",
+     "message": "A report run timed out waiting on Tableau — usually a transient "
+                "slow/half-rendered load. Re-running clears it most of the time. "
+                "If one specific section keeps failing, its Tableau view may need "
+                "to be re-created."},
 ]
 
 
@@ -3360,7 +3379,11 @@ def _render_daily_focus_mapping_prompt(captainship: str) -> None:
         for o in sorted_options
     ]
 
-    for name in unmapped:
+    # Enumerate so every widget key carries the row index. Two unmapped tabs
+    # can share the same display name; keying on `name` alone collided and the
+    # whole 'library' screen died with StreamlitDuplicateElementKey (Maud,
+    # 2026-06-06). The index makes each row's keys unique regardless.
+    for _i, name in enumerate(unmapped):
         suggestion = _suggest_office_for_name(name)
         with st.container(border=True):
             top_cols = st.columns([3, 6])
@@ -3377,22 +3400,22 @@ def _render_daily_focus_mapping_prompt(captainship: str) -> None:
             btn_cols = st.columns([2, 2, 2, 4])
             confirm_disabled = suggestion is None
             if btn_cols[0].button(
-                "✅ Confirm match", key=f"map_confirm_{name}",
+                "✅ Confirm match", key=f"map_confirm_{_i}_{name}",
                 disabled=confirm_disabled, use_container_width=True,
                 type="primary",
             ):
                 _save_icd_mapping(name, suggestion["office_id"])
                 _daily_focus_icds_in_sheet.clear()
                 st.rerun()
-            picker_state_key = f"map_picker_open_{name}"
+            picker_state_key = f"map_picker_open_{_i}_{name}"
             if btn_cols[1].button(
-                "🔍 Pick different", key=f"map_pick_{name}",
+                "🔍 Pick different", key=f"map_pick_{_i}_{name}",
                 use_container_width=True,
             ):
                 st.session_state[picker_state_key] = not st.session_state.get(picker_state_key, False)
                 st.rerun()
             if btn_cols[2].button(
-                "🚫 Not an ICD", key=f"map_skip_{name}",
+                "🚫 Not an ICD", key=f"map_skip_{_i}_{name}",
                 use_container_width=True,
                 help="Mark this name as 'not a real ICD' so we never ask again "
                      "(e.g. for header/title rows).",
@@ -3414,12 +3437,12 @@ def _render_daily_focus_mapping_prompt(captainship: str) -> None:
                 pick = st.selectbox(
                     "AppStream office",
                     option_labels, index=default_idx,
-                    key=f"map_picker_{name}",
+                    key=f"map_picker_{_i}_{name}",
                     label_visibility="collapsed",
                 )
                 save_cols = st.columns([1, 4])
                 if save_cols[0].button(
-                    "💾 Save", key=f"map_save_{name}",
+                    "💾 Save", key=f"map_save_{_i}_{name}",
                     type="primary", use_container_width=True,
                 ):
                     chosen = sorted_options[option_labels.index(pick)]
@@ -3739,8 +3762,13 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
         if checklist:
             with st.expander("📋 Pre-flight checklist", expanded=(is_due and not ran_today)):
                 for idx, step in enumerate(checklist):
+                    # An uploaded report can register a step dict with no "text"
+                    # key; reading step["text"] then KeyError'd and took the whole
+                    # library screen down (2026-05-27). Default it so a malformed
+                    # step renders as an empty/blank line instead of crashing.
+                    step_text = step.get("text", "")
                     if step.get("info"):
-                        st.info(step["text"])
+                        st.info(step_text)
                         continue
                     # Upload step — file_uploader inline, files saved to
                     # target_dir; step is "done" when at least 1 file is there.
@@ -3748,7 +3776,7 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                         up_cfg = step["uploader"]
                         target_dir = WORKSPACE / up_cfg["target_dir"]
                         target_dir.mkdir(parents=True, exist_ok=True)
-                        st.markdown(f"**{step['text']}**")
+                        st.markdown(f"**{step_text}**")
                         _accept = [a.lstrip(".")
                                     for a in up_cfg.get("accept", [".xlsx"])]
                         _multi = bool(up_cfg.get("multiple", False))
@@ -3791,7 +3819,7 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                     ck_key = f"check_{report['id']}_{idx}"
                     msg_key = f"msg_{report['id']}_{idx}"
                     with cols[0]:
-                        ck = st.checkbox(step["text"], key=ck_key)
+                        ck = st.checkbox(step_text, key=ck_key)
                         if not ck:
                             all_checked = False
                         # Display action result message (set by callback on previous run).
@@ -4697,6 +4725,18 @@ def _append_intake_link(entry_id: str, url: str, label: str = "") -> bool:
     return True
 
 
+def _safe_link_button(label: str, url, **kwargs) -> None:
+    """st.link_button crashes with 'bad argument type for built-in operation'
+    when `url` isn't a non-empty str — gspread hands back ints/floats for
+    numeric-looking cells, and a truthiness check passes those through. Coerce
+    to str and skip empties so one malformed link can't take down the whole
+    screen (TypeError on 'library', 2026-05-27)."""
+    u = str(url or "").strip()
+    if not u:
+        return
+    st.link_button(label, u, **kwargs)
+
+
 def _label_for_url(url: str) -> str:
     """Pick a short, scannable button label from a URL's host.
 
@@ -4854,9 +4894,33 @@ def _file_run_glitch(report_id: str, report_name: str, log_text: str,
 
     Captures everything needed to actually debug it: the plain-English likely
     cause, the exact command, the Hub code version, and the run log (with any
-    traceback). Returns the new bug ID."""
+    traceback). Returns the new bug ID (or the existing one if deduped)."""
     diag = _diagnose_run_failure(log_text)
     diag_line = f"LIKELY CAUSE: {diag[0]}\n{diag[1]}\n\n" if diag else ""
+
+    # Dedup: a flaky report (a Tableau timeout that clears on a re-run) was
+    # filing a fresh P2 row EVERY run — Fiber Activations 5x, Captainship
+    # Churn 3x in one week — burying the tab in the same transient. If an
+    # unresolved 'Run glitch — {report_name}' with the SAME likely-cause was
+    # already filed in the last 7 days, return that ID instead of spamming a
+    # duplicate. A genuinely NEW error (different cause) still files. Never
+    # raises — on any error we fall through and file (a dup beats a lost
+    # report). (Megan 2026-06-14)
+    _sig = f"LIKELY CAUSE: {diag[0]}" if diag else ""
+    if _sig:
+        try:
+            _cutoff = (dt.datetime.now() - dt.timedelta(days=7)).strftime("%Y-%m-%d %H:%M")
+            for _b in _read_bugs():
+                if (
+                    str(_b.get("Title", "")) == f"Run glitch — {report_name}"
+                    and str(_b.get("Status", "")).strip().lower()
+                        not in ("resolved", "fixed")
+                    and str(_b.get("Submitted At", "")) >= _cutoff
+                    and _sig in str(_b.get("Details", ""))
+                ):
+                    return str(_b.get("ID", ""))
+        except Exception:
+            pass
     cmd_line = f"COMMAND: {command}\n" if command else ""
     details = (
         f"Automatic glitch report — a run of '{report_name}' failed.\n\n"
@@ -6047,7 +6111,7 @@ def _render_intake_card(entry: dict, allow_claim: bool = True, allow_done: bool 
                     _row = st.columns(2)
                     for j, (_lbl, _url) in enumerate(_btns[i:i+2]):
                         with _row[j]:
-                            st.link_button(_lbl, _url, use_container_width=True)
+                            _safe_link_button(_lbl, _url, use_container_width=True)
 
             if entry.get("Description"):
                 with st.expander("Project Details"):
@@ -6385,7 +6449,7 @@ def _render_completed_intake_card(entry: dict) -> None:
                 st.markdown("**📝 Project description**")
                 st.markdown(entry["Description"])
             if entry.get("Sheet Link"):
-                st.link_button("📂 Open Sheet", entry["Sheet Link"], use_container_width=True)
+                _safe_link_button("📂 Open Sheet", entry["Sheet Link"], use_container_width=True)
         with st.popover("🔄 Resurrect this project", use_container_width=True):
             st.caption(
                 "Move this back to In Progress to flag a needed update, fix, or "

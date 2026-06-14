@@ -342,15 +342,24 @@ def download_crosstab_patchright(
     relaunching Chrome each time). Otherwise launches its own session,
     runs the download, and closes.
 
-    SELF-HEAL (Megan 2026-06-08): retry ONCE on any failure. The dominant
+    SELF-HEAL (Megan 2026-06-08): retry on any failure. The dominant
     failure mode across every report is a transient Tableau load/render
     flake — '0 thumbs', a 120s toolbar timeout, a half-rendered crosstab —
     that clears on a fresh attempt. drive_crosstab_dialog re-navigates
     (about:blank → goto) each call, so the retry is a clean reload. A
-    genuinely broken/stale view fails both attempts and the error still
-    propagates, so callers' skip+flag resilience is unchanged."""
+    genuinely broken/stale view fails every attempt and the error still
+    propagates, so callers' skip+flag resilience is unchanged.
+
+    BUMPED 2->3 attempts (2026-06-14): one retry wasn't enough for the
+    heaviest vizzes — Fiber Activations hit 120s wait_for timeouts on two
+    back-to-back runs (6/11) and again 6/12. A 3rd attempt with a short
+    backoff (lets Tableau's server-side render settle) clears most of the
+    remainder. Retries only fire on failure, so happy-path runtime is
+    unchanged."""
+    MAX_ATTEMPTS = 3
+    BACKOFF_S = 3
     last_err = None
-    for attempt in (1, 2):
+    for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             if page is not None:
                 return drive_crosstab_dialog(page, view_url, crosstab_sheet,
@@ -360,9 +369,12 @@ def download_crosstab_patchright(
                                              out_path, verbose=verbose)
         except Exception as e:
             last_err = e
-            if attempt == 1 and verbose:
-                print(f"  ⚠ crosstab pull failed ({str(e).splitlines()[0][:90]})"
-                      " — retrying once…", flush=True)
+            if attempt < MAX_ATTEMPTS:
+                if verbose:
+                    print(f"  ⚠ crosstab pull failed ({str(e).splitlines()[0][:90]})"
+                          f" — retry {attempt}/{MAX_ATTEMPTS - 1} after {BACKOFF_S}s…",
+                          flush=True)
+                time.sleep(BACKOFF_S)
     raise last_err
 
 
