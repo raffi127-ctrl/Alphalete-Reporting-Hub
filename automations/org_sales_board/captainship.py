@@ -14,6 +14,7 @@ the go-live version will sort high→low). [[reference_org_board_sandbox_scoping
 from __future__ import annotations
 
 import datetime as dt
+import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
 
@@ -88,7 +89,8 @@ def fill_captainship(ws, anchor: CaptainAnchor, today, per_for,
     {date: value} dict (team view first, org-wide fallback) or {} if nowhere.
     Every no-sale day is written as 0 (Megan: insert 0, never blank).
     WORKSHEET-SCOPED. Returns ICDs found in NO pull (filled 0)."""
-    assert ws.title == "Copy of Alphalete ORG Sales Board", ws.title
+    assert ws.title in ("Alphalete ORG Sales Board",
+                        "Copy of Alphalete ORG Sales Board"), ws.title
     from automations.org_sales_board import week as _wk
     monday = _wk.reporting_monday(today)  # rolls Tuesday — Monday = last week
     days = [monday + dt.timedelta(days=i) for i in range(len(anchor.day_cols))]
@@ -155,25 +157,54 @@ TYPES = {
     },
 }
 
-# (sheet-title token, type, team-view URL). Title token feeds find_captainship.
-CAPTAINS = [
-    ("RAF", "fiber", _V + "ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK/ab2eca72-395f-48d5-a254-9d99739b88d4/AllproductsRafsteam"),
-    ("WAYNE", "fiber", _V + "ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK/70f6a2a1-af9e-409b-9e9c-ac3ac20a85ab/AllproductsWaynesteam"),
-    ("STARR", "fiber", _V + "ATTTRACKER2_1-D2D/PRODUCTSALESSUMMARY4WK/c29a4154-c77c-4416-8e06-379e7b431b60/AllproductsStarsteam"),
-    # New fiber captainships (Aron's captainship dissolved 2026-06; its sheet
-    # block is already gone). The per-captain team-view URL is VESTIGIAL —
-    # _team_url is unused below; every captainship's sales come from the fiber
-    # PROGRAMS all-teams pull. Placeholder until/if a real team view is wired.
-    ("CHAN", "fiber", "VESTIGIAL-UNUSED-team-view-url"),
-    ("TONY", "fiber", "VESTIGIAL-UNUSED-team-view-url"),
-    ("SAHIL", "fiber", "VESTIGIAL-UNUSED-team-view-url"),
-    ("CARLOS", "b2b", _V + "ATTTRACKER-B2B/D2D1-PAGERV3/32440800-0a5a-4f21-be33-f807ba5930a7/CarlosTeam"),
-    ("EVELIZ", "b2b", _V + "ATTTRACKER-B2B/D2D1-PAGERV3/48735d6e-cf6a-48fa-8d24-6f790d2ba3b7/EvelizsTeam"),
-    ("LUIS", "b2b", _V + "ATTTRACKER-B2B/D2D1-PAGERV3/8f51c40d-46c3-4ddc-bf64-ec769777f3eb/LuissTeam"),
-    ("KHALIL", "nds", _V + "NDS-SNRES-ATT-OOFWorkbook/ProductSalesSummaryRep/7f7d9a86-425b-438a-8838-ffb1d16cde63/KHALILSTEAM"),
-    ("COLTEN", "nds", _V + "NDS-SNRES-ATT-OOFWorkbook/ProductSalesSummaryRep/f6e61d86-e503-4c7d-9230-56b85048f402/COLTENSTEAM"),
-    ("JAIRO", "nds", _V + "NDS-SNRES-ATT-OOFWorkbook/ProductSalesSummaryRep/99c40989-62fd-4ffd-bc6e-c6e7fe78c0d7/JAIROSTEAM"),
-]
+# Program search-order HINT per captainship: which program's crosstab to try
+# FIRST when matching an ICD. Only a preference — per_for() falls back across
+# ALL programs, so a captainship missing from this map (e.g. a brand-new one
+# Megan just added to the board) still fills correctly; the hint just avoids a
+# wasted first lookup. Keyed by normalized title (uppercase, possessive
+# stripped: "CHAN'S" → "CHAN"). [[feedback_captainship_roster_truth]]
+TYPE_HINTS = {
+    "RAF": "fiber", "WAYNE": "fiber", "STARR": "fiber",
+    "CHAN": "fiber", "TONY": "fiber", "SAHIL": "fiber",
+    "CARLOS": "b2b", "EVELIZ": "b2b", "LUIS": "b2b",
+    "KHALIL": "nds", "COLTEN": "nds", "JAIRO": "nds",
+}
+# Program tried first for a captainship with no hint. Fiber is the most common
+# and, regardless, per_for() still falls back across every program — so an
+# unknown captainship's numbers are correct either way.
+DEFAULT_TYPE = "fiber"
+
+
+def _cap_key(title: str) -> str:
+    """Normalize a captainship title for TYPE_HINTS lookup: uppercase + drop a
+    trailing possessive ("CHAN'S"→"CHAN", "LUIS'"→"LUIS")."""
+    return re.sub(r"['’]S?$", "", title.strip().upper()).strip()
+
+
+def discover_captainships(grid: List[List[str]]) -> List[Tuple[str, str]]:
+    """The captainship list, READ FROM THE BOARD — not hardcoded. Returns
+    (title, type-hint) for every "<NAME> CAPTAINSHIP TEAM" block (the fillable
+    blocks find_captainship targets), top to bottom, de-duped. Add or remove a
+    block on the tab and the report follows automatically — no code edit. The
+    title is the text before "CAPTAINSHIP" and feeds find_captainship verbatim;
+    the type is a search-order hint only. [[feedback_captainship_roster_truth]]
+    [No hardcoded rows — find blocks by their col-B label.]"""
+    out: List[Tuple[str, str]] = []
+    seen = set()
+    for i in range(len(grid)):
+        b = _cell(grid, i, 1)
+        bl = b.lower()
+        if "captainship team" not in bl:
+            continue
+        title = b[:bl.index("captainship")].strip()
+        if not title:
+            continue
+        key = _cap_key(title)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append((title, TYPE_HINTS.get(key, DEFAULT_TYPE)))
+    return out
 
 # All-teams, all-products per-PROGRAM views (Megan 2026-06-03). Pull every ICD
 # once per program, then assign each to its captainship via the SHEET roster —
@@ -251,7 +282,10 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
             failed_programs.append(tkey)
 
     summary = {"filled": [], "missing": {}, "failed_programs": failed_programs}
-    for title, tkey, _team_url in CAPTAINS:
+    captains = discover_captainships(grid)
+    logfn(f"  discovered {len(captains)} captainship block(s) on the board: "
+          f"{[c[0] for c in captains]}")
+    for title, tkey in captains:
         t = TYPES[tkey]
         metric = t["metric"]
         pull = prog.get(tkey, {})

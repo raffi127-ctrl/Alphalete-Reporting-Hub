@@ -316,8 +316,9 @@ def plan_daily_clear(ws, grid) -> List[str]:
         if rows and cols:
             ranges.append(f"{a1col(cols[0])}{min(rows)}:"
                           f"{a1col(cols[-1])}{max(rows)}")
-    for name in ("RAF", "WAYNE", "STARR", "CHAN", "TONY", "SAHIL",
-                 "CARLOS", "EVELIZ", "LUIS", "KHALIL", "COLTEN", "JAIRO"):
+    # Auto-discovered from the board — same source the fill uses — so adding/
+    # removing a captainship needs no edit here either.
+    for name, _tkey in cap.discover_captainships(grid):
         try:
             a = cap.find_captainship(grid, name)
         except Exception:
