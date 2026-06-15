@@ -339,6 +339,9 @@ METRIC_GOALS_SCRAPED: Dict[str, str] = {"1 GIG%": "New Internet 1Gig+ Mix%"}
 # Office Metrics section — scraped from the Metrics crosstab.
 METRICS_SCRAPED: Dict[str, str] = {
     "6+ days out scheduled":   "% of sales scheduled 6+ days out (4 wks)",
+    # "Intall" is the literal (mis)spelling of the Tableau header — do NOT
+    # "fix" it; the typo is what the Metrics-Install crosstab actually emits.
+    "6+ days Orders Scheduled": "Intall Scheduled 6+ Days New Internet Count (4 wk)",
     "0-30 Day Cancel Rate":    "0-30 day New Internet cancel rate",
     "30-60 activation rate %": "30-60 day New Internet activation rate",
 }
