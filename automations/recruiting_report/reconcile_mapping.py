@@ -48,6 +48,7 @@ _RECONCILE_CONFIG = {
         # this dict adds extra office_ids whose counts get summed in.
         "hardcoded_siblings": {
             "Chan Park": ["22057"],  # Nola Management Group, Inc. 2nd
+            "Nigel Gilbert": ["23530"],  # Premier Marketing Solutions, Inc. 2nd
         },
         # Admin / template / aggregate tabs that aren't ICD offices.
         # Raf Hidalgo is INTENTIONALLY excluded — her tab is both the
