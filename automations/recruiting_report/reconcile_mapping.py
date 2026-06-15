@@ -38,7 +38,7 @@ _RECONCILE_CONFIG = {
             "JC Pascual":         "22976",
             "Milly Villagrana":   "22001",
             "Natalia Gwarda":     "23431",
-            "Nigel Gilbert":      "22435",
+            "Nigel Gilbert":      "23530",
             "Oren Shezaf":        "22536",
             "Preppie Olison":     "21373",
             "Starr Rodenhurst":   "17573",
@@ -48,7 +48,6 @@ _RECONCILE_CONFIG = {
         # this dict adds extra office_ids whose counts get summed in.
         "hardcoded_siblings": {
             "Chan Park": ["22057"],  # Nola Management Group, Inc. 2nd
-            "Nigel Gilbert": ["23530"],  # Premier Marketing Solutions, Inc. 2nd
         },
         # Admin / template / aggregate tabs that aren't ICD offices.
         # Raf Hidalgo is INTENTIONALLY excluded — her tab is both the

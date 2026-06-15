@@ -124,13 +124,10 @@
     },
     {
       "sheet_tab": "Nigel Gilbert",
-      "office_id": "22435",
+      "office_id": "23530",
       "as_owner": "Nigel Gilbert",
-      "as_company": "Zora Industries, Inc.",
-      "confidence": 0.7,
-      "siblings": [
-        "23530"
-      ]
+      "as_company": "Premier Marketing Solutions, Inc.",
+      "confidence": 0.7
     },
     {
       "sheet_tab": "Hasani Lynch",
