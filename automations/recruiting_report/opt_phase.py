@@ -136,24 +136,56 @@ WIRELESS_CHURN_VIEW_URL = (
 WIRELESS_CHURN_SHEET = "ICD Churn (Wireless)"
 WIRELESS_CHURN_PATH = WORKSPACE / "output" / "opt_wireless_churn.csv"
 
-# Captain's Bonus crosstab — AUTOMATIONPULL-CAPTAINS custom view. The Crosstab
-# dialog splits data into one "CB Appr + Churn (<captain>)" sheet per
-# captainship team; the four remaining (Aron's captainship dissolved
-# 2026-06-10) are pulled and merged into one ICD lookup.
+# Captain's Bonus crosstab — the DEFAULT view (no custom-view GUID). The
+# AUTOMATIONPULL-CAPTAINS custom view stopped rendering its toolbar (the
+# Download button never appears -> 120s timeout, observed 2026-06-15), so we
+# pull the bare view: it renders fine AND exposes every captainship. The
+# Crosstab dialog splits data into one "CB Appr + Churn (<captain>)" sheet per
+# captainship team; those sheets are AUTO-DISCOVERED (discover_captains_sheets)
+# so a captainship added/removed in Tableau is picked up without a code change,
+# then merged into one ICD lookup.
 CAPTAINS_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
-    "ATTTRACKER2_1-D2D/CaptainsBonus/"
-    "96f8a0ef-a1fc-48c8-9669-e39cdffa4d7e/AUTOMATIONPULL-CAPTAINS"
+    "ATTTRACKER2_1-D2D/CaptainsBonus"
 )
-CAPTAINS_SHEETS = ["CB Appr + Churn (Pat)",
-                   "CB Appr + Churn (Raf)", "CB Appr + Churn (Starr)",
-                   "CB Appr + Churn (Wayne)"]
+# FALLBACK ONLY — used when discover_captains_sheets can't reach the Crosstab
+# dialog. Kept current (8 teams as of 2026-06-15: Aron's dissolved 2026-06-10;
+# Chan/Jess/Sahil/Tony added) so even the fallback fills everyone.
+CAPTAINS_SHEETS = ["CB Appr + Churn (Chan)", "CB Appr + Churn (Jess)",
+                   "CB Appr + Churn (Pat)", "CB Appr + Churn (Raf)",
+                   "CB Appr + Churn (Sahil)", "CB Appr + Churn (Starr)",
+                   "CB Appr + Churn (Tony)", "CB Appr + Churn (Wayne)"]
 
 
 def _captains_path(sheet: str) -> Path:
     """Per-team crosstab CSV path, e.g. .../opt_captains_raf.csv."""
     tag = sheet.split("(")[-1].rstrip(")").strip().lower()
     return WORKSPACE / "output" / f"opt_captains_{tag}.csv"
+
+
+def discover_captains_sheets(page=None, logfn=print) -> List[str]:
+    """Auto-detect the 'CB Appr + Churn (<team>)' sheets the Captain's Bonus
+    view currently offers, so a captainship added/removed in Tableau is picked
+    up without a code change. (Chan/Jess/Sahil/Tony appeared by 2026-06-15; the
+    old hardcoded 4-team list silently dropped their ICDs — Marcellus Butler,
+    Tony Chavez, Jennifer Figueroa.) Falls back to CAPTAINS_SHEETS when
+    discovery can't reach the dialog or matches nothing."""
+    try:
+        offered = list_crosstab_sheets(CAPTAINS_VIEW_URL, page=page, verbose=False)
+    except Exception as e:
+        logfn(f"OPT: ⚠️ Captain's Bonus sheet discovery FAILED "
+              f"({type(e).__name__}: {str(e)[:120]}) — using fallback "
+              f"{len(CAPTAINS_SHEETS)} sheet(s)")
+        return list(CAPTAINS_SHEETS)
+    found = sorted(s for s in offered if re.search(r"cb\s*appr.*churn", s, re.I))
+    if not found:
+        logfn(f"OPT: ⚠️ Captain's Bonus discovery saw {len(offered)} sheet(s) but "
+              f"none matched 'CB Appr + Churn' — using fallback "
+              f"{len(CAPTAINS_SHEETS)} sheet(s)")
+        return list(CAPTAINS_SHEETS)
+    logfn(f"OPT: Captain's Bonus auto-discovered {len(found)} team sheet(s): "
+          f"{[s.split('(')[-1].rstrip(')') for s in found]}")
+    return found
 
 
 # Program Summary (Direct Deposit) — PROGRAM SUMMARY view, CAPTAINVIEW custom
@@ -2022,6 +2054,10 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
     # --skip-download (the files were already verified present below).
     dl_ok: Dict[str, bool] = {}
     dl_gaps: List[str] = []
+    # Captain's Bonus team sheets — auto-discovered inside the download session
+    # below; defaults to the static fallback so --skip-download (which never
+    # opens a session) still parses whatever per-team CSVs are on disk.
+    captains_sheets = list(CAPTAINS_SHEETS)
     if skip_download:
         for pth, lbl in [(ATT_PATH, "ATT"), (INT_PATH, "INT"),
                          (PRODUCT_SALES_PATH, "Product Sales"),
@@ -2112,9 +2148,13 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
             _dl("wchurn", "Wireless Churn", lambda: download_crosstab(
                 WIRELESS_CHURN_VIEW_URL, WIRELESS_CHURN_SHEET,
                 WIRELESS_CHURN_PATH, verbose=False, page=_pg))
+            # Discover the live team sheets first so a captainship added/removed
+            # in Tableau is picked up without a code change (falls back to the
+            # static list if the dialog can't be read).
+            captains_sheets = discover_captains_sheets(_pg, logfn)
             _dl("captains", "Captain's Bonus", lambda: [download_crosstab(
                 CAPTAINS_VIEW_URL, sheet, _captains_path(sheet),
-                verbose=False, page=_pg) for sheet in CAPTAINS_SHEETS])
+                verbose=False, page=_pg) for sheet in captains_sheets])
             _dl("program", "Program Summary",
                 lambda: download_program_summary(verbose=False, page=_pg,
                                                  we_sunday=we_sunday))
@@ -2140,7 +2180,7 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
                                  if dl_ok.get("wmetrics", True) else {})
     wireless_churn_by_owner = (parse_churn(WIRELESS_CHURN_PATH)
                                if dl_ok.get("wchurn", True) else {})
-    captains_by_owner = (parse_captains([_captains_path(s) for s in CAPTAINS_SHEETS])
+    captains_by_owner = (parse_captains([_captains_path(s) for s in captains_sheets])
                          if dl_ok.get("captains", True) else {})
     program_summary = (parse_program_summary(PROGRAM_SUMMARY_PATH)
                        if dl_ok.get("program", True) else {})
