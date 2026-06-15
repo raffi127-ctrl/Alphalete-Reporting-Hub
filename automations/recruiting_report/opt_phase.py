@@ -1871,12 +1871,20 @@ def fill_opt_for_tab(
 
     # --- CHURN view (Office Metrics section) ---
     churn_row = _match_owner(tab_name, churn_by_owner, aliases_map)
-    if churn_row:
-        cv = churn_row["values"]
-        for sheet_label, csv_col in CHURN_SCRAPED.items():
-            cell = cv.get(_norm(csv_col), "")
-            if str(cell).strip() != "":
-                _queue(om_rows, sheet_label, cell)
+    # Fill -% (USER_ENTERED -> literal text) for any churn metric the owner has
+    # no value for — whether the owner didn't match the Churn crosstab at all
+    # (cv = {}) or matched but that cell came back blank. Mirrors int_wow's '-%'
+    # no-data marker so a gap reads as "reported, no data", not "untouched".
+    cv = churn_row["values"] if churn_row else {}
+    for sheet_label, csv_col in CHURN_SCRAPED.items():
+        cell = cv.get(_norm(csv_col), "")
+        if str(cell).strip() != "":
+            _queue(om_rows, sheet_label, cell)
+        elif churn_by_owner:
+            # -% only when the Churn source actually loaded (dict non-empty).
+            # A failed download leaves churn_by_owner={} -> write nothing, so
+            # the cell stays as-is instead of being stamped over with -%.
+            _queue(om_rows, sheet_label, "-%")
 
     # --- Captain's Bonus (Office Metrics section) ---
     cap_row = _match_owner(tab_name, captains_by_owner, aliases_map)
@@ -1957,12 +1965,15 @@ def fill_opt_for_tab(
                 if str(cell).strip() != "":
                     _queue(wireless_rows, sheet_label, cell)
         wc_row = _match_owner(tab_name, wireless_churn_by_owner, aliases_map)
-        if wc_row:
-            wcv = wc_row["values"]
-            for sheet_label, csv_col in WIRELESS_CHURN_SCRAPED.items():
-                cell = wcv.get(_norm(csv_col), "")
-                if str(cell).strip() != "":
-                    _queue(wireless_rows, sheet_label, cell)
+        # Same -% no-data fill as the Office-Metrics churn block above.
+        wcv = wc_row["values"] if wc_row else {}
+        for sheet_label, csv_col in WIRELESS_CHURN_SCRAPED.items():
+            cell = wcv.get(_norm(csv_col), "")
+            if str(cell).strip() != "":
+                _queue(wireless_rows, sheet_label, cell)
+            elif wireless_churn_by_owner:
+                # -% only when the Wireless Churn source loaded (dict non-empty).
+                _queue(wireless_rows, sheet_label, "-%")
 
     # Drop rows that are legitimately absent on this tab — not real gaps.
     expected_gone = _EXPECTED_MISSING.get(_norm(tab_name), set())
