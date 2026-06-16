@@ -77,9 +77,18 @@ echo "→ Upgrading pip"
 echo "→ Installing Python packages (this takes a minute)"
 .venv/bin/pip install --quiet -r automations/recruiting_report/requirements.txt
 
-# 4. Install Playwright Chromium (required even though we use real Chrome — provides Playwright runtime)
-echo "→ Installing Playwright Chromium"
-.venv/bin/playwright install chromium >/dev/null
+# 4. Install the Chromium build for the browser driver. The project uses
+# patchright (a Playwright fork) — the venv has `.venv/bin/patchright`, NOT
+# `.venv/bin/playwright` (the old name broke Camila's install 2026-06-16).
+# Prefer patchright; fall back to playwright only if that's what's present.
+echo "→ Installing Chromium for patchright"
+if [ -x .venv/bin/patchright ]; then
+    .venv/bin/patchright install chromium >/dev/null
+elif [ -x .venv/bin/playwright ]; then
+    .venv/bin/playwright install chromium >/dev/null
+else
+    red "⚠ neither patchright nor playwright CLI found in .venv — skipping Chromium install"
+fi
 
 # 5. Write config (Sheet ID)
 CONFIG_DIR="$HOME/.config/recruiting-report"
