@@ -1,6 +1,5 @@
 {
   "_note": "Tableau ORDER LOG custom views, each pre-filtered server-side to Captain's bonus Team + Product Type = New Internet. Created manually in Tableau (Eve, 2026-05-30). Only the Start/End Date range is added by URL at run time (pull.build_url). Re-paste here if a view is renamed/recreated.",
-  "_note_raf_TEMP": "TEMPORAL (2026-06-09): 'raf' points to Rafsscheduled6daysout_TEMP_0609 (GUID 29e053bf-84b8-44cc-9b0e-3b2b219aa9f1) while Sistemas fixes the team filter on the real view. REVERT to original GUID 0dc4fcdd-d3ab-4098-b7da-df9ad48b58a1 (view Rafsscheduled6daysout) once fixed.",
-  "raf": "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/ORDERLOG/29e053bf-84b8-44cc-9b0e-3b2b219aa9f1/Rafsscheduled6daysout_TEMP_0609?:iid=1",
+  "raf": "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/ORDERLOG/0dc4fcdd-d3ab-4098-b7da-df9ad48b58a1/Rafsscheduled6daysout?:iid=1",
   "starr": "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER2_1-D2D/ORDERLOG/a078a28b-89f3-49e2-9ad3-ca2f69579d7c/Starrsscheduled6daysout?:iid=1"
 }
