@@ -378,10 +378,21 @@ def fill_owner_tab(ws, scraped_by_date: dict, layout: Layout) -> dict:
     # Tableau-only marker emoji when keying so 'Joe Smith 🔹' (added by
     # Phase 3 last week) matches the 'Joe Smith' ownerville returns now.
     rep_col_values = ws.col_values(rep_col)
+    # The frozen 'LAST WEEK' block sits BELOW the current week. Current-week
+    # reps must NEVER be matched into it — otherwise, when the top is empty
+    # (right after the Tuesday shift), the fill matches every rep to the only
+    # place the name exists (the frozen block) and writes THIS week's data into
+    # LAST week's block, leaving the top empty. That's the bug that broke the
+    # shift (Megan 2026-06-16). Stop the rep map at the LAST WEEK label.
+    _lastweek_row = next((i for i, v in enumerate(rep_col_values, start=1)
+                          if isinstance(v, str)
+                          and v.strip().upper() == LAST_WEEK_LABEL), None)
     name_to_row = {}
     for i, name in enumerate(rep_col_values, start=1):
         if i < 3 or not name.strip():
             continue
+        if _lastweek_row is not None and i >= _lastweek_row:
+            break  # reached the frozen LAST WEEK block — never fill into it
         # Office-summary rows (OFFICE TOTALS / % ON BOARD / etc.) sit in
         # col B too but are NOT reps. Excluding them is critical: a new
         # rep is placed at max(name_to_row.values()) + 1, so if the
@@ -511,6 +522,66 @@ def fill_owner_tab(ws, scraped_by_date: dict, layout: Layout) -> dict:
         "skipped_cells": skipped_cells,
         "written_cells": len(cells_to_write),
     }
+
+
+def backfill_lastweek_block(ws, scraped_by_date: dict, layout: "Layout") -> dict:
+    """Write per-day data into the FROZEN 'LAST WEEK' block — NOT the live
+    top current-week block. For recovering a last week that was never fully
+    scraped while the report was down: re-scrape last week and fill its missing
+    days into the frozen snapshot. Matches reps BY NAME within the frozen block
+    ONLY (between the 'LAST WEEK' label and that block's OFFICE TOTALS), so it
+    never touches the current-week rows above. Caller runs write_weekly_formulas
+    afterward to refresh the frozen weekly totals. (Megan 2026-06-16)"""
+    rep_col = layout.rep_name_col
+    col_b = ws.col_values(rep_col)
+    lw_idx = next((i for i, v in enumerate(col_b)
+                   if isinstance(v, str) and v.strip().upper() == "LAST WEEK"), None)
+    if lw_idx is None:
+        return {"written_cells": 0, "reps": 0, "note": "no LAST WEEK block"}
+    # Frozen block ends at its own OFFICE TOTALS row.
+    end_idx = next((i for i in range(lw_idx + 3, len(col_b))
+                    if col_b[i].strip().upper() == "OFFICE TOTALS"), len(col_b))
+    name_to_row = {}
+    for i in range(lw_idx + 3, end_idx):   # skip label/dates/col-header rows
+        name = col_b[i].strip()
+        if not name or _is_summary_label(name):
+            continue
+        key = strip_rep_mark(name).lower().strip()
+        if key:
+            name_to_row[key] = i + 1       # 1-based
+    if not name_to_row:
+        return {"written_cells": 0, "reps": 0, "note": "no frozen reps"}
+    field_map = {**TT_FIELD_TO_CANONICAL, **DISP_FIELD_TO_CANONICAL}
+    cells = []
+    for date, reps in scraped_by_date.items():
+        wd = date.weekday()
+        if wd not in layout.day_cols:
+            continue
+        wd_cols = layout.day_cols[wd]
+        for rep in reps:
+            row = name_to_row.get(strip_rep_mark(rep["name"]).lower().strip())
+            if not row:
+                continue
+            for field, canonical in field_map.items():
+                if field not in rep:
+                    continue
+                col = wd_cols.get(canonical)
+                if col is None:
+                    continue
+                value = rep[field]
+                if value is None or value == "":
+                    continue
+                if field == "total_gaps":
+                    value = parse_gap_time(value)
+                    if value is None:
+                        continue
+                out = value if isinstance(value, (int, float)) else str(value)
+                cells.append((_a1(col, row), out))
+    if cells:
+        data = [{"range": f"'{ws.title}'!{a1}", "values": [[v]]} for a1, v in cells]
+        ws.spreadsheet.values_batch_update(
+            {"valueInputOption": "USER_ENTERED", "data": data})
+    return {"written_cells": len(cells), "reps": len(name_to_row)}
 
 
 # Mapping from Weekly Total block header → canonical per-day metric name.
