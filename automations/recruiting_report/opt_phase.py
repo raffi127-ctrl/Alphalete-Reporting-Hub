@@ -342,6 +342,7 @@ METRICS_SCRAPED: Dict[str, str] = {
     # "Intall" is the literal (mis)spelling of the Tableau header — do NOT
     # "fix" it; the typo is what the Metrics-Install crosstab actually emits.
     "6+ days Orders Scheduled": "Intall Scheduled 6+ Days New Internet Count (4 wk)",
+    "Jep Orders":              "Jep New Internet Count (4 wk)",
     "0-30 Day Cancel Rate":    "0-30 day New Internet cancel rate",
     "30-60 activation rate %": "30-60 day New Internet activation rate",
 }
