@@ -11,6 +11,10 @@ __pycache__/
 .browser_profile/
 .appstream_profile/
 .appstream_profile_alt/
+# AppStream storage_state export — contains live SESSION cookies (auth). Sensitive;
+# never commit. Exported by output/_scratch_appstream_export_state.py.
+.appstream_storage_state.json
+automations/shared/.appstream_storage_state.json
 *.app/
 # Build artifacts + Claude Code local state
 build/

@@ -24,6 +24,7 @@ in the profile and skip straight to Tableau.
 
 from __future__ import annotations
 
+import json
 import re
 import time
 from contextlib import contextmanager
@@ -544,41 +545,120 @@ APPSTREAM_PROFILE_DIR = (
 )
 _APPSTREAM_USERNAME_SELECTOR = 'input[name="userName"], ' + _USERNAME_SELECTOR
 
+# A manually-exported AppStream session (cookies incl. CFID/CFTOKEN + the
+# rqst_<TOKEN> SSO cookies). Produced by a one-time human login via
+# output/_scratch_appstream_export_state.py. GITIGNORED — carries live session
+# cookies. This is how the unattended path authenticates WITHOUT driving the
+# login form, whose Cloudflare Turnstile can't be cleared unattended.
+APPSTREAM_STORAGE_STATE = (
+    Path(__file__).resolve().parent / ".appstream_storage_state.json"
+)
+
+
+def _reuse_appstream_storage_state(ctx, page: Page, verbose: bool) -> bool:
+    """Restore a manually-exported AppStream session onto the persistent stealth
+    context. Inject the saved cookies, then for each saved rqst SSO token
+    navigate to index.cfm?rqst=<TOKEN>&p=701 — the URL form AppStream keys the
+    authenticated console to (cookies alone land on Login; a bare index.cfm or a
+    stale token bounces back). Returns True once #searchMC appears.
+
+    Tokens can be stale (the export may hold several rqst_* cookies, only one
+    live) — we try each and take the first that loads the console."""
+    if not APPSTREAM_STORAGE_STATE.exists():
+        if verbose:
+            print(f"-> no storage_state at {APPSTREAM_STORAGE_STATE.name}",
+                  flush=True)
+        return False
+    try:
+        state = json.loads(APPSTREAM_STORAGE_STATE.read_text())
+    except Exception as e:
+        if verbose:
+            print(f"-> storage_state unreadable ({e!r}) — ignoring", flush=True)
+        return False
+    cookies = state.get("cookies", [])
+    if cookies:
+        try:
+            ctx.add_cookies(cookies)
+        except Exception as e:
+            if verbose:
+                print(f"-> add_cookies failed ({e!r})", flush=True)
+    tokens = [c["name"][len("rqst_"):] for c in cookies
+              if c.get("name", "").startswith("rqst_")]
+    if verbose:
+        print(f"-> storage_state: {len(cookies)} cookies, "
+              f"{len(tokens)} rqst token(s)", flush=True)
+    for tok in tokens:
+        url = f"{APPSTREAM_BASE}?rqst={tok}&p=701"
+        try:
+            page.goto(url, wait_until="domcontentloaded")
+            page.wait_for_selector("#searchMC", timeout=8_000)
+            if verbose:
+                print(f"-> AppStream console restored from storage_state "
+                      f"(rqst={tok[:8]}…, page at {(page.url or '')[:72]})",
+                      flush=True)
+            return True
+        except PWTimeout:
+            continue
+        except Exception:
+            continue
+    return False
+
 
 @contextmanager
 def appstream_direct_session(headless: bool = False,
                              verbose: bool = True,
                              profile_dir: Optional[Path] = None,
                              username: Optional[str] = None,
-                             password: Optional[str] = None) -> Iterator[Page]:
-    """Yield a Page logged DIRECTLY into AppStream as the recruiting account
-    (rcaptain) via patchright stealth — a FULL, sustained console session with
-    the #searchMC office switcher. This is the unattended replacement for
-    fetch_office._attach() (debug-Chrome CDP, broken on Chrome 148).
+                             password: Optional[str] = None,
+                             allow_form_login: bool = False) -> Iterator[Page]:
+    """Yield a Page on the AppStream recruiting console (#searchMC office
+    switcher) for the rcaptain account, via patchright stealth. Unattended
+    replacement for fetch_office._attach() (debug-Chrome CDP, broken on Chrome
+    148).
 
-    NOT appstream_session(): that rides the ownerville SSO and lands on a
-    short-lived p=701 report view that times out within ~30s and has no office
-    switcher. This logs in on AppStream's own two-step form (same shape as
-    ownerville) and the session persists in a dedicated profile.
+    Auth path (since 2026-06-16): restore a manually-exported session
+    (APPSTREAM_STORAGE_STATE) instead of driving the login form. AppStream's
+    login form now hits a Cloudflare Turnstile that can't be cleared
+    unattended, so a missing/expired session FAILS FAST with a clear error
+    rather than stalling on the check. Re-export with
+    output/_scratch_appstream_export_state.py after a one-time manual login.
+
+    allow_form_login=True re-enables the legacy two-step form-drive (the path
+    that hits the Turnstile) — interactive/debug use ONLY; never the default
+    automated path.
 
     Override args (used by daily_focus --alt-appstream for ICDs visible only
     from a different AppStream account):
       - profile_dir: use a separate profile (so rcaptain's cookies aren't
                      overwritten by the alternate account's session).
       - username / password: skip creds.py lookup; pass these directly to
-                             the login form (lets the caller load them from
-                             env without touching keychain/file)."""
+                             the login form (only relevant with
+                             allow_form_login=True)."""
     profile = profile_dir or APPSTREAM_PROFILE_DIR
     profile.mkdir(exist_ok=True, parents=True)
-    user = username or creds.appstream_username()
-    pwd  = password or creds.appstream_password()
     with sync_playwright() as p:
         ctx = _launch_persistent(p, profile, headless=headless,
                                  label="appstream_direct", verbose=verbose)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
+            # Primary (automated) path: restore the exported session. Never
+            # touches the login form / Turnstile.
+            if _reuse_appstream_storage_state(ctx, page, verbose):
+                yield page
+                return
+
+            if not allow_form_login:
+                raise RuntimeError(
+                    "AppStream session expired or missing — run "
+                    "output/_scratch_appstream_export_state.py")
+
+            # Legacy opt-in form-drive (interactive/debug only — hits the
+            # Cloudflare Turnstile, so it stalls in unattended runs).
+            user = username or creds.appstream_username()
+            pwd  = password or creds.appstream_password()
             if verbose:
-                print("-> Loading https://applicantstream.com/", flush=True)
+                print("-> [allow_form_login] driving AppStream login form",
+                      flush=True)
             page.goto("https://applicantstream.com/",
                       wait_until="domcontentloaded")
             page.wait_for_timeout(3_000)
