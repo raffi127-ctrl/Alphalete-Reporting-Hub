@@ -432,14 +432,26 @@ def main() -> int:
         action="store_true",
         help="With --fill: don't actually write to the Sheet",
     )
+    ap.add_argument(
+        "--week-ending",
+        default=None,
+        help="Sunday (YYYY-MM-DD) of the Mon-Sun week to pull. Defaults to the "
+             "current week. Use a prior Sunday to pull a past week (keeps the "
+             "Tableau pull aligned with a --week-start ownerville scrape).",
+    )
     args = ap.parse_args()
+
+    week_ending = None
+    if args.week_ending:
+        week_ending = dt.datetime.strptime(args.week_ending, "%Y-%m-%d").date()
 
     if args.out is None:
         ext = "csv" if args.format == "csv" else "xlsx"
         args.out = DEFAULT_OUTPUT_DIR / f"tableau_phase3_download.{ext}"
 
     try:
-        out = download_crosstab(args.out, download_format=args.format)
+        out = download_crosstab(args.out, download_format=args.format,
+                                week_ending=week_ending)
         # Skip the per-rep validation for CSV — _validate_per_rep_file uses
         # openpyxl which can't read CSV. CSV correctness is verified
         # downstream via the parser + Megan's spot-check.

@@ -571,6 +571,15 @@ def main() -> int:
     with ownerville_session(verbose=True) as page:
         print(f"✓ Ownerville session ready. URL: {page.url}")
 
+        # Bound EVERY patchright op so one stuck owner can't hang the whole
+        # run. Without this, an unbounded call (e.g. a goto whose networkidle
+        # never settles) froze the scrape indefinitely on a single owner
+        # (Cody, 2026-06-15). With a cap, the call raises TimeoutError instead,
+        # the per-owner except below catches it, and that owner is skipped so
+        # the rest of the run finishes. 60s is well above any healthy op.
+        page.set_default_timeout(60_000)
+        page.set_default_navigation_timeout(60_000)
+
         aliases_raw = load_aliases()
         if aliases_raw:
             total = sum(len(v) for v in aliases_raw.values())
