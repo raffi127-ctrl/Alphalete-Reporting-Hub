@@ -644,8 +644,7 @@ def write_weekly_formulas(ws, layout: Layout) -> int:
     # unique weekly count). The full design pass masked it by rewriting the
     # summary block afterward, but running this standalone left it clobbered
     # (Megan 2026-05-31).
-    rep_rows = [i for i, v in enumerate(rep_col_vals, start=1)
-                if i >= 3 and v.strip() and not _is_summary_label(v)]
+    rep_rows = _current_zone_rep_rows(rep_col_vals)
     if not rep_rows:
         return 0
 
@@ -1045,6 +1044,33 @@ def _is_summary_label(v: str) -> bool:
     return v.strip().upper().rstrip(TABLEAU_ONLY_MARK).strip() in OFFICE_SUMMARY_LABELS
 
 
+def _current_zone_rep_rows(rep_vals, totals_row=None):
+    """Rep rows (1-based) in the CURRENT (top) zone only.
+
+    Stops at the frozen 'LAST WEEK' label so summary writes
+    (OFFICE TOTALS, % ON BOARD, weekly formulas) never anchor below the
+    frozen block or treat a frozen rep as a current-week rep. Mirrors the
+    zone-scoping fill_owner_tab uses.
+    """
+    lw_row = next(
+        (i for i, v in enumerate(rep_vals, start=1)
+         if isinstance(v, str) and v.strip().upper() == LAST_WEEK_LABEL),
+        None,
+    )
+    rows = []
+    for i, v in enumerate(rep_vals, start=1):
+        if i < 3 or not (v and v.strip()):
+            continue
+        if lw_row is not None and i >= lw_row:
+            break
+        if totals_row is not None and i >= totals_row:
+            break
+        if _is_summary_label(v):
+            continue
+        rows.append(i)
+    return rows
+
+
 def strip_rep_mark(name: str) -> str:
     """Strip the Tableau-only marker from a rep name. Used everywhere
     that compares rep names — Phase 2's ownerville matching must ignore
@@ -1263,12 +1289,7 @@ def write_office_totals_row(ws, layout: Layout) -> None:
     # Find last rep row — but skip any row whose rep_name_col contains
     # 'OFFICE TOTALS' (an old buggy write may have landed the label there
     # instead of col C).
-    rep_rows = [
-        i for i, v in enumerate(rep_vals, start=1)
-        if i >= 3
-        and v and v.strip()
-        and not _is_summary_label(v)
-    ]
+    rep_rows = _current_zone_rep_rows(rep_vals)
     if not rep_rows:
         return
     last_rep_row = rep_rows[-1]
@@ -1276,10 +1297,19 @@ def write_office_totals_row(ws, layout: Layout) -> None:
     # Detect ALL prior OFFICE TOTALS rows — check cols B, C, D since past
     # writes may have placed the label in different cells. Collect every
     # one so we can clear duplicates that earlier buggy runs left behind.
+    # Only sweep stale OFFICE TOTALS in the CURRENT zone — never touch the
+    # frozen LAST WEEK block's own OFFICE TOTALS / summary rows.
+    _lw_row = next(
+        (i for i, v in enumerate(rep_vals, start=1)
+         if isinstance(v, str) and v.strip().upper() == LAST_WEEK_LABEL),
+        None,
+    )
     existing_totals_rows: set[int] = set()
     for probe_col in (2, 3, 4):
         col_vals = ws.col_values(probe_col)
         for i, v in enumerate(col_vals, start=1):
+            if _lw_row is not None and i >= _lw_row:
+                break
             if isinstance(v, str) and v.strip().upper() == "OFFICE TOTALS":
                 existing_totals_rows.add(i)
 
@@ -1519,11 +1549,7 @@ def write_office_summary_block(ws, layout: Layout) -> None:
 
     # Find rep rows above the totals row (skip empty rows + skip totals)
     rep_vals = ws.col_values(layout.rep_name_col)
-    rep_rows = [
-        i for i, v in enumerate(rep_vals, start=1)
-        if i >= 3 and i < totals_row and v and v.strip()
-        and not _is_summary_label(v)
-    ]
+    rep_rows = _current_zone_rep_rows(rep_vals, totals_row=totals_row)
     if not rep_rows:
         return
     last_rep_row = max(rep_rows)

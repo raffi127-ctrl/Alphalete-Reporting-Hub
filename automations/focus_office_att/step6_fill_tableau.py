@@ -225,10 +225,22 @@ def fill_tableau_for_owner(ws, owner_data: dict, layout, dry_run: bool = False) 
     # Build {lowercase_rep_name: row}. Skip the OFFICE TOTALS row.
     # Strip the Tableau-only marker emoji when keying so a previously-
     # marked rep still matches their Tableau name on the next run.
+    #
+    # SCOPE TO THE CURRENT (top) ZONE: stop at the frozen 'LAST WEEK'
+    # label. Without this, a rep present in both weeks maps to their
+    # frozen-block row (last occurrence wins) and this week's production
+    # gets written INTO last week's frozen block, corrupting it.
+    _lw_row = next(
+        (i for i, v in enumerate(rep_col_vals, start=1)
+         if isinstance(v, str) and v.strip().upper() == "LAST WEEK"),
+        None,
+    )
     sheet_reps: dict[str, int] = {}
     for i, name in enumerate(rep_col_vals, start=1):
         if i < 3 or not name or not name.strip():
             continue
+        if _lw_row is not None and i >= _lw_row:
+            break  # reached the frozen LAST WEEK block — never match into it
         if name.strip().upper() == "OFFICE TOTALS":
             continue
         sheet_reps[strip_rep_mark(name).lower().strip()] = i
