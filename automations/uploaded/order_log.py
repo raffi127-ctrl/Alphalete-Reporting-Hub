@@ -54,6 +54,8 @@ CUSTOM_VIEW_URL = (
 # ====================================================================
 
 import asyncio
+import json
+import os
 import re
 import tempfile
 from contextlib import asynccontextmanager
@@ -141,8 +143,14 @@ async def launch_stealth_browser(headless: bool = False) -> AsyncIterator[Page]:
 # ====================================================================
 
 LOGIN_URL = "https://ownerville.com"
-CLOUDFLARE_WAIT_SECONDS = 10
+# Timing knobs — overridable via env for a HEADED manual run where a human
+# clears the Cloudflare 'verify you are human' check by hand. Defaults keep the
+# automated/unattended behavior byte-identical.
+CLOUDFLARE_WAIT_SECONDS = int(os.environ.get("ORDER_LOG_CLOUDFLARE_WAIT_S", "10"))
 PRE_SUBMIT_PAUSE_SECONDS = 3
+# Post-submit landing wait — ALSO where ownerville's post-login security check
+# can surface, so a manual run extends it to give the human time to tilt it.
+POST_LOGIN_WAIT_MS = int(os.environ.get("ORDER_LOG_POST_LOGIN_WAIT_S", "45")) * 1000
 
 USERNAME_SELECTOR = (
     'input[type="email"], input[name="username"], input[name="email"], '
@@ -219,19 +227,53 @@ async def _attempt_login(page: Page) -> None:
     # them without .first trips strict mode.
     logout = page.get_by_text(re.compile(r"^\s*log\s*out\s*$", re.IGNORECASE))
     sidebar = page.locator("a.waves-effect")
-    await logout.or_(sidebar).first.wait_for(state="visible", timeout=45_000)
+    await logout.or_(sidebar).first.wait_for(state="visible",
+                                             timeout=POST_LOGIN_WAIT_MS)
 
 
-async def login(page: Page) -> None:
-    """Sign into Ownerville, recovering from a stale 'Session expired' state.
+async def _inject_ownerville_storage_state(page: Page) -> bool:
+    """Seed the context with the manually-exported ownerville session so the
+    fast-path 'Log Out' check below finds a live login WITHOUT driving the
+    Turnstile form. Reuses tableau_patchright's storage_state file + path
+    (imported, not duplicated). A missing/unreadable file is a no-op — the
+    caller then fails fast. Returns True iff cookies were injected.
 
-    The persistent browser profile sometimes carries an expired ownerville
-    session cookie. After we submit valid credentials the server bounces the
-    page back to a 'Session expired — enter your username again' login screen,
-    so the post-login wait times out (Eve 2026-05-30). When the first attempt
-    doesn't land, we clear cookies and retry once from a fresh session — the
-    happy path keeps its Cloudflare clearance, and we only re-run Cloudflare
-    on the recovery path."""
+    Lazy import keeps order_log's async stack from pulling the sync patchright
+    module at import time (and sidesteps any import cycle via opt_phase)."""
+    from automations.shared.tableau_patchright import OWNERVILLE_STORAGE_STATE
+    if not OWNERVILLE_STORAGE_STATE.exists():
+        print(f"-> no storage_state at {OWNERVILLE_STORAGE_STATE.name}")
+        return False
+    try:
+        state = json.loads(OWNERVILLE_STORAGE_STATE.read_text())
+    except Exception as e:
+        print(f"-> storage_state unreadable ({e!r}) — ignoring")
+        return False
+    cookies = state.get("cookies", [])
+    if cookies:
+        try:
+            await page.context.add_cookies(cookies)
+        except Exception as e:
+            print(f"-> add_cookies failed ({e!r})")
+            return False
+    print(f"-> storage_state: {len(cookies)} cookie(s) injected")
+    return True
+
+
+async def login(page: Page, allow_form_login: bool = False) -> None:
+    """Sign into Ownerville via the exported storage_state session.
+
+    Default path (since 2026-06-17): inject the manually-exported ownerville
+    cookies, then reuse them via the fast-path 'Log Out' check below — no login
+    form is driven, because ownerville's Cloudflare 'verify you are human' check
+    can't be cleared unattended. A missing/expired session FAILS FAST (re-export
+    via output/_scratch_ownerville_export_state.py). allow_form_login=True
+    re-enables the legacy two-step form-drive (interactive/debug ONLY — it hits
+    the Turnstile and stalls unattended)."""
+    # Seed the exported session first so the fast-path can reuse it without
+    # touching the form.
+    await _inject_ownerville_storage_state(page)
+
     # Fast path: the shared browser profile may already hold a live Ownerville
     # session — e.g. Telemapper Knocks logged in just before us in the Daily
     # Metrics run. If a Log Out control is already visible, reuse the session
@@ -248,8 +290,20 @@ async def login(page: Page) -> None:
               "skipping login")
         return
     except PlaywrightTimeoutError:
-        pass  # not logged in — fall through to the full login flow
+        pass  # not logged in — fall through
 
+    # Unattended default: never touch the Turnstile form. Fail fast + clear,
+    # pointing at the same re-export helper the ownerville fail-fast names.
+    if not allow_form_login:
+        from automations.shared.tableau_patchright import OWNERVILLE_STORAGE_STATE
+        raise RuntimeError(
+            "ownerville session expired or missing — run "
+            "output/_scratch_ownerville_export_state.py to re-export "
+            f"{OWNERVILLE_STORAGE_STATE.name}. (storage_state reuse path; the "
+            "login form is disabled because its Cloudflare 'verify you are "
+            "human' check can't be cleared unattended.)")
+
+    # Legacy opt-in form-drive — interactive/debug ONLY (hits the Turnstile).
     for attempt in (1, 2):
         try:
             await _attempt_login(page)
@@ -948,28 +1002,35 @@ async def download_dashboard_csv(
 # Date, then write a formatted .xlsx with status-driven row colors.
 # ====================================================================
 
+# COLUMNS_TO_KEEP and FRIENDLY_HEADERS are positional twins — index N of one
+# maps to index N of the other (df.columns = FRIENDLY_HEADERS in _load_and_clean).
+# Keep them aligned when adding/moving a column.
 COLUMNS_TO_KEEP = [
     "Rep",
     "sp.Order Date (copy)",
     "Customer Name",
+    "sp.Customer Phone",
     "sp.SPM Number",
     "Product Type (Broken Out)",
     "Package",
     "spe.Status",
     "spe.Install Date",
     "Activatoin Date (order log)",  # typo matches source data
+    "Tech Install",
 ]
 
 FRIENDLY_HEADERS = [
     "Rep",
     "Order Date",
     "Customer Name",
+    "Customer Phone",
     "SPM Number",
     "Product Type",
     "Package",
     "Status",
     "Install Date",
     "Activation Date",
+    "Tech Install",
 ]
 
 STATUS_ORDER = [
@@ -1001,7 +1062,12 @@ STATUS_TEXT_COLORS = {
     "Delivered":    "B45F06",
 }
 
-DATE_COLUMN_INDEXES = (2, 8, 9)
+# Derived from FRIENDLY_HEADERS by label (1-based) so inserting/moving a column
+# can't silently shift date formatting onto the wrong column.
+DATE_COLUMN_NAMES = ("Order Date", "Install Date", "Activation Date")
+DATE_COLUMN_INDEXES = tuple(
+    FRIENDLY_HEADERS.index(name) + 1 for name in DATE_COLUMN_NAMES
+)
 
 
 def _status_sort_key(value) -> int:
@@ -1134,7 +1200,8 @@ def csv_to_xlsx(csv_path: Path, output_dir: Path) -> Path:
 #  Entry point
 # ====================================================================
 
-async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True) -> None:
+async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True,
+               allow_form_login: bool = False) -> None:
     # Intermediate CSV goes to a tempdir that auto-cleans on exit.
     # Final .xlsx is the only artifact left on disk (in Downloads).
     xlsx_path: Optional[Path] = None
@@ -1142,7 +1209,7 @@ async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True) -> None
         tmp_dir = Path(tmp)
 
         async with launch_stealth_browser() as page:
-            await login(page)
+            await login(page, allow_form_login=allow_form_login)
 
             tableau_page = await navigate_to_workbook(
                 page,
@@ -1229,5 +1296,9 @@ if __name__ == "__main__":
                      help=f"Tableau 'Owner Name' filter value (default: {OWNER_NAME!r})")
     _ap.add_argument("--no-slack", action="store_true",
                      help="Skip the Slack post (just save the .xlsx to Downloads).")
+    _ap.add_argument("--allow-form-login", action="store_true",
+                     help="Enable the legacy ownerville form-drive (HEADED manual "
+                          "run ONLY — you clear the Cloudflare check by hand).")
     _args = _ap.parse_args()
-    asyncio.run(main(_args.owner, post_to_slack=not _args.no_slack))
+    asyncio.run(main(_args.owner, post_to_slack=not _args.no_slack,
+                     allow_form_login=_args.allow_form_login))
