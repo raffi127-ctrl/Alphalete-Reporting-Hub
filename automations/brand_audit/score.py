@@ -195,13 +195,27 @@ def _score_reviews(results: dict, company_name: str) -> SectionScore:
                         respond=respond)
 
 
-def _score_reputation(results: dict, company_name: str) -> SectionScore:
+def _subreddit_from_url(url: str) -> str:
+    from urllib.parse import urlparse
+    parts = [p for p in urlparse(url or "").path.split("/") if p]
+    return parts[1] if len(parts) >= 2 and parts[0].lower() == "r" else ""
+
+
+def _score_reputation(results: dict, company) -> SectionScore:
+    name = getattr(company, "name", None) or (company if isinstance(company, str) else "")
     serp = (results.get("serp") or {}).get("metrics") or {}
     sev = (results.get("serp") or {}).get("evidence") or {}
     reddit = (results.get("reddit") or {}).get("metrics") or {}
     website = (results.get("website") or {}).get("metrics") or {}
+    gev = (results.get("google_reviews") or {}).get("evidence") or {}
     google = dict((results.get("google_reviews") or {}).get("metrics") or {})
-    google["_name"] = company_name   # so advice can use the brand name
+    google["_name"] = name           # so advice can use the brand name
+    # one-tap "leave a review" link from the resolved Google place
+    place_id = gev.get("place_id")
+    review_link = (f"https://search.google.com/local/writereview?placeid={place_id}"
+                   if place_id else "")
+    subreddit = _subreddit_from_url(getattr(company, "reddit", ""))
+    website_url = getattr(company, "website", "") or (website.get("root") if isinstance(website, dict) else "")
     reasons = []
     score = 100.0
 
@@ -253,7 +267,9 @@ def _score_reputation(results: dict, company_name: str) -> SectionScore:
         for e in (sev.get("page1") or [])
     ]
     from automations.brand_audit.seo_advice import build_recommendations
-    advice = build_recommendations(serp, reddit, website, google)
+    advice = build_recommendations(serp, reddit, website, google,
+                                   subreddit=subreddit, website_url=website_url,
+                                   review_link=review_link)
     return SectionScore("reputation", "Reputation / Search", round(score),
                         grade_from_score(score), reasons, display,
                         page1=page1, advice=advice)
@@ -335,14 +351,16 @@ def _score_social(results: dict) -> SectionScore:
                         posts=posts_rows)
 
 
-def build_scorecard(results: dict, company_name: str = "") -> Scorecard:
-    """results: {source_name: CollectorResult.as_dict()}."""
+def build_scorecard(results: dict, company="") -> Scorecard:
+    """results: {source_name: CollectorResult.as_dict()}. `company` may be a
+    Company object (preferred — lets advice build copy-paste links) or a name."""
     def m(src):
         return (results.get(src) or {}).get("metrics") or {}
 
+    cname = getattr(company, "name", company) or ""
     sections = [
-        _score_reviews(results, company_name),
-        _score_reputation(results, company_name),
+        _score_reviews(results, cname),
+        _score_reputation(results, company),
         _score_website(m("website")),
         _score_social(results),
     ]

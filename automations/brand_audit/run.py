@@ -45,7 +45,7 @@ def audit_company(company) -> tuple[dict, dict]:
         results[r.source] = r.as_dict()
         status = "ok" if results[r.source]["ok"] else f"FAILED: {results[r.source]['error']}"
         print(f"  · {r.source}: {status}")
-    card = score.build_scorecard(results, company.name)
+    card = score.build_scorecard(results, company)
     _record_review_snapshots(company, results)
     return card.as_dict(), results
 

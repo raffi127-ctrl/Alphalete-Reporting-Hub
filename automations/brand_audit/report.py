@@ -123,13 +123,19 @@ def _advice_html(advice: list[dict]) -> str:
         return ""
     items = []
     for a in advice:
+        steps = "".join(f"<li>{_esc(s)}</li>" for s in a.get("steps", []))
+        paste = ""
+        if a.get("paste"):
+            paste = ('<div class="paste-label">Copy &amp; paste this:</div>'
+                     f'<div class="paste-box">{_esc(a["paste"])}</div>')
         items.append(
-            f'<li><span class="prio prio-{_esc(a["priority"]).lower()}">'
-            f'{_esc(a["priority"])}</span> {_esc(a["action"])}'
-            f'<div class="why"><b>Who:</b> {_esc(a.get("who",""))} &nbsp;·&nbsp; '
-            f'<b>Gets you:</b> {_esc(a.get("result",""))}</div></li>')
-    return ('<div class="advice-title">What to do — the ICD\'s action list'
-            '</div><ul class="advice">' + "".join(items) + "</ul>")
+            f'<div class="act"><div class="act-h">'
+            f'<span class="act-prio">{_esc(a.get("priority",""))}</span>'
+            f'<b>{_esc(a.get("title",""))}</b></div>'
+            f'<div class="act-who">Who: {_esc(a.get("who",""))}</div>'
+            f'<ol class="steps">{steps}</ol>{paste}</div>')
+    return ('<div class="advice-title">What to do — copy-paste steps for the ICD'
+            '</div>' + "".join(items))
 
 
 def _section_html(s: dict) -> str:
@@ -260,14 +266,19 @@ def render_html(company, scorecard: dict, narrative: str,
   .cat-prof {{ background:#eaf1fb; color:#1c5fa6; }}
   .cat-neg {{ background:#fae6e6; color:#b42318; }}
   .cat-neu {{ background:#f1f2f4; color:#6b7280; }}
-  .advice {{ margin:0; padding-left:0; list-style:none; }}
-  .advice li {{ font-size:12px; margin:6px 0; padding-left:2px; }}
-  .why {{ font-size:11px; color:#6b7280; margin:1px 0 0 2px; }}
-  .prio {{ font-size:10px; font-weight:700; padding:1px 7px; border-radius:10px;
-          margin-right:6px; }}
-  .prio-high {{ background:#fae6e6; color:#b42318; }}
-  .prio-medium {{ background:#faf0da; color:#854f0b; }}
-  .prio-low {{ background:#f1f2f4; color:#6b7280; }}
+  .act {{ background:#f7f8fa; border:1px solid #eceef1; border-radius:8px;
+         padding:10px 12px; margin:8px 0; }}
+  .act-h {{ font-size:13px; }}
+  .act-prio {{ font-size:10px; font-weight:700; background:#e6f0fb; color:#1c5fa6;
+              padding:1px 7px; border-radius:10px; margin-right:6px; }}
+  .act-who {{ font-size:11px; color:#6b7280; margin:2px 0 4px; }}
+  ol.steps {{ margin:4px 0; padding-left:20px; font-size:12.5px; color:#2a2e35; }}
+  ol.steps li {{ margin:2px 0; }}
+  .paste-label {{ font-size:11px; font-weight:700; color:#3a3f48; margin:6px 0 2px; }}
+  .paste-box {{ font-family:ui-monospace, Menlo, Consolas, monospace; font-size:12px;
+               background:#fff; border:1px dashed #b4c7e0; border-radius:6px;
+               padding:8px 10px; color:#1a1d24; white-space:pre-wrap;
+               user-select:all; }}
   .attn-wrap {{ padding:18px 28px; background:#fff6f6; border-top:1px solid #f0d4d4; }}
   .attn-wrap h2 {{ font-size:15px; margin:0 0 10px; color:#b42318; }}
   .attention {{ list-style:none; margin:0; padding:0; }}

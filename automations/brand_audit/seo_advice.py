@@ -1,84 +1,81 @@
-"""Turn the audit data into a concrete, plain-English action list — what the ICD
-actually DOES this week, not SEO strategy.
+"""Dead-simple, copy-paste SEO/reputation actions for the ICD.
 
-Each item: {priority, action (verb-first, jargon-free), who, result}. Generated
-from THIS run's data so it stays specific and honest. No "H1 / schema /
-backlink" jargon — anything technical is phrased as "ask your web person to…".
+The ICD is a sales owner, not a marketer — every action is written like you're
+explaining it to a 7-year-old: a plain title, numbered tap-by-tap steps, and
+(where it helps) the EXACT words to copy and paste. No jargon, no "do this and
+maybe that" — one clear thing to do.
+
+Each item: {priority, title, who, steps: [str, ...], paste: str|""}.
 """
 from __future__ import annotations
 
 
-def build_recommendations(serp: dict, reddit: dict, website: dict,
-                          google: dict) -> list[dict]:
-    recs: list[dict] = []
+def build_recommendations(serp: dict, reddit: dict, website: dict, google: dict,
+                          *, subreddit: str = "", website_url: str = "",
+                          review_link: str = "") -> list[dict]:
     name = google.get("_name") or "your company"
+    sub = subreddit or "yoursubreddit"
+    site = website_url or "your website"
+    review_link = review_link or "(your Google review link)"
 
     own_pos = serp.get("own_site_position")
     top_neg = serp.get("top_negative_position")
     neg_on_page1 = serp.get("negative_results_on_page1") or 0
-    has_panel = serp.get("has_knowledge_panel")
-    neg_threads = reddit.get("negative_mentions") or 0
-    has_blog = website.get("has_blog")
-
     negative_outranks_own = neg_on_page1 and (
         own_pos is None or (top_neg is not None and top_neg < own_pos))
 
-    if negative_outranks_own:
-        recs.append({
-            "priority": "High",
-            "action": f'Put one page on {name}\'s website titled like "Working '
-                      f'at {name} — what to really expect" that honestly answers '
-                      f'the questions people ask in that #%s Reddit thread.'
-                      % (top_neg or 1),
-            "who": "ICD writes the honest answers → web person posts the page",
-            "result": "Gives Google a page of YOURS to show instead of the "
-                      "Reddit thread.",
-        })
-        recs.append({
-            "priority": "High",
-            "action": "Post in your own subreddit once a week (even a short "
-                      "update or a customer win).",
-            "who": "ICD",
-            "result": "Active subreddits climb in Google — yours can move above "
-                      "the negative thread.",
-        })
+    recs: list[dict] = []
 
+    # 1) Get more Google reviews — the single easiest, highest-impact thing.
     recs.append({
-        "priority": "High" if negative_outranks_own else "Medium",
-        "action": "Ask 10 happy customers to leave a Google review this week "
-                  "(text them the review link right after the sale).",
-        "who": "ICD + reps",
-        "result": "More fresh 5★ reviews keep your %s rating strong and front-"
-                  "and-center." % (google.get("rating") or "high"),
+        "priority": "Do this first",
+        "title": "Text 10 happy customers and ask for a Google review",
+        "who": "You (and your reps)",
+        "steps": [
+            "Open the text messages on your phone.",
+            "Pick 10 customers who were happy.",
+            "Copy the message below.",
+            "Send it to each one — change [first name] to their name.",
+            "Send the link in the message too (it opens straight to leaving a review).",
+        ],
+        "paste": (f"Hi [first name]! Thanks again for choosing {name}. If you have "
+                  f"30 seconds, leaving us a quick Google review would mean a lot: "
+                  f"{review_link}"),
     })
 
-    if own_pos and own_pos > 1:
-        recs.append({
-            "priority": "Medium",
-            "action": f'Ask whoever runs the website to make the homepage title '
-                      f'and the big heading say exactly "{name}".',
-            "who": "Web person (ICD forwards this)",
-            "result": "Helps your own site beat the Reddit thread for the #1 "
-                      "spot (you're #%s now)." % own_pos,
-        })
+    # 2) Post in the company's own subreddit (uses the weekly draft we send).
+    recs.append({
+        "priority": "Do this weekly",
+        "title": "Post once a week in your Reddit group",
+        "who": "You",
+        "steps": [
+            f"Open Reddit and go to: reddit.com/r/{sub}",
+            "Log in.",
+            "Tap the button that says \"Create Post\".",
+            "Open your Slack channel #alphaletemarketingbrandhealth — copy the "
+            "post we wrote for you there.",
+            "Paste it in, then tap \"Post\".",
+        ],
+        "paste": "",
+    })
 
-    if not has_panel:
+    # 3) Only if a negative result sits above the owned site: get a page up.
+    if negative_outranks_own:
         recs.append({
-            "priority": "Medium",
-            "action": "Claim and fully fill out your Google Business Profile "
-                      "(photos, hours, description).",
-            "who": "ICD",
-            "result": "Unlocks the info box on the right of Google — branded "
-                      "space that's yours.",
-        })
-
-    if neg_threads:
-        recs.append({
-            "priority": "Low",
-            "action": "Never argue inside the negative Reddit threads — answer "
-                      "the concerns in your OWN content instead.",
-            "who": "ICD",
-            "result": "Arguing ranks the thread higher; owned answers outrank it.",
+            "priority": "Important",
+            "title": "Ask your website person to add one new page",
+            "who": "Forward this to whoever runs the website",
+            "steps": [
+                "Open your email or text to your website person.",
+                "Copy the message below and send it to them.",
+                "That's it — they do the rest.",
+            ],
+            "paste": (
+                f"Hey — can you add a new page to {site} titled \"Working at "
+                f"{name} — what it's really like\"? Please make the page's title "
+                f"and big heading say \"{name}\" exactly. I'll send you the words "
+                f"to put on it. Goal: it should show up on Google when people "
+                f"search our company name. Thanks!"),
         })
 
     return recs
