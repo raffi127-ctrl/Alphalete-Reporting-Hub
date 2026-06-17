@@ -1194,6 +1194,31 @@ def main() -> int:
         except Exception as e:
             say(f"  tab-color refresh failed (non-fatal): {e}")
 
+        # Re-extend the LAST WEEK conditional shading. The per-owner design
+        # pass (Phase 2/3) runs reset_conditional_formatting, which re-ranges
+        # the column shading to the CURRENT zone only — leaving the frozen
+        # block unshaded (the white-frozen-block bug, 2026-06-16). This must
+        # be the LAST conditional op of the run.
+        say("Re-extending LAST WEEK conditional shading...")
+        import time as _t
+        _nc = 0
+        for ws in sh.worksheets():
+            if ws.title in NON_OWNER_TABS:
+                continue
+            for _att in range(3):
+                try:
+                    _normalize_lastweek_conditional(ws)
+                    _nc += 1
+                    break
+                except Exception as e:
+                    if "429" in str(e) and _att < 2:
+                        _t.sleep(20)
+                        continue
+                    say(f"  {ws.title}: shading re-extend skipped — {type(e).__name__}")
+                    break
+            _t.sleep(0.4)
+        say(f"  re-extended on {_nc} tab(s)")
+
         # Re-collapse the headroom now the new fill set the rep count / summary
         # row, so each tab reads current → spacer → LAST WEEK cleanly.
         say("Collapsing LAST WEEK headroom...")
