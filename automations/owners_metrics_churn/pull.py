@@ -270,7 +270,7 @@ NDS_KHALIL_URL = (
 NDS_COLTEN_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "NDS-SNRES-ATT-OOFWorkbook/CHURNRATES/"
-    "28f34b4b-a7fb-427a-a984-337fd1c59461/ColtensCaptainship318?:iid=1"
+    "32daf35c-78ac-480e-b7b7-e9c24bdacba8/ColtensCaptainshipChurn?:iid=1"  # re-saved 2026-06-17 (old view 28f34b4b… returned Jairo's data)
 )
 NDS_JAIRO_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
