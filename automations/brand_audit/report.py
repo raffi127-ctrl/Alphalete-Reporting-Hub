@@ -71,12 +71,20 @@ def _social_posts_html(posts: list[dict]) -> str:
         return ""
     rows = []
     for p in posts:
-        n = p.get("posts_since_audit")
+        n = p.get("posts_last_7d")
         val = '<span class="muted">needs API</span>' if n is None else str(n)
         rows.append(f'<tr><td>{_esc(p["platform"])}</td><td>{val}</td></tr>')
-    return ('<div class="serp-title">Posts since last audit</div>'
+    return ('<div class="serp-title">Posts in the last 7 days</div>'
             f'<table class="rev"><tr><th>Platform</th>'
             f'<th>Posts</th></tr>{"".join(rows)}</table>')
+
+
+def _note_html(note: str) -> str:
+    if not note:
+        return ""
+    paras = "".join(f"<p>{_esc(p.strip())}</p>" for p in note.split("\n\n") if p.strip())
+    return ('<div class="note-title">Performance feedback</div>'
+            f'<div class="note-box">{paras}</div>')
 
 
 def _respond_html(respond: list[dict]) -> str:
@@ -171,6 +179,8 @@ def _section_html(s: dict) -> str:
         body += _design_review_html(s["review"])
     if s.get("posts"):
         body += _social_posts_html(s["posts"])
+    if s.get("note"):
+        body += _note_html(s["note"])
     if s.get("page1"):
         body += _page1_html(s["page1"])
     if s.get("advice"):
@@ -201,6 +211,9 @@ _PRETTY = {
     "secure_https": "Secure (HTTPS)", "blog_post_count": "Blog posts",
     "pages_updated_90d": "Updated (90d)", "postable_channels": "Postable channels",
     "followers_total": "Followers", "avg_engagement_rate": "Engagement rate",
+    "ig_followers": "IG followers", "ig_posts_7d": "IG posts (7d)",
+    "ig_last_post_days": "IG last post (days)", "ig_avg_likes": "IG avg likes",
+    "ig_engagement_pct": "IG engagement %",
 }
 
 
@@ -279,6 +292,10 @@ def render_html(company, scorecard: dict, narrative: str,
   .dr-actions-title {{ font-size:12px; font-weight:700; margin:8px 0 3px; }}
   .dr-actions {{ margin:0; padding-left:18px; font-size:12px; color:#2a2e35; }}
   .dr-actions li {{ margin:2px 0; }}
+  .note-title {{ margin:12px 0 4px; font-size:13px; font-weight:700; }}
+  .note-box {{ background:#f4f7fb; border-left:3px solid #2D6CDF; border-radius:0 8px 8px 0;
+              padding:8px 12px; font-size:12px; color:#2a2e35; }}
+  .note-box p {{ margin:5px 0; line-height:1.5; }}
   .serp-row {{ display:flex; align-items:center; gap:8px; padding:5px 0;
               border-top:1px solid #f3f4f6; font-size:12px; }}
   .serp-row .pos {{ color:#9aa0a8; width:16px; }}

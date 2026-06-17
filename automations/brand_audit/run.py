@@ -28,11 +28,11 @@ from automations.brand_audit import intake, score, report, alerts, sheet_log
 from automations.brand_audit.config import DEFAULT_COMPANY, DEFAULT_INTAKE_SHEET_ID
 from automations.brand_audit.collectors import (
     google_reviews, serp, reddit, website, reputation, social_public,
-    website_review,
+    website_review, social_meta,
 )
 
 _COLLECTORS = [google_reviews, serp, reddit, website, reputation,
-               social_public, website_review]
+               social_public, website_review, social_meta]
 
 
 def audit_company(company) -> tuple[dict, dict]:

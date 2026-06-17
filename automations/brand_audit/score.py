@@ -78,6 +78,7 @@ class SectionScore:
     advice: list = field(default_factory=list)    # SEO/reputation action plan
     posts: list = field(default_factory=list)     # per-platform posts since audit (social)
     review: dict = field(default_factory=dict)    # visual design critique (website)
+    note: str = ""                                # free-text feedback (social)
 
     def as_dict(self) -> dict:
         return {"key": self.key, "label": self.label, "score": self.score,
@@ -85,7 +86,7 @@ class SectionScore:
                 "display": self.display, "rows": self.rows,
                 "respond": self.respond, "page1": self.page1,
                 "advice": self.advice, "posts": self.posts,
-                "review": self.review}
+                "review": self.review, "note": self.note}
 
 
 @dataclass
@@ -329,30 +330,39 @@ def _score_social(results: dict) -> SectionScore:
     blocked = [c["label"] for c in channels.values()
                if c.get("connected") and not c.get("postable")]
 
-    # Per-platform "posts since last audit" — structure now, fills in once a
-    # platform API / aggregator is connected (post counts aren't on public pages).
+    # Real per-platform numbers from the Meta API where connected (IG/FB);
+    # other platforms stay "needs API".
+    meta = (results.get("social_meta") or {}).get("metrics") or {}
+    mev = (results.get("social_meta") or {}).get("evidence") or {}
+    ig = meta.get("instagram") or {}
+    fb = meta.get("facebook") or {}
+    by_platform = {"Instagram": ig.get("posts_last_7d"),
+                   "Facebook": fb.get("posts_last_7d")}
     posts_rows = [
         {"platform": c["label"],
-         "posts_since_audit": c.get("posts_since_audit")}   # None until API
+         "posts_last_7d": by_platform.get(c["label"])}   # None = needs API
         for c in channels.values() if c.get("connected")
     ]
 
     reasons = [f"Present on {len(connected)} platform(s): "
                + (", ".join(connected) or "none") + "."]
     if blocked:
-        reasons.append("Excluded from posting (by rule): "
-                       + ", ".join(blocked) + ".")
-    reasons.append("Posts-since-last-audit, engagement, and followers need a "
-                   "platform API (Meta) or aggregator — not on public pages, so "
-                   "this stays N/A until one is connected.")
-    display = {
-        "channels_connected": len(connected),
-        "postable_channels": len(postable),
-        "followers_total": social.get("followers_total"),     # None until API
-        "avg_engagement_rate": social.get("avg_engagement_rate"),
-    }
+        reasons.append("Excluded from posting (by rule): " + ", ".join(blocked) + ".")
+    if not ig and not fb:
+        reasons.append("Connect the Meta API to unlock real post counts + "
+                       "engagement (LinkedIn/X stay limited).")
+    display = {"channels_connected": len(connected),
+               "postable_channels": len(postable)}
+    if ig:
+        display.update({
+            "ig_followers": ig.get("followers"),
+            "ig_posts_7d": ig.get("posts_last_7d"),
+            "ig_last_post_days": ig.get("last_post_age_days"),
+            "ig_avg_likes": ig.get("avg_likes"),
+            "ig_engagement_pct": ig.get("engagement_rate_pct"),
+        })
     return SectionScore("social", "Social", None, "N/A", reasons, display,
-                        posts=posts_rows)
+                        posts=posts_rows, note=mev.get("feedback", ""))
 
 
 def build_scorecard(results: dict, company="") -> Scorecard:

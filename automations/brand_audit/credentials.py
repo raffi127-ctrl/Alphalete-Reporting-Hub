@@ -64,6 +64,13 @@ def anthropic_api_key() -> str:
     return _resolve("anthropic_api_key", "ANTHROPIC_API_KEY")
 
 
+def optional(key: str, env: str | None = None):
+    """Return a key if present (file or env), else None — for credentials that
+    only some companies have wired up (e.g. Meta token). Never raises."""
+    val = str(_file().get(key) or os.environ.get(env or key.upper(), "")).strip()
+    return val or None
+
+
 def has(key: str) -> bool:
     """True if a key is available without raising — lets collectors skip soft."""
     try:
