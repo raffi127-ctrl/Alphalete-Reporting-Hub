@@ -115,12 +115,19 @@ def collect(company) -> CollectorResult:
     own_position = None
     negatives = []
     page1 = []
+    serp_ratings = {}   # site -> {rating, reviews} lifted from Google rich snippets
+    _RATING_SITES = {"indeed.com": "indeed", "glassdoor.com": "glassdoor"}
     for r in organic:
         pos = r.get("position")
         title = r.get("title", "")
         link = r.get("link", "")
         snippet = r.get("snippet", "")
         dom = _domain(link)
+        rich = ((r.get("rich_snippet") or {}).get("top") or {}).get("detected_extensions") or {}
+        for site_dom, key in _RATING_SITES.items():
+            if dom.endswith(site_dom) and rich.get("rating") is not None and key not in serp_ratings:
+                serp_ratings[key] = {"rating": rich.get("rating"),
+                                     "reviews": rich.get("reviews")}
         is_own = bool(own_domain) and dom.endswith(own_domain)
         if is_own and own_position is None:
             own_position = pos
@@ -152,6 +159,7 @@ def collect(company) -> CollectorResult:
         "profile_count": cat_counts["profile"],
         "neutral_count": cat_counts["neutral"],
         "brand_controlled_count": cat_counts["owned"] + cat_counts["profile"],
+        "serp_ratings": serp_ratings,   # {indeed:{rating,reviews}, glassdoor:{...}}
     }
     res.evidence["page1"] = page1
     res.evidence["knowledge_graph"] = {"title": kg.get("title"),

@@ -129,6 +129,16 @@ def _score_reviews(results: dict, company_name: str) -> SectionScore:
     google = (results.get("google_reviews") or {}).get("metrics") or {}
     gev = (results.get("google_reviews") or {}).get("evidence") or {}
     rep = (results.get("reputation") or {}).get("metrics") or {}
+    serp_ratings = ((results.get("serp") or {}).get("metrics") or {}).get("serp_ratings") or {}
+
+    def _site(name, rep_rating_key, rep_count_key, serp_key):
+        # prefer the direct scrape; fall back to the Google rich-snippet rating
+        rating = rep.get(rep_rating_key)
+        count = rep.get(rep_count_key)
+        if rating is None and serp_ratings.get(serp_key):
+            rating = serp_ratings[serp_key].get("rating")
+            count = count if count is not None else serp_ratings[serp_key].get("reviews")
+        return rating, count
 
     rating = google.get("rating")
     count = google.get("review_count")
@@ -140,13 +150,15 @@ def _score_reviews(results: dict, company_name: str) -> SectionScore:
         _review_site_row(company_name, "Google", rating, count, readable=True,
                          below5=google.get("below5_in_sample"),
                          below5_partial=True),  # only the 5-review sample
-        _review_site_row(company_name, "Glassdoor", rep.get("glassdoor_rating"),
-                         rep.get("glassdoor_review_count"),
-                         readable=rep.get("glassdoor_rating") is not None),
-        _review_site_row(company_name, "Indeed", rep.get("indeed_rating"),
-                         rep.get("indeed_review_count"),
-                         readable=rep.get("indeed_rating") is not None),
     ]
+    gd_rating, gd_count = _site("Glassdoor", "glassdoor_rating",
+                                "glassdoor_review_count", "glassdoor")
+    in_rating, in_count = _site("Indeed", "indeed_rating",
+                                "indeed_review_count", "indeed")
+    rows.append(_review_site_row(company_name, "Glassdoor", gd_rating, gd_count,
+                                 readable=gd_rating is not None))
+    rows.append(_review_site_row(company_name, "Indeed", in_rating, in_count,
+                                 readable=in_rating is not None))
 
     # --- below-5★ reviews to respond to (what we can currently see) ----------
     from automations.brand_audit.respond_draft import draft_reply
