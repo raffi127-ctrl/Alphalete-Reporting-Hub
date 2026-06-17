@@ -529,6 +529,23 @@ _FAILURE_SIGNATURES: list[dict] = [
                 "the site had logged out), so it couldn't reach the report's "
                 "website. Launching Report Chrome, signing in, and re-running "
                 "should fix it."},
+    {"needles": ("auto-relogin failed", "ownerville auto-relogin",
+                 "ownerville login did not complete", "no rqst after a fresh login",
+                 "_ensure_ownerville_logged_in", "still no rqst"),
+     "headline": "The ownerville login failed (Cloudflare check or saved "
+                 "credentials) — NOT a Tableau worksheet problem.",
+     "fix": "Open ownerville once in the report's browser and clear the 'verify "
+            "you're human' (Cloudflare) box so the session warms up, then re-run. "
+            "Also confirm ownerville-creds.json has the right username/password. "
+            "A scheduled/unattended run can't clear Cloudflare on its own — a "
+            "person has to warm the login first.",
+     "link": "",
+     "message": "A report run failed at the ownerville login (every Tableau pull "
+                "signs in through ownerville first). It couldn't get a valid "
+                "session — usually a Cloudflare 'verify you're human' block on an "
+                "unattended run, or wrong/missing saved credentials. Open "
+                "ownerville in the report's browser, clear the Cloudflare check to "
+                "warm the session, then re-run."},
     {"needles": ("invalid_grant", "refresherror", "token has been expired",
                  "token has been revoked", "invalid credentials"),
      "headline": "The Google sign-in for the Sheet expired.",
