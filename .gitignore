@@ -3,6 +3,7 @@ output/
 service-account.json
 oauth-token.json
 ownerville-creds.json
+brand-audit-keys.json
 .venv/
 __pycache__/
 *.pyc
