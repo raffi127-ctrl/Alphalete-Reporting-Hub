@@ -521,6 +521,7 @@ def _tail_log(log_path: str | Path, lines: int = 40) -> str:
 _FAILURE_SIGNATURES: list[dict] = [
     {"needles": ("port 9222", "no ownerville tab", "debug chrome isn't running",
                  "no ownerville tab found", "chrome is open but no ownerville"),
+     "pre_manifest": True,
      "headline": "Report Chrome isn't running, or the site got logged out.",
      "fix": "Launch Report Chrome from the sidebar, log into the report's "
             "website, then click Run Again.",
@@ -532,6 +533,7 @@ _FAILURE_SIGNATURES: list[dict] = [
     {"needles": ("auto-relogin failed", "ownerville auto-relogin",
                  "ownerville login did not complete", "no rqst after a fresh login",
                  "_ensure_ownerville_logged_in", "still no rqst"),
+     "pre_manifest": True,
      "headline": "The ownerville login failed (Cloudflare check or saved "
                  "credentials) — NOT a Tableau worksheet problem.",
      "fix": "Open ownerville once in the report's browser and clear the 'verify "
@@ -548,6 +550,7 @@ _FAILURE_SIGNATURES: list[dict] = [
                 "warm the session, then re-run."},
     {"needles": ("invalid_grant", "refresherror", "token has been expired",
                  "token has been revoked", "invalid credentials"),
+     "pre_manifest": True,
      "headline": "The Google sign-in for the Sheet expired.",
      "fix": "Re-authorize Google access (the OAuth login), then click Run "
             "Again. Ask Megan if you're not sure how.",
@@ -556,6 +559,7 @@ _FAILURE_SIGNATURES: list[dict] = [
                 "expired. The OAuth token needs re-authorizing before the "
                 "report can write to the Sheet again."},
     {"needles": ("429", "quota exceeded", "resource_exhausted", "rate limit"),
+     "pre_manifest": True,
      "headline": "Google Sheets hit its per-minute limit.",
      "fix": "Wait about 2 minutes, then click Run Again — the run picks up "
             "where it stopped, so nothing already done is lost.",
@@ -611,14 +615,49 @@ _FAILURE_SIGNATURES: list[dict] = [
 ]
 
 
+_ERR_LINE_RE = re.compile(r"^([A-Za-z_][\w.]*(?:Error|Exception|Timeout)):\s*(.+)$")
+
+
+def _extract_error_line(log_text: str) -> str | None:
+    """Pull the most informative real error out of a run log — the LAST
+    'SomeError: message' traceback line (the outermost raised exception). Used
+    as a fallback so an UNRECOGNIZED failure still names its actual cause from
+    the log, instead of falling back to a Tableau guess or no cause at all.
+    Per Megan 2026-06-17: the Hub must say the real cause, not just 'Tableau'."""
+    if not log_text:
+        return None
+    last = None
+    for raw in log_text.splitlines():
+        m = _ERR_LINE_RE.match(raw.strip())
+        if m:
+            last = f"{m.group(1)}: {m.group(2).strip()}"
+    if last:
+        return last[:300]
+    # No exception line — fall back to the last 'failed'/'error' summary line.
+    for raw in reversed(log_text.splitlines()):
+        s = raw.strip()
+        if s and ("failed" in s.lower() or s.lower().startswith("error")):
+            return s[:300]
+    return None
+
+
 def _diagnose_run_failure(log_text: str) -> tuple[str, str] | None:
     """Translate a failed run's log into (headline, what-to-do).
-    Returns None when nothing recognizable matched — the caller then
-    falls back to the report's generic failure message."""
+    Returns None only when the log is empty — otherwise it always names a
+    cause: a known signature if one matches, else the actual error pulled
+    from the log (never a generic Tableau guess)."""
     low = (log_text or "").lower()
     for sig in _FAILURE_SIGNATURES:
         if any(n in low for n in sig["needles"]):
             return sig["headline"], sig["fix"]
+    # No known signature — surface the REAL error from the log so the Hub
+    # still reports an accurate cause (not a default Tableau flag).
+    err = _extract_error_line(log_text)
+    if err:
+        return (f"The run hit an error: {err}",
+                "Read the full traceback in the run log below, fix that specific "
+                "error, then re-run. (If it looks like a transient Tableau/network "
+                "blip, try Run Again first.)")
     return None
 
 
@@ -629,7 +668,20 @@ def _failure_remediation(report_id: str, log_text: str) -> dict | None:
     link + a tailored message); falls back to the generic log-signature match.
     `link` is "" when unknown; `message` is neutral copy-paste text. Powers the
     Hub's failure callout (why → fix → link → message-to-send)."""
-    # 1) Report-provided remediation from the standard manifest (most specific).
+    low = (log_text or "").lower()
+
+    def _sig_dict(sig: dict) -> dict:
+        return {"reason": sig["headline"], "fix": sig["fix"],
+                "link": sig.get("link", ""), "message": sig.get("message", "")}
+
+    # 1) High-confidence infrastructure causes (login / OAuth / quota / Chrome)
+    #    win over the report's manifest — they are NOT Tableau-data problems, so
+    #    a Tableau-oriented manifest message would mislead.
+    for sig in _FAILURE_SIGNATURES:
+        if sig.get("pre_manifest") and any(n in low for n in sig["needles"]):
+            return _sig_dict(sig)
+    # 2) Report-provided manifest remediation (best for Tableau-data issues —
+    #    it knows the exact view + link).
     try:
         from automations.shared import run_manifest as _rm
         rem = _rm.failure_remediation(report_id) if report_id else None
@@ -638,12 +690,20 @@ def _failure_remediation(report_id: str, log_text: str) -> dict | None:
     if rem:
         return {"reason": rem.get("reason", ""), "fix": rem.get("fix", ""),
                 "link": rem.get("link", ""), "message": rem.get("message", "")}
-    # 2) Generic signature match on the log.
-    low = (log_text or "").lower()
+    # 3) Remaining generic signatures (Tableau worksheet / timeout / etc.).
     for sig in _FAILURE_SIGNATURES:
         if any(n in low for n in sig["needles"]):
-            return {"reason": sig["headline"], "fix": sig["fix"],
-                    "link": sig.get("link", ""), "message": sig.get("message", "")}
+            return _sig_dict(sig)
+    # 4) Last resort: surface the ACTUAL error from the log so the Hub still
+    #    names a real cause instead of nothing (Megan 2026-06-17).
+    err = _extract_error_line(log_text)
+    if err:
+        return {"reason": f"The run hit an error: {err}",
+                "fix": "Read the full traceback in the run log, fix that error, "
+                       "then re-run.",
+                "link": "",
+                "message": f"A report run failed with: {err}. See the full "
+                           "log/traceback to fix it, then re-run."}
     return None
 
 
