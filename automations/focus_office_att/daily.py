@@ -464,6 +464,22 @@ def rollover_to_last_week(sh, only=None, logfn=print) -> int:
                           "startIndex": end_row + 1, "endIndex": LAST_WEEK_LABEL_ROW - 1},
                 "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}})
         ws.spreadsheet.batch_update({"requests": requests})
+        # Re-sequence the frozen # (col A): the snapshot copied the current
+        # block's computed numbers and the sortRange above scrambles those
+        # static values. Number the frozen reps 1..N in their sorted order
+        # (the current block's # is a =ROW()-2 formula that self-renumbers;
+        # the frozen block's is static, so it must be redone here).
+        froz_b = ws.col_values(2)
+        seq, k = [], 0
+        for r in range(frozen_rep_start, frozen_rep_end + 1):
+            nm = froz_b[r - 1] if r - 1 < len(froz_b) else ""
+            if nm and nm.strip():
+                k += 1
+                seq.append([k])
+            else:
+                seq.append([""])
+        if seq:
+            ws.update(seq, f"A{frozen_rep_start}", value_input_option="RAW")
         # Normalize conditional ranges LAST (the format paste auto-splits them).
         _normalize_lastweek_conditional(ws)
         # Restore the basic filter we cleared for the snapshot.
@@ -500,8 +516,8 @@ def rollover_all_tabs(sh, logfn=print) -> int:
 
 
 def collapse_headroom(sh, only=None, logfn=print) -> int:
-    """Re-hide the unused rows between the current-week summary (+1 spacer) and
-    the fixed LAST WEEK block, so each tab reads current → spacer → LAST WEEK
+    """Re-hide the unused rows between the current-week summary (3 spacers) and
+    the LAST WEEK block, so each tab reads current → 3 rows → LAST WEEK
     with the headroom collapsed. Runs at the END of every run (the day's fill
     moves the summary row). Per-tab 429 backoff + pacing so a rate-limit
     doesn't abort the whole pass. No-op on tabs without a frozen block."""
@@ -521,19 +537,28 @@ def collapse_headroom(sh, only=None, logfn=print) -> int:
                            for v in col_b[LAST_WEEK_LABEL_ROW - 1:]):
                     break   # no frozen block below → nothing to collapse
                 sid = ws.id
+                # Anchor on the ACTUAL LAST WEEK row (not the fixed constant)
+                # so the gap survives layout drift.
+                lw_row = next((i for i, v in enumerate(col_b, 1)
+                               if isinstance(v, str) and v.strip().upper() == LAST_WEEK_LABEL), None)
+                if not lw_row:
+                    break
+                # Leave exactly 3 visible spacer rows between the current
+                # summary and the LAST WEEK block; hide the rest of the
+                # headroom (Megan 2026-06-16).
                 reqs = [
                     {"updateDimensionProperties": {
-                        "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": 2, "endIndex": end_row + 1},
+                        "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": 2, "endIndex": end_row + 3},
                         "properties": {"hiddenByUser": False}, "fields": "hiddenByUser"}},
                     {"updateDimensionProperties": {
                         "range": {"sheetId": sid, "dimension": "ROWS",
-                                  "startIndex": LAST_WEEK_LABEL_ROW - 1, "endIndex": 200},
+                                  "startIndex": lw_row - 1, "endIndex": 240},
                         "properties": {"hiddenByUser": False}, "fields": "hiddenByUser"}},
                 ]
-                if end_row + 1 < LAST_WEEK_LABEL_ROW - 1:
+                if end_row + 3 < lw_row - 1:
                     reqs.append({"updateDimensionProperties": {
                         "range": {"sheetId": sid, "dimension": "ROWS",
-                                  "startIndex": end_row + 1, "endIndex": LAST_WEEK_LABEL_ROW - 1},
+                                  "startIndex": end_row + 3, "endIndex": lw_row - 1},
                         "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}})
                 ws.spreadsheet.batch_update({"requests": reqs})
                 n += 1

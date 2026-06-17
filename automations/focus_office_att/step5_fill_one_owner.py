@@ -398,7 +398,7 @@ def fill_owner_tab(ws, scraped_by_date: dict, layout: Layout) -> dict:
         # rep is placed at max(name_to_row.values()) + 1, so if the
         # summary rows were included the new rep would land BELOW the
         # summary block — which then scrambles the whole tab when
-        # alphabetize_reps runs.
+        # sort_reps_by_app_sum runs.
         if _is_summary_label(name):
             continue
         key = strip_rep_mark(name).lower().strip()
@@ -828,10 +828,10 @@ def design_cosmetic_ops(ws, layout: Layout) -> list:
     and Phase 3 (step6) run this same list so a daily run reproduces the
     ENTIRE approved design, not a partial subset. Every op is idempotent."""
     return [
-        # alphabetize FIRST — it writes the rep block back as values, so
-        # the formula writers below must run after to restore formulas
-        # for the new (sorted) row order.
-        ("alphabetize_reps",             lambda: alphabetize_reps(ws, layout)),
+        # sort by SUM Total Apps FIRST — it writes the rep block back as
+        # values, so the formula writers below must run after to restore
+        # formulas for the new (sorted) row order.
+        ("sort_reps_by_app_sum",         lambda: sort_reps_by_app_sum(ws, layout)),
         ("write_per_day_total_apps_formulas", lambda: write_per_day_total_apps_formulas(ws, layout)),
         ("write_weekly_formulas",        lambda: write_weekly_formulas(ws, layout)),
         ("apply_empty_cell_defaults",    lambda: apply_empty_cell_defaults(ws, layout)),
@@ -892,9 +892,11 @@ def apply_gap_time_format(ws, layout: Layout) -> None:
     ws.spreadsheet.batch_update({"requests": requests})
 
 
-def alphabetize_reps(ws, layout: Layout) -> None:
-    """Sort rep rows alphabetically by Rep Name — read-sort-write in
-    Python rather than the Sheets sortRange API.
+def sort_reps_by_app_sum(ws, layout: Layout) -> None:
+    """Sort rep rows by SUM Total Apps (col C) highest→lowest — read-sort-write
+    in Python rather than the Sheets sortRange API. Rep Name is the tiebreaker
+    so equal-app reps stay in a stable alphabetical order. (Megan 2026-06-16:
+    "weekly total ... sorted by SUM Total Apps greatest to least".)
 
     Why not sortRange: it 500s intermittently (then consistently) on
     these heavily-formatted tabs. Reading the rep block, sorting it
@@ -949,8 +951,12 @@ def alphabetize_reps(ws, layout: Layout) -> None:
         # in among the reps.
         if name and not _is_summary_label(name):
             rows_with_names.append(padded)
+    def _app_sum(r):
+        v = r[1] if len(r) > 1 else None   # col C = SUM Total Apps (read unformatted)
+        return float(v) if isinstance(v, (int, float)) else 0.0
+    # SUM Total Apps high→low; rep name as the alphabetical tiebreaker.
     rows_with_names.sort(
-        key=lambda r: strip_rep_mark(str(r[0] or "")).lower().strip()
+        key=lambda r: (-_app_sum(r), strip_rep_mark(str(r[0] or "")).lower().strip())
     )
     # Write back contiguously from `first`; pad with blank rows so any
     # collapsed gaps get cleared.
@@ -1021,7 +1027,7 @@ def reset_conditional_formatting(ws) -> tuple[int, int]:
 
 
 TABLEAU_ONLY_MARK = "🔹"
-# Frozen-block divider label. alphabetize_reps caps its sort ABOVE this row so
+# Frozen-block divider label. sort_reps_by_app_sum caps its sort ABOVE this row so
 # the LAST WEEK block is never sorted into the current week. Must match
 # daily.LAST_WEEK_LABEL.
 LAST_WEEK_LABEL = "LAST WEEK"
@@ -1817,10 +1823,10 @@ def main() -> int:
     if stats["new_reps"]:
         print(f"    ✓ added {len(stats['new_reps'])} new rep row(s): {stats['new_reps']}")
 
-    # Post-fill: weekly formulas + alphabetize + border + gap-time format + autosize + collapse
-    print(f"  → Weekly formulas + alphabetize + border + gap-time format + autosize + collapse…")
+    # Post-fill: weekly formulas + sort by app sum + border + gap-time format + autosize + collapse
+    print(f"  → Weekly formulas + sort by app sum + border + gap-time format + autosize + collapse…")
     write_weekly_formulas(ws, layout)
-    alphabetize_reps(ws, layout)
+    sort_reps_by_app_sum(ws, layout)
     apply_bold_border(ws)
     apply_gap_time_format(ws, layout)
     autosize_all_data_cols(ws)
