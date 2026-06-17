@@ -10,6 +10,12 @@ Each item: {priority, title, who, steps: [str, ...], paste: str|""}.
 from __future__ import annotations
 
 
+# Reviews this strong don't need a "go get more" nudge — surface that action
+# only when the rating or volume is actually weak (named, tunable).
+REVIEWS_STRONG_RATING = 4.3
+REVIEWS_STRONG_COUNT = 100
+
+
 def build_recommendations(serp: dict, reddit: dict, website: dict, google: dict,
                           *, subreddit: str = "", website_url: str = "",
                           review_link: str = "") -> list[dict]:
@@ -24,24 +30,31 @@ def build_recommendations(serp: dict, reddit: dict, website: dict, google: dict,
     negative_outranks_own = neg_on_page1 and (
         own_pos is None or (top_neg is not None and top_neg < own_pos))
 
+    rating = google.get("rating")
+    count = google.get("review_count") or 0
+    reviews_strong = (rating is not None and rating >= REVIEWS_STRONG_RATING
+                      and count >= REVIEWS_STRONG_COUNT)
+
     recs: list[dict] = []
 
-    # 1) Get more Google reviews — the single easiest, highest-impact thing.
-    recs.append({
-        "priority": "Do this first",
-        "title": "Text 10 happy customers and ask for a Google review",
-        "who": "You (and your reps)",
-        "steps": [
-            "Open the text messages on your phone.",
-            "Pick 10 customers who were happy.",
-            "Copy the message below.",
-            "Send it to each one — change [first name] to their name.",
-            "Send the link in the message too (it opens straight to leaving a review).",
-        ],
-        "paste": (f"Hi [first name]! Thanks again for choosing {name}. If you have "
-                  f"30 seconds, leaving us a quick Google review would mean a lot: "
-                  f"{review_link}"),
-    })
+    # 1) Get more Google reviews — ONLY when reviews are actually weak. A brand
+    # that already pulls strong reviews routinely doesn't need this nudge.
+    if not reviews_strong:
+        recs.append({
+            "priority": "Do this first",
+            "title": "Text 10 happy customers and ask for a Google review",
+            "who": "You (and your reps)",
+            "steps": [
+                "Open the text messages on your phone.",
+                "Pick 10 customers who were happy.",
+                "Copy the message below.",
+                "Send it to each one — change [first name] to their name.",
+                "Send the link too (it opens straight to leaving a review).",
+            ],
+            "paste": (f"Hi [first name]! Thanks again for choosing {name}. If you "
+                      f"have 30 seconds, leaving us a quick Google review would "
+                      f"mean a lot: {review_link}"),
+        })
 
     # 2) Post in the company's own subreddit (uses the weekly draft we send).
     recs.append({
