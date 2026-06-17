@@ -44,6 +44,7 @@ def collect(company) -> CollectorResult:
             # populated only once a platform API / aggregator is connected:
             "followers": None,
             "engagement_rate": None,
+            "posts_since_audit": None,
         }
 
     connected = [p["label"] for p in present.values() if p["connected"]]

@@ -37,12 +37,15 @@ REV_VOLUME_TIERS = [(500, 30), (200, 24), (50, 16), (10, 8), (1, 3)]
 REV_NEG_PENALTY = 12            # per negative review in the sample
 
 # ---- Reputation / Search weights -------------------------------------------
-REP_NEG_ABOVE_OWN = 40          # a negative result ranking above the own site
-REP_NEG_ON_PAGE1 = 20           # a negative result on page 1 but below own site
-REP_REDDIT_NEG_EACH = 6         # per negative Reddit thread
-REP_REDDIT_NEG_CAP = 42
-REP_OWN_NOT_FIRST = 10
-REP_OWN_OFF_PAGE1 = 25
+# Tuned so "page 1 is mostly yours + one negative" is a fixable C, not an F.
+# A single old negative thread shouldn't tank a brand that otherwise owns the
+# results and has strong reviews (Megan's call, 2026-06-17).
+REP_NEG_ABOVE_OWN = 22          # a negative result ranking above the own site
+REP_NEG_ON_PAGE1 = 12           # a negative result on page 1 but below own site
+REP_REDDIT_NEG_EACH = 2         # per negative Reddit thread (often old / niche)
+REP_REDDIT_NEG_CAP = 12
+REP_OWN_NOT_FIRST = 6
+REP_OWN_OFF_PAGE1 = 20
 
 # ---- Website weights --------------------------------------------------------
 WEB_NO_BLOG = 25
@@ -73,13 +76,14 @@ class SectionScore:
     respond: list = field(default_factory=list)   # below-5★ reviews + draft reply
     page1: list = field(default_factory=list)     # SERP page-1 w/ category (reputation)
     advice: list = field(default_factory=list)    # SEO/reputation action plan
+    posts: list = field(default_factory=list)     # per-platform posts since audit (social)
 
     def as_dict(self) -> dict:
         return {"key": self.key, "label": self.label, "score": self.score,
                 "grade": self.grade, "reasons": self.reasons,
                 "display": self.display, "rows": self.rows,
                 "respond": self.respond, "page1": self.page1,
-                "advice": self.advice}
+                "advice": self.advice, "posts": self.posts}
 
 
 @dataclass
@@ -111,14 +115,14 @@ def _volume_points(count):
 
 def _review_site_row(company_name, site, rating, total, *, readable,
                      below5=None, below5_partial=False):
-    """One per-site row for the Reviews table. new_7d comes from the weekly
-    snapshot history; None until a baseline exists."""
+    """One per-site row for the Reviews table. new_since_audit comes from the
+    snapshot history; None until a prior audit exists."""
     from automations.brand_audit import review_history
-    new_7d = review_history.new_since_last_week(company_name, site, total) \
+    new_since = review_history.new_since_last_audit(company_name, site, total) \
         if readable else None
     return {"site": site, "rating": rating, "total": total,
-            "new_7d": new_7d, "below5": below5, "below5_partial": below5_partial,
-            "readable": readable}
+            "new_since_audit": new_since, "below5": below5,
+            "below5_partial": below5_partial, "readable": readable}
 
 
 def _score_reviews(results: dict, company_name: str) -> SectionScore:
@@ -293,21 +297,30 @@ def _score_social(results: dict) -> SectionScore:
     blocked = [c["label"] for c in channels.values()
                if c.get("connected") and not c.get("postable")]
 
+    # Per-platform "posts since last audit" — structure now, fills in once a
+    # platform API / aggregator is connected (post counts aren't on public pages).
+    posts_rows = [
+        {"platform": c["label"],
+         "posts_since_audit": c.get("posts_since_audit")}   # None until API
+        for c in channels.values() if c.get("connected")
+    ]
+
     reasons = [f"Present on {len(connected)} platform(s): "
                + (", ".join(connected) or "none") + "."]
     if blocked:
         reasons.append("Excluded from posting (by rule): "
                        + ", ".join(blocked) + ".")
-    reasons.append("Engagement rate, followers, and posting cadence need a "
-                   "platform API (Meta) or a posting aggregator — not gradeable "
-                   "from public pages yet, so this stays N/A.")
+    reasons.append("Posts-since-last-audit, engagement, and followers need a "
+                   "platform API (Meta) or aggregator — not on public pages, so "
+                   "this stays N/A until one is connected.")
     display = {
         "channels_connected": len(connected),
         "postable_channels": len(postable),
         "followers_total": social.get("followers_total"),     # None until API
         "avg_engagement_rate": social.get("avg_engagement_rate"),
     }
-    return SectionScore("social", "Social", None, "N/A", reasons, display)
+    return SectionScore("social", "Social", None, "N/A", reasons, display,
+                        posts=posts_rows)
 
 
 def build_scorecard(results: dict, company_name: str = "") -> Scorecard:

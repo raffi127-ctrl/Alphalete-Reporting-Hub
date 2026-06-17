@@ -44,7 +44,7 @@ def _metric_chip(label: str, value) -> str:
 
 def _reviews_table_html(rows: list[dict]) -> str:
     head = ("<tr><th>Site</th><th>Rating</th><th>Reviews</th>"
-            "<th>New (7d)</th><th>Below 5★</th></tr>")
+            "<th>New since last audit</th><th>Below 5★</th></tr>")
     trs = []
     for r in rows:
         if not r.get("readable"):
@@ -53,15 +53,30 @@ def _reviews_table_html(rows: list[dict]) -> str:
             continue
         rating = f'{r["rating"]}/5' if r.get("rating") is not None else "—"
         total = r["total"] if r.get("total") is not None else "—"
-        new7 = "—" if r.get("new_7d") is None else f'+{r["new_7d"]}'
+        nsa = r.get("new_since_audit")
+        new7 = ('<span class="muted">baseline set</span>' if nsa is None
+                else (f'+{nsa}' if nsa else '0'))
         if r.get("below5") is None:
             b5 = '<span class="muted">needs API</span>'
         else:
             b5 = str(r["below5"]) + ('<span class="muted">+ (sample)</span>'
                                      if r.get("below5_partial") else "")
         trs.append(f'<tr><td>{_esc(r["site"])}</td><td>{_esc(rating)}</td>'
-                   f'<td>{_esc(total)}</td><td>{_esc(new7)}</td><td>{b5}</td></tr>')
+                   f'<td>{_esc(total)}</td><td>{new7}</td><td>{b5}</td></tr>')
     return f'<table class="rev">{head}{"".join(trs)}</table>'
+
+
+def _social_posts_html(posts: list[dict]) -> str:
+    if not posts:
+        return ""
+    rows = []
+    for p in posts:
+        n = p.get("posts_since_audit")
+        val = '<span class="muted">needs API</span>' if n is None else str(n)
+        rows.append(f'<tr><td>{_esc(p["platform"])}</td><td>{val}</td></tr>')
+    return ('<div class="serp-title">Posts since last audit</div>'
+            f'<table class="rev"><tr><th>Platform</th>'
+            f'<th>Posts</th></tr>{"".join(rows)}</table>')
 
 
 def _respond_html(respond: list[dict]) -> str:
@@ -122,14 +137,17 @@ def _section_html(s: dict) -> str:
     color = _grade_color(grade)
     reasons = "".join(f"<li>{_esc(r)}</li>" for r in s["reasons"])
     score_txt = "" if s["score"] is None else f'<span class="score">{s["score"]}/100</span>'
-    if s.get("rows"):   # reviews-style table render
+    if s.get("rows") and s["key"] == "reviews":   # reviews table render
         body = _reviews_table_html(s["rows"])
-        body += ('<div class="respond-title">Below-5★ reviews — how to '
-                 'respond</div>' + _respond_html(s.get("respond") or []))
+        n_resp = len(s.get("respond") or [])
+        body += (f'<div class="respond-title">Reviews needing a response: '
+                 f'{n_resp}</div>' + _respond_html(s.get("respond") or []))
     else:               # default chip render
         body = ('<div class="chips">'
                 + "".join(_metric_chip(_pretty(k), v) for k, v in s["display"].items())
                 + "</div>")
+    if s.get("posts"):
+        body += _social_posts_html(s["posts"])
     if s.get("page1"):
         body += _page1_html(s["page1"])
     if s.get("advice"):

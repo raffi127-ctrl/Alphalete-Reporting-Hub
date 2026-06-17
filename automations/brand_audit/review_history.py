@@ -1,20 +1,20 @@
-"""Weekly review-count snapshots, so we can report 'new reviews in the last 7
-days' without a per-review feed.
+"""Per-audit count snapshots, so we can report 'new since the last audit'
+(reviews, and later social posts) without a full per-item feed.
 
-Each run records {company: {site: [{ts, total}, ...]}}. The weekly delta is
-(current total) - (the snapshot closest to ~7 days ago). The first run has no
-baseline, so the delta is None ('—') until the next weekly run. This works for
-any site that gives a total count (Google, Glassdoor); a site we couldn't read
-is simply skipped.
+Each run records {company: {site: [{ts, total}, ...]}}. The delta is
+(current total) - (the most recent PRIOR snapshot's total) — i.e. what changed
+since the last time this audit ran. The first audit has no prior snapshot, so
+the delta is None ('—, baseline set') until the next run. Works for anything
+that exposes a running total (Google reviews, Glassdoor reviews, later post
+counts); an unreadable source is simply skipped.
 """
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 
 _PATH = Path.home() / ".config" / "brand-audit" / "review_history.json"
-_BASELINE_MIN_AGE_DAYS = 6  # don't diff against a snapshot younger than this
 
 
 def _load() -> dict:
@@ -33,35 +33,28 @@ def _now():
     return datetime.now(timezone.utc)
 
 
-def new_since_last_week(company: str, site: str, total) -> int | None:
-    """Return new reviews vs the snapshot nearest ~7 days ago, or None if there
-    isn't a baseline old enough yet. Pure read — does not record."""
+def new_since_last_audit(company: str, site: str, total) -> int | None:
+    """New items vs the most recent prior snapshot, or None if there's no prior
+    snapshot yet (first audit). Pure read — call BEFORE record()."""
     if total is None:
         return None
     snaps = (_load().get(company, {}) or {}).get(site, [])
-    cutoff = _now() - timedelta(days=_BASELINE_MIN_AGE_DAYS)
-    eligible = []
-    for s in snaps:
-        try:
-            ts = datetime.fromisoformat(s["ts"])
-            if ts <= cutoff and isinstance(s.get("total"), int):
-                eligible.append((ts, s["total"]))
-        except Exception:
-            continue
-    if not eligible:
+    prior = [s["total"] for s in snaps if isinstance(s.get("total"), int)]
+    if not prior:
         return None
-    eligible.sort(key=lambda x: x[0])           # oldest..newest
-    baseline_total = eligible[-1][1]            # most recent eligible
-    return max(0, total - baseline_total)
+    return max(0, int(total) - prior[-1])   # last recorded = previous audit
+
+
+# Back-compat alias
+new_since_last_week = new_since_last_audit
 
 
 def record(company: str, site: str, total) -> None:
-    """Append today's snapshot (skip if total is unknown)."""
+    """Append this audit's snapshot (skip if total is unknown)."""
     if total is None:
         return
     state = _load()
     state.setdefault(company, {}).setdefault(site, []).append(
         {"ts": _now().isoformat(), "total": int(total)})
-    # keep the last ~26 snapshots per site (half a year of weekly runs)
-    state[company][site] = state[company][site][-26:]
+    state[company][site] = state[company][site][-26:]  # keep ~26 audits
     _save(state)
