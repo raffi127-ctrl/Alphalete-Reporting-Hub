@@ -348,6 +348,23 @@ def render_html(company, scorecard: dict, narrative: str,
 </div></body></html>"""
 
 
+def render_card_png(html_path: Path) -> Path:
+    """Render the saved HTML card to a full-page PNG for Slack. Returns the PNG
+    path. Raises if the browser/render fails (caller handles)."""
+    from patchright.sync_api import sync_playwright
+    out = html_path.with_name(html_path.stem + "_card.png")
+    uri = html_path.resolve().as_uri()
+    with sync_playwright() as p:
+        b = p.chromium.launch(headless=True)
+        pg = b.new_page(viewport={"width": 900, "height": 1000},
+                        device_scale_factor=2)
+        pg.goto(uri, wait_until="networkidle", timeout=30000)
+        pg.wait_for_timeout(800)
+        pg.screenshot(path=str(out), full_page=True)
+        b.close()
+    return out
+
+
 def build_narrative(company, scorecard: dict) -> str:
     secs = {s["key"]: s for s in scorecard["sections"]}
     rep = secs.get("reputation", {})

@@ -75,6 +75,8 @@ def main(argv=None) -> int:
                         "sheet-log writes)")
     p.add_argument("--no-log", action="store_true",
                    help="skip writing the per-company log tab to the sheet")
+    p.add_argument("--no-card", action="store_true",
+                   help="skip posting the rendered card image to Slack")
     args = p.parse_args(argv)
 
     if args.all:
@@ -97,6 +99,14 @@ def main(argv=None) -> int:
         path = report.save_report(company, card, results)
         print(f"  overall: {card['overall_grade']} ({card['overall_score']}/100)")
         print(f"  card: {path}")
+        if not args.dry_run and not args.no_card:
+            try:
+                png = report.render_card_png(path)
+                cr = alerts.post_card_image(company.name, png, card)
+                print("  card image posted to Slack" if cr.get("posted")
+                      else f"  card image post: {cr}")
+            except Exception as e:
+                print(f"  !! card-to-Slack failed (non-fatal): {e}")
         neg = [f for f in card["flags"] if f["level"] == "negative"]
         if neg:
             try:

@@ -77,6 +77,27 @@ def _format_message(company_name: str, overall_grade: str,
     return "\n".join(lines)
 
 
+def post_card_image(company_name: str, png_path, scorecard: dict, *,
+                    dry_run: bool = False, channel_id: str = ALERT_SLACK_CHANNEL_ID):
+    """Post the rendered Brand Health Card image to Slack (header + image)."""
+    from datetime import datetime
+    month = datetime.now().strftime("%B %Y")
+    header = (f":bar_chart: *Brand Health — {company_name} · {month} · "
+              f"Overall {scorecard.get('overall_grade','?')}* "
+              f"({scorecard.get('overall_score','?')}/100)")
+    if dry_run:
+        return {"dry_run": True, "channel": channel_id, "header": header,
+                "image": str(png_path)}
+    from automations.shared import slack_metrics_post as smp
+    client = smp._client()
+    resp = client.files_upload_v2(
+        channel=channel_id, file=str(png_path),
+        filename=f"brand_health_{month.replace(' ', '_')}.png",
+        initial_comment=header)
+    return {"posted": bool(resp.get("ok")), "channel": channel_id,
+            "file": (resp.get("file") or {}).get("id")}
+
+
 def send_alerts(company_name: str, scorecard: dict, *, dry_run: bool = False,
                 channel_id: str = ALERT_SLACK_CHANNEL_ID) -> dict:
     flags = scorecard.get("flags", [])
