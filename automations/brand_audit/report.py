@@ -138,6 +138,21 @@ def _advice_html(advice: list[dict]) -> str:
             '</div>' + "".join(items))
 
 
+def _design_review_html(rv: dict) -> str:
+    if not rv or not rv.get("vibe"):
+        return ""
+    rows = []
+    for label, key in (("Vibe", "vibe"), ("Photos", "photos"),
+                        ("Fit for a 20-25yo", "audience_fit")):
+        if rv.get(key):
+            rows.append(f'<div class="dr-row"><b>{label}:</b> {_esc(rv[key])}</div>')
+    acts = "".join(f"<li>{_esc(a)}</li>" for a in (rv.get("actions") or []))
+    actions = (f'<div class="dr-actions-title">Design ideas</div>'
+               f'<ul class="dr-actions">{acts}</ul>') if acts else ""
+    return ('<div class="dr-title">How the site looks — design review</div>'
+            + "".join(rows) + actions)
+
+
 def _section_html(s: dict) -> str:
     grade = s["grade"]
     color = _grade_color(grade)
@@ -152,6 +167,8 @@ def _section_html(s: dict) -> str:
         body = ('<div class="chips">'
                 + "".join(_metric_chip(_pretty(k), v) for k, v in s["display"].items())
                 + "</div>")
+    if s.get("review"):
+        body += _design_review_html(s["review"])
     if s.get("posts"):
         body += _social_posts_html(s["posts"])
     if s.get("page1"):
@@ -257,6 +274,11 @@ def render_html(company, scorecard: dict, narrative: str,
   .r-text {{ font-size:12px; color:#3a3f48; margin:3px 0; font-style:italic; }}
   .r-draft {{ font-size:12px; color:#1a1d24; }}
   .serp-title, .advice-title {{ margin:12px 0 6px; font-size:13px; font-weight:700; }}
+  .dr-title {{ margin:12px 0 6px; font-size:13px; font-weight:700; }}
+  .dr-row {{ font-size:12px; color:#3a3f48; margin:3px 0; }}
+  .dr-actions-title {{ font-size:12px; font-weight:700; margin:8px 0 3px; }}
+  .dr-actions {{ margin:0; padding-left:18px; font-size:12px; color:#2a2e35; }}
+  .dr-actions li {{ margin:2px 0; }}
   .serp-row {{ display:flex; align-items:center; gap:8px; padding:5px 0;
               border-top:1px solid #f3f4f6; font-size:12px; }}
   .serp-row .pos {{ color:#9aa0a8; width:16px; }}

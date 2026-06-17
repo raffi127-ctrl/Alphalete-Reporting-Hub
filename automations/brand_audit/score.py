@@ -77,13 +77,15 @@ class SectionScore:
     page1: list = field(default_factory=list)     # SERP page-1 w/ category (reputation)
     advice: list = field(default_factory=list)    # SEO/reputation action plan
     posts: list = field(default_factory=list)     # per-platform posts since audit (social)
+    review: dict = field(default_factory=dict)    # visual design critique (website)
 
     def as_dict(self) -> dict:
         return {"key": self.key, "label": self.label, "score": self.score,
                 "grade": self.grade, "reasons": self.reasons,
                 "display": self.display, "rows": self.rows,
                 "respond": self.respond, "page1": self.page1,
-                "advice": self.advice, "posts": self.posts}
+                "advice": self.advice, "posts": self.posts,
+                "review": self.review}
 
 
 @dataclass
@@ -275,13 +277,15 @@ def _score_reputation(results: dict, company) -> SectionScore:
                         page1=page1, advice=advice)
 
 
-def _score_website(web: dict) -> SectionScore:
+def _score_website(results: dict) -> SectionScore:
+    web = (results.get("website") or {}).get("metrics") or {}
+    review = (results.get("website_review") or {}).get("evidence") or {}
     reasons = []
     if not web.get("reachable"):
         return SectionScore("website", "Website", 0, "F",
                             [f"Website not reachable (status "
                              f"{web.get('http_status')})."],
-                            {"reachable": False})
+                            {"reachable": False}, review=review)
     score = 100.0
     if web.get("secure_https") is False:
         score -= WEB_NOT_SECURE
@@ -312,7 +316,7 @@ def _score_website(web: dict) -> SectionScore:
                "pages_updated_90d": recent,
                "sitemap_url_count": web.get("sitemap_url_count")}
     return SectionScore("website", "Website", round(score),
-                        grade_from_score(score), reasons, display)
+                        grade_from_score(score), reasons, display, review=review)
 
 
 def _score_social(results: dict) -> SectionScore:
@@ -361,7 +365,7 @@ def build_scorecard(results: dict, company="") -> Scorecard:
     sections = [
         _score_reviews(results, cname),
         _score_reputation(results, company),
-        _score_website(m("website")),
+        _score_website(results),
         _score_social(results),
     ]
 
