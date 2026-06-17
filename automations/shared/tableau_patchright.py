@@ -17,9 +17,14 @@ Profile re-use: we point at order_log.py's existing .browser_profile so
 Megan's logged-in session carries across both reports (no duplicate
 login). The profile is gitignored.
 
-The session manager handles login lazily — first run drives the
-ownerville form; subsequent runs find an already-authenticated session
-in the profile and skip straight to Tableau.
+Auth (since 2026-06-17): the default path restores a manually-exported
+ownerville session (.ownerville_storage_state.json) — inject the login
+cookies, let v2.ownerville mint a fresh rqst SSO token, ride it to
+Tableau. No login form is driven, because ownerville's 'verify you are
+human' check can't be cleared unattended. A missing/expired session
+FAILS FAST (re-export via output/_scratch_ownerville_export_state.py).
+The legacy form-drive survives behind allow_form_login=True for
+interactive/debug use only.
 """
 
 from __future__ import annotations
@@ -46,6 +51,16 @@ from automations.shared import creds
 
 PROFILE_DIR = (
     Path(__file__).resolve().parent.parent / "uploaded" / ".browser_profile"
+)
+
+# A manually-exported ownerville session — the ColdFusion login cookies
+# (CFID/CFTOKEN/…) from which v2.ownerville mints a fresh rqst SSO token.
+# Produced by a one-time manual login via
+# output/_scratch_ownerville_export_state.py. GITIGNORED — live session
+# cookies. This is how unattended runs authenticate WITHOUT driving the login
+# form, whose Cloudflare 'verify you are human' check can't be cleared headless.
+OWNERVILLE_STORAGE_STATE = (
+    Path(__file__).resolve().parent / ".ownerville_storage_state.json"
 )
 
 LOGIN_URL = "https://ownerville.com"
@@ -136,33 +151,39 @@ def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
 
 
 @contextmanager
-def tableau_session(headless: bool = False, verbose: bool = True) -> Iterator[Page]:
+def tableau_session(headless: bool = False, verbose: bool = True,
+                    allow_form_login: bool = False) -> Iterator[Page]:
     """Yield a Page logged into Tableau via ownerville SSO.
 
-    Uses Order Log's persistent profile so the login survives across runs.
-    First call may drive the login form + Cloudflare; subsequent calls
-    skip straight to the post-login state."""
+    Uses Order Log's persistent profile + the exported ownerville
+    storage_state so the login survives across runs without driving the
+    Turnstile form. allow_form_login=True re-enables the legacy form-drive
+    (interactive/debug ONLY)."""
     PROFILE_DIR.mkdir(exist_ok=True, parents=True)
     with sync_playwright() as p:
         ctx = _launch_persistent(p, PROFILE_DIR, headless=headless,
                                  label="tableau_patchright", verbose=verbose)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
-            _ensure_tableau_authenticated(page, verbose=verbose)
+            _ensure_tableau_authenticated(page, verbose=verbose,
+                                          allow_form_login=allow_form_login)
             yield page
         finally:
             ctx.close()
 
 
-def _ensure_tableau_authenticated(page: Page, verbose: bool = True) -> None:
+def _ensure_tableau_authenticated(page: Page, verbose: bool = True,
+                                  allow_form_login: bool = False) -> None:
     """Make sure `page` has a Tableau session cookie. Two steps:
-      1. Ensure ownerville is logged in (drives the form if not).
+      1. Ensure ownerville is logged in (storage_state reuse; form only if
+         allow_form_login=True).
       2. Visit v2.ownerville.com, extract the rqst SSO token, and
          redirect via the Tableau SSO URL. After this returns, any
          subsequent goto() to a Tableau view URL will load the viz
          instead of bouncing to login.
     """
-    _ensure_ownerville_logged_in(page, verbose=verbose)
+    _ensure_ownerville_logged_in(page, verbose=verbose,
+                                 allow_form_login=allow_form_login)
     _sso_to_tableau(page, verbose=verbose)
 
 
@@ -274,45 +295,86 @@ def _ownerville_session_valid(page: Page, verbose: bool = True) -> bool:
         return False
 
 
-def _ensure_ownerville_logged_in(page: Page, verbose: bool = True) -> None:
-    """Guarantee a LIVE ownerville session, re-logging in from saved creds when
-    the persisted cookie has gone stale.
+def _reuse_ownerville_storage_state(ctx, page: Page, verbose: bool) -> bool:
+    """Restore a manually-exported ownerville session onto the stealth context.
+    Inject the saved cookies (the ColdFusion login session: CFID/CFTOKEN/…),
+    then validate via _ownerville_session_valid — v2.ownerville mints a FRESH
+    rqst SSO token from the login cookie. Unlike the AppStream twin there is NO
+    token replay: the exported rqst is ephemeral, so we persist the login cookie
+    and let v2 re-mint. Returns True iff a live rqst appears.
 
-    The old logic treated 'no login form visible' as 'logged in'. But an
-    expired cookie shows no form AND has no live session, so every downstream
-    pull failed with 'no rqst' (Eve rows 38/69) and a human had to re-sign-in.
-    Now we VALIDATE against a real rqst token and, if it's missing, clear the
-    dead cookie and drive a fresh login (creds from ownerville-creds.json) —
-    the key piece that makes unattended/scheduled runs reliable.
-
-    Stays loud on a real failure (bad creds / Cloudflare block) so the glitch
-    filer still captures it; it only self-heals the expired-cookie case."""
-    if verbose:
-        print(f"-> Loading {LOGIN_URL}", flush=True)
-    page.goto(LOGIN_URL, wait_until="domcontentloaded")
-    page.wait_for_timeout(3_000)
-    if (page.locator(_PASSWORD_SELECTOR).count() > 0
-            or page.locator(_USERNAME_SELECTOR).count() > 0):
-        _drive_login_form(page, verbose=verbose)
-    elif verbose:
-        print("-> ownerville session reused from profile", flush=True)
-
-    if _ownerville_session_valid(page, verbose=verbose):
+    A missing / unreadable state file returns False so the caller fails fast
+    instead of falling to the Turnstile form unattended."""
+    if not OWNERVILLE_STORAGE_STATE.exists():
         if verbose:
-            print("-> ownerville session validated (rqst present)", flush=True)
+            print(f"-> no storage_state at {OWNERVILLE_STORAGE_STATE.name}",
+                  flush=True)
+        return False
+    try:
+        state = json.loads(OWNERVILLE_STORAGE_STATE.read_text())
+    except Exception as e:
+        if verbose:
+            print(f"-> storage_state unreadable ({e!r}) — ignoring", flush=True)
+        return False
+    cookies = state.get("cookies", [])
+    if cookies:
+        try:
+            ctx.add_cookies(cookies)
+        except Exception as e:
+            if verbose:
+                print(f"-> add_cookies failed ({e!r})", flush=True)
+    if verbose:
+        print(f"-> storage_state: {len(cookies)} cookie(s) injected", flush=True)
+    return _ownerville_session_valid(page, verbose=verbose)
+
+
+def _ensure_ownerville_logged_in(page: Page, verbose: bool = True,
+                                 allow_form_login: bool = False) -> None:
+    """Guarantee a LIVE ownerville session.
+
+    Auth path (since 2026-06-17): restore a manually-exported session
+    (OWNERVILLE_STORAGE_STATE) rather than driving the login form. ownerville's
+    form hits a Cloudflare 'verify you are human' check that can't be cleared
+    unattended, so a missing/expired session FAILS FAST with a clear error
+    (re-export via output/_scratch_ownerville_export_state.py) instead of
+    stalling on the check.
+
+    Steps:
+      1. Reuse the exported storage_state (inject cookies → rqst check).
+      2. Failing that, try whatever cookie the persistent profile already holds.
+      3. Unless allow_form_login=True, fail fast — never touch the Turnstile.
+      4. allow_form_login=True re-enables the legacy two-step form-drive
+         (interactive/debug ONLY — it hits the Turnstile and stalls unattended).
+    """
+    # (1) Primary automated path: exported session, no form / Turnstile.
+    if _reuse_ownerville_storage_state(page.context, page, verbose):
+        if verbose:
+            print("-> ownerville session restored from storage_state "
+                  "(rqst present)", flush=True)
         return
 
-    # Stale cookie: clear it and force a clean login from saved creds.
+    # (2) Fall back to the persistent-profile cookie, if it's still live.
+    if _ownerville_session_valid(page, verbose=verbose):
+        if verbose:
+            print("-> ownerville session reused from profile (rqst present)",
+                  flush=True)
+        return
+
+    # (3) Unattended default: fail loud + clear, pointing at the re-export.
+    if not allow_form_login:
+        raise RuntimeError(
+            "ownerville session expired or missing — run "
+            "output/_scratch_ownerville_export_state.py to re-export "
+            f"{OWNERVILLE_STORAGE_STATE.name}. (storage_state reuse path; the "
+            "login form is disabled because its Cloudflare 'verify you are "
+            f"human' check can't be cleared unattended.) Profile: {PROFILE_DIR}")
+
+    # (4) Legacy opt-in form-drive — interactive/debug ONLY (hits the Turnstile).
     if verbose:
-        print("-> ownerville session STALE (no rqst) — clearing cookies and "
-              "re-logging in from saved creds", flush=True)
-    try:
-        page.context.clear_cookies()
-    except Exception:
-        pass
+        print("-> [allow_form_login] driving ownerville login form (hits the "
+              "Cloudflare check — interactive use only)", flush=True)
     page.goto(LOGIN_URL, wait_until="domcontentloaded")
     page.wait_for_timeout(3_000)
-    # With cookies cleared the login form should appear; wait for it, drive it.
     try:
         page.wait_for_selector(
             f"{_PASSWORD_SELECTOR}, {_USERNAME_SELECTOR}", timeout=20_000)
@@ -321,10 +383,10 @@ def _ensure_ownerville_logged_in(page: Page, verbose: bool = True) -> None:
     _drive_login_form(page, verbose=verbose)
     if _ownerville_session_valid(page, verbose=verbose):
         if verbose:
-            print("-> ownerville re-login succeeded (rqst present)", flush=True)
+            print("-> ownerville form login succeeded (rqst present)", flush=True)
         return
     raise RuntimeError(
-        "ownerville auto-relogin failed — still no rqst after a fresh login. "
+        "ownerville form login failed — still no rqst after driving the form. "
         "Check ownerville-creds.json (username/password) or a Cloudflare block. "
         f"Profile: {PROFILE_DIR}")
 
@@ -497,20 +559,23 @@ def _sso_to_appstream(page: Page, verbose: bool = True) -> Page:
 
 
 @contextmanager
-def appstream_session(headless: bool = False, verbose: bool = True) -> Iterator[Page]:
+def appstream_session(headless: bool = False, verbose: bool = True,
+                      allow_form_login: bool = False) -> Iterator[Page]:
     """Yield a Page logged into AppStream via ownerville SSO — the unattended
     replacement for fetch_office._attach() (which needs a human-launched debug
-    Chrome with an AppStream tab). Uses the shared persistent profile, so the
-    ownerville login carries across runs.
+    Chrome with an AppStream tab). Uses the shared persistent profile +
+    ownerville storage_state, so the login carries across runs.
 
-    UNVERIFIED LIVE (2026-05-25) — smoke-test before wiring it in."""
+    allow_form_login=True re-enables the legacy form-drive (interactive/debug
+    ONLY). UNVERIFIED LIVE (2026-05-25) — smoke-test before wiring it in."""
     PROFILE_DIR.mkdir(exist_ok=True, parents=True)
     with sync_playwright() as p:
         ctx = _launch_persistent(p, PROFILE_DIR, headless=headless,
                                  label="appstream_session", verbose=verbose)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
-            _ensure_ownerville_logged_in(page, verbose=verbose)
+            _ensure_ownerville_logged_in(page, verbose=verbose,
+                                         allow_form_login=allow_form_login)
             _sso_to_appstream(page, verbose=verbose)
             yield page
         finally:
@@ -519,18 +584,22 @@ def appstream_session(headless: bool = False, verbose: bool = True) -> Iterator[
 
 @contextmanager
 def ownerville_session(headless: bool = False,
-                      verbose: bool = True) -> Iterator[Page]:
+                      verbose: bool = True,
+                      allow_form_login: bool = False) -> Iterator[Page]:
     """Yield a Page logged into ownerville.com via patchright — WITHOUT the
     Tableau SSO hop. For reports that scrape ownerville's own pages (e.g.
-    focus_office_att rep breakdowns). Same login + shared profile as
-    tableau_session; the caller navigates to the ownerville URLs it needs."""
+    focus_office_att rep breakdowns). Same login + shared profile +
+    storage_state as tableau_session; the caller navigates to the ownerville
+    URLs it needs. allow_form_login=True re-enables the legacy form-drive
+    (interactive/debug ONLY)."""
     PROFILE_DIR.mkdir(exist_ok=True, parents=True)
     with sync_playwright() as p:
         ctx = _launch_persistent(p, PROFILE_DIR, headless=headless,
                                  label="ownerville_session", verbose=verbose)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
-            _ensure_ownerville_logged_in(page, verbose=verbose)
+            _ensure_ownerville_logged_in(page, verbose=verbose,
+                                         allow_form_login=allow_form_login)
             yield page
         finally:
             ctx.close()
