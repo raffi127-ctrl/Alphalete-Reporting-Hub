@@ -227,12 +227,18 @@ def _attention_html(flags: list[dict]) -> str:
     if not negatives and not warns:
         return '<div class="ok">✓ No negative findings this run.</div>'
     rows = []
-    for f in negatives + warns:
-        tag = "🚩" if f["level"] == "negative" else "⚠️"
-        link = (f'<a href="{_esc(f["url"])}">{_esc(f.get("detail") or "open")}</a>'
-                if f.get("url") else _esc(f.get("detail") or ""))
-        rows.append(f'<li>{tag} <b>{_esc(f["message"])}</b><br>'
-                    f'<span class="det">{link}</span></li>')
+    # Collapse the many near-identical Reddit threads into one summary line —
+    # the full list with links is in the work-queue log tab.
+    reddit_negs = [f for f in negatives if f.get("source") == "reddit"]
+    other_negs = [f for f in negatives if f.get("source") != "reddit"]
+    for f in other_negs:
+        rows.append(f'<li>🚩 <b>{_esc(f["message"])}</b></li>')
+    if reddit_negs:
+        rows.append(f'<li>🚩 <b>{len(reddit_negs)} negative Reddit threads</b> '
+                    f'<span class="det">— full list with links in the '
+                    f'"{_esc("Rafael Hidalgo")}" log tab</span></li>')
+    for f in warns:
+        rows.append(f'<li>⚠️ <b>{_esc(f["message"])}</b></li>')
     return f'<ul class="attention">{"".join(rows)}</ul>'
 
 
