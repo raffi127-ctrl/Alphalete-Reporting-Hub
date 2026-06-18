@@ -37,7 +37,11 @@ _SYSTEM = (
     "specific; no hashtags; no emoji walls; no corporate buzzwords (\"thrilled "
     "to announce\", \"leverage\", \"synergy\"); vary sentence length; sound like "
     "a human posting an update, not an ad. Keep it brief (a tight title + a few "
-    "sentences). Never fabricate facts — use only what you're given."
+    "sentences). Never fabricate facts — use only what you're given.\n"
+    "TONE: genuinely positive, upbeat, and energetic. The writer clearly LIKES "
+    "the job and is excited about the opportunity, the growth, and the team. "
+    "Authentic and human, but never lukewarm, cynical, hedged, or dwelling on "
+    "downsides — write like someone who's genuinely glad they're here."
 )
 
 
@@ -77,10 +81,12 @@ def _prompt(company, results: dict, ctype: str, custom_topic: str) -> str:
         )
     if ctype == "hiring":
         return (
-            f"Write a post for r/{_subreddit(company)} that honestly describes "
-            f"what working at {name} (a door-to-door sales company) is actually "
-            f"like day to day — the kind of straight-talk post that answers what "
-            f"a curious applicant would want to know. Honest, not a recruiting ad."
+            f"Write an upbeat, genuine post from someone who loves working at "
+            f"{name} (a door-to-door sales company) and is genuinely excited "
+            f"about the opportunity — the growth, the wins, the team energy, what "
+            f"makes it a great place to build a career and earn. Real and human "
+            f"(not a corporate ad), and it should make a motivated young person "
+            f"want to join. Convey that you actually love it here."
         )
     if ctype == "custom":
         return (
