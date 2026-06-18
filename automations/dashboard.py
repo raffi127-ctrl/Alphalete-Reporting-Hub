@@ -1744,6 +1744,81 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "leaders-call",
+        "name": "Leader's Call - Weekly Recognition (Raf)",
+        "creator": "Claude",
+        "emoji": "📣",
+        "color": "#F59E0B",
+        "category": "🎯 Recruiting",
+        "description": "Pulls each campaign's qualifying reps from Tableau "
+                       "(Fiber, NDS, B2B, JE, BOX, Costco, Revenue) + the "
+                       "uploaded Frontier scorecard, and fills the Leader's "
+                       "Call tab with everyone over the recognition threshold.",
+        # NOTE (Claude): draft 'How it works' — Megan/Maud to review/edit.
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Fills the **Leader's Call** tab with the week's recognition "
+            "names per campaign, each section sorted high-to-low:\n"
+            "- **Fiber / NDS / B2B / JE / BOX** — reps with **12+** apps\n"
+            "- **Costco** — reps with **8+** (ATV+DTV+Internet+AIA+New/Port, "
+            "no Up)\n"
+            "- **Revenue over 2K** — reps at **$2,000+** (local-office owners)\n"
+            "- **Frontier** — reps with **8+** from the uploaded scorecard\n\n"
+            "WHEN IT RUNS\n"
+            "**Mondays.** Each campaign view's 'This Week' = the just-"
+            "completed week, so the run recognizes the finished week.\n\n"
+            "PREFLIGHT — FRONTIER UPLOAD\n"
+            "Frontier isn't in Tableau, so **upload the Frontier 'Sales "
+            "Verification' file(s)** before running. The other 7 campaigns "
+            "pull automatically (no login needed).\n\n"
+            "DATA SOURCES\n"
+            "Each section comes from its own Tableau crosstab (pulled "
+            "unattended via the saved ownerville session), filtered to the "
+            "local-office owners + that section's threshold."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
+        "assignees": ["Maud"],
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [0],   # Monday
+            "time": "8:00 AM",
+            "estimated_minutes": 8,
+        },
+        "checklist": [
+            {"text": "Upload the Frontier 'Sales Verification' file(s) "
+                     "received via email (xlsx/csv)",
+             "uploader": {
+                 "target_dir": "automations/uploaded/leaders_call_frontier",
+                 "accept": [".xlsx", ".csv", ".pdf"],
+                 "multiple": True,
+             }},
+        ],
+        "post_run": {
+            "message_success": "✅ Leader's Call tab filled for the completed "
+                               "week. Spot-check before the call.",
+            "message_failed": "❌ Run failed. Check the log above, then re-run.",
+        },
+        "actions": [
+            {
+                "label": "Run This Week",
+                "icon": "▶",
+                "primary": True,
+                "help": "Pulls all 7 Tableau campaigns + the Frontier upload "
+                        "and writes the Leader's Call tab.",
+                "module": "automations.leaders_call.run",
+                "args_fn": lambda: ["--write"],
+            },
+            {
+                "label": "Preview (no write)",
+                "icon": "👁",
+                "help": "Pull + print every section without touching the Sheet.",
+                "module": "automations.leaders_call.run",
+                "args_fn": lambda: ["--dry-run"],
+            },
+        ],
+    },
+    {
         "id": "daily-rep-breakdown",
         "name": "Daily Rep Breakdown - ATT Program",
         "creator": "Megan",
