@@ -838,7 +838,10 @@ def _notify_failure(headline: str, detail: str, log_file: str) -> None:
 # (Eve's run sat at 62 min before someone stopped it, 2026-05-31). Generous
 # vs. the ~15 min normal total, so a legit slow Monday won't false-trip.
 PHASE_TIMEOUT_EXIT = 124  # conventional "timed out" exit code
-PHASE2_TIMEOUT_S = 40 * 60
+PHASE2_TIMEOUT_S = 60 * 60  # was 40 — a full 30-owner scrape (~1.5 min/owner of
+# impersonation overhead, incl. the heavy master owner) runs ~48 min and got
+# killed at owner 26 (Eve 2026-06-18). The checkpoint resumes a kill, but bump
+# the cap so a normal full run completes without tripping it + filing a glitch.
 PHASE3_TIMEOUT_S = 35 * 60  # was 20 — heavy days (big fills + Tableau retries) ran over (Megan 2026-06-07)
 
 # Daily Rep BD report pull custom view (Phase 3 Tableau source) — surfaced as
