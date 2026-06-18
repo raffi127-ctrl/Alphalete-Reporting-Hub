@@ -49,6 +49,25 @@ CUSTOM_VIEW_URL = (
     "OrderLog-RafaelHidalgo?:iid=1"
 )
 
+# --- Shared crosstab path (storage_state, no Turnstile) ----------------------
+# The DEFAULT download path (main(), unattended) pulls the crosstab straight
+# from this view via tableau_patchright.download_crosstab_patchright, which
+# authenticates by the exported ownerville storage_state — no Cloudflare
+# Turnstile, no www/V2 sidebar nav. This is the path proven in
+# output/_scratch_orderlog_publish.py.
+#
+# Re-saved Custom View with a RELATIVE 'Last 1 month' date range (new GUID after
+# the re-save). NOTE: this path uses whatever range is baked into the view; it
+# does NOT apply main()'s 'last month -> yesterday' override (the shared pull
+# can't drive the date textareas the way the legacy filter path does).
+CROSSTAB_VIEW_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER2_1-D2D/ORDERLOG/"
+    "96696e4a-8aac-44da-9eff-87f17092435c/OrderLog-RafaelHidalgo?:iid=1"
+)
+# The worksheet inside the view to export (Tableau Crosstab "sheet" name).
+CROSSTAB_SHEET = "A.Order Log"
+
 # ====================================================================
 #  Implementation — no changes needed below this line for normal use.
 # ====================================================================
@@ -993,6 +1012,42 @@ async def download_dashboard_csv(
     return csv_path
 
 
+def download_order_log_crosstab(
+    out_path: Path,
+    *,
+    allow_form_login: bool = False,
+    verbose: bool = True,
+) -> Path:
+    """Pull the 'A.Order Log' crosstab via the SHARED Tableau storage_state
+    session — the same path proven in output/_scratch_orderlog_publish.py, and
+    the canonical helper that scratch now imports (so the two can't desync).
+
+    Authenticates by the manually-exported ownerville storage_state: no
+    Cloudflare Turnstile, no www/V2 sidebar nav. The date window is whatever
+    relative range is baked into CROSSTAB_VIEW_URL ('Last 1 month'); this path
+    can't drive the date textareas the legacy filter path used.
+
+    SYNC (patchright sync API). Callers inside an asyncio loop MUST invoke this
+    via asyncio.to_thread so sync_playwright doesn't trip the running loop.
+
+    allow_form_login=True re-enables tableau_session's legacy ownerville
+    form-drive (interactive/debug ONLY — it hits the Turnstile). Default off: a
+    missing/expired session FAILS FAST inside tableau_session, pointing at
+    output/_scratch_ownerville_export_state.py to re-export."""
+    from automations.shared.tableau_patchright import (
+        download_crosstab_patchright,
+        tableau_session,
+    )
+    # Own the session so allow_form_login flows through; download_crosstab_
+    # patchright reuses the page (and keeps its own 3x render-flake retry).
+    with tableau_session(allow_form_login=allow_form_login,
+                         verbose=verbose) as page:
+        return download_crosstab_patchright(
+            CROSSTAB_VIEW_URL, CROSSTAB_SHEET, out_path,
+            verbose=verbose, page=page,
+        )
+
+
 # ====================================================================
 #  CSV → cleaned + color-coded .xlsx
 # ====================================================================
@@ -1200,6 +1255,57 @@ def csv_to_xlsx(csv_path: Path, output_dir: Path) -> Path:
 #  Entry point
 # ====================================================================
 
+async def _legacy_filter_download(owner_name: str, tmp_dir: Path,
+                                  allow_form_login: bool) -> Path:
+    """Legacy download path — the original self-contained flow, preserved as a
+    fallback. Drives ownerville login (form-drive only if allow_form_login;
+    storage_state reuse otherwise), navigates Tableau, applies the per-owner
+    Custom View or manual filters, sets the 'last month -> yesterday' date
+    range, and downloads the Crosstab.
+
+    Still the ONLY path that serves a non-default --owner, since the shared
+    crosstab view (CROSSTAB_VIEW_URL) is Rafael-specific."""
+    async with launch_stealth_browser() as page:
+        await login(page, allow_form_login=allow_form_login)
+
+        tableau_page = await navigate_to_workbook(
+            page,
+            workbook_name=WORKBOOK_NAME,
+            tab_name=TAB_NAME,
+            screenshot_dir=SCREENSHOT_DIR,
+        )
+
+        # Prefer the saved per-owner Custom View: it already has Owner Name,
+        # Product Type and Captain's Bonus Teams v2 set correctly, so we
+        # only adjust dates. The view is owner-specific, so try it only for
+        # the default owner; any other --owner uses the manual filter path.
+        # If the view can't be loaded, fall back to driving the filters by
+        # hand (the original, self-contained path).
+        view_applied = False
+        if owner_name == OWNER_NAME:
+            view_applied = await apply_custom_view(
+                tableau_page, CUSTOM_VIEW_URL, CUSTOM_VIEW_NAME
+            )
+
+        if not view_applied:
+            # Owner Name first — proves the filter panel has rendered, so
+            # the team-filter reset below reliably finds its dropdown.
+            await set_owner_name_filter(tableau_page, owner_name)
+            await reset_team_filter_to_all(tableau_page)
+            await reset_product_type_filter_to_all(tableau_page)
+
+        # Dates always get set last — the Custom View may bake in its own
+        # range, so we override regardless of which path ran above.
+        await set_date_range(tableau_page, START_DATE, END_DATE)
+
+        return await download_dashboard_csv(
+            tableau_page,
+            workbook_name=WORKBOOK_NAME,
+            tab_name=TAB_NAME,
+            data_dir=tmp_dir,
+        )
+
+
 async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True,
                allow_form_login: bool = False) -> None:
     # Intermediate CSV goes to a tempdir that auto-cleans on exit.
@@ -1208,48 +1314,28 @@ async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True,
     with tempfile.TemporaryDirectory(prefix="order_log_") as tmp:
         tmp_dir = Path(tmp)
 
-        async with launch_stealth_browser() as page:
-            await login(page, allow_form_login=allow_form_login)
-
-            tableau_page = await navigate_to_workbook(
-                page,
-                workbook_name=WORKBOOK_NAME,
-                tab_name=TAB_NAME,
-                screenshot_dir=SCREENSHOT_DIR,
+        # Default (unattended) path: pull the crosstab through the SHARED
+        # Tableau storage_state session — no Cloudflare Turnstile, no www/V2
+        # sidebar nav. Used for the default owner (Rafael) when not explicitly
+        # forcing the legacy form-drive. The legacy filter path is kept as a
+        # fallback: it runs when allow_form_login is set OR for a non-default
+        # --owner (the shared crosstab view is Rafael-specific).
+        if owner_name == OWNER_NAME and not allow_form_login:
+            csv_path = tmp_dir / "order_log_crosstab.csv"
+            print("-> Downloading 'A.Order Log' crosstab via shared path "
+                  "(storage_state auth, no Turnstile)...")
+            # sync_playwright can't run inside this asyncio loop — offload the
+            # sync shared pull to a worker thread.
+            await asyncio.to_thread(
+                download_order_log_crosstab, csv_path,
+                allow_form_login=False,
             )
+        else:
+            csv_path = await _legacy_filter_download(
+                owner_name, tmp_dir, allow_form_login)
 
-            # Prefer the saved per-owner Custom View: it already has Owner Name,
-            # Product Type and Captain's Bonus Teams v2 set correctly, so we
-            # only adjust dates. The view is owner-specific, so try it only for
-            # the default owner; any other --owner uses the manual filter path.
-            # If the view can't be loaded, fall back to driving the filters by
-            # hand (the original, self-contained path).
-            view_applied = False
-            if owner_name == OWNER_NAME:
-                view_applied = await apply_custom_view(
-                    tableau_page, CUSTOM_VIEW_URL, CUSTOM_VIEW_NAME
-                )
-
-            if not view_applied:
-                # Owner Name first — proves the filter panel has rendered, so
-                # the team-filter reset below reliably finds its dropdown.
-                await set_owner_name_filter(tableau_page, owner_name)
-                await reset_team_filter_to_all(tableau_page)
-                await reset_product_type_filter_to_all(tableau_page)
-
-            # Dates always get set last — the Custom View may bake in its own
-            # range, so we override regardless of which path ran above.
-            await set_date_range(tableau_page, START_DATE, END_DATE)
-
-            csv_path = await download_dashboard_csv(
-                tableau_page,
-                workbook_name=WORKBOOK_NAME,
-                tab_name=TAB_NAME,
-                data_dir=tmp_dir,
-            )
-
-            xlsx_path = csv_to_xlsx(csv_path, OUTPUT_DIR)
-            print(f"\n✓ Saved to Downloads: {xlsx_path.name}")
+        xlsx_path = csv_to_xlsx(csv_path, OUTPUT_DIR)
+        print(f"\n✓ Saved to Downloads: {xlsx_path.name}")
 
     # Slack post happens AFTER the browser context is torn down so a
     # failing Slack call can never strand a logged-in patchright session.
@@ -1294,8 +1380,10 @@ if __name__ == "__main__":
     _ap = argparse.ArgumentParser(description="Download a filtered Order Log")
     _ap.add_argument("--owner", default=OWNER_NAME,
                      help=f"Tableau 'Owner Name' filter value (default: {OWNER_NAME!r})")
-    _ap.add_argument("--no-slack", action="store_true",
-                     help="Skip the Slack post (just save the .xlsx to Downloads).")
+    _ap.add_argument("--no-slack", "--no-post", "--dry-run", dest="no_slack",
+                     action="store_true",
+                     help="Skip the Slack post (just save the .xlsx to "
+                          "Downloads). Aliases: --no-post, --dry-run.")
     _ap.add_argument("--allow-form-login", action="store_true",
                      help="Enable the legacy ownerville form-drive (HEADED manual "
                           "run ONLY — you clear the Cloudflare check by hand).")
