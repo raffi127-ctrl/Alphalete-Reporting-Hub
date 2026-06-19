@@ -238,15 +238,17 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
         # 2) caption (once) — use the latest image on the message
         if not st.get("caption"):
             try:
-                img = _download(imgs[-1]["url_private"])
-                img = photo_edit.process_bytes(img)   # auto-enhance + IG crop
+                raw = _download(imgs[-1]["url_private"])
+                quality = photo_edit.quality_report(raw)   # flag bad sources
+                img = photo_edit.process_bytes(raw)        # auto-enhance + IG crop
                 cap = caption_for(img, text, company_name,
                                   avoid=recent_captions[:25])
             except Exception as e:
                 actions.append({"ts": ts, "action": "caption_error", "error": str(e)})
                 continue
             recent_captions.insert(0, cap)   # avoid repeats within this run too
-            act = {"ts": ts, "action": "propose_caption", "caption": cap}
+            act = {"ts": ts, "action": "propose_caption", "caption": cap,
+                   "quality": quality}
             if dry_run:   # save the cleaned photo so it can be eyeballed
                 from automations.brand_audit.config import OUTPUT_DIR
                 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -255,10 +257,15 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                 act["photo"] = str(p)
             actions.append(act)
             if not dry_run:
+                warn = ""
+                if quality and quality.get("warnings"):
+                    warn = (":warning: *Photo quality* — "
+                            + " ".join(quality["warnings"]) + "\n\n")
                 r = cl.chat_postMessage(
                     channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
-                    text=f":sparkles: *Proposed caption* — react :white_check_mark: "
-                         f"to approve (or reply with edits / a new photo):\n\n{cap}")
+                    text=f"{warn}:sparkles: *Proposed caption* — react "
+                         f":white_check_mark: to approve (or reply with edits / "
+                         f"a new photo):\n\n{cap}")
                 st["caption"] = cap
                 st["caption_ts"] = r.get("ts")
             continue

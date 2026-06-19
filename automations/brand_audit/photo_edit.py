@@ -50,26 +50,36 @@ def _shadow_lift(img: Image.Image, gamma: float = 0.92) -> Image.Image:
 
 
 def enhance(img: Image.Image, intensity: float = 1.0) -> Image.Image:
-    """Return a lighting-cleaned copy. intensity scales the whole effect
-    (0 = no-op, 1 = default, >1 = stronger)."""
+    """Return a lighting-cleaned copy. Tuned to NEVER blow out highlights or
+    amplify grain: white-balance is clamped, auto-levels only lifts the black
+    point (never clips the bright end), brightening is adaptive (only when the
+    photo is dark) via a highlight-preserving gamma curve, and sharpening is
+    mild with a high threshold so flat/noisy areas are left alone.
+    intensity scales the effect (0 = no-op, 1 = default)."""
     img = ImageOps.exif_transpose(img).convert("RGB")  # honor camera rotation
 
     arr = np.asarray(img).astype(np.float32)
-    arr = _gray_world_wb(arr, strength=0.6 * intensity)
+    arr = _gray_world_wb(arr, strength=0.5 * intensity)
     img = Image.fromarray(arr.astype("uint8"), "RGB")
 
-    # auto-levels: stretch the histogram, clipping a small tail each end
-    img = ImageOps.autocontrast(img, cutoff=0.5)
-    img = _shadow_lift(img, gamma=1.0 - 0.08 * intensity)
+    # auto-levels: lift the black point a hair, but cutoff=(low, 0) means the
+    # highlight end is NEVER clipped -> no new blown-out areas.
+    img = ImageOps.autocontrast(img, cutoff=(0.5, 0.0))
 
-    img = ImageEnhance.Contrast(img).enhance(1.0 + 0.05 * intensity)
-    img = ImageEnhance.Color(img).enhance(1.0 + 0.08 * intensity)
-    img = ImageEnhance.Brightness(img).enhance(1.0 + 0.03 * intensity)
+    # brighten ONLY if the photo is genuinely dark, and via gamma (which rolls
+    # off toward white instead of hard-clipping it).
+    mean_lum = float(np.asarray(img.convert("L"), dtype=np.float32).mean())
+    if mean_lum < 110:
+        lift = min(0.16, (110 - mean_lum) / 110 * 0.20) * intensity
+        img = _shadow_lift(img, gamma=1.0 - lift)
 
-    # light sharpening to counter resize softness
-    img = img.filter(ImageFilter.UnsharpMask(radius=1.5,
-                                             percent=int(60 * intensity),
-                                             threshold=2))
+    img = ImageEnhance.Contrast(img).enhance(1.0 + 0.04 * intensity)
+    img = ImageEnhance.Color(img).enhance(1.0 + 0.07 * intensity)
+
+    # gentle, noise-aware sharpen (threshold=3 skips flat/noisy regions)
+    img = img.filter(ImageFilter.UnsharpMask(radius=1.2,
+                                             percent=int(45 * intensity),
+                                             threshold=3))
     return img
 
 
@@ -84,30 +94,86 @@ def _pick_aspect(w: int, h: int) -> str:
 
 
 def fit_for_ig(img: Image.Image, aspect: str = DEFAULT_ASPECT) -> Image.Image:
-    """Center-crop + scale to an Instagram-optimal frame ('cover' fit, no
-    letterbox bars). aspect='auto' picks the standard closest to the source."""
+    """Center-crop to an Instagram-optimal aspect ('cover' fit, no letterbox
+    bars). NEVER upscales — if the source can't fill 1080px we keep the native
+    crop (slightly smaller but crisp) rather than enlarging it into grain.
+    aspect='auto' picks the standard closest to the source."""
     img = ImageOps.exif_transpose(img).convert("RGB")
     w, h = img.size
     key = _pick_aspect(w, h) if aspect == "auto" else aspect
     tw, th = IG_SIZES[key]
+    ar = tw / th
 
-    scale = max(tw / w, th / h)
-    nw, nh = round(w * scale), round(h * scale)
-    img = img.resize((nw, nh), Image.LANCZOS)
-    left, top = (nw - tw) // 2, (nh - th) // 2
-    return img.crop((left, top, left + tw, top + th))
+    # largest center crop of the target aspect that fits at native resolution
+    if w / h > ar:
+        cw, ch = int(round(h * ar)), h
+    else:
+        cw, ch = w, int(round(w / ar))
+    left, top = (w - cw) // 2, (h - ch) // 2
+    img = img.crop((left, top, left + cw, top + ch))
+
+    # only ever downscale to the target; never enlarge
+    if cw > tw:
+        img = img.resize((tw, th), Image.LANCZOS)
+    return img
 
 
 # ---- pipeline ---------------------------------------------------------------
+def quality_report(data: bytes, aspect: str = DEFAULT_ASPECT) -> dict:
+    """Inspect the SOURCE photo for problems we can't fix (too low-res to be
+    crisp, already blown-out, very dark/crushed). Returns a dict with `ok` and
+    human-readable `warnings` so the workflow can ask for a better photo before
+    posting. Enhancement preserves quality but can't recover detail that was
+    never captured."""
+    img = ImageOps.exif_transpose(Image.open(io.BytesIO(data))).convert("RGB")
+    w, h = img.size
+    key = _pick_aspect(w, h) if aspect == "auto" else aspect
+    tw, th = IG_SIZES[key]
+    ar = tw / th
+    if w / h > ar:
+        cw, ch = int(round(h * ar)), h
+    else:
+        cw, ch = w, int(round(w / ar))
+    long_edge = max(cw, ch)
+
+    arr = np.asarray(img)
+    blown = float((arr >= 250).all(axis=2).mean())     # pure-white, no detail
+    crushed = float((arr <= 5).all(axis=2).mean())      # pure-black
+    mean_lum = float((arr @ [0.299, 0.587, 0.114]).mean())
+
+    warnings = []
+    if long_edge < 1080:
+        warnings.append(
+            f"Low resolution — after cropping it's only {cw}x{ch}px (IG ideal "
+            f"{tw}x{th}). It may look soft when enlarged. Send a higher-res "
+            "original if you have one.")
+    if blown > 0.02:
+        warnings.append(
+            f"Blown-out highlights — {blown*100:.0f}% of the photo is pure "
+            "white with no detail. That detail can't be recovered; a "
+            "better-exposed shot would look cleaner.")
+    if crushed > 0.06:
+        warnings.append(
+            f"Crushed shadows — {crushed*100:.0f}% of the photo is pure black.")
+    if mean_lum < 55:
+        warnings.append(
+            "Very dark photo — we'll brighten it, but a better-lit original "
+            "will look crisper and less grainy.")
+    return {"width": w, "height": h, "crop": [cw, ch], "long_edge": long_edge,
+            "blown_fraction": blown, "crushed_fraction": crushed,
+            "mean_lum": mean_lum, "ok": not warnings, "warnings": warnings}
+
+
 def process_bytes(data: bytes, *, aspect: str = DEFAULT_ASPECT,
-                  intensity: float = 1.0, quality: int = 90) -> bytes:
+                  intensity: float = 1.0, quality: int = 95) -> bytes:
     """Full pipeline: enhance lighting, then crop to an IG frame. Returns JPEG
-    bytes. aspect: '4:5' | '1:1' | '1.91:1' | 'auto'."""
+    bytes at high quality (4:4:4 chroma, no subsampling) so fine detail/text
+    stays crisp. aspect: '4:5' | '1:1' | '1.91:1' | 'auto'."""
     img = Image.open(io.BytesIO(data))
     img = enhance(img, intensity=intensity)
     img = fit_for_ig(img, aspect=aspect)
     out = io.BytesIO()
-    img.save(out, format="JPEG", quality=quality, optimize=True)
+    img.save(out, format="JPEG", quality=quality, optimize=True, subsampling=0)
     return out.getvalue()
 
 
