@@ -16,6 +16,8 @@ Two phases:
 from __future__ import annotations
 
 import argparse
+import datetime as dt
+import json
 import sys
 import time
 from pathlib import Path
@@ -134,6 +136,59 @@ def _launch_zoho(p, headless: bool):
         return p.chromium.launch_persistent_context(**base)
 
 
+def _compose(pg, caption: str, image_path: str | None,
+             media_type: str) -> list[str]:
+    """Open New Post, set the caption, attach the photo (gallery -> Attach),
+    and select channels. Returns the channels left selected. Shared by
+    create_draft + schedule_post."""
+    pg.locator(_NEW_POST).first.click(timeout=15000)
+    pg.wait_for_timeout(3000)
+
+    ed = pg.locator(_EDITOR).first
+    ed.click()
+    try:
+        ed.fill(caption)
+    except Exception:
+        pg.keyboard.type(caption)
+
+    # photo: media button -> file chooser -> gallery -> Attach (set_input_files
+    # alone uploads to the gallery but never inserts it)
+    if image_path:
+        with pg.expect_file_chooser(timeout=15000) as fc:
+            pg.locator(_MEDIA_BTN).first.click(timeout=10000)
+        fc.value.set_files(image_path)
+        pg.wait_for_timeout(3500)
+        attach = pg.get_by_role("button", name="Attach").first
+        attach.click(timeout=15000)
+        try:
+            attach.wait_for(state="detached", timeout=15000)  # dialog closes on insert
+        except Exception:
+            pg.wait_for_timeout(3000)
+        pg.wait_for_timeout(2000)
+
+    # channel selection (drops Raf's personal LinkedIn, YouTube, TikTok-for-photos)
+    return select_channels(pg, media_type=media_type)
+
+
+def _click_save_draft(pg) -> None:
+    """Click Save Draft — the publishing-options popup overlaps it, so click the
+    visible one with force, then fall back to a direct JS click."""
+    loc = pg.locator(_SAVE_DRAFT)
+    for i in range(loc.count()):
+        el = loc.nth(i)
+        try:
+            if el.is_visible():
+                el.click(timeout=8000, force=True)
+                return
+        except Exception:
+            continue
+    if not pg.evaluate(
+            "() => { for (const n of document.querySelectorAll('*')) {"
+            " if ((n.innerText||'').trim() === 'Save Draft') { n.click();"
+            " return true; } } return false; }"):
+        raise RuntimeError("could not click Save Draft")
+
+
 def create_draft(caption: str, image_path: str | None,
                  company_name: str = "", *, media_type: str = "photo",
                  headless: bool = False, timeout: int = 60000) -> dict:
@@ -158,58 +213,8 @@ def create_draft(caption: str, image_path: str | None,
                     "re-authenticate, then retry.")
             pg.wait_for_timeout(2500)
 
-            pg.locator(_NEW_POST).first.click(timeout=15000)
-            pg.wait_for_timeout(3000)
-
-            # caption
-            ed = pg.locator(_EDITOR).first
-            ed.click()
-            try:
-                ed.fill(caption)
-            except Exception:
-                pg.keyboard.type(caption)
-
-            # photo FIRST: media button -> file chooser -> gallery -> Attach.
-            # (set_input_files on the hidden input uploads to the gallery but
-            # never inserts it; you must click Attach.)
-            if image_path:
-                with pg.expect_file_chooser(timeout=15000) as fc:
-                    pg.locator(_MEDIA_BTN).first.click(timeout=10000)
-                fc.value.set_files(image_path)
-                pg.wait_for_timeout(3500)
-                attach = pg.get_by_role("button", name="Attach").first
-                attach.click(timeout=15000)
-                # the media dialog closes once the photo is inserted into the post
-                try:
-                    attach.wait_for(state="detached", timeout=15000)
-                except Exception:
-                    pg.wait_for_timeout(3000)
-                pg.wait_for_timeout(2000)
-
-            # THEN channel selection (drops Raf's personal LinkedIn, YouTube, and
-            # TikTok-for-photos); aborts if Raf's LinkedIn can't be removed
-            channels = select_channels(pg, media_type=media_type)
-
-            # Save Draft — the publishing-options popup overlaps it, so click the
-            # visible one with force, then fall back to a direct JS click.
-            saved = False
-            loc = pg.locator(_SAVE_DRAFT)
-            for i in range(loc.count()):
-                el = loc.nth(i)
-                try:
-                    if el.is_visible():
-                        el.click(timeout=8000, force=True)
-                        saved = True
-                        break
-                except Exception:
-                    continue
-            if not saved:
-                saved = bool(pg.evaluate(
-                    "() => { for (const n of document.querySelectorAll('*')) {"
-                    " if ((n.innerText||'').trim() === 'Save Draft') { n.click();"
-                    " return true; } } return false; }"))
-            if not saved:
-                raise RuntimeError("could not click Save Draft")
+            channels = _compose(pg, caption, image_path, media_type)
+            _click_save_draft(pg)
             pg.wait_for_timeout(4000)
 
             from automations.brand_audit.config import OUTPUT_DIR
@@ -230,6 +235,122 @@ def create_draft(caption: str, image_path: str | None,
                         "error": "composer still open after Save Draft — likely "
                                  "a channel validation issue"}
             return {"ok": True, "screenshot": shot, "channels": channels}
+        finally:
+            ctx.close()
+
+
+# ---- scheduling -------------------------------------------------------------
+# Schedule-panel selectors (mapped 2026-06-19).
+_SCHED_RADIO = "text=Schedule for a Specific Date"
+_DATE_INPUT = "#newpost-compose-publish_schedule_datepicker"
+_CALENDAR = "#newpost-calendar-datepicker"
+_CAL_NEXT = ".zso-next-line"
+_CAL_DAY = "div.publish_day"
+_HOUR_C = "#select2-zs-newpost-composer-publishingoption-schedule-custom-time-hour-container"
+_MIN_C = "#select2-zs-newpost-composer-publishingoption-schedule-custom-time-minute-container"
+# TODO(verify): AM/PM selector unconfirmed — hour/minute select2 are verified,
+# but this container id timed out once; confirm before enabling live scheduling.
+_AMPM_C = "#select2-zs-newpost-composer-publishingoption-schedule-custom-timeformat-container"
+_SCHEDULE_BTN = "Schedule"
+
+_SCHED_STATE = Path.home() / ".config" / "brand-audit" / "zoho_schedule.json"
+
+
+def _select2(pg, container_sel: str, value: str) -> None:
+    """Pick `value` in a select2 dropdown (click container -> click option)."""
+    pg.locator(container_sel).first.click(timeout=6000)
+    pg.wait_for_timeout(400)
+    pg.locator("li.select2-results__option", has_text=value).first.click(timeout=5000)
+    pg.wait_for_timeout(300)
+
+
+def _set_schedule(pg, when: dt.datetime) -> None:
+    """Set the composer to schedule at `when` (local to the brand's time zone)."""
+    pg.locator(_SCHED_RADIO).first.click(timeout=8000)
+    pg.wait_for_timeout(1200)
+    # date — open the calendar, page to the right month, click the day
+    pg.locator(_DATE_INPUT).first.click(timeout=6000)
+    pg.wait_for_timeout(800)
+    cal = pg.locator(_CALENDAR).first
+    target = when.strftime("%B %Y")
+    for _ in range(24):
+        if target in (cal.text_content(timeout=4000) or ""):
+            break
+        cal.locator(_CAL_NEXT).first.click(timeout=4000)
+        pg.wait_for_timeout(400)
+    cal.get_by_text(str(when.day), exact=True).first.click(timeout=5000)
+    pg.wait_for_timeout(600)
+    # time — 12h clock via select2
+    h12 = when.hour % 12 or 12
+    _select2(pg, _HOUR_C, f"{h12:02d}")
+    _select2(pg, _MIN_C, f"{when.minute:02d}")
+    _select2(pg, _AMPM_C, "AM" if when.hour < 12 else "PM")
+
+
+def next_daily_slot(best_hour: int = 11, best_minute: int = 0) -> dt.datetime:
+    """Next open DAILY slot: one post/day, never in the past. Reads the last
+    scheduled date from state so approved posts auto-space one per day."""
+    state = {}
+    try:
+        state = json.loads(_SCHED_STATE.read_text())
+    except Exception:
+        pass
+    today = dt.date.today()
+    last = state.get("last_scheduled_date")
+    nxt = max(dt.date.fromisoformat(last) + dt.timedelta(days=1), today) if last else today
+    return dt.datetime(nxt.year, nxt.month, nxt.day, best_hour, best_minute)
+
+
+def _record_slot(when: dt.datetime) -> None:
+    _SCHED_STATE.parent.mkdir(parents=True, exist_ok=True)
+    _SCHED_STATE.write_text(json.dumps(
+        {"last_scheduled_date": when.date().isoformat()}, indent=2))
+
+
+def schedule_post(caption: str, image_path: str | None, company_name: str = "",
+                  *, when: dt.datetime | None = None, media_type: str = "photo",
+                  dry_run: bool = True, headless: bool = False,
+                  timeout: int = 60000) -> dict:
+    """Compose (caption + photo + channel selection) then SCHEDULE the post.
+    when=None -> next daily slot. dry_run=True is SAFE: it sets everything but
+    clicks *Save Draft* instead of Schedule, so nothing publishes — flip to
+    dry_run=False to actually schedule a live post. Returns the result + the
+    scheduled datetime + channels left selected."""
+    from patchright.sync_api import sync_playwright
+
+    when = when or next_daily_slot()
+    ZOHO_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as p:
+        ctx = _launch_zoho(p, headless)
+        try:
+            pg = ctx.pages[0] if ctx.pages else ctx.new_page()
+            pg.goto(ZOHO_SOCIAL_URL, wait_until="networkidle", timeout=timeout)
+            if "accounts.zoho.com" in pg.url:
+                raise RuntimeError("Zoho session expired — run `--login`.")
+            pg.wait_for_timeout(2500)
+            channels = _compose(pg, caption, image_path, media_type)
+            _set_schedule(pg, when)
+
+            if dry_run:
+                _click_save_draft(pg)   # SAFE: no live post
+                result = {"ok": True, "dry_run": True, "channels": channels,
+                          "scheduled_for": when.isoformat()}
+            else:
+                pg.get_by_role("button", name=_SCHEDULE_BTN).first.click(timeout=15000)
+                pg.wait_for_timeout(4000)
+                still = False
+                try:
+                    still = pg.locator(_EDITOR).is_visible()
+                except Exception:
+                    pass
+                if still:
+                    result = {"ok": False, "channels": channels,
+                              "error": "composer still open after Schedule"}
+                else:
+                    _record_slot(when)
+                    result = {"ok": True, "dry_run": False, "channels": channels,
+                              "scheduled_for": when.isoformat()}
+            return result
         finally:
             ctx.close()
 
