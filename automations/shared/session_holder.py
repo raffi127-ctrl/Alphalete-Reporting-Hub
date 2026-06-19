@@ -105,11 +105,16 @@ def main() -> int:
         waited, deadline = 0, args.seed_timeout * 60
         seeded = False
         while waited < deadline:
-            if _ownerville_session_valid(val_page, verbose=False):
+            # PASSIVE detection — read the login page's URL (a property read, NO
+            # navigation) so we never re-trigger Cloudflare while the human is
+            # mid-login. The old cut polled by NAVIGATING a check page every 15s,
+            # which kept the Turnstile alive and fought the login (Megan
+            # 2026-06-18). The post-login redirect lands on v2 with an rqst token.
+            if "rqst=" in (login_page.url or ""):
                 seeded = True
                 break
-            time.sleep(15)
-            waited += 15
+            time.sleep(5)
+            waited += 5
         if seeded:
             ovn, apn = _export(ctx)
             print(f"[{_stamp()}] seeded ✓ — exported {ovn} ownerville + {apn} appstream "
