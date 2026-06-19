@@ -93,3 +93,14 @@ def appstream_username() -> str:
 def appstream_password() -> str:
     return _resolve_as("appstream_password", "APPLICANTSTREAM_PASSWORD",
                        "applicantstream-password")
+
+
+# --- Sara Plus (saraplus.com) login — B2B WE sales board pull -----------------
+# Direct email+password form at /e/servicepages/login.aspx (no 2FA). Same
+# gitignored-file → env source order; never hardcoded (the repo was public).
+def saraplus_username() -> str:
+    return _resolve("saraplus_username", "SARAPLUS_USERNAME")
+
+
+def saraplus_password() -> str:
+    return _resolve("saraplus_password", "SARAPLUS_PASSWORD")

@@ -46,3 +46,8 @@ automations/uploaded/frontier/
 # debugging from one-off mapping work — never commit. Keep them around
 # locally if useful, but don't track them.
 automations/*/_probe_*.py
+
+# Sara Plus (B2B WE board) — persistent profile + session cookies. Sensitive.
+automations/b2b_sales_board/.saraplus_profile/
+automations/b2b_sales_board/.saraplus_storage_state.json
+automations/b2b_sales_board/_probe_*.png
