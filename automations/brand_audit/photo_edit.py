@@ -164,13 +164,38 @@ def quality_report(data: bytes, aspect: str = DEFAULT_ASPECT) -> dict:
             "mean_lum": mean_lum, "ok": not warnings, "warnings": warnings}
 
 
+def adjust(img: Image.Image, *, brightness: float = 1.0, contrast: float = 1.0,
+          color: float = 1.0, sharpen: float = 0.0) -> Image.Image:
+    """Apply targeted, explicit tweaks on top of the base enhance — used when an
+    approver asks for a specific fix ('too dark', 'more punch', 'less saturated').
+    Multipliers: 1.0 = no change. Bounds are clamped to keep things sane."""
+    brightness = min(max(brightness, 0.6), 1.4)
+    contrast = min(max(contrast, 0.7), 1.4)
+    color = min(max(color, 0.5), 1.5)
+    if brightness != 1.0:
+        img = ImageEnhance.Brightness(img).enhance(brightness)
+    if contrast != 1.0:
+        img = ImageEnhance.Contrast(img).enhance(contrast)
+    if color != 1.0:
+        img = ImageEnhance.Color(img).enhance(color)
+    if sharpen > 0:
+        img = img.filter(ImageFilter.UnsharpMask(radius=1.2,
+                                                 percent=int(60 * sharpen),
+                                                 threshold=3))
+    return img
+
+
 def process_bytes(data: bytes, *, aspect: str = DEFAULT_ASPECT,
-                  intensity: float = 1.0, quality: int = 95) -> bytes:
-    """Full pipeline: enhance lighting, then crop to an IG frame. Returns JPEG
-    bytes at high quality (4:4:4 chroma, no subsampling) so fine detail/text
-    stays crisp. aspect: '4:5' | '1:1' | '1.91:1' | 'auto'."""
+                  intensity: float = 1.0, quality: int = 95,
+                  adjust_opts: dict | None = None) -> bytes:
+    """Full pipeline: enhance lighting, optionally apply targeted tweaks, then
+    crop to an IG frame. Returns JPEG bytes at high quality (4:4:4 chroma) so
+    fine detail/text stays crisp. aspect: '4:5' | '1:1' | '1.91:1' | 'auto'.
+    adjust_opts: optional dict for adjust() (brightness/contrast/color/sharpen)."""
     img = Image.open(io.BytesIO(data))
     img = enhance(img, intensity=intensity)
+    if adjust_opts:
+        img = adjust(img, **adjust_opts)
     img = fit_for_ig(img, aspect=aspect)
     out = io.BytesIO()
     img.save(out, format="JPEG", quality=quality, optimize=True, subsampling=0)

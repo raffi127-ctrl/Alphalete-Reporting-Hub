@@ -116,6 +116,74 @@ def _get_reactions(cl, ts: str | None) -> list[dict] | None:
         return None
 
 
+def _human_reply_after(cl, parent_ts: str, after_ts: str) -> dict | None:
+    """Latest plain-text reply in the thread, posted after `after_ts`, that is a
+    human answer (not one of our bot prompts — those start with an emoji
+    shortcode). Used to read why a photo was rejected."""
+    try:
+        reps = cl.conversations_replies(channel=SOCIAL_INBOX_CHANNEL_ID,
+                                        ts=parent_ts).get("messages", [])
+    except Exception:
+        return None
+    out = None
+    for r in reps:
+        if r.get("ts", "") <= (after_ts or ""):
+            continue
+        if r.get("files"):
+            continue
+        t = (r.get("text") or "").strip()
+        if not t or t.startswith(":"):   # skip blanks + our emoji-led prompts
+            continue
+        out = r
+    return out
+
+
+_PHOTO_FEEDBACK_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "intent": {"type": "string", "enum": ["skip", "fix"]},
+        "aspect": {"type": "string",
+                   "enum": ["keep", "4:5", "1:1", "1.91:1"]},
+        "brightness": {"type": "number"},
+        "contrast": {"type": "number"},
+        "saturation": {"type": "number"},
+        "note": {"type": "string"},
+    },
+    "required": ["intent"], "additionalProperties": False,
+}
+
+
+def _interpret_photo_feedback(text: str) -> dict:
+    """Decide why an approver ❌'d the photo. intent='skip' if they don't want
+    THIS photo posted at all (content/privacy/'not this one'); intent='fix' if
+    it's about how the image LOOKS, with modest adjustment multipliers + a short
+    human-facing note. Falls back to a gentle brighten on any API hiccup."""
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
+        system = (
+            "An approver rejected an auto-edited social photo and gave a reason. "
+            "If they simply don't want THIS photo posted (privacy, wrong moment, "
+            "'not this one', 'skip it'), return intent='skip'. If the complaint "
+            "is about how the image LOOKS (too dark/bright, dull/flat, washed "
+            "out, bad crop, color/tint), return intent='fix' with multipliers "
+            "(1.0 = no change; brightness/contrast 0.7-1.4, saturation 0.6-1.4) "
+            "and an aspect ('keep' unless they mention the crop). Add a short, "
+            "friendly `note` saying what you changed (or, if it's something we "
+            "can't fix like blur/low-res, say so plainly).")
+        resp = client.messages.create(
+            model=MODEL, max_tokens=300, system=system,
+            output_config={"format": {"type": "json_schema",
+                                       "schema": _PHOTO_FEEDBACK_SCHEMA}},
+            messages=[{"role": "user", "content":
+                       f"Approver's reason: {text!r}"}])
+        body = next((b.text for b in resp.content if b.type == "text"), "{}")
+        return json.loads(body)
+    except Exception:
+        return {"intent": "fix", "aspect": "keep", "brightness": 1.12,
+                "note": "Brightened it up a touch — take another look."}
+
+
 def _newest_file_reply_ts(cl, parent_ts: str) -> str | None:
     """ts of the most recent thread reply that carries a file (the photo we
     just uploaded), so its reactions can be tracked separately."""
@@ -331,17 +399,67 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                 st["caption_ts"] = r.get("ts")
             continue
 
-        # photo ❌ -> ask for a replacement (once)
-        if (not photo_ok and _reacted(photo_reactions, SOCIAL_REJECT_EMOJI)
-                and not st.get("photo_reedit_asked")):
-            actions.append({"ts": ts, "action": "photo_rejected"})
+        # photo ❌ -> ask WHY, then skip (don't want it) or fix (how it looks)
+        photo_rejected = (not photo_ok
+                          and _reacted(photo_reactions, SOCIAL_REJECT_EMOJI))
+        if photo_rejected and not st.get("photo_dismissed"):
+            # A) ask why (once per reject cycle)
+            if not st.get("photo_why_ts"):
+                actions.append({"ts": ts, "action": "ask_photo_reason"})
+                if not dry_run:
+                    q = cl.chat_postMessage(
+                        channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                        text=":frame_with_picture: Got a :x: on the photo — "
+                             "what's off? If you just don't want *this photo* "
+                             "posted, tell me and I'll skip it. If it's *how it "
+                             "looks* (too dark/bright, dull, crop, color), say so "
+                             "and I'll fix it and re-post.")
+                    st["photo_why_ts"] = q.get("ts")
+                continue
+            # B) read their answer
+            reply = _human_reply_after(cl, ts, st.get("photo_why_ts"))
+            if not reply:
+                actions.append({"ts": ts, "action": "awaiting_photo_reason"})
+                continue
+            interp = _interpret_photo_feedback(reply.get("text", ""))
+            if interp.get("intent") == "skip":
+                actions.append({"ts": ts, "action": "photo_skipped"})
+                if not dry_run:
+                    cl.chat_postMessage(
+                        channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                        text=":ok_hand: Got it — skipping this one. Send the next "
+                             "photo whenever.")
+                    st["photo_dismissed"] = True
+                    st["posted"] = True
+                continue
+            # fix: re-edit per their feedback and re-post for approval
+            try:
+                raw = _download(imgs[-1]["url_private"])
+                asp = interp.get("aspect") or "keep"
+                opts = {"brightness": interp.get("brightness", 1.0),
+                        "contrast": interp.get("contrast", 1.0),
+                        "color": interp.get("saturation", 1.0)}
+                newimg = photo_edit.process_bytes(
+                    raw, aspect=("auto" if asp == "keep" else asp),
+                    adjust_opts=opts)
+            except Exception as e:
+                actions.append({"ts": ts, "action": "caption_error", "error": str(e)})
+                continue
+            new_path = OUTPUT_DIR / f"social_{ts.replace('.', '')}_ig.jpg"
+            new_path.write_bytes(newimg)
+            actions.append({"ts": ts, "action": "photo_reedited",
+                            "photo": str(new_path)})
             if not dry_run:
-                cl.chat_postMessage(
+                note = interp.get("note") or "Updated the edit."
+                cl.files_upload_v2(
                     channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
-                    text=":frame_with_picture: Got it on the photo — reply here "
-                         "with a better/edited version and I'll clean it up and "
-                         "re-post it for approval.")
-                st["photo_reedit_asked"] = True
+                    file=str(new_path), title="Edited photo (v2)",
+                    initial_comment=f":frame_with_picture: {note} React "
+                    ":white_check_mark: to approve the PHOTO, :x: if it still "
+                    "needs work.")
+                st["photo_ts"] = _newest_file_reply_ts(cl, ts)
+                st["photo_path"] = str(new_path)
+                st["photo_why_ts"] = None   # next ❌ asks why again
             continue
 
         # BOTH approved -> draft in Zoho
