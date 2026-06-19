@@ -245,7 +245,23 @@ def fill_tableau_for_owner(ws, owner_data: dict, layout, dry_run: bool = False) 
             continue
         sheet_reps[strip_rep_mark(name).lower().strip()] = i
 
-    cells_to_write: list[tuple[str, object]] = []
+    # AUTHORITATIVE fill so the office totals ALWAYS match Tableau (Megan
+    # 2026-06-19). Clear every current-zone sale cell for the EXISTING reps
+    # first, then overlay the Tableau values — so a rep who sold last week but
+    # 0 this week (or any stale leftover) goes to 0 instead of keeping the old
+    # number. The old fill only overwrote NON-zero, which silently inflated
+    # totals. SAFE BY DESIGN: only owners WITH a Tableau block reach this
+    # function (step6 loops the export), so an owner missing from a partial /
+    # failed pull is never cleared — a bad pull can't wipe a whole tab to zero.
+    SALE_METRICS = ("New INT", "Upgrades", "DTV", "New Lines")
+    cells: dict[str, object] = {}
+    for row in list(sheet_reps.values()):
+        for wd_cols in layout.day_cols.values():
+            for m in SALE_METRICS:
+                c = wd_cols.get(m)
+                if c:
+                    cells[f"{_col_letter(c)}{row}"] = ""   # clear stale, overlay below
+
     written = 0
     new_reps: list[str] = []
     # Track next available row so multiple new reps in one call don't
@@ -264,9 +280,7 @@ def fill_tableau_for_owner(ws, owner_data: dict, layout, dry_run: bool = False) 
             next_new_row += 1
             sheet_reps[key] = row
             new_reps.append(tableau_rep)
-            cells_to_write.append((
-                f"{_col_letter(layout.rep_name_col)}{row}", tableau_rep,
-            ))
+            cells[f"{_col_letter(layout.rep_name_col)}{row}"] = tableau_rep
 
         for wd, metric_counts in days.items():
             if wd not in layout.day_cols:
@@ -276,12 +290,11 @@ def fill_tableau_for_owner(ws, owner_data: dict, layout, dry_run: bool = False) 
                 col = wd_cols.get(metric)
                 if col is None:
                     continue
-                a1 = f"{_col_letter(col)}{row}"
-                cells_to_write.append((a1, int(count)))
+                cells[f"{_col_letter(col)}{row}"] = int(count)   # overlay wins over the clear
                 written += 1
 
-    if cells_to_write and not dry_run:
-        data = [{"range": f"'{ws.title}'!{a1}", "values": [[v]]} for a1, v in cells_to_write]
+    if cells and not dry_run:
+        data = [{"range": f"'{ws.title}'!{a1}", "values": [[v]]} for a1, v in cells.items()]
         ws.spreadsheet.values_batch_update({"valueInputOption": "USER_ENTERED", "data": data})
 
     return {"written": written, "unmatched_reps": [], "new_reps": new_reps}
