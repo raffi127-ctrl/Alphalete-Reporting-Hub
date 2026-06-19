@@ -91,7 +91,11 @@ def _chrome_ok() -> tuple[bool, str]:
 def wipe_future_day_blocks(sh, today: "dt.date") -> int:
     """Clear cells in day-blocks for days AFTER `today` (this week).
     Each day spans 12 cols starting at col 13 (Mon). Clears both values
-    and userEnteredFormat in rows 3-200. No-op on Sunday."""
+    and userEnteredFormat in the CURRENT zone only (rows 3 .. just above the
+    LAST WEEK block) — NOT rows 3-200, which used to reach into the frozen
+    LAST WEEK block and wipe its later days a column at a time as the week
+    progressed (by Thursday last week's Fri-Sun were gone — Megan 2026-06-18).
+    No-op on Sunday."""
     dow = today.weekday()    # 0=Mon..6=Sun
     first_future_col = 13 + (dow + 1) * 12   # 0-indexed column to start clearing
     if first_future_col > 96:
@@ -106,12 +110,15 @@ def wipe_future_day_blocks(sh, today: "dt.date") -> int:
             c, r = divmod(c - 1, 26)
             s = chr(65 + r) + s
         return s
-    rng = f"{_coletter(first_future_col)}3:{_coletter(96)}200"
+    # Stop ABOVE the frozen LAST WEEK block so its (complete) later days are
+    # never clobbered. LAST_WEEK_LABEL_ROW-1 is the last current-zone row.
+    last_cur_row = LAST_WEEK_LABEL_ROW - 1
+    rng = f"{_coletter(first_future_col)}3:{_coletter(96)}{last_cur_row}"
     sh.values_batch_clear(body={"ranges": [f"{_q(t.title)}!{rng}" for t in tabs]})
     sh.batch_update({"requests": [
         {"updateCells": {
             "range": {"sheetId": t.id,
-                      "startRowIndex": 2, "endRowIndex": 200,
+                      "startRowIndex": 2, "endRowIndex": last_cur_row,
                       "startColumnIndex": first_future_col - 1,
                       "endColumnIndex": 96},
             "fields": "userEnteredFormat",
