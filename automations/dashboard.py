@@ -3115,6 +3115,21 @@ def _run_outcome(report_id: str) -> dict:
     return result
 
 
+def _skipped_icds(log_text: str) -> list[str]:
+    """ICDs/owners the scrape couldn't match in ownerville and auto-skipped.
+    Pulled from the "Couldn't find 'X' in ownerville" lines, deduped, in order.
+    A run that completes but skips a couple ICDs should SAY SO (Megan
+    2026-06-18: "if it's just missing 2 ICDs it should say that, not failed")."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for m in re.finditer(r"[Cc]ouldn'?t find '([^']+)' in ownerville", log_text or ""):
+        n = m.group(1).strip()
+        if n and n not in seen:
+            seen.add(n)
+            out.append(n)
+    return out
+
+
 def _run_outcome_raw(report_id: str) -> dict:
     """Classify the LAST run of `report_id` from its persisted log:
     {'status': 'full'|'partial'|'failed'|None, 'issues': [...]}. None = no log.
@@ -3143,8 +3158,15 @@ def _run_outcome_raw(report_id: str) -> dict:
         skip_markers = [(m, msg) for m, msg in _PARTIAL_RUN_MARKERS
                         if "skipped" in m or "failed" in m or "sync to latest" in m]
         issues = [msg for marker, msg in skip_markers if marker in low]
+        # Surface ICDs the scrape couldn't match in ownerville: a completed run
+        # that quietly skipped a couple reps/owners should read "N ICDs skipped",
+        # NOT a silent green (and NOT a red failure) — Megan 2026-06-18.
+        skipped = _skipped_icds(text)
+        if skipped:
+            issues.append(f"{len(skipped)} ICD(s) skipped (not found in ownerville): "
+                          + ", ".join(skipped))
         if issues:
-            return {"status": "partial", "issues": issues}
+            return {"status": "partial", "issues": issues, "skipped": skipped}
         return {"status": "full", "issues": []}
 
     # Saved status is failed/unknown — old behavior (broad log scan).
@@ -3828,14 +3850,23 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
         # Last-run outcome (#4) — surfaces a silent partial/failed run at a
         # glance, without opening the card.
         _card_oc = _run_outcome(report["id"])
+        _skipped_list = _card_oc.get("skipped") or []
         if _card_oc["status"] == "partial":
-            pills += "<span class='pill pill-warn'>⚠️ LAST RUN PARTIAL</span>"
+            if _skipped_list:
+                _n = len(_skipped_list)
+                pills += (f"<span class='pill pill-warn'>⚠️ COMPLETED · "
+                          f"{_n} ICD{'s' if _n != 1 else ''} SKIPPED</span>")
+            else:
+                pills += "<span class='pill pill-warn'>⚠️ LAST RUN PARTIAL</span>"
         elif _card_oc["status"] == "failed":
             pills += "<span class='pill pill-warn'>❌ LAST RUN FAILED</span>"
         if sched:
             pills += f"<span class='pill pill-info'>{sched.get('time', '')} • ~{sched.get('estimated_minutes', '?')} min</span>"
         if pills:
             st.markdown(pills, unsafe_allow_html=True)
+        # Name the skipped ICDs so "2 ICDs skipped" is actionable, not a mystery.
+        if _skipped_list:
+            st.caption(f"⏭️ Skipped — not found in ownerville: {', '.join(_skipped_list)}")
         # Report name — forced onto a single line (ellipsis if ever too long).
         st.markdown(
             "<div style='font-size:1.35rem; font-weight:800; line-height:1.25; "
