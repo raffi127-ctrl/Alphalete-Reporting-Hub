@@ -130,7 +130,11 @@ def caption_for(image_bytes: bytes, context: str, company_name: str) -> str:
         "grind', 'next man up', 'sky's the limit', 'leveled up'.\n"
         "- Sound like a sharp human who posts constantly — NOT a brand bot, NOT "
         "AI. Vary the structure; don't follow a template.\n"
-        "- Use the real names/levels/context. Never invent facts."
+        "- Use the real names/context. Never invent facts.\n"
+        "- NEVER put a person's level in parentheses after their name (no "
+        "'Vincent (LVL 3)'). Refer to people by name only — don't tag internal "
+        "level designations onto them. (Naming the promotion itself, like 'hit "
+        "Level 1', is fine.)"
     )
     resp = client.messages.create(
         model=MODEL, max_tokens=400, system=system,
