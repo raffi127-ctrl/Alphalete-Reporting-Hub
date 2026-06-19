@@ -248,12 +248,24 @@ _CAL_NEXT = ".zso-next-line"
 _CAL_DAY = "div.publish_day"
 _HOUR_C = "#select2-zs-newpost-composer-publishingoption-schedule-custom-time-hour-container"
 _MIN_C = "#select2-zs-newpost-composer-publishingoption-schedule-custom-time-minute-container"
-# TODO(verify): AM/PM selector unconfirmed — hour/minute select2 are verified,
-# but this container id timed out once; confirm before enabling live scheduling.
-_AMPM_C = "#select2-zs-newpost-composer-publishingoption-schedule-custom-timeformat-container"
+# AM/PM is a toggle switch (checkbox), NOT a select2: unchecked = AM, checked = PM.
+_AMPM_CHECKBOX = "#publish_time_ampm"
+_AMPM_SWITCH = "label.timePeriodSwitch"
 _SCHEDULE_BTN = "Schedule"
 
 _SCHED_STATE = Path.home() / ".config" / "brand-audit" / "zoho_schedule.json"
+
+
+def _visible(locator):
+    """First visible match of a locator (or None) — for selectors that resolve
+    to duplicate elements where only one is on-screen."""
+    try:
+        for i in range(locator.count()):
+            if locator.nth(i).is_visible():
+                return locator.nth(i)
+    except Exception:
+        pass
+    return None
 
 
 def _select2(pg, container_sel: str, value: str) -> None:
@@ -284,7 +296,18 @@ def _set_schedule(pg, when: dt.datetime) -> None:
     h12 = when.hour % 12 or 12
     _select2(pg, _HOUR_C, f"{h12:02d}")
     _select2(pg, _MIN_C, f"{when.minute:02d}")
-    _select2(pg, _AMPM_C, "AM" if when.hour < 12 else "PM")
+    # AM/PM toggle: checked = PM. There are duplicate switches in the DOM, so
+    # operate on the VISIBLE one. Click only if it needs flipping.
+    want_pm = when.hour >= 12
+    sw = _visible(pg.locator(_AMPM_SWITCH))
+    if sw is not None:
+        cb = sw.locator("input.tpSwitch-input")
+        try:
+            if cb.is_checked() != want_pm:
+                sw.click(timeout=4000)
+                pg.wait_for_timeout(300)
+        except Exception:
+            pass
 
 
 def next_daily_slot(best_hour: int = 11, best_minute: int = 0) -> dt.datetime:
