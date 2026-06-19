@@ -63,19 +63,105 @@ def launch_login(max_minutes: int = 30) -> int:
     return 0
 
 
-def create_draft(caption: str, image_path: str,
-                 company_name: str = "") -> dict:
-    """Create a DRAFT post (image + caption) in Zoho Social using the warm
-    logged-in profile, without publishing. Not yet wired — the Save-as-Draft
-    composer flow still needs to be mapped from a logged-in session.
+# Composer selectors (mapped 2026-06-19 from a logged-in session).
+_EDITOR = "#content-editor-newpost-content-editor-div"   # caption (contenteditable)
+# the MAIN composer media uploader (other imgInputs are per-channel/customize)
+_IMG_INPUT = "#zs-newpost-composer-footer-option-media-fileupload input[type=file]"
+_IMG_PREVIEW = "#newpost-imgpreview img, #newpost-imglists img"   # upload thumb
+_NEW_POST = "text=New Post"
+_SAVE_DRAFT = "text=Save Draft"
 
-    Raises NotImplementedError until then; callers (social_inbox) catch it and
-    leave the submission pending so it drafts automatically once this is built.
+
+def create_draft(caption: str, image_path: str | None,
+                 company_name: str = "", *, headless: bool = False,
+                 timeout: int = 60000) -> dict:
+    """Create a DRAFT post (image + caption) in Zoho Social via the warm
+    logged-in profile, WITHOUT publishing. Runs headful — headless trips Zoho's
+    re-auth wall. Raises if the session has expired (re-run `--login`).
+
+    NOTE: channel selection (and excluding Raf's personal LinkedIn per the hard
+    rule) stays with the human at PUBLISH time — a draft does not post anywhere.
     """
-    raise NotImplementedError(
-        "Zoho Save-as-Draft composer not mapped yet — log in via "
-        "`zoho_draft.py --login`, then map New Post -> upload -> caption -> "
-        "Save as Draft.")
+    from patchright.sync_api import sync_playwright
+    from automations.shared.tableau_patchright import _launch_persistent
+
+    ZOHO_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as p:
+        ctx = _launch_persistent(p, ZOHO_PROFILE_DIR, headless=headless,
+                                 label="zoho-draft")
+        try:
+            pg = ctx.pages[0] if ctx.pages else ctx.new_page()
+            pg.goto(ZOHO_SOCIAL_URL, wait_until="networkidle", timeout=timeout)
+            if "accounts.zoho.com" in pg.url:
+                raise RuntimeError(
+                    "Zoho session expired — run `zoho_draft.py --login` to "
+                    "re-authenticate, then retry.")
+            pg.wait_for_timeout(2500)
+
+            pg.locator(_NEW_POST).first.click(timeout=15000)
+            pg.wait_for_timeout(3000)
+
+            # caption
+            ed = pg.locator(_EDITOR).first
+            ed.click()
+            try:
+                ed.fill(caption)
+            except Exception:
+                pg.keyboard.type(caption)
+
+            # photo (set_input_files works even on a hidden input); wait for the
+            # thumbnail so media-required channels (IG/TikTok) don't error out
+            if image_path:
+                pg.locator(_IMG_INPUT).first.set_input_files(image_path)
+                try:
+                    pg.wait_for_selector(_IMG_PREVIEW, state="visible",
+                                         timeout=30000)
+                except Exception:
+                    pass
+                pg.wait_for_timeout(2000)
+
+            # Save Draft — the publishing-options popup overlaps it, so click the
+            # visible one with force, then fall back to a direct JS click.
+            saved = False
+            loc = pg.locator(_SAVE_DRAFT)
+            for i in range(loc.count()):
+                el = loc.nth(i)
+                try:
+                    if el.is_visible():
+                        el.click(timeout=8000, force=True)
+                        saved = True
+                        break
+                except Exception:
+                    continue
+            if not saved:
+                saved = bool(pg.evaluate(
+                    "() => { for (const n of document.querySelectorAll('*')) {"
+                    " if ((n.innerText||'').trim() === 'Save Draft') { n.click();"
+                    " return true; } } return false; }"))
+            if not saved:
+                raise RuntimeError("could not click Save Draft")
+            pg.wait_for_timeout(4000)
+
+            from automations.brand_audit.config import OUTPUT_DIR
+            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+            shot = str(OUTPUT_DIR / "_zoho_draft_result.png")
+            try:
+                pg.screenshot(path=shot, full_page=False)
+            except Exception:
+                shot = None
+            # success = the composer closed (editor gone). If it's still open,
+            # the save was blocked (validation) — report it instead of lying.
+            try:
+                still_open = pg.locator(_EDITOR).is_visible()
+            except Exception:
+                still_open = False
+            if still_open:
+                return {"ok": False, "screenshot": shot,
+                        "error": "composer still open after Save Draft — likely "
+                                 "a channel validation issue"}
+            return {"ok": True, "screenshot": shot}
+        finally:
+            ctx.close()
 
 
 def main(argv=None) -> int:

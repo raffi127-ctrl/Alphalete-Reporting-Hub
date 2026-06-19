@@ -474,7 +474,10 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                     cl.chat_postMessage(
                         channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
                         text=":rocket: Photo + caption approved — saved as a "
-                             "*draft in Zoho* for you to publish.")
+                             "*draft in Zoho* for you to publish.\n"
+                             ":warning: Before publishing, check the channels — "
+                             "leave *Rafael Hidalgo's personal LinkedIn* "
+                             "unchecked (never post there).")
                     st["drafted"] = True
                     st["posted"] = True
                 except Exception as e:
