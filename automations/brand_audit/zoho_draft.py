@@ -65,11 +65,25 @@ def launch_login(max_minutes: int = 30) -> int:
 
 # Composer selectors (mapped 2026-06-19 from a logged-in session).
 _EDITOR = "#content-editor-newpost-content-editor-div"   # caption (contenteditable)
-# the MAIN composer media uploader (other imgInputs are per-channel/customize)
-_IMG_INPUT = "#zs-newpost-composer-footer-option-media-fileupload input[type=file]"
-_IMG_PREVIEW = "#newpost-imgpreview img, #newpost-imglists img"   # upload thumb
+_MEDIA_BTN = "#zs-newpost-composer-footer-option-media"  # opens the media dialog
+# after the media dialog uploads, the "Attach" button inserts it into the post
+_IMG_PREVIEW = ("#newpost-imgpreview img, #newpost-imglists img, "
+                "[class*=imgpreview] img")               # in-composer thumbnail
 _NEW_POST = "text=New Post"
 _SAVE_DRAFT = "text=Save Draft"
+
+
+def _launch_zoho(p, headless: bool):
+    """Persistent Zoho context with a LARGE viewport — the media dialog's
+    'Attach' button sits bottom-right and is off-screen / unclickable at the
+    default window size. System Chrome first, bundled Chromium fallback."""
+    base = dict(user_data_dir=str(ZOHO_PROFILE_DIR), headless=headless,
+                viewport={"width": 1680, "height": 1000},
+                args=["--window-size=1700,1050"])
+    try:
+        return p.chromium.launch_persistent_context(channel="chrome", **base)
+    except Exception:
+        return p.chromium.launch_persistent_context(**base)
 
 
 def create_draft(caption: str, image_path: str | None,
@@ -83,12 +97,10 @@ def create_draft(caption: str, image_path: str | None,
     rule) stays with the human at PUBLISH time — a draft does not post anywhere.
     """
     from patchright.sync_api import sync_playwright
-    from automations.shared.tableau_patchright import _launch_persistent
 
     ZOHO_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as p:
-        ctx = _launch_persistent(p, ZOHO_PROFILE_DIR, headless=headless,
-                                 label="zoho-draft")
+        ctx = _launch_zoho(p, headless)
         try:
             pg = ctx.pages[0] if ctx.pages else ctx.new_page()
             pg.goto(ZOHO_SOCIAL_URL, wait_until="networkidle", timeout=timeout)
@@ -109,16 +121,18 @@ def create_draft(caption: str, image_path: str | None,
             except Exception:
                 pg.keyboard.type(caption)
 
-            # photo (set_input_files works even on a hidden input); wait for the
-            # thumbnail so media-required channels (IG/TikTok) don't error out
+            # photo: media button -> file chooser -> gallery -> Attach.
+            # (set_input_files on the hidden input uploads to the gallery but
+            # never inserts it; you must click Attach.)
             if image_path:
-                pg.locator(_IMG_INPUT).first.set_input_files(image_path)
-                try:
-                    pg.wait_for_selector(_IMG_PREVIEW, state="visible",
-                                         timeout=30000)
-                except Exception:
-                    pass
-                pg.wait_for_timeout(2000)
+                with pg.expect_file_chooser(timeout=15000) as fc:
+                    pg.locator(_MEDIA_BTN).first.click(timeout=10000)
+                fc.value.set_files(image_path)
+                pg.wait_for_timeout(3000)
+                pg.get_by_role("button", name="Attach").first.click(timeout=15000)
+                # confirm the thumbnail actually landed in the composer
+                pg.wait_for_selector(_IMG_PREVIEW, state="visible", timeout=30000)
+                pg.wait_for_timeout(1500)
 
             # Save Draft — the publishing-options popup overlaps it, so click the
             # visible one with force, then fall back to a direct JS click.
