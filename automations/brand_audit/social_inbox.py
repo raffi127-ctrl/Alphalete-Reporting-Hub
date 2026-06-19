@@ -22,7 +22,7 @@ from pathlib import Path
 
 import requests
 
-from automations.brand_audit import credentials
+from automations.brand_audit import credentials, photo_edit
 from automations.brand_audit.config import (
     SOCIAL_INBOX_CHANNEL_ID, SOCIAL_APPROVERS, SOCIAL_APPROVE_EMOJI,
     DEFAULT_COMPANY,
@@ -239,13 +239,21 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
         if not st.get("caption"):
             try:
                 img = _download(imgs[-1]["url_private"])
+                img = photo_edit.process_bytes(img)   # auto-enhance + IG crop
                 cap = caption_for(img, text, company_name,
                                   avoid=recent_captions[:25])
             except Exception as e:
                 actions.append({"ts": ts, "action": "caption_error", "error": str(e)})
                 continue
             recent_captions.insert(0, cap)   # avoid repeats within this run too
-            actions.append({"ts": ts, "action": "propose_caption", "caption": cap})
+            act = {"ts": ts, "action": "propose_caption", "caption": cap}
+            if dry_run:   # save the cleaned photo so it can be eyeballed
+                from automations.brand_audit.config import OUTPUT_DIR
+                OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+                p = OUTPUT_DIR / f"social_{ts.replace('.', '')}_ig.jpg"
+                p.write_bytes(img)
+                act["photo"] = str(p)
+            actions.append(act)
             if not dry_run:
                 r = cl.chat_postMessage(
                     channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
