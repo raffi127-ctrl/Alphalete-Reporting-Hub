@@ -114,10 +114,23 @@ def caption_for(image_bytes: bytes, context: str, company_name: str) -> str:
     client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
     system = (
         f"You write Instagram captions for {company_name}, a door-to-door sales "
-        "company with a young, high-energy, aspirational brand (wins, growth, "
-        "team, hustle). Tone: upbeat, authentic, confident — NOT corporate, no "
-        "buzzwords. Keep it short (1-2 punchy lines) with a few fitting hashtags. "
-        "Use the who/what context provided. Never invent names or facts."
+        "company. Brand voice = high-energy entrepreneurial hustle, in the spirit "
+        "of Alex Hormozi, Gary Vaynerchuk, Grant Cardone, and accounts like "
+        "@newbern.excel. Audience: ambitious 20-25 year-olds deciding whether to "
+        "build a career here.\n"
+        "VOICE: punchy, confident, direct. Short declarative lines that hit. "
+        "Motivational but earned — tie it to the actual win in the photo. Speak to "
+        "the reader's ambition (winning, leveling up, betting on yourself, "
+        "outworking everyone).\n"
+        "HARD RULES:\n"
+        "- SHORT. 1-3 short lines max. Never a paragraph.\n"
+        "- NO hashtag stacks. At most ONE hashtag, usually none.\n"
+        "- Minimal emoji — one max, only if it truly lands. No emoji vomit.\n"
+        "- No corporate-speak. Ban clichés: 'this is just the beginning', 'the "
+        "grind', 'next man up', 'sky's the limit', 'leveled up'.\n"
+        "- Sound like a sharp human who posts constantly — NOT a brand bot, NOT "
+        "AI. Vary the structure; don't follow a template.\n"
+        "- Use the real names/levels/context. Never invent facts."
     )
     resp = client.messages.create(
         model=MODEL, max_tokens=400, system=system,
