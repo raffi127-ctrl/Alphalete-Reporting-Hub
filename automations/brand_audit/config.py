@@ -35,6 +35,14 @@ LOG_TAB_OVERRIDES = {
 # (private, created 2026-06-17). Reuses the shared Slack user token.
 ALERT_SLACK_CHANNEL_ID = "C0BBB2W5J1X"
 
+# Photo-intake channel for the social posting workflow: #alphaletesocialmedia.
+SOCIAL_INBOX_CHANNEL_ID = "C08P9T25N95"
+# Slack user IDs whose reaction approves a post. Empty = treat any approval
+# reaction as approval (set the real approver list before going live).
+SOCIAL_APPROVERS: tuple = ()
+# Reaction(s) that count as approval.
+SOCIAL_APPROVE_EMOJI = ("white_check_mark", "+1", "heavy_check_mark")
+
 # 🚫 HARD RULE: never post to / never treat these as postable channels.
 # Raf's personal LinkedIn is off-limits (Megan, 2026-06-17). Matched loosely
 # against channel display names when we reach the posting/draft layer.
