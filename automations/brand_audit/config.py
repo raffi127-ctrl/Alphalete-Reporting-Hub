@@ -37,11 +37,16 @@ ALERT_SLACK_CHANNEL_ID = "C0BBB2W5J1X"
 
 # Photo-intake channel for the social posting workflow: #alphaletesocialmedia.
 SOCIAL_INBOX_CHANNEL_ID = "C08P9T25N95"
-# Slack user IDs whose reaction approves a post. Empty = treat any approval
-# reaction as approval (set the real approver list before going live).
-SOCIAL_APPROVERS: tuple = ()
+# Slack user IDs whose reaction approves (or rejects) a post. Empty = treat
+# any reaction as authoritative. Approvers: Megan + Rafael Hidalgo.
+# NOTE 2026-06-19: Megan (raffi127@gmail.com) and "Rafael Hidalgo" resolve to
+# the SAME Slack account U045Z8N0ZQC. Add Rafael's separate ID here if he has
+# his own account.
+SOCIAL_APPROVERS: tuple = ("U045Z8N0ZQC",)
 # Reaction(s) that count as approval.
 SOCIAL_APPROVE_EMOJI = ("white_check_mark", "+1", "heavy_check_mark")
+# Reaction(s) that REJECT a caption -> the system suggests a new one.
+SOCIAL_REJECT_EMOJI = ("x", "negative_squared_cross_mark", "-1", "no_entry_sign")
 
 # 🚫 HARD RULE: never post to / never treat these as postable channels.
 # Raf's personal LinkedIn is off-limits (Megan, 2026-06-17). Matched loosely

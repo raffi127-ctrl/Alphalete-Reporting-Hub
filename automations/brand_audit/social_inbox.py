@@ -25,7 +25,7 @@ import requests
 from automations.brand_audit import credentials, photo_edit
 from automations.brand_audit.config import (
     SOCIAL_INBOX_CHANNEL_ID, SOCIAL_APPROVERS, SOCIAL_APPROVE_EMOJI,
-    DEFAULT_COMPANY,
+    SOCIAL_REJECT_EMOJI, DEFAULT_COMPANY,
 )
 
 _STATE = Path.home() / ".config" / "brand-audit" / "social_inbox.json"
@@ -92,20 +92,24 @@ def _has_context(text: str) -> bool:
     return len(t) >= 8
 
 
+def _reacted(reactions: list[dict] | None, emoji: tuple) -> bool:
+    """True if an authorized approver reacted with one of `emoji`."""
+    for rx in (reactions or []):
+        if rx.get("name") not in emoji:
+            continue
+        users = rx.get("users") or []
+        if not SOCIAL_APPROVERS:          # no allow-list set yet → anyone counts
+            return True
+        if any(u in SOCIAL_APPROVERS for u in users):
+            return True
+    return False
+
+
 def _approved(msg: dict, caption_reactions: list[dict] | None) -> bool:
-    """True if an authorized user reacted with an approval emoji on the photo
-    (or the caption reply)."""
-    def ok(reactions):
-        for rx in (reactions or []):
-            if rx.get("name") not in SOCIAL_APPROVE_EMOJI:
-                continue
-            users = rx.get("users") or []
-            if not SOCIAL_APPROVERS:      # no allow-list set yet → any approver
-                return True
-            if any(u in SOCIAL_APPROVERS for u in users):
-                return True
-        return False
-    return ok(msg.get("reactions")) or ok(caption_reactions)
+    """True if an approver reacted with an approval emoji on the photo or the
+    caption reply."""
+    return (_reacted(msg.get("reactions"), SOCIAL_APPROVE_EMOJI)
+            or _reacted(caption_reactions, SOCIAL_APPROVE_EMOJI))
 
 
 # ---- caption generation -----------------------------------------------------
@@ -264,13 +268,13 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                 r = cl.chat_postMessage(
                     channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
                     text=f"{warn}:sparkles: *Proposed caption* — react "
-                         f":white_check_mark: to approve (or reply with edits / "
-                         f"a new photo):\n\n{cap}")
+                         f":white_check_mark: to approve, :x: for a different "
+                         f"one (or reply with edits / a new photo):\n\n{cap}")
                 st["caption"] = cap
                 st["caption_ts"] = r.get("ts")
             continue
 
-        # 3) approved? -> post (stub)
+        # 3) react to the current caption: ✅ approve / ❌ suggest a new one
         cap_reactions = None
         if st.get("caption_ts"):
             try:
@@ -279,8 +283,37 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                 cap_reactions = (rr.get("message") or {}).get("reactions")
             except Exception:
                 pass
+
+        # ❌ -> regenerate a fresh caption (approval always wins over reject)
+        rejected = st.setdefault("rejected", [])
+        cur = st.get("caption")
+        if (not _approved(m, cap_reactions)
+                and _reacted(cap_reactions, SOCIAL_REJECT_EMOJI)
+                and cur and cur not in rejected):
+            rejected.append(cur)
+            try:
+                raw = _download(imgs[-1]["url_private"])
+                newcap = caption_for(photo_edit.process_bytes(raw), text,
+                                     company_name,
+                                     avoid=(rejected + recent_captions)[:25])
+            except Exception as e:
+                actions.append({"ts": ts, "action": "caption_error", "error": str(e)})
+                continue
+            recent_captions.insert(0, newcap)
+            actions.append({"ts": ts, "action": "repropose_caption",
+                            "caption": newcap, "rejected": cur})
+            if not dry_run:
+                r = cl.chat_postMessage(
+                    channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                    text=":arrows_counterclockwise: Got it — here's a different "
+                         "take. React :white_check_mark: to approve, :x: for "
+                         f"another:\n\n{newcap}")
+                st["caption"] = newcap
+                st["caption_ts"] = r.get("ts")
+            continue
+
         if _approved(m, cap_reactions):
-            actions.append({"ts": ts, "action": "post", "caption": st.get("caption")})
+            actions.append({"ts": ts, "action": "post", "caption": cur})
             if not dry_run:
                 # TODO: wire real posting (IG-native or aggregator) here.
                 cl.chat_postMessage(channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
@@ -289,7 +322,7 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                 st["posted"] = True
         else:
             actions.append({"ts": ts, "action": "awaiting_approval",
-                            "caption": st.get("caption")})
+                            "caption": cur})
 
     if not dry_run:
         state["_recent_captions"] = recent_captions[:50]   # cap history
