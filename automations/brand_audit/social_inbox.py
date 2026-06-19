@@ -462,34 +462,43 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                 st["photo_why_ts"] = None   # next ❌ asks why again
             continue
 
-        # BOTH approved -> draft in Zoho
+        # BOTH approved -> SCHEDULE into the next daily slot (one post/day).
+        # Zoho is only touched on a live (non-dry-run) pass; channel exclusion
+        # (Raf's personal LinkedIn) is enforced inside schedule_post.
         if caption_ok and photo_ok:
+            from automations.brand_audit import zoho_draft
+            slot = zoho_draft.next_daily_slot()
             actions.append({"ts": ts, "action": "both_approved",
-                            "caption": cur, "photo": st.get("photo_path")})
-            if not dry_run and not st.get("drafted"):
+                            "caption": cur, "photo": st.get("photo_path"),
+                            "scheduled_for": slot.isoformat()})
+            if not dry_run and not st.get("scheduled"):
                 try:
-                    from automations.brand_audit import zoho_draft
-                    zoho_draft.create_draft(cur, st.get("photo_path"),
-                                            company_name)
+                    res = zoho_draft.schedule_post(
+                        cur, st.get("photo_path"), company_name,
+                        when=slot, media_type="photo", dry_run=False)
+                except Exception as e:
+                    res = {"ok": False, "error": str(e)}
+                if res.get("ok"):
+                    h12 = slot.hour % 12 or 12
+                    when_txt = (f"{slot:%a %b} {slot.day} at {h12}:"
+                                f"{slot.minute:02d} {'AM' if slot.hour < 12 else 'PM'}")
                     cl.chat_postMessage(
                         channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
-                        text=":rocket: Photo + caption approved — saved as a "
-                             "*draft in Zoho* for you to publish.\n"
-                             ":warning: Before publishing, check the channels — "
-                             "leave *Rafael Hidalgo's personal LinkedIn* "
-                             "unchecked (never post there).")
-                    st["drafted"] = True
+                        text=f":rocket: Approved — *scheduled on Zoho* for "
+                             f"{when_txt} (Facebook, X, LinkedIn company page, "
+                             "Instagram, Google). Raf's personal LinkedIn is "
+                             "excluded.")
+                    st["scheduled"] = True
                     st["posted"] = True
-                except Exception as e:
-                    if not st.get("zoho_pending_notified"):
-                        cl.chat_postMessage(
-                            channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
-                            text=":white_check_mark: Photo + caption both "
-                                 "approved. The Zoho draft step is being wired — "
-                                 "it'll draft automatically once ready.")
-                        st["zoho_pending_notified"] = True
-                    actions.append({"ts": ts, "action": "zoho_pending",
-                                    "error": str(e)})
+                elif not st.get("zoho_pending_notified"):
+                    cl.chat_postMessage(
+                        channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                        text=":warning: Photo + caption approved, but the Zoho "
+                             f"schedule step hit an issue: {res.get('error','?')}. "
+                             "I'll retry next run.")
+                    st["zoho_pending_notified"] = True
+                    actions.append({"ts": ts, "action": "schedule_error",
+                                    "error": res.get("error")})
         else:
             actions.append({"ts": ts, "action": "awaiting_approval",
                             "caption_ok": caption_ok, "photo_ok": photo_ok})
