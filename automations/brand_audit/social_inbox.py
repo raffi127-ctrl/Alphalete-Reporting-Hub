@@ -109,15 +109,16 @@ def _approved(msg: dict, caption_reactions: list[dict] | None) -> bool:
 
 
 # ---- caption generation -----------------------------------------------------
-def caption_for(image_bytes: bytes, context: str, company_name: str) -> str:
+def caption_for(image_bytes: bytes, context: str, company_name: str,
+                avoid: list[str] | None = None) -> str:
     import anthropic
     client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
     system = (
         f"You write Instagram captions for {company_name}, a door-to-door sales "
-        "company. Model the voice closely on @newbern.excel (a similar company we "
-        "admire), with the energy of Hormozi / Gary Vee / Grant Cardone. "
-        "Audience: ambitious 20-25 year-olds deciding whether to build a career "
-        "here.\n"
+        "company. Aim for a SIMILAR VIBE to accounts like @newbern.excel and the "
+        "energy of Hormozi / Gary Vee / Grant Cardone — but this is our OWN "
+        "voice, NOT a copy of anyone. Audience: ambitious 20-25 year-olds "
+        "deciding whether to build a career here, plus our clients and community.\n"
         "#1 PRINCIPLE — DOCUMENT, DON'T CREATE. You are capturing real moments "
         "from inside the company, not manufacturing ads. Caption what's actually "
         "happening — the people, the team energy, the day — like a teammate "
@@ -131,22 +132,27 @@ def caption_for(image_bytes: bytes, context: str, company_name: str) -> str:
         "like a teammate hyping them up, not a brand account. High-energy and "
         "confident, but human and kind. Celebrate the PERSON first, the result "
         "second.\n"
-        "MATCH THE PHOTO TO A POST TYPE:\n"
+        "MATCH THE PHOTO TO A POST TYPE — we post a WIDE RANGE, not just wins:\n"
         "- Promotion / pin: warmly congratulate the person by name, name the "
-        "growth, hype their future (e.g. 'Big congrats to Fabian on Level 2 — "
-        "hard work and stepping up when it counts').\n"
+        "growth, hype their future.\n"
         "- Results / income: name the person + the real number from the context, "
         "one punchy line on their mindset, celebrate the win.\n"
+        "- Client / customer appreciation: genuine gratitude to the people we "
+        "serve — thank them, show we value their trust, highlight a happy "
+        "customer or a job well done. Warm and sincere, not salesy.\n"
         "- Culture / lifestyle (team hanging out, morning vibe, office, events): "
         "light, fun, relatable — NOT every post is a win. It's great to ask the "
         "audience a question.\n"
+        "- Milestone / event / behind-the-scenes: conferences, team trips, a "
+        "normal day in the field, recognition nights — document the moment.\n"
         "- Values / why: the deeper reason — growth, becoming someone, building a "
         "life worth wanting.\n"
+        "Let the photo + context decide the type. Keep the overall feed varied.\n"
         "CALL TO ACTION — USE SPARINGLY. Do NOT turn every post into a "
         "recruiting pitch. Most posts are just documenting the moment and need NO "
         "CTA. Only add a low-key invite ('DM INFO to learn more') now and then, "
         "when it genuinely fits — never forced, never salesy.\n"
-        "STYLE (match @newbern.excel exactly):\n"
+        "STYLE:\n"
         "- SHORT. 2-4 short lines.\n"
         f"- Hashtags are GOOD here — end with 3-5 tags: a brand tag built from "
         f"the company name (e.g. #{company_name.replace(' ', '')}) plus a few "
@@ -162,6 +168,22 @@ def caption_for(image_bytes: bytes, context: str, company_name: str) -> str:
         "- NEVER put a person's internal level in parentheses after their name "
         "(no 'Vincent (LVL 3)'). Naming the promotion itself ('Level 2') is fine."
     )
+    user_text = f"Context from the submitter:\n{context}\n\nWrite the caption."
+    if avoid:
+        recent = "\n".join(f"- {c}" for c in avoid if c)
+        user_text += (
+            "\n\nCRITICAL — DO NOT SOUND AUTOMATED. Here are our RECENT captions. "
+            "Even if THIS photo is the same kind of moment (e.g. another "
+            "promotion), the caption must feel written fresh by a different "
+            "person. Do NOT reuse — not even reworded — any of these from the "
+            "list below: a line or phrase; an opener or closer (e.g. 'Proud of "
+            "you, NAME'); a sentence shape or rhythm; a recurring framing (e.g. "
+            "'two women...', 'got to be the one to call it', 'just getting "
+            "started', 'the climb'); or the same topical hashtags (the brand tag "
+            "is the only one allowed to repeat). Find a different angle, "
+            "structure, and word choice every time:\n"
+            f"{recent}"
+        )
     resp = client.messages.create(
         model=MODEL, max_tokens=400, system=system,
         output_config={"format": {"type": "json_schema", "schema": _CAPTION_SCHEMA}},
@@ -169,8 +191,7 @@ def caption_for(image_bytes: bytes, context: str, company_name: str) -> str:
             {"type": "image", "source": {"type": "base64",
              "media_type": "image/jpeg",
              "data": base64.standard_b64encode(image_bytes).decode()}},
-            {"type": "text", "text": f"Context from the submitter:\n{context}\n\n"
-                                     "Write the caption."},
+            {"type": "text", "text": user_text},
         ]}])
     text = next((b.text for b in resp.content if b.type == "text"), "{}")
     return json.loads(text).get("caption", "")
@@ -185,6 +206,10 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
     msgs = cl.conversations_history(channel=SOCIAL_INBOX_CHANNEL_ID,
                                     limit=limit).get("messages", [])
     state = _load_state()
+    # Captions we've already used (persisted across runs so we never repeat a
+    # line even days apart). Newest first; we feed the recent slice as a
+    # "do-not-reuse" list to every new caption.
+    recent_captions = list(state.get("_recent_captions", []))
     actions = []
 
     for m in msgs:
@@ -214,10 +239,12 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
         if not st.get("caption"):
             try:
                 img = _download(imgs[-1]["url_private"])
-                cap = caption_for(img, text, company_name)
+                cap = caption_for(img, text, company_name,
+                                  avoid=recent_captions[:25])
             except Exception as e:
                 actions.append({"ts": ts, "action": "caption_error", "error": str(e)})
                 continue
+            recent_captions.insert(0, cap)   # avoid repeats within this run too
             actions.append({"ts": ts, "action": "propose_caption", "caption": cap})
             if not dry_run:
                 r = cl.chat_postMessage(
@@ -250,6 +277,7 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                             "caption": st.get("caption")})
 
     if not dry_run:
+        state["_recent_captions"] = recent_captions[:50]   # cap history
         _save_state(state)
     return actions
 
