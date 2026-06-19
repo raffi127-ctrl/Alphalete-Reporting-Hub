@@ -75,7 +75,10 @@ def _image_files(msg: dict) -> list[dict]:
 
 
 def _download(url: str) -> bytes:
-    r = requests.get(url, headers={"Authorization": f"Bearer {_token()}"}, timeout=30)
+    # File downloads need files:read — use the bot token (it has it) and fall
+    # back to the user token. The bot must be a member of the channel.
+    tok = credentials.optional("slack_bot_token") or _token()
+    r = requests.get(url, headers={"Authorization": f"Bearer {tok}"}, timeout=30)
     r.raise_for_status()
     return r.content
 
