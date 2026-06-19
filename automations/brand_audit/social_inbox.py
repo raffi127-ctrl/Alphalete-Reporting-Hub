@@ -25,7 +25,7 @@ import requests
 from automations.brand_audit import credentials, photo_edit
 from automations.brand_audit.config import (
     SOCIAL_INBOX_CHANNEL_ID, SOCIAL_APPROVERS, SOCIAL_APPROVE_EMOJI,
-    SOCIAL_REJECT_EMOJI, DEFAULT_COMPANY,
+    SOCIAL_REJECT_EMOJI, DEFAULT_COMPANY, OUTPUT_DIR,
 )
 
 _STATE = Path.home() / ".config" / "brand-audit" / "social_inbox.json"
@@ -105,11 +105,27 @@ def _reacted(reactions: list[dict] | None, emoji: tuple) -> bool:
     return False
 
 
-def _approved(msg: dict, caption_reactions: list[dict] | None) -> bool:
-    """True if an approver reacted with an approval emoji on the photo or the
-    caption reply."""
-    return (_reacted(msg.get("reactions"), SOCIAL_APPROVE_EMOJI)
-            or _reacted(caption_reactions, SOCIAL_APPROVE_EMOJI))
+def _get_reactions(cl, ts: str | None) -> list[dict] | None:
+    """Reactions on a specific message (or None)."""
+    if not ts:
+        return None
+    try:
+        rr = cl.reactions_get(channel=SOCIAL_INBOX_CHANNEL_ID, timestamp=ts)
+        return (rr.get("message") or {}).get("reactions")
+    except Exception:
+        return None
+
+
+def _newest_file_reply_ts(cl, parent_ts: str) -> str | None:
+    """ts of the most recent thread reply that carries a file (the photo we
+    just uploaded), so its reactions can be tracked separately."""
+    try:
+        reps = cl.conversations_replies(channel=SOCIAL_INBOX_CHANNEL_ID,
+                                        ts=parent_ts).get("messages", [])
+        files = [r for r in reps if r.get("files") and r.get("ts") != parent_ts]
+        return files[-1]["ts"] if files else None
+    except Exception:
+        return None
 
 
 # ---- caption generation -----------------------------------------------------
@@ -239,7 +255,8 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                     st["asked_context"] = True
             continue
 
-        # 2) caption (once) — use the latest image on the message
+        # 2) first pass: post the edited PHOTO and the CAPTION as TWO separate
+        #    messages so each can be approved on its own (✅) or rejected (❌).
         if not st.get("caption"):
             try:
                 raw = _download(imgs[-1]["url_private"])
@@ -251,44 +268,46 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                 actions.append({"ts": ts, "action": "caption_error", "error": str(e)})
                 continue
             recent_captions.insert(0, cap)   # avoid repeats within this run too
-            act = {"ts": ts, "action": "propose_caption", "caption": cap,
-                   "quality": quality}
-            if dry_run:   # save the cleaned photo so it can be eyeballed
-                from automations.brand_audit.config import OUTPUT_DIR
-                OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-                p = OUTPUT_DIR / f"social_{ts.replace('.', '')}_ig.jpg"
-                p.write_bytes(img)
-                act["photo"] = str(p)
-            actions.append(act)
+            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+            photo_path = OUTPUT_DIR / f"social_{ts.replace('.', '')}_ig.jpg"
+            photo_path.write_bytes(img)
+            actions.append({"ts": ts, "action": "propose", "caption": cap,
+                            "photo": str(photo_path), "quality": quality})
             if not dry_run:
                 warn = ""
                 if quality and quality.get("warnings"):
                     warn = (":warning: *Photo quality* — "
                             + " ".join(quality["warnings"]) + "\n\n")
+                # the edited PHOTO — approved on its own
+                cl.files_upload_v2(
+                    channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                    file=str(photo_path), title="Edited photo — IG ready",
+                    initial_comment=f"{warn}:frame_with_picture: *Edited photo* "
+                    "(auto-enhanced + cropped) — react :white_check_mark: to "
+                    "approve the PHOTO, :x: to ask for a different edit / upload "
+                    "your own.")
+                st["photo_ts"] = _newest_file_reply_ts(cl, ts)
+                st["photo_path"] = str(photo_path)
+                # the CAPTION — approved on its own
                 r = cl.chat_postMessage(
                     channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
-                    text=f"{warn}:sparkles: *Proposed caption* — react "
-                         f":white_check_mark: to approve, :x: for a different "
-                         f"one (or reply with edits / a new photo):\n\n{cap}")
+                    text=":sparkles: *Proposed caption* — react "
+                         ":white_check_mark: to approve the CAPTION, :x: for a "
+                         f"different one:\n\n{cap}")
                 st["caption"] = cap
                 st["caption_ts"] = r.get("ts")
             continue
 
-        # 3) react to the current caption: ✅ approve / ❌ suggest a new one
-        cap_reactions = None
-        if st.get("caption_ts"):
-            try:
-                rr = cl.reactions_get(channel=SOCIAL_INBOX_CHANNEL_ID,
-                                      timestamp=st["caption_ts"])
-                cap_reactions = (rr.get("message") or {}).get("reactions")
-            except Exception:
-                pass
-
-        # ❌ -> regenerate a fresh caption (approval always wins over reject)
-        rejected = st.setdefault("rejected", [])
+        # 3) collect reactions on the caption and the photo (judged separately)
+        cap_reactions = _get_reactions(cl, st.get("caption_ts"))
+        photo_reactions = _get_reactions(cl, st.get("photo_ts"))
+        caption_ok = _reacted(cap_reactions, SOCIAL_APPROVE_EMOJI)
+        photo_ok = _reacted(photo_reactions, SOCIAL_APPROVE_EMOJI)
         cur = st.get("caption")
-        if (not _approved(m, cap_reactions)
-                and _reacted(cap_reactions, SOCIAL_REJECT_EMOJI)
+
+        # caption ❌ -> regenerate a fresh caption (approval wins over reject)
+        rejected = st.setdefault("rejected", [])
+        if (not caption_ok and _reacted(cap_reactions, SOCIAL_REJECT_EMOJI)
                 and cur and cur not in rejected):
             rejected.append(cur)
             try:
@@ -305,24 +324,54 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
             if not dry_run:
                 r = cl.chat_postMessage(
                     channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
-                    text=":arrows_counterclockwise: Got it — here's a different "
-                         "take. React :white_check_mark: to approve, :x: for "
-                         f"another:\n\n{newcap}")
+                    text=":arrows_counterclockwise: Got it — a different take. "
+                         "React :white_check_mark: to approve the CAPTION, :x: "
+                         f"for another:\n\n{newcap}")
                 st["caption"] = newcap
                 st["caption_ts"] = r.get("ts")
             continue
 
-        if _approved(m, cap_reactions):
-            actions.append({"ts": ts, "action": "post", "caption": cur})
+        # photo ❌ -> ask for a replacement (once)
+        if (not photo_ok and _reacted(photo_reactions, SOCIAL_REJECT_EMOJI)
+                and not st.get("photo_reedit_asked")):
+            actions.append({"ts": ts, "action": "photo_rejected"})
             if not dry_run:
-                # TODO: wire real posting (IG-native or aggregator) here.
-                cl.chat_postMessage(channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
-                                    text=":rocket: Approved — posting queued. "
-                                         "(Posting destination not wired yet.)")
-                st["posted"] = True
+                cl.chat_postMessage(
+                    channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                    text=":frame_with_picture: Got it on the photo — reply here "
+                         "with a better/edited version and I'll clean it up and "
+                         "re-post it for approval.")
+                st["photo_reedit_asked"] = True
+            continue
+
+        # BOTH approved -> draft in Zoho
+        if caption_ok and photo_ok:
+            actions.append({"ts": ts, "action": "both_approved",
+                            "caption": cur, "photo": st.get("photo_path")})
+            if not dry_run and not st.get("drafted"):
+                try:
+                    from automations.brand_audit import zoho_draft
+                    zoho_draft.create_draft(cur, st.get("photo_path"),
+                                            company_name)
+                    cl.chat_postMessage(
+                        channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                        text=":rocket: Photo + caption approved — saved as a "
+                             "*draft in Zoho* for you to publish.")
+                    st["drafted"] = True
+                    st["posted"] = True
+                except Exception as e:
+                    if not st.get("zoho_pending_notified"):
+                        cl.chat_postMessage(
+                            channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                            text=":white_check_mark: Photo + caption both "
+                                 "approved. The Zoho draft step is being wired — "
+                                 "it'll draft automatically once ready.")
+                        st["zoho_pending_notified"] = True
+                    actions.append({"ts": ts, "action": "zoho_pending",
+                                    "error": str(e)})
         else:
             actions.append({"ts": ts, "action": "awaiting_approval",
-                            "caption": cur})
+                            "caption_ok": caption_ok, "photo_ok": photo_ok})
 
     if not dry_run:
         state["_recent_captions"] = recent_captions[:50]   # cap history
