@@ -23,7 +23,7 @@ from pathlib import Path
 
 import requests
 
-from automations.brand_audit import credentials, photo_edit
+from automations.brand_audit import credentials, photo_edit, style
 from automations.brand_audit.config import (
     SOCIAL_INBOX_CHANNEL_ID, SOCIAL_APPROVERS, SOCIAL_APPROVE_EMOJI,
     SOCIAL_REJECT_EMOJI, SOCIAL_POSTED_EMOJI, DEFAULT_COMPANY, OUTPUT_DIR,
@@ -279,6 +279,12 @@ def caption_for(image_bytes: bytes, context: str, company_name: str,
         "- NEVER put a person's internal level in parentheses after their name "
         "(no 'Vincent (LVL 3)'). Naming the promotion itself ('Level 2') is fine."
     )
+    from automations.brand_audit import style
+    learned = style.caption_rules()
+    if learned:
+        system += ("\n\nSTANDING TEAM FEEDBACK — ALWAYS FOLLOW (learned from past "
+                   "corrections; these override anything above if they conflict):\n"
+                   + "\n".join(f"- {r}" for r in learned))
     user_text = f"Context from the submitter:\n{context}\n\nWrite the caption."
     if feedback:
         user_text += (
@@ -359,7 +365,8 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
             try:
                 raw = _download(imgs[-1]["url_private"])
                 quality = photo_edit.quality_report(raw)   # flag bad sources
-                img = photo_edit.process_bytes(raw)        # auto-enhance + IG crop
+                img = photo_edit.process_bytes(             # auto-enhance + IG crop
+                    raw, zoom=style.photo_default_zoom())   # learned crop tightness
                 cap = caption_for(img, text, company_name,
                                   avoid=recent_captions[:25])
             except Exception as e:
@@ -368,7 +375,7 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
             recent_captions.insert(0, cap)   # avoid repeats within this run too
             OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
             photo_path = OUTPUT_DIR / f"social_{ts.replace('.', '')}_ig.jpg"
-            photo_path.write_bytes(img)
+            photo_path.write_bytes(img)   # img already used learned zoom (below)
             actions.append({"ts": ts, "action": "propose", "caption": cap,
                             "photo": str(photo_path), "quality": quality})
             if not dry_run:
@@ -410,6 +417,8 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                 and cur and cur not in rejected):
             rejected.append(cur)
             fb = _human_reply_after(cl, ts, st.get("caption_ts") or ts)
+            if fb and fb.get("text"):
+                style.add_caption_feedback(fb["text"])   # Lucy learns from it
             try:
                 raw = _download(imgs[-1]["url_private"])
                 newcap = caption_for(photo_edit.process_bytes(raw), text,
@@ -455,6 +464,9 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                     actions.append({"ts": ts, "action": "awaiting_photo_reason"})
                 continue
             interp = _interpret_photo_feedback(reply.get("text", ""))
+            if interp.get("intent") == "fix":   # Lucy learns the photo preference
+                style.add_photo_feedback(reply.get("text", ""),
+                                         zoom=float(interp.get("zoom") or 1.0))
             if interp.get("intent") == "skip":
                 actions.append({"ts": ts, "action": "photo_skipped"})
                 if not dry_run:
