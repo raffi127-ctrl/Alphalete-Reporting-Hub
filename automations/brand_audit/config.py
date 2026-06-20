@@ -46,6 +46,9 @@ SOCIAL_APPROVERS: tuple = ("U04G5HJBGFN", "U045Z8N0ZQC")
 SOCIAL_APPROVE_EMOJI = ("white_check_mark", "+1", "heavy_check_mark")
 # Reaction(s) that REJECT a caption -> the system suggests a new one.
 SOCIAL_REJECT_EMOJI = ("x", "negative_squared_cross_mark", "-1", "no_entry_sign")
+# Emoji the bot adds to the ORIGINAL submitted photo once it's posted/scheduled,
+# so the submitter sees it was handled (at-a-glance "done" in the channel).
+SOCIAL_POSTED_EMOJI = "white_check_mark"
 
 # 🚫 HARD RULE: never post to / never treat these as postable channels.
 # Raf's personal LinkedIn is off-limits (Megan, 2026-06-17). Matched loosely

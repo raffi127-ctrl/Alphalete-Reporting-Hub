@@ -25,7 +25,7 @@ import requests
 from automations.brand_audit import credentials, photo_edit
 from automations.brand_audit.config import (
     SOCIAL_INBOX_CHANNEL_ID, SOCIAL_APPROVERS, SOCIAL_APPROVE_EMOJI,
-    SOCIAL_REJECT_EMOJI, DEFAULT_COMPANY, OUTPUT_DIR,
+    SOCIAL_REJECT_EMOJI, SOCIAL_POSTED_EMOJI, DEFAULT_COMPANY, OUTPUT_DIR,
 )
 
 _STATE = Path.home() / ".config" / "brand-audit" / "social_inbox.json"
@@ -489,6 +489,12 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                              f"{when_txt} (Facebook, X, LinkedIn company page, "
                              "Instagram, Google). Raf's personal LinkedIn is "
                              "excluded.")
+                    # mark the ORIGINAL submitted photo as handled/posted
+                    try:
+                        cl.reactions_add(channel=SOCIAL_INBOX_CHANNEL_ID,
+                                         name=SOCIAL_POSTED_EMOJI, timestamp=ts)
+                    except Exception:
+                        pass
                     st["scheduled"] = True
                     st["posted"] = True
                 elif not st.get("zoho_pending_notified"):
