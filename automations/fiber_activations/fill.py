@@ -13,7 +13,7 @@ import gspread
 
 from automations.fiber_activations.pull import cycle_sunday
 
-SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
+SHEET_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
 TAB_NAME = "Captainship Activations"
 
 AVG_LABEL = "Last 4 week AVG"
