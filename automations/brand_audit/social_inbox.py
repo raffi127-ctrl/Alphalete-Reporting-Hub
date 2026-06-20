@@ -466,8 +466,9 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
         # Zoho is only touched on a live (non-dry-run) pass; channel exclusion
         # (Raf's personal LinkedIn) is enforced inside schedule_post.
         if caption_ok and photo_ok:
-            from automations.brand_audit import zoho_draft
-            slot = zoho_draft.next_daily_slot()
+            from automations.brand_audit import zoho_draft, best_time
+            bh, bm, _src = best_time.best_posting_time(company_name)
+            slot = zoho_draft.next_daily_slot(best_hour=bh, best_minute=bm)
             actions.append({"ts": ts, "action": "both_approved",
                             "caption": cur, "photo": st.get("photo_path"),
                             "scheduled_for": slot.isoformat()})

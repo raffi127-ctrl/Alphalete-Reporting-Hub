@@ -321,7 +321,10 @@ def next_daily_slot(best_hour: int = 11, best_minute: int = 0) -> dt.datetime:
     today = dt.date.today()
     last = state.get("last_scheduled_date")
     nxt = max(dt.date.fromisoformat(last) + dt.timedelta(days=1), today) if last else today
-    return dt.datetime(nxt.year, nxt.month, nxt.day, best_hour, best_minute)
+    when = dt.datetime(nxt.year, nxt.month, nxt.day, best_hour, best_minute)
+    if when <= dt.datetime.now() + dt.timedelta(minutes=5):
+        when += dt.timedelta(days=1)      # today's slot already passed -> tomorrow
+    return when
 
 
 def _record_slot(when: dt.datetime) -> None:
