@@ -482,20 +482,35 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
             continue
         ts = m["ts"]
         st = state.setdefault(ts, {})
-        if st.get("posted"):
+        if st.get("killed"):
             continue
         text = m.get("text", "")
 
-        # 💀 from an approver anywhere on this submission = never post it.
-        krx = _thread_reactions(cl, ts)
-        if any(_reacted(krx.get(t), SOCIAL_KILL_EMOJI)
-               for t in (ts, st.get("photo_ts"), st.get("caption_ts")) if t):
-            actions.append({"ts": ts, "action": "killed"})
-            if not dry_run and not st.get("killed_acked"):
-                cl.chat_postMessage(channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
-                                    text=":skull: Got it — we won't post this one.")
-                st["killed_acked"] = True
-            st["posted"] = True
+        # 💀 from an approver TRUMPS everything — even an approval (✅+💀 = no),
+        # even if it was already scheduled. Checked first, on active + scheduled
+        # items, so one person's skull overrides the other's approval.
+        if (not st.get("posted")) or st.get("scheduled"):
+            krx = _thread_reactions(cl, ts)
+            if any(_reacted(krx.get(t), SOCIAL_KILL_EMOJI)
+                   for t in (ts, st.get("photo_ts"), st.get("caption_ts")) if t):
+                actions.append({"ts": ts, "action": "killed",
+                                "was_scheduled": bool(st.get("scheduled"))})
+                if not dry_run:
+                    if st.get("scheduled"):
+                        cl.chat_postMessage(
+                            channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                            text=":skull: Got it — but heads up, this was already "
+                                 "*scheduled in Zoho*. Please remove it from the "
+                                 "scheduled queue (I can't auto-unschedule yet).")
+                    else:
+                        cl.chat_postMessage(
+                            channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                            text=":skull: Got it — we won't post this one.")
+                st["killed"] = True
+                st["posted"] = True
+                continue
+
+        if st.get("posted"):
             continue
 
         # PROPOSE: post the edited PHOTO right away (no context needed); the
