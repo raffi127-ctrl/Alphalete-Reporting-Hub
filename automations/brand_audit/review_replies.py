@@ -78,7 +78,11 @@ def draft_reply(review: dict, company_name: str, feedback: str = "",
         "use their first name if given. For criticism: acknowledge it sincerely, "
         "never be defensive or argue, take it offline (invite them to reach out "
         "to make it right). Never share private details, never use jargon or "
-        "'we value your feedback' clichés. Keep the brand clean and classy.")
+        "'we value your feedback' clichés. Keep the brand clean and classy.\n"
+        "VARY every reply — do NOT reuse the same words or structure across "
+        "replies. In particular don't lean on 'thrilled' (or any single word/"
+        "phrase) repeatedly; each reply should read like it was written "
+        "individually by a real person.")
     stars = review.get("rating")
     user = (f"Review — {stars}★ from {review.get('author') or 'a customer'}:\n"
             f"\"{review.get('text') or '(no text, just a rating)'}\"\n\n"
@@ -86,8 +90,9 @@ def draft_reply(review: dict, company_name: str, feedback: str = "",
     if feedback:
         user += f"\n\nThe approver rejected the last draft — apply this: \"{feedback}\"."
     if avoid:
-        user += ("\n\nWrite a genuinely DIFFERENT reply from these earlier "
-                 "rejected ones (different angle/wording):\n"
+        user += ("\n\nDo NOT reuse the wording or structure of these other "
+                 "recent replies — make this one clearly different (and don't "
+                 "repeat words like 'thrilled' that appear in them):\n"
                  + "\n".join(f"- {a}" for a in avoid if a))
     resp = client.messages.create(
         model=MODEL, max_tokens=300, system=system,
@@ -135,6 +140,7 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
     state = _load()
     state.setdefault("headers", {})
     state.setdefault("reviews", {})
+    recent = list(state.get("_recent_replies", []))   # for cross-reply variety
     actions = []
     today = dt.date.today().strftime("%m/%d/%y")
 
@@ -151,7 +157,8 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
         k = _key(rv)
         if k in state["reviews"]:
             continue
-        reply = draft_reply(rv, company_name)
+        reply = draft_reply(rv, company_name, avoid=recent[:15])
+        recent.insert(0, reply)
         new_count += 1
         actions.append({"action": "draft", "rating": rv.get("rating"), "reply": reply})
         if not dry_run and hdr:
@@ -181,7 +188,8 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
                 and _reacted(rx, SOCIAL_REJECT_EMOJI)
                 and cur and cur not in rejected):
             rejected.append(cur)
-            new = draft_reply(rv, company_name, avoid=rejected)
+            new = draft_reply(rv, company_name, avoid=(rejected + recent)[:15])
+            recent.insert(0, new)
             actions.append({"action": "redraft", "review": k, "reply": new})
             if not dry_run and hdr:
                 r = cl.chat_postMessage(channel=channel, thread_ts=hdr["ts"],
@@ -209,6 +217,7 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
             actions.append({"action": "header_completed", "date": date})
 
     if not dry_run:
+        state["_recent_replies"] = recent[:40]
         _save(state)
     return actions
 
