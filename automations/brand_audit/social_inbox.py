@@ -485,28 +485,35 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
             continue
         text = m.get("text", "")
 
-        # First pass: gather context, ASK the thread if more would help, caption.
-        if not st.get("caption"):
-            extra = _rep_context(cl, ts)
-            full_context = (text + ("\n" + extra if extra else "")).strip()
-            try:
-                raw = _download(imgs[-1]["url_private"])
-                quality = photo_edit.quality_report(raw)   # flag bad sources
-                img = photo_edit.process_bytes(             # auto-enhance + IG crop
-                    raw, zoom=style.photo_default_zoom())   # learned crop tightness
-            except Exception as e:
-                actions.append({"ts": ts, "action": "caption_error", "error": str(e)})
-                continue
+        # PROPOSE: post the edited PHOTO right away (no context needed); the
+        # CAPTION follows once we have enough context. Approved separately.
+        if not (st.get("photo_ts") and st.get("caption")):
+            # the edited image — process fresh if the photo isn't posted yet,
+            # else reuse the version already saved (caption-only passes)
+            quality = None
+            if st.get("photo_ts") and st.get("photo_path") and \
+                    Path(st["photo_path"]).exists():
+                img = Path(st["photo_path"]).read_bytes()
+                raw = None
+            else:
+                try:
+                    raw = _download(imgs[-1]["url_private"])
+                    quality = photo_edit.quality_report(raw)
+                    img = photo_edit.process_bytes(
+                        raw, zoom=style.photo_default_zoom())
+                except Exception as e:
+                    actions.append({"ts": ts, "action": "caption_error",
+                                    "error": str(e)})
+                    continue
 
-            # BRAND-SAFETY SCREEN — flag (don't auto-block) anything with
-            # alcohol/smoking/drugs/profanity/gang signs/weapons/cash or that
-            # reads thuggish-unprofessional. Megan/Raf approve (✅) or deny (❌);
-            # Lucy posts WHAT she found so reps learn what's not allowed.
+            # 1) BRAND-SAFETY SCREEN — gate everything. Flag (don't auto-block)
+            #    alcohol/smoking/drugs/profanity/gang signs/weapons/cash/blur or
+            #    anything thuggish-unprofessional → approvers ✅ post / ❌ deny.
             if not st.get("screen_ok"):
                 if st.get("flagged_ts"):
                     frx = _thread_reactions(cl, ts).get(st["flagged_ts"])
                     if _reacted(frx, SOCIAL_APPROVE_EMOJI):
-                        st["screen_ok"] = True              # approved despite flag
+                        st["screen_ok"] = True
                     elif _reacted(frx, SOCIAL_REJECT_EMOJI):
                         actions.append({"ts": ts, "action": "photo_denied"})
                         if not dry_run:
@@ -514,14 +521,14 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                                 channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
                                 text=":no_entry: Denied — we won't post this one. "
                                      "Thanks for sending though!")
-                            st["posted"] = True             # closed out
+                            st["posted"] = True
                         continue
                     else:
                         actions.append({"ts": ts, "action": "awaiting_screen_review"})
                         continue
                 else:
                     issues = list(screen_photo(img, company_name))
-                    if photo_edit.is_too_blurry(raw):   # judge blur on the source
+                    if raw is not None and photo_edit.is_too_blurry(raw):
                         issues.append("too blurry to meet our posting standards "
                                       "(couldn't sharpen it enough)")
                     if issues:
@@ -538,64 +545,71 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                         continue
                     st["screen_ok"] = True
 
-            # if more info would materially help the caption, ask in-thread (once)
-            if not st.get("context_resolved"):
-                if st.get("asked_context_ts"):
-                    if not _rep_answered_after(cl, ts, st["asked_context_ts"]):
-                        actions.append({"ts": ts, "action": "awaiting_context"})
-                        continue
-                    extra = _rep_context(cl, ts)
-                    full_context = (text + ("\n" + extra if extra else "")).strip()
-                    st["context_resolved"] = True
-                else:
-                    questions = needs_more_context(img, full_context, company_name)
-                    if questions:
-                        msg = (":wave: A couple quick Qs so I caption this right:\n"
-                               + "\n".join(f"• {q}" for q in questions))
-                        actions.append({"ts": ts, "action": "ask_context",
-                                        "message": msg})
-                        if not dry_run:
-                            r0 = cl.chat_postMessage(channel=SOCIAL_INBOX_CHANNEL_ID,
-                                                     thread_ts=ts, text=msg)
-                            st["asked_context_ts"] = r0.get("ts")
-                        continue
-                    st["context_resolved"] = True
+            # 2) post the EDITED PHOTO for approval — NO context needed
+            if not st.get("photo_ts"):
+                OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+                photo_path = OUTPUT_DIR / f"social_{ts.replace('.', '')}_ig.jpg"
+                photo_path.write_bytes(img)
+                actions.append({"ts": ts, "action": "propose_photo",
+                                "photo": str(photo_path), "quality": quality})
+                if not dry_run:
+                    warn = ""
+                    if quality and quality.get("warnings"):
+                        warn = (":warning: *Photo quality* — "
+                                + " ".join(quality["warnings"]) + "\n\n")
+                    cl.files_upload_v2(
+                        channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                        file=str(photo_path), title="Edited photo — IG ready",
+                        initial_comment=f"{warn}:frame_with_picture: *Edited "
+                        "photo* (auto-enhanced + cropped) — react "
+                        ":white_check_mark: to approve the PHOTO, :x: to ask for "
+                        "a different edit / upload your own.")
+                    st["photo_ts"] = _newest_file_reply_ts(cl, ts)
+                    st["photo_path"] = str(photo_path)
 
-            try:
-                cap = caption_for(img, full_context, company_name,
-                                  avoid=recent_captions[:25])
-            except Exception as e:
-                actions.append({"ts": ts, "action": "caption_error", "error": str(e)})
-                continue
-            recent_captions.insert(0, cap)   # avoid repeats within this run too
-            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-            photo_path = OUTPUT_DIR / f"social_{ts.replace('.', '')}_ig.jpg"
-            photo_path.write_bytes(img)   # img already used learned zoom (below)
-            actions.append({"ts": ts, "action": "propose", "caption": cap,
-                            "photo": str(photo_path), "quality": quality})
-            if not dry_run:
-                warn = ""
-                if quality and quality.get("warnings"):
-                    warn = (":warning: *Photo quality* — "
-                            + " ".join(quality["warnings"]) + "\n\n")
-                # the edited PHOTO — approved on its own
-                cl.files_upload_v2(
-                    channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
-                    file=str(photo_path), title="Edited photo — IG ready",
-                    initial_comment=f"{warn}:frame_with_picture: *Edited photo* "
-                    "(auto-enhanced + cropped) — react :white_check_mark: to "
-                    "approve the PHOTO, :x: to ask for a different edit / upload "
-                    "your own.")
-                st["photo_ts"] = _newest_file_reply_ts(cl, ts)
-                st["photo_path"] = str(photo_path)
-                # the CAPTION — approved on its own
-                r = cl.chat_postMessage(
-                    channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
-                    text=":sparkles: *Proposed caption* — react "
-                         ":white_check_mark: to approve the CAPTION, :x: for a "
-                         f"different one:\n\n{cap}")
-                st["caption"] = cap
-                st["caption_ts"] = r.get("ts")
+            # 3) CAPTION — needs context; ask the rep / wait, then post
+            if not st.get("caption"):
+                rep_ctx = _rep_context(cl, ts)
+                full_context = (text + ("\n" + rep_ctx if rep_ctx else "")).strip()
+                if not st.get("context_resolved"):
+                    if st.get("asked_context_ts"):
+                        if not _rep_answered_after(cl, ts, st["asked_context_ts"]):
+                            actions.append({"ts": ts, "action": "awaiting_context"})
+                            continue
+                        st["context_resolved"] = True
+                    else:
+                        questions = needs_more_context(img, full_context,
+                                                       company_name)
+                        if questions:
+                            msg = (":wave: A couple quick Qs so I caption this "
+                                   "right:\n" + "\n".join(f"• {q}" for q in questions))
+                            actions.append({"ts": ts, "action": "ask_context",
+                                            "message": msg})
+                            if not dry_run:
+                                r0 = cl.chat_postMessage(
+                                    channel=SOCIAL_INBOX_CHANNEL_ID,
+                                    thread_ts=ts, text=msg)
+                                st["asked_context_ts"] = r0.get("ts")
+                            continue
+                        st["context_resolved"] = True
+                try:
+                    cap = caption_for(img, full_context, company_name,
+                                      avoid=recent_captions[:25])
+                except Exception as e:
+                    actions.append({"ts": ts, "action": "caption_error",
+                                    "error": str(e)})
+                    continue
+                recent_captions.insert(0, cap)
+                actions.append({"ts": ts, "action": "propose_caption",
+                                "caption": cap})
+                if not dry_run:
+                    r = cl.chat_postMessage(
+                        channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                        text=":sparkles: *Proposed caption* — react "
+                             ":white_check_mark: to approve the CAPTION, :x: for "
+                             f"a different one:\n\n{cap}")
+                    st["caption"] = cap
+                    st["caption_ts"] = r.get("ts")
             continue
 
         # 3) collect reactions on the caption and the photo (judged separately)
