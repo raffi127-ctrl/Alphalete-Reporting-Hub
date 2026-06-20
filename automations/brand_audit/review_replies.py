@@ -82,7 +82,11 @@ def draft_reply(review: dict, company_name: str, feedback: str = "",
         "VARY every reply — do NOT reuse the same words or structure across "
         "replies. In particular don't lean on 'thrilled' (or any single word/"
         "phrase) repeatedly; each reply should read like it was written "
-        "individually by a real person.")
+        "individually by a real person.\n"
+        "DON'T SOUND AI: no balanced three-part phrases (tricolons), no filler "
+        "('made our day', 'means the world', 'couldn't be happier', 'so glad'), "
+        "no over-polished marketing tone. Write plainly, like a real teammate "
+        "typing a quick, genuine thanks — short and human, not a press release.")
     stars = review.get("rating")
     user = (f"Review — {stars}★ from {review.get('author') or 'a customer'}:\n"
             f"\"{review.get('text') or '(no text, just a rating)'}\"\n\n"
