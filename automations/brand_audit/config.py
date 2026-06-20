@@ -48,7 +48,8 @@ SOCIAL_APPROVE_EMOJI = ("white_check_mark", "+1", "heavy_check_mark")
 SOCIAL_REJECT_EMOJI = ("x", "negative_squared_cross_mark", "-1", "no_entry_sign")
 # Emoji the bot adds to the ORIGINAL submitted photo once it's posted/scheduled,
 # so the submitter sees it was handled (at-a-glance "done" in the channel).
-SOCIAL_POSTED_EMOJI = "white_check_mark"
+# Rocket stands out far more than a checkmark in a busy thread.
+SOCIAL_POSTED_EMOJI = "rocket"
 
 # 🚫 HARD RULE: never post to / never treat these as postable channels.
 # Raf's personal LinkedIn is off-limits (Megan, 2026-06-17). Matched loosely

@@ -93,11 +93,13 @@ def _pick_aspect(w: int, h: int) -> str:
     return "1:1"              # roughly square
 
 
-def fit_for_ig(img: Image.Image, aspect: str = DEFAULT_ASPECT) -> Image.Image:
+def fit_for_ig(img: Image.Image, aspect: str = DEFAULT_ASPECT,
+               zoom: float = 1.0) -> Image.Image:
     """Center-crop to an Instagram-optimal aspect ('cover' fit, no letterbox
     bars). NEVER upscales — if the source can't fill 1080px we keep the native
     crop (slightly smaller but crisp) rather than enlarging it into grain.
-    aspect='auto' picks the standard closest to the source."""
+    aspect='auto' picks the standard closest to the source. zoom>1 crops tighter
+    (e.g. 1.3 = ~30% more zoomed in on the center)."""
     img = ImageOps.exif_transpose(img).convert("RGB")
     w, h = img.size
     key = _pick_aspect(w, h) if aspect == "auto" else aspect
@@ -109,6 +111,9 @@ def fit_for_ig(img: Image.Image, aspect: str = DEFAULT_ASPECT) -> Image.Image:
         cw, ch = int(round(h * ar)), h
     else:
         cw, ch = w, int(round(w / ar))
+    # tighter crop = take a smaller centered region (keeps aspect), then scale up
+    if zoom and zoom > 1.0:
+        cw, ch = max(1, int(cw / zoom)), max(1, int(ch / zoom))
     left, top = (w - cw) // 2, (h - ch) // 2
     img = img.crop((left, top, left + cw, top + ch))
 
@@ -187,16 +192,17 @@ def adjust(img: Image.Image, *, brightness: float = 1.0, contrast: float = 1.0,
 
 def process_bytes(data: bytes, *, aspect: str = DEFAULT_ASPECT,
                   intensity: float = 1.0, quality: int = 95,
-                  adjust_opts: dict | None = None) -> bytes:
+                  adjust_opts: dict | None = None, zoom: float = 1.0) -> bytes:
     """Full pipeline: enhance lighting, optionally apply targeted tweaks, then
     crop to an IG frame. Returns JPEG bytes at high quality (4:4:4 chroma) so
     fine detail/text stays crisp. aspect: '4:5' | '1:1' | '1.91:1' | 'auto'.
-    adjust_opts: optional dict for adjust() (brightness/contrast/color/sharpen)."""
+    adjust_opts: optional dict for adjust() (brightness/contrast/color/sharpen).
+    zoom>1 crops tighter / more zoomed-in."""
     img = Image.open(io.BytesIO(data))
     img = enhance(img, intensity=intensity)
     if adjust_opts:
         img = adjust(img, **adjust_opts)
-    img = fit_for_ig(img, aspect=aspect)
+    img = fit_for_ig(img, aspect=aspect, zoom=zoom)
     out = io.BytesIO()
     img.save(out, format="JPEG", quality=quality, optimize=True, subsampling=0)
     return out.getvalue()

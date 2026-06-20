@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import json
+import time
 from pathlib import Path
 
 import requests
@@ -105,15 +106,18 @@ def _reacted(reactions: list[dict] | None, emoji: tuple) -> bool:
     return False
 
 
-def _get_reactions(cl, ts: str | None) -> list[dict] | None:
-    """Reactions on a specific message (or None)."""
-    if not ts:
-        return None
+def _thread_reactions(cl, parent_ts: str) -> dict:
+    """{message_ts: reactions} for a thread, read via conversations_replies
+    (history scope; includes reactor user IDs — reactions.get needs a scope our
+    token lacks)."""
+    out = {}
     try:
-        rr = cl.reactions_get(channel=SOCIAL_INBOX_CHANNEL_ID, timestamp=ts)
-        return (rr.get("message") or {}).get("reactions")
+        for m in cl.conversations_replies(channel=SOCIAL_INBOX_CHANNEL_ID,
+                                          ts=parent_ts).get("messages", []):
+            out[m["ts"]] = m.get("reactions")
     except Exception:
-        return None
+        pass
+    return out
 
 
 def _human_reply_after(cl, parent_ts: str, after_ts: str) -> dict | None:
@@ -147,6 +151,7 @@ _PHOTO_FEEDBACK_SCHEMA = {
         "brightness": {"type": "number"},
         "contrast": {"type": "number"},
         "saturation": {"type": "number"},
+        "zoom": {"type": "number"},
         "note": {"type": "string"},
     },
     "required": ["intent"], "additionalProperties": False,
@@ -166,9 +171,14 @@ def _interpret_photo_feedback(text: str) -> dict:
             "If they simply don't want THIS photo posted (privacy, wrong moment, "
             "'not this one', 'skip it'), return intent='skip'. If the complaint "
             "is about how the image LOOKS (too dark/bright, dull/flat, washed "
-            "out, bad crop, color/tint), return intent='fix' with multipliers "
-            "(1.0 = no change; brightness/contrast 0.7-1.4, saturation 0.6-1.4) "
-            "and an aspect ('keep' unless they mention the crop). Add a short, "
+            "out, bad crop, color/tint, too zoomed out / cropped too loose), "
+            "return intent='fix' with multipliers (1.0 = no change; "
+            "brightness/contrast 0.7-1.4, saturation 0.6-1.4), an aspect ('keep' "
+            "unless they want a different shape), and zoom — be generous: 1.5-1.8 "
+            "if they want it cropped tighter / more zoomed in on the subjects "
+            "(1.7+ if they say 'more' / it's still too loose); 1.0 only if crop "
+            "is fine. "
+            "Add a short, "
             "friendly `note` saying what you changed (or, if it's something we "
             "can't fix like blur/low-res, say so plainly).")
         resp = client.messages.create(
@@ -181,24 +191,28 @@ def _interpret_photo_feedback(text: str) -> dict:
         return json.loads(body)
     except Exception:
         return {"intent": "fix", "aspect": "keep", "brightness": 1.12,
-                "note": "Brightened it up a touch — take another look."}
+                "zoom": 1.0, "note": "Brightened it up a touch — take another look."}
 
 
 def _newest_file_reply_ts(cl, parent_ts: str) -> str | None:
-    """ts of the most recent thread reply that carries a file (the photo we
-    just uploaded), so its reactions can be tracked separately."""
-    try:
-        reps = cl.conversations_replies(channel=SOCIAL_INBOX_CHANNEL_ID,
-                                        ts=parent_ts).get("messages", [])
-        files = [r for r in reps if r.get("files") and r.get("ts") != parent_ts]
-        return files[-1]["ts"] if files else None
-    except Exception:
-        return None
+    """ts of the most recent thread reply carrying a file (the photo we just
+    uploaded). Retries — the file message can lag a beat after upload."""
+    for _ in range(5):
+        try:
+            reps = cl.conversations_replies(channel=SOCIAL_INBOX_CHANNEL_ID,
+                                            ts=parent_ts).get("messages", [])
+            files = [r for r in reps if r.get("files") and r.get("ts") != parent_ts]
+            if files:
+                return files[-1]["ts"]
+        except Exception:
+            pass
+        time.sleep(1.5)
+    return None
 
 
 # ---- caption generation -----------------------------------------------------
 def caption_for(image_bytes: bytes, context: str, company_name: str,
-                avoid: list[str] | None = None) -> str:
+                avoid: list[str] | None = None, feedback: str = "") -> str:
     import anthropic
     client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
     system = (
@@ -246,9 +260,17 @@ def caption_for(image_bytes: bytes, context: str, company_name: str,
         f"the company name (e.g. #{company_name.replace(' ', '')}) plus a few "
         "relevant ones. Don't exceed ~5.\n"
         "- 1-3 relevant emoji are on-brand (🔥💰👏🚀). Don't go wall-to-wall.\n"
-        "- Sound like a real teammate — specific, warm, human. NOT generic, NOT "
-        "corporate, NOT obviously AI. Ban dead corporate phrases ('thrilled to "
-        "announce', 'this is just the beginning').\n"
+        "- FEATURE THE PERSON BEING PROMOTED/FEATURED — center their win. The "
+        "trainer/mentor is secondary: mention them in passing at most, often not "
+        "at all. Don't make the post about the trainer.\n"
+        "- AUDIENCE = APPLICANTS. Write so a 20-25yo thinking about joining feels "
+        "it could be them — naturally, no tacked-on salesy CTA.\n"
+        "- DON'T SOUND AI. The #1 tell is the balanced three-part phrase / "
+        "tricolon ('suited up, locked in, ready to work', 'two suits, big smiles, "
+        "well earned') — NEVER write those. Also ban filler hype: 'well earned', "
+        "'just getting started', 'the work shows', 'locked in', 'put in the "
+        "work'. Write like a real teammate typing fast on their phone: short, "
+        "plain, ONE specific real detail beats three generic ones.\n"
         "- Vary every caption — don't reuse the same hook or closer across posts; "
         "if a line feels like a template you've used, rewrite it.\n"
         "- Use the real names/context. Never invent specific numbers, dates, "
@@ -257,6 +279,13 @@ def caption_for(image_bytes: bytes, context: str, company_name: str,
         "(no 'Vincent (LVL 3)'). Naming the promotion itself ('Level 2') is fine."
     )
     user_text = f"Context from the submitter:\n{context}\n\nWrite the caption."
+    if feedback:
+        user_text += (
+            f"\n\nThe approver REJECTED the previous caption with this feedback — "
+            f"apply it directly: \"{feedback}\". If they said it sounds too AI / "
+            "generic, make it sound like a real teammate typed it fast: plainer "
+            "words, a specific human detail, drop polished marketing phrasing and "
+            "any line that feels templated.")
     if avoid:
         recent = "\n".join(f"- {c}" for c in avoid if c)
         user_text += (
@@ -367,8 +396,9 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
             continue
 
         # 3) collect reactions on the caption and the photo (judged separately)
-        cap_reactions = _get_reactions(cl, st.get("caption_ts"))
-        photo_reactions = _get_reactions(cl, st.get("photo_ts"))
+        thread_rx = _thread_reactions(cl, ts)
+        cap_reactions = thread_rx.get(st.get("caption_ts"))
+        photo_reactions = thread_rx.get(st.get("photo_ts"))
         caption_ok = _reacted(cap_reactions, SOCIAL_APPROVE_EMOJI)
         photo_ok = _reacted(photo_reactions, SOCIAL_APPROVE_EMOJI)
         cur = st.get("caption")
@@ -378,11 +408,13 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
         if (not caption_ok and _reacted(cap_reactions, SOCIAL_REJECT_EMOJI)
                 and cur and cur not in rejected):
             rejected.append(cur)
+            fb = _human_reply_after(cl, ts, st.get("caption_ts") or ts)
             try:
                 raw = _download(imgs[-1]["url_private"])
                 newcap = caption_for(photo_edit.process_bytes(raw), text,
                                      company_name,
-                                     avoid=(rejected + recent_captions)[:25])
+                                     avoid=(rejected + recent_captions)[:25],
+                                     feedback=(fb.get("text") if fb else ""))
             except Exception as e:
                 actions.append({"ts": ts, "action": "caption_error", "error": str(e)})
                 continue
@@ -403,23 +435,23 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
         photo_rejected = (not photo_ok
                           and _reacted(photo_reactions, SOCIAL_REJECT_EMOJI))
         if photo_rejected and not st.get("photo_dismissed"):
-            # A) ask why (once per reject cycle)
-            if not st.get("photo_why_ts"):
-                actions.append({"ts": ts, "action": "ask_photo_reason"})
-                if not dry_run:
-                    q = cl.chat_postMessage(
-                        channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
-                        text=":frame_with_picture: Got a :x: on the photo — "
-                             "what's off? If you just don't want *this photo* "
-                             "posted, tell me and I'll skip it. If it's *how it "
-                             "looks* (too dark/bright, dull, crop, color), say so "
-                             "and I'll fix it and re-post.")
-                    st["photo_why_ts"] = q.get("ts")
-                continue
-            # B) read their answer
-            reply = _human_reply_after(cl, ts, st.get("photo_why_ts"))
+            # use feedback already in the thread (after the photo was proposed);
+            # only ask "what's off?" if they haven't said anything yet
+            reply = _human_reply_after(cl, ts, st.get("photo_ts") or ts)
             if not reply:
-                actions.append({"ts": ts, "action": "awaiting_photo_reason"})
+                if not st.get("photo_why_ts"):
+                    actions.append({"ts": ts, "action": "ask_photo_reason"})
+                    if not dry_run:
+                        q = cl.chat_postMessage(
+                            channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                            text=":frame_with_picture: Got a :x: on the photo — "
+                                 "what's off? If you just don't want *this photo* "
+                                 "posted, tell me and I'll skip it. If it's *how "
+                                 "it looks* (too dark/bright, dull, crop, zoom, "
+                                 "color), say so and I'll fix it and re-post.")
+                        st["photo_why_ts"] = q.get("ts")
+                else:
+                    actions.append({"ts": ts, "action": "awaiting_photo_reason"})
                 continue
             interp = _interpret_photo_feedback(reply.get("text", ""))
             if interp.get("intent") == "skip":
@@ -441,7 +473,7 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                         "color": interp.get("saturation", 1.0)}
                 newimg = photo_edit.process_bytes(
                     raw, aspect=("auto" if asp == "keep" else asp),
-                    adjust_opts=opts)
+                    adjust_opts=opts, zoom=float(interp.get("zoom") or 1.0))
             except Exception as e:
                 actions.append({"ts": ts, "action": "caption_error", "error": str(e)})
                 continue
