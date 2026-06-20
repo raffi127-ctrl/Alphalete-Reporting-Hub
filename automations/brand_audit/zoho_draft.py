@@ -329,7 +329,8 @@ def next_daily_slot(candidate_hours: list[int] | None = None) -> dt.datetime:
     """Next open DAILY slot: one post/day, never in the past, and NEVER the same
     time two days running. Rotates through `candidate_hours` (good windows) and
     adds a random non-round minute so the feed never looks automated."""
-    candidate_hours = list(candidate_hours) if candidate_hours else [11]
+    # hard rule: nothing posts past 7pm -> no slot hour later than 6pm
+    candidate_hours = [h for h in (candidate_hours or []) if 8 <= h <= 18] or [12]
     state = {}
     try:
         state = json.loads(_SCHED_STATE.read_text())

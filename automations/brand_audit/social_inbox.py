@@ -273,6 +273,7 @@ def caption_for(image_bytes: bytes, context: str, company_name: str,
         "plain, ONE specific real detail beats three generic ones.\n"
         "- Vary every caption — don't reuse the same hook or closer across posts; "
         "if a line feels like a template you've used, rewrite it.\n"
+        "- FIRST NAMES ONLY — never use anyone's last name.\n"
         "- Use the real names/context. Never invent specific numbers, dates, "
         "timelines, or perks that aren't in the context.\n"
         "- NEVER put a person's internal level in parentheses after their name "
@@ -517,10 +518,9 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                                 f"{slot.minute:02d} {'AM' if slot.hour < 12 else 'PM'}")
                     cl.chat_postMessage(
                         channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
-                        text=f":rocket: Approved — *scheduled on Zoho* for "
+                        text=f":rocket: *Lucy has scheduled this to post* on "
                              f"{when_txt} (Facebook, X, LinkedIn company page, "
-                             "Instagram, Google). Raf's personal LinkedIn is "
-                             "excluded.")
+                             "Instagram, Google).")
                     # mark the ORIGINAL submitted photo as handled/posted
                     try:
                         cl.reactions_add(channel=SOCIAL_INBOX_CHANNEL_ID,

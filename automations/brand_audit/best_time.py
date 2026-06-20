@@ -22,7 +22,10 @@ from automations.brand_audit.zoho_draft import ZOHO_SOCIAL_URL, _launch_zoho
 
 # We post once a day but NEVER at the same time daily (robotic-looking). We
 # rotate across several good windows. Default spread (used until our own data
-# shows clear per-hour winners) = morning / lunch / afternoon / evening.
+# shows clear per-hour winners) = morning / lunch / afternoon / early-evening.
+# Megan's rule: NOTHING posts past 7pm, so the latest window is 6pm.
+EARLIEST_HOUR = 8
+LATEST_HOUR = 18                    # 6pm — keeps every post comfortably before 7pm
 DEFAULT_WINDOWS = [9, 12, 15, 18]
 DEFAULT_BEST_HOUR = 12      # single-value fallback (legacy callers)
 DEFAULT_BEST_MINUTE = 0
@@ -103,7 +106,8 @@ def good_hours(samples: list[tuple[int, int]]) -> tuple[list[int], str]:
             by_hour[h].append(e)
         # hours with enough posts AND positive engagement, best first
         ranked = sorted(
-            (h for h, v in by_hour.items() if len(v) >= 3 and sum(v) > 0),
+            (h for h, v in by_hour.items()
+             if len(v) >= 3 and sum(v) > 0 and EARLIEST_HOUR <= h <= LATEST_HOUR),
             key=lambda h: sum(by_hour[h]) / len(by_hour[h]), reverse=True)
         if len(ranked) >= MIN_GOOD_HOURS:
             return sorted(ranked[:4]), f"computed from {len(samples)} posts"
