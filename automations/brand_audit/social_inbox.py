@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import time
 from pathlib import Path
 
@@ -189,21 +190,47 @@ def screen_photo(image_bytes: bytes, company_name: str) -> list[str]:
         return []   # screening failure shouldn't hard-block; logged elsewhere
 
 
-def _human_context(cl, parent_ts: str) -> str:
-    """All human (non-bot) text replies in the thread, joined — the context /
-    answers the submitter has given. Bot prompts start with an emoji shortcode."""
+def _clean_reply(text: str) -> str:
+    """Reply text with @mentions stripped (so a bare tag/ping reads as empty)."""
+    return re.sub(r"<@[^>]+>", "", text or "").strip()
+
+
+def _submitter_context(cl, parent_ts: str, submitter_id: str | None) -> str:
+    """Substantive replies from the PHOTO'S SUBMITTER — the real answers to
+    Lucy's questions. Approvers tagging the submitter (a ping, or a reply from
+    a different user) do NOT count as the answer."""
     out = []
     try:
         for r in cl.conversations_replies(channel=SOCIAL_INBOX_CHANNEL_ID,
                                           ts=parent_ts).get("messages", []):
             if r.get("ts") == parent_ts or r.get("files"):
                 continue
-            t = (r.get("text") or "").strip()
-            if t and not t.startswith(":"):
+            if submitter_id and r.get("user") != submitter_id:
+                continue
+            t = _clean_reply(r.get("text"))
+            if t and not t.startswith(":") and len(t) >= 3:
                 out.append(t)
     except Exception:
         pass
     return " | ".join(out)
+
+
+def _submitter_answered_after(cl, parent_ts: str, submitter_id: str | None,
+                              after_ts: str) -> bool:
+    """True if the submitter posted a substantive reply after `after_ts`."""
+    try:
+        for r in cl.conversations_replies(channel=SOCIAL_INBOX_CHANNEL_ID,
+                                          ts=parent_ts).get("messages", []):
+            if r.get("ts", "") <= (after_ts or "") or r.get("files"):
+                continue
+            if submitter_id and r.get("user") != submitter_id:
+                continue
+            t = _clean_reply(r.get("text"))
+            if t and not t.startswith(":") and len(t) >= 3:
+                return True
+    except Exception:
+        pass
+    return False
 
 
 _CONTEXT_SCHEMA = {
@@ -461,7 +488,8 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
 
         # First pass: gather context, ASK the thread if more would help, caption.
         if not st.get("caption"):
-            extra = _human_context(cl, ts)
+            submitter = m.get("user")
+            extra = _submitter_context(cl, ts, submitter)
             full_context = (text + ("\n" + extra if extra else "")).strip()
             try:
                 raw = _download(imgs[-1]["url_private"])
@@ -495,7 +523,7 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                         continue
                 else:
                     issues = list(screen_photo(img, company_name))
-                    if photo_edit.is_too_blurry(img):
+                    if photo_edit.is_too_blurry(raw):   # judge blur on the source
                         issues.append("too blurry to meet our posting standards "
                                       "(couldn't sharpen it enough)")
                     if issues:
@@ -515,10 +543,11 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
             # if more info would materially help the caption, ask in-thread (once)
             if not st.get("context_resolved"):
                 if st.get("asked_context_ts"):
-                    if not _human_reply_after(cl, ts, st["asked_context_ts"]):
+                    if not _submitter_answered_after(cl, ts, submitter,
+                                                     st["asked_context_ts"]):
                         actions.append({"ts": ts, "action": "awaiting_context"})
                         continue
-                    extra = _human_context(cl, ts)
+                    extra = _submitter_context(cl, ts, submitter)
                     full_context = (text + ("\n" + extra if extra else "")).strip()
                     st["context_resolved"] = True
                 else:
