@@ -27,7 +27,8 @@ import requests
 from automations.brand_audit import credentials, photo_edit, style
 from automations.brand_audit.config import (
     SOCIAL_INBOX_CHANNEL_ID, SOCIAL_APPROVERS, SOCIAL_APPROVE_EMOJI,
-    SOCIAL_REJECT_EMOJI, SOCIAL_POSTED_EMOJI, DEFAULT_COMPANY, OUTPUT_DIR,
+    SOCIAL_REJECT_EMOJI, SOCIAL_KILL_EMOJI, SOCIAL_POSTED_EMOJI,
+    DEFAULT_COMPANY, OUTPUT_DIR,
 )
 
 _STATE = Path.home() / ".config" / "brand-audit" / "social_inbox.json"
@@ -484,6 +485,18 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
         if st.get("posted"):
             continue
         text = m.get("text", "")
+
+        # 💀 from an approver anywhere on this submission = never post it.
+        krx = _thread_reactions(cl, ts)
+        if any(_reacted(krx.get(t), SOCIAL_KILL_EMOJI)
+               for t in (ts, st.get("photo_ts"), st.get("caption_ts")) if t):
+            actions.append({"ts": ts, "action": "killed"})
+            if not dry_run and not st.get("killed_acked"):
+                cl.chat_postMessage(channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                                    text=":skull: Got it — we won't post this one.")
+                st["killed_acked"] = True
+            st["posted"] = True
+            continue
 
         # PROPOSE: post the edited PHOTO right away (no context needed); the
         # CAPTION follows once we have enough context. Approved separately.

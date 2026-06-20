@@ -46,6 +46,8 @@ SOCIAL_APPROVERS: tuple = ("U04G5HJBGFN", "U045Z8N0ZQC")
 SOCIAL_APPROVE_EMOJI = ("white_check_mark", "+1", "heavy_check_mark")
 # Reaction(s) that REJECT a caption -> the system suggests a new one.
 SOCIAL_REJECT_EMOJI = ("x", "negative_squared_cross_mark", "-1", "no_entry_sign")
+# Reaction(s) that KILL a submission outright -> never post it (Megan/Raf 💀).
+SOCIAL_KILL_EMOJI = ("skull", "skull_and_crossbones")
 # Emoji the bot adds to the ORIGINAL submitted photo once it's posted/scheduled,
 # so the submitter sees it was handled (at-a-glance "done" in the channel).
 # Rocket stands out far more than a checkmark in a busy thread.
