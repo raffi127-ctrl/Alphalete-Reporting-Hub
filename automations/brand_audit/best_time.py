@@ -20,10 +20,13 @@ from pathlib import Path
 
 from automations.brand_audit.zoho_draft import ZOHO_SOCIAL_URL, _launch_zoho
 
-# Research-backed default: late-morning/noon on weekdays is a common Instagram
-# engagement sweet spot for a young audience. Used until our own data is strong.
-DEFAULT_BEST_HOUR = 12
+# We post once a day but NEVER at the same time daily (robotic-looking). We
+# rotate across several good windows. Default spread (used until our own data
+# shows clear per-hour winners) = morning / lunch / afternoon / evening.
+DEFAULT_WINDOWS = [9, 12, 15, 18]
+DEFAULT_BEST_HOUR = 12      # single-value fallback (legacy callers)
 DEFAULT_BEST_MINUTE = 0
+MIN_GOOD_HOURS = 3          # need this many data-backed hours to skip the spread
 MIN_POSTS = 10              # need at least this many before trusting our data
 MIN_TOTAL_ENGAGEMENT = 30   # and real engagement, not a handful of likes
 MIN_DISTINCT_HOURS = 3      # and posts spread across times, else no comparison
@@ -88,6 +91,52 @@ def compute_best_hour(samples: list[tuple[int, int]]) -> int | None:
         return None
     best = max(avg, key=avg.get)
     return best if avg[best] > 0 else None
+
+
+def good_hours(samples: list[tuple[int, int]]) -> tuple[list[int], str]:
+    """Return (hours, source): the data-backed good hours to rotate across, or
+    the default spread when there isn't enough signal. We want VARIETY — posts
+    rotate through these so they never land at the same time each day."""
+    if len(samples) >= MIN_POSTS and sum(e for _, e in samples) >= MIN_TOTAL_ENGAGEMENT:
+        by_hour: dict[int, list[int]] = defaultdict(list)
+        for h, e in samples:
+            by_hour[h].append(e)
+        # hours with enough posts AND positive engagement, best first
+        ranked = sorted(
+            (h for h, v in by_hour.items() if len(v) >= 3 and sum(v) > 0),
+            key=lambda h: sum(by_hour[h]) / len(by_hour[h]), reverse=True)
+        if len(ranked) >= MIN_GOOD_HOURS:
+            return sorted(ranked[:4]), f"computed from {len(samples)} posts"
+    return DEFAULT_WINDOWS, "default spread (not enough varied-time data yet)"
+
+
+def best_good_hours(company_name: str = "", *, force: bool = False) -> tuple[list[int], str]:
+    """Cached list of good hours to rotate across (see good_hours)."""
+    if not force:
+        try:
+            c = json.loads(_CACHE.read_text())
+            if (dt.date.today() - dt.date.fromisoformat(c["date"])).days < _CACHE_TTL_DAYS:
+                return c["hours"], c.get("source", "cache")
+        except Exception:
+            pass
+    hours, source = DEFAULT_WINDOWS, "default spread"
+    try:
+        from patchright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            ctx = _launch_zoho(p, False)
+            try:
+                pg = ctx.pages[0] if ctx.pages else ctx.new_page()
+                pg.goto(ZOHO_SOCIAL_URL, wait_until="networkidle", timeout=60000)
+                pg.wait_for_timeout(2000)
+                hours, source = good_hours(_scrape_samples(pg))
+            finally:
+                ctx.close()
+    except Exception as e:
+        source = f"default spread (scrape failed: {e})"
+    _CACHE.parent.mkdir(parents=True, exist_ok=True)
+    _CACHE.write_text(json.dumps({"date": dt.date.today().isoformat(),
+                                  "hours": hours, "source": source}))
+    return hours, source
 
 
 def best_posting_time(company_name: str = "", *, force: bool = False) -> tuple[int, int, str]:

@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import random
 import sys
 import time
 from pathlib import Path
@@ -310,9 +311,14 @@ def _set_schedule(pg, when: dt.datetime) -> None:
             pass
 
 
-def next_daily_slot(best_hour: int = 11, best_minute: int = 0) -> dt.datetime:
-    """Next open DAILY slot: one post/day, never in the past. Reads the last
-    scheduled date from state so approved posts auto-space one per day."""
+_JITTER_MINUTES = [3, 11, 17, 24, 33, 41, 48, 56]   # non-round -> looks human
+
+
+def next_daily_slot(candidate_hours: list[int] | None = None) -> dt.datetime:
+    """Next open DAILY slot: one post/day, never in the past, and NEVER the same
+    time two days running. Rotates through `candidate_hours` (good windows) and
+    adds a random non-round minute so the feed never looks automated."""
+    candidate_hours = list(candidate_hours) if candidate_hours else [11]
     state = {}
     try:
         state = json.loads(_SCHED_STATE.read_text())
@@ -321,7 +327,14 @@ def next_daily_slot(best_hour: int = 11, best_minute: int = 0) -> dt.datetime:
     today = dt.date.today()
     last = state.get("last_scheduled_date")
     nxt = max(dt.date.fromisoformat(last) + dt.timedelta(days=1), today) if last else today
-    when = dt.datetime(nxt.year, nxt.month, nxt.day, best_hour, best_minute)
+    # rotate to a different hour than the one we used last time
+    last_hour = state.get("last_scheduled_hour")
+    if last_hour in candidate_hours and len(candidate_hours) > 1:
+        hour = candidate_hours[(candidate_hours.index(last_hour) + 1) % len(candidate_hours)]
+    else:
+        hour = candidate_hours[0]
+    when = dt.datetime(nxt.year, nxt.month, nxt.day, hour,
+                       random.choice(_JITTER_MINUTES))
     if when <= dt.datetime.now() + dt.timedelta(minutes=5):
         when += dt.timedelta(days=1)      # today's slot already passed -> tomorrow
     return when
@@ -330,7 +343,8 @@ def next_daily_slot(best_hour: int = 11, best_minute: int = 0) -> dt.datetime:
 def _record_slot(when: dt.datetime) -> None:
     _SCHED_STATE.parent.mkdir(parents=True, exist_ok=True)
     _SCHED_STATE.write_text(json.dumps(
-        {"last_scheduled_date": when.date().isoformat()}, indent=2))
+        {"last_scheduled_date": when.date().isoformat(),
+         "last_scheduled_hour": when.hour}, indent=2))
 
 
 def schedule_post(caption: str, image_path: str | None, company_name: str = "",
