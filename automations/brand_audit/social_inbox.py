@@ -195,17 +195,17 @@ def _clean_reply(text: str) -> str:
     return re.sub(r"<@[^>]+>", "", text or "").strip()
 
 
-def _submitter_context(cl, parent_ts: str, submitter_id: str | None) -> str:
-    """Substantive replies from the PHOTO'S SUBMITTER — the real answers to
-    Lucy's questions. Approvers tagging the submitter (a ping, or a reply from
-    a different user) do NOT count as the answer."""
+def _rep_context(cl, parent_ts: str) -> str:
+    """Substantive replies from a REP (a non-approver) — the real answers to
+    Lucy's questions. Approver messages (Megan/Raf uploading photos or tagging
+    the rep to respond) and bare @-pings do NOT count as the answer."""
     out = []
     try:
         for r in cl.conversations_replies(channel=SOCIAL_INBOX_CHANNEL_ID,
                                           ts=parent_ts).get("messages", []):
             if r.get("ts") == parent_ts or r.get("files"):
                 continue
-            if submitter_id and r.get("user") != submitter_id:
+            if r.get("user") in SOCIAL_APPROVERS:   # not the rep's answer
                 continue
             t = _clean_reply(r.get("text"))
             if t and not t.startswith(":") and len(t) >= 3:
@@ -215,15 +215,14 @@ def _submitter_context(cl, parent_ts: str, submitter_id: str | None) -> str:
     return " | ".join(out)
 
 
-def _submitter_answered_after(cl, parent_ts: str, submitter_id: str | None,
-                              after_ts: str) -> bool:
-    """True if the submitter posted a substantive reply after `after_ts`."""
+def _rep_answered_after(cl, parent_ts: str, after_ts: str) -> bool:
+    """True if a rep (non-approver) posted a substantive reply after `after_ts`."""
     try:
         for r in cl.conversations_replies(channel=SOCIAL_INBOX_CHANNEL_ID,
                                           ts=parent_ts).get("messages", []):
             if r.get("ts", "") <= (after_ts or "") or r.get("files"):
                 continue
-            if submitter_id and r.get("user") != submitter_id:
+            if r.get("user") in SOCIAL_APPROVERS:
                 continue
             t = _clean_reply(r.get("text"))
             if t and not t.startswith(":") and len(t) >= 3:
@@ -488,8 +487,7 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
 
         # First pass: gather context, ASK the thread if more would help, caption.
         if not st.get("caption"):
-            submitter = m.get("user")
-            extra = _submitter_context(cl, ts, submitter)
+            extra = _rep_context(cl, ts)
             full_context = (text + ("\n" + extra if extra else "")).strip()
             try:
                 raw = _download(imgs[-1]["url_private"])
@@ -543,11 +541,10 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
             # if more info would materially help the caption, ask in-thread (once)
             if not st.get("context_resolved"):
                 if st.get("asked_context_ts"):
-                    if not _submitter_answered_after(cl, ts, submitter,
-                                                     st["asked_context_ts"]):
+                    if not _rep_answered_after(cl, ts, st["asked_context_ts"]):
                         actions.append({"ts": ts, "action": "awaiting_context"})
                         continue
-                    extra = _submitter_context(cl, ts, submitter)
+                    extra = _rep_context(cl, ts)
                     full_context = (text + ("\n" + extra if extra else "")).strip()
                     st["context_resolved"] = True
                 else:
