@@ -21,7 +21,7 @@ from automations.brand_audit import credentials
 from automations.brand_audit.collectors import google_reviews
 from automations.brand_audit.config import ALERT_SLACK_CHANNEL_ID, DEFAULT_COMPANY
 from automations.brand_audit.social_inbox import (
-    _client, _reacted, _thread_reactions, _human_reply_after,
+    _client, _reacted, _thread_reactions,
 )
 from automations.brand_audit.config import (
     SOCIAL_APPROVE_EMOJI, SOCIAL_REJECT_EMOJI, SOCIAL_KILL_EMOJI,
@@ -30,6 +30,10 @@ from automations.brand_audit.config import (
 MODEL = "claude-opus-4-8"
 _STATE = Path.home() / ".config" / "brand-audit" / "review_replies.json"
 NEGATIVE_BELOW = 4          # rating < 4 is flagged as needs-attention
+# An approver reacting one of these on the DAILY HEADER = batch done, stop
+# re-checking it. Until then Lucy keeps picking up late reactions each scan.
+HEADER_DONE_EMOJI = ("white_check_mark", "heavy_check_mark",
+                     "ballot_box_with_check", "checkered_flag")
 
 _REPLY_SCHEMA = {
     "type": "object",
@@ -62,7 +66,8 @@ def get_reviews(company) -> list[dict]:
         (res.evidence.get("reviews") if hasattr(res, "evidence") else []) or []
 
 
-def draft_reply(review: dict, company_name: str, feedback: str = "") -> str:
+def draft_reply(review: dict, company_name: str, feedback: str = "",
+                avoid: list[str] | None = None) -> str:
     """Draft the business's public reply to one review."""
     import anthropic
     client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
@@ -80,6 +85,10 @@ def draft_reply(review: dict, company_name: str, feedback: str = "") -> str:
             "Write the reply.")
     if feedback:
         user += f"\n\nThe approver rejected the last draft — apply this: \"{feedback}\"."
+    if avoid:
+        user += ("\n\nWrite a genuinely DIFFERENT reply from these earlier "
+                 "rejected ones (different angle/wording):\n"
+                 + "\n".join(f"- {a}" for a in avoid if a))
     resp = client.messages.create(
         model=MODEL, max_tokens=300, system=system,
         output_config={"format": {"type": "json_schema", "schema": _REPLY_SCHEMA}},
@@ -111,8 +120,12 @@ def _review_block(review: dict, reply: str) -> str:
 
 def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                     channel: str | None = None) -> list[dict]:
-    """Draft + post replies for every review; track approvals. Posting to Google
+    """One daily scan: post a 'Response Reviews MM/DD/YY' header thread, draft a
+    reply for each new review as a REPLY in that thread, and pick up reactions on
+    every still-open day's threads (approve / redo / skip). Keeps re-checking a
+    day's header until an approver reacts a 'done' emoji on it. Posting to Google
     is stubbed (API pending) — approved replies are marked ready."""
+    import datetime as dt
     from automations.brand_audit import intake
     company = intake.find_company(company_name)
     if not company:
@@ -120,64 +133,80 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
     channel = channel or ALERT_SLACK_CHANNEL_ID
     cl = _client()
     state = _load()
+    state.setdefault("headers", {})
+    state.setdefault("reviews", {})
     actions = []
+    today = dt.date.today().strftime("%m/%d/%y")
 
+    # 1) today's header thread (one per day)
+    hdr = state["headers"].get(today)
+    if not hdr and not dry_run:
+        r = cl.chat_postMessage(channel=channel, text=f"*Response Reviews {today}*")
+        hdr = state["headers"][today] = {"ts": r.get("ts"), "completed": False}
+        actions.append({"action": "header_created", "date": today})
+
+    # 2) draft + post any NEW reviews as replies under today's header
+    new_count = 0
     for rv in get_reviews(company):
         k = _key(rv)
-        st = state.setdefault(k, {})
-        if st.get("posted") or st.get("skipped"):
+        if k in state["reviews"]:
             continue
-
-        # 💀 skip
-        if st.get("reply_ts"):
-            rx = _thread_reactions(cl, st["reply_ts"]).get(st["reply_ts"])
-            if _reacted(rx, SOCIAL_KILL_EMOJI):
-                actions.append({"review": k, "action": "skipped"})
-                st["skipped"] = True
-                continue
-            # ❌ + note -> redraft
-            rejected = st.setdefault("rejected", [])
-            cur = st.get("reply")
-            if (not _reacted(rx, SOCIAL_APPROVE_EMOJI)
-                    and _reacted(rx, SOCIAL_REJECT_EMOJI)
-                    and cur and cur not in rejected):
-                rejected.append(cur)
-                fb = _human_reply_after(cl, st["reply_ts"], st["reply_ts"])
-                new = draft_reply(rv, company_name,
-                                  feedback=(fb.get("text") if fb else ""))
-                actions.append({"review": k, "action": "redraft", "reply": new})
-                if not dry_run:
-                    r = cl.chat_postMessage(channel=channel, text=_review_block(rv, new))
-                    st["reply"] = new
-                    st["reply_ts"] = r.get("ts")
-                continue
-            # ✅ approved -> ready to post (stub until API)
-            if _reacted(rx, SOCIAL_APPROVE_EMOJI):
-                actions.append({"review": k, "action": "approved", "reply": cur})
-                if not dry_run:
-                    try:
-                        post_reply_to_google(rv, cur, company)
-                        st["posted"] = True
-                    except Exception:
-                        st["approved_pending_api"] = True   # wait for GBP API
-                        if not st.get("approved_acked"):
-                            cl.chat_postMessage(
-                                channel=channel,
-                                text=":white_check_mark: Approved — will post to "
-                                     "Google automatically once API access is on.")
-                            st["approved_acked"] = True
-                continue
-            actions.append({"review": k, "action": "awaiting_approval"})
-            continue
-
-        # first pass: draft + post for approval
         reply = draft_reply(rv, company_name)
-        actions.append({"review": k, "action": "draft", "rating": rv.get("rating"),
-                        "reply": reply})
-        if not dry_run:
-            r = cl.chat_postMessage(channel=channel, text=_review_block(rv, reply))
-            st["reply"] = reply
-            st["reply_ts"] = r.get("ts")
+        new_count += 1
+        actions.append({"action": "draft", "rating": rv.get("rating"), "reply": reply})
+        if not dry_run and hdr:
+            r = cl.chat_postMessage(channel=channel, thread_ts=hdr["ts"],
+                                    text=_review_block(rv, reply))
+            state["reviews"][k] = {"reply": reply, "reply_ts": r.get("ts"),
+                                   "date": today, "review": rv}
+    if not dry_run and hdr and new_count == 0 and not hdr.get("noted_empty"):
+        cl.chat_postMessage(channel=channel, thread_ts=hdr["ts"],
+                            text="No new reviews needing a response today. React "
+                                 ":white_check_mark: on this header to close it out.")
+        hdr["noted_empty"] = True
+
+    # 3) handle reactions on every still-open review reply (any day)
+    for k, st in state["reviews"].items():
+        if st.get("posted") or st.get("skipped") or not st.get("reply_ts"):
+            continue
+        rv = st.get("review") or {}
+        rx = _thread_reactions(cl, st["reply_ts"]).get(st["reply_ts"])
+        if _reacted(rx, SOCIAL_KILL_EMOJI):
+            st["skipped"] = True
+            actions.append({"action": "skipped", "review": k})
+            continue
+        rejected = st.setdefault("rejected", [])
+        cur = st.get("reply")
+        if (not _reacted(rx, SOCIAL_APPROVE_EMOJI)
+                and _reacted(rx, SOCIAL_REJECT_EMOJI)
+                and cur and cur not in rejected):
+            rejected.append(cur)
+            new = draft_reply(rv, company_name, avoid=rejected)
+            actions.append({"action": "redraft", "review": k, "reply": new})
+            if not dry_run and hdr:
+                r = cl.chat_postMessage(channel=channel, thread_ts=hdr["ts"],
+                                        text=_review_block(rv, new))
+                st["reply"] = new
+                st["reply_ts"] = r.get("ts")
+            continue
+        if _reacted(rx, SOCIAL_APPROVE_EMOJI):
+            actions.append({"action": "approved", "review": k, "reply": cur})
+            if not dry_run:
+                try:
+                    post_reply_to_google(rv, cur, company)
+                    st["posted"] = True
+                except Exception:
+                    st["approved_pending_api"] = True   # auto-posts once GBP API on
+            continue
+        actions.append({"action": "awaiting", "review": k})
+
+    # 4) mark a day's header complete once an approver reacts a 'done' emoji
+    for date, h in state["headers"].items():
+        if h.get("completed") or not h.get("ts"):
+            continue
+        if _reacted(_thread_reactions(cl, h["ts"]).get(h["ts"]), HEADER_DONE_EMOJI):
+            h["completed"] = True
+            actions.append({"action": "header_completed", "date": date})
 
     if not dry_run:
         _save(state)
