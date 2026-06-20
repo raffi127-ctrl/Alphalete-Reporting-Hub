@@ -281,10 +281,18 @@ def _visible(locator):
 
 
 def _select2(pg, container_sel: str, value: str) -> None:
-    """Pick `value` in a select2 dropdown (click container -> click option)."""
-    pg.locator(container_sel).first.click(timeout=6000)
+    """Pick `value` in a select2 dropdown (click container -> click option),
+    tolerant of the container being briefly off-screen / not yet ready."""
+    c = pg.locator(container_sel).first
+    try:
+        c.scroll_into_view_if_needed(timeout=4000)
+    except Exception:
+        pass
+    c.click(timeout=10000)
     pg.wait_for_timeout(400)
-    pg.locator("li.select2-results__option", has_text=value).first.click(timeout=5000)
+    opt = pg.locator("li.select2-results__option", has_text=value).first
+    opt.wait_for(state="visible", timeout=6000)
+    opt.click(timeout=6000)
     pg.wait_for_timeout(300)
 
 
@@ -303,7 +311,12 @@ def _set_schedule(pg, when: dt.datetime) -> None:
         cal.locator(_CAL_NEXT).first.click(timeout=4000)
         pg.wait_for_timeout(400)
     cal.get_by_text(str(when.day), exact=True).first.click(timeout=5000)
-    pg.wait_for_timeout(600)
+    # the calendar overlay must close before the time pickers are reachable
+    try:
+        pg.locator(_CALENDAR).first.wait_for(state="hidden", timeout=5000)
+    except Exception:
+        pg.wait_for_timeout(1000)
+    pg.wait_for_timeout(500)
     # time — 12h clock via select2
     h12 = when.hour % 12 or 12
     _select2(pg, _HOUR_C, f"{h12:02d}")

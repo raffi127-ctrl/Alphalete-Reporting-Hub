@@ -778,15 +778,18 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                         pass
                     st["scheduled"] = True
                     st["posted"] = True
-                elif not st.get("zoho_pending_notified"):
-                    cl.chat_postMessage(
-                        channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
-                        text=":warning: Photo + caption approved, but the Zoho "
-                             f"schedule step hit an issue: {res.get('error','?')}. "
-                             "I'll retry next run.")
-                    st["zoho_pending_notified"] = True
+                else:
+                    # always surface the error (so it's visible + retried); only
+                    # post the Slack heads-up once
                     actions.append({"ts": ts, "action": "schedule_error",
                                     "error": res.get("error")})
+                    if not st.get("zoho_pending_notified"):
+                        cl.chat_postMessage(
+                            channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                            text=":warning: Photo + caption approved, but the Zoho "
+                                 f"schedule step hit a snag: {res.get('error','?')}. "
+                                 "I'll retry.")
+                        st["zoho_pending_notified"] = True
         else:
             actions.append({"ts": ts, "action": "awaiting_approval",
                             "caption_ok": caption_ok, "photo_ok": photo_ok})
