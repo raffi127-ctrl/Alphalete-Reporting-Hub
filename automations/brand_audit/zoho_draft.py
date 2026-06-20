@@ -171,22 +171,33 @@ def _compose(pg, caption: str, image_path: str | None,
     return select_channels(pg, media_type=media_type)
 
 
-def _click_save_draft(pg) -> None:
-    """Click Save Draft — the publishing-options popup overlaps it, so click the
-    visible one with force, then fall back to a direct JS click."""
-    loc = pg.locator(_SAVE_DRAFT)
+def _click_action(pg, label: str) -> bool:
+    """Reliable click of a footer action button ('Post Now', 'Schedule', 'Save
+    Draft'). The publishing-options popup overlaps these and the button can read
+    'disabled' for a beat, so JS-click the INNERMOST element with this exact
+    label (fires the real handler past the overlay); fall back to a forced UI
+    click."""
+    if pg.evaluate(
+            "(t) => { let best = null;"
+            " for (const n of document.querySelectorAll('*')) {"
+            "   if ((n.innerText||'').trim() === t) {"
+            "     if (!best || n.children.length < best.children.length) best = n; } }"
+            " if (best) { best.click(); return true; } return false; }", label):
+        return True
+    loc = pg.locator(f"text={label}")
     for i in range(loc.count()):
         el = loc.nth(i)
         try:
             if el.is_visible():
                 el.click(timeout=8000, force=True)
-                return
+                return True
         except Exception:
             continue
-    if not pg.evaluate(
-            "() => { for (const n of document.querySelectorAll('*')) {"
-            " if ((n.innerText||'').trim() === 'Save Draft') { n.click();"
-            " return true; } } return false; }"):
+    return False
+
+
+def _click_save_draft(pg) -> None:
+    if not _click_action(pg, "Save Draft"):
         raise RuntimeError("could not click Save Draft")
 
 
@@ -376,7 +387,8 @@ def schedule_post(caption: str, image_path: str | None, company_name: str = "",
                 result = {"ok": True, "dry_run": True, "channels": channels,
                           "scheduled_for": when.isoformat()}
             else:
-                pg.get_by_role("button", name=_SCHEDULE_BTN).first.click(timeout=15000)
+                if not _click_action(pg, _SCHEDULE_BTN):
+                    raise RuntimeError("could not click Schedule")
                 pg.wait_for_timeout(4000)
                 still = False
                 try:
@@ -391,6 +403,63 @@ def schedule_post(caption: str, image_path: str | None, company_name: str = "",
                     result = {"ok": True, "dry_run": False, "channels": channels,
                               "scheduled_for": when.isoformat()}
             return result
+        finally:
+            ctx.close()
+
+
+def post_now(caption: str, image_path: str | None, company_name: str = "",
+             *, media_type: str = "photo", headless: bool = False,
+             timeout: int = 60000) -> dict:
+    """PUBLISH the post immediately (Publish Now -> Post Now). Composes caption
+    + photo + channel selection (Raf's personal LinkedIn always excluded), then
+    posts live. Returns ok + channels. Irreversible once live."""
+    from patchright.sync_api import sync_playwright
+
+    ZOHO_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as p:
+        ctx = _launch_zoho(p, headless)
+        try:
+            pg = ctx.pages[0] if ctx.pages else ctx.new_page()
+            pg.goto(ZOHO_SOCIAL_URL, wait_until="networkidle", timeout=timeout)
+            if "accounts.zoho.com" in pg.url:
+                raise RuntimeError("Zoho session expired — run `--login`.")
+            pg.wait_for_timeout(2500)
+
+            channels = _compose(pg, caption, image_path, media_type)
+            # Publish Now is the default option; make sure it's selected
+            try:
+                pg.locator("text=Publish Now").first.click(timeout=4000)
+                pg.wait_for_timeout(500)
+            except Exception:
+                pass
+            if not _click_action(pg, "Post Now"):
+                raise RuntimeError("could not click Post Now")
+            pg.wait_for_timeout(2500)
+            # a confirm dialog may appear -> accept it
+            for sel in ["button:has-text('Publish')", "button:has-text('Confirm')",
+                        "button:has-text('Yes')", "button:has-text('Post')"]:
+                try:
+                    el = pg.locator(sel).first
+                    if el.is_visible():
+                        el.click(timeout=2500)
+                        break
+                except Exception:
+                    continue
+            pg.wait_for_timeout(7000)
+
+            from automations.brand_audit.config import OUTPUT_DIR
+            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+            shot = str(OUTPUT_DIR / "_zoho_postnow_result.png")
+            try:
+                pg.screenshot(path=shot, full_page=False)
+            except Exception:
+                shot = None
+            try:
+                still_open = pg.locator(_EDITOR).is_visible()
+            except Exception:
+                still_open = False
+            return {"ok": not still_open, "channels": channels, "screenshot": shot,
+                    "error": None if not still_open else "composer still open after Post Now"}
         finally:
             ctx.close()
 
