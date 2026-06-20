@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import time
 from pathlib import Path
 
@@ -140,6 +141,53 @@ def _human_reply_after(cl, parent_ts: str, after_ts: str) -> dict | None:
             continue
         out = r
     return out
+
+
+_SCREEN_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "safe": {"type": "boolean"},
+        "issues": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["safe"], "additionalProperties": False,
+}
+
+
+def screen_photo(image_bytes: bytes, company_name: str) -> list[str]:
+    """Brand-safety screen. Returns a list of issues (empty = safe to post).
+    HARD RULE: never post alcohol, profanity, gang signs, or anything that
+    reads ghetto/thuggish/unprofessional."""
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
+        system = (
+            f"You screen photos before they post on {company_name}'s social "
+            "accounts. The brand must look POLISHED and PROFESSIONAL — it "
+            "recruits young professionals and must NEVER look ghetto, thuggish, "
+            "or unprofessional. Set safe=false and name the issue if the photo "
+            "shows ANY of: alcohol or drinking (bottles, cans, cups of beer/"
+            "liquor), visible profanity or offensive text/symbols, gang signs / "
+            "throwing up sets, middle fingers, flashing cash, weapons, drugs/"
+            "vaping/smoking, or clothing/poses/anything that looks thuggish or "
+            "unprofessional. IMPORTANT: normal friendly gestures are FINE — "
+            "thumbs up, pointing, peace sign, shaka, clapping, arms crossed; do "
+            "NOT flag those as gang signs. If the photo is clean and "
+            "professional, safe=true.")
+        resp = client.messages.create(
+            model=MODEL, max_tokens=200, system=system,
+            output_config={"format": {"type": "json_schema",
+                                       "schema": _SCREEN_SCHEMA}},
+            messages=[{"role": "user", "content": [
+                {"type": "image", "source": {"type": "base64",
+                 "media_type": "image/jpeg",
+                 "data": base64.standard_b64encode(image_bytes).decode()}},
+                {"type": "text", "text": "Screen this photo."},
+            ]}])
+        body = next((b.text for b in resp.content if b.type == "text"), "{}")
+        data = json.loads(body)
+        return [] if data.get("safe") else (data.get("issues") or ["flagged"])
+    except Exception:
+        return []   # screening failure shouldn't hard-block; logged elsewhere
 
 
 def _human_context(cl, parent_ts: str) -> str:
@@ -336,6 +384,8 @@ def caption_for(image_bytes: bytes, context: str, company_name: str,
         "- Vary every caption — don't reuse the same hook or closer across posts; "
         "if a line feels like a template you've used, rewrite it.\n"
         "- FIRST NAMES ONLY — never use anyone's last name.\n"
+        "- Never use profanity or anything that reads unprofessional/thuggish — "
+        "the brand stays clean and polished.\n"
         "- Use the real names/context. Never invent specific numbers, dates, "
         "timelines, or perks that aren't in the context.\n"
         "- NEVER put a person's internal level in parentheses after their name "
@@ -422,6 +472,33 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
             except Exception as e:
                 actions.append({"ts": ts, "action": "caption_error", "error": str(e)})
                 continue
+
+            # BRAND-SAFETY SCREEN — never post alcohol/smoking/drugs/profanity/
+            # gang signs/weapons/cash or anything thuggish-unprofessional.
+            if not st.get("screen_ok"):
+                if st.get("blocked_ts"):
+                    ovr = _human_reply_after(cl, ts, st["blocked_ts"])
+                    if ovr and re.search(r"post anyway|override|it'?s fine|post it",
+                                         (ovr.get("text") or "").lower()):
+                        st["screen_ok"] = True
+                    else:
+                        actions.append({"ts": ts, "action": "photo_blocked"})
+                        continue
+                else:
+                    issues = screen_photo(img, company_name)
+                    if issues:
+                        actions.append({"ts": ts, "action": "photo_blocked",
+                                        "issues": issues})
+                        if not dry_run:
+                            r0 = cl.chat_postMessage(
+                                channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                                text=":no_entry: I can't post this one — it looks "
+                                     "like it includes " + ", ".join(issues) +
+                                     ". We keep the brand clean and professional. "
+                                     "(If I'm wrong, reply 'post anyway'.)")
+                            st["blocked_ts"] = r0.get("ts")
+                        continue
+                    st["screen_ok"] = True
 
             # if more info would materially help the caption, ask in-thread (once)
             if not st.get("context_resolved"):
