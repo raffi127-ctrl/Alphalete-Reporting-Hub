@@ -41,9 +41,10 @@ FINANCIAL_METRICS: Dict[str, str] = {
 }
 
 # Bespoke-format row label (normalized via _lbl) -> canonical metric key.
-# Only the metrics Megan confirmed are mapped; anything left out (Indeed,
-# Operating %, and for Coel also Aptel/Arcadia/Owners Withdrawal) is simply
-# never populated, so the fill doesn't write it.
+# Only the metrics Megan confirmed are mapped; anything left out (Operating %,
+# and for Coel also Aptel/Arcadia/Owners Withdrawal) is simply never
+# populated, so the fill doesn't write it. Coel's Indeed spend is NOT a labeled
+# row — it's summed from the P&L detail transactions (see _coel_indeed_total).
 _GERMAN_METRICS: Dict[str, str] = {
     "current bank balance total": "TOTAL FUNDS AVAILABLE",
     "owner payroll":              "OWNERS PAYROLL",
@@ -177,10 +178,39 @@ def _parse_german(wb) -> Tuple[List[dict], List[dt.date]]:
             sorted(weeks_seen))
 
 
+def _coel_indeed_total(ws) -> Optional[float]:
+    """Coel's cash-flow file has no 'Indeed' line — his Indeed spend lives as
+    one or more checks inside the P&L DETAIL block (category '905 Advertising'),
+    each a transaction row whose Name column reads 'Indeed'. Find the detail
+    header row (the one carrying BOTH a 'Name' and an 'Amount' label — no
+    hardcoded columns, the template can move them), then sum every transaction
+    amount whose Name is Indeed. Returns None when there's no detail table, so
+    a week without the section never writes a spurious 0. Jobs2Me / ARS
+    Recruiting / Aptel checks sit in the same block but are deliberately left
+    out — they belong to other metrics, not Indeed."""
+    name_col = amt_col = None
+    for r in ws.iter_rows(min_row=1, max_row=ws.max_row):
+        labels = {_lbl(c.value): c.column - 1 for c in r if c.value is not None}
+        if "name" in labels and "amount" in labels:
+            name_col, amt_col = labels["name"], labels["amount"]
+            break
+    if name_col is None:
+        return None
+    total: Optional[float] = None
+    for r in ws.iter_rows(min_row=1, max_row=ws.max_row):
+        if name_col >= len(r) or amt_col >= len(r):
+            continue
+        nm, amt = r[name_col].value, r[amt_col].value
+        if nm and "indeed" in _lbl(nm) and isinstance(amt, (int, float)):
+            total = (total or 0) + amt
+    return total
+
+
 def _parse_coel(wb) -> Tuple[List[dict], List[dt.date]]:
     """CASH FLOW layout — one office, one sheet per week. Each metric label
     is found anywhere on the sheet; its value is the first number to the
-    right on the same row."""
+    right on the same row. Indeed is the exception — summed from the P&L
+    detail transactions (_coel_indeed_total), since it has no labeled row."""
     owner = office = None
     metrics: Dict[str, Dict[dt.date, object]] = {}
     weeks_seen: set = set()
@@ -207,6 +237,9 @@ def _parse_coel(wb) -> Tuple[List[dict], List[dt.date]]:
                             if isinstance(r[k].value, (int, float))), None)
                 if val is not None:
                     metrics.setdefault(canon, {}).setdefault(week, val)
+        indeed = _coel_indeed_total(ws)
+        if indeed is not None:
+            metrics.setdefault("INDEED", {}).setdefault(week, indeed)
     if not owner:
         return [], []
     return ([{"office": office or owner, "owner": owner, "metrics": metrics}],
