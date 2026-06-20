@@ -142,6 +142,68 @@ def _human_reply_after(cl, parent_ts: str, after_ts: str) -> dict | None:
     return out
 
 
+def _human_context(cl, parent_ts: str) -> str:
+    """All human (non-bot) text replies in the thread, joined — the context /
+    answers the submitter has given. Bot prompts start with an emoji shortcode."""
+    out = []
+    try:
+        for r in cl.conversations_replies(channel=SOCIAL_INBOX_CHANNEL_ID,
+                                          ts=parent_ts).get("messages", []):
+            if r.get("ts") == parent_ts or r.get("files"):
+                continue
+            t = (r.get("text") or "").strip()
+            if t and not t.startswith(":"):
+                out.append(t)
+    except Exception:
+        pass
+    return " | ".join(out)
+
+
+_CONTEXT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "enough": {"type": "boolean"},
+        "questions": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["enough"], "additionalProperties": False,
+}
+
+
+def needs_more_context(image_bytes: bytes, context: str,
+                       company_name: str) -> list[str]:
+    """Decide if there's enough to caption well; return clarifying questions if
+    not (empty list = good to go). Lucy asks rather than guesses."""
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
+        system = (
+            f"You are Lucy, writing a social caption for {company_name} (a "
+            "door-to-door sales company) from a submitted photo + context. "
+            "Decide if you have ENOUGH to write a SPECIFIC, accurate caption: "
+            "who is featured (first names), what the moment is (a promotion + "
+            "which level, an event, a win, team culture), and any key detail. If "
+            "something important is missing or ambiguous, set enough=false and "
+            "give 1-3 short, friendly questions to ask the submitter in Slack. "
+            "If you can already write a good, accurate caption, enough=true with "
+            "no questions. Don't ask for trivia — only what materially improves "
+            "the caption. Never guess at names or what's happening.")
+        resp = client.messages.create(
+            model=MODEL, max_tokens=300, system=system,
+            output_config={"format": {"type": "json_schema",
+                                       "schema": _CONTEXT_SCHEMA}},
+            messages=[{"role": "user", "content": [
+                {"type": "image", "source": {"type": "base64",
+                 "media_type": "image/jpeg",
+                 "data": base64.standard_b64encode(image_bytes).decode()}},
+                {"type": "text", "text": f"Context so far: {context or '(none)'}"},
+            ]}])
+        body = next((b.text for b in resp.content if b.type == "text"), "{}")
+        data = json.loads(body)
+        return [] if data.get("enough") else (data.get("questions") or [])
+    except Exception:
+        return []   # on any error, don't block — caption with what we have
+
+
 _PHOTO_FEEDBACK_SCHEMA = {
     "type": "object",
     "properties": {
@@ -348,26 +410,44 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
             continue
         text = m.get("text", "")
 
-        # 1) no context -> ask for it (once)
-        if not _has_context(text):
-            if not st.get("asked_context"):
-                actions.append({"ts": ts, "action": "ask_context",
-                                "message": _CONTEXT_QUESTION})
-                if not dry_run:
-                    cl.chat_postMessage(channel=SOCIAL_INBOX_CHANNEL_ID,
-                                        thread_ts=ts, text=_CONTEXT_QUESTION)
-                    st["asked_context"] = True
-            continue
-
-        # 2) first pass: post the edited PHOTO and the CAPTION as TWO separate
-        #    messages so each can be approved on its own (✅) or rejected (❌).
+        # First pass: gather context, ASK the thread if more would help, caption.
         if not st.get("caption"):
+            extra = _human_context(cl, ts)
+            full_context = (text + ("\n" + extra if extra else "")).strip()
             try:
                 raw = _download(imgs[-1]["url_private"])
                 quality = photo_edit.quality_report(raw)   # flag bad sources
                 img = photo_edit.process_bytes(             # auto-enhance + IG crop
                     raw, zoom=style.photo_default_zoom())   # learned crop tightness
-                cap = caption_for(img, text, company_name,
+            except Exception as e:
+                actions.append({"ts": ts, "action": "caption_error", "error": str(e)})
+                continue
+
+            # if more info would materially help the caption, ask in-thread (once)
+            if not st.get("context_resolved"):
+                if st.get("asked_context_ts"):
+                    if not _human_reply_after(cl, ts, st["asked_context_ts"]):
+                        actions.append({"ts": ts, "action": "awaiting_context"})
+                        continue
+                    extra = _human_context(cl, ts)
+                    full_context = (text + ("\n" + extra if extra else "")).strip()
+                    st["context_resolved"] = True
+                else:
+                    questions = needs_more_context(img, full_context, company_name)
+                    if questions:
+                        msg = (":wave: A couple quick Qs so I caption this right:\n"
+                               + "\n".join(f"• {q}" for q in questions))
+                        actions.append({"ts": ts, "action": "ask_context",
+                                        "message": msg})
+                        if not dry_run:
+                            r0 = cl.chat_postMessage(channel=SOCIAL_INBOX_CHANNEL_ID,
+                                                     thread_ts=ts, text=msg)
+                            st["asked_context_ts"] = r0.get("ts")
+                        continue
+                    st["context_resolved"] = True
+
+            try:
+                cap = caption_for(img, full_context, company_name,
                                   avoid=recent_captions[:25])
             except Exception as e:
                 actions.append({"ts": ts, "action": "caption_error", "error": str(e)})

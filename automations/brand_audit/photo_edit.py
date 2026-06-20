@@ -21,6 +21,13 @@ import io
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
+# iPhone photos are HEIC by default — register the opener so Pillow can read them
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+except Exception:
+    pass
+
 # Instagram feed targets (width, height), 1080px on the long-fit edge.
 IG_SIZES = {
     "4:5": (1080, 1350),    # portrait — most feed real estate, the default
