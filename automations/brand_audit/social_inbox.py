@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import base64
 import json
-import re
 import time
 from pathlib import Path
 
@@ -473,30 +472,42 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                 actions.append({"ts": ts, "action": "caption_error", "error": str(e)})
                 continue
 
-            # BRAND-SAFETY SCREEN — never post alcohol/smoking/drugs/profanity/
-            # gang signs/weapons/cash or anything thuggish-unprofessional.
+            # BRAND-SAFETY SCREEN — flag (don't auto-block) anything with
+            # alcohol/smoking/drugs/profanity/gang signs/weapons/cash or that
+            # reads thuggish-unprofessional. Megan/Raf approve (✅) or deny (❌);
+            # Lucy posts WHAT she found so reps learn what's not allowed.
             if not st.get("screen_ok"):
-                if st.get("blocked_ts"):
-                    ovr = _human_reply_after(cl, ts, st["blocked_ts"])
-                    if ovr and re.search(r"post anyway|override|it'?s fine|post it",
-                                         (ovr.get("text") or "").lower()):
-                        st["screen_ok"] = True
+                if st.get("flagged_ts"):
+                    frx = _thread_reactions(cl, ts).get(st["flagged_ts"])
+                    if _reacted(frx, SOCIAL_APPROVE_EMOJI):
+                        st["screen_ok"] = True              # approved despite flag
+                    elif _reacted(frx, SOCIAL_REJECT_EMOJI):
+                        actions.append({"ts": ts, "action": "photo_denied"})
+                        if not dry_run:
+                            cl.chat_postMessage(
+                                channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
+                                text=":no_entry: Denied — we won't post this one. "
+                                     "Thanks for sending though!")
+                            st["posted"] = True             # closed out
+                        continue
                     else:
-                        actions.append({"ts": ts, "action": "photo_blocked"})
+                        actions.append({"ts": ts, "action": "awaiting_screen_review"})
                         continue
                 else:
                     issues = screen_photo(img, company_name)
                     if issues:
-                        actions.append({"ts": ts, "action": "photo_blocked",
+                        actions.append({"ts": ts, "action": "photo_flagged",
                                         "issues": issues})
                         if not dry_run:
                             r0 = cl.chat_postMessage(
                                 channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
-                                text=":no_entry: I can't post this one — it looks "
-                                     "like it includes " + ", ".join(issues) +
-                                     ". We keep the brand clean and professional. "
-                                     "(If I'm wrong, reply 'post anyway'.)")
-                            st["blocked_ts"] = r0.get("ts")
+                                text=":warning: *Flagging for review* — heads up, "
+                                     "this looks like it has: " + "; ".join(issues)
+                                     + ".\nWe keep the brand clean and "
+                                     "professional, so it shouldn't post as-is. "
+                                     "*Approvers: react :white_check_mark: to post "
+                                     "it anyway, :x: to deny.*")
+                            st["flagged_ts"] = r0.get("ts")
                         continue
                     st["screen_ok"] = True
 
