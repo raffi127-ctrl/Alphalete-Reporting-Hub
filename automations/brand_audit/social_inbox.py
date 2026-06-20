@@ -494,7 +494,10 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                         actions.append({"ts": ts, "action": "awaiting_screen_review"})
                         continue
                 else:
-                    issues = screen_photo(img, company_name)
+                    issues = list(screen_photo(img, company_name))
+                    if photo_edit.is_too_blurry(img):
+                        issues.append("too blurry to meet our posting standards "
+                                      "(couldn't sharpen it enough)")
                     if issues:
                         actions.append({"ts": ts, "action": "photo_flagged",
                                         "issues": issues})
@@ -503,10 +506,8 @@ def process_inbox(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
                                 channel=SOCIAL_INBOX_CHANNEL_ID, thread_ts=ts,
                                 text=":warning: *Flagging for review* — heads up, "
                                      "this looks like it has: " + "; ".join(issues)
-                                     + ".\nWe keep the brand clean and "
-                                     "professional, so it shouldn't post as-is. "
-                                     "*Approvers: react :white_check_mark: to post "
-                                     "it anyway, :x: to deny.*")
+                                     + ".\n*Approvers: react :white_check_mark: to "
+                                     "post it anyway, :x: to deny.*")
                             st["flagged_ts"] = r0.get("ts")
                         continue
                     st["screen_ok"] = True

@@ -131,6 +131,28 @@ def fit_for_ig(img: Image.Image, aspect: str = DEFAULT_ASPECT,
 
 
 # ---- pipeline ---------------------------------------------------------------
+def blur_variance(img_bytes: bytes) -> float:
+    """Sharpness score = variance of the Laplacian (higher = sharper). Computed
+    on a size-normalized grayscale copy so it's comparable across photos."""
+    im = ImageOps.exif_transpose(Image.open(io.BytesIO(img_bytes))).convert("L")
+    w, h = im.size
+    s = 1000.0 / max(w, h)
+    im = im.resize((max(2, int(w * s)), max(2, int(h * s))))
+    g = np.asarray(im, dtype=np.float64)
+    lap = (4 * g[1:-1, 1:-1] - g[:-2, 1:-1] - g[2:, 1:-1]
+           - g[1:-1, :-2] - g[1:-1, 2:])
+    return float(lap.var())
+
+
+# below this sharpness score a photo is too blurry to meet posting standards
+BLUR_THRESHOLD = 80.0
+
+
+def is_too_blurry(img_bytes: bytes, threshold: float = BLUR_THRESHOLD) -> bool:
+    """True if the photo is too blurry to post even after our enhancement."""
+    return blur_variance(img_bytes) < threshold
+
+
 def quality_report(data: bytes, aspect: str = DEFAULT_ASPECT) -> dict:
     """Inspect the SOURCE photo for problems we can't fix (too low-res to be
     crisp, already blown-out, very dark/crushed). Returns a dict with `ok` and
