@@ -55,9 +55,34 @@ def run(target: dt.date | None = None, *, test_tab: bool = False,
     target, rows = pull_disposition_day(target)
     print(f"[total_knocks] Scraped {len(rows)} rep(s).", flush=True)
     if not rows:
-        print("[total_knocks] ⚠ No rows for that day — nothing to post.",
-              flush=True)
-        return 1
+        # No knocks for that day (e.g. a day nobody door-knocked). Post an
+        # explicit 'No data available' one-liner to each metric in today's
+        # thread so the absence is visible — NOT a silent failure — and the
+        # parent reactions still mark both metrics done. (Eve, 2026-06-22)
+        print("[total_knocks] ⚠ No rows for that day — posting "
+              "'No data available' to the Metrics thread.", flush=True)
+        if dry_run or no_slack:
+            why = "--dry-run" if dry_run else "--no-slack"
+            print(f"[total_knocks] {why} — would post 'No data available' "
+                  f"for {POST_TOTAL_KNOCKS[0]} + {POST_TIME_GAPS[0]}.",
+                  flush=True)
+            print("[total_knocks] ✅ Finished (no data).", flush=True)
+            return 0
+        from automations.shared.slack_metrics_post import post_reply_text_only
+        slack_today = central_today()   # post into TODAY's thread (Texas time)
+        for label, emoji in [POST_TOTAL_KNOCKS, POST_TIME_GAPS]:
+            text = (f"{label} — {target.strftime('%b')} {target.day} "
+                    f"— No data available")
+            resp = post_reply_text_only(text, react_emoji=emoji,
+                                        today=slack_today)
+            if resp.get("ok"):
+                print(f"[total_knocks] ✅ Posted '{label}' no-data notice.",
+                      flush=True)
+            else:
+                print(f"[total_knocks] ⚠ Slack response for '{label}': {resp}",
+                      flush=True)
+        print("[total_knocks] ✅ Finished (no data).", flush=True)
+        return 0
 
     # 2. Fill the tab (skipped on dry-run).
     if dry_run:
