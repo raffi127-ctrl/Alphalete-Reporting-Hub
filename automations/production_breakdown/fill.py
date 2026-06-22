@@ -310,6 +310,22 @@ def fill_for_tab(sh, ws, parsed: Dict[str, dict],
             updates.append((gspread.utils.rowcol_to_a1(row, chart["first_day_col"] + di),
                             v if v else ""))
 
+    # ----- FIX (2026-06-22): clear stale rep-column merges BEFORE writing values.
+    # The Sheets API silently DROPS a value written to a non-anchor cell of an
+    # existing merged range. A prior run leaves Rep/Total merges; if this run's
+    # rep order or row-shape shifts, a name/total write lands on a stale
+    # non-anchor cell and vanishes — leaving a merged-but-empty rep block with
+    # correct day cells (the ghost-rows bug: 39 tabs, names + Product Totals
+    # blank). Unmerge first so every target cell is free when we write.
+    # Unconditional (not gated on merges_pending): an all-singles-this-week tab
+    # can still carry stale merges from a mixed-rep prior run, which would drop
+    # its single reps' name/total the same way.
+    _rep_cols0 = {chart["label_col"] - 1, chart["total_col"] - 1}
+    _rep_top0 = rep_start - 1
+    _pre_unmerge = _unmerge_reqs_for(sh, sid, _rep_top0, _rep_cols0)
+    if _pre_unmerge:
+        rfill._retry(sh.batch_update, {"requests": _pre_unmerge})
+
     rfill._retry(ws.batch_update,
                  [{"range": a1, "values": [[v]]} for a1, v in updates],
                  value_input_option="USER_ENTERED")
@@ -322,17 +338,13 @@ def fill_for_tab(sh, ws, parsed: Dict[str, dict],
                 "startIndex": rep_start + n_new - 1,
                 "endIndex": rep_start + n_old - 1}}}]})
 
-    # Unmerge any stale merge in the rep columns before (re)merging. A rep whose
-    # row-shape changed since last run leaves a stale merge that a fixed unmerge
-    # range can PARTIAL-overlap, which Sheets rejects with [400] "you must select
-    # all cells in a merged range" (the 2026-05-25 bug — 32 reps, plus Hasani
-    # Lynch whose prior run left a rows 152-153 merge one row past the now-
-    # shorter chart). _unmerge_reqs_for reads the ACTUAL existing merges and
-    # unmerges each by its full range, so the unmerge can never partial-overlap,
-    # no matter how far a stale merge extends. Re-read at both merge points
-    # because the PASTE_FORMAT in post_reqs re-creates merges between them.
-    _rep_cols0 = {chart["label_col"] - 1, chart["total_col"] - 1}
-    _rep_top0 = rep_start - 1
+    # Re-unmerge before (re)merging. _unmerge_reqs_for reads the ACTUAL existing
+    # merges and unmerges each by its full range, so the unmerge can never
+    # PARTIAL-overlap (the [400] "you must select all cells in a merged range"
+    # case — the 2026-05-25 bug), no matter how far a stale merge extends. Re-read
+    # at both merge points because the PASTE_FORMAT in post_reqs re-creates merges
+    # between them. (_rep_cols0 / _rep_top0 are defined above, at the pre-write
+    # unmerge.)
 
     # ----- mergeCells for mixed reps (clear filter + stale merges first)
     if merges_pending:
