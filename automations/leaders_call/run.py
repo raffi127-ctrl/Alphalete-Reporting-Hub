@@ -32,7 +32,7 @@ from typing import Optional
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent.parent / "output" / "leaders_call"
 
-LEADERS_CALL_SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
+LEADERS_CALL_SHEET_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
 LEADERS_CALL_TAB = "Leader's Call"
 
 # All AT&T product types — appended to the Fiber view URL so the crosstab's
