@@ -124,6 +124,7 @@ def main(argv=None) -> int:
             status = "ok" if r["ok"] else "FAILED"
             print(f"  -> {r['target']} (posted to channel {r['channel']}): {status}")
         print("\n✅ Test post done (real channels untouched).")
+        print("=== done ===")
         return 0
 
     # ---- detect-only: just list sheets + the naive pick. No downloads. ----
@@ -209,6 +210,7 @@ def main(argv=None) -> int:
         print(f"  message : {plan['comment']}")
         print(f"  channels: {plan['channels']}")
         print(f"  files   : {plan['files']}  (both PDFs to BOTH channels)")
+        print("=== done (dry-run) ===")
         return 0
 
     print("\nPosting to Slack…")
@@ -217,6 +219,7 @@ def main(argv=None) -> int:
         status = "ok" if r["ok"] else "FAILED"
         print(f"  #{name} ({r['channel']}): {status}")
     print("\n✅ Done.")
+    print("=== done ===")
     return 0
 
 
