@@ -96,7 +96,7 @@ def run_first_last_sale(file_paths: List[Path], dry_run: bool = False,
             ws = rfill._retry(sh.worksheet, tab)
             res = fsfill.fill_for_tab(sh, ws, week, parsed, aliases_map,
                                        src_bounds, src_sid, dry_run=dry_run)
-            if res["inserted"]:
+            if res.get("inserted"):
                 inserted_log[tab] = res["inserted"]
             if res["status"] == "OK":
                 filled.append(tab)

@@ -31,6 +31,8 @@ from automations.recruiting_report import fill as rfill
 DAYS_FULL = ["Week Avg", "Sunday", "Monday", "Tuesday", "Wednesday",
              "Thursday", "Friday", "Saturday"]
 NO_DATA_TIME = "No Logged Knocks"
+# Marker for a day the owner is in the upload but logged no sale that day.
+NO_SALE_MARK = "-"
 NOT_ON_UPLOAD = "Not On Emailed Report"
 # Google Sheets 'Light red 3' — for the WE header cell on absent-owner tabs
 LIGHT_RED = {"red": 244/255, "green": 199/255, "blue": 195/255}
@@ -120,8 +122,11 @@ def insert_missing_days(sh, ws, sheet_id: int) -> Optional[dict]:
     while True:
         grid = rfill._retry(ws.get_all_values)
         sec = find_section(grid)
-        if not sec or not sec["body_rows"]:
+        if not sec:
             return sec
+        # body_rows may be empty (section header present but day rows deleted —
+        # Rashad Reed / William Sassenberg). Fall through so the loop below
+        # bootstraps the full DAYS_FULL set starting just under the subheader.
         body = dict(sec["body_rows"])
         missing_day = None
         prev_row = None
@@ -182,9 +187,10 @@ def fill_present(ws, sec, week: dt.date, owner: dict) -> int:
             updates.append((gspread.utils.rowcol_to_a1(row, sec["orders_col"]),
                             o if o is not None else 0))
         else:
-            updates.append((gspread.utils.rowcol_to_a1(row, sec["first_col"]), NO_DATA_TIME))
-            updates.append((gspread.utils.rowcol_to_a1(row, sec["last_col"]), NO_DATA_TIME))
-            updates.append((gspread.utils.rowcol_to_a1(row, sec["orders_col"]), 0))
+            # Day with no sale in the upload -> '-' no-data marker in all three.
+            updates.append((gspread.utils.rowcol_to_a1(row, sec["first_col"]), NO_SALE_MARK))
+            updates.append((gspread.utils.rowcol_to_a1(row, sec["last_col"]), NO_SALE_MARK))
+            updates.append((gspread.utils.rowcol_to_a1(row, sec["orders_col"]), NO_SALE_MARK))
     rfill._retry(ws.batch_update,
                  [{"range": a1, "values": [[v]]} for a1, v in updates],
                  value_input_option="USER_ENTERED")
@@ -243,12 +249,16 @@ def fill_for_tab(sh, ws, week: dt.date, parsed: Dict[str, dict],
     sheet_id = ws._properties["sheetId"]
     grid = rfill._retry(ws.get_all_values)
     sec = find_section(grid)
-    if not sec or not sec["body_rows"]:
-        return {"tab": tab, "status": "NO_SECTION"}
+    if not sec:
+        return {"tab": tab, "status": "NO_SECTION", "inserted": []}
 
-    # Ensure all 8 day rows exist (insert if needed)
+    # Ensure all 8 day rows exist (insert if needed). A tab can have the
+    # section header but ZERO day rows (Rashad Reed / William Sassenberg, whose
+    # day rows were deleted) — insert_missing_days now bootstraps from empty.
     initial = set(sec["body_rows"].keys())
     sec = insert_missing_days(sh, ws, sheet_id)
+    if not sec or not sec["body_rows"]:
+        return {"tab": tab, "status": "NO_SECTION", "inserted": []}
     after = set(sec["body_rows"].keys())
     inserted = sorted(after - initial, key=lambda d: DAYS_FULL.index(d))
 

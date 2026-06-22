@@ -346,6 +346,10 @@ METRICS_SCRAPED: Dict[str, str] = {
     "0-30 Day Cancel Rate":    "0-30 day New Internet cancel rate",
     "30-60 activation rate %": "30-60 day New Internet activation rate",
 }
+# Metrics rows that get the '-%' no-data marker (like churn) when the Metrics
+# source LOADED but the cell is blank — a real "reported, no qualifying sales"
+# gap (Rashad Reed activation), not an untouched cell. Narrow on purpose.
+METRICS_NODATA_DASH = {"30-60 activation rate %"}
 # Office Metrics section — scraped from the CHURN crosstab (% values).
 CHURN_SCRAPED: Dict[str, str] = {
     "0-30 Day Churn": "0-30 Day Churn",
@@ -366,6 +370,9 @@ WIRELESS_SCRAPED: Dict[str, str] = {
     "Extra / Preimum Plan % Metrics": "Extra/Premium Plan % (Metrics)",
     "Next up %":                      "Next Up % (Metrics)",
 }
+# Wireless rows that get '-%' when the Wireless Metrics source loaded but the
+# cell is blank (no qualifying sales) — same no-data marker as above.
+WIRELESS_NODATA_DASH = {"30-60 Activation Rate"}
 # Wireless Metrics section — churn rows, scraped from the Wireless Churn crosstab.
 WIRELESS_CHURN_SCRAPED: Dict[str, str] = {
     "0-30 Day Churn": "0-30 Day Churn",
@@ -397,6 +404,11 @@ ALT_LABELS: Dict[str, List[str]] = {
     "New Internets": ["New Internet"],
     "DTV": ["DTVs"],
     "0-30 Day Churn": ["0-30 Churn"],
+    # Some tabs label this row with a trailing '%' ('6+ days Out Scheduled %')
+    # that _norm keeps, so the exact key misses (2026-06-22: Joseph Logan,
+    # Hammad Haque). Alias the '%' variant — surgical, no global %-strip (which
+    # could collide with 'X' vs 'X %' wireless label pairs).
+    "6+ days out scheduled": ["6+ days out scheduled %"],
 }
 
 # Rows legitimately absent on specific tabs — never flagged as data gaps.
@@ -1872,6 +1884,10 @@ def fill_opt_for_tab(
             cell = mv.get(_norm(csv_col), "")
             if str(cell).strip() != "":
                 _queue(om_rows, sheet_label, cell)
+            elif metrics_by_owner and sheet_label in METRICS_NODATA_DASH:
+                # source loaded but blank (no qualifying sales) -> '-%' marker,
+                # not an empty cell (Rashad Reed activation).
+                _queue(om_rows, sheet_label, "-%")
 
     # --- CHURN view (Office Metrics section) ---
     churn_row = _match_owner(tab_name, churn_by_owner, aliases_map)
@@ -1968,6 +1984,9 @@ def fill_opt_for_tab(
                 cell = wv.get(_norm(csv_col), "")
                 if str(cell).strip() != "":
                     _queue(wireless_rows, sheet_label, cell)
+                elif wireless_metrics_by_owner and sheet_label in WIRELESS_NODATA_DASH:
+                    # source loaded but blank (no qualifying sales) -> '-%'.
+                    _queue(wireless_rows, sheet_label, "-%")
         wc_row = _match_owner(tab_name, wireless_churn_by_owner, aliases_map)
         # Same -% no-data fill as the Office-Metrics churn block above.
         wcv = wc_row["values"] if wc_row else {}
