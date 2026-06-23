@@ -9,7 +9,9 @@ __pycache__/
 *.pyc
 .env
 .DS_Store
-.browser_profile/
+# Browser profiles — all variants (.browser_profile, _holder, _zoho, …) hold
+# live session cookies (auth). Sensitive; never commit.
+.browser_profile*
 .appstream_profile/
 .appstream_profile_alt/
 # AppStream storage_state export — contains live SESSION cookies (auth). Sensitive;
