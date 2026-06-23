@@ -135,6 +135,7 @@ ICD_NAME_TO_OFFICE_ID = {
     "carissa ng":         "23402",
     "drew tepper":        "22583",
     "maxamad aden":       "23066",
+    "roshan amin ahmad":  "19833",
 }
 # Backwards-compatible alias
 SHORT_NAME_TO_OFFICE_ID = ICD_NAME_TO_OFFICE_ID
