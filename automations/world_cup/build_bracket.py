@@ -29,12 +29,21 @@ from typing import Optional
 # Round 1 & 2 used groups of 6; Round 3 switched to groups of 4. If Smart
 # Circle changes the structure again, add/adjust the entry for that round size
 # (the round-start email from Chris Williford states groups + how many advance).
+# Numbered rounds are keyed by N (the "Round of N" size); named rounds (the
+# Finals) are keyed by their name string — the Finals carries 36 reps in 6
+# groups of 6, which would collide with the Round-of-36 entry if keyed by count.
+# `label` overrides the displayed round name (else it falls back to "Round {num}").
 ROUND_CONFIGS = {
     864: {"num": 1, "groups": 144, "group_size": 6, "top_n": 3, "window": "May 25-31, 2026", "next": "Round of 432"},
     432: {"num": 2, "groups": 72,  "group_size": 6, "top_n": 2, "window": "Jun 1-7, 2026",   "next": "Round of 144"},
     144: {"num": 3, "groups": 36,  "group_size": 4, "top_n": 2, "window": "Jun 8-14, 2026",  "next": "Round of 72"},
     72:  {"num": 4, "groups": 18,  "group_size": 4, "top_n": 2, "window": "Jun 15-21, 2026", "next": "Round of 36"},
     36:  {"num": 5, "groups": 9,   "group_size": 4, "top_n": 2, "window": "Jun 22-28, 2026", "next": "Finals"},
+    # Finals: Smart Circle collapsed the field to 36 reps in 6 groups of 6 and
+    # relabeled the crosstab's first column "Finals Groups". top_n defaults to 2
+    # (every recent round) — correct it here if Chris Williford's round-start
+    # email states a different advance count. No "next" (terminal round).
+    "Finals": {"num": 6, "label": "Finals", "groups": 6, "group_size": 6, "top_n": 2, "window": "Jun 22-28, 2026", "next": ""},
 }
 
 
@@ -47,26 +56,42 @@ def _num(s: str) -> float:
     return float(s) if re.match(r"^-?\d+(\.\d+)?$", s) else 0.0
 
 
+def _round_label(round_key) -> str:
+    """Display label for a round key: 'Round of 144' for numbered rounds, or the
+    name itself ('Finals') for named rounds."""
+    return f"Round of {round_key}" if isinstance(round_key, int) else str(round_key)
+
+
 def read_groups(csv_path: Path):
     """Parse the Tableau crosstab CSV (UTF-16, tab-separated).
 
-    Returns (round_size, header, groups) where groups is an OrderedDict of
-    group-name -> list of {"rep", "owner", "score"(float)}. Raises if the round
-    size can't be read from the header (e.g. the 'Overall Contest Tracker' sheet
-    which is just the title text)."""
+    Returns (round_key, header, groups) where round_key is the int N for a
+    numbered 'Round of N' or the name string for a named round ('Finals'), and
+    groups is an OrderedDict of group-name -> list of {"rep", "owner",
+    "score"(float)}. Raises if the round can't be read from the header (e.g. the
+    'Overall Contest Tracker' sheet which is just the title text)."""
     with open(csv_path, encoding="utf-16") as f:
         rows = list(csv.reader(io.StringIO(f.read()), delimiter="\t"))
 
     header = rows[0] if rows else []
-    m = re.search(r"Round of (\d+)", header[0] if header else "")
-    if not m:
+    # The first column reads "<round> Groups" — "Round of 144 Groups" for a
+    # numbered round, or "Finals Groups" once Smart Circle collapses to the
+    # final stage. Numbered rounds key ROUND_CONFIGS by N (int); named rounds
+    # key by the name (str).
+    core = re.sub(r"\s*Groups\s*$", "", (header[0] if header else "").strip(),
+                  flags=re.IGNORECASE).strip()
+    m = re.search(r"Round of (\d+)", core)
+    if m:
+        round_key = int(m.group(1))
+    elif core and core.lower() != "overall contest tracker":
+        round_key = core
+    else:
         raise RoundConfigError(
             f"Cannot detect round from CSV header: {header}. Expected the first "
-            "column to look like 'Round of 144 Groups'. If this is the 'Overall "
-            "Contest Tracker' sheet it has no rep data — pull the 'Round of N' "
-            "sheet instead."
+            "column to look like 'Round of 144 Groups' or a named round like "
+            "'Finals Groups'. If this is the 'Overall Contest Tracker' sheet it "
+            "has no rep data — pull the 'Round of N' sheet instead."
         )
-    round_size = int(m.group(1))
 
     groups: "OrderedDict[str, list]" = OrderedDict()
     for r in rows[1:]:
@@ -75,22 +100,22 @@ def read_groups(csv_path: Path):
         g, rep, owner = r[0].strip(), r[1].strip(), r[2].strip()
         score = _num(r[3]) if len(r) > 3 else 0.0
         groups.setdefault(g, []).append({"rep": rep, "owner": owner, "score": score})
-    return round_size, header, groups
+    return round_key, header, groups
 
 
 def read_round(csv_path: Path):
     """Return (round_size, cfg) for the CSV, raising RoundConfigError if the
     round size isn't in ROUND_CONFIGS."""
-    round_size, _header, _groups = read_groups(csv_path)
-    cfg = ROUND_CONFIGS.get(round_size)
+    round_key, _header, _groups = read_groups(csv_path)
+    cfg = ROUND_CONFIGS.get(round_key)
     if not cfg:
         raise RoundConfigError(
-            f"No config for Round of {round_size}. Smart Circle started a round "
-            "this script hasn't seen — add an entry to ROUND_CONFIGS in "
+            f"No config for {_round_label(round_key)}. Smart Circle started a "
+            "round this script hasn't seen — add an entry to ROUND_CONFIGS in "
             "build_bracket.py (group_size, top_n, window dates, next round name) "
             "from the round-start email, then re-run."
         )
-    return round_size, cfg
+    return round_key, cfg
 
 
 def _gnum(g: str) -> int:
@@ -140,18 +165,23 @@ def build_html(csv_path: Path, public: bool,
     public=True  -> Public version: all groups, no highlights, safe to share.
 
     Returns (html_string, stats_dict)."""
-    round_size, _header, groups = read_groups(csv_path)
-    cfg = ROUND_CONFIGS.get(round_size)
+    round_key, _header, groups = read_groups(csv_path)
+    cfg = ROUND_CONFIGS.get(round_key)
     if not cfg:
         raise RoundConfigError(
-            f"No config for Round of {round_size}. Add an entry to ROUND_CONFIGS "
-            "in build_bracket.py from the round-start email, then re-run."
+            f"No config for {_round_label(round_key)}. Add an entry to "
+            "ROUND_CONFIGS in build_bracket.py from the round-start email, then "
+            "re-run."
         )
 
     TOP_N = cfg["top_n"]
     ROUND_NUM = cfg["num"]
     WINDOW = cfg["window"]
     NEXT_ROUND = cfg["next"]
+    ROUND_TITLE = cfg.get("label") or f"Round {ROUND_NUM}"   # H1 + filename label
+    STAGE = _round_label(round_key)                          # subtitle stage line
+    advance_txt = (f"Top {TOP_N} per group advance to {NEXT_ROUND}"
+                   if NEXT_ROUND else f"Top {TOP_N} per group advance")
     SUFFIX = " (Public)" if public else ""
 
     # Rank each group by score desc; flag cut-line ties. Alphalete stats are
@@ -278,8 +308,8 @@ body {{ font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; color: 
 .foot {{ margin-top:8px; font-size:8.5px; color:#9aa3b5; text-align:center; }}
 </style></head><body>
 <div class="hero">
-  <h1>AT&amp;T <span class="acc">WORLD CUP 2026</span> &mdash; Round {ROUND_NUM} Standings</h1>
-  <div class="sub">Round of {round_size} &nbsp;&middot;&nbsp; {cfg["groups"]} Groups of {cfg["group_size"]} &nbsp;&middot;&nbsp; Top {TOP_N} per group advance to {NEXT_ROUND} &nbsp;&middot;&nbsp; Window {WINDOW}</div>
+  <h1>AT&amp;T <span class="acc">WORLD CUP 2026</span> &mdash; {ROUND_TITLE} Standings</h1>
+  <div class="sub">{STAGE} &nbsp;&middot;&nbsp; {cfg["groups"]} Groups of {cfg["group_size"]} &nbsp;&middot;&nbsp; {advance_txt} &nbsp;&middot;&nbsp; Window {WINDOW}</div>
   <div class="bar">
     <span class="chip">Snapshot: <b>{snapshot}</b></span>
     <span class="chip">Qualifying: <b>Gig+ New Internet Sales</b></span>
@@ -300,8 +330,10 @@ body {{ font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; color: 
 </body></html>"""
 
     stats = {
-        "round_size": round_size,
+        "round_size": round_key,
         "round_num": ROUND_NUM,
+        "round_label": ROUND_TITLE,
+        "top_n": TOP_N,
         "public": public,
         "shown_groups": shown_groups,
         "total_groups": total_groups,

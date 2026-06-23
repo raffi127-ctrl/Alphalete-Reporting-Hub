@@ -19,8 +19,8 @@ CHANNELS = {
 }
 
 
-def _comment(round_num: int) -> str:
-    return f"🏆 World Cup 2026 — Round {round_num}"
+def _comment(round_label: str) -> str:
+    return f"🏆 World Cup 2026 — {round_label}"
 
 
 def _resolve_dest(client, dest: str) -> str:

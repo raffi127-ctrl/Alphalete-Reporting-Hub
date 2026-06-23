@@ -52,40 +52,38 @@ from automations.shared.tableau_patchright import tableau_session
 OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
 
 
-def _pdf_paths(round_num: int) -> tuple[Path, Path]:
-    """Match the handoff naming: 'World Cup 2026 - Round N Bracket(.pdf)'."""
-    alpha = OUTPUT_DIR / f"World Cup 2026 - Round {round_num} Bracket.pdf"
-    public = OUTPUT_DIR / f"World Cup 2026 - Round {round_num} Bracket (Public).pdf"
+def _pdf_paths(round_label: str) -> tuple[Path, Path]:
+    """Match the handoff naming: 'World Cup 2026 - <label> Bracket(.pdf)' where
+    <label> is 'Round N' for numbered rounds or 'Finals'."""
+    alpha = OUTPUT_DIR / f"World Cup 2026 - {round_label} Bracket.pdf"
+    public = OUTPUT_DIR / f"World Cup 2026 - {round_label} Bracket (Public).pdf"
     return alpha, public
 
 
-def _find_existing_pdfs() -> tuple[int, Path, Path]:
+def _find_existing_pdfs() -> tuple[str, Path, Path]:
     """Locate the most recent already-rendered (alpha, public) PDF pair in
     output/. Used by --test-channel so a test post reuses the PDFs from the
-    last --no-slack run instead of re-pulling Tableau."""
-    alphas: dict[int, Path] = {}
-    publics: dict[int, Path] = {}
-    for pth in OUTPUT_DIR.glob("World Cup 2026 - Round *.pdf"):
-        m = re.search(r"Round (\d+) Bracket", pth.name)
+    last --no-slack run instead of re-pulling Tableau. Picks the newest complete
+    pair by file mtime (round labels like 'Finals' don't sort numerically)."""
+    pairs: dict[str, dict[str, Path]] = {}
+    for pth in OUTPUT_DIR.glob("World Cup 2026 - * Bracket*.pdf"):
+        m = re.match(r"World Cup 2026 - (.+?) Bracket( \(Public\))?\.pdf$", pth.name)
         if not m:
             continue
-        n = int(m.group(1))
-        if "(Public)" in pth.name:
-            publics[n] = pth
-        else:
-            alphas[n] = pth
-    common = sorted(set(alphas) & set(publics))
-    if not common:
+        slot = pairs.setdefault(m.group(1), {})
+        slot["public" if m.group(2) else "alpha"] = pth
+    complete = {lbl: s for lbl, s in pairs.items() if "alpha" in s and "public" in s}
+    if not complete:
         raise SystemExit(
             "No existing World Cup PDF pair found in output/. Run "
             "`--no-slack` first to generate them, then retry --test-channel.")
-    n = common[-1]
-    return n, alphas[n], publics[n]
+    label = max(complete, key=lambda l: complete[l]["alpha"].stat().st_mtime)
+    return label, complete[label]["alpha"], complete[label]["public"]
 
 
-def _write_html(round_num: int, public: bool, html_str: str) -> Path:
+def _write_html(round_label: str, public: bool, html_str: str) -> Path:
     suffix = " (Public)" if public else ""
-    out = OUTPUT_DIR / f"World Cup 2026 - Round {round_num} Bracket{suffix}.html"
+    out = OUTPUT_DIR / f"World Cup 2026 - {round_label} Bracket{suffix}.html"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html_str, encoding="utf-8")
     return out
@@ -111,13 +109,13 @@ def main(argv=None) -> int:
 
     # ---- test-channel: post existing PDFs to ONE destination. No Tableau. ----
     if args.test_channel:
-        round_num, alpha_pdf, public_pdf = _find_existing_pdfs()
+        round_label, alpha_pdf, public_pdf = _find_existing_pdfs()
         print(f"\n=== World Cup — TEST POST (single destination) ===")
-        print(f"  Using existing PDFs for Round {round_num}:")
+        print(f"  Using existing PDFs for {round_label}:")
         print(f"    {alpha_pdf.name}")
         print(f"    {public_pdf.name}")
         print(f"  Destination: {args.test_channel}")
-        result = slack_post.post_round(alpha_pdf, public_pdf, round_num,
+        result = slack_post.post_round(alpha_pdf, public_pdf, round_label,
                                        test_channel=args.test_channel)
         print(f"\n  message: {result['comment']}")
         for name, r in result["results"].items():
@@ -177,14 +175,14 @@ def main(argv=None) -> int:
     # ---- build both HTML versions ----
     alpha_html, alpha_stats = build_bracket.build_html(csv_path, public=False)
     public_html, public_stats = build_bracket.build_html(csv_path, public=True)
-    round_num = alpha_stats["round_num"]
+    round_label = alpha_stats["round_label"]
 
-    alpha_html_path = _write_html(round_num, False, alpha_html)
-    public_html_path = _write_html(round_num, True, public_html)
+    alpha_html_path = _write_html(round_label, False, alpha_html)
+    public_html_path = _write_html(round_label, True, public_html)
 
     # ---- render both PDFs ----
-    alpha_pdf, public_pdf = _pdf_paths(round_num)
-    print(f"\nRendering PDFs (Round {round_num} / Round of {round_size})…")
+    alpha_pdf, public_pdf = _pdf_paths(round_label)
+    print(f"\nRendering PDFs ({round_label} / Round of {round_size})…")
     render.render_pdfs([
         (alpha_html, alpha_pdf),
         (public_html, public_pdf),
@@ -192,7 +190,7 @@ def main(argv=None) -> int:
 
     print("\n--- Standings (Alphalete) ---")
     print(f"  In play: {alpha_stats['alph_in_play']}  "
-          f"In top {build_bracket.ROUND_CONFIGS[round_size]['top_n']}: "
+          f"In top {alpha_stats['top_n']}: "
           f"{alpha_stats['alph_top']}  Leading group: {alpha_stats['alph_leading']}")
     print(f"  Alphalete view: {alpha_stats['shown_groups']} of "
           f"{alpha_stats['total_groups']} groups   "
@@ -204,7 +202,7 @@ def main(argv=None) -> int:
 
     # ---- post (or show plan) ----
     if args.no_slack:
-        plan = slack_post.post_round(alpha_pdf, public_pdf, round_num,
+        plan = slack_post.post_round(alpha_pdf, public_pdf, round_label,
                                      dry_run=True)
         print("\n--- WOULD POST to Slack (--no-slack): ---")
         print(f"  message : {plan['comment']}")
@@ -214,7 +212,7 @@ def main(argv=None) -> int:
         return 0
 
     print("\nPosting to Slack…")
-    result = slack_post.post_round(alpha_pdf, public_pdf, round_num)
+    result = slack_post.post_round(alpha_pdf, public_pdf, round_label)
     for name, r in result["results"].items():
         status = "ok" if r["ok"] else "FAILED"
         print(f"  #{name} ({r['channel']}): {status}")
