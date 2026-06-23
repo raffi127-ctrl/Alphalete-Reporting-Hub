@@ -138,12 +138,17 @@ def _claude_message(s: dict) -> str:
             "wolf-pack nod). CRUCIAL: still deliver the real weather prep as "
             "ARMOR/FUEL to go dominate — rain jacket/umbrella if rain; shed-able "
             "layers if the morning's cool but the afternoon's hot; sunscreen/bug "
-            "spray + extra water if hot & sunny; hydrate. KEEP IT SHORT — 2 to 3 "
-            "short lines MAX, tight and punchy, NO rambling or repeating yourself. "
-            "Quick hype greeting + a fire/weather emoji, the key forecast + the "
-            "must-have gear, a one-line sign-off as '— Lucy 🐾'. PLAIN TEXT ONLY — no "
+            "spray + extra water if hot & sunny; hydrate. KEEP IT VERY SHORT — like a "
+            "quick hype text, UNDER 40 WORDS TOTAL. One punchy line with the high "
+            "temp + the SINGLE most important gear (umbrella/jacket if rain, extra "
+            "water if hot), one quick rally line, then sign off '— Lucy 🐾'. Do NOT "
+            "list multiple tips, do NOT ramble or repeat. PLAIN TEXT ONLY — no "
             "markdown or asterisks (Slack shows them literally); ALL-CAPS for "
-            "emphasis. No hashtags."
+            "emphasis. No hashtags.\n\n"
+            "Length + vibe to match (do NOT copy the words):\n"
+            "\"YO DAWGSSS 🐺⚡ 95° and storms in DFW today — rain jacket + extra "
+            "water, we knock right through it. Every door is money. LET'S GOOO!\n"
+            "— Lucy 🐾\""
         )
         user = (
             f"Forecast — {_facts_line(s)}\n"
@@ -155,7 +160,7 @@ def _claude_message(s: dict) -> str:
         client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
         resp = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=160,
+            max_tokens=110,
             system=system,
             messages=[{"role": "user", "content": user}],
         )
