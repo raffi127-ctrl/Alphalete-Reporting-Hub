@@ -112,10 +112,9 @@ def _template_message(s: dict) -> str:
     if s["hi"] >= 85:
         tips.append("sunscreen + bug spray for the afternoon sun")
     tips.append("and pack plenty of water")
-    tip_str = "; ".join(tips)
-    return (f"🔥 RISE AND GRIND, Dawgs! {_facts_line(s)}\n\n"
-            f"Game plan: {tip_str}. Now get out there and OWN those streets — every "
-            f"door is money. Let's EAT! — Lucy 🐾")
+    tip_str = ", ".join(tips[:2])  # keep it short
+    return (f"🔥 LET'S GO, Dawgs! {_facts_line(s)} "
+            f"{tip_str.capitalize()}. Every door is money — go get it! — Lucy 🐾")
 
 
 def _claude_message(s: dict) -> str:
@@ -139,10 +138,12 @@ def _claude_message(s: dict) -> str:
             "wolf-pack nod). CRUCIAL: still deliver the real weather prep as "
             "ARMOR/FUEL to go dominate — rain jacket/umbrella if rain; shed-able "
             "layers if the morning's cool but the afternoon's hot; sunscreen/bug "
-            "spray + extra water if hot & sunny; hydrate. Open with a high-energy "
-            "greeting + a fire/weather emoji, weave in the forecast facts, sign off "
-            "'— Lucy 🐾'. 2-5 short punchy lines. PLAIN TEXT ONLY — no markdown or "
-            "asterisks (Slack shows them literally); ALL-CAPS for emphasis. No hashtags."
+            "spray + extra water if hot & sunny; hydrate. KEEP IT SHORT — 2 to 3 "
+            "short lines MAX, tight and punchy, NO rambling or repeating yourself. "
+            "Quick hype greeting + a fire/weather emoji, the key forecast + the "
+            "must-have gear, a one-line sign-off as '— Lucy 🐾'. PLAIN TEXT ONLY — no "
+            "markdown or asterisks (Slack shows them literally); ALL-CAPS for "
+            "emphasis. No hashtags."
         )
         user = (
             f"Forecast — {_facts_line(s)}\n"
@@ -154,7 +155,7 @@ def _claude_message(s: dict) -> str:
         client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
         resp = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=320,
+            max_tokens=160,
             system=system,
             messages=[{"role": "user", "content": user}],
         )
