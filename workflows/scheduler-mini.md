@@ -97,6 +97,40 @@ launchctl enable gui/$(id -u)/com.alphalete.brand-audit-noon
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.alphalete.brand-audit-noon.plist
 ```
 
+## 6am weather alert (com.alphalete.weather-6am)
+Friendly daily forecast for the Frisco, TX team → `#alphalete-sales`, posted at
+6am Central (just before the 7am metrics thread). `automations/weather_alert/run.py`:
+Open-Meteo forecast (no key) → Claude writes the warm prep blurb (umbrella / layers
+/ sunscreen / water) → posts to #alphalete-sales. Template fallback if Claude is
+unavailable, so it never hard-fails. `deploy/weather_alert_6am.sh`.
+
+Deploy + test + go-live:
+```bash
+cd ~/recruiting-report
+git pull --ff-only origin main
+chmod +x deploy/weather_alert_6am.sh
+python3 -c "import os; src=open(os.path.expanduser('~/recruiting-report/deploy/com.alphalete.weather-6am.plist')).read(); home=os.path.expanduser('~'); src=src.replace('/Users/megan/1st Claude Folder', home+'/recruiting-report'); open(os.path.expanduser('~/Library/LaunchAgents/com.alphalete.weather-6am.plist'),'w').write(src); print('PLIST WRITTEN')"
+plutil -lint ~/Library/LaunchAgents/com.alphalete.weather-6am.plist
+bash deploy/weather_alert_6am.sh --dry-run   # prints the message, no post
+ls -t output/logs/weather-6am-*.log | head -1 | xargs tail -n 20
+# GO LIVE:
+launchctl enable gui/$(id -u)/com.alphalete.weather-6am
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.alphalete.weather-6am.plist
+```
+
+## SHARED mini prereq — Slack user token
+Any job that POSTS to Slack (weather alert, brand audit, the 3am daily-focus Slack
+summary) reads `~/.config/recruiting-report/slack-user-token` (an `xoxp-` token).
+The fresh mini won't have it — copy it from the laptop ONCE:
+```bash
+# from the laptop (AirDrop the file, or over SSH/Tailscale):
+#   scp ~/.config/recruiting-report/slack-user-token alphalete@<mini>:~/.config/recruiting-report/
+# on the mini, make sure the dir exists first:  mkdir -p ~/.config/recruiting-report
+```
+Also needed for the Anthropic-written weather wording: `~/.config/brand-audit/keys.json`
+(same file the brand audit uses). Without it the weather post still works via the
+plain template.
+
 ## Notes
 - A run-time trigger only fires if the mini is awake — keep `sudo pmset -c sleep 0` set.
 - If the mini is asleep/off at 3am, launchd runs the job at next wake (StartCalendarInterval is catch-up). Keep it awake to fire on time.
