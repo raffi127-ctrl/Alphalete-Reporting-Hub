@@ -51,11 +51,13 @@ from automations.focus_office_att.step5_fill_one_owner import (
     TT_FIELD_TO_CANONICAL,
     DISP_FIELD_TO_CANONICAL,
     _merge_rep_records,
+    backfill_lastweek_block,
     design_cosmetic_ops,
     fill_owner_tab,
     page_rqst,
     scrape_day,
     scrape_disposition_day,
+    write_weekly_formulas,
 )
 
 DEST_SPREADSHEET_ID = "1xgVE_e8bZimACgPdqcdNCr1qo4sedWect_zzEcUgEJY"
@@ -413,9 +415,15 @@ def _find_owner_and_impersonate(page, sheet_tab_name: str, aliases_raw: dict) ->
     return new_rqst, "ok"
 
 
-def _scrape_one_owner(page, ws, days: list[dt.date], rqst: str) -> dict:
+def _scrape_one_owner(page, ws, days: list[dt.date], rqst: str,
+                      backfill_lastweek: bool = False) -> dict:
     """Scrape Time Tracker + Disposition for one owner across the given days,
-    fill the Sheet tab, run post-fill ops. Returns stats dict."""
+    fill the Sheet tab, run post-fill ops. Returns stats dict.
+
+    When backfill_lastweek=True the scraped days are written into the FROZEN
+    'LAST WEEK' block (by rep name) instead of the live current-week block,
+    and the expensive design pass is skipped (the frozen block is already
+    styled). Used to recover a last week that was down at the time."""
     metrics = (
         list(TT_FIELD_TO_CANONICAL.values())
         + list(DISP_FIELD_TO_CANONICAL.values())
@@ -454,6 +462,22 @@ def _scrape_one_owner(page, ws, days: list[dt.date], rqst: str) -> dict:
             key = r["name"].lower().strip()
             by_name[key] = _merge_rep_records(by_name.get(key, {"name": r["name"]}), r)
         scraped_by_date[d] = list(by_name.values())
+
+    if backfill_lastweek:
+        # Write into the FROZEN block by name; refresh that block's weekly
+        # totals. No design pass — the frozen block is already styled.
+        bstats = backfill_lastweek_block(ws, scraped_by_date, layout)
+        try:
+            write_weekly_formulas(ws, layout)
+        except Exception as e:
+            print(f"  ⚠ frozen weekly-formula refresh failed: {e}")
+        return {
+            "tt_counts": {d.isoformat(): len(tt_by_date[d]) for d in days},
+            "disp_counts": {d.isoformat(): len(disp_by_date[d]) for d in days},
+            "written": bstats.get("written_cells", 0),
+            "skipped": 0,
+            "new_reps": [],
+        }
 
     stats = fill_owner_tab(ws, scraped_by_date, layout)
 
@@ -508,6 +532,12 @@ def main() -> int:
                          "path for mid-week daily runs). Yesterday is re-pulled "
                          "because the prior run scraped it as a still-in-progress "
                          "partial day — this run finalizes it now that it's done.")
+    ap.add_argument("--backfill-lastweek", default=None, metavar="MONDAY",
+                    help="Backfill the FROZEN 'LAST WEEK' block for the week "
+                         "whose Monday is MONDAY (YYYY-MM-DD). Scrapes Fri/Sat/Sun "
+                         "of that week and writes them into the LAST WEEK block "
+                         "(matched by rep name), NEVER the current week. For "
+                         "recovering a last week that was down at the time.")
     args = ap.parse_args()
 
     only = _parse_csv(args.only)
@@ -522,7 +552,15 @@ def main() -> int:
         owner_tabs = [t for t in owner_tabs if t not in skip]
 
     today = dt.date.today()
-    if args.daily_window:
+    backfill_lastweek = bool(args.backfill_lastweek)
+    if backfill_lastweek:
+        # Frozen LAST WEEK recovery: scrape ONLY the typically-missing tail
+        # (Fri/Sat/Sun) of the given week and write them into the frozen block.
+        # Mon–Thu are left as-is (already frozen). Fills ownerville metrics;
+        # production (Tableau) is back-filled separately.
+        bf_monday = dt.datetime.strptime(args.backfill_lastweek, "%Y-%m-%d").date()
+        days = [bf_monday + dt.timedelta(days=i) for i in (4, 5, 6)]  # Fri/Sat/Sun
+    elif args.daily_window:
         # Mid-week fast path: re-scrape yesterday + today only. Yesterday
         # is re-pulled because the prior run scraped it as a partial,
         # still-in-progress day; now that it's complete its numbers are
@@ -540,7 +578,8 @@ def main() -> int:
     # Resume: skip owners already scraped OK in an interrupted run earlier
     # today. Only normal full / daily runs use the checkpoint — targeted
     # --only / --skip / --week-start / --dry-run runs always scrape fresh.
-    checkpoint_active = not (only or skip or args.week_start or args.dry_run)
+    checkpoint_active = not (only or skip or args.week_start or args.dry_run
+                             or backfill_lastweek)
     run_key = f"{today.isoformat()}|{'daily' if args.daily_window else 'full'}"
     resumed: list[str] = []
     if checkpoint_active:
@@ -607,7 +646,8 @@ def main() -> int:
                         results[owner] = "no master rqst"
                         continue
                     ws = all_tabs[owner]
-                    stats = _scrape_one_owner(page, ws, days, rqst)
+                    stats = _scrape_one_owner(page, ws, days, rqst,
+                                              backfill_lastweek=backfill_lastweek)
                     scraped_ok = True
                     results[owner] = "ok"
                     if checkpoint_active:
@@ -632,7 +672,8 @@ def main() -> int:
                     continue
                 print(f"  ✓ Impersonated; rqst={rqst[:8]}…")
                 ws = all_tabs[owner]
-                stats = _scrape_one_owner(page, ws, days, rqst)
+                stats = _scrape_one_owner(page, ws, days, rqst,
+                                          backfill_lastweek=backfill_lastweek)
                 scraped_ok = True
                 results[owner] = "ok"
                 if checkpoint_active:

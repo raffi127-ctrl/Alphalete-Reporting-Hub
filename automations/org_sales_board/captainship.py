@@ -212,9 +212,15 @@ def discover_captainships(grid: List[List[str]]) -> List[Tuple[str, str]]:
     for i in range(len(grid)):
         b = _cell(grid, i, 1)
         bl = b.lower()
-        if "captainship team" not in bl:
+        # The board labels these blocks inconsistently — "<NAME> CAPTAINSHIP
+        # TEAM" (Raf's, Jairo's) AND "<NAME> CAPTAIN TEAM" (Carlos', Wayne's,
+        # …). Match BOTH so every block is found regardless of wording. A bare
+        # "CAPTAIN TEAM" sub-header (the weekly-columns row) has no name before
+        # it → empty title → skipped below. (Real tab, Megan 2026-06-17.)
+        m = re.search(r"\bcaptain(?:ship)?\s+team\b", bl)
+        if not m:
             continue
-        title = b[:bl.index("captainship")].strip()
+        title = b[:m.start()].strip()
         if not title:
             continue
         key = _cap_key(title)

@@ -1,5 +1,5 @@
 {
-  "confirmed_count": 49,
+  "confirmed_count": 50,
   "needs_review_count": 0,
   "skip_count": 27,
   "confirmed": [
@@ -355,6 +355,14 @@
       "office_id": "23607",
       "as_owner": "Jacob Dover",
       "as_company": "Rockstarworld Incorporated",
+      "confidence": 1.0,
+      "auto_onboarded": true
+    },
+    {
+      "sheet_tab": "Rashad Reed",
+      "office_id": "23411",
+      "as_owner": "Rashad Reed",
+      "as_company": "Elevate Specialized Acquisitions, Inc",
       "confidence": 1.0,
       "auto_onboarded": true
     }
