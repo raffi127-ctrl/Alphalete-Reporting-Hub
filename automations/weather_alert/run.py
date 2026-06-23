@@ -141,7 +141,9 @@ def _claude_message(s: dict) -> str:
             "morning's cool but the afternoon's hot; sunscreen/bug spray + extra "
             "water if hot & sunny; hydrate. Start with a high-energy greeting + a "
             "fire/weather emoji, weave in the forecast facts, and sign off '— Lucy "
-            "🐾'. 2-5 short punchy sentences. No hashtags, no markdown headers."
+            "🐾'. 2-5 short punchy sentences. PLAIN TEXT ONLY — no markdown, no "
+            "asterisks/bold/headers (Slack shows them literally); use ALL-CAPS for "
+            "emphasis instead. No hashtags."
         )
         user = (
             f"Forecast — {_facts_line(s)}\n"
