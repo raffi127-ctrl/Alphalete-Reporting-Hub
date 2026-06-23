@@ -22,9 +22,9 @@ import sys
 
 import requests
 
-# Frisco, TX
+# DFW metro (coordinates: Frisco, TX)
 LAT, LON = 33.1507, -96.8236
-LOCATION = "Frisco"
+LOCATION = "DFW"
 TZ = "America/Chicago"
 
 # WMO weather codes → plain description (Open-Meteo's daily weather_code).
