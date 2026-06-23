@@ -716,10 +716,23 @@ def appstream_direct_session(headless: bool = False,
                 yield page
                 return
 
+            # NOTE (Megan 2026-06-22): unlike Tableau, AppStream can't be
+            # seeded by an ownerville URL hop — applicantstream.com sits behind
+            # its OWN Cloudflare challenge, so a token-in-URL navigation just
+            # bounces to its login page (verified 4 ways). The only path that
+            # establishes the session is a one-time interactive login that
+            # clears the Turnstile; the session is then kept warm so scheduled
+            # runs don't hit the wall. See _capture_appstream_state() below.
             if not allow_form_login:
                 raise RuntimeError(
-                    "AppStream session expired or missing — run "
-                    "output/_scratch_appstream_export_state.py")
+                    "AppStream session expired or missing. The saved session "
+                    "(.appstream_storage_state.json) has no live token. Re-seed "
+                    "it with a one-time login:\n"
+                    "    PYTHONPATH=. .venv/bin/python -m "
+                    "automations.shared.tableau_patchright --appstream-login\n"
+                    "(a browser opens; clear the Cloudflare check + log in as "
+                    "rcaptain once, and it saves the session). The session "
+                    "holder then keeps it warm for scheduled runs.")
 
             # Legacy opt-in form-drive (interactive/debug only — hits the
             # Cloudflare Turnstile, so it stalls in unattended runs).
@@ -745,6 +758,59 @@ def appstream_direct_session(headless: bool = False,
             ctx.close()
 
 
+def _capture_appstream_state(verbose: bool = True) -> bool:
+    """One-time interactive capture of the AppStream session. Opens a HEADED
+    browser on the persistent .appstream_profile; the human clears the
+    Cloudflare check + logs in as rcaptain. Once the office console (#searchMC)
+    appears, the session (cookies incl. CFID/CFTOKEN + the rqst_<TOKEN> SSO
+    cookies) is written to APPSTREAM_STORAGE_STATE for the unattended runs to
+    reuse. AppStream's own Cloudflare can't be cleared headlessly, so this
+    interactive seed is the only way to (re)establish the session; the session
+    holder keeps it warm afterward."""
+    profile = APPSTREAM_PROFILE_DIR
+    profile.mkdir(exist_ok=True, parents=True)
+    with sync_playwright() as p:
+        ctx = _launch_persistent(p, profile, headless=False,
+                                 label="appstream_login", verbose=verbose)
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        try:
+            page.goto(f"{APPSTREAM_BASE}?p=701", wait_until="domcontentloaded")
+        except Exception:
+            pass
+        print("\n" + "=" * 64)
+        print("  LOG INTO APPLICANTSTREAM IN THE BROWSER WINDOW THAT OPENED")
+        print("  • clear the Cloudflare check if shown")
+        print("  • sign in as rcaptain")
+        print("  Waiting for the office console to load (up to 5 min)…")
+        print("=" * 64 + "\n", flush=True)
+        seen = False
+        for _ in range(60):
+            try:
+                if page.locator("#searchMC").count() > 0:
+                    seen = True
+                    break
+            except Exception:
+                pass
+            page.wait_for_timeout(5_000)
+        if not seen:
+            print("❌ Didn't detect the office console (#searchMC) within 5 min — "
+                  "nothing saved. Re-run and finish the login.", flush=True)
+            ctx.close()
+            return False
+        state = ctx.storage_state()
+        APPSTREAM_STORAGE_STATE.write_text(json.dumps(state))
+        cookies = state.get("cookies", [])
+        n_rqst = sum(1 for c in cookies if c.get("name", "").startswith("rqst_"))
+        print(f"✅ Saved AppStream session ({len(cookies)} cookies, {n_rqst} "
+              f"rqst token(s)) → {APPSTREAM_STORAGE_STATE.name}", flush=True)
+        if n_rqst == 0:
+            print("⚠ No rqst_ token captured — the unattended reuse needs one. "
+                  "Make sure you reached the office switcher before this saved.",
+                  flush=True)
+        ctx.close()
+        return n_rqst > 0
+
+
 if __name__ == "__main__":
     # Smoke tests for the patchright sessions. Run headed so you can watch
     # Cloudflare + SSO. --appstream verifies the new (unverified) AppStream
@@ -753,7 +819,13 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--appstream", action="store_true",
                     help="Smoke-test the AppStream patchright login.")
+    ap.add_argument("--appstream-login", action="store_true",
+                    help="One-time interactive AppStream login → saves the "
+                         "session for unattended runs.")
     args = ap.parse_args()
+    if args.appstream_login:
+        import sys as _sys
+        _sys.exit(0 if _capture_appstream_state(verbose=True) else 1)
     if args.appstream:
         with appstream_session(verbose=True) as pg:
             url = pg.url or ""
