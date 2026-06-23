@@ -474,7 +474,11 @@
     {
       "sheet_tab": "Salik Mallick",
       "reason": "no AppStream office (sales-only, no recruiting)"
+    },
+    {
+      "sheet_tab": "Juan Botero Berrio",
+      "reason": "no AppStream office (sales-only, no recruiting)"
     }
   ],
-  "sales_only_count": 1
+  "sales_only_count": 2
 }
