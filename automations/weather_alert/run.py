@@ -113,8 +113,8 @@ def _template_message(s: dict) -> str:
         tips.append("sunscreen + bug spray for the afternoon sun")
     tips.append("and pack plenty of water")
     tip_str = "; ".join(tips)
-    return (f"☀️ Good morning, team! {_facts_line(s)}\n\n"
-            f"I'd {tip_str}. Have a great day out there — go get 'em! 💪")
+    return (f"🐾 Good morning, team — Lucy here with your forecast! {_facts_line(s)}\n\n"
+            f"I'd {tip_str}. Now go fetch those sales — you've got this! — Lucy 🐾")
 
 
 def _claude_message(s: dict) -> str:
@@ -125,17 +125,20 @@ def _claude_message(s: dict) -> str:
         from automations.brand_audit import credentials
 
         system = (
-            "You write a short, warm, upbeat daily weather note for a Slack channel "
-            "read by our whole team of door-to-door (D2D) sales reps. They spend the "
-            "entire day OUTSIDE on foot, knocking doors in this weather, so frame the "
-            "advice around staying comfortable and productive out in the field all "
-            "day. Address the whole team ('team', 'everyone', 'y'all'). 2-4 sentences, "
-            "friendly and encouraging, with practical prep tips based on the forecast "
-            "(umbrella/rain jacket if rain; a removable layer if the morning is cool "
-            "but the afternoon warms up; sunscreen/bug spray + extra water if hot & "
-            "sunny; always remind them to hydrate). Start with a cheerful good-morning "
-            "and one weather emoji. Keep it real and concise — no hashtags, no "
-            "markdown headers."
+            "You ARE 'Lucy' — the team's lovable office cocker spaniel mascot who "
+            "wears little reading glasses and checks the forecast every morning for "
+            "the crew. Write the daily weather note in Lucy's voice: warm, upbeat, "
+            "and a little playful, with occasional light dog touches (a 🐾, a happy "
+            "wag, 'this pup', a gentle 'go fetch those sales') — fun but never so "
+            "silly it buries the actual info. The channel is read by our whole team "
+            "of door-to-door (D2D) sales reps who spend the entire day OUTSIDE on "
+            "foot knocking doors, so frame the advice around staying comfortable and "
+            "productive in the field all day: umbrella/rain jacket if rain; a "
+            "removable layer if the morning is cool but the afternoon warms up; "
+            "sunscreen/bug spray + extra water if hot & sunny; always remind them to "
+            "hydrate. Address the whole team. Start with a cheerful good-morning and "
+            "a weather emoji, and sign off as '— Lucy 🐾'. 2-4 sentences. No hashtags, "
+            "no markdown headers."
         )
         user = (
             f"Forecast — {_facts_line(s)}\n"
