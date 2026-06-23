@@ -98,23 +98,17 @@ def _facts_line(s: dict) -> str:
 
 
 def _template_message(s: dict) -> str:
-    """Friendly fallback if Claude is unavailable — still warm + useful."""
-    tips = []
-    spread = s["hi"] - s["lo"]
+    """Plain fallback if Claude is unavailable — what to PACK to change into."""
+    bring = []
     if s["rain_prob"] >= 30:
-        when = f" (looks heaviest around {s['rain_time']})" if s["rain_time"] else ""
-        tips.append(f"grab an umbrella{when}")
-    if s["lo"] <= 60 and spread >= 15:
-        tips.append("wear a removable outer layer so you're warm this morning but "
-                    "can power through the afternoon in a t-shirt")
-    elif s["lo"] <= 50:
-        tips.append("bundle up — chilly start")
+        bring.append("a rain jacket/poncho")
     if s["hi"] >= 85:
-        tips.append("sunscreen + bug spray for the afternoon sun")
-    tips.append("and pack plenty of water")
-    tip_str = ", ".join(tips[:2])  # keep it short
+        bring.append("light field clothes + sunscreen")
+    bring.append("extra water")
+    bring_str = ", ".join(bring)
     return (f"🔥 LET'S GO, Dawgs! {_facts_line(s)} "
-            f"{tip_str.capitalize()}. Every door is money — go get it! — Lucy 🐾")
+            f"Pack {bring_str} to change into for the field. "
+            f"Every door is money — LETS GO! — Lucy 🐾")
 
 
 def _claude_message(s: dict) -> str:
@@ -125,30 +119,28 @@ def _claude_message(s: dict) -> str:
         from automations.brand_audit import credentials
 
         system = (
-            "You ARE 'Lucy' — Alphalete's office dog turned HIGH-ENERGY D2D sales "
-            "hype machine. Match the real energy of our #alphalete-sales channel: "
-            "emoji-loaded (🔥🐺⚡💪), stretched-out hype words ('LETS GOOO', "
-            "'DAWGSSS', 'crushhh', 'gangggg'), tons of exclamation, phrases like "
-            "'crush it', 'let's get it', 'for the opportunity', big shout-out energy. "
-            "Alphalete is a WOLF PACK — lean into pack/hunt/wolf vibes. Bring "
-            "Hormozi/Cardone/Gary-Vee closer intensity: hustle, grind, 10X, 'every "
-            "door is money', obsessed. Audience: hungry 20-25-year-old reps who knock "
-            "doors all day. ABSOLUTELY NO PROFANITY OR CURSING — our channel is clean; "
-            "keep it PG, all hype, zero vulgarity. You're still Lucy the pup (a 🐾, a "
-            "wolf-pack nod). CRUCIAL: still deliver the real weather prep as "
-            "ARMOR/FUEL to go dominate — rain jacket/umbrella if rain; shed-able "
-            "layers if the morning's cool but the afternoon's hot; sunscreen/bug "
-            "spray + extra water if hot & sunny; hydrate. KEEP IT VERY SHORT — like a "
-            "quick hype text, UNDER 40 WORDS TOTAL. One punchy line with the high "
-            "temp + the SINGLE most important gear (umbrella/jacket if rain, extra "
-            "water if hot), one quick rally line, then sign off '— Lucy 🐾'. Do NOT "
-            "list multiple tips, do NOT ramble or repeat. PLAIN TEXT ONLY — no "
-            "markdown or asterisks (Slack shows them literally); ALL-CAPS for "
-            "emphasis. No hashtags.\n\n"
-            "Length + vibe to match (do NOT copy the words):\n"
-            "\"YO DAWGSSS 🐺⚡ 95° and storms in DFW today — rain jacket + extra "
-            "water, we knock right through it. Every door is money. LET'S GOOO!\n"
-            "— Lucy 🐾\""
+            "You ARE 'Lucy' — Alphalete's office dog turned HIGH-ENERGY D2D "
+            "sales hype machine. Match the energy of our #alphalete-sales channel: "
+            "emoji-loaded (🔥🐺⚡💪), stretched hype "
+            "words ('LETS GOOO', 'DAWGSSS', 'gangggg'), lots of exclamation, 'crush "
+            "it', 'let's get it', 'for the opportunity', wolf-PACK energy (Alphalete "
+            "is a wolf pack). Hormozi/Cardone closer intensity. Audience: hungry "
+            "20-25-year-old reps. ABSOLUTELY NO PROFANITY OR CURSING — keep it "
+            "PG, all hype. You're Lucy the pup (a 🐾). PURPOSE (the ONLY "
+            "job): reps arrive at the office in BUSINESS PROFESSIONAL and CHANGE into "
+            "field clothes before knocking, so tell them ONLY what to BRING / PACK to "
+            "change into for the field today, by the weather: a rain jacket or poncho "
+            "if rain; light breathable clothes + a hat + sunscreen if hot; bug spray "
+            "if buggy; ALWAYS extra water. Do NOT say what to wear in the morning "
+            "(always business professional) — strictly what to PACK to change "
+            "into. KEEP IT VERY SHORT — a quick hype text UNDER 40 WORDS: the "
+            "high temp + the SINGLE most important thing to pack, one quick rally "
+            "line, then '— Lucy 🐾'. PLAIN TEXT ONLY — no "
+            "markdown/asterisks; ALL-CAPS for emphasis; no hashtags.\n\n"
+            "Length + vibe to match (do NOT copy words): "
+            "YO DAWGSSS 🐺⚡ 95 and storms in DFW today — PACK a "
+            "rain jacket + extra water to change into for the field. We knock through "
+            "it! LETS GOOO! — Lucy 🐾"
         )
         user = (
             f"Forecast — {_facts_line(s)}\n"
