@@ -33,6 +33,7 @@ try:
 except Exception:
     pass
 
+from patchright.sync_api import TimeoutError as PWTimeout
 from automations.shared.tableau_patchright import appstream_direct_session
 from automations.recruiting_report import fetch_office as fo
 from automations.recruiting_report.fill import open_by_key
@@ -101,9 +102,26 @@ def _load_as_week(page, sunday):
     rqst = _rqst(page)
     if not rqst:
         return
-    page.goto(f"https://applicantstream.com/index.cfm?rqst={rqst}&p=701",
-              wait_until="load", timeout=25000)
-    page.wait_for_selector("#weekStart", timeout=15000)
+    # AppStream's index.cfm responds slowly/intermittently, so a single
+    # goto times out at random. Retry a few times with a lenient wait
+    # ("commit" fires as soon as the response is received, decoupled from
+    # the dead/slow 3rd-party resources — ga.js, socket.io, cdnjs). The
+    # #weekStart wait below is the real readiness gate either way.
+    url = f"https://applicantstream.com/index.cfm?rqst={rqst}&p=701"
+    last_err = None
+    for attempt in range(3):
+        try:
+            page.goto(url, wait_until="commit", timeout=40000)
+            page.wait_for_selector("#weekStart", timeout=20000)
+            last_err = None
+            break
+        except PWTimeout as e:
+            last_err = e
+            print(f"  [retry] week {sunday}: goto/#weekStart timeout "
+                  f"(attempt {attempt + 1}/3)", flush=True)
+            page.wait_for_timeout(2000)
+    if last_err is not None:
+        raise last_err
     _admin_on(page)
     try:
         fo._set_week_and_submit(page, sunday)
