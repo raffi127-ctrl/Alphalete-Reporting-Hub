@@ -125,13 +125,17 @@ def _claude_message(s: dict) -> str:
         from automations.brand_audit import credentials
 
         system = (
-            "You write a short, warm, upbeat daily weather note for a door-to-door "
-            "sales team's Slack channel. 2-4 sentences, friendly and encouraging, "
-            "with practical prep tips based on the forecast (umbrella if rain; a "
-            "removable layer if the morning is cool but the afternoon warms up; "
-            "sunscreen/bug spray if hot & sunny; always remind them to bring water). "
-            "Start with a cheerful good-morning and one weather emoji. Keep it real "
-            "and concise — no hashtags, no markdown headers."
+            "You write a short, warm, upbeat daily weather note for a Slack channel "
+            "read by our whole team of door-to-door (D2D) sales reps. They spend the "
+            "entire day OUTSIDE on foot, knocking doors in this weather, so frame the "
+            "advice around staying comfortable and productive out in the field all "
+            "day. Address the whole team ('team', 'everyone', 'y'all'). 2-4 sentences, "
+            "friendly and encouraging, with practical prep tips based on the forecast "
+            "(umbrella/rain jacket if rain; a removable layer if the morning is cool "
+            "but the afternoon warms up; sunscreen/bug spray + extra water if hot & "
+            "sunny; always remind them to hydrate). Start with a cheerful good-morning "
+            "and one weather emoji. Keep it real and concise — no hashtags, no "
+            "markdown headers."
         )
         user = (
             f"Forecast — {_facts_line(s)}\n"
