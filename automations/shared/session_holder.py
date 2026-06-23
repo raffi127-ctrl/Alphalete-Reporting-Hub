@@ -47,6 +47,7 @@ from automations.shared.tableau_patchright import (
     PROFILE_DIR,
     _launch_persistent,
     _ownerville_session_valid,
+    _reuse_appstream_storage_state,
     OWNERVILLE_STORAGE_STATE,
     APPSTREAM_STORAGE_STATE,
     OWNERVILLE_V2_URL,
@@ -62,17 +63,49 @@ def _stamp() -> str:
     return dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _export(ctx) -> tuple[int, int]:
-    """Write the live ownerville (master) + AppStream cookies to their
-    storage_state files. ownerville is what the reports actually need; the
-    AppStream file is a best-effort bonus (its console also SSOs via ownerville)."""
+def _export_ownerville(ctx) -> int:
+    """Write the live ownerville (master SSO) cookies to OWNERVILLE_STORAGE_STATE.
+    Only called when the session is confirmed live, so a good export is never
+    clobbered with dead cookies."""
     cookies = ctx.storage_state().get("cookies", [])
     ov = [c for c in cookies if "ownerville" in (c.get("domain") or "")]
-    ap = [c for c in cookies if "applicantstream" in (c.get("domain") or "")]
     OWNERVILLE_STORAGE_STATE.write_text(json.dumps({"cookies": ov, "origins": []}))
+    return len(ov)
+
+
+def _export_appstream(ctx) -> int:
+    """Write the live applicantstream cookies (CFID/CFTOKEN + rqst SSO token) to
+    APPSTREAM_STORAGE_STATE. Only called when the console is confirmed live."""
+    cookies = ctx.storage_state().get("cookies", [])
+    ap = [c for c in cookies if "applicantstream" in (c.get("domain") or "")]
     if ap:
         APPSTREAM_STORAGE_STATE.write_text(json.dumps({"cookies": ap, "origins": []}))
-    return len(ov), len(ap)
+    return len(ap)
+
+
+def _warm_appstream(ctx, page, verbose: bool = False) -> bool:
+    """Keep the AppStream (applicantstream) console session alive in the holder's
+    context so unattended reports (daily_focus, recruiting) can reuse it.
+
+    AppStream sits behind its OWN Cloudflare wall — it CANNOT be seeded via
+    ownerville — so a human seeds it once with `--appstream-login`; this keeps
+    that session warm. Strategy: reload the open console to refresh the
+    ColdFusion session; if it dropped (or hasn't loaded yet), restore it from
+    the saved storage_state (which still holds live CFID/CFTOKEN + the rqst SSO
+    token). Returns True if the office switcher (#searchMC) is present."""
+    # Lightweight keep-alive: reload the live console if we're on it.
+    try:
+        if "applicantstream" in (page.url or ""):
+            page.reload(wait_until="domcontentloaded")
+            if page.locator("#searchMC").count() > 0:
+                return True
+    except Exception:
+        pass
+    # Console dropped or not loaded yet — restore from the saved session.
+    try:
+        return _reuse_appstream_storage_state(ctx, page, verbose=verbose)
+    except Exception:
+        return False
 
 
 def main() -> int:
@@ -116,25 +149,53 @@ def main() -> int:
             time.sleep(5)
             waited += 5
         if seeded:
-            ovn, apn = _export(ctx)
-            print(f"[{_stamp()}] seeded ✓ — exported {ovn} ownerville + {apn} appstream "
-                  f"cookies. Keep-alive every {args.interval:g} min. Leave running. Ctrl-C to stop.",
+            ovn = _export_ownerville(ctx)
+            print(f"[{_stamp()}] seeded ✓ — exported {ovn} ownerville cookies. "
+                  f"Keep-alive every {args.interval:g} min. Leave running. Ctrl-C to stop.",
                   flush=True)
         else:
             print(f"[{_stamp()}] not seeded within {args.seed_timeout:g} min — will keep "
                   f"checking; finish logging in in the window.", flush=True)
 
-        # --- Continuous keep-alive + export loop (uses val_page so login_page
-        #     stays available for a human re-login if ever needed). ---
+        # --- AppStream: restore the console in its own page + keep it warm in the
+        #     same context. AppStream has its OWN Cloudflare wall (can't be seeded
+        #     via ownerville), so it relies on a one-time --appstream-login seed;
+        #     the holder keeps that warm + re-exports it for unattended runs. ---
+        appstream_page = ctx.new_page()
+        if APPSTREAM_STORAGE_STATE.exists():
+            if _warm_appstream(ctx, appstream_page, verbose=False):
+                apn = _export_appstream(ctx)
+                print(f"[{_stamp()}] AppStream ✓ — console restored ({apn} cookies).",
+                      flush=True)
+            else:
+                print(f"[{_stamp()}]  ⚠️ AppStream session stale — re-seed once:  "
+                      f"PYTHONPATH=. .venv/bin/python -m "
+                      f"automations.shared.tableau_patchright --appstream-login", flush=True)
+        else:
+            print(f"[{_stamp()}]  ⚠️ AppStream not seeded — recruiting/daily-focus need it. "
+                  f"Seed once:  PYTHONPATH=. .venv/bin/python -m "
+                  f"automations.shared.tableau_patchright --appstream-login", flush=True)
+
+        # --- Continuous keep-alive + export loop. ownerville uses val_page so
+        #     login_page stays free for a human re-login; AppStream uses its own
+        #     appstream_page. Each source exports only when confirmed live. ---
         while True:
             try:
-                if _ownerville_session_valid(val_page, verbose=False):
-                    ovn, apn = _export(ctx)
-                    print(f"[{_stamp()}] warm ✓ — exported {ovn} ownerville + {apn} appstream cookies",
+                ov_ok = _ownerville_session_valid(val_page, verbose=False)
+                as_ok = _warm_appstream(ctx, appstream_page, verbose=False)
+                ovn = _export_ownerville(ctx) if ov_ok else None
+                apn = _export_appstream(ctx) if as_ok else None
+                ov_s = f"{ovn} ownerville" if ov_ok else "ownerville STALE"
+                as_s = f"{apn} appstream" if as_ok else "appstream STALE"
+                mark = "warm ✓" if (ov_ok and as_ok) else " ⚠️ partial"
+                print(f"[{_stamp()}] {mark} — {ov_s} | {as_s} (stale = kept last good export)",
+                      flush=True)
+                if not ov_ok:
+                    print(f"[{_stamp()}]     → log back into ownerville in the window.",
                           flush=True)
-                else:
-                    print(f"[{_stamp()}]  ⚠️ STALE — log back into ownerville in the window "
-                          f"(kept last good export).", flush=True)
+                if not as_ok:
+                    print(f"[{_stamp()}]     → re-seed AppStream:  --appstream-login",
+                          flush=True)
             except KeyboardInterrupt:
                 print(f"[{_stamp()}] holder stopped.", flush=True)
                 return 0
