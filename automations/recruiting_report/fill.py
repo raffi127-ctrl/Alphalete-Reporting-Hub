@@ -363,6 +363,7 @@ def auto_onboard_tabs(
         {c["sheet_tab"] for c in mapping["confirmed"]}
         | {n["sheet_tab"] for n in mapping["needs_review"]}
         | {s["sheet_tab"] for s in mapping["skip"]}
+        | {s["sheet_tab"] for s in mapping.get("sales_only", [])}
     )
     office_index = _load_office_index()
     try:
@@ -441,6 +442,7 @@ def unresolved_ambiguous_tabs(sh: gspread.Spreadsheet) -> list:
         {c["sheet_tab"] for c in mapping["confirmed"]}
         | {n["sheet_tab"] for n in mapping["needs_review"]}
         | {s["sheet_tab"] for s in mapping["skip"]}
+        | {s["sheet_tab"] for s in mapping.get("sales_only", [])}
     )
     office_index = _load_office_index()
     try:

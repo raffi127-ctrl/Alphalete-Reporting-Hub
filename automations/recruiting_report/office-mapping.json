@@ -1,7 +1,7 @@
 {
-  "confirmed_count": 51,
+  "confirmed_count": 49,
   "needs_review_count": 0,
-  "skip_count": 28,
+  "skip_count": 27,
   "confirmed": [
     {
       "sheet_tab": "Raf Hidalgo",
@@ -281,14 +281,6 @@
       ]
     },
     {
-      "sheet_tab": "DMari Longmire",
-      "office_id": "22989",
-      "as_owner": "DMari Longmire",
-      "as_company": "(hardcoded \u2014 may not be visible in all AS accounts)",
-      "confidence": 1.0,
-      "hardcoded": true
-    },
-    {
       "sheet_tab": "Francisco Castillo",
       "office_id": "22532",
       "as_owner": "Francisco Castillo",
@@ -324,14 +316,6 @@
       "sheet_tab": "Oren Shezaf",
       "office_id": "22536",
       "as_owner": "Oren Shezaf",
-      "as_company": "(hardcoded \u2014 may not be visible in all AS accounts)",
-      "confidence": 1.0,
-      "hardcoded": true
-    },
-    {
-      "sheet_tab": "Preppie Olison",
-      "office_id": "21373",
-      "as_owner": "Preppie Olison",
       "as_company": "(hardcoded \u2014 may not be visible in all AS accounts)",
       "confidence": 1.0,
       "hardcoded": true
@@ -384,10 +368,6 @@
     {
       "sheet_tab": "Rason Williams",
       "reason": "admin tab"
-    },
-    {
-      "sheet_tab": "Salik Mallick",
-      "reason": "no AppStream office (sales-only, no recruiting)"
     },
     {
       "sheet_tab": "Template 1",
@@ -489,5 +469,12 @@
       "sheet_tab": "OLD-Daily Focus Report",
       "reason": "old/deprecated tab"
     }
-  ]
+  ],
+  "sales_only": [
+    {
+      "sheet_tab": "Salik Mallick",
+      "reason": "no AppStream office (sales-only, no recruiting)"
+    }
+  ],
+  "sales_only_count": 1
 }

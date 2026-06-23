@@ -2245,8 +2245,13 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
     mapping = fill.load_mapping()
     for tab in fill.prune_deleted_tabs(sh, mapping, dry_run=dry_run):
         logfn(f"OPT: pruned deleted tab '{tab}' — no longer in the Sheet")
-    targets = [only] if only else [c["sheet_tab"]
-                                   for c in mapping["confirmed"]]
+    # 'sales_only' tabs (e.g. Salik Mallick — no AppStream office, so the
+    # recruiting funnel skips them) still get OPT/office-metrics here: their
+    # data is in the ICD-level crosstabs by name. The funnel (run.py) iterates
+    # 'confirmed' only, so it stays skipped for them.
+    targets = ([only] if only else
+               [c["sheet_tab"] for c in mapping["confirmed"]]
+               + [c["sheet_tab"] for c in mapping.get("sales_only", [])])
     # Fiber Lead — per-ICD pull (slow, one View Data scrape per ICD); skipped
     # on --skip-download, which reuses the last opt_fiber.csv. parse_fiber
     # returns {} when there's no file, so Fiber just doesn't fill.
