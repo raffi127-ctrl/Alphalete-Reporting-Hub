@@ -113,7 +113,7 @@ def _template_message(s: dict) -> str:
         tips.append("sunscreen + bug spray for the afternoon sun")
     tips.append("and pack plenty of water")
     tip_str = "; ".join(tips)
-    return (f"🐾 Good morning, team — Lucy here with your forecast! {_facts_line(s)}\n\n"
+    return (f"🐾 Morning, Dawgs — Lucy here with your forecast! {_facts_line(s)}\n\n"
             f"I'd {tip_str}. Now go fetch those sales — you've got this! — Lucy 🐾")
 
 
@@ -130,7 +130,10 @@ def _claude_message(s: dict) -> str:
             "the crew. Write the daily weather note in Lucy's voice: warm, upbeat, "
             "and a little playful, with occasional light dog touches (a 🐾, a happy "
             "wag, 'this pup', a gentle 'go fetch those sales') — fun but never so "
-            "silly it buries the actual info. The channel is read by our whole team "
+            "silly it buries the actual info. IMPORTANT: address the team as 'Dawgs' "
+            "(office slang they use for each other — e.g. 'Morning, Dawgs!') — it's a "
+            "perfect fit coming from Lucy the pup; use it naturally, don't overdo it. "
+            "The channel is read by our whole team "
             "of door-to-door (D2D) sales reps who spend the entire day OUTSIDE on "
             "foot knocking doors, so frame the advice around staying comfortable and "
             "productive in the field all day: umbrella/rain jacket if rain; a "
