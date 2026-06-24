@@ -22,6 +22,13 @@ VENV_PY=".venv/bin/python"
 LOG_DIR="output/logs"
 mkdir -p "$LOG_DIR"
 
+# Self-update: fast-forward to latest before the run so config/code changes land
+# without a manual pull (the source of all the babysitting on 2026-06-24).
+# Best-effort: only when the working tree is clean; never blocks the run.
+if [ -d .git ] && [ -z "$(git status --porcelain -uno 2>/dev/null)" ]; then
+  git pull --ff-only --quiet origin main 2>/dev/null || true
+fi
+
 # macOS Sequoia fork-safety + proxy workarounds (mirrors appstream_morning.sh so
 # subprocess.Popen / patchright don't crash post-fork on the mini).
 export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
