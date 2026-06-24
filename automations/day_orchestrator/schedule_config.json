@@ -135,7 +135,7 @@
     },
 
     "brand_audit": {
-      "on_scheduler": false, "_disabled_reason": "Not a priority — excluded from the orchestrator so its noon slot doesn't hold the morning final email. Runs on its own standalone noon launchd job (com.alphalete.brand-audit-noon) instead.",
+      "on_scheduler": false, "runs_at": "12:00 PM CST", "_disabled_reason": "Not a priority — excluded from the orchestrator so its noon slot doesn't hold the morning final email. Runs on its own standalone noon launchd job (com.alphalete.brand-audit-noon); listed in the summary email as REMAINING via runs_at.",
       "display_name": "Brand Health Audit",
       "source_type": "api", "data_sources": [],
       "command": ["automations.brand_audit.run"], "base_args": ["--company", "Alphalete Marketing"],

@@ -132,6 +132,22 @@ def _build_body(cfg, ds, *, checkpoint: bool):
         html.append(f"<p style='font-size:13px;color:#555'>✅ <b>Ran clean ({len(done)}):</b> "
                     f"{_esc(names)}</p>")
 
+    # 4) REMAINING — reports that run on their OWN job later today (e.g. the noon
+    # brand audit). They never gate this email; we just note they're still coming.
+    remaining = [(rid, r) for rid, r in (cfg.raw.get("reports", {}) or {}).items()
+                 if not r.get("on_scheduler", False) and r.get("runs_at")]
+    if remaining:
+        text.append("")
+        text.append(f"🕐 REMAINING ({len(remaining)}) — runs later today:")
+        html.append("<h3 style='color:#8a6d3b'>🕐 Remaining — runs later today</h3>"
+                    "<ul style='font-size:14px'>")
+        for rid, r in remaining:
+            name = r.get("display_name", rid)
+            when = r.get("runs_at", "")
+            text.append(f"  • {name} — scheduled to run at {when}")
+            html.append(f"<li><b>{_esc(name)}</b> — scheduled to run at {_esc(when)}</li>")
+        html.append("</ul>")
+
     html.append("</div>")
     return "".join(html), "\n".join(text)
 
