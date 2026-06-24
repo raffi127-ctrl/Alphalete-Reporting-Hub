@@ -3726,6 +3726,11 @@ def _render_report_screenshot(report: dict) -> None:
     — in that case there's no uploader here (update it on that report)."""
     import base64
     from PIL import Image as _Image
+    # Show the result of a just-completed save+sync (stashed before the rerun,
+    # so it survives into the run where the new image renders).
+    _saved_msg = st.session_state.pop(f"shot_msg_{report['id']}", None)
+    if _saved_msg:
+        (st.success if _saved_msg[0] else st.warning)(_saved_msg[1])
     _borrowed = report.get("screenshot_from")
     _shot_id = _borrowed or report["id"]
     shot = REPORT_SHOTS_DIR / f"{_shot_id}.png"
@@ -3768,10 +3773,20 @@ def _render_report_screenshot(report: dict) -> None:
         ):
             try:
                 REPORT_SHOTS_DIR.mkdir(parents=True, exist_ok=True)
-                _Image.open(_up).convert("RGB").save(shot, "PNG")
-                st.rerun()
+                _img = _Image.open(_up).convert("RGB")
+                # Cap the longest side so screenshots committed to the repo stay
+                # lean (these accumulate); still ample for the card frame.
+                _img.thumbnail((1600, 1600))
+                _img.save(shot, "PNG")
             except Exception as e:
                 st.error(f"Couldn't save that image: {e}")
+            else:
+                # Sync through the repo so it lands on every teammate's Hub on
+                # their next relaunch (the launcher hard-pulls origin/main).
+                _ok, _msg = _git_push_screenshot(
+                    f"resources/report-screenshots/{_shot_id}.png", report["name"])
+                st.session_state[f"shot_msg_{report['id']}"] = (_ok, _msg)
+                st.rerun()
 
 
 def _render_report_breakdown(report: dict) -> None:
@@ -5540,6 +5555,44 @@ def _git_push_library_addition(report_name: str) -> tuple[bool, str]:
         return False, f"Git failed at `{' '.join(e.cmd)}`:\n{stderr}"
     except Exception as e:
         return False, f"{type(e).__name__}: {e}"
+
+
+def _git_push_screenshot(rel_path: str, report_name: str) -> tuple[bool, str]:
+    """Auto-commit + push ONE uploaded screenshot PNG so every teammate's Hub
+    shows it on their next relaunch (the launcher hard-pulls origin/main on
+    launch). Mirrors _git_push_library_addition but stages only the single PNG,
+    and commits with an explicit pathspec so it never sweeps in unrelated
+    staged/working-tree edits (Megan's dev machine often has in-flight changes).
+    """
+    import subprocess
+    try:
+        # Stage just this PNG (covers both a brand-new file and an overwrite).
+        subprocess.run(["git", "add", rel_path], cwd=str(WORKSPACE),
+                       check=True, capture_output=True, timeout=20)
+        # Nothing changed (re-saving the same image)? Treat as already synced.
+        diff = subprocess.run(["git", "diff", "--cached", "--quiet", "--", rel_path],
+                              cwd=str(WORKSPACE), capture_output=True, timeout=10)
+        if diff.returncode == 0:
+            return True, "Already in sync (image unchanged)."
+        # Pathspec commit -> only this PNG is committed, even if other paths
+        # happen to be staged.
+        subprocess.run(["git", "commit", "-m", f"Hub: screenshot for {report_name}",
+                        "--", rel_path],
+                       cwd=str(WORKSPACE), check=True, capture_output=True, timeout=20)
+        push = subprocess.run(["git", "push"], cwd=str(WORKSPACE),
+                              capture_output=True, timeout=60, text=True)
+        if push.returncode != 0:
+            return False, ("Saved + committed locally, but the push failed:\n"
+                           f"{(push.stderr or '').strip()[:300]}\n"
+                           "Run `git push` from a terminal to finish syncing.")
+        return True, "Pushed ✓ — teammates see it on their next Hub relaunch."
+    except subprocess.TimeoutExpired as e:
+        return False, f"Saved locally; git timed out ({e.cmd}). Run `git push` manually."
+    except subprocess.CalledProcessError as e:
+        stderr = (e.stderr or b"").decode("utf-8", errors="replace").strip()[:300]
+        return False, f"Saved locally; git failed at `{' '.join(e.cmd)}`:\n{stderr}"
+    except Exception as e:
+        return False, f"Saved locally; couldn't sync to the repo ({type(e).__name__}: {e})."
 
 
 def _promote_pending_report(entry_id: str) -> tuple[bool, str]:
