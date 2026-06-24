@@ -2056,6 +2056,61 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "captainship-activations",
+        "name": "Captainship Activations (per-captain)",
+        "creator": "Eve",
+        "emoji": "🧑‍✈️",
+        "color": "#8E7CC3",
+        "category": "🎯 Fiber",
+        "description": "Daily Wed→Tue fill of the 5 per-captain tabs (Wayne, Starr, Chan, Tony, Sahil): violet captain table + shared country table. Renders 6 PNGs and saves them to your Downloads folder (no Slack).",
+        "breakdown": (
+            "WHAT IT DOES\nOne Tableau pull → writes each captain's violet cells "
+            "(activations, EOW, churn, appr) + the global country cells, then "
+            "renders 6 PNGs (5 captain violet w/o the Payout col + 1 country) and "
+            "saves them to your Downloads folder.\n\nDRIVE\nUpload to the "
+            "'Captainship Activations - PNGs' Drive folder is OPTIONAL (the "
+            "'Run + upload to Drive' button) and pending the Drive API being "
+            "enabled — a failed/disabled upload never breaks the run.\n\nWHEN\n"
+            "Manual trigger only (NOT on the scheduler). Wednesday "
+            "structure-only-inserts the new WE row. NO Slack."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "13-9f_aPDlPa6L6_Wash4ws7959mn822J__vB5OYmcB8/edit"),
+        "assignees": ["Eve"],
+        "schedule": {"frequency": "manual", "estimated_minutes": 6},
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Captainship Activations done — 5 tabs filled (violet + country) and 6 PNGs uploaded to the Drive folder.",
+            "message_failed": "❌ Run failed. Check the log, fix, re-run.",
+        },
+        "actions": [
+            {
+                "label": "Run Today's Fill",
+                "icon": "▶",
+                "primary": True,
+                "help": "Pulls Tableau, fills the 5 tabs, renders the 6 PNGs and saves them to your Downloads folder.",
+                "module": "automations.fiber_activations.captain_run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Dry-run (no writes)",
+                "icon": "🧪",
+                "primary": False,
+                "help": "Pull + show what would be written + render PNGs locally; no Sheet writes, no Downloads/Drive.",
+                "module": "automations.fiber_activations.captain_run",
+                "args_fn": lambda: ["--dry-run"],
+            },
+            {
+                "label": "Run + upload to Drive",
+                "icon": "☁",
+                "primary": False,
+                "help": "Same as Run Today's Fill, plus upload the PNGs to the Drive folder (needs the Drive API enabled; failures are non-fatal).",
+                "module": "automations.fiber_activations.captain_run",
+                "args_fn": lambda: ["--drive"],
+            },
+        ],
+    },
+    {
         "id": "world-cup",
         "name": "AT&T World Cup 2026 - Bracket Flyers",
         "creator": "Eve",
