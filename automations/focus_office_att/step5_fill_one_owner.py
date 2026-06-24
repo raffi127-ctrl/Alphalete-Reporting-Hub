@@ -278,7 +278,13 @@ def _navigate_to_disposition_for_date(page, rqst: str, target_mdy: str) -> None:
         f"https://v2.ownerville.com/index.cfm?p=89&rqst={rqst}"
         f"&startDate={target_mdy}&endDate={target_mdy}"
     )
-    page.goto(url, wait_until="networkidle", timeout=25000)
+    # domcontentloaded, NOT networkidle: the disposition table is server-rendered
+    # into the page HTML (URL query params drive it), so it's present the moment
+    # the DOM parses. networkidle blocks until 500ms of total network silence,
+    # which these polling DataTables pages drag out for seconds every call — and
+    # _scrape_disposition_view's explicit row-wait already guarantees the data
+    # before we read it. Per-day call, so this is the biggest single speedup.
+    page.goto(url, wait_until="domcontentloaded", timeout=25000)
     try:
         page.locator("select[name='table-dispositions_length']").select_option("100")
         page.wait_for_load_state("networkidle", timeout=8000)
@@ -1784,7 +1790,7 @@ def main() -> int:
         # Time Tracker scrape: one navigation, then one day at a time.
         if TIME_TRACKER_PAGE not in page.url:
             page.goto(f"https://v2.ownerville.com/index.cfm?p=510&rqst={rqst}",
-                      wait_until="networkidle", timeout=20000)
+                      wait_until="domcontentloaded", timeout=20000)
         tt_by_date: dict[dt.date, list[dict]] = {}
         for d in days:
             print(f"  → [Time Tracker] {d.strftime('%a %m/%d/%Y')}…")

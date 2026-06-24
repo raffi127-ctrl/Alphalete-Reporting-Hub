@@ -169,7 +169,7 @@ def _find_ownerville_page(browser):
 def _capture_master_rqst(page) -> str | None:
     """Navigate to root and read the rqst from the resulting master Welcome URL."""
     print("  → Resetting ownerville tab to master Welcome…")
-    page.goto("https://v2.ownerville.com/", wait_until="networkidle", timeout=25000)
+    page.goto("https://v2.ownerville.com/", wait_until="domcontentloaded", timeout=25000)
     print(f"  ✓ Landed on {page.url}")
     m = re.search(r"rqst=([A-Fa-f0-9_]+)", page.url)
     return m.group(1) if m else None
@@ -188,7 +188,7 @@ def _navigate_to_office_access(page) -> bool:
     """
     # 1. Reset to master Welcome to get a fresh rqst.
     try:
-        page.goto("https://v2.ownerville.com/", wait_until="networkidle", timeout=25000)
+        page.goto("https://v2.ownerville.com/", wait_until="domcontentloaded", timeout=25000)
     except Exception as e:
         print(f"  ⚠ Root nav errored: {type(e).__name__}: {str(e)[:120]}")
         return False
@@ -201,7 +201,7 @@ def _navigate_to_office_access(page) -> bool:
     # 2. Navigate to Office Access using the fresh rqst.
     url = f"https://v2.ownerville.com/index.cfm?p=901&rqst={fresh_rqst}"
     try:
-        page.goto(url, wait_until="networkidle", timeout=20000)
+        page.goto(url, wait_until="domcontentloaded", timeout=20000)
     except Exception as e:
         print(f"  ⚠ Direct ?p=901 nav errored: {type(e).__name__}: {str(e)[:120]}")
         return False
@@ -410,7 +410,7 @@ def _find_owner_and_impersonate(page, sheet_tab_name: str, aliases_raw: dict) ->
 
     # Navigate to the impersonated portal and read the new rqst token (the
     # server hands back a fresh one for the impersonated session).
-    page.goto(f"https://v2.ownerville.com/{result['redirect']}", wait_until="networkidle", timeout=20000)
+    page.goto(f"https://v2.ownerville.com/{result['redirect']}", wait_until="domcontentloaded", timeout=20000)
     new_rqst = page_rqst(page)
     return new_rqst, "ok"
 
@@ -436,7 +436,7 @@ def _scrape_one_owner(page, ws, days: list[dt.date], rqst: str,
     tt_url = f"https://v2.ownerville.com/index.cfm?p=510&rqst={rqst}"
     for attempt in (1, 2):
         try:
-            page.goto(tt_url, wait_until="networkidle", timeout=45000)
+            page.goto(tt_url, wait_until="domcontentloaded", timeout=45000)
             break
         except Exception as e:
             if attempt == 2:
