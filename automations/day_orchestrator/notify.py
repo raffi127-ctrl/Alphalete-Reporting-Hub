@@ -187,7 +187,14 @@ def _send_email(subject, html, text, recipients, dry_run, tag):
               f"(would send to {', '.join(recipients)})", flush=True)
         return
     pw = app_password()
-    ctx = ssl.create_default_context()
+    # Use certifi's CA bundle so TLS verification works even on Python.org
+    # builds that can't see the system root certs (verified failure mode on a
+    # 3.14 install 2026-06-23 — the mini may be the same).
+    try:
+        import certifi
+        ctx = ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        ctx = ssl.create_default_context()
     with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ctx) as s:
         s.login(FROM_ADDR, pw)
         s.send_message(msg)
