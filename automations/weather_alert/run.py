@@ -152,7 +152,7 @@ def _assemble(greeting: str, s: dict, crush: str) -> str:
 
 
 _FALLBACK_GREETING = "🐺 Morning, Dawgs — let's GO! ⚡"
-_FALLBACK_CRUSH = "Now go knock through it and CRUSH today! 🔥 — Lucy 🐾"
+_FALLBACK_CRUSH = "Now go turn those doors into SALES today! 🔥 — Lucy 🐾"
 
 
 def _template_message(s: dict) -> str:
@@ -173,8 +173,10 @@ def _voiced_lines(s: dict) -> tuple:
             "for the hungry 20-something sales team. ABSOLUTELY NO PROFANITY — PG, "
             "all hype. Address the crew with ONE of these nicknames (mix it up day "
             "to day): Dawgs, Dogs, killers, killas, snicklepops, snicklepoppers, "
-            "cats, catz. NEVER call them 'rep' or 'reps'. PLAIN TEXT only: no "
-            "markdown, no asterisks, no hashtags; ALL-CAPS for emphasis is fine."
+            "cats, catz. NEVER call them 'rep' or 'reps'. The work is knocking DOORS "
+            "to make SALES — frame the rally around turning DOORS into SALES "
+            "(closing, knocking), NEVER say 'leads'. PLAIN TEXT only: no markdown, "
+            "no asterisks, no hashtags; ALL-CAPS for emphasis is fine."
         )
         user = (
             f"Today in {LOCATION}: high {s['hi']}F, {s['conditions']}, "
