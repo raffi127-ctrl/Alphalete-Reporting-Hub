@@ -112,6 +112,8 @@
       "command": ["automations.focus_office_att.daily"], "base_args": [],
       "cadence": {"weekdays": [0,1,2,3,4,5,6]},
       "priority": "P3", "freshness_target": "monday_am",
+      "timeout_minutes": 130,
+      "_timeout_note": "Heavy: ~30-owner ownerville scrape (60m budget) + Tableau fill (35m). The flat 45m orchestrator cap killed it mid-scrape every run, which corrupted the sheet. Runs last (P3) so a long run blocks nothing.",
       "_freshness_note": "Megan's example: least important day-to-day, but should be as current as possible by Monday morning.",
       "depends_on": [], "verify": {"type": "not_configured"}
     },

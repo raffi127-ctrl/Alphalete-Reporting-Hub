@@ -30,6 +30,7 @@ class Report:
     freshness_target: Optional[str]  # e.g. "monday_am"
     depends_on: List[str]
     verify: dict
+    timeout_minutes: int = 45
     idempotency: dict = field(default_factory=dict)
 
 
@@ -61,6 +62,7 @@ def load_config(path: Path = CONFIG_PATH) -> Config:
             freshness_target=r.get("freshness_target"),
             depends_on=r.get("depends_on", []),
             verify=r.get("verify", {}),
+            timeout_minutes=int(r.get("timeout_minutes", 45)),
             idempotency=r.get("idempotency", {}),
         )
     return Config(

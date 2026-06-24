@@ -265,17 +265,24 @@ def _run_report(r, target, *, dry_run, simulate):
     if dry_run:
         cmd.append("--dry-run")
     logf = LOG_DIR / f"orch-{target.isoformat()}-{r.report_id}.log"
+    # Per-report timeout (registry timeout_minutes, default 45). The flat 45-min
+    # cap killed heavy reports MID-RUN — daily_rep_breakdown alone budgets 60m
+    # scrape + 35m Tableau (~95m), so it timed out every pass and its partial
+    # kills corrupted the sheet (Megan 2026-06-24). Heavy reports now get their
+    # real budget here.
+    timeout_s = int(getattr(r, "timeout_minutes", 45) or 45) * 60
     try:
         with open(logf, "a") as lf:
-            lf.write(f"\n===== {_now().isoformat()} :: {' '.join(cmd)} =====\n")
+            lf.write(f"\n===== {_now().isoformat()} :: {' '.join(cmd)} "
+                     f"(timeout {timeout_s//60}m) =====\n")
             lf.flush()
             proc = subprocess.run(cmd, stdout=lf, stderr=subprocess.STDOUT,
-                                  timeout=REPORT_TIMEOUT_S, cwd=str(REPO_ROOT))
+                                  timeout=timeout_s, cwd=str(REPO_ROOT))
         if proc.returncode == 0:
             return True, "exit 0"
         return False, f"exit {proc.returncode} (see {logf.name})"
     except subprocess.TimeoutExpired:
-        return False, f"timed out after {REPORT_TIMEOUT_S//60}m"
+        return False, f"timed out after {timeout_s//60}m"
     except Exception as e:
         return False, f"launch error: {str(e).splitlines()[0][:120]}"
 
