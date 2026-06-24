@@ -17,7 +17,8 @@
     "checkpoint_time": "07:30",
     "backstop_time": "12:00",
     "channel": "email",
-    "recipients": ["Meganhidalgo1191@gmail.com", "Alphaletereporting@gmail.com"],
+    "recipients": ["Alphaletereporting@gmail.com"],
+    "_recipients_note": "Send only to alphaletereporting@ — direct Gmail-to-Gmail sends to personal inboxes get silently dropped. A filter in that account (from:alphaletereporting to:alphaletereporting) forwards every report email to Meganhidalgo1191@. Add to the FORWARD, not here.",
     "session_stale_after_minutes": 20,
     "gate_unprobed_sources": false
   },
