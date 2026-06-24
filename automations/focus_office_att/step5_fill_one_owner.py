@@ -777,7 +777,7 @@ def apply_number_formats(ws, layout: Layout) -> None:
     for col, fmt in fmt_targets:
         requests.append({
             "repeatCell": {
-                "range": {"sheetId": ws.id, "startRowIndex": 2, "endRowIndex": 200,
+                "range": {"sheetId": ws.id, "startRowIndex": 2, "endRowIndex": 109,  # stop above frozen LAST WEEK block (row 110+)
                           "startColumnIndex": col - 1, "endColumnIndex": col},
                 "cell": {"userEnteredFormat": {"numberFormat": fmt}},
                 "fields": "userEnteredFormat.numberFormat",
@@ -888,7 +888,7 @@ def apply_gap_time_format(ws, layout: Layout) -> None:
             "repeatCell": {
                 "range": {
                     "sheetId": ws.id,
-                    "startRowIndex": 2, "endRowIndex": 200,
+                    "startRowIndex": 2, "endRowIndex": 109,  # stop above frozen LAST WEEK block (row 110+)
                     "startColumnIndex": col - 1, "endColumnIndex": col,
                 },
                 "cell": {"userEnteredFormat": {"numberFormat": {"type": "TIME", "pattern": '[h]"h" mm"m"'}}},
@@ -1017,7 +1017,7 @@ def reset_conditional_formatting(ws) -> tuple[int, int]:
         "repeatCell": {
             "range": {
                 "sheetId": sheet_id,
-                "startRowIndex": 2, "endRowIndex": 200,
+                "startRowIndex": 2, "endRowIndex": 109,  # stop above frozen LAST WEEK block (row 110+)
                 "startColumnIndex": 0, "endColumnIndex": 100,
             },
             "cell": {"userEnteredFormat": {"backgroundColor": WHITE}},
