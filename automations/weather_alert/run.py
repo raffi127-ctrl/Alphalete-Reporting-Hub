@@ -97,71 +97,121 @@ def _facts_line(s: dict) -> str:
     return "; ".join(parts) + "."
 
 
-def _template_message(s: dict) -> str:
-    """Plain fallback if Claude is unavailable — what to PACK to change into."""
-    bring = []
-    if s["rain_prob"] >= 30:
-        bring.append("a rain jacket/poncho")
+# Fixed-layout message (Megan 2026-06-24):
+#   <short funny Lucy greeting>
+#   Temp: <hi> degrees
+#   <condition line>
+#
+#   What to prepare:
+#   <weather-driven prep items>
+#   Water — always! 💧
+#   <Lucy crush-it close>
+# The structure is built in Python (always correct); Claude only writes the two
+# VOICED lines (greeting + close), with a template fallback so it never hard-fails.
+
+_WET_WORDS = ("storm", "thunder", "rain", "shower", "drizzle", "snow", "sleet")
+
+
+def _is_wet(s: dict) -> bool:
+    """Wet day if a meaningful rain chance OR the forecast condition itself is a
+    precip type (the daily rain % can read low even when the weather code is
+    thunderstorms — trust either signal)."""
+    c = (s.get("conditions") or "").lower()
+    return s["rain_prob"] >= 30 or any(w in c for w in _WET_WORDS)
+
+
+def _condition_line(s: dict) -> str:
+    c = s["conditions"]
+    cap = c[0].upper() + c[1:] if c else "Mixed conditions"
+    if _is_wet(s):
+        return f"{cap} expected"
+    return cap
+
+
+def _prep_items(s: dict) -> list:
+    items = []
+    if _is_wet(s):
+        items.append("Rain jacket / outer layer to peel off later")
     if s["hi"] >= 85:
-        bring.append("light field clothes + sunscreen")
-    bring.append("extra water")
-    bring_str = ", ".join(bring)
-    return (f"🔥 LET'S GO, Dawgs! {_facts_line(s)} "
-            f"Pack {bring_str} to change into for the field. "
-            f"Every door is money — LETS GO! — Lucy 🐾")
+        items.append("Light field clothes + hat & sunscreen to change into")
+    elif s["hi"] <= 45:
+        items.append("Warm layer to change into")
+    items.append("Water — always! 💧")
+    return items
 
 
-def _claude_message(s: dict) -> str:
-    """Write the friendly blurb with Claude; fall back to the template on any
-    error (missing key, network, etc.) — a weather post must never hard-fail."""
+def _assemble(greeting: str, s: dict, crush: str) -> str:
+    lines = [greeting.strip(),
+             f"Temp: {s['hi']} degrees",
+             _condition_line(s),
+             "",
+             "What to prepare:"]
+    lines += _prep_items(s)
+    lines.append(crush.strip())
+    return "\n".join(lines)
+
+
+_FALLBACK_GREETING = "🐺 Morning, Dawgs — Lucy reporting for duty! ⚡"
+_FALLBACK_CRUSH = "Now go knock through it and CRUSH today! 🔥🐾 — Lucy"
+
+
+def _template_message(s: dict) -> str:
+    """Plain fallback layout if Claude is unavailable — never hard-fails."""
+    return _assemble(_FALLBACK_GREETING, s, _FALLBACK_CRUSH)
+
+
+def _voiced_lines(s: dict) -> tuple:
+    """Just the two Lucy-voiced lines (greeting, crush) from Claude; falls back
+    to the template lines on any error so the post always goes out."""
     try:
         import anthropic
         from automations.brand_audit import credentials
 
         system = (
-            "You ARE 'Lucy' — Alphalete's office dog turned HIGH-ENERGY D2D "
-            "sales hype machine. Match the energy of our #alphalete-sales channel: "
-            "emoji-loaded (🔥🐺⚡💪), stretched hype "
-            "words ('LETS GOOO', 'DAWGSSS', 'gangggg'), lots of exclamation, 'crush "
-            "it', 'let's get it', 'for the opportunity', wolf-PACK energy (Alphalete "
-            "is a wolf pack). Hormozi/Cardone closer intensity. Audience: hungry "
-            "20-25-year-old reps. ABSOLUTELY NO PROFANITY OR CURSING — keep it "
-            "PG, all hype. You're Lucy the pup (a 🐾). PURPOSE (the ONLY "
-            "job): reps arrive at the office in BUSINESS PROFESSIONAL and CHANGE into "
-            "field clothes before knocking, so tell them ONLY what to BRING / PACK to "
-            "change into for the field today, by the weather: a rain jacket or poncho "
-            "if rain; light breathable clothes + a hat + sunscreen if hot; bug spray "
-            "if buggy; ALWAYS extra water. Do NOT say what to wear in the morning "
-            "(always business professional) — strictly what to PACK to change "
-            "into. KEEP IT VERY SHORT — a quick hype text UNDER 40 WORDS: the "
-            "high temp + the SINGLE most important thing to pack, one quick rally "
-            "line, then '— Lucy 🐾'. PLAIN TEXT ONLY — no "
-            "markdown/asterisks; ALL-CAPS for emphasis; no hashtags.\n\n"
-            "Length + vibe to match (do NOT copy words): "
-            "YO DAWGSSS 🐺⚡ 95 and storms in DFW today — PACK a "
-            "rain jacket + extra water to change into for the field. We knock through "
-            "it! LETS GOOO! — Lucy 🐾"
+            "You ARE 'Lucy' — Alphalete's office dog turned HIGH-ENERGY D2D sales "
+            "hype pup. Wolf-PACK energy (🐺⚡🔥🐾), Hormozi/Cardone closer intensity, "
+            "for hungry 20-something reps. ABSOLUTELY NO PROFANITY — PG, all hype. "
+            "PLAIN TEXT only: no markdown, no asterisks, no hashtags; ALL-CAPS for "
+            "emphasis is fine."
         )
         user = (
-            f"Forecast — {_facts_line(s)}\n"
-            f"(high {s['hi']}F, low {s['lo']}F, wind {s['wind']}mph, "
-            f"rain chance {s['rain_prob']}%"
-            + (f" around {s['rain_time']}" if s["rain_time"] else "")
-            + "). Write the team's weather note."
+            f"Today in {LOCATION}: high {s['hi']}F, {s['conditions']}, "
+            f"rain chance {s['rain_prob']}%.\n\n"
+            "Give EXACTLY two lines and nothing else:\n"
+            "GREETING: one short, FUNNY, high-energy greeting from Lucy the office "
+            "dog (8 words max, 1-2 emoji)\n"
+            "CRUSH: one short 'go crush it today' rally close (8 words max), ending "
+            "with '— Lucy 🐾'"
         )
         client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
         resp = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=110,
+            max_tokens=120,
             system=system,
             messages=[{"role": "user", "content": user}],
         )
         text = next((b.text for b in resp.content if b.type == "text"), "").strip()
-        return text or _template_message(s)
+        greeting = crush = None
+        for line in text.splitlines():
+            ls = line.strip()
+            if ls.upper().startswith("GREETING:"):
+                greeting = ls.split(":", 1)[1].strip()
+            elif ls.upper().startswith("CRUSH:"):
+                crush = ls.split(":", 1)[1].strip()
+        if greeting and crush:
+            return greeting, crush
+        print("[weather] Claude didn't return both lines — using template voice.",
+              flush=True)
     except Exception as e:
         print(f"[weather] Claude wording unavailable ({type(e).__name__}: "
               f"{str(e)[:120]}) — using template.", flush=True)
-        return _template_message(s)
+    return _FALLBACK_GREETING, _FALLBACK_CRUSH
+
+
+def _claude_message(s: dict) -> str:
+    """Assemble the fixed-layout message with Lucy's two voiced lines."""
+    greeting, crush = _voiced_lines(s)
+    return _assemble(greeting, s, crush)
 
 
 def main() -> int:
