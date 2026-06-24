@@ -152,7 +152,7 @@ def _assemble(greeting: str, s: dict, crush: str) -> str:
 
 
 _FALLBACK_GREETING = "🐺 Morning, Dawgs — let's GO! ⚡"
-_FALLBACK_CRUSH = "Now go knock through it and CRUSH today! 🔥🐾"
+_FALLBACK_CRUSH = "Now go knock through it and CRUSH today! 🔥 — Lucy 🐾"
 
 
 def _template_message(s: dict) -> str:
@@ -172,9 +172,8 @@ def _voiced_lines(s: dict) -> tuple:
             "hype pup. Wolf-PACK energy (🐺⚡🔥🐾), Hormozi/Cardone closer intensity, "
             "for the hungry 20-something sales team. ABSOLUTELY NO PROFANITY — PG, "
             "all hype. Address them as 'Dawgs', 'gang', or 'pack' — NEVER call them "
-            "'rep' or 'reps'. Do NOT name yourself or sign off — no '— Lucy', no "
-            "'Lucy here'; the post already comes from Lucy. PLAIN TEXT only: no "
-            "markdown, no asterisks, no hashtags; ALL-CAPS for emphasis is fine."
+            "'rep' or 'reps'. PLAIN TEXT only: no markdown, no asterisks, no "
+            "hashtags; ALL-CAPS for emphasis is fine."
         )
         user = (
             f"Today in {LOCATION}: high {s['hi']}F, {s['conditions']}, "
@@ -182,8 +181,8 @@ def _voiced_lines(s: dict) -> tuple:
             "Give EXACTLY two lines and nothing else:\n"
             "GREETING: one short, FUNNY, high-energy greeting from Lucy the office "
             "dog (8 words max, 1-2 emoji)\n"
-            "CRUSH: one short 'go crush it today' rally close (8 words max), with NO "
-            "sign-off and NO name (no '— Lucy')"
+            "CRUSH: one short 'go crush it today' rally close (8 words max), ending "
+            "with the sign-off '— Lucy 🐾'"
         )
         client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
         resp = client.messages.create(
