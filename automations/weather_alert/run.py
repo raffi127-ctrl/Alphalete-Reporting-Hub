@@ -191,13 +191,24 @@ def _voiced_lines(s: dict) -> tuple:
             messages=[{"role": "user", "content": user}],
         )
         text = next((b.text for b in resp.content if b.type == "text"), "").strip()
+
+        def _clean(v: str) -> str:
+            return v.strip().strip("*").strip()
+
         greeting = crush = None
         for line in text.splitlines():
-            ls = line.strip()
-            if ls.upper().startswith("GREETING:"):
-                greeting = ls.split(":", 1)[1].strip()
-            elif ls.upper().startswith("CRUSH:"):
-                crush = ls.split(":", 1)[1].strip()
+            ls = line.strip().lstrip("*-•").strip()
+            low = ls.lower()
+            if ":" in ls and low.startswith("greeting"):
+                greeting = _clean(ls.split(":", 1)[1])
+            elif ":" in ls and low.startswith("crush"):
+                crush = _clean(ls.split(":", 1)[1])
+        # Lenient fallback: model returned just two unlabeled lines.
+        if not (greeting and crush):
+            lines = [l.strip() for l in text.splitlines() if l.strip()]
+            if len(lines) == 2 and not any(
+                    w in l.lower() for l in lines for w in ("greeting", "crush")):
+                greeting, crush = _clean(lines[0]), _clean(lines[1])
         if greeting and crush:
             return greeting, crush
         print("[weather] Claude didn't return both lines — using template voice.",
