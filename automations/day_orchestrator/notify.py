@@ -43,13 +43,13 @@ _LABELS = {
 
 def send_checkpoint(cfg, ds, *, channel="email", dry_run=False):
     subj = f"Reports {_d(ds)} — 7:30 checkpoint · {_tally(ds)}"
-    html, text = _build_body(ds, checkpoint=True)
+    html, text = _build_body(cfg, ds, checkpoint=True)
     _dispatch(cfg, subj, html, text, channel, dry_run, tag="checkpoint")
 
 
 def send_final(cfg, ds, *, channel="email", dry_run=False):
     subj = f"Reports {_d(ds)} — FINAL · {_tally(ds)}"
-    html, text = _build_body(ds, checkpoint=False)
+    html, text = _build_body(cfg, ds, checkpoint=False)
     _dispatch(cfg, subj, html, text, channel, dry_run, tag="final")
 
 
@@ -70,92 +70,81 @@ def send_session_alert(cfg, ds, reason, *, channel="email", dry_run=False):
 
 # ---------------- body builders ----------------
 
-def _build_body(ds, *, checkpoint: bool):
-    groups_order = ([st.DONE, st.FAILED, st.MISSED_NOT_READY, st.BLOCKED_SESSION,
-                     st.INCOMPLETE, st.STILL_TRYING, st.HALTED_FOR_FIX,
-                     st.MANUAL_PENDING_UPLOAD, st.PENDING, st.SKIPPED])
-    by_status = {s: [] for s in groups_order}
-    for rs in ds.reports.values():
-        by_status.setdefault(rs.status, []).append(rs)
-
-    text_lines: List[str] = []
-    html_parts: List[str] = []
+def _build_body(cfg, ds, *, checkpoint: bool):
+    """Concise summary: what NEEDS ATTENTION (+ the fix) first, then one line of
+    what ran clean. No verbose done-list / 'not scheduled' noise (Megan 2026-06-24)."""
+    text: List[str] = []
+    html: List[str] = ["<div style='font-family:Arial,sans-serif;color:#000'>"]
 
     head = "7:30 CHECKPOINT" if checkpoint else "FINAL SUMMARY"
-    text_lines.append(f"{head} — {ds.date} ({_tally(ds)})")
-    html_parts.append(f"<h2 style='font-family:Arial,sans-serif'>{head} — {ds.date}</h2>"
-                      f"<p style='font-family:Arial,sans-serif;color:#555'>{_tally(ds)}</p>")
+    text.append(f"{head} — {ds.date}")
+    text.append(_tally(ds))
+    html.append(f"<h2>{head} — {ds.date}</h2>"
+                f"<p style='color:#555'>{_tally(ds)}</p>")
 
-    for status in groups_order:
-        items = by_status.get(status) or []
-        if not items:
-            continue
-        emoji, label = _LABELS.get(status, ("•", status))
-        text_lines.append(f"\n{emoji} {label} ({len(items)})")
-        html_parts.append(f"<h3 style='font-family:Arial,sans-serif'>{emoji} {label} "
-                          f"<span style='color:#888;font-weight:normal'>({len(items)})</span></h3><ul style='font-family:Arial,sans-serif;font-size:14px'>")
-        for rs in sorted(items, key=lambda x: x.report_id):
-            line, h = _item_lines(rs, status)
-            text_lines.append("  " + line)
-            html_parts.append(f"<li>{h}</li>")
-        html_parts.append("</ul>")
+    # 1) NEEDS ATTENTION first — what failed/incomplete + the exact re-run command.
+    attention = [rs for s in (st.FAILED, st.INCOMPLETE, st.MISSED_NOT_READY,
+                              st.BLOCKED_SESSION) for rs in ds.by_status(s)]
+    if attention:
+        text.append("")
+        text.append(f"❌ NEEDS ATTENTION ({len(attention)}):")
+        html.append(f"<h3 style='color:#c0392b'>❌ Needs attention ({len(attention)})</h3>"
+                    "<ol style='font-size:14px;line-height:1.6'>")
+        for rs in attention:
+            name = rs.display_name or rs.report_id
+            why = rs.last_reason or rs.status
+            if rs.missing:
+                why += " — missing: " + "; ".join(rs.missing)
+            cmd = _rerun_cmd(rs.report_id, cfg)
+            text.append(f"  • {name} — {why}")
+            text.append(f"      re-run: {cmd}")
+            html.append(f"<li><b>{_esc(name)}</b> — {_esc(why)}"
+                        f"<br><code>{_esc(cmd)}</code></li>")
+        html.append("</ol>")
+    elif not checkpoint:
+        text.append("")
+        text.append("✅ Everything ran clean — nothing to do.")
+        html.append("<h3 style='color:#1e7e34'>✅ Everything ran clean — nothing to do.</h3>")
 
-    # Still-trying call-to-action (checkpoint) / manual action list (final).
-    still = by_status.get(st.STILL_TRYING) or []
-    if checkpoint and still:
-        ids = ", ".join(sorted(r.report_id for r in still))
-        cta = (
-            "\n🛑 To STOP one and fix the data yourself: reply to this email with "
-            "subject  STOP <report_id>  (e.g. STOP country_metrics). It drops from "
-            "the retry loop and is marked 'manually halted for fix'. "
-            "Still trying until noon: " + ids)
-        text_lines.append(cta)
-        html_parts.append(
-            "<div style='font-family:Arial,sans-serif;font-size:14px;background:#fff8e1;"
-            "border:1px solid #ffe082;padding:10px;border-radius:6px'>"
-            "<b>🛑 To stop one and fix it yourself:</b> reply to this email with subject "
-            "<code>STOP &lt;report_id&gt;</code> (e.g. <code>STOP country_metrics</code>). "
-            "It drops from the retry loop and is marked “manually halted for fix.”<br>"
-            f"<span style='color:#777'>Still trying until noon: {_esc(ids)}</span></div>")
+    # 2) STILL TRYING (checkpoint only) + how to stop one.
+    if checkpoint:
+        still = ds.by_status(st.STILL_TRYING)
+        if still:
+            text.append("")
+            text.append(f"🟡 STILL TRYING ({len(still)}):")
+            html.append("<h3>🟡 Still trying</h3><ul style='font-size:14px'>")
+            for rs in still:
+                wait = rs.waiting_on or "data not ready"
+                text.append(f"  • {rs.display_name or rs.report_id} — waiting on {wait}")
+                html.append(f"<li><b>{_esc(rs.display_name or rs.report_id)}</b> — "
+                            f"waiting on {_esc(wait)}</li>")
+            html.append("</ul>")
+            text.append(f"  (reply with subject  STOP {still[0].report_id}  to drop one from the loop)")
+            html.append("<div style='font-size:13px;color:#777'>Reply with subject "
+                        "<code>STOP &lt;report_id&gt;</code> to drop one from the loop.</div>")
 
-    actionable = ([rs for s in (st.INCOMPLETE, st.FAILED, st.MISSED_NOT_READY,
-                                 st.BLOCKED_SESSION)
-                   for rs in (by_status.get(s) or [])])
-    if not checkpoint and actionable:
-        text_lines.append("\n🔁 Manual action list:")
-        html_parts.append("<h3 style='font-family:Arial,sans-serif'>🔁 Manual action list</h3>"
-                          "<ol style='font-family:Arial,sans-serif;font-size:14px'>")
-        for rs in actionable:
-            cmd = _rerun_cmd(rs)
-            miss = (" — missing: " + "; ".join(rs.missing)) if rs.missing else ""
-            text_lines.append(f"  {rs.report_id}: {cmd}{miss}")
-            html_parts.append(f"<li><b>{_esc(rs.display_name or rs.report_id)}</b>"
-                              f"{_esc(miss)}<br><code>{_esc(cmd)}</code></li>")
-        html_parts.append("</ol>")
+    # 3) RAN CLEAN — compact one-liner, no per-report bullets.
+    done = ds.by_status(st.DONE)
+    if done:
+        names = ", ".join(sorted(r.display_name or r.report_id for r in done))
+        text.append("")
+        text.append(f"✅ Ran clean ({len(done)}): {names}")
+        html.append(f"<p style='font-size:13px;color:#555'>✅ <b>Ran clean ({len(done)}):</b> "
+                    f"{_esc(names)}</p>")
 
-    html = ("<div style='font-family:Arial,sans-serif;color:#000'>"
-            + "".join(html_parts) + "</div>")
-    return html, "\n".join(text_lines)
-
-
-def _item_lines(rs, status):
-    base = rs.display_name or rs.report_id
-    extra = ""
-    if status == st.STILL_TRYING and rs.waiting_on:
-        extra = f" — waiting on {rs.waiting_on}"
-    elif status == st.INCOMPLETE and rs.missing:
-        extra = f" — missing: {'; '.join(rs.missing)}"
-    elif rs.last_reason and status in (st.FAILED, st.MISSED_NOT_READY, st.BLOCKED_SESSION):
-        extra = f" — {rs.last_reason}"
-    text = f"{base} [{rs.report_id}]{extra}"
-    html = f"<b>{_esc(base)}</b> <span style='color:#999'>[{_esc(rs.report_id)}]</span>{_esc(extra)}"
-    return text, html
+    html.append("</div>")
+    return "".join(html), "\n".join(text)
 
 
-def _rerun_cmd(rs):
-    # Best-effort re-run hint; the orchestrator stores only the id, so point at
-    # the module form the wrappers use.
-    return f"python -m automations.{rs.report_id}.run   # (or the report's Hub card)"
+def _rerun_cmd(report_id, cfg):
+    """The REAL re-run command from the registry (module + args) — not a guess
+    off the report id (which often isn't the module path)."""
+    r = cfg.reports.get(report_id)
+    if r and r.command:
+        parts = list(r.command) + list(r.base_args)
+        rest = "" if len(parts) == 1 else " " + " ".join(parts[1:])
+        return "python -m " + parts[0] + rest
+    return f"python -m automations.{report_id}.run"
 
 
 # ---------------- dispatch ----------------
