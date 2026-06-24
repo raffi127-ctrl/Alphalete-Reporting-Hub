@@ -18,7 +18,8 @@
     "backstop_time": "12:00",
     "channel": "email",
     "recipients": ["Meganhidalgo1191@gmail.com", "Alphaletereporting@gmail.com"],
-    "session_stale_after_minutes": 20
+    "session_stale_after_minutes": 20,
+    "gate_unprobed_sources": false
   },
 
   "sources": {
@@ -94,7 +95,8 @@
     },
 
     "org_sales_board": {
-      "on_scheduler": true, "display_name": "Alphalete Org Sales Board",
+      "on_scheduler": false, "_disabled_reason": "Can't go live until its --real guard is fixed (--real currently requires --dry-run, so it can't write the real tab unattended). Stays MANUAL on Eve until then.",
+      "display_name": "Alphalete Org Sales Board",
       "source_type": "tableau", "data_sources": ["tableau:sara_byday"],
       "command": ["automations.org_sales_board.run"], "base_args": ["--step", "daily", "--with-captainships"],
       "cadence": {"weekdays": [0,1,2,3,4,5,6], "not_before": "06:00"},

@@ -93,7 +93,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     cache = readiness.ReadinessCache(cfg, dry_run=dry_run, target_date=target,
                                      stale_after_minutes=stale_after,
-                                     verbose=True)
+                                     verbose=True,
+                                     gate_unprobed=s.get("gate_unprobed_sources", False))
 
     # ---- probe-only mode (Phase 1 review) ----
     if args.probe_only:

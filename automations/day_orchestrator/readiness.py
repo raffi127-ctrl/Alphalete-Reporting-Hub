@@ -62,12 +62,14 @@ class ReadinessCache:
     once READY, sticky (never re-probe). NOT-ready is re-probed each pass."""
 
     def __init__(self, cfg: registry.Config, *, dry_run: bool, target_date: dt.date,
-                 stale_after_minutes: int = 20, verbose: bool = True):
+                 stale_after_minutes: int = 20, verbose: bool = True,
+                 gate_unprobed: bool = False):
         self.cfg = cfg
         self.dry_run = dry_run
         self.target_date = target_date
         self.stale_after = stale_after_minutes
         self.verbose = verbose
+        self.gate_unprobed = gate_unprobed
         self._ready: Dict[str, Readiness] = {}   # sticky READY verdicts
 
     def _log(self, msg: str) -> None:
@@ -106,10 +108,14 @@ class ReadinessCache:
         ptype = probe.get("type", "not_configured")
 
         if ptype == "not_configured":
-            # Dry-run: let the full loop exercise. Live: force wiring first.
-            if self.dry_run:
-                return Readiness(True, "stubbed READY (dry-run; probe not wired)")
-            return Readiness(False, "probe not wired — set the view URL before cutover")
+            # No real readiness probe wired for this source yet. Default: just
+            # run on the report's not_before schedule (like the manual process
+            # did) — the report's own Tableau pull + the circle-back retry handle
+            # a not-yet-refreshed extract. Set settings.gate_unprobed_sources=true
+            # to instead BLOCK until a real probe is wired (hardening later).
+            if self.gate_unprobed:
+                return Readiness(False, "no readiness probe wired (gated)")
+            return Readiness(True, "no readiness probe — running on schedule")
 
         if ptype == "tableau_date_coverage":
             return self._probe_tableau_date_coverage(source_id, probe)
