@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.day-orchestrator</string>
+
+    <!-- Path is the laptop's; on the mini, regenerate with the install path via
+         the python-replace step in workflows/scheduler-mini.md.
+         DURING THE DRY-RUN WEEK, append the dry-run flags here (see that doc) so
+         it runs alongside the existing jobs without writing or emailing for real. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/day_orchestrator.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- 4:00am every day, in the machine's LOCAL time (mini is CST). The
+         orchestrator owns its own checkpoint/backstop times internally. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>4</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/day-orchestrator.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/day-orchestrator.launchd.err.log</string>
+</dict>
+</plist>
