@@ -1,12 +1,14 @@
 {
   "_meta": {
     "purpose": "Single editable source of truth for the day orchestrator. Cadence, priority, and freshness are deliberately KNOBS — tuned by hand during the ~1-week parallel dry-run (Megan 2026-06-23).",
+    "scope": "ALL non-upload reports run on the scheduler (Megan 2026-06-23). Upload-gated reports (Financial, First/Last Sale, Frontier) stay MANUAL — see 'excluded'.",
     "weekday_convention": "Python weekday(): Mon=0, Tue=1, Wed=2, Thu=3, Fri=4, Sat=5, Sun=6 (matches dashboard.py).",
     "times": "All times are CST (the mini is Central). HH:MM 24h.",
-    "priority_tiers": "P1 critical (guaranteed done daily, runs first) > P2 standard daily > P3 best-effort (runs last).",
+    "priority_tiers": "P1 critical (guaranteed done daily, runs first) > P2 standard > P3 best-effort (runs last).",
     "freshness_target": "A DEADLINE distinct from cadence. e.g. 'monday_am' = must be current by Monday morning even if deprioritized midweek; the orchestrator escalates effective priority as the deadline nears.",
-    "source_type": "tableau = readiness gate + circle-back applies | appstream = immediately ready (no probe) | api = ready | upload = MANUAL, never auto-run, only noted.",
-    "probe_not_configured": "A tableau source with probe.type 'not_configured' resolves READY in --dry-run (so the full loop exercises) and NOT-READY in live (forces wiring the real view URL before cutover)."
+    "source_type": "tableau = readiness gate + circle-back applies | appstream = immediately ready (no probe) | api = ready | upload = MANUAL, never auto-run.",
+    "probe_not_configured": "A tableau source with probe.type 'not_configured' resolves READY in --dry-run (so the full loop exercises) and NOT-READY in live (forces wiring the real view URL before cutover).",
+    "cutover_retire_jobs": "These now run from the orchestrator — RETIRE their standalone LaunchAgents at cutover so reports don't double-run/double-post: com.alphalete.appstream-morning (daily_focus + Mon recruiter retention), com.alphalete.weather-6am, com.alphalete.brand-audit-noon, com.alphalete.recruiting-report (weekly ATT). Until cutover (dry-run week) they coexist safely — the orchestrator writes nothing."
   },
 
   "settings": {
@@ -20,156 +22,195 @@
   },
 
   "sources": {
-    "tableau:order_log": {
-      "label": "60-day Order Log",
-      "probe": {"type": "not_configured", "_todo": "wire view_url + crosstab_sheet + date_col + min_rows before live cutover"}
-    },
-    "tableau:churn": {
-      "label": "CHURN / RafExpanded",
-      "probe": {"type": "not_configured", "_todo": "wire before cutover"}
-    },
-    "tableau:product_sales": {
-      "label": "OPT Product Sales Summary",
-      "probe": {"type": "not_configured", "_todo": "wire before cutover"}
-    },
-    "tableau:fiber_pss": {
-      "label": "Fiber Lead Performance / PSS",
-      "probe": {"type": "not_configured", "_todo": "wire before cutover"}
-    },
-    "tableau:dispo": {
-      "label": "Disposition / Time Tracker (ownerville)",
-      "probe": {"type": "not_configured", "_todo": "wire before cutover"}
-    }
+    "tableau:order_log": {"label": "60-day Order Log", "probe": {"type": "not_configured", "_todo": "wire view_url + crosstab_sheet + date_col + min_rows before live cutover"}},
+    "tableau:churn": {"label": "CHURN / RafExpanded", "probe": {"type": "not_configured", "_todo": "wire before cutover"}},
+    "tableau:product_sales": {"label": "OPT Product Sales Summary", "probe": {"type": "not_configured", "_todo": "wire before cutover"}},
+    "tableau:fiber_pss": {"label": "Fiber Lead Performance / PSS", "probe": {"type": "not_configured", "_todo": "wire before cutover"}},
+    "tableau:dispo": {"label": "Disposition / Time Tracker (ownerville)", "probe": {"type": "not_configured", "_todo": "wire before cutover"}},
+    "tableau:sara_byday": {"label": "SARA by-day (org sales board)", "probe": {"type": "not_configured", "_todo": "wire before cutover"}}
   },
 
   "reports": {
     "daily_metrics": {
-      "on_scheduler": true,
-      "display_name": "9 Daily Metrics Report",
-      "source_type": "tableau",
-      "data_sources": ["tableau:order_log"],
-      "_sources_note": "Internally orchestrates total_knocks, canceled_orders, ongoing_cancel, disconnects, churn, scheduled_6, order_log; sub-steps self-gate, so the unit is gated on the dominant order_log source.",
-      "command": ["automations.daily_metrics.run"],
-      "base_args": [],
-      "cadence": {"weekdays": [0, 1, 2, 3, 4, 5, 6], "not_before": "07:00"},
-      "priority": "P1",
-      "freshness_target": null,
-      "depends_on": [],
+      "on_scheduler": true, "display_name": "9 Daily Metrics Report",
+      "source_type": "tableau", "data_sources": ["tableau:order_log"],
+      "_sources_note": "Internally orchestrates total_knocks, canceled_orders, ongoing_cancel, disconnects, churn, scheduled_6, order_log; gated on the dominant order_log source.",
+      "command": ["automations.daily_metrics.run"], "base_args": [],
+      "cadence": {"weekdays": [0,1,2,3,4,5,6], "not_before": "07:00"},
+      "priority": "P1", "freshness_target": null, "depends_on": [],
       "verify": {"type": "manifest", "report_id": "daily_metrics"}
     },
 
-    "captainship_churn": {
-      "on_scheduler": true,
-      "display_name": "Captainship - New Internet & Wireless Churn",
-      "source_type": "tableau",
-      "data_sources": ["tableau:churn"],
-      "command": ["automations.captainship_churn.run"],
-      "base_args": [],
-      "cadence": {"weekdays": [0, 1, 2, 3, 4, 5, 6], "not_before": "07:00"},
-      "priority": "P2",
-      "freshness_target": null,
-      "depends_on": [],
-      "verify": {"type": "not_configured", "_todo": "set sheet/tab/anchor_label/date_header"}
+    "daily_focus_raf": {
+      "on_scheduler": true, "display_name": "Daily Recruiting Focus — Raf",
+      "source_type": "appstream", "data_sources": [],
+      "command": ["automations.recruiting_report.daily_focus"], "base_args": ["--captainship", "Raf"],
+      "cadence": {"weekdays": [0,1,2,3,4]},
+      "priority": "P1", "freshness_target": null, "depends_on": [],
+      "verify": {"type": "not_configured"}
+    },
+    "daily_focus_carlos": {
+      "on_scheduler": true, "display_name": "Daily Recruiting Focus — Carlos",
+      "source_type": "appstream", "data_sources": [],
+      "command": ["automations.recruiting_report.daily_focus"], "base_args": ["--captainship", "Carlos"],
+      "cadence": {"weekdays": [0,1,2,3,4]},
+      "priority": "P1", "freshness_target": null, "depends_on": [],
+      "verify": {"type": "not_configured"}
     },
 
-    "owners_metrics_churn": {
-      "on_scheduler": true,
-      "display_name": "Captainship Churn - Owners Metrics",
-      "source_type": "tableau",
-      "data_sources": ["tableau:churn"],
-      "command": ["automations.owners_metrics_churn.run"],
-      "base_args": [],
-      "cadence": {"weekdays": [0, 1, 2, 3, 4, 5, 6], "not_before": "07:00"},
-      "priority": "P2",
-      "freshness_target": null,
-      "depends_on": [],
-      "verify": {"type": "not_configured", "_todo": "set sheet/tab/anchor_label/date_header"}
+    "weather_alert": {
+      "on_scheduler": true, "display_name": "Weather Alert (Frisco team)",
+      "source_type": "api", "data_sources": [],
+      "command": ["automations.weather_alert.run"], "base_args": [],
+      "cadence": {"weekdays": [0,1,2,3,4,5,6], "not_before": "06:00"},
+      "_note": "Time-critical: posts to #alphalete-sales just before the 7am metrics thread.",
+      "priority": "P1", "freshness_target": null, "depends_on": [],
+      "verify": {"type": "not_configured"}
     },
 
     "fiber_activations": {
-      "on_scheduler": true,
-      "display_name": "Fiber Activations Report",
-      "source_type": "tableau",
-      "data_sources": ["tableau:fiber_pss"],
-      "command": ["automations.fiber_activations.run"],
-      "base_args": [],
-      "cadence": {"weekdays": [0, 1, 2, 3, 4, 5, 6], "not_before": "05:00"},
-      "priority": "P2",
-      "freshness_target": null,
-      "depends_on": [],
-      "verify": {"type": "not_configured", "_todo": "set sheet/tab/anchor_label/date_header"}
+      "on_scheduler": true, "display_name": "Fiber Activations Report",
+      "source_type": "tableau", "data_sources": ["tableau:fiber_pss"],
+      "command": ["automations.fiber_activations.run"], "base_args": [],
+      "cadence": {"weekdays": [0,1,2,3,4,5,6], "not_before": "05:00"},
+      "priority": "P2", "freshness_target": null, "depends_on": [],
+      "verify": {"type": "not_configured"}
+    },
+    "captainship_churn": {
+      "on_scheduler": true, "display_name": "Captainship - New Internet & Wireless Churn",
+      "source_type": "tableau", "data_sources": ["tableau:churn"],
+      "command": ["automations.captainship_churn.run"], "base_args": [],
+      "cadence": {"weekdays": [0,1,2,3,4,5,6], "not_before": "07:00"},
+      "priority": "P2", "freshness_target": null, "depends_on": [],
+      "verify": {"type": "not_configured"}
+    },
+    "owners_metrics_churn": {
+      "on_scheduler": true, "display_name": "Captainship Churn - Owners Metrics",
+      "source_type": "tableau", "data_sources": ["tableau:churn"],
+      "command": ["automations.owners_metrics_churn.run"], "base_args": [],
+      "cadence": {"weekdays": [0,1,2,3,4,5,6], "not_before": "07:00"},
+      "priority": "P2", "freshness_target": null, "depends_on": [],
+      "verify": {"type": "not_configured"}
+    },
+
+    "org_sales_board": {
+      "on_scheduler": true, "display_name": "Alphalete Org Sales Board",
+      "source_type": "tableau", "data_sources": ["tableau:sara_byday"],
+      "command": ["automations.org_sales_board.run"], "base_args": ["--step", "daily", "--with-captainships"],
+      "cadence": {"weekdays": [0,1,2,3,4,5,6], "not_before": "06:00"},
+      "priority": "P2", "freshness_target": null, "depends_on": [],
+      "verify": {"type": "not_configured"},
+      "_warn": "STILL POINTS AT THE SANDBOX 'Copy of' TAB. Before live cutover: finish the sandbox->--real switch (and --real is guarded to require --dry-run). Safe in the dry-run week as-is."
     },
 
     "daily_rep_breakdown": {
-      "on_scheduler": true,
-      "display_name": "Daily Rep Breakdown - ATT Program",
-      "source_type": "tableau",
-      "data_sources": ["tableau:dispo"],
-      "command": ["automations.focus_office_att.daily"],
-      "base_args": [],
-      "cadence": {"weekdays": [0, 1, 2, 3, 4, 5, 6], "not_before": "09:00"},
-      "priority": "P3",
-      "freshness_target": "monday_am",
+      "on_scheduler": true, "display_name": "Daily Rep Breakdown - ATT Program",
+      "source_type": "tableau", "data_sources": ["tableau:dispo"],
+      "command": ["automations.focus_office_att.daily"], "base_args": [],
+      "cadence": {"weekdays": [0,1,2,3,4,5,6], "not_before": "09:00"},
+      "priority": "P3", "freshness_target": "monday_am",
       "_freshness_note": "Megan's example: least important day-to-day, but should be as current as possible by Monday morning.",
-      "depends_on": [],
-      "verify": {"type": "not_configured", "_todo": "set sheet/tab/anchor_label/date_header"}
+      "depends_on": [], "verify": {"type": "not_configured"}
+    },
+
+    "recruiter_retention_daily": {
+      "on_scheduler": true, "display_name": "Daily Recruiter 1st Round Retention",
+      "source_type": "appstream", "data_sources": [],
+      "command": ["automations.recruiter_retention.daily"], "base_args": [],
+      "cadence": {"weekdays": [0,1,2,3,4], "not_before": "08:00"},
+      "priority": "P2", "freshness_target": null, "depends_on": [],
+      "verify": {"type": "not_configured"}
+    },
+
+    "world_cup": {
+      "on_scheduler": true, "display_name": "AT&T World Cup 2026 - Bracket Flyers",
+      "source_type": "tableau", "data_sources": [],
+      "_note": "Seasonal/ad-hoc: self-detects whether a new bracket round started and no-ops otherwise. Session-gated only.",
+      "command": ["automations.world_cup.run"], "base_args": [],
+      "cadence": {"weekdays": [0,1,2,3,4,5,6], "not_before": "09:00"},
+      "priority": "P3", "freshness_target": null, "depends_on": [],
+      "verify": {"type": "not_configured"}
+    },
+
+    "brand_audit": {
+      "on_scheduler": true, "display_name": "Brand Health Audit",
+      "source_type": "api", "data_sources": [],
+      "command": ["automations.brand_audit.run"], "base_args": ["--company", "Alphalete Marketing"],
+      "cadence": {"weekdays": [0,1,2,3,4,5,6], "not_before": "12:00"},
+      "priority": "P3", "freshness_target": null, "depends_on": [],
+      "verify": {"type": "not_configured"}
+    },
+
+    "att_focus_raf": {
+      "on_scheduler": true, "display_name": "ATT Program - Focus Report (Raf)",
+      "source_type": "tableau", "data_sources": ["tableau:product_sales"],
+      "_note": "AppStream + Tableau OPT; gated on the Tableau OPT source. run.py defaults to the current week.",
+      "command": ["automations.recruiting_report.run"], "base_args": [],
+      "cadence": {"weekdays": [0], "not_before": "08:00"},
+      "priority": "P1", "freshness_target": null, "depends_on": [],
+      "verify": {"type": "not_configured"}
+    },
+    "carlos_focus": {
+      "on_scheduler": true, "display_name": "Carlos 1on1s - Focus Report",
+      "source_type": "tableau", "data_sources": ["tableau:product_sales"],
+      "command": ["automations.recruiting_report.carlos_opt_all"], "base_args": [],
+      "cadence": {"weekdays": [0], "not_before": "08:00"},
+      "priority": "P2", "freshness_target": null, "depends_on": [],
+      "verify": {"type": "not_configured"}
+    },
+    "alphalete_org_focus": {
+      "on_scheduler": true, "display_name": "Alphalete Org 1on1s - Focus Report",
+      "source_type": "tableau", "data_sources": ["tableau:product_sales"],
+      "command": ["automations.alphalete_org_report.opt_all"], "base_args": [],
+      "cadence": {"weekdays": [0], "not_before": "08:00"},
+      "priority": "P2", "freshness_target": null, "depends_on": [],
+      "verify": {"type": "not_configured"},
+      "_todo": "confirm opt_all picks the current week with no --week (verify in the dry-run week)."
+    },
+    "recruiter_retention_weekly": {
+      "on_scheduler": true, "display_name": "Ongoing 1st Round Recruiter Retention",
+      "source_type": "appstream", "data_sources": [],
+      "command": ["automations.recruiter_retention.run"], "base_args": [],
+      "cadence": {"weekdays": [0], "not_before": "08:00"},
+      "priority": "P2", "freshness_target": null, "depends_on": [],
+      "verify": {"type": "not_configured"}
+    },
+    "leaders_call": {
+      "on_scheduler": true, "display_name": "Leader's Call - Weekly Recognition",
+      "source_type": "tableau", "data_sources": ["tableau:product_sales"],
+      "command": ["automations.leaders_call.run"], "base_args": ["--write"],
+      "cadence": {"weekdays": [0], "not_before": "08:00"},
+      "priority": "P2", "freshness_target": null, "depends_on": [],
+      "verify": {"type": "not_configured"}
     },
 
     "int_wow_penetration": {
-      "on_scheduler": true,
-      "display_name": "Int WoW Report - Penetration %",
-      "source_type": "tableau",
-      "data_sources": ["tableau:fiber_pss"],
-      "command": ["automations.int_wow_penetration.run"],
-      "base_args": [],
+      "on_scheduler": true, "display_name": "Int WoW Report - Penetration %",
+      "source_type": "tableau", "data_sources": ["tableau:fiber_pss"],
+      "command": ["automations.int_wow_penetration.run"], "base_args": [],
       "cadence": {"weekdays": [1], "not_before": "08:00"},
-      "priority": "P2",
-      "freshness_target": null,
-      "depends_on": [],
-      "verify": {"type": "not_configured", "_todo": "set sheet/tab/anchor_label/date_header"},
-      "idempotency": {"insert_style": true, "_warn": "inserts a new week column — needs a guard so a retry can't double-insert today's column before live cutover."}
+      "priority": "P2", "freshness_target": null, "depends_on": [],
+      "verify": {"type": "not_configured"},
+      "idempotency": {"insert_style": true, "_note": "inserts a new week column; existing guard overwrites WE column if already at B (verified 2026-06-23)."}
     },
-
     "country_metrics": {
-      "on_scheduler": true,
-      "display_name": "Country Metrics",
-      "source_type": "tableau",
-      "data_sources": ["tableau:product_sales"],
-      "command": ["automations.country_metrics.run"],
-      "base_args": [],
+      "on_scheduler": true, "display_name": "Country Metrics",
+      "source_type": "tableau", "data_sources": ["tableau:product_sales"],
+      "command": ["automations.country_metrics.run"], "base_args": [],
       "cadence": {"weekdays": [3], "not_before": "08:00"},
-      "priority": "P2",
-      "freshness_target": null,
-      "depends_on": [],
-      "verify": {"type": "not_configured", "_todo": "set sheet/tab/anchor_label/date_header"},
-      "idempotency": {"insert_style": true, "_warn": "inserts a new week column — needs a guard before live cutover."}
-    },
-
-    "leaders_call": {
-      "on_scheduler": true,
-      "display_name": "Leader's Call - Weekly Recognition",
-      "source_type": "tableau",
-      "data_sources": ["tableau:product_sales"],
-      "command": ["automations.leaders_call.run"],
-      "base_args": ["--write"],
-      "cadence": {"weekdays": [0], "not_before": "08:00"},
-      "priority": "P2",
-      "freshness_target": null,
-      "depends_on": [],
-      "verify": {"type": "not_configured", "_todo": "set sheet/tab/anchor_label/date_header"}
+      "priority": "P2", "freshness_target": null, "depends_on": [],
+      "verify": {"type": "not_configured"},
+      "idempotency": {"insert_style": true, "_warn": "inserts a new week column — confirm it won't double-insert on retry before cutover."}
     }
   },
 
   "read_only_standalone": {
-    "_note": "Already live & firing as their own launchd jobs. The orchestrator does NOT run these — it only reads their latest status (log/manifest) for the summary email.",
-    "appstream_morning": {"display_name": "AppStream Morning (Daily Focus + Mon Recruiter Retention)", "source_type": "appstream"},
-    "brand_audit_noon": {"display_name": "Brand Health Audit (noon)", "source_type": "api"},
-    "weather_6am": {"display_name": "Weather Alert (6am)", "source_type": "api"}
+    "_note": "Empty now — the previously-standalone AppStream/weather/brand reports were folded into the scheduler above (Megan 2026-06-23). Retire their launchd jobs at cutover (see _meta.cutover_retire_jobs)."
   },
 
   "excluded": {
-    "org_sales_board": {"_reason": "Deferred — next piece of work; needs sandbox->--real fix before it can be scheduled live."},
-    "financial_report": {"_reason": "Upload-gated — stays MANUAL; only noted as 'pending upload' in the summary."},
+    "_note": "Only upload-gated reports remain manual — they can't run unattended (a human must drop the emailed file first).",
+    "financial_report": {"_reason": "Upload-gated — MANUAL."},
     "first_last_sale": {"_reason": "Upload-gated — MANUAL."},
     "frontier_opt": {"_reason": "Upload-gated — MANUAL."}
   }
