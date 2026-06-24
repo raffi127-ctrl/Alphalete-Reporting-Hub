@@ -2399,7 +2399,7 @@ AUTOMATED_REPORTS = [
             "but still written."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit#gid=164937446"),
+                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit#gid=1630583673"),
         "assignees": ["Eve"],
         "schedule": {
             "frequency": "weekly",

@@ -20,11 +20,16 @@ import unicodedata
 from collections import defaultdict
 from typing import Optional
 
+import gspread
+
 from automations.recruiting_report.fill import open_by_key
 
-SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
-WORKSHEET_GID = 164937446          # 'Int WoW Report' (production tab)
-# Sandbox during build was gid 1597480198 ('Int WoW Report - TEST').
+# The 'Int WoW Report' tab was moved (~2026-06) out of the old recruiting
+# workbook into the consolidated captainship/fiber workbook — the same sheet
+# fiber_activations + leaders_call write to. Resolve the tab BY NAME so a future
+# move/recreate (which changes the gid) can't strand the report again.
+SHEET_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
+WORKSHEET_TITLE = "Int WoW Report"      # production tab — looked up by name, not gid
 HEADER_LABEL = "PENETRATION %"
 TOTAL_LABEL = "NATIONAL"
 NO_DATA = "-%"
@@ -34,7 +39,20 @@ _SUFFIX = {"ii", "iii", "iv", "v", "jr", "sr"}
 
 
 def open_ws():
-    return open_by_key(SHEET_ID).get_worksheet_by_id(WORKSHEET_GID)
+    """Open the 'Int WoW Report' tab BY NAME — never a hardcoded gid (gids change
+    when a tab is deleted/recreated; the name survives). If it's missing, fail
+    with the available tabs listed so a future relocation is obvious instead of a
+    cryptic WorksheetNotFound (the 2026-06-23 break, when the tab moved sheets)."""
+    sh = open_by_key(SHEET_ID)
+    try:
+        return sh.worksheet(WORKSHEET_TITLE)
+    except gspread.WorksheetNotFound:
+        titles = [w.title for w in sh.worksheets()]
+        raise RuntimeError(
+            f"Int WoW tab {WORKSHEET_TITLE!r} not found in sheet {SHEET_ID}. "
+            "It was likely moved or renamed — update SHEET_ID / WORKSHEET_TITLE "
+            f"in automations/int_wow_penetration/fill.py. Tabs present: {titles}"
+        )
 
 
 def week_label(d: dt.date) -> str:
