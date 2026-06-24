@@ -2077,7 +2077,7 @@ AUTOMATED_REPORTS = [
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "13-9f_aPDlPa6L6_Wash4ws7959mn822J__vB5OYmcB8/edit"),
         "assignees": ["Eve"],
-        "schedule": {"frequency": "manual", "estimated_minutes": 6},
+        "schedule": {"frequency": "daily", "time": "9:00 AM", "estimated_minutes": 6},
         "checklist": [],
         "post_run": {
             "message_success": "✅ Captainship Activations done — 5 tabs filled (violet + country) and 6 PNGs uploaded to the Drive folder.",
