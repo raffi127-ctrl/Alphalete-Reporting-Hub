@@ -64,6 +64,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--probe-only", action="store_true")
     ap.add_argument("--once", action="store_true")
     ap.add_argument("--simulate", action="store_true")
+    ap.add_argument("--live-emails", action="store_true",
+                    help="send the checkpoint/final emails for REAL even under "
+                         "--dry-run (reports still write nothing). Use this for "
+                         "the dry-run week so the summaries actually arrive.")
     args = ap.parse_args(argv)
 
     cfg = registry.load_config()
@@ -77,6 +81,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     channel = args.channel or s.get("channel", "email")
     stale_after = s.get("session_stale_after_minutes", 20)
     only = set(args.only.split(",")) if args.only else None
+    # Reports honor --dry-run; emails send for real if --live-emails (so the
+    # dry-run week's summaries actually reach Megan + Eve).
+    email_dry = dry_run and not args.live_emails
 
     # Reports scheduled today (weekday match), optionally narrowed by --only.
     todays = registry.scheduled_today(cfg, target)
@@ -126,28 +133,28 @@ def main(argv: Optional[List[str]] = None) -> int:
             _log(f"--- pass {pass_no} ---")
             _run_pass(cfg, ds, todays, cache, target,
                       dry_run=dry_run, simulate=args.simulate, stale_after=stale_after,
-                      channel=channel)
+                      channel=channel, email_dry=email_dry)
             state.save(ds)
 
             now = _now()
 
             # 7:30 checkpoint email (once).
             if not ds.checkpoint_sent and now >= checkpoint_at:
-                _send_checkpoint(cfg, ds, channel, dry_run)
+                _send_checkpoint(cfg, ds, channel, email_dry)
                 ds.checkpoint_sent = True
                 state.save(ds)
 
             # All done early → final + stop.
             if ds.all_terminal():
                 _log("all reports terminal — sending final summary.")
-                _finalize(cfg, ds, channel, dry_run, target, stale_after)
+                _finalize(cfg, ds, channel, email_dry, target, stale_after)
                 break
 
             # Backstop reached → give up on stragglers, final + stop.
             if now >= backstop_at:
                 _log(f"backstop {backstop_at.time()} reached — marking stragglers MISSED.")
                 _apply_backstop(ds, stale_after)
-                _finalize(cfg, ds, channel, dry_run, target, stale_after)
+                _finalize(cfg, ds, channel, email_dry, target, stale_after)
                 break
 
             if args.once:
@@ -164,7 +171,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         state.release_lock(target.isoformat())
 
 
-def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after, channel):
+def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
+              channel, email_dry):
     from automations.day_orchestrator import control
 
     # Pull in any STOP/RESUME email replies (phone path), then apply all
@@ -212,7 +220,7 @@ def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
         if not rd.ready:
             # Distinguish a stale session (alert!) from data-not-ready.
             if "session" in rd.reason.lower():
-                _maybe_session_alert(cfg, ds, rd.reason, channel, dry_run)
+                _maybe_session_alert(cfg, ds, rd.reason, channel, email_dry)
             ds.set(r.report_id, state.STILL_TRYING, reason=rd.reason, waiting_on=rd.reason)
             _log(f"  {r.report_id}: still trying — {rd.reason}")
             continue

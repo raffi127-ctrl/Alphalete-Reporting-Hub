@@ -189,7 +189,10 @@ pl['ProgramArguments']=[fix(x) for x in pl['ProgramArguments']]
 pl['WorkingDirectory']=fix(pl['WorkingDirectory'])
 pl['EnvironmentVariables']={k:fix(v) for k,v in pl['EnvironmentVariables'].items()}
 pl['StandardOutPath']=fix(pl['StandardOutPath']); pl['StandardErrorPath']=fix(pl['StandardErrorPath'])
-pl['ProgramArguments'].append('--dry-run')   # DRY-RUN WEEK: no sheet writes / no real email
+pl['ProgramArguments'] += ['--dry-run', '--live-emails']   # DRY-RUN WEEK: reports
+# write NOTHING, but the checkpoint/final summary emails SEND for real so Megan +
+# Eve actually receive them each morning to evaluate. Drop --live-emails to keep
+# emails as .eml files on the mini instead.
 out=home+'/Library/LaunchAgents/com.alphalete.day-orchestrator.plist'
 plistlib.dump(pl, open(out,'wb')); print('wrote', out)
 PY
@@ -197,7 +200,8 @@ plutil -lint ~/Library/LaunchAgents/com.alphalete.day-orchestrator.plist
 launchctl enable gui/$(id -u)/com.alphalete.day-orchestrator
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.alphalete.day-orchestrator.plist
 ```
-Fires 4am CST daily; each report runs in its own `--dry-run`. Watch the emails +
+Fires 4am CST daily; each report runs in its own `--dry-run` (no sheet writes),
+and you + Eve get the real checkpoint/final summary emails. Watch them +
 `output/logs/day-orchestrator-*.log` for ~a week; tune `schedule_config.json`.
 
 ### Stop a stuck report (phone or terminal)
