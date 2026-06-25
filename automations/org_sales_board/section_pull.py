@@ -83,6 +83,11 @@ class ScrapeSpec:
     #   rest (e.g. "VOICE" — the no-voice total = sum of every other product
     #   row). When set, the pre-summed total_label row is skipped to avoid
     #   double-counting. When empty + total_label set, keep only total_label.
+    include_products: tuple = ()  # INVERSE of exclude_products: keep ONLY these
+    #   product rows (e.g. "NEW INTERNET") and sum them — the SAME already-
+    #   downloaded crosstab, a different metric. Takes precedence over
+    #   exclude_products/total_label. Lets one fiber pull yield BOTH the all-
+    #   units total AND the New-Internet-only number (the captainship NI box).
     product_col: str = "Product Type (Broken Out)"  # the per-row product label
     skip_owners: tuple = ()      # crosstab grand-total rows to drop (e.g.
     #   "Sales Total"). Matched case-insensitively against the owner cell.
@@ -230,6 +235,7 @@ def parse_crosstab_byday(
     ti = tableau_http.col_idx(header, spec.product_col)
     skip = {s.lower() for s in spec.skip_owners}
     exclude = {p.upper() for p in spec.exclude_products}
+    include = {p.upper() for p in spec.include_products}
     # The owner cell only appears on the FIRST of an owner's product rows; the
     # rest are blank. Carry it forward so component rows attribute correctly.
     cur_owner = ""
@@ -245,7 +251,12 @@ def parse_crosstab_byday(
         if not owner_raw or owner_raw.lower() in skip:
             continue
         prod = r[ti].strip() if (ti is not None and len(r) > ti) else ""
-        if exclude:
+        if include:
+            # Keep ONLY the named product rows (e.g. NEW INTERNET) and sum them;
+            # the pre-summed total_label row falls out on its own (not listed).
+            if prod.upper() not in include:
+                continue
+        elif exclude:
             # Sum component product rows; skip the pre-summed total + Voice.
             if (spec.total_label and prod == spec.total_label) \
                     or prod.upper() in exclude:

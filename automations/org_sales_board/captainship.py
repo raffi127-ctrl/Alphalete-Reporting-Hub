@@ -41,15 +41,39 @@ def _cell(grid, r, c):  # 0-based
 def find_captainship(grid: List[List[str]], captain_title: str) -> CaptainAnchor:
     title_l = captain_title.strip().lower()
     n = len(grid)
+    # Match the block's title cell tolerantly: the board labels these blocks
+    # inconsistently — "<NAME> CAPTAINSHIP TEAM" (Raf's, Jairo's) AND "<NAME>
+    # CAPTAIN TEAM" (Carlos', Wayne's, …). Mirror discover_captainships' grafía
+    # tolerance so BOTH wordings resolve to the real leaderboard block. The old
+    # literal-"captainship" test skipped the top "Captain Team" block and fell
+    # through to a draft table below (no leaderboard → StopIteration). The extra
+    # title_l constraint keeps a bare "CAPTAIN TEAM" sub-header from matching.
+    # [No hardcoded rows — find blocks by their col-B label.]
     t = next((i for i in range(n)
               if title_l in _cell(grid, i, 1).lower()
-              and "captainship" in _cell(grid, i, 1).lower()), None)
+              and re.search(r"\bcaptain(?:ship)?\s+team\b",
+                            _cell(grid, i, 1).lower())), None)
     if t is None:
         raise ValueError(f"captainship title for {captain_title!r} not found")
-    a = CaptainAnchor(captain=captain_title)
-    # Leaderboard: first 'CAPTAIN TEAM' (col A) below the title.
+    # Leaderboard: first 'CAPTAIN TEAM' (col A) below the title. Single-box —
+    # used by compare.py / rollover.py. Multi-box fiber captains (two stacked
+    # leaderboards) go through find_captainship_boxes; this still returns the
+    # FIRST box, unchanged, for the callers that want one anchor.
     cap = next(i for i in range(t, n) if _cell(grid, i, 0).upper() == "CAPTAIN TEAM")
-    r = cap + 2  # skip the sub-label row ("Fiber - All Units")
+    anchor, _dh = _build_anchor(grid, cap, captain_title)
+    return anchor
+
+
+def _build_anchor(grid: List[List[str]], cap_row: int, captain: str):
+    """Build ONE CaptainAnchor from its 'CAPTAIN TEAM' (col A) leaderboard
+    header row. Leaderboard = named rows from cap_row+2 to 'TOTALS'; daily =
+    the first col-C 'Monday' header below it, its weekday columns, and named
+    rows to the next 'TOTALS'. Returns (anchor, daily_header_row). Shared by
+    find_captainship (first box) and find_captainship_boxes (each box of a
+    multi-box fiber captain)."""
+    n = len(grid)
+    a = CaptainAnchor(captain=captain)
+    r = cap_row + 2  # skip the sub-label row ("Fiber - All Units"/"- New Internet")
     while r < n:
         if _cell(grid, r, 0).upper() == "TOTALS":
             break
@@ -58,9 +82,11 @@ def find_captainship(grid: List[List[str]], captain_title: str) -> CaptainAnchor
             a.leaderboard.append((r + 1, name))
         r += 1
     lb_end = r
-    # Daily table: first row whose col C == 'Monday' below the leaderboard.
-    dh = next(i for i in range(lb_end, n) if _cell(grid, i, 2).lower() == "monday")
-    # That header row's weekday columns → day_cols (Mon..Sun, expect C..I).
+    dh = next((i for i in range(lb_end, n)
+               if _cell(grid, i, 2).lower() == "monday"), None)
+    if dh is None:
+        raise ValueError(
+            f"no daily 'Monday' header below the leaderboard at row {cap_row + 1}")
     a.day_cols = [c + 1 for c in range(len(grid[dh]))
                   if _cell(grid, dh, c).lower() in WEEKDAYS]
     r = dh + 2  # skip the day-number row beneath the weekday header
@@ -71,7 +97,59 @@ def find_captainship(grid: List[List[str]], captain_title: str) -> CaptainAnchor
         if name:
             a.daily.append((r + 1, name))
         r += 1
-    return a
+    return a, dh
+
+
+def _classify_box(daily_header_label: str):
+    """Which box a leaderboard is, read from its DAILY header's col-A label
+    ('Fiber - New Internet' vs 'Fiber - All Units'). The daily header is the
+    reliable signal — some leaderboard sub-labels are mislabeled (Sahil's
+    New-Internet leaderboard sub-label reads 'All Units', but its daily header
+    correctly reads 'New Internet')."""
+    l = (daily_header_label or "").lower()
+    if "new internet" in l:
+        return "new_internet"
+    if "all units" in l:
+        return "all_units"
+    return None
+
+
+def find_captainship_boxes(grid: List[List[str]], captain_title: str):
+    """Resolve EVERY leaderboard box under a captain's title, not just the
+    first. Fiber captains carry TWO stacked boxes — 📶 New Internet (top) and
+    🛜 All Units (bottom), sourced from the same crosstab with different product
+    filters; every other captain has ONE. Returns [(variant, anchor), …] with
+    variant ∈ {'new_internet','all_units',None}. Boxes are bounded by the NEXT
+    captain's title row and classified by their daily header label, so the two
+    never cross. [No hardcoded rows — find blocks by their col-B label.]"""
+    title_l = captain_title.strip().lower()
+    n = len(grid)
+    pat = re.compile(r"\bcaptain(?:ship)?\s+team\b")
+    start = next((i for i in range(n)
+                  if title_l in _cell(grid, i, 1).lower()
+                  and pat.search(_cell(grid, i, 1).lower())), None)
+    if start is None:
+        raise ValueError(f"captainship title for {captain_title!r} not found")
+    my_key = _cap_key(captain_title)
+    # Span ends at the next DIFFERENT captain's title (a fiber captain names its
+    # block twice — once per box — so same-key repeat titles stay in the span).
+    end = n
+    for i in range(start + 1, n):
+        b = _cell(grid, i, 1)
+        m = pat.search(b.lower())
+        if m:
+            other = b[:m.start()].strip()
+            if other and _cap_key(other) != my_key:
+                end = i
+                break
+    boxes = []
+    for i in range(start, end):
+        if _cell(grid, i, 0).upper() == "CAPTAIN TEAM":
+            anchor, dh = _build_anchor(grid, i, captain_title)
+            boxes.append((_classify_box(_cell(grid, dh, 0)), anchor))
+    if not boxes:
+        raise ValueError(f"no 'CAPTAIN TEAM' leaderboard under {captain_title!r}")
+    return boxes
 
 
 def _a1col(c: int) -> str:  # 1-based col -> letter(s)
@@ -83,12 +161,15 @@ def _a1col(c: int) -> str:  # 1-based col -> letter(s)
 
 
 def fill_captainship(ws, anchor: CaptainAnchor, today, per_for,
-                     dry_run: bool = False) -> list:
+                     dry_run: bool = False, metric=None) -> list:
     """Fill a captainship's daily Mon-Sun + running total and the
-    leaderboard's this-week total. `per_for(name)` returns that ICD's
-    {date: value} dict (team view first, org-wide fallback) or {} if nowhere.
-    Every no-sale day is written as 0 (Megan: insert 0, never blank).
-    WORKSHEET-SCOPED. Returns ICDs found in NO pull (filled 0)."""
+    leaderboard's this-week total. `per_for(name, metric)` returns that ICD's
+    {date: value} dict for the given metric (team view first, org-wide fallback)
+    or {} if nowhere. `metric` selects the per-box metric (e.g. 'NewInternet'
+    for a fiber captain's 📶 box); None = the program's default metric, used by
+    the 🛜 All Units box and every non-fiber single box. Every no-sale day is
+    written as 0 (Megan: insert 0, never blank). WORKSHEET-SCOPED. Returns ICDs
+    found in NO pull (filled 0)."""
     # HARD GUARD: only ever write to the sandbox copy. Megan 2026-06-14: "DO
     # NOT change anything on the real tab." Auto-discovery still READS the real
     # tab fine; this just blocks the WRITE path from touching it. Re-enable a
@@ -101,7 +182,7 @@ def fill_captainship(ws, anchor: CaptainAnchor, today, per_for,
     runL, wkL = _a1col(anchor.running_col), _a1col(anchor.week_total_col)
     updates, missing = [], []
     for row, name in anchor.daily:
-        per = per_for(name)
+        per = per_for(name, metric)
         if not per:
             # No sales found in any view this week — write "NS" (No Sales)
             # across the row instead of 0 (Megan 2026-06-03), so a zero-
@@ -135,7 +216,7 @@ def fill_captainship(ws, anchor: CaptainAnchor, today, per_for,
                 f"=SUMIF($B${d0}:$B${d1},B{row},${jcol}${d0}:${jcol}${d1})"]]})
     else:
         for row, name in anchor.leaderboard:
-            per = per_for(name) or {}
+            per = per_for(name, metric) or {}
             updates.append({"range": f"{wkL}{row}",
                             "values": [[sum(int(per.get(d, 0)) for d in days)]]})
     if not dry_run:
@@ -285,6 +366,32 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
             csv = sp.pull_section_byday(spec, Path("output"), page, logfn=lambda m: None, today=today)
         return sp.parse_byday(spec, csv, today)
 
+    def _pull_fiber_dual(view_url):
+        """ONE fiber download → TWO metrics. The 🛜 All Units box keeps the
+        current all-units total (sum all products except Voice); the 📶 New
+        Internet box sums ONLY the NEW INTERNET product rows of the SAME
+        crosstab. No extra Tableau pull — the include/exclude filter is applied
+        at parse time. Returns {owner: {'Total': {...}, 'NewInternet': {...}}}."""
+        fp = TYPES["fiber"]["parse"]
+        all_units = _spec("PROG_fiber", view_url, fp, "Total")  # == current spec
+        new_int = sp.ScrapeSpec(
+            section_label="PROG_fiber", metric="NewInternet", view_url=view_url,
+            owner_col=fp["owner_col"], value_col="", day_col="",
+            method=sp.CROSSTAB, crosstab_sheet=fp["crosstab_sheet"],
+            include_products=("NEW INTERNET",),
+            skip_owners=("Grand Total", "Sales Total"), week_pin=True,
+            out_name=all_units.out_name)            # SAME file → one download
+        if resolve_csv:
+            csv = resolve_csv("PROG_fiber", all_units)
+        else:
+            csv = sp.pull_section_byday(all_units, Path("output"), page,
+                                        logfn=lambda m: None, today=today)
+        merged: dict = {}
+        for spec in (all_units, new_int):
+            for owner, metrics in sp.parse_byday(spec, csv, today).items():
+                merged.setdefault(owner, {}).update(metrics)
+        return merged
+
     # Pull each PROGRAM's all-teams view ONCE (fiber, b2b, nds) — every ICD in
     # that program, no team filter. RESILIENT: a single program view that
     # fails to render (Tableau load/render flake → "0 thumbs", or a stale
@@ -297,7 +404,9 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
         t = TYPES[tkey]
         logfn(f"  program pull: {tkey}")
         try:
-            prog[tkey] = _pull(f"PROG_{tkey}", view_url, t["parse"], t["metric"])
+            prog[tkey] = (_pull_fiber_dual(view_url) if tkey == "fiber"
+                          else _pull(f"PROG_{tkey}", view_url,
+                                     t["parse"], t["metric"]))
         except Exception as e:
             logfn(f"  ⚠ program pull {tkey} FAILED ({type(e).__name__}: "
                   f"{str(e)[:90]}) — skipping; {tkey} stays blank for all "
@@ -320,7 +429,7 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
         # block removed) but still listed, or added to CAPTAINS before its sheet
         # block exists. Re-add the block (or remove it from CAPTAINS) to clear.
         try:
-            anchor = find_captainship(grid, title)
+            boxes = find_captainship_boxes(grid, title)
         except Exception as e:
             logfn(f"    ⚠ no '{title} CAPTAINSHIP' block on the board "
                   f"({type(e).__name__}: {str(e)[:80]}) — skipping {title}.")
@@ -332,22 +441,37 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
         # numbers anyway — some reps sit on a captainship whose Tableau team
         # doesn't include them (e.g. Preppie Olison is on ARON/fiber but his
         # sales are in NDS — pull them regardless, Megan 2026-06-08). Absent
-        # from EVERY program = 0 sales this week → NS.
-        def per_for(name, prog=prog, tkey=tkey):
+        # from EVERY program = 0 sales this week → NS. `metric` overrides the
+        # program default so a fiber captain's 📶 box reads NewInternet.
+        def per_for(name, metric=None, prog=prog, tkey=tkey):
             cands = _candidates_for_name(name, aliases)
             for tk in [tkey] + [k for k in prog if k != tkey]:
                 pdata = prog.get(tk, {})
                 k = next((x for x in pdata if x in cands), None)
                 if k:
-                    return pdata[k].get(TYPES[tk]["metric"], {})
+                    return pdata[k].get(metric or TYPES[tk]["metric"], {})
             return {}
 
-        missing = fill_captainship(ws, anchor, today, per_for, dry_run=dry_run)
+        # Fiber captains have TWO boxes; route each to its metric. The 📶 New
+        # Internet box pulls the New-Internet-only number; the 🛜 All Units box
+        # (and every non-fiber single box) keeps the program's default metric.
+        # find_captainship_boxes pre-classified them — they never cross.
+        total_icds, all_missing = 0, []
+        for variant, anchor in boxes:
+            box_metric = ("NewInternet"
+                          if tkey == "fiber" and variant == "new_internet"
+                          else None)
+            missing = fill_captainship(ws, anchor, today, per_for,
+                                       dry_run=dry_run, metric=box_metric)
+            total_icds += len(anchor.daily)
+            all_missing += missing
         summary["filled"].append(title)
-        if missing:
-            summary["missing"][title] = missing
-        logfn(f"    {title}: {len(anchor.daily)} ICDs"
-              + (f", 0-sales/not in program view (NS): {missing}" if missing else ""))
+        if all_missing:
+            summary["missing"][title] = all_missing
+        box_desc = "+".join(v or "single" for v, _ in boxes)
+        logfn(f"    {title}: {len(boxes)} box ({box_desc}), {total_icds} ICD-row(s)"
+              + (f", 0-sales/not in program view (NS): {all_missing}"
+                 if all_missing else ""))
     logfn(f"=== captainships filled: {summary['filled']} "
           f"| 0-sales (NS): {summary['missing']} ===")
     if failed_programs:
