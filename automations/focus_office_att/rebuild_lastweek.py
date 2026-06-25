@@ -41,7 +41,7 @@ from pathlib import Path
 
 from automations.recruiting_report import fill as _fill
 from automations.focus_office_att.daily import (
-    DEST_SPREADSHEET_ID, LOG_DIR,
+    DEST_SPREADSHEET_ID, LOG_DIR, NON_OWNER_TABS, LAST_WEEK_DATA_ROW,
     PHASE2_TIMEOUT_S, PHASE3_TIMEOUT_S, PHASE_TIMEOUT_EXIT,
     CURRENT_ZONE_LAST_ROW, _q, _run_phase,
     set_current_week_dates, set_all_current_week_dates,
@@ -86,7 +86,8 @@ def _phase(module, args, log_fh, say, timeout_s, label) -> None:
         raise Abort(f"{label} failed (exit {rc}). Nothing destructive has run yet.")
 
 
-def rebuild(monday: dt.date, only: str | None, log_fh, say) -> int:
+def rebuild(monday: dt.date, only: str | None, log_fh, say,
+            from_freeze: bool = False) -> int:
     last_monday = monday
     last_sunday = monday + dt.timedelta(days=6)
     this_monday = monday + dt.timedelta(days=7)
@@ -94,32 +95,37 @@ def rebuild(monday: dt.date, only: str | None, log_fh, say) -> int:
     scope = f'"{only}"' if only else "ALL owner tabs"
     say(f"=== Rebuild LAST WEEK ({last_monday}..{last_sunday}) → {scope} ===")
 
-    # 1. Label the top as LAST week, so the freeze snapshot carries last week's
-    #    dates (the freeze copies row 1 into the frozen date row).
-    say("1. labeling top block as last week…")
-    if only:
-        set_current_week_dates(sh.worksheet(only), last_monday)
+    if from_freeze:
+        # Resume an interrupted run: last week is assumed already scraped into
+        # the top (steps 1-3 done before the interruption). Go straight to the
+        # freeze. Finish any straggler tabs with a separate --only scrape first.
+        say("(--from-freeze) skipping steps 1-3 — last week already filled up top.")
     else:
-        set_all_current_week_dates(sh, last_monday, logfn=say)
+        # 1. Label the top as LAST week, so the freeze snapshot carries last
+        #    week's dates (the freeze copies row 1 into the frozen date row).
+        say("1. labeling top block as last week…")
+        if only:
+            set_current_week_dates(sh.worksheet(only), last_monday)
+        else:
+            set_all_current_week_dates(sh, last_monday, logfn=say)
 
-    # 2. Scrape last week's ownerville activity into the top block.
-    say("2. scraping last week's activity (ownerville)…")
-    a = ["--week-start", last_monday.isoformat()] + (["--only", only] if only else [])
-    _phase(RUN_ALL, a, log_fh, say, PHASE2_TIMEOUT_S, "last-week scrape")
+        # 2. Scrape last week's ownerville activity into the top block.
+        say("2. scraping last week's activity (ownerville)…")
+        a = ["--week-start", last_monday.isoformat()] + (["--only", only] if only else [])
+        _phase(RUN_ALL, a, log_fh, say, PHASE2_TIMEOUT_S, "last-week scrape")
 
-    # 3. Fill last week's production (Tableau). Org-wide export — can't scope to
-    #    one tab, so we SKIP it in --only preview (production is added in the
-    #    full run). Non-fatal if it fails: the frozen block still gets activity.
-    if only:
-        say("3. (skipping Tableau production — org-wide, added in the full run)")
-    else:
-        say("3. filling last week's production (Tableau)…")
-        try:
-            _phase(STEP7, ["--format", "csv", "--fill", "--week-ending",
-                           last_sunday.isoformat()], log_fh, say,
-                   PHASE3_TIMEOUT_S, "last-week Tableau")
-        except Abort as e:
-            say(f"   ⚠ {e}  — continuing; freeze will capture activity only.")
+        # 3. Fill last week's production (Tableau). Org-wide export — can't scope
+        #    to one tab, so SKIP in --only preview. Non-fatal if it fails.
+        if only:
+            say("3. (skipping Tableau production — org-wide, added in the full run)")
+        else:
+            say("3. filling last week's production (Tableau)…")
+            try:
+                _phase(STEP7, ["--format", "csv", "--fill", "--week-ending",
+                               last_sunday.isoformat()], log_fh, say,
+                       PHASE3_TIMEOUT_S, "last-week Tableau")
+            except Abort as e:
+                say(f"   ⚠ {e}  — continuing; freeze will capture activity only.")
 
     # 4. FREEZE the top into the bottom LAST WEEK block. HARD GATE: if it froze
     #    nothing, abort BEFORE the wipe so last week can't be lost again.
@@ -131,6 +137,22 @@ def rebuild(monday: dt.date, only: str | None, log_fh, say) -> int:
                     "week is not erased. The top block still holds last week's "
                     "data; investigate the freeze, do not wipe.")
     say(f"   ✓ froze {n} tab(s)")
+
+    # SAFETY GATE: confirm the freeze actually PERSISTED rep names into the
+    # frozen block before the wipe destroys the current week. The freeze can
+    # log success yet leave an empty block (the Marcellus --only failure); if
+    # that happens here we ABORT before the wipe, so last week is never lost.
+    check = ([only] if only else
+             [t.title for t in sh.worksheets() if t.title not in NON_OWNER_TABS][:5])
+    for title in check:
+        col_b = sh.worksheet(title).col_values(2)
+        froz = [v for i, v in enumerate(col_b, 1)
+                if i >= LAST_WEEK_DATA_ROW and (v or "").strip()]
+        if not froz:
+            raise Abort(f"freeze did NOT persist on {title!r} — frozen block has "
+                        f"no rep names. ABORTING before the wipe; the current "
+                        f"block still holds last week, so nothing is lost.")
+        say(f"   ✓ verified frozen block on {title}: {len(froz)} rep row(s)")
 
     # 5–6. Now safe: last week is preserved below. Relabel + clear the top.
     say("5. labeling top block as this week…")
@@ -175,6 +197,9 @@ def main() -> int:
     ap.add_argument("--only", default="", metavar="TAB",
                     help="Preview ONE owner tab (ownerville + freeze + this-week "
                          "refill; no org-wide Tableau).")
+    ap.add_argument("--from-freeze", action="store_true",
+                    help="Resume an interrupted run: skip the last-week scrape "
+                         "(already done) and start at the freeze.")
     ap.add_argument("--plan", action="store_true",
                     help="Print the steps + computed dates and exit (no writes).")
     args = ap.parse_args()
@@ -211,7 +236,7 @@ def main() -> int:
             log_fh.write(m + "\n")
             log_fh.flush()
         try:
-            return rebuild(monday, only, log_fh, say)
+            return rebuild(monday, only, log_fh, say, from_freeze=args.from_freeze)
         except Abort as e:
             say(f"\n✗ ABORTED: {e}")
             return 1
