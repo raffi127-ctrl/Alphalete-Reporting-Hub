@@ -23,7 +23,7 @@ Q_HIGHLIGHT_HEX = "#F9CB9C"
 # Leave DRIVE_FOLDER_ID empty on first run — drive_upload finds-or-creates the
 # folder by name and prints the id to paste here (so later runs skip the lookup).
 DRIVE_FOLDER_NAME = "Captainship Activations - PNGs"
-DRIVE_FOLDER_ID = ""
+DRIVE_FOLDER_ID = "1f_FaU__z7n_iOmL0lU7muATgPw2NEvlB"
 
 
 @dataclass(frozen=True)
