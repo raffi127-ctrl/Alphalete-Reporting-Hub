@@ -905,10 +905,31 @@ def _daily_manifest_fail(phase: str) -> None:
 
 
 def _daily_manifest_ok() -> None:
-    """Clear the failure manifest on a fully-successful run. Best-effort."""
+    """Finalize the manifest after a pipeline that didn't crash. NOT always
+    'clean': any owner that couldn't be scraped (not in ownerville / no access)
+    is surfaced as the manifest's failed list, so the run reads INCOMPLETE and
+    the email lists exactly who was skipped — even though the pipeline itself
+    'succeeded' (Megan 2026-06-25: "give a breakdown of what wasn't accessible
+    even if the report was successful" — e.g. Melik El Jaiez isn't in OV).
+    Fully clean only when every owner scraped OK. Best-effort."""
     try:
         from automations.shared import run_manifest as _rm
-        _rm.mark_clean(_DAILY_RB_CARD_ID, kind="phase")
+        bad: dict = {}
+        if SCRAPE_RESULTS.exists():
+            try:
+                data = json.loads(SCRAPE_RESULTS.read_text())
+                bad = {o: s for o, s in data.get("results", {}).items()
+                       if s != "ok" and o not in NON_OWNER_TABS}
+            except Exception:
+                bad = {}
+        if bad:
+            owners = sorted(bad)
+            detail = "; ".join(f"{o} ({bad[o]})" for o in owners)
+            _rm.write_manifest(_DAILY_RB_CARD_ID, failed=owners, retry_args=[],
+                               kind="owner",
+                               note=f"{len(owners)} owner(s) not scraped — {detail}")
+        else:
+            _rm.mark_clean(_DAILY_RB_CARD_ID, kind="phase")
     except Exception:
         pass
 
