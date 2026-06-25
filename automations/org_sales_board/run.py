@@ -33,7 +33,7 @@ try:
 except Exception:
     pass
 
-SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
+SHEET_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
 SANDBOX_TAB = "Copy of Alphalete ORG Sales Board"
 PROD_TAB = "Alphalete ORG Sales Board"          # real tab — only when told
 
