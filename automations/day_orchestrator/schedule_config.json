@@ -49,7 +49,7 @@
       "command": ["automations.recruiting_report.daily_focus"], "base_args": ["--captainship", "Raf"],
       "cadence": {"weekdays": [0,1,2,3,4]},
       "priority": "P1", "freshness_target": null, "depends_on": [],
-      "verify": {"type": "not_configured"}
+      "verify": {"type": "manifest", "report_id": "daily-focus"}
     },
     "daily_focus_carlos": {
       "on_scheduler": true, "display_name": "Daily Recruiting Focus — Carlos",
@@ -57,7 +57,7 @@
       "command": ["automations.recruiting_report.daily_focus"], "base_args": ["--captainship", "Carlos"],
       "cadence": {"weekdays": [0,1,2,3,4]},
       "priority": "P1", "freshness_target": null, "depends_on": [],
-      "verify": {"type": "not_configured"}
+      "verify": {"type": "manifest", "report_id": "daily-focus"}
     },
 
     "weather_alert": {

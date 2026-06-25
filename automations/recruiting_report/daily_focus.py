@@ -868,6 +868,7 @@ def run_captainship(captainship: str, args, week_start: dt.date,
     inaccessible_this_run: List[str] = []
     denied_this_run: List[str] = []          # AppStream refused this account
     fetch_errors_this_run: List[str] = []    # transient Playwright/timeout
+    unmapped_this_run: List[str] = []        # no office_id mapping — dropped silently before
 
     col3 = fill._retry(ws.col_values, 3)
 
@@ -928,6 +929,7 @@ def run_captainship(captainship: str, args, week_start: dt.date,
             if not office_id:
                 log.warning("[%s] no office_id mapping — confirm it from the dashboard's "
                             "'Map new ICDs' prompt and re-run; skip for now", icd)
+                unmapped_this_run.append(icd)  # surfaced as a manifest failure, not a silent drop
                 continue
 
             anchor = _find_section_anchor(col3, icd)
@@ -1103,11 +1105,16 @@ def run_captainship(captainship: str, args, week_start: dt.date,
                      captainship, len(fetch_errors_this_run),
                      ", ".join(fetch_errors_this_run))
 
+    if unmapped_this_run:
+        log.info("%s: %d ICD(s) skipped — no office_id mapping: %s",
+                 captainship, len(unmapped_this_run), ", ".join(unmapped_this_run))
+
     log.info("done")
     return 0, {
         "inaccessible": inaccessible_this_run,
         "denied":       denied_this_run,
         "fetch_errors": fetch_errors_this_run,
+        "unmapped":     unmapped_this_run,
     }
 
 
@@ -1157,6 +1164,7 @@ def main() -> int:
     skipped: List[str] = []
     denied: List[str] = []
     fetch_errors: List[str] = []
+    unmapped: List[str] = []
     carlos_result = None
     for cs in targets:
         cs_rc, cs_result = run_captainship(cs, args, week_start, log)
@@ -1164,6 +1172,7 @@ def main() -> int:
         skipped       += cs_result.get("inaccessible", [])
         denied        += cs_result.get("denied", [])
         fetch_errors  += cs_result.get("fetch_errors", [])
+        unmapped      += cs_result.get("unmapped", [])
         if cs == "Carlos":
             carlos_result = cs_result
 
@@ -1185,12 +1194,23 @@ def main() -> int:
         # id 'daily-focus' in dashboard.py.
         try:
             from automations.shared import run_manifest as _rm
-            uniq = sorted(set(skipped))
+            # Include UNMAPPED ICDs (no office id) alongside access failures —
+            # both mean the report is incomplete. Dropping the unmapped ones
+            # silently is exactly what let a 24-ICD-short run report "clean"
+            # (Megan 2026-06-25). reconcile reads this manifest, so a non-empty
+            # failed list now correctly marks the run INCOMPLETE, not clean.
+            uniq = sorted(set(skipped) | set(unmapped))
             if uniq:
+                bits = []
+                if set(skipped):
+                    bits.append(f"{len(set(skipped))} not pulled (no AppStream access)")
+                if set(unmapped):
+                    bits.append(f"{len(set(unmapped))} unmapped "
+                                f"(need an office id via 'Map new ICDs')")
                 _rm.write_manifest(
                     "daily-focus", failed=uniq,
                     retry_args=["--retry-inaccessible"], kind="ICD",
-                    note=f"{len(uniq)} ICD(s) not pulled (no AppStream access).")
+                    note="; ".join(bits) + ".")
             else:
                 _rm.mark_clean("daily-focus", kind="ICD")
         except Exception as e:  # noqa: BLE001 — manifest is best-effort
