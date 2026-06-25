@@ -67,6 +67,14 @@ _OUTPUT_DIR = Path(__file__).resolve().parent.parent.parent / "output"
 # it's persisted here so we never ask again. Sentinel "__SKIP__" marks rows
 # the user told us aren't real ICDs (e.g. header text) — those names are
 # silently ignored on every run.
+# Two-layer mappings (Megan 2026-06-25): the COMMITTED base file syncs the
+# known-good ICD→office map to every machine via git, so the mini resolves the
+# same ICDs the laptop does. The LOCAL (gitignored) output/ file layers on top
+# for per-machine additions made through the Hub's "Map new ICDs" prompt — it
+# stays gitignored on purpose so those writes never dirty the tree and block the
+# mini's git self-update (the stale-code bug from this morning). Promote local
+# additions into the base when you want to share them.
+BASE_OVERRIDES_PATH = Path(__file__).resolve().parent / "icd_office_mappings.json"
 OVERRIDES_PATH = Path(__file__).resolve().parent.parent.parent / "output" / "icd_office_mappings.json"
 SKIP_SENTINEL = "__SKIP__"
 
@@ -719,16 +727,20 @@ def fill_icd_section(
 
 
 def _load_overrides() -> dict:
-    """Read user-confirmed ICD→office-id overrides. Returns {} if missing
-    or unreadable. Keys are lowercased ICD names; values are office-id
+    """Read user-confirmed ICD→office-id overrides: the COMMITTED base file
+    merged with the LOCAL (gitignored) output/ file, local winning. Returns {}
+    if neither exists. Keys are lowercased ICD names; values are office-id
     strings (or the SKIP_SENTINEL for non-ICD rows the user dismissed)."""
-    if not OVERRIDES_PATH.exists():
-        return {}
-    try:
-        data = json.loads(OVERRIDES_PATH.read_text())
-        return {str(k).lower().strip(): str(v) for k, v in data.items()}
-    except Exception:
-        return {}
+    merged: dict = {}
+    for path in (BASE_OVERRIDES_PATH, OVERRIDES_PATH):  # base first, local last (local wins)
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text())
+            merged.update({str(k).lower().strip(): str(v) for k, v in data.items()})
+        except Exception:
+            continue
+    return merged
 
 
 def _save_overrides(overrides: dict) -> None:
