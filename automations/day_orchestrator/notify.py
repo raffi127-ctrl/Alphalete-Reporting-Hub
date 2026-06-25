@@ -68,6 +68,51 @@ def send_session_alert(cfg, ds, reason, *, channel="email", dry_run=False):
     _dispatch(cfg, subj, html, text, channel, dry_run, tag="session-alert")
 
 
+# ---------------- failure diagnosis (real reason + copy-paste fix) ----------------
+# Megan 2026-06-25: a failure that only says "exit 1, see log" + a bare module
+# path is a back-and-forth, not a fix. Read the log tail for the ACTUAL cause and
+# emit the EXACT terminal commands to correct it — paste once, data flows.
+
+APPSTREAM_RESEED = ("PYTHONPATH=. .venv/bin/python -m "
+                    "automations.shared.tableau_patchright --appstream-login")
+
+
+def _runnable(report_id, cfg) -> str:
+    """The fully-runnable re-run command (not a guess off the id)."""
+    r = cfg.reports.get(report_id)
+    if r and r.command:
+        parts = list(r.command) + list(r.base_args)
+        rest = "" if len(parts) == 1 else " " + " ".join(parts[1:])
+        return "PYTHONPATH=. .venv/bin/python -m " + parts[0] + rest
+    return f"PYTHONPATH=. .venv/bin/python -m automations.{report_id}.run"
+
+
+def _log_tail(report_id, date, n: int = 60) -> str:
+    try:
+        p = REPO_ROOT / "output" / "logs" / f"orch-{date}-{report_id}.log"
+        return "\n".join(p.read_text(errors="replace").splitlines()[-n:]).lower()
+    except Exception:
+        return ""
+
+
+def _diagnose(rs, cfg, date):
+    """(human reason, needs_appstream_reseed, runnable re-run) for a failure."""
+    rerun = _runnable(rs.report_id, cfg)
+    low = _log_tail(rs.report_id, date)
+    if ("appstream session expired" in low or "no live token" in low
+            or "0 rqst token" in low):
+        return ("ApplicantStream session expired — Cloudflare timed it out; "
+                "needs a one-time re-seed (log in as rcaptain, clear the check), "
+                "then re-run.", True, rerun)
+    if ("invalid_grant" in low or "token has been expired" in low
+            or "refresherror" in low):
+        return ("Google auth token expired — re-auth, then re-run.", False, rerun)
+    if "turnstile" in low or "ownerville session is stale" in low:
+        return ("Ownerville session stale — re-seed it in the session-holder "
+                "window on the mini, then re-run.", False, rerun)
+    return (rs.last_reason or rs.status or "failed — see the log.", False, rerun)
+
+
 # ---------------- body builders ----------------
 
 def _build_body(cfg, ds, *, checkpoint: bool):
@@ -90,17 +135,34 @@ def _build_body(cfg, ds, *, checkpoint: bool):
         text.append(f"❌ NEEDS ATTENTION ({len(attention)}):")
         html.append(f"<h3 style='color:#c0392b'>❌ Needs attention ({len(attention)})</h3>"
                     "<ol style='font-size:14px;line-height:1.6'>")
+        reruns, need_reseed = [], False
         for rs in attention:
             name = rs.display_name or rs.report_id
-            why = rs.last_reason or rs.status
+            reason, reseed, rerun = _diagnose(rs, cfg, ds.date)
             if rs.missing:
-                why += " — missing: " + "; ".join(rs.missing)
-            cmd = _rerun_cmd(rs.report_id, cfg)
-            text.append(f"  • {name} — {why}")
-            text.append(f"      re-run: {cmd}")
-            html.append(f"<li><b>{_esc(name)}</b> — {_esc(why)}"
-                        f"<br><code>{_esc(cmd)}</code></li>")
+                reason += " — missing: " + "; ".join(rs.missing)
+            need_reseed = need_reseed or reseed
+            reruns.append(rerun)
+            text.append(f"  • {name} — {reason}")
+            html.append(f"<li><b>{_esc(name)}</b> — {_esc(reason)}</li>")
         html.append("</ol>")
+        # ONE copy-paste fix block: re-seed once if a session expired, then re-run
+        # every failed report. Paste it in Terminal on the mini and it's corrected
+        # — no log-digging, no back-and-forth (Megan 2026-06-25).
+        fix = [f"cd {REPO_ROOT}"]
+        if need_reseed:
+            fix.append(APPSTREAM_RESEED
+                       + "   # browser opens — log in as rcaptain + clear the check")
+        fix += reruns
+        text.append("")
+        text.append("FIX — paste in Terminal on the mini:")
+        for line in fix:
+            text.append(f"    {line}")
+        html.append("<div style='margin:8px 0 2px'><b>Fix — paste in Terminal "
+                    "on the mini:</b></div>"
+                    "<pre style='background:#f4f4f4;padding:10px;border-radius:5px;"
+                    "font-size:13px;white-space:pre-wrap;line-height:1.5'>"
+                    f"{_esc(chr(10).join(fix))}</pre>")
     elif not checkpoint:
         text.append("")
         text.append("✅ Everything ran clean — nothing to do.")
