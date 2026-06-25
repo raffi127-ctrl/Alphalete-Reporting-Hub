@@ -184,16 +184,20 @@ def fill_captainship(ws, anchor: CaptainAnchor, today, per_for,
     for row, name in anchor.daily:
         per = per_for(name, metric)
         if not per:
-            # No sales found in any view this week — write "NS" (No Sales)
-            # across the row instead of 0 (Megan 2026-06-03), so a zero-
-            # production rep reads clearly rather than looking like missing data.
+            # No match in any pull view this week. Write 0 on COMPLETED days
+            # (not "NS"), so it reads as a real zero AND matches the VA tab's 0s
+            # (Eve 2026-06-25, superseding the 2026-06-03 "NS" choice). A 0 by a
+            # BROKEN NAME (board spelling ≠ Tableau) is no longer conflated with
+            # a real 0: the name-break guard in run_captainships flags any 0/NS
+            # row whose sales sit orphaned under a near-match name. Today/future
+            # stay blank — they haven't happened yet. Running total = the same
+            # live =SUM as a matched row (evaluates to 0).
             missing.append(name)
-            # NS only on completed days (< today); today + future blank out —
-            # they haven't happened yet (Megan 2026-06-03).
             updates.append({"range": f"{L0}{row}:{L1}{row}",
-                            "values": [["" if d >= today else "NS"
+                            "values": [["" if d >= today else 0
                                         for d in days]]})
-            updates.append({"range": f"{runL}{row}", "values": [["NS"]]})
+            updates.append({"range": f"{runL}{row}",
+                            "values": [[f"=SUM({L0}{row}:{L1}{row})"]]})
             continue
         updates.append({"range": f"{L0}{row}:{L1}{row}",
                         "values": [["" if d >= today else int(per.get(d, 0))
@@ -466,18 +470,79 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
             total_icds += len(anchor.daily)
             all_missing += missing
         summary["filled"].append(title)
+        all_missing = list(dict.fromkeys(all_missing))   # dedupe (a rep absent
+        #   from BOTH fiber boxes was listed twice)
         if all_missing:
             summary["missing"][title] = all_missing
         box_desc = "+".join(v or "single" for v, _ in boxes)
         logfn(f"    {title}: {len(boxes)} box ({box_desc}), {total_icds} ICD-row(s)"
-              + (f", 0-sales/not in program view (NS): {all_missing}"
-                 if all_missing else ""))
+              + (f", 0-sales (filled 0): {all_missing}" if all_missing else ""))
     logfn(f"=== captainships filled: {summary['filled']} "
-          f"| 0-sales (NS): {summary['missing']} ===")
+          f"| 0-sales: {summary['missing']} ===")
+
+    # NAME-BREAK GUARD: a row filled 0 is a REAL zero OR a name whose Tableau
+    # spelling differs (its sales sit orphaned in the pull, e.g. board "Steve
+    # McElwee" vs Tableau "Steven McElwee"). Flag the second so a "0 by broken
+    # name" never passes as a real 0 — the fix is the ICD Aliases sheet, so we
+    # WARN, we don't auto-match. Scoped to a fuzzy near-match of a 0 row against
+    # owners that landed on NO board row: the all-teams pull carries ~120 legit
+    # non-roster owners, so a blanket "orphan → warn" would flood.
+    summary["name_warnings"] = _name_break_warnings(
+        grid, captains, prog, aliases, summary["missing"], logfn)
+
     if failed_programs:
         logfn(f"  ⚠ PROGRAM PULL(S) FAILED this run: {failed_programs} — those "
               f"programs are blank for all captainships; re-run to retry.")
     return summary
+
+
+def _name_break_warnings(grid, captains, prog, aliases, missing_by_cap,
+                         logfn=print, cutoff: float = 0.82) -> list:
+    """Return [(captain, board_name, pull_owner, units), …] for every 0/NS row
+    that has a close-but-not-exact name in the pull WITH sales — a suspected
+    alias/typo. Read-only; logs a warning block when any are found."""
+    import difflib
+    from automations.alphalete_org_report.tableau_http import _norm_owner
+    prim = {"fiber": "Total", "b2b": "count", "nds": "Total"}
+    owner_tot, all_keys = {}, set()
+    for tk, pdata in prog.items():
+        for o, m in pdata.items():
+            all_keys.add(o)
+            tot = sum(int(v) for v in m.get(prim.get(tk, "Total"), {}).values())
+            owner_tot[o] = max(owner_tot.get(o, 0), tot)
+    # owners that DID land on a board row are legitimately placed, not orphans
+    matched = set()
+    for title, _ in captains:
+        try:
+            for _, anc in find_captainship_boxes(grid, title):
+                for _, nm in anc.daily:
+                    k = next((x for x in _candidates_for_name(nm, aliases)
+                              if x in all_keys), None)
+                    if k:
+                        matched.add(k)
+        except Exception:
+            continue
+    pool = [o for o in all_keys if owner_tot[o] > 0 and o not in matched]
+    warnings = []
+    for title, names in missing_by_cap.items():
+        for nm in dict.fromkeys(names):
+            # only rows that matched NOTHING anywhere are name-break candidates;
+            # a rep present in the pull (e.g. sold all-units, 0 New Internet) is
+            # a real zero for that box, not a broken name.
+            if any(x in all_keys for x in _candidates_for_name(nm, aliases)):
+                continue
+            near = difflib.get_close_matches(_norm_owner(nm), pool, n=1,
+                                             cutoff=cutoff)
+            if near:
+                warnings.append((title, nm, near[0], owner_tot[near[0]]))
+    if warnings:
+        logfn("  ⚠ SUSPECTED NAME BREAKS (a 0 row but a near-name owner sold — "
+              "add an alias in the ICD Aliases sheet; nothing auto-matched):")
+        for title, nm, o, val in warnings:
+            logfn(f"      [{title}] '{nm}' → 0, but pull has '{o}' = {val} units")
+    else:
+        logfn("  ✅ no suspected name breaks — every 0 row is a real zero.")
+    return warnings
 
 
 def _candidates_for_name(name, aliases):
