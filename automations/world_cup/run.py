@@ -101,6 +101,11 @@ def main(argv=None) -> int:
                    help="Full run + render 2 PDFs to output/, but don't post.")
     p.add_argument("--round", type=int, default=None,
                    help="Force the round size (e.g. 144). Skips auto-detection.")
+    p.add_argument("--finals", action="store_true",
+                   help="Pull the named 'Finals' sheet instead of a 'Round of N'. "
+                        "The numeric auto-detection can't find the Finals (it's "
+                        "not 'Round of N', and the still-populated Round-of-36 "
+                        "sheet would win), so the Finals needs this flag.")
     p.add_argument("--test-channel", default=None,
                    help="Post the full message + both existing output/ PDFs to "
                         "this single destination (channel ID, or user ID U… -> "
@@ -129,7 +134,7 @@ def main(argv=None) -> int:
     if args.detect_only:
         print("\n=== World Cup — DETECT ONLY ===")
         with tableau_session(verbose=True) as page:
-            sheets = pull.list_crosstab_sheets(page, verbose=True)
+            sheets = pull.list_crosstab_sheets(page, verbose=True, full_scan=True)
         cands = pull.round_candidates(sheets)
         print(f"\nAll Crosstab sheets ({len(sheets)}):")
         for s in sheets:
@@ -141,14 +146,24 @@ def main(argv=None) -> int:
                   "(then fall forward if it has no data).")
         else:
             print("-> No 'Round of N' sheet found.")
+        grid = pull.data_grid_sheet(sheets)
+        print(f"-> Data-grid sheet: {grid!r}. --finals pins Contest View=Finals "
+              f"and pulls this sheet."
+              if grid else "-> No data-grid sheet found (--finals would error).")
         return 0
 
     # ---- detect + pull (shared by --pull-only, --no-slack, and full run) ----
     with tableau_session(verbose=True) as page:
-        round_size, csv_path, sheets = pull.detect_and_pull(
-            page, OUTPUT_DIR, override_round=args.round, verbose=True)
+        if args.finals:
+            round_size, csv_path, sheets = pull.pull_finals(
+                page, OUTPUT_DIR, verbose=True)
+        else:
+            round_size, csv_path, sheets = pull.detect_and_pull(
+                page, OUTPUT_DIR, override_round=args.round, verbose=True)
 
-    print(f"\nActive round: Round of {round_size}")
+    # round_size is the int N for a numbered round or the sheet name str (Finals).
+    round_desc = round_size if args.finals else f"Round of {round_size}"
+    print(f"\nActive round: {round_desc}")
     print(f"CSV: {csv_path}")
 
     # ---- pull-only: inspect columns + Alphalete match, then stop. ----
@@ -182,7 +197,7 @@ def main(argv=None) -> int:
 
     # ---- render both PDFs ----
     alpha_pdf, public_pdf = _pdf_paths(round_label)
-    print(f"\nRendering PDFs ({round_label} / Round of {round_size})…")
+    print(f"\nRendering PDFs ({round_label} / {round_desc})…")
     render.render_pdfs([
         (alpha_html, alpha_pdf),
         (public_html, public_pdf),

@@ -40,10 +40,11 @@ ROUND_CONFIGS = {
     72:  {"num": 4, "groups": 18,  "group_size": 4, "top_n": 2, "window": "Jun 15-21, 2026", "next": "Round of 36"},
     36:  {"num": 5, "groups": 9,   "group_size": 4, "top_n": 2, "window": "Jun 22-28, 2026", "next": "Finals"},
     # Finals: Smart Circle collapsed the field to 36 reps in 6 groups of 6 and
-    # relabeled the crosstab's first column "Finals Groups". top_n defaults to 2
-    # (every recent round) — correct it here if Chris Williford's round-start
-    # email states a different advance count. No "next" (terminal round).
-    "Finals": {"num": 6, "label": "Finals", "groups": 6, "group_size": 6, "top_n": 2, "window": "Jun 22-28, 2026", "next": ""},
+    # relabeled the crosstab's first column "Finals Groups". Smart Circle changed
+    # the Finals advance rule (per Chris Williford, 2026-06-25): only the top
+    # scorer per group advances now — top_n=1, not 2 like the earlier rounds.
+    # No "next" (terminal round).
+    "Finals": {"num": 6, "label": "Finals", "groups": 6, "group_size": 6, "top_n": 1, "window": "Jun 22-28, 2026", "next": ""},
 }
 
 
@@ -180,8 +181,13 @@ def build_html(csv_path: Path, public: bool,
     NEXT_ROUND = cfg["next"]
     ROUND_TITLE = cfg.get("label") or f"Round {ROUND_NUM}"   # H1 + filename label
     STAGE = _round_label(round_key)                          # subtitle stage line
-    advance_txt = (f"Top {TOP_N} per group advance to {NEXT_ROUND}"
-                   if NEXT_ROUND else f"Top {TOP_N} per group advance")
+    # top_n==1 reads awkwardly as "Top 1 per group advance" — say "winner" instead.
+    if TOP_N == 1:
+        advance_txt = (f"Group winner advances to {NEXT_ROUND}"
+                       if NEXT_ROUND else "Group winner advances")
+    else:
+        advance_txt = (f"Top {TOP_N} per group advance to {NEXT_ROUND}"
+                       if NEXT_ROUND else f"Top {TOP_N} per group advance")
     SUFFIX = " (Public)" if public else ""
 
     # Rank each group by score desc; flag cut-line ties. Alphalete stats are
@@ -240,8 +246,9 @@ def build_html(csv_path: Path, public: bool,
                 f'</div>'
             )
             if m["rank"] == TOP_N:
+                cut_label = "Winner advances ▲" if TOP_N == 1 else f"Top {TOP_N} advance ▲"
                 rows_html.append(
-                    f'<div class="cutline"><span>Top {TOP_N} advance ▲</span></div>')
+                    f'<div class="cutline"><span>{cut_label}</span></div>')
 
         tie_badge = ('<span class="tie-badge" title="cut-line tie — tiebreakers '
                      'will decide">TIE AT CUT</span>' if cut_tie else "")
@@ -315,14 +322,14 @@ body {{ font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; color: 
     <span class="chip">Qualifying: <b>Gig+ New Internet Sales</b></span>
     <span class="chip">Tiebreakers: <b>Wireless &rarr; DTV &rarr; lowest 0-30d cancel% &rarr; lowest churn%</b></span>
     <span class="chip">Total Gig+ across field: <b>{int(total_score)}</b></span>
-    {"" if public else f'<span class="chip">Alphalete in play: <b>{alph_in_play}</b> &middot; In top {TOP_N}: <b>{alph_top}</b> &middot; Leading group: <b>{alph_leading}</b></span>'}
+    {"" if public else (f'<span class="chip">Alphalete in play: <b>{alph_in_play}</b> &middot; Winning group: <b>{alph_top}</b></span>' if TOP_N == 1 else f'<span class="chip">Alphalete in play: <b>{alph_in_play}</b> &middot; In top {TOP_N}: <b>{alph_top}</b> &middot; Leading group: <b>{alph_leading}</b></span>')}
     {"" if public else f'<span class="chip">Showing: <b>{shown_groups} of {total_groups}</b> groups (Alphalete-touched only)</span>'}
   </div>
 </div>
 <div class="stats">
-  <div class="k"><span class="sw sw-adv"></span> Top {TOP_N} (advancing)</div>
+  <div class="k"><span class="sw sw-adv"></span> {"Group winner (advancing)" if TOP_N == 1 else f"Top {TOP_N} (advancing)"}</div>
   <div class="k"><span class="sw sw-elim"></span> Bottom {cfg["group_size"]-TOP_N} (need to climb)</div>
-  <div class="k"><span class="sw sw-tie"></span> Tie at the cut &mdash; tiebreakers will decide ({cut_tie_groups} groups)</div>
+  <div class="k"><span class="sw sw-tie"></span> Tie at the cut &mdash; tiebreakers will decide ({cut_tie_groups} group{"" if cut_tie_groups == 1 else "s"})</div>
   {"" if public else '<div class="k"><span class="sw sw-alpha"></span> &#9733; Alphalete Marketing reps</div>'}
 </div>
 <div class="grid">{"".join(cards)}</div>
