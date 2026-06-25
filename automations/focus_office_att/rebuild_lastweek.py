@@ -183,6 +183,34 @@ def rebuild(monday: dt.date, only: str | None, log_fh, say,
             say(f"   ⚠ {e}  — this week's production may be incomplete; re-run "
                 f"the normal daily report to finish it.")
 
+    # 9. Re-extend the frozen LAST WEEK conditional shading. The scrape/Tableau
+    #    passes run reset_conditional_formatting, which re-ranges the column
+    #    shading to the CURRENT zone — leaving the frozen block WHITE (data but
+    #    no color-coding). The normal daily run does this as its last step; the
+    #    rebuild skipped it, so rebuilt tabs landed unshaded (Megan 2026-06-25).
+    #    Must be the LAST conditional op. Full run only (org-wide tabs).
+    if not only:
+        say("9. re-extending LAST WEEK conditional shading…")
+        from automations.focus_office_att.daily import _normalize_lastweek_conditional
+        import time as _t
+        nc = 0
+        for ws in sh.worksheets():
+            if ws.title in NON_OWNER_TABS:
+                continue
+            for _att in range(3):
+                try:
+                    _normalize_lastweek_conditional(ws)
+                    nc += 1
+                    break
+                except Exception as e:
+                    if "429" in str(e) and _att < 2:
+                        _t.sleep(20)
+                        continue
+                    say(f"   {ws.title}: shading re-extend skipped — {type(e).__name__}")
+                    break
+            _t.sleep(0.4)
+        say(f"   ✓ re-extended shading on {nc} tab(s)")
+
     say("=== DONE ===")
     if only:
         say(f'Verify "{only}": bottom = last week (activity), top = this week, '
