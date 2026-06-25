@@ -578,9 +578,15 @@ def main() -> int:
     # Resume: skip owners already scraped OK in an interrupted run earlier
     # today. Only normal full / daily runs use the checkpoint — targeted
     # --only / --skip / --week-start / --dry-run runs always scrape fresh.
-    checkpoint_active = not (only or skip or args.week_start or args.dry_run
-                             or backfill_lastweek)
-    run_key = f"{today.isoformat()}|{'daily' if args.daily_window else 'full'}"
+    # --week-start runs (the rebuild's full-week scrapes) DO get the checkpoint
+    # now — they're the longest, most interruptible scrapes, so resume matters
+    # most there (Megan 2026-06-25: the rebuild restarted from owner 1 every
+    # time). run_key includes the week so the last-week (6/15) and this-week
+    # (6/22) scrapes never share a checkpoint. --only/--skip/--dry-run and the
+    # frozen-block backfill mode still always scrape fresh.
+    checkpoint_active = not (only or skip or args.dry_run or backfill_lastweek)
+    run_key = (f"{today.isoformat()}|{args.week_start or 'cur'}|"
+               f"{'daily' if args.daily_window else 'full'}")
     resumed: list[str] = []
     if checkpoint_active:
         cp = _read_checkpoint()
