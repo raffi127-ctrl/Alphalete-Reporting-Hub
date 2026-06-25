@@ -75,12 +75,20 @@ def _export_ownerville(ctx) -> int:
 
 def _export_appstream(ctx) -> int:
     """Write the live applicantstream cookies (CFID/CFTOKEN + rqst SSO token) to
-    APPSTREAM_STORAGE_STATE. Only called when the console is confirmed live."""
+    APPSTREAM_STORAGE_STATE. Only called when the console is confirmed live.
+
+    GUARD (Megan 2026-06-25): only export if the session actually carries an
+    rqst SSO token. A degraded/SSO-only console can have applicantstream cookies
+    but ZERO rqst tokens — writing that clobbers a good manual rcaptain login
+    and kills the direct-session reports (daily_focus, recruiter_retention).
+    No token → keep the last good export untouched."""
     cookies = ctx.storage_state().get("cookies", [])
     ap = [c for c in cookies if "applicantstream" in (c.get("domain") or "")]
-    if ap:
+    n_rqst = sum(1 for c in ap if (c.get("name") or "").lower().startswith("rqst"))
+    if ap and n_rqst:
         APPSTREAM_STORAGE_STATE.write_text(json.dumps({"cookies": ap, "origins": []}))
-    return len(ap)
+        return len(ap)
+    return 0
 
 
 def _warm_appstream(ctx, page, verbose: bool = False) -> bool:
