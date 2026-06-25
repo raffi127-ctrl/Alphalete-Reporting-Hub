@@ -141,14 +141,36 @@ def _recommended_bring(s: dict) -> str:
     return ", ".join(items)
 
 
+def _condition_emoji(s: dict) -> str:
+    """Header icon reflecting the actual sky."""
+    c = (s.get("conditions") or "").lower()
+    if "thunder" in c:
+        return "⛈️"
+    if "freezing" in c:
+        return "🧊"
+    if "snow" in c or "sleet" in c:
+        return "❄️"
+    if "rain" in c or "shower" in c or "drizzl" in c:
+        return "🌧️"
+    if "fog" in c:
+        return "🌫️"
+    if "partly" in c:
+        return "⛅"
+    if "cloud" in c:
+        return "☁️"
+    if "sunny" in c or "clear" in c:
+        return "☀️"
+    return "🌤️"
+
+
 def _build_message(s: dict) -> str:
     """The plain daily forecast — no greeting, hype, nicknames, or sign-off."""
     return "\n".join([
-        "Today's Weather Forecast",
-        f"Temp: high {s['hi']}°F / low {s['lo']}°F",
-        f"Precipitation: {_precipitation(s)}",
-        f"Recommended dressing: {_recommended_dressing(s)}",
-        f"Recommended to bring: {_recommended_bring(s)}",
+        f"{_condition_emoji(s)} Today's Weather Forecast",
+        f"🌡️ Temp: high {s['hi']}°F / low {s['lo']}°F",
+        f"🌧️ Precipitation: {_precipitation(s)}",
+        f"👕 Recommended dressing: {_recommended_dressing(s)}",
+        f"🎒 Recommended to bring: {_recommended_bring(s)}",
     ])
 
 
