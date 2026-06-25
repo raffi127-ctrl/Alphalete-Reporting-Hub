@@ -734,7 +734,15 @@ def main() -> int:
     except Exception as e:
         print(f"  ⚠ couldn't write scrape-results file: {e}")
 
-    return 0 if not bad else 1
+    # Per-owner flagged skips (not in OV / no access) are SURFACED — scrape_results
+    # + this SUMMARY + per-tab banners + the daily manifest — and must NOT abort a
+    # run that otherwise worked: the rebuild/daily still has to freeze the owners
+    # that DID scrape (Megan 2026-06-25: Melik-not-in-OV aborted a clean 27/28
+    # rebuild right before the freeze). Fail the run only on a SESSION-level
+    # failure (the ownerville rqst died, so owners couldn't reach the console) or
+    # if NOTHING scraped at all.
+    session_dead = [o for o, s in bad if s.startswith("no master rqst")]
+    return 1 if (not ok or session_dead) else 0
 
 
 if __name__ == "__main__":
