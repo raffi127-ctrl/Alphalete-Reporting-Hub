@@ -242,16 +242,29 @@ def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
             recon = reconcile.ReconResult(ok=True, unknown=True, note="simulated")
         else:
             recon = reconcile.verify(r, target, dry_run=dry_run)
+        done = False
         if recon.ok and not recon.unknown:
             ds.set(r.report_id, state.DONE, reason=recon.note)
             _log(f"  {r.report_id}: DONE — {recon.note}")
+            done = True
         elif recon.unknown:
             # Ran clean but we can't verify cells yet (verify not wired).
             ds.set(r.report_id, state.DONE, reason=f"ran; {recon.note}")
             _log(f"  {r.report_id}: DONE (unverified) — {recon.note}")
+            done = True
         else:
             ds.set(r.report_id, state.INCOMPLETE, reason=recon.note, missing=recon.missing)
             _log(f"  {r.report_id}: INCOMPLETE — {recon.note}: {', '.join(recon.missing)}")
+
+        # Mark it ran on the Hub (shared "Hub Activity" tab) so the Hub reflects
+        # mini runs, not just click-runs (Megan 2026-06-25). Best-effort.
+        if done and not (dry_run or simulate):
+            try:
+                from automations.day_orchestrator import hub_publish
+                if hub_publish.publish_done(r.report_id, r.display_name):
+                    _log(f"  {r.report_id}: ✓ marked ran on the Hub")
+            except Exception as e:
+                _log(f"  {r.report_id}: Hub publish skipped ({type(e).__name__}: {str(e)[:80]})")
 
 
 def _run_report(r, target, *, dry_run, simulate):
