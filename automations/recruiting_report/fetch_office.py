@@ -158,8 +158,13 @@ def _switch_office(page: Page, office_id: str, owner_hint: str = "") -> bool:
         # Office isn't accessible in this AS account. Caller should skip.
         return False
 
-    # Click the item — this triggers AppStream's office-switch (page reload)
-    with page.expect_navigation(timeout=15000, wait_until="load"):
+    # Click the item — this triggers AppStream's office-switch (page reload).
+    # 30s + domcontentloaded (was 15s + "load"): ApplicantStream's report page is
+    # heavy (jQuery/select2/socket.io), so waiting for full "load" routinely blew
+    # the 15s budget and surfaced as a per-ICD timeout every run (Megan 2026-06-25,
+    # "running with no errors"). The office switch IS the navigation, so a ready
+    # DOM is enough — the caller's week-set + table read wait on the data after.
+    with page.expect_navigation(timeout=30000, wait_until="domcontentloaded"):
         target_item.click()
     return True
 
