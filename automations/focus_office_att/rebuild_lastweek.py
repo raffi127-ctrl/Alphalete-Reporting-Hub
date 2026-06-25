@@ -51,6 +51,13 @@ from automations.focus_office_att.daily import (
 RUN_ALL = "automations.focus_office_att.run_all_owners"
 STEP7 = "automations.focus_office_att.step7_download_tableau"
 
+# The rebuild scrapes a FULL WEEK (7 days × ~28 owners, ~3 min/owner) — far
+# heavier than the daily 2-day window that PHASE2_TIMEOUT_S (60 min) is sized
+# for. A full-week scrape needs ~85 min, so the 60-min cap killed it around
+# owner 20 EVERY time — the silent reason the full rebuild never finished
+# (Megan 2026-06-25). Give the rebuild's scrapes real headroom.
+REBUILD_SCRAPE_TIMEOUT_S = 150 * 60
+
 
 class Abort(Exception):
     pass
@@ -112,7 +119,7 @@ def rebuild(monday: dt.date, only: str | None, log_fh, say,
         # 2. Scrape last week's ownerville activity into the top block.
         say("2. scraping last week's activity (ownerville)…")
         a = ["--week-start", last_monday.isoformat()] + (["--only", only] if only else [])
-        _phase(RUN_ALL, a, log_fh, say, PHASE2_TIMEOUT_S, "last-week scrape")
+        _phase(RUN_ALL, a, log_fh, say, REBUILD_SCRAPE_TIMEOUT_S, "last-week scrape")
 
         # 3. Fill last week's production (Tableau). Org-wide export — can't scope
         #    to one tab, so SKIP in --only preview. Non-fatal if it fails.
@@ -169,7 +176,7 @@ def rebuild(monday: dt.date, only: str | None, log_fh, say,
     # 7. Scrape this week's activity into the (now clean) top block.
     say("7. scraping this week's activity (ownerville)…")
     a = ["--week-start", this_monday.isoformat()] + (["--only", only] if only else [])
-    _phase(RUN_ALL, a, log_fh, say, PHASE2_TIMEOUT_S, "this-week scrape")
+    _phase(RUN_ALL, a, log_fh, say, REBUILD_SCRAPE_TIMEOUT_S, "this-week scrape")
 
     # 8. Fill this week's production (Tableau) — full run only.
     if only:
