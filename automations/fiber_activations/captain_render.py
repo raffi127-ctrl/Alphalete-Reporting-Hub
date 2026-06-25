@@ -84,9 +84,15 @@ def _data_rows(ws, header_row, avg_row, detect):
     return rows or [last]
 
 
-def _render_mirror(ws, today, out_path: Path, title: str, cols, detect) -> Path:
+def _render_mirror(ws, today, out_path: Path, title: str, cols, detect,
+                   with_secondary: bool = False) -> Path:
     """Draw title + header + the data-bearing WE rows (≤8), each cell filled with
-    its real effective bg from the sheet. Skips columns not in `cols`."""
+    its real effective bg from the sheet. Skips columns not in `cols`.
+
+    When `with_secondary` is set (captain violet tables only), the 4 secondary
+    tables below the AVG row (overrides / metrics / churn + activation tiers) are
+    rendered underneath — same region/process as Raf's render.py, mirroring each
+    captain's real cell colors. Country (orange) stays single-band."""
     header_row, avg_row = _find_we_and_avg(ws)
     all_rows = _data_rows(ws, header_row, avg_row, detect)
     window = all_rows[-WINDOW:]
@@ -112,9 +118,19 @@ def _render_mirror(ws, today, out_path: Path, title: str, cols, detect) -> Path:
         row = grid[r_off].get("values", []) if 0 <= r_off < len(grid) else []
         return row[i] if i < len(row) else {}
 
+    # Secondary block (captain tables only) — read it up front so the canvas is
+    # sized to fit it. Same anchors/region as Raf (avg_row+3 .. avg_row+19).
+    sec = None
+    if with_secondary:
+        s_cells, s_topleft, s_covered, n_sec = R._read_secondary(ws, avg_row)
+        sec = (s_cells, s_topleft, s_covered, n_sec)
+
     band_w = sum(w for _, _, w in cols)
-    total_w = band_w + R.PAD * 2
+    main_w = band_w + R.PAD * 2
+    total_w = (max(band_w, sum(R.SEC_COL_W)) + R.PAD * 2) if sec else main_w
     total_h = R.TITLE_H + R.HEADER_H + R.ROW_H * len(draw_rows) + R.PAD * 2
+    if sec:
+        total_h += R.BAND_GAP + R.SEC_ROW_H * sec[3]
     img, d = R._new_canvas(total_w, total_h)
     f = R._fonts()
     x0 = R.PAD * R.SS
@@ -158,6 +174,14 @@ def _render_mirror(ws, today, out_path: Path, title: str, cols, detect) -> Path:
             cx += w * R.SS
         y += R.ROW_H * R.SS
 
+    # Secondary band underneath (captain tables only), after a gap — mirrors the
+    # 4 tables' real bg/bold/merges via Raf's generic drawer.
+    if sec:
+        s_cells, s_topleft, s_covered, n_sec = sec
+        sec_y = y + R.BAND_GAP * R.SS
+        R._draw_secondary_band(d, x0, sec_y, s_cells, s_topleft, s_covered,
+                               n_sec, f["sec"], f["sec_b"])
+
     img = img.resize((total_w, total_h), Image.LANCZOS)
     img.save(out_path)
     return out_path
@@ -173,7 +197,8 @@ def render_all(sh, today: dt.date, out_dir: Path) -> dict:
         ws = sh.worksheet(cap.tab)
         name = f"Captainship Activations - {cap.team} by {md}"
         out[cap.team] = _render_mirror(ws, today, out_dir / f"{name}.png",
-                                       name, CAPTAIN_COLS, CAPTAIN_DETECT)
+                                       name, CAPTAIN_COLS, CAPTAIN_DETECT,
+                                       with_secondary=True)
     ws0 = sh.worksheet(C.CAPTAINS[0].tab)
     cname = f"Country Captainship Activations by {md}"
     out["Country"] = _render_mirror(ws0, today, out_dir / f"{cname}.png",
