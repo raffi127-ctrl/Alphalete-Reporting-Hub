@@ -981,7 +981,14 @@ def _run_phase(module: str, extra_args: list[str], log_fh,
         popen_kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         popen_kw["start_new_session"] = True
+    # stdin=DEVNULL: a phase must NEVER inherit the terminal's TTY. The owner
+    # scraper falls back to an interactive input() when a tab name doesn't match
+    # ownerville; spawned from a rebuild/orchestrator that still has a TTY, that
+    # prompt would HANG the whole unattended run until the phase watchdog killed
+    # it (Megan 2026-06-25: Melik El Jaiez stalled the 6/15 rebuild at owner
+    # 19/28). Closed stdin → isatty() is False → it auto-skips + flags instead.
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            stdin=subprocess.DEVNULL,
                             text=True, bufsize=1, cwd=str(WORKSPACE), **popen_kw)
     timed_out = {"hit": False}
     timer = None
