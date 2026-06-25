@@ -83,6 +83,52 @@ def _scoped_wipe_current(sh, title: str) -> None:
         sh.batch_update({"requests": [{"setBasicFilter": {"filter": bf}}]})
 
 
+def _finalize(sh, say) -> None:
+    """Apply the daily run's full finalization to every owner tab so a rebuild's
+    output matches a clean daily run: the headroom SPACER between the current
+    block and the LAST WEEK block, the OV-access banners, the amber tab colors,
+    and the frozen-block conditional SHADING (must be the last conditional op).
+    The rebuild used to only re-shade — missing the spacer + banners + colors,
+    which is why rebuilt tabs read 'no gap + wrong formatting' (Megan
+    2026-06-25). Each pass is best-effort so one hiccup doesn't drop the rest.
+    Reusable standalone: `from rebuild_lastweek import _finalize`."""
+    import time as _t
+    from automations.focus_office_att.daily import (
+        collapse_headroom, _refresh_pending_banners, refresh_tab_colors,
+        _normalize_lastweek_conditional)
+    try:
+        n = collapse_headroom(sh, logfn=say)
+        say(f"   ✓ headroom spacer collapsed on {n} tab(s)")
+    except Exception as e:
+        say(f"   headroom spacer skipped — {type(e).__name__}: {str(e)[:80]}")
+    try:
+        _refresh_pending_banners(sh, say)
+    except Exception as e:
+        say(f"   banner refresh skipped — {type(e).__name__}")
+    try:
+        refresh_tab_colors(sh)
+        say("   ✓ tab colors refreshed")
+    except Exception as e:
+        say(f"   tab-color refresh skipped — {type(e).__name__}")
+    nc = 0
+    for ws in sh.worksheets():
+        if ws.title in NON_OWNER_TABS:
+            continue
+        for _att in range(3):
+            try:
+                _normalize_lastweek_conditional(ws)
+                nc += 1
+                break
+            except Exception as e:
+                if "429" in str(e) and _att < 2:
+                    _t.sleep(20)
+                    continue
+                say(f"   {ws.title}: shading skipped — {type(e).__name__}")
+                break
+        _t.sleep(0.4)
+    say(f"   ✓ re-extended shading on {nc} tab(s)")
+
+
 def _phase(module, args, log_fh, say, timeout_s, label) -> None:
     say(f"  $ {module} {' '.join(args)}")
     rc = _run_phase(module, args, log_fh, timeout_s=timeout_s)
@@ -190,33 +236,14 @@ def rebuild(monday: dt.date, only: str | None, log_fh, say,
             say(f"   ⚠ {e}  — this week's production may be incomplete; re-run "
                 f"the normal daily report to finish it.")
 
-    # 9. Re-extend the frozen LAST WEEK conditional shading. The scrape/Tableau
-    #    passes run reset_conditional_formatting, which re-ranges the column
-    #    shading to the CURRENT zone — leaving the frozen block WHITE (data but
-    #    no color-coding). The normal daily run does this as its last step; the
-    #    rebuild skipped it, so rebuilt tabs landed unshaded (Megan 2026-06-25).
-    #    Must be the LAST conditional op. Full run only (org-wide tabs).
+    # 9. Finalize formatting to MATCH a clean daily run — the headroom spacer
+    #    between the current block and LAST WEEK, the OV-access banners, the
+    #    amber tab colors, and the frozen-block conditional shading (last op).
+    #    The rebuild used to only re-shade, so rebuilt tabs were missing the
+    #    spacer + banners + colors (Megan 2026-06-25). Full run only.
     if not only:
-        say("9. re-extending LAST WEEK conditional shading…")
-        from automations.focus_office_att.daily import _normalize_lastweek_conditional
-        import time as _t
-        nc = 0
-        for ws in sh.worksheets():
-            if ws.title in NON_OWNER_TABS:
-                continue
-            for _att in range(3):
-                try:
-                    _normalize_lastweek_conditional(ws)
-                    nc += 1
-                    break
-                except Exception as e:
-                    if "429" in str(e) and _att < 2:
-                        _t.sleep(20)
-                        continue
-                    say(f"   {ws.title}: shading re-extend skipped — {type(e).__name__}")
-                    break
-            _t.sleep(0.4)
-        say(f"   ✓ re-extended shading on {nc} tab(s)")
+        say("9. finalizing formatting (spacer + banners + colors + shading)…")
+        _finalize(sh, say)
 
     say("=== DONE ===")
     if only:
