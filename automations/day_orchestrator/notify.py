@@ -127,9 +127,15 @@ def _build_body(cfg, ds, *, checkpoint: bool):
     html.append(f"<h2>{head} — {ds.date}</h2>"
                 f"<p style='color:#555'>{_tally(ds)}</p>")
 
-    # 1) NEEDS ATTENTION first — what failed/incomplete + the exact re-run command.
-    attention = [rs for s in (st.FAILED, st.INCOMPLETE, st.MISSED_NOT_READY,
+    # 1) NEEDS ATTENTION — reports that FAILED (didn't run) + the exact re-run
+    # command. INCOMPLETE reports actually RAN; they're shown separately below as
+    # a note (not a failure), and kept OUT of the fix block — re-running won't
+    # change a known exclusion like an owner who isn't in ownerville (Megan
+    # 2026-06-26: "the daily rep breakdown 'fail' should be a note of a
+    # successful report that left something out, and why").
+    attention = [rs for s in (st.FAILED, st.MISSED_NOT_READY,
                               st.BLOCKED_SESSION) for rs in ds.by_status(s)]
+    noted = ds.by_status(st.INCOMPLETE)
     if attention:
         text.append("")
         text.append(f"❌ NEEDS ATTENTION ({len(attention)}):")
@@ -163,7 +169,25 @@ def _build_body(cfg, ds, *, checkpoint: bool):
                     "<pre style='background:#f4f4f4;padding:10px;border-radius:5px;"
                     "font-size:13px;white-space:pre-wrap;line-height:1.5'>"
                     f"{_esc(chr(10).join(fix))}</pre>")
-    elif not checkpoint:
+    # 1b) RAN — WITH A NOTE: INCOMPLETE reports completed successfully but left
+    # something out for a known reason (e.g. an owner not in ownerville). NOT a
+    # failure — no fix command; the note just says what was left out + why.
+    if noted:
+        text.append("")
+        text.append(f"📝 RAN — WITH A NOTE ({len(noted)}):")
+        html.append(f"<h3 style='color:#8a6d00'>📝 Ran — with a note ({len(noted)})</h3>"
+                    "<ul style='font-size:14px;line-height:1.6'>")
+        for rs in noted:
+            nm = rs.display_name or rs.report_id
+            why = rs.last_reason or "completed; some items left out"
+            text.append(f"  • {nm} — ran ✓; {why}")
+            html.append(f"<li><b>{_esc(nm)}</b> — ran ✓; {_esc(why)}</li>")
+        html.append("</ul>")
+        text.append("   (no action needed — these ran; the note explains what was left out and why.)")
+        html.append("<div style='font-size:13px;color:#777'>No action needed — these ran; "
+                    "the note explains what was left out and why.</div>")
+
+    if not attention and not noted and not checkpoint:
         text.append("")
         text.append("✅ Everything ran clean — nothing to do.")
         html.append("<h3 style='color:#1e7e34'>✅ Everything ran clean — nothing to do.</h3>")
@@ -295,7 +319,7 @@ def _tally(ds):
     trying = len(ds.by_status(st.STILL_TRYING, st.PENDING))
     parts = [f"{done} done"]
     if inc:
-        parts.append(f"{inc} incomplete")
+        parts.append(f"{inc} with a note")
     if fail:
         parts.append(f"{fail} failed")
     if missed:
