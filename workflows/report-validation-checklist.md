@@ -15,6 +15,7 @@ Run through this list before saying any new report automation is "done." Each it
 - [ ] **Every metric in the sheet is wired** — audit each label in the metric-labels dict against the fill function. Missing rows = blank cells = silent gap.
 - [ ] **Column lookups by header label, never by index** ([[feedback-no-hardcoded-columns]]).
 - [ ] **Owner-name normalization handles Tableau "NAME\n[city, state]" format** + the alias list ([[feedback-alias-list]]).
+- [ ] **Terminated-ICD check wired** — the report cross-references the names it fills against the 'Terminated ICDs' tab and alerts the runner about anyone terminated still on it. Add ONE call per run where the full name list is in scope: `from automations.shared import terminated_icds as ti` → `ti.alert_terminated(names, report_label="<this report>")`. Where the report writes a run-manifest, fold the returned flag into the note (advisory — never marks the run failed). Wrap in try/except so the advisory can't break the run. N/A ONLY for pure aggregate/metric reports with no per-person row (daily_metrics, weather, country_metrics, world_cup, brand_audit, int_wow_penetration, leaders_call). See [[project-report-backlog]] item 8.
 - [ ] **Incremental, never destructive** — empty source data = "not yet uploaded," NOT "wipe the cell" ([[feedback-financial-incremental]]).
 - [ ] **Preview on Marcellus first** for any new multi-tab automation ([[feedback-preview-marcellus]]).
 
