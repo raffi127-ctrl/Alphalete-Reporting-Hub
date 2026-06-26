@@ -133,7 +133,15 @@ def _action_reseed_appstream(args: str) -> tuple[bool, str]:
     return ok, res + " (needs a human at the Cloudflare check on the mini)"
 
 
+def _action_ping(args: str) -> tuple[bool, str]:
+    """Liveness check — proves the mini's poller is alive and processing the
+    queue. No side effects; used to verify the deploy."""
+    import socket
+    return True, f"pong from {socket.gethostname()} @ {_now()}"
+
+
 ACTIONS = {
+    "ping": _action_ping,
     "rerun": _action_rerun,
     "restart_holder": _action_restart_holder,
     "reseed_appstream": _action_reseed_appstream,
