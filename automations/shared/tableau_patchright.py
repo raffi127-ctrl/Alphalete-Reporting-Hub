@@ -786,6 +786,8 @@ def _capture_appstream_state(verbose: bool = True) -> bool:
         print("  LOG INTO APPLICANTSTREAM IN THE BROWSER WINDOW THAT OPENED")
         print("  • clear the Cloudflare check if shown")
         print("  • sign in as rcaptain")
+        print("  • THEN go to:  applicantstream.com/index.cfm?p=701")
+        print("    (that loads the office search box — which is what gets saved)")
         print("  Waiting for the office console to load (up to 5 min)…")
         print("=" * 64 + "\n", flush=True)
         seen = False
@@ -794,18 +796,12 @@ def _capture_appstream_state(verbose: bool = True) -> bool:
                 if page.locator("#searchMC").count() > 0:
                     seen = True
                     break
-                # Once the login form is gone the human has authenticated, but
-                # the office switcher (#searchMC) only renders on p=701 — so
-                # nudge there. Guarded on the form being absent so we never hit
-                # p=701 before auth (that's the "Valid User ID Not Obtained"
-                # error). Only nudge when not already on a p=701 URL.
-                login_present = (
-                    page.locator(_PASSWORD_SELECTOR).count() > 0
-                    or page.locator(_APPSTREAM_USERNAME_SELECTOR).count() > 0
-                )
-                if not login_present and "p=701" not in (page.url or ""):
-                    page.goto(f"{APPSTREAM_BASE}?p=701",
-                              wait_until="domcontentloaded")
+                # NO auto-nudge to p=701. The old code jumped there whenever the
+                # login form was absent — but that also fires DURING the
+                # Cloudflare check (no form on screen), bouncing to the "Valid
+                # User ID Not Obtained" error mid-login (Megan 2026-06-26). The
+                # human navigates to p=701 themselves once logged in (see the
+                # printed instructions); we just watch for #searchMC to appear.
             except Exception:
                 pass
             page.wait_for_timeout(5_000)
