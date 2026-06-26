@@ -52,6 +52,12 @@ SURVIVAL_BUFFER_MIN = 90
 # outside it (e.g. an evening proactive re-seed) needs no rerun.
 MORNING_WINDOW = (4, 12)   # [4am, noon)
 
+# Send the proactive "re-seed tonight" ping in the EVENING only — a predictable
+# 6pm heads-up you can act on before bed beats a random-time one (Megan
+# 2026-06-26: "slack Eve at 6pm if she needs the reseed to happen"). The watch
+# still runs every 6 min, but it HOLDS the ping until this hour.
+PING_HOUR = 18   # 6pm (mini local time)
+
 
 def _now() -> dt.datetime:
     return dt.datetime.now()
@@ -175,8 +181,11 @@ def watch(dry_run: bool = False) -> dict:
             state["reran_for"] = today
         state["last_ok"] = True
     else:
-        # Won't survive to the next 4am run — needs a human re-seed. Ping ONCE/day.
-        if state.get("alerted_for") != today:
+        # Won't survive to the next 4am batch — needs a human re-seed. HOLD the
+        # ping until the evening (PING_HOUR) so it lands when Megan can act on it,
+        # then send it once/day. (last_ok is still tracked now, regardless of the
+        # ping time, so morning auto-recovery works whenever the re-seed happens.)
+        if now.hour >= PING_HOUR and state.get("alerted_for") != today:
             _alert(
                 "⚠️ *AppStream re-seed needed* before tomorrow's 4am reports "
                 "(daily_focus + recruiter retention).\n"
