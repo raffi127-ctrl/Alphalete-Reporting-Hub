@@ -38,9 +38,10 @@ from automations.shared.tableau_patchright import APPSTREAM_STORAGE_STATE
 
 WATCH_STATE = Path(__file__).resolve().parents[2] / "output" / "appstream_watch_state.json"
 
-# Slack DM target for the re-seed ping — Megan Hidalgo's user id (from the
-# social-inbox approver list). Tunable: set to a channel id to post to a channel.
-ALERT_SLACK_TARGET = "U04G5HJBGFN"
+# Slack DM recipients for the re-seed ping — BOTH get it so whoever's free does
+# the 30-sec re-seed if the other can't (Megan 2026-06-26). Megan Hidalgo +
+# Evelyn ("Eve") Sobrino. Tunable: add/remove user ids (or a channel id).
+ALERT_SLACK_TARGETS = ["U04G5HJBGFN", "U088E2KJEV8"]
 
 # Reports that depend on the AppStream recruiting console — auto-rerun on recovery.
 APPSTREAM_REPORTS = ["daily_focus_carlos", "daily_focus_raf"]
@@ -129,14 +130,21 @@ def _save_state(s: dict) -> None:
 
 
 def _alert(text: str, dry_run: bool) -> None:
-    print(f"[appstream_watch] ALERT →\n{text}")
+    print(f"[appstream_watch] ALERT → {', '.join(ALERT_SLACK_TARGETS)}\n{text}")
     if dry_run:
         return
     try:
         from automations.shared.slack_metrics_post import _client
-        _client().chat_postMessage(channel=ALERT_SLACK_TARGET, text=text)
+        client = _client()
     except Exception as e:
-        print(f"[appstream_watch] (Slack alert failed: {type(e).__name__}: {str(e)[:100]})")
+        print(f"[appstream_watch] (Slack client init failed: {type(e).__name__}: {str(e)[:100]})")
+        return
+    for target in ALERT_SLACK_TARGETS:   # one failure mustn't block the other recipient
+        try:
+            client.chat_postMessage(channel=target, text=text)
+        except Exception as e:
+            print(f"[appstream_watch] (Slack alert to {target} failed: "
+                  f"{type(e).__name__}: {str(e)[:100]})")
 
 
 def _enqueue_rerun(report_id: str, dry_run: bool) -> None:
