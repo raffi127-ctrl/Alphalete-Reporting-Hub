@@ -204,6 +204,17 @@ def main() -> int:
                 if not as_ok:
                     print(f"[{_stamp()}]     → re-seed AppStream:  --appstream-login",
                           flush=True)
+                # Predict the AppStream session dying + recover from it: ping
+                # Megan ONCE with the re-seed command if it won't survive to the
+                # next 4am batch, and auto-rerun daily_focus once it's healthy
+                # again. Isolated so a watch hiccup never disturbs the holder
+                # (Megan 2026-06-26 — "Eve needs to remotely help the glitch").
+                try:
+                    from automations.shared import appstream_watch
+                    appstream_watch.watch()
+                except Exception as e:
+                    print(f"[{_stamp()}] appstream_watch skipped: "
+                          f"{type(e).__name__}: {str(e)[:120]}", flush=True)
             except KeyboardInterrupt:
                 print(f"[{_stamp()}] holder stopped.", flush=True)
                 return 0
