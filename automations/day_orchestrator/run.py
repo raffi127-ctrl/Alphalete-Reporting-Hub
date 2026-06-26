@@ -139,8 +139,22 @@ def main(argv: Optional[List[str]] = None) -> int:
 
             now = _now()
 
-            # 7:30 checkpoint email (once).
-            if not ds.checkpoint_sent and now >= checkpoint_at:
+            # A report the orchestrator gave up on (FAILED/INCOMPLETE) may have
+            # been re-run BY HAND since — the loop never retries a terminal
+            # report, so without this a manual fix is never reflected. Re-read
+            # its manifest so state + emails show the CURRENT state, not the last
+            # attempt (Megan re-ran daily_focus at 6:37 after the 4am AppStream
+            # expiry; the 7:32 email still said "failed"). Manifest-verified only.
+            _reverify_terminal(ds, todays, target, dry_run)
+
+            # 7:30 checkpoint email (once) — but NOT if everything's already
+            # terminal: the final fires immediately below, so a checkpoint here
+            # is just a duplicate a minute earlier (Megan 2026-06-26 got two
+            # near-identical 7:31 / 7:32 emails). The checkpoint is a progress
+            # snapshot while work is still in flight; if nothing's in flight,
+            # only the final summary sends.
+            if (not ds.checkpoint_sent and now >= checkpoint_at
+                    and not ds.all_terminal()):
                 _send_checkpoint(cfg, ds, channel, email_dry)
                 ds.checkpoint_sent = True
                 state.save(ds)
@@ -334,6 +348,38 @@ def _send_checkpoint(cfg, ds, channel, dry_run):
         notify.send_checkpoint(cfg, ds, channel=channel, dry_run=dry_run)
     except Exception as e:
         _log(f"checkpoint send failed: {e}")
+
+
+def _reverify_terminal(ds, todays, target, dry_run):
+    """Re-read the run-manifest for any FAILED/INCOMPLETE report and flip it to
+    DONE if it's since become clean — catches a report re-run BY HAND after the
+    orchestrator gave up (the loop never retries a terminal report, so a manual
+    fix would otherwise never be reflected in the state or the email). Restricted
+    to manifest-verified reports (a clean manifest is authoritative); read-only +
+    best-effort, never crashes the loop (Megan 2026-06-26)."""
+    if dry_run:
+        return
+    from automations.day_orchestrator import reconcile
+    by_id = {r.report_id: r for r in todays}
+    flipped = False
+    for rs in list(ds.reports.values()):
+        if rs.status not in (state.FAILED, state.INCOMPLETE):
+            continue
+        r = by_id.get(rs.report_id)
+        if not r or (getattr(r, "verify", None) or {}).get("type") != "manifest":
+            continue
+        old = rs.status
+        try:
+            recon = reconcile.verify(r, target, dry_run=dry_run)
+        except Exception:
+            continue
+        if recon.ok and not recon.unknown:
+            ds.set(rs.report_id, state.DONE,
+                   reason="re-verified clean (fixed after the orchestrator's run)")
+            _log(f"  {rs.report_id}: {old}→DONE on re-verify — {recon.note}")
+            flipped = True
+    if flipped:
+        state.save(ds)
 
 
 def _finalize(cfg, ds, channel, dry_run, target, stale_after):
