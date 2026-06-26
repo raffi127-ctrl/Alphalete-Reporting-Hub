@@ -80,7 +80,16 @@ def plan_delta_lastweek(grid: List[List[str]], today: dt.date) -> List[dict]:
     'Last week' TOTAL cell (col D under 'Total for week'). It must sum the
     per-day 'Last week' sub-columns (G, J, M, ...) for the days completed so
     far — currently it drops the latest day (=G+J on a Wednesday). 'Total this
-    week' (col C) already sums every day (future = 0) so it needs no fix."""
+    week' (col C) already sums every day (future = 0) so it needs no fix.
+
+    Covers BOTH the rep rows AND the table's TOTALS row. The totals row is
+    labelled inconsistently: Raf/Wayne carry "Captainship" in col B (a normal
+    non-blank row, grown in the loop), but Starr/Chan/Tony/Sahil/Khalil/Luis
+    leave col B BLANK on the totals row (their "<name>'s Captainship" label
+    sits a few rows below). A blank col-B row would normally end the table, so
+    we special-case it: if a blank-B row still carries a 'Total this week'
+    value, it's that totals row — grow its 'Last week' total, then stop (Eve
+    2026-06-26: their totals 'Last week' wasn't growing with the new day)."""
     n = elapsed_day_count(today)
     updates: List[dict] = []
     for i, row in enumerate(grid):
@@ -97,14 +106,31 @@ def plan_delta_lastweek(grid: List[List[str]], today: dt.date) -> List[dict]:
         elapsed = per_day[:n]
         if not elapsed:
             continue
+        # 'Total this week' column (C) — marks the totals row when col B is blank.
+        tw_col = next((c + 1 for c, v in enumerate(grid[sub])
+                       if (v or "").strip().lower() == "total this week"), None)
+
+        def _grow(r):
+            return {"range": f"{_a1(total_col)}{r}",
+                    "values": [["=" + "+".join(f"{_a1(c)}{r}" for c in elapsed)]]}
+
         r = sub + 2                                   # first data row (1-based)
         while r <= len(grid):
             rv = grid[r - 1]
             b = (rv[1] if len(rv) > 1 else "").strip()
-            if not b or any("Total for week" in (c or "") for c in rv[:6]):
+            if any("Total for week" in (c or "") for c in rv[:6]):
+                break                                 # next table's header
+            if not b:
+                # A blank col-B row ends the table UNLESS it's the label-less
+                # totals row (still has a 'Total this week' value) — grow it,
+                # then stop. Raf/Wayne's totals carry a col-B label so they
+                # never reach here; their trailing blank row has no tw value.
+                tw = (rv[tw_col - 1].strip()
+                      if tw_col and len(rv) >= tw_col else "")
+                if tw:
+                    updates.append(_grow(r))
                 break
-            formula = "=" + "+".join(f"{_a1(c)}{r}" for c in elapsed)
-            updates.append({"range": f"{_a1(total_col)}{r}", "values": [[formula]]})
+            updates.append(_grow(r))
             r += 1
     return updates
 
