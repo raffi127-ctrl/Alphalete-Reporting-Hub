@@ -1117,6 +1117,8 @@ def run_captainship(captainship: str, args, week_start: dt.date,
         "denied":       denied_this_run,
         "fetch_errors": fetch_errors_this_run,
         "unmapped":     unmapped_this_run,
+        "tab":          ws.title,
+        "icds":         icds,   # col-V names processed (full list on a non-only run)
     }
 
 
@@ -1167,6 +1169,7 @@ def main() -> int:
     denied: List[str] = []
     fetch_errors: List[str] = []
     unmapped: List[str] = []
+    icds_by_tab: dict = {}   # tab title -> col-V names, for the terminated check
     carlos_result = None
     for cs in targets:
         cs_rc, cs_result = run_captainship(cs, args, week_start, log)
@@ -1175,6 +1178,9 @@ def main() -> int:
         denied        += cs_result.get("denied", [])
         fetch_errors  += cs_result.get("fetch_errors", [])
         unmapped      += cs_result.get("unmapped", [])
+        tab = cs_result.get("tab")
+        if tab:
+            icds_by_tab.setdefault(tab, []).extend(cs_result.get("icds", []))
         if cs == "Carlos":
             carlos_result = cs_result
 
@@ -1194,6 +1200,23 @@ def main() -> int:
         # none failed so the Hub hides the retry button. Best-effort — a
         # manifest hiccup must never fail the run. report_id matches the card
         # id 'daily-focus' in dashboard.py.
+        # Cross-reference every filled ICD against the 'Terminated ICDs' tab and
+        # ALERT the runner about anyone terminated who's still on a tab so they
+        # can remove them. Advisory only — never marks the run failed, never
+        # deletes the section. Folded into the manifest note so the mini email
+        # surfaces it on unattended runs too.
+        term_note = None
+        try:
+            from automations.shared import terminated_icds as _ti
+            all_names = [n for names in icds_by_tab.values() for n in names]
+            hits, _flag = _ti.alert_terminated(
+                all_names, report_label="the Daily Recruiting Focus tabs")
+            if hits:
+                term_note = ("terminated ICD(s) still on the report (remove them): "
+                             + ", ".join(h["report_name"] for h in hits))
+        except Exception as e:  # noqa: BLE001 — advisory must never fail the run
+            log.warning("terminated-ICD check skipped: %s", e)
+
         try:
             from automations.shared import run_manifest as _rm
             # Include UNMAPPED ICDs (no office id) alongside access failures —
@@ -1201,6 +1224,8 @@ def main() -> int:
             # silently is exactly what let a 24-ICD-short run report "clean"
             # (Megan 2026-06-25). reconcile reads this manifest, so a non-empty
             # failed list now correctly marks the run INCOMPLETE, not clean.
+            # Terminated ICDs are appended to the NOTE only — they're an advisory
+            # to act on, not a failed part to retry.
             uniq = sorted(set(skipped) | set(unmapped))
             if uniq:
                 bits = []
@@ -1209,10 +1234,17 @@ def main() -> int:
                 if set(unmapped):
                     bits.append(f"{len(set(unmapped))} unmapped "
                                 f"(need an office id via 'Map new ICDs')")
+                note = "; ".join(bits) + "."
+                if term_note:
+                    note += " ⚠ " + term_note
                 _rm.write_manifest(
                     "daily-focus", failed=uniq,
-                    retry_args=["--retry-inaccessible"], kind="ICD",
-                    note="; ".join(bits) + ".")
+                    retry_args=["--retry-inaccessible"], kind="ICD", note=note)
+            elif term_note:
+                # No failures, but terminated ICDs to remove — keep the run clean
+                # (ok=true, no failed parts) while carrying the advisory note.
+                _rm.write_manifest("daily-focus", failed=[], kind="ICD",
+                                   note="⚠ " + term_note)
             else:
                 _rm.mark_clean("daily-focus", kind="ICD")
         except Exception as e:  # noqa: BLE001 — manifest is best-effort

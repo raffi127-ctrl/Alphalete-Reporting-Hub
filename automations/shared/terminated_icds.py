@@ -25,13 +25,24 @@ Public API:
   load_terminated() -> list[dict]              # [{"name","date","notes"}, ...]
   is_terminated(name) -> bool
   terminated_among(names) -> list[dict]        # which of `names` are terminated
-  format_flag(hits) -> str | None              # ready-to-print callout
+  format_flag(hits, report_label) -> str|None  # ready-to-print callout
+  alert_terminated(names, report_label) -> (hits, flag)  # check + EMIT the alert
   log_terminated(name, date="", notes="")      # append a row (deduped)
+
+The one-liner every report uses (call once per run, with the names it filled):
+  from automations.shared import terminated_icds as ti
+  hits, flag = ti.alert_terminated(names, report_label="Daily Recruiting Focus")
+  # `flag` (or None) can also be folded into the report's run-manifest note so
+  # the orchestrator / mini email surfaces it on unattended runs.
 """
 from __future__ import annotations
 
+import logging
+
 from automations.recruiting_report import fill as _fill
 from automations.focus_office_att import aliases as _aliases
+
+_log = logging.getLogger("terminated-icds")
 
 TERMINATED_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 TERMINATED_TAB = "Terminated ICDs"
@@ -105,16 +116,39 @@ def terminated_among(names) -> list[dict]:
     return hits
 
 
-def format_flag(hits: list[dict]) -> str | None:
+def format_flag(hits: list[dict], report_label: str = "this report") -> str | None:
     """Render the standard callout for a report's output, or None if no hits."""
     if not hits:
         return None
-    lines = [f"⚠ {len(hits)} terminated ICD(s) still on this report — remove them:"]
+    lines = [f"⚠ {len(hits)} terminated ICD(s) still on {report_label} — remove them:"]
     for h in hits:
         when = f" (terminated {h['date']})" if h.get("date") else ""
         note = f" — {h['notes']}" if h.get("notes") else ""
         lines.append(f"   • {h['report_name']}{when}{note}")
     return "\n".join(lines)
+
+
+def alert_terminated(names, report_label: str = "this report") -> tuple[list[dict], str | None]:
+    """The standard one-call hook for any report: check the names it filled
+    against the terminated list and, if any still appear, EMIT the alert to the
+    live run output (print) + the logger so the runner sees it. Returns
+    (hits, flag_str|None); fold flag_str into the report's manifest note so
+    unattended runs surface it in the email too.
+
+    Non-destructive — it only warns. A human removes the section/row. Tolerant:
+    any Sheet error inside is swallowed (returns no hits) so the terminated
+    check can never break a report's run."""
+    try:
+        hits = terminated_among(names)
+    except Exception as e:  # noqa: BLE001 — advisory check must never fail a run
+        print(f"⚠ terminated-ICD check skipped ({e})", flush=True)
+        return [], None
+    flag = format_flag(hits, report_label)
+    if flag:
+        print("\n" + flag + "\n", flush=True)
+        _log.warning("terminated ICD(s) still on %s: %s", report_label,
+                     ", ".join(h["report_name"] for h in hits))
+    return hits, flag
 
 
 def log_terminated(name: str, date: str = "", notes: str = "") -> None:
