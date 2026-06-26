@@ -1202,9 +1202,10 @@ def apply_empty_cell_defaults(ws, layout: Layout) -> None:
     - Activity columns (Total Leads Knocked / Talk To's / Presentations /
       First Knock / Last Knock Date / # Of Gaps / Total Gap Time): empty → x
 
-    Only touches days that have already passed (Mon → today). Future days
-    in the current week stay empty — they're 'not yet scraped', not 'rep
-    didn't work'.
+    Only touches COMPLETED days (Mon → YESTERDAY). Today + future days stay
+    empty — today's numbers aren't final until the next morning's run fills
+    them, and future days haven't happened. Painting them 0/x makes the tab
+    show a premature wall of zeros (Megan 2026-06-26).
     """
     if not layout.day_cols:
         return
@@ -1220,9 +1221,13 @@ def apply_empty_cell_defaults(ws, layout: Layout) -> None:
         return
     last_rep_row = rep_rows[-1]
 
-    # Only fill defaults for days that have already passed in the current week.
+    # Only fill defaults for COMPLETED days (Mon → yesterday). Excluding today:
+    # the daily run fills a day's data the FOLLOWING morning, so today's column
+    # should stay blank until then — not show a premature 0/x grid (Megan
+    # 2026-06-26: "this week should be filled M-Thurs as those are the completed
+    # days"; today is Fri).
     today_weekday = dt.date.today().weekday()  # 0=Mon..6=Sun
-    past_weekdays = set(range(0, today_weekday + 1))
+    past_weekdays = set(range(0, today_weekday))
 
     # Build a flat map of (sheet_col → metric_name) for the day-block cells
     # we care about, restricted to past weekdays. Compare metric names
