@@ -773,8 +773,13 @@ def _capture_appstream_state(verbose: bool = True) -> bool:
         ctx = _launch_persistent(p, profile, headless=False,
                                  label="appstream_login", verbose=verbose)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        # Land on the LOGIN page, not ?p=701. p=701 is a deep report page
+        # that needs an already-authenticated session — opening it cold shows
+        # "Valid User ID Not Obtained! Cannot Proceed!", which the human then
+        # has to work around by retyping the URL (Megan 2026-06-26). The bare
+        # site root serves the login form, so the human can sign in directly.
         try:
-            page.goto(f"{APPSTREAM_BASE}?p=701", wait_until="domcontentloaded")
+            page.goto("https://applicantstream.com/", wait_until="domcontentloaded")
         except Exception:
             pass
         print("\n" + "=" * 64)
@@ -789,6 +794,18 @@ def _capture_appstream_state(verbose: bool = True) -> bool:
                 if page.locator("#searchMC").count() > 0:
                     seen = True
                     break
+                # Once the login form is gone the human has authenticated, but
+                # the office switcher (#searchMC) only renders on p=701 — so
+                # nudge there. Guarded on the form being absent so we never hit
+                # p=701 before auth (that's the "Valid User ID Not Obtained"
+                # error). Only nudge when not already on a p=701 URL.
+                login_present = (
+                    page.locator(_PASSWORD_SELECTOR).count() > 0
+                    or page.locator(_APPSTREAM_USERNAME_SELECTOR).count() > 0
+                )
+                if not login_present and "p=701" not in (page.url or ""):
+                    page.goto(f"{APPSTREAM_BASE}?p=701",
+                              wait_until="domcontentloaded")
             except Exception:
                 pass
             page.wait_for_timeout(5_000)
