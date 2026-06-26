@@ -165,10 +165,6 @@ DAILY_SECTION_LABELS = [
     "BOX", "Frontier", "Retail Internet",
 ]
 
-CAPTAIN_NAMES = ["RAF", "WAYNE", "STARR", "CHAN", "TONY", "SAHIL",
-                 "CARLOS", "EVELIZ", "LUIS", "KHALIL", "COLTEN", "JAIRO"]
-
-
 def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     """The whole TUESDAY rollover in order — run BEFORE the new week's daily
     fill, AFTER a fresh pull has finalized the just-finished week:
@@ -214,22 +210,29 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
 
     grid = ws.get_all_values()                 # ORG headers changed
     org = find_org_block(grid)
-    for name in CAPTAIN_NAMES:
+    # Roll EVERY leaderboard box, not just the first. Fiber captains carry two
+    # stacked boxes (📶 New Internet + 🛜 All Units); find_captainship (one box)
+    # left the All Units box un-shifted, desyncing its weekly history from the
+    # NI box + the ORG week after week (Eve 2026-06-26). discover_captainships
+    # replaces the hardcoded CAPTAIN_NAMES list, and find_captainship_boxes
+    # iterates both boxes — the same pair the daily fill writes.
+    for title, _tkey in cap.discover_captainships(grid):
         try:
-            a = cap.find_captainship(grid, name)
+            boxes = cap.find_captainship_boxes(grid, title)
         except Exception as e:
-            logfn(f"      ⚠ captainship {name} not found: {e}")
+            logfn(f"      ⚠ captainship {title} not found: {e}")
             continue
-        hdr_row = a.leaderboard[0][0] - 2
-        lb_rows = [r for r, _ in a.leaderboard]
-        last_col = max((c + 1 for c in range(2, len(grid[hdr_row - 1]))
-                        if (grid[hdr_row - 1][c] or "").strip()), default=16)
-        upd, _ = plan_captainship_leaderboard_rollover(
-            ws, hdr_row, lb_rows, last_col, org.header_row, org.last_col)
-        if not dry_run:
-            ws.batch_update(upd, value_input_option="USER_ENTERED")
-        summary["captainships"] += 1
-    logfn(f"  2/4 {summary['captainships']} captainship leaderboards frozen")
+        for _variant, a in boxes:
+            hdr_row = a.leaderboard[0][0] - 2
+            lb_rows = [r for r, _ in a.leaderboard]
+            last_col = max((c + 1 for c in range(2, len(grid[hdr_row - 1]))
+                            if (grid[hdr_row - 1][c] or "").strip()), default=16)
+            upd, _ = plan_captainship_leaderboard_rollover(
+                ws, hdr_row, lb_rows, last_col, org.header_row, org.last_col)
+            if not dry_run:
+                ws.batch_update(upd, value_input_option="USER_ENTERED")
+            summary["captainships"] += 1
+    logfn(f"  2/4 {summary['captainships']} captainship leaderboard box(es) frozen")
 
     tables = find_delta_tables(grid)
     for t in tables:
@@ -317,16 +320,19 @@ def plan_daily_clear(ws, grid) -> List[str]:
             ranges.append(f"{a1col(cols[0])}{min(rows)}:"
                           f"{a1col(cols[-1])}{max(rows)}")
     # Auto-discovered from the board — same source the fill uses — so adding/
-    # removing a captainship needs no edit here either.
-    for name, _tkey in cap.discover_captainships(grid):
+    # removing a captainship needs no edit here either. Both boxes of a fiber
+    # captain are cleared (find_captainship_boxes), so the 🛜 All Units daily
+    # table is blanked too (the NI box was the only one cleared before).
+    for title, _tkey in cap.discover_captainships(grid):
         try:
-            a = cap.find_captainship(grid, name)
+            boxes = cap.find_captainship_boxes(grid, title)
         except Exception:
             continue
-        if a.daily and a.day_cols:
-            d_rows = [r for r, _ in a.daily]
-            ranges.append(f"{a1col(a.day_cols[0])}{min(d_rows)}:"
-                          f"{a1col(a.day_cols[-1])}{max(d_rows)}")
+        for _variant, a in boxes:
+            if a.daily and a.day_cols:
+                d_rows = [r for r, _ in a.daily]
+                ranges.append(f"{a1col(a.day_cols[0])}{min(d_rows)}:"
+                              f"{a1col(a.day_cols[-1])}{max(d_rows)}")
     return ranges
 
 

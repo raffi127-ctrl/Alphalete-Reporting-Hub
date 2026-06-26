@@ -39,11 +39,20 @@ def elapsed_day_count(today: dt.date) -> int:
 
 def plan_elapsed_totals(grid: List[List[str]], today: dt.date) -> List[dict]:
     """Return [{range, formula}] for every 'Current vs Prior' table's elapsed
-    grand-total rows, sized to the days completed so far this week."""
+    grand-total rows, sized to the days completed so far this week.
+
+    Matches ANY 'Current vs Prior' header — the ORG summaries ('X ORG -
+    Current vs Prior Weeks' + 'RAF ORG (w/out Carlos & Colten) - …', where the
+    'ORG -' isn't contiguous) AND every captainship box's bare 'Current vs
+    Prior Weeks'. Broadening is safe because `_ELAPSED_ROWS` is what actually
+    selects cells — only the 'Sales (Last Week)' / 'Sales (4 Week AVG)' rows
+    get a formula; the static 'Last Week' / 'Prior Week' history rows never do
+    (Eve 2026-06-26: closes the captainship + w/out-Carlos&Colten gap that the
+    VAs were fixing by hand)."""
     n = elapsed_day_count(today)
     updates: List[dict] = []
     for i, row in enumerate(grid):
-        if not any("ORG - Current vs Prior" in (c or "") for c in row[:6]):
+        if not any("Current vs Prior" in (c or "") for c in row[:6]):
             continue
         hdr = i + 1
         # day-header row = first row within 4 with >=4 weekday names
