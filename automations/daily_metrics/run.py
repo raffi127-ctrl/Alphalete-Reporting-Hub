@@ -2,10 +2,10 @@
 
 The 7 underlying report modules each pull their own data and reply to
 today's "Metrics for: <date>" thread in #alphalete-sales — between them
-they produce the 9 metrics posted to that thread every morning:
+they produce the 10 metrics posted to that thread every morning:
 
     🪵 Telemapper Knocks + ⏰ Time Gaps   (total_knocks)
-    📋 Order Log                          (uploaded.order_log)
+    📋 Order Log + 🆕 Rep Activations     (uploaded.order_log)
     📅 Sales Scheduled 6+ Days Out        (scheduled_6_days_out)
     🚫 Canceled Orders                    (canceled_orders)
     🔁 Ongoing Cancel                     (ongoing_cancel)

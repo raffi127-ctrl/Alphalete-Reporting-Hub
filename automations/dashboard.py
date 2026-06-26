@@ -1872,15 +1872,15 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "daily-metrics",
-        "name": "9 Daily Metrics Report",
+        "name": "10 Daily Metrics Report",
         "creator": "Megan",
         "emoji": "📊",
         "color": "#0EA5E9",
         "category": "📊 Metrics",
-        "description": "One run that fires all 9 daily #alphalete-sales metrics — Telemapper Knocks, Time Gaps, Order Log, Sales Scheduled 6+ Days, Canceled Orders, Ongoing Cancel, Disconnects, New Internet Churn, Wireless Churn — each posting into today's Metrics thread.",
+        "description": "One run that fires all 10 daily #alphalete-sales metrics — Telemapper Knocks, Time Gaps, Order Log, Sales Scheduled 6+ Days, Canceled Orders, Ongoing Cancel, Disconnects, New Internet Churn, Wireless Churn, Rep Activations — each posting into today's Metrics thread.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Runs all 9 metric reports back-to-back & posts into today's "
+            "Runs all 10 metric reports back-to-back & posts into today's "
             "Metrics thread in #alphalete-sales Slack. The day's header "
             "thread is posted first if it isn't already up.\n\n"
             "METRICS POSTED (in thread order)\n"
@@ -1892,7 +1892,8 @@ AUTOMATED_REPORTS = [
             "• 🔁 Ongoing Cancel\n"
             "• ❎ Disconnected New Internets\n"
             "• 🌐 New Internet Churn\n"
-            "• 📊 Wireless Churn\n\n"
+            "• 📊 Wireless Churn\n"
+            "• 🆕 Rep Activations\n\n"
             "IF ONE FAILS\n"
             "The run keeps going and ends with a ✅/❌ summary. Re-run just "
             "the ones that failed from 'More actions' below.\n\n"
@@ -1904,9 +1905,12 @@ AUTOMATED_REPORTS = [
             "the day prior) for Raf's Local Office. Screenshots + posts both "
             "to the Metrics thread; keeps no record. Opens Ownerville "
             "automatically — don't type in or close the window while it runs.\n\n"
-            "📋 ORDER LOG\n"
+            "📋 ORDER LOG + 🆕 REP ACTIVATIONS\n"
             "Fills out the order log and saves it to your Downloads folder as "
-            "'Order Log MM-DD-YYYY.xlsx', then posts it to the Metrics thread.\n\n"
+            "'Order Log MM-DD-YYYY.xlsx', then posts it to the Metrics thread. "
+            "From the same data it also posts a 🆕 Rep Activations summary "
+            "(Posted / Pending / Total / Canceled per rep, last week & this "
+            "week).\n\n"
             "📅 SALES SCHEDULED 6+ DAYS OUT\n"
             "All scheduled new-internet installs planned 6+ days out for Raf's "
             "Local Office + Raf's Captainship + Starr's Captainship. Fills the "
@@ -1946,15 +1950,15 @@ AUTOMATED_REPORTS = [
             "estimated_minutes": 15,
         },
         "post_run": {
-            "message_success": "✅ Daily Metrics done — all 9 posted to the Metrics thread.",
+            "message_success": "✅ Daily Metrics done — all 10 posted to the Metrics thread.",
             "message_failed": "❌ Some metrics failed — check the summary above, then re-run those from More actions.",
         },
         "actions": [
             {
-                "label": "Run All 9 Metrics",
+                "label": "Run All 10 Metrics",
                 "icon": "▶",
                 "primary": True,
-                "help": "Runs all 7 reports → 9 metrics posted to today's thread; continues past any that fail.",
+                "help": "Runs all 7 reports → 10 metrics posted to today's thread; continues past any that fail.",
                 "module": "automations.daily_metrics.run",
                 "args_fn": lambda: [],
             },

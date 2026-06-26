@@ -34,7 +34,7 @@
 
   "reports": {
     "daily_metrics": {
-      "on_scheduler": true, "display_name": "9 Daily Metrics Report",
+      "on_scheduler": true, "display_name": "10 Daily Metrics Report",
       "source_type": "tableau", "data_sources": ["tableau:order_log"],
       "_sources_note": "Internally orchestrates total_knocks, canceled_orders, ongoing_cancel, disconnects, churn, scheduled_6, order_log; gated on the dominant order_log source.",
       "command": ["automations.daily_metrics.run"], "base_args": [],
