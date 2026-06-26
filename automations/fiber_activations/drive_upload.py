@@ -7,6 +7,10 @@ Overwrite semantics: each PNG name carries the date (…by M.D.png). A file with
 the SAME name already in the folder is UPDATED in place (same fileId, link
 stays stable); otherwise it's created. So a same-day re-run overwrites the day's
 images instead of piling up duplicates.
+
+Prune semantics: after uploading today's set, every OTHER .png in the folder
+(an earlier day's run, e.g. …by 6.25.png) is trashed so only the current day's
+images remain. Trashed = recoverable from the Drive bin, not hard-deleted.
 """
 from __future__ import annotations
 
@@ -47,6 +51,23 @@ def ensure_folder(svc, folder_id: Optional[str] = None) -> str:
     return fid
 
 
+def _prune_others(svc, folder_id: str, keep_names: set) -> dict:
+    """Trash every .png in the folder whose name is NOT in keep_names (i.e. an
+    earlier day's run). Trashed, not hard-deleted, so it's recoverable from the
+    Drive bin. Returns {filename: 'trashed'}."""
+    q = (f"'{folder_id}' in parents and trashed = false "
+         f"and mimeType = 'image/png'")
+    files = svc.files().list(q=q, spaces="drive",
+                             fields="files(id,name)").execute().get("files", [])
+    trashed = {}
+    for f in files:
+        if f["name"] in keep_names:
+            continue
+        svc.files().update(fileId=f["id"], body={"trashed": True}).execute()
+        trashed[f["name"]] = "trashed"
+    return trashed
+
+
 def _upload_one(svc, folder_id: str, path: Path) -> str:
     from googleapiclient.http import MediaFileUpload
     media = MediaFileUpload(str(path), mimetype="image/png", resumable=False)
@@ -62,10 +83,11 @@ def _upload_one(svc, folder_id: str, path: Path) -> str:
 
 
 def upload_all(paths, folder_id: Optional[str] = None,
-               dry_run: bool = False) -> dict:
-    """Upload each PNG (overwrite same-name). dry_run only prints the plan and
-    does NOT authenticate or call Drive. Returns {filename: 'updated'|'created'|
-    'would-upload'}."""
+               dry_run: bool = False, prune: bool = True) -> dict:
+    """Upload each PNG (overwrite same-name), then (prune=True) trash any other
+    .png left in the folder from a previous day's run so only today's set
+    remains. dry_run only prints the plan and does NOT authenticate or call
+    Drive. Returns {filename: 'updated'|'created'|'trashed'|'would-upload'}."""
     paths = [Path(p) for p in paths]
     if dry_run:
         return {p.name: "would-upload" for p in paths}
@@ -74,4 +96,6 @@ def upload_all(paths, folder_id: Optional[str] = None,
     results = {}
     for p in paths:
         results[p.name] = _upload_one(svc, fid, p)
+    if prune:
+        results.update(_prune_others(svc, fid, {p.name for p in paths}))
     return results

@@ -35,7 +35,7 @@ def _deliver(sh, today, *, want_drive: bool, dry_run: bool) -> None:
     Drive. Drive is best-effort: a failure (e.g. Drive API not enabled) is
     logged and SWALLOWED so the run still succeeds with the local copies."""
     print("\n--- Render PNGs (cols A–L minus K for captains; Q–Z for country) ---")
-    imgs = CR.render_all(sh, today, OUTPUT_DIR)
+    imgs, skipped = CR.render_all(sh, today, OUTPUT_DIR)
     for label, path in imgs.items():
         print(f"   {label:8s} -> {path}")
 
@@ -44,7 +44,7 @@ def _deliver(sh, today, *, want_drive: bool, dry_run: bool) -> None:
         if want_drive:
             for name in DU.upload_all(list(imgs.values()), dry_run=True):
                 print(f"   would-upload: {name}")
-        return
+        return skipped
 
     # Always save locally to Downloads.
     DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
@@ -57,7 +57,7 @@ def _deliver(sh, today, *, want_drive: bool, dry_run: bool) -> None:
     if not want_drive:
         print("\n  (Drive upload OFF — pass --drive to also upload. PNGs are in "
               "Downloads.)")
-        return
+        return skipped
 
     # Optional Drive upload — never fatal.
     print(f"\n--- Upload {len(imgs)} PNGs to Drive '{C.DRIVE_FOLDER_NAME}' ---")
@@ -69,6 +69,7 @@ def _deliver(sh, today, *, want_drive: bool, dry_run: bool) -> None:
         print(f"  ⚠ Drive upload skipped — {type(e).__name__}: {str(e)[:160]}")
         print("    (Likely the Drive API isn't enabled yet. The PNGs are saved "
               "in Downloads; re-run with --drive once the API is on.)")
+    return skipped
 
 # Windows consoles default to cp1252; emoji status lines would crash AFTER the
 # sheet write. Force UTF-8 (same guard as Raf's run.py).
@@ -144,7 +145,24 @@ def main(argv=None) -> int:
           f"(Orange Z left to formula; row 8 / formatting untouched.)")
 
     # Render the 6 PNGs (read-only), save to Downloads, optional non-fatal Drive.
-    _deliver(sh, today, want_drive=args.drive, dry_run=args.dry_run)
+    skipped = _deliver(sh, today, want_drive=args.drive, dry_run=args.dry_run)
+
+    # A tab that's missing its 'WE'/AVG header is reported per-tab and the run
+    # is marked INCOMPLETE — the healthy tabs still filled + uploaded, but the
+    # Hub must NOT read this as a clean run (it scans for 'run incomplete').
+    if skipped:
+        names = ", ".join(team for team, _ in skipped)
+        print(f"\n⚠ RUN INCOMPLETE — {len(skipped)} PNG(s) not rendered: {names}")
+        for team, reason in skipped:
+            print(f"    • {team}: {reason}")
+        print("  (The other tabs filled + uploaded fine. Fix the tab(s) above — "
+              "usually a missing 'WE' header in cell A1 — then re-run.)")
+        return 1
+
+    # Canonical success sentinel — the Hub scans the log for this to mark the
+    # run 'success'. Without it the run reads as 'unknown' → defaulted to
+    # 'failed' (dashboard.py orphan detector), even on a clean run.
+    print("\n=== done (dry-run) ===" if args.dry_run else "\n=== done ===")
     return 0
 
 

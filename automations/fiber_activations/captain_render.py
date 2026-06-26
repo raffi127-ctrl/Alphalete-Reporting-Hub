@@ -187,20 +187,42 @@ def _render_mirror(ws, today, out_path: Path, title: str, cols, detect,
     return out_path
 
 
-def render_all(sh, today: dt.date, out_dir: Path) -> dict:
-    """Render all 6 PNGs. Returns {label: Path}. Country rendered once (it's
-    identical across all tabs)."""
+def render_all(sh, today: dt.date, out_dir: Path) -> tuple[dict, list]:
+    """Render the 6 PNGs. Returns ({label: Path}, skipped) where skipped is a
+    list of (label, reason) for any tab that couldn't be rendered (e.g. a
+    missing 'WE'/AVG header in col A). A broken tab is SKIPPED with a clear
+    reason — it no longer aborts the whole run, so the healthy tabs still render
+    and upload. Country is drawn once from the first healthy captain tab (its
+    data is identical across all tabs), so one broken tab no longer kills it."""
     out_dir.mkdir(parents=True, exist_ok=True)
     md = f"{today.month}.{today.day}"
     out = {}
+    skipped = []
+    good_tab = None  # first captain tab that rendered OK — reused for Country.
     for cap in C.CAPTAINS:
         ws = sh.worksheet(cap.tab)
         name = f"Captainship Activations - {cap.team} by {md}"
-        out[cap.team] = _render_mirror(ws, today, out_dir / f"{name}.png",
-                                       name, CAPTAIN_COLS, CAPTAIN_DETECT,
-                                       with_secondary=True)
-    ws0 = sh.worksheet(C.CAPTAINS[0].tab)
+        try:
+            out[cap.team] = _render_mirror(ws, today, out_dir / f"{name}.png",
+                                           name, CAPTAIN_COLS, CAPTAIN_DETECT,
+                                           with_secondary=True)
+            if good_tab is None:
+                good_tab = cap.tab
+        except RuntimeError as e:
+            skipped.append((cap.team, str(e)))
+            print(f"   ⚠ SKIPPED {cap.team} — {e}")
+
     cname = f"Country Captainship Activations by {md}"
-    out["Country"] = _render_mirror(ws0, today, out_dir / f"{cname}.png",
-                                    cname, COUNTRY_COLS, COUNTRY_DETECT)
-    return out
+    if good_tab is None:
+        skipped.append(("Country", "no healthy captain tab to source the country "
+                                   "band from"))
+        print("   ⚠ SKIPPED Country — no healthy captain tab to source from")
+    else:
+        ws0 = sh.worksheet(good_tab)
+        try:
+            out["Country"] = _render_mirror(ws0, today, out_dir / f"{cname}.png",
+                                            cname, COUNTRY_COLS, COUNTRY_DETECT)
+        except RuntimeError as e:
+            skipped.append(("Country", str(e)))
+            print(f"   ⚠ SKIPPED Country — {e}")
+    return out, skipped
