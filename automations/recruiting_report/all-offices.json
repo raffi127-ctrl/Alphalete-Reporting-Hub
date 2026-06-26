@@ -1,5 +1,5 @@
 {
-  "count": 414,
+  "count": 418,
   "offices": [
     {
       "office_id": "1366Joseph EckhartVincero Inc",
@@ -912,6 +912,30 @@
       "owner": null,
       "company": null,
       "raw": "23624Natalia GwardaZora Industries, Inc. 2nd"
+    },
+    {
+      "office_id": "16744Kevin\u00a0 BahamLudach Inc",
+      "owner": null,
+      "company": null,
+      "raw": "16744Kevin\u00a0 BahamLudach Inc"
+    },
+    {
+      "office_id": "20425Dekiyah SandersKairos Vision Inc.",
+      "owner": null,
+      "company": null,
+      "raw": "20425Dekiyah SandersKairos Vision Inc."
+    },
+    {
+      "office_id": "21329Osvaldo RodriguezOzKorp, Inc",
+      "owner": null,
+      "company": null,
+      "raw": "21329Osvaldo RodriguezOzKorp, Inc"
+    },
+    {
+      "office_id": "23607Jacob DoverRockstarworld Incorporated",
+      "owner": null,
+      "company": null,
+      "raw": "23607Jacob DoverRockstarworld Incorporated"
     },
     {
       "office_id": "20646",
