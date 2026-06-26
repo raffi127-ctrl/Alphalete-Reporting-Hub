@@ -48,12 +48,14 @@ from . import fetch_office, fill
 ICD_LIST_COLUMN = 22  # col V
 
 # Each captainship's Daily Focus report is one tab in the shared
-# "Daily Focus Report - Raf/Carlos" spreadsheet. The report process is
-# identical per captainship — only the AppStream account logged in (and
-# therefore which ICDs are reachable) differs. The tab name == the
-# captainship name.
+# Daily Focus spreadsheet. The report process is identical per
+# captainship — only the AppStream account logged in (and therefore
+# which ICDs are reachable) differs. Each entry is matched to its tab by
+# substring of the tab title (find_captainship_worksheet), so the full
+# name here finds the matching tab. Each captain owns their tab's col V
+# list — add a name here to include that captain's tab in the run.
 DAILY_FOCUS_SPREADSHEET_ID = "11FRYGG1hvuxcbWiYtDv7LzVss6ujZE_SOpqfhrQrVAo"
-CAPTAINSHIPS = ["Raf", "Carlos"]
+CAPTAINSHIPS = ["Raf", "Carlos", "Sahil Multani", "Chan Park", "Jose Antonio Chavez"]
 DEFAULT_CAPTAINSHIP = "Raf"
 
 # Sidecar state file, one per captainship: tracks which ICDs the *most
@@ -1123,7 +1125,7 @@ def main() -> int:
     ap.add_argument("--captainship", choices=CAPTAINSHIPS + ["all"],
                     default="all",
                     help="Which captainship to run, or 'all' (default) — "
-                         "both Raf and Carlos in one run.")
+                         "every captainship tab in one run.")
     ap.add_argument("--week-start", help="Sunday at start of week to fetch (default: most recent past Sunday).")
     ap.add_argument("--only", help="Only one ICD (short name as in col 22).")
     ap.add_argument("--retry-inaccessible", action="store_true",

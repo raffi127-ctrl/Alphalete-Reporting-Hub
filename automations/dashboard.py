@@ -1483,17 +1483,17 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "daily-focus",
-        "name": "Daily Recruiting Focus (Raf & Carlos)",
+        "name": "Daily Recruiting Focus",
         "creator": "Megan",
         "emoji": "☀️",
         "color": "#4ECDC4",
         "category": "🎯 Recruiting",
-        "description": "Per-ICD daily breakdown (Mon–Fri current week, last week, plus next-week scheduled) for the Raf and Carlos captainships — fills both tabs in one run.",
+        "description": "Per-ICD daily breakdown (Mon–Fri current week, last week, plus next-week scheduled) for every captainship tab — fills them all in one run.",
         "breakdown": (
             "WHAT IT DOES\n"
             "A day-by-day breakdown (Mon-Fri) of the recruiting numbers "
-            "for **every ICD in the Raf and Carlos captainships** — current "
-            "week and last week, side by side. One run fills both tabs.\n\n"
+            "for **every ICD across all captainship tabs** — current "
+            "week and last week, side by side. One run fills every tab.\n\n"
             "WEEKEND ROLLOVER\n"
             "Per Raf's rule, weekend numbers fold into the adjacent weekday:\n"
             "• **Sunday → Monday** (Sun + Mon counts combined into Mon's cell).\n"
@@ -1525,7 +1525,7 @@ AUTOMATED_REPORTS = [
         # clicks. Empty list hides the section.
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Daily Focus run complete — the Raf and Carlos tabs are filled. Any ICD that couldn't be pulled (rcaptain has no AppStream access to it yet) is listed below.",
+            "message_success": "✅ Daily Focus run complete — every captainship tab is filled. Any ICD that couldn't be pulled (rcaptain has no AppStream access to it yet) is listed below.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
             "again_label": "🔁 Retry the skipped ICDs",
             "again_action": {
@@ -1542,7 +1542,7 @@ AUTOMATED_REPORTS = [
                 "label": "Run Daily Focus",
                 "icon": "▶",
                 "primary": True,
-                "help": "Fills today's daily focus report for every ICD in the Raf and Carlos captainships.",
+                "help": "Fills today's daily focus report for every ICD across all captainship tabs.",
                 "module": "automations.recruiting_report.daily_focus",
                 "args_fn": lambda: [],
             },
