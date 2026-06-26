@@ -123,9 +123,12 @@ def ensure_metrics_thread(today: dt.date | None = None,
     find_metrics_thread_ts recognises (so the replies still match it)."""
     today = today or dt.date.today()
     # Match the Slack Workflow bot's header: the dated first line (which
-    # find_metrics_thread_ts recognises) + the 9-metric checklist with the
-    # same emoji shortcodes the bot uses, so a fallback-posted header reads
-    # identically to the normal one.
+    # find_metrics_thread_ts recognises) + the metric checklist with the same
+    # emoji shortcodes the bot uses, so a fallback-posted header reads
+    # identically to the normal one. NOTE: this list must stay in sync with the
+    # Slack "Metrics" Workflow Builder header (that's the PRIMARY poster; this is
+    # only the fallback). Rep Activations added 2026-06-26 — add the matching
+    # ":new: Rep Activations" line to the Workflow Builder header too.
     header_text = "\n".join([
         f"Metrics for: {today.strftime('%B')} {_ordinal(today.day)} {today.year}",
         "",
@@ -138,6 +141,7 @@ def ensure_metrics_thread(today: dt.date | None = None,
         ":negative_squared_cross_mark: Disconnected New Internets",
         ":globe_with_meridians: New Internet Churn",
         ":bar_chart: Wireless Churn",
+        ":new: Rep Activations",
     ])
     if dry_run:
         return {"dry_run": True, "header_text": header_text,

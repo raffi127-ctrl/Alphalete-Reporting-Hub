@@ -1399,8 +1399,8 @@ async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True,
             )
             post_reply_with_image(
                 rep_png,
-                comment="📊 Rep Activations — Last & This Week",
-                react_emoji="bar_chart",       # 📊
+                comment="🆕 Rep Activations — Last & This Week",
+                react_emoji="new",       # 🆕 — its OWN metric line (was sharing 📊 with Wireless Churn)
                 file_name=f"Rep Activations {today:%m-%d-%Y}.png",
             )
             print("  ✓ Slack: posted Rep Activations summary")
