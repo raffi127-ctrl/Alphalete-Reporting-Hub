@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.mini-control</string>
+
+    <!-- Polls the "Mini Control" Google-Sheet tab every 2 min and AUTO-RUNS
+         whitelisted fix actions (rerun a report, restart the holder, trigger an
+         AppStream re-seed). This is how Eve / Megan fix a glitch on the mini
+         without a copy-paste block. NOTE: on the mini, swap the two paths below
+         from "/Users/megan/1st Claude Folder" to the mini's repo path
+         (/Users/alphalete/recruiting-report) — same as the sibling plists. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/megan/1st Claude Folder/.venv/bin/python</string>
+        <string>-u</string>
+        <string>-m</string>
+        <string>automations.day_orchestrator.mini_control</string>
+        <string>--loop</string>
+        <string>--interval</string>
+        <string>120</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- Start at login and keep it alive (restart if it ever exits/crashes). -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <!-- Don't hot-loop if it dies fast: wait 30s between restarts. -->
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/mini_control.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/mini_control.err.log</string>
+</dict>
+</plist>
