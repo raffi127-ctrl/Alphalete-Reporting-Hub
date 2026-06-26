@@ -1311,6 +1311,8 @@ async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True,
     # Intermediate CSV goes to a tempdir that auto-cleans on exit.
     # Final .xlsx is the only artifact left on disk (in Downloads).
     xlsx_path: Optional[Path] = None
+    # Companion Rep Activations summary PNG (built from the same crosstab).
+    rep_png: Optional[Path] = None
     with tempfile.TemporaryDirectory(prefix="order_log_") as tmp:
         tmp_dir = Path(tmp)
 
@@ -1336,6 +1338,24 @@ async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True,
 
         xlsx_path = csv_to_xlsx(csv_path, OUTPUT_DIR)
         print(f"\n✓ Saved to Downloads: {xlsx_path.name}")
+
+        # Rep Activations summary — two Sun-Sat tables (last week + running
+        # week) of Posted / Pending / Total / Canceled per rep, built from the
+        # SAME crosstab. Rendered to Downloads (so it survives tempdir cleanup)
+        # and posted as a 2nd image below the Order Log .xlsx. Never let a
+        # summary hiccup take down the Order Log itself.
+        try:
+            from automations.rep_activations.aggregate import build_week_tables
+            from automations.rep_activations.render import render as render_rep_tables
+            summary = build_week_tables(_load_and_clean(csv_path), date.today())
+            rep_png = render_rep_tables(
+                summary,
+                OUTPUT_DIR / f"Rep Activations {date.today():%m-%d-%Y}.png",
+            )
+            print(f"✓ Saved Rep Activations image: {rep_png.name}")
+        except Exception as e:
+            rep_png = None
+            print(f"  ⚠ Rep Activations summary skipped: {e}")
 
     # Slack post happens AFTER the browser context is torn down so a
     # failing Slack call can never strand a logged-in patchright session.
@@ -1369,6 +1389,24 @@ async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True,
     except SlackPostError as e:
         print(f"  ⚠ Slack post failed: {e}")
         print("    .xlsx is still in Downloads — you can drag it into Slack manually.")
+
+    # Second reply: the Rep Activations summary image (same gating as above —
+    # we only reach here for the default owner with Slack enabled).
+    if rep_png is not None:
+        try:
+            from automations.shared.slack_metrics_post import (
+                post_reply_with_image, SlackPostError,
+            )
+            post_reply_with_image(
+                rep_png,
+                comment="📊 Rep Activations — Last & This Week",
+                react_emoji="bar_chart",       # 📊
+                file_name=f"Rep Activations {today:%m-%d-%Y}.png",
+            )
+            print("  ✓ Slack: posted Rep Activations summary")
+        except SlackPostError as e:
+            print(f"  ⚠ Slack post failed (Rep Activations): {e}")
+            print("    .png is still in Downloads — you can drag it into Slack manually.")
 
 
 if __name__ == "__main__":
