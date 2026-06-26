@@ -454,6 +454,23 @@ def main() -> int:
     else:
         log.info("MISSING TABS: none ✓ (all %d confirmed offices filled this week)", len(confirmed_names))
 
+    # Cross-reference the filled offices against the 'Terminated ICDs' tab and
+    # ALERT the runner about anyone terminated who's still on a tab (advisory —
+    # prints to the run output + log; never removes a tab). Folded into the
+    # manifest note below so the mini email surfaces it on unattended runs.
+    _term_note = None
+    if not args.only and not args.dry_run:
+        try:
+            from automations.shared import terminated_icds as _ti
+            _hits, _flag = _ti.alert_terminated(
+                sorted(confirmed_names),
+                report_label=f"the {fill.CAPTAINSHIP} recruiting report")
+            if _hits:
+                _term_note = ("terminated ICD(s) still on the report (remove them): "
+                              + ", ".join(h["report_name"] for h in _hits))
+        except Exception:  # noqa: BLE001 — advisory must never fail the run
+            pass
+
     # Standard failure manifest → Hub "Retry failed only" (re-pull just the
     # missing office tabs via --retry-missing) + failure-help callout. Keyed by
     # the card the CAPTAINSHIP maps to (Carlos's card runs the orchestrator, not
@@ -470,7 +487,8 @@ def main() -> int:
                 _rm.write_manifest(
                     _card_id, failed=list(still_missing),
                     retry_args=["--retry-missing"], kind="tab",
-                    note=f"{len(still_missing)} office tab(s) still missing.",
+                    note=f"{len(still_missing)} office tab(s) still missing."
+                         + (f" ⚠ {_term_note}" if _term_note else ""),
                     remediation=_rm.make_remediation(
                         reason=f"{len(still_missing)} office tab(s) couldn't be "
                                f"filled this run — usually AppStream/ownerville "
@@ -485,6 +503,11 @@ def main() -> int:
                                 f"AppStream access): {', '.join(still_missing)}. "
                                 f"Can someone confirm access is granted so we "
                                 f"can re-pull just those?"))
+            elif _term_note:
+                # No missing tabs, but terminated ICDs to remove — stay clean
+                # (ok=true) while carrying the advisory note for the email.
+                _rm.write_manifest(_card_id, failed=[], kind="tab",
+                                   note="⚠ " + _term_note)
             else:
                 _rm.mark_clean(_card_id, kind="tab")
         except Exception:

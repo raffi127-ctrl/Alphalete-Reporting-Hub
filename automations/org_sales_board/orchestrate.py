@@ -174,6 +174,7 @@ def _run_daily_inner(ws, *, page, dry_run, today, from_csv, only,
     ctx = AdapterContext(today=today, out_dir=Path("output"),
                          from_csv=from_csv, page=page, logfn=logfn)
     summary = {"filled": [], "skipped": [], "manual": []}
+    _owner_names: set = set()  # every owner/ICD name pulled — for the terminated check
 
     stage_names = ["Tableau scrape (one session)", "MANUAL"]
     for stage_idx, group in enumerate(src.run_order()):
@@ -208,6 +209,10 @@ def _run_daily_inner(ws, *, page, dry_run, today, from_csv, only,
                 summary["skipped"].extend(labels)
                 continue
             logfn(f"  {labels}: parsed {len(pull)} owner(s)")
+            try:
+                _owner_names.update(pull.keys())
+            except Exception:  # pull isn't a name-keyed mapping — skip
+                pass
 
             for sec in sections:
                 spec = fs.SectionSpec(label=sec.label, metric=sec.metric)
@@ -231,5 +236,11 @@ def _run_daily_inner(ws, *, page, dry_run, today, from_csv, only,
             cap = captainship.run_captainships(ws, page, today=today,
                                                dry_run=dry_run, logfn=logfn)
             summary["captainships"] = cap
+            try:
+                _owner_names.update(cap.get("filled", []))
+                _owner_names.update((cap.get("missing") or {}).keys())
+            except Exception:
+                pass
 
+    summary["owners"] = sorted(_owner_names)
     return summary

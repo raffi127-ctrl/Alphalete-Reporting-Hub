@@ -214,14 +214,31 @@ def main(argv=None) -> int:
     if aliases:
         print(f"  Loaded {sum(len(v) for v in aliases.values())} aliases "
               f"({len(aliases)} canonical names).")
+    all_reps: set = set()
     for slug, label, _fetch_fn, open_ws_fn, _csv_name in selected:
         if slug not in csvs:
             continue   # pull failed/skipped above — already flagged
         parsed = pull.parse(csvs[slug])
         parsed = _apply_aliases(parsed, aliases)
         _run_fill_phase(label, open_ws_fn, parsed, today, args)
+        all_reps.update(parsed.get("reps", {}).keys())
 
     # No Slack post — Captainship is sheet-only (Megan 2026-05-29).
+
+    # Cross-reference filled reps against the 'Terminated ICDs' tab + ALERT the
+    # runner about anyone terminated still on a tab (advisory — prints to the run
+    # output + log, never removes a row). Folded into the manifest note below.
+    _term_note = None
+    if not args.dry_run and not args.only:
+        try:
+            from automations.shared import terminated_icds as _ti
+            _hits, _flag = _ti.alert_terminated(
+                sorted(all_reps), report_label="the Captainship Churn tabs")
+            if _hits:
+                _term_note = ("terminated ICD(s) still on the report (remove them): "
+                              + ", ".join(h["report_name"] for h in _hits))
+        except Exception:  # noqa: BLE001 — advisory must never fail the run
+            pass
 
     # Standard failure manifest → Hub "Retry failed only" + failure-help callout.
     # Only on a FULL run (an --only run is itself the retry). --only is a single
@@ -237,7 +254,8 @@ def main(argv=None) -> int:
                     failed=list(failed),
                     retry_args=(["--only", _fslugs[0]] if len(_fslugs) == 1 else []),
                     kind="report",
-                    note=f"{len(failed)} churn report(s) failed: {failed}.",
+                    note=f"{len(failed)} churn report(s) failed: {failed}."
+                         + (f" ⚠ {_term_note}" if _term_note else ""),
                     remediation=_rm.make_remediation(
                         reason=f"{len(failed)} churn report(s) failed in "
                                f"Tableau: {', '.join(failed)}.",
@@ -251,6 +269,9 @@ def main(argv=None) -> int:
                                 f"these from Tableau today: {', '.join(failed)}. "
                                 f"Can someone check those churn views are "
                                 f"loading? A re-run often clears a flaky load."))
+            elif _term_note:
+                _rm.write_manifest("captainship-new-internet-wireless-churn",
+                                   failed=[], kind="report", note="⚠ " + _term_note)
             else:
                 _rm.mark_clean("captainship-new-internet-wireless-churn",
                                kind="report")

@@ -480,6 +480,19 @@ def main(argv=None):
     for D, recs in pulled.items():
         report[D] = recs                    # fresh data wins for the pulled column(s)
     fill(sh, ws, report, blocks, dry=False)
+
+    # Cross-reference the recruiters on the tab against the 'Terminated ICDs'
+    # tab + ALERT the runner about anyone terminated still listed (advisory —
+    # prints to the run output + log, never removes a row). Names come from the
+    # same set fill() builds: every recruiter across all report weeks.
+    try:
+        from automations.shared import terminated_icds as _ti
+        _names = sorted({n for wk in report.values() for n in wk})
+        _ti.alert_terminated(
+            _names, report_label="the Ongoing 1st Round Recruiter Retention tab")
+    except Exception:  # noqa: BLE001 — advisory must never fail the run
+        pass
+
     print("=== done ===", flush=True)
     return 0
 

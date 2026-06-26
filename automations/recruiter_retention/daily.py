@@ -182,6 +182,16 @@ def main(argv=None) -> int:
         return 0
 
     _write(cards, this_mon, today)
+
+    # Cross-reference the recruiters on the tab against the 'Terminated ICDs'
+    # tab + ALERT the runner about anyone terminated still listed (advisory —
+    # prints to the run output + log, never removes a row).
+    try:
+        from automations.shared import terminated_icds as _ti
+        _ti.alert_terminated(names, report_label="the Daily 1st Round Recruiter % tab")
+    except Exception:  # noqa: BLE001 — advisory must never fail the run
+        pass
+
     print(f"\n=== done ===")
     return 0
 

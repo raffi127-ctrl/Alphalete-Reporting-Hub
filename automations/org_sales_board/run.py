@@ -204,6 +204,20 @@ def main(argv=None) -> int:
             _skipped = list(_summary.get("skipped") or [])
             _failed_prog = list(
                 (_summary.get("captainships") or {}).get("failed_programs") or [])
+            # Cross-reference every owner/ICD pulled onto the board against the
+            # 'Terminated ICDs' tab + ALERT the runner (advisory — prints to the
+            # output + log, never removes a row). Folded into the manifest note.
+            _term_note = None
+            try:
+                from automations.shared import terminated_icds as _ti
+                _hits, _flag = _ti.alert_terminated(
+                    _summary.get("owners") or [],
+                    report_label="the Org Sales Board")
+                if _hits:
+                    _term_note = ("terminated ICD(s) still on the board (remove them): "
+                                  + ", ".join(h["report_name"] for h in _hits))
+            except Exception:  # noqa: BLE001 — advisory must never fail the run
+                pass
             _compare_clean = True
             if not args.dry_run and not args.real:
                 from automations.org_sales_board import compare
@@ -230,7 +244,8 @@ def main(argv=None) -> int:
                         _rm.write_manifest(
                             "org-sales-board", failed=_failed_all, retry_args=_ra,
                             kind="section",
-                            note=f"{len(_failed_all)} part(s) missing this run.",
+                            note=f"{len(_failed_all)} part(s) missing this run."
+                                 + (f" ⚠ {_term_note}" if _term_note else ""),
                             remediation=_rm.make_remediation(
                                 reason=("Org Sales Board run is missing data — "
                                         + "; ".join(_failed_all) + "."),
@@ -249,6 +264,9 @@ def main(argv=None) -> int:
                                          "often clears a flaky Tableau load; if a "
                                          "view keeps failing it may need "
                                          "re-creating in Tableau.")))
+                    elif _term_note:
+                        _rm.write_manifest("org-sales-board", failed=[],
+                                           kind="section", note="⚠ " + _term_note)
                     else:
                         _rm.mark_clean("org-sales-board", kind="section")
                 except Exception:

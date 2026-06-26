@@ -1275,6 +1275,18 @@ def main() -> int:
         except Exception:
             pass
 
+    # Cross-reference the owner tabs against the 'Terminated ICDs' tab + ALERT
+    # the runner about anyone terminated who still has a tab (advisory — prints
+    # to the run output + log, never deletes a tab). Self-contained so a Sheet
+    # hiccup can't touch the success path.
+    try:
+        from automations.shared import terminated_icds as _ti
+        _sh = _fill._client().open_by_key(DEST_SPREADSHEET_ID)
+        _owners = [t.title for t in _sh.worksheets() if t.title not in NON_OWNER_TABS]
+        _ti.alert_terminated(_owners, report_label="the Daily Rep Breakdown tabs")
+    except Exception:  # noqa: BLE001 — advisory must never fail the run
+        pass
+
     _notify_success(
         f"{'Tuesday shift' if is_shift_day else 'Daily'} run complete — "
         f"all 30 tabs refreshed.")
