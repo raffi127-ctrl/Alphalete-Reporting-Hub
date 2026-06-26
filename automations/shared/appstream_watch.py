@@ -44,7 +44,8 @@ WATCH_STATE = Path(__file__).resolve().parents[2] / "output" / "appstream_watch_
 ALERT_SLACK_TARGETS = ["U04G5HJBGFN", "U088E2KJEV8"]
 
 # Reports that depend on the AppStream recruiting console — auto-rerun on recovery.
-APPSTREAM_REPORTS = ["daily_focus_carlos", "daily_focus_raf"]
+# One entry now: daily_focus runs every captainship in one pass (--captainship all).
+APPSTREAM_REPORTS = ["daily_focus"]
 
 # The session must stay valid through the 4am batch — require it to outlast 4am
 # by this margin so the token covers the whole daily_focus run, not just its start.

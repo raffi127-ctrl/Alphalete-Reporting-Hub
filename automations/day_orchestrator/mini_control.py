@@ -23,7 +23,7 @@ Actions:
 CLI:
   python -m automations.day_orchestrator.mini_control --loop      # on the mini
   python -m automations.day_orchestrator.mini_control --once
-  python -m automations.day_orchestrator.mini_control --enqueue rerun daily_focus_carlos
+  python -m automations.day_orchestrator.mini_control --enqueue rerun daily_focus
       --dry-run    poll + show what WOULD run, execute nothing
       --sandbox    use the "Mini Control TEST" tab (build/verify safely)
 """
@@ -96,10 +96,10 @@ def _run_cmd(cmd: list[str], timeout_s: int = DEFAULT_TIMEOUT_S) -> tuple[bool, 
 
 
 def _action_rerun(args: str) -> tuple[bool, str]:
-    """Re-run one orchestrator report by report_id (e.g. daily_focus_carlos)."""
+    """Re-run one orchestrator report by report_id (e.g. daily_focus)."""
     report_id = (args or "").strip()
     if not report_id:
-        return False, "rerun needs a report_id (e.g. daily_focus_carlos)"
+        return False, "rerun needs a report_id (e.g. daily_focus)"
     cfg = registry.load_config()
     r = cfg.reports.get(report_id)
     if not r:
@@ -240,7 +240,7 @@ def main(argv=None) -> int:
     ap.add_argument("--loop", action="store_true", help="poll forever (run on the mini)")
     ap.add_argument("--once", action="store_true", help="poll once and exit")
     ap.add_argument("--enqueue", nargs="+", metavar="ACTION",
-                    help="queue an action, e.g. --enqueue rerun daily_focus_carlos")
+                    help="queue an action, e.g. --enqueue rerun daily_focus")
     ap.add_argument("--interval", type=int, default=120, help="loop interval seconds")
     ap.add_argument("--dry-run", action="store_true", help="poll but execute nothing")
     ap.add_argument("--sandbox", action="store_true", help="use the TEST tab")

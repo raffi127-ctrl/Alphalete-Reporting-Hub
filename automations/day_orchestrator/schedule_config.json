@@ -43,18 +43,11 @@
       "verify": {"type": "manifest", "report_id": "daily_metrics"}
     },
 
-    "daily_focus_raf": {
-      "on_scheduler": true, "display_name": "Daily Recruiting Focus — Raf",
+    "daily_focus": {
+      "on_scheduler": true, "display_name": "Daily Recruiting Focus",
       "source_type": "appstream", "data_sources": [],
-      "command": ["automations.recruiting_report.daily_focus"], "base_args": ["--captainship", "Raf"],
-      "cadence": {"weekdays": [0,1,2,3,4]},
-      "priority": "P1", "freshness_target": null, "depends_on": [],
-      "verify": {"type": "manifest", "report_id": "daily-focus"}
-    },
-    "daily_focus_carlos": {
-      "on_scheduler": true, "display_name": "Daily Recruiting Focus — Carlos",
-      "source_type": "appstream", "data_sources": [],
-      "command": ["automations.recruiting_report.daily_focus"], "base_args": ["--captainship", "Carlos"],
+      "_note": "One pass over EVERY captainship tab. '--captainship all' reads CAPTAINSHIPS in daily_focus.py (Raf, Carlos, Sahil Multani, Chan Park, Jose Antonio Chavez). Add a captain there + a tab in the Sheet — no schedule_config edit needed. (Replaced the split daily_focus_raf/daily_focus_carlos entries 2026-06-26.)",
+      "command": ["automations.recruiting_report.daily_focus"], "base_args": ["--captainship", "all"],
       "cadence": {"weekdays": [0,1,2,3,4]},
       "priority": "P1", "freshness_target": null, "depends_on": [],
       "verify": {"type": "manifest", "report_id": "daily-focus"}
