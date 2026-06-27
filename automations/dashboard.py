@@ -5180,6 +5180,27 @@ def _file_run_glitch(report_id: str, report_name: str, log_text: str,
         except Exception:
             pass
     cmd_line = f"COMMAND: {command}\n" if command else ""
+    # A self-contained block to paste straight into Claude — it has everything
+    # Claude needs to act immediately, with no back-and-forth: what failed, the
+    # exact command, the Hub version, the plain-English cause, and the error
+    # tail. (Megan 2026-06-27: "just give the cause + exact code to run in Claude
+    # so Claude understands immediately what's going on.")
+    _err_tail = "\n".join((log_text or "").strip().splitlines()[-12:]) \
+        or "(no log was captured)"
+    _cause = diag[0] if diag else "see the error tail below"
+    claude_block = (
+        "===== PASTE THIS TO CLAUDE TO FIX =====\n"
+        f"The Hub report \"{report_name}\" (report_id: {report_id}) failed"
+        f"{(' on ' + user) if user else ''}.\n"
+        f"What ran: {command or 'n/a'}\n"
+        f"Hub version (git SHA): {_hub_git_sha()}\n"
+        f"Likely cause: {_cause}\n"
+        "Diagnose the root cause from the error below and fix it in the repo. "
+        "If it's a transient Tableau/network blip, just re-run it instead. "
+        "Error tail:\n"
+        f"{_err_tail}\n"
+        "===== END =====\n\n"
+    )
     details = (
         f"Automatic glitch report — a run of '{report_name}' failed.\n\n"
         f"WHEN:  {dt.datetime.now():%Y-%m-%d %H:%M}\n"
@@ -5187,6 +5208,7 @@ def _file_run_glitch(report_id: str, report_name: str, log_text: str,
         f"HUB:   {_hub_git_sha()}\n"
         f"{cmd_line}\n"
         f"{diag_line}"
+        f"{claude_block}"
         f"--- Run log ---\n"
         f"{(log_text or '').strip() or '(no log was captured)'}"
     )
