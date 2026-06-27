@@ -97,11 +97,17 @@ def main(argv=None) -> int:
     p.add_argument("--only", default=None,
                    help="Limit to one captain by team short-name (e.g. Wayne).")
     p.add_argument("--drive", action="store_true",
-                   help="Also upload the PNGs to Drive (needs the Drive API "
-                        "enabled in the GCP project). Off by default — PNGs "
-                        "always save to your Downloads folder. Upload failures "
-                        "are non-fatal.")
+                   help="(Deprecated — Drive upload is ON by default now. Kept "
+                        "so older callers passing --drive still work.)")
+    p.add_argument("--no-drive", action="store_true",
+                   help="Skip the Drive upload (PNGs still save to Downloads). "
+                        "Use this for a local-only run. Upload failures are "
+                        "non-fatal regardless.")
     args = p.parse_args(argv)
+    # Drive upload is ON by default — every live run pushes the PNGs to the
+    # 'Captainship Activations - PNGs' folder (overwrite same-name + prune the
+    # prior day) so Drive always mirrors Downloads. --no-drive opts out.
+    want_drive = not args.no_drive
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
     roster = [c for c in C.CAPTAINS
@@ -145,7 +151,7 @@ def main(argv=None) -> int:
           f"(Orange Z left to formula; row 8 / formatting untouched.)")
 
     # Render the 6 PNGs (read-only), save to Downloads, optional non-fatal Drive.
-    skipped = _deliver(sh, today, want_drive=args.drive, dry_run=args.dry_run)
+    skipped = _deliver(sh, today, want_drive=want_drive, dry_run=args.dry_run)
 
     # A tab that's missing its 'WE'/AVG header is reported per-tab and the run
     # is marked INCOMPLETE — the healthy tabs still filled + uploaded, but the
