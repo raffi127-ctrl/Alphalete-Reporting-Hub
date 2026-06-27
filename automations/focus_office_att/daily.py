@@ -323,6 +323,40 @@ def set_all_current_week_dates(sh, monday: "dt.date", logfn=print) -> int:
     return n
 
 
+def set_frozen_week_dates(sh, monday: "dt.date", logfn=print) -> int:
+    """Stamp the LAST WEEK block's per-day date labels + weekly banner to the
+    week starting `monday`. The freeze copies rep data but NOT the per-day date
+    labels, so they went stale ('Sat 12/30' on every tab — Megan 2026-06-27).
+    Finds the 'LAST WEEK' row per tab (label in col B), then writes 'Mon m/d' …
+    'Sun m/d' into each day-block's first col (13, 25, … 85) + the banner in
+    col C of that row. Idempotent."""
+    import time
+    from gspread.utils import rowcol_to_a1
+    md = lambda d: f"{d.month}/{d.day}"
+    names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    banner = (f"Weekly Total Mon {md(monday)} - Sun {md(monday + dt.timedelta(days=6))} "
+              "(Weekend hours excluded from averages)")
+    tabs = [t for t in sh.worksheets() if t.title not in NON_OWNER_TABS]
+    n = 0
+    for ws in tabs:
+        try:
+            col_b = ws.col_values(2)
+            lw = next((i for i, v in enumerate(col_b, start=1)
+                       if isinstance(v, str) and v.strip().upper() == LAST_WEEK_LABEL), None)
+            if not lw:
+                continue
+            updates = [{"range": rowcol_to_a1(lw, 3), "values": [[banner]]}]
+            for wd in range(7):
+                updates.append({"range": rowcol_to_a1(lw, 13 + wd * 12),
+                                "values": [[f"{names[wd]} {md(monday + dt.timedelta(days=wd))}"]]})
+            ws.batch_update(updates, value_input_option="USER_ENTERED")
+            n += 1
+            time.sleep(0.3)
+        except Exception as e:
+            logfn(f"  {ws.title}: frozen-date stamp failed — {type(e).__name__}")
+    return n
+
+
 def _shift_already_done(sh, monday: "dt.date") -> bool:
     """True if the top chart already shows the week starting `monday` — i.e.
     the Tuesday shift already ran today. Guards against a SECOND shift nesting
@@ -1098,18 +1132,17 @@ def main() -> int:
     stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
     log_path = LOG_DIR / f"focus-office-daily-{stamp}.log"
     today = dt.date.today()
-    # CADENCE (Megan 2026-06-15): the week SHIFTS on TUESDAY, not Monday.
-    #   Monday    — the just-finished week is still the top chart; finalize it
-    #               (scrape LAST week so Sunday's numbers settle). No rollover.
-    #   Tuesday   — SHIFT: freeze last week into LAST WEEK, relabel the top to
-    #               the new week, clear it, then scrape the new week (Mon+Tue).
-    #   Wed–Sun   — incremental fill of the current week.
+    # CADENCE (Megan 2026-06-27): the week SHIFTS on MONDAY.
+    #   Monday   — SHIFT: scrape LAST week first (Sunday only lands on Monday's
+    #              pull, so this is when last week becomes COMPLETE), THEN freeze
+    #              the finished week into LAST WEEK + start the fresh week. The
+    #              freeze runs AFTER the scrape (below Phase 3) so Sunday is in.
+    #   Tue–Sun  — incremental: pull only the completed day before (yesterday).
     dow = today.weekday()                       # 0=Mon .. 6=Sun
-    is_shift_day = (dow == 1)                    # Tuesday
+    is_shift_day = (dow == 0)                    # Monday (rollover day)
     this_monday = today - dt.timedelta(days=dow)
     last_monday = this_monday - dt.timedelta(days=7)
-    mode = ("TUESDAY shift" if is_shift_day
-            else "MONDAY finalize-last-week" if dow == 0
+    mode = ("MONDAY shift (finalize + freeze last week)" if is_shift_day
             else "mid-week incremental")
 
     with open(log_path, "w") as log:
@@ -1125,56 +1158,25 @@ def main() -> int:
         # self-auth via patchright now — no more debug-Chrome pre-flight gate.
         sh = _fill._client().open_by_key(DEST_SPREADSHEET_ID)
 
-        # 2. Tuesday SHIFT (freeze last week + start new week), else future-day wipe
-        if is_shift_day:
-            # Idempotency guard: if the top chart already shows THIS week's
-            # dates, the shift ran already today — skip it. Without this, a
-            # second run re-rolls the (now-current) week on top of the frozen
-            # block and NESTS them (the corruption of 2026-06-15).
-            if _shift_already_done(sh, this_monday):
-                say("Tuesday shift already done (top chart is this week) — skipping.")
-            else:
-                # Freeze the just-finished week into each tab's LAST WEEK block
-                # BEFORE wiping the current week (Raf: keep last week's data).
-                say("Tuesday: freezing last week into the LAST WEEK block...")
-                try:
-                    n = rollover_all_tabs(sh, logfn=say)
-                    say(f"  froze last week on {n} tab(s)")
-                except Exception as e:
-                    say(f"  rollover failed (non-fatal): {e}")
-                say("Tuesday: clearing the current week for the new week...")
-                try:
-                    n = wipe_all_owner_tabs(sh)
-                    say(f"  cleared current week on {n} tab(s)")
-                    try:
-                        RUN_CHECKPOINT.unlink(missing_ok=True)
-                    except Exception:
-                        pass
-                except Exception as e:
-                    say(f"  wipe failed: {e}")
-                    _notify_failure("Focus Office Tuesday wipe failed.",
-                                    str(e), str(log_path))
-                    return 1
-                # Relabel row 1 to the NEW week — the report never wrote these,
-                # which is why labels drifted (Megan 2026-06-15).
-                say(f"Tuesday: setting new-week dates (Mon {this_monday.month}/"
-                    f"{this_monday.day})...")
-                try:
-                    n = set_all_current_week_dates(sh, this_monday, logfn=say)
-                    say(f"  set new-week dates on {n} tab(s)")
-                except Exception as e:
-                    say(f"  date relabel failed (non-fatal): {e}")
-        else:
-            # Tue-Sun: clear cells for days AFTER today so last week's
-            # Wed-Sun stale data doesn't leak into this week (the column
-            # headers roll over but cell values don't until something
-            # writes them). Sunday no-ops.
-            say("Clearing future-day blocks (post-today, this week)...")
-            try:
-                n = wipe_future_day_blocks(sh, today)
-                say(f"  cleared future blocks on {n} tab(s)")
-            except Exception as e:
-                say(f"  future-day clear failed (non-fatal): {e}")
+        # Decide the MONDAY rollover up front — it runs AFTER the scrape (below).
+        # shift_pending = it's Monday AND we haven't already rolled over today.
+        # Idempotency: if the top chart already shows this week, a prior run did
+        # the roll — don't re-freeze and nest the blocks (the 2026-06-15 corruption).
+        shift_pending = is_shift_day and not _shift_already_done(sh, this_monday)
+        if is_shift_day and not shift_pending:
+            say("Monday rollover already done today (top chart is this week) — "
+                "will fill incrementally, no re-freeze.")
+
+        # 2. Pre-scrape: clear future-day blocks so last week's stale data doesn't
+        #    linger in this week's columns (headers roll over but values don't until
+        #    something writes them). The freeze now runs AFTER the scrape, so last
+        #    week's Sunday — which only lands on Monday's pull — is captured first.
+        say("Clearing future-day blocks (post-today, this week)...")
+        try:
+            n = wipe_future_day_blocks(sh, today)
+            say(f"  cleared future blocks on {n} tab(s)")
+        except Exception as e:
+            say(f"  future-day clear failed (non-fatal): {e}")
 
         # Collapse future-day column GROUPS so empty days are hidden
         # behind a +/- toggle the user can click to peek at them.
@@ -1188,11 +1190,9 @@ def main() -> int:
 
         # 3. Phase 2 — ownerville scrape (week depends on the cadence)
         say("Phase 2: ownerville scrape...")
-        if is_shift_day:
-            phase2_args = []                       # full scrape of the new week
-        elif dow == 0:                             # Monday: finalize LAST week
+        if shift_pending:                          # Monday: scrape LAST week to finish it
             phase2_args = ["--week-start", last_monday.isoformat()]
-        else:                                      # Wed-Sun: incremental
+        else:                                      # Tue-Sun (+ Mon re-run): incremental
             phase2_args = ["--daily-window"]
         rc2 = _run_phase("automations.focus_office_att.run_all_owners",
                          phase2_args, log, timeout_s=PHASE2_TIMEOUT_S)
@@ -1233,7 +1233,7 @@ def main() -> int:
         # week, step7's default).
         say("Phase 3: Tableau auto-download (CSV) + Sheet fill...")
         phase3_args = ["--format", "csv", "--fill"]
-        if dow == 0:
+        if shift_pending:   # Monday: pull LAST week's Tableau to finish it before the freeze
             phase3_args += ["--week-ending", (last_monday + dt.timedelta(days=6)).isoformat()]
         rc3 = _run_phase("automations.focus_office_att.step7_download_tableau",
                          phase3_args, log,
@@ -1278,6 +1278,40 @@ def main() -> int:
             say(f"  cleared incomplete-day columns on {n} tab(s)")
         except Exception as e:
             say(f"  incomplete-day clear failed (non-fatal): {e}")
+
+        # MONDAY ROLLOVER — the scrape just finished last week (Sunday is in), so
+        # NOW freeze the complete week into LAST WEEK and start the fresh week.
+        # AFTER the scrape (not before) so Sunday — which only lands on Monday's
+        # pull — is captured (Megan 2026-06-27: roll over on Monday, not Tuesday).
+        if shift_pending:
+            say("Monday: freezing the completed last week into the LAST WEEK block...")
+            try:
+                n = rollover_all_tabs(sh, logfn=say)
+                say(f"  froze last week on {n} tab(s)")
+            except Exception as e:
+                say(f"  rollover failed (non-fatal): {e}")
+            try:
+                n = set_frozen_week_dates(sh, last_monday, logfn=say)
+                say(f"  stamped frozen-week dates on {n} tab(s)")
+            except Exception as e:
+                say(f"  frozen-date stamp failed (non-fatal): {e}")
+            say("Monday: clearing the current week for the new week...")
+            try:
+                n = wipe_all_owner_tabs(sh)
+                say(f"  cleared current week on {n} tab(s)")
+                try:
+                    RUN_CHECKPOINT.unlink(missing_ok=True)
+                except Exception:
+                    pass
+            except Exception as e:
+                say(f"  wipe failed: {e}")
+            say(f"Monday: setting new-week dates (Mon {this_monday.month}/"
+                f"{this_monday.day})...")
+            try:
+                n = set_all_current_week_dates(sh, this_monday, logfn=say)
+                say(f"  set new-week dates on {n} tab(s)")
+            except Exception as e:
+                say(f"  date relabel failed (non-fatal): {e}")
 
         # 5. Tab colors
         say("Refreshing tab colors...")
@@ -1345,7 +1379,7 @@ def main() -> int:
         pass
 
     _notify_success(
-        f"{'Tuesday shift' if is_shift_day else 'Daily'} run complete — "
+        f"{'Monday shift' if is_shift_day else 'Daily'} run complete — "
         f"all 30 tabs refreshed.")
     _daily_manifest_ok()   # clear any prior failure manifest
     return 0
