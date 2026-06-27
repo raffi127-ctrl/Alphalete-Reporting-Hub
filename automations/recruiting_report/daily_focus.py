@@ -752,18 +752,63 @@ def _save_overrides(overrides: dict) -> None:
     ))
 
 
+ALL_OFFICES_PATH = Path(__file__).resolve().parent / "all-offices.json"
+_OFFICE_DIRECTORY_CACHE: Optional[dict] = None
+
+
+def _load_office_directory() -> dict:
+    """Map {owner-name-lower: [office_id, ...]} from all-offices.json — the full
+    AppStream office directory the Hub already uses for its 'Map new ICDs'
+    suggestions. Built once + cached. Only entries with a real owner + numeric
+    office id are included (the file also has raw, owner-less rows)."""
+    global _OFFICE_DIRECTORY_CACHE
+    if _OFFICE_DIRECTORY_CACHE is None:
+        d: dict = {}
+        try:
+            for o in json.loads(ALL_OFFICES_PATH.read_text()).get("offices", []):
+                owner = (o.get("owner") or "").lower().strip()
+                oid = str(o.get("office_id") or "").strip()
+                if owner and oid.isdigit():
+                    d.setdefault(owner, [])
+                    if oid not in d[owner]:
+                        d[owner].append(oid)
+        except Exception:
+            pass
+        _OFFICE_DIRECTORY_CACHE = d
+    return _OFFICE_DIRECTORY_CACHE
+
+
 def _resolve_office_id(name: str) -> Optional[str]:
     """Return the office id for an ICD name, or None if unmapped/skipped.
 
-    Order: user overrides (incl. SKIP sentinel) → hardcoded
-    ICD_NAME_TO_OFFICE_ID. SKIP returns None so the caller skips the row
-    without logging a 'no mapping' warning."""
+    Order: user overrides (incl. SKIP sentinel) → hardcoded ICD_NAME_TO_OFFICE_ID
+    → all-offices.json directory (exact, UNAMBIGUOUS owner-name match). The
+    directory fallback means an ICD whose sheet name matches its AppStream office
+    name exactly is auto-resolved — no manual 'Map new ICDs' step — so only
+    genuinely new or ambiguous names fall through to the prompt (Megan 2026-06-27:
+    "you should have auto done that on the report run"). SKIP returns None so the
+    caller skips the row without logging a 'no mapping' warning."""
     key = name.lower().strip()
     overrides = _load_overrides()
     if key in overrides:
         v = overrides[key]
         return None if v == SKIP_SENTINEL else v
-    return ICD_NAME_TO_OFFICE_ID.get(key)
+    hard = ICD_NAME_TO_OFFICE_ID.get(key)
+    if hard:
+        return hard
+    # Directory fallback: auto-resolve an exact, unambiguous owner match. If a
+    # name maps to >1 office (e.g. a captain with two offices), DON'T guess —
+    # leave it for a manual pick so we never write the wrong office's data.
+    dir_hits = _load_office_directory().get(key, [])
+    _log = logging.getLogger("daily-focus")
+    if len(dir_hits) == 1:
+        _log.info("[%s] auto-resolved to office %s from all-offices.json",
+                  name, dir_hits[0])
+        return dir_hits[0]
+    if len(dir_hits) > 1:
+        _log.warning("[%s] %d offices share this name in all-offices.json (%s) — "
+                     "needs a manual pick; skipping for now", name, len(dir_hits), dir_hits)
+    return None
 
 
 def _is_skipped(name: str) -> bool:
