@@ -17,6 +17,7 @@ Status flows  queued -> running -> done | failed.  Only 'queued' rows run.
 
 Actions:
   rerun <report_id>     re-run one orchestrator report (today's common fix)
+  update                git pull the latest code onto the mini (remote deploy)
   restart_holder        relaunch the ownerville session-holder LaunchAgent
   reseed_appstream      open the AppStream login (a human clears Cloudflare)
 
@@ -140,9 +141,20 @@ def _action_ping(args: str) -> tuple[bool, str]:
     return True, f"pong from {socket.gethostname()} @ {_now()}"
 
 
+def _action_update(args: str) -> tuple[bool, str]:
+    """git pull the repo on the mini — deploy new code WITHOUT being physically
+    at it. --ff-only so it never creates a merge commit (fails cleanly if the
+    mini's checkout has diverged, rather than tangling it). The next scheduled
+    run / report picks up the new code; a poller-code change needs a
+    restart_holder after. Read the result with `mini status`."""
+    return _run_cmd(["git", "-C", str(REPO_ROOT), "pull", "--ff-only"],
+                    timeout_s=120)
+
+
 ACTIONS = {
     "ping": _action_ping,
     "rerun": _action_rerun,
+    "update": _action_update,
     "restart_holder": _action_restart_holder,
     "reseed_appstream": _action_reseed_appstream,
 }
@@ -276,6 +288,7 @@ def print_help() -> None:
         "  mini status               show the last 10 commands + their results\n"
         "  mini status 25            show the last 25\n"
         "  mini rerun <report_id>    re-run a report that failed in the daily email\n"
+        "  mini update               git pull the latest code onto the mini\n"
         "  mini restart_holder       restart the session keep-alive\n"
         "  mini reseed_appstream     open AppStream login (needs a human AT the mini)\n"
         "  mini help                 show this\n\n"
