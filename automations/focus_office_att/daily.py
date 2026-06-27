@@ -127,6 +127,52 @@ def wipe_future_day_blocks(sh, today: "dt.date") -> int:
     return len(tabs)
 
 
+def clear_incomplete_current_days(sh, today: "dt.date") -> int:
+    """Clear current-week day-blocks for days that are NOT yet complete
+    (date >= today), so the report only ever shows the fully-completed day
+    before. The mid-week scrape re-pulls yesterday+today (today is always a
+    partial snapshot); this strips today's partial back out AFTER the fill so
+    only the completed day before is shown (Megan 2026-06-27).
+
+    DATE-aware (reads row-1 'Mon m/d'), NOT weekday-based: on Monday the current
+    block still shows last week (pre-Tuesday-rollover), where every date is < today
+    so nothing is cleared — a weekday clear would wrongly wipe completed data.
+    Clears the CURRENT zone only (rep rows + OFFICE TOTALS + summary), never the
+    frozen LAST WEEK block. No-op if today's column is already the first/none."""
+    import re as _re
+    tabs = [t for t in sh.worksheets() if t.title not in NON_OWNER_TABS]
+    if not tabs:
+        return 0
+    mon = None
+    for v in tabs[0].row_values(1):
+        m = _re.match(r"^Mon\s+(\d{1,2})/(\d{1,2})", str(v).strip())
+        if m:
+            mon = dt.date(today.year, int(m.group(1)), int(m.group(2)))
+            if mon > today + dt.timedelta(days=30):   # a Dec label read in Jan
+                mon = dt.date(today.year - 1, int(m.group(1)), int(m.group(2)))
+            break
+    if not mon:
+        return 0
+    incomplete = [wd for wd in range(7) if mon + dt.timedelta(days=wd) >= today]
+    if not incomplete:
+        return 0
+    def _coletter(c: int) -> str:
+        s = ""
+        while c > 0:
+            c, r = divmod(c - 1, 26)
+            s = chr(65 + r) + s
+        return s
+    last_cur_row = LAST_WEEK_LABEL_ROW - 1
+    ranges = []
+    for wd in incomplete:
+        c0 = 13 + wd * 12      # day-block start col (Mon=13, +12/day)
+        c1 = c0 + 11           # 12-col block
+        for t in tabs:
+            ranges.append(f"{_q(t.title)}!{_coletter(c0)}3:{_coletter(c1)}{last_cur_row}")
+    sh.values_batch_clear(body={"ranges": ranges})
+    return len(tabs)
+
+
 # Day-block column-group ranges (0-indexed half-open) — Mon..Sun.
 # These match the pre-existing depth=2 column groups Sheets already has on
 # every owner tab, exactly. Each block is 11 cols; the 1-col gap between
@@ -1221,6 +1267,17 @@ def main() -> int:
             _daily_manifest_fail("phase3")
             return 1
         say("  Phase 3 done.")
+
+        # Strip today's partial data back out — the scrape re-pulls yesterday+today
+        # but today is never complete, so only the fully-completed day before should
+        # show (Megan 2026-06-27). Date-aware + after the fill so the scrape can't
+        # re-add it. No-op on Monday (current block still shows last week).
+        say("Clearing not-yet-complete days (only the completed day before is shown)...")
+        try:
+            n = clear_incomplete_current_days(sh, today)
+            say(f"  cleared incomplete-day columns on {n} tab(s)")
+        except Exception as e:
+            say(f"  incomplete-day clear failed (non-fatal): {e}")
 
         # 5. Tab colors
         say("Refreshing tab colors...")
