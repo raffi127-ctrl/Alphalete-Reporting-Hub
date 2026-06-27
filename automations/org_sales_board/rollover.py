@@ -9,12 +9,14 @@ Mon–Sun week for any weekday, so only the run-DAY matters, not the code.)
 Three mechanics:
 
 1. LEADERBOARDS (the ALPHALETE ORG weekly-history block + the 10 captainship
-   strips): col C = the live current week (a =SUM/=SUMIF formula for ORG, a
-   filled value for captainships); cols D→ = frozen static history (WE dates,
+   strips): col C = the live current week (a =SUM formula for ORG, a =SUMIF
+   formula for captainships); cols D→ = frozen static history (WE dates,
    newest→oldest left→right). Rollover GROWS by one column (Megan 2026-06-01,
    keep full history): each data row's values shift one column RIGHT
    (C-value→D, D→E, …) freezing the completed week into D; col C keeps its
-   formula (ORG) or is zeroed (captainships, refilled by the daily run). The
+   formula in BOTH cases — the daily-clear (step 4) zeroes the source the
+   captainship =SUMIF reads, so it drops to 0 for the new week WITHOUT the
+   rollover overwriting the formula with a literal (Eve 2026-06-26). The
    header row shifts the same way and the new col-C header becomes the new
    week-ending date. (Captainship C headers are =C24, so only the ORG C24 is
    re-dated — the rest follow.)
@@ -133,7 +135,11 @@ def plan_captainship_leaderboard_rollover(ws, header_row, data_rows, last_col,
                                           org_header_row, org_last_col):
     """Roll a captainship leaderboard. Mirrors the ORG data shift (old C..last
     VALUES -> D..last+1, freezing the just-finished week into D) but:
-      • col-C VALUE is zeroed (the daily run refills the new week);
+      • col-C is LEFT INTACT — it holds the live `=SUMIF` this-week total. The
+        daily-clear (step 4) blanks the daily table that =SUMIF sums, so it
+        reads 0 for the new week ON ITS OWN. Writing a literal 0 here would
+        destroy the formula (Eve 2026-06-26 — the just-finished week is already
+        frozen into D from col C's VALUE, read below before any write);
       • col-C HEADER is left alone (it's `=C24`, auto-follows the ORG);
       • the static D..last HEADERS are replaced by the (already-rolled) ORG
         header row D..end, so every leaderboard tracks identical week columns.
@@ -148,7 +154,11 @@ def plan_captainship_leaderboard_rollover(ws, header_row, data_rows, last_col,
     org_hdr = (list(org_hdr) + [""] * width)[:width]
     updates.append({"range": f"{Dl}{header_row}:{ANl}{header_row}",
                     "values": [org_hdr]})
-    # Data rows: shift old C..last -> D..last+1, zero C.
+    # Data rows: shift old C..last -> D..last+1. Col C's VALUE (the =SUMIF
+    # result for the just-finished week) is READ here via UNFORMATTED_VALUE and
+    # frozen into D BEFORE any write, so the week is preserved. Col C itself is
+    # NOT written — its =SUMIF stays live and self-zeroes when step 4 clears the
+    # daily table it sums (no literal-0 overwrite of the formula).
     rng = f"{Cl}{data_rows[0]}:{a1col(c1)}{data_rows[-1]}"
     vals = ws.get(rng, value_render_option="UNFORMATTED_VALUE")
     rowmap = {data_rows[0] + i: (list(r) + [""] * width)[:width]
@@ -156,7 +166,6 @@ def plan_captainship_leaderboard_rollover(ws, header_row, data_rows, last_col,
     for row in data_rows:
         cur = rowmap.get(row, [""] * width)
         updates.append({"range": f"{Dl}{row}:{ANl}{row}", "values": [cur]})
-        updates.append({"range": f"{Cl}{row}", "values": [[0]]})
     return updates, {"rows": len(data_rows), "grow_into": ANl}
 
 
@@ -254,6 +263,23 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     summary["org_history_tables"] = len(org_tables)
     logfn(f"  3b/5 {len(org_tables)} ORG history table(s) shifted down "
           f"(this wk → Last Week → Prior → 2 Weeks → 3 Weeks)")
+
+    # 3c. Per-campaign history blocks (Retail NL, ATT Fiber, Retail JE, ATT NDS,
+    # B2B, BOX, Frontier, Retail Internet): same down-shift, but seeded from each
+    # section's 'Totals' (=SUM current week) row instead of a 'Sales - This Week'
+    # SUMIF — the X-ORG finder above missed them (Eve 2026-06-26). MUST also run
+    # before the daily clear: the 'Totals' row is a live =SUM over the daily
+    # cells step 4 zeroes, so its value has to be frozen first. The Totals row is
+    # only READ — its formula is never written (plan_org_history_rollover writes
+    # only Last/Prior/2wk/3wk, all static data cells).
+    camp_tables = find_campaign_history_tables(grid)
+    for t in camp_tables:
+        upd = plan_org_history_rollover(ws, t)
+        if upd and not dry_run:
+            ws.batch_update(upd, value_input_option="USER_ENTERED")
+    summary["campaign_history_tables"] = len(camp_tables)
+    logfn(f"  3c/5 {len(camp_tables)} per-campaign history block(s) shifted down "
+          f"(Totals → Last Week → Prior → 2 Weeks → 3 Weeks)")
 
     ranges = plan_daily_clear(ws, grid)
     if not dry_run:
@@ -428,6 +454,57 @@ def find_org_history_tables(grid: List[List[str]]) -> List[dict]:
         tables.append({"header_row": hdr, "c0": min(daycols),
                        "cN": max(daycols) + 1, **rows})   # cN = Grand-Total col
     return tables
+
+
+def find_campaign_history_tables(grid: List[List[str]]) -> List[dict]:
+    """Per-campaign Last/Prior/2wk/3wk history blocks — one under each daily
+    section (Retail NL, ATT Fiber, Retail JE, ATT NDS, B2B, BOX, Frontier,
+    Retail Internet). Each is four consecutive label rows ('Last Week' / 'Prior
+    Week' / '2 Weeks Prior' / '3 Weeks Prior') sitting directly beneath the
+    section's 'Totals' (=SUM current-week) row. Unlike the X-ORG blocks (seeded
+    from a 'Sales - This Week' SUMIF, handled by find_org_history_tables), these
+    seed Last Week from that 'Totals' row — so the returned dict's "this" key
+    points at the Totals row and the SAME plan_org_history_rollover shifts them.
+
+    The 'Totals' row is the signal that distinguishes a campaign block from an
+    X-ORG block: a campaign block's first non-blank row above 'Last Week' is
+    'Totals'; an X-ORG block's is a 'Sales (...)' row, so it's skipped here.
+    Returns dicts shaped like find_org_history_tables (this/lw/pw/2wp/3wp +
+    c0/cN). [No hardcoded rows — found by their col-A/B labels.]"""
+    seq = ("last week", "prior week", "2 weeks prior", "3 weeks prior")
+    out: List[dict] = []
+    n = len(grid)
+    for i in range(n):
+        if (_cell(grid, i, 0) or _cell(grid, i, 1)).lower() != "last week":
+            continue
+        if i + 3 >= n or not all(
+                (_cell(grid, i + k, 0) or _cell(grid, i + k, 1)).lower() == seq[k]
+                for k in range(4)):
+            continue
+        # First NON-BLANK row above 'Last Week' must be the section 'Totals'
+        # (=SUM). If it's a 'Sales (...)' row instead, this is an X-ORG block —
+        # leave it to find_org_history_tables.
+        tot = None
+        for r in range(i - 1, max(i - 4, -1), -1):
+            if not _cell(grid, r, 0) and not _cell(grid, r, 1):
+                continue                       # blank spacer — keep scanning up
+            if _cell(grid, r, 0).lower() in ("totals", "total"):
+                tot = r
+            break                              # first non-blank row decides
+        if tot is None:
+            continue
+        # Value-column span = every column carrying a value across the Totals +
+        # the 4 history rows (robust to a 0 that displays blank in one row).
+        scan = [tot, i, i + 1, i + 2, i + 3]
+        maxc = max(len(grid[r]) for r in scan)
+        daycols = [c + 1 for c in range(2, maxc)
+                   if any(_cell(grid, r, c) for r in scan)]
+        if not daycols:
+            continue
+        out.append({"this": tot + 1, "lw": i + 1, "pw": i + 2,
+                    "2wp": i + 3, "3wp": i + 4,
+                    "c0": min(daycols), "cN": max(daycols)})
+    return out
 
 
 def plan_org_history_rollover(ws, table: dict):
