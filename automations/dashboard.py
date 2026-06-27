@@ -5242,12 +5242,28 @@ def _file_hub_glitch(ex: BaseException) -> None:
         seen.add(sig)
         view = str(st.session_state.get("view", "?"))
         user = str(st.session_state.get("user", "") or "")
+        # Same self-contained "paste to Claude" block as the run-glitch report,
+        # so an uncaught Hub crash is one paste to fix too (Megan 2026-06-27).
+        _err_tail = "\n".join(tb.strip().splitlines()[-12:]) or "(no traceback)"
+        claude_block = (
+            "===== PASTE THIS TO CLAUDE TO FIX =====\n"
+            f"The Alphalete Hub (Streamlit, automations/dashboard.py) crashed with "
+            f"an uncaught {type(ex).__name__} on the \"{view}\" screen"
+            f"{(' for ' + user) if user else ''}.\n"
+            f"Error: {sig}\n"
+            f"Hub version (git SHA): {_hub_git_sha()}\n"
+            "Find the root cause from the traceback below and fix it in the repo "
+            "(dashboard.py or a module it calls). Traceback tail:\n"
+            f"{_err_tail}\n"
+            "===== END =====\n\n"
+        )
         details = (
             f"Automatic Hub glitch — the Hub hit an uncaught error.\n\n"
             f"WHEN:   {dt.datetime.now():%Y-%m-%d %H:%M}\n"
             f"WHO:    {user or 'unknown'}\n"
             f"SCREEN: {view}\n"
             f"HUB:    {_hub_git_sha()}\n\n"
+            f"{claude_block}"
             f"--- Error ---\n{tb}"
         )
         _add_bug(
