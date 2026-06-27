@@ -34,7 +34,9 @@ import datetime as dt
 import json
 from pathlib import Path
 
-from automations.shared.tableau_patchright import APPSTREAM_STORAGE_STATE
+from automations.shared.tableau_patchright import (
+    APPSTREAM_STORAGE_STATE, OWNERVILLE_STORAGE_STATE,
+)
 
 WATCH_STATE = Path(__file__).resolve().parents[2] / "output" / "appstream_watch_state.json"
 
@@ -69,35 +71,38 @@ def _now() -> dt.datetime:
 # Probe — read when the session dies. Cheap, no network.
 # ---------------------------------------------------------------------------
 
-def session_status() -> dict:
-    """Report when the stored AppStream session dies. The rqst SSO token's
-    `expires` is the binding constraint for whether the recruiting console will
-    still authenticate; CFID/CFTOKEN ride alongside it.
+def session_status(state_path=None, what: str = "AppStream") -> dict:
+    """Report when a stored session dies. The rqst SSO token's `expires` is the
+    binding constraint for whether the console will still authenticate;
+    CFID/CFTOKEN ride alongside it. Works for BOTH the AppStream recruiting
+    session and the ownerville/Tableau session (same cookie shape) — pass the
+    state_path + a label.
 
-    Returns {ok, rqst_expiry: datetime|None, hours_left: float|None, reason}."""
-    if not APPSTREAM_STORAGE_STATE.exists():
-        return {"ok": False, "rqst_expiry": None, "hours_left": None,
-                "reason": "no stored AppStream session — never seeded"}
+    Returns {ok, rqst_expiry: datetime|None, hours_left: float|None, what, reason}."""
+    state_path = state_path or APPSTREAM_STORAGE_STATE
+    if not state_path.exists():
+        return {"ok": False, "rqst_expiry": None, "hours_left": None, "what": what,
+                "reason": f"no stored {what} session — never seeded"}
     try:
-        cookies = json.loads(APPSTREAM_STORAGE_STATE.read_text()).get("cookies", [])
+        cookies = json.loads(state_path.read_text()).get("cookies", [])
     except Exception as e:
-        return {"ok": False, "rqst_expiry": None, "hours_left": None,
-                "reason": f"session file unreadable: {str(e)[:80]}"}
+        return {"ok": False, "rqst_expiry": None, "hours_left": None, "what": what,
+                "reason": f"{what} session file unreadable: {str(e)[:80]}"}
     now = _now().timestamp()
     rqst_exps = [c.get("expires") for c in cookies
                  if (c.get("name") or "").lower().startswith("rqst")
                  and isinstance(c.get("expires"), (int, float)) and c["expires"] > 0]
     if not rqst_exps:
-        return {"ok": False, "rqst_expiry": None, "hours_left": None,
-                "reason": "no rqst SSO token in the session (degraded / SSO-only)"}
+        return {"ok": False, "rqst_expiry": None, "hours_left": None, "what": what,
+                "reason": f"{what}: no rqst SSO token in the session (degraded / SSO-only)"}
     latest = max(rqst_exps)
     hours = (latest - now) / 3600
     exp = dt.datetime.fromtimestamp(latest)
     if latest <= now:
-        return {"ok": False, "rqst_expiry": exp, "hours_left": hours,
-                "reason": f"rqst token EXPIRED {-hours:.1f}h ago (at {exp:%b %-d %-I:%M%p})"}
-    return {"ok": True, "rqst_expiry": exp, "hours_left": hours,
-            "reason": f"rqst token valid {hours:.1f}h more (until {exp:%b %-d %-I:%M%p})"}
+        return {"ok": False, "rqst_expiry": exp, "hours_left": hours, "what": what,
+                "reason": f"{what} rqst token EXPIRED {-hours:.1f}h ago (at {exp:%b %-d %-I:%M%p})"}
+    return {"ok": True, "rqst_expiry": exp, "hours_left": hours, "what": what,
+            "reason": f"{what} rqst token valid {hours:.1f}h more (until {exp:%b %-d %-I:%M%p})"}
 
 
 def _next_4am(now: dt.datetime | None = None) -> dt.datetime:
@@ -109,6 +114,13 @@ def _next_4am(now: dt.datetime | None = None) -> dt.datetime:
 def _reseed_cmd() -> str:
     return ("cd /Users/alphalete/recruiting-report && PYTHONPATH=. .venv/bin/python "
             "-m automations.shared.tableau_patchright --appstream-login")
+
+
+def _ov_reseed_cmd() -> str:
+    # Restarting the session-holder re-seeds ownerville: it opens the login and
+    # waits for a human to clear the 'verify you're human' box (one session
+    # covers Tableau + AppStream-via-SSO).
+    return "launchctl kickstart -k gui/$(id -u)/com.alphalete.session-holder"
 
 
 # ---------------------------------------------------------------------------
@@ -164,70 +176,93 @@ def _enqueue_rerun(report_id: str, dry_run: bool) -> None:
 # ---------------------------------------------------------------------------
 
 def watch(dry_run: bool = False) -> dict:
-    """One evaluation: predict / ping / recover. Safe to call every few minutes
+    """One evaluation across BOTH sessions (AppStream recruiting console +
+    ownerville/Tableau). Predict / ping / recover. Safe to call every few minutes
     (throttled to one ping + one rerun-batch per day). Never raises."""
-    st = session_status()
     state = _load_state()
     now = _now()
     today = now.date().isoformat()
     threshold = _next_4am(now) + dt.timedelta(minutes=SURVIVAL_BUFFER_MIN)
-    survives = bool(st["ok"] and st["rqst_expiry"] and st["rqst_expiry"] >= threshold)
-    was_ok = state.get("last_ok")
 
-    if survives:
-        # Healthy through the next 4am batch. If we were stale before, a re-seed
-        # just happened — auto-rerun the AppStream reports IF this is the morning
-        # window (i.e. they likely failed at 4am). An evening proactive re-seed
-        # recovers without needing a rerun.
-        if (was_ok is False
-                and MORNING_WINDOW[0] <= now.hour < MORNING_WINDOW[1]
-                and state.get("reran_for") != today):
-            for rid in APPSTREAM_REPORTS:
-                _enqueue_rerun(rid, dry_run)
-            _alert(f"✅ AppStream session is healthy again — auto-re-running "
-                   f"{', '.join(APPSTREAM_REPORTS)} so nothing's missing. "
-                   f"({st['reason']})", dry_run)
-            state["reran_for"] = today
-        state["last_ok"] = True
-    else:
-        # Won't survive to the next 4am batch — needs a human re-seed. HOLD the
-        # ping until the evening (PING_HOUR) so it lands when Megan can act on it,
-        # then send it once/day. (last_ok is still tracked now, regardless of the
-        # ping time, so morning auto-recovery works whenever the re-seed happens.)
-        if now.hour >= PING_HOUR and state.get("alerted_for") != today:
-            _alert(
-                "⚠️ *AppStream re-seed needed* before tomorrow's 4am reports "
-                "(daily_focus + recruiter retention).\n"
-                f"• {st['reason']}\n"
-                "• It's a 30-sec job: on the mini, run the re-seed and clear the "
-                "Cloudflare check once:\n"
-                f"```{_reseed_cmd()}```\n"
-                "The moment it's healthy I'll auto-run the reports — you don't "
-                "have to touch anything else.",
-                dry_run)
-            state["alerted_for"] = today
-        state["last_ok"] = False
+    # (key, status, re-seed cmd, reports to auto-rerun on morning recovery).
+    # Ownerville recovery has no auto-rerun list — the 4am failure email already
+    # lists those reports with their `lucy rerun` lines, so we don't double-fire.
+    sessions = [
+        ("appstream",  session_status(APPSTREAM_STORAGE_STATE, "AppStream"),
+         _reseed_cmd(),    APPSTREAM_REPORTS),
+        ("ownerville", session_status(OWNERVILLE_STORAGE_STATE, "Ownerville"),
+         _ov_reseed_cmd(), []),
+    ]
+
+    stale = []   # [(status, reseed_cmd), ...] for sessions that won't survive 4am
+    survives_all = True
+    for key, stt, reseed, reports in sessions:
+        survives = bool(stt["ok"] and stt["rqst_expiry"] and stt["rqst_expiry"] >= threshold)
+        survives_all = survives_all and survives
+        was_ok = state.get(f"last_ok_{key}")
+        if survives:
+            # Recovered in the morning window after being stale → a re-seed just
+            # happened; auto-rerun this session's reports so nothing's missing.
+            if (was_ok is False and reports
+                    and MORNING_WINDOW[0] <= now.hour < MORNING_WINDOW[1]
+                    and state.get(f"reran_{key}") != today):
+                for rid in reports:
+                    _enqueue_rerun(rid, dry_run)
+                _alert(f"✅ {stt['what']} session is healthy again — auto-re-running "
+                       f"{', '.join(reports)} so nothing's missing. ({stt['reason']})",
+                       dry_run)
+                state[f"reran_{key}"] = today
+            state[f"last_ok_{key}"] = True
+        else:
+            stale.append((stt, reseed))
+            state[f"last_ok_{key}"] = False
+
+    # ONE combined evening ping if EITHER session won't survive to 4am — held to
+    # PING_HOUR so it lands when Megan/Eve can act, once/day. Both re-seeds need a
+    # human at the mini to clear the check.
+    if stale and now.hour >= PING_HOUR and state.get("alerted_for") != today:
+        lines = ["⚠️ *Session re-seed needed* before tomorrow's 4am reports."]
+        for stt, reseed in stale:
+            lines.append(f"\n• *{stt['what']}*: {stt['reason']}\n"
+                         f"  Fix on the mini (clear the check once):\n```{reseed}```")
+        lines.append("\nThe moment it's healthy I'll auto-run what I can — "
+                     "you don't have to touch anything else.")
+        _alert("\n".join(lines), dry_run)
+        state["alerted_for"] = today
 
     state["last_checked"] = now.isoformat(timespec="seconds")
-    state["last_reason"] = st["reason"]
+    state["last_reason"] = "; ".join(stt["reason"] for _, stt, _, _ in sessions)
     _save_state(state)
-    return {"status": st, "survives_next_4am_batch": survives,
+    return {"sessions": {stt["what"]: stt["reason"] for _, stt, _, _ in sessions},
+            "stale": [stt["what"] for stt, _ in stale],
+            "survives_next_4am_batch": survives_all,
             "next_threshold": threshold.isoformat(timespec="minutes")}
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Predict + recover the AppStream session")
+    ap = argparse.ArgumentParser(description="Predict + recover the AppStream + ownerville sessions")
     ap.add_argument("--once", action="store_true", help="one evaluation (default)")
-    ap.add_argument("--status", action="store_true", help="just print session_status + exit")
+    ap.add_argument("--status", action="store_true",
+                    help="print BOTH session statuses (AppStream + ownerville) + exit")
+    ap.add_argument("--test-ping", action="store_true",
+                    help="send a test Slack DM to the alert recipients to prove the path")
     ap.add_argument("--dry-run", action="store_true", help="no Slack / no enqueue")
     a = ap.parse_args(argv)
     if a.status:
-        s = session_status()
-        print(json.dumps({**s, "rqst_expiry": s["rqst_expiry"].isoformat() if s["rqst_expiry"] else None}, indent=2))
+        for path, what in ((APPSTREAM_STORAGE_STATE, "AppStream"),
+                           (OWNERVILLE_STORAGE_STATE, "Ownerville")):
+            s = session_status(path, what)
+            print(json.dumps({**s, "rqst_expiry": s["rqst_expiry"].isoformat()
+                              if s["rqst_expiry"] else None}, indent=2))
+        return 0
+    if a.test_ping:
+        _alert("✅ Test ping from appstream_watch — if you (Megan + Eve) both see "
+               "this, the 6pm re-seed alerts will reach you. No action needed.",
+               dry_run=False)
         return 0
     res = watch(dry_run=a.dry_run)
     print(f"[appstream_watch] survives next 4am batch: {res['survives_next_4am_batch']} "
-          f"(needs valid until {res['next_threshold']})")
+          f"(stale: {res['stale'] or 'none'}; needs valid until {res['next_threshold']})")
     return 0
 
 

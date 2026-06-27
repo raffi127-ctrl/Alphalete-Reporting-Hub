@@ -18,7 +18,8 @@
  */
 
 const GLITCH_BUG_TAB        = "Bug Reports";
-const GLITCH_TITLE_PREFIX   = "Run glitch —";          // only auto-file failures
+// Auto-emailed glitch types: report-run failures AND uncaught Hub crashes.
+const GLITCH_TITLE_PREFIXES = ["Run glitch —", "Hub glitch —"];
 const GLITCH_LAST_SEEN_PROP = "BUG_REPORTS_LAST_SEEN_ID";
 // Who gets the glitch email — comma-separated. Add teammates here anytime.
 const GLITCH_RECIPIENTS     = "meganhidalgo1191@gmail.com,alphaletereporting@gmail.com"; // Megan + Eve
@@ -71,7 +72,7 @@ function notifyMeganOnNewBug() {
     if (!id) continue;
     if (id > newestId) newestId = id;
     if (lastSeen && id > lastSeen) {
-      if (!GLITCH_TITLE_PREFIX || title.indexOf(GLITCH_TITLE_PREFIX) === 0) {
+      if (GLITCH_TITLE_PREFIXES.some(function (p) { return title.indexOf(p) === 0; })) {
         toEmail.push({
           id, title,
           type:        String(r[typeCol] || ""),
