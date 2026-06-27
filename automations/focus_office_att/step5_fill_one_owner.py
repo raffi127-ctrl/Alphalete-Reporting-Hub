@@ -1195,6 +1195,36 @@ def mark_tableau_only_reps(ws, layout: Layout) -> int:
     return marked_count
 
 
+def _completed_weekdays(ws) -> set[int]:
+    """Weekday indices (0=Mon … 6=Sun) whose date is already in the PAST,
+    derived from the TOP block's row-1 'Mon m/d' … 'Sun m/d' labels vs today.
+
+    WHY read the sheet instead of just today.weekday(): the finalize functions
+    (0-fill defaults, OFFICE TOTALS, summary block) run on whatever week the top
+    block currently holds. In a normal daily run that's the current week, so this
+    returns Mon→yesterday — identical to the old today.weekday() logic, no change.
+    But during a rebuild_lastweek the top temporarily holds a FULLY-PAST week, and
+    the old logic wrongly treated that week's Sat/Sun as today/future and left them
+    unfilled right before the freeze (the blank-frozen-weekend bug, Megan 2026-06-27).
+    Deriving 'completed' from the sheet's own dates makes all three correct for
+    either week. Falls back to today.weekday() if row 1 has no parseable Monday."""
+    import re as _re
+    today = dt.date.today()
+    try:
+        for v in ws.row_values(1):
+            m = _re.match(r"^Mon\s+(\d{1,2})/(\d{1,2})\b", str(v).strip())
+            if m:
+                mo, da = int(m.group(1)), int(m.group(2))
+                monday = dt.date(today.year, mo, da)
+                if monday > today + dt.timedelta(days=30):   # a Dec label read in Jan
+                    monday = dt.date(today.year - 1, mo, da)
+                return {wd for wd in range(7)
+                        if monday + dt.timedelta(days=wd) < today}
+    except Exception:
+        pass
+    return set(range(0, today.weekday()))
+
+
 def apply_empty_cell_defaults(ws, layout: Layout) -> None:
     """Fill empty data cells with '0' or 'x' per Raf's formatting request:
 
@@ -1226,8 +1256,10 @@ def apply_empty_cell_defaults(ws, layout: Layout) -> None:
     # should stay blank until then — not show a premature 0/x grid (Megan
     # 2026-06-26: "this week should be filled M-Thurs as those are the completed
     # days"; today is Fri).
-    today_weekday = dt.date.today().weekday()  # 0=Mon..6=Sun
-    past_weekdays = set(range(0, today_weekday))
+    # Completed days come from the sheet's own week dates (row 1) vs today, so
+    # this is correct whether the top holds the current week (Mon→yesterday) or a
+    # fully-past week being rebuilt (all 7 days). See _completed_weekdays.
+    past_weekdays = _completed_weekdays(ws)
 
     # Build a flat map of (sheet_col → metric_name) for the day-block cells
     # we care about, restricted to past weekdays. Compare metric names
@@ -1353,13 +1385,13 @@ def write_office_totals_row(ws, layout: Layout) -> None:
     # Group by (col_idx, agg_type) for downstream aggregation. Days after
     # today haven't happened — their per-day cols go in perday_future_cols
     # so the totals row CLEARS them (blank) rather than summing them to 0.
-    today_wd = dt.date.today().weekday()
+    completed = _completed_weekdays(ws)
     perday_sum_cols: list[int] = []
     perday_avg_cols: list[int] = []
     perday_future_cols: list[int] = []
     for wd in sorted(layout.day_cols.keys()):
         for metric, col_idx in layout.day_cols[wd].items():
-            if wd > today_wd:
+            if wd not in completed:
                 perday_future_cols.append(col_idx)
             elif metric in PER_DAY_AVG_METRICS:
                 perday_avg_cols.append(col_idx)
@@ -1589,8 +1621,10 @@ def write_office_summary_block(ws, layout: Layout) -> None:
         ta = metric_map.get("Total Apps")
         if ta:
             day_ta_cols[wd] = ta
-    # Future days haven't happened — their summary cells stay blank.
-    today_wd = dt.date.today().weekday()
+    # Completed days from the sheet's own week dates (correct for current-week
+    # runs AND last-week rebuilds); non-completed days stay blank. See
+    # _completed_weekdays.
+    completed = _completed_weekdays(ws)
 
     # Per-day counts + per-rep weekly flags (for unique weekly totals).
     # In-field rule (per Megan 2026-05-15):
@@ -1664,8 +1698,8 @@ def write_office_summary_block(ws, layout: Layout) -> None:
         row_vals[0] = label                  # col B
         row_vals[1] = weekly_val             # col C
         for wd, ta_col in day_ta_cols.items():
-            if wd > today_wd:
-                continue  # future day hasn't happened — leave it blank
+            if wd not in completed:
+                continue  # not a completed day — leave it blank
             row_vals[ta_col - 2] = value_fn(wd)
         update_data.append({
             "range": f"'{ws.title}'!B{target_row}:CR{target_row}",
