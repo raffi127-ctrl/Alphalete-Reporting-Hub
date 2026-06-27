@@ -235,6 +235,38 @@ def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = F
         time.sleep(interval_s)
 
 
+def print_status(n: int = 10, *, sandbox: bool = False) -> None:
+    """Print the last N queue rows + their results to the terminal, so you can
+    check what the mini did WITHOUT opening the Sheet. Newest row last (right
+    above your prompt)."""
+    ws = _open(sandbox)
+    rows = ws.get_all_records()
+    if not rows:
+        print("(no commands on the Mini Control queue yet)")
+        return
+    recent = rows[-n:]
+    icons = {"done": "✓", "failed": "✗", "running": "…", "queued": "•"}
+    print(f"Last {len(recent)} Mini Control command(s) — newest last:\n")
+    for row in recent:
+        status = str(row.get("Status", "")).strip()
+        icon = icons.get(status.lower(), "?")
+        action = str(row.get("Action", "")).strip()
+        args = str(row.get("Args", "")).strip()
+        by = str(row.get("By", "")).strip()
+        result = str(row.get("Result", "")).strip()
+        when = (str(row.get("Finished At", "")).strip()
+                or str(row.get("Queued At", "")).strip())
+        head = f"{icon} {status.lower():<7} {action} {args}".rstrip()
+        if by:
+            head += f"  (by {by})"
+        print(head)
+        if result:
+            print(f"      {result}")
+        if when:
+            print(f"      {when}")
+    print()
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Mini remote-control command queue")
     ap.add_argument("--loop", action="store_true", help="poll forever (run on the mini)")
@@ -244,11 +276,17 @@ def main(argv=None) -> int:
     ap.add_argument("--by", default=os.environ.get("MINI_BY", "Eve"),
                     help="who queued this — the audit-log 'By' column (or set "
                          "MINI_BY in the shell). Default: Eve.")
+    ap.add_argument("--status", nargs="?", type=int, const=10, metavar="N",
+                    help="print the last N queue rows + their results and exit "
+                         "(default 10) — check outcomes without the Sheet")
     ap.add_argument("--interval", type=int, default=120, help="loop interval seconds")
     ap.add_argument("--dry-run", action="store_true", help="poll but execute nothing")
     ap.add_argument("--sandbox", action="store_true", help="use the TEST tab")
     a = ap.parse_args(argv)
 
+    if a.status is not None:
+        print_status(a.status, sandbox=a.sandbox)
+        return 0
     if a.enqueue:
         enqueue(a.enqueue[0], " ".join(a.enqueue[1:]), by=a.by, sandbox=a.sandbox)
         return 0
