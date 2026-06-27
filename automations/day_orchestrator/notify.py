@@ -95,6 +95,34 @@ def _log_tail(report_id, date, n: int = 60) -> str:
         return ""
 
 
+def _log_tail_raw(report_id, date, n: int = 12) -> str:
+    """Last N log lines, ORIGINAL case (for the paste-to-Claude error tail —
+    _log_tail lowercases for signature matching, which mangles tracebacks)."""
+    try:
+        p = REPO_ROOT / "output" / "logs" / f"orch-{date}-{report_id}.log"
+        return "\n".join(p.read_text(errors="replace").splitlines()[-n:]).strip()
+    except Exception:
+        return ""
+
+
+def _claude_block(rs, reason, cfg, date) -> str:
+    """Self-contained block to paste into Claude — same as the Hub glitch
+    emails, so any 4am failure is one paste to fix (no back-and-forth)."""
+    tail = _log_tail_raw(rs.report_id, date) or "(no log captured)"
+    return (
+        "===== PASTE THIS TO CLAUDE TO FIX =====\n"
+        f"The report \"{rs.display_name or rs.report_id}\" (report_id: "
+        f"{rs.report_id}) failed on the mini's automated run.\n"
+        f"Re-run command: lucy rerun {rs.report_id}\n"
+        f"Likely cause: {reason}\n"
+        "Diagnose the root cause from the error below and fix it in the repo; "
+        "if it's a transient Tableau/network blip, just `lucy rerun` it. "
+        "Error tail:\n"
+        f"{tail}\n"
+        "===== END ====="
+    )
+
+
 def _diagnose(rs, cfg, date):
     """(human reason, needs_appstream_reseed, runnable re-run) for a failure."""
     rerun = f"lucy rerun {rs.report_id}"
@@ -141,7 +169,7 @@ def _build_body(cfg, ds, *, checkpoint: bool):
         text.append(f"❌ NEEDS ATTENTION ({len(attention)}):")
         html.append(f"<h3 style='color:#c0392b'>❌ Needs attention ({len(attention)})</h3>"
                     "<ol style='font-size:14px;line-height:1.6'>")
-        reruns, need_reseed = [], False
+        reruns, need_reseed, claude_blocks = [], False, []
         for rs in attention:
             name = rs.display_name or rs.report_id
             reason, reseed, rerun = _diagnose(rs, cfg, ds.date)
@@ -149,6 +177,7 @@ def _build_body(cfg, ds, *, checkpoint: bool):
                 reason += " — missing: " + "; ".join(rs.missing)
             need_reseed = need_reseed or reseed
             reruns.append(rerun)
+            claude_blocks.append(_claude_block(rs, reason, cfg, ds.date))
             text.append(f"  • {name} — {reason}")
             html.append(f"<li><b>{_esc(name)}</b> — {_esc(reason)}</li>")
         html.append("</ol>")
@@ -172,6 +201,14 @@ def _build_body(cfg, ds, *, checkpoint: bool):
                     "<pre style='background:#f4f4f4;padding:10px;border-radius:5px;"
                     "font-size:13px;white-space:pre-wrap;line-height:1.5'>"
                     f"{_esc(chr(10).join(fix))}</pre>")
+        # If a re-run won't fix it (a real bug, not a transient), paste one of
+        # these into Claude — same self-contained block as the Hub glitch emails.
+        for blk in claude_blocks:
+            text.append("")
+            text.append(blk)
+            html.append("<pre style='background:#f7f7f7;padding:10px;border-radius:5px;"
+                        "font-size:12px;white-space:pre-wrap;line-height:1.45;"
+                        "margin:8px 0'>" + _esc(blk) + "</pre>")
     # 1b) RAN — WITH A NOTE: INCOMPLETE reports completed successfully but left
     # something out for a known reason (e.g. an owner not in ownerville). NOT a
     # failure — no fix command; the note just says what was left out + why.
