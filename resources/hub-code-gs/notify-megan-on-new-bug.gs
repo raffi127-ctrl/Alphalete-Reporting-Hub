@@ -117,19 +117,19 @@ function notifyMeganOnNewBug() {
     const html =
       '<div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:640px;margin:0 auto;color:#1a1a1a">' +
         '<div style="background:#c0392b;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0">' +
-          '<div style="font-size:18px;font-weight:700">🚩 ' + escapeHtml(reportName) + '</div>' +
+          '<div style="font-size:18px;font-weight:700">🚩 ' + glitchEscapeHtml(reportName) + '</div>' +
           '<div style="font-size:13px;opacity:.9;margin-top:3px">A report run failed and was auto-filed.</div>' +
         '</div>' +
         '<div style="border:1px solid #ececec;border-top:none;border-radius:0 0 10px 10px;padding:18px 20px">' +
           '<div style="font-size:12.5px;color:#777;margin-bottom:14px">' +
-            '👤 ' + escapeHtml(b.submitter || 'unknown') + '&nbsp;&nbsp;·&nbsp;&nbsp;' +
-            '🕐 ' + escapeHtml(b.submittedAt) + '&nbsp;&nbsp;·&nbsp;&nbsp;🔥 ' + escapeHtml(b.priority) +
+            '👤 ' + glitchEscapeHtml(b.submitter || 'unknown') + '&nbsp;&nbsp;·&nbsp;&nbsp;' +
+            '🕐 ' + glitchEscapeHtml(b.submittedAt) + '&nbsp;&nbsp;·&nbsp;&nbsp;🔥 ' + glitchEscapeHtml(b.priority) +
           '</div>' +
           '<div style="background:#fff8e1;border-left:4px solid #f5a623;border-radius:6px;padding:12px 14px;font-size:14px;margin-bottom:16px">' +
             '💡 <b>To fix:</b> copy the <b>PASTE THIS TO CLAUDE</b> block below and drop it into Claude — it has the cause, the command, and the error.' +
           '</div>' +
           '<pre style="background:#f6f8fa;border:1px solid #e6e9ec;border-radius:8px;padding:14px;font-size:12.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;font-family:SFMono-Regular,Consolas,monospace">' +
-            escapeHtml(b.details) +
+            glitchEscapeHtml(b.details) +
           '</pre>' +
           '<div style="margin-top:14px">' +
             '<a href="' + url + '" style="display:inline-block;background:#3498db;color:#fff;text-decoration:none;font-size:13px;padding:8px 14px;border-radius:6px">Open the Bug Reports tab →</a>' +
@@ -145,7 +145,7 @@ function notifyMeganOnNewBug() {
 }
 
 // Minimal HTML escaper for values dropped into the email markup.
-function escapeHtml(s) {
+function glitchEscapeHtml(s) {
   return String(s == null ? "" : s)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
