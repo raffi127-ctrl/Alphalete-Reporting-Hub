@@ -98,19 +98,56 @@ function notifyMeganOnNewBug() {
   }
 
   for (const b of toEmail) {
-    const subject = "🚩 Hub run glitch: " + b.title.replace(/^Run glitch —\s*/, "");
-    const body =
-      "A Hub report run just failed and was auto-filed on the Bug Reports tab.\n\n" +
-      "Title:      " + b.title + "\n" +
-      "Submitter:  " + b.submitter + "\n" +
-      "Priority:   " + b.priority + "\n" +
-      "Submitted:  " + b.submittedAt + "\n" +
-      "ID:         " + b.id + "\n\n" +
-      "Sheet link: " + ss.getUrl() + "\n\n" +
-      "--- Details ---\n" + b.details + "\n";
-    MailApp.sendEmail(GLITCH_RECIPIENTS, subject, body);
+    const reportName = b.title.replace(/^(Run|Hub) glitch —\s*/, "");
+    const subject = "🚩 Hub glitch: " + reportName;
+    const url = ss.getUrl();
+
+    // Plain-text fallback (clients without HTML). The Details already lead with
+    // the cause + the paste-to-Claude block, so just pass them through.
+    const plain =
+      "A Hub report run failed (auto-filed on the Bug Reports tab).\n\n" +
+      b.details + "\n\n" +
+      "Submitter: " + b.submitter + "  ·  Priority: " + b.priority +
+      "  ·  " + b.submittedAt + "\n" +
+      "Bug Reports tab: " + url + "\n";
+
+    // Clean, scannable HTML: header, one-line meta, a "how to fix" callout, then
+    // the details (cause + paste-to-Claude block) in a copyable monospace box.
+    // (Megan 2026-06-27: clean + engaging, not a wall of text.)
+    const html =
+      '<div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:640px;margin:0 auto;color:#1a1a1a">' +
+        '<div style="background:#c0392b;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0">' +
+          '<div style="font-size:18px;font-weight:700">🚩 ' + escapeHtml(reportName) + '</div>' +
+          '<div style="font-size:13px;opacity:.9;margin-top:3px">A report run failed and was auto-filed.</div>' +
+        '</div>' +
+        '<div style="border:1px solid #ececec;border-top:none;border-radius:0 0 10px 10px;padding:18px 20px">' +
+          '<div style="font-size:12.5px;color:#777;margin-bottom:14px">' +
+            '👤 ' + escapeHtml(b.submitter || 'unknown') + '&nbsp;&nbsp;·&nbsp;&nbsp;' +
+            '🕐 ' + escapeHtml(b.submittedAt) + '&nbsp;&nbsp;·&nbsp;&nbsp;🔥 ' + escapeHtml(b.priority) +
+          '</div>' +
+          '<div style="background:#fff8e1;border-left:4px solid #f5a623;border-radius:6px;padding:12px 14px;font-size:14px;margin-bottom:16px">' +
+            '💡 <b>To fix:</b> copy the <b>PASTE THIS TO CLAUDE</b> block below and drop it into Claude — it has the cause, the command, and the error.' +
+          '</div>' +
+          '<pre style="background:#f6f8fa;border:1px solid #e6e9ec;border-radius:8px;padding:14px;font-size:12.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;font-family:SFMono-Regular,Consolas,monospace">' +
+            escapeHtml(b.details) +
+          '</pre>' +
+          '<div style="margin-top:14px">' +
+            '<a href="' + url + '" style="display:inline-block;background:#3498db;color:#fff;text-decoration:none;font-size:13px;padding:8px 14px;border-radius:6px">Open the Bug Reports tab →</a>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    MailApp.sendEmail({ to: GLITCH_RECIPIENTS, subject: subject, body: plain, htmlBody: html });
     Logger.log("Emailed " + GLITCH_RECIPIENTS + " about bug " + b.id + ".");
   }
 
   props.setProperty(GLITCH_LAST_SEEN_PROP, newestId);
+}
+
+// Minimal HTML escaper for values dropped into the email markup.
+function escapeHtml(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }

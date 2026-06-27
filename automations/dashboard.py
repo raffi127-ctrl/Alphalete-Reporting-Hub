@@ -5164,7 +5164,7 @@ def _file_run_glitch(report_id: str, report_name: str, log_text: str,
     # duplicate. A genuinely NEW error (different cause) still files. Never
     # raises — on any error we fall through and file (a dup beats a lost
     # report). (Megan 2026-06-14)
-    _sig = f"LIKELY CAUSE: {diag[0]}" if diag else ""
+    _sig = f"Likely cause: {diag[0]}" if diag else ""
     if _sig:
         try:
             _cutoff = (dt.datetime.now() - dt.timedelta(days=7)).strftime("%Y-%m-%d %H:%M")
@@ -5179,13 +5179,11 @@ def _file_run_glitch(report_id: str, report_name: str, log_text: str,
                     return str(_b.get("ID", ""))
         except Exception:
             pass
-    cmd_line = f"COMMAND: {command}\n" if command else ""
-    # A self-contained block to paste straight into Claude — it has everything
-    # Claude needs to act immediately, with no back-and-forth: what failed, the
-    # exact command, the Hub version, the plain-English cause, and the error
-    # tail. (Megan 2026-06-27: "just give the cause + exact code to run in Claude
-    # so Claude understands immediately what's going on.")
-    _err_tail = "\n".join((log_text or "").strip().splitlines()[-12:]) \
+    # Self-contained block to paste straight into Claude — everything it needs
+    # to act with no back-and-forth. The 20-line error tail REPLACES the old
+    # full run-log dump (Megan 2026-06-27: keep the email clean + engaging, not
+    # a wall of text); the full log still lives in output/logs on disk.
+    _err_tail = "\n".join((log_text or "").strip().splitlines()[-20:]) \
         or "(no log was captured)"
     _cause = diag[0] if diag else "see the error tail below"
     claude_block = (
@@ -5199,18 +5197,14 @@ def _file_run_glitch(report_id: str, report_name: str, log_text: str,
         "If it's a transient Tableau/network blip, just re-run it instead. "
         "Error tail:\n"
         f"{_err_tail}\n"
-        "===== END =====\n\n"
+        "===== END ====="
     )
     details = (
-        f"Automatic glitch report — a run of '{report_name}' failed.\n\n"
-        f"WHEN:  {dt.datetime.now():%Y-%m-%d %H:%M}\n"
-        f"WHO:   {user or 'unknown'}\n"
-        f"HUB:   {_hub_git_sha()}\n"
-        f"{cmd_line}\n"
-        f"{diag_line}"
-        f"{claude_block}"
-        f"--- Run log ---\n"
-        f"{(log_text or '').strip() or '(no log was captured)'}"
+        f"⚠️ CAUSE: {_cause}\n\n"
+        "🛠️ TO FIX — paste this whole block into Claude:\n\n"
+        f"{claude_block}\n\n"
+        f"— {report_name} · {dt.datetime.now():%Y-%m-%d %H:%M}"
+        f" · {user or 'unknown'} · {_hub_git_sha()}"
     )
     return _add_bug(
         title=f"Run glitch — {report_name}",
@@ -5243,8 +5237,10 @@ def _file_hub_glitch(ex: BaseException) -> None:
         view = str(st.session_state.get("view", "?"))
         user = str(st.session_state.get("user", "") or "")
         # Same self-contained "paste to Claude" block as the run-glitch report,
-        # so an uncaught Hub crash is one paste to fix too (Megan 2026-06-27).
-        _err_tail = "\n".join(tb.strip().splitlines()[-12:]) or "(no traceback)"
+        # so an uncaught Hub crash is one paste to fix too. The 20-line traceback
+        # tail replaces the old full-traceback dump (Megan 2026-06-27: keep the
+        # email clean, not a wall of text).
+        _err_tail = "\n".join(tb.strip().splitlines()[-20:]) or "(no traceback)"
         claude_block = (
             "===== PASTE THIS TO CLAUDE TO FIX =====\n"
             f"The Alphalete Hub (Streamlit, automations/dashboard.py) crashed with "
@@ -5255,16 +5251,14 @@ def _file_hub_glitch(ex: BaseException) -> None:
             "Find the root cause from the traceback below and fix it in the repo "
             "(dashboard.py or a module it calls). Traceback tail:\n"
             f"{_err_tail}\n"
-            "===== END =====\n\n"
+            "===== END ====="
         )
         details = (
-            f"Automatic Hub glitch — the Hub hit an uncaught error.\n\n"
-            f"WHEN:   {dt.datetime.now():%Y-%m-%d %H:%M}\n"
-            f"WHO:    {user or 'unknown'}\n"
-            f"SCREEN: {view}\n"
-            f"HUB:    {_hub_git_sha()}\n\n"
-            f"{claude_block}"
-            f"--- Error ---\n{tb}"
+            f"⚠️ CAUSE: uncaught {type(ex).__name__} on the '{view}' screen — {sig}\n\n"
+            "🛠️ TO FIX — paste this whole block into Claude:\n\n"
+            f"{claude_block}\n\n"
+            f"— Hub crash · {dt.datetime.now():%Y-%m-%d %H:%M}"
+            f" · {user or 'unknown'} · {_hub_git_sha()}"
         )
         _add_bug(
             title=f"Hub glitch — {type(ex).__name__} on '{view}' screen",
