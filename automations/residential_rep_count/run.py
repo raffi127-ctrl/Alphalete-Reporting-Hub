@@ -94,6 +94,29 @@ def _run(args) -> dict:
     return rep
 
 
+def _backfill(args) -> int:
+    """Fill the last N weeks' columns from their emails — FILL ONLY (no section
+    moves; structural changes belong to the live current-week run)."""
+    sandbox = bool(args.sandbox)
+    dry = bool(args.dry_run)
+    print(f"Residential Rep Count BACKFILL ({args.backfill} weeks) → "
+          f"{'SANDBOX' if sandbox else 'REAL'} tab · "
+          f"{'DRY-RUN' if dry else 'LIVE WRITE'}")
+    with tempfile.TemporaryDirectory() as td:
+        items = email_source.fetch_recent(td, args.backfill)
+        print(f"  found {len(items)} weekly emails: "
+              + ", ".join(str(w) for _, w, _ in items))
+        ws, _ = fill.open_tab(sandbox=sandbox)
+        for path, week, _subj in items:
+            email_data = parse.parse_headcounts(path)
+            grid = rfill._retry(ws.get_all_values)
+            rep = fill.fill_week(ws, grid, email_data, week, dry_run=dry)
+            new = next((l for l in rep["log"] if "NEW week" in l), "")
+            print(f"  {rep['label']}: {rep['total_hc']}/{rep['total_icd']} "
+                  f"({len(rep['updates'])} cells){'  '+new if new else ''}")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--sandbox", action="store_true",
@@ -102,7 +125,13 @@ def main(argv=None) -> int:
                     help="don't write anything (testing)")
     ap.add_argument("--week-ending", help="Saturday YYYY-MM-DD to fill "
                     "(default: this week's, must have landed)")
+    ap.add_argument("--backfill", type=int, metavar="N",
+                    help="fill the last N weeks' columns from their emails "
+                         "(fill-only, no section moves)")
     args = ap.parse_args(argv)
+
+    if args.backfill:
+        return _backfill(args)
 
     from automations.shared import run_manifest as rm
     try:

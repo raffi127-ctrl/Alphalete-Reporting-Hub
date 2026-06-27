@@ -89,6 +89,42 @@ def fetch_latest(
         M.logout()
 
 
+def fetch_recent(dest_dir: str | Path, n: int) -> list:
+    """Download the .xlsx from the most recent `n` distinct-week Archey emails.
+    Returns [(path, week_ending, subject)] OLDEST→NEWEST (so a backfill writes
+    weeks in chronological order)."""
+    dest = Path(dest_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    M = imaplib.IMAP4_SSL(IMAP_HOST)
+    M.login(ACCOUNT, _app_password())
+    out: list = []
+    seen: set = set()
+    try:
+        M.select('"[Gmail]/All Mail"', readonly=True)
+        typ, data = M.search(None, f'(FROM "{SENDER}" SUBJECT "{SUBJECT}")')
+        ids = data[0].split()
+        for i in reversed(ids):              # newest first
+            if len(seen) >= n:
+                break
+            _, raw = M.fetch(i, "(RFC822)")
+            msg = email.message_from_bytes(raw[0][1])
+            for part in msg.walk():
+                fn = _decode(part.get_filename() or "")
+                if not fn.lower().endswith(".xlsx"):
+                    continue
+                we = _week_from_filename(fn)
+                if we is None or we in seen:
+                    continue
+                seen.add(we)
+                p = dest / fn
+                p.write_bytes(part.get_payload(decode=True))
+                out.append((p, we, _decode(msg.get("Subject") or "")))
+                break
+    finally:
+        M.logout()
+    return sorted(out, key=lambda t: t[1])   # oldest -> newest
+
+
 def latest_week_ending() -> Optional[dt.date]:
     """Cheap probe: the Saturday week-ending of the newest Archey email
     (read from its attachment filename), without downloading the file body."""

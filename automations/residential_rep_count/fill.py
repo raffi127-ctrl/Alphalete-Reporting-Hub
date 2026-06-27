@@ -43,6 +43,14 @@ def we_label(d: dt.date) -> str:
     return f"WE {d.month}/{d.day}/{d.strftime('%y')}"
 
 
+def we_label_to_date(label: str) -> Optional[dt.date]:
+    """'WE 6/20/26' -> date(2026, 6, 20); None if it doesn't parse."""
+    m = re.match(r"\s*WE\s+(\d{1,2})/(\d{1,2})/(\d{2})\s*$", label or "")
+    if not m:
+        return None
+    return dt.date(2000 + int(m.group(3)), int(m.group(1)), int(m.group(2)))
+
+
 def open_tab(sandbox: bool = True):
     sh = rfill.open_by_key(SPREADSHEET_ID)
     return sh.worksheet(SANDBOX_TAB if sandbox else REAL_TAB), sh
@@ -148,13 +156,41 @@ def fill_week(ws, grid: List[List[str]], email_data: Dict[str, dict],
     log: List[str] = []
     updates: List[dict] = []
 
-    # 1) Locate / create the week column.
+    # 1) Locate / create the week column — inserted in chronological position,
+    # inheriting the prior week's formatting (number format, borders, fill).
     if label in lay["we_cols"]:
         wk = lay["we_cols"][label]
         log.append(f"week column {label!r} exists at col {wk + 1}")
     else:
-        wk = (max(lay["we_cols"].values()) + 1) if lay["we_cols"] else 3
-        log.append(f"NEW week column {label!r} -> col {wk + 1}")
+        dated = sorted(
+            ((d, c) for l, c in lay["we_cols"].items()
+             if (d := we_label_to_date(l)) is not None),
+            key=lambda dc: dc[0])
+        wk = next((c for d, c in dated if d > we_date), None)
+        if wk is None:                      # newest week -> append at the end
+            wk = (max(lay["we_cols"].values()) + 1) if lay["we_cols"] else 3
+        log.append(f"NEW week column {label!r} -> col {wk + 1} "
+                   "(inherits prior week's format)")
+        if not dry_run:
+            reqs = [{"insertDimension": {
+                "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                          "startIndex": wk, "endIndex": wk + 1},
+                "inheritFromBefore": True}}]
+            # insertDimension's inheritFromBefore can drop BORDERS, so also
+            # copy the full per-cell format from the previous week's column
+            # (only when the left neighbor really is a WE week column).
+            left_hdr = (grid[lay["header"]][wk - 1]
+                        if wk - 1 < len(grid[lay["header"]]) else "")
+            if wk >= 1 and left_hdr.strip().lower().startswith("we "):
+                reqs.append({"copyPaste": {
+                    "source": {"sheetId": ws.id, "startRowIndex": 0,
+                               "endRowIndex": len(grid), "startColumnIndex": wk - 1,
+                               "endColumnIndex": wk},
+                    "destination": {"sheetId": ws.id, "startRowIndex": 0,
+                                    "endRowIndex": len(grid), "startColumnIndex": wk,
+                                    "endColumnIndex": wk + 1},
+                    "pasteType": "PASTE_FORMAT"}})
+            rfill._retry(ws.spreadsheet.batch_update, {"requests": reqs})
         updates.append({"range": rowcol_to_a1(lay["header"] + 1, wk + 1),
                         "values": [[label]]})
 
