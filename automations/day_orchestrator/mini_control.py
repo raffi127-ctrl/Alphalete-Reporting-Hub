@@ -241,13 +241,16 @@ def main(argv=None) -> int:
     ap.add_argument("--once", action="store_true", help="poll once and exit")
     ap.add_argument("--enqueue", nargs="+", metavar="ACTION",
                     help="queue an action, e.g. --enqueue rerun daily_focus")
+    ap.add_argument("--by", default=os.environ.get("MINI_BY", "Eve"),
+                    help="who queued this — the audit-log 'By' column (or set "
+                         "MINI_BY in the shell). Default: Eve.")
     ap.add_argument("--interval", type=int, default=120, help="loop interval seconds")
     ap.add_argument("--dry-run", action="store_true", help="poll but execute nothing")
     ap.add_argument("--sandbox", action="store_true", help="use the TEST tab")
     a = ap.parse_args(argv)
 
     if a.enqueue:
-        enqueue(a.enqueue[0], " ".join(a.enqueue[1:]), sandbox=a.sandbox)
+        enqueue(a.enqueue[0], " ".join(a.enqueue[1:]), by=a.by, sandbox=a.sandbox)
         return 0
     if a.loop:
         poll_loop(a.interval, dry_run=a.dry_run, sandbox=a.sandbox)
