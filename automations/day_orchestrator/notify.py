@@ -97,7 +97,7 @@ def _log_tail(report_id, date, n: int = 60) -> str:
 
 def _diagnose(rs, cfg, date):
     """(human reason, needs_appstream_reseed, runnable re-run) for a failure."""
-    rerun = f"mini rerun {rs.report_id}"
+    rerun = f"lucy rerun {rs.report_id}"
     low = _log_tail(rs.report_id, date)
     if ("appstream session expired" in low or "no live token" in low
             or "0 rqst token" in low):
@@ -155,13 +155,13 @@ def _build_body(cfg, ds, *, checkpoint: bool):
         # ONE copy-paste fix block: re-seed once if a session expired, then re-run
         # every failed report. Paste it in Terminal on the mini and it's corrected
         # — no log-digging, no back-and-forth (Megan 2026-06-25).
-        # Copy-paste fix: one `mini rerun <id>` per failed report. Runs from ANY
-        # terminal — the `mini` command queues it to the mini, which runs it
-        # within ~2 min (check with `mini status`). A session re-seed is the one
+        # Copy-paste fix: one `lucy rerun <id>` per failed report. Runs from ANY
+        # terminal — the `lucy` command queues it to the mini, which runs it
+        # within ~2 min (check with `lucy status`). A session re-seed is the one
         # exception: it still needs a human AT the mini to clear the check.
         fix = []
         if need_reseed:
-            fix.append("mini reseed_appstream   # needs someone at the mini to clear the check")
+            fix.append("lucy reseed_appstream   # needs someone at the mini to clear the check")
         fix += reruns
         text.append("")
         text.append("FIX — paste in your Terminal:")

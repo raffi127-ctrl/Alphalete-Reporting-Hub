@@ -146,7 +146,7 @@ def _action_update(args: str) -> tuple[bool, str]:
     at it. --ff-only so it never creates a merge commit (fails cleanly if the
     mini's checkout has diverged, rather than tangling it). The next scheduled
     run / report picks up the new code; a poller-code change needs a
-    restart_holder after. Read the result with `mini status`."""
+    restart_holder after. Read the result with `lucy status`."""
     return _run_cmd(["git", "-C", str(REPO_ROOT), "pull", "--ff-only"],
                     timeout_s=120)
 
@@ -281,18 +281,18 @@ def print_status(n: int = 10, *, sandbox: bool = False) -> None:
 
 def print_help() -> None:
     """Friendly terminal cheat-sheet: the actions + the live report list, so the
-    name in the daily email maps straight to the `mini rerun <id>` to type."""
+    name in the daily email maps straight to the `lucy rerun <id>` to type."""
     print(
-        "mini — control the Mac mini from your terminal.\n\n"
-        "  mini ping                 is the mini awake?  (look for 'pong')\n"
-        "  mini status               show the last 10 commands + their results\n"
-        "  mini status 25            show the last 25\n"
-        "  mini rerun <report_id>    re-run a report that failed in the daily email\n"
-        "  mini update               git pull the latest code onto the mini\n"
-        "  mini restart_holder       restart the session keep-alive\n"
-        "  mini reseed_appstream     open AppStream login (needs a human AT the mini)\n"
-        "  mini help                 show this\n\n"
-        "After any command, run 'mini status' to see if it worked (done / failed).\n"
+        "lucy — control the Mac mini from your terminal.\n\n"
+        "  lucy ping                 is the mini awake?  (look for 'pong')\n"
+        "  lucy status               show the last 10 commands + their results\n"
+        "  lucy status 25            show the last 25\n"
+        "  lucy rerun <report_id>    re-run a report that failed in the daily email\n"
+        "  lucy update               git pull the latest code onto the mini\n"
+        "  lucy restart_holder       restart the session keep-alive\n"
+        "  lucy reseed_appstream     open AppStream login (needs a human AT the mini)\n"
+        "  lucy help                 show this\n\n"
+        "After any command, run 'lucy status' to see if it worked (done / failed).\n"
     )
     try:
         from automations.day_orchestrator import registry
@@ -304,7 +304,7 @@ def print_help() -> None:
     width = max((len(rid) for rid, _ in reports), default=12)
     for rid, r in reports:
         name = getattr(r, "display_name", "") or rid
-        print(f"  mini rerun {rid:<{width}}   {name}")
+        print(f"  lucy rerun {rid:<{width}}   {name}")
     print()
 
 
