@@ -267,6 +267,34 @@ def print_status(n: int = 10, *, sandbox: bool = False) -> None:
     print()
 
 
+def print_help() -> None:
+    """Friendly terminal cheat-sheet: the actions + the live report list, so the
+    name in the daily email maps straight to the `mini rerun <id>` to type."""
+    print(
+        "mini — control the Mac mini from your terminal.\n\n"
+        "  mini ping                 is the mini awake?  (look for 'pong')\n"
+        "  mini status               show the last 10 commands + their results\n"
+        "  mini status 25            show the last 25\n"
+        "  mini rerun <report_id>    re-run a report that failed in the daily email\n"
+        "  mini restart_holder       restart the session keep-alive\n"
+        "  mini reseed_appstream     open AppStream login (needs a human AT the mini)\n"
+        "  mini help                 show this\n\n"
+        "After any command, run 'mini status' to see if it worked (done / failed).\n"
+    )
+    try:
+        from automations.day_orchestrator import registry
+        reports = list(registry.load_config().reports.items())
+    except Exception as e:  # noqa: BLE001
+        print(f"(couldn't load the report list: {e})")
+        return
+    print("Re-run a report — match the name in the email to the id:\n")
+    width = max((len(rid) for rid, _ in reports), default=12)
+    for rid, r in reports:
+        name = getattr(r, "display_name", "") or rid
+        print(f"  mini rerun {rid:<{width}}   {name}")
+    print()
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Mini remote-control command queue")
     ap.add_argument("--loop", action="store_true", help="poll forever (run on the mini)")
@@ -276,6 +304,8 @@ def main(argv=None) -> int:
     ap.add_argument("--by", default=os.environ.get("MINI_BY", "Eve"),
                     help="who queued this — the audit-log 'By' column (or set "
                          "MINI_BY in the shell). Default: Eve.")
+    ap.add_argument("--actions", action="store_true",
+                    help="print the cheat-sheet + the live report list and exit")
     ap.add_argument("--status", nargs="?", type=int, const=10, metavar="N",
                     help="print the last N queue rows + their results and exit "
                          "(default 10) — check outcomes without the Sheet")
@@ -284,6 +314,9 @@ def main(argv=None) -> int:
     ap.add_argument("--sandbox", action="store_true", help="use the TEST tab")
     a = ap.parse_args(argv)
 
+    if a.actions:
+        print_help()
+        return 0
     if a.status is not None:
         print_status(a.status, sandbox=a.sandbox)
         return 0
