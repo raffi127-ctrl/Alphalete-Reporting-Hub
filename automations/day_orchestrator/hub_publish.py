@@ -49,6 +49,7 @@ _HUB_CARD = {
     "int_wow_penetration": "int-wow-penetration",
     "org_sales_board": "org-sales-board",
     "leaders_call": "leaders-call",
+    "residential_rep_count": "residential_rep_count",
     # weather_alert, brand_audit: Slack-only, no Hub card → not published.
 }
 
