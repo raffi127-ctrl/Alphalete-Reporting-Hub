@@ -264,9 +264,12 @@ def _org_sort_collapse(ws, sid):
     ncols = max(len(r) for r in grid)
     a0, a1 = layout["active"]
     inact = layout["inactive"]
+    # Active = greatest→least by the latest week's headcount (name as tiebreak).
+    latest_col = max(layout["we_cols"].values()) if layout["we_cols"] else 0
     reqs = [{"sortRange": {"range": {"sheetId": sid, "startRowIndex": a0,
              "endRowIndex": a1 + 1, "startColumnIndex": 0, "endColumnIndex": ncols},
-             "sortSpecs": [{"dimensionIndex": 0, "sortOrder": "ASCENDING"}]}}]
+             "sortSpecs": [{"dimensionIndex": latest_col, "sortOrder": "DESCENDING"},
+                           {"dimensionIndex": 0, "sortOrder": "ASCENDING"}]}}]
     grp = None
     if inact and inact[1] >= inact[0]:
         i0, i1 = inact
