@@ -21,7 +21,8 @@ import datetime as dt
 import tempfile
 import traceback
 
-from automations.residential_rep_count import email_source, fill, parse, structure
+from automations.residential_rep_count import (
+    email_source, fill, org_headcount, parse, structure)
 from automations.recruiting_report import fill as rfill
 
 REPORT_ID = "residential_rep_count"
@@ -73,6 +74,16 @@ def _run(args) -> dict:
         grid = rfill._retry(ws.get_all_values)
         rep = fill.fill_week(ws, grid, email_data, week, dry_run=dry)
 
+        # also keep the SCI RC/NC Headcount tab current (append this week's
+        # org-level column); non-fatal — the ICD fill is the primary output.
+        org_rep = None
+        try:
+            org_data = org_headcount.parse_org_snapshot(xlsx)
+            ws_org, _ = org_headcount.open_tab(sandbox=sandbox)
+            org_rep = org_headcount.update_week(ws_org, week, org_data, dry_run=dry)
+        except Exception as e:
+            print(f"  ⚠ SCI RC/NC Headcount update skipped: {e}")
+
     print(f"\n=== structural {'plan' if dry else 'changes'} ===")
     for line in struct:
         print("  " + line)
@@ -80,6 +91,11 @@ def _run(args) -> dict:
     for line in rep["log"]:
         print("  " + line)
     print(f"  cells {'to write' if dry else 'written'}: {len(rep['updates'])}")
+    if org_rep:
+        print(f"\n=== SCI RC/NC Headcount: {org_rep['label']} === "
+              f"{org_rep['cells']} cells"
+              + (f", +{org_rep['appended']} new org leader(s)"
+                 if org_rep["appended"] else ""))
     if rep["unmatched"]:
         print(f"\n⚠ {len(rep['unmatched'])} active ICD(s) NOT in the email "
               "(filled 0 — check ICD Aliases): " + ", ".join(rep["unmatched"]))
@@ -92,6 +108,30 @@ def _run(args) -> dict:
     except Exception as e:
         print(f"  (terminated-ICD check skipped: {e})")
     return rep
+
+
+def _org_backfill(args) -> int:
+    """Backfill the 'SCI RC/NC Headcount' tab — Org Leader rows × weekly columns
+    of Unique Headcount, from the last N weeks' 'Org Snapshot (by Campaign)'."""
+    sandbox = bool(args.sandbox)
+    dry = bool(args.dry_run)
+    n = args.org_backfill
+    print(f"SCI RC/NC Headcount BACKFILL ({n} weeks) → "
+          f"{'SANDBOX' if sandbox else 'REAL'} tab · "
+          f"{'DRY-RUN' if dry else 'LIVE WRITE'}")
+    with tempfile.TemporaryDirectory() as td:
+        items = email_source.fetch_recent(td, n)
+        if not items:
+            print("  no Archey emails found"); return 1
+        print(f"  {len(items)} weekly emails: {items[0][1]} → {items[-1][1]}")
+        weeks = [(week, org_headcount.parse_org_snapshot(path))
+                 for path, week, _ in items]
+        ws, _ = org_headcount.open_tab(sandbox=sandbox)
+        rep = org_headcount.write_backfill(ws, weeks, dry_run=dry)
+    print(f"  {rep['leaders']} org leaders × {rep['weeks']} weeks "
+          f"({rep['first_week']} → {rep['last_week']})"
+          f"{'  [dry-run, not written]' if dry else ''}")
+    return 0
 
 
 def _backfill(args) -> int:
@@ -128,8 +168,13 @@ def main(argv=None) -> int:
     ap.add_argument("--backfill", type=int, metavar="N",
                     help="fill the last N weeks' columns from their emails "
                          "(fill-only, no section moves)")
+    ap.add_argument("--org-backfill", type=int, metavar="N",
+                    help="backfill the 'SCI RC/NC Headcount' tab from the last "
+                         "N weeks (Org Leader × weekly Unique Headcount)")
     args = ap.parse_args(argv)
 
+    if args.org_backfill:
+        return _org_backfill(args)
     if args.backfill:
         return _backfill(args)
 
