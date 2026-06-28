@@ -246,9 +246,16 @@ def _post_to_slack(selected, today: dt.date) -> int:
         ws = fill_mod.open_ws()
         sections = fill_mod.find_sections(ws)
         paths = render_mod.render_all_sections(ws, sections, today, out_dir)
-        for i, period in enumerate(PERIODS):
+        # Track the first section we actually POST so the parent-thread
+        # reaction attaches there. For a fully-populated office (Raf) the
+        # first present period is "0-30", identical to before. For a young
+        # office whose 0-30 is the only filled section, the reaction still
+        # fires (on that first present section) rather than being lost on a
+        # skipped period.
+        posted_any = False
+        for period in PERIODS:
             if period not in paths:
-                print(f"      {period}-day: ⚠ skipped — section not "
+                print(f"      {period}-day: ⚠ skipped — section empty / not "
                       f"detected on the sheet (no PNG rendered).")
                 continue
             # Small wait between posts so Slack's file-upload events
@@ -257,7 +264,7 @@ def _post_to_slack(selected, today: dt.date) -> int:
             # overlapping millisecond timestamps and the Slack thread
             # may display them out of [0-30, 30, 60, 90] order (Megan
             # 2026-05-28).
-            if i > 0:
+            if posted_any:
                 time.sleep(1.0)
             comment = f"{'🌐' if slug == 'new-internet' else '📊'} {title_prefix} — {period} Day"
             file_name = f"{title_prefix} {period} Day {today:%m-%d-%Y}.png"
@@ -265,9 +272,10 @@ def _post_to_slack(selected, today: dt.date) -> int:
                 result = post_reply_with_file(
                     paths[period],
                     comment=comment,
-                    react_emoji=react_emoji if i == 0 else None,
+                    react_emoji=react_emoji if not posted_any else None,
                     file_name=file_name,
                 )
+                posted_any = True
                 print(f"      {period}-day: posted (file={result.get('file')})")
                 if not result.get("ok", True):
                     failures += 1

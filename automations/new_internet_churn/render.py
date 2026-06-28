@@ -342,13 +342,66 @@ def render_multi_week(
     return out_path
 
 
+def section_has_data(ws, section: dict, n_weeks: int = N_WEEKS) -> bool:
+    """True if the section has ANY churn data on the sheet — either a
+    non-blank Office Avg value OR at least one rep with a non-blank value
+    across the N week-pairs. Rows are taken from find_sections (label-
+    anchored), never hardcoded indices.
+
+    Skip-empty rendering (Megan 2026-06-28): a YOUNG office (e.g. Rashad
+    Reed) only has 0-30 Day data filled — the 30/60/90 section headers
+    exist on the tab but carry no avg/rep numbers yet. We omit those empty
+    sections from the Slack post instead of rendering blank images.
+
+    Raf's office has all 4 sections populated, so this returns True for
+    every section → all 4 still render, byte-for-byte as before. The only
+    behavior change is for sections that are entirely blank.
+    """
+    end_col_0 = 1 + n_weeks * 2
+    end_col = _col_letter(end_col_0 - 1)
+    avg_row = section["office_avg_row"]
+    rep_hdr_row = section["rep_header_row"]
+    rep_rows = section["rep_rows"]
+    last_rep_row = max(rep_rows.values()) if rep_rows else rep_hdr_row
+
+    ranges = [
+        f"A{avg_row}:{end_col}{avg_row}",
+        f"A{rep_hdr_row + 1}:{end_col}{last_rep_row}",
+    ]
+    result = ws.batch_get(ranges)
+
+    def _nonblank_in_pairs(row) -> bool:
+        # Scan the (pct, units) value columns (B onward = idx 1+); a single
+        # non-blank cell means the section has data.
+        for i in range(1, min(len(row), end_col_0)):
+            if (row[i] or "").strip():
+                return True
+        return False
+
+    avg_row_vals = result[0][0] if result[0] else []
+    if _nonblank_in_pairs(avg_row_vals):
+        return True
+
+    rep_rows_data = result[1] if result[1] else []
+    for rep_row in rep_rows_data:
+        if rep_row and _nonblank_in_pairs(rep_row):
+            return True
+    return False
+
+
 def render_all_sections(ws, sections: dict, today: dt.date,
                          out_dir: Path,
                          n_weeks: int = N_WEEKS) -> dict:
-    """Render all 4 period sections into PNGs."""
+    """Render every period section that HAS data into a PNG.
+
+    Empty sections (no Office Avg + no rep values) are skipped so a young
+    office only posts the section(s) it actually has. Fully-populated
+    offices (Raf) render all 4 exactly as before."""
     out: dict = {}
     out_dir.mkdir(parents=True, exist_ok=True)
     for period, sect in sections.items():
+        if not section_has_data(ws, sect, n_weeks):
+            continue
         path = out_dir / f"new_internet_churn_{period.replace('-', '_')}_day.png"
         render_multi_week(ws, sect, period, today, path, n_weeks=n_weeks)
         out[period] = path

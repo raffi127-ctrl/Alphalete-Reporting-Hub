@@ -101,20 +101,30 @@ METRICS = [
     dict(slug="churn",
          label="🌐 New Internet + 📊 Wireless Churn",
          module="automations.churn.run",
-         owner_args=None,
+         owner_args=[],
+         env={"CHURN_NI_VIEW_URL": ("https://us-east-1.online.tableau.com/#/site/sci/"
+                                    "views/ATTTRACKER2_1-D2D/CHURN/"
+                                    "39c6f9f5-77c8-4de6-909e-5db242f9ee4a/INTRashad?:iid=1"),
+              "CHURN_WL_VIEW_URL": ("https://us-east-1.online.tableau.com/#/site/sci/"
+                                    "views/ATTTRACKER2_1-D2D/CHURN/"
+                                    "2a80ee2a-7471-47ae-a592-27832a6e0ff5/WirelessRashad?:iid=1"),
+              "CHURN_SHEET_ID": "11louWIU8IuSPrZLsMkRh8qEnO3wNqmeNwIOSKPpXzm8"},
          dry_flag="--dry-run", post_flag=None,
-         note="sheet-fill LIVE via `lucy rerun rashad_churn` (INTRashad/WirelessRashad "
-              "→ his sheet); Slack-post here DEFERRED — needs skip-empty so a young "
-              "office doesn't post blank 30/60/90 churn images. Wire post when matured."),
+         note="ready — churn.run pulls INTRashad/WirelessRashad → fills his sheet → "
+              "renders skip-empty (young office posts only the 0-30 section) → posts "
+              "to #elevate-sales. Churn posts when NOT --dry-run and NOT --skip-slack "
+              "(it has no --live flag); the runner's live path adds no flag → it posts."),
     dict(slug="knocks_gaps",
-         label="🪵 Telemapper Knocks + ⏰ Time Gaps",
-         module="automations.total_knocks.run",
-         owner_args=None,
-         dry_flag="--dry-run", post_flag=None,
-         note="FLAGGED — needs Rashad's rep roster. Disposition-by-Rep scrape "
-              "filters by DATE only (no owner/office column), per-rep by badge; "
-              "can't scope to Rashad without his badge/rep list (he has no team "
-              "yet). Also sheet-coupled."),
+         label="🚪 Total Knocks + 🕐 Time Gaps",
+         module="automations.rashad_metrics.knocks_run",
+         owner_args=[],
+         env={"RASHAD_KNOCKS_OFFICE": "Rashad Reed"},
+         dry_flag="--dry-run", post_flag="--live",
+         note="ready — knocks_run impersonates Rashad's office in ownerville "
+              "(focus_office_att helpers) then runs Raf's EXACT disposition + "
+              "time-tracker scrape (total_knocks.pull), renders 2 images from "
+              "the pulled rows (render rows= path), posts to #elevate-sales. "
+              "Rides the ownerville session — same gate as order_log."),
 ]
 
 

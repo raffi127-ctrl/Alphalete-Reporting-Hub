@@ -46,9 +46,14 @@ def render_multi_week(ws, section, period, today, out_path,
 
 def render_all_sections(ws, sections, today, out_dir,
                          n_weeks: int = _shared.N_WEEKS) -> dict:
+    """Render every period section that HAS data into a PNG. Empty
+    sections are skipped (skip-empty for young offices); fully-populated
+    offices render all 4 as before. See _shared.section_has_data."""
     out: dict = {}
     out_dir.mkdir(parents=True, exist_ok=True)
     for period, sect in sections.items():
+        if not _shared.section_has_data(ws, sect, n_weeks):
+            continue
         path = out_dir / f"wireless_churn_{period.replace('-', '_')}_day.png"
         render_multi_week(ws, sect, period, today, path, n_weeks=n_weeks)
         out[period] = path

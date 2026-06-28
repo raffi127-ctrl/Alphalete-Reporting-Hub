@@ -25,6 +25,7 @@ from automations.recruiting_report.fill import open_by_key
 from automations.total_knocks.fill import SHEET_ID, TAB_TEST, TAB_PROD, HEADER_ROW
 from automations.total_knocks.pull import (
     COL_ID, COL_REP, COL_FIRST_KNOCK, COL_LAST_KNOCK, COL_GAPS, COL_TOTAL_GAPS,
+    SHEET_COLUMNS,
     _norm,
 )
 
@@ -94,6 +95,27 @@ def _read_table(sheet_id: str, tab: str) -> tuple[list[str], list[list[str]]]:
     rows = []
     for r in vals[HEADER_ROW:]:
         cells = (r + [""] * len(header))[:len(header)]
+        if any(c.strip() for c in cells):
+            rows.append(cells)
+    return header, rows
+
+
+def _table_from_rows(
+    records: list[dict],
+) -> tuple[list[str], list[list[str]]]:
+    """Build the same (header, data_rows) shape `_read_table` returns, but from
+    in-memory records keyed by SHEET_COLUMNS — no Sheet read.
+
+    Used to render directly from a fresh pull (e.g. an impersonated single
+    office) without writing a production tab. The header order and stringified
+    cells mirror exactly what the filled tab would show, so the rendered image
+    is identical to the Sheet-backed one.
+    """
+    header = list(SHEET_COLUMNS)
+    rows: list[list[str]] = []
+    for rec in records:
+        cells = ["" if rec.get(c, "") is None else str(rec.get(c, ""))
+                 for c in header]
         if any(c.strip() for c in cells):
             rows.append(cells)
     return header, rows
@@ -176,9 +198,21 @@ def _title_date(target: dt.date) -> str:
 
 def render_total_knocks(target: dt.date, *, tab: str = TAB_PROD,
                         sheet_id: str = SHEET_ID,
-                        out_dir: Path = OUT_DIR_DEFAULT) -> Path:
-    """PNG 1 — columns A–N, in tab order (First Knock asc), amber theme."""
-    header, rows = _read_table(sheet_id, tab)
+                        out_dir: Path = OUT_DIR_DEFAULT,
+                        rows: list[dict] | None = None) -> Path:
+    """PNG 1 — columns A–N, in tab order (First Knock asc), amber theme.
+
+    `rows` (optional): in-memory records keyed by SHEET_COLUMNS. When given,
+    render straight from them (sorted the same way fill.py orders the tab —
+    First Knock asc) instead of reading the Sheet, so callers can render a
+    fresh pull without writing a production tab. Default (None) preserves the
+    exact Sheet-reading behaviour.
+    """
+    if rows is not None:
+        from automations.total_knocks.fill import _sorted_rows
+        header, rows = _table_from_rows(_sorted_rows(rows))
+    else:
+        header, rows = _read_table(sheet_id, tab)
     if not rows:
         raise RuntimeError(f"No data rows in tab {tab!r} to render.")
     n = min(TOTAL_KNOCKS_NCOL, len(header))
@@ -205,11 +239,21 @@ def _fmt_hm(v: str) -> str:
 
 def render_time_gaps(target: dt.date, *, tab: str = TAB_PROD,
                      sheet_id: str = SHEET_ID,
-                     out_dir: Path = OUT_DIR_DEFAULT) -> Path:
+                     out_dir: Path = OUT_DIR_DEFAULT,
+                     rows: list[dict] | None = None) -> Path:
     """PNG 2 — ID, Rep, First/Last Knock, Gaps, Total Gaps (min), sorted by
     Total Gaps (min) desc, teal theme. Total Gaps is shown as 'Xh Ym' (like
-    Ownerville); the Sheet column itself stays in plain minutes."""
-    header, rows = _read_table(sheet_id, tab)
+    Ownerville); the Sheet column itself stays in plain minutes.
+
+    `rows` (optional): in-memory records keyed by SHEET_COLUMNS. When given,
+    render straight from them instead of reading the Sheet (this function does
+    its own Total-Gaps-desc sort, so no pre-sort is needed). Default (None)
+    preserves the exact Sheet-reading behaviour.
+    """
+    if rows is not None:
+        header, rows = _table_from_rows(rows)
+    else:
+        header, rows = _read_table(sheet_id, tab)
     if not rows:
         raise RuntimeError(f"No data rows in tab {tab!r} to render.")
     idx = {}
