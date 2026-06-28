@@ -1627,22 +1627,30 @@ def write_office_summary_block(ws, layout: Layout) -> None:
     completed = _completed_weekdays(ws)
 
     # Per-day counts + per-rep weekly flags (for unique weekly totals).
-    # In-field rule (per Megan 2026-05-15):
-    #   "in the field" = Total Leads Knocked has a positive numeric value
-    #   OR any production col (New INT/Upgrades/DTV/New Lines) > 0.
-    # Selling implies presence — Tableau-only reps with a sale but no OV
-    # door-knock count as in-field via their sale.
+    # In-field rule (per Megan 2026-05-15; BROADENED 2026-06-27):
+    #   "in the field" = ANY field activity that day — Total Leads Knocked > 0
+    #   OR Talk To's > 0 OR Presentations > 0 — OR any production col
+    #   (New INT/Upgrades/DTV/New Lines) > 0. Talk To's/Presentations were added
+    #   so a rep who was clearly out working (talked/presented) but logged 0 NEW
+    #   leads knocked still counts (Megan: "broaden so reps like Ammar count" —
+    #   7 Talk To's + 2 Presentations but 0 Leads Knocked used to read NOT in field).
+    #   Selling implies presence — Tableau-only reps with a sale but no OV
+    #   door-knock count via their sale.
+    ACTIVITY_METRICS = ("Total Leads Knocked", "Talk To's", "Presentations")
     in_field: dict[int, int] = {}
     sold: dict[int, int] = {}
     in_field_any_day = [False] * len(rep_data)
     sold_any_day = [False] * len(rep_data)
     for wd in range(7):
-        knocked_col = layout.day_cols.get(wd, {}).get("Total Leads Knocked")
+        activity_cols = [
+            c for c in (layout.day_cols.get(wd, {}).get(m) for m in ACTIVITY_METRICS)
+            if c
+        ]
         sale_cols = [
             c for c in (layout.day_cols.get(wd, {}).get(m) for m in SALE_METRICS)
             if c
         ]
-        if not knocked_col and not sale_cols:
+        if not activity_cols and not sale_cols:
             in_field[wd] = 0
             sold[wd] = 0
             continue
@@ -1661,9 +1669,14 @@ def write_office_summary_block(ws, layout: Layout) -> None:
             if has_sale:
                 sold_count += 1
                 sold_any_day[ri] = True
-            knocked = (row[knocked_col - 1] if knocked_col and len(row) >= knocked_col else None)
-            knocked_data = isinstance(knocked, (int, float)) and knocked > 0
-            if knocked_data or has_sale:
+            has_activity = False
+            for ac in activity_cols:
+                if len(row) >= ac:
+                    v = row[ac - 1]
+                    if isinstance(v, (int, float)) and v > 0:
+                        has_activity = True
+                        break
+            if has_activity or has_sale:
                 in_count += 1
                 in_field_any_day[ri] = True
         in_field[wd] = in_count
