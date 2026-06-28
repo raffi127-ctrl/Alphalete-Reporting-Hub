@@ -651,6 +651,31 @@
       "verify": {
         "type": "not_configured"
       }
+    },
+    "rashad_orderlog": {
+      "on_scheduler": true,
+      "_note": "DIAGNOSTIC — `lucy rerun rashad_orderlog` runs order_log directly for Rashad (dry, no post) so its real error surfaces in the status tail. weekdays=[] never auto-runs. Remove once order_log is fixed.",
+      "display_name": "Rashad Order Log (diag)",
+      "source_type": "appstream",
+      "data_sources": [],
+      "command": [
+        "automations.uploaded.order_log"
+      ],
+      "base_args": [
+        "--owner",
+        "Rashad Reed",
+        "--no-slack"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 30,
+      "verify": {
+        "type": "not_configured"
+      }
     }
   },
   "read_only_standalone": {
