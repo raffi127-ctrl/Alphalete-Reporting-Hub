@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 import csv
+import os
 import tempfile
 from pathlib import Path
 from typing import Optional
 
 from automations.shared.tableau_patchright import download_crosstab_patchright
 
-VIEW_URL = (
+# Default = Raf's RafExpanded; override via ONGOING_CANCEL_VIEW_URL (e.g.
+# Rashad's RashadExpanded) so the same pull serves any owner's cancel-rate view.
+VIEW_URL = os.environ.get("ONGOING_CANCEL_VIEW_URL") or (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "CancelRatesRunningSumRaf/InternetCancelRatesDoD/"
     "d54dda09-87e8-44c3-a8a9-a9cdbabf062a/RafExpanded?:iid=1"

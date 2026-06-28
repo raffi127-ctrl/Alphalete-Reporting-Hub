@@ -84,11 +84,14 @@ METRICS = [
     dict(slug="ongoing_cancel",
          label="🔁 Ongoing Cancel",
          module="automations.ongoing_cancel.run",
-         owner_args=None,
+         owner_args=[],
+         env={"ONGOING_CANCEL_VIEW_URL":
+              "https://us-east-1.online.tableau.com/#/site/sci/views/"
+              "CancelRatesRunningSumRaf/InternetCancelRatesDoD/"
+              "b7cb521f-8535-4d3e-b4be-7a644065ad48/RashadExpanded?:iid=1"},
          dry_flag="--dry-run", post_flag=None,
-         note="FLAGGED — needs a Tableau view. Source is RafExpanded, a "
-              "Raf-specific COMPUTED running-sum cancel-rate view; no org-wide "
-              "version exists to filter. Needs a Rashad/org-wide cancel-rates view."),
+         note="ready — RashadExpanded cancel-rates view (env override); its "
+              "slack_post honors METRICS_CHANNEL_ID so it posts to #elevate-sales"),
     dict(slug="disconnects",
          label="❎ Disconnected New Internets",
          module="automations.disconnects.run",
@@ -100,10 +103,9 @@ METRICS = [
          module="automations.churn.run",
          owner_args=None,
          dry_flag="--dry-run", post_flag=None,
-         note="FLAGGED — needs a Tableau view + refactor. Source INTLocalOffice "
-              "bakes 'ICD Owner = Rafael Hidalgo' into the view; also sheet-coupled "
-              "(fills Local Office tabs, renders from them). Needs a Rashad churn "
-              "view + a Rashad tab or a direct-render path."),
+         note="sheet-fill LIVE via `lucy rerun rashad_churn` (INTRashad/WirelessRashad "
+              "→ his sheet); Slack-post here DEFERRED — needs skip-empty so a young "
+              "office doesn't post blank 30/60/90 churn images. Wire post when matured."),
     dict(slug="knocks_gaps",
          label="🪵 Telemapper Knocks + ⏰ Time Gaps",
          module="automations.total_knocks.run",
@@ -164,15 +166,15 @@ def main(argv=None) -> int:
         return 2
     mode = "live" if args.live else ("dry-run" if args.dry_run else "plan")
 
-    wired = [m for m in METRICS if m["owner_args"]]
-    pending = [m for m in METRICS if not m["owner_args"]]
+    wired = [m for m in METRICS if m["owner_args"] is not None]
+    pending = [m for m in METRICS if m["owner_args"] is None]
     if args.only:
         sel = [m for m in METRICS if m["slug"] == args.only]
         if not sel:
             print(f"--only {args.only!r}: unknown slug "
                   f"(all: {[m['slug'] for m in METRICS]})")
             return 2
-        if not sel[0]["owner_args"]:
+        if sel[0]["owner_args"] is None:
             print(f"--only {args.only!r}: not wired yet — {sel[0]['note']}")
             return 2
         wired = sel
@@ -240,7 +242,8 @@ def main(argv=None) -> int:
     overall_start = time.monotonic()
     for m in wired:
         cmd = _metric_cmd(m, live=(mode == "live"))
-        ok, note = _run_one(m["label"], cmd, child_env)
+        m_env = dict(child_env, **m.get("env", {}))   # per-metric Tableau-view overrides
+        ok, note = _run_one(m["label"], cmd, m_env)
         results.append((m["label"], ok, note))
 
     # --- Reconciliation summary ---
