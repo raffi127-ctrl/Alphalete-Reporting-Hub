@@ -637,6 +637,27 @@
         "type": "not_configured",
         "_todo": "wire a manifest verify once all 7 metrics post (mirror daily_metrics)"
       }
+    },
+    "rashad_churn": {
+      "on_scheduler": true,
+      "_note": "weekdays=[] → NEVER auto-runs on schedule (scheduled_today filters by weekday); it exists ONLY so `lucy rerun rashad_churn` can run Rashad's churn fill on-demand on the mini. Fills the 'Metrics Reports - Rashad Reed' churn tabs (today's snapshot, sheet-only — churn_pull defaults to --skip-slack). Flip weekdays to daily + wire the #elevate-sales post once verified.",
+      "display_name": "Rashad Churn (on-demand)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.rashad_metrics.churn_pull"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 60,
+      "verify": {
+        "type": "not_configured"
+      }
     }
   },
   "read_only_standalone": {
