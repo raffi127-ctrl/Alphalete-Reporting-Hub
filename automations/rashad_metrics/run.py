@@ -228,16 +228,31 @@ def main(argv=None) -> int:
         try:
             import certifi, ssl
             from slack_sdk import WebClient
-            who = WebClient(
-                token=tok, ssl=ssl.create_default_context(cafile=certifi.where())
-            ).auth_test()
+            client = WebClient(
+                token=tok, ssl=ssl.create_default_context(cafile=certifi.where()))
+            who = client.auth_test()
             print(f"  posting as: {who.get('user')} (team={who.get('team')}) "
                   f"— same token path as the 9-metrics report")
         except Exception as e:
             print(f"✗ Slack token failed auth: {type(e).__name__}: {str(e)[:140]}")
             return 2
 
-        # Ensure today's Metrics header thread exists in #elevate-sales so every
+        # If --channel is a comma-separated list of user ids, open a group DM
+        # (mpim) with them and post the whole report there — used by the review
+        # run that DMs Megan + Raf for sign-off before the report goes public.
+        if "," in target_chan:
+            users = [u.strip() for u in target_chan.split(",") if u.strip()]
+            try:
+                conv = client.conversations_open(users=",".join(users))
+                target_chan = conv["channel"]["id"]
+                child_env["METRICS_CHANNEL_ID"] = target_chan
+                print(f"  group DM opened for {len(users)} user(s) → {target_chan}")
+            except Exception as e:
+                print(f"✗ couldn't open group DM for {users}: "
+                      f"{type(e).__name__}: {str(e)[:140]}")
+                return 2
+
+        # Ensure today's Metrics header thread exists in the destination so every
         # metric reply has a parent to land in (no 7am workflow there).
         if not args.only:
             os.environ["METRICS_CHANNEL_ID"] = target_chan
