@@ -676,6 +676,31 @@
       "verify": {
         "type": "not_configured"
       }
+    },
+    "rashad_metrics_review": {
+      "on_scheduler": true,
+      "_note": "REVIEW run: `lucy rerun rashad_metrics_review` runs the full report --live but DMs it to Megan (U045Z8N0ZQC) via --channel, for review BEFORE going public to #elevate-sales. weekdays=[] never auto-runs.",
+      "display_name": "Rashad's Daily Metrics — REVIEW DM",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.rashad_metrics.run"
+      ],
+      "base_args": [
+        "--live",
+        "--channel",
+        "U045Z8N0ZQC"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 60,
+      "verify": {
+        "type": "not_configured"
+      }
     }
   },
   "read_only_standalone": {

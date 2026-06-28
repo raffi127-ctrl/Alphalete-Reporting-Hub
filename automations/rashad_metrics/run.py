@@ -169,7 +169,12 @@ def main(argv=None) -> int:
                          "ownerville/Tableau session).")
     ap.add_argument("--only", default=None,
                     help="run a single metric by slug (e.g. order_log).")
+    ap.add_argument("--channel", default=None,
+                    help="override the post destination (Slack channel/DM id). "
+                         "Default #elevate-sales. Pass a user id (e.g. U045Z8N0ZQC) "
+                         "to DM the rendered report for review before going live.")
     args = ap.parse_args(argv)
+    target_chan = args.channel or ELEVATE_CHANNEL_ID
 
     if args.live and args.dry_run:
         print("✗ --live and --dry-run are mutually exclusive.")
@@ -189,8 +194,9 @@ def main(argv=None) -> int:
             return 2
         wired = sel
 
+    _dest = "#elevate-sales" if target_chan == ELEVATE_CHANNEL_ID else f"DM/{target_chan}"
     print(f"=== Rashad's daily metrics — owner={RASHAD_OWNER!r} → "
-          f"#elevate-sales ({ELEVATE_CHANNEL_ID}) — {mode.upper()} ===")
+          f"{_dest} ({target_chan}) — {mode.upper()} ===")
     for m in wired:
         print(f"   • {m['label']}  ({m['module']})")
 
@@ -206,7 +212,7 @@ def main(argv=None) -> int:
         return 0
 
     # Every metric subprocess posts to #elevate-sales instead of #alphalete-sales.
-    child_env = dict(os.environ, METRICS_CHANNEL_ID=ELEVATE_CHANNEL_ID)
+    child_env = dict(os.environ, METRICS_CHANNEL_ID=target_chan)
 
     # --- LIVE: confirm a Slack token RESOLVES + show the identity BEFORE posting.
     # We do NOT override the token — slack_metrics_post resolves it the same way
@@ -234,7 +240,7 @@ def main(argv=None) -> int:
         # Ensure today's Metrics header thread exists in #elevate-sales so every
         # metric reply has a parent to land in (no 7am workflow there).
         if not args.only:
-            os.environ["METRICS_CHANNEL_ID"] = ELEVATE_CHANNEL_ID
+            os.environ["METRICS_CHANNEL_ID"] = target_chan
             try:
                 res = smp.ensure_metrics_thread()
                 print(f"  header thread: "
