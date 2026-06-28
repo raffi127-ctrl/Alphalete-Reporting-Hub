@@ -43,6 +43,18 @@ def yesterday_central() -> dt.date:
 WORKSHEET = "A.Order Log"
 MIN_DAYS_TO_APPT = 6
 
+# Org-wide ALLREPS Order Log view (all reps) — the SAME view canceled_orders /
+# disconnects pull. It honors Start/End Date by URL and exposes every column this
+# report maps (Owner Name, Rep, Customer, Phone, Days to Appointment, Tech
+# Install). Used for single-owner cuts (e.g. Rashad) so we can filter to one
+# Owner Name client-side instead of needing a per-owner custom view.
+ALLREPS_VIEW_URL_TMPL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER2_1-D2D/ORDERLOG/"
+    "117748c0-9487-45e8-a5d4-c447093718d5/ALLREPS?:iid=1"
+    "&Start%20Date={start}&End%20Date={end}"
+)
+
 # Custom-view URLs are written by create_views.py to this sidecar so we don't
 # have to hand-edit source after creating them in Tableau.
 VIEWS_JSON = Path(__file__).resolve().parent / "views.json"
@@ -98,6 +110,20 @@ def fetch_crosstab(team: str, day: dt.date,
     return out_path
 
 
+def fetch_crosstab_allreps(day: dt.date,
+                           out_path: Optional[Path] = None,
+                           verbose: bool = False,
+                           page=None) -> Path:
+    """Pull the org-wide ALLREPS Order Log for a single day (Start==End==day).
+    Used by single-owner cuts (filter to one Owner Name in parse_and_filter)."""
+    out_path = out_path or (Path(tempfile.gettempdir())
+                            / "scheduled_6days_allreps_orderlog.csv")
+    url = ALLREPS_VIEW_URL_TMPL.format(start=day.isoformat(), end=day.isoformat())
+    download_crosstab_patchright(url, WORKSHEET, out_path,
+                                 verbose=verbose, page=page)
+    return out_path
+
+
 def _parse_days(raw: str) -> Optional[int]:
     """'6', '6.0', ' 12 ' → int; blanks / non-numeric → None (row dropped)."""
     s = (raw or "").strip().replace(",", "")
@@ -109,13 +135,17 @@ def _parse_days(raw: str) -> Optional[int]:
         return None
 
 
-def parse_and_filter(csv_path: Path) -> list[dict]:
+def parse_and_filter(csv_path: Path, owner: Optional[str] = None) -> list[dict]:
     """Parse the Crosstab CSV, keep rows with Days to Appointment >= 6, map to
     the 6 Sheet columns, and return SORTED alphabetically by Rep (case-fold).
 
     Team + Product Type are already filtered server-side by the custom view; we
     still defensively enforce Product Type == NEW INTERNET if that column is
-    present, so a mis-saved view can't leak wireless rows into the sheet."""
+    present, so a mis-saved view can't leak wireless rows into the sheet.
+
+    `owner` (single-owner cuts, e.g. Rashad on the org-wide ALLREPS view): when
+    set, keep only rows whose Owner Name matches (case-fold). Default None = the
+    existing team-custom-view behavior (no owner filter)."""
     with open(csv_path, "r", encoding="utf-16-le") as f:
         rows = list(csv.reader(f, delimiter="\t"))
     if not rows:
@@ -126,6 +156,8 @@ def parse_and_filter(csv_path: Path) -> list[dict]:
         return header.index(name)
 
     days_i = col("Days to Appointment")
+    owner_i = col("Owner Name") if owner is not None else None
+    owner_cf = owner.strip().casefold() if owner is not None else None
     prod_i = header.index("Product Type (Broken Out)") if \
         "Product Type (Broken Out)" in header else None
     mapped_idx = [(sheet_col, col(tab_col)) for sheet_col, tab_col in COL_MAP]
@@ -134,6 +166,9 @@ def parse_and_filter(csv_path: Path) -> list[dict]:
     for r in rows[1:]:
         if len(r) <= days_i:
             continue
+        if owner_i is not None:
+            if owner_i >= len(r) or r[owner_i].strip().casefold() != owner_cf:
+                continue
         if prod_i is not None and prod_i < len(r):
             if r[prod_i].strip().upper() != "NEW INTERNET":
                 continue

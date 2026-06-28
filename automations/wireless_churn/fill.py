@@ -33,5 +33,7 @@ unhide_all_rep_rows         = _shared.unhide_all_rep_rows
 apply_pct_direct_colors     = _shared.apply_pct_direct_colors
 clear_empty_cell_backgrounds = _shared.clear_empty_cell_backgrounds
 hide_after_5_zero_pulls     = _shared.hide_after_5_zero_pulls
+ungroup_all_rep_rows        = _shared.ungroup_all_rep_rows
+group_collapse_nodata_reps  = _shared.group_collapse_nodata_reps
 apply_rep_row_borders       = _shared.apply_rep_row_borders
 _date_label                 = _shared._date_label

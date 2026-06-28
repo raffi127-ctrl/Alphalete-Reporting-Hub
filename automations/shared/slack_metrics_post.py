@@ -16,7 +16,7 @@ import os
 import ssl
 from pathlib import Path
 
-CHANNEL_ID = "C068PH3RFSM"  # #alphalete-sales
+CHANNEL_ID = os.environ.get("METRICS_CHANNEL_ID", "C068PH3RFSM")  # default #alphalete-sales; override via METRICS_CHANNEL_ID (e.g. Rashad's private #elevate-sales) — read at import so subprocesses pick it up
 TOKEN_PATH = Path.home() / ".config" / "recruiting-report" / "slack-user-token"
 
 

@@ -25,6 +25,7 @@ We walk the rows once and pivot into:
 from __future__ import annotations
 
 import csv
+import os
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -39,7 +40,7 @@ from automations.shared.tableau_patchright import download_crosstab_patchright
 #     saved custom view so all 3 dropdowns are locked correctly.)
 #   * Product Type (Broken Out) = NEW INTERNET
 #   * ICD Owner Name (rep) = RAFAEL HIDALGO
-VIEW_URL = (
+VIEW_URL = os.environ.get("CHURN_NI_VIEW_URL") or (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/CHURN/"
     "6a425046-e284-4e60-9ffa-7656aa7b9776/INTLocalOffice?:iid=2"

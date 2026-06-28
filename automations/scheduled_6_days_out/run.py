@@ -85,10 +85,60 @@ def _email_team(team: str, png_path: Path, day: dt.date, *,
         print(f"  ⚠ Email {team} failed: {e}")
 
 
+def _run_single_owner(owner: str, day: dt.date, *,
+                      post_slack: bool, dry_run: bool) -> int:
+    """One-office cut: pull the org-wide ALLREPS Order Log, filter to a SINGLE
+    owner (+ Days to Appointment >= 6, New Internet), render + post that one
+    image to the Metrics thread. No Sheet writes, no captainship tabs, no email.
+
+    Used by automations/rashad_metrics — the channel is whatever
+    slack_metrics_post resolves (METRICS_CHANNEL_ID). Default multi-tab flow
+    is untouched.
+    """
+    tag = _date_tag(day)
+    do_post = post_slack and not dry_run
+    print(f"=== Scheduled 6 days out — single owner: {owner} — "
+          f"data day {day.isoformat()} (Central) ===")
+    print("Step 1: Tableau ALLREPS Order Log pull (org-wide, 1-day)…")
+    csv_path = pull.fetch_crosstab_allreps(day, verbose=True)
+    print(f"  ✓ {csv_path}")
+
+    print(f"Step 2: Parse + filter (Days to Appointment >= 6, Owner = {owner})…")
+    rows = pull.parse_and_filter(csv_path, owner=owner)
+    print(f"  ✓ {owner}: {len(rows)} rows")
+
+    print("Step 3: Render PNG…")
+    img = Path(tempfile.gettempdir()) / f"scheduled_6days_single_{tag}.png"
+    render.render(rows, img,
+                  title=f"Scheduled 6 days out — {owner} ({tag})",
+                  color_by="Rep")
+    print(f"  ✓ {img}")
+
+    print("Step 4: Slack post to today's Metrics thread…")
+    try:
+        res = slack_metrics_post.post_reply_with_image(
+            img, comment="📅 Scheduled 6 days out", react_emoji="calendar",
+            today=pull.central_today(), dry_run=not do_post)
+        print(f"  ✓ Slack ({'LIVE' if do_post else 'DRY-RUN'}): {res}")
+        if not res.get("dry_run") and not res.get("ok", True):
+            print("✗ Slack post FAILED.")
+            return 1
+    except slack_metrics_post.SlackPostError as e:
+        print(f"  ⚠ Slack post failed: {e}")
+        return 1
+    print("=== done ===")
+    return 0
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="scheduled_6_days_out")
     p.add_argument("--dry-run", action="store_true",
                    help="Don't write to the Sheet (still pulls + renders PNGs).")
+    p.add_argument("--owner", default=None,
+                   help="Single-owner mode: pull the org-wide ALLREPS Order Log, "
+                        "filter to just this owner, post that one image (no Sheet "
+                        "writes, no captainship tabs, no email). Used by "
+                        "rashad_metrics.")
     p.add_argument("--post-slack", action="store_true",
                    help="Actually post Raf's Local Office image to the Metrics "
                         "thread. Off by default (logs what it WOULD post).")
@@ -105,6 +155,12 @@ def main(argv=None) -> int:
 
     day = (dt.date.fromisoformat(args.day) if args.day
            else pull.yesterday_central())
+
+    if args.owner:
+        return _run_single_owner(args.owner, day,
+                                 post_slack=args.post_slack,
+                                 dry_run=args.dry_run)
+
     tag = _date_tag(day)
     dl = downloads_dir()
     slack_dry = not args.post_slack

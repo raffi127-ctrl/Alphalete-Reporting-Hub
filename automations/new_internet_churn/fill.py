@@ -29,6 +29,7 @@ EACH DAILY RUN:
 from __future__ import annotations
 
 import datetime as dt
+import os
 import re
 import time
 from typing import Optional
@@ -36,7 +37,7 @@ from typing import Optional
 from automations.new_internet_churn import pull
 from automations.recruiting_report.fill import open_by_key, _retry
 
-SHEET_ID = "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8"
+SHEET_ID = os.environ.get("CHURN_SHEET_ID", "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8")
 TAB_LOCAL_OFFICE = "Local Office - New Internet Churn"
 
 PERIOD_SECTION_LABELS = (
@@ -1217,6 +1218,85 @@ def hide_blanks_today(
     if batch_requests:
         ws.spreadsheet.batch_update({"requests": batch_requests})
     return actions
+
+
+def ungroup_all_rep_rows(ws, *, dry_run: bool = False, logfn=print) -> None:
+    """Delete every existing ROW group on the tab. Run BEFORE re-sorting +
+    re-grouping (mirrors unhide_all_rep_rows) so a rep that was collapsed
+    yesterday but has data today isn't stuck inside a stale collapsed group."""
+    meta = ws.spreadsheet.fetch_sheet_metadata(
+        params={"fields": "sheets(properties(sheetId),rowGroups)"})
+    groups = []
+    for s in meta.get("sheets", []):
+        if s["properties"]["sheetId"] == ws.id:
+            groups = s.get("rowGroups", []) or []
+            break
+    if not groups:
+        return
+    if dry_run:
+        logfn(f"  (dry-run) would delete {len(groups)} existing row group(s)")
+        return
+    reqs = [{"deleteDimensionGroup": {"range": g["range"]}} for g in groups]
+    ws.spreadsheet.batch_update({"requests": reqs})
+
+
+def group_collapse_nodata_reps(ws, sections, *, dry_run: bool = False,
+                               logfn=print) -> None:
+    """REPLACES plain hiding (Megan 2026-06-28): after sort_sections_via_sortrange
+    clusters blank-today reps at the TOP of each section, relocate that no-data
+    block to the BOTTOM of the section and wrap it in a COLLAPSED Sheets row group
+    (the +/- toggle). Reps with data stay visible + % desc; no-data reps collapse
+    out of the way. Names never deleted. Sections processed BOTTOM-UP so row moves
+    don't shift not-yet-processed sections.
+
+    'No-data' here = blank today (col B), matching hide_blanks_today. (5-zero reps
+    carry a 0% value so they already sort to the bottom of the DATA block; widen
+    the classification below if they should also collapse.)
+
+    ⚠ UNTESTED from a dev laptop — the moveDimension index math is verified only
+    for the all-blank case (Rashad's empty template). MUST be dry-run on the mini
+    against real mixed churn data before it touches Raf's live run.
+    """
+    if not sections:
+        return
+    for period, sect in sorted(sections.items(),
+                               key=lambda kv: kv[1]["header_row"], reverse=True):
+        rep_rows = sect.get("rep_rows") or {}
+        if not rep_rows:
+            continue
+        first = max(min(rep_rows.values()), sect["rep_header_row"] + 1)
+        last = max(rep_rows.values())
+        block = ws.spreadsheet.values_get(
+            f"{ws.title}!A{first}:B{last}").get("values", [])
+        n = 0  # contiguous blank-today reps at the top (post desc-sort)
+        for rd in block:
+            name = (rd[0] if rd else "").strip()
+            today = (rd[1] if len(rd) > 1 else "").strip()
+            if name and not today:
+                n += 1
+            else:
+                break
+        if n == 0:
+            continue
+        if dry_run:
+            logfn(f"  (dry-run) {period}: move+group+collapse {n} no-data reps")
+            continue
+        reqs = []
+        if n < (last - first + 1):   # data reps below → move blanks to the bottom
+            reqs.append({"moveDimension": {
+                "source": {"sheetId": ws.id, "dimension": "ROWS",
+                           "startIndex": first - 1, "endIndex": first - 1 + n},
+                "destinationIndex": last}})
+        g0, g1 = last - n, last   # 0-indexed bottom block after the move
+        reqs.append({"addDimensionGroup": {"range": {
+            "sheetId": ws.id, "dimension": "ROWS",
+            "startIndex": g0, "endIndex": g1}}})
+        reqs.append({"updateDimensionGroup": {"dimensionGroup": {
+            "range": {"sheetId": ws.id, "dimension": "ROWS",
+                      "startIndex": g0, "endIndex": g1},
+            "depth": 1, "collapsed": True}, "fields": "collapsed"}})
+        ws.spreadsheet.batch_update({"requests": reqs})
+        logfn(f"  {period}: moved+grouped+collapsed {n} no-data reps at bottom")
 
 
 def clear_empty_cell_backgrounds(

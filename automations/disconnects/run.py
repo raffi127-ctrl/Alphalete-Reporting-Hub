@@ -47,10 +47,58 @@ SAHIL_OWNER = {"Sahil Multani"}
 STARR_PLUS_SAHIL = STARR_OWNERS | SAHIL_OWNER
 
 
+def _run_single_owner(owner: str, order_start: dt.date, end: dt.date,
+                      status_start: dt.date, *, dry_run: bool) -> int:
+    """One-office cut: pull org-wide, filter to a SINGLE owner, render + post
+    that one image to the Metrics thread. No sheet writes, no captainship split.
+
+    Used by automations/rashad_metrics — the channel is whatever
+    slack_metrics_post resolves (METRICS_CHANNEL_ID). Default flow untouched.
+    """
+    print(f"=== Disconnects — single owner: {owner} — Status Date window "
+          f"{status_start.isoformat()} → {end.isoformat()} ===")
+    print(f"Step 1: Tableau Order Log pull "
+          f"(Order Date {order_start.isoformat()} → {end.isoformat()})...")
+    csv_path = pull.fetch_crosstab(order_start, end, verbose=False)
+    print(f"  ✓ {csv_path}")
+
+    print("Step 2: Parse + filter (DTR=Disconnected, NEW INTERNET, Status Date "
+          f"in window, Owner = {owner})...")
+    rows = pull.parse_and_filter(csv_path, {owner},
+                                 status_window=(status_start, end))
+    print(f"  ✓ {owner}: {len(rows)} disconnected")
+
+    print("Step 3: Slack post to today's Metrics thread...")
+    try:
+        if rows:
+            img_path = Path(tempfile.gettempdir()) / "disconnects_single.png"
+            render.render(rows, img_path)
+            res = slack_metrics_post.post_reply_with_image(
+                img_path, comment="❎ Disconnected New Internets",
+                react_emoji="negative_squared_cross_mark", dry_run=dry_run)
+        else:
+            res = slack_metrics_post.post_reply_text_only(
+                "❎ No New Disconnected New Internets",
+                react_emoji="negative_squared_cross_mark", dry_run=dry_run)
+        print(f"  ✓ Slack: {res}")
+        if not res.get("dry_run") and not res.get("ok", True):
+            print("✗ Slack post FAILED.")
+            return 1
+    except slack_metrics_post.SlackPostError as e:
+        print(f"  ⚠ Slack post failed: {e}")
+        return 1
+    print("=== done ===")
+    return 0
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="disconnects")
     p.add_argument("--dry-run", action="store_true",
                    help="Don't write to the sheet; print what would happen.")
+    p.add_argument("--owner", default=None,
+                   help="Single-owner mode: pull org-wide, filter to just this "
+                        "owner, post that one image (no sheet writes, no "
+                        "captainship split). Used by rashad_metrics.")
     p.add_argument("--start-date", default=None,
                    help="Override Order-Date start (YYYY-MM-DD). Default = 60 days ago.")
     p.add_argument("--end-date", default=None,
@@ -71,6 +119,10 @@ def main(argv=None) -> int:
     order_start = (dt.date.fromisoformat(args.start_date)
                    if args.start_date else default_order_start)
     end = dt.date.fromisoformat(args.end_date) if args.end_date else yesterday
+
+    if args.owner:
+        return _run_single_owner(args.owner, order_start, end, status_start,
+                                 dry_run=args.dry_run)
 
     print(f"=== Disconnects — Status Date window "
           f"{status_start.isoformat()} → {end.isoformat()} ===")

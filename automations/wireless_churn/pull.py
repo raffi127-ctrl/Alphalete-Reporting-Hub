@@ -18,6 +18,7 @@ source (no more URL-param hacks).
 """
 from __future__ import annotations
 
+import os
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -34,7 +35,7 @@ WORKSHEET = _shared.WORKSHEET
 
 # Custom view URL: WirelessLocalOffice — see module docstring for why
 # this swap matters.
-VIEW_URL = (
+VIEW_URL = os.environ.get("CHURN_WL_VIEW_URL") or (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/CHURN/"
     "237d7959-bef0-40df-8697-8d879fe22560/WirelessLocalOffice?:iid=1"

@@ -601,6 +601,42 @@
         ],
         "readiness_applies": false
       }
+    },
+    "rashad_metrics": {
+      "on_scheduler": false,
+      "_disabled_reason": "BUILDING 2026-06-28. 4 of 7 metrics wired (order_log, canceled_orders, disconnects, sales_6plus) via the org-wide-pull → filter-to-Rashad pattern. Posts AS Lucy by reusing the SAME Slack token path as daily_metrics (no separate token — on the mini that file is Lucy). Remaining 3 are FLAGGED, each needs a Tableau asset that doesn't exist: ongoing_cancel (a Rashad/org-wide cancel-rates view — current RafExpanded is Raf-only computed), churn (a Rashad churn view — INTLocalOffice bakes owner=Raf; also sheet-coupled, needs a Rashad tab or direct-render), knocks_gaps (Rashad's rep roster — Disposition-by-Rep has no owner column). Flip true only after a clean dry-run of the 4 wired on the mini + Megan's go-ahead (and the 3 flagged either built or accepted as omitted).",
+      "display_name": "Rashad's Daily Metrics (#elevate-sales)",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:order_log"
+      ],
+      "_sources_note": "Single-office cut of the daily metrics for owner 'Rashad Reed', posted to his PRIVATE #elevate-sales (C0B3KTCCMT7) as the Lucy reporting bot. Internally orchestrates order_log + canceled_orders + disconnects today (more as wired); gated on the dominant order_log source.",
+      "command": [
+        "automations.rashad_metrics.run"
+      ],
+      "base_args": [
+        "--live"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "not_before": "06:00"
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 60,
+      "verify": {
+        "type": "not_configured",
+        "_todo": "wire a manifest verify once all 7 metrics post (mirror daily_metrics)"
+      }
     }
   },
   "read_only_standalone": {
