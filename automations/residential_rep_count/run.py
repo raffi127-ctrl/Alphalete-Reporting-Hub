@@ -92,10 +92,11 @@ def _run(args) -> dict:
         print("  " + line)
     print(f"  cells {'to write' if dry else 'written'}: {len(rep['updates'])}")
     if org_rep:
+        ops = org_rep.get("ops", [])
         print(f"\n=== SCI RC/NC Headcount: {org_rep['label']} === "
-              f"{org_rep['cells']} cells"
-              + (f", +{org_rep['appended']} new org leader(s)"
-                 if org_rep["appended"] else ""))
+              f"{len(ops)} structural change(s)")
+        for line in ops[:20]:
+            print("  " + line)
     if rep["unmatched"]:
         print(f"\n⚠ {len(rep['unmatched'])} active ICD(s) NOT in the email "
               "(filled 0 — check ICD Aliases): " + ", ".join(rep["unmatched"]))
