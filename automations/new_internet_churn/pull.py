@@ -99,13 +99,16 @@ def parse(csv_path: Path) -> dict:
         )
     color_i = header.index(color_col)
     # The unnamed metric-type column sits between color and the 0-30 column.
-    missing = [f"{p} Day Churn" for p in PERIODS if f"{p} Day Churn" not in header]
-    if missing:
-        raise ValueError(
-            f"churn crosstab missing period column(s): {missing}. "
-            f"Actual header columns ({len(header)}): {header}")
-    metric_i = header.index("0-30 Day Churn") - 1
-    period_cols = {p: header.index(f"{p} Day Churn") for p in PERIODS}
+    # Tolerate a YOUNG office (e.g. Rashad) that doesn't have 30/60/90-day churn
+    # yet — only parse the period columns actually present. Missing periods stay
+    # absent from the parsed result; the fill writes blanks for those sections.
+    # (Raf has all 4, so his behavior is unchanged.)
+    period_cols = {p: header.index(f"{p} Day Churn")
+                   for p in PERIODS if f"{p} Day Churn" in header}
+    if not period_cols:
+        return {"office_total": {}, "reps": {}}
+    # The unnamed metric-type column sits just left of the first period column.
+    metric_i = min(period_cols.values()) - 1
 
     office_total: dict = {}
     reps: dict = {}
