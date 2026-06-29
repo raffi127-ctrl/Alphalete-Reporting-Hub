@@ -1152,13 +1152,30 @@ def _load_and_clean(csv_path: Path) -> pd.DataFrame:
         (i for i, ln in enumerate(lines)
          if "\t" in ln and any(c.strip().strip('"') == "Rep"
                                 for c in ln.split("\t"))),
-        0,
+        None,
     )
+    # A caption-only export (no "Rep" header row) happens when the owner has
+    # zero order-log rows in the window — common for a young office like
+    # Rashad's. Tableau's Crosstab then offers only the "Last Refresh" caption
+    # sheet, so the saved .csv has no data columns. Return an empty, correctly-
+    # typed frame instead of crashing on df["Rep"] (KeyError) downstream.
+    if header_idx is None:
+        print(f"  (no 'Rep' header in {csv_path.name} — empty/caption-only "
+              "export; owner likely has no orders in the window)")
+        return pd.DataFrame(columns=FRIENDLY_HEADERS)
+
     df = pd.read_csv(csv_path, encoding="utf-16", sep="\t", skiprows=header_idx)
 
     rep_blank = df["Rep"].isna() | (df["Rep"].astype(str).str.strip() == "")
     df = df.loc[~rep_blank].copy()
 
+    # Belt-and-suspenders: if the export has a "Rep" header but is missing some
+    # expected columns (another sparse-export shape), don't KeyError on the
+    # select — treat it as empty, same as the caption-only case above.
+    missing = [c for c in COLUMNS_TO_KEEP if c not in df.columns]
+    if missing:
+        print(f"  (export missing column(s) {missing} — treating as empty)")
+        return pd.DataFrame(columns=FRIENDLY_HEADERS)
     df = df[COLUMNS_TO_KEEP].copy()
 
     for src_col in ("sp.Order Date (copy)", "spe.Install Date",
