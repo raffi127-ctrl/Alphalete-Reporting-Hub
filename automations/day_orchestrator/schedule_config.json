@@ -187,6 +187,36 @@
         "type": "not_configured"
       }
     },
+    "captainship_activations": {
+      "on_scheduler": true,
+      "display_name": "Captainship Activations (per-captain)",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:fiber_pss"
+      ],
+      "_note": "Per-captain sibling of fiber_activations: one Fiber dashboard pull -> 5 captain tabs (violet + shared country) + 6 PNGs to Downloads, Drive upload ON by default (non-fatal if disabled). NO Slack. Gated on the same fiber_pss source. Wednesday structure-only-inserts the new WE row.",
+      "command": [
+        "automations.fiber_activations.captain_run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "captainship_churn": {
       "on_scheduler": true,
       "display_name": "Captainship - New Internet & Wireless Churn",

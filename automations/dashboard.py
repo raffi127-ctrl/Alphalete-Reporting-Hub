@@ -2080,12 +2080,14 @@ AUTOMATED_REPORTS = [
             "'Captainship Activations - PNGs' Drive folder is OPTIONAL (the "
             "'Run + upload to Drive' button) and pending the Drive API being "
             "enabled — a failed/disabled upload never breaks the run.\n\nWHEN\n"
-            "Manual trigger only (NOT on the scheduler). Wednesday "
+            "**On the scheduler — every day, Wed–Tue** (fully unattended, "
+            "gated on the same Fiber Tableau session as Fiber Activations). "
+            "You can also trigger it by hand here. Wednesday "
             "structure-only-inserts the new WE row. NO Slack."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "13-9f_aPDlPa6L6_Wash4ws7959mn822J__vB5OYmcB8/edit"),
-        "assignees": ["Eve"],
+        "assignees": ["Fully Automated Alphalete Reports"],
         "schedule": {"frequency": "daily", "time": "9:00 AM", "estimated_minutes": 6},
         "checklist": [],
         "post_run": {
