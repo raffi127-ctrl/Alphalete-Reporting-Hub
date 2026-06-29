@@ -615,9 +615,9 @@
         "automations.rashad_metrics.run"
       ],
       "base_args": [
-        "--dry-run"
+        "--live"
       ],
-      "_base_args_note": "DRY-RUN for now: `lucy rerun rashad_metrics` pulls all wired metrics for Rashad + posts NOTHING. weekdays=[] → never auto-runs. Flip base_args to [--live] + set weekdays (e.g. 0-6) for daily go-live once the dry-run verifies + access is confirmed.",
+      "_base_args_note": "LIVE: `lucy rerun rashad_metrics` pulls all metrics for Rashad + POSTS to #elevate-sales. weekdays=[] keeps it MANUAL-only for now; set weekdays (e.g. 0-6) for daily auto-posting once a live run verifies 10/10.",
       "cadence": {
         "weekdays": [],
         "not_before": "06:00"
