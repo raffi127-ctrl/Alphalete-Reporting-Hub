@@ -252,6 +252,13 @@ def main(argv=None) -> int:
                       f"{type(e).__name__}: {str(e)[:140]}")
                 return 2
 
+        # slack_metrics_post read CHANNEL_ID at IMPORT (before target_chan was
+        # known), so the parent's ensure_metrics_thread would post the header to the
+        # WRONG channel and every metric subprocess would find no thread to reply to
+        # → all posts fail. Rebind it here. (Subprocesses already get the right
+        # channel via child_env METRICS_CHANNEL_ID.)
+        smp.CHANNEL_ID = target_chan
+
         # Ensure today's Metrics header thread exists in the destination so every
         # metric reply has a parent to land in (no 7am workflow there).
         if not args.only:
