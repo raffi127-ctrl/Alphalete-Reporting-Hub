@@ -118,8 +118,15 @@ def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
     byte-identical behavior to before. The retry only triggers on the exact
     profile-in-use failure that otherwise crashes the run — so it cannot
     affect a working patchright run."""
+    # Force a large window so multi-sheet Tableau dashboards render fully
+    # in-view (the Program Summary DOWNLINE VIEW's downline worksheet sits
+    # below the fold at the old ~784x449 default, which made its header
+    # unclickable for the activate_xy download path). Fractional activate_xy
+    # coords (e.g. FIBER_OVERVIEW_XY) are resolution-independent, so the other
+    # scrape sources are unaffected. no_viewport stays True (real window).
     base = dict(user_data_dir=str(user_data_dir), headless=headless,
-                no_viewport=True)
+                no_viewport=True,
+                args=["--window-size=1680,1280", "--window-position=0,0"])
     prefer_chrome = True
     last: Optional[Exception] = None
     for attempt in range(_LAUNCH_RETRIES):

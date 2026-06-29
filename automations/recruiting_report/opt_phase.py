@@ -188,15 +188,28 @@ def discover_captains_sheets(page=None, logfn=print) -> List[str]:
     return found
 
 
-# Program Summary (Direct Deposit) — PROGRAM SUMMARY view, CAPTAINVIEW custom
+# Program Summary (Direct Deposit) — PROGRAM SUMMARY view, DOWNLINE VIEW custom
 # view. Its per-ICD table won't crosstab-export, so it's scraped via the
 # Download -> Data View Data window. Direct Deposit per ICD = the sum of that
 # ICD's "Total $ to ICD" rows.
+#
+# Was the CAPTAIN VIEW custom view until 2026-06-29, when (a) CAPTAIN VIEW
+# corrupted ("An error occurred while loading the custom view CAPTAIN VIEW …
+# Re-create…", confirmed by headed screenshot) AND (b) Eve confirmed DOWNLINE
+# VIEW is the correct, more complete source (captains + owners, not just
+# captains). DOWNLINE VIEW is a multi-sheet dashboard, so the download needs
+# PROGRAM_SUMMARY_XY below to activate the downline worksheet first (and the
+# enlarged window from tableau_patchright._launch_persistent so it's in-view).
 PROGRAM_SUMMARY_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "DirectDepositICDVIEWVersion2_0/PROGRAMSUMMARY/"
-    "639b7ff1-d2ed-49ae-a85d-b96a0787a1e9/CAPTAINVIEW"
+    "15c897de-6162-469b-9ef7-1735d235f2a8/DOWNLINEVIEW"
 )
+# Fractional (x, y) of the viz iframe to click — the DOWNLINE table's header
+# row ("Account.Name") — so 'Download -> Data' targets that worksheet (the
+# dashboard's top table is a 1-row owner summary; the downline table is the
+# full org). Calibrated to the enlarged window; the activate loop sweeps ±0.03y.
+PROGRAM_SUMMARY_XY = (0.033, 0.539)
 PROGRAM_SUMMARY_PATH = WORKSPACE / "output" / "opt_program_summary.csv"
 
 # Direct Deposit roster — the set of ICD owners ever seen in the DD view
@@ -1204,7 +1217,8 @@ def download_program_summary(out_path: Path = PROGRAM_SUMMARY_PATH,
     via the view's 'Processed Week' filter when given."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fields, records = scrape_view_data(_program_summary_url(we_sunday),
-                                       verbose=verbose, page=page)
+                                       verbose=verbose, page=page,
+                                       activate_xy=PROGRAM_SUMMARY_XY)
     lines = ["\t".join(fields)] + ["\t".join(r) for r in records]
     out_path.write_text("\n".join(lines), encoding="utf-8")
     if verbose:
