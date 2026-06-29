@@ -293,21 +293,30 @@ async def login(page: Page, allow_form_login: bool = False) -> None:
     # touching the form.
     await _inject_ownerville_storage_state(page)
 
-    # Fast path: the shared browser profile may already hold a live Ownerville
-    # session — e.g. Telemapper Knocks logged in just before us in the Daily
-    # Metrics run. If a Log Out control is already visible, reuse the session
-    # and skip the login flow. This also dodges the Cloudflare re-login that
-    # fails when two Ownerville reports run back-to-back. (2026-05-30)
-    # Match ONLY the logout text here (not the broad sidebar) so the
-    # logged-out homepage can't false-positive.
+    # Fast path: confirm the injected cookies still mint a fresh `rqst` SSO
+    # token at v2.ownerville.com — the SAME signal tableau_patchright's
+    # _ownerville_session_valid uses (and that Telemapper Knocks/Raf's own
+    # order_log path rely on). The old check loaded the public ownerville.com
+    # root and waited 6s for the literal "Log Out" text, which the marketing
+    # root may not render even when authenticated, and which timed out in
+    # unattended runs (Rashad runner 2026-06-28). Same CFID/CFTOKEN cookies,
+    # reliable question. On a genuinely dead session this falls through to the
+    # same fail-fast RuntimeError below.
+    from automations.shared.tableau_patchright import OWNERVILLE_V2_URL
     try:
-        await page.goto(LOGIN_URL, wait_until="domcontentloaded")
-        await page.get_by_text(
-            re.compile(r"^\s*log\s*out\s*$", re.IGNORECASE)
-        ).first.wait_for(state="visible", timeout=6000)
-        print("-> Already logged into Ownerville (reusing session) — "
-              "skipping login")
-        return
+        await page.goto(OWNERVILLE_V2_URL, wait_until="domcontentloaded")
+        await page.wait_for_timeout(4000)
+        rqst = bool(re.search(r"rqst=([A-Za-z0-9_]+)", page.url or ""))
+        if not rqst:
+            href = await page.evaluate(
+                "() => { const a=[...document.querySelectorAll('a')]"
+                ".find(x=>/rqst=/.test(x.getAttribute('href')||'')); "
+                "return a?a.getAttribute('href'):''; }")
+            rqst = bool(re.search(r"rqst=([A-Za-z0-9_]+)", href or ""))
+        if rqst:
+            print("-> Already logged into Ownerville (reusing session) — "
+                  "skipping login")
+            return
     except PlaywrightTimeoutError:
         pass  # not logged in — fall through
 
