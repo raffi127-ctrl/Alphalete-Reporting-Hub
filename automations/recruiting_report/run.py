@@ -72,31 +72,23 @@ def _hidden_tab_titles(sh) -> set:
 
 
 def _most_recent_sunday(today: Optional[dt.date] = None) -> dt.date:
-    """AS picker Sunday for the most-recently-COMPLETED week.
+    """The Sheet WE (week-ending) Sunday to fill — the week that just ended.
 
-    The downstream per-week writer does a +7 day shift (sheet's WE
-    Sunday convention = AS picker Sunday + 7), so this function
-    returns the Sunday that maps to the just-ended week's column.
+    Same convention as the OPT/sales phase (opt_phase._most_recent_sunday):
+    the most recent Sunday on or before today. On a Monday run that's the
+    just-ended week's WE column (Mon 6/29 → WE 6/28).
 
-    Eve runs this on Mondays AFTER the prior week ends — she wants
-    the just-ended week's column filled, NOT a new in-progress week's
-    upcoming-Sunday column.
+    The AppStream source for this column is read ONE WEEK earlier (week-7)
+    at fetch time — recruiting numbers lag a week, and a just-closed AS week
+    is still preliminary. So WE 6/28 is filled from AppStream 6/21, which is
+    fully settled by the Monday it runs.
 
-      Mon 5/25 → 5/17 (→ +7 = WE 5/24, just-ended week ✓)
-      Wed 5/27 → 5/17 (same → WE 5/24)
-      Sun 5/24 → 5/10 (today's week isn't fully complete until 23:59,
-                       so target last fully-completed week's WE 5/17)
-
-    Previously returned the in-progress week's Sunday, which on Monday
-    5/25 mapped to WE 5/31 (col K) instead of the desired WE 5/24
-    (col J)."""
+    (Eve, 2026-06-29: was AS-picker-week with a +7 forward shift, which
+    wrote the NEXT week's column with preliminary data that never got
+    overwritten. Now matches ventas/metricas: fill the last closed WE.)"""
     today = today or dt.date.today()
-    # weekday(): Mon=0 ... Sun=6
-    #   days back to last Sunday strictly before today  → (wd+1)%7 or 7
-    #   minus another 7 for the +7 WE-shift convention → target just-
-    #   completed week, not in-progress
-    days_back = ((today.weekday() + 1) % 7 or 7) + 7
-    return today - dt.timedelta(days=days_back)
+    # weekday(): Mon=0 ... Sun=6 → days back to the most recent Sunday.
+    return today - dt.timedelta(days=(today.weekday() + 1) % 7)
 
 
 def _setup_logging(week: dt.date) -> logging.Logger:
@@ -112,7 +104,9 @@ def _setup_logging(week: dt.date) -> logging.Logger:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--week", help="Sunday YYYY-MM-DD (matches AS picker + Sheet column). Default: most recent Sunday.")
+    ap.add_argument("--week", help="Sheet WE (week-ending) Sunday to fill, YYYY-MM-DD "
+                                   "(same as the OPT/sales week). AppStream is read from "
+                                   "week-7. Default: most recent Sunday.")
     ap.add_argument("--only", help="Only process this office (by sheet_tab name).")
     ap.add_argument("--retry-missing", action="store_true",
                     help="Re-fetch only the offices still missing from this "
@@ -130,7 +124,8 @@ def main() -> int:
 
     week = dt.date.fromisoformat(args.week) if args.week else _most_recent_sunday()
     log = _setup_logging(week)
-    log.info("target week (AS picker Sunday): %s", week.isoformat())
+    log.info("target week (Sheet WE Sunday): %s  (AppStream read from %s)",
+             week.isoformat(), (week - dt.timedelta(days=7)).isoformat())
     log.info("dry_run=%s", args.dry_run)
 
     mapping = fill.load_mapping()
@@ -363,13 +358,21 @@ def main() -> int:
                 week_data: Dict[dt.date, Dict[str, Optional[float]]] = {}
                 inaccessible = False
                 for w in weeks_to_fetch:
+                    # Recruiting lags AppStream by one week: the Sheet WE column
+                    # `w` is filled from AppStream's PRIOR week (w-7), which is
+                    # fully settled by the time this runs (a just-closed AS week
+                    # is still preliminary). Keeps recruiting on the same WE-Sunday
+                    # convention as OPT/sales so every closed week gets final
+                    # numbers and no future column is written. (Eve, 2026-06-29 —
+                    # replaced the old +7 forward shift.)
+                    as_week = w - dt.timedelta(days=7)
                     try:
-                        metrics = fetch_office.fetch_one(target_page, section_id, owner, w)
+                        metrics = fetch_office.fetch_one(target_page, section_id, owner, as_week)
                         if metrics:
                             week_data[w] = metrics
                             if section_id == primary_id:
-                                log.info("  fetched %s: pull=%s, 1st_booked=%s",
-                                         w, metrics.get("pull"), metrics.get("first_booked"))
+                                log.info("  WE %s ← AppStream %s: pull=%s, 1st_booked=%s",
+                                         w, as_week, metrics.get("pull"), metrics.get("first_booked"))
                         elif metrics == {}:
                             log.warning("  [%s] not accessible — skipping (data preserved)", section_label)
                             inaccessible = True
@@ -386,7 +389,7 @@ def main() -> int:
                                 appstream_dead = True
                                 break
                             try:
-                                metrics = fetch_office.fetch_one(target_page, section_id, owner, w)
+                                metrics = fetch_office.fetch_one(target_page, section_id, owner, as_week)
                                 if metrics:
                                     week_data[w] = metrics
                                 elif metrics == {}:
@@ -408,7 +411,10 @@ def main() -> int:
                 if inaccessible or not week_data:
                     continue
 
-                we_sunday_data = {(w + dt.timedelta(days=7)): m for w, m in week_data.items()}
+                # week_data is already keyed by the Sheet WE Sunday (the AppStream
+                # week-7 read happened at fetch time), so write straight through —
+                # no forward shift.
+                we_sunday_data = dict(week_data)
                 for line in fill.fill_office_section(
                     ws, metric_rows, sunday_to_col, we_sunday_data, args.dry_run, label=section_label
                 ):
