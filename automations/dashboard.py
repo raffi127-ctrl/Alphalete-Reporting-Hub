@@ -1155,6 +1155,11 @@ def _last_completed_we_sunday(today: dt.date | None = None) -> dt.date:
     return today - dt.timedelta(days=(today.weekday() + 1) % 7)
 
 
+# DEPRECATED (2026-06-29): recruiting_report.run's --week now means the Sheet WE
+# Sunday (it reads AppStream from week-7 internally), so callers pass
+# _last_completed_we_sunday() directly. This WE-minus-7 helper is the OLD
+# AS-picker convention and is no longer wired anywhere — do NOT use it for a
+# --week arg or you'll fill the column one week too early.
 def _last_completed_as_picker(today: dt.date | None = None) -> dt.date:
     return _last_completed_we_sunday(today) - dt.timedelta(days=7)
 
@@ -1207,7 +1212,7 @@ AUTOMATED_REPORTS = [
                 "primary": True,
                 "help": "Fills the most recent WE Sunday column",
                 "module": "automations.recruiting_report.run",
-                "args_fn": lambda: ["--week", _last_completed_as_picker().isoformat()],
+                "args_fn": lambda: ["--week", _last_completed_we_sunday().isoformat()],
             },
             {
                 "label": "Backfill Last 10 Weeks (one office)",
@@ -1297,7 +1302,7 @@ AUTOMATED_REPORTS = [
                 # abort the rest. The shared ATT opt_phase is NOT used — Carlos's
                 # B2B owners aren't in those views (glitch 2026-06-01).
                 "module": "automations.recruiting_report.carlos_opt_all",
-                "args_fn": lambda: ["--week", _last_completed_as_picker().isoformat()],
+                "args_fn": lambda: ["--week", _last_completed_we_sunday().isoformat()],
             },
             {
                 "label": "Run a Specific Past Week",
@@ -1394,7 +1399,7 @@ AUTOMATED_REPORTS = [
                 # OPT modules auto-target the current week, so only the
                 # recruiting step needs --week.
                 "module": "automations.alphalete_org_report.opt_all",
-                "args_fn": lambda: ["--week", _last_completed_as_picker().isoformat()],
+                "args_fn": lambda: ["--week", _last_completed_we_sunday().isoformat()],
             },
             {
                 # Retail OPT - fills BOTH ICD sections on Boaktear's tab
