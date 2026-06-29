@@ -100,13 +100,14 @@ DAILY_SOURCES: List[Source] = [
     Source(
         label="BOX", metric="count",
         method=SCRAPE, date_mode=RELATIVE,
-        workbook="B2BBOXEnergy", view="B2BBOXEnergyDailyTracker",
+        workbook="B2BBOXEnergyTracker", view="BoxDailyTracker",
         shared_key="box",
-        notes="NEEDS WORKSHEET FIX: activate_xy=(0.5,0.5) landed on the WTD "
-              "Metrics sheet (ICD Name|Measure Names|Measure Values, Accepted "
-              "% etc.) — NOT the per-day tracker. Find the click point / "
-              "worksheet that yields ICD Owner & Office x day -> Total "
-              "general. Owner names carry '|company, Inc.|' suffix."),
+        notes="Pull config lives in section_pull.BOX_SPEC (CROSSTAB, worksheet "
+              "'Daily Tracker Sales': Owner Name | Mon (06-22)…Sun | Grand "
+              "Total). Workbook renamed 2026-06-29 from B2BBOXEnergy/"
+              "B2BBOXEnergyDailyTracker (old path 404s). Owner names are clean "
+              "here (no |company| suffix); 'Roshan Ahmad' aliased to the board "
+              "row 'Roshan Amin Ahmad' via BOARD_NAME_ALIASES."),
     Source(
         label="Retail JE", metric="Closed Won",
         method=SCRAPE, date_mode=RELATIVE, column_verified=True,

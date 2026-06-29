@@ -405,20 +405,22 @@ B2B_SPEC = ScrapeSpec(
     out_name="org_sales_board_b2b_byday.csv",
 )
 
-# BOX daily section — B2BBOXEnergyDailyTracker, "BOX Daily Tracker" worksheet
-# (Megan 2026-05-31). Crosstab columns: ICD Name | Column Max | "5/25 Mon" …
-# "5/31 Sun". Already the current week (date-labeled headers, parsed directly).
-# Each ICD spans two rows split by a 'Column Max' 0/1 flag with complementary
-# day values — summing per (owner,date) reconstructs the daily totals, so no
-# total/product filtering. ICD Name is clean here (no |company| suffix).
+# BOX daily section — workbook RENAMED 2026-06-29: B2BBOXEnergy →
+# B2BBOXEnergyTracker, view BoxDailyTracker, worksheet "Daily Tracker Sales"
+# (the old B2BBOXEnergyDailyTracker / "BOX Daily Tracker" path now 404s; see
+# [[project_box-energy-workbook-renamed]]). Crosstab columns: a "Sale Date"
+# chrome row, then: Owner Name | "Mon (06-22)" … "Sun (06-28)" | Grand Total.
+# Date-labeled headers parsed directly; one row per owner (the old 'Column Max'
+# 0/1 split is gone). Owner Name is clean (no |company| suffix); the generic
+# parser sums per (owner,date), so no total/product filtering needed.
 BOX_SPEC = ScrapeSpec(
     section_label="BOX", metric="count",
-    view_url=_BASE + "B2BBOXEnergy/B2BBOXEnergyDailyTracker",
-    owner_col="ICD Name",
+    view_url=_BASE + "B2BBOXEnergyTracker/BoxDailyTracker",
+    owner_col="Owner Name",
     value_col="",
     day_col="",
     method=CROSSTAB,
-    crosstab_sheet="BOX Daily Tracker",
+    crosstab_sheet="Daily Tracker Sales",
     skip_owners=("Grand Total", "Total"),
     week_pin=True,    # pin to the reporting week (Monday = last week). No-op if
     #   this workbook ignores the filter; harmless either way.

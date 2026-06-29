@@ -168,6 +168,10 @@ def find_daily_section(grid: List[List[str]], label: str) -> SectionAnchor:
 # documented). Board row name -> extra Tableau owner forms to match.
 BOARD_NAME_ALIASES = {
     "Akib Chowdhury": ["Boaktear Chowdhury"],
+    # The rebuilt BOX tracker (B2BBOXEnergyTracker/BoxDailyTracker, 2026-06-29)
+    # names this ICD "Roshan Ahmad" — the board row keeps the full "Roshan Amin
+    # Ahmad" (Eve 6/29: board-local, don't touch the shared ICD Aliases list).
+    "Roshan Amin Ahmad": ["Roshan Ahmad"],
 }
 
 
