@@ -789,19 +789,24 @@ def _failed_sections(results: dict) -> list:
     return [t for t, v in results.items() if isinstance(v, PullFailure)]
 
 
-# Who the finished PDF is DM'd to on Slack (as Lucy) after a clean run. Default
-# is Maud's Slack user id (avoids needing users:read on Lucy's token); override
-# with LEADERS_CALL_PDF_SLACK_USER (a user id, email, or name).
+# Who the finished PDF goes to on Slack (as Lucy) after a clean run — the
+# Leader's Call group: Maud + Carlos + Rafael (ids avoid needing users:read on
+# Lucy's token). Override with LEADERS_CALL_PDF_SLACK_USERS (comma-separated
+# ids/emails/names). Sent as ONE group DM if Lucy has mpim:write, else as
+# individual DMs (slack_metrics_post.dm_users_with_file falls back automatically).
 import os as _os
-PDF_SLACK_RECIPIENT = _os.environ.get("LEADERS_CALL_PDF_SLACK_USER",
-                                      "U045USN7NCD")  # Maud Miller
+PDF_SLACK_RECIPIENTS = [
+    u.strip() for u in _os.environ.get(
+        "LEADERS_CALL_PDF_SLACK_USERS",
+        "U045USN7NCD,U046G04P5LG,U045Z8N0ZQC").split(",") if u.strip()
+]  # Maud Miller, Carlos Hidalgo, Rafael Hidalgo
 
 
 def _build_recognition_pdf(results: dict) -> None:
     """Generate the Alphalete Leader's Call PDF from a CLEAN run's results and
-    DM it to PDF_SLACK_RECIPIENT on Slack. Only called when no section failed
-    (see main). PDF or Slack errors are logged but do NOT fail the run — the
-    sheet is already correctly written."""
+    DM it to the PDF_SLACK_RECIPIENTS group on Slack (as Lucy). Only called when
+    no section failed (see main). PDF or Slack errors are logged but do NOT fail
+    the run — the sheet is already correctly written."""
     _, sun = _target_week()
     try:
         from automations.leaders_call import build_pdf as pdf
@@ -814,14 +819,14 @@ def _build_recognition_pdf(results: dict) -> None:
         return
     try:
         from automations.shared import slack_metrics_post as slack
-        res = slack.dm_user_with_file(
-            out, user=PDF_SLACK_RECIPIENT, file_name=out.name,
+        res = slack.dm_users_with_file(
+            out, users=PDF_SLACK_RECIPIENTS, file_name=out.name,
             comment=f"📣 Alphalete Leader's Call — recognition for the week ending "
                     f"{sun.month}/{sun.day}.")
-        print(f"📨 PDF delivered to {PDF_SLACK_RECIPIENT} on Slack "
-              f"(ok={res.get('ok')})", flush=True)
+        print(f"📨 PDF delivered to {len(PDF_SLACK_RECIPIENTS)} recipient(s) on Slack "
+              f"(mode={res.get('mode')}, ok={res.get('ok')})", flush=True)
     except Exception as e:
-        print(f"⚠ Slack delivery to {PDF_SLACK_RECIPIENT} failed "
+        print(f"⚠ Slack delivery to the Leader's Call group failed "
               f"({type(e).__name__}: {str(e)[:140]}) — the PDF is saved at {out}.",
               flush=True)
 

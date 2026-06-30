@@ -138,6 +138,45 @@ def dm_user_with_file(file_path: "Path", *, user: str, comment: str,
             "file": (resp.get("file") or {}).get("id")}
 
 
+def dm_users_with_file(file_path: "Path", *, users: "list[str]", comment: str,
+                       file_name: str | None = None, dry_run: bool = False,
+                       as_bot: bool = True) -> dict:
+    """DM a file to a GROUP of Slack users from Lucy. Tries ONE multi-party DM
+    (a single shared thread — needs the mpim:write scope); if Lucy lacks that
+    scope (or the group open fails for any reason), falls back to an individual
+    DM to each user (im:write, which Lucy has) so the PDF still reaches everyone.
+    `users` are ids (U…/W…), emails, or names. Returns mode='group_dm' or
+    'individual_dms' so the caller can log which path ran."""
+    if dry_run:
+        return {"dry_run": True, "to_users": users, "file": str(file_path),
+                "comment": comment, "as_bot": as_bot}
+    client = _bot_client() if as_bot else _client()
+    user_ids = [_resolve_user_id(client, u) for u in users]
+    try:
+        channel = client.conversations_open(users=",".join(user_ids))["channel"]["id"]
+        resp = client.files_upload_v2(
+            channel=channel, file=str(file_path),
+            filename=file_name or Path(file_path).name, initial_comment=comment)
+        return {"ok": resp.get("ok"), "mode": "group_dm", "channel": channel,
+                "user_ids": user_ids, "file": (resp.get("file") or {}).get("id")}
+    except Exception as e:
+        # Most likely missing_scope (mpim:write) — deliver individually so the
+        # PDF still lands for everyone. Each DM needs only im:write.
+        print(f"  group DM unavailable ({type(e).__name__}: {str(e)[:100]}) — "
+              f"sending individual DMs instead.")
+        results = []
+        for uid in user_ids:
+            try:
+                results.append(dm_user_with_file(
+                    file_path, user=uid, comment=comment,
+                    file_name=file_name, as_bot=as_bot))
+            except Exception as e2:
+                print(f"  DM to {uid} failed: {type(e2).__name__}: {str(e2)[:80]}")
+                results.append({"ok": False, "user_id": uid})
+        return {"ok": any(r.get("ok") for r in results), "mode": "individual_dms",
+                "user_ids": user_ids, "results": results}
+
+
 def _ordinal(n: int) -> str:
     """1 → '1st', 2 → '2nd', 3 → '3rd', 4 → '4th', 11 → '11th', 21 → '21st'…"""
     if 11 <= (n % 100) <= 13:
