@@ -1369,6 +1369,73 @@ async def _legacy_filter_download(owner_name: str, tmp_dir: Path,
         )
 
 
+def _post_order_log(xlsx_path: Path, rep_png: "Optional[Path]", *,
+                    is_empty: bool, owner_name: str, today,
+                    post_to_slack: bool) -> None:
+    """Post Order Log + Rep Activations into today's Metrics thread.
+
+    - Empty/no-orders day: post a 'No data available' note in place of the empty
+      .xlsx (mirrors Total Knocks) so the metric still appears in the thread.
+    - Rep Activations image posts whenever it rendered (even on an empty day).
+    - Owner/channel gate: skip ONLY when a non-default owner would post into the
+      SHARED #alphalete-sales thread. A scoped channel override (e.g. Rashad ->
+      #elevate-sales via METRICS_CHANNEL_ID) is an intentional per-owner report,
+      so we DO post there.
+    - post_to_slack=False (dry-run): DESCRIBE the planned posts, post nothing.
+    """
+    import os as _os
+    DEFAULT_METRICS_CHANNEL = "C068PH3RFSM"   # #alphalete-sales
+    metrics_channel = _os.environ.get("METRICS_CHANNEL_ID", DEFAULT_METRICS_CHANNEL)
+    if owner_name != OWNER_NAME and metrics_channel == DEFAULT_METRICS_CHANNEL:
+        print(f"  (Skipping Slack post — non-default owner {owner_name!r} into the "
+              f"shared thread; that thread is {OWNER_NAME!r}-only.)")
+        return
+    dry = not post_to_slack
+    from automations.shared.slack_metrics_post import (
+        post_reply_with_file, post_reply_with_image, post_reply_text_only,
+        SlackPostError,
+    )
+    # Order Log: a 'No data' note on an empty day, else the .xlsx.
+    if is_empty:
+        note = f"📋 Order Log — {today.strftime('%b')} {today.day} — No data available"
+        if dry:
+            print(f"  --dry-run — would post Order Log note: {note!r}")
+        else:
+            try:
+                post_reply_text_only(note, react_emoji="clipboard")
+                print("  ✓ Slack: posted Order Log 'No data' note")
+            except SlackPostError as e:
+                print(f"  ⚠ Slack post failed (Order Log note): {e}")
+    else:
+        slack_filename = f"Order Log {today:%m-%d-%Y}.xlsx"
+        if dry:
+            print(f"  --dry-run — would post Order Log file: {slack_filename}")
+        else:
+            try:
+                result = post_reply_with_file(
+                    xlsx_path, comment="📋 Order Log",
+                    react_emoji="clipboard", file_name=slack_filename)
+                print(f"  ✓ Slack: posted Order Log (file={result.get('file')})")
+            except SlackPostError as e:
+                print(f"  ⚠ Slack post failed: {e}")
+                print("    .xlsx is in Downloads — drag it into Slack manually.")
+    # Rep Activations image (rendered even on empty days).
+    if rep_png is not None:
+        if dry:
+            print(f"  --dry-run — would post Rep Activations image: {rep_png.name}")
+        else:
+            try:
+                post_reply_with_image(
+                    rep_png, comment="🆕 Rep Activations — Last & This Week",
+                    react_emoji="new",
+                    file_name=f"Rep Activations {today:%m-%d-%Y}.png")
+                print("  ✓ Slack: posted Rep Activations summary")
+            except SlackPostError as e:
+                print(f"  ⚠ Slack post failed (Rep Activations): {e}")
+    else:
+        print("  (Rep Activations image not rendered — nothing to post.)")
+
+
 async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True,
                allow_form_login: bool = False) -> None:
     # Intermediate CSV goes to a tempdir that auto-cleans on exit.
@@ -1376,6 +1443,9 @@ async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True,
     xlsx_path: Optional[Path] = None
     # Companion Rep Activations summary PNG (built from the same crosstab).
     rep_png: Optional[Path] = None
+    # Whether the cleaned export is empty (no orders) — drives a 'No data'
+    # note in place of an empty .xlsx. Defaults False (post the .xlsx).
+    is_empty: bool = False
     with tempfile.TemporaryDirectory(prefix="order_log_") as tmp:
         tmp_dir = Path(tmp)
 
@@ -1410,7 +1480,9 @@ async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True,
         try:
             from automations.rep_activations.aggregate import build_week_tables
             from automations.rep_activations.render import render as render_rep_tables
-            summary = build_week_tables(_load_and_clean(csv_path), date.today())
+            _cleaned = _load_and_clean(csv_path)
+            is_empty = bool(_cleaned.empty)
+            summary = build_week_tables(_cleaned, date.today())
             rep_png = render_rep_tables(
                 summary,
                 OUTPUT_DIR / f"Rep Activations {date.today():%m-%d-%Y}.png",
@@ -1420,56 +1492,15 @@ async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True,
             rep_png = None
             print(f"  ⚠ Rep Activations summary skipped: {e}")
 
-    # Slack post happens AFTER the browser context is torn down so a
-    # failing Slack call can never strand a logged-in patchright session.
-    # Skipped for non-Raf ad-hoc runs so we never noise up the Metrics
-    # thread with someone else's order log.
+    # Slack post happens AFTER the browser context is torn down so a failing
+    # Slack call can never strand a logged-in patchright session. The
+    # owner/channel gate, empty-day 'No data' note, Rep Activations image, and
+    # dry-run describe all live in _post_order_log.
     if xlsx_path is None:
         return
-    if not post_to_slack:
-        print("  (Skipping Slack post — --no-slack passed.)")
-        return
-    if owner_name != OWNER_NAME:
-        print(f"  (Skipping Slack post — owner is {owner_name!r}, "
-              f"Metrics thread is for {OWNER_NAME!r} only.)")
-        return
-
-    today = date.today()
-    # Match Eve's manual filename pattern: 'Order Log MM-DD-YYYY.xlsx'.
-    slack_filename = f"Order Log {today:%m-%d-%Y}.xlsx"
-    try:
-        from automations.shared.slack_metrics_post import (
-            post_reply_with_file, SlackPostError,
-        )
-        result = post_reply_with_file(
-            xlsx_path,
-            comment="📋 Order Log",
-            react_emoji="clipboard",       # 📋 — matches the Metrics workflow header line
-            file_name=slack_filename,
-        )
-        print(f"  ✓ Slack: posted to today's Metrics thread "
-              f"(file={result.get('file')})")
-    except SlackPostError as e:
-        print(f"  ⚠ Slack post failed: {e}")
-        print("    .xlsx is still in Downloads — you can drag it into Slack manually.")
-
-    # Second reply: the Rep Activations summary image (same gating as above —
-    # we only reach here for the default owner with Slack enabled).
-    if rep_png is not None:
-        try:
-            from automations.shared.slack_metrics_post import (
-                post_reply_with_image, SlackPostError,
-            )
-            post_reply_with_image(
-                rep_png,
-                comment="🆕 Rep Activations — Last & This Week",
-                react_emoji="new",       # 🆕 — its OWN metric line (was sharing 📊 with Wireless Churn)
-                file_name=f"Rep Activations {today:%m-%d-%Y}.png",
-            )
-            print("  ✓ Slack: posted Rep Activations summary")
-        except SlackPostError as e:
-            print(f"  ⚠ Slack post failed (Rep Activations): {e}")
-            print("    .png is still in Downloads — you can drag it into Slack manually.")
+    _post_order_log(xlsx_path, rep_png, is_empty=is_empty,
+                    owner_name=owner_name, today=date.today(),
+                    post_to_slack=post_to_slack)
 
 
 if __name__ == "__main__":
