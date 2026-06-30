@@ -48,3 +48,10 @@ automations/uploaded/frontier/
 # debugging from one-off mapping work — never commit. Keep them around
 # locally if useful, but don't track them.
 automations/*/_probe_*.py
+# AppStream office list — machine-regenerated on every daily_focus run
+# (refresh_offices_from_page scrapes the logged-in account's offices). It's a
+# per-account runtime cache, not source. Tracking it dirtied the mini's tree
+# after every run and blocked `lucy update` (git pull --ff-only). Readers
+# (fill._load_office_index, dashboard._all_appstream_offices) fall back to an
+# empty list if it's missing, so a fresh clone just rebuilds it on first run.
+automations/recruiting_report/all-offices.json
