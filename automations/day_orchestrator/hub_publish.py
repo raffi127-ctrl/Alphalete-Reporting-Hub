@@ -40,6 +40,7 @@ _HUB_CARD = {
     "daily_rep_breakdown": "daily-rep-breakdown",
     "daily_metrics": "daily-metrics",
     "fiber_activations": "fiber-activations",
+    "captainship_activations": "captainship-activations",
     "captainship_churn": "captainship-new-internet-wireless-churn",
     "owners_metrics_churn": "owners-metrics-churn",
     "recruiter_retention_daily": "daily-1st-round-recruiter-percent",

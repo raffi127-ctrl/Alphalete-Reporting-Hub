@@ -24,6 +24,11 @@ from automations.fiber_activations import captain_render as CR
 from automations.fiber_activations import drive_upload as DU
 from automations.recruiting_report import fill as rfill
 
+# Run-manifest id (matches the orchestrator's verify.report_id for
+# captainship_activations + the Hub card id) so a clean run verifies DONE and a
+# partial run (skipped tabs) surfaces as INCOMPLETE naming them.
+MANIFEST_ID = "captainship-activations"
+
 OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output" / "captainship_pngs"
 # Where the manual run drops the finished PNGs. ~/Downloads is the standard
 # cross-platform user Downloads folder (Windows + macOS + Linux).
@@ -120,6 +125,20 @@ def main(argv=None) -> int:
     print(f"=== Captainship Activations ({'DRY-RUN' if args.dry_run else 'LIVE'}) "
           f"— {today.isoformat()} ({today.strftime('%A')}) ===")
 
+    # Seed an ok=false manifest up-front for a full LIVE run so a mid-run crash
+    # leaves the report non-clean (no stale-clean re-verify to DONE); mark_clean
+    # at the end overwrites it. Skipped for --only (a single-captain run isn't
+    # the full set) and --dry-run (no writes).
+    _manifest_live = not args.dry_run and not args.only
+    if _manifest_live:
+        try:
+            from automations.shared import run_manifest as _rm
+            _rm.write_manifest(MANIFEST_ID, failed=["captainship activations"],
+                               retry_args=[], kind="captain",
+                               note="run started but did not complete")
+        except Exception:  # noqa: BLE001 — manifest is best-effort, never fail the run
+            pass
+
     pull = CP.pull_run(today, verbose=False)
     print(f"Country: activations={pull.country_activations}  EOW={pull.country_eow}")
     if pull.missing:
@@ -163,7 +182,25 @@ def main(argv=None) -> int:
             print(f"    • {team}: {reason}")
         print("  (The other tabs filled + uploaded fine. Fix the tab(s) above — "
               "usually a missing 'WE' header in cell A1 — then re-run.)")
+        if _manifest_live:
+            try:
+                from automations.shared import run_manifest as _rm
+                _rm.write_manifest(
+                    MANIFEST_ID, failed=[team for team, _ in skipped],
+                    retry_args=[], kind="captain",
+                    note=f"{len(skipped)} captain tab(s) not rendered: {names}")
+            except Exception:  # noqa: BLE001 — manifest is best-effort
+                pass
         return 1
+
+    # Fill + render completed cleanly — overwrite the seeded manifest so the
+    # orchestrator verifies this run as DONE.
+    if _manifest_live:
+        try:
+            from automations.shared import run_manifest as _rm
+            _rm.mark_clean(MANIFEST_ID, kind="captain")
+        except Exception:  # noqa: BLE001 — manifest is best-effort
+            pass
 
     # Canonical success sentinel — the Hub scans the log for this to mark the
     # run 'success'. Without it the run reads as 'unknown' → defaulted to
