@@ -2122,69 +2122,6 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
-        "id": "world-cup",
-        "name": "AT&T World Cup 2026 - Bracket Flyers",
-        "creator": "Eve",
-        "emoji": "🏆",
-        "color": "#EAB308",
-        "category": "🎯 Fiber",
-        "description": "Pulls the active World Cup round's standings from Tableau and posts two bracket PDFs (Alphalete-highlighted + Public) to #alphalete-sales and #alphalete-lvl1-chat.",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "Reads the WorldCup2026 Tableau view, auto-detects the active "
-            "'Round of N' (smallest round sheet with live data), pulls its "
-            "crosstab, and builds two flyer PDFs: the **Alphalete** version "
-            "(Rafael's reps highlighted gold, filtered to his groups) and the "
-            "**Public** version (all groups, no highlights). Both render via "
-            "headless Chromium — no Mac Chrome needed.\n\n"
-            "WHEN IT RUNS\n"
-            "**By hand each morning** during a round window (Smart Circle "
-            "pushes a new tracker daily). Click Run This Round.\n\n"
-            "SLACK\n"
-            "Posts ONE message — **'🏆 World Cup 2026 — Round N'** with both "
-            "PDFs attached — to **#alphalete-sales** and **#alphalete-lvl1-chat**.\n\n"
-            "IF THE ROUND STRUCTURE CHANGES\n"
-            "Smart Circle has changed group size mid-contest (R1/R2 = groups "
-            "of 6, R3 = groups of 4). If a run errors with 'No config for "
-            "Round of N', add that round to ROUND_CONFIGS in "
-            "automations/world_cup/build_bracket.py (from the round-start "
-            "email), then run again. Use **Run a Specific Round** to override "
-            "auto-detection if it picks the wrong sheet."
-        ),
-        "assignees": ["Eve"],
-        "schedule": {
-            "frequency": "daily",
-            "time": "9:00 AM",
-            "estimated_minutes": 4,
-        },
-        # Fully unattended via patchright (ownerville Tableau session). Empty
-        # list hides the checklist section.
-        "checklist": [],
-        "post_run": {
-            "message_success": "✅ World Cup flyers posted — both PDFs (Alphalete + Public) sent to #alphalete-sales and #alphalete-lvl1-chat under the '🏆 World Cup 2026 — Round N' message.",
-            "message_failed": "❌ Run failed. Check the log above. If it says 'No config for Round of N', add that round to ROUND_CONFIGS in build_bracket.py, then run again.",
-        },
-        "actions": [
-            {
-                "label": "Run This Round",
-                "icon": "▶",
-                "primary": True,
-                "help": "Auto-detects the active round, pulls Tableau, renders both PDFs, and posts them to #alphalete-sales + #alphalete-lvl1-chat.",
-                "module": "automations.world_cup.run",
-                "args_fn": lambda: [],
-            },
-            {
-                "label": "Run a Specific Round (override)",
-                "icon": "🎯",
-                "needs_text": True,
-                "text_label": "Round size (e.g. 144) — only if auto-detect picks the wrong sheet",
-                "help": "Skip auto-detection and pull this exact 'Round of N' sheet, then build + post.",
-                "module": "automations.world_cup.run",
-                "args_fn": lambda n: ["--round", n.strip()],
-            },
-        ],
-    },
-    {
         "id": "captainship-new-internet-wireless-churn",
         "name": "Captainship - New Internet & Wireless Churn",
         "creator": "Megan",

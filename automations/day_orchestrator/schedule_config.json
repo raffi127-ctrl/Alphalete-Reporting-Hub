@@ -374,34 +374,6 @@
         "report_id": "recruiter-retention-daily"
       }
     },
-    "world_cup": {
-      "on_scheduler": true,
-      "display_name": "AT&T World Cup 2026 - Bracket Flyers",
-      "source_type": "tableau",
-      "data_sources": [],
-      "_note": "Seasonal/ad-hoc: self-detects whether a new bracket round started and no-ops otherwise. Session-gated only.",
-      "command": [
-        "automations.world_cup.run"
-      ],
-      "base_args": [],
-      "cadence": {
-        "weekdays": [
-          0,
-          1,
-          2,
-          3,
-          4,
-          5,
-          6
-        ]
-      },
-      "priority": "P3",
-      "freshness_target": null,
-      "depends_on": [],
-      "verify": {
-        "type": "not_configured"
-      }
-    },
     "brand_audit": {
       "on_scheduler": false,
       "runs_at": "12:00 PM CST",

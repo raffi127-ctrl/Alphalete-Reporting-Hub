@@ -45,7 +45,6 @@ _HUB_CARD = {
     "recruiter_retention_daily": "daily-1st-round-recruiter-percent",
     "recruiter_retention_weekly": "ongoing-1st-round-recruiter-retention",
     "country_metrics": "country-metrics",
-    "world_cup": "world-cup",
     "int_wow_penetration": "int-wow-penetration",
     "org_sales_board": "org-sales-board",
     "leaders_call": "leaders-call",
