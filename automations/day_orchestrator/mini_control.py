@@ -109,15 +109,23 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     cmd = [sys.executable, "-m", r.command[0]] + list(r.command[1:]) + list(r.base_args)
     timeout_s = int(getattr(r, "timeout_minutes", 45) or 45) * 60
     ok, result = _run_cmd(cmd, timeout_s)
-    # On success, mark the report completed on the Hub. The orchestrator's own
-    # run loop publishes, but a manual `lucy rerun` otherwise wouldn't — so a
-    # report that failed at 4am (e.g. session expiry) and was fixed via lucy
-    # stayed "not completed" on the Hub even though the data filled. Best-effort;
-    # publish_done is a no-op when the report has no Hub card.
+    # On success, mark the report completed on the Hub — but ONLY if it actually
+    # VERIFIES clean, mirroring the orchestrator's run loop (which publishes after
+    # reconcile, not on exit code alone). A report can exit 0 yet be INCOMPLETE —
+    # daily_rep_breakdown returns 0 with an owner still pending OV access, and the
+    # carlos/alphalete wrappers always exit 0 even when a step failed. Publishing
+    # 'success' then would falsely mark it completed. So re-verify first; publish
+    # only when recon.ok (DONE or DONE-unverified), never on INCOMPLETE. The
+    # orchestrator's run loop publishes when the orchestrator itself ran it; this
+    # covers the manual `lucy rerun` recovery path. Best-effort; publish_done is a
+    # no-op when the report has no Hub card.
     if ok:
         try:
-            from automations.day_orchestrator import hub_publish
-            hub_publish.publish_done(report_id, getattr(r, "display_name", report_id))
+            import datetime as _dt
+            from automations.day_orchestrator import hub_publish, reconcile
+            recon = reconcile.verify(r, _dt.date.today(), dry_run=False, verbose=False)
+            if recon.ok:   # DONE or DONE-unverified (unknown) — NOT incomplete
+                hub_publish.publish_done(report_id, getattr(r, "display_name", report_id))
         except Exception:  # noqa: BLE001 — Hub publish must never fail the rerun
             pass
     return ok, result
