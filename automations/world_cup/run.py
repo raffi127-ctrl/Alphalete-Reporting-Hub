@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+import time
 from pathlib import Path
 
 # Windows consoles default to cp1252; printing the ✅/🏆/→ status lines would
@@ -153,13 +154,36 @@ def main(argv=None) -> int:
         return 0
 
     # ---- detect + pull (shared by --pull-only, --no-slack, and full run) ----
-    with tableau_session(verbose=True) as page:
-        if args.finals:
-            round_size, csv_path, sheets = pull.pull_finals(
-                page, OUTPUT_DIR, verbose=True)
-        else:
-            round_size, csv_path, sheets = pull.detect_and_pull(
-                page, OUTPUT_DIR, override_round=args.round, verbose=True)
+    # SESSION-LEVEL retry: a fresh tableau_session per attempt. The per-dialog
+    # retry inside list_crosstab_sheets/download_crosstab_patchright can't help
+    # when the PAGE itself dies mid-pull (TargetClosedError) — e.g. a concurrent
+    # ownerville pull bumps the one-session-per-account login. Reopening a fresh
+    # session on failure rides out a closed page + transient session contention;
+    # the backoff gives a competing run time to finish. A genuinely broken view
+    # still fails all attempts and propagates.
+    SESS_ATTEMPTS, SESS_BACKOFF_S = 3, 15
+    _sess_err = None
+    for _sess_try in range(1, SESS_ATTEMPTS + 1):
+        try:
+            with tableau_session(verbose=True) as page:
+                if args.finals:
+                    round_size, csv_path, sheets = pull.pull_finals(
+                        page, OUTPUT_DIR, verbose=True)
+                else:
+                    round_size, csv_path, sheets = pull.detect_and_pull(
+                        page, OUTPUT_DIR, override_round=args.round, verbose=True)
+            _sess_err = None
+            break
+        except Exception as e:  # noqa: BLE001 — reopen a clean session + retry
+            _sess_err = e
+            if _sess_try < SESS_ATTEMPTS:
+                print(f"  ⚠ Tableau session failed "
+                      f"({str(e).splitlines()[0][:90]}) — fresh-session retry "
+                      f"{_sess_try}/{SESS_ATTEMPTS - 1} after {SESS_BACKOFF_S}s…",
+                      flush=True)
+                time.sleep(SESS_BACKOFF_S)
+    if _sess_err is not None:
+        raise _sess_err
 
     # round_size is the int N for a numbered round or the sheet name str (Finals).
     round_desc = round_size if args.finals else f"Round of {round_size}"
