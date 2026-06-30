@@ -282,25 +282,17 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     logfn(f"  3c/5 {len(camp_tables)} per-campaign history block(s) shifted down "
           f"(Totals → Last Week → Prior → 2 Weeks → 3 Weeks)")
 
-    # 3d. Per-captainship Product-Summary WE-stack week-logs: INSERT the just-
-    # closed week at the TOP of each (full dated history kept, newest first) and
-    # re-anchor the two summary formulas ('Sales (Last Week)' = top row, 'Sales
-    # (4 Week AVG)' = top 4) to the new top window. These are REAL row inserts,
-    # so apply_product_summary_rollover re-reads the grid + re-finds every block
-    # BY LABEL after each insert (never carries fixed row numbers across one).
-    # MUST run before the daily clear: each block's 'Totals' is a live =SUM that
-    # has to be frozen first. Idempotent (skips a block already at this week's
-    # WE row). [Eve 2026-06-30]
-    ps = apply_product_summary_rollover(ws, today=today, dry_run=dry_run,
-                                        logfn=logfn)
-    summary["product_summaries"] = len([r for r in ps if not r.get("skipped")])
-
-    # The inserts above shifted every captainship row DOWN, so the grid read at
-    # the top is now stale below the first insert. Re-read so the daily clear +
-    # date-anchor steps address CURRENT row numbers (the captainship daily
-    # tables the clear blanks sit below the inserts).
-    if not dry_run and ps:
-        grid = ws.get_all_values()
+    # 3d. Per-captainship Product-Summary WE-stack week-logs are archived
+    # MANUALLY by a person on Monday night (advances the week + archives the
+    # closing one); the Tuesday report only populates Monday's sales and must
+    # NOT auto-archive (Megan 2026-06-30, vacation plan). So the archiver
+    # (apply_product_summary_rollover / find_captainship_product_summaries /
+    # _roll_one_product_summary) is deliberately NOT called here — it stays as a
+    # standalone, tested function for a manual or future run. To re-enable
+    # automatic archiving, call apply_product_summary_rollover(ws, today=today,
+    # dry_run=dry_run, logfn=logfn) HERE, BEFORE the daily clear (each block's
+    # 'Totals' is a live =SUM that must be frozen first), then re-read `grid`
+    # (its real row inserts shift every row below them).
 
     ranges = plan_daily_clear(ws, grid)
     if not dry_run:
