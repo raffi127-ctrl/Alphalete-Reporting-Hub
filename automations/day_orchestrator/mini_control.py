@@ -54,7 +54,7 @@ HEADERS = ["Queued At", "Action", "Args", "By", "Status", "Result", "Finished At
 # Don't auto-run more than this many fixes in one day — a guard against a runaway
 # loop (a fix that re-queues itself, a stuck report). Hitting the cap pauses
 # auto-run and leaves the rows queued for a human to look at.
-DAILY_AUTORUN_CAP = 25
+DAILY_AUTORUN_CAP = 40
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
@@ -193,12 +193,16 @@ def _set(ws, rownum: int, status: str, result: str = "", finished: bool = False)
 
 
 def _autoruns_today(rows: list[dict]) -> int:
-    """How many fixes already ran (or are running) today — for the runaway cap."""
+    """How many SIDE-EFFECTING fixes already ran (or are running) today — for the
+    runaway cap. `ping` is a zero-side-effect liveness check, so it's excluded:
+    deploy/status churn (lots of pings on a hands-on day) shouldn't burn the
+    runaway budget meant to bound real reruns/updates."""
     today = dt.date.today().isoformat()
     return sum(
         1 for r in rows
         if str(r.get("Status", "")).strip().lower() in ("done", "failed", "running")
         and str(r.get("Queued At", "")).startswith(today)
+        and str(r.get("Action", "")).strip().lower() != "ping"
     )
 
 
