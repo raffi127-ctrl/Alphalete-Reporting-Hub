@@ -485,7 +485,21 @@ def _scrape_one_owner(page, ws, days: list[dt.date], rqst: str,
     # whole design pass if fill_owner_tab made no changes — re-applying
     # the same design to an unchanged tab is pure waste.
     if stats["written_cells"] == 0 and not stats["new_reps"]:
-        print(f"  → no changes — skipping the design pass")
+        # The 0/x empty-cell defaults MUST still run even when nothing new was
+        # written: fill_owner_tab leaves a completed day a rep had zero activity
+        # BLANK, and most daily runs write no NEW cells for an owner (the cells
+        # already exist), so this pass was always skipped and those blanks never
+        # became 0 — the recurring 0-backfill bug. Run just that one op here; the
+        # other (cosmetic) design ops are genuinely safe to skip on no changes.
+        print(f"  → no new cells — running 0/x empty-cell defaults only")
+        for _label, _fn in design_cosmetic_ops(ws, layout):
+            if _label == "apply_empty_cell_defaults":
+                try:
+                    _fn()
+                except Exception as e:
+                    print(f"  ⚠ apply_empty_cell_defaults failed (ignoring): "
+                          f"{type(e).__name__}: {e}")
+                break
         return {
             "tt_counts": {d.isoformat(): len(tt_by_date[d]) for d in days},
             "disp_counts": {d.isoformat(): len(disp_by_date[d]) for d in days},
