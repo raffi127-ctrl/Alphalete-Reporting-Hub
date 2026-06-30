@@ -31,6 +31,10 @@ import os
 import subprocess
 import sys
 
+# Orchestrator-completeness manifest id (matches the scheduler's verify.report_id
+# for alphalete_org_focus). Distinct from the Hub card id 'recruiting-alphalete-org'.
+MANIFEST_ID = "alphalete-org-run"
+
 
 def _step(name: str, cmd: list[str], env: dict | None = None) -> int:
     """Run one step as a subprocess, streaming its output to this run's log.
@@ -87,6 +91,27 @@ def main() -> int:
         print("\n⚠️ One or more steps failed — see the logs above. The steps "
               "that succeeded DID fill; re-run only the failed one from its own "
               "button on the card.", flush=True)
+
+    # Orchestrator-completeness manifest (SEPARATE from the Hub card's
+    # 'recruiting-alphalete-org' manifest the recruiting sub-step writes — don't
+    # clobber that). Because this wrapper always exits 0 (so partial success
+    # isn't hidden), the day-orchestrator can't tell from the exit code that a
+    # step silently failed; this manifest lets verify report INCOMPLETE and name
+    # the failed steps. Best-effort + only on a real (non-dry) run.
+    if not args.dry_run:
+        try:
+            from automations.shared import run_manifest as _rm
+            failed = [name for name, rc in results if rc != 0]
+            if failed:
+                _rm.write_manifest(
+                    MANIFEST_ID, failed=failed, retry_args=[], kind="step",
+                    note=f"{len(failed)} of {len(results)} step(s) failed: "
+                         + ", ".join(failed) + ". Re-run each from its card button.")
+            else:
+                _rm.mark_clean(MANIFEST_ID, kind="step")
+        except Exception:  # noqa: BLE001 — manifest is best-effort
+            pass
+
     # Exit 0 even if a step failed: the run as a whole did useful work, and the
     # per-step summary already flags what to re-run. (Returning non-zero would
     # mark the whole run failed and hide the partial success.)

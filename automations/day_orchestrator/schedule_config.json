@@ -480,7 +480,8 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": {
-        "type": "not_configured"
+        "type": "manifest",
+        "report_id": "carlos-1on1s-run"
       }
     },
     "alphalete_org_focus": {
@@ -503,7 +504,8 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": {
-        "type": "not_configured"
+        "type": "manifest",
+        "report_id": "alphalete-org-run"
       },
       "_todo": "confirm opt_all picks the current week with no --week (verify in the dry-run week)."
     },

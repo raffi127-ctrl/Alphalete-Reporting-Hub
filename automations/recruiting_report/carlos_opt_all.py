@@ -40,6 +40,10 @@ import subprocess
 import sys
 import time
 
+# Orchestrator-completeness manifest id (matches the scheduler's verify.report_id
+# for carlos_focus). Distinct from the Hub card id 'recruiting-carlos'.
+MANIFEST_ID = "carlos-1on1s-run"
+
 CARLOS_OPT_VIEWS = [
     ("B2B 1-Pager",        "d2d1"),
     ("Cancel Rates",       "cancel"),
@@ -128,7 +132,27 @@ def main() -> int:
               "that succeeded DID fill; re-run this wrapper, or manually with "
               "`opt_phase_carlos --download-all` then `--apply-view <key> "
               "--no-download` per view.", flush=True)
-    else:
+
+    # Orchestrator-completeness manifest (SEPARATE from the Hub card's
+    # 'recruiting-carlos' id). This wrapper always exits 0 so partial success
+    # isn't hidden — which also means the day-orchestrator can't see a silent
+    # step failure from the exit code. This manifest lets verify report
+    # INCOMPLETE + name the failed steps. Best-effort, real (non-dry) runs only.
+    if not args.dry_run:
+        try:
+            from automations.shared import run_manifest as _rm
+            failed = [name for name, rc in results if rc != 0]
+            if failed:
+                _rm.write_manifest(
+                    MANIFEST_ID, failed=failed, retry_args=[], kind="step",
+                    note=f"{len(failed)} of {len(results)} step(s) failed: "
+                         + ", ".join(failed) + ". Re-run the wrapper or each view.")
+            else:
+                _rm.mark_clean(MANIFEST_ID, kind="step")
+        except Exception:  # noqa: BLE001 — manifest is best-effort
+            pass
+
+    if not any_fail:
         # Authoritative success sentinel. The Hub classifies a run as success
         # ONLY when it sees '=== done ===' (checked BEFORE the traceback scan),
         # so a fully-successful run is no longer mis-filed as a glitch just
