@@ -986,6 +986,14 @@ def apply_units_white_override(
             last_row = sorted_periods[idx + 1][1]["header_row"] - 1
         else:
             last_row = ws.row_count
+        # Clamp to the grid + skip empty/degenerate sections. On a small sheet
+        # (young office — e.g. Rashad's 44-row churn tab) a section can land at
+        # the last grid row, producing an out-of-grid / backwards range like
+        # C45:C44 that gspread rejects ("exceeds grid limits"). The unhide/sort
+        # passes already skip empty sections; this col-C range pass must too.
+        last_row = min(last_row, ws.row_count)
+        if first_row >= last_row:
+            continue
         ranges.append({
             "sheetId": ws.id,
             "startRowIndex": first_row,         # 0-indexed → row first_row+1
@@ -1033,7 +1041,11 @@ def apply_units_white_override(
         "index": 0,    # highest priority — wins over Eve's % color rules
     }}
 
-    ws.spreadsheet.batch_update({"requests": delete_requests + [add_request]})
+    # If every section was empty/degenerate, `ranges` is empty — still run the
+    # deletes (idempotency) but skip the add so we never send an empty-ranges rule.
+    reqs = delete_requests + ([add_request] if ranges else [])
+    if reqs:
+        ws.spreadsheet.batch_update({"requests": reqs})
 
 
 def sort_sections_desc(
