@@ -63,6 +63,20 @@ def _stamp() -> str:
     return dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _browser_alive(ctx) -> bool:
+    """Cheap liveness probe for the holder's Chrome. A persistent context's
+    .browser is None, so is_connected() isn't available; instead confirm at
+    least one page exists and isn't closed. A crashed browser reports its pages
+    closed (or raises on access) -> False, which the loop turns into a clean
+    exit so launchd relaunches the job (fixes the 2026-06-30 dead-Chrome /
+    live-Python orphan where the session silently went cold)."""
+    try:
+        pages = ctx.pages
+        return bool(pages) and any(not pg.is_closed() for pg in pages)
+    except Exception:
+        return False
+
+
 def _export_ownerville(ctx) -> int:
     """Write the live ownerville (master SSO) cookies to OWNERVILLE_STORAGE_STATE.
     Only called when the session is confirmed live, so a good export is never
@@ -127,6 +141,15 @@ def main() -> int:
     args = ap.parse_args()
 
     HOLDER_PROFILE_DIR.mkdir(exist_ok=True, parents=True)
+    # A crashed Chrome leaves a stale Singleton* lock in the profile that makes
+    # the next launch fail with "profile already in use" — which would defeat the
+    # whole point of a launchd restart. Clear them so a watchdog/launchd relaunch
+    # actually relaunches instead of dying at startup.
+    for _lock in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+        try:
+            (HOLDER_PROFILE_DIR / _lock).unlink()
+        except OSError:
+            pass
     with sync_playwright() as p:
         ctx = _launch_persistent(p, HOLDER_PROFILE_DIR, headless=False,
                                  label="session_holder", verbose=False)
@@ -187,8 +210,21 @@ def main() -> int:
         # --- Continuous keep-alive + export loop. ownerville uses val_page so
         #     login_page stays free for a human re-login; AppStream uses its own
         #     appstream_page. Each source exports only when confirmed live. ---
+        # WATCHDOG: launchd's KeepAlive only watches THIS python, not the Chrome
+        # child. When Chrome died, the old loop logged "refresh error" forever
+        # while the session went cold (the 2026-06-30 failure). Instead: detect a
+        # dead/unrecoverable browser and EXIT non-zero so launchd relaunches the
+        # whole job — a fresh Chrome on the SAME persistent profile re-warms from
+        # the still-valid cookies, no human needed.
+        consecutive_errors = 0
+        MAX_CONSECUTIVE_ERRORS = 3
         while True:
             try:
+                if not _browser_alive(ctx):
+                    print(f"[{_stamp()}] browser is gone — exiting (rc=1) so launchd "
+                          f"restarts the holder fresh on the persistent profile.",
+                          flush=True)
+                    return 1
                 ov_ok = _ownerville_session_valid(val_page, verbose=False)
                 as_ok = _warm_appstream(ctx, appstream_page, verbose=False)
                 ovn = _export_ownerville(ctx) if ov_ok else None
@@ -215,12 +251,22 @@ def main() -> int:
                 except Exception as e:
                     print(f"[{_stamp()}] appstream_watch skipped: "
                           f"{type(e).__name__}: {str(e)[:120]}", flush=True)
+                consecutive_errors = 0   # a clean pass clears the strike count
             except KeyboardInterrupt:
                 print(f"[{_stamp()}] holder stopped.", flush=True)
                 return 0
             except Exception as e:
-                print(f"[{_stamp()}] refresh error: {type(e).__name__}: {str(e)[:140]}",
+                consecutive_errors += 1
+                emsg = f"{type(e).__name__}: {str(e)[:140]}"
+                dead = any(s in emsg.lower() for s in
+                           ("closed", "crash", "disconnect", "target page",
+                            "browser has been"))
+                print(f"[{_stamp()}] refresh error #{consecutive_errors}: {emsg}",
                       flush=True)
+                if dead or consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                    print(f"[{_stamp()}] browser unrecoverable — exiting (rc=1) so "
+                          f"launchd restarts the holder fresh.", flush=True)
+                    return 1
             try:
                 time.sleep(args.interval * 60)
             except KeyboardInterrupt:
