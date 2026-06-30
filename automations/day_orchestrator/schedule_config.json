@@ -184,7 +184,8 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": {
-        "type": "not_configured"
+        "type": "manifest",
+        "report_id": "fiber-activations"
       }
     },
     "captainship_activations": {
@@ -243,7 +244,8 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": {
-        "type": "not_configured"
+        "type": "manifest",
+        "report_id": "captainship-new-internet-wireless-churn"
       }
     },
     "owners_metrics_churn": {
@@ -272,7 +274,8 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": {
-        "type": "not_configured"
+        "type": "manifest",
+        "report_id": "owners-metrics-churn"
       }
     },
     "org_sales_board": {
@@ -307,7 +310,8 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": {
-        "type": "not_configured"
+        "type": "manifest",
+        "report_id": "org-sales-board"
       },
       "_warn": "STILL POINTS AT THE SANDBOX 'Copy of' TAB. Before live cutover: finish the sandbox->--real switch (and --real is guarded to require --dry-run). Safe in the dry-run week as-is."
     },
@@ -621,8 +625,8 @@
       "freshness_target": "friday_am",
       "depends_on": [],
       "verify": {
-        "type": "not_configured",
-        "_todo": "set sheet/tab/anchor_label or manifest"
+        "type": "manifest",
+        "report_id": "residential_rep_count"
       },
       "_onboarded": true,
       "_detected": {
