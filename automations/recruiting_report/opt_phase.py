@@ -647,7 +647,7 @@ def list_crosstab_sheets(view_url: str, page=None, verbose: bool = False,
 
 def drive_crosstab_dialog(page, view_url: str, crosstab_sheet: str,
                           out_path: Path, verbose: bool = True,
-                          skip_nav: bool = False) -> Path:
+                          skip_nav: bool = False, pre_export=None) -> Path:
     """The Page-level Crosstab driver: navigates to `view_url`, opens the
     Download → Crosstab dialog, picks `crosstab_sheet`, exports CSV.
 
@@ -657,7 +657,14 @@ def drive_crosstab_dialog(page, view_url: str, crosstab_sheet: str,
     skip_nav: when True, do NOT navigate — assume the caller already loaded
     the view AND set up any interactive state (e.g. a week selection) that a
     fresh navigation would reset. Used by views whose week can't be driven by
-    a URL param (JE 'Sales Week Ending')."""
+    a URL param (JE 'Sales Week Ending').
+
+    pre_export: optional callable(page, viz) run AFTER the viz hydrates but
+    BEFORE the Download menu opens — a hook for views that must drive an
+    interactive control (e.g. set exact date textareas) the URL can't encode.
+    Runs on every retry attempt (which re-navigates), so the control state is
+    re-applied on each fresh load. Defaults to None (no-op) — every existing
+    caller is byte-for-byte unchanged."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     # Navigate to about:blank first to force a clean DOM (avoids
     # leftover modal state from a previous crashed download). Then
@@ -687,6 +694,12 @@ def drive_crosstab_dialog(page, view_url: str, crosstab_sheet: str,
     # longer to load; their crosstab Download button stays disabled
     # until the underlying data is in. Bumped from 10s to 25s.
     page.wait_for_timeout(25_000)
+
+    # Optional interactive setup (e.g. drive exact date textareas) before the
+    # export. Runs after hydration so the controls exist; runs on each retry
+    # because a retry re-navigates and would otherwise lose the applied state.
+    if pre_export is not None:
+        pre_export(page, viz)
 
     def _clear_error_toast() -> None:
         """Tableau intermittently raises a viz error toast that overlays the

@@ -404,6 +404,7 @@ def download_crosstab_patchright(
     out_path: Path,
     verbose: bool = True,
     page: Optional[Page] = None,
+    pre_export=None,
 ) -> Path:
     """Download a Tableau Crosstab via the patchright stealth session.
 
@@ -433,10 +434,12 @@ def download_crosstab_patchright(
         try:
             if page is not None:
                 return drive_crosstab_dialog(page, view_url, crosstab_sheet,
-                                             out_path, verbose=verbose)
+                                             out_path, verbose=verbose,
+                                             pre_export=pre_export)
             with tableau_session(verbose=verbose) as pg:
                 return drive_crosstab_dialog(pg, view_url, crosstab_sheet,
-                                             out_path, verbose=verbose)
+                                             out_path, verbose=verbose,
+                                             pre_export=pre_export)
         except Exception as e:
             last_err = e
             if attempt < MAX_ATTEMPTS:

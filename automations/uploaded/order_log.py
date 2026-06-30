@@ -1021,6 +1021,39 @@ async def download_dashboard_csv(
     return csv_path
 
 
+def _set_order_log_dates_sync(start_date: date, end_date: date,
+                              verbose: bool = True):
+    """Build a sync `pre_export(page, viz)` hook that forces the ORDER LOG
+    view's Start/End Date textareas to an EXACT window.
+
+    The shared crosstab path navigates straight to CROSSTAB_VIEW_URL, whose
+    baked 'Last 1 month' relative range ends on TODAY — so it drags in today's
+    still-churning orders and lands one day past the intended 'last month →
+    yesterday' window. Driving the textareas pins the export to the exact
+    START_DATE → END_DATE regardless of the view's baked range. This is the
+    sync twin of the async set_date_range() the legacy filter path uses; the
+    shared pull is sync (sync-patchright), so it can't reuse that coroutine.
+
+    The hook runs after the viz hydrates and on every retry attempt, so a
+    re-navigation (which resets to the baked range) re-applies the dates."""
+    def _hook(page, viz) -> None:
+        if verbose:
+            print(f"-> Forcing ORDER LOG date range: {_fmt_date(start_date)} "
+                  f"→ {_fmt_date(end_date)}", flush=True)
+        for label, d in (("Start Date", start_date), ("End Date", end_date)):
+            box = viz.locator(f'textarea[aria-label="{label}"]').first
+            box.wait_for(state="visible", timeout=15_000)
+            # force=True bypasses Tableau's transparent click-capture overlay.
+            box.click(force=True)
+            box.fill(_fmt_date(d))
+            box.press("Enter")
+            page.wait_for_timeout(1200)
+        # Let the viz recompute against the new window before the export reads
+        # its data; the crosstab dialog's own sheet-poll tolerates the rest.
+        page.wait_for_timeout(6000)
+    return _hook
+
+
 def download_order_log_crosstab(
     out_path: Path,
     *,
@@ -1054,6 +1087,10 @@ def download_order_log_crosstab(
         return download_crosstab_patchright(
             CROSSTAB_VIEW_URL, CROSSTAB_SHEET, out_path,
             verbose=verbose, page=page,
+            # Pin the export to the exact 'last month → yesterday' window
+            # instead of the view's baked 'Last 1 month' (which ends on today).
+            pre_export=_set_order_log_dates_sync(START_DATE, END_DATE,
+                                                 verbose=verbose),
         )
 
 
