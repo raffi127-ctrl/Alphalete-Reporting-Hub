@@ -8431,7 +8431,23 @@ else:  # st.session_state.view == "user"
                 )
                 _due = [r for r in my_reports if _was_due_on(r, _day)]
                 if _due:
-                    for _r in _due:
+                    # Single-office reports (category "🏢 Other Offices") render
+                    # UNDER an "Other Offices" divider, below the main-office
+                    # reports — not mixed into the day's list (Megan 2026-06-30).
+                    _main = [r for r in _due if r.get("category") != "🏢 Other Offices"]
+                    _other = [r for r in _due if r.get("category") == "🏢 Other Offices"]
+                    _ordered = _main + (["__OTHER_OFFICES__"] if _other else []) + _other
+                    for _r in _ordered:
+                        if _r == "__OTHER_OFFICES__":
+                            st.markdown(
+                                "<div style='border-top:1px solid #d1d5db; "
+                                "margin:10px 0 5px; padding-top:6px; "
+                                "font-size:0.72em; font-weight:700; color:#10B981; "
+                                "letter-spacing:0.05em; text-align:center'>"
+                                "🏢 OTHER OFFICES</div>",
+                                unsafe_allow_html=True,
+                            )
+                            continue
                         # Mark today's card with green ✅ when there's a
                         # successful run today (same signal the sidebar's
                         # "Today's Tasks" uses, so the two stay in sync).
