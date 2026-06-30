@@ -13,11 +13,15 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import re
 import ssl
 from pathlib import Path
 
 CHANNEL_ID = os.environ.get("METRICS_CHANNEL_ID", "C068PH3RFSM")  # default #alphalete-sales; override via METRICS_CHANNEL_ID (e.g. Rashad's private #elevate-sales) — read at import so subprocesses pick it up
 TOKEN_PATH = Path.home() / ".config" / "recruiting-report" / "slack-user-token"
+# Token for the automated-reports identity 'Lucy' (alphaletereporting@gmail.com)
+# used to DM finished reports so they come FROM Lucy, not the person running it.
+BOT_TOKEN_PATH = Path.home() / ".config" / "recruiting-report" / "slack-bot-token"
 
 
 class SlackPostError(RuntimeError):
@@ -51,6 +55,87 @@ def _client():
     from slack_sdk import WebClient
     ctx = ssl.create_default_context(cafile=certifi.where())
     return WebClient(token=_load_token(), ssl=ctx)
+
+
+def _load_bot_token() -> str:
+    """The 'Lucy' (Fully Automated Alphalete Reports) token — env SLACK_BOT_TOKEN
+    or the slack-bot-token file. Separate from the per-user metrics token so DMs
+    are sent AS Lucy."""
+    tok = os.environ.get("SLACK_BOT_TOKEN")
+    if tok:
+        return tok.lstrip("﻿").strip()
+    if BOT_TOKEN_PATH.exists():
+        return BOT_TOKEN_PATH.read_text(encoding="utf-8-sig").strip()
+    raise SlackPostError(
+        f"No 'Lucy' Slack token found. Save it to {BOT_TOKEN_PATH} or set "
+        "SLACK_BOT_TOKEN. (Create a Slack app on the alphaletereporting account "
+        "with chat:write + files:write + im:write, install it, save the token.)")
+
+
+def _bot_client():
+    import certifi
+    from slack_sdk import WebClient
+    ctx = ssl.create_default_context(cafile=certifi.where())
+    return WebClient(token=_load_bot_token(), ssl=ctx)
+
+
+def _resolve_user_id(client, query: str) -> str:
+    """Resolve a Slack user id from an email or a (real/display) name. Tries an
+    email lookup first, then exact then substring name match over the workspace
+    member list. Skips deactivated accounts and bots."""
+    q = (query or "").strip()
+    if re.fullmatch(r"[UW][A-Z0-9]{6,}", q):    # already a Slack user id
+        return q
+    if "@" in q:
+        try:
+            return client.users_lookupByEmail(email=q)["user"]["id"]
+        except Exception:
+            pass  # fall through to name match
+    ql = q.lower()
+    members, cursor = [], None
+    while True:
+        resp = client.users_list(limit=200, cursor=cursor)
+        members.extend(resp.get("members", []))
+        cursor = (resp.get("response_metadata") or {}).get("next_cursor")
+        if not cursor:
+            break
+
+    def names(u):
+        p = u.get("profile", {})
+        return [n.lower() for n in (u.get("real_name", ""), p.get("real_name", ""),
+                p.get("display_name", ""), u.get("name", "")) if n]
+
+    active = [u for u in members if not u.get("deleted") and not u.get("is_bot")]
+    for u in active:                       # exact match
+        if ql in names(u):
+            return u["id"]
+    for u in active:                       # substring fallback
+        if any(ql in n for n in names(u)):
+            return u["id"]
+    raise SlackPostError(
+        f"Couldn't find a Slack user matching {query!r} in the workspace.")
+
+
+def dm_user_with_file(file_path: "Path", *, user: str, comment: str,
+                      file_name: str | None = None, dry_run: bool = False,
+                      as_bot: bool = True) -> dict:
+    """DM a Slack user a file attachment with a comment, FROM Lucy by default.
+
+    `user` may be a Slack user id (U…/W…), an email, or a name. Opens a DM and
+    uploads the file. as_bot=True uses the 'Lucy' token (_bot_client) so the DM
+    is sent as Lucy; pass as_bot=False to send from the per-user metrics token.
+    Token scopes: files:write + im:write (+ users:read only if `user` is a name)."""
+    if dry_run:
+        return {"dry_run": True, "to_user": user, "file": str(file_path),
+                "comment": comment, "as_bot": as_bot}
+    client = _bot_client() if as_bot else _client()
+    user_id = _resolve_user_id(client, user)
+    channel = client.conversations_open(users=user_id)["channel"]["id"]
+    resp = client.files_upload_v2(
+        channel=channel, file=str(file_path),
+        filename=file_name or Path(file_path).name, initial_comment=comment)
+    return {"ok": resp.get("ok"), "user_id": user_id, "channel": channel,
+            "file": (resp.get("file") or {}).get("id")}
 
 
 def _ordinal(n: int) -> str:

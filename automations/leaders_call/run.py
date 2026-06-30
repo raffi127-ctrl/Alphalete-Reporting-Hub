@@ -58,6 +58,46 @@ def _fiber_url() -> str:
     return base + qp
 
 
+def _target_week() -> tuple:
+    """(Monday, Sunday) of the just-completed week — the same target every
+    campaign fills. On a Monday run this is the week that just ended."""
+    import datetime as dt
+    from automations.alphalete_org_report.opt_nds import _current_target_week_end
+    sun = _current_target_week_end(None)
+    return sun - dt.timedelta(days=6), sun
+
+
+def _je_url() -> str:
+    """JE 'Weekly Metrics by Rep' with Sales Week Ending PINNED to the target
+    week's Sunday. The view's saved default was stale (stuck at 6/7/2026 on the
+    2026-06-29 run). Unlike the ATT 'Time Frame' filter, JE's 'Sales Week Ending'
+    IS URL-drivable — but ONLY in ISO format (2026-06-28); the M/D/YYYY form is
+    silently ignored (verified 2026-06-29). Same param opt_je.py uses."""
+    from urllib.parse import quote
+    _, sun = _target_week()
+    base = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+            "JustEnergyRTL-SalesStaffingProductivityWorkbook/WeeklyMetricsbyRep")
+    return f"{base}?{quote('Sales Week Ending')}={sun.isoformat()}"
+
+
+def _costco_url() -> str:
+    """The saved "Costco Rep All" custom view (Maud 2026-06-29) — rep-level SARA
+    summary with Owner & Office=(All) (the base view was stuck on a single owner
+    via the shared profile's RetailNLOrgSalesBoard default). Min/Max Date are
+    PINNED to the just-completed week via URL: SARA's real date control is
+    Min/Max Date (ignores 'week ending'), and WITHOUT pinning the view defaults
+    to the CURRENT in-progress week — empty on a Monday run, so the rep worksheet
+    never renders and the Crosstab dialog shows only 'Z_Last Refresh' (the exact
+    Monday failure we hit). Rep worksheet = 'Sara Plus Sales Summary (2)'."""
+    from urllib.parse import quote
+    mon, sun = _target_week()
+    base = ("https://us-east-1.online.tableau.com/#/site/sci/views/DropshipV_2/"
+            "SARAPLUSSALESSUMMARY/513cb7f6-fba5-4e38-896d-419bcb8010b4/"
+            "CostcoRepAll?:iid=1")
+    return (f"{base}&{quote('Min Date')}={mon.isoformat()}"
+            f"&{quote('Max Date')}={sun.isoformat()}")
+
+
 @dataclass
 class Campaign:
     key: str
@@ -72,6 +112,9 @@ class Campaign:
     owners: list[str] = field(default_factory=list)   # keep these owners; [] = all
     parser: str = "generic"          # "generic" | "costco" | "revenue"
     sum_cols: tuple = ()             # Costco: product columns to sum per rep
+    exclude_reps: tuple = ()         # rep names ALWAYS dropped (first+last match)
+    flag_if_empty: bool = False      # relative-"This Week" view: 0 rows => likely
+                                     # the week rolled; FLAG instead of writing 0
 
 
 CAMPAIGNS: dict[str, Campaign] = {
@@ -87,6 +130,7 @@ CAMPAIGNS: dict[str, Campaign] = {
         owners=["Rafael Hidalgo", "Kash Rai", "Haytham Nagi", "Aya Al-Khafaji",
                 "Cyrus Wade", "Hammad Haque", "Jacob Dover", "Cody Cannon",
                 "Rashad Reed", "Salik Mallick"],
+        flag_if_empty=True,           # relative This Week — guards the week roll
     ),
     "nds": Campaign(
         key="nds",
@@ -100,11 +144,18 @@ CAMPAIGNS: dict[str, Campaign] = {
         owner_hdr=("owner",),
         value_hdr=("product total", "grand total", "total"),
         owners=["Khalil Mansour", "Maxamad Aden", "Isaiah Revelle"],
+        flag_if_empty=True,           # relative This Week — guards the week roll
     ),
     "b2b": Campaign(
         key="b2b",
+        # The saved "B2B Leader Recognition" custom view pins Time Frame=This Week
+        # (the recognition week), addressed via the :customView= URL param — the
+        # B2BLASTWEEK custom view + Time Frame filter can't be driven any other way
+        # (URL filter params and interactive clicks both fail; see memory). The
+        # relative "This Week" auto-rolls each week, so no weekly re-save (Maud
+        # created it 2026-06-29).
         url=("https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/"
-             "B2BATTSalesMetrics/5dc77806-1536-4a20-9c98-54545f786715/B2BLASTWEEK"),
+             "B2BATTSalesMetrics?:customView=B2B%20Leader%20Recognition"),
         crosstab_sheet="Sales.Quality Metrics",
         threshold=12,
         section_title="B2B",
@@ -112,11 +163,11 @@ CAMPAIGNS: dict[str, Campaign] = {
         owner_hdr=("owner name", "owner"),
         value_hdr=("sales",),          # the 'Sales' (apps) column, not 'AIR/AWB Sales'
         owners=["Atef Choudhury", "Carlos Hidalgo", "Kevin Driggs"],
+        flag_if_empty=True,           # relative This Week (no date cols to check)
     ),
     "je": Campaign(
         key="je",
-        url=("https://us-east-1.online.tableau.com/#/site/sci/views/"
-             "JustEnergyRTL-SalesStaffingProductivityWorkbook/WeeklyMetricsbyRep"),
+        url=_je_url(),
         crosstab_sheet="Weekly Metrics by Rep",
         threshold=12,
         section_title="JE",
@@ -124,24 +175,27 @@ CAMPAIGNS: dict[str, Campaign] = {
         owner_hdr=("icd name", "icd", "owner"),
         value_hdr=("total sales",),     # loom's 'Total Cells' = this view's Total Sales
         owners=["David Martinez", "Cinthya Reyes", "Paola Rodriguez",
-                "Brandon Stockerbs", "Gerrit Stockerbs", "Ishama Ariyano"],
+                "Brandon Stockerbs", "Gerrit Stockerbs", "Ishama Ariyano",
+                "Brandon Stallkamp"],   # added Maud 2026-06-29, effective next run
     ),
     "box": Campaign(
         key="box",
+        # Maud 2026-06-29: switched to the B2BBOXEnergyTracker workbook, 'Box
+        # Sales Metrics' tab. Recognize ALL reps with 12+ 'Complete Sales' (the
+        # old B2BBOXEnergy/WoWMetricsbyRep view wouldn't render unattended).
         url=("https://us-east-1.online.tableau.com/#/site/sci/views/"
-             "B2BBOXEnergy/WoWMetricsbyRep"),
-        crosstab_sheet="WoW Rep Metrics",
-        threshold=12,
+             "B2BBOXEnergyTracker/BoxSalesMetrics?:iid=1"),
+        crosstab_sheet="Sales Metrics",
+        threshold=8,                  # Maud 2026-06-29: 8+ Complete Sales (was 12)
         section_title="BOX",
         rep_hdr=("rep name", "rep"),
-        owner_hdr=("icd name", "icd", "owner"),
-        value_hdr=("total sales",),
-        owners=["Roshan Amin Ahmad", "Ryan McSpadden"],
+        owner_hdr=("owner name", "owner"),
+        value_hdr=("complete sales",),   # exact-match column, not Sales/Rep etc.
+        owners=[],                        # all reps with 12+ Complete Sales
     ),
     "costco": Campaign(
         key="costco",
-        url=("https://us-east-1.online.tableau.com/#/site/sci/views/"
-             "DropshipV_2/SARAPLUSSALESSUMMARY?:iid=1"),
+        url=_costco_url(),
         crosstab_sheet="Sara Plus Sales Summary (2)",
         threshold=8,
         section_title="Costco",
@@ -161,6 +215,8 @@ CAMPAIGNS: dict[str, Campaign] = {
         section_title="Revenue over 2K",
         owners=[],
         parser="revenue",
+        # Always drop Khalil Mansour from Revenue recognition (Maud 2026-06-29).
+        exclude_reps=("Khalil Mansour",),
     ),
 }
 
@@ -298,6 +354,10 @@ def parse_costco(camp: Campaign, rows: list[list[str]]) -> list[tuple]:
     sum_idx = [i for i, h in enumerate(hdr) if h in camp.sum_cols]
     if ri is None or not sum_idx:
         raise RuntimeError(f"costco: cols rep={ri} sum={sum_idx} in {rows[0]}")
+    # The "Costco Rep All" view is Owner & Office=(All) — company-wide (125 reps
+    # across every office). Scope to the LOCAL office owners (first+last match),
+    # like every other section, so recognition isn't polluted by other offices.
+    keep = {_name_tokens(o) for o in camp.owners} if camp.owners else None
     out = []
     for r in rows[1:]:
         rep = (r[ri] if ri < len(r) else "").strip()
@@ -305,6 +365,8 @@ def parse_costco(camp: Campaign, rows: list[list[str]]) -> list[tuple]:
             continue
         owner = re.sub(r"\s*\[.*", "", (r[oi] if oi is not None and oi < len(r)
                                         else "")).replace("\n", " ").strip()
+        if keep is not None and _name_tokens(owner) not in keep:
+            continue
         apps = sum(int(_num(r[i]) or 0) for i in sum_idx if i < len(r))
         if apps >= camp.threshold:
             out.append((rep, owner, apps))
@@ -335,6 +397,12 @@ def _name_tokens(s: str) -> tuple:
 
 
 _REVENUE_OWNER_KEYS = {_name_tokens(o) for o in REVENUE_OWNERS}
+
+# Only these four ICDs run Costco (Maud 2026-06-29). The "Costco Rep All" view is
+# company-wide (Owner & Office=All), so scope to exactly these owners.
+COSTCO_OWNERS = ["Amjad Malhas", "Ana Griffin", "Ronald Dawson",
+                 "Boaktear Chowdhury"]
+CAMPAIGNS["costco"].owners = COSTCO_OWNERS
 
 
 def parse_revenue(camp: Campaign, rows: list[list[str]]) -> list[tuple]:
@@ -374,7 +442,23 @@ def parse_revenue(camp: Campaign, rows: list[list[str]]) -> list[tuple]:
     return out
 
 
+def _is_excluded(camp: Campaign, rep: str) -> bool:
+    """True if `rep` is on the campaign's always-drop list (first+last match, so
+    'Khalil Mansour' drops regardless of middle name / spacing)."""
+    if not camp.exclude_reps:
+        return False
+    keys = {_name_tokens(x) for x in camp.exclude_reps}
+    return _name_tokens(rep) in keys
+
+
 def parse(camp: Campaign, rows: list[list[str]]) -> list[tuple]:
+    out = _parse_inner(camp, rows)
+    if camp.exclude_reps:
+        out = [t for t in out if not _is_excluded(camp, t[0])]
+    return out
+
+
+def _parse_inner(camp: Campaign, rows: list[list[str]]) -> list[tuple]:
     if camp.parser == "costco":
         return parse_costco(camp, rows)
     if camp.parser == "revenue":
@@ -459,6 +543,109 @@ def _dry_one(camp: Campaign) -> None:
 
 TABLEAU_ORDER = ["fiber", "nds", "b2b", "je", "box", "costco", "revenue"]
 
+# Heavy Tableau vizzes (notably Costco's SARA view and BOX) intermittently fail
+# to render in time — the Crosstab dialog shows only the 'Z_Last Refresh' thumb,
+# or the download toolbar 120s-timeouts. Every other report in this repo retries
+# these exact flakes (see download_crosstab_patchright); the Leader's Call pull
+# historically did NOT, so a single flake dropped the section. Retry on a fresh
+# navigation before giving up.
+PULL_ATTEMPTS = 3
+_PULL_SETTLE_MS = 6000
+
+
+class PullFailure:
+    """Sentinel: a Tableau pull/parse that failed after every retry. DISTINCT
+    from None (a section legitimately left as-is, e.g. Frontier with no upload),
+    so write_report flags it loudly and NEVER leaves stale numbers in its place."""
+    def __init__(self, key: str, msg: str):
+        self.key = key
+        self.msg = msg
+
+
+_DATE_PAREN_RE = re.compile(r"\((\d{1,2})-(\d{1,2})\)")        # Fiber 'Mon (06-22)'
+_DATE_SLASH_RE = re.compile(r"\b(\d{1,2})/(\d{1,2})/\d{4}\b")  # NDS '6/28/2026'
+
+
+def _extract_week_dates(rows: list[list[str]]) -> list[tuple]:
+    """(month, day) pairs found in the crosstab's header rows — Fiber's
+    'Mon (06-22)' day columns and NDS's '6/28/2026' week-ending cells. Empty when
+    the worksheet carries no dates (B2B/JE/Costco rep sheets)."""
+    out = []
+    for r in rows[:4]:
+        for c in r:
+            c = c or ""
+            for mth, day in _DATE_PAREN_RE.findall(c):
+                out.append((int(mth), int(day)))
+            for mth, day in _DATE_SLASH_RE.findall(c):
+                out.append((int(mth), int(day)))
+    return out
+
+
+def _week_ok(rows: list[list[str]]) -> Optional[bool]:
+    """True if EVERY date in the crosstab header falls inside the target
+    completed week; False if any date is outside (the view's 'This Week' rolled
+    to a different week); None if the worksheet has no dates to check."""
+    import datetime as dt
+    mon, sun = _target_week()
+    target = {((mon + dt.timedelta(days=i)).month,
+               (mon + dt.timedelta(days=i)).day) for i in range(7)}
+    dates = _extract_week_dates(rows)
+    if not dates:
+        return None
+    return all(md in target for md in dates)
+
+
+def _pull_parse(camp: Campaign, page):
+    """Pull + parse one campaign's crosstab, retrying transient Tableau render
+    flakes on a fresh navigation. Returns the parsed [(rep,owner,val)] rows, or a
+    PullFailure sentinel if every attempt fails — callers must treat that as a
+    hard error and must never fall back to stale data.
+
+    WEEK GUARD: every pull is checked against the target completed week. If the
+    crosstab's dated columns are for a DIFFERENT week (the relative 'This Week'
+    filter rolled — e.g. an off-hours run after the new week's data loaded), it's
+    flagged, never written. For relative-week views with no date columns to read
+    (flag_if_empty, e.g. B2B), a 0-row result is treated the same way."""
+    from automations.alphalete_org_report.opt_nds import _read_tab_csv
+    import datetime as dt
+    mon, sun = _target_week()
+    wk = f"{mon.isoformat()}..{sun.isoformat()}"
+    last = ""
+    for attempt in range(1, PULL_ATTEMPTS + 1):
+        try:
+            path = _pull(camp, page)
+            rows = _read_tab_csv(path)
+            res = parse(camp, rows)
+            # Hard week mismatch (dated columns say a different week): definitive,
+            # don't retry — the week won't change on a re-pull.
+            if _week_ok(rows) is False:
+                got = sorted({f"{m:02d}-{d:02d}" for m, d in _extract_week_dates(rows)})
+                return PullFailure(camp.key,
+                                   f"WRONG WEEK: data is for {got}, expected {wk}")
+            # Relative-week view with no dates (B2B): 0 rows usually means the
+            # week rolled to the new empty week. Retry (could be a flake), then flag.
+            if camp.flag_if_empty and not res:
+                last = f"0 rows (possible rolled/empty week, expected {wk})"
+                print(f"  ⚠ {camp.key}: empty result — attempt {attempt}/"
+                      f"{PULL_ATTEMPTS}", flush=True)
+                if attempt < PULL_ATTEMPTS:
+                    page.wait_for_timeout(_PULL_SETTLE_MS)
+                    continue
+                return PullFailure(camp.key, f"0 rows after {PULL_ATTEMPTS} tries — "
+                                   f"likely the week hasn't rolled to {wk} yet; "
+                                   "verify run timing")
+            return res
+        except Exception as e:
+            last = str(e).splitlines()[0][:160]
+            print(f"  ⚠ {camp.key}: pull attempt {attempt}/{PULL_ATTEMPTS} "
+                  f"failed ({last})", flush=True)
+            if attempt < PULL_ATTEMPTS:
+                try:
+                    page.wait_for_timeout(_PULL_SETTLE_MS)  # let render settle
+                except Exception:
+                    pass
+    return PullFailure(camp.key, last)
+
 # Section title -> regex matched against column A to locate each section's
 # header row on the Leader's Call tab (label lookup, never hardcoded rows).
 SECTION_MATCH = {
@@ -520,11 +707,20 @@ def write_report(ws, results: dict, dry_run: bool = True) -> list[str]:
         data_start = trow + 2                        # title, header, then data
         next_trow = found[idx + 1][1] if idx + 1 < len(found) else len(grid) + 1
         old_count = max(0, next_trow - data_start)
-        new_count = len(rows)
-        body = [[rep, owner, _fmt_value(title, val)] for rep, owner, val in rows]
+        if isinstance(rows, PullFailure):
+            # NEVER leave stale numbers for a failed pull: overwrite the section
+            # with one visible failure marker so it's obvious it didn't update.
+            body = [[f"⚠ PULL FAILED — not updated this week; re-run the report "
+                     f"({rows.msg[:50]})", "", ""]]
+            label = "FAIL"
+        else:
+            body = [[rep, owner, _fmt_value(title, val)] for rep, owner, val in rows]
+            label = "ok"
+        new_count = len(body)
         if dry_run:
-            log.append(f"[dry] {title}: rows {old_count} -> {new_count} "
-                       f"(write A{data_start}:C{data_start + new_count - 1})")
+            tag = " [FAILURE marker]" if label == "FAIL" else ""
+            log.append(f"[dry/{label}] {title}: rows {old_count} -> {new_count} "
+                       f"(write A{data_start}:C{data_start + new_count - 1}){tag}")
             continue
         diff = new_count - old_count
         if diff > 0:
@@ -534,7 +730,7 @@ def write_report(ws, results: dict, dry_run: bool = True) -> list[str]:
         if new_count:
             rng = f"A{data_start}:C{data_start + new_count - 1}"
             rfill._retry(ws.update, rng, body, value_input_option="USER_ENTERED")
-        log.append(f"[ok] {title}: wrote {new_count} rows at A{data_start}")
+        log.append(f"[{label}] {title}: wrote {new_count} rows at A{data_start}")
     return log
 
 
@@ -543,27 +739,36 @@ def run_all(write: bool = False) -> dict:
     section. With write=True, also write the results into the live Leader's
     Call tab (Frontier is left as-is unless its preflight upload was parsed).
     Returns {section_title: [(rep, owner, value)]}."""
-    from automations.alphalete_org_report.opt_nds import _read_tab_csv
     from automations.shared.tableau_patchright import tableau_session
     results: dict = {}
     with tableau_session(verbose=True) as page:
         for k in TABLEAU_ORDER:
             camp = CAMPAIGNS[k]
-            try:
-                path = _pull(camp, page)
-                res = parse(camp, _read_tab_csv(path))
-                results[camp.section_title] = res
-                print(f"\n=== {camp.section_title}: {len(res)} >= {camp.threshold} ===",
+            res = _pull_parse(camp, page)         # retries flakes internally
+            results[camp.section_title] = res
+            if isinstance(res, PullFailure):
+                print(f"\n✗ {camp.section_title}: FAILED after {PULL_ATTEMPTS} "
+                      f"attempts ({res.msg}) — will be flagged, not left stale",
                       flush=True)
-                for rep, owner, val in res:
-                    v = f"${val:,.0f}" if camp.threshold >= 100 else f"{val:g}"
-                    print(f"   {rep} | {owner} | {v}", flush=True)
-            except Exception as e:
-                print(f"✗ {k}: {type(e).__name__}: {str(e)[:160]}", flush=True)
-                results[camp.section_title] = None
-    # Frontier: filled from its preflight-uploaded PDF (see frontier.py).
+                continue
+            print(f"\n=== {camp.section_title}: {len(res)} >= {camp.threshold} ===",
+                  flush=True)
+            for rep, owner, val in res:
+                v = f"${val:,.0f}" if camp.threshold >= 100 else f"{val:g}"
+                print(f"   {rep} | {owner} | {v}", flush=True)
+    # Frontier: auto-fetch this week's scorecard from Lucy's inbox (the
+    # "Frontier - Sales Verification … Abyl" email lands Mon ~2pm CST), then
+    # parse. Email fetch is best-effort — if it fails (no token / email not in
+    # yet) we fall back to whatever was last uploaded, so it never crashes.
     try:
         from automations.leaders_call import frontier as fr
+        try:
+            from automations.leaders_call import frontier_email as femail
+            femail.fetch_latest_scorecard(fr.UPLOAD_DIR)
+        except Exception as fe:
+            print(f"-> Frontier email fetch skipped ({type(fe).__name__}: "
+                  f"{str(fe).splitlines()[0][:120]}) — using last uploaded file",
+                  flush=True)
         results["Frontier"] = fr.parse_uploaded()
         print(f"\n=== Frontier: {len(results['Frontier'])} >= 8 ===", flush=True)
     except Exception as e:
@@ -576,6 +781,49 @@ def run_all(write: bool = False) -> dict:
         for ln in write_report(ws, results, dry_run=False):
             print("  " + ln, flush=True)
     return results
+
+
+def _failed_sections(results: dict) -> list:
+    """Section titles whose Tableau pull failed (PullFailure sentinel) — used to
+    set a non-zero exit so the Hub flags the run instead of reporting success."""
+    return [t for t, v in results.items() if isinstance(v, PullFailure)]
+
+
+# Who the finished PDF is DM'd to on Slack (as Lucy) after a clean run. Default
+# is Maud's Slack user id (avoids needing users:read on Lucy's token); override
+# with LEADERS_CALL_PDF_SLACK_USER (a user id, email, or name).
+import os as _os
+PDF_SLACK_RECIPIENT = _os.environ.get("LEADERS_CALL_PDF_SLACK_USER",
+                                      "U045USN7NCD")  # Maud Miller
+
+
+def _build_recognition_pdf(results: dict) -> None:
+    """Generate the Alphalete Leader's Call PDF from a CLEAN run's results and
+    DM it to PDF_SLACK_RECIPIENT on Slack. Only called when no section failed
+    (see main). PDF or Slack errors are logged but do NOT fail the run — the
+    sheet is already correctly written."""
+    _, sun = _target_week()
+    try:
+        from automations.leaders_call import build_pdf as pdf
+        out = OUTPUT_DIR / f"alphalete_leaders_call_{sun.isoformat()}.pdf"
+        pdf.build_pdf(results, out, pdf.qualifiers_from_campaigns())
+        print(f"📄 Leader's Call PDF generated: {out}", flush=True)
+    except Exception as e:
+        print(f"⚠ PDF generation failed ({type(e).__name__}: {str(e)[:140]}) — "
+              "the sheet is written; PDF can be re-built separately.", flush=True)
+        return
+    try:
+        from automations.shared import slack_metrics_post as slack
+        res = slack.dm_user_with_file(
+            out, user=PDF_SLACK_RECIPIENT, file_name=out.name,
+            comment=f"📣 Alphalete Leader's Call — recognition for the week ending "
+                    f"{sun.month}/{sun.day}.")
+        print(f"📨 PDF delivered to {PDF_SLACK_RECIPIENT} on Slack "
+              f"(ok={res.get('ok')})", flush=True)
+    except Exception as e:
+        print(f"⚠ Slack delivery to {PDF_SLACK_RECIPIENT} failed "
+              f"({type(e).__name__}: {str(e)[:140]}) — the PDF is saved at {out}.",
+              flush=True)
 
 
 def main() -> int:
@@ -605,10 +853,22 @@ def main() -> int:
         _dry_one(CAMPAIGNS[args.campaign])
         return 0
     if args.dry_run:
-        run_all(write=False)
-        return 0
+        results = run_all(write=False)
+        return 1 if _failed_sections(results) else 0
     if args.write:
-        run_all(write=True)
+        results = run_all(write=True)
+        failed = _failed_sections(results)
+        if failed:
+            print(f"\n❌ {len(failed)} section(s) failed to pull and were FLAGGED "
+                  f"in the sheet (not left stale): {', '.join(failed)}. Re-run the "
+                  "report to refresh them.", flush=True)
+            print("   ⏸ Recognition PDF NOT generated — it only builds when every "
+                  "section pulled cleanly.", flush=True)
+            return 1
+        print("\n✅ All sections pulled and written for this week.", flush=True)
+        # GATE: only build the Leader's Call PDF on a fully-clean pull (Maud
+        # 2026-06-29). Nothing failed here, so generate it from the same results.
+        _build_recognition_pdf(results)
         return 0
 
     print("Use --dry-run to preview, or --write to fill the live Leader's Call "

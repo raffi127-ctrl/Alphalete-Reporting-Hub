@@ -523,7 +523,8 @@
       }
     },
     "leaders_call": {
-      "on_scheduler": true,
+      "on_scheduler": false,
+      "_off_scheduler_note": "Run by the dedicated com.alphalete.leaders-call-mon launchd job at Mon 2:05pm CST (deploy/leaders_call_mon.sh), NOT the morning orchestrator — the Frontier scorecard email lands ~2pm and the morning noon-backstop can't do a 2:05pm run. Maud 2026-06-29.",
       "display_name": "Leader's Call - Weekly Recognition",
       "source_type": "tableau",
       "data_sources": [

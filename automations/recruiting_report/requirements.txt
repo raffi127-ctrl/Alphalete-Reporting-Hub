@@ -3,6 +3,8 @@ gspread>=6.1
 google-auth-oauthlib>=1.2
 keyring>=25.0
 streamlit>=1.36
+# Leader's Call recognition PDF generator (automations/leaders_call/build_pdf.py).
+reportlab>=4.0
 # The browser driver for EVERY report that drives Chrome (AppStream,
 # ownerville, Tableau). patchright is a Playwright fork with anti-detection
 # patches; all reports import patchright.{sync,async}_api, not playwright.
