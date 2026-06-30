@@ -34,6 +34,7 @@ with dry_run=True first ([[feedback_preview_marcellus]]).
 from __future__ import annotations
 
 import datetime as dt
+import re
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
@@ -280,6 +281,26 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     summary["campaign_history_tables"] = len(camp_tables)
     logfn(f"  3c/5 {len(camp_tables)} per-campaign history block(s) shifted down "
           f"(Totals → Last Week → Prior → 2 Weeks → 3 Weeks)")
+
+    # 3d. Per-captainship Product-Summary WE-stack week-logs: INSERT the just-
+    # closed week at the TOP of each (full dated history kept, newest first) and
+    # re-anchor the two summary formulas ('Sales (Last Week)' = top row, 'Sales
+    # (4 Week AVG)' = top 4) to the new top window. These are REAL row inserts,
+    # so apply_product_summary_rollover re-reads the grid + re-finds every block
+    # BY LABEL after each insert (never carries fixed row numbers across one).
+    # MUST run before the daily clear: each block's 'Totals' is a live =SUM that
+    # has to be frozen first. Idempotent (skips a block already at this week's
+    # WE row). [Eve 2026-06-30]
+    ps = apply_product_summary_rollover(ws, today=today, dry_run=dry_run,
+                                        logfn=logfn)
+    summary["product_summaries"] = len([r for r in ps if not r.get("skipped")])
+
+    # The inserts above shifted every captainship row DOWN, so the grid read at
+    # the top is now stale below the first insert. Re-read so the daily clear +
+    # date-anchor steps address CURRENT row numbers (the captainship daily
+    # tables the clear blanks sit below the inserts).
+    if not dry_run and ps:
+        grid = ws.get_all_values()
 
     ranges = plan_daily_clear(ws, grid)
     if not dry_run:
@@ -530,3 +551,246 @@ def plan_org_history_rollover(ws, table: dict):
         if vals:
             updates.append({"range": span(d), "values": [vals]})
     return updates
+
+
+# --------------------------------------------------------------------------
+# Per-captainship Product-Summary WE-stack week-log (insert-at-top, grows down)
+# --------------------------------------------------------------------------
+# Unlike the daily-section history blocks (fixed 4 rows 'Last Week'…'3 Weeks
+# Prior', value-shift, drops the 5th — see find_campaign_history_tables), each
+# captainship's Product Summary keeps a FULL dated week-log: a 'Totals' row
+# (live =SUM of the captain's daily chart) sitting directly above a stack of
+# 'WE m.d' rows, newest first, growing DOWN. The Tuesday rollover INSERTS the
+# just-finished week as a new row at the TOP (static values) and re-anchors the
+# two summary formulas ('Sales (Last Week)' = top row, 'Sales (4 Week AVG)' =
+# top 4 rows) so they keep tracking the top after the shift — a raw insert makes
+# Google auto-adjust them the WRONG way (they'd follow the OLD top down and drop
+# the new week), so the re-anchor is mandatory. Eve 2026-06-30.
+
+_WEEKDAYS_LOWER = {"monday", "tuesday", "wednesday", "thursday", "friday",
+                   "saturday", "sunday"}
+_WE_ROW_RE = re.compile(r"^WE\s+\d", re.IGNORECASE)
+
+
+def we_label_short(week_ending: dt.date) -> str:
+    """'WE M.D' (NON-zero-padded) matching the captainship week-log rows
+    ('WE 6.21'), distinct from we_label()'s zero-padded leaderboard form
+    ('WE 06.21')."""
+    return f"WE {week_ending.month}.{week_ending.day}"
+
+
+def _captain_span(grid: List[List[str]], title: str):
+    """(start_row, end_row) 1-based of a captain's block, bounded by the NEXT
+    different captain's '… CAPTAIN(SHIP) TEAM' title (col B). Used to scope a
+    preview to one captainship."""
+    pat = re.compile(r"\bcaptain(?:ship)?\s+team\b")
+    tl = title.strip().lower()
+    n = len(grid)
+    start = next((i for i in range(n)
+                  if tl in _cell(grid, i, 1).lower()
+                  and pat.search(_cell(grid, i, 1).lower())), None)
+    if start is None:
+        return None
+    end = n
+    for i in range(start + 1, n):
+        b = _cell(grid, i, 1).lower()
+        m = pat.search(b)
+        if m and b[:m.start()].strip() and tl not in b[:m.start()]:
+            end = i
+            break
+    return (start + 1, end)
+
+
+def find_captainship_product_summaries(grid: List[List[str]]) -> List[dict]:
+    """Every captainship Product-Summary WE-stack block, anchored by label:
+      • a 'Totals' row (col A) DIRECTLY above a 'WE …' history row (col A) — the
+        signal that separates a captainship week-log from the daily-section
+        history blocks (those carry literal 'Last Week' text under Totals);
+      • the weekly day columns (Monday..Sunday) + the Grand-Total column to
+        their right, read from the daily chart's weekday header above Totals;
+      • the two summary rows 'Sales (Last Week)' / 'Sales ( 4 Week AVG)' (col B)
+        above Totals, whose per-day cells reference the stack top.
+    Returns dicts {totals_row, top_row, day_cols, gt_col, last_week_row,
+    avg_row} (all 1-based). [No hardcoded rows.]"""
+    out: List[dict] = []
+    n = len(grid)
+    for i in range(n):
+        if _cell(grid, i, 0).lower() not in ("totals", "total"):
+            continue
+        if i + 1 >= n or not _WE_ROW_RE.match(_cell(grid, i + 1, 0)):
+            continue
+        # weekday header = nearest weekday-name row ABOVE Totals. Scan up to the
+        # previous block boundary (its leaderboard 'TOTALS' row) with NO fixed
+        # cap — big teams (15+ reps) push the daily header well above Totals, so
+        # a tight window silently dropped RAF/CARLOS/COLTEN (Eve 2026-06-30).
+        dayrow = None
+        for r in range(i - 1, -1, -1):
+            if _cell(grid, r, 0).lower() in ("totals", "total"):
+                break                            # previous block's totals — stop
+            if sum(1 for c in grid[r]
+                   if (c or "").strip().lower() in _WEEKDAYS_LOWER) >= 4:
+                dayrow = r
+                break
+        if dayrow is None:
+            continue
+        day_cols = [c + 1 for c in range(len(grid[dayrow]))
+                    if (grid[dayrow][c] or "").strip().lower() in _WEEKDAYS_LOWER]
+        gt_col = max(day_cols) + 1               # Grand-Total col (after Sunday)
+        # summary rows above Totals (col B), found by label. The summary block
+        # sits above the leaderboard, so it can be ~40 rows up for big teams —
+        # scan generously, but STOP at a 'WE …' row (that means we've crossed up
+        # into the PREVIOUS box's week-log, so THIS box has no summary rows and
+        # we must not borrow the other box's). [No fixed offset.]
+        lw_row = avg_row = None
+        for r in range(i - 1, max(i - 120, -1), -1):
+            if _WE_ROW_RE.match(_cell(grid, r, 0)):
+                break
+            b = _cell(grid, r, 1).lower().replace(" ", "")
+            if b == "sales(lastweek)":
+                lw_row = r + 1
+            elif b == "sales(4weekavg)":
+                avg_row = r + 1
+            if lw_row and avg_row:
+                break
+        out.append({"totals_row": i + 1, "top_row": i + 2,
+                    "day_cols": day_cols, "gt_col": gt_col,
+                    "last_week_row": lw_row, "avg_row": avg_row})
+    return out
+
+
+def _captain_for_row(grid: List[List[str]], row1: int) -> str:
+    """Captain name owning a given 1-based row — the nearest '… CAPTAIN(SHIP)
+    TEAM' title (col B) above it. For readable per-block logging."""
+    pat = re.compile(r"\bcaptain(?:ship)?\s+team\b")
+    for r in range(row1 - 1, -1, -1):
+        b = _cell(grid, r, 1)
+        m = pat.search(b.lower())
+        if m and b[:m.start()].strip():
+            return b[:m.start()].strip()
+    return "?"
+
+
+def _roll_one_product_summary(ws, b: dict, label: str) -> dict:
+    """Apply ONE WE-stack insert + re-anchor using b's CURRENT (freshly-read)
+    row numbers. Caller must pass row numbers read AFTER any prior insert."""
+    top, tot = b["top_row"], b["totals_row"]
+    c0, gtc = min(b["day_cols"]), b["gt_col"]
+    # freeze the Totals values (read just before the insert, off the live =SUM)
+    tot_vals = (ws.get(f"{a1col(c0)}{tot}:{a1col(gtc)}{tot}",
+                       value_render_option="UNFORMATTED_VALUE") or [[]])[0]
+    # 1) structural insert of ONE blank row at the stack top
+    ws.spreadsheet.batch_update({"requests": [{"insertDimension": {
+        "range": {"sheetId": ws.id, "dimension": "ROWS",
+                  "startIndex": top - 1, "endIndex": top},
+        "inheritFromBefore": False}}]})           # inherit history-row formatting
+    # 2) new WE row: label in col A, frozen day+grand-total values in C..gt
+    updates = [
+        {"range": f"A{top}", "values": [[label]]},
+        {"range": f"{a1col(c0)}{top}:{a1col(gtc)}{top}", "values": [list(tot_vals)]},
+    ]
+    # 3) re-anchor the two summary formulas to the (new) top window. The insert
+    #    pushed the old top from `top` to `top+1`; the freshly inserted row now
+    #    occupies `top`, so the original references (=X$top, AVERAGE(X$top:
+    #    X$top+3)) are exactly right — Google auto-rewrote them off the top, so
+    #    we set them back. (J/Grand-Total of these rows is a self-sum owned by
+    #    elapsed_totals.py — left untouched.)
+    for col in b["day_cols"]:
+        X = a1col(col)
+        if b["last_week_row"]:
+            updates.append({"range": f"{X}{b['last_week_row']}",
+                            "values": [[f"={X}${top}"]]})
+        if b["avg_row"]:
+            updates.append({"range": f"{X}{b['avg_row']}",
+                            "values": [[f"=AVERAGE({X}${top}:{X}${top + 3})"]]})
+    ws.batch_update(updates, value_input_option="USER_ENTERED")
+    return {**b, "label": label, "frozen": list(tot_vals)}
+
+
+def apply_product_summary_rollover(ws, today=None, dry_run: bool = False,
+                                   only_title: str | None = None,
+                                   logfn=print) -> List[dict]:
+    """Insert the just-closed week at the TOP of each captainship Product-Summary
+    WE-stack (newest-first, full history kept) and re-anchor the two summary
+    formulas to the fixed top window. MUST run BEFORE the daily clear (the Totals
+    row is a live =SUM whose value has to be frozen first).
+
+    A real row insert SHIFTS every row below it, so processing block N would
+    invalidate stale row numbers for blocks N+1… . We therefore RE-READ the grid
+    and RE-FIND every block BY LABEL after each insert, and pick the next block
+    whose top WE row is not yet this week's label — never carrying fixed row
+    numbers across an insert. Progress (and idempotency, within and across runs)
+    is tracked by the label itself: a rolled block's top now reads `label`, so
+    it's skipped next pass; the loop ends when every in-scope block carries this
+    week's WE row. `only_title` scopes to ONE captainship (preview)."""
+    import datetime as _dt
+    today = today or _dt.date.today()
+    just_closed = new_week_ending(today) - dt.timedelta(days=7)
+    label = we_label_short(just_closed)
+    logfn(f"  product-summary week-log — freeze {label!r} (just-closed Sunday "
+          f"{just_closed.isoformat()}; today {today:%a} {today.isoformat()}; "
+          f"dry_run={dry_run})")
+
+    def _scope(grid):
+        span = _captain_span(grid, only_title) if only_title else None
+        if only_title and span is None:
+            return None, None
+        blocks = find_captainship_product_summaries(grid)
+        if span:
+            blocks = [b for b in blocks if span[0] <= b["totals_row"] <= span[1]]
+        return blocks, span
+
+    # DRY-RUN: one read, list every block + what WOULD be frozen (no insert, so
+    # the by-label loop can't make progress — iterate once instead).
+    if dry_run:
+        grid = ws.get_all_values()
+        blocks, span = _scope(grid)
+        if blocks is None:
+            logfn(f"  ⚠ captain title {only_title!r} not found — nothing to do")
+            return []
+        results = []
+        for b in blocks:
+            cap = _captain_for_row(grid, b["totals_row"])
+            cur = _cell(grid, b["top_row"] - 1, 0)
+            c0, gtc = min(b["day_cols"]), b["gt_col"]
+            if cur == label:
+                logfn(f"    [{cap}] rows {b['totals_row']}/{b['top_row']}: "
+                      f"top already {label!r} — would skip")
+                results.append({**b, "captain": cap, "label": label, "skipped": True})
+                continue
+            tv = (ws.get(f"{a1col(c0)}{b['totals_row']}:{a1col(gtc)}{b['totals_row']}",
+                         value_render_option="UNFORMATTED_VALUE") or [[]])[0]
+            logfn(f"    [{cap}] rows {b['totals_row']}/{b['top_row']}: would insert "
+                  f"{label!r} = {list(tv)} (was top {cur!r}); summary rows "
+                  f"LW={b['last_week_row']} AVG={b['avg_row']}")
+            results.append({**b, "captain": cap, "label": label, "frozen": list(tv),
+                            "prev_top_label": cur, "skipped": False})
+        return results
+
+    # LIVE: re-read + re-find by label after every insert.
+    results: List[dict] = []
+    guard = 0
+    while True:
+        guard += 1
+        if guard > 200:            # backstop; never expected to trip
+            raise RuntimeError("product-summary rollover did not converge")
+        grid = ws.get_all_values()
+        blocks, span = _scope(grid)
+        if blocks is None:
+            logfn(f"  ⚠ captain title {only_title!r} not found — nothing to do")
+            break
+        target = next((b for b in blocks
+                       if _cell(grid, b["top_row"] - 1, 0) != label), None)
+        if target is None:
+            break                  # every in-scope block carries this week's WE
+        cap = _captain_for_row(grid, target["totals_row"])
+        prev = _cell(grid, target["top_row"] - 1, 0)
+        info = _roll_one_product_summary(ws, target, label)
+        info["captain"] = cap
+        info["prev_top_label"] = prev
+        results.append(info)
+        logfn(f"    [{cap}] rows {target['totals_row']}/{target['top_row']}: "
+              f"inserted {label!r} = {info['frozen']} (was top {prev!r}); "
+              f"re-anchored LW→row {target['top_row']}, "
+              f"AVG→{target['top_row']}:{target['top_row'] + 3}")
+    logfn(f"  product-summary week-log: {len(results)} block(s) rolled to {label!r}")
+    return results
