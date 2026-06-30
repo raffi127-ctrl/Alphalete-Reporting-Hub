@@ -112,7 +112,7 @@ function notifyMeganOnNewBug() {
       "  ·  " + b.submittedAt + "\n" +
       "Bug Reports tab: " + url + "\n";
 
-    // Clean, scannable HTML: header, one-line meta, a "how to fix" callout, then
+    // Clean, scannable HTML: header, a "how to fix" callout, then
     // the details (cause + paste-to-Claude block) in a copyable monospace box.
     // (Megan 2026-06-27: clean + engaging, not a wall of text.)
     const html =
@@ -122,10 +122,6 @@ function notifyMeganOnNewBug() {
           '<div style="font-size:13px;opacity:.9;margin-top:3px">A report run failed and was auto-filed.</div>' +
         '</div>' +
         '<div style="border:1px solid #ececec;border-top:none;border-radius:0 0 10px 10px;padding:18px 20px">' +
-          '<div style="font-size:12.5px;color:#777;margin-bottom:14px">' +
-            '👤 ' + glitchEscapeHtml(b.submitter || 'unknown') + '&nbsp;&nbsp;·&nbsp;&nbsp;' +
-            '🕐 ' + glitchEscapeHtml(b.submittedAt) + '&nbsp;&nbsp;·&nbsp;&nbsp;🔥 ' + glitchEscapeHtml(b.priority) +
-          '</div>' +
           '<div style="background:#fff8e1;border-left:4px solid #f5a623;border-radius:6px;padding:12px 14px;font-size:14px;margin-bottom:16px">' +
             '💡 <b>To fix:</b> copy the <b>PASTE THIS TO CLAUDE</b> block below and drop it into Claude — it has the cause, the command, and the error.' +
           '</div>' +
