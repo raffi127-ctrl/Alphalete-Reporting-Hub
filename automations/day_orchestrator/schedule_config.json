@@ -7,6 +7,7 @@
     "priority_tiers": "P1 critical (guaranteed done daily, runs first) > P2 standard > P3 best-effort (runs last).",
     "freshness_target": "A DEADLINE distinct from cadence. e.g. 'monday_am' = must be current by Monday morning even if deprioritized midweek; the orchestrator escalates effective priority as the deadline nears.",
     "source_type": "tableau = readiness gate + circle-back applies | appstream = immediately ready (no probe) | api = ready | upload = MANUAL, never auto-run.",
+    "run_order_flow": "Run order optimizes TOTAL runtime (registry.flow_rank): wave 1 = every NON-tableau report (appstream / api / email / upload) so their early-ready data fills first; wave 2 = all source_type 'tableau' reports LAST, giving Tableau the most time to finish publishing before we read it; daily_rep_breakdown is pinned dead last (heaviest, flakiest). New reports auto-map by source_type — set it correctly and the report lands in the right wave automatically; no per-report order field. Source-type-based, never weekday-based, so a weekend-scheduled AppStream report still runs in wave 1 and is never blocked.",
     "probe_not_configured": "A tableau source with probe.type 'not_configured' resolves READY in --dry-run (so the full loop exercises) and NOT-READY in live (forces wiring the real view URL before cutover).",
     "cutover_retire_jobs": "These now run from the orchestrator \u2014 RETIRE their standalone LaunchAgents at cutover so reports don't double-run/double-post: com.alphalete.appstream-morning (daily_focus + Mon recruiter retention), com.alphalete.weather-6am, com.alphalete.brand-audit-noon, com.alphalete.recruiting-report (weekly ATT). Until cutover (dry-run week) they coexist safely \u2014 the orchestrator writes nothing."
   },
@@ -147,8 +148,7 @@
           4,
           5,
           6
-        ],
-        "not_before": "06:00"
+        ]
       },
       "_note": "Time-critical: posts to #alphalete-sales just before the 7am metrics thread.",
       "priority": "P1",
@@ -304,8 +304,7 @@
           4,
           5,
           6
-        ],
-        "not_before": "08:00"
+        ]
       },
       "priority": "P2",
       "freshness_target": null,
@@ -596,8 +595,7 @@
       "cadence": {
         "weekdays": [
           4
-        ],
-        "not_before": "06:45"
+        ]
       },
       "priority": "P2",
       "freshness_target": "friday_am",
@@ -632,8 +630,7 @@
       ],
       "_base_args_note": "LIVE: pulls all metric slugs for Rashad (order_log+rep_activations, sales_6plus, cancels, ongoing_cancel, disconnects, churn, knocks_gaps) + POSTS to #elevate-sales. Flipped to DAILY (every day, not-before 06:00) 2026-06-30 after a verified 10/10 thread; churn grid-range + order_log owner-gate + sidebar-nav stale-session fixes all landed same day.",
       "cadence": {
-        "weekdays": [0, 1, 2, 3, 4, 5, 6],
-        "not_before": "06:00"
+        "weekdays": [0, 1, 2, 3, 4, 5, 6]
       },
       "priority": "P3",
       "freshness_target": null,

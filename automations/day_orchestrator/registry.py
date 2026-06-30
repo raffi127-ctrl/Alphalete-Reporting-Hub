@@ -79,6 +79,25 @@ def scheduled_today(cfg: Config, date: dt.date) -> List[Report]:
     return [r for r in cfg.reports.values() if wd in r.weekdays]
 
 
+# --- Run-order flow (optimizes TOTAL runtime, not any single report) ---
+# Do the non-Tableau work FIRST (AppStream / ownerville-UI / email / API — their
+# data is ready early in the morning) so Tableau, whose data updates SLOWEST,
+# gets the most time to finish publishing before we read it. daily_rep_breakdown
+# is pinned DEAD LAST (heaviest + flakiest scrape — don't let it block anything).
+# New reports auto-map by source_type — no per-report config needed: anything
+# that isn't source_type 'tableau' runs in the first wave. (Weekend-safe: this is
+# source-type-based, never weekday-based, so an AppStream report scheduled on a
+# weekend still runs in the first wave and is never blocked.)
+_FLOW_LAST = {"daily_rep_breakdown"}   # always dead last, regardless of source
+
+def flow_rank(report: Report) -> int:
+    if report.report_id in _FLOW_LAST:
+        return 2
+    if report.source_type == "tableau":
+        return 1            # Tableau reads last (slowest-updating data)
+    return 0                # appstream / api / email / upload — run first
+
+
 def effective_priority_rank(report: Report, date: dt.date) -> int:
     """Base priority, escalated when a freshness deadline is near.
 
@@ -117,5 +136,6 @@ def run_order(reports: List[Report], date: dt.date) -> List[Report]:
 
     return sorted(
         reports,
-        key=lambda r: (effective_priority_rank(r, date), dep_depth[r.report_id], r.report_id),
+        key=lambda r: (flow_rank(r), effective_priority_rank(r, date),
+                       dep_depth[r.report_id], r.report_id),
     )
