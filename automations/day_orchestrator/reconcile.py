@@ -38,7 +38,7 @@ def verify(report, target_date: dt.date, *, dry_run: bool, verbose: bool = True)
     vtype = vcfg.get("type", "not_configured")
     try:
         if vtype == "manifest":
-            return _verify_manifest(vcfg)
+            return _verify_manifest(vcfg, target_date)
         if vtype == "sheet_column":
             return _verify_sheet_column(vcfg, target_date)
         # not_configured / unknown
@@ -51,9 +51,17 @@ def verify(report, target_date: dt.date, *, dry_run: bool, verbose: bool = True)
 
 # ---------------- manifest verifier ----------------
 
-def _verify_manifest(vcfg: dict) -> ReconResult:
+def _verify_manifest(vcfg: dict, target_date: dt.date) -> ReconResult:
     """Read the report's standard run-manifest (output/manifests/<id>.json).
-    ok=true,failed=[] -> DONE. Otherwise name the failed units."""
+    ok=true,failed=[] -> DONE. Otherwise name the failed units.
+
+    FRESHNESS GATE: a manifest is only trusted when its run_ts is from
+    `target_date`. A report that crashes BEFORE writing its manifest leaves the
+    PRIOR run's file in place — without this check a stale `ok=true` would let
+    the loop (and _reverify_terminal) flip a real failure to DONE. A stale
+    manifest is treated as unknown (soft-pass) so the loop still relies on the
+    exit code (which is checked first) and re-verify won't falsely clear it.
+    This can only PREVENT a false DONE, never cause a false FAILED."""
     from automations.shared.run_manifest import read_manifest
 
     report_id = vcfg.get("report_id")
@@ -61,6 +69,18 @@ def _verify_manifest(vcfg: dict) -> ReconResult:
     if m is None:
         return ReconResult(ok=True, unknown=True,
                            note=f"no manifest found for {report_id!r} — confirm by hand")
+    # Only a manifest written by TODAY's run is authoritative.
+    run_date = None
+    try:
+        run_date = dt.datetime.fromisoformat(m.get("run_ts", "")).date()
+    except Exception:
+        run_date = None
+    if run_date != target_date:
+        stamp = run_date.isoformat() if run_date else "unknown"
+        return ReconResult(ok=True, unknown=True,
+                           note=f"manifest for {report_id!r} is stale "
+                                f"(run {stamp}, expected {target_date.isoformat()}) "
+                                f"— confirm by hand")
     if m.get("ok"):
         return ReconResult(ok=True, note="manifest clean")
     failed = m.get("failed", []) or []

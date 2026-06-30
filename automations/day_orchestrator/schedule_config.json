@@ -456,7 +456,8 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": {
-        "type": "not_configured"
+        "type": "manifest",
+        "report_id": "recruiting"
       }
     },
     "carlos_focus": {
