@@ -19,6 +19,7 @@ from __future__ import annotations
 import csv
 import io
 import re
+import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 from urllib.parse import quote
@@ -67,56 +68,106 @@ def list_crosstab_sheets(page, view_url: str = WORLDCUP_VIEW_URL,
     caller only needs the data grid (it's a 'Round of N' sheet that loads
     early), but it can truncate the list before later-hydrating sheets appear.
     Callers that need the COMPLETE list (e.g. run.py --detect-only) pass
-    full_scan=True."""
+    full_scan=True.
+
+    SELF-HEAL (2026-06-30): the open-dialog sequence is wrapped in the SAME
+    3-attempt retry download_crosstab_patchright uses — the dominant world_cup
+    failure was a transient 120s "viz-viewer-toolbar-button-download not visible"
+    here (this runs FIRST, to detect the round, and had no retry while
+    download_round did). Each attempt re-navigates (about:blank → goto), so a
+    retry is a clean reload. A 0-sheet read and an error toast over the Download
+    button are also treated as retryable (the toast is dismissed first, mirroring
+    drive_crosstab_dialog), so a genuinely broken view still fails every attempt
+    and propagates."""
     polls = 40 if full_scan else 25
-    try:
-        page.goto("about:blank", wait_until="domcontentloaded", timeout=10_000)
-    except Exception:
-        pass
-    page.goto(view_url, wait_until="domcontentloaded")
+    MAX_ATTEMPTS, BACKOFF_S = 3, 3
 
-    viz = page.frame_locator('iframe[title="Data Visualization"]')
-    dl_btn = viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-download"]')
-    dl_btn.wait_for(state="visible", timeout=120_000)
-    page.wait_for_timeout(25_000)
+    def _attempt() -> List[str]:
+        try:
+            page.goto("about:blank", wait_until="domcontentloaded", timeout=10_000)
+        except Exception:
+            pass
+        page.goto(view_url, wait_until="domcontentloaded")
 
-    if verbose:
-        print("Opening Download -> Crosstab to list available sheets…", flush=True)
-    dl_btn.click()
-    page.wait_for_timeout(1800)
-    viz.locator(
-        '[data-tb-test-id="download-flyout-download-crosstab-MenuItem"]').click()
+        viz = page.frame_locator('iframe[title="Data Visualization"]')
+        dl_btn = viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-download"]')
+        dl_btn.wait_for(state="visible", timeout=120_000)
+        page.wait_for_timeout(25_000)
 
-    thumbs = viz.locator('[data-tb-test-id^="sheet-thumbnail-"]')
-    seen: "dict[str, bool]" = {}
-    for _ in range(polls):
-        page.wait_for_timeout(1000)
-        n = thumbs.count()
-        for i in range(n):
-            try:
-                t = thumbs.nth(i).inner_text().strip()
-            except Exception:
-                continue
-            if t:
-                seen[t] = True
-        # Early exit once a Round-of-N sheet is present and the count has had a
-        # moment to settle (we still keep accumulating any we already saw).
-        # Suppressed under full_scan, which needs the complete (late-hydrating)
-        # list to find the Finals sheet.
-        if (not full_scan and n > 0
-                and any(_ROUND_SHEET_RE.search(s) for s in seen) and _ >= 8):
-            break
+        # Dismiss any error toast overlaying the toolbar so the Download click
+        # can land (mirrors opt_phase.drive_crosstab_dialog._clear_error_toast).
+        try:
+            toast = viz.locator('[data-tb-test-id^="banner-error-toast"]')
+            if toast.count():
+                if verbose:
+                    try:
+                        print(f"  ⚠ Tableau error toast over Download: "
+                              f"{toast.first.inner_text(timeout=2_000).strip()!r}"
+                              f" — dismissing", flush=True)
+                    except Exception:
+                        pass
+                toast.first.evaluate(
+                    "el => { (el.closest('.tab-shared-widget-toaster') || el).remove(); }")
+        except Exception:
+            pass
 
-    # Close the dialog so a later download() reopens it cleanly.
-    try:
-        page.keyboard.press("Escape")
-    except Exception:
-        pass
+        if verbose:
+            print("Opening Download -> Crosstab to list available sheets…", flush=True)
+        dl_btn.click()
+        page.wait_for_timeout(1800)
+        viz.locator(
+            '[data-tb-test-id="download-flyout-download-crosstab-MenuItem"]').click()
 
-    names = list(seen)
-    if verbose:
-        print(f"  Crosstab sheets seen ({len(names)}): {names}", flush=True)
-    return names
+        thumbs = viz.locator('[data-tb-test-id^="sheet-thumbnail-"]')
+        seen: "dict[str, bool]" = {}
+        for _ in range(polls):
+            page.wait_for_timeout(1000)
+            n = thumbs.count()
+            for i in range(n):
+                try:
+                    t = thumbs.nth(i).inner_text().strip()
+                except Exception:
+                    continue
+                if t:
+                    seen[t] = True
+            # Early exit once a Round-of-N sheet is present and the count has had
+            # a moment to settle (we still keep accumulating any we already saw).
+            # Suppressed under full_scan, which needs the complete (late-
+            # hydrating) list to find the Finals sheet.
+            if (not full_scan and n > 0
+                    and any(_ROUND_SHEET_RE.search(s) for s in seen) and _ >= 8):
+                break
+
+        # Close the dialog so a later download() reopens it cleanly.
+        try:
+            page.keyboard.press("Escape")
+        except Exception:
+            pass
+
+        names = list(seen)
+        if not names:
+            # 0 thumbnails = a transient render flake (same class as the toolbar
+            # timeout); raise so the retry reloads instead of returning [].
+            raise RuntimeError("crosstab dialog opened but listed 0 sheets")
+        return names
+
+    last_err = None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            names = _attempt()
+            if verbose:
+                print(f"  Crosstab sheets seen ({len(names)}): {names}", flush=True)
+            return names
+        except Exception as e:
+            last_err = e
+            if attempt < MAX_ATTEMPTS:
+                if verbose:
+                    print(f"  ⚠ sheet-list pull failed "
+                          f"({str(e).splitlines()[0][:90]}) — retry "
+                          f"{attempt}/{MAX_ATTEMPTS - 1} after {BACKOFF_S}s…",
+                          flush=True)
+                time.sleep(BACKOFF_S)
+    raise last_err
 
 
 def round_candidates(sheet_names: List[str]) -> List[Tuple[int, str]]:
