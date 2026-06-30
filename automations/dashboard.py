@@ -2587,7 +2587,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit#gid=1819006464"),
-        "assignees": ["Eve"],
+        "assignees": ["Fully Automated Alphalete Reports"],
         "schedule": {
             "frequency": "daily",
             "time": "6:00 AM",
@@ -8442,7 +8442,7 @@ else:  # st.session_state.view == "user"
                             st.markdown(
                                 "<div style='border-top:3px solid #DC2626; "
                                 "margin:10px 0 5px; padding-top:6px; "
-                                "font-size:0.72em; font-weight:700; color:#10B981; "
+                                "font-size:0.95em; font-weight:700; color:#DC2626; "
                                 "letter-spacing:0.05em; text-align:center'>"
                                 "🏢 OTHER OFFICES</div>",
                                 unsafe_allow_html=True,
