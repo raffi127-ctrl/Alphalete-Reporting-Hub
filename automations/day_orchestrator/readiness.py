@@ -91,6 +91,8 @@ class ReadinessCache:
             return Readiness(True, f"{rpt.source_type} — immediately ready (no probe)")
         if rpt.source_type == "upload":
             return Readiness(True, "upload — manual (not gated)")
+        if rpt.source_type == "email":
+            return self._probe_email(rpt)
         # tableau: require a warm session, then every source ready.
         warm, age, why = session_status(self.stale_after)
         if not warm:
@@ -100,6 +102,30 @@ class ReadinessCache:
             if not r.ready:
                 return Readiness(False, f"{sid}: {r.reason}")
         return Readiness(True, "all sources ready")
+
+    # ---- email-fed reports: ready when this week's source email has landed ----
+    def _probe_email(self, rpt: registry.Report) -> Readiness:
+        """No clock gate — ready only once the report's weekly source email is in.
+        residential_rep_count waits for Archey's xlsx (reusing the report's OWN
+        _expected_week_ending + email_source.latest_week_ending, so the gate and
+        the report agree). Other email reports have no probe yet → run on schedule.
+        Fail-OPEN on a probe error (IMAP hiccup) so a transient blip can't block
+        forever — the report itself still refuses to fill from a missing email."""
+        if rpt.report_id != "residential_rep_count":
+            return Readiness(True, "email — no probe wired; running on schedule")
+        try:
+            from automations.residential_rep_count import email_source
+            from automations.residential_rep_count.run import _expected_week_ending
+            expected = _expected_week_ending(self.target_date)
+            latest = email_source.latest_week_ending()
+            if latest and latest >= expected:
+                return Readiness(True, f"Archey email WE {expected.month}/{expected.day} is in")
+            seen = f"latest WE {latest.month}/{latest.day}" if latest else "none found"
+            return Readiness(
+                False, f"waiting on Archey's WE {expected.month}/{expected.day} email ({seen})")
+        except Exception as e:  # noqa: BLE001 — fail open; the report self-guards
+            return Readiness(
+                True, f"email probe error ({type(e).__name__}) — running; report self-guards")
 
     # ---- the actual Tableau probe ----
     def _probe_source(self, source_id: str) -> Readiness:
