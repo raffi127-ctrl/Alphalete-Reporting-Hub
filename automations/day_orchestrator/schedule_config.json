@@ -732,6 +732,31 @@
       "verify": {
         "type": "not_configured"
       }
+    },
+    "rashad_churn_post": {
+      "on_scheduler": true,
+      "_note": "Churn-only LIVE post: `lucy rerun rashad_churn_post` -> rashad_metrics.run --only churn --live -> posts New Internet + Wireless Churn into TODAY's existing #elevate-sales Metrics thread (find_metrics_thread_ts locates today's header + replies in-thread, NOT a new top-level msg). weekdays=[] never auto-runs. Added 2026-06-30 to recover churn after the full run's churn post failed (other 8 already posted).",
+      "display_name": "Rashad Churn - live post (in-thread)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.rashad_metrics.run"
+      ],
+      "base_args": [
+        "--only",
+        "churn",
+        "--live"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 30,
+      "verify": {
+        "type": "not_configured"
+      }
     }
   },
   "read_only_standalone": {
