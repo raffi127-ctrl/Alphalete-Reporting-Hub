@@ -5,7 +5,7 @@ lines) and the Retail Internet section (Internet). Source is the
 purpose-built view:
 
   DropshipV_2 / SARAPLUSSALESSUMMARYBYDAY / RetailNLOrgSalesBoard
-  .../2eaaea0a-8456-44d9-8852-edd8034e4ee7/RetailNLOrgSalesBoard
+  .../6e2f1ff9-4f18-4e99-bef9-0644c8328082/RetailNLOrgSalesBoard
 
 RetailNLOrgSalesBoard is a Tableau CUSTOM (saved) view — the .csv export
 endpoint can't address a custom view by name (it 404s; it only serves the
@@ -38,9 +38,13 @@ from automations.alphalete_org_report import tableau_http
 
 # Full custom-view URL + the click point that activates the worksheet so
 # Download → Data enables (multi-worksheet dashboard).
+# Custom-view GUID changes whenever the view is re-saved in Tableau — update it
+# here (Megan re-saved 2026-06-30: 2eaaea0a… → 6e2f1ff9…; the stale GUID 404s
+# with "view does not exist / no permissions"). NO trailing query string: the
+# date pin below appends "?Min Date=…&Max Date=…".
 RETAIL_NL_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/DropshipV_2/"
-    "SARAPLUSSALESSUMMARYBYDAY/2eaaea0a-8456-44d9-8852-edd8034e4ee7/"
+    "SARAPLUSSALESSUMMARYBYDAY/6e2f1ff9-4f18-4e99-bef9-0644c8328082/"
     "RetailNLOrgSalesBoard")
 ACTIVATE_XY = (0.5, 0.5)
 
