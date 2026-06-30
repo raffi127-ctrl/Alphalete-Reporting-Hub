@@ -657,9 +657,9 @@
       "base_args": [
         "--live"
       ],
-      "_base_args_note": "LIVE: `lucy rerun rashad_metrics` pulls all metrics for Rashad + POSTS to #elevate-sales. weekdays=[] keeps it MANUAL-only for now; set weekdays (e.g. 0-6) for daily auto-posting once a live run verifies 10/10.",
+      "_base_args_note": "LIVE: pulls all metric slugs for Rashad (order_log+rep_activations, sales_6plus, cancels, ongoing_cancel, disconnects, churn, knocks_gaps) + POSTS to #elevate-sales. Flipped to DAILY (every day, not-before 06:00) 2026-06-30 after a verified 10/10 thread; churn grid-range + order_log owner-gate + sidebar-nav stale-session fixes all landed same day.",
       "cadence": {
-        "weekdays": [],
+        "weekdays": [0, 1, 2, 3, 4, 5, 6],
         "not_before": "06:00"
       },
       "priority": "P3",
