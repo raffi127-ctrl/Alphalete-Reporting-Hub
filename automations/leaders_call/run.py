@@ -821,6 +821,10 @@ def _build_recognition_pdf(results: dict) -> None:
         from automations.shared import slack_metrics_post as slack
         res = slack.dm_users_with_file(
             out, users=PDF_SLACK_RECIPIENTS, file_name=out.name,
+            # Use the provisioned 'Lucy Reporting' USER token (slack-user-token,
+            # the same one the metrics posts use) — the separate bot-app token
+            # (SLACK_BOT_TOKEN) was never created, so as_bot=True fails on the mini.
+            as_bot=False,
             comment=f"📣 Alphalete Leader's Call — recognition for the week ending "
                     f"{sun.month}/{sun.day}.")
         print(f"📨 PDF delivered to {len(PDF_SLACK_RECIPIENTS)} recipient(s) on Slack "
