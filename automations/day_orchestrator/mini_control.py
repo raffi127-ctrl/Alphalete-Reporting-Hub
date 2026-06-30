@@ -123,6 +123,14 @@ def _action_restart_holder(args: str) -> tuple[bool, str]:
     return proc.returncode == 0, f"kickstart exit {proc.returncode}" + (f": {out}" if out else "")
 
 
+def _action_watch_test(args: str) -> tuple[bool, str]:
+    """Fire appstream_watch's one-off test ping so Megan/Eve can confirm the 6pm
+    session-expiry Slack DM actually delivers — WITHOUT waiting for a real lapse
+    or being physically at the mini. No side effects beyond the Slack message."""
+    cmd = [sys.executable, "-m", "automations.shared.appstream_watch", "--test-ping"]
+    return _run_cmd(cmd, timeout_s=120)
+
+
 def _action_reseed_appstream(args: str) -> tuple[bool, str]:
     """Open the AppStream login so a HUMAN at the mini clears the Cloudflare
     check. This can't be fully unattended — the Turnstile is bot-detection and
@@ -157,6 +165,7 @@ ACTIONS = {
     "update": _action_update,
     "restart_holder": _action_restart_holder,
     "reseed_appstream": _action_reseed_appstream,
+    "watch_test": _action_watch_test,
 }
 
 
@@ -291,6 +300,7 @@ def print_help() -> None:
         "  lucy update               git pull the latest code onto the mini\n"
         "  lucy restart_holder       restart the session keep-alive\n"
         "  lucy reseed_appstream     open AppStream login (needs a human AT the mini)\n"
+        "  lucy watch_test           send a test of the 6pm session-expiry Slack ping\n"
         "  lucy help                 show this\n\n"
         "After any command, run 'lucy status' to see if it worked (done / failed).\n"
     )

@@ -43,6 +43,11 @@ TAB = "1st rd Recruiter %"        # sheet tab (Hub card: "Ongoing 1st Round Recr
 OFFICE_ID, OWNER = "11280", "Rafael Hidalgo"
 REPORT_FIRST = dt.date(2026, 4, 12)   # first week-ENDING-Sunday column
 
+# Run-manifest id (matches the orchestrator's verify.report_id) so the weekly
+# email reflects whether the report actually completed, and a re-seed + rerun
+# flips it FAILED->DONE on re-verify. (Mirrors the daily report's pattern.)
+MANIFEST_ID = "recruiter-retention-weekly"
+
 # AppStream mainRow label (normalized) -> metric. (Booked dropped — % uses
 # Showed/Scheduled, hide + the name-highlight key off Scheduled.)
 SECTIONS = {"total first interviews": "Sch", "first interviews showed up": "SU"}
@@ -429,6 +434,18 @@ def main(argv=None):
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
     cur_sun = today - dt.timedelta(days=(today.weekday() + 1) % 7)   # latest completed week-ending Sunday
 
+    # Seed an ok=false manifest up-front (live only) so any mid-run failure
+    # (e.g. AppStream session expired during the pull) leaves the report
+    # non-clean — mark_clean() at the end overwrites it once the fill finishes.
+    if not args.dry_run:
+        try:
+            from automations.shared import run_manifest as _rm
+            _rm.write_manifest(MANIFEST_ID, failed=["recruiter retention weekly fill"],
+                               retry_args=["--backfill"], kind="recruiter",
+                               note="run started but did not complete")
+        except Exception:  # noqa: BLE001 — manifest is best-effort, never fail the run
+            pass
+
     sh = open_by_key(SHEET_ID)
     ws = sh.worksheet(TAB)
     v0 = ws.get_all_values()
@@ -491,6 +508,13 @@ def main(argv=None):
         _ti.alert_terminated(
             _names, report_label="the Ongoing 1st Round Recruiter Retention tab")
     except Exception:  # noqa: BLE001 — advisory must never fail the run
+        pass
+
+    # Fill completed — overwrite the seeded failure manifest with a clean one.
+    try:
+        from automations.shared import run_manifest as _rm
+        _rm.mark_clean(MANIFEST_ID, kind="recruiter")
+    except Exception:  # noqa: BLE001 — manifest is best-effort
         pass
 
     print("=== done ===", flush=True)
