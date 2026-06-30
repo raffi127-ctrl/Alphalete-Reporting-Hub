@@ -1783,11 +1783,11 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
-        "assignees": ["Maud"],
+        "assignees": ["Maud", "Fully Automated Alphalete Reports"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],   # Monday
-            "time": "8:00 AM",
+            "time": "2:05 PM",
             "estimated_minutes": 8,
         },
         "checklist": [
