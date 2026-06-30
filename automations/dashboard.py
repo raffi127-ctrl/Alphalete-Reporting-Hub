@@ -8440,7 +8440,7 @@ else:  # st.session_state.view == "user"
                     for _r in _ordered:
                         if _r == "__OTHER_OFFICES__":
                             st.markdown(
-                                "<div style='border-top:3px solid #10B981; "
+                                "<div style='border-top:3px solid #DC2626; "
                                 "margin:10px 0 5px; padding-top:6px; "
                                 "font-size:0.72em; font-weight:700; color:#10B981; "
                                 "letter-spacing:0.05em; text-align:center'>"
