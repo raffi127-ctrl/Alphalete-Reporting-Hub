@@ -33,15 +33,18 @@ from typing import Optional
 
 from automations.shared.tableau_patchright import download_crosstab_patchright
 
-# Saved custom view "ThisWeek" (rebuilt 2026-06; the old 4d55c69f/'Thisweek'
-# corrupted and stopped rendering). Its week filter auto-rolls to the latest
-# week every pull (no re-save needed). NOTE: this view puts the per-day labels
-# ('6/08 Mon' …) on the row ABOVE the 'ICD Office Name' row and repeats the
-# week-ending date ('6/14/2026') on it — parse() handles both layouts.
+# Saved custom view "ThisWeek". This view PERIODICALLY corrupts / stops
+# rendering (the Download button never appears → 120s timeout) and gets rebuilt
+# with a NEW GUID each time: 4d55c69f → 828a12c2 → 41cac48e (last re-saved by
+# Megan 2026-06-30). When it breaks again, re-save the view in Tableau and
+# update the GUID in CV_URL below. Its week filter auto-rolls to the latest week
+# every pull (no re-save needed for the date). NOTE: this view puts the per-day
+# labels ('6/08 Mon' …) on the row ABOVE the 'ICD Office Name' row and repeats
+# the week-ending date ('6/14/2026') on it — parse() handles both layouts.
 CV_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "JustEnergyRTL-SalesStaffingProductivityWorkbook/WeeklyMetricsbyICD/"
-    "828a12c2-023e-482d-a8d3-e41c896312a8/ThisWeek?:iid=1"
+    "41cac48e-7b4d-4b27-b595-8b01b1e80948/ThisWeek?:iid=1"
 )
 WORKSHEET = "Daily Sales by ICD"
 
