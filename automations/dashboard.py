@@ -1757,8 +1757,9 @@ AUTOMATED_REPORTS = [
         "category": "🎯 Recruiting",
         "description": "Pulls each campaign's qualifying reps from Tableau "
                        "(Fiber, NDS, B2B, JE, BOX, Costco, Revenue) + the "
-                       "uploaded Frontier scorecard, and fills the Leader's "
-                       "Call tab with everyone over the recognition threshold.",
+                       "Frontier scorecard auto-pulled from Lucy's Monday email, "
+                       "fills the Leader's Call tab, and DMs the recognition "
+                       "PDF to the leadership group as Lucy.",
         # NOTE (Claude): draft 'How it works' — Megan/Maud to review/edit.
         "breakdown": (
             "WHAT IT DOES\n"
@@ -1772,14 +1773,21 @@ AUTOMATED_REPORTS = [
             "WHEN IT RUNS\n"
             "**Mondays.** Each campaign view's 'This Week' = the just-"
             "completed week, so the run recognizes the finished week.\n\n"
-            "PREFLIGHT — FRONTIER UPLOAD\n"
-            "Frontier isn't in Tableau, so **upload the Frontier 'Sales "
-            "Verification' file(s)** before running. The other 7 campaigns "
-            "pull automatically (no login needed).\n\n"
+            "FRONTIER — AUTO-PULLED FROM EMAIL\n"
+            "Frontier isn't in Tableau, so it's read automatically from the "
+            "**'Frontier - Sales Verification' email** that lands in Lucy's "
+            "inbox Monday ~2pm — **no upload needed**. (Backup: if that email "
+            "hasn't arrived yet, it uses the last uploaded file; you can upload "
+            "one below.) The other 7 campaigns pull from Tableau (no login "
+            "needed).\n\n"
             "DATA SOURCES\n"
             "Each section comes from its own Tableau crosstab (pulled "
             "unattended via the saved ownerville session), filtered to the "
-            "local-office owners + that section's threshold."
+            "local-office owners + that section's threshold.\n\n"
+            "DELIVERY\n"
+            "After a clean run, the recognition PDF is built and DM'd to the "
+            "leadership group (Maud, Carlos, Rafael) on Slack as Lucy — "
+            "automatically."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
@@ -1791,8 +1799,9 @@ AUTOMATED_REPORTS = [
             "estimated_minutes": 8,
         },
         "checklist": [
-            {"text": "Upload the Frontier 'Sales Verification' file(s) "
-                     "received via email (xlsx/csv)",
+            {"text": "Backup only — Frontier auto-pulls from Lucy's Monday "
+                     "email. Upload the 'Sales Verification' file here ONLY if "
+                     "that email hasn't arrived yet.",
              "uploader": {
                  "target_dir": "automations/uploaded/leaders_call_frontier",
                  "accept": [".xlsx", ".csv", ".pdf"],
@@ -1800,8 +1809,9 @@ AUTOMATED_REPORTS = [
              }},
         ],
         "post_run": {
-            "message_success": "✅ Leader's Call tab filled for the completed "
-                               "week. Spot-check before the call.",
+            "message_success": "✅ Leader's Call tab filled + recognition PDF "
+                               "DM'd to the group (Maud, Carlos, Rafael) as "
+                               "Lucy. Spot-check before the call.",
             "message_failed": "❌ Run failed. Check the log above, then re-run.",
         },
         "actions": [
