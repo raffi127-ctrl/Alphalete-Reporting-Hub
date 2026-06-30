@@ -2029,6 +2029,110 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "rashad-metrics",
+        "name": "Rashad's Daily Metrics (#elevate-sales)",
+        "creator": "Megan",
+        "emoji": "📈",
+        "color": "#8B5CF6",
+        "category": "🏢 Other Offices",
+        "description": "The same 10 daily metrics as the main report, scoped to Rashad Reed's office and posted into his #elevate-sales Metrics thread — Telemapper Knocks, Time Gaps, Order Log, Sales Scheduled 6+ Days, Canceled Orders, Ongoing Cancel, Disconnects, New Internet Churn, Wireless Churn, Rep Activations.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Runs all 10 daily metrics for Rashad Reed's office and posts each "
+            "into today's Metrics thread in #elevate-sales (one header thread "
+            "per day, created first if it isn't up yet).\n\n"
+            "METRICS POSTED (in thread order)\n"
+            "• 🚪 Telemapper Knocks\n"
+            "• ⏰ Time Gaps\n"
+            "• 📋 Order Log\n"
+            "• 📅 Sales Scheduled 6+ Days Out\n"
+            "• 🚫 Canceled Orders\n"
+            "• 🔁 Ongoing Cancel\n"
+            "• ❎ Disconnected New Internets\n"
+            "• 🌐 New Internet Churn\n"
+            "• 📊 Wireless Churn\n"
+            "• 🆕 Rep Activations\n\n"
+            "IF ONE FAILS\n"
+            "The run keeps going and ends with a ✅/❌ summary. Re-run just the "
+            "ones that failed from the per-metric buttons below.\n\n"
+            "WHEN IT RUNS\n"
+            "Daily, not before 6am — same metric logic as the main report, "
+            "filtered to Rashad's office and posted to #elevate-sales instead "
+            "of #alphalete-sales."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "11louWIU8IuSPrZLsMkRh8qEnO3wNqmeNwIOSKPpXzm8/edit"),
+        "assignees": ["Fully Automated Alphalete Reports"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "6:00 AM",
+            "estimated_minutes": 12,
+        },
+        "post_run": {
+            "message_success": "✅ Rashad's metrics posted to the #elevate-sales thread.",
+            "message_failed": "❌ A metric failed — check the summary above, then re-run that one from the buttons below.",
+        },
+        "actions": [
+            {
+                "label": "Run All Metrics",
+                "icon": "▶",
+                "primary": True,
+                "help": "Runs all 10 metrics → posted to today's #elevate-sales thread; continues past any that fail.",
+                "module": "automations.rashad_metrics.run",
+                "args_fn": lambda: ["--live"],
+            },
+            {
+                "label": "Telemapper Knocks + Time Gaps",
+                "icon": "🚪",
+                "help": "Re-run just Knocks + Time Gaps for Rashad.",
+                "module": "automations.rashad_metrics.run",
+                "args_fn": lambda: ["--only", "knocks_gaps", "--live"],
+            },
+            {
+                "label": "Order Log + Rep Activations",
+                "icon": "📋",
+                "help": "Re-run just the Order Log + Rep Activations for Rashad.",
+                "module": "automations.rashad_metrics.run",
+                "args_fn": lambda: ["--only", "order_log", "--live"],
+            },
+            {
+                "label": "Sales Scheduled 6+ Days Out",
+                "icon": "📅",
+                "help": "Re-run just Sales Scheduled 6+ Days for Rashad.",
+                "module": "automations.rashad_metrics.run",
+                "args_fn": lambda: ["--only", "sales_6plus", "--live"],
+            },
+            {
+                "label": "Canceled Orders",
+                "icon": "🚫",
+                "help": "Re-run just Canceled Orders for Rashad.",
+                "module": "automations.rashad_metrics.run",
+                "args_fn": lambda: ["--only", "cancels", "--live"],
+            },
+            {
+                "label": "Ongoing Cancel",
+                "icon": "🔁",
+                "help": "Re-run just Ongoing Cancel for Rashad.",
+                "module": "automations.rashad_metrics.run",
+                "args_fn": lambda: ["--only", "ongoing_cancel", "--live"],
+            },
+            {
+                "label": "Disconnected New Internets",
+                "icon": "❎",
+                "help": "Re-run just Disconnects for Rashad.",
+                "module": "automations.rashad_metrics.run",
+                "args_fn": lambda: ["--only", "disconnects", "--live"],
+            },
+            {
+                "label": "New Internet + Wireless Churn",
+                "icon": "🌐",
+                "help": "Re-run just New Internet + Wireless Churn for Rashad (the recovery used 2026-06-30).",
+                "module": "automations.rashad_metrics.run",
+                "args_fn": lambda: ["--only", "churn", "--live"],
+            },
+        ],
+    },
+    {
         "id": "fiber-activations",
         "name": "Fiber Activations Report",
         "creator": "Megan",
