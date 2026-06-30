@@ -554,12 +554,13 @@ def main() -> int:
     today = dt.date.today()
     backfill_lastweek = bool(args.backfill_lastweek)
     if backfill_lastweek:
-        # Frozen LAST WEEK recovery: scrape ONLY the typically-missing tail
-        # (Fri/Sat/Sun) of the given week and write them into the frozen block.
-        # Mon–Thu are left as-is (already frozen). Fills ownerville metrics;
-        # production (Tableau) is back-filled separately.
+        # Frozen LAST WEEK recovery: scrape Tue–Sun of the given week and write
+        # them into the frozen block. Mon is filled by Monday's run (rarely the
+        # one that fails). Widened from Fri/Sat/Sun-only 2026-06-29: a full-week
+        # session outage left Tue–Thu empty too, not just the weekend tail.
+        # Fills ownerville metrics; production (Tableau) is back-filled separately.
         bf_monday = dt.datetime.strptime(args.backfill_lastweek, "%Y-%m-%d").date()
-        days = [bf_monday + dt.timedelta(days=i) for i in (4, 5, 6)]  # Fri/Sat/Sun
+        days = [bf_monday + dt.timedelta(days=i) for i in (1, 2, 3, 4, 5, 6)]  # Tue–Sun
     elif args.daily_window:
         # Mid-week fast path: re-scrape yesterday + today only. Yesterday
         # is re-pulled because the prior run scraped it as a partial,

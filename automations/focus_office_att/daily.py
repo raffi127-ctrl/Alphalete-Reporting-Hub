@@ -323,20 +323,41 @@ def set_all_current_week_dates(sh, monday: "dt.date", logfn=print) -> int:
     return n
 
 
-def set_frozen_week_dates(sh, monday: "dt.date", logfn=print) -> int:
+def set_frozen_week_dates(sh, monday: "dt.date", only: str | None = None,
+                          logfn=print) -> int:
     """Stamp the LAST WEEK block's per-day date labels + weekly banner to the
     week starting `monday`. The freeze copies rep data but NOT the per-day date
-    labels, so they went stale ('Sat 12/30' on every tab — Megan 2026-06-27).
-    Finds the 'LAST WEEK' row per tab (label in col B), then writes 'Mon m/d' …
-    'Sun m/d' into each day-block's first col (13, 25, … 85) + the banner in
-    col C of that row. Idempotent."""
+    labels reliably (the row-1 day cells are live =TODAY() formulas, so the
+    frozen copy resolved to empty/0 and rendered as the 12/30/1899 serial —
+    'Sat 12/30' on every tab, Megan 2026-06-27).
+
+    POSITIONAL, not content-match: the frozen day-header cells are EMPTY after
+    the freeze (they render as 'Sat 12/30'), so there is nothing to regex in that
+    row. Instead we read ROW 1 (the current-week date row, which IS correct) to
+    discover the column→weekday map — for each row-1 cell matching
+    ^(Mon|Tue|…|Sun)\\b we record (column → weekday). Then we write the FROZEN
+    week's date for that weekday (monday + weekday_index, 'Ddd m/d') into the SAME
+    column on the LAST WEEK row. This is independent of the frozen cells' content,
+    so it overwrites the empty/'Sat 12/30' cells. No hardcoded columns — the map
+    comes from row 1.
+
+    The day headers + banner live on the SAME row as the 'LAST WEEK' label (col B)
+    — verified on the live sheet (tab 'Aya Al-Khafaji': that row holds 'LAST WEEK',
+    the 'Weekly Total Mon 6/15 - Sun 6/21' banner, and 7× 'Sat 12/30'). So we write
+    into the label row, NOT label+1. Also strips that row's numberFormat → TEXT so
+    a string label can't re-render as a 12/30/1899 serial. Idempotent.
+
+    Pass `only` to scope to ONE tab (Marcellus-first preview)."""
     import time
+    import re as _re
     from gspread.utils import rowcol_to_a1
     md = lambda d: f"{d.month}/{d.day}"
     names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     banner = (f"Weekly Total Mon {md(monday)} - Sun {md(monday + dt.timedelta(days=6))} "
               "(Weekend hours excluded from averages)")
     tabs = [t for t in sh.worksheets() if t.title not in NON_OWNER_TABS]
+    if only:
+        tabs = [t for t in tabs if t.title == only]
     n = 0
     for ws in tabs:
         try:
@@ -345,15 +366,94 @@ def set_frozen_week_dates(sh, monday: "dt.date", logfn=print) -> int:
                        if isinstance(v, str) and v.strip().upper() == LAST_WEEK_LABEL), None)
             if not lw:
                 continue
-            updates = [{"range": rowcol_to_a1(lw, 3), "values": [[banner]]}]
-            for wd in range(7):
-                updates.append({"range": rowcol_to_a1(lw, 13 + wd * 12),
-                                "values": [[f"{names[wd]} {md(monday + dt.timedelta(days=wd))}"]]})
+            # Discover column→weekday map from ROW 1 (the correct current-week
+            # date row). For each 'Ddd m/d' cell, record its column + weekday.
+            # The banner column is the 'Weekly Total …' cell in row 1.
+            row1 = ws.get("A1:CR1")
+            row1 = row1[0] if row1 else []
+            col_to_wd: dict[int, int] = {}
+            banner_col: int | None = None
+            for c, v in enumerate(row1, 1):
+                s = str(v).strip()
+                if not s:
+                    continue
+                m = _re.match(r"^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b", s)
+                if m:
+                    col_to_wd[c] = names.index(m.group(1))
+                elif "Weekly Total" in s and banner_col is None:
+                    banner_col = c
+            if not col_to_wd:
+                logfn(f"  {ws.title}: no row-1 day headers — skipping frozen stamp")
+                continue
+            # Write the FROZEN week's date into the SAME columns on the LAST WEEK
+            # row (positional — independent of the frozen cells' empty content).
+            updates = []
+            for c, wd in col_to_wd.items():
+                d = monday + dt.timedelta(days=wd)
+                updates.append({"range": rowcol_to_a1(lw, c),
+                                "values": [[f"{names[wd]} {md(d)}"]]})
+            if banner_col is not None:
+                updates.append({"range": rowcol_to_a1(lw, banner_col),
+                                "values": [[banner]]})
+            # Strip any inherited date numberFormat on the LAST WEEK date row so a
+            # string label can't render as a 12/30/1899 serial.
+            ws.spreadsheet.batch_update({"requests": [{"repeatCell": {
+                "range": {"sheetId": ws.id, "startRowIndex": lw - 1,
+                          "endRowIndex": lw, "startColumnIndex": 0,
+                          "endColumnIndex": 96},
+                "cell": {"userEnteredFormat": {"numberFormat": {"type": "TEXT"}}},
+                "fields": "userEnteredFormat.numberFormat"}}]})
             ws.batch_update(updates, value_input_option="USER_ENTERED")
             n += 1
             time.sleep(0.3)
         except Exception as e:
             logfn(f"  {ws.title}: frozen-date stamp failed — {type(e).__name__}")
+    return n
+
+
+def default_frozen_production_zeros(sh, only: str | None = None, logfn=print) -> int:
+    """Fill blank PRODUCTION cells (New INT / Upgrades / DTV / New Lines) in the
+    frozen LAST WEEK block with 0, leaving activity 'x' cells alone. The frozen
+    block is built by the freeze snapshot, which apply_empty_cell_defaults never
+    reached — so frozen production cells were left blank instead of 0 (the
+    fill-but-flag '0 if it's 0' rule). The frozen week is fully past, so every
+    weekday is complete (all_days=True). Reuses the same column resolver +
+    defaulting logic as the live top block; finds the frozen rep rows by col-B
+    name (>= LAST_WEEK_DATA_ROW, non-summary). Per-tab try/except + pacing.
+
+    Pass `only` to scope to ONE tab (Marcellus-first preview). Returns tabs done."""
+    import time
+    from automations.focus_office_att.columns import resolve_layout
+    from automations.focus_office_att.step5_fill_one_owner import (
+        apply_empty_cell_defaults, _is_summary_label)
+    tabs = [t for t in sh.worksheets() if t.title not in NON_OWNER_TABS]
+    if only:
+        tabs = [t for t in tabs if t.title == only]
+    n = 0
+    for ws in tabs:
+        try:
+            # Column layout comes from row 1/2 headers (shared by both blocks).
+            layout = resolve_layout(ws, interactive=False)
+            col_b = ws.col_values(2)
+            lw = next((i for i, v in enumerate(col_b, start=1)
+                       if isinstance(v, str) and v.strip().upper() == LAST_WEEK_LABEL), None)
+            if not lw:
+                continue
+            # Frozen rep rows: below the frozen data start, named, non-summary.
+            frozen_start = lw + (LAST_WEEK_DATA_ROW - LAST_WEEK_LABEL_ROW)  # 113-110 = +3
+            frozen_rows = [
+                i for i, v in enumerate(col_b, start=1)
+                if i >= frozen_start
+                and isinstance(v, str) and v.strip()
+                and not _is_summary_label(v)
+            ]
+            if not frozen_rows:
+                continue
+            apply_empty_cell_defaults(ws, layout, rep_rows=frozen_rows, all_days=True)
+            n += 1
+            time.sleep(0.3)
+        except Exception as e:
+            logfn(f"  {ws.title}: frozen production 0-fill failed — {type(e).__name__}")
     return n
 
 
@@ -1295,6 +1395,11 @@ def main() -> int:
                 say(f"  stamped frozen-week dates on {n} tab(s)")
             except Exception as e:
                 say(f"  frozen-date stamp failed (non-fatal): {e}")
+            try:
+                n = default_frozen_production_zeros(sh, logfn=say)
+                say(f"  0-filled frozen production blanks on {n} tab(s)")
+            except Exception as e:
+                say(f"  frozen production 0-fill failed (non-fatal): {e}")
             say("Monday: clearing the current week for the new week...")
             try:
                 n = wipe_all_owner_tabs(sh)

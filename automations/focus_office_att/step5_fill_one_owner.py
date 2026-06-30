@@ -1225,7 +1225,8 @@ def _completed_weekdays(ws) -> set[int]:
     return set(range(0, today.weekday()))
 
 
-def apply_empty_cell_defaults(ws, layout: Layout) -> None:
+def apply_empty_cell_defaults(ws, layout: Layout, *, rep_rows=None,
+                              all_days: bool = False) -> None:
     """Fill empty data cells with '0' or 'x' per Raf's formatting request:
 
     - Production columns (New INT / Upgrades / DTV / New Lines): empty → 0
@@ -1236,19 +1237,29 @@ def apply_empty_cell_defaults(ws, layout: Layout) -> None:
     empty — today's numbers aren't final until the next morning's run fills
     them, and future days haven't happened. Painting them 0/x makes the tab
     show a premature wall of zeros (Megan 2026-06-26).
+
+    `rep_rows`: explicit 1-based rep rows to default. Defaults to the TOP/
+    current block's reps (col-B names, rows 3+). Pass the FROZEN block's rep
+    rows (113+) to default production blanks → 0 in the LAST WEEK block too —
+    that block is built by the freeze snapshot, which apply_empty_cell_defaults
+    never reached, so frozen production cells were left blank instead of 0.
+    `all_days`: skip the completed-day gate (the frozen block holds a fully-past
+    week, so every weekday is complete). The top/current block keeps the gate.
     """
     if not layout.day_cols:
         return
 
-    rep_vals = ws.col_values(layout.rep_name_col)
-    rep_rows = [
-        i for i, v in enumerate(rep_vals, start=1)
-        if i >= 3
-        and v and v.strip()
-        and not _is_summary_label(v)
-    ]
+    if rep_rows is None:
+        rep_vals = ws.col_values(layout.rep_name_col)
+        rep_rows = [
+            i for i, v in enumerate(rep_vals, start=1)
+            if i >= 3
+            and v and v.strip()
+            and not _is_summary_label(v)
+        ]
     if not rep_rows:
         return
+    first_rep_row = rep_rows[0]
     last_rep_row = rep_rows[-1]
 
     # Only fill defaults for COMPLETED days (Mon → yesterday). Excluding today:
@@ -1259,7 +1270,8 @@ def apply_empty_cell_defaults(ws, layout: Layout) -> None:
     # Completed days come from the sheet's own week dates (row 1) vs today, so
     # this is correct whether the top holds the current week (Mon→yesterday) or a
     # fully-past week being rebuilt (all 7 days). See _completed_weekdays.
-    past_weekdays = _completed_weekdays(ws)
+    # all_days=True bypasses the gate for the frozen block (a fully-past week).
+    past_weekdays = set(range(7)) if all_days else _completed_weekdays(ws)
 
     # Build a flat map of (sheet_col → metric_name) for the day-block cells
     # we care about, restricted to past weekdays. Compare metric names
@@ -1282,18 +1294,18 @@ def apply_empty_cell_defaults(ws, layout: Layout) -> None:
 
     # One range read covers every cell we might touch.
     rep_data = ws.get(
-        f"{_col_letter(min_col)}3:{_col_letter(max_col)}{last_rep_row}",
+        f"{_col_letter(min_col)}{first_rep_row}:{_col_letter(max_col)}{last_rep_row}",
         value_render_option="FORMATTED_VALUE",
     )
 
     # Only fill defaults on rows that have an actual rep — skip phantom
     # rows (no name in col B) so we don't paint 'x'/'0' across an empty
-    # row 3 (or any other empty row in the rep range).
+    # row (e.g. row 3, or any other empty row in the rep range).
     rep_rows_set = set(rep_rows)
 
     updates: list[dict] = []
     for ri, row in enumerate(rep_data):
-        sheet_row = 3 + ri
+        sheet_row = first_rep_row + ri
         if sheet_row not in rep_rows_set:
             continue  # phantom row — skip
         for col, metric in col_to_metric.items():
