@@ -378,6 +378,15 @@ def _reverify_terminal(ds, todays, target, dry_run):
                    reason="re-verified clean (fixed after the orchestrator's run)")
             _log(f"  {rs.report_id}: {old}→DONE on re-verify — {recon.note}")
             flipped = True
+            # Publish the recovery to the Hub too — the main run loop publishes
+            # on its DONE, but a FAILED→DONE flip here otherwise left the Hub
+            # card showing not-completed after a manual fix. Best-effort.
+            try:
+                from automations.day_orchestrator import hub_publish
+                hub_publish.publish_done(rs.report_id,
+                                         getattr(r, "display_name", rs.report_id))
+            except Exception:  # noqa: BLE001 — never crash the loop
+                pass
     if flipped:
         state.save(ds)
 

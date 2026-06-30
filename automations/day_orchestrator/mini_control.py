@@ -108,7 +108,19 @@ def _action_rerun(args: str) -> tuple[bool, str]:
         return False, f"unknown report_id {report_id!r}. known: {known} …"
     cmd = [sys.executable, "-m", r.command[0]] + list(r.command[1:]) + list(r.base_args)
     timeout_s = int(getattr(r, "timeout_minutes", 45) or 45) * 60
-    return _run_cmd(cmd, timeout_s)
+    ok, result = _run_cmd(cmd, timeout_s)
+    # On success, mark the report completed on the Hub. The orchestrator's own
+    # run loop publishes, but a manual `lucy rerun` otherwise wouldn't — so a
+    # report that failed at 4am (e.g. session expiry) and was fixed via lucy
+    # stayed "not completed" on the Hub even though the data filled. Best-effort;
+    # publish_done is a no-op when the report has no Hub card.
+    if ok:
+        try:
+            from automations.day_orchestrator import hub_publish
+            hub_publish.publish_done(report_id, getattr(r, "display_name", report_id))
+        except Exception:  # noqa: BLE001 — Hub publish must never fail the rerun
+            pass
+    return ok, result
 
 
 def _action_restart_holder(args: str) -> tuple[bool, str]:
