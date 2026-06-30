@@ -501,7 +501,21 @@ async def navigate_to_workbook(
     where the viz renders (Tableau opens in a new browser tab).
     """
     print('-> Clicking sidebar Tableau parent')
-    await page.locator(SIDEBAR_TABLEAU_PARENT_SELECTOR).first.click()
+    # login() only confirms SOME sidebar link (a.waves-effect) is visible — not
+    # this Tableau-specific parent (:has(i.fa-t)), which can lag behind on a
+    # stale/slow session (worked at 6am, went "not visible" by noon → the daily
+    # run's failure point). Wait for THIS item; if it never paints, reload the
+    # post-login page once to force a clean sidebar render, then click.
+    parent = page.locator(SIDEBAR_TABLEAU_PARENT_SELECTOR).first
+    try:
+        await parent.wait_for(state="visible", timeout=15_000)
+    except Exception:
+        print('   Tableau sidebar item not visible — reloading to re-render')
+        await page.reload(wait_until="load")
+        await page.wait_for_timeout(1500)
+        await parent.wait_for(state="visible", timeout=20_000)
+    await parent.scroll_into_view_if_needed()
+    await parent.click()
     await page.wait_for_timeout(800)
 
     print('-> Clicking sidebar Tableau sub-item')
