@@ -61,10 +61,30 @@ MORNING_WINDOW = (4, 12)   # [4am, noon)
 # 2026-06-26: "slack Eve at 6pm if she needs the reseed to happen"). The watch
 # still runs every 6 min, but it HOLDS the ping until this hour.
 PING_HOUR = 18   # 6pm (mini local time)
+# A SECOND, last-chance window ~1h before the 4am batch: catches a session that
+# went stale AFTER the 6pm ping (or was never re-seeded), so it surfaces as an
+# early-morning heads-up instead of a 7am surprise-failure.
+PRE_BATCH_PING_HOUR = 3   # 3am (mini local time)
+# The holder re-exports a live session every ~6 min and ONLY when it validates.
+# So a stale export FILE means the holder is down OR the session no longer
+# validates — a real-health signal the rqst-expiry timestamp alone can miss
+# (a future-dated token whose holder died still reads "valid").
+STALE_EXPORT_MIN = 25
 
 
 def _now() -> dt.datetime:
     return dt.datetime.now()
+
+
+def _export_age_min(state_path) -> float | None:
+    """Minutes since the holder last re-exported this session file. The holder
+    writes it only when the session validates live, so a stale file means the
+    holder is down or the session is dead — caught even when the stored rqst
+    timestamp still reads 'valid'. None if the file is absent."""
+    try:
+        return (_now().timestamp() - Path(state_path).stat().st_mtime) / 60.0
+    except OSError:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +191,18 @@ def _enqueue_rerun(report_id: str, dry_run: bool) -> None:
         print(f"[appstream_watch] (enqueue failed: {type(e).__name__}: {str(e)[:100]})")
 
 
+def _reseed_alert_text(stale, when: str) -> str:
+    """Build the re-seed DM. `stale` is [(status, reseed_cmd), ...]; `when` frames
+    the urgency (evening 'tonight' vs the 3am '~1h before the batch')."""
+    lines = [f"⚠️ *Session re-seed needed* {when}."]
+    for stt, reseed in stale:
+        lines.append(f"\n• *{stt['what']}*: {stt['reason']}\n"
+                     f"  Fix on the mini (clear the check once):\n```{reseed}```")
+    lines.append("\nThe moment it's healthy I'll auto-run what I can — "
+                 "you don't have to touch anything else.")
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # The watch — one evaluation
 # ---------------------------------------------------------------------------
@@ -194,13 +226,25 @@ def watch(dry_run: bool = False) -> dict:
          _ov_reseed_cmd(), []),
     ]
 
-    stale = []   # [(status, reseed_cmd), ...] for sessions that won't survive 4am
-    survives_all = True
+    stale = []   # [(status, reseed_cmd), ...] for sessions that won't survive the batch
+    healthy_all = True
+    state_paths = {"appstream": APPSTREAM_STORAGE_STATE, "ownerville": OWNERVILLE_STORAGE_STATE}
     for key, stt, reseed, reports in sessions:
-        survives = bool(stt["ok"] and stt["rqst_expiry"] and stt["rqst_expiry"] >= threshold)
-        survives_all = survives_all and survives
+        token_ok = bool(stt["ok"] and stt["rqst_expiry"] and stt["rqst_expiry"] >= threshold)
+        age = _export_age_min(state_paths[key])
+        export_fresh = age is not None and age <= STALE_EXPORT_MIN
+        # A future-dated token whose file has gone stale means the holder stopped
+        # validating/exporting it — effectively dead even though the timestamp
+        # still reads "valid". Surface it; the expiry check alone would miss it.
+        if token_ok and not export_fresh:
+            note = (f" — but the holder hasn't re-exported in {age:.0f}m "
+                    f"(holder down or session no longer validating)") if age is not None \
+                   else " — but there is no export file (holder never ran)"
+            stt = {**stt, "reason": stt["reason"] + note}
+        healthy = token_ok and export_fresh
+        healthy_all = healthy_all and healthy
         was_ok = state.get(f"last_ok_{key}")
-        if survives:
+        if healthy:
             # Recovered in the morning window after being stale → a re-seed just
             # happened; auto-rerun this session's reports so nothing's missing.
             if (was_ok is False and reports
@@ -217,25 +261,26 @@ def watch(dry_run: bool = False) -> dict:
             stale.append((stt, reseed))
             state[f"last_ok_{key}"] = False
 
-    # ONE combined evening ping if EITHER session won't survive to 4am — held to
-    # PING_HOUR so it lands when Megan/Eve can act, once/day. Both re-seeds need a
-    # human at the mini to clear the check.
-    if stale and now.hour >= PING_HOUR and state.get("alerted_for") != today:
-        lines = ["⚠️ *Session re-seed needed* before tomorrow's 4am reports."]
-        for stt, reseed in stale:
-            lines.append(f"\n• *{stt['what']}*: {stt['reason']}\n"
-                         f"  Fix on the mini (clear the check once):\n```{reseed}```")
-        lines.append("\nThe moment it's healthy I'll auto-run what I can — "
-                     "you don't have to touch anything else.")
-        _alert("\n".join(lines), dry_run)
-        state["alerted_for"] = today
+    # Heads-up pings, each held to an act-able window + once/day:
+    #   • 6pm — the predictable "re-seed tonight" nudge.
+    #   • 3am — a last-chance check ~1h before the 4am batch, catching a session
+    #           that went stale AFTER the evening ping (which used to surface only
+    #           as a 7am surprise). Both re-seeds need a human at the mini.
+    if stale:
+        if now.hour >= PING_HOUR and state.get("alerted_evening_for") != today:
+            _alert(_reseed_alert_text(stale, "before tomorrow's 4am reports"), dry_run)
+            state["alerted_evening_for"] = today
+        elif (PRE_BATCH_PING_HOUR <= now.hour < MORNING_WINDOW[0]
+              and state.get("alerted_prebatch_for") != today):
+            _alert(_reseed_alert_text(stale, "before the 4am batch (~1h out)"), dry_run)
+            state["alerted_prebatch_for"] = today
 
     state["last_checked"] = now.isoformat(timespec="seconds")
     state["last_reason"] = "; ".join(stt["reason"] for _, stt, _, _ in sessions)
     _save_state(state)
     return {"sessions": {stt["what"]: stt["reason"] for _, stt, _, _ in sessions},
             "stale": [stt["what"] for stt, _ in stale],
-            "survives_next_4am_batch": survives_all,
+            "survives_next_4am_batch": healthy_all,
             "next_threshold": threshold.isoformat(timespec="minutes")}
 
 
