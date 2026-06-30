@@ -38,6 +38,11 @@ wk.SECTIONS.setdefault("interviews booked", "B")
 SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
 TAB = "Daily 1st rd Recruiter %"
 
+# Run-manifest id (matches the orchestrator's verify.report_id) so the morning
+# email reflects whether this report actually completed, and a manual re-seed +
+# rerun flips it FAILED->DONE on re-verify.
+MANIFEST_ID = "recruiter-retention-daily"
+
 BLOCK_H = 8                      # content rows per recruiter block
 SPACER = 1                       # blank white row between blocks
 STRIDE = BLOCK_H + SPACER        # rows from one block's top to the next
@@ -149,6 +154,19 @@ def main(argv=None) -> int:
           f"(fill Mon->today={today})")
     print(f"  AppStream weeks (Sun): current={cur_sun}  last={last_sun}")
 
+    # Seed a failure manifest up-front (live only). If the run crashes mid-way
+    # (e.g. AppStream session expired during the pull), the manifest stays
+    # ok=false so re-verify can't falsely flip a stale clean state to DONE;
+    # mark_clean() at the end overwrites it once the fill completes.
+    if not args.dry_run:
+        try:
+            from automations.shared import run_manifest as _rm
+            _rm.write_manifest(MANIFEST_ID, failed=["recruiter retention fill"],
+                               retry_args=[], kind="recruiter",
+                               note="run started but did not complete")
+        except Exception:  # noqa: BLE001 — manifest is best-effort, never fail the run
+            pass
+
     data = wk.pull_as_weeks([cur_sun, last_sun], verbose=True)
     cur_w, last_w = data.get(cur_sun, {}), data.get(last_sun, {})
 
@@ -190,6 +208,14 @@ def main(argv=None) -> int:
         from automations.shared import terminated_icds as _ti
         _ti.alert_terminated(names, report_label="the Daily 1st Round Recruiter % tab")
     except Exception:  # noqa: BLE001 — advisory must never fail the run
+        pass
+
+    # Fill completed — overwrite the seeded failure manifest with a clean one so
+    # the orchestrator verifies this report as DONE.
+    try:
+        from automations.shared import run_manifest as _rm
+        _rm.mark_clean(MANIFEST_ID, kind="recruiter")
+    except Exception:  # noqa: BLE001 — manifest is best-effort
         pass
 
     print(f"\n=== done ===")

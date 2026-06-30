@@ -370,7 +370,8 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": {
-        "type": "not_configured"
+        "type": "manifest",
+        "report_id": "recruiter-retention-daily"
       }
     },
     "world_cup": {
