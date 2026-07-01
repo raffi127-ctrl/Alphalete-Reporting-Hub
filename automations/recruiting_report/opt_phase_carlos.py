@@ -1191,6 +1191,11 @@ def main() -> int:
                     help="Download a single view's crosstab to inspect "
                          "the CSV format (no Sheet writes). Use this first "
                          "while wiring up each view's parser.")
+    ap.add_argument("--pp-crosstab", action="store_true",
+                    help="With --test-view personal_production: try the "
+                         "Crosstab download (full wide table, all measures) "
+                         "instead of the View-Data scrape (which is scoped to "
+                         "the one selected measure).")
     ap.add_argument("--dry-run", action="store_true",
                     help="Run the full pipeline but don't write to the Sheet.")
     ap.add_argument("--preview-icd",
@@ -1299,6 +1304,25 @@ def main() -> int:
         # (_current_we_sunday), so churn isn't empty and sales don't bleed in
         # from the prior week. On a Monday this is the just-ended Sunday.
         we = _current_we_sunday()
+        if view.key == "personal_production" and args.pp_crosstab:
+            # Crosstab probe: the View-Data Summary is scoped to whatever
+            # single measure is selected in the saved view (came back all
+            # 'AIR/AWB Sales'), so a crosstab of the rep worksheet is the only
+            # way to get every product column at once. Dumps the header row so
+            # we can see if the flyout opens + which columns it yields.
+            out = DOWNLOAD_DIR / "personal_production_crosstab.csv"
+            print(f"Test-CROSSTAB PP (sheet {view.sheet_thumbnail_match!r}, "
+                  f"week ending {we})…")
+            download_view_crosstab(view, out, week=we)
+            with open(out, encoding="utf-8") as fh:
+                header = fh.readline().rstrip("\n")
+                sample = [fh.readline().rstrip("\n") for _ in range(4)]
+            print(f"\nDone. CSV: {out}")
+            print("HEADER:", header)
+            for s in sample:
+                if s:
+                    print("  ", s)
+            return 0
         if view.key == "personal_production":
             # View-Data scrape (crosstab flyout won't open on this heavy viz).
             # Self-diagnosing: dump the real headers + sample rows so we confirm
