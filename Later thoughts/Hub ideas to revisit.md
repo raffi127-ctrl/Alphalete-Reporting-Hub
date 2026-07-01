@@ -118,11 +118,22 @@ against.
 ---
 
 ## Platform check: Claude Cowork vs the custom Hub
-Logged: 2026-05-15
+Logged: 2026-05-15 · **DECIDED 2026-06-30 — stay on the custom Hub.**
 
-Decision: keep the custom Hub for now, but revisit whether to move to
-**Claude Cowork** (claude.com/blog/cowork-for-enterprise) — an
-off-the-shelf Anthropic agent workspace for non-technical teams.
+**Decision (Megan, 2026-06-30): keep the custom Hub.** The value is the custom
+scrapers (ownerville/Tableau/AppStream Cloudflare bypass + impersonation + the
+one-session-per-account keepalive) and the domain logic (52 ICDs, captainships,
+churn math, alias/terminated-ICD handling) — none of which Cowork replaces. The
+coordination layer Cowork would swap in is a thin shell tightly wired to the
+automations (cards→modules→manifests→retry→Hub Activity→mini scheduler), and the
+real maintenance cost is the automations, not the shell. Revisit ONLY if the
+team-collaboration side grows (generic agent/planning/doc workflows) — and even
+then likely a HYBRID (Cowork for human triage, Hub stays the execution engine),
+not a replacement. Original note kept below for history.
+
+Earlier framing: revisit whether to move to **Claude Cowork**
+(claude.com/blog/cowork-for-enterprise) — an off-the-shelf Anthropic agent
+workspace for non-technical teams.
 
 Cowork could likely replace the Hub's coordination layer (request
 intake, review workflow, dashboards, reusable skills) with far less
