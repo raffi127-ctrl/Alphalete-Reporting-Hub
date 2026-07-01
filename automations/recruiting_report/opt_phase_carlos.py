@@ -1314,14 +1314,15 @@ def main() -> int:
             print(f"Test-CROSSTAB PP (sheet {view.sheet_thumbnail_match!r}, "
                   f"week ending {we})…")
             download_view_crosstab(view, out, week=we)
-            with open(out, encoding="utf-8") as fh:
-                header = fh.readline().rstrip("\n")
-                sample = [fh.readline().rstrip("\n") for _ in range(4)]
-            print(f"\nDone. CSV: {out}")
-            print("HEADER:", header)
-            for s in sample:
-                if s:
-                    print("  ", s)
+            # Tableau crosstabs are UTF-16 / tab-delimited (see _parse_view_csv).
+            import csv as _csv
+            with open(out, encoding="utf-16") as fh:
+                rows = list(_csv.reader(fh, delimiter="\t"))
+            print(f"\nDone. CSV: {out}  ({len(rows)-1} data rows, "
+                  f"{len(rows[0]) if rows else 0} cols)")
+            print("COLUMNS:", rows[0] if rows else [])
+            for r in rows[1:6]:
+                print("  ", r)
             return 0
         if view.key == "personal_production":
             # View-Data scrape (crosstab flyout won't open on this heavy viz).
