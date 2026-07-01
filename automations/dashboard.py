@@ -1191,7 +1191,7 @@ AUTOMATED_REPORTS = [
             "login can see it."
         ),
         "sheet_url": SHEET_URL,
-        "assignees": ["Eve"],   # primary owner; anyone can still run it
+        "assignees": ["Fully Automated Alphalete Reports"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],  # Monday
@@ -1274,7 +1274,7 @@ AUTOMATED_REPORTS = [
             "permission to that ICD's data."
         ),
         "sheet_url": CARLOS_SHEET_URL,
-        "assignees": ["Eve"],
+        "assignees": ["Fully Automated Alphalete Reports"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],  # Monday
@@ -1362,7 +1362,7 @@ AUTOMATED_REPORTS = [
             "hidden tabs — no mapping edit needed."
         ),
         "sheet_url": ALPHALETE_ORG_SHEET_URL,
-        "assignees": ["Eve"],
+        "assignees": ["Fully Automated Alphalete Reports"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],  # Monday
@@ -1516,7 +1516,7 @@ AUTOMATED_REPORTS = [
             "prompts you to map it at the top — confirm the match, then re-run."
         ),
         "sheet_url": DAILY_FOCUS_SHEET_URL,
-        "assignees": ["Eve"],  # moved from Maud → Eve 2026-06-05
+        "assignees": ["Fully Automated Alphalete Reports"],
         "schedule": {
             # Weekly with weekdays [0..4] = Mon–Fri. (frequency 'daily' would
             # short-circuit and ignore the weekdays filter, so it'd appear
@@ -1796,7 +1796,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
-        "assignees": ["Maud", "Fully Automated Alphalete Reports"],
+        "assignees": ["Fully Automated Alphalete Reports"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],   # Monday
@@ -1862,7 +1862,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": "https://docs.google.com/spreadsheets/d/"
                      "1xgVE_e8bZimACgPdqcdNCr1qo4sedWect_zzEcUgEJY/edit",
-        "assignees": ["Eve"],
+        "assignees": ["Fully Automated Alphalete Reports"],
         "schedule": {
             "frequency": "daily",
             "time": "9:00 AM",
@@ -1963,7 +1963,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8/edit"),
-        "assignees": ["Eve"],
+        "assignees": ["Fully Automated Alphalete Reports"],
         "schedule": {
             "frequency": "daily",
             "time": "7:00 AM",
@@ -2161,7 +2161,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
-        "assignees": ["Eve"],
+        "assignees": ["Fully Automated Alphalete Reports"],
         "schedule": {
             "frequency": "daily",
             "time": "5:00 AM",
@@ -2262,7 +2262,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8/edit"),
-        "assignees": ["Eve"],
+        "assignees": ["Fully Automated Alphalete Reports"],
         "schedule": {
             "frequency": "daily",
             "time": "7:00 AM",
@@ -2315,7 +2315,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1uFrT0EkkGT0QqlYTxw_uevZD3ObKxaVjWsvZAUDxK6c/edit"),
-        "assignees": ["Eve"],
+        "assignees": ["Fully Automated Alphalete Reports"],
         "schedule": {
             "frequency": "daily",
             "time": "7:00 AM",
@@ -2371,7 +2371,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
-        "assignees": ["Eve"],
+        "assignees": ["Fully Automated Alphalete Reports"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],  # Monday
@@ -2424,7 +2424,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
-        "assignees": ["Eve"],
+        "assignees": ["Fully Automated Alphalete Reports"],
         "schedule": {
             "frequency": "daily",
             "weekdays": [0, 1, 2, 3, 4],   # Mon–Fri only
@@ -2468,7 +2468,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE/edit#gid=1044031962"),
-        "assignees": ["Eve"],
+        "assignees": ["Fully Automated Alphalete Reports"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [3],  # Thursday
@@ -2522,7 +2522,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit#gid=1630583673"),
-        "assignees": ["Eve"],
+        "assignees": ["Fully Automated Alphalete Reports"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [1],  # Tuesday
