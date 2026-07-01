@@ -1564,7 +1564,7 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "financial-pull",
-        "name": "Financial Pull (Upload)",
+        "name": "Financial Report",
         "creator": "Megan",
         "emoji": "💰",
         "color": "#34D399",
@@ -1579,7 +1579,10 @@ AUTOMATED_REPORTS = [
             "Reads the financial workbooks emailed each week and writes "
             "them into the latest 4 week columns on every matched ICD.\n\n"
             "WHEN IT RUNS\n"
-            "Fridays, after the financial workbooks arrive.\n\n"
+            "Auto-runs Thursday mornings on the mac mini scheduler — it "
+            "pulls this week's FINANCIAL SUMMARY workbooks straight from the "
+            "reporting inbox (all senders) and fills, no upload needed. The "
+            "manual upload button below stays as a fallback for a re-run.\n\n"
             "IF AN ICD ISN'T IN THIS UPLOAD\n"
             "Their tab is **left untouched** — whatever was filled by a "
             "previous run stays put. When you later upload a file that "
@@ -1597,12 +1600,14 @@ AUTOMATED_REPORTS = [
             {"name": "Carlos 1on1s - Focus Report",         "url": CARLOS_SHEET_URL},
             {"name": "Alphalete Org 1on1s - Focus Reports", "url": ALPHALETE_ORG_SHEET_URL},
         ],
-        "assignees": ["Eve"],
+        "assignees": ["Eve", "Fully Automated Alphalete Reports"],
         "schedule": {
             "frequency": "weekly",
-            "weekdays": [4],   # Friday — Megan 2026-05-22: moved from Tue
-                                # to Fri to match Eve's actual run cadence.
-            "time": "9:00 AM",
+            "weekdays": [3],   # Thursday — 2026-07-01: cut over to auto
+                                # email-ingest. All 3 senders land by Wed
+                                # midday, so Thursday's 4am run has the full
+                                # week with a day of buffer.
+            "time": "4:00 AM",
             "estimated_minutes": 5,
         },
         "checklist": [

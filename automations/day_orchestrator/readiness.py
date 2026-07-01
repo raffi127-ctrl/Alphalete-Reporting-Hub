@@ -134,6 +134,18 @@ class ReadinessCache:
                     return Readiness(True, f"Frontier Events PDFs in ({len(avail)}/3)")
                 return Readiness(
                     False, f"waiting on Frontier Events daily PDFs ({dailies}/2 in)")
+            if rpt.report_id == "financial_report":
+                # 3 senders land across Tue–Wed (hubtruth Tue PM, melissab Wed,
+                # jsanchez Mon/Tue); a Thursday run should see all 3. Ready once
+                # >=2 are in (the dominant hubtruth + at least one more). The
+                # report is incremental/partial-safe, so this only avoids a
+                # too-early empty run — a missing sender is filled next run.
+                from automations.financial_report import email_source as fes
+                n = fes.any_available(since_days=7)
+                if n >= 2:
+                    return Readiness(True, f"Financial workbooks in ({n}/3 senders)")
+                return Readiness(
+                    False, f"waiting on this week's Financial workbooks ({n}/3 senders in)")
             return Readiness(True, "email — no probe wired; running on schedule")
         except Exception as e:  # noqa: BLE001 — fail open; the report self-guards
             return Readiness(

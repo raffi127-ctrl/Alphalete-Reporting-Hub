@@ -1,7 +1,7 @@
 {
   "_meta": {
     "purpose": "Single editable source of truth for the day orchestrator. Cadence, priority, and freshness are deliberately KNOBS — tuned by hand during the ~1-week parallel dry-run (Megan 2026-06-23).",
-    "scope": "ALL non-upload reports run on the scheduler (Megan 2026-06-23). Upload-gated reports still manual: Financial, First/Last Sale — see 'excluded'. Frontier moved to auto email-ingest 2026-07-01.",
+    "scope": "ALL non-upload reports run on the scheduler (Megan 2026-06-23). Upload-gated reports still manual: First/Last Sale — see 'excluded'. Frontier + Financial moved to auto email-ingest 2026-07-01.",
     "weekday_convention": "Python weekday(): Mon=0, Tue=1, Wed=2, Thu=3, Fri=4, Sat=5, Sun=6 (matches dashboard.py).",
     "times": "All times are CST (the mini is Central). HH:MM 24h.",
     "priority_tiers": "P1 critical (guaranteed done daily, runs first) > P2 standard > P3 best-effort (runs last).",
@@ -771,16 +771,37 @@
       "verify": {
         "type": "not_configured"
       }
+    },
+    "financial_report": {
+      "on_scheduler": true,
+      "display_name": "Financial Report",
+      "source_type": "email",
+      "data_sources": [],
+      "_note": "Auto-ingest via --email: pulls this week's FINANCIAL SUMMARY .xlsx from ALL senders (financial_report.email_source: hubtruth/Amber, melissab/Coel, jsanchez/German) into a temp dir, then fills every matching ICD tab. Manual Upload card kept as fallback. Arrivals (CST): hubtruth Tue ~2:30pm, melissab Wed ~11am, jsanchez Mon/Tue -> all in by Wed midday, so a Thursday 4am run has the full week with a day of buffer. readiness._probe_email gates on this week's workbooks landing. Incremental: unmatched ICDs are never wiped (missing = not-yet-arrived). Verify not wired (no manifest yet).",
+      "command": [
+        "automations.financial_report.run"
+      ],
+      "base_args": [
+        "--email"
+      ],
+      "cadence": {
+        "weekdays": [
+          3
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
     }
   },
   "read_only_standalone": {
     "_note": "Empty now — the previously-standalone AppStream/weather/brand reports were folded into the scheduler above (Megan 2026-06-23). Retire their launchd jobs at cutover (see _meta.cutover_retire_jobs)."
   },
   "excluded": {
-    "_note": "Still manual: Financial (multi-sender email, not yet wired) + First/Last Sale (its email is being discontinued -> Tableau rewire). Frontier moved to auto email-ingest 2026-07-01 (source_type email, --email).",
-    "financial_report": {
-      "_reason": "Upload-gated — MANUAL (multi-sender email auto-ingest not built yet)."
-    },
+    "_note": "Still manual: First/Last Sale (its email is being discontinued -> Tableau rewire). Frontier + Financial moved to auto email-ingest (source_type email, --email); Frontier 2026-07-01, Financial 2026-07-01.",
     "first_last_sale": {
       "_reason": "Upload-gated — MANUAL (email being discontinued; move to Tableau D2D/B2B view)."
     }
