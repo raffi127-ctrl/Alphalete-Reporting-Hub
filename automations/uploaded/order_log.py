@@ -1333,12 +1333,25 @@ def _autosize_columns(ws, df: pd.DataFrame) -> None:
         ws.column_dimensions[get_column_letter(col_idx)].width = max_len + 4
 
 
-def csv_to_xlsx(csv_path: Path, output_dir: Path) -> Path:
+def _owner_file_suffix(owner_name: str) -> str:
+    """Filename suffix that stops a NON-default owner's Downloads artifacts from
+    colliding with the default owner's same-day files. On the mini, Raf's daily
+    run writes (and holds) `Order Log <date>.xlsx` / `Rep Activations <date>.png`;
+    a non-default owner (e.g. Rashad) then hit `[Errno 1] Operation not permitted`
+    overwriting the locked PNG, so Rep Activations silently dropped (2026-07-01).
+    Empty for the default owner, so Raf's filenames are unchanged."""
+    if owner_name == OWNER_NAME:
+        return ""
+    safe = "".join(c for c in owner_name if c.isalnum() or c in " -_").strip()
+    return f" ({safe})" if safe else ""
+
+
+def csv_to_xlsx(csv_path: Path, output_dir: Path, name_suffix: str = "") -> Path:
     """Build the cleaned, color-coded .xlsx ready for Slack."""
     output_dir.mkdir(parents=True, exist_ok=True)
     df = _load_and_clean(csv_path)
 
-    filename = f"Order Log {date.today():%m-%d-%Y}.xlsx"
+    filename = f"Order Log {date.today():%m-%d-%Y}{name_suffix}.xlsx"
     out_path = output_dir / filename
 
     wb = Workbook()
@@ -1390,7 +1403,7 @@ def csv_to_xlsx(csv_path: Path, output_dir: Path) -> Path:
         wb.save(out_path)
     except PermissionError:
         timestamp = datetime.now().strftime("%H%M%S")
-        out_path = output_dir / f"Order Log {date.today():%m-%d-%Y} {timestamp}.xlsx"
+        out_path = output_dir / f"Order Log {date.today():%m-%d-%Y}{name_suffix} {timestamp}.xlsx"
         print(f"  (target .xlsx was locked — likely open in Excel; saving to "
               f"{out_path.name} instead)")
         wb.save(out_path)
@@ -1562,7 +1575,12 @@ async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True,
             csv_path = await _legacy_filter_download(
                 owner_name, tmp_dir, allow_form_login)
 
-        xlsx_path = csv_to_xlsx(csv_path, OUTPUT_DIR)
+        # Owner-namespaced disk filenames for a non-default owner so a
+        # non-default run can't collide with (or EPERM against) the default
+        # owner's locked same-day files on the mini. Slack display names stay
+        # clean (set separately in _post_order_log).
+        _suffix = _owner_file_suffix(owner_name)
+        xlsx_path = csv_to_xlsx(csv_path, OUTPUT_DIR, name_suffix=_suffix)
         print(f"\n✓ Saved to Downloads: {xlsx_path.name}")
 
         # Rep Activations summary — two Sun-Sat tables (last week + running
@@ -1578,7 +1596,7 @@ async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True,
             summary = build_week_tables(_cleaned, date.today())
             rep_png = render_rep_tables(
                 summary,
-                OUTPUT_DIR / f"Rep Activations {date.today():%m-%d-%Y}.png",
+                OUTPUT_DIR / f"Rep Activations {date.today():%m-%d-%Y}{_suffix}.png",
             )
             print(f"✓ Saved Rep Activations image: {rep_png.name}")
         except Exception as e:
