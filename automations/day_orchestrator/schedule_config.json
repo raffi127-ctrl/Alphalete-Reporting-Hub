@@ -1,7 +1,7 @@
 {
   "_meta": {
     "purpose": "Single editable source of truth for the day orchestrator. Cadence, priority, and freshness are deliberately KNOBS \u2014 tuned by hand during the ~1-week parallel dry-run (Megan 2026-06-23).",
-    "scope": "ALL non-upload reports run on the scheduler (Megan 2026-06-23). Upload-gated reports (Financial, First/Last Sale, Frontier) stay MANUAL \u2014 see 'excluded'.",
+    "scope": "ALL non-upload reports run on the scheduler (Megan 2026-06-23). Upload-gated reports still manual: Financial, First/Last Sale \u2014 see 'excluded'. Frontier moved to auto email-ingest 2026-07-01.",
     "weekday_convention": "Python weekday(): Mon=0, Tue=1, Wed=2, Thu=3, Fri=4, Sat=5, Sun=6 (matches dashboard.py).",
     "times": "All times are CST (the mini is Central). HH:MM 24h.",
     "priority_tiers": "P1 critical (guaranteed done daily, runs first) > P2 standard > P3 best-effort (runs last).",
@@ -614,6 +614,30 @@
         "readiness_applies": false
       }
     },
+    "frontier_opt": {
+      "on_scheduler": true,
+      "display_name": "Frontier OPT Data Pull",
+      "source_type": "email",
+      "data_sources": [],
+      "_note": "Auto-ingest via --email: pulls the 3 Frontier Events PDFs from reports@credicousa.com (frontier_email_source) into a temp dir, then fills. Manual Upload card kept as fallback. Sales PDFs land DAILY ~1:30pm CT (completed week is in Sunday's daily, so the Monday 4am run has it); Quality Scorecard lags ~2wk by design. readiness._probe_email gates on the daily PDFs. Verify not wired yet (opt_frontier has no manifest).",
+      "command": [
+        "automations.alphalete_org_report.opt_frontier"
+      ],
+      "base_args": [
+        "--email"
+      ],
+      "cadence": {
+        "weekdays": [
+          0
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "rashad_metrics": {
       "on_scheduler": true,
       "_disabled_reason": "BUILDING 2026-06-28. 4 of 7 metrics wired (order_log, canceled_orders, disconnects, sales_6plus) via the org-wide-pull → filter-to-Rashad pattern. Posts AS Lucy by reusing the SAME Slack token path as daily_metrics (no separate token — on the mini that file is Lucy). Remaining 3 are FLAGGED, each needs a Tableau asset that doesn't exist: ongoing_cancel (a Rashad/org-wide cancel-rates view — current RafExpanded is Raf-only computed), churn (a Rashad churn view — INTLocalOffice bakes owner=Raf; also sheet-coupled, needs a Rashad tab or direct-render), knocks_gaps (Rashad's rep roster — Disposition-by-Rep has no owner column). Flip true only after a clean dry-run of the 4 wired on the mini + Megan's go-ahead (and the 3 flagged either built or accepted as omitted).",
@@ -690,6 +714,27 @@
         "type": "not_configured"
       }
     },
+    "insurance_probe": {
+      "on_scheduler": true,
+      "_note": "DIAGNOSTIC (temp 2026-07-01) — `lucy rerun insurance_probe` pulls NDS Weekly Metrics (Rep) via the HTTP .csv endpoint (the UI crosstab fails for this view class) and uploads the CSV to Megan's Slack DM so Claude can read the real column/Total-row structure before wiring the Insurance% fill. weekdays=[] never auto-runs. Remove once wired.",
+      "display_name": "Insurance% NDS probe",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.recruiting_report._insurance_probe"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 15,
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "rashad_metrics_review": {
       "on_scheduler": true,
       "_note": "REVIEW run: `lucy rerun rashad_metrics_review` runs the full report --live but DMs it to Megan (U045Z8N0ZQC) via --channel, for review BEFORE going public to #elevate-sales. weekdays=[] never auto-runs.",
@@ -745,15 +790,12 @@
     "_note": "Empty now \u2014 the previously-standalone AppStream/weather/brand reports were folded into the scheduler above (Megan 2026-06-23). Retire their launchd jobs at cutover (see _meta.cutover_retire_jobs)."
   },
   "excluded": {
-    "_note": "Only upload-gated reports remain manual \u2014 they can't run unattended (a human must drop the emailed file first).",
+    "_note": "Still manual: Financial (multi-sender email, not yet wired) + First/Last Sale (its email is being discontinued -> Tableau rewire). Frontier moved to auto email-ingest 2026-07-01 (source_type email, --email).",
     "financial_report": {
-      "_reason": "Upload-gated \u2014 MANUAL."
+      "_reason": "Upload-gated \u2014 MANUAL (multi-sender email auto-ingest not built yet)."
     },
     "first_last_sale": {
-      "_reason": "Upload-gated \u2014 MANUAL."
-    },
-    "frontier_opt": {
-      "_reason": "Upload-gated \u2014 MANUAL."
+      "_reason": "Upload-gated \u2014 MANUAL (email being discontinued; move to Tableau D2D/B2B view)."
     }
   }
 }
