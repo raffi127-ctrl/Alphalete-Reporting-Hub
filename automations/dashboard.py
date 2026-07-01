@@ -3163,6 +3163,28 @@ def _was_run_successfully_today(report_id: str, today: dt.date | None = None) ->
     return False
 
 
+def _week_run_statuses(week_days: list[dt.date]) -> dict:
+    """{(report_id, date): latest_status} for the given days, from the shared
+    run feed (local + Hub Activity) — powers the This-week grid's per-card
+    outcome badges. Latest run wins for a given report+day."""
+    wanted = set(week_days)
+    latest: dict = {}   # (report_id, date) -> (dt, status)
+    for r in _all_runs_merged(days=8):
+        when = r.get("_dt")
+        if when is None:
+            continue
+        d = when.date()
+        if d not in wanted:
+            continue
+        rid = r.get("report_id")
+        if not rid:
+            continue
+        key = (rid, d)
+        if key not in latest or when > latest[key][0]:
+            latest[key] = (when, (r.get("status") or "").lower())
+    return {k: v[1] for k, v in latest.items()}
+
+
 def _latest_run_summary(report_id: str) -> str | None:
     """Return compact text like 'Today · Megan · 1:06 AM', or None.
     Considers runs by any teammate, not just this machine.
@@ -8408,9 +8430,37 @@ else:  # st.session_state.view == "user"
         # for the week ahead. One row, 7 columns; auto-updates as new reports
         # get assigned to them (or as schedules change).
         st.markdown("### 📅 This week")
+        # Colored status pills: Streamlit tags each keyed button's wrapper with a
+        # `st-key-<key>` class. We suffix the key with `__calstat_<status>` and
+        # color the button by that suffix (space-safe: the suffix has no spaces
+        # even when the profile name does). Only calendar buttons match.
+        st.markdown(
+            "<style>"
+            "[class*='__calstat_ok'] button{background:#E1F5EE!important;color:#04342C!important;border-color:#5DCAA5!important}"
+            "[class*='__calstat_fail'] button{background:#FAECE7!important;color:#712B13!important;border-color:#F0997B!important}"
+            "[class*='__calstat_miss'] button{background:transparent!important;color:#888780!important;border-color:var(--border)!important;opacity:.75}"
+            "</style>",
+            unsafe_allow_html=True,
+        )
+        _week_start = today - dt.timedelta(days=today.weekday())    # Monday
+        _week_days = [_week_start + dt.timedelta(days=_k) for _k in range(7)]
+        _cal_statuses = _week_run_statuses(_week_days)
+
+        def _cal_status(_rid: str, _day: dt.date) -> str:
+            """Per-card outcome for a day: ok / fail / miss / up(coming)."""
+            if _day > today:
+                return "up"                       # future — hasn't run
+            _s = _cal_statuses.get((_rid, _day))
+            if _s == "success":
+                return "ok"
+            if _s is None:                        # no run recorded
+                return "up" if _day == today else "miss"
+            if _s in ("running", "started", "in progress", "in-progress"):
+                return "up" if _day == today else "fail"   # stuck if it's a past day
+            return "fail"                         # any other terminal status
+
         _cal_cols = st.columns(7)
-        for _i in range(7):
-            _day = today + dt.timedelta(days=_i)
+        for _i, _day in enumerate(_week_days):
             with _cal_cols[_i]:
                 _is_today = (_day == today)
                 _today_pill = (
@@ -8448,20 +8498,24 @@ else:  # st.session_state.view == "user"
                                 unsafe_allow_html=True,
                             )
                             continue
-                        # Mark today's card with green ✅ when there's a
-                        # successful run today (same signal the sidebar's
-                        # "Today's Tasks" uses, so the two stay in sync).
-                        _done = _is_today and _was_run_successfully_today(
-                            _r["id"], today)
-                        _label = f"{_r.get('emoji', '📄')} {_r['name']}"
-                        if _done:
-                            _label = "✅ " + _label
+                        # Per-day run outcome → colored pill (green ✅ ran ok,
+                        # coral ⚠️ failed/incomplete, gray – scheduled-didn't-run,
+                        # plain = upcoming). Status is encoded in the button key
+                        # (__calstat_<status>) which the injected CSS colors.
+                        _stat = _cal_status(_r["id"], _day)
+                        _icon = {"ok": "✅ ", "fail": "⚠️ ", "miss": "– "}.get(_stat, "")
+                        _label = f"{_icon}{_r.get('emoji', '📄')} {_r['name']}"
+                        _help = {
+                            "ok": "Ran OK — open to view",
+                            "fail": "Failed / incomplete — open to see why",
+                            "miss": "Was scheduled but didn't run — open to run",
+                            "up": "Open this report to run it",
+                        }.get(_stat, "Open this report to run it")
                         if st.button(
                             _label,
-                            key=f"cal_{user_name}_{_day.strftime('%Y%m%d')}_{_r['id']}",
+                            key=f"cal_{user_name}_{_day.strftime('%Y%m%d')}_{_r['id']}__calstat_{_stat}",
                             use_container_width=True,
-                            help="Done today — open to view" if _done
-                                 else "Open this report to run it",
+                            help=_help,
                         ):
                             st.session_state["library_report_id"] = _r["id"]
                             st.session_state["library_came_from"] = ("user", user_name)
