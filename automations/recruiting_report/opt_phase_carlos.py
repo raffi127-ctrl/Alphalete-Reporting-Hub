@@ -1275,20 +1275,14 @@ def main() -> int:
             except Exception as e:
                 print(f"  ✗ dd: {type(e).__name__}: {str(e)[:160]}", flush=True)
                 fails.append("dd")
-            # Personal Production — View-Data scrape (the crosstab flyout
-            # chronically won't open on this heavy REPEXPANDED/base viz).
+            # Personal Production — Crosstab of the 'Sales.Quality Metrics'
+            # rep worksheet (full wide table; flyout opens on the base view).
             pp_view = next(v for v in VIEWS if v.key == "personal_production")
             try:
-                fields, records, _ = _pp_scrape_autotune(
-                    pp_view.url, verbose=True, page=page)
-                pp_path = DOWNLOAD_DIR / "personal_production_view_data.csv"
-                pp_path.parent.mkdir(parents=True, exist_ok=True)
-                pp_path.write_text(
-                    "\n".join(["\t".join(fields)]
-                              + ["\t".join(r) for r in records]),
-                    encoding="utf-8")
-                print(f"  → personal_production: scraped {len(records)} "
-                      f"View Data row(s), {len(fields)} cols", flush=True)
+                pp_path = DOWNLOAD_DIR / "personal_production_crosstab.csv"
+                download_view_crosstab(pp_view, pp_path, week=we, page=page)
+                print(f"  → personal_production: crosstab saved "
+                      f"{pp_path.name}", flush=True)
                 ok.append("personal_production")
             except Exception as e:
                 print(f"  ✗ personal_production: {type(e).__name__}: "
@@ -1304,12 +1298,12 @@ def main() -> int:
         # (_current_we_sunday), so churn isn't empty and sales don't bleed in
         # from the prior week. On a Monday this is the just-ended Sunday.
         we = _current_we_sunday()
-        if view.key == "personal_production" and args.pp_crosstab:
-            # Crosstab probe: the View-Data Summary is scoped to whatever
-            # single measure is selected in the saved view (came back all
-            # 'AIR/AWB Sales'), so a crosstab of the rep worksheet is the only
-            # way to get every product column at once. Dumps the header row so
-            # we can see if the flyout opens + which columns it yields.
+        if view.key == "personal_production":
+            # Crosstab of the 'Sales.Quality Metrics' rep worksheet — the
+            # flyout opens on the base view and gives the full wide table
+            # (every product column). The old View-Data scrape was scoped to
+            # the one measure selected in the saved view (all 'AIR/AWB Sales'),
+            # so it couldn't yield NI/VOIP/NL/AIR together (2026-07-01).
             out = DOWNLOAD_DIR / "personal_production_crosstab.csv"
             print(f"Test-CROSSTAB PP (sheet {view.sheet_thumbnail_match!r}, "
                   f"week ending {we})…")
@@ -1322,28 +1316,6 @@ def main() -> int:
                   f"{len(rows[0]) if rows else 0} cols)")
             print("COLUMNS:", rows[0] if rows else [])
             for r in rows[1:6]:
-                print("  ", r)
-            return 0
-        if view.key == "personal_production":
-            # View-Data scrape (crosstab flyout won't open on this heavy viz).
-            # Self-diagnosing: dump the real headers + sample rows so we confirm
-            # the product-column names + rep column before trusting the apply.
-            # Autotune sweeps activation clicks until it hits the rep table.
-            print(f"Test-scraping PP View Data (week ending {we})…")
-            fields, records, win_xy = _pp_scrape_autotune(
-                view.url, verbose=True)
-            print(f"→ winning activate_xy = {win_xy} "
-                  f"(set PP_ACTIVATE_CANDIDATES[0] to this to skip the sweep)")
-            out = DOWNLOAD_DIR / "personal_production_view_data.csv"
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(
-                "\n".join(["\t".join(fields)]
-                          + ["\t".join(r) for r in records]),
-                encoding="utf-8")
-            print(f"\nDone. CSV: {out}  ({len(records)} data rows, "
-                  f"{len(fields)} cols)")
-            print("COLUMNS:", fields)
-            for r in records[:6]:
                 print("  ", r)
             return 0
         out = DOWNLOAD_DIR / f"{view.key}.csv"
@@ -1504,9 +1476,13 @@ def main() -> int:
         # '3 NI / 2 NL' (or '-' if nothing).
         import csv as _csv
         pp_view = next(v for v in VIEWS if v.key == "personal_production")
-        # View-Data scrape output (UTF-8), not the old UTF-16 crosstab — the
-        # crosstab flyout chronically won't open on this heavy viz (2026-07-01).
-        csv_path = DOWNLOAD_DIR / "personal_production_view_data.csv"
+        # Crosstab of the 'Sales.Quality Metrics' rep worksheet (UTF-16). The
+        # flyout DOES open on the base view (2026-07-01) and gives the full
+        # wide table — every product column at once. The View-Data scrape was
+        # abandoned: its Summary is scoped to the one measure selected in the
+        # saved view (came back all 'AIR/AWB Sales'), so it can't yield NI/VOIP/
+        # NL/AIR together.
+        csv_path = DOWNLOAD_DIR / "personal_production_crosstab.csv"
         if not csv_path.exists():
             print(f"No cached CSV at {csv_path}. Run --test-view personal_production first.")
             return 1
@@ -1526,7 +1502,7 @@ def main() -> int:
                   f"numbers aren't written. Fix the scrape, then re-run "
                   f"`--download-all` + `--apply-view personal_production`.")
             return 1
-        with open(csv_path, encoding="utf-8") as f:
+        with open(csv_path, encoding="utf-16") as f:
             rows = list(_csv.reader(f, delimiter="\t"))
         headers = [h.strip() for h in rows[0]]
         # The 'Rep' header has a trailing space in the CSV ('Rep ').
