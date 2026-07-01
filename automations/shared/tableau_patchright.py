@@ -824,9 +824,6 @@ def appstream_direct_session(headless: bool = False,
             elif verbose:
                 print("-> AppStream session reused from profile", flush=True)
             page.wait_for_timeout(3_000)
-            if verbose:
-                print(f"-> AppStream console ready "
-                      f"(page at {(page.url or '')[:72]})", flush=True)
             # Persist the freshly-authenticated session so sibling reports in the
             # same batch reuse it (fast) instead of each re-driving the login +
             # Cloudflare wait. Only save a real console session (carries an rqst_
@@ -841,6 +838,21 @@ def appstream_direct_session(headless: bool = False,
                               flush=True)
             except Exception:
                 pass
+            # The login lands on the HOME page (index.cfm), not the office
+            # switcher (#searchMC) that callers like pull_as_weeks expect. If
+            # we're not already on it, hop to it via the just-minted rqst (the
+            # same ?rqst=<TOKEN>&p=701 nav the reuse path uses).
+            try:
+                if page.locator("#searchMC").count() == 0:
+                    if verbose:
+                        print("-> login landed off the office switcher — hopping "
+                              "to #searchMC via the fresh token", flush=True)
+                    _reuse_appstream_storage_state(ctx, page, verbose)
+            except Exception:
+                pass
+            if verbose:
+                print(f"-> AppStream console ready "
+                      f"(page at {(page.url or '')[:72]})", flush=True)
             yield page
         finally:
             ctx.close()
