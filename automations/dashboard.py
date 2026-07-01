@@ -8474,15 +8474,23 @@ else:  # st.session_state.view == "user"
         # even when the profile name does). Only calendar buttons match.
         st.markdown(
             "<style>"
+            "@keyframes calpulse{0%{opacity:1}50%{opacity:.5}100%{opacity:1}}"
             "[class*='__calstat_ok'] button{background:#E1F5EE!important;color:#04342C!important;border-color:#5DCAA5!important}"
             "[class*='__calstat_fail'] button{background:#FAECE7!important;color:#712B13!important;border-color:#F0997B!important}"
             "[class*='__calstat_miss'] button{background:transparent!important;color:#888780!important;border-color:var(--border)!important;opacity:.75}"
+            "[class*='__calstat_running'] button{background:#FBF3DE!important;color:#6B5210!important;border-color:#C9A85C!important;animation:calpulse 1.4s ease-in-out infinite}"
             "</style>",
             unsafe_allow_html=True,
         )
         _week_start = today - dt.timedelta(days=today.weekday())    # Monday
         _week_days = [_week_start + dt.timedelta(days=_k) for _k in range(7)]
         _cal_statuses = _week_run_statuses(_week_days)
+        # Live "running now": actual subprocesses (active_runs.json + a ps match),
+        # so the card shows a pulsing 🔄 for whatever is executing right now.
+        try:
+            _running_ids = {a.get("report_id") for a in _read_active_runs()}
+        except Exception:
+            _running_ids = set()
 
         def _cal_status(_rid: str, _day: dt.date) -> str:
             """Per-card outcome for a day: ok / fail / miss / up(coming)."""
@@ -8544,13 +8552,17 @@ else:  # st.session_state.view == "user"
                         # plain = upcoming). Status is encoded in the button key
                         # (__calstat_<status>) which the injected CSS colors.
                         _stat = _cal_status(_r["id"], _day)
-                        _icon = {"ok": "✅ ", "fail": "⚠️ ", "miss": "– "}.get(_stat, "")
+                        if _day == today and _r["id"] in _running_ids:
+                            _stat = "running"          # live subprocess right now
+                        _icon = {"ok": "✅ ", "fail": "⚠️ ", "miss": "– ",
+                                 "running": "🔄 "}.get(_stat, "")
                         _label = f"{_icon}{_r.get('emoji', '📄')} {_r['name']}"
                         _help = {
                             "ok": "Ran OK — open to view",
                             "fail": "Failed / incomplete — open to see why",
                             "miss": "Was scheduled but didn't run — open to run",
                             "up": "Open this report to run it",
+                            "running": "Running now — open to watch",
                         }.get(_stat, "Open this report to run it")
                         if st.button(
                             _label,
