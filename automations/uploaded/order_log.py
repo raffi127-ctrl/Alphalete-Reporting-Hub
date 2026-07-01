@@ -1108,6 +1108,75 @@ def download_order_log_crosstab(
         )
 
 
+# --- Non-default owner: org-wide ALLREPS pull + Python-side owner filter ------
+# The org-wide ALLREPS view exposes the SAME "A.Order Log" worksheet
+# (CROSSTAB_SHEET) as the default path — just unfiltered by owner. It's the view
+# canceled_orders / disconnects / scheduled_6_days_out already pull for their
+# single-owner cuts, and it takes the date window via URL params (ISO dates).
+ALLREPS_VIEW_URL_TMPL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER2_1-D2D/ORDERLOG/"
+    "117748c0-9487-45e8-a5d4-c447093718d5/ALLREPS?:iid=1"
+    "&Start%20Date={start}&End%20Date={end}"
+)
+
+
+def _filter_crosstab_by_owner(src: Path, dst: Path, owner_name: str) -> int:
+    """Copy Tableau crosstab `src` → `dst`, keeping the caption+header lines but
+    only the DATA rows whose 'Owner Name' cell matches `owner_name` (case-
+    insensitive). Preserves the UTF-16 / tab format so _load_and_clean reads the
+    result identically to a single-owner custom-view export. Returns rows kept.
+
+    If the export has no 'Owner Name' header (empty/caption-only), it's written
+    through unchanged so _load_and_clean's own empty handling takes over."""
+    with open(src, "r", encoding="utf-16") as f:
+        lines = f.readlines()
+    header_idx = next(
+        (i for i, ln in enumerate(lines)
+         if "\t" in ln and any(c.strip().strip('"') == "Owner Name"
+                               for c in ln.split("\t"))),
+        None,
+    )
+    if header_idx is None:
+        with open(dst, "w", encoding="utf-16", newline="") as f:
+            f.writelines(lines)
+        return 0
+    header_cells = [c.strip().strip('"') for c in lines[header_idx].split("\t")]
+    owner_i = header_cells.index("Owner Name")
+    want = owner_name.strip().lower()
+    kept = [ln for ln in lines[header_idx + 1:]
+            if (cells := ln.split("\t")) and len(cells) > owner_i
+            and cells[owner_i].strip().strip('"').lower() == want]
+    with open(dst, "w", encoding="utf-16", newline="") as f:
+        f.writelines(lines[: header_idx + 1])
+        f.writelines(kept)
+    return len(kept)
+
+
+def _allreps_filtered_download(owner_name: str, tmp_dir: Path,
+                               verbose: bool = True) -> Path:
+    """Non-default-owner Order Log pull.
+
+    Instead of driving the fragile ownerville sidebar-nav + manual 'Owner Name'
+    filter (which silently returned an EMPTY crosstab for Rashad — confirmed
+    2026-07-01, even though his office had orders), pull the org-wide ALLREPS
+    'A.Order Log' crosstab through the SHARED storage_state session (no Turnstile,
+    no sidebar nav) and filter to the owner Python-side — the same reliable
+    pattern canceled_orders / disconnects / scheduled_6_days_out use. Returns a
+    crosstab CSV in the single-owner shape the rest of the pipeline expects."""
+    from automations.shared.tableau_patchright import download_crosstab_patchright
+    raw = tmp_dir / "order_log_allreps.csv"
+    url = ALLREPS_VIEW_URL_TMPL.format(start=START_DATE.isoformat(),
+                                       end=END_DATE.isoformat())
+    print(f"-> Downloading org-wide ALLREPS '{CROSSTAB_SHEET}' crosstab "
+          f"({START_DATE} → {END_DATE}), then filtering to {owner_name!r}...")
+    download_crosstab_patchright(url, CROSSTAB_SHEET, raw, verbose=verbose)
+    filtered = tmp_dir / "order_log_crosstab.csv"
+    n = _filter_crosstab_by_owner(raw, filtered, owner_name)
+    print(f"   ✓ {n} order-log row(s) for {owner_name}")
+    return filtered
+
+
 # ====================================================================
 #  CSV → cleaned + color-coded .xlsx
 # ====================================================================
@@ -1479,7 +1548,17 @@ async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True,
                 download_order_log_crosstab, csv_path,
                 allow_form_login=False,
             )
+        elif owner_name != OWNER_NAME:
+            # Non-default owner (e.g. Rashad): pull the org-wide ALLREPS crosstab
+            # via the shared storage_state session and filter to this owner
+            # Python-side. Replaces the fragile manual-filter sidebar path, which
+            # silently returned empty for non-Rafael owners (2026-07-01). Sync
+            # pull → offload to a worker thread like the shared path above.
+            csv_path = await asyncio.to_thread(
+                _allreps_filtered_download, owner_name, tmp_dir)
         else:
+            # Default owner WITH allow_form_login: keep the legacy form-drive
+            # fallback (interactive/debug — hits the Turnstile).
             csv_path = await _legacy_filter_download(
                 owner_name, tmp_dir, allow_form_login)
 
