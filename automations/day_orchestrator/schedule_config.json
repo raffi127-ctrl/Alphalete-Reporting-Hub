@@ -689,6 +689,27 @@
         "type": "not_configured"
       }
     },
+    "fiber_probe": {
+      "on_scheduler": true,
+      "_note": "DIAGNOSTIC (temp 2026-07-01) — `lucy rerun fiber_probe` calls the Fiber BULK crosstab path DIRECTLY (never the slow legacy fallback) and prints a decisive verdict as its last line, so `lucy status` shows whether AUTOMATIONPULL-NICHURNVIEW is still alive vs silently degrading to the ~25-min loop. weekdays=[] never auto-runs. Delete after confirming.",
+      "display_name": "Fiber bulk pull (probe)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.recruiting_report._fiber_probe"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 15,
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "rashad_metrics_review": {
       "on_scheduler": true,
       "_note": "REVIEW run: `lucy rerun rashad_metrics_review` runs the full report --live but DMs it to Megan (U045Z8N0ZQC) via --channel, for review BEFORE going public to #elevate-sales. weekdays=[] never auto-runs.",
