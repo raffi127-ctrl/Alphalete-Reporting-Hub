@@ -664,17 +664,19 @@
     },
     "rashad_orderlog": {
       "on_scheduler": true,
-      "_note": "DIAGNOSTIC — `lucy rerun rashad_orderlog` runs order_log directly for Rashad (dry, no post) so its real error surfaces in the status tail. weekdays=[] never auto-runs. Remove once order_log is fixed.",
-      "display_name": "Rashad Order Log (diag)",
-      "source_type": "appstream",
-      "data_sources": [],
+      "_note": "MANUAL re-post — `lucy rerun rashad_orderlog` posts JUST Rashad's Order Log + Rep Activations LIVE to #elevate-sales (rashad_metrics.run --live --only order_log, which sets METRICS_CHANNEL_ID + posts AS Lucy into today's thread). weekdays=[] never auto-runs; the full rashad_metrics card owns the daily 10-metric post. Repurposed 2026-07-01 from the dry diagnostic once the non-default-owner order_log ALLREPS pull was fixed (commit 70874c1).",
+      "display_name": "Rashad Order Log (re-post)",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:order_log"
+      ],
       "command": [
-        "automations.uploaded.order_log"
+        "automations.rashad_metrics.run"
       ],
       "base_args": [
-        "--owner",
-        "Rashad Reed",
-        "--no-slack"
+        "--live",
+        "--only",
+        "order_log"
       ],
       "cadence": {
         "weekdays": []
