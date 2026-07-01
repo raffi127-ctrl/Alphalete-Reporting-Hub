@@ -689,6 +689,31 @@
         "type": "not_configured"
       }
     },
+    "rashad_ol_diag": {
+      "on_scheduler": true,
+      "_note": "DIAGNOSTIC (temp 2026-07-01) — `lucy rerun rashad_ol_diag` runs order_log directly for Rashad in DRY mode (--no-slack, no post). Its own 3-line tail reveals whether Rep Activations rendered ('Saved Rep Activations image') or raised ('Rep Activations summary skipped: <err>'), since rashad_metrics hides the order_log subprocess output. Remove once the rep-activations skip is fixed.",
+      "display_name": "Rashad Order Log (diag)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.uploaded.order_log"
+      ],
+      "base_args": [
+        "--owner",
+        "Rashad Reed",
+        "--no-slack"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 30,
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "rashad_metrics_review": {
       "on_scheduler": true,
       "_note": "REVIEW run: `lucy rerun rashad_metrics_review` runs the full report --live but DMs it to Megan (U045Z8N0ZQC) via --channel, for review BEFORE going public to #elevate-sales. weekdays=[] never auto-runs.",
