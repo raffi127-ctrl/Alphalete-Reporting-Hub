@@ -40,20 +40,19 @@ TABLEAU_SITE = "sci"
 
 
 def _grab_session() -> requests.Session:
-    """Spin up a requests.Session pre-loaded with the debug Chrome's
-    Tableau cookies. Re-auths the Tableau tab via ownerville SSO if the
-    session has expired. Caller owns the session and can reuse it for
-    multiple GETs without re-grabbing cookies."""
-    with sync_playwright() as p:
-        browser = p.chromium.connect_over_cdp(fetch_office.CDP_URL)
-        page = _find_tableau_page(browser)
-        if page is None:
-            page = _reauth_tableau(browser.contexts[0])
-        cookies = page.context.cookies()
-    s = requests.Session()
-    for c in cookies:
-        s.cookies.set(c["name"], c["value"], domain=c["domain"])
-    return s
+    """Build a requests.Session pre-loaded with Tableau SSO cookies.
+
+    Repointed 2026-07-01 to the PATCHRIGHT tableau session — the old CDP debug
+    Chrome on :9222 no longer runs on the mini, so connect_over_cdp failed
+    ("retrieving websocket url from http://localhost:9222"). Production callers
+    (opt_nds) already pass their own patchright session via
+    requests_session_from_page(page); this fallback now uses the same source, so
+    a caller that omits `session` no longer hits the dead CDP path."""
+    from automations.shared.tableau_patchright import (
+        tableau_session, requests_session_from_page,
+    )
+    with tableau_session(verbose=False) as page:
+        return requests_session_from_page(page)
 
 
 def download_view_csv(workbook: str, view: str, out_path: Path,
