@@ -683,64 +683,6 @@ def _reuse_appstream_storage_state(ctx, page: Page, verbose: bool) -> bool:
     return False
 
 
-def refresh_appstream_via_sso(ctx, page: Page, verbose: bool = True) -> bool:
-    """Re-mint a FRESH AppStream session by walking ownerville's SSO hop (p=701)
-    and save it to APPSTREAM_STORAGE_STATE — the self-heal for the ~2h rqst token.
-
-    AppStream's rqst token only lives ~2h and a console reload does NOT refresh
-    it, so a stored token always ages out before the next unattended batch. But
-    the OV->AppStream SSO hop passes Cloudflare unattended again (re-verified
-    2026-06-30 after the wall that blocked it on 2026-06-22 came down), so we
-    mint a brand-new token off the (self-refreshing) ownerville session. Called
-    every holder cycle, the saved token is never more than one interval old — it
-    never expires. Returns True on a fresh save; on any failure it leaves the
-    last good export UNTOUCHED (never clobbers a working session with junk).
-
-    Requires a valid ownerville login already present on `ctx` (the holder keeps
-    it warm); the caller passes a page dedicated to AppStream."""
-    try:
-        _sso_to_appstream(page, verbose=verbose)
-    except Exception as e:
-        if verbose:
-            print(f"-> AppStream SSO refresh failed: {type(e).__name__}: "
-                  f"{str(e)[:120]}", flush=True)
-        return False
-    url = page.url or ""
-    if "applicantstream.com" not in url or "login" in url.lower():
-        if verbose:
-            print(f"-> SSO hop didn't land on an authed console (at {url[:72]})",
-                  flush=True)
-        return False
-    # The console is keyed to the rqst URL token; persist it as the rqst_<TOKEN>
-    # cookie the reuse path reads (the server may or may not set it itself).
-    state = ctx.storage_state()
-    cookies = [c for c in state.get("cookies", [])
-               if "applicantstream" in (c.get("domain") or "")]
-    have_rqst = any((c.get("name") or "").startswith("rqst_") for c in cookies)
-    m = _APPSTREAM_RQST_RE.search(url)
-    tok = m.group(1) if m else None
-    if tok and not have_rqst:
-        cookies.append({
-            "name": f"rqst_{tok}", "value": "1",
-            "domain": "applicantstream.com", "path": "/",
-            "expires": time.time() + 2 * 3600,  # matches the server's ~2h life
-            "httpOnly": False, "secure": True, "sameSite": "Lax",
-        })
-        have_rqst = True
-    if not have_rqst:
-        if verbose:
-            print("-> SSO landed but found no rqst token to save — keeping the "
-                  "last good export", flush=True)
-        return False
-    APPSTREAM_STORAGE_STATE.write_text(
-        json.dumps({"cookies": cookies, "origins": []}))
-    if verbose:
-        print(f"-> AppStream token refreshed via SSO "
-              f"(rqst={(tok or '?')[:8]}…, {len(cookies)} cookies saved)",
-              flush=True)
-    return True
-
-
 @contextmanager
 def appstream_direct_session(headless: bool = False,
                              verbose: bool = True,
@@ -935,12 +877,12 @@ if __name__ == "__main__":
     ap.add_argument("--appstream-login", action="store_true",
                     help="One-time interactive AppStream login → saves the "
                          "session for unattended runs.")
-    ap.add_argument("--appstream-sso-refresh", action="store_true",
-                    help="Test the UNATTENDED self-heal: walk OV->AppStream via "
-                         "SSO, save a fresh token, and confirm a cold reuse works.")
     ap.add_argument("--appstream-form-login", action="store_true",
                     help="Test the UNATTENDED rcaptain form login (now that "
                          "Cloudflare auto-passes) → real console + save session.")
+    ap.add_argument("--ownerville-form-login", action="store_true",
+                    help="Test whether ownerville's Cloudflare auto-passes now: "
+                         "drive the OV login in a THROWAWAY profile, unattended.")
     args = ap.parse_args()
     if args.appstream_form_login:
         import sys as _sys
@@ -970,56 +912,40 @@ if __name__ == "__main__":
     if args.appstream_login:
         import sys as _sys
         _sys.exit(0 if _capture_appstream_state(verbose=True) else 1)
-    if args.appstream_sso_refresh:
+    if args.ownerville_form_login:
         import sys as _sys
-        PROFILE_DIR.mkdir(exist_ok=True, parents=True)
+        # Throwaway profile so we NEVER touch the holder's / reports' shared
+        # profile. NOTE: ownerville is one-session-per-account, so this login can
+        # still bump a live holder session server-side — stop the holder first.
+        _test_profile = PROFILE_DIR.parent / ".ov_login_test"
+        _test_profile.mkdir(exist_ok=True, parents=True)
+        _ok = False
         with sync_playwright() as _p:
-            _ctx = _launch_persistent(_p, PROFILE_DIR, headless=False,
-                                      label="appstream_sso_refresh", verbose=True)
+            _ctx = _launch_persistent(_p, _test_profile, headless=False,
+                                      label="ov_form_login_test", verbose=True)
             _pg = _ctx.pages[0] if _ctx.pages else _ctx.new_page()
-            _ensure_ownerville_logged_in(_pg, verbose=True)
-            # Mint a live session via SSO, then probe which auth path a COLD
-            # page can reuse: bare CFID/CFTOKEN (?p=701) vs replaying the token.
-            _sso_to_appstream(_pg, verbose=True)
-            _url = _pg.url or ""
-            _m = _APPSTREAM_RQST_RE.search(_url)
-            _tok = _m.group(1) if _m else None
-            _cks = [c for c in _ctx.storage_state().get("cookies", [])
-                    if "applicantstream" in (c.get("domain") or "")]
-            print(f"\n--- live SSO session established ---")
-            print(f"  landed: {_url[:78]}")
-            print(f"  appstream cookies: "
-                  f"{', '.join(sorted(c.get('name','?') for c in _cks)) or '(none)'}")
-            print(f"  token in URL: {(_tok or '(none)')[:16]}…\n")
-
-            def _probe(label, goto_url):
-                pg = _ctx.new_page()
+            try:
+                _pg.goto(LOGIN_URL, wait_until="domcontentloaded")
+                _pg.wait_for_timeout(3_000)
                 try:
-                    pg.goto(goto_url, wait_until="domcontentloaded")
-                except Exception as e:
-                    print(f"  [{label}] goto error: {type(e).__name__}"); return False
-                got = False
-                for _ in range(4):            # up to ~20s
-                    try:
-                        if pg.locator("#searchMC").count() > 0:
-                            got = True; break
-                    except Exception:
-                        pass
-                    pg.wait_for_timeout(5_000)
-                print(f"  [{label}] {'✅ #searchMC' if got else '❌ no console'} "
-                      f"— at {(pg.url or '')[:66]}")
-                pg.close(); return got
-
-            print("--- COLD reuse probes (fresh pages, same saved cookies) ---")
-            _bare = _probe("CFID/CFTOKEN only (?p=701, no token)",
-                           f"{APPSTREAM_BASE}?p=701")
-            _repl = _probe("replay token (?rqst=…&p=701)",
-                           f"{APPSTREAM_BASE}?rqst={_tok}&p=701") if _tok else False
-            print("\n=== VERDICT ===")
-            print(f"  bare CF cookies authenticate : {'YES' if _bare else 'no'}")
-            print(f"  token replay authenticates   : {'YES' if _repl else 'no'}")
-            _ctx.close()
-        _sys.exit(0)
+                    _pg.wait_for_selector(
+                        f"{_PASSWORD_SELECTOR}, {_USERNAME_SELECTOR}",
+                        timeout=20_000)
+                except Exception:
+                    pass
+                _drive_login_form(_pg, verbose=True)   # defaults to OV creds
+                _ok = _ownerville_session_valid(_pg, verbose=True)
+                print("\n✅ ownerville form login reached a LIVE session UNATTENDED "
+                      "(rqst present) — Cloudflare auto-passes; the holder could be "
+                      "retired." if _ok else
+                      "\n❌ ownerville form login did NOT reach a live session — "
+                      "Cloudflare still blocks the OV form; keep the holder.")
+            except Exception as _e:
+                print(f"\n❌ ownerville form login error: {type(_e).__name__}: "
+                      f"{str(_e)[:180]}")
+            finally:
+                _ctx.close()
+        _sys.exit(0 if _ok else 1)
     if args.appstream:
         with appstream_session(verbose=True) as pg:
             url = pg.url or ""
