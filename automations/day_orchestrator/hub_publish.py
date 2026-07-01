@@ -50,6 +50,7 @@ _HUB_CARD = {
     "org_sales_board": "org-sales-board",
     "leaders_call": "leaders-call",
     "residential_rep_count": "residential_rep_count",
+    "rashad_metrics": "rashad-metrics",
     # weather_alert, brand_audit: Slack-only, no Hub card → not published.
 }
 
