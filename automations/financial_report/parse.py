@@ -110,30 +110,100 @@ def _detect_format(wb) -> str:
     return "summary"
 
 
+def _num(v):
+    """Normalize a summary value cell so both layouts store the same type:
+    '90,036.50' -> 90036.50, '$1,200' -> 1200, '49.33%' -> 0.4933 (fraction,
+    matching the old numeric % like 0.6125). Numbers pass through; unparseable
+    text is returned as-is."""
+    if v is None or isinstance(v, (int, float)):
+        return v
+    s = str(v).strip()
+    if not s:
+        return None
+    if s.endswith("%"):
+        try:
+            return float(s[:-1].replace(",", "").strip()) / 100.0
+        except ValueError:
+            return v
+    try:
+        return float(s.replace(",", "").replace("$", "").strip())
+    except ValueError:
+        return v
+
+
+def _date_cell(v) -> Optional[dt.date]:
+    """A date-header cell -> date, from a datetime OR an 'MM/DD/YYYY' string."""
+    if isinstance(v, dt.datetime):
+        return v.date()
+    if isinstance(v, dt.date):
+        return v
+    if isinstance(v, str):
+        for fmt in ("%m/%d/%Y", "%m/%d/%y"):
+            try:
+                return dt.datetime.strptime(v.strip(), fmt).date()
+            except ValueError:
+                continue
+    return None
+
+
+def _date_header(cells) -> Tuple[Optional[List[dt.date]], Optional[int]]:
+    """Longest contiguous run (>=2) of date cells in a row -> (dates, start col
+    index). Handles the old layout (datetimes in D-F) and the new one
+    (MM/DD/YYYY strings in B-E)."""
+    parsed = [_date_cell(c) for c in cells]
+    best_start, best_len, i = None, 0, 0
+    while i < len(parsed):
+        if parsed[i] is not None:
+            j = i
+            while j < len(parsed) and parsed[j] is not None:
+                j += 1
+            if j - i > best_len:
+                best_start, best_len = i, j - i
+            i = j
+        else:
+            i += 1
+    if best_len >= 2:
+        return parsed[best_start:best_start + best_len], best_start
+    return None, None
+
+
 def _parse_summary(wb) -> Tuple[List[dict], List[dt.date]]:
-    """FINANCIAL SUMMARY layout — offices stacked on the first sheet."""
+    """FINANCIAL SUMMARY layout — offices stacked on the first sheet. Handles
+    BOTH hubtruth layouts by locating the value columns dynamically off the
+    date-header row: the old one (office header col B, metric col C, datetime
+    headers/values in D+) and the new 'ORG FINANCIAL SUMMARY' one (office +
+    metric both col A, 'MM/DD/YYYY' string headers/values shifted to B+)."""
     ws = wb[wb.sheetnames[0]]
     weeks: List[dt.date] = []
+    vcol: Optional[int] = None       # 0-based col where the week values start
     offices: List[dict] = []
     cur: Optional[dict] = None
     for row in ws.iter_rows(min_row=1, max_row=ws.max_row):
-        b = row[1].value if len(row) > 1 else None
-        c = row[2].value if len(row) > 2 else None
-        vals = [(row[i].value if len(row) > i else None) for i in range(3, 7)]
-        if not weeks and all(isinstance(v, dt.datetime) for v in vals):
-            weeks = [v.date() for v in vals]
+        cells = [c.value for c in row]
+        if vcol is None:
+            dates, start = _date_header(cells)
+            if dates:
+                weeks, vcol = dates, start
             continue
-        if b and "(" in str(b) and ")" in str(b):
-            cur = {"office": str(b).strip(),
-                   "owner": _owner_from_office(str(b)),
-                   "state": _state_from_office(str(b)),
+        label_region = cells[:vcol]
+        vals = [(_num(cells[vcol + i]) if vcol + i < len(cells) else None)
+                for i in range(len(weeks))]
+        # office header: a '(OWNER-STATE)' cell in the label region
+        office = next((str(v).strip() for v in label_region
+                       if v and "(" in str(v) and ")" in str(v)), None)
+        if office:
+            cur = {"office": office,
+                   "owner": _owner_from_office(office),
+                   "state": _state_from_office(office),
                    "metrics": {}}
             offices.append(cur)
-        elif c and cur is not None:
-            label = str(c).strip().upper()
-            cur["metrics"][label] = {weeks[i]: vals[i]
-                                     for i in range(min(len(weeks), len(vals)))
-                                     if vals[i] is not None}
+            continue
+        # metric row: the last non-empty label cell before the values
+        label = next((str(v).strip() for v in reversed(label_region)
+                      if v and str(v).strip()), None)
+        if label and cur is not None:
+            cur["metrics"][label.upper()] = {
+                weeks[i]: vals[i] for i in range(len(weeks)) if vals[i] is not None}
     return offices, weeks
 
 

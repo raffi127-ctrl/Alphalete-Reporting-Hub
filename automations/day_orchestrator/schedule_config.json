@@ -1,7 +1,7 @@
 {
   "_meta": {
-    "purpose": "Single editable source of truth for the day orchestrator. Cadence, priority, and freshness are deliberately KNOBS \u2014 tuned by hand during the ~1-week parallel dry-run (Megan 2026-06-23).",
-    "scope": "ALL non-upload reports run on the scheduler (Megan 2026-06-23). Upload-gated reports still manual: Financial, First/Last Sale \u2014 see 'excluded'. Frontier moved to auto email-ingest 2026-07-01.",
+    "purpose": "Single editable source of truth for the day orchestrator. Cadence, priority, and freshness are deliberately KNOBS — tuned by hand during the ~1-week parallel dry-run (Megan 2026-06-23).",
+    "scope": "ALL non-upload reports run on the scheduler (Megan 2026-06-23). Upload-gated reports still manual: Financial, First/Last Sale — see 'excluded'. Frontier moved to auto email-ingest 2026-07-01.",
     "weekday_convention": "Python weekday(): Mon=0, Tue=1, Wed=2, Thu=3, Fri=4, Sat=5, Sun=6 (matches dashboard.py).",
     "times": "All times are CST (the mini is Central). HH:MM 24h.",
     "priority_tiers": "P1 critical (guaranteed done daily, runs first) > P2 standard > P3 best-effort (runs last).",
@@ -9,7 +9,7 @@
     "source_type": "tableau = readiness gate + circle-back applies | appstream = immediately ready (no probe) | api = ready | upload = MANUAL, never auto-run.",
     "run_order_flow": "Run order optimizes TOTAL runtime (registry.flow_rank): wave 1 = every NON-tableau report (appstream / api / email / upload) so their early-ready data fills first; wave 2 = all source_type 'tableau' reports LAST, giving Tableau the most time to finish publishing before we read it; daily_rep_breakdown is pinned dead last (heaviest, flakiest). New reports auto-map by source_type — set it correctly and the report lands in the right wave automatically; no per-report order field. Source-type-based, never weekday-based, so a weekend-scheduled AppStream report still runs in wave 1 and is never blocked.",
     "probe_not_configured": "A tableau source with probe.type 'not_configured' resolves READY in --dry-run (so the full loop exercises) and NOT-READY in live (forces wiring the real view URL before cutover).",
-    "cutover_retire_jobs": "These now run from the orchestrator \u2014 RETIRE their standalone LaunchAgents at cutover so reports don't double-run/double-post: com.alphalete.appstream-morning (daily_focus + Mon recruiter retention), com.alphalete.weather-6am, com.alphalete.brand-audit-noon, com.alphalete.recruiting-report (weekly ATT). Until cutover (dry-run week) they coexist safely \u2014 the orchestrator writes nothing."
+    "cutover_retire_jobs": "These now run from the orchestrator — RETIRE their standalone LaunchAgents at cutover so reports don't double-run/double-post: com.alphalete.appstream-morning (daily_focus + Mon recruiter retention), com.alphalete.weather-6am, com.alphalete.brand-audit-noon, com.alphalete.recruiting-report (weekly ATT). Until cutover (dry-run week) they coexist safely — the orchestrator writes nothing."
   },
   "settings": {
     "start_time": "04:00",
@@ -20,7 +20,7 @@
     "recipients": [
       "Alphaletereporting@gmail.com"
     ],
-    "_recipients_note": "Send only to alphaletereporting@ \u2014 direct Gmail-to-Gmail sends to personal inboxes get silently dropped. A filter in that account (from:alphaletereporting to:alphaletereporting) forwards every report email to Meganhidalgo1191@. Add to the FORWARD, not here.",
+    "_recipients_note": "Send only to alphaletereporting@ — direct Gmail-to-Gmail sends to personal inboxes get silently dropped. A filter in that account (from:alphaletereporting to:alphaletereporting) forwards every report email to Meganhidalgo1191@. Add to the FORWARD, not here.",
     "session_stale_after_minutes": 20,
     "gate_unprobed_sources": false
   },
@@ -105,7 +105,7 @@
       "display_name": "Daily Recruiting Focus",
       "source_type": "appstream",
       "data_sources": [],
-      "_note": "One pass over EVERY captainship tab. '--captainship all' reads CAPTAINSHIPS in daily_focus.py (Raf, Carlos, Sahil Multani, Chan Park, Jose Antonio Chavez). Add a captain there + a tab in the Sheet \u2014 no schedule_config edit needed. (Replaced the split daily_focus_raf/daily_focus_carlos entries 2026-06-26.)",
+      "_note": "One pass over EVERY captainship tab. '--captainship all' reads CAPTAINSHIPS in daily_focus.py (Raf, Carlos, Sahil Multani, Chan Park, Jose Antonio Chavez). Add a captain there + a tab in the Sheet — no schedule_config edit needed. (Replaced the split daily_focus_raf/daily_focus_carlos entries 2026-06-26.)",
       "command": [
         "automations.recruiting_report.daily_focus"
       ],
@@ -377,7 +377,7 @@
     "brand_audit": {
       "on_scheduler": false,
       "runs_at": "12:00 PM CST",
-      "_disabled_reason": "Not a priority \u2014 excluded from the orchestrator so its noon slot doesn't hold the morning final email. Runs on its own standalone noon launchd job (com.alphalete.brand-audit-noon); listed in the summary email as REMAINING via runs_at.",
+      "_disabled_reason": "Not a priority — excluded from the orchestrator so its noon slot doesn't hold the morning final email. Runs on its own standalone noon launchd job (com.alphalete.brand-audit-noon); listed in the summary email as REMAINING via runs_at.",
       "display_name": "Brand Health Audit",
       "source_type": "api",
       "data_sources": [],
@@ -581,7 +581,7 @@
       },
       "idempotency": {
         "insert_style": true,
-        "_warn": "inserts a new week column \u2014 confirm it won't double-insert on retry before cutover."
+        "_warn": "inserts a new week column — confirm it won't double-insert on retry before cutover."
       }
     },
     "residential_rep_count": {
@@ -655,7 +655,15 @@
       ],
       "_base_args_note": "LIVE: pulls all metric slugs for Rashad (order_log+rep_activations, sales_6plus, cancels, ongoing_cancel, disconnects, churn, knocks_gaps) + POSTS to #elevate-sales. Flipped to DAILY (every day, not-before 06:00) 2026-06-30 after a verified 10/10 thread; churn grid-range + order_log owner-gate + sidebar-nav stale-session fixes all landed same day.",
       "cadence": {
-        "weekdays": [0, 1, 2, 3, 4, 5, 6]
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
       },
       "priority": "P1",
       "freshness_target": null,
@@ -714,27 +722,6 @@
         "type": "not_configured"
       }
     },
-    "insurance_probe": {
-      "on_scheduler": true,
-      "_note": "DIAGNOSTIC (temp 2026-07-01) — `lucy rerun insurance_probe` pulls NDS Weekly Metrics (Rep) via the HTTP .csv endpoint (the UI crosstab fails for this view class) and uploads the CSV to Megan's Slack DM so Claude can read the real column/Total-row structure before wiring the Insurance% fill. weekdays=[] never auto-runs. Remove once wired.",
-      "display_name": "Insurance% NDS probe",
-      "source_type": "tableau",
-      "data_sources": [],
-      "command": [
-        "automations.recruiting_report._insurance_probe"
-      ],
-      "base_args": [],
-      "cadence": {
-        "weekdays": []
-      },
-      "priority": "P3",
-      "freshness_target": null,
-      "depends_on": [],
-      "timeout_minutes": 15,
-      "verify": {
-        "type": "not_configured"
-      }
-    },
     "rashad_metrics_review": {
       "on_scheduler": true,
       "_note": "REVIEW run: `lucy rerun rashad_metrics_review` runs the full report --live but DMs it to Megan (U045Z8N0ZQC) via --channel, for review BEFORE going public to #elevate-sales. weekdays=[] never auto-runs.",
@@ -787,15 +774,15 @@
     }
   },
   "read_only_standalone": {
-    "_note": "Empty now \u2014 the previously-standalone AppStream/weather/brand reports were folded into the scheduler above (Megan 2026-06-23). Retire their launchd jobs at cutover (see _meta.cutover_retire_jobs)."
+    "_note": "Empty now — the previously-standalone AppStream/weather/brand reports were folded into the scheduler above (Megan 2026-06-23). Retire their launchd jobs at cutover (see _meta.cutover_retire_jobs)."
   },
   "excluded": {
     "_note": "Still manual: Financial (multi-sender email, not yet wired) + First/Last Sale (its email is being discontinued -> Tableau rewire). Frontier moved to auto email-ingest 2026-07-01 (source_type email, --email).",
     "financial_report": {
-      "_reason": "Upload-gated \u2014 MANUAL (multi-sender email auto-ingest not built yet)."
+      "_reason": "Upload-gated — MANUAL (multi-sender email auto-ingest not built yet)."
     },
     "first_last_sale": {
-      "_reason": "Upload-gated \u2014 MANUAL (email being discontinued; move to Tableau D2D/B2B view)."
+      "_reason": "Upload-gated — MANUAL (email being discontinued; move to Tableau D2D/B2B view)."
     }
   }
 }
