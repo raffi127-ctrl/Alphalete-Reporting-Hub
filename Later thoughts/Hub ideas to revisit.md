@@ -6,9 +6,16 @@ Hub later, but are not building right now. Add to this list anytime.
 ---
 
 ## Auto-running scheduler
-Logged: 2026-05-15
+Logged: 2026-05-15 · **DONE 2026-06-23** (this is now the thing running the whole morning)
 
-**What:** the Hub runs reports on their own at a set time (Daily / Weekly /
+**SHIPPED.** The Mac mini day-orchestrator (launchd `com.alphalete.day-orchestrator`,
+~4am CST) auto-runs ALL non-upload reports with a readiness gate + circle-back retry +
+7:30/noon email summaries. The "can't run unattended while a human logs in" blocker was
+solved by the session-holder keepalive (keeps ownerville/AppStream warm). Run order is
+now flow-optimized (non-Tableau first → Tableau → daily_rep_breakdown last, 2026-06-30).
+Remote control via `lucy`; readiness = source_type based. Original note kept for history.
+
+**What (original):** the Hub runs reports on their own at a set time (Daily / Weekly /
 Monthly + time of day) — no human click needed.
 
 **Why parked:** reports that pull from a logged-in website (e.g. Daily Rep
@@ -93,8 +100,9 @@ Logged: 2026-05-16 · **AUDITED 2026-06-10**
   single-pull / upload reports where "retry failed only" == just re-run.
 - **Resume checkpoint** = only daily-rep-breakdown. Worth adding to the long
   recruiting reports someday; everything else is short enough not to need it.
-  recruiting-carlos manifest still TODO (its primary is the carlos_opt_all
-  orchestrator, not the shared run.py).
+  recruiting-carlos manifest **DONE 2026-06-30** — carlos_opt_all + alphalete
+  opt_all now write wrapper-completeness manifests (verify wired). So every
+  scheduled report now has a manifest / "retry failed only" path.
 
 **What (original):** resume, the progress bar, retry, and failure alerts are now
 built. Go through every report in the Report Library and confirm they
