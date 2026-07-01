@@ -1,11 +1,13 @@
 """Probe NDS Weekly Metrics (Rep) to see how to pull the Insurance % values.
 
 The UI crosstab download FAILS for this view class (React ignores the worksheet
-thumbnail click — see tableau_http.py), which is why opt_nds pulls it via the
-HTTP .csv endpoint instead. So this probe pulls it the SAME way (HTTP, base view
-= Last Week, all owners) and UPLOADS the CSV to the Lucy↔Megan Slack DM so Claude
-can read the exact columns + whether per-owner Total rows are present, before
-wiring the fill. Compact verdict also lands in `lucy status`.
+thumbnail click). The HTTP helper (tableau_http) is ALSO dead on the mini — it
+attaches to a CDP debug Chrome on :9222 that no longer runs (patchright now).
+
+So this probe fetches the view's .csv endpoint through the PATCHRIGHT tableau
+session's authenticated request context (shares the SSO cookies, no CDP needed),
+then uploads the CSV to the Lucy↔Megan Slack DM so Claude can read the real
+columns + whether per-owner Total rows are present before wiring the fill.
 
     lucy rerun insurance_probe
 
@@ -18,37 +20,52 @@ from pathlib import Path
 
 import certifi
 
-from automations.alphalete_org_report import tableau_http
+from automations.shared.tableau_patchright import tableau_session
 
-WORKBOOK = "NDS-SNRES-ATT-OOFWorkbook"
-VIEW = "NDSWeeklyMetricsRep"
+CSV_URL = ("https://us-east-1.online.tableau.com/t/sci/views/"
+           "NDS-SNRES-ATT-OOFWorkbook/NDSWeeklyMetricsRep.csv")
 MEGAN = "U045Z8N0ZQC"
 
 
-def _peek(rows: list[list[str]]) -> str:
+def _fetch_csv(out: Path) -> None:
+    with tableau_session(verbose=True) as page:
+        # context.request shares the SSO auth cookies but isn't a same-origin
+        # browser fetch, so no CORS wall. 120s for a big export.
+        resp = page.context.request.get(CSV_URL, timeout=120_000)
+        if not resp.ok:
+            raise RuntimeError(f"HTTP {resp.status} from .csv endpoint")
+        out.write_bytes(resp.body())
+
+
+def _peek(out: Path) -> str:
+    from automations.alphalete_org_report import tableau_http
+    try:
+        rows = tableau_http.parse_csv(out)
+    except Exception:
+        rows = [ln.split(",") for ln in
+                out.read_text(encoding="latin-1", errors="replace").splitlines()[:400]]
     if not rows:
         return "EMPTY csv"
     header = rows[0]
     ins_i = next((i for i, h in enumerate(header) if "nsurance" in h.lower()), None)
     owner_i = next((i for i, h in enumerate(header) if "owner" in h.lower()), None)
-    rep_i = next((i for i, h in enumerate(header) if h.strip().lower() in ("rep", "rep name")), None)
-    # Count rows that look like per-owner subtotals (Rep cell == 'Total' or blank).
+    rep_i = next((i for i, h in enumerate(header)
+                  if h.strip().lower() in ("rep", "rep name")), None)
     total_rows = 0
     if rep_i is not None:
-        for r in rows[1:]:
-            if rep_i < len(r) and r[rep_i].strip().lower() in ("total", ""):
-                total_rows += 1
+        total_rows = sum(1 for r in rows[1:]
+                         if rep_i < len(r) and r[rep_i].strip().lower() in ("total", ""))
     khalil = "?"
     if owner_i is not None and ins_i is not None:
         for r in rows[1:]:
             if owner_i < len(r) and "khalil" in r[owner_i].lower():
                 khalil = r[ins_i] if ins_i < len(r) else "?"
                 break
-    return (f"{len(rows)-1} data rows; cols={len(header)}; "
-            f"insurance_col={header[ins_i] if ins_i is not None else 'MISSING'!r}; "
-            f"owner_col={'yes' if owner_i is not None else 'no'}; "
-            f"rep_col={'yes' if rep_i is not None else 'no'}; "
-            f"total/blank-rep rows={total_rows}; khalil_insurance={khalil!r}")
+    return (f"{len(rows)-1} rows; cols={len(header)}; "
+            f"insurance={header[ins_i] if ins_i is not None else 'MISSING'!r}; "
+            f"owner_col={'y' if owner_i is not None else 'n'}; "
+            f"rep_col={'y' if rep_i is not None else 'n'}; "
+            f"total/blank-rep rows={total_rows}; khalil={khalil!r}")
 
 
 def _post_to_slack(out: Path, summary: str) -> str:
@@ -60,7 +77,7 @@ def _post_to_slack(out: Path, summary: str) -> str:
     client.files_upload_v2(
         channel=dm, file=str(out), filename="insurance_probe.csv",
         title="Insurance% NDS probe",
-        initial_comment=f"🔧 Insurance% probe — NDS Weekly Metrics (Rep) via HTTP. {summary}")
+        initial_comment=f"🔧 Insurance% probe — NDS Weekly Metrics (Rep) via patchright .csv. {summary}")
     return "posted CSV to Megan's Slack DM"
 
 
@@ -68,22 +85,17 @@ def main() -> int:
     out = Path("output") / "_insurance_probe.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     try:
-        tableau_http.download_view_csv(WORKBOOK, VIEW, out)
+        _fetch_csv(out)
     except Exception as e:  # noqa: BLE001
-        print(f"INSURANCE PROBE VERDICT: ❌ HTTP pull failed — "
+        print(f"INSURANCE PROBE VERDICT: ❌ .csv fetch failed — "
               f"{type(e).__name__}: {str(e)[:160]}")
         return 1
-    try:
-        rows = tableau_http.parse_csv(out)
-    except Exception as e:  # noqa: BLE001
-        rows = []
-        print(f"  parse_csv failed: {e}")
-    summary = _peek(rows)
+    summary = _peek(out)
     try:
         posted = _post_to_slack(out, summary)
     except Exception as e:  # noqa: BLE001
         posted = f"Slack upload failed ({type(e).__name__}: {str(e)[:80]})"
-    print(f"INSURANCE PROBE VERDICT: ✓ HTTP OK — {summary} — {posted}")
+    print(f"INSURANCE PROBE VERDICT: ✓ .csv OK — {summary} — {posted}")
     return 0
 
 
