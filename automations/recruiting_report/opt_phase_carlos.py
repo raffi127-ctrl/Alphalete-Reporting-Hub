@@ -324,10 +324,15 @@ VIEWS: List[ViewConfig] = [
 ]
 
 # Personal Production View-Data scrape: the B2BATTSalesMetrics dashboard is
-# multi-sheet, so 'Download → Data' is disabled until the Sales.Quality Metrics
-# worksheet is activated. This fractional (x, y) clicks inside that sheet first.
-# TUNE against live Tableau if the scrape reports no worksheet selected.
-PP_ACTIVATE_XY = (0.5, 0.35)
+# multi-sheet, so 'Download → Data' is disabled until the rep-level worksheet
+# ("B2B Metrics Owner (+/-) Rep" / Sales.Quality Metrics) is activated. This
+# fractional (x, y) clicks its HEADER ROW — activates the sheet without picking
+# a data mark (a mark would scope View Data to one rep). y=0.35 landed on the
+# "Low Metric Office Count" summary tile above it (returned Total Offices /
+# threshold counts, not per-rep rows — verified live 2026-07-01); 0.40 drops
+# onto the rep table's column headers. TUNE against live Tableau if the scrape
+# returns the summary tile again (raise y) or one rep's rows (it hit a mark).
+PP_ACTIVATE_XY = (0.5, 0.40)
 
 
 # Canonical column-B label(s) for each sheet row in our OPT block. The
