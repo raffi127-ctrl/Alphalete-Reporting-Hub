@@ -257,22 +257,32 @@ def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
         else:
             recon = reconcile.verify(r, target, dry_run=dry_run)
         done = False
+        mark_ran = False    # publish to the Hub? true for DONE *and* INCOMPLETE
         if recon.ok and not recon.unknown:
             ds.set(r.report_id, state.DONE, reason=recon.note)
             _log(f"  {r.report_id}: DONE — {recon.note}")
             done = True
+            mark_ran = True
         elif recon.unknown:
             # Ran clean but we can't verify cells yet (verify not wired).
             ds.set(r.report_id, state.DONE, reason=f"ran; {recon.note}")
             _log(f"  {r.report_id}: DONE (unverified) — {recon.note}")
             done = True
+            mark_ran = True
         else:
             ds.set(r.report_id, state.INCOMPLETE, reason=recon.note, missing=recon.missing)
             _log(f"  {r.report_id}: INCOMPLETE — {recon.note}: {', '.join(recon.missing)}")
+            # INCOMPLETE = it RAN, just with a note (e.g. an owner pending OV
+            # access, a VA-compare lag). Still mark it on the Hub so the card
+            # shows it ran — the exit code already kept a hard FAILURE (non-zero)
+            # out of this branch, and the email renders the note separately.
+            # (Megan 2026-07-01: 'ran with a note' should be marked complete on
+            # the Hub, not left looking like it never ran.)
+            mark_ran = True
 
         # Mark it ran on the Hub (shared "Hub Activity" tab) so the Hub reflects
         # mini runs, not just click-runs (Megan 2026-06-25). Best-effort.
-        if done and not (dry_run or simulate):
+        if mark_ran and not (dry_run or simulate):
             try:
                 from automations.day_orchestrator import hub_publish
                 if hub_publish.publish_done(r.report_id, r.display_name):
