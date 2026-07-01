@@ -709,10 +709,13 @@ def write_per_day_total_apps_formulas(ws, layout: Layout) -> int:
     misleading '0'. Idempotent. Returns the count of cells touched.
     """
     rep_vals = ws.col_values(layout.rep_name_col)
-    rep_rows = [
-        i for i, v in enumerate(rep_vals, start=1)
-        if i >= 3 and v and v.strip() and not _is_summary_label(v)
-    ]
+    # CURRENT-zone rep rows ONLY — never the frozen LAST WEEK block. That block
+    # is a COMPLETED week (all 7 days); the broad "every named row" scan used to
+    # include it, and the today-based `is_future` cutoff below then CLEARED its
+    # Thu–Sun Total Apps as if they were future days (glitch 2026-07-01: last
+    # week's Total Apps stopped summing past today's weekday). _current_zone_rep_rows
+    # stops at the LAST WEEK label + skips summary rows (same as the weekly-sum writer).
+    rep_rows = _current_zone_rep_rows(rep_vals)
     if not rep_rows:
         return 0
 
