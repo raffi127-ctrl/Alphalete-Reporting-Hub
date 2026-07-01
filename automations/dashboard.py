@@ -1684,7 +1684,7 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "frontier-opt-data-pull",
-        "name": "Frontier OPT Data Pull (Upload)",
+        "name": "Frontier OPT Data Pull",
         "creator": "Megan",
         "emoji": "📄",
         "color": "#10B981",
@@ -1712,7 +1712,7 @@ AUTOMATED_REPORTS = [
             "latest numbers)."
         ),
         "sheet_url": ALPHALETE_ORG_SHEET_URL,
-        "assignees": ["Eve"],
+        "assignees": ["Eve", "Fully Automated Alphalete Reports"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],   # Monday
