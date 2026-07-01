@@ -747,7 +747,8 @@ def appstream_direct_session(headless: bool = False,
                              profile_dir: Optional[Path] = None,
                              username: Optional[str] = None,
                              password: Optional[str] = None,
-                             allow_form_login: bool = False) -> Iterator[Page]:
+                             allow_form_login: bool = False,
+                             force_form_login: bool = False) -> Iterator[Page]:
     """Yield a Page on the AppStream recruiting console (#searchMC office
     switcher) for the rcaptain account, via patchright stealth. Unattended
     replacement for fetch_office._attach() (debug-Chrome CDP, broken on Chrome
@@ -779,8 +780,10 @@ def appstream_direct_session(headless: bool = False,
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
             # Primary (automated) path: restore the exported session. Never
-            # touches the login form / Turnstile.
-            if _reuse_appstream_storage_state(ctx, page, verbose):
+            # touches the login form / Turnstile. force_form_login skips this to
+            # exercise the rcaptain form login directly (test / holder re-seed).
+            if not force_form_login and _reuse_appstream_storage_state(
+                    ctx, page, verbose):
                 yield page
                 return
 
@@ -791,7 +794,7 @@ def appstream_direct_session(headless: bool = False,
             # establishes the session is a one-time interactive login that
             # clears the Turnstile; the session is then kept warm so scheduled
             # runs don't hit the wall. See _capture_appstream_state() below.
-            if not allow_form_login:
+            if not (allow_form_login or force_form_login):
                 raise RuntimeError(
                     "AppStream session expired or missing. The saved session "
                     "(.appstream_storage_state.json) has no live token. Re-seed "
@@ -906,7 +909,35 @@ if __name__ == "__main__":
     ap.add_argument("--appstream-sso-refresh", action="store_true",
                     help="Test the UNATTENDED self-heal: walk OV->AppStream via "
                          "SSO, save a fresh token, and confirm a cold reuse works.")
+    ap.add_argument("--appstream-form-login", action="store_true",
+                    help="Test the UNATTENDED rcaptain form login (now that "
+                         "Cloudflare auto-passes) → real console + save session.")
     args = ap.parse_args()
+    if args.appstream_form_login:
+        import sys as _sys
+        _ok = False
+        try:
+            with appstream_direct_session(allow_form_login=True,
+                                          force_form_login=True,
+                                          headless=False, verbose=True) as _pg:
+                _got = _pg.locator("#searchMC").count() > 0
+                print(f"\n-> landed at {(_pg.url or '')[:78]}")
+                if _got:
+                    _st = _pg.context.storage_state()
+                    APPSTREAM_STORAGE_STATE.write_text(json.dumps(_st))
+                    _nr = sum(1 for c in _st.get("cookies", [])
+                              if c.get("name", "").startswith("rqst_"))
+                    print(f"✅ rcaptain console reached UNATTENDED — saved session "
+                          f"({len(_st.get('cookies', []))} cookies, {_nr} rqst) "
+                          f"→ {APPSTREAM_STORAGE_STATE.name}")
+                    _ok = _nr > 0
+                else:
+                    print("❌ did NOT reach the rcaptain console (#searchMC) — "
+                          "Cloudflare may still be challenging the form, or the "
+                          "login didn't submit. Nothing saved.")
+        except Exception as _e:
+            print(f"❌ form login error: {type(_e).__name__}: {str(_e)[:160]}")
+        _sys.exit(0 if _ok else 1)
     if args.appstream_login:
         import sys as _sys
         _sys.exit(0 if _capture_appstream_state(verbose=True) else 1)
