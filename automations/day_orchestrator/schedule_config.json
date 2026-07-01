@@ -722,27 +722,6 @@
         "type": "not_configured"
       }
     },
-    "fiber_unmatched": {
-      "on_scheduler": true,
-      "_note": "DIAGNOSTIC (temp 2026-07-01) — `lucy rerun fiber_unmatched` pulls the Fiber bulk crosstab, reports which ATT Focus Report tabs are UNMATCHED (need an ICD alias) with a fuzzy-suggested Fiber-view spelling for each, + flags any matched tab with a bad >100% penetration. Posts to Megan's Slack DM. weekdays=[] never auto-runs. Remove once aliases added.",
-      "display_name": "Fiber unmatched tabs (probe)",
-      "source_type": "tableau",
-      "data_sources": [],
-      "command": [
-        "automations.recruiting_report._fiber_unmatched_probe"
-      ],
-      "base_args": [],
-      "cadence": {
-        "weekdays": []
-      },
-      "priority": "P3",
-      "freshness_target": null,
-      "depends_on": [],
-      "timeout_minutes": 15,
-      "verify": {
-        "type": "not_configured"
-      }
-    },
     "rashad_metrics_review": {
       "on_scheduler": true,
       "_note": "REVIEW run: `lucy rerun rashad_metrics_review` runs the full report --live but DMs it to Megan (U045Z8N0ZQC) via --channel, for review BEFORE going public to #elevate-sales. weekdays=[] never auto-runs.",
