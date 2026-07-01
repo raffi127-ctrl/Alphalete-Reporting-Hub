@@ -1600,7 +1600,7 @@ AUTOMATED_REPORTS = [
             {"name": "Carlos 1on1s - Focus Report",         "url": CARLOS_SHEET_URL},
             {"name": "Alphalete Org 1on1s - Focus Reports", "url": ALPHALETE_ORG_SHEET_URL},
         ],
-        "assignees": ["Eve", "Fully Automated Alphalete Reports"],
+        "assignees": ["Fully Automated Alphalete Reports"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [3],   # Thursday — 2026-07-01: cut over to auto
@@ -1717,7 +1717,7 @@ AUTOMATED_REPORTS = [
             "latest numbers)."
         ),
         "sheet_url": ALPHALETE_ORG_SHEET_URL,
-        "assignees": ["Eve", "Fully Automated Alphalete Reports"],
+        "assignees": ["Fully Automated Alphalete Reports"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],   # Monday

@@ -13,5 +13,7 @@
   "daily-1st-round-recruiter-percent": ["Fully Automated Alphalete Reports"],
   "country-metrics": ["Fully Automated Alphalete Reports"],
   "int-wow-penetration": ["Fully Automated Alphalete Reports"],
-  "org-sales-board": ["Fully Automated Alphalete Reports"]
+  "org-sales-board": ["Fully Automated Alphalete Reports"],
+  "financial-pull": ["Fully Automated Alphalete Reports"],
+  "frontier-opt-data-pull": ["Fully Automated Alphalete Reports"]
 }
