@@ -323,6 +323,12 @@ VIEWS: List[ViewConfig] = [
     ),
 ]
 
+# Personal Production View-Data scrape: the B2BATTSalesMetrics dashboard is
+# multi-sheet, so 'Download → Data' is disabled until the Sales.Quality Metrics
+# worksheet is activated. This fractional (x, y) clicks inside that sheet first.
+# TUNE against live Tableau if the scrape reports no worksheet selected.
+PP_ACTIVATE_XY = (0.5, 0.35)
+
 
 # Canonical column-B label(s) for each sheet row in our OPT block. The
 # writer looks up the actual row by matching ANY listed label in each
@@ -1160,7 +1166,8 @@ def main() -> int:
         from automations.shared.tableau_patchright import tableau_session
         from automations.recruiting_report.opt_phase import scrape_view_data
         we = _current_we_sunday()
-        crosstab_views = [v for v in VIEWS if v.key != "dd"]
+        crosstab_views = [v for v in VIEWS
+                          if v.key not in ("dd", "personal_production")]
         ok, fails = [], []
         print(f"Downloading ALL Carlos OPT views in ONE login "
               f"(week ending {we})…", flush=True)
@@ -1190,17 +1197,58 @@ def main() -> int:
             except Exception as e:
                 print(f"  ✗ dd: {type(e).__name__}: {str(e)[:160]}", flush=True)
                 fails.append("dd")
+            # Personal Production — View-Data scrape (the crosstab flyout
+            # chronically won't open on this heavy REPEXPANDED/base viz).
+            pp_view = next(v for v in VIEWS if v.key == "personal_production")
+            try:
+                fields, records = scrape_view_data(
+                    pp_view.url, verbose=True, activate_xy=PP_ACTIVATE_XY,
+                    page=page)
+                pp_path = DOWNLOAD_DIR / "personal_production_view_data.csv"
+                pp_path.parent.mkdir(parents=True, exist_ok=True)
+                pp_path.write_text(
+                    "\n".join(["\t".join(fields)]
+                              + ["\t".join(r) for r in records]),
+                    encoding="utf-8")
+                print(f"  → personal_production: scraped {len(records)} "
+                      f"View Data row(s), {len(fields)} cols", flush=True)
+                ok.append("personal_production")
+            except Exception as e:
+                print(f"  ✗ personal_production: {type(e).__name__}: "
+                      f"{str(e)[:160]}", flush=True)
+                fails.append("personal_production")
         print(f"\nDownloaded {len(ok)}/{len(VIEWS)}: {ok}"
               + (f"  | FAILED: {fails}" if fails else ""), flush=True)
         return 1 if fails else 0
 
     if args.test_view:
         view = next(v for v in VIEWS if v.key == args.test_view)
-        out = DOWNLOAD_DIR / f"{view.key}.csv"
         # Pin the download to the SAME completed week the apply step targets
         # (_current_we_sunday), so churn isn't empty and sales don't bleed in
         # from the prior week. On a Monday this is the just-ended Sunday.
         we = _current_we_sunday()
+        if view.key == "personal_production":
+            # View-Data scrape (crosstab flyout won't open on this heavy viz).
+            # Self-diagnosing: dump the real headers + sample rows so we confirm
+            # the product-column names + rep column before trusting the apply.
+            # TUNE PP_ACTIVATE_XY if it reports 0 rows / no worksheet selected.
+            from automations.recruiting_report.opt_phase import scrape_view_data
+            print(f"Test-scraping PP View Data (week ending {we})…")
+            fields, records = scrape_view_data(
+                view.url, verbose=True, activate_xy=PP_ACTIVATE_XY)
+            out = DOWNLOAD_DIR / "personal_production_view_data.csv"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(
+                "\n".join(["\t".join(fields)]
+                          + ["\t".join(r) for r in records]),
+                encoding="utf-8")
+            print(f"\nDone. CSV: {out}  ({len(records)} data rows, "
+                  f"{len(fields)} cols)")
+            print("COLUMNS:", fields)
+            for r in records[:6]:
+                print("  ", r)
+            return 0
+        out = DOWNLOAD_DIR / f"{view.key}.csv"
         print(f"Test-downloading view '{view.key}' (week ending {we})…")
         download_view_crosstab(view, out, week=we)
         print(f"\nDone. CSV: {out}")
@@ -1358,28 +1406,29 @@ def main() -> int:
         # '3 NI / 2 NL' (or '-' if nothing).
         import csv as _csv
         pp_view = next(v for v in VIEWS if v.key == "personal_production")
-        csv_path = DOWNLOAD_DIR / "personal_production.csv"
+        # View-Data scrape output (UTF-8), not the old UTF-16 crosstab — the
+        # crosstab flyout chronically won't open on this heavy viz (2026-07-01).
+        csv_path = DOWNLOAD_DIR / "personal_production_view_data.csv"
         if not csv_path.exists():
             print(f"No cached CSV at {csv_path}. Run --test-view personal_production first.")
             return 1
-        # STALENESS GATE — the PP CSV has NO date column, so a failed download
-        # (the heavy REPEXPANDED crosstab flyout chronically won't open) leaves
-        # an OLD cache that we'd otherwise fill silently, making PP identical
-        # every week (Megan 2026-06-08: "same every week → incorrect"; cache was
-        # stuck at May 20). The download runs in the SAME run as the apply, so a
-        # cache not refreshed TODAY means this week's download failed. Refuse to
-        # write stale numbers — skip + flag, leave the cell as-is (blank/last
-        # good) rather than presenting wrong data as complete.
+        # STALENESS GATE — the PP CSV has NO date column, so a failed scrape
+        # leaves an OLD cache that we'd otherwise fill silently, making PP
+        # identical every week (Megan 2026-06-08: "same every week → incorrect";
+        # cache was stuck at May 20). The scrape runs in the SAME run as the
+        # apply, so a cache not refreshed TODAY means this week's scrape failed.
+        # Refuse to write stale numbers — skip + flag, leave the cell as-is
+        # (blank/last good) rather than presenting wrong data as complete.
         import datetime as _dt
         cache_day = _dt.date.fromtimestamp(csv_path.stat().st_mtime)
         if not args.dry_run and cache_day < _dt.date.today():
-            print(f"❌ Personal Production cache is STALE (downloaded "
-                  f"{cache_day.isoformat()}, not today) — the REPEXPANDED "
-                  f"crosstab download failed this run. SKIPPING the PP fill so "
-                  f"stale numbers aren't written. Fix the download, then re-run "
+            print(f"❌ Personal Production cache is STALE (scraped "
+                  f"{cache_day.isoformat()}, not today) — the PP View-Data "
+                  f"scrape failed this run. SKIPPING the PP fill so stale "
+                  f"numbers aren't written. Fix the scrape, then re-run "
                   f"`--download-all` + `--apply-view personal_production`.")
             return 1
-        with open(csv_path, encoding="utf-16") as f:
+        with open(csv_path, encoding="utf-8") as f:
             rows = list(_csv.reader(f, delimiter="\t"))
         headers = [h.strip() for h in rows[0]]
         # The 'Rep' header has a trailing space in the CSV ('Rep ').
