@@ -747,23 +747,24 @@ def appstream_direct_session(headless: bool = False,
                              profile_dir: Optional[Path] = None,
                              username: Optional[str] = None,
                              password: Optional[str] = None,
-                             allow_form_login: bool = False,
+                             allow_form_login: bool = True,
                              force_form_login: bool = False) -> Iterator[Page]:
     """Yield a Page on the AppStream recruiting console (#searchMC office
     switcher) for the rcaptain account, via patchright stealth. Unattended
     replacement for fetch_office._attach() (debug-Chrome CDP, broken on Chrome
     148).
 
-    Auth path (since 2026-06-16): restore a manually-exported session
-    (APPSTREAM_STORAGE_STATE) instead of driving the login form. AppStream's
-    login form now hits a Cloudflare Turnstile that can't be cleared
-    unattended, so a missing/expired session FAILS FAST with a clear error
-    rather than stalling on the check. Re-export with
-    output/_scratch_appstream_export_state.py after a one-time manual login.
+    Auth path (2026-06-30): reuse the saved session (APPSTREAM_STORAGE_STATE)
+    if it's still live; otherwise drive the rcaptain login form and save a
+    fresh session. AppStream's Cloudflare auto-passes the automation again, so
+    the form login runs UNATTENDED — this is the self-heal that keeps the 4am
+    reports running without a human re-seed. If Cloudflare ever re-challenges,
+    the login won't reach the console and the run fails loudly (the one-time
+    human seed --appstream-login is the fallback).
 
-    allow_form_login=True re-enables the legacy two-step form-drive (the path
-    that hits the Turnstile) — interactive/debug use ONLY; never the default
-    automated path.
+    allow_form_login defaults True (the self-heal). Pass allow_form_login=False
+    for a reuse-only run that fails fast when the session is stale.
+    force_form_login=True skips reuse and re-logs-in unconditionally.
 
     Override args (used by daily_focus --alt-appstream for ICDs visible only
     from a different AppStream account):
@@ -787,13 +788,15 @@ def appstream_direct_session(headless: bool = False,
                 yield page
                 return
 
-            # NOTE (Megan 2026-06-22): unlike Tableau, AppStream can't be
-            # seeded by an ownerville URL hop — applicantstream.com sits behind
-            # its OWN Cloudflare challenge, so a token-in-URL navigation just
-            # bounces to its login page (verified 4 ways). The only path that
-            # establishes the session is a one-time interactive login that
-            # clears the Turnstile; the session is then kept warm so scheduled
-            # runs don't hit the wall. See _capture_appstream_state() below.
+            # UPDATE (2026-06-30): AppStream's Cloudflare now auto-passes the
+            # automation, so the rcaptain form login runs UNATTENDED again and is
+            # the default self-heal (allow_form_login defaults True) — a stale or
+            # missing session just re-logs-in and saves a fresh one. The
+            # ownerville SSO URL hop is NOT used for reports: it lands on the
+            # wrong (ownerville report) view, not the rcaptain console. If
+            # Cloudflare ever re-challenges, the login won't complete (no
+            # #searchMC) and the run fails loudly; the one-time human seed
+            # (--appstream-login) is the fallback.
             if not (allow_form_login or force_form_login):
                 raise RuntimeError(
                     "AppStream session expired or missing. The saved session "
@@ -824,6 +827,20 @@ def appstream_direct_session(headless: bool = False,
             if verbose:
                 print(f"-> AppStream console ready "
                       f"(page at {(page.url or '')[:72]})", flush=True)
+            # Persist the freshly-authenticated session so sibling reports in the
+            # same batch reuse it (fast) instead of each re-driving the login +
+            # Cloudflare wait. Only save a real console session (carries an rqst_
+            # cookie) — never clobber the last good export with a half-login.
+            try:
+                _st = ctx.storage_state()
+                if sum(1 for c in _st.get("cookies", [])
+                       if c.get("name", "").startswith("rqst_")):
+                    APPSTREAM_STORAGE_STATE.write_text(json.dumps(_st))
+                    if verbose:
+                        print("-> saved fresh AppStream session for reuse",
+                              flush=True)
+            except Exception:
+                pass
             yield page
         finally:
             ctx.close()
