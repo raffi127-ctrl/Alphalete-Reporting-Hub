@@ -297,6 +297,27 @@ def main() -> int:
         template_sundays = fill.list_template_columns(sh)
         log.info("template has %d weekly columns", len(template_sundays))
 
+        # RESUME CHECKPOINT: persist the filled/still-missing state after EACH
+        # office (not just at the end) so a killed run — timeout, dropped
+        # AppStream session, crash — leaves the results file current. A follow-up
+        # `--retry-missing` then re-fetches ONLY the offices not yet done instead
+        # of re-scraping the whole ~52-tab report. Local JSON write, cheap.
+        def _checkpoint() -> None:
+            try:
+                _all = prior_filled | filled_in_run
+                _cn = {c["sheet_tab"] for c in mapping["confirmed"]}
+                _miss = sorted(_cn - _all - hidden)
+                results_file.parent.mkdir(parents=True, exist_ok=True)
+                results_file.write_text(json.dumps({
+                    "week": week.isoformat(),
+                    "filled": sorted(_all),
+                    "still_missing": _miss,
+                    "inaccessible_in_last_run": sorted(inaccessible_in_run),
+                    "updated_at": dt.datetime.now().isoformat(timespec="seconds"),
+                }, indent=2))
+            except Exception:  # noqa: BLE001 — checkpoint is best-effort
+                pass
+
         # Step 3: per-office fetch + fill (handles primary + sibling sections)
         for office in confirmed:
             tab_name = office["sheet_tab"]
@@ -427,6 +448,9 @@ def main() -> int:
                 filled_in_run.add(tab_name)
             elif primary_status == "inaccessible":
                 inaccessible_in_run.add(tab_name)
+
+            # Persist progress now, so a kill on the NEXT office is resumable.
+            _checkpoint()
 
         if appstream_dead:
             log.error("AppStream session was unrecoverable — stopped the fetch "
