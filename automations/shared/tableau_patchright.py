@@ -683,6 +683,64 @@ def _reuse_appstream_storage_state(ctx, page: Page, verbose: bool) -> bool:
     return False
 
 
+def refresh_appstream_via_sso(ctx, page: Page, verbose: bool = True) -> bool:
+    """Re-mint a FRESH AppStream session by walking ownerville's SSO hop (p=701)
+    and save it to APPSTREAM_STORAGE_STATE — the self-heal for the ~2h rqst token.
+
+    AppStream's rqst token only lives ~2h and a console reload does NOT refresh
+    it, so a stored token always ages out before the next unattended batch. But
+    the OV->AppStream SSO hop passes Cloudflare unattended again (re-verified
+    2026-06-30 after the wall that blocked it on 2026-06-22 came down), so we
+    mint a brand-new token off the (self-refreshing) ownerville session. Called
+    every holder cycle, the saved token is never more than one interval old — it
+    never expires. Returns True on a fresh save; on any failure it leaves the
+    last good export UNTOUCHED (never clobbers a working session with junk).
+
+    Requires a valid ownerville login already present on `ctx` (the holder keeps
+    it warm); the caller passes a page dedicated to AppStream."""
+    try:
+        _sso_to_appstream(page, verbose=verbose)
+    except Exception as e:
+        if verbose:
+            print(f"-> AppStream SSO refresh failed: {type(e).__name__}: "
+                  f"{str(e)[:120]}", flush=True)
+        return False
+    url = page.url or ""
+    if "applicantstream.com" not in url or "login" in url.lower():
+        if verbose:
+            print(f"-> SSO hop didn't land on an authed console (at {url[:72]})",
+                  flush=True)
+        return False
+    # The console is keyed to the rqst URL token; persist it as the rqst_<TOKEN>
+    # cookie the reuse path reads (the server may or may not set it itself).
+    state = ctx.storage_state()
+    cookies = [c for c in state.get("cookies", [])
+               if "applicantstream" in (c.get("domain") or "")]
+    have_rqst = any((c.get("name") or "").startswith("rqst_") for c in cookies)
+    m = _APPSTREAM_RQST_RE.search(url)
+    tok = m.group(1) if m else None
+    if tok and not have_rqst:
+        cookies.append({
+            "name": f"rqst_{tok}", "value": "1",
+            "domain": "applicantstream.com", "path": "/",
+            "expires": time.time() + 2 * 3600,  # matches the server's ~2h life
+            "httpOnly": False, "secure": True, "sameSite": "Lax",
+        })
+        have_rqst = True
+    if not have_rqst:
+        if verbose:
+            print("-> SSO landed but found no rqst token to save — keeping the "
+                  "last good export", flush=True)
+        return False
+    APPSTREAM_STORAGE_STATE.write_text(
+        json.dumps({"cookies": cookies, "origins": []}))
+    if verbose:
+        print(f"-> AppStream token refreshed via SSO "
+              f"(rqst={(tok or '?')[:8]}…, {len(cookies)} cookies saved)",
+              flush=True)
+    return True
+
+
 @contextmanager
 def appstream_direct_session(headless: bool = False,
                              verbose: bool = True,
@@ -845,10 +903,36 @@ if __name__ == "__main__":
     ap.add_argument("--appstream-login", action="store_true",
                     help="One-time interactive AppStream login → saves the "
                          "session for unattended runs.")
+    ap.add_argument("--appstream-sso-refresh", action="store_true",
+                    help="Test the UNATTENDED self-heal: walk OV->AppStream via "
+                         "SSO, save a fresh token, and confirm a cold reuse works.")
     args = ap.parse_args()
     if args.appstream_login:
         import sys as _sys
         _sys.exit(0 if _capture_appstream_state(verbose=True) else 1)
+    if args.appstream_sso_refresh:
+        import sys as _sys
+        PROFILE_DIR.mkdir(exist_ok=True, parents=True)
+        with sync_playwright() as _p:
+            _ctx = _launch_persistent(_p, PROFILE_DIR, headless=False,
+                                      label="appstream_sso_refresh", verbose=True)
+            _pg = _ctx.pages[0] if _ctx.pages else _ctx.new_page()
+            _ensure_ownerville_logged_in(_pg, verbose=True)
+            _ok = refresh_appstream_via_sso(_ctx, _pg, verbose=True)
+            print("\n✅ SSO refresh SAVED a fresh AppStream token"
+                  if _ok else "\n❌ SSO refresh did NOT save a token — see above")
+            if _ok:
+                # Prove a COLD reuse works off the just-saved token (what the
+                # scheduled reports do at run time).
+                _pg2 = _ctx.new_page()
+                _re = _reuse_appstream_storage_state(_ctx, _pg2, verbose=True)
+                print("✅ cold reuse off the saved token reached the console — "
+                      "self-heal works end to end"
+                      if _re else
+                      "❌ saved token did NOT reuse — check cookie format/expiry")
+                _ok = _ok and _re
+            _ctx.close()
+        _sys.exit(0 if _ok else 1)
     if args.appstream:
         with appstream_session(verbose=True) as pg:
             url = pg.url or ""
