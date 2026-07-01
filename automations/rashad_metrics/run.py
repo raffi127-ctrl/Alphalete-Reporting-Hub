@@ -276,27 +276,48 @@ def main(argv=None) -> int:
               "the ownerville/Tableau session (run on the mini).")
 
     # --- Run each wired metric, continue on failure ---
-    results: list[tuple[str, bool, str]] = []
+    results: list[tuple[str, str, bool, str]] = []
     overall_start = time.monotonic()
     for m in wired:
         cmd = _metric_cmd(m, live=(mode == "live"))
         m_env = dict(child_env, **m.get("env", {}))   # per-metric Tableau-view overrides
         ok, note = _run_one(m["label"], cmd, m_env)
-        results.append((m["label"], ok, note))
+        results.append((m["slug"], m["label"], ok, note))
 
     # --- Reconciliation summary ---
     total = time.monotonic() - overall_start
-    n_ok = sum(1 for _, ok, _ in results if ok)
+    n_ok = sum(1 for *_, ok, _ in results if ok)
     print(f"\n{'='*70}\n=== Rashad's metrics summary "
           f"({n_ok}/{len(results)} ok, {total/60:.0f}m, {mode}) ===")
-    for label, ok, note in results:
+    for _slug, label, ok, note in results:
         print(f"  {'✅' if ok else '❌'}  {label}  ({note})")
     if pending and not args.only:
         print(f"\n  (skipped — not wired: {', '.join(m['slug'] for m in pending)})")
-    failed = [label for label, ok, _ in results if not ok]
-    if failed:
-        print(f"\n{len(failed)} metric(s) failed — re-run with --only <slug>. "
-              f"Failed: {failed}")
+    failed_slugs = [slug for slug, _l, ok, _ in results if not ok]
+    failed_labels = [label for _s, label, ok, _ in results if not ok]
+
+    # Run-manifest for the orchestrator's completeness verify — ONLY on the full
+    # LIVE daily run. A --only or dry run must not clobber it with a partial /
+    # no-post result. A short run (a metric crashed or timed out) now records
+    # ok=false + the failed units, so the orchestrator flags it as INCOMPLETE
+    # instead of trusting the exit code (which the wrapper already returns).
+    if mode == "live" and not args.only:
+        from automations.shared import run_manifest as _rm
+        # --only re-runs a single slug; if several failed, re-run the whole live
+        # report (powers the Hub's 'retry failed' + the daily email's lucy line).
+        retry = (["--live", "--only", failed_slugs[0]]
+                 if len(failed_slugs) == 1 else ["--live"])
+        _rm.write_manifest(
+            "rashad_metrics",
+            failed=failed_labels,
+            retry_args=retry,
+            note=(f"{n_ok}/{len(results)} metrics posted to #elevate-sales"
+                  + (f"; failed: {', '.join(failed_slugs)}" if failed_slugs else "")),
+        )
+
+    if failed_slugs:
+        print(f"\n{len(failed_slugs)} metric(s) failed — re-run with --only <slug>. "
+              f"Failed: {failed_labels}")
         return 1
     print("\nAll wired metrics ok ✓")
     # Hub/orchestrator classify a run done by finding this sentinel in the log.
