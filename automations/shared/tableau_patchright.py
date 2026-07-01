@@ -159,13 +159,16 @@ def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
 
 @contextmanager
 def tableau_session(headless: bool = False, verbose: bool = True,
-                    allow_form_login: bool = False) -> Iterator[Page]:
+                    allow_form_login: bool = True) -> Iterator[Page]:
     """Yield a Page logged into Tableau via ownerville SSO.
 
     Uses Order Log's persistent profile + the exported ownerville
     storage_state so the login survives across runs without driving the
-    Turnstile form. allow_form_login=True re-enables the legacy form-drive
-    (interactive/debug ONLY)."""
+    Turnstile form. When that session is stale/missing, self-heal by
+    driving the OV login form unattended — verified 2026-07-01 that
+    ownerville's Cloudflare now auto-passes the automation (mirrors the
+    AppStream self-heal from 6/30). allow_form_login defaults True (the
+    self-heal); pass False for a reuse-only run that fails fast."""
     PROFILE_DIR.mkdir(exist_ok=True, parents=True)
     with sync_playwright() as p:
         ctx = _launch_persistent(p, PROFILE_DIR, headless=headless,
