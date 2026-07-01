@@ -15,6 +15,7 @@ import datetime as dt
 import email
 import fnmatch
 import imaplib
+import re
 from email.header import decode_header
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -37,6 +38,13 @@ def _decode(s: str) -> str:
     return "".join(
         t.decode(enc or "utf-8", "replace") if isinstance(t, bytes) else t
         for t, enc in decode_header(s or ""))
+
+
+def _filename(part) -> str:
+    """Attachment filename, whitespace-normalized. Email header folding can
+    inject newlines into a long filename ('Coel\\n Reif_….xlsx'), which breaks
+    dedup AND the on-disk filename — collapse any whitespace run to one space."""
+    return re.sub(r"\s+", " ", _decode(part.get_filename() or "")).strip()
 
 
 def _connect() -> imaplib.IMAP4_SSL:
@@ -87,7 +95,7 @@ def fetch_by_globs(
                 continue
             msg = email.message_from_bytes(raw[0][1])
             for part in msg.walk():
-                fn = _decode(part.get_filename() or "")
+                fn = _filename(part)
                 if not fn:
                     continue
                 for g in globs:
@@ -100,6 +108,46 @@ def fetch_by_globs(
                         if verbose:
                             print(f"  ✓ {g}  ->  {fn}", flush=True)
         return found
+    finally:
+        M.logout()
+
+
+def fetch_all(
+    sender: str,
+    filename_globs: Iterable[str],
+    dest_dir: str | Path,
+    *,
+    subject: Optional[str] = None,
+    since_days: int = 60,
+    verbose: bool = True,
+) -> List[Path]:
+    """Download EVERY attachment matching any of `filename_globs` FROM `sender`
+    in the window, deduped by filename (newest email wins on a resend). For
+    reports whose source is MANY files — e.g. one financial workbook per owner —
+    rather than one-per-type. `sender` may be a bare domain ("hubtruth.com") to
+    match every address at it. Returns the saved paths."""
+    dest = Path(dest_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    globs = list(filename_globs)
+    seen: Dict[str, Path] = {}      # filename -> path; newest-first, first wins
+    M = _connect()
+    try:
+        for i in reversed(_search(M, sender, subject, since_days)):   # newest first
+            _, raw = M.fetch(i, "(RFC822)")
+            if not raw or not raw[0]:
+                continue
+            msg = email.message_from_bytes(raw[0][1])
+            for part in msg.walk():
+                fn = _filename(part)
+                if not fn or fn in seen:
+                    continue
+                if any(fnmatch.fnmatch(fn.lower(), g.lower()) for g in globs):
+                    out = dest / fn
+                    out.write_bytes(part.get_payload(decode=True))
+                    seen[fn] = out
+                    if verbose:
+                        print(f"  ✓ {fn}", flush=True)
+        return list(seen.values())
     finally:
         M.logout()
 

@@ -160,25 +160,46 @@ def run_financial_report(file_paths, dry_run: bool = False,
 
 
 def main() -> int:
+    import tempfile
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", help="Folder of uploaded FINANCIAL SUMMARY .xlsx "
                                   f"files (default: {UPLOAD_DIR}).")
     ap.add_argument("--only-sheet", help="Only this output spreadsheet (substring match).")
     ap.add_argument("--dry-run", action="store_true",
                     help="Don't write — just print what would change.")
+    ap.add_argument("--email", action="store_true",
+                    help="Auto-ingest: pull this week's FINANCIAL SUMMARY .xlsx "
+                         "from the reporting inbox (all senders) into a temp "
+                         "folder, instead of a manual upload dir.")
     args = ap.parse_args()
 
-    directory = Path(args.dir).expanduser() if args.dir else UPLOAD_DIR
-    files = gather_files(directory)
-    if not files:
-        print(f"no .xlsx files found in {directory}")
-        return 1
-    print(f"financial report — {len(files)} file(s) from {directory}, "
-          f"dry_run={args.dry_run}")
-    run_financial_report(files, dry_run=args.dry_run,
-                         only_sheet=args.only_sheet)
-    print("done")
-    return 0
+    _tmpctx = None
+    if args.email:
+        from automations.financial_report import email_source as _fes
+        _tmpctx = tempfile.TemporaryDirectory(prefix="financial_email_")
+        directory = Path(_tmpctx.name)
+        print("Auto-ingest: fetching FINANCIAL SUMMARY workbooks from the "
+              "reporting inbox…")
+        got = _fes.fetch(directory, verbose=True)
+        print(f"  fetched {len(got)} workbook(s)")
+    else:
+        directory = Path(args.dir).expanduser() if args.dir else UPLOAD_DIR
+
+    try:
+        files = gather_files(directory)
+        if not files:
+            print(f"no .xlsx files found in {directory}")
+            return 1
+        print(f"financial report — {len(files)} file(s) from "
+              f"{'email inbox' if args.email else directory}, "
+              f"dry_run={args.dry_run}")
+        run_financial_report(files, dry_run=args.dry_run,
+                             only_sheet=args.only_sheet)
+        print("done")
+        return 0
+    finally:
+        if _tmpctx is not None:
+            _tmpctx.cleanup()
 
 
 if __name__ == "__main__":
