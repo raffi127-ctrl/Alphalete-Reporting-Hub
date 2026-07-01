@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import re
 import sys
 import time
 
@@ -115,7 +116,6 @@ def main() -> int:
         ctx = _launch_persistent(p, HOLDER_PROFILE_DIR, headless=False,
                                  label="session_holder", verbose=False)
         login_page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        val_page = ctx.new_page()   # SEPARATE page for polling — never disturbs login_page
 
         # --- Seed: open ownerville for the human; poll a separate page for a
         #     live session. The holder never drives the form or navigates the
@@ -157,15 +157,32 @@ def main() -> int:
         #     (which also covers Tableau via SSO), no 3rd tab, no AppStream re-seed
         #     babysitting. ---
 
-        # --- Continuous keep-alive + export loop. ownerville uses val_page so
-        #     login_page stays free for a human re-login; exports only when the
-        #     session is confirmed live. ---
+        # --- Continuous keep-alive + export loop, ONE ownerville tab. When the
+        #     session is healthy we navigate that tab to keep it warm; when it
+        #     goes stale we STOP navigating and passively watch the SAME tab for
+        #     the human's re-login (navigating mid-login fights Cloudflare —
+        #     Megan 2026-06-18). No separate poller tab. ---
         # WATCHDOG: launchd's KeepAlive only watches THIS python, not the Chrome
         # child. When Chrome died, the old loop logged "refresh error" forever
         # while the session went cold (the 2026-06-30 failure). Instead: detect a
         # dead/unrecoverable browser and EXIT non-zero so launchd relaunches the
         # whole job — a fresh Chrome on the SAME persistent profile re-warms from
         # the still-valid cookies, no human needed.
+        def _passive_rqst() -> bool:
+            """Read the CURRENT tab for a live rqst — URL or in-page SSO link. No
+            navigation, so it never disturbs a human mid-login."""
+            try:
+                if re.search(r"rqst=([A-Za-z0-9_]+)", login_page.url or ""):
+                    return True
+                href = login_page.evaluate(
+                    "() => { const a=[...document.querySelectorAll('a')]"
+                    ".find(x=>/rqst=/.test(x.getAttribute('href')||'')); "
+                    "return a?a.getAttribute('href'):''; }")
+                return bool(re.search(r"rqst=([A-Za-z0-9_]+)", href or ""))
+            except Exception:
+                return False
+
+        awaiting_login = not seeded
         consecutive_errors = 0
         MAX_CONSECUTIVE_ERRORS = 3
         while True:
@@ -175,15 +192,26 @@ def main() -> int:
                           f"restarts the holder fresh on the persistent profile.",
                           flush=True)
                     return 1
-                ov_ok = _ownerville_session_valid(val_page, verbose=False)
-                ovn = _export_ownerville(ctx) if ov_ok else None
-                mark = "warm ✓" if ov_ok else " ⚠️ stale"
-                ov_s = f"{ovn} ownerville cookies" if ov_ok else "ownerville STALE"
-                print(f"[{_stamp()}] {mark} — {ov_s} "
-                      f"(stale = kept last good export)", flush=True)
-                if not ov_ok:
-                    print(f"[{_stamp()}]     → log back into ownerville in the window.",
-                          flush=True)
+                if awaiting_login:
+                    # Human is (re)logging in on the tab — DON'T navigate it.
+                    if _passive_rqst():
+                        awaiting_login = False
+                        ovn = _export_ownerville(ctx)
+                        print(f"[{_stamp()}] re-seeded ✓ — exported {ovn} ownerville "
+                              f"cookies.", flush=True)
+                    else:
+                        print(f"[{_stamp()}]  ⏳ waiting for ownerville login in the "
+                              f"window…", flush=True)
+                else:
+                    # Healthy → navigate the one tab to keep the session warm.
+                    if _ownerville_session_valid(login_page, verbose=False):
+                        ovn = _export_ownerville(ctx)
+                        print(f"[{_stamp()}] warm ✓ — {ovn} ownerville cookies "
+                              f"(stale = kept last good export)", flush=True)
+                    else:
+                        awaiting_login = True
+                        print(f"[{_stamp()}]  ⚠️ ownerville STALE — log back in in the "
+                              f"window (kept last good export).", flush=True)
                 consecutive_errors = 0   # a clean pass clears the strike count
             except KeyboardInterrupt:
                 print(f"[{_stamp()}] holder stopped.", flush=True)
