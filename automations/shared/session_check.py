@@ -1,14 +1,12 @@
-"""One-click session readiness check + reseed launcher — the mini's desktop button.
+"""One-click session check — the mini's desktop button.
 
 Double-click the "Session Check" button on the mini's Desktop to run this. It:
-  1. Checks the ownerville/Tableau + AppStream rqst tokens.
-  2. Prints a clear ✅ / ⚠️ summary (and whether each lasts to the next 4am batch).
-  3. If a session WON'T survive (or is dead), it LAUNCHES the login you need:
-       • AppStream  → opens the --appstream-login browser (sign in as
-         alphaletereporting@gmail.com, clear the Cloudflare box).
-       • Ownerville → restarts the session-holder so its ownerville login
-         window comes up to log into.
-  4. All sessions good → it just says so and exits.
+  1. Checks the ownerville/Tableau session (the one the holder keeps warm).
+  2. Prints a clear ✅ / ⚠️ summary (does it last to the next 4am batch?).
+  3. If ownerville WON'T survive, it restarts the session-holder so its login
+     window comes up for you to log into.
+  4. AppStream needs nothing — each report self-heals by driving its own
+     rcaptain login at run time (Cloudflare auto-passes again, 2026-06-30).
 
 Run on the mini:
     PYTHONPATH=. .venv/bin/python -m automations.shared.session_check
@@ -18,14 +16,11 @@ from __future__ import annotations
 import datetime as dt
 import os
 import subprocess
-import sys
 
 from automations.shared.appstream_watch import (
     session_status, _next_4am, SURVIVAL_BUFFER_MIN,
 )
-from automations.shared.tableau_patchright import (
-    APPSTREAM_STORAGE_STATE, OWNERVILLE_STORAGE_STATE,
-)
+from automations.shared.tableau_patchright import OWNERVILLE_STORAGE_STATE
 
 SESSION_HOLDER_LABEL = "com.alphalete.session-holder"
 
@@ -39,55 +34,38 @@ def main() -> int:
           f"(needs to last until {threshold:%-I:%M %p})")
     print("════════════════════════════════════════════════\n")
 
-    need_appstream = need_ownerville = False
-    for path, what in ((OWNERVILLE_STORAGE_STATE, "Ownerville / Tableau"),
-                       (APPSTREAM_STORAGE_STATE, "AppStream (recruiting)")):
-        s = session_status(path, what)
-        survives = bool(s["ok"] and s["rqst_expiry"]
-                        and s["rqst_expiry"] >= threshold)
-        print(f"  {'✅' if survives else '⚠️ '} {what}")
-        print(f"      {s['reason']}\n")
-        if not survives:
-            if "AppStream" in what:
-                need_appstream = True
-            else:
-                need_ownerville = True
+    # Ownerville / Tableau — the one session the holder keeps warm.
+    s = session_status(OWNERVILLE_STORAGE_STATE, "Ownerville / Tableau")
+    ov_survives = bool(s["ok"] and s["rqst_expiry"]
+                       and s["rqst_expiry"] >= threshold)
+    print(f"  {'✅' if ov_survives else '⚠️ '} Ownerville / Tableau")
+    print(f"      {s['reason']}\n")
 
-    if not (need_appstream or need_ownerville):
-        print("✅  All sessions are good through tomorrow's 4am run.")
-        print("    Nothing to do — you're set.\n")
+    # AppStream self-heals inside each report now (drives the rcaptain login at
+    # run time), so there's nothing to reseed here anymore.
+    print("  ✅ AppStream (recruiting)")
+    print("      Self-heals at run time — each report logs itself in. "
+          "Nothing to do.\n")
+
+    if ov_survives:
+        print("✅  Ownerville is good through tomorrow's 4am run.")
+        print("    AppStream handles itself. You're set — nothing to do.\n")
         return 0
 
     print("──────────────────────────────────────────────────")
-    print("  A session needs a fresh login — launching it now.")
+    print("  Ownerville needs a fresh login — opening it now.")
     print("  Log in and clear any 'verify you're human' box.")
     print("──────────────────────────────────────────────────\n")
-
-    if need_ownerville:
-        print(">> Restarting the session-holder so its ownerville window opens…")
-        try:
-            subprocess.run(
-                ["launchctl", "kickstart", "-k",
-                 f"gui/{os.getuid()}/{SESSION_HOLDER_LABEL}"],
-                check=False)
-            print("   → Log into ownerville in the holder's Chrome window, "
-                  "then re-run this check.\n")
-        except Exception as e:
-            print(f"   (couldn't restart the holder: {type(e).__name__}: {e})\n")
-
-    if need_appstream:
-        print(">> Opening the AppStream login "
-              "(sign in as alphaletereporting@gmail.com)…\n")
-        try:
-            subprocess.run(
-                [sys.executable, "-m",
-                 "automations.shared.tableau_patchright", "--appstream-login"],
-                check=False)
-        except Exception as e:
-            print(f"   (couldn't open the AppStream login: "
-                  f"{type(e).__name__}: {e})\n")
-
-    print("\n✅  Done. Re-run this check to confirm everything's green.\n")
+    print(">> Restarting the session-holder so its ownerville window opens…")
+    try:
+        subprocess.run(
+            ["launchctl", "kickstart", "-k",
+             f"gui/{os.getuid()}/{SESSION_HOLDER_LABEL}"],
+            check=False)
+        print("   → Log into ownerville in the holder's Chrome window, "
+              "then re-run this check.\n")
+    except Exception as e:
+        print(f"   (couldn't restart the holder: {type(e).__name__}: {e})\n")
     return 0
 
 
