@@ -325,14 +325,73 @@ VIEWS: List[ViewConfig] = [
 
 # Personal Production View-Data scrape: the B2BATTSalesMetrics dashboard is
 # multi-sheet, so 'Download → Data' is disabled until the rep-level worksheet
-# ("B2B Metrics Owner (+/-) Rep" / Sales.Quality Metrics) is activated. This
-# fractional (x, y) clicks its HEADER ROW — activates the sheet without picking
-# a data mark (a mark would scope View Data to one rep). y=0.35 landed on the
-# "Low Metric Office Count" summary tile above it (returned Total Offices /
-# threshold counts, not per-rep rows — verified live 2026-07-01); 0.40 drops
-# onto the rep table's column headers. TUNE against live Tableau if the scrape
-# returns the summary tile again (raise y) or one rep's rows (it hit a mark).
-PP_ACTIVATE_XY = (0.5, 0.40)
+# ("B2B Metrics Owner (+/-) Rep") is activated. We can't reliably pin a single
+# click point — the "Low Metric Office Count" summary tile sits directly above
+# the rep table and the viz's internal coords don't map cleanly to screen
+# pixels (0.35 and 0.40 both landed on the summary, verified live 2026-07-01).
+# So instead of one hardcoded (x, y), sweep a band of candidates and keep the
+# first that returns the REP TABLE (product columns + many rows) rather than
+# the summary tile (Measure Names/Values). Self-tuning survives template drift.
+PP_ACTIVATE_CANDIDATES = [
+    (0.5, 0.45), (0.5, 0.48), (0.5, 0.42), (0.5, 0.51),
+    (0.5, 0.54), (0.5, 0.58), (0.12, 0.48), (0.5, 0.62),
+]
+
+
+def _pp_looks_like_rep_table(fields, records) -> bool:
+    """True when a View-Data scrape hit the per-rep table (not the summary
+    tile). The summary tile is a Measure Names/Values pair; the rep table has
+    the product columns + one row per rep."""
+    fl = [f.strip().lower() for f in fields]
+    if any("measure names" in f for f in fl):
+        return False  # the Low Metric Office Count summary worksheet
+    has_products = any("internet sales" in f for f in fl)
+    return has_products and len(records) > 1
+
+
+def _pp_scrape_autotune(view_url: str, verbose: bool = True, page=None):
+    """Scrape the PP rep table, sweeping PP_ACTIVATE_CANDIDATES until one
+    activation click lands on the rep worksheet (many rows + product columns)
+    instead of the summary tile above it. Returns (fields, records, xy). One
+    Tableau session is reused across candidates (re-navigates per try) so the
+    sweep costs one login. Raises if no candidate reaches the rep table."""
+    import contextlib
+    from automations.recruiting_report.opt_phase import scrape_view_data
+    from automations.shared.tableau_patchright import tableau_session
+
+    @contextlib.contextmanager
+    def _sess():
+        if page is not None:
+            yield page
+        else:
+            with tableau_session(verbose=verbose) as pg:
+                yield pg
+
+    last = None
+    with _sess() as pg:
+        for xy in PP_ACTIVATE_CANDIDATES:
+            try:
+                fields, records = scrape_view_data(
+                    view_url, verbose=verbose, activate_xy=xy, page=pg)
+            except Exception as e:
+                if verbose:
+                    print(f"  · activate {xy}: {type(e).__name__} "
+                          f"{str(e)[:80]} — trying next", flush=True)
+                continue
+            if _pp_looks_like_rep_table(fields, records):
+                if verbose:
+                    print(f"  ✓ rep table via activate_xy={xy} "
+                          f"({len(records)} rows)", flush=True)
+                return fields, records, xy
+            if verbose:
+                print(f"  · activate {xy}: not the rep table "
+                      f"({len(records)} rows, cols {fields[:3]}) — trying next",
+                      flush=True)
+            last = (fields, records)
+    raise RuntimeError(
+        "PP autotune: no activation click hit the rep table (tried "
+        f"{PP_ACTIVATE_CANDIDATES}). Last cols: "
+        f"{last[0][:4] if last else 'none'}")
 
 
 # Canonical column-B label(s) for each sheet row in our OPT block. The
@@ -1206,9 +1265,8 @@ def main() -> int:
             # chronically won't open on this heavy REPEXPANDED/base viz).
             pp_view = next(v for v in VIEWS if v.key == "personal_production")
             try:
-                fields, records = scrape_view_data(
-                    pp_view.url, verbose=True, activate_xy=PP_ACTIVATE_XY,
-                    page=page)
+                fields, records, _ = _pp_scrape_autotune(
+                    pp_view.url, verbose=True, page=page)
                 pp_path = DOWNLOAD_DIR / "personal_production_view_data.csv"
                 pp_path.parent.mkdir(parents=True, exist_ok=True)
                 pp_path.write_text(
@@ -1236,11 +1294,12 @@ def main() -> int:
             # View-Data scrape (crosstab flyout won't open on this heavy viz).
             # Self-diagnosing: dump the real headers + sample rows so we confirm
             # the product-column names + rep column before trusting the apply.
-            # TUNE PP_ACTIVATE_XY if it reports 0 rows / no worksheet selected.
-            from automations.recruiting_report.opt_phase import scrape_view_data
+            # Autotune sweeps activation clicks until it hits the rep table.
             print(f"Test-scraping PP View Data (week ending {we})…")
-            fields, records = scrape_view_data(
-                view.url, verbose=True, activate_xy=PP_ACTIVATE_XY)
+            fields, records, win_xy = _pp_scrape_autotune(
+                view.url, verbose=True)
+            print(f"→ winning activate_xy = {win_xy} "
+                  f"(set PP_ACTIVATE_CANDIDATES[0] to this to skip the sweep)")
             out = DOWNLOAD_DIR / "personal_production_view_data.csv"
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(
