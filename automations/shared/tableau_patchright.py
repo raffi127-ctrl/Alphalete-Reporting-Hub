@@ -918,21 +918,48 @@ if __name__ == "__main__":
                                       label="appstream_sso_refresh", verbose=True)
             _pg = _ctx.pages[0] if _ctx.pages else _ctx.new_page()
             _ensure_ownerville_logged_in(_pg, verbose=True)
-            _ok = refresh_appstream_via_sso(_ctx, _pg, verbose=True)
-            print("\n✅ SSO refresh SAVED a fresh AppStream token"
-                  if _ok else "\n❌ SSO refresh did NOT save a token — see above")
-            if _ok:
-                # Prove a COLD reuse works off the just-saved token (what the
-                # scheduled reports do at run time).
-                _pg2 = _ctx.new_page()
-                _re = _reuse_appstream_storage_state(_ctx, _pg2, verbose=True)
-                print("✅ cold reuse off the saved token reached the console — "
-                      "self-heal works end to end"
-                      if _re else
-                      "❌ saved token did NOT reuse — check cookie format/expiry")
-                _ok = _ok and _re
+            # Mint a live session via SSO, then probe which auth path a COLD
+            # page can reuse: bare CFID/CFTOKEN (?p=701) vs replaying the token.
+            _sso_to_appstream(_pg, verbose=True)
+            _url = _pg.url or ""
+            _m = _APPSTREAM_RQST_RE.search(_url)
+            _tok = _m.group(1) if _m else None
+            _cks = [c for c in _ctx.storage_state().get("cookies", [])
+                    if "applicantstream" in (c.get("domain") or "")]
+            print(f"\n--- live SSO session established ---")
+            print(f"  landed: {_url[:78]}")
+            print(f"  appstream cookies: "
+                  f"{', '.join(sorted(c.get('name','?') for c in _cks)) or '(none)'}")
+            print(f"  token in URL: {(_tok or '(none)')[:16]}…\n")
+
+            def _probe(label, goto_url):
+                pg = _ctx.new_page()
+                try:
+                    pg.goto(goto_url, wait_until="domcontentloaded")
+                except Exception as e:
+                    print(f"  [{label}] goto error: {type(e).__name__}"); return False
+                got = False
+                for _ in range(4):            # up to ~20s
+                    try:
+                        if pg.locator("#searchMC").count() > 0:
+                            got = True; break
+                    except Exception:
+                        pass
+                    pg.wait_for_timeout(5_000)
+                print(f"  [{label}] {'✅ #searchMC' if got else '❌ no console'} "
+                      f"— at {(pg.url or '')[:66]}")
+                pg.close(); return got
+
+            print("--- COLD reuse probes (fresh pages, same saved cookies) ---")
+            _bare = _probe("CFID/CFTOKEN only (?p=701, no token)",
+                           f"{APPSTREAM_BASE}?p=701")
+            _repl = _probe("replay token (?rqst=…&p=701)",
+                           f"{APPSTREAM_BASE}?rqst={_tok}&p=701") if _tok else False
+            print("\n=== VERDICT ===")
+            print(f"  bare CF cookies authenticate : {'YES' if _bare else 'no'}")
+            print(f"  token replay authenticates   : {'YES' if _repl else 'no'}")
             _ctx.close()
-        _sys.exit(0 if _ok else 1)
+        _sys.exit(0)
     if args.appstream:
         with appstream_session(verbose=True) as pg:
             url = pg.url or ""
