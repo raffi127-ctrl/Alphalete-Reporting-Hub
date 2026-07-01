@@ -111,18 +111,30 @@ class ReadinessCache:
         the report agree). Other email reports have no probe yet → run on schedule.
         Fail-OPEN on a probe error (IMAP hiccup) so a transient blip can't block
         forever — the report itself still refuses to fill from a missing email."""
-        if rpt.report_id != "residential_rep_count":
-            return Readiness(True, "email — no probe wired; running on schedule")
         try:
-            from automations.residential_rep_count import email_source
-            from automations.residential_rep_count.run import _expected_week_ending
-            expected = _expected_week_ending(self.target_date)
-            latest = email_source.latest_week_ending()
-            if latest and latest >= expected:
-                return Readiness(True, f"Archey email WE {expected.month}/{expected.day} is in")
-            seen = f"latest WE {latest.month}/{latest.day}" if latest else "none found"
-            return Readiness(
-                False, f"waiting on Archey's WE {expected.month}/{expected.day} email ({seen})")
+            if rpt.report_id == "residential_rep_count":
+                from automations.residential_rep_count import email_source
+                from automations.residential_rep_count.run import _expected_week_ending
+                expected = _expected_week_ending(self.target_date)
+                latest = email_source.latest_week_ending()
+                if latest and latest >= expected:
+                    return Readiness(True, f"Archey email WE {expected.month}/{expected.day} is in")
+                seen = f"latest WE {latest.month}/{latest.day}" if latest else "none found"
+                return Readiness(
+                    False, f"waiting on Archey's WE {expected.month}/{expected.day} email ({seen})")
+            if rpt.report_id == "frontier_opt":
+                # Ready once the two DAILY Events PDFs (by-store + events) have
+                # landed — they carry the sales/percentages. The quality
+                # scorecard lags ~2wk and the report forces it to the run week,
+                # so it isn't a gate. Partial-safe either way.
+                from automations.alphalete_org_report import frontier_email_source as fes
+                avail = fes.latest_available()
+                dailies = sum(1 for g in avail if "Daily Sales" in g)
+                if dailies >= 2:
+                    return Readiness(True, f"Frontier Events PDFs in ({len(avail)}/3)")
+                return Readiness(
+                    False, f"waiting on Frontier Events daily PDFs ({dailies}/2 in)")
+            return Readiness(True, "email — no probe wired; running on schedule")
         except Exception as e:  # noqa: BLE001 — fail open; the report self-guards
             return Readiness(
                 True, f"email probe error ({type(e).__name__}) — running; report self-guards")

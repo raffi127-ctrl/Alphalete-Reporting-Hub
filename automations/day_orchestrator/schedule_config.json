@@ -690,6 +690,27 @@
         "type": "not_configured"
       }
     },
+    "carlos_pp_531": {
+      "on_scheduler": true,
+      "_note": "BACKFILL (temp 2026-07-01) — `lucy rerun carlos_pp_531` runs the Carlos PP backfill scoped to ONLY week-ending 5/31 (wraps output/pp_backfill.py). base_args=[] = download + DRY-RUN preview (no Sheet write); verdict tail shows whether 5/31 is selectable + rep rows pulled. Once the preview looks right, flip base_args to ['--write','--skip-download'] to fill from the cached pull. weekdays=[] never auto-runs. Remove after 5/31 is filled or re-confirmed blocked.",
+      "display_name": "Carlos PP 5/31 backfill",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.recruiting_report._pp531_probe"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 20,
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "rashad_metrics_review": {
       "on_scheduler": true,
       "_note": "REVIEW run: `lucy rerun rashad_metrics_review` runs the full report --live but DMs it to Megan (U045Z8N0ZQC) via --channel, for review BEFORE going public to #elevate-sales. weekdays=[] never auto-runs.",

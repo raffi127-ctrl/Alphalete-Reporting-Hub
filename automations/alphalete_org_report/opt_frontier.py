@@ -757,8 +757,16 @@ def run_frontier_opt(dry_run: bool = False, only_rep: Optional[str] = None,
     return {"filled": filled, "skipped": skipped, "errors": errors}
 
 
+def _print_result(result):
+    print(f"\nFilled: {len(result['filled'])}; Skipped: {len(result['skipped'])}; "
+          f"Errors: {len(result['errors'])}")
+    for e in result["errors"]:
+        print(f"  ✗ {e}")
+
+
 if __name__ == "__main__":
     import argparse
+    import tempfile
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--only", help="Only this ICD (substring match).")
@@ -766,12 +774,24 @@ if __name__ == "__main__":
                     f"(default: {DEFAULT_UPLOAD_DIR}).")
     ap.add_argument("--include-current", action="store_true",
                     help="Also fill the in-progress current week.")
+    ap.add_argument("--email", action="store_true",
+                    help="Auto-ingest: pull the 3 Frontier Events PDFs from the "
+                         "reporting inbox (reports@credicousa.com) into a temp "
+                         "folder, instead of a manual upload dir.")
     args = ap.parse_args()
-    result = run_frontier_opt(
-        dry_run=args.dry_run, only_rep=args.only,
-        upload_dir=Path(args.dir).expanduser() if args.dir else None,
-        include_current=args.include_current)
-    print(f"\nFilled: {len(result['filled'])}; Skipped: {len(result['skipped'])}; "
-          f"Errors: {len(result['errors'])}")
-    for e in result["errors"]:
-        print(f"  ✗ {e}")
+
+    if args.email:
+        from automations.alphalete_org_report import frontier_email_source as _fes
+        with tempfile.TemporaryDirectory(prefix="frontier_email_") as _tmp:
+            print("Auto-ingest: fetching Frontier Events PDFs from the "
+                  "reporting inbox…")
+            got = _fes.fetch(_tmp, verbose=True)
+            print(f"  fetched {len(got)}/3 PDF(s)")
+            _print_result(run_frontier_opt(
+                dry_run=args.dry_run, only_rep=args.only,
+                upload_dir=Path(_tmp), include_current=args.include_current))
+    else:
+        _print_result(run_frontier_opt(
+            dry_run=args.dry_run, only_rep=args.only,
+            upload_dir=Path(args.dir).expanduser() if args.dir else None,
+            include_current=args.include_current))
