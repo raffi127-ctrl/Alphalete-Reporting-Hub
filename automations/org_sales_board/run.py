@@ -303,15 +303,22 @@ def main(argv=None) -> int:
                 except Exception:
                     pass
             if _skipped or _failed_prog or _failed_caps or not _compare_clean:
-                # No "done"/"complete" wording on this path — missing data must
-                # never read as completed on the Hub (Megan 2026-06-08).
-                print("=== daily fill INCOMPLETE — missing data. "
+                # RAN but with a note (missing pull or a VA-compare difference).
+                # Exit 0 — NOT a hard failure: the manifest written above carries
+                # the failed parts, so the orchestrator's verify marks this
+                # INCOMPLETE → "Ran — with a note", not "Needs attention". (A
+                # non-zero exit is treated as FAILED before verify even runs, so
+                # returning 1 wrongly buried a VA-lag/1-cell diff as a failure.
+                # "Missing data must not read as COMPLETED" still holds — the
+                # manifest keeps it out of DONE; it just lands in the note bucket
+                # instead of the fail bucket. Megan 2026-07-01.)
+                print("=== daily fill INCOMPLETE (ran — with a note). "
                       f"skipped/failed section pull(s)={_skipped or 'none'}; "
                       f"failed captainship program pull(s)={_failed_prog or 'none'}; "
                       f"failed captainship fill(s)={_failed_caps or 'none'}; "
                       f"compare={'clean' if _compare_clean else 'FLAGGED differences'}. "
                       "Re-run to retry the missing pull(s). ===")
-                return 1
+                return 0
     print("=== done ===")
     return 0
 
