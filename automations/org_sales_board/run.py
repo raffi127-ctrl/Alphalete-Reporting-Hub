@@ -212,8 +212,9 @@ def main(argv=None) -> int:
             # program pull = missing data, even if the compare passes (e.g. a
             # Monday run with no completed days to compare).
             _skipped = list(_summary.get("skipped") or [])
-            _failed_prog = list(
-                (_summary.get("captainships") or {}).get("failed_programs") or [])
+            _caps_summary = _summary.get("captainships") or {}
+            _failed_prog = list(_caps_summary.get("failed_programs") or [])
+            _failed_caps = list(_caps_summary.get("failed_captainships") or [])
             # Cross-reference every owner/ICD pulled onto the board against the
             # 'Terminated ICDs' tab + ALERT the runner (advisory — prints to the
             # output + log, never removes a row). Folded into the manifest note.
@@ -239,27 +240,36 @@ def main(argv=None) -> int:
             if not args.dry_run:
                 try:
                     from automations.shared import run_manifest as _rm
-                    if _skipped or _failed_prog or not _compare_clean:
+                    if _skipped or _failed_prog or _failed_caps or not _compare_clean:
                         _failed_all = (
                             [f"section: {s}" for s in _skipped]
-                            + [f"captainship: {c}" for c in _failed_prog]
+                            + [f"program: {c}" for c in _failed_prog]
+                            + [f"captainship: {c}" for c in _failed_caps]
                             + ([] if _compare_clean
                                else ["compare: differences vs the VA tab"]))
                         # GRANULAR retry: re-run ONLY the failed sections and/or
-                        # programs, not the whole board. A mixed failure now
-                        # re-runs the failed sections AND failed programs in one
-                        # pass (was: full re-run). A compare-only mismatch stays
-                        # non-granular — a re-run can't fix a data disagreement.
-                        if _skipped and not _failed_prog:
-                            _ra = ["--step", "daily", "--sections", ",".join(_skipped)]
-                        elif _failed_prog and not _skipped:
-                            _ra = ["--step", "captainships",
-                                   "--programs", ",".join(_failed_prog)]
-                        elif _skipped and _failed_prog:
+                        # captainship parts, not the whole board. A failed CAPTAIN
+                        # forces a full captainship re-run (can't subset by
+                        # captain); failed PROGRAMS alone subset via --programs.
+                        # A compare-only mismatch stays non-granular (a re-run
+                        # can't fix a data disagreement).
+                        if _failed_caps:
+                            _cap_ra = ["--step", "captainships"]
+                        elif _failed_prog:
+                            _cap_ra = ["--step", "captainships",
+                                       "--programs", ",".join(_failed_prog)]
+                        else:
+                            _cap_ra = None
+                        if _skipped and _cap_ra:
                             _ra = ["--step", "daily",
                                    "--sections", ",".join(_skipped),
-                                   "--with-captainships",
-                                   "--programs", ",".join(_failed_prog)]
+                                   "--with-captainships"]
+                            if _failed_prog and not _failed_caps:
+                                _ra += ["--programs", ",".join(_failed_prog)]
+                        elif _skipped:
+                            _ra = ["--step", "daily", "--sections", ",".join(_skipped)]
+                        elif _cap_ra:
+                            _ra = _cap_ra
                         else:
                             _ra = []   # compare-only mismatch — no granular re-run
                         _rm.write_manifest(
@@ -292,12 +302,13 @@ def main(argv=None) -> int:
                         _rm.mark_clean("org-sales-board", kind="section")
                 except Exception:
                     pass
-            if _skipped or _failed_prog or not _compare_clean:
+            if _skipped or _failed_prog or _failed_caps or not _compare_clean:
                 # No "done"/"complete" wording on this path — missing data must
                 # never read as completed on the Hub (Megan 2026-06-08).
                 print("=== daily fill INCOMPLETE — missing data. "
                       f"skipped/failed section pull(s)={_skipped or 'none'}; "
                       f"failed captainship program pull(s)={_failed_prog or 'none'}; "
+                      f"failed captainship fill(s)={_failed_caps or 'none'}; "
                       f"compare={'clean' if _compare_clean else 'FLAGGED differences'}. "
                       "Re-run to retry the missing pull(s). ===")
                 return 1

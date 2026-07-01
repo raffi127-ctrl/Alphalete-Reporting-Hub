@@ -426,6 +426,7 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
             failed_programs.append(tkey)
 
     summary = {"filled": [], "missing": {}, "failed_programs": failed_programs}
+    failed_captainships: list = []   # per-captain fill errors — never crash the board
     captains = discover_captainships(grid)
     logfn(f"  discovered {len(captains)} captainship block(s) on the board: "
           f"{[c[0] for c in captains]}")
@@ -467,23 +468,35 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
         # Internet box pulls the New-Internet-only number; the 🛜 All Units box
         # (and every non-fiber single box) keeps the program's default metric.
         # find_captainship_boxes pre-classified them — they never cross.
-        total_icds, all_missing = 0, []
-        for variant, anchor in boxes:
-            box_metric = ("NewInternet"
-                          if tkey == "fiber" and variant == "new_internet"
-                          else None)
-            missing = fill_captainship(ws, anchor, today, per_for,
-                                       dry_run=dry_run, metric=box_metric)
-            total_icds += len(anchor.daily)
-            all_missing += missing
-        summary["filled"].append(title)
-        all_missing = list(dict.fromkeys(all_missing))   # dedupe (a rep absent
-        #   from BOTH fiber boxes was listed twice)
-        if all_missing:
-            summary["missing"][title] = all_missing
-        box_desc = "+".join(v or "single" for v, _ in boxes)
-        logfn(f"    {title}: {len(boxes)} box ({box_desc}), {total_icds} ICD-row(s)"
-              + (f", 0-sales (filled 0): {all_missing}" if all_missing else ""))
+        # RESILIENT: a fill error on ONE captainship (bad anchor, Sheets write,
+        # unexpected pull shape) must NOT crash the whole board — skip + flag it
+        # (mirrors the program-pull + find_captainship_boxes guards). The run
+        # then completes INCOMPLETE, names the culprit, and a re-run
+        # (--step captainships) retries. (glitch 2026-07-01: an unwrapped fill
+        # crash exited the run at the captainships phase.)
+        try:
+            total_icds, all_missing = 0, []
+            for variant, anchor in boxes:
+                box_metric = ("NewInternet"
+                              if tkey == "fiber" and variant == "new_internet"
+                              else None)
+                missing = fill_captainship(ws, anchor, today, per_for,
+                                           dry_run=dry_run, metric=box_metric)
+                total_icds += len(anchor.daily)
+                all_missing += missing
+            summary["filled"].append(title)
+            all_missing = list(dict.fromkeys(all_missing))   # dedupe (a rep absent
+            #   from BOTH fiber boxes was listed twice)
+            if all_missing:
+                summary["missing"][title] = all_missing
+            box_desc = "+".join(v or "single" for v, _ in boxes)
+            logfn(f"    {title}: {len(boxes)} box ({box_desc}), {total_icds} ICD-row(s)"
+                  + (f", 0-sales (filled 0): {all_missing}" if all_missing else ""))
+        except Exception as e:  # noqa: BLE001 — one captain must not crash the board
+            logfn(f"    ⚠ FILL FAILED for {title} ({type(e).__name__}: "
+                  f"{str(e)[:100]}) — skipping this captainship; the rest still "
+                  f"fill. Re-run (--step captainships) to retry.")
+            failed_captainships.append(title)
     logfn(f"=== captainships filled: {summary['filled']} "
           f"| 0-sales: {summary['missing']} ===")
 
@@ -494,12 +507,20 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
     # WARN, we don't auto-match. Scoped to a fuzzy near-match of a 0 row against
     # owners that landed on NO board row: the all-teams pull carries ~120 legit
     # non-roster owners, so a blanket "orphan → warn" would flood.
-    summary["name_warnings"] = _name_break_warnings(
-        grid, captains, prog, aliases, summary["missing"], logfn)
+    summary["failed_captainships"] = failed_captainships
+    try:
+        summary["name_warnings"] = _name_break_warnings(
+            grid, captains, prog, aliases, summary["missing"], logfn)
+    except Exception as e:  # noqa: BLE001 — the name-break check must never crash the run
+        logfn(f"  ⚠ name-break check skipped ({type(e).__name__}: {str(e)[:80]})")
+        summary["name_warnings"] = []
 
     if failed_programs:
         logfn(f"  ⚠ PROGRAM PULL(S) FAILED this run: {failed_programs} — those "
               f"programs are blank for all captainships; re-run to retry.")
+    if failed_captainships:
+        logfn(f"  ⚠ CAPTAINSHIP FILL(S) FAILED this run: {failed_captainships} — "
+              f"re-run (--step captainships) to retry.")
     return summary
 
 
