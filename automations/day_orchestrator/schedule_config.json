@@ -549,7 +549,8 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": {
-        "type": "not_configured"
+        "type": "manifest",
+        "report_id": "int-wow-penetration"
       },
       "idempotency": {
         "insert_style": true,
@@ -637,8 +638,8 @@
       "depends_on": [],
       "timeout_minutes": 60,
       "verify": {
-        "type": "not_configured",
-        "_todo": "wire a manifest verify once all 7 metrics post (mirror daily_metrics)"
+        "type": "manifest",
+        "report_id": "rashad_metrics"
       }
     },
     "rashad_churn": {

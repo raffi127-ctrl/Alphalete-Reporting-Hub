@@ -29,6 +29,12 @@ from automations.focus_office_att.aliases import load_aliases
 CENTRAL = ZoneInfo("America/Chicago")
 
 
+# Standard run-manifest id — the orchestrator's verify reads
+# output/manifests/int-wow-penetration.json (schedule_config verify.report_id
+# must match). Seeded as failed at run start; mark_clean'd on a clean fill.
+MANIFEST_ID = "int-wow-penetration"
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="int_wow_penetration")
     ap.add_argument("--date", default=None,
@@ -61,6 +67,19 @@ def main(argv=None) -> int:
     src = f"CSV {args.csv}" if args.csv else "Tableau (Fiber Lead Performance)"
     print(f"=== Int WoW Penetration % — {label} — {mode} ===")
     print(f"Source: {src}")
+
+    # Seed a failure manifest up-front (live only). If the run crashes mid-way
+    # (pull/fill error, or the 'no owners' abort below), it stays ok=false so
+    # the orchestrator's verify flags the run INCOMPLETE instead of "ran clean";
+    # mark_clean() at the end overwrites it once the fill completes.
+    if not args.dry_run:
+        try:
+            from automations.shared import run_manifest as _rm
+            _rm.write_manifest(MANIFEST_ID, failed=["int wow penetration fill"],
+                               retry_args=[], kind="int_wow",
+                               note="run started but did not complete")
+        except Exception:  # noqa: BLE001 — manifest is best-effort, never fail the run
+            pass
 
     # --- data ---
     if args.csv:
@@ -114,6 +133,13 @@ def main(argv=None) -> int:
         else:
             print(f"  ⚠ Slack post FAILED (sheet fill is done — run still OK): "
                   f"{res.get('error')}")
+
+    if not args.dry_run:
+        try:
+            from automations.shared import run_manifest as _rm
+            _rm.mark_clean(MANIFEST_ID, kind="int_wow")
+        except Exception:  # noqa: BLE001 — manifest is best-effort, never fail the run
+            pass
 
     print("\n=== done ===")
     return 0
