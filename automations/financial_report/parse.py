@@ -204,7 +204,45 @@ def _parse_summary(wb) -> Tuple[List[dict], List[dt.date]]:
         if label and cur is not None:
             cur["metrics"][label.upper()] = {
                 weeks[i]: vals[i] for i in range(len(weeks)) if vals[i] is not None}
+    _resign_profit_loss(offices)
     return offices, weeks
+
+
+def _resign_profit_loss(offices: List[dict]) -> None:
+    """Restore the +/- on PROFIT/LOSS from the movement in TOTAL FUNDS
+    AVAILABLE. In this (hubtruth summary) format, "PROFIT/LOSS" equals the
+    week-over-week change in TOTAL FUNDS AVAILABLE — verified to the cent on
+    ~80% of owner-weeks (the rest are restatements). Amber's ORG template
+    reports only the MAGNITUDE (always positive), so a LOSING week reads as a
+    gain. Re-sign each week by whether the owner's funds rose (profit, +) or
+    fell (loss, -), keeping the file's reported magnitude. The oldest in-file
+    week is left as-is (no prior week here to diff) — it gets corrected on the
+    next weekly file. Scoped to summary format only: the German/Coel templates
+    have their own parsers and are already correctly signed, so they never
+    reach here."""
+    for off in offices:
+        tfa = off["metrics"].get("TOTAL FUNDS AVAILABLE")
+        pl = off["metrics"].get("PROFIT/LOSS")
+        if not tfa or not pl:
+            continue
+        common = sorted(w for w in pl if w in tfa)
+        for i in range(1, len(common)):
+            w, wp = common[i], common[i - 1]
+            if not isinstance(pl[w], (int, float)):
+                continue
+            dtfa = tfa[w] - tfa[wp]
+            pl[w] = -abs(pl[w]) if dtfa < 0 else abs(pl[w])
+        # The OLDEST in-file week can't be signed — its prior week (needed for
+        # the funds delta) isn't in this file. And because a given week sits in
+        # ~4 successive weekly files and the fill re-writes its column each
+        # time, the LAST write to that column is the run where the week is
+        # oldest — which would stamp the unsigned (magnitude-only) value and
+        # silently undo the correction. So DON'T write P/L for the oldest week:
+        # drop it, leaving the correctly-signed value from the run where this
+        # week was newer. (Only P/L is dropped; the week's other metrics still
+        # fill. Needs >=2 weeks so a signed week remains.)
+        if len(common) >= 2:
+            pl.pop(common[0], None)
 
 
 def _parse_german(wb) -> Tuple[List[dict], List[dt.date]]:
