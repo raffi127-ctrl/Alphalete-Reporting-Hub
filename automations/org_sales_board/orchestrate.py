@@ -234,10 +234,26 @@ def _run_daily_inner(ws, *, page, dry_run, today, from_csv, only,
         else:
             from automations.org_sales_board import captainship
             logfn("--- Captainships (same session) ---")
-            cap = captainship.run_captainships(ws, page, today=today,
-                                               dry_run=dry_run,
-                                               programs=captainship_programs,
-                                               logfn=logfn)
+            # BROAD GUARD: the whole captainships phase must NEVER crash the
+            # board — the daily sections already filled. Any exception here
+            # (setup, program pulls, discover, fill) is caught + LOGGED with its
+            # real message + traceback, and flagged so run.py reports INCOMPLETE
+            # (retry: --step captainships). (glitch 2026-07-01: an exception
+            # early in the captainships phase — before the per-captain fill
+            # loop — exited the run.)
+            try:
+                cap = captainship.run_captainships(ws, page, today=today,
+                                                   dry_run=dry_run,
+                                                   programs=captainship_programs,
+                                                   logfn=logfn)
+            except Exception as e:  # noqa: BLE001 — never crash the board on captainships
+                import traceback as _tb
+                logfn(f"  ⚠ CAPTAINSHIPS PHASE FAILED ({type(e).__name__}: "
+                      f"{str(e)[:200]}) — daily sections still filled; "
+                      f"re-run --step captainships to retry.")
+                logfn("  captainships traceback:\n" + _tb.format_exc())
+                cap = {"filled": [], "missing": {}, "failed_programs": [],
+                       "failed_captainships": [f"(phase error: {type(e).__name__}: {str(e)[:80]})"]}
             summary["captainships"] = cap
             try:
                 _owner_names.update(cap.get("filled", []))
