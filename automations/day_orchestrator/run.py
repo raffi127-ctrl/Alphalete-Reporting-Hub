@@ -111,6 +111,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     try:
+        # Before any browser report runs, close a stray HUMAN Chrome left open
+        # on the mini — it single-instances with our automation Chrome and
+        # breaks every browser report ("Opening in existing browser session").
+        # Automation Chrome (holder/reports/appstream) is protected. Best-effort
+        # + real runs only (a dry-run must not kill a person's browser).
+        if not dry_run:
+            from automations.day_orchestrator import chrome_guard
+            chrome_guard.close_stray_chrome()
+
         ds = state.load_or_create(
             target.isoformat(),
             {r.report_id: r.display_name for r in todays},
