@@ -49,6 +49,13 @@ WEEKLY_COL_START = 3   # col C (SUM Total Apps)
 WEEKLY_COL_END = 12    # col L (SUM New Lines)
 WEEKLY_COL_PADDING_PX = 6
 
+# Col C ('SUM Total Apps') is PINNED, not auto-measured. autoResize sizes a
+# col against EVERY cell in it, incl. the frozen LAST WEEK block's long
+# C-banner (C111 'Weekly Total Mon X/X - Sun X/X …'). The C1 clear below only
+# covers the current-week banner, so col C used to balloon to ~545px. A fixed
+# width holds the 'SUM Total Apps' header + numbers cleanly. (Megan 2026-07-01)
+SUM_APPS_COL_WIDTH_PX = 100
+
 
 def merge_weekly_banner(ws) -> None:
     """Merge C1:L1 — the row-1 'Weekly Total Mon X/X - Sun X/X' banner —
@@ -209,6 +216,10 @@ def autosize_all_data_cols(ws, last_data_col: int = LAST_DATA_COL,
         current = widths[col_0idx]
         if col_0idx == rep_name_col - 1:
             new_width = max(current + REP_NAME_COL_PADDING_PX, REP_NAME_COL_MIN_PX)
+        elif col_0idx == WEEKLY_COL_START - 1:
+            # Col C is pinned — see SUM_APPS_COL_WIDTH_PX. Never trust the
+            # autoResized `current` here (the frozen C-banner inflates it).
+            new_width = SUM_APPS_COL_WIDTH_PX
         elif WEEKLY_COL_START - 1 <= col_0idx <= WEEKLY_COL_END - 1:
             new_width = current + WEEKLY_COL_PADDING_PX
         else:
