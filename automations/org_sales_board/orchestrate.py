@@ -139,6 +139,7 @@ def run_daily(ws, *, dry_run: bool = True, today=None,
               from_csv: Optional[Path] = None,
               only: Optional[list[str]] = None,
               include_captainships: bool = False,
+              captainship_programs: Optional[list[str]] = None,
               logfn: Callable[[str], None] = print) -> dict:
     """Execute the daily sections in fastest order under ONE patchright
     session. Returns a summary {filled, skipped, manual}. `only` restricts
@@ -234,7 +235,9 @@ def _run_daily_inner(ws, *, page, dry_run, today, from_csv, only,
             from automations.org_sales_board import captainship
             logfn("--- Captainships (same session) ---")
             cap = captainship.run_captainships(ws, page, today=today,
-                                               dry_run=dry_run, logfn=logfn)
+                                               dry_run=dry_run,
+                                               programs=captainship_programs,
+                                               logfn=logfn)
             summary["captainships"] = cap
             try:
                 _owner_names.update(cap.get("filled", []))

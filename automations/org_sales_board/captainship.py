@@ -347,14 +347,19 @@ def _spec(label, view_url, parse, metric):
 
 
 def run_captainships(ws, page, *, today=None, dry_run=False,
-                     resolve_csv=None, logfn=print) -> dict:
+                     resolve_csv=None, programs=None, logfn=print) -> dict:
     """Pull + fill all 10 captainships under ONE patchright session.
 
     For each captain: pull the TEAM view crosstab, then look each SHEET-roster
     ICD up there first and in the org-wide all-products view as fallback. Fills
     worksheet-scoped. `resolve_csv(key, spec)` overrides the live download with
     a saved CSV path (offline tests); default pulls live via `page`.
+
+    `programs` = optional subset of PROGRAMS keys (e.g. ["fiber"]) — pull ONLY
+    those program views. Used by the granular "retry failed only" path so a
+    mixed failure re-runs just the failed programs, not all of them.
     """
+    _prog_filter = set(programs) if programs else None
     import datetime as dt
     from pathlib import Path
     from automations.org_sales_board import section_pull as sp
@@ -405,6 +410,8 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
     prog = {}
     failed_programs = []
     for tkey, view_url in PROGRAMS.items():
+        if _prog_filter is not None and tkey not in _prog_filter:
+            continue                      # granular retry: skip non-targeted programs
         t = TYPES[tkey]
         logfn(f"  program pull: {tkey}")
         try:

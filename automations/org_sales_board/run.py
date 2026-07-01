@@ -129,7 +129,15 @@ def main(argv=None) -> int:
     ap.add_argument("--with-captainships", action="store_true",
                     help="On the 'daily' step, also fill the 10 captainship "
                          "leaderboards in the SAME login (one full-board run).")
+    ap.add_argument("--sections",
+                    help="Comma-separated section labels to fill ONLY (granular "
+                         "retry of just the failed daily sections). Omit = all.")
+    ap.add_argument("--programs",
+                    help="Comma-separated captainship program keys to pull ONLY "
+                         "(granular retry of just the failed programs). Omit = all.")
     args = ap.parse_args(argv)
+    _sections = [s.strip() for s in args.sections.split(",") if s.strip()] if args.sections else None
+    _programs = [p.strip() for p in args.programs.split(",") if p.strip()] if args.programs else None
 
     # HARD GUARD (Megan 2026-06-14: "DO NOT change anything on the real tab").
     # A live --real run is refused outright. --real --dry-run is still allowed:
@@ -160,13 +168,16 @@ def main(argv=None) -> int:
         from automations.org_sales_board import captainship
         from automations.shared.tableau_patchright import tableau_session
         with tableau_session(verbose=False) as page:
-            captainship.run_captainships(ws, page, dry_run=args.dry_run)
+            captainship.run_captainships(ws, page, dry_run=args.dry_run,
+                                         programs=_programs)
     else:
         # Both 'daily' (all sections) and 'retail-nl' (just the SARA pair)
         # run through the ONE patchright-session orchestrator — no CDP.
         from automations.org_sales_board import orchestrate
         only = (["Retail NL", "Retail Internet"]
                 if args.step == "retail-nl" else None)
+        if _sections:                     # granular retry: fill ONLY these sections
+            only = _sections
         from_csv = Path(args.from_csv) if args.from_csv else None
         # WEEKLY ROLLOVER IS MANUAL (Megan 2026-06-30, vacation plan): a person
         # rolls the board over Monday night — advances the week + archives the
@@ -177,7 +188,8 @@ def main(argv=None) -> int:
         # rolled. To roll deliberately, run `--step rollover` (still wired).
         _summary = orchestrate.run_daily(ws, dry_run=args.dry_run, only=only,
                               from_csv=from_csv,
-                              include_captainships=args.with_captainships) or {}
+                              include_captainships=args.with_captainships,
+                              captainship_programs=_programs) or {}
         # Extend the elapsed-day grand-total formulas on the 'Current vs Prior'
         # tables (Sales Last Week / 4 Week AVG) to sum the days completed so far
         # this week — the VAs do this by hand each day; the automation now
@@ -233,12 +245,23 @@ def main(argv=None) -> int:
                             + [f"captainship: {c}" for c in _failed_prog]
                             + ([] if _compare_clean
                                else ["compare: differences vs the VA tab"]))
-                        if _failed_prog and not _skipped and _compare_clean:
-                            _ra = ["--step", "captainships"]
-                        elif _skipped and not _failed_prog and _compare_clean:
-                            _ra = ["--step", "daily"]
+                        # GRANULAR retry: re-run ONLY the failed sections and/or
+                        # programs, not the whole board. A mixed failure now
+                        # re-runs the failed sections AND failed programs in one
+                        # pass (was: full re-run). A compare-only mismatch stays
+                        # non-granular — a re-run can't fix a data disagreement.
+                        if _skipped and not _failed_prog:
+                            _ra = ["--step", "daily", "--sections", ",".join(_skipped)]
+                        elif _failed_prog and not _skipped:
+                            _ra = ["--step", "captainships",
+                                   "--programs", ",".join(_failed_prog)]
+                        elif _skipped and _failed_prog:
+                            _ra = ["--step", "daily",
+                                   "--sections", ",".join(_skipped),
+                                   "--with-captainships",
+                                   "--programs", ",".join(_failed_prog)]
                         else:
-                            _ra = []
+                            _ra = []   # compare-only mismatch — no granular re-run
                         _rm.write_manifest(
                             "org-sales-board", failed=_failed_all, retry_args=_ra,
                             kind="section",
