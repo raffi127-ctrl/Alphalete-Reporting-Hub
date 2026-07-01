@@ -2915,6 +2915,44 @@ def _was_due_on(report: dict, day: dt.date) -> bool:
     return day.weekday() in sched.get("weekdays", [])
 
 
+# Cache the orchestrator config once per process (registry is lightweight; the
+# app reloads on restart if schedule_config changes).
+_SCHED_REGISTRY_CACHE: dict = {}
+
+
+def _sched_sorted(reports: list[dict], day: dt.date) -> list[dict]:
+    """Order Hub cards to match the day-orchestrator's ACTUAL run sequence for
+    `day` (registry.run_order — flow_rank -> priority -> id), so the schedule
+    view lists reports top-to-bottom in the order they'll run. Cards map to a
+    scheduler report by their action module; cards NOT on the scheduler keep
+    their relative order, placed after the scheduled ones. Best-effort — any
+    failure falls back to the original list order."""
+    try:
+        cached = _SCHED_REGISTRY_CACHE.get("v")
+        if cached is None:
+            from automations.day_orchestrator import registry as _reg
+            cached = (_reg, _reg.load_config())
+            _SCHED_REGISTRY_CACHE["v"] = cached
+        _reg, cfg = cached
+        ordered_ids = [r.report_id for r in
+                       _reg.run_order(_reg.scheduled_today(cfg, day), day)]
+        mod_rank: dict[str, int] = {}
+        for pos, rid in enumerate(ordered_ids):
+            rep = cfg.reports.get(rid)
+            if rep and getattr(rep, "command", None):
+                mod_rank[rep.command[0]] = pos
+
+        def _rank(card: dict) -> int:
+            for a in card.get("actions", []):
+                if a.get("module") in mod_rank:
+                    return mod_rank[a["module"]]
+            return 10_000  # unscheduled cards sort after, keeping their order
+
+        return sorted(reports, key=_rank)
+    except Exception:
+        return reports
+
+
 # --------------------------------------------------------------------------
 # Cross-user run coordination via the recruiting Sheet's "Hub Activity" tab.
 # Each run start appends a row; run-end updates the same row by RunID. Lets
@@ -8480,6 +8518,9 @@ else:  # st.session_state.view == "user"
                     unsafe_allow_html=True,
                 )
                 _due = [r for r in my_reports if _was_due_on(r, _day)]
+                # List reports in the order the day-orchestrator will run them
+                # (matches the scheduler sequence), then split out Other Offices.
+                _due = _sched_sorted(_due, _day)
                 if _due:
                     # Single-office reports (category "🏢 Other Offices") render
                     # UNDER an "Other Offices" divider, below the main-office
