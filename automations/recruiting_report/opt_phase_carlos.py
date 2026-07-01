@@ -323,84 +323,13 @@ VIEWS: List[ViewConfig] = [
     ),
 ]
 
-# Personal Production View-Data scrape: the B2BATTSalesMetrics dashboard is
-# multi-sheet, so 'Download → Data' is disabled until the rep-level worksheet
-# ("B2B Metrics Owner (+/-) Rep") is activated. We can't reliably pin a single
-# click point — the "Low Metric Office Count" summary tile sits directly above
-# the rep table and the viz's internal coords don't map cleanly to screen
-# pixels (0.35 and 0.40 both landed on the summary, verified live 2026-07-01).
-# So instead of one hardcoded (x, y), sweep a band of candidates and keep the
-# first that returns the REP TABLE (product columns + many rows) rather than
-# the summary tile (Measure Names/Values). Self-tuning survives template drift.
-PP_ACTIVATE_CANDIDATES = [
-    (0.5, 0.45), (0.5, 0.48), (0.5, 0.42), (0.5, 0.51),
-    (0.5, 0.54), (0.5, 0.58), (0.12, 0.48), (0.5, 0.62),
-]
-
-
-# The PP rep table's View Data is a TALL long-format grid (~637 rows: one
-# per rep-per-measure, cols = Owner Name / Rep / Measure Names / Measure
-# Values). The default scroll-scrape jumps to the bottom and plateaus at
-# ~137; these gentler params sweep it fully without skipping middle rows.
-PP_SCRAPE_KWARGS = dict(jump_every=None, scroll_step=0.35,
-                        scroll_wait_ms=1600, stale_max=30, max_iter=400)
-
-
-def _pp_looks_like_rep_table(fields, records) -> bool:
-    """True when a View-Data scrape hit the per-rep table (not the summary
-    tile). The rep worksheet returns LONG format with Owner Name + Rep
-    columns; the "Low Metric Office Count" summary tile is a bare Measure
-    Names/Values pair with neither."""
-    fl = [f.strip().lower() for f in fields]
-    has_owner = any("owner name" in f for f in fl)
-    has_rep = any(f in ("rep", "rep name") for f in fl)
-    return has_owner and has_rep and len(records) > 1
-
-
-def _pp_scrape_autotune(view_url: str, verbose: bool = True, page=None):
-    """Scrape the PP rep table, sweeping PP_ACTIVATE_CANDIDATES until one
-    activation click lands on the rep worksheet (many rows + product columns)
-    instead of the summary tile above it. Returns (fields, records, xy). One
-    Tableau session is reused across candidates (re-navigates per try) so the
-    sweep costs one login. Raises if no candidate reaches the rep table."""
-    import contextlib
-    from automations.recruiting_report.opt_phase import scrape_view_data
-    from automations.shared.tableau_patchright import tableau_session
-
-    @contextlib.contextmanager
-    def _sess():
-        if page is not None:
-            yield page
-        else:
-            with tableau_session(verbose=verbose) as pg:
-                yield pg
-
-    last = None
-    with _sess() as pg:
-        for xy in PP_ACTIVATE_CANDIDATES:
-            try:
-                fields, records = scrape_view_data(
-                    view_url, verbose=verbose, activate_xy=xy, page=pg,
-                    scrape_kwargs=PP_SCRAPE_KWARGS)
-            except Exception as e:
-                if verbose:
-                    print(f"  · activate {xy}: {type(e).__name__} "
-                          f"{str(e)[:80]} — trying next", flush=True)
-                continue
-            if _pp_looks_like_rep_table(fields, records):
-                if verbose:
-                    print(f"  ✓ rep table via activate_xy={xy} "
-                          f"({len(records)} rows)", flush=True)
-                return fields, records, xy
-            if verbose:
-                print(f"  · activate {xy}: not the rep table "
-                      f"({len(records)} rows, cols {fields[:3]}) — trying next",
-                      flush=True)
-            last = (fields, records)
-    raise RuntimeError(
-        "PP autotune: no activation click hit the rep table (tried "
-        f"{PP_ACTIVATE_CANDIDATES}). Last cols: "
-        f"{last[0][:4] if last else 'none'}")
+# NOTE (2026-07-01): Personal Production is scraped via the CROSSTAB of the
+# 'Sales.Quality Metrics' rep worksheet (download_view_crosstab) — the flyout
+# opens on the base view and yields the full wide table. A prior View-Data
+# scrape approach (activation-click sweep of the multi-sheet dashboard) was
+# abandoned: Tableau's View Data Summary is scoped to the ONE measure selected
+# in the saved view, so it returned only 'AIR/AWB Sales'. See git history for
+# _pp_scrape_autotune if that path is ever needed again.
 
 
 # Canonical column-B label(s) for each sheet row in our OPT block. The
@@ -1191,11 +1120,6 @@ def main() -> int:
                     help="Download a single view's crosstab to inspect "
                          "the CSV format (no Sheet writes). Use this first "
                          "while wiring up each view's parser.")
-    ap.add_argument("--pp-crosstab", action="store_true",
-                    help="With --test-view personal_production: try the "
-                         "Crosstab download (full wide table, all measures) "
-                         "instead of the View-Data scrape (which is scoped to "
-                         "the one selected measure).")
     ap.add_argument("--dry-run", action="store_true",
                     help="Run the full pipeline but don't write to the Sheet.")
     ap.add_argument("--preview-icd",
