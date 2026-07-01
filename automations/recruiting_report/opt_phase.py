@@ -1187,7 +1187,8 @@ def _scrape_one_view_data(page, ctx, view_url: str, verbose: bool = True,
 
 def scrape_view_data(view_url: str, verbose: bool = True,
                      activate_xy: Optional[Tuple[float, float]] = None,
-                     page=None) -> Tuple[List[str], List[List[str]]]:
+                     page=None, scrape_kwargs: Optional[Dict] = None
+                     ) -> Tuple[List[str], List[List[str]]]:
     """Drive Tableau's Download -> Data on `view_url` and scrape the View Data
     window. Returns (field_names, records). Used for views whose per-ICD table
     won't crosstab-export.
@@ -1198,12 +1199,19 @@ def scrape_view_data(view_url: str, verbose: bool = True,
 
     On a multi-sheet dashboard, 'Download -> Data' is disabled until a
     worksheet is selected — pass `activate_xy` (fractional x, y of the viz)
-    to click inside the target worksheet first."""
+    to click inside the target worksheet first.
+
+    `scrape_kwargs` tunes the grid scroll-scrape (jump_every / scroll_step /
+    scroll_wait_ms / stale_max / max_iter) — needed for tall grids where the
+    default jump-to-bottom plateaus early (e.g. the Carlos PP rep table:
+    ~637 long-format rows)."""
     if page is not None:
-        return _scrape_one_view_data(page, page.context, view_url, verbose, activate_xy)
+        return _scrape_one_view_data(page, page.context, view_url, verbose,
+                                     activate_xy, scrape_kwargs)
     from automations.shared.tableau_patchright import tableau_session
     with tableau_session(verbose=verbose) as pg:
-        return _scrape_one_view_data(pg, pg.context, view_url, verbose, activate_xy)
+        return _scrape_one_view_data(pg, pg.context, view_url, verbose,
+                                     activate_xy, scrape_kwargs)
 
 
 def _program_summary_url(we_sunday: Optional[dt.date] = None) -> str:

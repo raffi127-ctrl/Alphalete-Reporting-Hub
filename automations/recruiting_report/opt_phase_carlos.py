@@ -338,15 +338,23 @@ PP_ACTIVATE_CANDIDATES = [
 ]
 
 
+# The PP rep table's View Data is a TALL long-format grid (~637 rows: one
+# per rep-per-measure, cols = Owner Name / Rep / Measure Names / Measure
+# Values). The default scroll-scrape jumps to the bottom and plateaus at
+# ~137; these gentler params sweep it fully without skipping middle rows.
+PP_SCRAPE_KWARGS = dict(jump_every=None, scroll_step=0.35,
+                        scroll_wait_ms=1600, stale_max=30, max_iter=400)
+
+
 def _pp_looks_like_rep_table(fields, records) -> bool:
     """True when a View-Data scrape hit the per-rep table (not the summary
-    tile). The summary tile is a Measure Names/Values pair; the rep table has
-    the product columns + one row per rep."""
+    tile). The rep worksheet returns LONG format with Owner Name + Rep
+    columns; the "Low Metric Office Count" summary tile is a bare Measure
+    Names/Values pair with neither."""
     fl = [f.strip().lower() for f in fields]
-    if any("measure names" in f for f in fl):
-        return False  # the Low Metric Office Count summary worksheet
-    has_products = any("internet sales" in f for f in fl)
-    return has_products and len(records) > 1
+    has_owner = any("owner name" in f for f in fl)
+    has_rep = any(f in ("rep", "rep name") for f in fl)
+    return has_owner and has_rep and len(records) > 1
 
 
 def _pp_scrape_autotune(view_url: str, verbose: bool = True, page=None):
@@ -372,7 +380,8 @@ def _pp_scrape_autotune(view_url: str, verbose: bool = True, page=None):
         for xy in PP_ACTIVATE_CANDIDATES:
             try:
                 fields, records = scrape_view_data(
-                    view_url, verbose=verbose, activate_xy=xy, page=pg)
+                    view_url, verbose=verbose, activate_xy=xy, page=pg,
+                    scrape_kwargs=PP_SCRAPE_KWARGS)
             except Exception as e:
                 if verbose:
                     print(f"  · activate {xy}: {type(e).__name__} "
