@@ -159,17 +159,20 @@ def run_daily(ws, *, dry_run: bool = True, today=None,
     if not needs_pull:
         return _run_daily_inner(ws, page=None, dry_run=dry_run, today=today,
                                 from_csv=from_csv, only=only, logfn=logfn,
-                                include_captainships=include_captainships)
+                                include_captainships=include_captainships,
+                                captainship_programs=captainship_programs)
 
     from automations.shared.tableau_patchright import tableau_session
     with tableau_session(verbose=False) as page:
         return _run_daily_inner(ws, page=page, dry_run=dry_run, today=today,
                                 from_csv=from_csv, only=only, logfn=logfn,
-                                include_captainships=include_captainships)
+                                include_captainships=include_captainships,
+                                captainship_programs=captainship_programs)
 
 
 def _run_daily_inner(ws, *, page, dry_run, today, from_csv, only,
-                     logfn, include_captainships=False) -> dict:
+                     logfn, include_captainships=False,
+                     captainship_programs=None) -> dict:
     grid = ws.get_all_values()
     raw_aliases = fs.load_aliases()
     ctx = AdapterContext(today=today, out_dir=Path("output"),
