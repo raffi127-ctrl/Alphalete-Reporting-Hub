@@ -257,6 +257,20 @@ def _build_body(cfg, ds, *, checkpoint: bool):
         text.append(f"✅ Ran clean ({len(done)}): {names}")
         html.append(f"<p style='font-size:13px;color:#555'>✅ <b>Ran clean ({len(done)}):</b> "
                     f"{_esc(names)}</p>")
+        # Per-report clean-run detail — shown ONLY when the report attached a
+        # note to its clean manifest (e.g. Financial records which workbooks it
+        # pulled + how many tabs they filled). Reports without a note add
+        # nothing, so the compact one-liner above stays compact for everything
+        # else.
+        _GENERIC = {"", "manifest clean", "simulated"}
+        detailed = [r for r in done
+                    if r.last_reason and r.last_reason not in _GENERIC
+                    and not r.last_reason.startswith("ran; ")]
+        for r in sorted(detailed, key=lambda x: (x.display_name or x.report_id)):
+            nm = r.display_name or r.report_id
+            text.append(f"   📄 {nm}: {r.last_reason}")
+            html.append("<div style='font-size:12px;color:#777;margin-left:14px'>"
+                        f"📄 <b>{_esc(nm)}</b>: {_esc(r.last_reason)}</div>")
 
     # 4) REMAINING — reports that run on their OWN job later today (e.g. the noon
     # brand audit). They never gate this email; we just note they're still coming.

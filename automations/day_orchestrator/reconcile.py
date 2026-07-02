@@ -82,7 +82,10 @@ def _verify_manifest(vcfg: dict, target_date: dt.date) -> ReconResult:
                                 f"(run {stamp}, expected {target_date.isoformat()}) "
                                 f"— confirm by hand")
     if m.get("ok"):
-        return ReconResult(ok=True, note="manifest clean")
+        # Pass the report's own clean-run note through (e.g. Financial records
+        # which workbooks it pulled) so the summary email can surface it; fall
+        # back to the generic label when the report wrote none.
+        return ReconResult(ok=True, note=m.get("note") or "manifest clean")
     failed = m.get("failed", []) or []
     return ReconResult(ok=False, missing=failed,
                        note=m.get("note", "") or f"{len(failed)} unit(s) failed")

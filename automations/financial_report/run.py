@@ -238,7 +238,15 @@ def main() -> int:
                                     "the report couldn't read it. Which sender's "
                                     "format changed, and can we get a sample?"))
                 else:
-                    _rm.mark_clean(MANIFEST_ID, kind="section")
+                    # Clean run — record WHICH workbooks were pulled + how many
+                    # tabs they filled, in the manifest note. The orchestrator
+                    # surfaces this note in the summary email so it's easy to
+                    # audit what came in and got filled this week.
+                    names = ", ".join(sorted(p.name for p in files))
+                    _rm.write_manifest(
+                        MANIFEST_ID, failed=[], retry_args=[], kind="section",
+                        note=f"pulled {len(files)} workbook(s) → "
+                             f"{result.get('filled', 0)} tab(s) filled: {names}")
             except Exception:  # noqa: BLE001 — manifest is best-effort
                 pass
         print("done")
