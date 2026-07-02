@@ -51,6 +51,8 @@ _HUB_CARD = {
     "leaders_call": "leaders-call",
     "residential_rep_count": "residential_rep_count",
     "rashad_metrics": "rashad-metrics",
+    "frontier_opt": "frontier-opt-data-pull",
+    "financial_report": "financial-pull",
     # weather_alert, brand_audit: Slack-only, no Hub card → not published.
 }
 
