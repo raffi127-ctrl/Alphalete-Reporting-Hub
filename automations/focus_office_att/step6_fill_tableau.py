@@ -383,8 +383,15 @@ def main() -> int:
                     ops = design_cosmetic_ops(ws, layout)
                     if (not stats.get("new_reps")
                             and not os.environ.get("FOCUS_PHASE3_FULL_DESIGN")):
+                        # apply_empty_cell_defaults MUST stay: fill_tableau_for_owner
+                        # CLEARS each production cell then writes only non-zero sales,
+                        # so a 0-sale completed-day cell is left BLANK. Phase 2's
+                        # 0-fill ran BEFORE this clear, so without re-running it here
+                        # those blanks never become 0 — the recurring "no data isn't
+                        # 0" bug (Megan asked repeatedly). Cheap: 1 read + 1 write.
                         _keep = {"write_office_totals_row",
-                                 "write_office_summary_block"}
+                                 "write_office_summary_block",
+                                 "apply_empty_cell_defaults"}
                         ops = [(l, f) for l, f in ops if l in _keep]
                     for label, fn in ops:
                         try:
