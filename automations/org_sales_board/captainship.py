@@ -346,6 +346,15 @@ def _spec(label, view_url, parse, metric):
         out_name=f"org_sales_board_cap_{label}.csv")
 
 
+# A transient Tableau load/render flake ("0 thumbs") or a slow crosstab losing
+# the 4am race (every tableau report pulls at once) should NOT silently blank a
+# program's captainships for the day — retry the program pull before giving up
+# (Megan 2026-07-02: Wed/Thu scheduled runs blanked all captainship d1/d2 this
+# way; a standalone re-run pulled clean). Tunable.
+_PROG_PULL_TRIES = 3
+_PROG_PULL_BACKOFF_S = 8
+
+
 def run_captainships(ws, page, *, today=None, dry_run=False,
                      resolve_csv=None, programs=None, logfn=print) -> dict:
     """Pull + fill all 10 captainships under ONE patchright session.
@@ -361,6 +370,7 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
     """
     _prog_filter = set(programs) if programs else None
     import datetime as dt
+    import time
     from pathlib import Path
     from automations.org_sales_board import section_pull as sp
     today = today or dt.date.today()
@@ -414,14 +424,26 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
             continue                      # granular retry: skip non-targeted programs
         t = TYPES[tkey]
         logfn(f"  program pull: {tkey}")
-        try:
-            prog[tkey] = (_pull_fiber_dual(view_url) if tkey == "fiber"
-                          else _pull(f"PROG_{tkey}", view_url,
-                                     t["parse"], t["metric"]))
-        except Exception as e:
-            logfn(f"  ⚠ program pull {tkey} FAILED ({type(e).__name__}: "
-                  f"{str(e)[:90]}) — skipping; {tkey} stays blank for all "
-                  f"captainships this run. Re-run to retry.")
+        _last_exc = None
+        for _attempt in range(1, _PROG_PULL_TRIES + 1):
+            try:
+                prog[tkey] = (_pull_fiber_dual(view_url) if tkey == "fiber"
+                              else _pull(f"PROG_{tkey}", view_url,
+                                         t["parse"], t["metric"]))
+                _last_exc = None
+                break
+            except Exception as e:
+                _last_exc = e
+                _more = _attempt < _PROG_PULL_TRIES
+                logfn(f"  ⚠ program pull {tkey} attempt {_attempt}/"
+                      f"{_PROG_PULL_TRIES} failed ({type(e).__name__}: "
+                      f"{str(e)[:80]})" + (" — retrying…" if _more else ""))
+                if _more:
+                    time.sleep(_PROG_PULL_BACKOFF_S * _attempt)
+        if _last_exc is not None:
+            logfn(f"  ⚠ program pull {tkey} FAILED after {_PROG_PULL_TRIES} "
+                  f"tries ({type(_last_exc).__name__}) — skipping; {tkey} stays "
+                  f"blank for all captainships this run. Re-run to retry.")
             prog[tkey] = {}
             failed_programs.append(tkey)
 
