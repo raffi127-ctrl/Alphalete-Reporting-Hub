@@ -288,7 +288,14 @@ def _set_week_and_submit(page: Page, week_start: dt.date) -> None:
     after = page.locator("#weekStart").input_value()
     print(f"[picker] AFTER setDate, BEFORE submit: input_value={after!r}", flush=True)
 
-    with page.expect_navigation(timeout=15000, wait_until="load"):
+    # Wait for domcontentloaded, not 'load': the Retention Report table is
+    # server-rendered HTML (present at DOMContentLoaded), so waiting for every
+    # sub-resource just invites a nav timeout on a slow AppStream evening — the
+    # exact 'Timeout 15000ms … waiting for navigation until load' that skipped
+    # Colten Wright + Rafael Hidalgo's last-week pulls (2026-07-01). 30s budget
+    # matches the office-switch nav on _switch_office above. If the table isn't
+    # ready, _scrape_metrics reads empty → the caller's retry/skip handles it.
+    with page.expect_navigation(timeout=30000, wait_until="domcontentloaded"):
         page.locator('input[name="submit"][type="submit"]').first.click()
     post_nav = page.locator("#weekStart").input_value()
     print(f"[picker] AFTER submit/navigation: input_value={post_nav!r} url={page.url[:120]}",
