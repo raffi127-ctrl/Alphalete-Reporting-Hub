@@ -57,6 +57,12 @@ WORKSPACE = Path(__file__).resolve().parent.parent.parent
 # Where the Hub drops the uploaded FINANCIAL SUMMARY files.
 UPLOAD_DIR = WORKSPACE / "automations" / "uploaded" / "financial"
 
+# Run-manifest id — MUST equal schedule_config financial_report.verify.report_id
+# AND the Hub card id (so the orchestrator's verify + the Hub's retry button
+# both read the same file). Seeded failed at run start, mark_clean'd on a clean
+# fill; a run with parse PROBLEMS leaves ok=false with the bad files named.
+MANIFEST_ID = "financial-pull"
+
 
 def _hidden_tab_titles(sh) -> set:
     """Tabs Megan has hidden in the Sheet — same retired/inactive convention
@@ -185,6 +191,20 @@ def main() -> int:
     else:
         directory = Path(args.dir).expanduser() if args.dir else UPLOAD_DIR
 
+    # Seed a failure manifest up-front (live only). If the run crashes mid-way
+    # — or bails on "no files" below — it stays ok=false so the orchestrator's
+    # verify flags the run INCOMPLETE instead of "ran clean" (exit-code only);
+    # mark_clean() at the end overwrites it once the fill completes cleanly.
+    live = not args.dry_run
+    if live:
+        try:
+            from automations.shared import run_manifest as _rm
+            _rm.write_manifest(MANIFEST_ID, failed=["financial fill"],
+                               retry_args=["--email"], kind="section",
+                               note="run started but did not complete")
+        except Exception:  # noqa: BLE001 — manifest is best-effort
+            pass
+
     try:
         files = gather_files(directory)
         if not files:
@@ -193,8 +213,34 @@ def main() -> int:
         print(f"financial report — {len(files)} file(s) from "
               f"{'email inbox' if args.email else directory}, "
               f"dry_run={args.dry_run}")
-        run_financial_report(files, dry_run=args.dry_run,
-                             only_sheet=args.only_sheet)
+        result = run_financial_report(files, dry_run=args.dry_run,
+                                      only_sheet=args.only_sheet)
+        if live:
+            try:
+                from automations.shared import run_manifest as _rm
+                problems = result.get("problems") or []
+                if problems:
+                    # A parse PROBLEM (usually a 0-offices file = new template)
+                    # is a real INCOMPLETE — name the files + tell the user how
+                    # to fix (send the file to Claude for a parser).
+                    bad = [name for name, _ in problems]
+                    _rm.write_manifest(
+                        MANIFEST_ID, failed=bad, retry_args=["--email"],
+                        kind="file",
+                        note=f"{len(bad)} file(s) couldn't be parsed",
+                        remediation=_rm.make_remediation(
+                            reason="One or more FINANCIAL SUMMARY workbooks "
+                                   "couldn't be parsed (0 offices) — usually a "
+                                   "new/changed template from that sender.",
+                            fix="Send the flagged file(s) to Claude to add a "
+                                "parser for the new layout, then re-run.",
+                            message="A financial workbook's template changed and "
+                                    "the report couldn't read it. Which sender's "
+                                    "format changed, and can we get a sample?"))
+                else:
+                    _rm.mark_clean(MANIFEST_ID, kind="section")
+            except Exception:  # noqa: BLE001 — manifest is best-effort
+                pass
         print("done")
         return 0
     finally:
