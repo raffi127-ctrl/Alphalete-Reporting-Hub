@@ -808,6 +808,29 @@ def apply_bold_center(ws) -> None:
     }]})
 
 
+def normalize_body_font(ws) -> None:
+    """Set BODY cells to Georgia 12pt (font family + size only). Leaves the 4
+    header rows untouched (rows 1-2 = current day-banner + column headers, and
+    the LAST WEEK label row + the frozen column-header row below it) per Megan's
+    request 2026-07-02 ("12pt Georgia, leave headers as they were"). Alignment +
+    bold are handled by apply_bold_center; this only touches font so headers keep
+    their own sizes. Idempotent."""
+    col_b = ws.col_values(2)
+    lw = next((i for i, v in enumerate(col_b, 1)
+               if isinstance(v, str) and v.strip().upper() == LAST_WEEK_LABEL), None)
+    # Body = everything except header rows 1,2 (and lw, lw+1 if a frozen block
+    # exists). 0-based, endRowIndex exclusive.
+    ranges = [(2, lw - 1), (lw + 1, 200)] if lw else [(2, 200)]
+    cell = {"userEnteredFormat": {"textFormat": {"fontFamily": "Georgia", "fontSize": 12}}}
+    fields = "userEnteredFormat.textFormat.fontFamily,userEnteredFormat.textFormat.fontSize"
+    reqs = [{"repeatCell": {
+        "range": {"sheetId": ws.id, "startRowIndex": s, "endRowIndex": e,
+                  "startColumnIndex": 0, "endColumnIndex": 96},
+        "cell": cell, "fields": fields}} for s, e in ranges if e > s]
+    if reqs:
+        ws.spreadsheet.batch_update({"requests": reqs})
+
+
 def apply_day_block_borders(ws, layout: Layout) -> None:
     """Thick black box around each day's 12-col block, spanning the header
     row through the last summary row so reps + OFFICE TOTALS + summary are
@@ -849,6 +872,7 @@ def design_cosmetic_ops(ws, layout: Layout) -> list:
         ("apply_number_formats",         lambda: apply_number_formats(ws, layout)),
         ("apply_gap_time_format",        lambda: apply_gap_time_format(ws, layout)),
         ("apply_bold_center",            lambda: apply_bold_center(ws)),
+        ("normalize_body_font",          lambda: normalize_body_font(ws)),
         ("reset_conditional_formatting", lambda: reset_conditional_formatting(ws)),
         ("write_office_totals_row",      lambda: write_office_totals_row(ws, layout)),
         ("write_office_summary_block",   lambda: write_office_summary_block(ws, layout)),
