@@ -2616,7 +2616,7 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "sales-board-screenshot-email",
-        "name": "Sales Board Screenshot Email",
+        "name": "Org. Sales Board Email",
         "creator": "Megan",
         "emoji": "📧",
         "color": "#DC2626",
