@@ -397,6 +397,26 @@ def send(msg: EmailMessage) -> None:
         s.send_message(msg)
 
 
+def board_fill_ok() -> Tuple[bool, str]:
+    """The email must reflect a COMPLETE fill. Reads the board's run manifest and
+    returns (ok, reason). Safe to send ONLY when today's fill is data-complete —
+    a clean run, or INCOMPLETE *only* because of VA-compare differences (all the
+    data is there, the VA tab just disagrees). A failed/skipped SECTION, PROGRAM,
+    or CAPTAINSHIP pull means data is missing → NOT safe (Megan 2026-07-03)."""
+    from automations.shared import run_manifest as _rm
+    m = _rm.read_manifest("org-sales-board")
+    if not m:
+        return False, "no Sales Board fill manifest found (did the board run?)"
+    ts = str(m.get("run_ts") or "")[:10]
+    if ts != dt.date.today().isoformat():
+        return False, f"Sales Board fill is not from today (manifest run_ts {ts or '?'})"
+    missing = [f for f in (m.get("failed") or [])
+               if not str(f).lower().startswith("compare:")]
+    if missing:
+        return False, "Sales Board fill INCOMPLETE — missing data: " + "; ".join(missing)
+    return True, ""
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Daily Sales Board screenshot email")
     ap.add_argument("--dry-run", action="store_true",
@@ -404,7 +424,20 @@ def main(argv=None) -> int:
     ap.add_argument("--preview", action="store_true",
                     help="send to Megan only (sign-off before the proving list)")
     ap.add_argument("--to", help="comma-separated override recipients")
+    ap.add_argument("--force", action="store_true",
+                    help="skip the board-fill-complete guard (manual/laptop testing)")
     a = ap.parse_args(argv)
+
+    # GUARD: never email a partial board. Only a DATA-COMPLETE fill is safe (clean,
+    # or INCOMPLETE only from VA-compare notes). A missing section/captainship pull
+    # → don't send. --dry-run never sends; --force overrides (e.g. laptop previews,
+    # where the board fill runs on a different machine so the manifest is stale).
+    if not (a.dry_run or a.force):
+        ok, why = board_fill_ok()
+        if not ok:
+            print(f"[screenshot_email] NOT SENT — {why}. The email would show "
+                  f"incomplete/incorrect numbers. (--force overrides.)", flush=True)
+            return 2
 
     out_dir = Path("output") / "sales_board_shots" / dt.date.today().isoformat()
     images = capture(out_dir)
