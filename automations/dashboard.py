@@ -2734,10 +2734,15 @@ def _spawn_background_run(cmd: list[str], report_id: str, report_name: str,
     ACTIVE_RUNS_LOG_DIR.mkdir(parents=True, exist_ok=True)
     log_file = ACTIVE_RUNS_LOG_DIR / f"{report_id}.log"
     log_handle = log_file.open("w")
-    env = None
+    # Every manual Hub "play" sets HUB_MANUAL_RUN=1. A report with a machine-local
+    # safety gate (e.g. "was the upstream fill fresh on THIS box?") must bypass it
+    # when this is set, so the play button ALWAYS runs, from any machine (Megan
+    # 2026-07-03 — that's the point of the Hub). The automated day-orchestrator
+    # does NOT go through here, so its gates still apply to the unattended run.
+    import os as _os
+    env = {**_os.environ, "HUB_MANUAL_RUN": "1"}
     if env_overrides:
-        import os as _os
-        env = {**_os.environ, **env_overrides}
+        env.update(env_overrides)
     # Windows: spawn the report in its OWN process group so a child crash
     # (or any CTRL_C / CTRL_BREAK Windows generates for the console) does
     # NOT propagate back to the Hub's streamlit process. Without this,

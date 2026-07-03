@@ -434,11 +434,15 @@ def main(argv=None) -> int:
                     help="skip the board-fill-complete guard (manual/laptop testing)")
     a = ap.parse_args(argv)
 
-    # GUARD: never email a partial board. Only a DATA-COMPLETE fill is safe (clean,
-    # or INCOMPLETE only from VA-compare notes). A missing section/captainship pull
-    # → don't send. --dry-run never sends; --force overrides (e.g. laptop previews,
-    # where the board fill runs on a different machine so the manifest is stale).
-    if not (a.dry_run or a.force):
+    # GUARD: never email a partial board on the AUTOMATED run. Only a DATA-COMPLETE
+    # fill is safe (clean, or INCOMPLETE only from VA-compare notes). A missing
+    # section/captainship pull → don't send. Bypassed by: --dry-run (never sends);
+    # --force (CLI); and HUB_MANUAL_RUN (any manual Hub play — the board manifest is
+    # machine-local + stale on the box that didn't run the fill, and a manual click
+    # is a human decision, so the play button must always run). [[feedback_hub_run_anywhere]]
+    import os as _os
+    _manual = a.force or _os.environ.get("HUB_MANUAL_RUN")
+    if not (a.dry_run or _manual):
         ok, why = board_fill_ok()
         if not ok:
             print(f"[screenshot_email] NOT SENT — {why}. The email would show "
