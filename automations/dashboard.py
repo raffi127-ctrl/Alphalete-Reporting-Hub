@@ -2929,25 +2929,38 @@ def _sched_sorted(reports: list[dict], day: dt.date) -> list[dict]:
     """Order Hub cards to match the day-orchestrator's ACTUAL run sequence for
     `day` (registry.run_order — flow_rank -> priority -> id), so the schedule
     view lists reports top-to-bottom in the order they'll run. Cards map to a
-    scheduler report by their action module; cards NOT on the scheduler keep
-    their relative order, placed after the scheduled ones. Best-effort — any
-    failure falls back to the original list order."""
+    scheduler report primarily by report ID (the canonical orchestrator
+    report_id -> Hub card id map in hub_publish._HUB_CARD), falling back to the
+    action module. ID-matching is what makes shared-library / uploaded reports
+    (whose module path is 'automations.uploaded._shared.<id>', never the
+    scheduler's real module) land in their true run slot instead of getting
+    dumped to the bottom. Cards NOT on the scheduler keep their relative order,
+    placed after the scheduled ones. Best-effort — any failure falls back to
+    the original list order."""
     try:
         cached = _SCHED_REGISTRY_CACHE.get("v")
         if cached is None:
             from automations.day_orchestrator import registry as _reg
-            cached = (_reg, _reg.load_config())
+            from automations.day_orchestrator.hub_publish import _HUB_CARD
+            cached = (_reg, _reg.load_config(), _HUB_CARD)
             _SCHED_REGISTRY_CACHE["v"] = cached
-        _reg, cfg = cached
+        _reg, cfg, _hub_card = cached
         ordered_ids = [r.report_id for r in
                        _reg.run_order(_reg.scheduled_today(cfg, day), day)]
-        mod_rank: dict[str, int] = {}
+        card_rank: dict[str, int] = {}   # Hub card id -> run position
+        mod_rank: dict[str, int] = {}    # action module -> run position (fallback)
         for pos, rid in enumerate(ordered_ids):
+            cid = _hub_card.get(rid)
+            if cid is not None:
+                card_rank[cid] = pos
             rep = cfg.reports.get(rid)
             if rep and getattr(rep, "command", None):
                 mod_rank[rep.command[0]] = pos
 
         def _rank(card: dict) -> int:
+            cid = str(card.get("id"))
+            if cid in card_rank:
+                return card_rank[cid]
             for a in card.get("actions", []):
                 if a.get("module") in mod_rank:
                     return mod_rank[a["module"]]
