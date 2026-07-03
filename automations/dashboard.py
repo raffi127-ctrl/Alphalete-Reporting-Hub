@@ -2628,16 +2628,6 @@ AUTOMATED_REPORTS = [
             "screenshots (colors/fonts/borders match the sheet). Rendered from the "
             "COPY tab via the Google Sheets PDF-export endpoint — no browser, runs "
             "from any machine.\n\n"
-            "WHAT'S INCLUDED (in sheet order)\n"
-            "Product Summary, RAF ORG, the ALPHALETE ORG leaderboard, the 8 daily "
-            "section tables, then every captainship whose ICD is on the ALPHALETE "
-            "ORG leaderboard (Raf / Carlos / Eveliz / Khalil / Colten / Jairo — each "
-            "as Summary + CAPTAIN TEAM leaderboard + collapsed daily), and the bottom "
-            "RAF / CARLOS / COLTEN / BEN ORG summaries. Captainships that live ONLY "
-            "in the captainship lists (not the org) are excluded.\n\n"
-            "COLLAPSED\n"
-            "Each table stops at Totals + Last Week — the long WE-history stacks are "
-            "dropped so the email isn't cluttered.\n\n"
             "RECIPIENTS\n"
             "Proving phase: Maud + Rafael + Megan. Expand to the full distribution "
             "list once it's proven out.\n\n"
@@ -2665,14 +2655,6 @@ AUTOMATED_REPORTS = [
                 "help": "Renders every section of the copy tab to exact-sheet images and emails them to the proving list (Maud, Rafael, Megan). Takes a couple of minutes.",
                 "module": "automations.org_sales_board.screenshot_email",
                 "args_fn": lambda: [],
-            },
-            {
-                "label": "Preview to Megan only",
-                "icon": "👁",
-                "primary": False,
-                "help": "Same email, sent only to Megan — a sign-off check before it goes to the proving list.",
-                "module": "automations.org_sales_board.screenshot_email",
-                "args_fn": lambda: ["--preview"],
             },
         ],
     },
