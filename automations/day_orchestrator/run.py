@@ -230,9 +230,14 @@ def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
                        waiting_on=f"clock < {r.not_before}")
                 continue
 
-        # Dependencies must all be DONE.
+        # Dependencies must have RAN — DONE or INCOMPLETE both count (INCOMPLETE =
+        # it filled but with a note, e.g. the Sales Board's VA-compare differences;
+        # the data is there). A dep that FAILED / never ran still blocks the
+        # dependent — so e.g. a failed board fill blocks the board email. (Only
+        # org_sales_board_email uses depends_on today.)
         unmet = [d for d in r.depends_on
-                 if d in ds.reports and ds.reports[d].status != state.DONE]
+                 if d in ds.reports
+                 and ds.reports[d].status not in (state.DONE, state.INCOMPLETE)]
         if unmet:
             ds.set(r.report_id, state.PENDING, reason=f"waiting on {', '.join(unmet)}",
                    waiting_on=", ".join(unmet))
