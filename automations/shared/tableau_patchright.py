@@ -730,8 +730,19 @@ def appstream_direct_session(headless: bool = False,
             # exercise the rcaptain form login directly (test / holder re-seed).
             if not force_form_login and _reuse_appstream_storage_state(
                     ctx, page, verbose):
-                yield page
-                return
+                # Verify the reused session actually landed on a LIVE console.
+                # A stale token restores cookies + navigates fine but lands
+                # logged-out with no #searchMC — and yielding that dead console
+                # cascades into every owner failing (Megan 2026-07-03: 35 ICDs
+                # missed exactly this way). If the switcher isn't there, DON'T
+                # yield — fall through to the unattended form-login self-heal.
+                if page.locator("#searchMC").count() > 0:
+                    yield page
+                    return
+                if verbose:
+                    print("-> reused AppStream session has no #searchMC (stale "
+                          "token) — re-logging in via the form self-heal",
+                          flush=True)
 
             # UPDATE (2026-06-30): AppStream's Cloudflare now auto-passes the
             # automation, so the rcaptain form login runs UNATTENDED again and is
@@ -795,6 +806,18 @@ def appstream_direct_session(headless: bool = False,
                     _reuse_appstream_storage_state(ctx, page, verbose)
             except Exception:
                 pass
+            # Final guard: never yield a dead console. If #searchMC still isn't
+            # present after the login + token hop, the login didn't complete
+            # (Cloudflare re-challenge) — fail LOUDLY so the run stops cleanly
+            # and the one-time reseed fallback is used, instead of cascading a
+            # #searchMC-timeout through every owner (Megan 2026-07-03).
+            if page.locator("#searchMC").count() == 0:
+                raise RuntimeError(
+                    "AppStream console never rendered #searchMC after login — "
+                    "the rcaptain login didn't complete (likely a Cloudflare "
+                    "re-challenge). Re-seed once with:\n"
+                    "    PYTHONPATH=. .venv/bin/python -m "
+                    "automations.shared.tableau_patchright --appstream-login")
             if verbose:
                 print(f"-> AppStream console ready "
                       f"(page at {(page.url or '')[:72]})", flush=True)
