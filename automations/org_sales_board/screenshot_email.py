@@ -164,21 +164,30 @@ def _export_png(gid: int, rng: str, out_path: Path, token: str) -> Path:
     import fitz  # PyMuPDF
     from PIL import Image, ImageChops
     import time
-    url = (f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=pdf"
-           f"&gid={gid}&range={rng}&portrait=false&fitw=true&gridlines=false"
-           f"&sheetnames=false&printtitle=false&pagenumbers=false&fzr=false"
-           f"&top_margin=0.1&bottom_margin=0.1&left_margin=0.1&right_margin=0.1")
-    # the export endpoint throttles rapid requests (429) — back off and retry.
-    for attempt in range(5):
-        r = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=90)
-        if r.status_code == 429:
-            time.sleep(5 * (attempt + 1))
-            continue
-        r.raise_for_status()
-        break
-    else:
+    base = (f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=pdf"
+            f"&gid={gid}&range={rng}&gridlines=false&sheetnames=false"
+            f"&printtitle=false&pagenumbers=false&fzr=false"
+            f"&top_margin=0.05&bottom_margin=0.05&left_margin=0.05&right_margin=0.05")
+
+    def _fetch(extra):
+        for attempt in range(5):       # export endpoint 429s on rapid requests
+            r = requests.get(base + extra,
+                             headers={"Authorization": f"Bearer {token}"}, timeout=90)
+            if r.status_code == 429:
+                time.sleep(5 * (attempt + 1))
+                continue
+            r.raise_for_status()
+            return r.content
         raise RuntimeError(f"export {rng}: throttled (429) after retries")
-    doc = fitz.open(stream=r.content, filetype="pdf")
+
+    # Default: fit-to-WIDTH, landscape (crisp for the wide short tables). If that
+    # paginates (a tall block like the leaderboard), re-render fit-to-PAGE so the
+    # whole thing lands on ONE page — no stitch seam / mid-table gap.
+    dpi = 200
+    doc = fitz.open(stream=_fetch("&portrait=false&fitw=true"), filetype="pdf")
+    if doc.page_count > 1:
+        doc = fitz.open(stream=_fetch("&portrait=true&scale=4"), filetype="pdf")
+        dpi = 320                      # fit-to-page shrinks — raise DPI to stay crisp
 
     def _trim(im):
         bg = Image.new("RGB", im.size, (255, 255, 255))
@@ -190,8 +199,8 @@ def _export_png(gid: int, rng: str, out_path: Path, token: str) -> Path:
                         min(im.width, bb[2] + pad), min(im.height, bb[3] + pad)))
 
     pages = []
-    for pg in doc:                       # tall ranges paginate — stitch vertically
-        pm = pg.get_pixmap(dpi=200)
+    for pg in doc:                       # normally 1 page now; stitch as a fallback
+        pm = pg.get_pixmap(dpi=dpi)
         pages.append(_trim(Image.open(io.BytesIO(pm.tobytes("png"))).convert("RGB")))
     if len(pages) == 1:
         img = pages[0]
