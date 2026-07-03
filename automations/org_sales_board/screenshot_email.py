@@ -49,7 +49,10 @@ from automations.scheduled_6_days_out.email_send import (
 PREVIEW_TO = ["Meganhidalgo1191@gmail.com"]
 PROVING_TO = ["maudmiller4@gmail.com", "raffi127@gmail.com",
               "Meganhidalgo1191@gmail.com"]
-# DISTRO_TO — the full ~79-person list — wired only after Megan proves it out.
+# GO-LIVE distro — 3 Gmail contact GROUPS, expanded to live addresses at send time
+# via the People API (automations.shared.contacts_auth). Names must match the
+# groups in alphaletereporting@gmail.com's contacts exactly.
+DISTRO_GROUPS = ["Alphalete Org Owners", "Carlos' Captain Team", "Raf's Captain Team"]
 
 _LB_WEEKS = 4          # leaderboard columns to show: this week + 3 prior (== the email)
 
@@ -424,6 +427,9 @@ def main(argv=None) -> int:
     ap.add_argument("--preview", action="store_true",
                     help="send to Megan only (sign-off before the proving list)")
     ap.add_argument("--to", help="comma-separated override recipients")
+    ap.add_argument("--distro", action="store_true",
+                    help="GO-LIVE: send to the 3 contact groups, expanded live via "
+                         "the People API (needs contacts_auth authorized)")
     ap.add_argument("--force", action="store_true",
                     help="skip the board-fill-complete guard (manual/laptop testing)")
     a = ap.parse_args(argv)
@@ -445,6 +451,18 @@ def main(argv=None) -> int:
 
     if a.to:
         to = [x.strip() for x in a.to.split(",") if x.strip()]
+    elif a.distro:
+        from automations.shared.contacts_auth import expand_groups
+        to, missing = expand_groups(DISTRO_GROUPS)
+        if missing:                         # fail loudly — never silently under-send
+            print(f"[screenshot_email] NOT SENT — distro group(s) not found: "
+                  f"{missing}. Check the names match the contacts groups.", flush=True)
+            return 2
+        if not to:
+            print("[screenshot_email] NOT SENT — distro expanded to 0 addresses.",
+                  flush=True)
+            return 2
+        print(f"[screenshot_email] distro expanded to {len(to)} address(es)", flush=True)
     elif a.preview:
         to = PREVIEW_TO
     else:
