@@ -193,7 +193,20 @@ def run_compare(logfn=print) -> dict:
     # Formula-region integrity: catch any live VA formula the report clobbered
     # with a static value (separate from the value compare above).
     formula_drift = check_formula_drift(logfn)
-    clean = not glitches and not copy_missing and not formula_drift
+    # DERIVED / bottom auto-formula tables (leaderboards, delta tables, ORG +
+    # campaign history rows, product summaries, section running totals). The value
+    # compare above only reaches the raw daily cells; this reaches the totals a
+    # wrong SUMIF would break (the old =F Monday-only 'Total this week'). Its own
+    # SEPARATE bucket, current-week only, name-matched where sorted. Wrapped so a
+    # bug in the new check can never crash the daily run's compare.
+    try:
+        from automations.org_sales_board import full_compare as _fc
+        derived = _fc.run_derived_compare(sh, copy, va, aliases, logfn)
+    except Exception as e:  # noqa: BLE001
+        logfn(f"  ⚠ derived-table compare skipped ({type(e).__name__}: {str(e)[:60]})")
+        derived = {"concerning": [], "benign_count": 0, "clean": True}
+    clean = (not glitches and not copy_missing and not formula_drift
+             and derived["clean"])
     if glitches:
         logfn(f"  ❌ {len(glitches)} REAL mismatch(es) (automation wrong/behind):")
         for g in glitches:
@@ -202,12 +215,14 @@ def run_compare(logfn=print) -> dict:
         logfn(f"  ❌ {len(copy_missing)} ICD(s) on the VA tab but MISSING a copy "
               f"row (add them): {copy_missing}")
     if clean:
-        logfn("  ✅ copy matches the VA tab on every completed-day cell.")
+        logfn("  ✅ copy matches the VA tab on every completed-day cell + every "
+              "derived this-week total.")
     else:
         logfn("  ❌ COMPARISON FOUND DIFFERENCES — review the flagged items "
               "above before trusting the copy.")
     return {"tally": tally, "glitches": glitches, "copy_missing": copy_missing,
-            "formula_drift": formula_drift, "clean": clean}
+            "formula_drift": formula_drift, "derived": derived["concerning"],
+            "clean": clean}
 
 
 def main():
