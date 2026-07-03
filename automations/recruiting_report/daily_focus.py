@@ -877,13 +877,24 @@ def _setup_logging(today: dt.date) -> logging.Logger:
 
 
 def run_captainship(captainship: str, args, week_start: dt.date,
-                    log: logging.Logger) -> Tuple[int, dict]:
+                    log: logging.Logger,
+                    office_cache: Optional[dict] = None) -> Tuple[int, dict]:
     """Fill the Daily Focus report for one captainship. Returns
     (return-code, skipped-ICDs dict) where the dict has keys:
       - "inaccessible": union of all skipped ICDs (legacy)
       - "denied":       ICDs AppStream refused (cur_raw == {})
       - "fetch_errors": ICDs that errored transiently (retry-recoverable)
-    The caller merges these across captainships into one shared state file."""
+    The caller merges these across captainships into one shared state file.
+
+    office_cache: run-level {(office_id, week[, "next"]): fetched_data} shared
+    across ALL captainships by main(), so an office that appears on more than one
+    captainship tab (e.g. Rafael Hidalgo / office 11280 is on 4 tabs) is scraped
+    from AppStream ONCE per week and reused everywhere — ~24% of the fetches
+    across the 5 tabs are these duplicates. It caches scraped DATA (not the live
+    page), so reuse is safe even though each captainship opens its own session.
+    Defaults to a private dict for standalone / --only calls."""
+    if office_cache is None:
+        office_cache = {}
     log.info("=== captainship: %s ===", captainship)
     sh = fill.open_by_key(DAILY_FOCUS_SPREADSHEET_ID)
     ws = find_captainship_worksheet(sh, captainship)
@@ -1023,12 +1034,19 @@ def run_captainship(captainship: str, args, week_start: dt.date,
                     return None, "empty"
                 return raw, "ok"
 
-            cur_raw, err = _try_current()
-            if err in ("exception", "empty"):
-                log.info("  retrying %s once after transient %s …", icd, err)
+            _ck_cur = (office_id, week_start)
+            if _ck_cur in office_cache:
+                cur_raw, err = office_cache[_ck_cur]
+                log.info("  ✓ %s office %s current-week reused from cache "
+                         "(already scraped this run)", icd, office_id)
+            else:
                 cur_raw, err = _try_current()
-                if err == "ok":
-                    log.info("  ✓ %s recovered on retry", icd)
+                if err in ("exception", "empty"):
+                    log.info("  retrying %s once after transient %s …", icd, err)
+                    cur_raw, err = _try_current()
+                    if err == "ok":
+                        log.info("  ✓ %s recovered on retry", icd)
+                office_cache[_ck_cur] = (cur_raw, err)
 
             if err == "exception":
                 log.warning("  %s still failing after retry — flagged as transient fetch error", icd)
@@ -1075,12 +1093,18 @@ def run_captainship(captainship: str, args, week_start: dt.date,
                     return None, "empty"
                 return raw, "ok"
 
-            last_raw, last_err = _try_last()
-            if last_err in ("exception", "empty"):
-                log.info("  retrying %s (last week) once after transient %s …", icd, last_err)
+            _ck_last = (office_id, last_week_start)
+            if _ck_last in office_cache:
+                last_raw, last_err = office_cache[_ck_last]
+                log.info("  ✓ %s office %s last-week reused from cache", icd, office_id)
+            else:
                 last_raw, last_err = _try_last()
-                if last_err == "ok":
-                    log.info("  ✓ %s (last week) recovered on retry", icd)
+                if last_err in ("exception", "empty"):
+                    log.info("  retrying %s (last week) once after transient %s …", icd, last_err)
+                    last_raw, last_err = _try_last()
+                    if last_err == "ok":
+                        log.info("  ✓ %s (last week) recovered on retry", icd)
+                office_cache[_ck_last] = (last_raw, last_err)
 
             if last_err != "ok":
                 # Last-week pull failed even after retry. Current week is fine,
@@ -1109,11 +1133,17 @@ def run_captainship(captainship: str, args, week_start: dt.date,
 
             # Fetch NEXT week (week_start + 7) for forward-looking scheduled counts
             next_week_start = week_start + dt.timedelta(days=7)
-            try:
-                next_weekly = fetch_office.fetch_one(target_page, office_id, icd, next_week_start)
-            except Exception as e:
-                log.exception("  fetch failed for %s (next week): %s", icd, e)
-                next_weekly = {}
+            _ck_next = (office_id, next_week_start, "next")
+            if _ck_next in office_cache:
+                next_weekly = office_cache[_ck_next]
+                log.info("  ✓ %s office %s next-week reused from cache", icd, office_id)
+            else:
+                try:
+                    next_weekly = fetch_office.fetch_one(target_page, office_id, icd, next_week_start)
+                except Exception as e:
+                    log.exception("  fetch failed for %s (next week): %s", icd, e)
+                    next_weekly = {}
+                office_cache[_ck_next] = next_weekly
             if next_weekly:
                 next_updates = []
                 for metric_key in NEXT_WEEK_METRICS:
@@ -1216,8 +1246,13 @@ def main() -> int:
     unmapped: List[str] = []
     icds_by_tab: dict = {}   # tab title -> col-V names, for the terminated check
     carlos_result = None
+    # Shared across all captainships so a duplicated office (an ICD on more than
+    # one tab, e.g. Rafael Hidalgo / office 11280 on 4 tabs) is scraped ONCE per
+    # week and reused — ~24% of the fetches across the 5 tabs are duplicates.
+    office_cache: dict = {}
     for cs in targets:
-        cs_rc, cs_result = run_captainship(cs, args, week_start, log)
+        cs_rc, cs_result = run_captainship(cs, args, week_start, log,
+                                           office_cache=office_cache)
         rc |= cs_rc
         skipped       += cs_result.get("inaccessible", [])
         denied        += cs_result.get("denied", [])
