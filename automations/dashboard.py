@@ -2614,6 +2614,68 @@ AUTOMATED_REPORTS = [
             },
         ],
     },
+    {
+        "id": "sales-board-screenshot-email",
+        "name": "Sales Board Screenshot Email",
+        "creator": "Megan",
+        "emoji": "📧",
+        "color": "#DC2626",
+        "category": "📊 Metrics",
+        "description": "Emails exact-sheet screenshots of the Org Sales Board (copy tab) — Product Summary, ALPHALETE ORG leaderboard, the daily sections, every in-org captainship, and the RAF/CARLOS/COLTEN/BEN ORG summaries. Rendered via the Sheets PDF export (no browser).",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Sends a daily email of the Org Sales Board as clean, exact-sheet "
+            "screenshots (colors/fonts/borders match the sheet). Rendered from the "
+            "COPY tab via the Google Sheets PDF-export endpoint — no browser, runs "
+            "from any machine.\n\n"
+            "WHAT'S INCLUDED (in sheet order)\n"
+            "Product Summary, RAF ORG, the ALPHALETE ORG leaderboard, the 8 daily "
+            "section tables, then every captainship whose ICD is on the ALPHALETE "
+            "ORG leaderboard (Raf / Carlos / Eveliz / Khalil / Colten / Jairo — each "
+            "as Summary + CAPTAIN TEAM leaderboard + collapsed daily), and the bottom "
+            "RAF / CARLOS / COLTEN / BEN ORG summaries. Captainships that live ONLY "
+            "in the captainship lists (not the org) are excluded.\n\n"
+            "COLLAPSED\n"
+            "Each table stops at Totals + Last Week — the long WE-history stacks are "
+            "dropped so the email isn't cluttered.\n\n"
+            "RECIPIENTS\n"
+            "Proving phase: Maud + Rafael + Megan. Expand to the full distribution "
+            "list once it's proven out.\n\n"
+            "WHEN IT RUNS\n"
+            "Daily, after the morning Sales Board fill (so the numbers are fresh)."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit#gid=25197725"),
+        "assignees": ["Fully Automated Alphalete Reports"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "6:30 AM",
+            "estimated_minutes": 5,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Sales Board screenshot email sent.",
+            "message_failed": "❌ Send failed — check the log above, fix, then re-run.",
+        },
+        "actions": [
+            {
+                "label": "Send Email (Maud + Rafael + Megan)",
+                "icon": "▶",
+                "primary": True,
+                "help": "Renders every section of the copy tab to exact-sheet images and emails them to the proving list (Maud, Rafael, Megan). Takes a couple of minutes.",
+                "module": "automations.org_sales_board.screenshot_email",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Preview to Megan only",
+                "icon": "👁",
+                "primary": False,
+                "help": "Same email, sent only to Megan — a sign-off check before it goes to the proving list.",
+                "module": "automations.org_sales_board.screenshot_email",
+                "args_fn": lambda: ["--preview"],
+            },
+        ],
+    },
 ]
 
 # Merge in user-uploaded reports (saved by the Wire-Up dialog)
