@@ -29,6 +29,34 @@ if ! command -v python3 >/dev/null; then
     exit 1
 fi
 
+# 1a. Pick a Python that ships prebuilt packages for all our deps. Python
+# 3.14 is too new — several deps ('cryptography', pandas, etc.) publish no
+# wheels for it yet, so pip falls back to compiling from source (needs Rust +
+# OpenSSL + pkg-config) and dies with a wall of errors on a fresh Mac
+# (confirmed: Intel Mac on 3.14, 2026-07-03). Prefer a proven version; only
+# fall back to bare `python3` if none of the good ones are installed.
+PYTHON_BIN=""
+for cand in python3.13 python3.12 python3.11; do
+    if command -v "$cand" >/dev/null 2>&1; then
+        PYTHON_BIN="$cand"
+        break
+    fi
+done
+if [ -z "$PYTHON_BIN" ]; then
+    PYTHON_BIN="python3"
+    PYVER="$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || echo "?")"
+    case "$PYVER" in
+        3.14|3.15|3.16|3.17)
+            red "⚠ Only Python $PYVER found — it's too new for prebuilt packages."
+            echo "   The install will try to compile from source and will likely fail."
+            echo "   Recommended fix:  brew install python@3.13"
+            echo "   Then re-run this installer."
+            echo
+            ;;
+    esac
+fi
+echo "→ Using $(command -v "$PYTHON_BIN" 2>/dev/null || echo "$PYTHON_BIN") ($PYTHON_BIN)"
+
 if ! command -v git >/dev/null; then
     echo "→ git not found. Installing Xcode Command Line Tools (a popup will appear, click Install)…"
     xcode-select --install || true
@@ -66,16 +94,50 @@ if [ -d ".venv" ]; then
     if ! .venv/bin/python -c "import sys" >/dev/null 2>&1; then
         echo "→ Existing .venv is broken (Python interpreter missing). Rebuilding…"
         rm -rf .venv
+    else
+        # Also rebuild if the venv is on a different Python than the one we
+        # picked above — e.g. an earlier run built it on 3.14 before 3.13 was
+        # installed. Reusing that stale venv would keep hitting the wheel
+        # problem no matter what the user installs afterward.
+        VENV_VER="$(.venv/bin/python -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || echo '')"
+        WANT_VER="$("$PYTHON_BIN" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || echo '')"
+        if [ -n "$VENV_VER" ] && [ -n "$WANT_VER" ] && [ "$VENV_VER" != "$WANT_VER" ]; then
+            echo "→ Existing .venv is on Python $VENV_VER; rebuilding on $WANT_VER"
+            rm -rf .venv
+        fi
     fi
 fi
 if [ ! -d ".venv" ]; then
     echo "→ Creating Python venv"
-    python3 -m venv .venv
+    "$PYTHON_BIN" -m venv .venv
 fi
 echo "→ Upgrading pip"
 .venv/bin/pip install --quiet --upgrade pip
 echo "→ Installing Python packages (this takes a minute)"
-.venv/bin/pip install --quiet -r automations/recruiting_report/requirements.txt
+# Force ready-made wheels for the packages that otherwise compile native code
+# (cryptography = Rust+OpenSSL; pandas/numpy/pyarrow/pillow/cffi = C). If a
+# wheel is missing for this Python, fail FAST with a plain-English fix instead
+# of dumping a wall of Rust/compiler errors. Pure-Python deps still install
+# normally (they're not in this --only-binary list), so sdist-only packages
+# aren't blocked.
+if ! .venv/bin/pip install --quiet \
+        --only-binary=cryptography,cffi,pandas,numpy,pyarrow,pillow \
+        -r automations/recruiting_report/requirements.txt; then
+    PYVER="$(.venv/bin/python -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || echo '?')"
+    echo
+    red "❌ Couldn't install ready-made packages for Python $PYVER."
+    echo "   This Python is too new — some packages (like 'cryptography') don't"
+    echo "   publish prebuilt builds for it yet, so they'd have to be compiled"
+    echo "   from source (which needs extra developer tools you don't have)."
+    echo
+    echo "   Easiest fix:"
+    echo "     1) Install Python 3.13:   brew install python@3.13"
+    echo "     2) Re-run this installer."
+    echo
+    echo "   (Advanced — to compile anyway: brew install pkgconf openssl@3 rust,"
+    echo "    set OPENSSL_DIR=\$(brew --prefix openssl@3), then re-run.)"
+    exit 1
+fi
 
 # 4. Install the Chromium build for the browser driver. The project uses
 # patchright (a Playwright fork) — the venv has `.venv/bin/patchright`, NOT
