@@ -128,10 +128,68 @@ def _daily_section_ranges(g) -> List[Tuple[str, str]]:
     return out
 
 
+def _rowtext(g, r):
+    return " ".join(_cell(g, r, c) for c in range(1, 14)).lower()
+
+
+def _istitle(g, r):
+    up = (_cell(g, r, 1) + " " + _cell(g, r, 2)).upper()
+    return ("PERFORMANCE" in up or up.strip().endswith("CAPTAIN TEAM")
+            or "CAPTAINSHIP TEAM" in up)
+
+
+def _captainship_ranges(g) -> List[Tuple[str, str]]:
+    """Every captainship performance block, in board order, as 3 sub-images:
+    Summary (title + Product Summary + Current-vs-Prior, cols A:J), CAPTAIN TEAM
+    leaderboard (A..header's WE cols, ≤10 weeks like the email), and the daily
+    table (A:L, through Totals — WE-history stack excluded). Found by label."""
+    def find(pred, r0, r1):
+        return next((x for x in range(r0, min(r1, len(g) + 1)) if pred(x)), None)
+    region_end = find(lambda r: "org - current vs prior"
+                      in (_cell(g, r, 1) + _cell(g, r, 2)).lower(),
+                      300, len(g) + 1) or len(g)
+    out = []
+    for ps in range(200, region_end):
+        if not _cell(g, ps, 2).lower().startswith("product summary"):
+            continue
+        title, rr = ps, ps - 1          # topmost contiguous title row above ps
+        while rr > 200:
+            if not (_cell(g, rr, 1) + _cell(g, rr, 2)).strip():
+                rr -= 1
+                continue
+            if _istitle(g, rr):
+                title = rr
+                rr -= 1
+                continue
+            break
+        summ_end = find(lambda x: _cell(g, x, 2).lower().startswith("sales ( 4 week"),
+                        ps, ps + 20)
+        if summ_end:
+            out.append((f"cap{title}_summary", f"A{title}:J{summ_end}"))
+        lbh = find(lambda x: _cell(g, x, 1) == "CAPTAIN TEAM",
+                   (summ_end or ps), (summ_end or ps) + 8)
+        tot = None
+        if lbh:
+            tot = find(lambda x: _cell(g, x, 1).upper() in ("TOTALS", "TOTAL"),
+                       lbh + 2, lbh + 40)
+            if tot:
+                right = min(_last_col(g, lbh, lbh), 12)   # header's WE cols, ≤10 wks
+                out.append((f"cap{title}_leaderboard", f"A{lbh}:{_colletter(right)}{tot}"))
+        anchor = tot or lbh or summ_end or ps
+        dh = find(lambda x: "running week totals" in _rowtext(g, x), anchor + 1, anchor + 12)
+        if dh:
+            dtot = find(lambda x: _cell(g, x, 1).lower() in ("totals", "total"),
+                        dh + 2, dh + 40)
+            if dtot:
+                out.append((f"cap{title}_daily", f"A{dh}:L{dtot}"))
+    return out
+
+
 def section_ranges(g) -> List[Tuple[str, str]]:
-    """Return [(name, 'A1:Z9'), …] for the PHASE-1 email sections, by label:
-    the top org summary (Product Summary, RAF ORG, ALPHALETE ORG leaderboard)
-    + the 8 daily section tables. Captainship blocks land in Phase 2."""
+    """Return [(name, 'A1:Z9'), …] for the full email, by label: the top org
+    summary (Product Summary, RAF ORG, ALPHALETE ORG leaderboard), the 8 daily
+    section tables, and every captainship block (3 sub-images each). Bottom ORG
+    summaries = Phase 3."""
     out = []
     ps = _label_row(g, "Product Summary", col=1)
     if ps:
@@ -149,6 +207,7 @@ def section_ranges(g) -> List[Tuple[str, str]]:
         last = first_val + _LB_WEEKS - 1
         out.append(("org_leaderboard", f"A{lb}:{_colletter(last)}{end}"))
     out.extend(_daily_section_ranges(g))
+    out.extend(_captainship_ranges(g))
     return out
 
 
