@@ -107,12 +107,25 @@ def plan_delta_lastweek(grid: List[List[str]], today: dt.date) -> List[dict]:
         if not elapsed:
             continue
         # 'Total this week' column (C) — marks the totals row when col B is blank.
+        # col C ('Total this week') + its per-day 'This week' sub-cols (F/I/L…).
+        # col C was WRONGLY assumed to already sum every day — in practice it's
+        # STALE (e.g. '=F', Monday only) and nothing extended it, so the this-
+        # week total ran short every day past Monday while the VAs extended
+        # theirs by hand (Megan 2026-07-02). Grow it like the 'Last week' total.
         tw_col = next((c + 1 for c, v in enumerate(grid[sub])
                        if (v or "").strip().lower() == "total this week"), None)
+        tw_per_day = [c + 1 for c, v in enumerate(grid[sub])
+                      if (v or "").strip().lower() == "this week"]
+        tw_elapsed = tw_per_day[:n]
 
         def _grow(r):
-            return {"range": f"{_a1(total_col)}{r}",
-                    "values": [["=" + "+".join(f"{_a1(c)}{r}" for c in elapsed)]]}
+            ups = [{"range": f"{_a1(total_col)}{r}",
+                    "values": [["=" + "+".join(f"{_a1(c)}{r}" for c in elapsed)]]}]
+            if tw_col and tw_elapsed:
+                ups.append({"range": f"{_a1(tw_col)}{r}",
+                            "values": [["=" + "+".join(f"{_a1(c)}{r}"
+                                                       for c in tw_elapsed)]]})
+            return ups
 
         r = sub + 2                                   # first data row (1-based)
         while r <= len(grid):
@@ -128,9 +141,9 @@ def plan_delta_lastweek(grid: List[List[str]], today: dt.date) -> List[dict]:
                 tw = (rv[tw_col - 1].strip()
                       if tw_col and len(rv) >= tw_col else "")
                 if tw:
-                    updates.append(_grow(r))
+                    updates.extend(_grow(r))
                 break
-            updates.append(_grow(r))
+            updates.extend(_grow(r))
             r += 1
     return updates
 
