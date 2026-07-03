@@ -4,8 +4,13 @@
 # before Tableau refreshes, so these AppStream-only reports run FIRST, ahead of
 # the (later, readiness-gated) Tableau batch.
 #
-#   Daily:   Daily Focus (Raf + Carlos)
-#   Mondays: + 1st Round Recruiter Retention
+#   Mondays: 1st Round Recruiter Retention
+#
+# NOTE: daily_focus was removed here 2026-07-03. The 4am day-orchestrator runs it
+# for ALL captainships (a superset of the old 3am Raf+Carlos split), and having
+# both meant the 3am AppStream login expired by 4am — the 4am daily_focus failed
+# ("4am AppStream expiry") and only succeeded on a late re-run (~6:12) despite the
+# report itself taking ~28 min. One owner (the 4am orchestrator) = no collision.
 #
 # Requires the ownerville session holder to be warm
 # (com.alphalete.session-holder) — AppStream SSOs through ownerville.
@@ -48,11 +53,8 @@ run() {
 
 echo "[$(date)] AppStream morning batch starting (args: ${EXTRA_ARGS:-none})" > "$LOG_FILE"
 
-# --- Daily (every day) ---
-run "daily_focus_raf"    automations.recruiting_report.daily_focus --captainship Raf
-run "daily_focus_carlos" automations.recruiting_report.daily_focus --captainship Carlos
-
 # --- Mondays only (date +%u: Monday = 1) ---
+# (daily_focus moved to the 4am day-orchestrator only — see the header note.)
 if [ "$(date +%u)" -eq 1 ]; then
   run "recruiter_retention" automations.recruiter_retention.run
 fi
