@@ -128,6 +128,18 @@ def _daily_section_ranges(g) -> List[Tuple[str, str]]:
     return out
 
 
+def _org_leaderboard_names(g) -> set:
+    """Normalized ICD names listed in the ALPHALETE ORG leaderboard (rank rows).
+    A captainship is only emailed if one of its reps is in this set."""
+    from automations.alphalete_org_report.tableau_http import _norm_owner
+    lb = _label_row(g, "ALPHALETE ORG", col=0, start=2)
+    if not lb:
+        return set()
+    end = _block_end(g, lb)
+    return {_norm_owner(_cell(g, r, 2)) for r in range(lb, end + 1)
+            if _cell(g, r, 1).isdigit() and _cell(g, r, 2)}
+
+
 def _rowtext(g, r):
     return " ".join(_cell(g, r, c) for c in range(1, 14)).lower()
 
@@ -143,6 +155,9 @@ def _captainship_ranges(g) -> List[Tuple[str, str]]:
     Summary (title + Product Summary + Current-vs-Prior, cols A:J), CAPTAIN TEAM
     leaderboard (A..header's WE cols, ≤10 weeks like the email), and the daily
     table (A:L, through Totals — WE-history stack excluded). Found by label."""
+    from automations.alphalete_org_report.tableau_http import _norm_owner
+    org = _org_leaderboard_names(g)
+
     def find(pred, r0, r1):
         return next((x for x in range(r0, min(r1, len(g) + 1)) if pred(x)), None)
     region_end = find(lambda r: "org - current vs prior"
@@ -164,17 +179,25 @@ def _captainship_ranges(g) -> List[Tuple[str, str]]:
             break
         summ_end = find(lambda x: _cell(g, x, 2).lower().startswith("sales ( 4 week"),
                         ps, ps + 20)
-        if summ_end:
-            out.append((f"cap{title}_summary", f"A{title}:J{summ_end}"))
         lbh = find(lambda x: _cell(g, x, 1) == "CAPTAIN TEAM",
                    (summ_end or ps), (summ_end or ps) + 8)
         tot = None
         if lbh:
             tot = find(lambda x: _cell(g, x, 1).upper() in ("TOTALS", "TOTAL"),
                        lbh + 2, lbh + 40)
-            if tot:
-                right = min(_last_col(g, lbh, lbh), 12)   # header's WE cols, ≤10 wks
-                out.append((f"cap{title}_leaderboard", f"A{lbh}:{_colletter(right)}{tot}"))
+        # ORG-MEMBERSHIP FILTER (Megan 2026-07-03): only email a captainship whose
+        # ICD is in the ALPHALETE ORG leaderboard — i.e. one of its reps is there.
+        # Captainships that live ONLY in the captainship lists are dropped.
+        reps = ({_norm_owner(_cell(g, x, 2)) for x in range(lbh + 1, tot)
+                 if _cell(g, x, 1).isdigit() and _cell(g, x, 2)}
+                if lbh and tot else set())
+        if not (reps & org):
+            continue
+        if summ_end:
+            out.append((f"cap{title}_summary", f"A{title}:J{summ_end}"))
+        if lbh and tot:
+            right = min(_last_col(g, lbh, lbh), 12)       # header's WE cols, ≤10 wks
+            out.append((f"cap{title}_leaderboard", f"A{lbh}:{_colletter(right)}{tot}"))
         anchor = tot or lbh or summ_end or ps
         dh = find(lambda x: "running week totals" in _rowtext(g, x), anchor + 1, anchor + 12)
         if dh:
