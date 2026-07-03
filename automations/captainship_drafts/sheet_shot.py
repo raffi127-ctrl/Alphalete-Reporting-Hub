@@ -148,13 +148,19 @@ def _selection_rect(page) -> dict | None:
     }""")
 
 
-def _goto_range(page, rng: str, timeout_s: int) -> dict:
+def _goto_range(page, rng: str, timeout_s: int,
+                edit_url: str | None = None, gid: int | None = None) -> dict:
     """Navigate to the sheet with `rng` selected; return the selection rect
     once it has STOPPED MOVING. The editor keeps shifting layout for a few
     seconds after load (row-header strip widens for 4-digit rows, toolbar
     chrome finishes, the grid re-anchors after tiles paint) — a rect read
-    too early drifts off the range by the time the screenshot is taken."""
-    page.goto(f"{_SHEET_EDIT_URL}#gid={_gid()}&range={rng}",
+    too early drifts off the range by the time the screenshot is taken.
+
+    `edit_url`/`gid` override the target sheet/tab (default: the captainship
+    drafts' Sales Board). Lets other reports screenshot a different workbook."""
+    _url = edit_url or _SHEET_EDIT_URL
+    _g = _gid() if gid is None else gid
+    page.goto(f"{_url}#gid={_g}&range={rng}",
               wait_until="domcontentloaded")
     deadline = time.time() + timeout_s
     prev, stable = None, 0
@@ -216,10 +222,11 @@ def _shoot_when_painted(page, rng: str, *, settle_ms: int,
 
 
 def _capture_on_page(page, rng: str, out_path: Path, *,
-                     settle_ms: int, timeout_s: int) -> Path:
+                     settle_ms: int, timeout_s: int,
+                     edit_url: str | None = None, gid: int | None = None) -> Path:
     png = None
     for attempt in (1, 2):
-        rect = _goto_range(page, rng, timeout_s)
+        rect = _goto_range(page, rng, timeout_s, edit_url, gid)
         # Grow the viewport so the WHOLE range is on screen (rect.x/y is
         # the grid origin below the toolbar + headers), then re-navigate
         # so the editor re-anchors the range and repaints at full size.
@@ -233,7 +240,7 @@ def _capture_on_page(page, rng: str, out_path: Path, *,
         if need_w > vp["width"] or need_h > vp["height"]:
             page.set_viewport_size({"width": max(vp["width"], need_w),
                                     "height": max(vp["height"], need_h)})
-            _goto_range(page, rng, timeout_s)
+            _goto_range(page, rng, timeout_s, edit_url, gid)
         page.add_style_tag(content=_HIDE_OVERLAYS_CSS)
         png = _shoot_when_painted(page, rng, settle_ms=settle_ms,
                                   timeout_s=timeout_s)
@@ -251,9 +258,11 @@ def _capture_on_page(page, rng: str, out_path: Path, *,
 
 
 def capture_ranges(items: Iterable[Tuple[str, Path]], *, scale: float = 2.0,
-                   settle_ms: int = 2500, timeout_s: int = 60) -> list[Path]:
+                   settle_ms: int = 2500, timeout_s: int = 60,
+                   edit_url: str | None = None, gid: int | None = None) -> list[Path]:
     """Screenshot each (range, out_path) of the Sales Board tab in one
-    browser session. Returns the written paths."""
+    browser session. Returns the written paths. `edit_url`/`gid` target a
+    different workbook/tab (default: the captainship drafts' Sales Board)."""
     done: list[Path] = []
     with sync_playwright() as p:
         ctx = _launch(p, headless=True, viewport=dict(_DEFAULT_VIEWPORT),
@@ -263,7 +272,8 @@ def capture_ranges(items: Iterable[Tuple[str, Path]], *, scale: float = 2.0,
             for rng, path in items:
                 done.append(_capture_on_page(
                     page, rng, Path(path),
-                    settle_ms=settle_ms, timeout_s=timeout_s))
+                    settle_ms=settle_ms, timeout_s=timeout_s,
+                    edit_url=edit_url, gid=gid))
         finally:
             ctx.close()
     return done
