@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import io
 import smtplib
 import ssl
 import sys
@@ -31,16 +32,18 @@ from email.utils import make_msgid
 from pathlib import Path
 from typing import List, Tuple
 
+import requests
+from google.auth.transport.requests import Request as _GARequest
+from google.oauth2.credentials import Credentials
 from gspread.utils import rowcol_to_a1
 
 from automations.org_sales_board.run import SHEET_ID, SANDBOX_TAB
-from automations.recruiting_report.fill import open_by_key, _retry
-from automations.captainship_drafts import sheet_shot
+from automations.recruiting_report.fill import (
+    open_by_key, _retry, SCOPES, OAUTH_TOKEN_PATH,
+)
 from automations.scheduled_6_days_out.email_send import (
     FROM_ADDR, SMTP_HOST, SMTP_PORT, app_password,
 )
-
-EDIT_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 
 # Rollout recipient tiers (Megan 2026-07-03).
 PREVIEW_TO = ["Meganhidalgo1191@gmail.com"]
@@ -149,8 +152,63 @@ def section_ranges(g) -> List[Tuple[str, str]]:
     return out
 
 
+def _access_token() -> str:
+    creds = Credentials.from_authorized_user_file(str(OAUTH_TOKEN_PATH), SCOPES)
+    creds.refresh(_GARequest())
+    return creds.token
+
+
+def _export_png(gid: int, rng: str, out_path: Path, token: str) -> Path:
+    """Render one A1 range of the copy tab to a trimmed PNG via the Sheets PDF
+    export endpoint — exact-sheet look (colors/fonts/borders), no browser."""
+    import fitz  # PyMuPDF
+    from PIL import Image, ImageChops
+    import time
+    url = (f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=pdf"
+           f"&gid={gid}&range={rng}&portrait=false&fitw=true&gridlines=false"
+           f"&sheetnames=false&printtitle=false&pagenumbers=false&fzr=false"
+           f"&top_margin=0.1&bottom_margin=0.1&left_margin=0.1&right_margin=0.1")
+    # the export endpoint throttles rapid requests (429) — back off and retry.
+    for attempt in range(5):
+        r = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=90)
+        if r.status_code == 429:
+            time.sleep(5 * (attempt + 1))
+            continue
+        r.raise_for_status()
+        break
+    else:
+        raise RuntimeError(f"export {rng}: throttled (429) after retries")
+    doc = fitz.open(stream=r.content, filetype="pdf")
+
+    def _trim(im):
+        bg = Image.new("RGB", im.size, (255, 255, 255))
+        bb = ImageChops.difference(im, bg).getbbox()
+        if not bb:
+            return im
+        pad = 6
+        return im.crop((max(0, bb[0] - pad), max(0, bb[1] - pad),
+                        min(im.width, bb[2] + pad), min(im.height, bb[3] + pad)))
+
+    pages = []
+    for pg in doc:                       # tall ranges paginate — stitch vertically
+        pm = pg.get_pixmap(dpi=200)
+        pages.append(_trim(Image.open(io.BytesIO(pm.tobytes("png"))).convert("RGB")))
+    if len(pages) == 1:
+        img = pages[0]
+    else:
+        w = max(p.width for p in pages)
+        img = Image.new("RGB", (w, sum(p.height for p in pages)), (255, 255, 255))
+        y = 0
+        for p in pages:
+            img.paste(p, (0, y))
+            y += p.height
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    img.save(out_path)
+    return out_path
+
+
 def capture(out_dir: Path) -> List[Tuple[str, Path]]:
-    """Screenshot each section of the COPY tab → PNGs. Returns [(name, path)]."""
+    """Render each section of the COPY tab → PNGs via PDF export. [(name, path)]."""
     sh = open_by_key(SHEET_ID)
     ws = _retry(lambda: sh.worksheet(SANDBOX_TAB))
     grid = _retry(ws.get_all_values)
@@ -159,19 +217,18 @@ def capture(out_dir: Path) -> List[Tuple[str, Path]]:
     if not ranges:
         raise RuntimeError("no sections found on the copy tab — template changed?")
     out_dir.mkdir(parents=True, exist_ok=True)
-    items = [(rng, out_dir / f"{name}.png") for name, rng in ranges]
-    print(f"[screenshot_email] capturing {len(items)} section(s) from copy tab "
-          f"(gid={gid}): {[r for _n, r in ranges]}", flush=True)
-    sheet_shot.capture_ranges([(r, p) for r, p in items],
-                              edit_url=EDIT_URL, gid=gid)
-    return [(name, out_dir / f"{name}.png") for name, _rng in ranges]
-
-
-_TITLES = {
-    "product_summary": "Product Summary — This Week",
-    "raf_org": "RAF ORG — Current vs Prior Weeks",
-    "org_leaderboard": "ALPHALETE ORG — Leaderboard",
-}
+    token = _access_token()
+    print(f"[screenshot_email] rendering {len(ranges)} section(s) from copy tab "
+          f"(gid={gid})", flush=True)
+    import time
+    out = []
+    for i, (name, rng) in enumerate(ranges):
+        if i:
+            time.sleep(2)          # gentle pacing so the export endpoint doesn't 429
+        p = _export_png(gid, rng, out_dir / f"{name}.png", token)
+        print(f"    {name:26} {rng}  -> {p.name}", flush=True)
+        out.append((name, p))
+    return out
 
 
 def build_email(images: List[Tuple[str, Path]], to_addrs: List[str],
@@ -180,27 +237,25 @@ def build_email(images: List[Tuple[str, Path]], to_addrs: List[str],
     msg["From"] = FROM_ADDR
     msg["To"] = ", ".join(to_addrs)
     msg["Subject"] = f"Alphalete Org Sales Board {day.month}/{day.day}"
+    # Every image is self-labeled (its own red title bar), so no typed headers
+    # and no top banner — just the screenshots stacked (Megan 2026-07-03).
     parts, cids = [], []
     for name, path in images:
         cid = make_msgid()[1:-1]
         cids.append((cid, path))
-        # org-top blocks get a title header; daily sections are self-labeled in
-        # the image, so they render as just the screenshot.
-        title = _TITLES.get(name)
-        title_html = (f'<div style="font-weight:bold;font-size:15px;'
-                      f'color:#8a0000;margin:18px 0 6px">{title}</div>'
-                      if title else '<div style="margin:14px 0 0"></div>')
         parts.append(
-            title_html
-            + f'<img src="cid:{cid}" style="max-width:1000px;width:100%;'
-            f'border:1px solid #ddd">')
+            f'<img src="cid:{cid}" style="max-width:1000px;width:100%;'
+            f'border:1px solid #ddd;margin:0 0 16px">')
+    # 'ALPHALETE ORG' banner, constrained to the table width (not full-page).
+    banner = ('<div style="background:#d9d9d9;text-align:center;padding:10px;'
+              'font-size:22px;font-weight:bold;color:#8a0000;border:1px solid #bbb;'
+              'max-width:1000px;width:100%;box-sizing:border-box;margin:0 0 16px">'
+              'ALPHALETE ORG</div>')
     html = (
         '<div style="font-family:Arial,Helvetica,sans-serif;color:#000">'
-        '<div style="background:#d9d9d9;text-align:center;padding:10px;'
-        'font-size:22px;font-weight:bold;color:#8a0000;border:1px solid #bbb">'
-        'ALPHALETE ORG</div>'
+        + banner
         + "".join(parts)
-        + '<div style="font-size:11px;color:#888;margin-top:18px">'
+        + '<div style="font-size:11px;color:#888;margin-top:6px">'
         'Auto-generated from the Sales Board (copy tab), cross-checked against '
         'the VA tab. — Alphalete Reporting</div></div>')
     msg.set_content("Alphalete Org Sales Board — see the HTML version for the "
@@ -214,7 +269,13 @@ def build_email(images: List[Tuple[str, Path]], to_addrs: List[str],
 
 
 def send(msg: EmailMessage) -> None:
-    ctx = ssl.create_default_context()
+    # certifi's CA bundle — the python.org macOS build ships without system CAs,
+    # so a default context fails SSL verification (works on the mini either way).
+    try:
+        import certifi
+        ctx = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        ctx = ssl.create_default_context()
     with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ctx) as s:
         s.login(FROM_ADDR, app_password())
         s.send_message(msg)
