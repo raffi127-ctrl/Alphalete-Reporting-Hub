@@ -220,6 +220,12 @@ def _build_body(cfg, ds, *, checkpoint: bool):
         for rs in noted:
             nm = rs.display_name or rs.report_id
             why = rs.last_reason or "completed; some items left out"
+            # Name the exact part(s) left out, not just the count. rs.missing is
+            # the manifest's failed[] list (e.g. "program: Frontier") — the same
+            # detail the ❌ attention block already appends. Without this the note
+            # only said "1 part(s) missing this run." with no way to know which.
+            if rs.missing:
+                why += " — missing: " + "; ".join(rs.missing)
             text.append(f"  • {nm} — ran ✓; {why}")
             html.append(f"<li><b>{_esc(nm)}</b> — ran ✓; {_esc(why)}</li>")
         html.append("</ul>")
