@@ -878,8 +878,7 @@ def _setup_logging(today: dt.date) -> logging.Logger:
 
 def run_captainship(captainship: str, args, week_start: dt.date,
                     log: logging.Logger,
-                    office_cache: Optional[dict] = None,
-                    target_page=None) -> Tuple[int, dict]:
+                    office_cache: Optional[dict] = None) -> Tuple[int, dict]:
     """Fill the Daily Focus report for one captainship. Returns
     (return-code, skipped-ICDs dict) where the dict has keys:
       - "inaccessible": union of all skipped ICDs (legacy)
@@ -946,52 +945,38 @@ def run_captainship(captainship: str, args, week_start: dt.date,
         full_icds = _read_icd_list(ws)
         col3 = _rebuild_sections_from_list(ws, full_icds, col3, args.dry_run, log)
 
-    # Session: reuse the ONE session main() hoisted across all captainships when
-    # it's passed in (saves a full AppStream re-login per captainship). main()
-    # only ever passes a LIVE session — it re-checks #searchMC between
-    # captainships and re-logs-in if stale — so a supplied page is safe to use
-    # directly via nullcontext (which does NOT close it on exit; main owns its
-    # lifecycle). With no page supplied (standalone / --only / --alt-appstream),
-    # open our own as before.
-    from contextlib import nullcontext
-    if target_page is not None:
-        log.info("reusing the shared AppStream session (hoisted by main())")
-        _session_ctx = nullcontext(target_page)
-    else:
-        # Unattended AppStream login via patchright (rcaptain) — replaces the old
-        # connect_over_cdp(9222) path, which broke on Chrome 148. Mirrors the
-        # weekly run.py migration; session is a full AppStream console with the
-        # #searchMC office switcher.
-        from automations.shared.tableau_patchright import (
-            appstream_direct_session, APPSTREAM_PROFILE_DIR,
+    # Unattended AppStream login via patchright (rcaptain) — replaces the old
+    # connect_over_cdp(9222) path, which broke on Chrome 148. Mirrors the
+    # weekly run.py migration; session is a full AppStream console with the
+    # #searchMC office switcher.
+    from automations.shared.tableau_patchright import (
+        appstream_direct_session, APPSTREAM_PROFILE_DIR,
+    )
+    session_kwargs = {"verbose": True}
+    if args.alt_appstream:
+        # Alternate AppStream account for ICDs the primary account can't see.
+        # Creds come from env (not creds.py / keychain) so the primary
+        # credentials stay the default; profile dir is separate so the
+        # alt session's cookies don't overwrite rcaptain's.
+        import os
+        alt_user = os.environ.get("APPLICANTSTREAM_USERNAME", "").strip()
+        alt_pass = os.environ.get("APPLICANTSTREAM_PASSWORD", "").strip()
+        if not alt_user or not alt_pass:
+            log.error("--alt-appstream needs APPLICANTSTREAM_USERNAME and "
+                      "APPLICANTSTREAM_PASSWORD env vars set on the command "
+                      "(e.g. APPLICANTSTREAM_USERNAME=... "
+                      "APPLICANTSTREAM_PASSWORD=... python -m ...).")
+            return 1, {"inaccessible": [], "denied": [], "fetch_errors": []}
+        session_kwargs["username"] = alt_user
+        session_kwargs["password"] = alt_pass
+        session_kwargs["profile_dir"] = (
+            APPSTREAM_PROFILE_DIR.parent / ".appstream_profile_alt"
         )
-        session_kwargs = {"verbose": True}
-        if args.alt_appstream:
-            # Alternate AppStream account for ICDs the primary account can't see.
-            # Creds come from env (not creds.py / keychain) so the primary
-            # credentials stay the default; profile dir is separate so the
-            # alt session's cookies don't overwrite rcaptain's.
-            import os
-            alt_user = os.environ.get("APPLICANTSTREAM_USERNAME", "").strip()
-            alt_pass = os.environ.get("APPLICANTSTREAM_PASSWORD", "").strip()
-            if not alt_user or not alt_pass:
-                log.error("--alt-appstream needs APPLICANTSTREAM_USERNAME and "
-                          "APPLICANTSTREAM_PASSWORD env vars set on the command "
-                          "(e.g. APPLICANTSTREAM_USERNAME=... "
-                          "APPLICANTSTREAM_PASSWORD=... python -m ...).")
-                return 1, {"inaccessible": [], "denied": [], "fetch_errors": []}
-            session_kwargs["username"] = alt_user
-            session_kwargs["password"] = alt_pass
-            session_kwargs["profile_dir"] = (
-                APPSTREAM_PROFILE_DIR.parent / ".appstream_profile_alt"
-            )
-            log.info("logging into AppStream via patchright (ALT account: %s) — "
-                     "unattended; using separate profile", alt_user)
-        else:
-            log.info("logging into AppStream via patchright (rcaptain) — unattended")
-        _session_ctx = appstream_direct_session(**session_kwargs)
-
-    with _session_ctx as target_page:
+        log.info("logging into AppStream via patchright (ALT account: %s) — "
+                 "unattended; using separate profile", alt_user)
+    else:
+        log.info("logging into AppStream via patchright (rcaptain) — unattended")
+    with appstream_direct_session(**session_kwargs) as target_page:
 
         for icd in icds:
             if _is_skipped(icd):
@@ -1265,55 +1250,19 @@ def main() -> int:
     # one tab, e.g. Rafael Hidalgo / office 11280 on 4 tabs) is scraped ONCE per
     # week and reused — ~24% of the fetches across the 5 tabs are duplicates.
     office_cache: dict = {}
-
-    # Hoist ONE AppStream session across all captainships (was: a full re-login
-    # per captainship = 5 logins, each with a Cloudflare wait). We re-check the
-    # session between captainships via #searchMC and re-log-in ONLY if it went
-    # stale, so captainships 4–5 can't fail on a dead session (the reason the old
-    # code re-logged-in every time). Skipped for --alt-appstream (separate
-    # creds/profile) and single-captainship runs, which open their own session
-    # inside run_captainship as before.
-    from contextlib import ExitStack
-    _hoist = len(targets) > 1 and not args.alt_appstream
-
-    def _session_alive(pg) -> bool:
-        try:
-            return pg is not None and pg.locator("#searchMC").count() > 0
-        except Exception:
-            return False
-
-    _stack = ExitStack()
-    _shared_page = None
-    try:
-        for cs in targets:
-            page_for_cs = None
-            if _hoist:
-                if not _session_alive(_shared_page):
-                    _stack.close()   # drop any dead session before reopening
-                    from automations.shared.tableau_patchright import (
-                        appstream_direct_session,
-                    )
-                    log.info("opening a shared AppStream session for the "
-                             "captainship batch (rcaptain)")
-                    _shared_page = _stack.enter_context(
-                        appstream_direct_session(verbose=True))
-                page_for_cs = _shared_page
-
-            cs_rc, cs_result = run_captainship(cs, args, week_start, log,
-                                               office_cache=office_cache,
-                                               target_page=page_for_cs)
-            rc |= cs_rc
-            skipped       += cs_result.get("inaccessible", [])
-            denied        += cs_result.get("denied", [])
-            fetch_errors  += cs_result.get("fetch_errors", [])
-            unmapped      += cs_result.get("unmapped", [])
-            tab = cs_result.get("tab")
-            if tab:
-                icds_by_tab.setdefault(tab, []).extend(cs_result.get("icds", []))
-            if cs == "Carlos":
-                carlos_result = cs_result
-    finally:
-        _stack.close()   # always close the shared session
+    for cs in targets:
+        cs_rc, cs_result = run_captainship(cs, args, week_start, log,
+                                           office_cache=office_cache)
+        rc |= cs_rc
+        skipped       += cs_result.get("inaccessible", [])
+        denied        += cs_result.get("denied", [])
+        fetch_errors  += cs_result.get("fetch_errors", [])
+        unmapped      += cs_result.get("unmapped", [])
+        tab = cs_result.get("tab")
+        if tab:
+            icds_by_tab.setdefault(tab, []).extend(cs_result.get("icds", []))
+        if cs == "Carlos":
+            carlos_result = cs_result
 
     # One shared retry-state file for the whole run — the Hub reads it to list
     # the skipped ICDs and power the "Retry the skipped ICDs" button. Not

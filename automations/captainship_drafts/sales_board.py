@@ -15,8 +15,15 @@ import contextlib
 
 from automations.recruiting_report import fill as _rf
 
-SALES_BOARD_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
+# Current Org Sales Board workbook (migrated off the old 1Ez-mbRO… workbook —
+# that ID is still valid but is the "All in One Local Office - Raf" workbook used
+# by other reports; the live Sales Board now lives here). Repointed 2026-07-03.
+SALES_BOARD_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
 SALES_BOARD_TAB = "Alphalete ORG Sales Board"
+# ⚠ PS_ROWS / UNITS_ROWS below are OLD-LAYOUT row ranges (from the old workbook).
+# They are dormant (Phase-1 drafts are churn-only) but WILL be wrong on this
+# workbook's layout — re-derive them BY LABEL before wiring the Product Summary /
+# Units sections in. [[feedback_no_hardcoded_columns]]
 
 # Product Summary ranges (inclusive sheet rows).
 PS_ROWS = {
