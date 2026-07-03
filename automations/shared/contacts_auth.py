@@ -109,9 +109,14 @@ def expand_groups(group_names: List[str]) -> Tuple[List[str], List[str]]:
 
     member_rns: List[str] = []
     for g in found.values():
+        # maxMembers caps at 1000 on the People API; these groups are far smaller.
         full = svc.contactGroups().get(
-            resourceName=g["resourceName"], maxMembers=100000).execute()
-        member_rns += full.get("memberResourceNames", []) or []
+            resourceName=g["resourceName"], maxMembers=1000).execute()
+        rns = full.get("memberResourceNames", []) or []
+        if len(rns) >= 1000:               # truncated — surface it rather than hide
+            print(f"⚠ group {g.get('formattedName') or g.get('name')!r} hit the "
+                  f"1000-member cap — some members may be missing.")
+        member_rns += rns
     member_rns = list(dict.fromkeys(member_rns))          # dedupe people
 
     emails, seen = [], set()
