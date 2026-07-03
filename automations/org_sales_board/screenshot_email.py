@@ -84,26 +84,68 @@ def _last_col(g, r0, r1, cap=None):
     return min(last, cap) if cap else last
 
 
+def _colletter(c):
+    return rowcol_to_a1(1, c)[:-1]
+
+
+def _daily_section_ranges(g) -> List[Tuple[str, str]]:
+    """The 8 daily section tables between the ORG leaderboard and the first
+    captainship block. Each: header row (col A = section name, col C = 'Monday',
+    day cols C-I, then RUNNING/LAST/PREVIOUS WEEK'S TOTALS) → the 'Last Week' row.
+    COLLAPSED: stops at Last Week, drops the trailing 'Org Head' helper column."""
+    out = []
+    lb = _label_row(g, "ALPHALETE ORG", col=0, start=2)
+    region_start = (_block_end(g, lb) + 1) if lb else 87
+    # region ends at the first captainship PERFORMANCE / CAPTAIN TEAM block
+    perf = _label_row(g, "CAPTAIN TEAM", col=0, start=region_start) or \
+        _label_row(g, "PERFORMANCE", col=1, start=region_start) or len(g)
+    for r in range(region_start, perf):
+        # header row = has 'RUNNING WEEK TOTALS' (day-order agnostic: Frontier
+        # runs Sun-Sat, the rest Mon-Sun) + a section name in col A.
+        rowtext = " ".join(_cell(g, r, c) for c in range(1, len(g[r - 1]) + 1)).lower()
+        if "running week totals" not in rowtext or not _cell(g, r, 1):
+            continue
+        name = _cell(g, r, 1)
+        # right edge = the 'PREVIOUS WEEK'S TOTALS' column on the header row
+        right = next((c for c in range(4, len(g[r - 1]) + 1)
+                      if "previous week" in _cell(g, r, c).lower()), None)
+        if right is None:
+            right = _last_col(g, r, r)
+        # bottom = the 'Last Week' row (the summary row right under Totals)
+        end = None
+        for rr in range(r + 1, min(r + 30, len(g) + 1)):
+            if _cell(g, rr, 1).lower() == "last week":
+                end = rr
+                break
+            if _cell(g, rr, 1).lower() in ("totals", "total"):
+                end = rr        # fallback: Totals if no Last Week row follows
+        if end:
+            key = "section_" + name.lower().replace(" ", "_").replace("/", "_")
+            out.append((key, f"A{r}:{_colletter(right)}{end}"))
+    return out
+
+
 def section_ranges(g) -> List[Tuple[str, str]]:
-    """Return [(name, 'A1:Z9'), …] for the three email sections, by label."""
+    """Return [(name, 'A1:Z9'), …] for the PHASE-1 email sections, by label:
+    the top org summary (Product Summary, RAF ORG, ALPHALETE ORG leaderboard)
+    + the 8 daily section tables. Captainship blocks land in Phase 2."""
     out = []
     ps = _label_row(g, "Product Summary", col=1)
     if ps:
         end = _block_end(g, ps)
-        out.append(("product_summary", f"A{ps}:{rowcol_to_a1(1, _last_col(g, ps, end))[:-1]}{end}"))
+        out.append(("product_summary", f"A{ps}:{_colletter(_last_col(g, ps, end))}{end}"))
     raf = _label_row(g, "RAF ORG", col=1)
     if raf:
         end = _block_end(g, raf)
-        out.append(("raf_org", f"A{raf}:{rowcol_to_a1(1, _last_col(g, raf, end))[:-1]}{end}"))
+        out.append(("raf_org", f"A{raf}:{_colletter(_last_col(g, raf, end))}{end}"))
     lb = _label_row(g, "ALPHALETE ORG", col=0, start=2)   # skip the r1 title cell
     if lb:
         end = _block_end(g, lb)
-        # first value column (the earliest 'WE ' header on the leaderboard row)
         first_val = next((c for c in range(3, len(g[lb - 1]) + 1)
                           if _cell(g, lb, c)), 3)
         last = first_val + _LB_WEEKS - 1
-        out.append(("org_leaderboard",
-                    f"A{lb}:{rowcol_to_a1(1, last)[:-1]}{end}"))
+        out.append(("org_leaderboard", f"A{lb}:{_colletter(last)}{end}"))
+    out.extend(_daily_section_ranges(g))
     return out
 
 
@@ -142,10 +184,15 @@ def build_email(images: List[Tuple[str, Path]], to_addrs: List[str],
     for name, path in images:
         cid = make_msgid()[1:-1]
         cids.append((cid, path))
+        # org-top blocks get a title header; daily sections are self-labeled in
+        # the image, so they render as just the screenshot.
+        title = _TITLES.get(name)
+        title_html = (f'<div style="font-weight:bold;font-size:15px;'
+                      f'color:#8a0000;margin:18px 0 6px">{title}</div>'
+                      if title else '<div style="margin:14px 0 0"></div>')
         parts.append(
-            f'<div style="font-weight:bold;font-size:15px;color:#8a0000;'
-            f'margin:18px 0 6px">{_TITLES.get(name, name)}</div>'
-            f'<img src="cid:{cid}" style="max-width:1000px;width:100%;'
+            title_html
+            + f'<img src="cid:{cid}" style="max-width:1000px;width:100%;'
             f'border:1px solid #ddd">')
     html = (
         '<div style="font-family:Arial,Helvetica,sans-serif;color:#000">'
