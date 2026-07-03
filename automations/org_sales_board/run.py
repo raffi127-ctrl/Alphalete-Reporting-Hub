@@ -230,9 +230,15 @@ def main(argv=None) -> int:
             except Exception:  # noqa: BLE001 — advisory must never fail the run
                 pass
             _compare_clean = True
+            _compare_ndiff = 0
             if not args.dry_run and not args.real:
                 from automations.org_sales_board import compare
-                _compare_clean = compare.run_compare()["clean"]
+                _cmp = compare.run_compare()
+                _compare_clean = _cmp["clean"]
+                # gating disagreements = raw daily glitches + current-week derived
+                # concerns (frozen + catch-all are report-only, never counted here)
+                _compare_ndiff = (len(_cmp.get("glitches", []))
+                                  + len(_cmp.get("derived", [])))
             # Standard failure manifest → Hub failure-help callout + a granular
             # "Retry failed only" button where the failure is one clean category
             # (--step captainships / --step daily); mixed/compare failures show
@@ -246,7 +252,8 @@ def main(argv=None) -> int:
                             + [f"program: {c}" for c in _failed_prog]
                             + [f"captainship: {c}" for c in _failed_caps]
                             + ([] if _compare_clean
-                               else ["compare: differences vs the VA tab"]))
+                               else [f"compare: {_compare_ndiff} cell(s) disagree "
+                                     "with the VA tab"]))
                         # GRANULAR retry: re-run ONLY the failed sections and/or
                         # captainship parts, not the whole board. A failed CAPTAIN
                         # forces a full captainship re-run (can't subset by
