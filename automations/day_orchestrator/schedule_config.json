@@ -315,6 +315,36 @@
       },
       "_warn": "Scheduled on the SANDBOX 'Copy of' tab ONLY. The real VA tab stays guarded (--real refuses live runs + a Copy-of-only assert); a real-tab cutover needs that guard relaxed first — do NOT point this at the real tab unattended without that work."
     },
+    "org_sales_board_email": {
+      "on_scheduler": true,
+      "_note": "Emails the Org Sales Board as exact-sheet screenshots (copy tab, Sheets PDF-export render — no browser). depends_on org_sales_board so it only runs AFTER the fill is DONE (fresh numbers). PROVING: base_args '--preview' sends to Megan only; at go-live swap to the 3 distro lists (Alphalete Org Owners / Carlos' / Raf's Captain Team). source_type 'tableau' only to phase it right after the board — it has no Tableau pull (reads the sheet via OAuth).",
+      "display_name": "Org. Sales Board Email",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.org_sales_board.screenshot_email"
+      ],
+      "base_args": [
+        "--preview"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [
+        "org_sales_board"
+      ],
+      "verify": null
+    },
     "daily_rep_breakdown": {
       "on_scheduler": true,
       "display_name": "Daily Rep Breakdown - ATT Program",
