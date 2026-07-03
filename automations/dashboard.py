@@ -2591,7 +2591,7 @@ AUTOMATED_REPORTS = [
             "matches the VAs' 0) and it fills the moment they sell."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit#gid=1819006464"),
+                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit#gid=388012799"),
         "assignees": ["Fully Automated Alphalete Reports"],
         "schedule": {
             "frequency": "daily",
