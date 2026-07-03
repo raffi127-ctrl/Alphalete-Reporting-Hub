@@ -208,11 +208,35 @@ def _captainship_ranges(g) -> List[Tuple[str, str]]:
     return out
 
 
+def _bottom_org_ranges(g) -> List[Tuple[str, str]]:
+    """Bottom 'X ORG - Current vs Prior Weeks' summary tables (RAF/CARLOS/COLTEN/
+    BEN). Header → 'Sales ( 4 Week AVG)' row; the frozen Last/Prior/2wp/3wp history
+    rows below are excluded. Same org filter: include an ORG only if its head is on
+    the ALPHALETE ORG leaderboard (RAF→Rafael, BEN→Benjamin Burden, etc.)."""
+    import re
+    lb = _label_row(g, "ALPHALETE ORG", col=0, start=2)
+    lb_end = _block_end(g, lb) if lb else 0
+    firsts = {_cell(g, r, 2).split()[0].lower() for r in range(lb or 1, lb_end + 1)
+              if _cell(g, r, 1).isdigit() and _cell(g, r, 2)}
+    out = []
+    for r in range(1600, len(g) + 1):
+        text = (_cell(g, r, 1) + " " + _cell(g, r, 2)).lower().strip()
+        if not re.search(r"\borg\b.*current vs prior", text):
+            continue
+        short = text.split()[0].rstrip("'s")
+        if not any(fn.startswith(short) for fn in firsts):
+            continue
+        end = next((x for x in range(r, r + 16)
+                    if _cell(g, x, 2).lower().startswith("sales ( 4 week")), None)
+        if end:
+            out.append((f"botorg_{short}", f"A{r}:J{end}"))
+    return out
+
+
 def section_ranges(g) -> List[Tuple[str, str]]:
     """Return [(name, 'A1:Z9'), …] for the full email, by label: the top org
-    summary (Product Summary, RAF ORG, ALPHALETE ORG leaderboard), the 8 daily
-    section tables, and every captainship block (3 sub-images each). Bottom ORG
-    summaries = Phase 3."""
+    summary, the 8 daily section tables, every in-org captainship block (3 images
+    each), and the bottom RAF/CARLOS/COLTEN/BEN ORG summary tables."""
     out = []
     ps = _label_row(g, "Product Summary", col=1)
     if ps:
@@ -231,6 +255,7 @@ def section_ranges(g) -> List[Tuple[str, str]]:
         out.append(("org_leaderboard", f"A{lb}:{_colletter(last)}{end}"))
     out.extend(_daily_section_ranges(g))
     out.extend(_captainship_ranges(g))
+    out.extend(_bottom_org_ranges(g))
     return out
 
 
