@@ -45,7 +45,7 @@ def authorize() -> None:
     creds = flow.run_local_server(
         port=0,
         login_hint=CONTACTS_ACCOUNT,
-        prompt="consent",
+        prompt="select_account consent",   # always show the account chooser
         authorization_prompt_message=(
             "Opening your browser to authorize Contacts (read-only).\n"
             f"➡  Sign in as {CONTACTS_ACCOUNT} (NOT raffi127) and approve.\n"
