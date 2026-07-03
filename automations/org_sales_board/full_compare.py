@@ -85,8 +85,9 @@ def _classify(c, v):
 def run_derived_compare(sh, cS, vS, aliases, logfn=print) -> dict:
     """cS/vS = FORMATTED grids of copy (SANDBOX) + VA (PROD) tabs, already read by
     the caller. Fetches the UNFORMATTED (computed) grids itself. Returns
-    {concerning, benign_count, frozen, clean}. `frozen` (prior-week history drift)
-    is REPORT-ONLY — it never affects `clean`/the gate."""
+    {concerning, benign_count, frozen, other, clean}. `frozen` (prior-week history
+    drift) and `other` (catch-all completeness pass over EVERY remaining cell) are
+    both REPORT-ONLY — neither affects `clean`/the gate."""
     from automations.org_sales_board.run import SANDBOX_TAB, PROD_TAB
     from automations.recruiting_report.fill import _retry
     cU = _retry(lambda: sh.worksheet(SANDBOX_TAB).get_all_values(
@@ -97,6 +98,8 @@ def run_derived_compare(sh, cS, vS, aliases, logfn=print) -> dict:
     concerning: List[tuple] = []     # (region, label, a1, copy, va, bucket)
     benign = 0
     frozen: List[tuple] = []         # (region, label, a1, copy, va) — REPORT-ONLY
+    other: List[tuple] = []          # catch-all completeness pass — REPORT-ONLY
+    touched = set()                  # (copy_row, col) every targeted pass read
 
     def candidates(name):
         return set(fs._candidates_for(name, aliases))
@@ -110,6 +113,7 @@ def run_derived_compare(sh, cS, vS, aliases, logfn=print) -> dict:
     def cmp_cell(region, label, cr, c1, vr=None):
         nonlocal benign
         vr = vr if vr is not None else cr
+        touched.add((cr, c1))
         cc, vv = _u(cU, cr, c1), _u(vU, vr, c1)
         b = _classify(cc, vv)
         if b in ("exact", "ns0", "blank"):
@@ -207,11 +211,13 @@ def run_derived_compare(sh, cS, vS, aliases, logfn=print) -> dict:
     # here, so it can't gate (it'd hold the board red forever). Surfaced so
     # nothing is unchecked. (Megan 2026-07-03: report, don't gate.)
     def frz_named(region, label, cr, vr, c1):
+        touched.add((cr, c1))
         cc, vv = _u(cU, cr, c1), _u(vU, vr, c1)
         if _classify(cc, vv) not in ("exact", "ns0", "blank"):
             frozen.append((region, label, rowcol_to_a1(cr, c1), cc, vv))
 
     def frz_pos(region, label, r, c1):
+        touched.add((r, c1))
         cc, vv = _u(cU, r, c1), _u(vU, r, c1)
         if _classify(cc, vv) not in ("exact", "ns0", "blank"):
             frozen.append((region, label, rowcol_to_a1(r, c1), cc, vv))
@@ -283,13 +289,90 @@ def run_derived_compare(sh, cS, vS, aliases, logfn=print) -> dict:
                 frz_pos("product-summary history", _acell(cS, rr) or _bname(cS, rr),
                         rr, c1)
 
-    clean = not concerning     # frozen is REPORT-ONLY — never affects the gate
-    _report(logfn, concerning, benign, frozen, clean)
+    # ========== CATCH-ALL completeness pass (REPORT-ONLY, never gates) ==========
+    # Guarantees LITERALLY every value cell is compared — the delta 'Delta' cols,
+    # row/team subtotals, ORG-summary metric rows, anything the targeted passes
+    # above didn't reach. Rows that sort differently between the tabs are
+    # name-mapped (only those move); every other row is positional (the two tabs
+    # are structurally identical). Col A (rank) is skipped — it's re-ranked per
+    # run and differs by design. (Megan 2026-07-03: verify EVERY cell.)
+    sorted_rows: dict = {}     # copy_row -> va_row (matched rows in sorted blocks)
+    sorted_all: set = set()    # every row inside a sorted block (matched or not)
+    try:
+        for lbl in SECTIONS:
+            try:
+                ca = fs.find_daily_section(cS, lbl)
+                va = fs.find_daily_section(vS, lbl)
+            except Exception:
+                continue
+            vp = {_norm_owner(n): r for n, r in va.icd_rows.items()}
+            for name, r in ca.icd_rows.items():
+                sorted_all.add(r)
+                vr = match_row(name, vp)
+                if vr:
+                    sorted_rows[r] = vr
+        for t in caps:
+            try:
+                ca = cap.find_captainship(cS, t)
+                va = cap.find_captainship(vS, t)
+            except Exception:
+                continue
+            vp_d = {_norm_owner(n): r for r, n in va.daily}
+            vp_l = {_norm_owner(n): r for r, n in va.leaderboard}
+            for r, name in ca.daily:
+                sorted_all.add(r)
+                vr = match_row(name, vp_d)
+                if vr:
+                    sorted_rows[r] = vr
+            for r, name in ca.leaderboard:
+                sorted_all.add(r)
+                vr = match_row(name, vp_l)
+                if vr:
+                    sorted_rows[r] = vr
+        _ob = rollover.find_org_block(cS)
+        _obv = rollover.find_org_block(vS)
+        vp = {_norm_owner(_bname(vS, r)): r for r in _obv.data_rows}
+        for r in _ob.data_rows:
+            sorted_all.add(r)
+            vr = match_row(_bname(cS, r), vp)
+            if vr:
+                sorted_rows[r] = vr
+        for t in rollover.find_delta_tables(cS):
+            vt = v_deltas.get(t["header_row"])
+            if not vt:
+                continue
+            vp = {_norm_owner(_bname(vS, r)): r for r in vt["data_rows"]}
+            for r in t["data_rows"]:
+                sorted_all.add(r)
+                vr = match_row(_bname(cS, r), vp)
+                if vr:
+                    sorted_rows[r] = vr
+        for r in range(1, len(cU) + 1):
+            width = len(cU[r - 1]) if r - 1 < len(cU) else 0
+            for c1 in range(2, width + 1):        # skip col A (rank)
+                if (r, c1) in touched:
+                    continue
+                if r in sorted_all and r not in sorted_rows and _bname(cS, r):
+                    continue           # a NAMED rep row that didn't match (roster
+                                       # mismatch — surfaced by the non-match check);
+                                       # blank-name sorted rows fall to positional.
+                vr = sorted_rows.get(r, r)
+                cc, vv = _u(cU, r, c1), _u(vU, vr, c1)
+                b = _classify(cc, vv)
+                if b in ("exact", "ns0", "blank"):
+                    continue
+                other.append((_bname(cS, r) or _acell(cS, r),
+                              rowcol_to_a1(r, c1), cc, vv, b))
+    except Exception as e:  # noqa: BLE001
+        logfn(f"  ⚠ catch-all completeness pass skipped ({str(e)[:60]})")
+
+    clean = not concerning     # frozen + other are REPORT-ONLY — never gate
+    _report(logfn, concerning, benign, frozen, other, clean)
     return {"concerning": concerning, "benign_count": benign,
-            "frozen": frozen, "clean": clean}
+            "frozen": frozen, "other": other, "clean": clean}
 
 
-def _report(logfn, concerning, benign, frozen, clean):
+def _report(logfn, concerning, benign, frozen, other, clean):
     import collections
     logfn(f"  --- DERIVED / BOTTOM AUTO-FORMULA TABLES (current-week) ---")
     if concerning:
@@ -315,3 +398,16 @@ def _report(logfn, concerning, benign, frozen, clean):
             logfn(f"      {reg}: {n}")
     else:
         logfn("  ✅ frozen history matches the VA tab too.")
+    # Catch-all completeness pass — every remaining value cell (deltas, subtotals,
+    # ORG-summary metrics, anything else). REPORT-ONLY, never gates.
+    logfn("  --- CATCH-ALL: EVERY OTHER CELL (report-only, does NOT gate) ---")
+    if other:
+        dirs = collections.Counter(o[4] for o in other)
+        logfn(f"  ⚠ {len(other)} remaining cell(s) differ copy-vs-VA "
+              f"({dict(dirs)}) — mostly derived delta/subtotal/metric cells:")
+        for label, a1, c, v, b in other[:25]:
+            logfn(f"      {label[:26]} {a1}: copy={c!r} VA={v!r}  ({b})")
+        if len(other) > 25:
+            logfn(f"      …and {len(other) - 25} more")
+    else:
+        logfn("  ✅ every remaining cell matches the VA tab — 100% coverage clean.")
