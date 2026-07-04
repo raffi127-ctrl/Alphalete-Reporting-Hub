@@ -2660,7 +2660,10 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "rc-autoread",
-        "name": "RingCentral Auto-Read (Q 10 Min)",
+        # The name uses non-breaking spaces ( ) inside "RingCentral Auto-Read"
+        # and "(Q 10 Min)" so the cadence wraps as one clean unit onto line 2 of
+        # the This Week strip pill instead of breaking mid-phrase.
+        "name": "RingCentral Auto-Read (Q 10 Min)",
         "creator": "Dylan",
         "emoji": "📲",
         "color": "#F59E0B",
@@ -2674,7 +2677,7 @@ AUTOMATED_REPORTS = [
             "wrap-up are left unread so a human still sees them.\n\n"
             "WHEN IT RUNS\n"
             "**Every ~10 minutes, 7 AM–midnight Central**, via a launchd "
-            "timer on the Mac mini (com.alphalete.rc-autoread). The **Run "
+            "timer on the Mac mini (LUCY). The **Run "
             "Now** button here triggers an extra pass any time.\n\n"
             "IF A THREAD ISN'T CLEARING\n"
             "Its wrap-up wording probably isn't in the phrase list — add the "
@@ -8726,6 +8729,10 @@ else:  # st.session_state.view == "user"
             "[class*='__calstat_fail'] button{background:#FAECE7!important;color:#712B13!important;border-color:#F0997B!important}"
             "[class*='__calstat_miss'] button{background:transparent!important;color:#888780!important;border-color:var(--border)!important;opacity:.75}"
             "[class*='__calstat_running'] button{background:#FBF3DE!important;color:#6B5210!important;border-color:#C9A85C!important;animation:calpulse 1.4s ease-in-out infinite}"
+            # RingCentral Auto-Read is a background OPS automation — always show its
+            # pill in the orange OPS color, regardless of run-status (its launchd
+            # job doesn't report status back, so the default pill would read gray).
+            "[class*='rc-autoread__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
             "</style>",
             unsafe_allow_html=True,
         )
