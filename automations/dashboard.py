@@ -2659,6 +2659,61 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "brand-health-audit",
+        "name": "Brand Health Audit",
+        "creator": "Megan",
+        "emoji": "🩺",
+        "color": "#6366F1",
+        "category": "🩺 Brand Health",
+        "description": "Daily reputation + brand scan for Alphalete Marketing — Google reviews, search results, Reddit, website, and public social — scored into a Brand Health Card, with Slack alerts on anything new.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Runs every brand collector for **Alphalete Marketing** (Google "
+            "reviews, search results, Reddit mentions, website, reputation "
+            "sites, public social), scores them into a **Brand Health Card** "
+            "saved to output/, logs the run to the Brand Health sheet, and "
+            "posts a Slack alert for anything new.\n\n"
+            "WHEN IT RUNS\n"
+            "**Every day at noon (Central)**, via a launchd timer on the Mac "
+            "mini (LUCY). The **Run Now** button here triggers an extra pass "
+            "any time.\n\n"
+            "PREVIEW\n"
+            "**Preview (Dry Run)** runs the full scan but makes no external "
+            "changes — no Slack alerts, no sheet writes."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1zoRQRhvkpu7Vvw4TsC60ufja9XwpUR8hHvV7FyzezMY/edit"),
+        "assignees": ["Fully Automated Alphalete Reports"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "12:00 PM",
+            "estimated_minutes": 5,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Brand Health scan complete — scorecard written and any new findings alerted to Slack.",
+            "message_failed": "❌ Run failed. Check the log above (usually an API key or rate-limit issue), then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run Now",
+                "icon": "▶",
+                "primary": True,
+                "help": "Run the full brand scan for Alphalete Marketing and post any new findings.",
+                "module": "automations.brand_audit.run",
+                "args_fn": lambda: ["--company", "Alphalete Marketing"],
+            },
+            {
+                "label": "Preview (Dry Run)",
+                "icon": "👀",
+                "primary": False,
+                "help": "Run the scan but make no external changes — no Slack alerts, no sheet writes.",
+                "module": "automations.brand_audit.run",
+                "args_fn": lambda: ["--company", "Alphalete Marketing", "--dry-run"],
+            },
+        ],
+    },
+    {
         "id": "rc-autoread",
         # The name uses non-breaking spaces ( ) inside "RingCentral Auto-Read"
         # and "(Q 10 Min)" so the cadence wraps as one clean unit onto line 2 of
@@ -2685,6 +2740,9 @@ AUTOMATED_REPORTS = [
         ),
         # No Google Sheet — RingCentral API only.
         "assignees": ["Fully Automated Alphalete Reports"],
+        # Runs on its own 10-min launchd timer — hide the DUE-TODAY + schedule
+        # pills on the report page (cadence is in the breakdown).
+        "hide_schedule": True,
         "schedule": {
             "frequency": "daily",
             "time": "7:00 AM",
@@ -2703,14 +2761,6 @@ AUTOMATED_REPORTS = [
                 "help": "Scan the extension and mark wrapped-up threads read.",
                 "module": "automations.rc_autoread.run",
                 "args_fn": lambda: [],
-            },
-            {
-                "label": "Preview (Dry Run)",
-                "icon": "👀",
-                "primary": False,
-                "help": "Show which threads WOULD be marked, without changing anything.",
-                "module": "automations.rc_autoread.run",
-                "args_fn": lambda: ["--dry-run"],
             },
         ],
     },
@@ -4285,9 +4335,13 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
         # Header row
         last_run_text = _latest_run_summary(report["id"])
         pills = ""
-        if ran_today:
+        # Background always-on jobs (hide_schedule) skip the DUE/DONE-today +
+        # schedule-time pills — those read wrong for something that runs on its
+        # own timer and doesn't report a per-day status.
+        _hide_sched = report.get("hide_schedule")
+        if ran_today and not _hide_sched:
             pills += "<span class='pill pill-ok'>✅ DONE TODAY</span>"
-        elif is_due:
+        elif is_due and not _hide_sched:
             pills += "<span class='pill pill-due'>DUE TODAY</span>"
         # Last-run outcome (#4) — surfaces a silent partial/failed run at a
         # glance, without opening the card.
@@ -4302,7 +4356,7 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                 pills += "<span class='pill pill-warn'>⚠️ LAST RUN PARTIAL</span>"
         elif _card_oc["status"] == "failed":
             pills += "<span class='pill pill-warn'>❌ LAST RUN FAILED</span>"
-        if sched:
+        if sched and not _hide_sched:
             pills += f"<span class='pill pill-info'>{sched.get('time', '')} • ~{sched.get('estimated_minutes', '?')} min</span>"
         if pills:
             st.markdown(pills, unsafe_allow_html=True)
