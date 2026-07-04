@@ -317,16 +317,14 @@
     },
     "org_sales_board_email": {
       "on_scheduler": true,
-      "_note": "Emails the Org Sales Board as exact-sheet screenshots (copy tab, Sheets PDF-export render — no browser). depends_on org_sales_board so it only runs AFTER the fill is DONE (fresh numbers). PROVING: base_args '--preview' sends to Megan only; at go-live swap to the 3 distro lists (Alphalete Org Owners / Carlos' / Raf's Captain Team). source_type 'tableau' only to phase it right after the board — it has no Tableau pull (reads the sheet via OAuth).",
+      "_note": "Emails the Org Sales Board as exact-sheet screenshots (copy tab, Sheets PDF-export render — no browser). depends_on org_sales_board so it only runs AFTER the fill is DONE (fresh numbers). PROVING (Megan 2026-07-04): base_args '' (no --preview) sends to the proving list — Maud + Rafael + Megan — off the COPY tab; at go-live swap to '--distro' (Alphalete Org Owners / Carlos' / Raf's Captain Team). source_type 'tableau' only to phase it right after the board — it has no Tableau pull (reads the sheet via OAuth).",
       "display_name": "Org. Sales Board Email",
       "source_type": "tableau",
       "data_sources": [],
       "command": [
         "automations.org_sales_board.screenshot_email"
       ],
-      "base_args": [
-        "--preview"
-      ],
+      "base_args": [],
       "cadence": {
         "weekdays": [
           0,

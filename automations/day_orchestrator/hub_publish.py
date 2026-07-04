@@ -48,6 +48,7 @@ _HUB_CARD = {
     "country_metrics": "country-metrics",
     "int_wow_penetration": "int-wow-penetration",
     "org_sales_board": "org-sales-board",
+    "org_sales_board_email": "sales-board-screenshot-email",
     "leaders_call": "leaders-call",
     "residential_rep_count": "residential_rep_count",
     "rashad_metrics": "rashad-metrics",
