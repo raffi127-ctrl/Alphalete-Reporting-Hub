@@ -810,9 +810,7 @@
         "automations.tableau_screenshots.run"
       ],
       "base_args": [
-        "--inspect",
-        "--only",
-        "att_country"
+        "--inspect"
       ],
       "cadence": {
         "weekdays": []

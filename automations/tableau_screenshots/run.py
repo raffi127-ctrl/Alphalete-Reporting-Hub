@@ -89,14 +89,44 @@ def main(argv=None) -> int:
     # re-export message) if the warm session is cold, instead of touching the
     # Cloudflare Turnstile.
     if args.inspect:
+        infos = []
         with tableau_session(headless=args.headless, allow_form_login=False,
                              verbose=True) as page:
             for spec in selected:
                 try:
-                    cap.inspect_view(page, spec, verbose=True)
+                    infos.append(cap.inspect_view(page, spec, verbose=True))
                 except Exception as e:
-                    print(f"INSPECT {spec['id']} ERROR: "
-                          f"{type(e).__name__}: {str(e)[:140]}", flush=True)
+                    infos.append({"id": spec["id"],
+                                  "error": f"{type(e).__name__}: {str(e)[:200]}"})
+        # Write full findings to a sheet tab (lucy status truncates to 280 chars,
+        # so the structure never survives the result cell). Read 'Inspect Out' on
+        # the control workbook from any machine to see tabs + dialog per tracker.
+        try:
+            import json as _json
+            import gspread
+            from automations.recruiting_report import fill as _fill
+            from automations.day_orchestrator.mini_control import CONTROL_SHEET_ID
+            sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
+            try:
+                ws = sh.worksheet("Inspect Out")
+            except gspread.WorksheetNotFound:
+                ws = sh.add_worksheet(title="Inspect Out", rows=50, cols=6)
+            rows = [["id", "url", "tabs_sel", "tabs", "dialog_sel", "dialog/err"]]
+            for i in infos:
+                rows.append([
+                    i.get("id", ""), i.get("url", ""), i.get("tabs_sel", ""),
+                    _json.dumps(i.get("tabs", []), ensure_ascii=False),
+                    i.get("dialog_sel", ""),
+                    (i.get("dialog", "") or i.get("dialog_err", "")
+                     or i.get("error", ""))[:40000],
+                ])
+            ws.clear()
+            ws.update(rows, "A1")
+            print(f"INSPECT wrote {len(infos)} row(s) to 'Inspect Out' tab.",
+                  flush=True)
+        except Exception as e:
+            print(f"INSPECT sheet-write failed: {type(e).__name__}: {str(e)[:160]}",
+                  flush=True)
         return 0
 
     with tableau_session(headless=args.headless, allow_form_login=False,
