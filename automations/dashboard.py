@@ -2658,6 +2658,59 @@ AUTOMATED_REPORTS = [
             },
         ],
     },
+    {
+        "id": "rc-autoread",
+        "name": "RingCentral Wrap-Up Auto-Read",
+        "creator": "Dylan",
+        "emoji": "📲",
+        "color": "#34D399",
+        "category": "📲 Ops",
+        "description": "Marks RingCentral SMS conversations read once they hit a known wrap-up message (installs, DirecTV/cell hand-offs, fiber reminders), leaving customer-reply threads unread.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Scans the RingCentral extension for **unread SMS** and marks a "
+            "conversation read once it has reached a known **wrap-up** "
+            "message. Threads where the **customer replied after** the "
+            "wrap-up are left unread so a human still sees them.\n\n"
+            "WHEN IT RUNS\n"
+            "**Every ~10 minutes, 7 AM–midnight Central**, via a launchd "
+            "timer on the Mac mini (com.alphalete.rc-autoread). The **Run "
+            "Now** button here triggers an extra pass any time.\n\n"
+            "IF A THREAD ISN'T CLEARING\n"
+            "Its wrap-up wording probably isn't in the phrase list — add the "
+            "phrase to WRAP_UP_PHRASES in automations/rc_autoread/run.py."
+        ),
+        # No Google Sheet — RingCentral API only.
+        "assignees": ["Fully Automated Alphalete Reports"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "estimated_minutes": 1,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Auto-read pass complete — wrapped-up threads marked read, customer-reply threads left unread.",
+            "message_failed": "❌ Run failed. Check the log above (usually a RingCentral auth/token or rate-limit issue), then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run Now",
+                "icon": "▶",
+                "primary": True,
+                "help": "Scan the extension and mark wrapped-up threads read.",
+                "module": "automations.rc_autoread.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Preview (Dry Run)",
+                "icon": "👀",
+                "primary": False,
+                "help": "Show which threads WOULD be marked, without changing anything.",
+                "module": "automations.rc_autoread.run",
+                "args_fn": lambda: ["--dry-run"],
+            },
+        ],
+    },
 ]
 
 # Merge in user-uploaded reports (saved by the Wire-Up dialog)
@@ -4026,9 +4079,14 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                 # Single-office reports (category "🏢 Other Offices") render
                 # UNDER an "Other Offices" divider, below the main-office
                 # reports — not mixed into the day's list (Megan 2026-06-30).
-                _main = [r for r in _due if r.get("category") != "🏢 Other Offices"]
+                _main = [r for r in _due if r.get("category") not in ("🏢 Other Offices", "📲 Ops")]
                 _other = [r for r in _due if r.get("category") == "🏢 Other Offices"]
-                _ordered = _main + (["__OTHER_OFFICES__"] if _other else []) + _other
+                _ops = [r for r in _due if r.get("category") == "📲 Ops"]
+                _ordered = (
+                    _main
+                    + (["__OTHER_OFFICES__"] if _other else []) + _other
+                    + (["__OPS__"] if _ops else []) + _ops
+                )
                 for _r in _ordered:
                     if _r == "__OTHER_OFFICES__":
                         st.markdown(
@@ -4037,6 +4095,16 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                             "font-size:0.95em; font-weight:700; color:#DC2626; "
                             "letter-spacing:0.05em; text-align:center'>"
                             "🏢 OTHER OFFICES</div>",
+                            unsafe_allow_html=True,
+                        )
+                        continue
+                    if _r == "__OPS__":
+                        st.markdown(
+                            "<div style='border-top:3px solid #10B981; "
+                            "margin:10px 0 5px; padding-top:6px; "
+                            "font-size:0.95em; font-weight:700; color:#10B981; "
+                            "letter-spacing:0.05em; text-align:center'>"
+                            "📲 OPS</div>",
                             unsafe_allow_html=True,
                         )
                         continue
