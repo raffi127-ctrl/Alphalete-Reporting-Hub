@@ -252,7 +252,7 @@ def inspect_view(page, spec: dict, *, verbose: bool = True) -> dict:
         _click_image_item(viz, page)
         page.wait_for_timeout(3000)
         try:
-            info["dialog"] = viz.locator("body").inner_text(timeout=4000)[:3000]
+            info["dialog"] = viz.locator("body").inner_text(timeout=4000)[:25000]
         except Exception as e:
             info["dialog_err"] = f"body read: {type(e).__name__}: {str(e)[:80]}"
     except Exception as e:
