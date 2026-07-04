@@ -50,6 +50,9 @@ PAGES = [
         "react": "satellite_antenna",
         "url": _BASE + "NDS-SNRES-ATT-OOFWorkbook/NDSDailyTracker?:iid=1",
         "crop": "canvas",
+        # Multi-page: page 2 is a repeat "Last Week" Rep Summary. Exact match so
+        # it doesn't hit the "Low Metrics Last Week" tab.
+        "crop_before": r"^Last Week$",
     },
     {
         "id": "b2b_att_country",
@@ -60,6 +63,8 @@ PAGES = [
                         "87ae0671-15de-4d80-bdc0-702d0946dd1d/"
                         "B2BLeaderRecognition?:iid=1"),
         "crop": "canvas",
+        # Multi-page: "B2B - Current Week" then "B2B - LAST WEEK" then Trends.
+        "crop_before": r"B2B\s*-\s*LAST WEEK",
     },
     {
         "id": "b2b_att_country_cru",

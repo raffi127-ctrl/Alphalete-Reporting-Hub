@@ -101,39 +101,44 @@ def _maybe_click_export_dialog(viz, page) -> None:
         page.wait_for_timeout(500)
 
 
-# These pager dashboards stack PAGE 1 (This Week) + PAGE 2 (Last Week) + PAGE 3
-# (Trends) in one tall dashboard; Download→Image exports all of it. Jolie posts
-# only PAGE 1, so we find the PAGE-2 header and crop the image to just above it.
-# Self-classifying: single-page trackers have no PAGE-2 element -> no crop.
-_PAGE1_CROP_JS = r"""
-() => {
+# These pager dashboards stack PAGE 1 (This Week) + a PAGE 2 (Last Week) + maybe a
+# Trends page in one tall dashboard; Download→Image exports all of it. Jolie posts
+# only PAGE 1, so we find the header that starts page 2 and crop the image to just
+# above it. The page-2 header text differs per workbook, so each multi-page
+# tracker sets spec['crop_before'] (a regex); the default catches the "PAGE 2"
+# wording. Self-classifying: single-page trackers have no such header -> no crop.
+_DEFAULT_CROP_MARKER = r"PAGE\s*2\b"
+
+_CROP_JS = r"""
+(marker) => {
+  const re = new RegExp(marker, 'i');
   const els = [...document.querySelectorAll('*')];
-  const p2 = els.find(e => e.children.length === 0 &&
-                          /PAGE\s*2\b/i.test((e.textContent||'').trim()));
-  if (!p2) return null;
-  let c = p2.parentElement, cont = null;
+  const hit = els.find(e => e.children.length === 0 &&
+                            re.test((e.textContent||'').trim()));
+  if (!hit) return null;
+  let c = hit.parentElement, cont = null;
   while (c) { if (c.scrollHeight > c.clientHeight + 50) { cont = c; break; }
              c = c.parentElement; }
   if (!cont) cont = document.scrollingElement || document.body;
   const cr = cont.getBoundingClientRect();
-  const pr = p2.getBoundingClientRect();
+  const pr = hit.getBoundingClientRect();
   const y = pr.top - cr.top + cont.scrollTop;
-  const frac = y / cont.scrollHeight;
-  return {frac, text: (p2.textContent||'').trim().slice(0,50)};
+  return {frac: y / cont.scrollHeight, text: (hit.textContent||'').trim().slice(0,50)};
 }
 """
 
 
-def _page1_crop_fraction(page, verbose: bool):
-    """Fraction (0-1) of the dashboard height where PAGE 2 starts, or None if this
-    is a single-page dashboard (no PAGE-2 header). The fraction is scale-invariant,
-    so it maps straight onto the exported image height."""
+def _page1_crop_fraction(page, spec: dict, verbose: bool):
+    """Fraction (0-1) of the dashboard height where page 2 starts, or None if this
+    is a single-page dashboard (marker not found). Scale-invariant, so it maps
+    straight onto the exported image height."""
+    marker = spec.get("crop_before", _DEFAULT_CROP_MARKER)
     try:
         el = page.query_selector(_IFRAME)
         frame = el.content_frame() if el else None
         if frame is None:
             return None
-        res = frame.evaluate(_PAGE1_CROP_JS)
+        res = frame.evaluate(_CROP_JS, marker)
     except Exception as e:
         if verbose:
             print(f"   crop probe failed ({type(e).__name__}) — no crop", flush=True)
@@ -142,7 +147,7 @@ def _page1_crop_fraction(page, verbose: bool):
         return None
     frac = res.get("frac")
     if verbose:
-        print(f"   PAGE-2 marker {res.get('text')!r} at frac={frac:.3f} "
+        print(f"   page-2 marker {res.get('text')!r} at frac={frac:.3f} "
               f"— cropping to Page 1", flush=True)
     return frac
 
@@ -174,7 +179,7 @@ def _download_once(page, spec: dict, out_path: Path, *, hydrate_ms: int,
     _clear_error_toast(viz, page, verbose)
     # Measure the Page-1 crop BEFORE opening the download flyout (the flyout can
     # shift the DOM). None for single-page dashboards.
-    crop_frac = _page1_crop_fraction(page, verbose)
+    crop_frac = _page1_crop_fraction(page, spec, verbose)
 
     dl_btn.click()
     page.wait_for_timeout(1800)                # flyout opens
