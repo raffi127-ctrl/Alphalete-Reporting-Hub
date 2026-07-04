@@ -243,6 +243,20 @@ def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
                    waiting_on=", ".join(unmet))
             continue
 
+        # A human Chrome opened AFTER batch start single-instances with our
+        # automation Chrome and hangs every browser report — and can break the
+        # holder session so this report never even reaches readiness. The
+        # batch-start guard only ran once; re-close a stray window before each
+        # browser report so one opened mid-run can't silently stall the batch
+        # (2026-07-04: an open Chrome window stalled the whole 4am run).
+        # [[reference_chrome_collision_guard]]
+        if not dry_run and not simulate and r.source_type in ("tableau", "appstream"):
+            try:
+                from automations.day_orchestrator import chrome_guard
+                chrome_guard.close_stray_chrome(verbose=False)
+            except Exception:  # noqa: BLE001 — a guard must never crash the batch
+                pass
+
         # Readiness (Tableau-gated; AppStream/API immediately ready).
         # --simulate bypasses the gate to exercise the loop offline.
         rd = readiness.Readiness(True, "simulated ready") if simulate else cache.report_ready(r)
