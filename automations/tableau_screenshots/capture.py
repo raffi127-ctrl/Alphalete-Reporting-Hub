@@ -163,23 +163,34 @@ def inspect_view(page, spec: dict, *, verbose: bool = True) -> dict:
         except Exception:
             continue
 
-    # Open Download → Image and dump the dialog (radio options / sheet picker).
+    # Which tab is currently active/selected.
+    try:
+        active = viz.locator('[role="tab"][aria-selected="true"]')
+        if active.count() > 0:
+            info["active_tab"] = active.first.inner_text()[:60]
+    except Exception:
+        pass
+
+    # Open the Download flyout, dump its menu items, then click Image and dump the
+    # WHOLE frame text (so a sheet-picker dialog's options, if any, are captured —
+    # or, if Image downloads directly, we just see the dashboard text).
     try:
         _clear_error_toast(viz, page, verbose)
         viz.locator(_DL_BTN).click()
         page.wait_for_timeout(1500)
+        try:
+            menu = viz.locator('[data-tb-test-id*="download-flyout" i], '
+                               '[data-tb-test-id*="flyout" i]')
+            if menu.count() > 0:
+                info["download_menu"] = menu.first.inner_text(timeout=2000)[:400]
+        except Exception:
+            pass
         _click_image_item(viz, page)
         page.wait_for_timeout(3000)
-        for sel in ('[role="dialog"]', '[data-tb-test-id*="dialog" i]',
-                    '[data-tb-test-id*="export" i]'):
-            try:
-                dlg = viz.locator(sel)
-                if dlg.count() > 0:
-                    info["dialog"] = dlg.first.inner_text(timeout=3000)[:900]
-                    info["dialog_sel"] = sel
-                    break
-            except Exception:
-                continue
+        try:
+            info["dialog"] = viz.locator("body").inner_text(timeout=4000)[:3000]
+        except Exception as e:
+            info["dialog_err"] = f"body read: {type(e).__name__}: {str(e)[:80]}"
     except Exception as e:
         info["dialog_err"] = f"{type(e).__name__}: {str(e)[:120]}"
 

@@ -111,14 +111,15 @@ def main(argv=None) -> int:
                 ws = sh.worksheet("Inspect Out")
             except gspread.WorksheetNotFound:
                 ws = sh.add_worksheet(title="Inspect Out", rows=50, cols=6)
-            rows = [["id", "url", "tabs_sel", "tabs", "dialog_sel", "dialog/err"]]
+            rows = [["id", "active_tab", "download_menu", "tabs",
+                     "dialog/frame_text", "err"]]
             for i in infos:
                 rows.append([
-                    i.get("id", ""), i.get("url", ""), i.get("tabs_sel", ""),
+                    i.get("id", ""), i.get("active_tab", ""),
+                    i.get("download_menu", ""),
                     _json.dumps(i.get("tabs", []), ensure_ascii=False),
-                    i.get("dialog_sel", ""),
-                    (i.get("dialog", "") or i.get("dialog_err", "")
-                     or i.get("error", ""))[:40000],
+                    (i.get("dialog", ""))[:40000],
+                    (i.get("dialog_err", "") or i.get("error", "")),
                 ])
             ws.clear()
             ws.update(rows, "A1")
