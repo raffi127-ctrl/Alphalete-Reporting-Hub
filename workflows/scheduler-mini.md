@@ -230,6 +230,49 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.alphalete.day-orches
 launchctl print gui/$(id -u)/com.alphalete.day-orchestrator | grep -iE "state|next" | head
 ```
 
+## Every-10-min RingCentral wrap-up auto-read (com.alphalete.rc-autoread)
+
+Marks unread SMS on the RingCentral extension read once a thread has hit a known
+wrap-up message; leaves threads where the customer replied after the wrap-up
+unread. `deploy/rc_autoread_10min.sh` runs `automations.rc_autoread.run`. Pure
+RingCentral API — **no Sheet writes, no Slack, no session holder, no keys files.**
+RingCentral creds are baked into `automations/rc_autoread/run.py` (owner chose
+commit-as-is). Idempotent — only flips unread→read, so extra runs are harmless.
+
+**Cadence:** the plist fires every 10 min on the :00/:10/…/:50; the wrapper gates
+the active window to **7:00 AM–midnight CST** (mini is Central). To run 24/7,
+delete the WINDOW GATE block in the wrapper.
+
+Deploy + test + go-live (same shape as the others):
+```bash
+cd ~/recruiting-report
+git pull --ff-only origin main
+chmod +x deploy/rc_autoread_10min.sh
+mkdir -p ~/Library/LaunchAgents output/logs
+
+# Regenerate the plist with the mini's path
+python3 -c "import os; src=open(os.path.expanduser('~/recruiting-report/deploy/com.alphalete.rc-autoread.plist')).read(); home=os.path.expanduser('~'); src=src.replace('/Users/megan/1st Claude Folder', home+'/recruiting-report'); open(os.path.expanduser('~/Library/LaunchAgents/com.alphalete.rc-autoread.plist'),'w').write(src); print('PLIST WRITTEN')"
+plutil -lint ~/Library/LaunchAgents/com.alphalete.rc-autoread.plist
+
+# TEST FIRST — dry run, no messages marked:
+bash deploy/rc_autoread_10min.sh --dry-run
+ls -t output/logs/rc-autoread-*.log | head -1 | xargs tail -n 20
+
+# GO LIVE:
+launchctl enable gui/$(id -u)/com.alphalete.rc-autoread
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.alphalete.rc-autoread.plist
+launchctl print gui/$(id -u)/com.alphalete.rc-autoread | grep -iE "state|next" | head
+```
+Logs: `output/logs/rc-autoread-YYYY-MM-DD.log` (one per day, every run appends)
+plus `output/logs/rc-autoread.launchd.{out,err}.log`.
+
+Reload after a change: `launchctl bootout gui/$(id -u)/com.alphalete.rc-autoread`,
+re-run the python-replace step, then `bootstrap` again.
+
+**Note:** if you run this on the mini AND keep Dylan's local Windows task, both
+will mark the same messages read — harmless (idempotent), just redundant. Pick
+one as the primary; the mini is the always-on choice.
+
 ## Notes
 - A run-time trigger only fires if the mini is awake — keep `sudo pmset -c sleep 0` set.
 - If the mini is asleep/off at 3am, launchd runs the job at next wake (StartCalendarInterval is catch-up). Keep it awake to fire on time.

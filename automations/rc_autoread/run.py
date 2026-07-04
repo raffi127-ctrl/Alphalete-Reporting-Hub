@@ -1,0 +1,226 @@
+"""RingCentral wrap-up auto-read — CLI entry for the Hub.
+
+Marks unread SMS as read once a conversation has reached a known wrap-up
+message, unless the customer replied after the wrap-up. Prints a plain
+text log to stdout (the Hub captures it) and ends with the canonical
+'=== done ===' success marker the dashboard scans for.
+
+Usage:
+  python -m automations.rc_autoread.run            # mark for real
+  python -m automations.rc_autoread.run --dry-run  # show what it WOULD mark
+
+Cross-platform: no file paths, no interactive prompts — stdout only.
+"""
+from __future__ import annotations
+
+import argparse
+import sys
+import time
+
+import requests
+
+# --- RingCentral credentials (personal extension; committed as-is per owner) ---
+CLIENT_ID = "7pKHk3Kr9uXefA76340gKo"
+CLIENT_SECRET = "4VeICLfeiUceyIQeyndbUSYBLDDt1pxYpewlfCGLAj2w"
+JWT_TOKEN = "eyJraWQiOiI4NzYyZjU5OGQwNTk0NGRiODZiZjVjYTk3ODA0NzYwOCIsInR5cCI6IkpXVCIsImFsZyI6IlJTMjU2In0.eyJhdWQiOiJodHRwczovL3BsYXRmb3JtLnJpbmdjZW50cmFsLmNvbS9yZXN0YXBpL29hdXRoL3Rva2VuIiwic3ViIjoiNjI2NzI0OTEwMTYiLCJpc3MiOiJodHRwczovL3BsYXRmb3JtLnJpbmdjZW50cmFsLmNvbSIsImV4cCI6MzkzMDI1MzA2NywiaWF0IjoxNzgyNzY5NDIwLCJqdGkiOiJLaXRCR1NyYVNwQzRFZ3pPUkFSdjFRIn0.eHw-Ws56nKIaITK8Ir9ciy1nXImrTOXqRwCRbB06lMiTpaJ1UyBM50lmAHl4jjKGPrENRz6p6InkB8Uz2r94-GZn-DAxMTr-pVEqXDaOj7lXExNJcw_Q5uJdfbFfrOI0MzSwuuEJJqJAXjNG9qeZw0hluXUqL0wlsNlE_JLGMRpSk0FxI4vun8qCCL7oCmuXZO9OzP9j0c3ikDnJ4T2vFQUC5YLx-CUZ01ITUbtq8lw9FUrY1JEK6ZooOVMlLQwjMJL08Ks2_wjl-Er0w7_NqZbkqbvkWHNc7bOlgj7fMV9b3wNJasdaWy78wdUtMnzSwCefgDl1o2_9WGY5Pb_1KA"
+EXTENSION_ID = "62883924016"
+MY_NUMBER = "+12148456450"
+BASE_URL = "https://platform.ringcentral.com"
+
+WRAP_UP_PHRASES = [
+    # Universal / multi-template
+    "AT&T D2D Tower Line",
+    "Thanks for setting up service with me",
+    "SaraPlus",
+    "rewardcenter.att.com",
+    "DO NOT CALL CORPORATE",
+    # Self Install (older)
+    "Please message in this group chat if you have any questions",
+    "internet must be activated after 2:00PM",
+    "bgw320-installation",
+    # Self Install (newer)
+    "Please first use this group chat if you have any questions or need assistance",
+    "Your self-install kit is scheduled to arrive",
+    # Tech Install
+    "Please reach out here in this group chat",
+    "Your installation date and time is in the screenshot",
+    "tech will call/message 30 minutes prior to arrival",
+    # Cell Phones (older)
+    "Please reach out here in this group message",
+    "rewardcenteroffers.com",
+    "nextqr.com/tradein",
+    "activate your phones after you receive them",
+    # Cell Phones (newer)
+    "Please use this group message if you have any questions or need assistance",
+    "SOMEONE MUST BE HOME TO SIGN FOR THE DELIVERY",
+    # DirecTV (older)
+    "DirecTV Wrap Up",
+    "registered your DirecTV",
+    "begin streaming as soon as you desire",
+    "Gemini when it arrives",
+    "stream on your Samsung or Vizio",
+    # DirecTV (newer)
+    "Your DirecTV billing begins once you first start streaming",
+    # Installation reminders
+    "just a reminder that today is your fiber installation",
+    "just a reminder that tomorrow is your fiber installation",
+    "fiber installation",
+    "today's installation",
+]
+
+
+def get_access_token(logfn=print):
+    logfn("Connecting to RingCentral...")
+    resp = requests.post(
+        f"{BASE_URL}/restapi/oauth/token",
+        auth=(CLIENT_ID, CLIENT_SECRET),
+        data={"grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer", "assertion": JWT_TOKEN},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json()["access_token"]
+
+
+def get_all_unread_sms(token):
+    headers = {"Authorization": f"Bearer {token}"}
+    all_records = []
+    page = 1
+    while True:
+        resp = requests.get(
+            f"{BASE_URL}/restapi/v1.0/account/~/extension/{EXTENSION_ID}/message-store",
+            headers=headers,
+            params={"messageType": "SMS", "readStatus": "Unread", "perPage": 100, "page": page},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        all_records.extend(data.get("records", []))
+        nav = data.get("navigation", {})
+        if not nav.get("nextPage"):
+            break
+        page += 1
+    return all_records
+
+
+def get_all_conversation_messages(token, conversation_id):
+    headers = {"Authorization": f"Bearer {token}"}
+    all_records = []
+    page = 1
+    while True:
+        resp = requests.get(
+            f"{BASE_URL}/restapi/v1.0/account/~/extension/{EXTENSION_ID}/message-store",
+            headers=headers,
+            params={"messageType": "SMS", "conversationId": conversation_id, "perPage": 100, "page": page},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        all_records.extend(data.get("records", []))
+        nav = data.get("navigation", {})
+        if not nav.get("nextPage"):
+            break
+        page += 1
+    return all_records
+
+
+def mark_read(token, msg_id, logfn=print):
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    for attempt in range(5):
+        resp = requests.put(
+            f"{BASE_URL}/restapi/v1.0/account/~/extension/{EXTENSION_ID}/message-store/{msg_id}",
+            headers=headers,
+            json={"readStatus": "Read"},
+            timeout=15,
+        )
+        if resp.status_code == 429:
+            wait = int(resp.headers.get("Retry-After", 10))
+            logfn(f"Rate limited, waiting {wait} seconds...")
+            time.sleep(wait)
+            continue
+        resp.raise_for_status()
+        time.sleep(0.3)
+        return
+    logfn(f"Failed to mark {msg_id} after retries, skipping.")
+
+
+def run_autoread(dry_run: bool = False, logfn=print) -> dict:
+    """Scan the extension and mark wrapped-up conversations read.
+    Returns a summary dict. When dry_run, reports what it WOULD mark
+    without changing anything."""
+    logfn("Script starting..." + (" (DRY RUN — nothing will be marked)" if dry_run else ""))
+    token = get_access_token(logfn)
+    logfn("Authenticated!")
+    messages = get_all_unread_sms(token)
+    logfn(f"Total unread SMS found (all pages): {len(messages)}")
+
+    phrases_lower = [p.lower() for p in WRAP_UP_PHRASES]
+    matched_conversations = set()
+    marked = 0
+    skipped = 0
+
+    for msg in messages:
+        body = (msg.get("subject", "") or "").strip()
+        body_lower = body.lower()
+        has_attachments = len(msg.get("attachments", [])) > 0
+        phrase_match = any(phrase in body_lower for phrase in phrases_lower)
+        image_only = has_attachments and body == "" and msg.get("from", {}).get("phoneNumber") != MY_NUMBER
+
+        if not phrase_match and not image_only:
+            continue
+
+        conv_id = msg.get("conversationId")
+        rep_number = msg.get("from", {}).get("phoneNumber")
+        wrapup_time = msg.get("creationTime", "")
+
+        if conv_id and conv_id not in matched_conversations:
+            all_msgs = get_all_conversation_messages(token, conv_id)
+
+            # For image-only messages, only treat as wrap-up if it's in the first 2 messages
+            if image_only and not phrase_match:
+                all_msgs_sorted = sorted(all_msgs, key=lambda m: m.get("creationTime", ""))
+                msg_position = next(
+                    (i for i, m in enumerate(all_msgs_sorted) if m.get("id") == msg.get("id")), None
+                )
+                if msg_position is None or msg_position > 1:
+                    continue
+
+            matched_conversations.add(conv_id)
+
+            customer_replied = any(
+                m.get("from", {}).get("phoneNumber") not in (rep_number, MY_NUMBER)
+                and m.get("creationTime", "") > wrapup_time
+                for m in all_msgs
+            )
+            if customer_replied:
+                logfn(f"Skipping conversation {conv_id} - customer replied after wrap-up")
+                skipped += 1
+            else:
+                for m in all_msgs:
+                    if m.get("readStatus") == "Unread":
+                        if dry_run:
+                            logfn(f"WOULD mark as read: {m['id']}")
+                        else:
+                            mark_read(token, m["id"], logfn)
+                            logfn(f"Marked as read: {m['id']}")
+                        marked += 1
+
+    verb = "would be marked" if dry_run else "marked"
+    logfn(f"Done. {marked} message(s) {verb} as read, "
+          f"{skipped} conversation(s) skipped due to customer reply.")
+    return {"marked": marked, "skipped": skipped, "unread_scanned": len(messages)}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="RingCentral wrap-up auto-read")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="Show what it would mark without changing anything")
+    args = ap.parse_args()
+
+    run_autoread(dry_run=args.dry_run)
+    # Canonical Hub success marker (dashboard scans the whole log for this).
+    print("=== done (dry-run) ===" if args.dry_run else "=== done ===")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
