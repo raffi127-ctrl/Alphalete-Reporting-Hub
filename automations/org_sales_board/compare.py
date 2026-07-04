@@ -58,15 +58,21 @@ def _classify(c, v):
     return "mismatch"                  # GLITCH: both have values, differ
 
 
-def check_formula_drift(logfn=print) -> list:
+def check_formula_drift(cS, vS, aliases, logfn=print) -> list:
     """Flag cells the automation should keep as LIVE formulas but wrote as a
     static value — the 'clobbered formula' regression (e.g. a captainship
     leaderboard total written as a frozen number instead of =SUMIF, fixed
-    2026-06-14). Positional vs the VA tab (both tabs are structurally identical,
-    and formula-PRESENCE at a position doesn't depend on who's sorted into the
-    row, so sort-order can't create false positives).
+    2026-06-14).
 
-    Reports ONLY 'VA has a formula here, copy has a static non-blank value' —
+    CONTENT-MATCHED (2026-07-04): pairs each copy row to its VA twin by content
+    (name/label/finder-order via full_compare.content_row_map), then compares
+    formula-PRESENCE at the twin — NEVER at the same row number. The two tabs
+    carry different counts of history/spacer rows, so a same-row scan lined a
+    static rep/history cell up against a VA formula row and cried 'drift' on
+    ~99% false positives. Only content-matched structural rows are checked; a row
+    with no twin is skipped (never flagged by position).
+
+    Reports ONLY 'VA twin has a formula here, copy has a static non-blank value' —
     the real drift signal. Deliberately ignores:
       • col A (rank — intentionally static, re-ranked correctly every run)
       • copy == 'NS' (intended no-sales marker over a VA =SUM that would be 0)
@@ -74,11 +80,13 @@ def check_formula_drift(logfn=print) -> list:
       • 'both are formulas but differ' (those are equivalent: =SUM(C:I) vs VA's
         explicit list, and delta =SUMIFs that differ only by the sorted name)
     Read-only. Returns the flagged cell list."""
+    from automations.org_sales_board.full_compare import content_row_map
     sh = open_by_key(SHEET_ID)
     cF = _retry(lambda: sh.worksheet(SANDBOX_TAB).get_all_values(
         value_render_option="FORMULA"))
     vF = _retry(lambda: sh.worksheet(PROD_TAB).get_all_values(
         value_render_option="FORMULA"))
+    row_map = content_row_map(cS, vS, aliases)   # copy 1-based row -> VA 1-based row
 
     def isf(x):
         return isinstance(x, str) and x.startswith("=")
@@ -89,14 +97,16 @@ def check_formula_drift(logfn=print) -> list:
         return str(g[r][c]) if (0 <= r < len(g) and 0 <= c < len(g[r])) else ""
 
     flagged = []
-    for r in range(min(len(cF), len(vF))):
-        width = max(len(cF[r]) if r < len(cF) else 0,
-                    len(vF[r]) if r < len(vF) else 0)
-        for c in range(1, width):          # skip col A (index 0) = rank
-            vv = fcell(vF, r, c)
-            cc = fcell(cF, r, c)
+    for cr, vr in sorted(row_map.items()):
+        ci, vi = cr - 1, vr - 1                 # 1-based rows -> 0-based grid idx
+        width = max(len(cF[ci]) if 0 <= ci < len(cF) else 0,
+                    len(vF[vi]) if 0 <= vi < len(vF) else 0)
+        for c in range(1, width):              # skip col A (index 0) = rank
+            vv = fcell(vF, vi, c)
+            cc = fcell(cF, ci, c)
             if isf(vv) and not isf(cc) and cc.strip() and cc.strip().upper() != "NS":
-                flagged.append((r + 1, c + 1, fcell(vF, r, 1), cc, vv))
+                flagged.append((cr, c + 1, fcell(vF, vi, 1) or fcell(vF, vi, 0),
+                                cc, vv))
     if flagged:
         logfn(f"  ❌ FORMULA DRIFT — {len(flagged)} cell(s) the report wrote as a "
               f"static value where the VA tab keeps a live formula "
@@ -192,7 +202,7 @@ def run_compare(logfn=print) -> dict:
           f"automation-ahead={tally['auto_ahead']}")
     # Formula-region integrity: catch any live VA formula the report clobbered
     # with a static value (separate from the value compare above).
-    formula_drift = check_formula_drift(logfn)
+    formula_drift = check_formula_drift(copy, va, aliases, logfn)
     # DERIVED / bottom auto-formula tables (leaderboards, delta tables, ORG +
     # campaign history rows, product summaries, section running totals). The value
     # compare above only reaches the raw daily cells; this reaches the totals a
