@@ -59,6 +59,10 @@ def main(argv=None) -> int:
                     help="Comma-separated Slack user id(s)/emails/names. Capture "
                          "then DM the full thread (header + real images) to them "
                          "for review, posting NOTHING to the channels.")
+    ap.add_argument("--inspect", action="store_true",
+                    help="Read-only: dump each view's dashboard tab strip + "
+                         "Download→Image dialog so we can target a single page. "
+                         "No capture, no post.")
     ap.add_argument("--headless", action="store_true",
                     help="Run the browser headless (default: headed, matches the "
                          "other Tableau reports + renders more reliably).")
@@ -84,6 +88,17 @@ def main(argv=None) -> int:
     # allow_form_login=False -> unattended reuse-only; fails fast (with the
     # re-export message) if the warm session is cold, instead of touching the
     # Cloudflare Turnstile.
+    if args.inspect:
+        with tableau_session(headless=args.headless, allow_form_login=False,
+                             verbose=True) as page:
+            for spec in selected:
+                try:
+                    cap.inspect_view(page, spec, verbose=True)
+                except Exception as e:
+                    print(f"INSPECT {spec['id']} ERROR: "
+                          f"{type(e).__name__}: {str(e)[:140]}", flush=True)
+        return 0
+
     with tableau_session(headless=args.headless, allow_form_login=False,
                          verbose=True) as page:
         for spec in selected:

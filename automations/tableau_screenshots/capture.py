@@ -134,6 +134,59 @@ def _dims(path: Path) -> str:
         return "?x?"
 
 
+def inspect_view(page, spec: dict, *, verbose: bool = True) -> dict:
+    """Read-only structure probe: navigate to the view, then dump the dashboard
+    TAB strip names and the Download → Image dialog contents, so we can see how
+    to target a SINGLE page (separate tab URL vs 'This View' vs a sheet picker).
+    No download."""
+    import json
+    try:
+        page.goto("about:blank", timeout=10_000)
+    except Exception:
+        pass
+    page.goto(spec["url"], wait_until="domcontentloaded")
+    viz = page.frame_locator(_IFRAME)
+    viz.locator(_DL_BTN).wait_for(state="visible", timeout=120_000)
+    page.wait_for_timeout(15_000)
+    info: dict = {"id": spec["id"], "url": spec["url"], "tabs": [], "dialog": ""}
+
+    # Dashboard tab strip (the "PAGE 1 / PAGE 2 / PAGE 3" tabs, if any).
+    for sel in ('[role="tab"]', '[data-tb-test-id*="Tabs" i] [role="tab"]',
+                '.tabTabControl [role="tab"]', '.tab-tabs [role="tab"]'):
+        try:
+            loc = viz.locator(sel)
+            n = loc.count()
+            if n:
+                info["tabs"] = [loc.nth(i).inner_text()[:60] for i in range(min(n, 20))]
+                info["tabs_sel"] = sel
+                break
+        except Exception:
+            continue
+
+    # Open Download → Image and dump the dialog (radio options / sheet picker).
+    try:
+        _clear_error_toast(viz, page, verbose)
+        viz.locator(_DL_BTN).click()
+        page.wait_for_timeout(1500)
+        _click_image_item(viz, page)
+        page.wait_for_timeout(3000)
+        for sel in ('[role="dialog"]', '[data-tb-test-id*="dialog" i]',
+                    '[data-tb-test-id*="export" i]'):
+            try:
+                dlg = viz.locator(sel)
+                if dlg.count() > 0:
+                    info["dialog"] = dlg.first.inner_text(timeout=3000)[:900]
+                    info["dialog_sel"] = sel
+                    break
+            except Exception:
+                continue
+    except Exception as e:
+        info["dialog_err"] = f"{type(e).__name__}: {str(e)[:120]}"
+
+    print("INSPECT " + json.dumps(info, ensure_ascii=False), flush=True)
+    return info
+
+
 def capture_page(page, spec: dict, out_dir: Path, *,
                  hydrate_ms: int = 20_000,
                  force_crop: str | None = None,   # accepted for CLI compat; unused
