@@ -2683,6 +2683,9 @@ AUTOMATED_REPORTS = [
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1zoRQRhvkpu7Vvw4TsC60ufja9XwpUR8hHvV7FyzezMY/edit"),
         "assignees": ["Fully Automated Alphalete Reports"],
+        # Self-running background job (noon launchd) — keep it out of the "due
+        # today / not completed" tallies; it doesn't report completion to the Hub.
+        "self_scheduled": True,
         "schedule": {
             "frequency": "daily",
             "time": "12:00 PM",
@@ -2734,6 +2737,9 @@ AUTOMATED_REPORTS = [
         # Runs on its own 10-min launchd timer — hide the DUE-TODAY + schedule
         # pills on the report page (cadence is in the breakdown).
         "hide_schedule": True,
+        # Self-running background job: never reports a per-day completion to the
+        # Hub, so keep it out of the "due today / not completed" tallies.
+        "self_scheduled": True,
         "schedule": {
             "frequency": "daily",
             "time": "7:00 AM",
@@ -8125,7 +8131,8 @@ with st.sidebar:
             my_reports = [r for r in AUTOMATED_REPORTS if not r.get("assignees")]
         else:
             my_reports = [r for r in AUTOMATED_REPORTS if st.session_state.user in r.get("assignees", [])]
-        due_today_for_me = [r for r in my_reports if _is_due_today(r, today)]
+        due_today_for_me = [r for r in my_reports
+                            if _is_due_today(r, today) and not r.get("self_scheduled")]
         if not due_today_for_me:
             st.caption("☕ Nothing due today.")
         else:
@@ -8215,7 +8222,8 @@ if st.session_state.view == "home":
     )
     # Run-count for the date header: of the reports due to run today,
     # how many have a successful run logged.
-    _due_today = [r for r in AUTOMATED_REPORTS if _is_due_today(r, today)]
+    _due_today = [r for r in AUTOMATED_REPORTS
+                  if _is_due_today(r, today) and not r.get("self_scheduled")]
     _ran_today = sum(1 for r in _due_today if _was_run_successfully_today(r["id"], today))
     _due_n = len(_due_today)
     st.markdown(f"""
@@ -8262,6 +8270,7 @@ if st.session_state.view == "home":
                     due_count = sum(
                         1 for r in my_reports
                         if _is_due_today(r, today)
+                        and not r.get("self_scheduled")
                         and not _was_run_successfully_today(r["id"], today)
                     )
                 with st.container(border=True):
