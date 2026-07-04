@@ -1,186 +1,141 @@
-"""Capture a Tableau view as a PNG on an already-authenticated patchright page.
+"""Capture a Tableau view as a full-board PNG on an authenticated patchright page.
 
-This is the one genuinely new capability in the module. Auth + the warm session
-are entirely reused (tableau_patchright.tableau_session yields the SSO'd page);
-here we only: navigate to a view URL, wait for the viz to finish PAINTING, and
-screenshot it.
+Approach (revised 2026-07-04): drive Tableau's own **Download -> Image** rather
+than screenshotting the browser. Why: the Tableau viz renders inside an
+`iframe[title="Data Visualization"]` and paints its big tables in an INTERNAL
+scroll box, so a page/full_page screenshot clips the bottom rows of the tall
+boards (the D2D pagers, the consolidated board). Tableau's image export renders
+the ENTIRE dashboard at its authored size -- full rows, no toolbar, no cutoff --
+which is what makes Jolie's posts look complete.
 
-Why a paint-settle loop (borrowed from captainship_drafts/sheet_shot.py): a
-Tableau canvas keeps repainting for seconds AFTER the URL's load event -- it
-draws the frame, then the marks, then text as the query returns. A fixed sleep
-either clips a half-drawn viz or wastes time. Frame-comparison (screenshot until
-consecutive frames are byte-identical) + an ink gate (reject a blank/near-blank
-frame) is what reliably catches "done".
+Reuses the Download-dialog machinery proven in recruiting_report.opt_phase
+(the iframe selector, the toolbar Download button, the error-toast clear). The
+only differences vs the crosstab path: pick the **Image** menu item, and there's
+no worksheet picker -- Image downloads the whole dashboard directly.
 
-Cropping is deliberately configurable + defensive because it's the one thing
-that needs live tuning on the mini:
-  crop="full"   -> full_page screenshot (always captures everything; safe default
-                   for the first mini run so we SEE the whole board).
-  crop="canvas" -> clip to the detected Tableau viz element; falls back to
-                   full_page with a printed warning if the element isn't found.
+Fallback: if image-export fails (button disabled / menu missing), fall back to a
+full_page screenshot so a run still yields something, flagged in the log.
 """
 from __future__ import annotations
 
-import io
-import re
-import time
 from pathlib import Path
 
-# Candidate selectors for the Tableau viz container, largest-visible wins. Tableau
-# Online's DOM changes across versions, so we try several and pick by area rather
-# than pin one brittle selector.
-_VIZ_SELECTORS = [
-    ".tab-viz",
-    "#tabZoneContainer",
-    "[class*='tableauViz']",
-    ".tabCanvas",
-    "#view",
-    "div[role='application']",
-]
-
-# A rendered frame with fewer "ink" (dark) pixels than this is still blank/loading.
-_INK_LUMA = 110
-_MIN_INK_PX = 1500
-
-
-def _ink_pixels(png: bytes) -> int:
-    """Count dark pixels in a PNG (proxy for 'has the table text painted yet')."""
-    from PIL import Image
-    hist = Image.open(io.BytesIO(png)).convert("L").histogram()
-    return sum(hist[:_INK_LUMA])
+_IFRAME = 'iframe[title="Data Visualization"]'
+_DL_BTN = '[data-tb-test-id="viz-viewer-toolbar-button-download"]'
+# By analogy with the confirmed crosstab item id
+# ('download-flyout-download-crosstab-MenuItem'); text fallback below in case the
+# id shifts across Tableau versions.
+_IMAGE_ITEM = '[data-tb-test-id="download-flyout-download-image-MenuItem"]'
 
 
 def _sanitize(name: str) -> str:
-    """Filesystem-safe file stem; keep it readable (spaces ok, drop path chars)."""
+    import re
     return re.sub(r"[/\\:*?\"<>|]+", "-", name).strip()
 
 
-def _viz_clip(page):
-    """Bounding box {x,y,width,height} of the best-guess viz element, or None.
-
-    Only returns a clip fully inside the current viewport -- page.screenshot(clip=)
-    errors on a rect that spills past the viewport, and for an oversized viz
-    full_page is the right capture anyway."""
+def _clear_error_toast(viz, page, verbose: bool) -> None:
+    """Dismiss a Tableau viz error toast that overlays + intercepts the toolbar
+    (mirrors opt_phase._clear_error_toast). No-op when there's no toast."""
+    toast = viz.locator('[data-tb-test-id^="banner-error-toast"]')
     try:
-        vp = page.viewport_size or {"width": 1680, "height": 1280}
-        box = page.evaluate(
-            """(sels) => {
-                let best = null, bestA = 0;
-                for (const s of sels) {
-                  for (const el of document.querySelectorAll(s)) {
-                    const r = el.getBoundingClientRect();
-                    const a = r.width * r.height;
-                    if (a > bestA && r.width > 200 && r.height > 200) {
-                      bestA = a;
-                      best = {x: r.x, y: r.y, width: r.width, height: r.height};
-                    }
-                  }
-                }
-                return best;
-            }""",
-            _VIZ_SELECTORS,
-        )
+        if toast.count() == 0:
+            return
     except Exception:
-        return None
-    if not box:
-        return None
-    # Reject clips that spill outside the viewport (oversized viz -> use full_page).
-    if (box["x"] < -1 or box["y"] < -1
-            or box["x"] + box["width"] > vp["width"] + 1
-            or box["y"] + box["height"] > vp["height"] + 1):
-        return None
-    return box
-
-
-def _wait_ready(page, *, timeout_s: float, verbose: bool) -> None:
-    """Best-effort wait for a Tableau viz container to exist, then for the network
-    to go quiet. Non-fatal: the paint-settle loop below is the real gate."""
-    deadline = time.time() + timeout_s
-    for sel in _VIZ_SELECTORS:
-        remaining = deadline - time.time()
-        if remaining <= 0:
-            break
+        return
+    try:
+        msg = toast.first.inner_text(timeout=2_000).strip()
+    except Exception:
+        msg = "(toast text unreadable)"
+    if verbose:
+        print(f"   ⚠ Tableau error toast over Download: {msg!r} — dismissing",
+              flush=True)
+    for sel in ('button[aria-label*="lose" i]', 'button[aria-label*="ismiss" i]',
+                '[data-tb-test-id*="dismiss" i]', '[data-tb-test-id*="close" i]'):
         try:
-            page.wait_for_selector(sel, timeout=int(remaining * 1000), state="attached")
-            break
+            btn = toast.locator(sel)
+            if btn.count() > 0:
+                btn.first.click(timeout=3_000)
+                page.wait_for_timeout(500)
+                return
         except Exception:
             continue
     try:
-        page.wait_for_load_state("networkidle", timeout=15_000)
+        toast.first.evaluate(
+            "el => { (el.closest('.tab-shared-widget-toaster') || el).remove(); }")
     except Exception:
         pass
+    page.wait_for_timeout(500)
 
 
-def _shoot(page, clip):
-    return page.screenshot(clip=clip) if clip else page.screenshot(full_page=True)
-
-
-def capture_page(page, spec: dict, out_dir: Path, *,
-                 settle_ms: int = 1400,
-                 stable_frames: int = 3,
-                 settle_timeout_s: float = 45.0,
-                 ready_timeout_s: float = 90.0,
-                 force_crop: str | None = None,
-                 verbose: bool = True) -> Path:
-    """Navigate `page` to spec['url'], wait for the viz to settle, save a PNG.
-
-    Returns the written path. Raises on a genuinely failed render (never painted /
-    stayed blank) so the caller can skip+flag that tracker.
-
-    force_crop overrides spec['crop'] for the whole run (e.g. --full on the first
-    mini pass so we see the entire board before tightening the canvas crop).
-    """
-    out_dir.mkdir(parents=True, exist_ok=True)
-    crop = force_crop or spec.get("crop", "canvas")
-    title = spec["title"]
-
-    if verbose:
-        print(f"-> [{spec['id']}] {spec['url']}", flush=True)
-    # about:blank first so a re-used page always triggers a real load event.
+def _click_image_item(viz, page, verbose: bool) -> None:
+    """Click the Download flyout's 'Image' item -- by test-id, then by text."""
+    item = viz.locator(_IMAGE_ITEM)
     try:
-        page.goto("about:blank")
+        if item.count() > 0:
+            item.first.click(timeout=5_000)
+            return
+    except Exception:
+        pass
+    # Text fallback: the flyout item literally reads 'Image'.
+    viz.get_by_text("Image", exact=True).first.click(timeout=5_000)
+
+
+def _download_image(page, spec: dict, out_path: Path, *,
+                    hydrate_ms: int, verbose: bool) -> Path:
+    try:
+        page.goto("about:blank", timeout=10_000)
     except Exception:
         pass
     page.goto(spec["url"], wait_until="domcontentloaded")
-    _wait_ready(page, timeout_s=ready_timeout_s, verbose=verbose)
 
-    # Resolve the clip once the layout has settled enough to measure it.
-    page.wait_for_timeout(settle_ms)
-    clip = _viz_clip(page) if crop == "canvas" else None
-    if crop == "canvas" and clip is None and verbose:
-        print(f"   (canvas element not found -- falling back to full_page)", flush=True)
+    viz = page.frame_locator(_IFRAME)
+    dl_btn = viz.locator(_DL_BTN)
+    dl_btn.wait_for(state="visible", timeout=120_000)
+    page.wait_for_timeout(hydrate_ms)          # let the data hydrate behind the viz
 
-    # Paint-settle: screenshot until consecutive frames are identical, gated on
-    # the frame actually having ink (table text painted).
-    deadline = time.time() + settle_timeout_s
-    prev, same, last = None, 0, None
-    while True:
-        cur = _shoot(page, clip)
-        last = cur
-        if _ink_pixels(cur) >= _MIN_INK_PX:
-            if prev is not None and cur == prev:
-                same += 1
-                if same >= (stable_frames - 1):
-                    break
-            else:
-                same = 0
-            prev = cur
-        if time.time() > deadline:
-            if _ink_pixels(last) < _MIN_INK_PX:
-                raise RuntimeError(
-                    f"{spec['id']}: viz never painted (blank after "
-                    f"{settle_timeout_s:g}s) -- check the URL / session.")
-            if verbose:
-                print(f"   (settle timeout -- using best-effort frame)", flush=True)
-            break
-        page.wait_for_timeout(1100)
+    _clear_error_toast(viz, page, verbose)
+    dl_btn.click()
+    page.wait_for_timeout(1800)                # flyout opens
 
-    stem = _sanitize(title)
-    out_path = out_dir / f"{stem}.png"
-    out_path.write_bytes(last)
+    # Image downloads the whole dashboard directly (no worksheet picker).
+    with page.expect_download(timeout=180_000) as dl_info:
+        _click_image_item(viz, page, verbose)
+    dl_info.value.save_as(str(out_path))
     if verbose:
-        kb = len(last) // 1024
-        print(f"   saved {out_path.name} ({kb} KB, crop={crop}"
-              f"{'/full-fallback' if crop == 'canvas' and clip is None else ''})",
-              flush=True)
+        print(f"   saved {out_path.name} "
+              f"({out_path.stat().st_size // 1024} KB, Download→Image)", flush=True)
     return out_path
+
+
+def _fallback_screenshot(page, out_path: Path, verbose: bool) -> Path:
+    """Last resort so a run isn't empty: full_page screenshot (may clip tall
+    boards -- logged so we know it happened)."""
+    if verbose:
+        print("   ⚠ image-export failed — falling back to full_page screenshot "
+              "(may clip tall boards)", flush=True)
+    page.screenshot(path=str(out_path), full_page=True)
+    return out_path
+
+
+def capture_page(page, spec: dict, out_dir: Path, *,
+                 hydrate_ms: int = 20_000,
+                 force_crop: str | None = None,   # accepted for CLI compat; unused
+                 verbose: bool = True) -> Path:
+    """Navigate `page` to spec['url'] and save the full board as a PNG via
+    Tableau's Download → Image (screenshot fallback). Returns the written path.
+
+    Raises only if BOTH image-export and the screenshot fallback fail, so the
+    caller can skip+flag that tracker.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{_sanitize(spec['title'])}.png"
+    if verbose:
+        print(f"-> [{spec['id']}] {spec['url']}", flush=True)
+    try:
+        return _download_image(page, spec, out_path,
+                               hydrate_ms=hydrate_ms, verbose=verbose)
+    except Exception as e:
+        if verbose:
+            print(f"   image-export error: {type(e).__name__}: "
+                  f"{str(e).splitlines()[0][:120]}", flush=True)
+        return _fallback_screenshot(page, out_path, verbose)

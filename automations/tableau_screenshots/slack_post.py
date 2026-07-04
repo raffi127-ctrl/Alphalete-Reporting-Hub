@@ -130,7 +130,10 @@ def preview_dm(captures: list, pages: list, users: list,
                 "replies": [{"file": Path(p).name,
                              "caption": reply_caption(s, today)}
                             for s, p in captures]}
-    client = smp._bot_client()
+    # Use the USER token (_client) -- on the mini that's Lucy, and it's the token
+    # rashad_metrics' review run already uses to DM Megan + Raf (the bot token
+    # isn't installed on the mini).
+    client = smp._client()
     user_ids = [smp._resolve_user_id(client, u) for u in users]
     try:
         channel = client.conversations_open(
