@@ -2660,7 +2660,10 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "brand-health-audit",
-        "name": "Brand Health Audit",
+        # Non-breaking spaces keep "(12 CST Daily)" together so the cadence
+        # wraps as one clean unit onto line 2 of the strip pill (same trick as
+        # rc-autoread's "(Q 10 Min)").
+        "name": "Brand Health Audit (12 CST Daily)",
         "creator": "Megan",
         "emoji": "🩺",
         "color": "#6366F1",
