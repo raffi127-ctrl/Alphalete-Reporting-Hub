@@ -1,35 +1,35 @@
-"""Capture a Tableau view as a full-board PNG on an authenticated patchright page.
+"""Capture a Tableau view as a full-board PNG via Tableau's own Download → Image.
 
-Approach (revised 2026-07-04): drive Tableau's own **Download -> Image** rather
-than screenshotting the browser. Why: the Tableau viz renders inside an
-`iframe[title="Data Visualization"]` and paints its big tables in an INTERNAL
-scroll box, so a page/full_page screenshot clips the bottom rows of the tall
-boards (the D2D pagers, the consolidated board). Tableau's image export renders
-the ENTIRE dashboard at its authored size -- full rows, no toolbar, no cutoff --
-which is what makes Jolie's posts look complete.
+Target framing (Jolie's posts, confirmed 2026-07-04): the ENTIRE dashboard — its
+blue title bar, the filter/parameter row, and every table/rep row — with NO
+browser chrome, NO Tableau viewer toolbar, NO gray canvas, and no clipping.
+That is exactly what Tableau's Download → Image produces, so this module drives
+that menu and saves the resulting PNG. There is deliberately NO screenshot
+fallback: a page/full_page screenshot drags in the browser + toolbar + gray
+canvas ("too much") and clips the tall boards, so on failure we RAISE and let the
+caller skip+flag that tracker rather than post a wrong-looking image.
 
-Reuses the Download-dialog machinery proven in recruiting_report.opt_phase
-(the iframe selector, the toolbar Download button, the error-toast clear). The
-only differences vs the crosstab path: pick the **Image** menu item, and there's
-no worksheet picker -- Image downloads the whole dashboard directly.
-
-Fallback: if image-export fails (button disabled / menu missing), fall back to a
-full_page screenshot so a run still yields something, flagged in the log.
+The viz lives inside `iframe[title="Data Visualization"]`. We reuse the Download
+machinery proven in recruiting_report.opt_phase (toolbar button, error-toast
+clear) and add a retry + a tolerant Image-menu / export-dialog path.
 """
 from __future__ import annotations
 
+import re
+import time
 from pathlib import Path
 
 _IFRAME = 'iframe[title="Data Visualization"]'
 _DL_BTN = '[data-tb-test-id="viz-viewer-toolbar-button-download"]'
-# By analogy with the confirmed crosstab item id
-# ('download-flyout-download-crosstab-MenuItem'); text fallback below in case the
-# id shifts across Tableau versions.
+# Confirmed sibling id is 'download-flyout-download-crosstab-MenuItem'; Image is
+# the analogous item. Text fallback below in case the id shifts across versions.
 _IMAGE_ITEM = '[data-tb-test-id="download-flyout-download-image-MenuItem"]'
+
+MAX_ATTEMPTS = 3
+BACKOFF_S = 4
 
 
 def _sanitize(name: str) -> str:
-    import re
     return re.sub(r"[/\\:*?\"<>|]+", "-", name).strip()
 
 
@@ -67,8 +67,8 @@ def _clear_error_toast(viz, page, verbose: bool) -> None:
     page.wait_for_timeout(500)
 
 
-def _click_image_item(viz, page, verbose: bool) -> None:
-    """Click the Download flyout's 'Image' item -- by test-id, then by text."""
+def _click_image_item(viz, page) -> None:
+    """Click the Download flyout's 'Image' item — by test-id, then by text."""
     item = viz.locator(_IMAGE_ITEM)
     try:
         if item.count() > 0:
@@ -76,12 +76,33 @@ def _click_image_item(viz, page, verbose: bool) -> None:
             return
     except Exception:
         pass
-    # Text fallback: the flyout item literally reads 'Image'.
     viz.get_by_text("Image", exact=True).first.click(timeout=5_000)
 
 
-def _download_image(page, spec: dict, out_path: Path, *,
-                    hydrate_ms: int, verbose: bool) -> Path:
+def _maybe_click_export_dialog(viz, page) -> None:
+    """Some Tableau builds pop an 'Image' export dialog with its OWN Download
+    button after the menu item; others download directly. Poll briefly for a
+    dialog Download button and click it if present. No-op on the direct-download
+    path (the menu click already fired the download)."""
+    deadline = time.time() + 6
+    while time.time() < deadline:
+        for loc in (
+            viz.locator('[data-tb-test-id*="export-image" i] button'),
+            viz.locator('[role="dialog"]').get_by_role(
+                "button", name=re.compile(r"^\s*download\s*$", re.I)),
+            viz.get_by_role("button", name=re.compile(r"^\s*download\s*$", re.I)),
+        ):
+            try:
+                if loc.count() > 0 and loc.first.is_visible(timeout=500):
+                    loc.first.click(timeout=3_000)
+                    return
+            except Exception:
+                continue
+        page.wait_for_timeout(500)
+
+
+def _download_once(page, spec: dict, out_path: Path, *, hydrate_ms: int,
+                   verbose: bool) -> Path:
     try:
         page.goto("about:blank", timeout=10_000)
     except Exception:
@@ -97,45 +118,52 @@ def _download_image(page, spec: dict, out_path: Path, *,
     dl_btn.click()
     page.wait_for_timeout(1800)                # flyout opens
 
-    # Image downloads the whole dashboard directly (no worksheet picker).
     with page.expect_download(timeout=180_000) as dl_info:
-        _click_image_item(viz, page, verbose)
+        _click_image_item(viz, page)
+        _maybe_click_export_dialog(viz, page)
     dl_info.value.save_as(str(out_path))
-    if verbose:
-        print(f"   saved {out_path.name} "
-              f"({out_path.stat().st_size // 1024} KB, Download→Image)", flush=True)
     return out_path
 
 
-def _fallback_screenshot(page, out_path: Path, verbose: bool) -> Path:
-    """Last resort so a run isn't empty: full_page screenshot (may clip tall
-    boards -- logged so we know it happened)."""
-    if verbose:
-        print("   ⚠ image-export failed — falling back to full_page screenshot "
-              "(may clip tall boards)", flush=True)
-    page.screenshot(path=str(out_path), full_page=True)
-    return out_path
+def _dims(path: Path) -> str:
+    try:
+        from PIL import Image
+        with Image.open(path) as im:
+            return f"{im.width}x{im.height}"
+    except Exception:
+        return "?x?"
 
 
 def capture_page(page, spec: dict, out_dir: Path, *,
                  hydrate_ms: int = 20_000,
                  force_crop: str | None = None,   # accepted for CLI compat; unused
                  verbose: bool = True) -> Path:
-    """Navigate `page` to spec['url'] and save the full board as a PNG via
-    Tableau's Download → Image (screenshot fallback). Returns the written path.
-
-    Raises only if BOTH image-export and the screenshot fallback fail, so the
-    caller can skip+flag that tracker.
-    """
+    """Navigate to spec['url'] and save the full board via Download → Image.
+    Retries on transient Tableau flakes. Raises after MAX_ATTEMPTS — NO screenshot
+    fallback (a screenshot would be 'too much' + clipped), so the caller skip+flags.
+    Returns the written path."""
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{_sanitize(spec['title'])}.png"
     if verbose:
         print(f"-> [{spec['id']}] {spec['url']}", flush=True)
-    try:
-        return _download_image(page, spec, out_path,
-                               hydrate_ms=hydrate_ms, verbose=verbose)
-    except Exception as e:
-        if verbose:
-            print(f"   image-export error: {type(e).__name__}: "
-                  f"{str(e).splitlines()[0][:120]}", flush=True)
-        return _fallback_screenshot(page, out_path, verbose)
+    last = None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            _download_once(page, spec, out_path, hydrate_ms=hydrate_ms,
+                           verbose=verbose)
+            kb = out_path.stat().st_size // 1024
+            if verbose:
+                print(f"   ✓ Download→Image  {out_path.name}  "
+                      f"{_dims(out_path)}px  {kb} KB", flush=True)
+            return out_path
+        except Exception as e:
+            last = e
+            if verbose:
+                print(f"   attempt {attempt}/{MAX_ATTEMPTS} failed: "
+                      f"{type(e).__name__}: {str(e).splitlines()[0][:110]}",
+                      flush=True)
+            if attempt < MAX_ATTEMPTS:
+                time.sleep(BACKOFF_S)
+    raise RuntimeError(
+        f"{spec['id']}: Download→Image failed after {MAX_ATTEMPTS} attempts "
+        f"({type(last).__name__}: {str(last).splitlines()[0][:120]})")

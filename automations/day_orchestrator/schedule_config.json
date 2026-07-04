@@ -802,17 +802,15 @@
     },
     "tableau_screenshots_preview": {
       "on_scheduler": true,
-      "_note": "PREVIEW/REVIEW run: `lucy rerun tableau_screenshots_preview` captures the 8 Tableau trackers and DMs the full thread (header + REAL images) to Raf (U045Z8N0ZQC) + Megan (U04G5HJBGFN) for review — posts NOTHING to the channels. weekdays=[] never auto-runs. Built 2026-07-04; the real daily card (posts to #alphalete-sales + #top-leaders-alphalete-org) gets added once the crop is approved.",
-      "display_name": "Tableau Trackers - PREVIEW DM",
+      "_note": "DRY-RUN capture: `lucy rerun tableau_screenshots_preview` captures all 8 Tableau trackers via Download → Image to output/tableau_screenshots/ and posts NOTHING (no Slack). Prints a per-tracker CAPTURE SUMMARY (dims + KB) to the log. weekdays=[] never auto-runs. Built 2026-07-04; swap base_args to '--preview-dm U045Z8N0ZQC,U04G5HJBGFN' to DM a review, or clear for the live daily post once the content is approved.",
+      "display_name": "Tableau Trackers - DRY-RUN capture",
       "source_type": "tableau",
       "data_sources": [],
       "command": [
         "automations.tableau_screenshots.run"
       ],
       "base_args": [
-        "--preview-dm",
-        "U045Z8N0ZQC,U04G5HJBGFN",
-        "--full"
+        "--dry-run"
       ],
       "cadence": {
         "weekdays": []

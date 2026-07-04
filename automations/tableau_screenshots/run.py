@@ -97,6 +97,22 @@ def main(argv=None) -> int:
                       f"{type(e).__name__}: {str(e).splitlines()[0][:120]}",
                       flush=True)
 
+    # Per-tracker summary (lands in the mini log so match/parity is visible).
+    print("\n=== CAPTURE SUMMARY ===", flush=True)
+    for spec, png in captures:
+        try:
+            from PIL import Image
+            with Image.open(png) as im:
+                dims = f"{im.width}x{im.height}"
+        except Exception:
+            dims = "?x?"
+        kb = Path(png).stat().st_size // 1024
+        print(f"  ✓ {spec['id']:<28} {dims:>11}px  {kb:>5} KB  {Path(png).name}",
+              flush=True)
+    for fid in failed:
+        print(f"  ✗ {fid:<28} FAILED (no image)", flush=True)
+    print(f"  saved to: {out_dir}", flush=True)
+
     if not captures:
         run_manifest.write_manifest(
             REPORT_ID, ok=False, failed=failed, kind="tracker",
