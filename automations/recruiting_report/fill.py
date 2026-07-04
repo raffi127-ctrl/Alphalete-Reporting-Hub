@@ -244,11 +244,29 @@ def _client() -> gspread.Client:
             "then relaunch the hub."
         )
     _install_global_retry()
-    return gspread.oauth(
-        scopes=SCOPES,
-        credentials_filename=str(OAUTH_CLIENT_PATH),
-        authorized_user_filename=str(OAUTH_TOKEN_PATH),
-    )
+    # NON-INTERACTIVE auth. gspread.oauth() has a browser FALLBACK: when the
+    # stored token can't be used (missing, or a transient refresh failure), it
+    # silently pops a Chrome (run_local_server) and blocks forever waiting for a
+    # sign-in — in the unattended 4am batch that's a "random Chrome" that stalls
+    # every report (2026-07-04). Load + refresh + authorize ourselves instead, and
+    # RAISE a clear error rather than open a browser (mirrors gmail/drive/contacts
+    # token helpers). The one-time consent still uses gspread.oauth via setup.
+    from google.oauth2.credentials import Credentials
+    from google.auth.transport.requests import Request
+    if not OAUTH_TOKEN_PATH.exists():
+        raise RuntimeError(
+            f"No Sheets OAuth token at {OAUTH_TOKEN_PATH}. Run the one-time "
+            "authorization on this machine (never in an unattended run).")
+    creds = Credentials.from_authorized_user_file(str(OAUTH_TOKEN_PATH), SCOPES)
+    if not creds.valid:
+        if creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+            OAUTH_TOKEN_PATH.write_text(creds.to_json(), encoding="utf-8")
+        else:
+            raise RuntimeError(
+                "Sheets OAuth token invalid and can't refresh — re-run the "
+                "one-time authorization. (Never opens a browser in a batch run.)")
+    return gspread.authorize(creds)
 
 
 def open_by_key(key, client=None):

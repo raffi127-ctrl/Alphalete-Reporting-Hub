@@ -20,11 +20,22 @@ _SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 
 def client() -> gspread.Client:
-    return gspread.oauth(
-        scopes=_SCOPES,
-        credentials_filename=str(_OAUTH_CLIENT_PATH),
-        authorized_user_filename=str(_OAUTH_TOKEN_PATH),
-    )
+    # NON-INTERACTIVE — never fall into gspread.oauth's browser fallback in the
+    # unattended batch (it pops a 'random Chrome' + hangs, 2026-07-04). Load +
+    # refresh + authorize; raise on failure instead of opening a browser.
+    from google.oauth2.credentials import Credentials
+    from google.auth.transport.requests import Request
+    if not _OAUTH_TOKEN_PATH.exists():
+        raise RuntimeError(f"No Sheets OAuth token at {_OAUTH_TOKEN_PATH}.")
+    creds = Credentials.from_authorized_user_file(str(_OAUTH_TOKEN_PATH), _SCOPES)
+    if not creds.valid:
+        if creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+            _OAUTH_TOKEN_PATH.write_text(creds.to_json(), encoding="utf-8")
+        else:
+            raise RuntimeError("Sheets OAuth token invalid and can't refresh — "
+                               "re-run the one-time authorization.")
+    return gspread.authorize(creds)
 
 
 def _retry(fn, *args, _tries: int = 4, **kwargs):
