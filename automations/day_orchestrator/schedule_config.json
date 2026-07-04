@@ -800,6 +800,31 @@
         "type": "not_configured"
       }
     },
+    "tableau_screenshots_preview": {
+      "on_scheduler": true,
+      "_note": "PREVIEW/REVIEW run: `lucy rerun tableau_screenshots_preview` captures the 8 Tableau trackers and DMs the full thread (header + REAL images) to Raf (U045Z8N0ZQC) + Megan (U04G5HJBGFN) for review — posts NOTHING to the channels. weekdays=[] never auto-runs. Built 2026-07-04; the real daily card (posts to #alphalete-sales + #top-leaders-alphalete-org) gets added once the crop is approved.",
+      "display_name": "Tableau Trackers - PREVIEW DM",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.tableau_screenshots.run"
+      ],
+      "base_args": [
+        "--preview-dm",
+        "U045Z8N0ZQC,U04G5HJBGFN",
+        "--full"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 30,
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "financial_report": {
       "on_scheduler": true,
       "display_name": "Financial Report",
