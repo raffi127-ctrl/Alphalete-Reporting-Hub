@@ -2668,21 +2668,17 @@ AUTOMATED_REPORTS = [
         "emoji": "🩺",
         "color": "#6366F1",
         "category": "🩺 Brand Health",
-        "description": "Daily reputation + brand scan for Alphalete Marketing — Google reviews, search results, Reddit, website, and public social — scored into a Brand Health Card, with Slack alerts on anything new.",
+        "description": "Daily reputation + brand scan for Alphalete Marketing — Google reviews, search results, Reddit, website, and public social — posted to the Brand Health Slack channel.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Runs every brand collector for **Alphalete Marketing** (Google "
             "reviews, search results, Reddit mentions, website, reputation "
-            "sites, public social), scores them into a **Brand Health Card** "
-            "saved to output/, logs the run to the Brand Health sheet, and "
-            "posts a Slack alert for anything new.\n\n"
+            "sites, public social) and posts the results in the **Brand "
+            "Health Slack Channel**.\n\n"
             "WHEN IT RUNS\n"
             "**Every day at noon (Central)**, via a launchd timer on the Mac "
             "mini (LUCY). The **Run Now** button here triggers an extra pass "
-            "any time.\n\n"
-            "PREVIEW\n"
-            "**Preview (Dry Run)** runs the full scan but makes no external "
-            "changes — no Slack alerts, no sheet writes."
+            "any time."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1zoRQRhvkpu7Vvw4TsC60ufja9XwpUR8hHvV7FyzezMY/edit"),
@@ -2705,14 +2701,6 @@ AUTOMATED_REPORTS = [
                 "help": "Run the full brand scan for Alphalete Marketing and post any new findings.",
                 "module": "automations.brand_audit.run",
                 "args_fn": lambda: ["--company", "Alphalete Marketing"],
-            },
-            {
-                "label": "Preview (Dry Run)",
-                "icon": "👀",
-                "primary": False,
-                "help": "Run the scan but make no external changes — no Slack alerts, no sheet writes.",
-                "module": "automations.brand_audit.run",
-                "args_fn": lambda: ["--company", "Alphalete Marketing", "--dry-run"],
             },
         ],
     },
@@ -8790,6 +8778,9 @@ else:  # st.session_state.view == "user"
             # pill in the orange OPS color, regardless of run-status (its launchd
             # job doesn't report status back, so the default pill would read gray).
             "[class*='rc-autoread__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
+            # Brand Health runs daily on its own launchd timer (doesn't report
+            # per-day status back), so pin its pill to the green 'ran ok' look.
+            "[class*='brand-health-audit__calstat'] button{background:#E1F5EE!important;color:#04342C!important;border-color:#5DCAA5!important;opacity:1!important;animation:none!important}"
             "</style>",
             unsafe_allow_html=True,
         )
