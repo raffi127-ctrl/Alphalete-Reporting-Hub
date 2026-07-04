@@ -2660,10 +2660,10 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "rc-autoread",
-        "name": "RingCentral Wrap-Up Auto-Read",
+        "name": "RingCentral Auto-Read (Q 10 Min)",
         "creator": "Dylan",
         "emoji": "📲",
-        "color": "#34D399",
+        "color": "#F59E0B",
         "category": "📲 Ops",
         "description": "Marks RingCentral SMS conversations read once they hit a known wrap-up message (installs, DirecTV/cell hand-offs, fiber reminders), leaving customer-reply threads unread.",
         "breakdown": (
@@ -4100,9 +4100,9 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                         continue
                     if _r == "__OPS__":
                         st.markdown(
-                            "<div style='border-top:3px solid #10B981; "
+                            "<div style='border-top:3px solid #F59E0B; "
                             "margin:10px 0 5px; padding-top:6px; "
-                            "font-size:0.95em; font-weight:700; color:#10B981; "
+                            "font-size:0.95em; font-weight:700; color:#F59E0B; "
                             "letter-spacing:0.05em; text-align:center'>"
                             "📲 OPS</div>",
                             unsafe_allow_html=True,
