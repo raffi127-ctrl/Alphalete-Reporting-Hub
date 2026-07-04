@@ -101,6 +101,63 @@ def _maybe_click_export_dialog(viz, page) -> None:
         page.wait_for_timeout(500)
 
 
+# These pager dashboards stack PAGE 1 (This Week) + PAGE 2 (Last Week) + PAGE 3
+# (Trends) in one tall dashboard; Download→Image exports all of it. Jolie posts
+# only PAGE 1, so we find the PAGE-2 header and crop the image to just above it.
+# Self-classifying: single-page trackers have no PAGE-2 element -> no crop.
+_PAGE1_CROP_JS = r"""
+() => {
+  const els = [...document.querySelectorAll('*')];
+  const p2 = els.find(e => e.children.length === 0 &&
+                          /PAGE\s*2\b/i.test((e.textContent||'').trim()));
+  if (!p2) return null;
+  let c = p2.parentElement, cont = null;
+  while (c) { if (c.scrollHeight > c.clientHeight + 50) { cont = c; break; }
+             c = c.parentElement; }
+  if (!cont) cont = document.scrollingElement || document.body;
+  const cr = cont.getBoundingClientRect();
+  const pr = p2.getBoundingClientRect();
+  const y = pr.top - cr.top + cont.scrollTop;
+  const frac = y / cont.scrollHeight;
+  return {frac, text: (p2.textContent||'').trim().slice(0,50)};
+}
+"""
+
+
+def _page1_crop_fraction(page, verbose: bool):
+    """Fraction (0-1) of the dashboard height where PAGE 2 starts, or None if this
+    is a single-page dashboard (no PAGE-2 header). The fraction is scale-invariant,
+    so it maps straight onto the exported image height."""
+    try:
+        el = page.query_selector(_IFRAME)
+        frame = el.content_frame() if el else None
+        if frame is None:
+            return None
+        res = frame.evaluate(_PAGE1_CROP_JS)
+    except Exception as e:
+        if verbose:
+            print(f"   crop probe failed ({type(e).__name__}) — no crop", flush=True)
+        return None
+    if not res:
+        return None
+    frac = res.get("frac")
+    if verbose:
+        print(f"   PAGE-2 marker {res.get('text')!r} at frac={frac:.3f} "
+              f"— cropping to Page 1", flush=True)
+    return frac
+
+
+def _crop_top(path: Path, frac: float, verbose: bool) -> None:
+    """Crop the PNG to its top `frac` (full width) = the Page-1 region."""
+    from PIL import Image
+    with Image.open(path) as im:
+        w, h = im.size
+        cut = max(1, min(h, round(h * frac)))
+        im.crop((0, 0, w, cut)).save(path)
+    if verbose:
+        print(f"   cropped {path.name} to top {frac:.1%} ({w}x{cut})", flush=True)
+
+
 def _download_once(page, spec: dict, out_path: Path, *, hydrate_ms: int,
                    verbose: bool) -> Path:
     try:
@@ -115,6 +172,10 @@ def _download_once(page, spec: dict, out_path: Path, *, hydrate_ms: int,
     page.wait_for_timeout(hydrate_ms)          # let the data hydrate behind the viz
 
     _clear_error_toast(viz, page, verbose)
+    # Measure the Page-1 crop BEFORE opening the download flyout (the flyout can
+    # shift the DOM). None for single-page dashboards.
+    crop_frac = _page1_crop_fraction(page, verbose)
+
     dl_btn.click()
     page.wait_for_timeout(1800)                # flyout opens
 
@@ -122,6 +183,9 @@ def _download_once(page, spec: dict, out_path: Path, *, hydrate_ms: int,
         _click_image_item(viz, page)
         _maybe_click_export_dialog(viz, page)
     dl_info.value.save_as(str(out_path))
+
+    if crop_frac is not None and 0.05 < crop_frac < 0.95:
+        _crop_top(out_path, crop_frac, verbose)
     return out_path
 
 

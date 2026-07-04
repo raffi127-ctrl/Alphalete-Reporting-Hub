@@ -143,8 +143,10 @@ def main(argv=None) -> int:
                       f"{type(e).__name__}: {str(e).splitlines()[0][:120]}",
                       flush=True)
 
-    # Per-tracker summary (lands in the mini log so match/parity is visible).
+    # Per-tracker summary (lands in the mini log) + written to the 'Inspect Out'
+    # sheet (readable from any machine, since lucy status truncates to 280 chars).
     print("\n=== CAPTURE SUMMARY ===", flush=True)
+    sheet_rows = [["id", "dims(px)", "KB", "status", "file"]]
     for spec, png in captures:
         try:
             from PIL import Image
@@ -155,9 +157,26 @@ def main(argv=None) -> int:
         kb = Path(png).stat().st_size // 1024
         print(f"  ✓ {spec['id']:<28} {dims:>11}px  {kb:>5} KB  {Path(png).name}",
               flush=True)
+        sheet_rows.append([spec["id"], dims, str(kb), "ok", Path(png).name])
     for fid in failed:
         print(f"  ✗ {fid:<28} FAILED (no image)", flush=True)
+        sheet_rows.append([fid, "", "", "FAILED", ""])
     print(f"  saved to: {out_dir}", flush=True)
+    try:
+        import gspread
+        from automations.recruiting_report import fill as _fill
+        from automations.day_orchestrator.mini_control import CONTROL_SHEET_ID
+        sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
+        try:
+            ws = sh.worksheet("Inspect Out")
+        except gspread.WorksheetNotFound:
+            ws = sh.add_worksheet(title="Inspect Out", rows=50, cols=6)
+        ws.clear()
+        ws.update(sheet_rows, "A1")
+        print("  (capture summary written to 'Inspect Out' sheet)", flush=True)
+    except Exception as e:
+        print(f"  (sheet-write failed: {type(e).__name__}: {str(e)[:120]})",
+              flush=True)
 
     if not captures:
         run_manifest.write_manifest(
