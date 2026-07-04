@@ -478,9 +478,11 @@ def main(argv=None) -> int:
         eml.write_bytes(bytes(msg))
         print(f"[screenshot_email] DRY-RUN — not sent. Recipients would be: {to}\n"
               f"  email written to {eml}", flush=True)
+        print("=== done (dry-run) ===", flush=True)   # Hub success sentinel
         return 0
     send(msg)
     print(f"[screenshot_email] sent to {to}", flush=True)
+    print("=== done ===", flush=True)                 # Hub reads this as success
     return 0
 
 
