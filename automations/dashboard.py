@@ -3963,6 +3963,118 @@ def _cross_user_pulse(report_id: str) -> None:
         st.session_state[sig_key] = sig
 
 
+@st.fragment(run_every=20)
+def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> None:
+    """The '📅 This week' 7-day schedule strip, in its own auto-refreshing
+    fragment (re-runs every 20s) so the live 'running now' 🔄 badge + the
+    per-day outcome pills update on their own — no manual page refresh (the
+    badge used to only update when the whole page was reloaded). The
+    pill-coloring CSS is injected once by the caller OUTSIDE this fragment and
+    persists across fragment reruns. Card clicks call st.rerun(scope="app") so
+    navigation escapes the fragment and switches the whole app to the report —
+    a bare st.rerun() would only re-run this fragment and never navigate.
+    Remote reads (_week_run_statuses → Hub Activity) are cached ttl=10s, so the
+    20s cadence never hits the Sheet more than once per 10s."""
+    _week_start = today - dt.timedelta(days=today.weekday())    # Monday
+    _week_days = [_week_start + dt.timedelta(days=_k) for _k in range(7)]
+    _cal_statuses = _week_run_statuses(_week_days)
+    # Live "running now": actual subprocesses (active_runs.json + a ps match),
+    # so the card shows a pulsing 🔄 for whatever is executing right now.
+    try:
+        _running_ids = {a.get("report_id") for a in _read_active_runs()}
+    except Exception:
+        _running_ids = set()
+
+    def _cal_status(_rid: str, _day: dt.date) -> str:
+        """Per-card outcome for a day: ok / fail / miss / up(coming)."""
+        if _day > today:
+            return "up"                       # future — hasn't run
+        _s = _cal_statuses.get((_rid, _day))
+        if _s == "success":
+            return "ok"
+        if _s is None:                        # no run recorded
+            return "up" if _day == today else "miss"
+        if _s in ("running", "started", "in progress", "in-progress"):
+            return "up" if _day == today else "fail"   # stuck if it's a past day
+        return "fail"                         # any other terminal status
+
+    _cal_cols = st.columns(7)
+    for _i, _day in enumerate(_week_days):
+        with _cal_cols[_i]:
+            _is_today = (_day == today)
+            _today_pill = (
+                "<span style='background:#C9A85C; color:#2A1F12; "
+                "padding:1px 6px; border-radius:999px; font-size:0.65em; "
+                "font-weight:800; margin-left:4px; vertical-align:middle'>"
+                "TODAY</span>"
+                if _is_today else ""
+            )
+            _header_color = "#8B6914" if _is_today else "#555"
+            st.markdown(
+                f"<div style='text-align:center; padding:2px 0 6px'>"
+                f"<div style='font-weight:700; color:{_header_color}; font-size:0.95em'>"
+                f"{_day.strftime('%a')}{_today_pill}</div>"
+                f"<div style='font-size:0.78em; color:#777'>{_day.strftime('%b')} {_day.day}</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            _due = [r for r in my_reports if _was_due_on(r, _day)]
+            # List reports in the order the day-orchestrator will run them
+            # (matches the scheduler sequence), then split out Other Offices.
+            _due = _sched_sorted(_due, _day)
+            if _due:
+                # Single-office reports (category "🏢 Other Offices") render
+                # UNDER an "Other Offices" divider, below the main-office
+                # reports — not mixed into the day's list (Megan 2026-06-30).
+                _main = [r for r in _due if r.get("category") != "🏢 Other Offices"]
+                _other = [r for r in _due if r.get("category") == "🏢 Other Offices"]
+                _ordered = _main + (["__OTHER_OFFICES__"] if _other else []) + _other
+                for _r in _ordered:
+                    if _r == "__OTHER_OFFICES__":
+                        st.markdown(
+                            "<div style='border-top:3px solid #DC2626; "
+                            "margin:10px 0 5px; padding-top:6px; "
+                            "font-size:0.95em; font-weight:700; color:#DC2626; "
+                            "letter-spacing:0.05em; text-align:center'>"
+                            "🏢 OTHER OFFICES</div>",
+                            unsafe_allow_html=True,
+                        )
+                        continue
+                    # Per-day run outcome → colored pill (green ✅ ran ok,
+                    # coral ⚠️ failed/incomplete, gray – scheduled-didn't-run,
+                    # plain = upcoming). Status is encoded in the button key
+                    # (__calstat_<status>) which the injected CSS colors.
+                    _stat = _cal_status(_r["id"], _day)
+                    if _day == today and _r["id"] in _running_ids:
+                        _stat = "running"          # live subprocess right now
+                    _icon = {"ok": "✅ ", "fail": "⚠️ ", "miss": "– ",
+                             "running": "🔄 "}.get(_stat, "")
+                    _label = f"{_icon}{_r.get('emoji', '📄')} {_r['name']}"
+                    _help = {
+                        "ok": "Ran OK — open to view",
+                        "fail": "Failed / incomplete — open to see why",
+                        "miss": "Was scheduled but didn't run — open to run",
+                        "up": "Open this report to run it",
+                        "running": "Running now — open to watch",
+                    }.get(_stat, "Open this report to run it")
+                    if st.button(
+                        _label,
+                        key=f"cal_{user_name}_{_day.strftime('%Y%m%d')}_{_r['id']}__calstat_{_stat}",
+                        use_container_width=True,
+                        help=_help,
+                    ):
+                        st.session_state["library_report_id"] = _r["id"]
+                        st.session_state["library_came_from"] = ("user", user_name)
+                        _set_view("library")
+                        st.rerun(scope="app")
+            else:
+                st.markdown(
+                    "<div style='text-align:center; color:#bbb; "
+                    "font-size:0.8em; padding:4px 0'>—</div>",
+                    unsafe_allow_html=True,
+                )
+
+
 def _render_report_screenshot(report: dict) -> None:
     """Right-column content on a report's Library page: the report's
     screenshot in a fixed-height frame so it lines up with the run card.
@@ -8549,104 +8661,11 @@ else:  # st.session_state.view == "user"
             "</style>",
             unsafe_allow_html=True,
         )
-        _week_start = today - dt.timedelta(days=today.weekday())    # Monday
-        _week_days = [_week_start + dt.timedelta(days=_k) for _k in range(7)]
-        _cal_statuses = _week_run_statuses(_week_days)
-        # Live "running now": actual subprocesses (active_runs.json + a ps match),
-        # so the card shows a pulsing 🔄 for whatever is executing right now.
-        try:
-            _running_ids = {a.get("report_id") for a in _read_active_runs()}
-        except Exception:
-            _running_ids = set()
-
-        def _cal_status(_rid: str, _day: dt.date) -> str:
-            """Per-card outcome for a day: ok / fail / miss / up(coming)."""
-            if _day > today:
-                return "up"                       # future — hasn't run
-            _s = _cal_statuses.get((_rid, _day))
-            if _s == "success":
-                return "ok"
-            if _s is None:                        # no run recorded
-                return "up" if _day == today else "miss"
-            if _s in ("running", "started", "in progress", "in-progress"):
-                return "up" if _day == today else "fail"   # stuck if it's a past day
-            return "fail"                         # any other terminal status
-
-        _cal_cols = st.columns(7)
-        for _i, _day in enumerate(_week_days):
-            with _cal_cols[_i]:
-                _is_today = (_day == today)
-                _today_pill = (
-                    "<span style='background:#C9A85C; color:#2A1F12; "
-                    "padding:1px 6px; border-radius:999px; font-size:0.65em; "
-                    "font-weight:800; margin-left:4px; vertical-align:middle'>"
-                    "TODAY</span>"
-                    if _is_today else ""
-                )
-                _header_color = "#8B6914" if _is_today else "#555"
-                st.markdown(
-                    f"<div style='text-align:center; padding:2px 0 6px'>"
-                    f"<div style='font-weight:700; color:{_header_color}; font-size:0.95em'>"
-                    f"{_day.strftime('%a')}{_today_pill}</div>"
-                    f"<div style='font-size:0.78em; color:#777'>{_day.strftime('%b')} {_day.day}</div>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
-                _due = [r for r in my_reports if _was_due_on(r, _day)]
-                # List reports in the order the day-orchestrator will run them
-                # (matches the scheduler sequence), then split out Other Offices.
-                _due = _sched_sorted(_due, _day)
-                if _due:
-                    # Single-office reports (category "🏢 Other Offices") render
-                    # UNDER an "Other Offices" divider, below the main-office
-                    # reports — not mixed into the day's list (Megan 2026-06-30).
-                    _main = [r for r in _due if r.get("category") != "🏢 Other Offices"]
-                    _other = [r for r in _due if r.get("category") == "🏢 Other Offices"]
-                    _ordered = _main + (["__OTHER_OFFICES__"] if _other else []) + _other
-                    for _r in _ordered:
-                        if _r == "__OTHER_OFFICES__":
-                            st.markdown(
-                                "<div style='border-top:3px solid #DC2626; "
-                                "margin:10px 0 5px; padding-top:6px; "
-                                "font-size:0.95em; font-weight:700; color:#DC2626; "
-                                "letter-spacing:0.05em; text-align:center'>"
-                                "🏢 OTHER OFFICES</div>",
-                                unsafe_allow_html=True,
-                            )
-                            continue
-                        # Per-day run outcome → colored pill (green ✅ ran ok,
-                        # coral ⚠️ failed/incomplete, gray – scheduled-didn't-run,
-                        # plain = upcoming). Status is encoded in the button key
-                        # (__calstat_<status>) which the injected CSS colors.
-                        _stat = _cal_status(_r["id"], _day)
-                        if _day == today and _r["id"] in _running_ids:
-                            _stat = "running"          # live subprocess right now
-                        _icon = {"ok": "✅ ", "fail": "⚠️ ", "miss": "– ",
-                                 "running": "🔄 "}.get(_stat, "")
-                        _label = f"{_icon}{_r.get('emoji', '📄')} {_r['name']}"
-                        _help = {
-                            "ok": "Ran OK — open to view",
-                            "fail": "Failed / incomplete — open to see why",
-                            "miss": "Was scheduled but didn't run — open to run",
-                            "up": "Open this report to run it",
-                            "running": "Running now — open to watch",
-                        }.get(_stat, "Open this report to run it")
-                        if st.button(
-                            _label,
-                            key=f"cal_{user_name}_{_day.strftime('%Y%m%d')}_{_r['id']}__calstat_{_stat}",
-                            use_container_width=True,
-                            help=_help,
-                        ):
-                            st.session_state["library_report_id"] = _r["id"]
-                            st.session_state["library_came_from"] = ("user", user_name)
-                            _set_view("library")
-                            st.rerun()
-                else:
-                    st.markdown(
-                        "<div style='text-align:center; color:#bbb; "
-                        "font-size:0.8em; padding:4px 0'>—</div>",
-                        unsafe_allow_html=True,
-                    )
+        # Rendered in an auto-refreshing fragment (every 20s) so the 🔄 running
+        # badge + outcome pills update live without a manual page reload. The
+        # pill-coloring CSS above is injected once here (outside the fragment)
+        # and persists across the fragment's reruns.
+        _this_week_strip(today, my_reports, user_name)
         st.markdown("---")
 
         # ---- Personal portfolio: projects this user has claimed / shipped ----
