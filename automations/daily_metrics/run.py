@@ -164,12 +164,29 @@ def main(argv=None) -> int:
             from automations.shared import run_manifest as _rm
             _label_to_slug = {label: slug for slug, label, _m, _b in selected}
             _fslugs = [_label_to_slug.get(l, l) for l in failed]
+            # When a metric drops, the fix RE-RUNS JUST THAT METRIC (--only <slug>),
+            # not the whole 10-metric thread (Megan 2026-07-05). The scoped rerun
+            # rides in retry_args → the failure email emits it as the fix command.
+            _rem = None
+            if failed:
+                _only = ",".join(_fslugs)
+                _rem = _rm.make_remediation(
+                    reason=f"{len(failed)} daily metric(s) didn't post to "
+                           f"#alphalete-sales: {', '.join(failed)}.",
+                    fix=f"Re-run ONLY the missing metric(s) — the rest already "
+                        f"posted, so don't re-post the whole thread: "
+                        f"lucy rerun daily_metrics --only {_only}",
+                    message=f"The Daily Metrics thread is missing "
+                            f"{len(failed)} metric(s): {', '.join(failed)}. "
+                            f"Re-running just those (--only {_only}) fills them "
+                            f"into the existing thread.")
             _rm.write_manifest(
                 "daily_metrics",
                 failed=failed,
                 retry_args=(["--only", ",".join(_fslugs)] if _fslugs else []),
                 note=(f"{n_ok}/{len(results)} metrics posted to #alphalete-sales"
-                      + (f"; failed: {', '.join(_fslugs)}" if _fslugs else "")),
+                      + (f"; ⚠ MISSING: {', '.join(failed)}" if failed else "")),
+                remediation=_rem,
             )
         except Exception:  # noqa: BLE001 — manifest write must never fail the run
             pass

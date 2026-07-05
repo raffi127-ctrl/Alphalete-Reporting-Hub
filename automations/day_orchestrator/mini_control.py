@@ -97,10 +97,14 @@ def _run_cmd(cmd: list[str], timeout_s: int = DEFAULT_TIMEOUT_S) -> tuple[bool, 
 
 
 def _action_rerun(args: str) -> tuple[bool, str]:
-    """Re-run one orchestrator report by report_id (e.g. daily_focus)."""
-    report_id = (args or "").strip()
-    if not report_id:
+    """Re-run one orchestrator report by report_id, plus any EXTRA CLI args after
+    it — e.g. 'daily_metrics --only churn' re-runs just that one metric, so a
+    failure email's fix can rescope the run to only the part that dropped instead
+    of re-doing the whole report."""
+    parts = (args or "").split()
+    if not parts:
         return False, "rerun needs a report_id (e.g. daily_focus)"
+    report_id, extra = parts[0], parts[1:]
     cfg = registry.load_config()
     r = cfg.reports.get(report_id)
     if not r:
@@ -119,7 +123,8 @@ def _action_rerun(args: str) -> tuple[bool, str]:
             chrome_guard.close_stray_chrome()
         except Exception:  # noqa: BLE001 — a guard must never crash the rerun
             pass
-    cmd = [sys.executable, "-m", r.command[0]] + list(r.command[1:]) + list(r.base_args)
+    cmd = ([sys.executable, "-m", r.command[0]] + list(r.command[1:])
+           + list(r.base_args) + extra)
     timeout_s = int(getattr(r, "timeout_minutes", 45) or 45) * 60
     ok, result = _run_cmd(cmd, timeout_s)
     # On a clean exit, mark the report on the Hub — matching the orchestrator,

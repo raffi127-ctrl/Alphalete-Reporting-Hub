@@ -126,6 +126,25 @@ def _claude_block(rs, reason, cfg, date) -> str:
 def _diagnose(rs, cfg, date):
     """(human reason, needs_appstream_reseed, runnable re-run) for a failure."""
     rerun = f"lucy rerun {rs.report_id}"
+    # Scope the re-run to just the failed PART when the report handed up retry_args
+    # (e.g. daily_metrics --only churn) — no need to redo the whole report. The
+    # manifest lives under the report's verify id, which is usually the same as
+    # report_id (falls back to whole-report rerun if it can't be resolved).
+    try:
+        from automations.shared import run_manifest as _rm
+        _r = cfg.reports.get(rs.report_id)
+        _vid = None
+        if _r is not None:
+            _v = getattr(_r, "verify", None)
+            _vid = (_v or {}).get("report_id") if isinstance(_v, dict) else None
+        for _mid in filter(None, (_vid, rs.report_id)):
+            _spec = _rm.retry_spec(_mid)
+            if _spec and _spec.get("retry_args"):
+                rerun = (f"lucy rerun {rs.report_id} "
+                         + " ".join(_spec["retry_args"]))
+                break
+    except Exception:  # noqa: BLE001 — a scoped rerun is a nicety, never fail here
+        pass
     low = _log_tail(rs.report_id, date)
     if ("appstream session expired" in low or "no live token" in low
             or "0 rqst token" in low):
