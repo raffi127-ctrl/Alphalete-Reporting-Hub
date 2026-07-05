@@ -179,23 +179,41 @@ def _crop_top(path: Path, frac: float, verbose: bool) -> None:
 
 
 def _trim_bottom(path: Path, verbose: bool, margin_px: int = 14) -> None:
-    """Trim trailing whitespace off the bottom of the PNG (Download→Image leaves
-    blank canvas + a footer below the content that Jolie's posts don't have).
-    Keeps full width + top; cuts to the last row with real content + a small
-    margin. Generic — helps single-page and cropped trackers alike."""
-    from PIL import Image, ImageChops
-    with Image.open(path) as im:
-        rgb = im.convert("RGB")
-        w, h = rgb.size
-        bg = Image.new("RGB", rgb.size, (255, 255, 255))
-        bbox = ImageChops.difference(rgb, bg).getbbox()   # (l,t,r,b) of non-white
-        if not bbox:
-            return
-        new_h = min(h, bbox[3] + margin_px)
-        if new_h < h - 2:
-            rgb.crop((0, 0, w, new_h)).save(path)
-            if verbose:
-                print(f"   trimmed bottom whitespace ({h}->{new_h}px)", flush=True)
+    """Trim the bottom of the PNG at the board's real end. Download→Image leaves a
+    big blank gap + a footer ('Last SFDC Object Update…', '***CONFIDENTIAL***')
+    below the content that Jolie's posts don't have. A naive whitespace trim stops
+    at the footer and keeps the gap, so instead: find the LARGEST blank-row gap
+    that has only a small footer (or nothing) below it, and cut at its top.
+    Generic — single-page and cropped trackers alike."""
+    import numpy as np
+    from PIL import Image
+    im = Image.open(path).convert("RGB")
+    arr = np.asarray(im.convert("L"))
+    h, w = arr.shape
+    row_has = (arr < 245).any(axis=1)          # per-row: any near-non-white pixel
+    runs, y = [], 0                             # blank-row runs (start, length)
+    while y < h:
+        if not row_has[y]:
+            j = y
+            while j < h and not row_has[j]:
+                j += 1
+            runs.append((y, j - y))
+            y = j
+        else:
+            y += 1
+    if not runs:
+        return
+    start, length = max(runs, key=lambda r: r[1])
+    if length < 30:                             # no meaningful trailing gap
+        return
+    content_below = int(row_has[start + length:].sum())
+    if content_below >= h * 0.08:               # real content below -> not a footer gap
+        return
+    new_h = min(h, start + margin_px)
+    if new_h < h - 2:
+        im.crop((0, 0, w, new_h)).save(path)
+        if verbose:
+            print(f"   trimmed bottom at board end ({h}->{new_h}px)", flush=True)
 
 
 def _download_once(page, spec: dict, out_path: Path, *, hydrate_ms: int,
@@ -226,7 +244,12 @@ def _download_once(page, spec: dict, out_path: Path, *, hydrate_ms: int,
 
     if crop_frac is not None and 0.05 < crop_frac < 0.95:
         _crop_top(out_path, crop_frac, verbose)
-    _trim_bottom(out_path, verbose)
+    try:
+        _trim_bottom(out_path, verbose)
+    except Exception as e:
+        if verbose:
+            print(f"   bottom-trim skipped ({type(e).__name__}: {str(e)[:80]})",
+                  flush=True)
     return out_path
 
 
