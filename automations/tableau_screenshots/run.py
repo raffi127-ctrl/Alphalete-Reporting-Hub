@@ -130,11 +130,12 @@ def main(argv=None) -> int:
                   flush=True)
         return 0
 
-    # device_scale=2 forces 2x device pixels so Tableau's Download→Image comes
-    # back at higher resolution (crisper text, closer to Jolie's zoomed-in posts).
-    # Window size doesn't matter for these fixed-size dashboards, so keep default.
+    # NOTE: device_scale=2 (2x DPI) broke the live all-8 run 2026-07-05 (SSO/session
+    # setup failed before any capture) — reverted to native res, which captured all
+    # 8 cleanly in testing. Re-add the zoom only after debugging why it fails at
+    # scale (the single-tracker dry-run worked, the full run didn't).
     with tableau_session(headless=args.headless, allow_form_login=False,
-                         verbose=True, device_scale=2) as page:
+                         verbose=True) as page:
         for spec in selected:
             try:
                 png = cap.capture_page(page, spec, out_dir,
