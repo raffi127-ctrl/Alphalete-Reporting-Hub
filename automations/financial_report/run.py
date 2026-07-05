@@ -105,6 +105,13 @@ def run_financial_report(file_paths, dry_run: bool = False,
     client = rfill._client()
     bridge = _name_bridge()
     total_filled = total_matched = 0
+    # ICD tabs that got NO financials this week (their data wasn't in any email).
+    # Now that financials auto-ingest from email (was manual upload), a missing
+    # ICD means someone's numbers didn't come through — SURFACE it as a note so
+    # Megan can chase that sender. Still NOT a failure: the run stays complete +
+    # never wipes a tab (incremental). [[feedback_financial_incremental]]
+    not_pulled: set = set()
+    matched_titles: set = set()   # a tab matched in ANY sheet isn't "missing"
     for sheet_name, sid in ffill.OUTPUT_SHEETS.items():
         if only_sheet and only_sheet.lower() not in sheet_name.lower():
             continue
@@ -136,9 +143,12 @@ def run_financial_report(file_paths, dry_run: bool = False,
                 # filled by a previous run stays put; when an upload that
                 # DOES include this ICD arrives, the cells get filled then.
                 # (Megan, 2026-05-20: incremental uploads must never wipe
-                # previously-entered data.)
+                # previously-entered data.) Record it so the run notes who's
+                # missing this week (Megan 2026-07-05, auto email-ingest era).
+                not_pulled.add(ws.title)
                 continue
             matched += 1
+            matched_titles.add(ws.title)
             lines = ffill.fill_financial_for_tab(ws, tab_offices, weeks, dry_run)
             for line in lines:
                 logfn(f"  {sheet_name}: {line}")
@@ -153,6 +163,15 @@ def run_financial_report(file_paths, dry_run: bool = False,
               f"(unmatched tabs left untouched)")
         total_matched += matched
         total_filled += filled
+    # A tab matched in any sheet isn't "missing" — only tabs that got NO data
+    # anywhere this week remain.
+    not_pulled -= matched_titles
+    if not_pulled:
+        logfn("")
+        logfn(f"===== ℹ️  {len(not_pulled)} ICD(s) had NO financials this week "
+              f"(not in any email) — NOTE only, run still complete =====")
+        for t in sorted(not_pulled):
+            logfn(f"  – {t}")
     if problems:
         logfn("")
         logfn("===== ❌ UPLOAD PROBLEMS — Megan check these files =====")
@@ -162,7 +181,7 @@ def run_financial_report(file_paths, dry_run: bool = False,
               "template is new — Claude needs to add a parser for that "
               "layout. Send the file to Claude.)")
     return {"filled": total_filled, "matched": total_matched,
-            "problems": problems}
+            "problems": problems, "not_pulled": sorted(not_pulled)}
 
 
 def main() -> int:
@@ -241,10 +260,18 @@ def main() -> int:
                     # Clean run — record WHICH workbooks were pulled in the
                     # manifest note. The orchestrator surfaces this note in the
                     # summary email so it's easy to see what came in this week.
+                    # Also NOTE which ICDs got no financials (data not in any
+                    # email) — run stays COMPLETE (failed=[]), it just tells Megan
+                    # who to chase (Megan 2026-07-05). [[feedback_financial_incremental]]
                     names = ", ".join(sorted(p.name for p in files))
+                    _note = f"pulled {len(files)} workbook(s): {names}"
+                    _not = result.get("not_pulled") or []
+                    if _not:
+                        _note += (f" · ⚠ {len(_not)} ICD(s) got NO financials this "
+                                  f"week (not in any email): " + ", ".join(_not))
                     _rm.write_manifest(
                         MANIFEST_ID, failed=[], retry_args=[], kind="section",
-                        note=f"pulled {len(files)} workbook(s): {names}")
+                        note=_note)
             except Exception:  # noqa: BLE001 — manifest is best-effort
                 pass
         print("done")
