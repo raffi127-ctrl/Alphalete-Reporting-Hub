@@ -152,6 +152,28 @@ def main(argv=None) -> int:
     for label, ok, note in results:
         print(f"  {'✅' if ok else '❌'}  {label}  ({note})")
     failed = [label for label, ok, _ in results if not ok]
+
+    # Run-manifest for the orchestrator's completeness verify. daily_metrics is
+    # configured verify=manifest/report_id 'daily_metrics' but never wrote one, so
+    # there was nothing to check — a metric that failed to post could read green.
+    # Now a full LIVE run always records it (ok=false + the failed units when a
+    # metric drops), so the Hub flags INCOMPLETE instead of trusting the exit code.
+    # A --only/dry run must not clobber the full-run result. [[feedback_flag_unfilled_cells]]
+    if not args.dry_run and not args.only:
+        try:
+            from automations.shared import run_manifest as _rm
+            _label_to_slug = {label: slug for slug, label, _m, _b in selected}
+            _fslugs = [_label_to_slug.get(l, l) for l in failed]
+            _rm.write_manifest(
+                "daily_metrics",
+                failed=failed,
+                retry_args=(["--only", ",".join(_fslugs)] if _fslugs else []),
+                note=(f"{n_ok}/{len(results)} metrics posted to #alphalete-sales"
+                      + (f"; failed: {', '.join(_fslugs)}" if _fslugs else "")),
+            )
+        except Exception:  # noqa: BLE001 — manifest write must never fail the run
+            pass
+
     if failed:
         print(f"\n{len(failed)} metric(s) failed — re-run just those with "
               f"--only <slug>. Failed: {failed}")
