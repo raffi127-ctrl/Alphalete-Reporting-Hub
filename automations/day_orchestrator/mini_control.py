@@ -285,11 +285,40 @@ def poll_once(*, dry_run: bool = False, sandbox: bool = False) -> int:
     return acted
 
 
+def _git_head() -> "str | None":
+    """Current repo commit, or None if git can't be read. Used to self-reload the
+    poller when `lucy update` advances HEAD."""
+    try:
+        r = subprocess.run(["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"],
+                           capture_output=True, text=True, timeout=10)
+        return r.stdout.strip() if r.returncode == 0 else None
+    except Exception:
+        return None
+
+
 def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = False) -> None:
     tab = SANDBOX_TAB if sandbox else CONTROL_TAB
     print(f"[mini_control] poll loop every {interval_s}s on {tab!r}"
           + (" [DRY-RUN]" if dry_run else ""))
+    startup_head = _git_head()
     while True:
+        # Self-reload: if `lucy update` advanced the repo, re-exec with the FRESH
+        # code at this safe boundary (between polls, nothing in flight) so a
+        # mini_control change (a new action, a parsing fix) deploys with no manual
+        # poller restart. Guarded so a git hiccup (None) never triggers a spurious
+        # reload; os.execv keeps the same PID so launchd KeepAlive is untouched.
+        head = _git_head()
+        if head and startup_head and head != startup_head:
+            print(f"[mini_control] repo advanced {startup_head[:7]}->{head[:7]} — "
+                  f"reloading poller with fresh code")
+            argv = [sys.executable, "-u", "-m",
+                    "automations.day_orchestrator.mini_control",
+                    "--loop", "--interval", str(interval_s)]
+            if sandbox:
+                argv.append("--sandbox")
+            if dry_run:
+                argv.append("--dry-run")
+            os.execv(sys.executable, argv)
         try:
             poll_once(dry_run=dry_run, sandbox=sandbox)
         except Exception as e:
