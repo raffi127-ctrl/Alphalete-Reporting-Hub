@@ -152,9 +152,16 @@ def _page1_crop_fraction(page, spec: dict, verbose: bool):
     return frac
 
 
+# Cut a hair ABOVE the page-2 header so its top sliver never shows in Page 1
+# (Megan 2026-07-04: att_country showed a bit of the next header). ~1.5% of height.
+_CROP_MARGIN_FRAC = 0.015
+
+
 def _crop_top(path: Path, frac: float, verbose: bool) -> None:
-    """Crop the PNG to its top `frac` (full width) = the Page-1 region."""
+    """Crop the PNG to its top `frac` (full width) = the Page-1 region, pulled up
+    by a small margin so the next page's header doesn't peek in."""
     from PIL import Image
+    frac = max(0.02, frac - _CROP_MARGIN_FRAC)
     with Image.open(path) as im:
         w, h = im.size
         cut = max(1, min(h, round(h * frac)))
