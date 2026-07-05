@@ -810,9 +810,8 @@
         "automations.tableau_screenshots.run"
       ],
       "base_args": [
-        "--dry-run",
-        "--only",
-        "b2b_box"
+        "--preview-dm",
+        "U04G5HJBGFN"
       ],
       "cadence": {
         "weekdays": []
