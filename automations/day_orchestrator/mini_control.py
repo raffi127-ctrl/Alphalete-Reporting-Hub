@@ -100,8 +100,13 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     """Re-run one orchestrator report by report_id, plus any EXTRA CLI args after
     it — e.g. 'daily_metrics --only churn' re-runs just that one metric, so a
     failure email's fix can rescope the run to only the part that dropped instead
-    of re-doing the whole report."""
-    parts = (args or "").split()
+    of re-doing the whole report. shlex so a quoted arg with spaces survives, e.g.
+    'opt_phase --only \"Marcellus Butler\"'."""
+    import shlex
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()   # unbalanced quotes → best-effort
     if not parts:
         return False, "rerun needs a report_id (e.g. daily_focus)"
     report_id, extra = parts[0], parts[1:]

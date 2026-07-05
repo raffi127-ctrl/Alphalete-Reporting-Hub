@@ -539,6 +539,7 @@ def main() -> int:
             from automations.shared import run_manifest as _rm
             _opt_skipped = set(opt_result["skipped"]) if opt_result else set()
             _entries = []
+            _opt_missing = []
             for _tab in sorted(confirmed_names - hidden):
                 _parts = []
                 if _tab in inaccessible_in_run:
@@ -547,12 +548,21 @@ def main() -> int:
                     _parts.append("recruiting")
                 if opt_result is not None and _tab in _opt_skipped:
                     _parts.append("OPT")
+                    _opt_missing.append(_tab)
                 if _parts:
                     _entries.append(f"{_tab} — {', '.join(_parts)}")
             _notes = []
             if _entries:
-                _notes.append(f"⚠ {len(_entries)} ICD(s) missing part(s) this week: "
-                              + "; ".join(_entries))
+                _n = (f"⚠ {len(_entries)} ICD(s) missing part(s) this week: "
+                      + "; ".join(_entries))
+                if _opt_missing:
+                    # Re-run JUST the OPT phase (one Tableau pull, minutes) — no
+                    # need to redo the whole ~30-min AppStream+OPT run (Megan
+                    # 2026-07-05: "rerun just that part" — the OPT part).
+                    _n += ("  ·  FIX (refill OPT only): lucy rerun opt_phase"
+                           + (f' --only "{_opt_missing[0]}"'
+                              if len(_opt_missing) == 1 else ""))
+                _notes.append(_n)
             if _term_note:
                 _notes.append("⚠ " + _term_note)
             if _notes:
