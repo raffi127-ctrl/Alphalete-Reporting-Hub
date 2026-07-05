@@ -602,6 +602,26 @@
         "type": "not_configured"
       }
     },
+    "restart_poller": {
+      "on_scheduler": true,
+      "_note": "MAINTENANCE — on_scheduler:true ONLY so registry.load_config (which drops on_scheduler:false) keeps it, making it rerunnable; cadence weekdays [] means it NEVER auto-runs in a batch. `lucy rerun restart_poller` bounces the mini's lucy poller (com.alphalete.mini-control) so it reloads new code after a `lucy update` — the poller keeps old modules in memory until restarted, so a newly-added lucy action reads as 'unknown action' until then. rerun spawns it as a fresh subprocess (current code); it schedules a detached, delayed kickstart. Use it, wait ~1min, then queue the new action.",
+      "display_name": "Restart mini poller (maintenance)",
+      "source_type": "api",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.poller_restart"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "int_wow_penetration": {
       "on_scheduler": true,
       "display_name": "Int WoW Report - Penetration %",
