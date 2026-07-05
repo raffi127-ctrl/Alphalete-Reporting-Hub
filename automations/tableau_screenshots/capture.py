@@ -229,15 +229,14 @@ def _trim_bottom(path: Path, verbose: bool, margin_px: int = 14,
 
     if not bands:
         return
+    # Cut just after the last SUBSTANTIAL content band (>= 100px tall). Trailing
+    # bands smaller than that are footer lines ("Last Object Update…",
+    # "***CONFIDENTIAL***") — drop them and any whitespace, regardless of the gaps
+    # between them. Real tables are >=140px, footers <=~76px, so 100 separates.
     main_end = bands[-1][1]
-    i = len(bands) - 1
-    while i > 0:                                # peel trailing footer bands
-        s, e = bands[i]
-        prev_end = bands[i - 1][1]
-        if (e - s) < 60 and (s - prev_end) > 30:   # small band after a real gap
-            main_end = prev_end
-            i -= 1
-        else:
+    for s, e in reversed(bands):
+        if (e - s) >= 100:
+            main_end = e
             break
     new_h = min(h, main_end + margin_px)
     TRIM_DEBUG[spec_id] += f" -> cut={new_h}"

@@ -810,9 +810,10 @@
         "automations.tableau_screenshots.run"
       ],
       "base_args": [
-        "--dry-run",
+        "--preview-dm",
+        "U04G5HJBGFN",
         "--only",
-        "b2b_att_country_cru,b2b_d2d_consolidated"
+        "b2b_att_country_cru,b2b_d2d_consolidated,b2b_box,quantum_fiber"
       ],
       "cadence": {
         "weekdays": []
