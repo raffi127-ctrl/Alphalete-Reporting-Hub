@@ -178,6 +178,26 @@ def _crop_top(path: Path, frac: float, verbose: bool) -> None:
         print(f"   cropped {path.name} to top {frac:.1%} ({w}x{cut})", flush=True)
 
 
+def _trim_bottom(path: Path, verbose: bool, margin_px: int = 14) -> None:
+    """Trim trailing whitespace off the bottom of the PNG (Download→Image leaves
+    blank canvas + a footer below the content that Jolie's posts don't have).
+    Keeps full width + top; cuts to the last row with real content + a small
+    margin. Generic — helps single-page and cropped trackers alike."""
+    from PIL import Image, ImageChops
+    with Image.open(path) as im:
+        rgb = im.convert("RGB")
+        w, h = rgb.size
+        bg = Image.new("RGB", rgb.size, (255, 255, 255))
+        bbox = ImageChops.difference(rgb, bg).getbbox()   # (l,t,r,b) of non-white
+        if not bbox:
+            return
+        new_h = min(h, bbox[3] + margin_px)
+        if new_h < h - 2:
+            rgb.crop((0, 0, w, new_h)).save(path)
+            if verbose:
+                print(f"   trimmed bottom whitespace ({h}->{new_h}px)", flush=True)
+
+
 def _download_once(page, spec: dict, out_path: Path, *, hydrate_ms: int,
                    verbose: bool) -> Path:
     try:
@@ -206,6 +226,7 @@ def _download_once(page, spec: dict, out_path: Path, *, hydrate_ms: int,
 
     if crop_frac is not None and 0.05 < crop_frac < 0.95:
         _crop_top(out_path, crop_frac, verbose)
+    _trim_bottom(out_path, verbose)
     return out_path
 
 
