@@ -255,7 +255,30 @@ def main(argv=None) -> int:
         if slug not in csvs:
             continue   # pull failed/skipped above — already flagged
         parsed = parse_fn(csvs[slug])
+        _raw_names = sorted(parsed.get("reps", {}).keys())
         parsed = _apply_aliases(parsed, aliases)
+        _aliased_names = sorted(parsed.get("reps", {}).keys())
+        # DIAGNOSTIC (--only runs): dump the raw + aliased rep names the pull
+        # returned to the 'Inspect Out' sheet, so a Tableau rename the alias
+        # doesn't cover (a rep silently dropping off) is visible off-machine.
+        if args.only:
+            try:
+                import gspread as _gs
+                from automations.recruiting_report import fill as _dbg
+                from automations.day_orchestrator.mini_control import CONTROL_SHEET_ID
+                _sh = _dbg._client().open_by_key(CONTROL_SHEET_ID)
+                try:
+                    _ws = _sh.worksheet("Inspect Out")
+                except _gs.WorksheetNotFound:
+                    _ws = _sh.add_worksheet(title="Inspect Out", rows=50, cols=4)
+                _ws.clear()
+                _ws.update([["slug", "n", "raw_names (from Tableau)",
+                             "aliased_names (after alias)"],
+                            [slug, str(len(_raw_names)),
+                             ", ".join(_raw_names), ", ".join(_aliased_names)]], "A1")
+                print(f"  (diag: dumped {len(_raw_names)} raw rep name(s) to Inspect Out)")
+            except Exception as _e:  # noqa: BLE001 — diag must never fail the run
+                print(f"  (diag dump failed: {type(_e).__name__}: {str(_e)[:80]})")
         _run_fill_phase(label, open_ws_fn, parsed, periods, today, args)
         all_reps.update(parsed.get("reps", {}).keys())
 
