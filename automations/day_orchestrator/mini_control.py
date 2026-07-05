@@ -59,6 +59,7 @@ DAILY_AUTORUN_CAP = 40
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
 SESSION_HOLDER_LABEL = "com.alphalete.session-holder"
+MINI_CONTROL_LABEL = "com.alphalete.mini-control"   # this poller's own launchd label
 
 
 def _now() -> str:
@@ -160,6 +161,25 @@ def _action_restart_holder(args: str) -> tuple[bool, str]:
     return proc.returncode == 0, f"kickstart exit {proc.returncode}" + (f": {out}" if out else "")
 
 
+def _action_restart_poller(args: str) -> tuple[bool, str]:
+    """Kickstart THIS poller (com.alphalete.mini-control) so it reloads its own
+    code — deploy a mini_control change with no human at the mini. `kickstart -k`
+    SIGKILLs the current process, so run it DETACHED after a short delay: this
+    action returns first (poll_once writes its result), THEN the poller is
+    replaced with fresh code by launchd. start_new_session so the kickstart child
+    isn't in the poller's process group and survives the kill."""
+    label = MINI_CONTROL_LABEL
+    try:
+        subprocess.Popen(
+            ["/bin/sh", "-c",
+             f"sleep 3; launchctl kickstart -k gui/{os.getuid()}/{label}"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't schedule restart: {str(e)[:140]}"
+    return True, f"restart scheduled for {label} (~3s) — poller reloads its code"
+
+
 def _action_watch_test(args: str) -> tuple[bool, str]:
     """Fire appstream_watch's one-off test ping so Megan/Eve can confirm the 6pm
     session-expiry Slack DM actually delivers — WITHOUT waiting for a real lapse
@@ -201,6 +221,7 @@ ACTIONS = {
     "rerun": _action_rerun,
     "update": _action_update,
     "restart_holder": _action_restart_holder,
+    "restart_poller": _action_restart_poller,
     "reseed_appstream": _action_reseed_appstream,
     "watch_test": _action_watch_test,
 }
