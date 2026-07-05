@@ -130,10 +130,11 @@ def main(argv=None) -> int:
                   flush=True)
         return 0
 
-    # Bigger window -> Tableau's Download→Image exports at higher resolution
-    # (bigger/crisper text, closer to Jolie's zoomed-in posts).
+    # device_scale=2 forces 2x device pixels so Tableau's Download→Image comes
+    # back at higher resolution (crisper text, closer to Jolie's zoomed-in posts).
+    # Window size doesn't matter for these fixed-size dashboards, so keep default.
     with tableau_session(headless=args.headless, allow_form_login=False,
-                         verbose=True, window_size=(2560, 1600)) as page:
+                         verbose=True, device_scale=2) as page:
         for spec in selected:
             try:
                 png = cap.capture_page(page, spec, out_dir,

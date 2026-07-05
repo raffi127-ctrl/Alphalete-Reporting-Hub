@@ -109,7 +109,8 @@ def _is_profile_in_use(exc: Exception) -> bool:
 
 
 def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
-                       verbose: bool = True, window_size: tuple = (1680, 1280)):
+                       verbose: bool = True, window_size: tuple = (1680, 1280),
+                       device_scale: float | None = None):
     """launch_persistent_context with the existing system-chrome → bundled-
     chromium fallback UNCHANGED, wrapped in a wait+retry for the "profile
     already in use" collision.
@@ -128,10 +129,16 @@ def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
     # unclickable for the activate_xy download path). Fractional activate_xy
     # coords (e.g. FIBER_OVERVIEW_XY) are resolution-independent, so the other
     # scrape sources are unaffected. no_viewport stays True (real window).
+    _args = [f"--window-size={window_size[0]},{window_size[1]}",
+             "--window-position=0,0"]
+    # Force 2x (or N x) device pixels so Tableau's Download→Image comes back at
+    # higher resolution (the screenshots module passes device_scale=2 for crisper
+    # posts). Default None = no flag = byte-identical launch for every other caller.
+    if device_scale:
+        _args += [f"--force-device-scale-factor={device_scale}",
+                  "--high-dpi-support=1"]
     base = dict(user_data_dir=str(user_data_dir), headless=headless,
-                no_viewport=True,
-                args=[f"--window-size={window_size[0]},{window_size[1]}",
-                      "--window-position=0,0"])
+                no_viewport=True, args=_args)
     prefer_chrome = True
     last: Optional[Exception] = None
     for attempt in range(_LAUNCH_RETRIES):
@@ -165,7 +172,8 @@ def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
 @contextmanager
 def tableau_session(headless: bool = False, verbose: bool = True,
                     allow_form_login: bool = True,
-                    window_size: tuple = (1680, 1280)) -> Iterator[Page]:
+                    window_size: tuple = (1680, 1280),
+                    device_scale: float | None = None) -> Iterator[Page]:
     """Yield a Page logged into Tableau via ownerville SSO.
 
     Uses Order Log's persistent profile + the exported ownerville
@@ -182,7 +190,7 @@ def tableau_session(headless: bool = False, verbose: bool = True,
     with sync_playwright() as p:
         ctx = _launch_persistent(p, PROFILE_DIR, headless=headless,
                                  label="tableau_patchright", verbose=verbose,
-                                 window_size=window_size)
+                                 window_size=window_size, device_scale=device_scale)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
             _ensure_tableau_authenticated(page, verbose=verbose,
