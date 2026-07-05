@@ -501,38 +501,12 @@ def main() -> int:
         except Exception:  # noqa: BLE001 — advisory must never fail the run
             pass
 
-    # Standard failure manifest → Hub "Retry failed only" (re-pull just the
-    # missing office tabs via --retry-missing) + failure-help callout. Keyed by
-    # the card the CAPTAINSHIP maps to (Carlos's card runs the orchestrator, not
-    # this module, so it's handled there). Skip --only (a single-office run
-    # doesn't represent the full missing list) and --dry-run. Runs on both full
-    # and --retry-missing passes (both recompute still_missing above), so the
-    # button self-clears once everything's filled. Best-effort.
+    # Card id for the run-manifest. It's written AFTER the OPT phase below so the
+    # note can say, per ICD, which PART didn't fill — AppStream recruiting metrics
+    # and/or the OPT section. Carlos's card runs via the orchestrator, not this
+    # module. (Skip --only / --dry-run at the write site.)
     _card_id = {"Raf": "recruiting",
                 "Alphalete-Org": "recruiting-alphalete-org"}.get(fill.CAPTAINSHIP)
-    if _card_id and not args.only and not args.dry_run:
-        try:
-            from automations.shared import run_manifest as _rm
-            # Missing office tabs are NOTED BY NAME on the completion email, but
-            # the run stays COMPLETE — most misses are pending AppStream access
-            # (chronic), and the next scheduled run re-pulls them once access is
-            # granted. (Megan 2026-07-05: "note what is missing on the completion
-            # email, still mark completed" — same treatment as the financial
-            # report.) [[feedback_flag_unfilled_cells]]
-            _notes = []
-            if still_missing:
-                _notes.append(f"⚠ {len(still_missing)} office tab(s) got NO data "
-                              f"this week (likely pending AppStream access): "
-                              + ", ".join(still_missing))
-            if _term_note:
-                _notes.append("⚠ " + _term_note)
-            if _notes:
-                _rm.write_manifest(_card_id, failed=[], kind="tab",
-                                   note=" · ".join(_notes))
-            else:
-                _rm.mark_clean(_card_id, kind="tab")
-        except Exception:
-            pass
 
     # OPT phase — pull the ATT ICD Summary from Tableau and fill each tab's
     # OPT + Office-Metrics section. Runs after the AppStream phase (its
@@ -540,6 +514,8 @@ def main() -> int:
     # can't fail the recruiting fill that already succeeded. Skipped on a
     # --retry-missing pass — the OPT data isn't login-dependent and a full
     # run already covered every tab.
+    opt_result = None   # stays None if the OPT phase is skipped or errors, so the
+                        # per-ICD note below won't falsely flag OPT for everyone
     if args.retry_missing:
         log.info("OPT phase skipped (--retry-missing is an AppStream-only pass)")
     elif args.no_opt:
@@ -552,6 +528,40 @@ def main() -> int:
                      len(opt_result["filled"]), len(opt_result["skipped"]))
         except Exception as e:
             log.warning("OPT phase skipped (is Tableau open + logged in?): %s", e)
+
+    # Completion-email note: for each ICD, WHICH PART didn't fill this week —
+    # AppStream recruiting metrics and/or the OPT section. Run stays COMPLETE
+    # (failed=[]); it's a "who's missing what" list, not a failure (Megan
+    # 2026-07-05). Only assesses OPT if the OPT phase actually ran (opt_result set),
+    # so a skipped OPT phase doesn't flag OPT for everyone. [[feedback_flag_unfilled_cells]]
+    if _card_id and not args.only and not args.dry_run:
+        try:
+            from automations.shared import run_manifest as _rm
+            _opt_skipped = set(opt_result["skipped"]) if opt_result else set()
+            _entries = []
+            for _tab in sorted(confirmed_names - hidden):
+                _parts = []
+                if _tab in inaccessible_in_run:
+                    _parts.append("recruiting (no access)")
+                elif _tab not in all_filled:
+                    _parts.append("recruiting")
+                if opt_result is not None and _tab in _opt_skipped:
+                    _parts.append("OPT")
+                if _parts:
+                    _entries.append(f"{_tab} — {', '.join(_parts)}")
+            _notes = []
+            if _entries:
+                _notes.append(f"⚠ {len(_entries)} ICD(s) missing part(s) this week: "
+                              + "; ".join(_entries))
+            if _term_note:
+                _notes.append("⚠ " + _term_note)
+            if _notes:
+                _rm.write_manifest(_card_id, failed=[], kind="tab",
+                                   note=" · ".join(_notes))
+            else:
+                _rm.mark_clean(_card_id, kind="tab")
+        except Exception:  # noqa: BLE001 — manifest is best-effort
+            pass
 
     # '=== done ===' is the Hub's success sentinel (dashboard.py checks it
     # BEFORE scanning for tracebacks) — plain 'done' let recovered fetch-retry
