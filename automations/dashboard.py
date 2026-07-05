@@ -8787,9 +8787,6 @@ else:  # st.session_state.view == "user"
             # pill in the orange OPS color, regardless of run-status (its launchd
             # job doesn't report status back, so the default pill would read gray).
             "[class*='rc-autoread__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
-            # Brand Health runs daily on its own launchd timer (doesn't report
-            # per-day status back), so pin its pill to the green 'ran ok' look.
-            "[class*='brand-health-audit__calstat'] button{background:#E1F5EE!important;color:#04342C!important;border-color:#5DCAA5!important;opacity:1!important;animation:none!important}"
             "</style>",
             unsafe_allow_html=True,
         )

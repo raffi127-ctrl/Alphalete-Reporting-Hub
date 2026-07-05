@@ -37,6 +37,19 @@ echo "[$(date)] brand-audit noon scan starting (extra args: ${*:-none})" > "$LOG
 ST=$?
 
 echo "[$(date)] brand-audit noon scan finished exit=$ST" >> "$LOG_FILE"
+
+# Report this standalone run to the Hub (shared Hub Activity sheet) so the
+# Brand Health card's pill reflects a REAL success/failure — same mechanism the
+# orchestrator uses for the reports it runs. Skip when a --dry-run was passed
+# (a preview shouldn't mark the card as ran). Best-effort — never fail the job.
+case " $* " in
+  *" --dry-run "*) : ;;
+  *)
+    if [ "$ST" -eq 0 ]; then _PUB=success; else _PUB=failed; fi
+    "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('brand_audit','Brand Health Audit','$_PUB')" >> "$LOG_FILE" 2>&1 || true
+    ;;
+esac
+
 if [ "$ST" -ne 0 ]; then
   osascript -e "display notification \"Brand audit noon scan failed (exit $ST)\" with title \"Brand Audit\" sound name \"Sosumi\"" 2>/dev/null || true
 fi

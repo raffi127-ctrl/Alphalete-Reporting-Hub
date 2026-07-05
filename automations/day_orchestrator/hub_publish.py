@@ -13,8 +13,7 @@ needed. Best-effort — never raises into the orchestrator loop.
 
 NOTE: the Hub keys on its CARD id, which differs from our schedule_config
 report_id (underscores vs hyphens, sometimes a different name). _HUB_CARD maps
-ours → theirs. A report with no Hub card (weather_alert, brand_audit) is a
-no-op.
+ours → theirs. A report with no Hub card (weather_alert) is a no-op.
 """
 from __future__ import annotations
 
@@ -54,7 +53,8 @@ _HUB_CARD = {
     "rashad_metrics": "rashad-metrics",
     "frontier_opt": "frontier-opt-data-pull",
     "financial_report": "financial-pull",
-    # weather_alert, brand_audit: Slack-only, no Hub card → not published.
+    "brand_audit": "brand-health-audit",
+    # weather_alert: Slack-only, no Hub card → not published.
 }
 
 
