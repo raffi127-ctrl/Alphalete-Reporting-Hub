@@ -2194,10 +2194,10 @@ AUTOMATED_REPORTS = [
         "breakdown": (
             "WHAT IT DOES\n"
             "Grabs each of the 8 Tableau trackers \n\n"
-            "•  TRACKERS\n"
+            "TRACKERS\n"
             "AT&T Internet Country (+ Internet Only), NDS, B2B AT&T Country "
             "(+ CRU), B2B D2D Consolidated, B2B Box, ATT Quantum Fiber.\n\n"
-            "🕒  WHEN IT RUNS\n"
+            "WHEN IT RUNS\n"
             "Daily in Slack channels: #alphalete-sales & #top-leaders-alphalete-org."
         ),
         "assignees": ["Fully Automated Alphalete Reports"],
