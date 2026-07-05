@@ -106,6 +106,19 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     if not r:
         known = ", ".join(sorted(cfg.reports)[:10])
         return False, f"unknown report_id {report_id!r}. known: {known} …"
+    # A stray HUMAN Chrome open on the mini single-instances with our automation
+    # Chrome and breaks every browser report ("Opening in existing browser
+    # session" — this is what killed daily_rep_breakdown at 4am on 2026-07-05).
+    # The orchestrator closes stray Chrome before each browser report, but the
+    # manual rerun path bypassed that — so a rerun would just collide again. Run
+    # the same guard here for tableau/appstream reports. Best-effort; a guard
+    # that crashes the rerun is worse than the collision. [[reference_chrome_collision_guard]]
+    if r.source_type in ("tableau", "appstream"):
+        try:
+            from automations.day_orchestrator import chrome_guard
+            chrome_guard.close_stray_chrome()
+        except Exception:  # noqa: BLE001 — a guard must never crash the rerun
+            pass
     cmd = [sys.executable, "-m", r.command[0]] + list(r.command[1:]) + list(r.base_args)
     timeout_s = int(getattr(r, "timeout_minutes", 45) or 45) * 60
     ok, result = _run_cmd(cmd, timeout_s)
