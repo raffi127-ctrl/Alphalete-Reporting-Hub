@@ -62,9 +62,9 @@ def _apply_aliases(parsed: dict, aliases: dict) -> dict:
 
 
 def _run_fill_phase(label: str, open_ws_fn, parsed: dict,
-                    today: dt.date, args) -> int:
-    """Fill one Captainship Churn tab. Returns 0 on success, 1 on
-    early-exit (today's column already present without --force-insert)."""
+                    today: dt.date, args) -> dict:
+    """Fill one Captainship Churn tab. Returns {period: [went_dark_rep, ...]} —
+    reps on the tab + recently active but absent from today's pull (empty = clean)."""
     print(f"\n--- {label}: parse + fill ---")
     office = parsed["office_total"]
     reps = parsed["reps"]
@@ -80,6 +80,21 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict,
     for p, sect in sections.items():
         print(f"    {p:>4}-day: header row {sect['header_row']}, "
               f"{len(sect['rep_rows'])} existing ICDs")
+
+    # Detect reps that WENT DARK — read the tab BEFORE inserting today's column
+    # (recent-history cols + rep_rows indices still valid). A rep on the roster +
+    # recently active but missing from today's pull was dropped from the Tableau
+    # view's filter or renamed past the alias (the Eveliz-Roca case) — flag it so
+    # the run reads INCOMPLETE, not a silent green DONE. [[feedback_flag_unfilled_cells]]
+    went_dark: dict = {}
+    try:
+        went_dark = fill.detect_went_dark(ws.get_all_values(), sections, parsed)
+        if went_dark:
+            for p, names in went_dark.items():
+                print(f"  ⚠ {p}-day WENT DARK (on tab + recent data, absent from "
+                      f"today's pull): {', '.join(names)}")
+    except Exception as e:  # noqa: BLE001 — detection must never break the fill
+        print(f"  (went-dark detection skipped: {type(e).__name__}: {str(e)[:80]})")
 
     # Idempotency check FIRST so we don't insert missing reps into a
     # tab that's already filled for today — Megan may have manually
@@ -152,7 +167,7 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict,
                                       dry_run=args.dry_run, logfn=print)
     fill.apply_rep_row_borders(ws, sections,
                                dry_run=args.dry_run, logfn=print)
-    return 0
+    return went_dark
 
 
 def main(argv=None) -> int:
@@ -215,12 +230,15 @@ def main(argv=None) -> int:
         print(f"  Loaded {sum(len(v) for v in aliases.values())} aliases "
               f"({len(aliases)} canonical names).")
     all_reps: set = set()
+    went_dark_all: dict = {}      # {tab label: {period: [rep names]}}
     for slug, label, _fetch_fn, open_ws_fn, _csv_name in selected:
         if slug not in csvs:
             continue   # pull failed/skipped above — already flagged
         parsed = pull.parse(csvs[slug])
         parsed = _apply_aliases(parsed, aliases)
-        _run_fill_phase(label, open_ws_fn, parsed, today, args)
+        _wd = _run_fill_phase(label, open_ws_fn, parsed, today, args)
+        if _wd:
+            went_dark_all[label] = _wd
         all_reps.update(parsed.get("reps", {}).keys())
 
     # No Slack post — Captainship is sheet-only (Megan 2026-05-29).
@@ -240,6 +258,19 @@ def main(argv=None) -> int:
         except Exception:  # noqa: BLE001 — advisory must never fail the run
             pass
 
+    # A rep that WENT DARK (dropped off a SUCCESSFUL pull) makes the run
+    # INCOMPLETE even though every captainship pulled — the Eveliz-Roca case
+    # (removed from the view's filter / renamed past the alias). Without this the
+    # run read a silent green DONE while her row quietly stopped filling.
+    _dark_note = None
+    if went_dark_all:
+        _bits = []
+        for _lbl, _per in went_dark_all.items():
+            _names = sorted({n for _ns in _per.values() for n in _ns})
+            _bits.append(f"{_lbl} — {', '.join(_names)}")
+        _dark_note = ("rep(s) on the tab stopped filling (recently active but "
+                      "absent from today's pull): " + "; ".join(_bits))
+
     # Standard failure manifest → Hub "Retry failed only" + failure-help callout.
     # Only on a FULL run (an --only run is itself the retry). --only is a single
     # choice, so retry just the one when exactly one failed, else full re-run.
@@ -255,6 +286,7 @@ def main(argv=None) -> int:
                     retry_args=(["--only", _fslugs[0]] if len(_fslugs) == 1 else []),
                     kind="report",
                     note=f"{len(failed)} churn report(s) failed: {failed}."
+                         + (f" ⚠ {_dark_note}" if _dark_note else "")
                          + (f" ⚠ {_term_note}" if _term_note else ""),
                     remediation=_rm.make_remediation(
                         reason=f"{len(failed)} churn report(s) failed in "
@@ -269,6 +301,31 @@ def main(argv=None) -> int:
                                 f"these from Tableau today: {', '.join(failed)}. "
                                 f"Can someone check those churn views are "
                                 f"loading? A re-run often clears a flaky load."))
+            elif _dark_note:
+                # Pull succeeded for every captainship, but a rep silently went
+                # dark → INCOMPLETE, not clean. Retry won't fix a filter/rename,
+                # so the remediation points at the Tableau view + alias.
+                _rm.write_manifest(
+                    "captainship-new-internet-wireless-churn",
+                    failed=list(went_dark_all.keys()), retry_args=[], kind="report",
+                    note="⚠ " + _dark_note
+                         + (f" ⚠ {_term_note}" if _term_note else ""),
+                    remediation=_rm.make_remediation(
+                        reason="A rep on a churn tab stopped filling while every "
+                               "captainship pulled fine: " + _dark_note,
+                        fix="This is almost always a Tableau-side change, not a "
+                            "flaky pull: the rep was removed from that view's "
+                            "filter, or renamed so the pull no longer matches her "
+                            "sheet row. Re-add her to the captain's view filter "
+                            "(and, if renamed, add the alias via "
+                            "focus_office_att.aliases.save_alias), then re-run.",
+                        link="https://us-east-1.online.tableau.com/#/site/sci/"
+                             "views/ATTTRACKER2_1-D2D/CHURN",
+                        message="Heads up — the Captainship Churn report filled "
+                                "every captainship, but a rep stopped showing up: "
+                                + _dark_note + ". Usually she was dropped from her "
+                                "captain's Tableau view filter or renamed. Can "
+                                "someone check the view?"))
             elif _term_note:
                 _rm.write_manifest("captainship-new-internet-wireless-churn",
                                    failed=[], kind="report", note="⚠ " + _term_note)
@@ -287,6 +344,14 @@ def main(argv=None) -> int:
         print("  Usually a flaky/slow Tableau load (often clears on a re-run) "
               "or a corrupted custom view (re-create it). The healthy tab(s) "
               "ARE filled.")
+        return 1
+    if went_dark_all and not args.only:
+        # Every pull succeeded but a rep silently went dark — do NOT read as a
+        # clean DONE (this should be caught, not green). [[feedback_flag_unfilled_cells]]
+        print(f"\n=== run INCOMPLETE — a rep stopped filling despite clean pulls. "
+              f"{_dark_note} ===")
+        print("  Check that rep's Tableau view filter (she was likely removed) "
+              "or add an alias if she was renamed, then re-run.")
         return 1
     print("\n=== done ===")
     return 0

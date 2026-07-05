@@ -194,6 +194,47 @@ def find_sections(ws) -> dict:
     return sections
 
 
+def recent_active(values: list, row: int,
+                  cols: tuple = (2, 4, 6, 8, 10, 12)) -> bool:
+    """True if a rep row has ANY non-empty pct in the last ~6 day columns
+    (B/D/F/H/J/L, read BEFORE today's column is inserted) — i.e. it was being
+    filled until recently. Distinguishes a rep who just dropped off the pull
+    (real 'went dark') from a long-stale roster leftover (blank for weeks)."""
+    for c in cols:
+        if len(values) >= row and len(values[row - 1]) >= c \
+                and values[row - 1][c - 1].strip():
+            return True
+    return False
+
+
+def detect_went_dark(values: list, sections: dict, parsed: dict) -> dict:
+    """Roster reps ABSENT from today's pull for a tier they were RECENTLY ACTIVE
+    in — the Eveliz-Roca failure: a rep dropped from a Tableau view's filter (or
+    renamed past the alias) makes the pull 'succeed' minus her, so her row
+    silently stops filling and the run still reads green. Returns
+    {period: [display_name, ...]} (empty = clean).
+
+    Read `values` (ws.get_all_values()) BEFORE today's column is inserted, so the
+    recent-history columns + `sections['rep_rows']` indices are still valid."""
+    reps = parsed.get("reps", {})
+    out: dict = {}
+    for period, sect in sections.items():
+        pull_lc = {nm.lower() for nm, pd in reps.items()
+                   if isinstance(pd, dict) and pd.get(period)
+                   and pd[period].get("pct")}
+        dark = []
+        for name_lc, row in sect["rep_rows"].items():
+            if name_lc in pull_lc:
+                continue
+            if recent_active(values, row):
+                disp = (values[row - 1][0].strip()
+                        if len(values) >= row and values[row - 1] else name_lc)
+                dark.append(disp)
+        if dark:
+            out[period] = sorted(set(dark))
+    return out
+
+
 def insert_missing_reps(
     ws,
     sections: dict,

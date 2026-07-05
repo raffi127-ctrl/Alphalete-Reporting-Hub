@@ -97,46 +97,6 @@ REPORTS = [
 ]
 
 
-def _recent_active(values: list, row: int,
-                   cols: tuple = (2, 4, 6, 8, 10, 12)) -> bool:
-    """True if a rep row has ANY non-empty pct in the last ~6 day columns
-    (B/D/F/H/J/L before today's insert) — i.e. it was being filled until
-    recently. Distinguishes a rep who just dropped off the pull (real 'went
-    dark') from a long-stale roster leftover (blank for weeks — don't spam)."""
-    for c in cols:
-        if len(values) >= row and len(values[row - 1]) >= c \
-                and values[row - 1][c - 1].strip():
-            return True
-    return False
-
-
-def _detect_went_dark(values: list, sections: dict, parsed: dict) -> dict:
-    """Roster reps ABSENT from today's pull for a tier they were recently active
-    in. The Eveliz-Roca failure: a rep removed from the Tableau view's filter (or
-    renamed past the alias) — the pull 'succeeds' minus her, so her row silently
-    stops filling and the run still reads green. Returns {period: [display_name]}.
-
-    Read `values` BEFORE today's column is inserted, so B/D/F/… still hold the
-    rep's recent history and `sections['rep_rows']` indices are still valid."""
-    reps = parsed.get("reps", {})
-    out: dict = {}
-    for period, sect in sections.items():
-        pull_lc = {nm.lower() for nm, pd in reps.items()
-                   if isinstance(pd, dict) and pd.get(period)
-                   and pd[period].get("pct")}
-        dark = []
-        for name_lc, row in sect["rep_rows"].items():
-            if name_lc in pull_lc:
-                continue
-            if _recent_active(values, row):
-                disp = (values[row - 1][0].strip()
-                        if len(values) >= row and values[row - 1] else name_lc)
-                dark.append(disp)
-        if dark:
-            out[period] = sorted(set(dark))
-    return out
-
-
 def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
                     today: dt.date, args) -> dict:
     """Fill one tab. Returns {period: [went_dark_rep, ...]} — reps on the tab +
@@ -164,7 +124,7 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
     # Eveliz-Roca case). Surfaced so the run flags INCOMPLETE, not a silent DONE.
     went_dark: dict = {}
     try:
-        went_dark = _detect_went_dark(ws.get_all_values(), sections, parsed)
+        went_dark = fill.detect_went_dark(ws.get_all_values(), sections, parsed)
         if went_dark:
             for p, names in went_dark.items():
                 print(f"  ⚠ {p}-day WENT DARK (on tab + recent data, absent from "
