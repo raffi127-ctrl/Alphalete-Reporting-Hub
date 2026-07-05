@@ -134,8 +134,25 @@ def run_order(reports: List[Report], date: dt.date) -> List[Report]:
     for r in reports:
         dep_depth[r.report_id] = depth(r)
 
-    return sorted(
+    ordered = sorted(
         reports,
         key=lambda r: (flow_rank(r), effective_priority_rank(r, date),
                        dep_depth[r.report_id], r.report_id),
     )
+    # Pull each dependent to sit IMMEDIATELY AFTER the last of its dependencies,
+    # instead of dead-last in its whole flow/priority tier. So the Org Sales Board
+    # *email* sends the instant the board fill finishes (Megan 2026-07-05: "send as
+    # soon as the board is filled"), not after every other Tableau report in the
+    # wave. Only reports that declare depends_on move; every other report keeps its
+    # exact sorted position. Iterating `ordered` (sorted by dep_depth) guarantees a
+    # dependency is placed before its dependents, so chains land in order too.
+    ids = {r.report_id for r in reports}
+    result: List[Report] = [r for r in ordered if not r.depends_on]
+    for r in ordered:
+        if not r.depends_on:
+            continue
+        deps = [d for d in r.depends_on if d in ids]
+        placed = [i for i, x in enumerate(result) if x.report_id in deps]
+        pos = max(placed) + 1 if placed else len(result)
+        result.insert(pos, r)
+    return result
