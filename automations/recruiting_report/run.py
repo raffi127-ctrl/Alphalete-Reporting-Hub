@@ -513,31 +513,22 @@ def main() -> int:
     if _card_id and not args.only and not args.dry_run:
         try:
             from automations.shared import run_manifest as _rm
+            # Missing office tabs are NOTED BY NAME on the completion email, but
+            # the run stays COMPLETE — most misses are pending AppStream access
+            # (chronic), and the next scheduled run re-pulls them once access is
+            # granted. (Megan 2026-07-05: "note what is missing on the completion
+            # email, still mark completed" — same treatment as the financial
+            # report.) [[feedback_flag_unfilled_cells]]
+            _notes = []
             if still_missing:
-                _rm.write_manifest(
-                    _card_id, failed=list(still_missing),
-                    retry_args=["--retry-missing"], kind="tab",
-                    note=f"{len(still_missing)} office tab(s) still missing."
-                         + (f" ⚠ {_term_note}" if _term_note else ""),
-                    remediation=_rm.make_remediation(
-                        reason=f"{len(still_missing)} office tab(s) couldn't be "
-                               f"filled this run — usually AppStream/ownerville "
-                               f"access for those offices isn't granted yet.",
-                        fix="Once access is granted, use 'Retry failed only' — a "
-                            "--retry-missing pass re-fetches just the missing "
-                            "offices under a fresh login. The filled tabs stay "
-                            "put.",
-                        link="",
-                        message=f"The recruiting report couldn't fill these "
-                                f"office tabs this week (likely pending "
-                                f"AppStream access): {', '.join(still_missing)}. "
-                                f"Can someone confirm access is granted so we "
-                                f"can re-pull just those?"))
-            elif _term_note:
-                # No missing tabs, but terminated ICDs to remove — stay clean
-                # (ok=true) while carrying the advisory note for the email.
+                _notes.append(f"⚠ {len(still_missing)} office tab(s) got NO data "
+                              f"this week (likely pending AppStream access): "
+                              + ", ".join(still_missing))
+            if _term_note:
+                _notes.append("⚠ " + _term_note)
+            if _notes:
                 _rm.write_manifest(_card_id, failed=[], kind="tab",
-                                   note="⚠ " + _term_note)
+                                   note=" · ".join(_notes))
             else:
                 _rm.mark_clean(_card_id, kind="tab")
         except Exception:
