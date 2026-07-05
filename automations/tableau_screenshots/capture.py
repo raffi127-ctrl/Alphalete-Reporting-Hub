@@ -115,23 +115,28 @@ _DEFAULT_CROP_MARKER = r"PAGE\s*2\b"
 # crop cuts too high — the internet_only bug). Download→Image renders exactly this
 # content span, so the fraction maps straight onto the image height.
 _CROP_JS = r"""
-(marker) => {
+({marker, topMarker}) => {
   const re = new RegExp(marker, 'i');
+  const tre = new RegExp(topMarker, 'i');
   const leaves = [...document.querySelectorAll('*')]
       .filter(e => e.children.length === 0 && (e.textContent||'').trim());
   const hit = leaves.find(e => re.test(e.textContent.trim()));
   if (!hit) return null;
-  const p1 = leaves.find(e => /PAGE\s*1\b/i.test(e.textContent.trim()));
+  // Top reference = the dashboard TITLE (topMarker), NOT the toolbar. Without it,
+  // min-leaf-top is the Tableau toolbar (above the dashboard) and the fraction is
+  // wrong for any dashboard whose title isn't "PAGE 1" (nds, b2b).
+  const topEl = leaves.find(e => tre.test(e.textContent.trim()));
   const rects = leaves.map(e => e.getBoundingClientRect())
       .filter(r => r.width > 0 && r.height > 0);
   if (!rects.length) return null;
-  const top = p1 ? p1.getBoundingClientRect().top : Math.min(...rects.map(r=>r.top));
+  const top = topEl ? topEl.getBoundingClientRect().top
+                    : Math.min(...rects.map(r=>r.top));
   const bottom = Math.max(...rects.map(r=>r.bottom));
   const hy = hit.getBoundingClientRect().top;
   const span = bottom - top;
   if (span <= 0) return null;
   return {frac: (hy - top) / span, text: hit.textContent.trim().slice(0,50),
-          p1: p1 ? p1.textContent.trim().slice(0,40) : null};
+          topUsed: topEl ? topEl.textContent.trim().slice(0,40) : 'MIN-LEAF'};
 }
 """
 
@@ -141,12 +146,13 @@ def _page1_crop_fraction(page, spec: dict, verbose: bool):
     is a single-page dashboard (marker not found). Scale-invariant, so it maps
     straight onto the exported image height."""
     marker = spec.get("crop_before", _DEFAULT_CROP_MARKER)
+    top_marker = spec.get("crop_top", r"PAGE\s*1\b")
     try:
         el = page.query_selector(_IFRAME)
         frame = el.content_frame() if el else None
         if frame is None:
             return None
-        res = frame.evaluate(_CROP_JS, marker)
+        res = frame.evaluate(_CROP_JS, {"marker": marker, "topMarker": top_marker})
     except Exception as e:
         if verbose:
             print(f"   crop probe failed ({type(e).__name__}) — no crop", flush=True)

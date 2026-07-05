@@ -811,7 +811,9 @@
       ],
       "base_args": [
         "--preview-dm",
-        "U04G5HJBGFN"
+        "U04G5HJBGFN",
+        "--only",
+        "nds,b2b_att_country"
       ],
       "cadence": {
         "weekdays": []

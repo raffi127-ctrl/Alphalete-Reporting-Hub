@@ -51,8 +51,10 @@ PAGES = [
         "url": _BASE + "NDS-SNRES-ATT-OOFWorkbook/NDSDailyTracker?:iid=1",
         "crop": "canvas",
         # Multi-page: page 2 is a repeat "Last Week" Rep Summary. Exact match so
-        # it doesn't hit the "Low Metrics Last Week" tab.
+        # it doesn't hit the "Low Metrics Last Week" tab. No "PAGE 1" title here,
+        # so anchor the crop top to the dashboard title (else it uses the toolbar).
         "crop_before": r"^Last Week$",
+        "crop_top": r"NDS Daily Tracker",
     },
     {
         "id": "b2b_att_country",
@@ -64,7 +66,9 @@ PAGES = [
                         "B2BLeaderRecognition?:iid=1"),
         "crop": "canvas",
         # Multi-page: "B2B - Current Week" then "B2B - LAST WEEK" then Trends.
+        # No "PAGE 1" title -> anchor crop top to the current-week title.
         "crop_before": r"B2B\s*-\s*LAST WEEK",
+        "crop_top": r"B2B\s*-\s*Current Week",
     },
     {
         "id": "b2b_att_country_cru",
