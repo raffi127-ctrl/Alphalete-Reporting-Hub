@@ -116,12 +116,69 @@ def section_metric_rows(col_a: list[str], anchor: int, end: int) -> dict[str, in
     return out
 
 
+def ensure_week_col(ws, week: dt.date, row1: list, logfn, dry_run: bool) -> int:
+    """1-based column for `week`, CREATING it if it doesn't exist yet — so a run
+    never fails just because nobody pre-made the column. Clones the most-recent
+    (rightmost) week column to its RIGHT: relative formulas shift into the new
+    column and formatting carries over; the new header is stamped and write()
+    overwrites the metric values. (Week columns are pre-made ~a year out today,
+    so this is a safety net for when that runway ends or a week is ever skipped.)"""
+    col = find_week_col(row1, week)
+    if col:
+        return col
+    dated = []
+    for i, v in enumerate(row1):
+        v = (v or "").strip()
+        for fmt in ("%m/%d/%y", "%m/%d/%Y"):
+            try:
+                dated.append((dt.datetime.strptime(v, fmt).date(), i + 1))
+                break
+            except ValueError:
+                continue
+    if not dated:
+        raise RuntimeError("no existing week column to clone from — add the "
+                           "first week's header by hand")
+    prev_date, prev_col = max(dated, key=lambda t: t[0])
+    new_col = prev_col + 1
+    logfn(f"  week {week.isoformat()} column MISSING — auto-creating "
+          f"{_col_a1(new_col)} cloned from {_col_a1(prev_col)} ({prev_date})")
+    if dry_run:
+        logfn("  (dry-run) would insert + clone the column")
+        return new_col
+    end_row = max(len(row1), len(ws.col_values(1))) + 30   # clone full used height (+margin)
+    sid = ws.id
+    ws.spreadsheet.batch_update({"requests": [
+        # 1) insert a blank column just right of the latest week (inherits the
+        #    prior column's formatting).
+        {"insertDimension": {
+            "range": {"sheetId": sid, "dimension": "COLUMNS",
+                      "startIndex": prev_col, "endIndex": prev_col + 1},
+            "inheritFromBefore": True}},
+        # 2) clone the prior week's column into it — PASTE_NORMAL carries formulas
+        #    (relative refs shift one column right, i.e. onto the new week) +
+        #    formats + values; write() then overwrites the metric values.
+        {"copyPaste": {
+            "source": {"sheetId": sid, "startRowIndex": 0, "endRowIndex": end_row,
+                       "startColumnIndex": prev_col - 1, "endColumnIndex": prev_col},
+            "destination": {"sheetId": sid, "startRowIndex": 0, "endRowIndex": end_row,
+                            "startColumnIndex": prev_col, "endColumnIndex": prev_col + 1},
+            "pasteType": "PASTE_NORMAL"}},
+    ]})
+    # 3) stamp the new week's header (USER_ENTERED → a real date in the cloned
+    #    format). %m/%d/%Y is cross-platform (no %-m).
+    ws.batch_update([{"range": f"{_col_a1(new_col)}1",
+                      "values": [[week.strftime("%m/%d/%Y")]]}],
+                    value_input_option="USER_ENTERED")
+    return new_col
+
+
 def write(ws, data: dict, week: dt.date, dry_run: bool, logfn=print) -> dict:
     col_a = ws.col_values(1)
     row1 = ws.row_values(1)
-    week_col = find_week_col(row1, week)
-    if not week_col:
-        raise RuntimeError(f"no column in row 1 with date header {week.isoformat()}")
+    # Auto-create the week's column if it isn't there yet, so a run never errors
+    # out on a missing column (col_a — the section labels — is unaffected by a
+    # column inserted to the right, so it stays valid below).
+    week_col = ensure_week_col(ws, week, row1, logfn, dry_run)
     colL = _col_a1(week_col)
     logfn(f"week {week.isoformat()} -> column {colL}")
 
