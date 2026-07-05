@@ -195,9 +195,12 @@ def _trim_bottom(path: Path, verbose: bool, margin_px: int = 14) -> None:
     import numpy as np
     from PIL import Image
     im = Image.open(path).convert("RGB")
-    arr = np.asarray(im.convert("L"))
+    arr = np.asarray(im.convert("L")).astype(np.int16)
     h, w = arr.shape
-    row_has = (arr < 245).any(axis=1)          # per-row: any near-non-white pixel
+    # A blank row is UNIFORM (near-constant color), whether the dashboard bg is
+    # white OR light-gray. Content rows have dark text/lines -> big min..max range.
+    # (The old `< 245` white test missed gray-bg whitespace, so nothing trimmed.)
+    row_has = (arr.max(axis=1) - arr.min(axis=1)) >= 22
     bands, y = [], 0                            # content bands [start, end)
     while y < h:
         if row_has[y]:
