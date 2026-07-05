@@ -196,6 +196,53 @@ def _crop_top(path: Path, frac: float, verbose: bool) -> None:
         print(f"   cropped {path.name} to top {frac:.1%} ({w}x{cut})", flush=True)
 
 
+def _blue_bar_tops(path: Path) -> list:
+    """Y of the top of each FULL-WIDTH dark-blue section bar in the image, top to
+    bottom. Tableau renders each section header (the dashboard title, and each
+    '... LAST WEEK' / 'Last Week' section) as a solid dark-blue band spanning the
+    whole width; data cells + whitespace never do. Scale-invariant (reads the
+    rendered pixels), so it beats the DOM-fraction estimate for a precise bottom."""
+    import numpy as np
+    from PIL import Image
+    a = np.asarray(Image.open(path).convert("RGB")).astype(int)
+    h, w, _ = a.shape
+    R, G, B = a[:, :, 0], a[:, :, 1], a[:, :, 2]
+    # Tableau header blue ~ (26,61,109): clearly blue (B well above R/G) and dark.
+    blue = (B > 60) & (B < 175) & (R < 100) & (G < 120) & (B > R + 15) & (B > G + 3)
+    frac = blue.mean(axis=1)                     # share of the row that is bar-blue
+    tops, prev = [], -10
+    for y in np.where(frac > 0.5)[0]:            # >50% wide => a full-width bar
+        if y - prev > 5:                         # new bar (not the same band)
+            tops.append(int(y))
+        prev = int(y)
+    return tops
+
+
+def _crop_above_bar(path: Path, bar_index: int, verbose: bool, spec_id: str = "") -> None:
+    """Crop the image to just above the Nth (1-based) full-width blue section bar,
+    dropping that section and everything below it. Used for the pager dashboards
+    whose 'next section' (Last Week) bled into the DOM-fraction crop — snapping to
+    the bar in IMAGE space is exact regardless of the DOM/image scale. Falls back
+    to no-op (leaving the DOM crop / full image) if the bar isn't found."""
+    from PIL import Image
+    tops = _blue_bar_tops(path)
+    CROP_DEBUG[spec_id] = CROP_DEBUG.get(spec_id, "") + f" blueBars={tops} wantBar#{bar_index}"
+    if len(tops) < bar_index:
+        if verbose:
+            print(f"   crop-to-bar: found {len(tops)} blue bar(s), need "
+                  f"#{bar_index} — leaving as-is", flush=True)
+        return
+    cut = max(1, tops[bar_index - 1] - 4)        # a few px above the bar's top edge
+    with Image.open(path) as im:
+        w, h = im.size
+        if cut < h - 2:
+            im.crop((0, 0, w, cut)).save(path)
+            CROP_DEBUG[spec_id] = CROP_DEBUG.get(spec_id, "") + f" barCut={cut}(<-{h})"
+            if verbose:
+                print(f"   cropped above blue bar #{bar_index} ({h}->{cut}px)",
+                      flush=True)
+
+
 def _trim_bottom(path: Path, verbose: bool, margin_px: int = 14,
                  spec_id: str = "") -> None:
     """Trim the bottom of the PNG to the board's real end. Download→Image leaves a
@@ -288,16 +335,21 @@ def _download_once(page, spec: dict, out_path: Path, *, hydrate_ms: int,
             CROP_DEBUG[_sid] = CROP_DEBUG.get(_sid, "") + f" preCropH={_im0.height}"
     except Exception:
         pass
-    if crop_frac is not None and 0.05 < crop_frac < 0.95:
+    # Two crop strategies. crop_to_bar (nds, b2b): snap the bottom to just above
+    # the Nth blue section bar in IMAGE space — exact, scale-proof. Otherwise the
+    # DOM-fraction crop (default for the approved single/pager trackers).
+    if spec.get("crop_to_bar"):
+        _crop_above_bar(out_path, int(spec["crop_to_bar"]), verbose, spec_id=_sid)
+    elif crop_frac is not None and 0.05 < crop_frac < 0.95:
         _crop_top(out_path, crop_frac, verbose)
-        try:
-            from PIL import Image as _Im
-            with _Im.open(out_path) as _im1:
-                CROP_DEBUG[_sid] = CROP_DEBUG.get(_sid, "") + f" postCropH={_im1.height}"
-        except Exception:
-            pass
     else:
         CROP_DEBUG[_sid] = CROP_DEBUG.get(_sid, "") + " NO-TOP-CROP"
+    try:
+        from PIL import Image as _Im
+        with _Im.open(out_path) as _im1:
+            CROP_DEBUG[_sid] = CROP_DEBUG.get(_sid, "") + f" postCropH={_im1.height}"
+    except Exception:
+        pass
     try:
         _trim_bottom(out_path, verbose, spec_id=spec.get("id", ""))
     except Exception as e:

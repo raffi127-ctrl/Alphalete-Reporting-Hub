@@ -50,9 +50,12 @@ PAGES = [
         "react": "satellite_antenna",
         "url": _BASE + "NDS-SNRES-ATT-OOFWorkbook/NDSDailyTracker?:iid=1",
         "crop": "canvas",
-        # Multi-page: page 2 is a repeat "Last Week" Rep Summary. Exact match so
-        # it doesn't hit the "Low Metrics Last Week" tab. No "PAGE 1" title here,
-        # so anchor the crop top to the dashboard title (else it uses the toolbar).
+        # Multi-page: below the 1-Pager sits a repeat "Last Week" section. The
+        # DOM-fraction crop landed a hair INTO it (blue "Last Week" bar + a few
+        # rows bled in), so snap the bottom to just above that bar in IMAGE space:
+        # it's the 2nd full-width blue section bar (the title is the 1st). Scale-
+        # proof; _trim_bottom then peels the whitespace gap back to the content end.
+        "crop_to_bar": 2,
         "crop_before": r"^Last Week$",
         "crop_top": r"NDS Daily Tracker",
     },
@@ -65,8 +68,11 @@ PAGES = [
                         "87ae0671-15de-4d80-bdc0-702d0946dd1d/"
                         "B2BLeaderRecognition?:iid=1"),
         "crop": "canvas",
-        # Multi-page: "B2B - Current Week" then "B2B - LAST WEEK" then Trends.
-        # No "PAGE 1" title -> anchor crop top to the current-week title.
+        # Multi-page: "B2B - Current Week" then "B2B - LAST WEEK" then Trends. The
+        # DOM-fraction crop bled the "B2B - LAST WEEK" bar + a few rows in, so snap
+        # the bottom to just above that bar in IMAGE space: it's the 2nd full-width
+        # blue section bar (the "B2B - Current Week" title is the 1st). Scale-proof.
+        "crop_to_bar": 2,
         "crop_before": r"B2B\s*-\s*LAST WEEK",
         "crop_top": r"B2B\s*-\s*Current Week",
     },
