@@ -800,30 +800,6 @@
         "type": "not_configured"
       }
     },
-    "tableau_screenshots_preview": {
-      "on_scheduler": true,
-      "_note": "DRY-RUN capture: `lucy rerun tableau_screenshots_preview` captures all 8 Tableau trackers via Download \u2192 Image to output/tableau_screenshots/ and posts NOTHING (no Slack). Prints a per-tracker CAPTURE SUMMARY (dims + KB) to the log. weekdays=[] never auto-runs. Built 2026-07-04; swap base_args to '--preview-dm U045Z8N0ZQC,U04G5HJBGFN' to DM a review, or clear for the live daily post once the content is approved.",
-      "display_name": "Tableau Trackers - DRY-RUN capture",
-      "source_type": "tableau",
-      "data_sources": [],
-      "command": [
-        "automations.tableau_screenshots.run"
-      ],
-      "base_args": [
-        "--preview-dm",
-        "U04G5HJBGFN"
-      ],
-      "cadence": {
-        "weekdays": []
-      },
-      "priority": "P3",
-      "freshness_target": null,
-      "depends_on": [],
-      "timeout_minutes": 30,
-      "verify": {
-        "type": "not_configured"
-      }
-    },
     "financial_report": {
       "on_scheduler": true,
       "display_name": "Financial Report",
@@ -847,6 +823,36 @@
       "verify": {
         "type": "manifest",
         "report_id": "financial-pull"
+      }
+    },
+    "tableau_screenshots": {
+      "on_scheduler": true,
+      "_note": "LIVE daily 8-tracker Tableau screenshots (Download->Image @ 2x DPI via device_scale=2, per-tracker page-1 crop + bottom footer/whitespace trim). Posts as Lucy into an own dated thread 'Alphalete Tableau Trackers M/D/YYYY' in BOTH #alphalete-sales (C068PH3RFSM) + #top-leaders-alphalete-org (C067TTGFEFR, private; Lucy U0BCG8F9B5Z is a member). Replaces Jolie's manual TRACKER post (her 3 'production' imgs stay manual/separate). source_type tableau = wave 2. Went live 2026-07-05. To preview instead of post: base_args ['--preview-dm','U04G5HJBGFN'].",
+      "display_name": "Alphalete Tableau Trackers",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.tableau_screenshots.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 30,
+      "verify": {
+        "type": "manifest",
+        "report_id": "tableau-screenshots"
       }
     }
   },
