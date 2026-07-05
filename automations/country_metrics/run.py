@@ -55,6 +55,7 @@ def main(argv=None) -> int:
           f"({'DRY-RUN' if args.dry_run else 'LIVE'}"
           f"{', SLACK-ONLY' if args.slack_only else ''}) ===")
 
+    res = None
     if not args.slack_only:
         print("Step 1: pull + aggregate from Tableau…")
         res = pull.gather(week, skip_download=args.skip_download, logfn=print)
@@ -93,6 +94,39 @@ def main(argv=None) -> int:
         else:
             print(f"  ⚠ Slack post FAILED (sheet fill is done — run still OK): "
                   f"{sres.get('error')}")
+
+    # Run-manifest so the orchestrator VERIFIES the fill landed (was
+    # verify=not_configured — a silent failure read 'ran clean'). Full LIVE run
+    # only. A metric COLUMN missing from the Tableau source (res['missing_cols'])
+    # is the 'expected but unfilled' signal — the metric can't fill, so flag
+    # INCOMPLETE with a fix; otherwise clean. A hard pull failure already crashes
+    # the run (non-zero exit → FAILED). [[feedback_flag_unfilled_cells]]
+    if not args.dry_run and not args.slack_only:
+        try:
+            from automations.shared import run_manifest as _rm
+            _missing = list((res or {}).get("missing_cols") or [])
+            if _missing:
+                _rm.write_manifest(
+                    "country_metrics", failed=_missing, retry_args=[],
+                    kind="section",
+                    note=f"{len(_missing)} metric column(s) missing from the "
+                         f"Tableau source: {', '.join(_missing)}",
+                    remediation=_rm.make_remediation(
+                        reason=f"Country Metrics couldn't find {len(_missing)} "
+                               f"metric column(s) in the Tableau source: "
+                               f"{', '.join(_missing)}.",
+                        fix="A metric column was renamed/removed in the Tableau "
+                            "view (or the column-name mapping). Fix the view, then "
+                            "re-run: lucy rerun country_metrics",
+                        link="",
+                        message=f"Country Metrics is missing {len(_missing)} "
+                                f"metric column(s) from Tableau: "
+                                f"{', '.join(_missing)}. Did a column get renamed "
+                                f"in the view?"))
+            else:
+                _rm.mark_clean("country_metrics", kind="section")
+        except Exception:  # noqa: BLE001 — manifest is best-effort
+            pass
 
     print("=== done ===")
     return 0
