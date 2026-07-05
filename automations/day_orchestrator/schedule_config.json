@@ -557,6 +557,30 @@
         "type": "not_configured"
       }
     },
+    "first_last_sale": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Run by the dedicated com.alphalete.first-last-sale-mon launchd job at Mon 2:00pm CST (deploy/first_last_sale_mon.sh), NOT the morning orchestrator. Smart Circle (cdeliscu@thesmartcircle.com) emails the 'B2B.D2D First Last Sale WE ….xlsx' Monday ~8:50am–1:11pm CT; --email auto-fetches it. The morning noon-backstop can't wait for a ~1pm email, so this dedicated 2pm job runs it (≈50min buffer past the latest arrival). run.py publishes 'ran' to the Hub itself + writes its own manifest. Manual Upload card kept as fallback.",
+      "display_name": "First Sale / Last Sale",
+      "source_type": "email",
+      "data_sources": [],
+      "command": [
+        "automations.first_last_sale.run"
+      ],
+      "base_args": [
+        "--email"
+      ],
+      "cadence": {
+        "weekdays": [
+          0
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "int_wow_penetration": {
       "on_scheduler": true,
       "display_name": "Int WoW Report - Penetration %",
@@ -904,9 +928,6 @@
     "_note": "Empty now — the previously-standalone AppStream/weather/brand reports were folded into the scheduler above (Megan 2026-06-23). Retire their launchd jobs at cutover (see _meta.cutover_retire_jobs)."
   },
   "excluded": {
-    "_note": "Still manual: First/Last Sale (its email is being discontinued -> Tableau rewire). Frontier + Financial moved to auto email-ingest (source_type email, --email); Frontier 2026-07-01, Financial 2026-07-01.",
-    "first_last_sale": {
-      "_reason": "Upload-gated — MANUAL (email being discontinued; move to Tableau D2D/B2B view)."
-    }
+    "_note": "Empty — all upload reports are now auto email-ingest: Frontier + Financial 2026-07-01, First/Last Sale wired to its own Mon 2pm job (Smart Circle resumed the email). Manual Upload cards kept as fallbacks."
   }
 }

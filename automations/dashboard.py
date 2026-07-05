@@ -1638,7 +1638,7 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "first-last-sale",
-        "name": "First Sale / Last Sale (Upload)",
+        "name": "First Sale / Last Sale",
         "creator": "Megan",
         "emoji": "🕰️",
         "color": "#A78BFA",
@@ -1652,16 +1652,20 @@ AUTOMATED_REPORTS = [
             "and fills the **First Sale / Last Sale times + Order Count** "
             "table on each ICD tab.\n\n"
             "WHEN IT RUNS\n"
-            "Mondays, after the email arrives.\n\n"
+            "Auto-runs **Monday 2:00 PM** on the mac mini — it pulls the "
+            "week's **B2B.D2D First Last Sale** workbook straight from the "
+            "reporting inbox (Smart Circle emails it ~10 AM–1 PM Monday) and "
+            "fills, no upload needed. The manual upload button below stays as "
+            "a fallback re-run.\n\n"
             "IF AN ICD ISN'T IN THE FILE\n"
             "Their section header turns into **'Not On Emailed Report'**."
         ),
         "sheet_url": SHEET_URL,
-        "assignees": ["Eve"],
+        "assignees": ["Fully Automated Alphalete Reports"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],   # Monday
-            "time": "9:15 AM",
+            "time": "2:00 PM",
             "estimated_minutes": 3,
         },
         "checklist": [

@@ -29,6 +29,10 @@ UPLOAD_DIR = WORKSPACE / "automations" / "uploaded" / "first_last_sale"
 # Source of formatting (Megan-formatted)
 FORMAT_SOURCE_TAB = "Marcellus Butler"
 
+# Run-manifest / Hub card id (= the dashboard card id). Seeded failed at run
+# start, mark_clean'd on a clean fill; also the id run.py publishes to the Hub.
+MANIFEST_ID = "first-last-sale"
+
 # Non-ICD tabs to never touch
 NON_ICD_TAB_TITLES = {
     "1on1's", "ATT owners list", "Copy of Country Sales Board ",
@@ -130,22 +134,72 @@ def run_first_last_sale(file_paths: List[Path], dry_run: bool = False,
 
 
 def main() -> int:
+    import tempfile
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", help=f"Folder of uploaded .xlsx (default: {UPLOAD_DIR})")
     ap.add_argument("--dry-run", action="store_true",
                     help="Print actions without writing")
+    ap.add_argument("--email", action="store_true",
+                    help="Auto-ingest: pull this week's B2B.D2D First Last Sale "
+                         ".xlsx from the reporting inbox (Smart Circle) into a "
+                         "temp folder, instead of a manual upload dir.")
     args = ap.parse_args()
 
-    directory = Path(args.dir).expanduser() if args.dir else UPLOAD_DIR
-    files = gather_files(directory)
-    if not files:
-        print(f"no FK/LK .xlsx files found in {directory}")
-        return 1
-    print(f"FSLS: {len(files)} candidate file(s) in {directory}, "
-          f"dry_run={args.dry_run}")
-    run_first_last_sale(files, dry_run=args.dry_run)
-    print("done")
-    return 0
+    _tmpctx = None
+    if args.email:
+        from automations.first_last_sale import email_source as _es
+        _tmpctx = tempfile.TemporaryDirectory(prefix="fsls_email_")
+        directory = Path(_tmpctx.name)
+        print("Auto-ingest: fetching the B2B.D2D First Last Sale workbook from "
+              "the reporting inbox…")
+        got = _es.fetch(directory, verbose=True)
+        print(f"  fetched {len(got)} workbook(s)")
+    else:
+        directory = Path(args.dir).expanduser() if args.dir else UPLOAD_DIR
+
+    # Seed a failed manifest up-front (live only) so a crash / 'no file' bail
+    # leaves ok=false; mark_clean() at the end overwrites it on a clean fill.
+    live = not args.dry_run
+    if live:
+        try:
+            from automations.shared import run_manifest as _rm
+            _rm.write_manifest(MANIFEST_ID, failed=["first/last sale fill"],
+                               retry_args=["--email"], kind="section",
+                               note="run started but did not complete")
+        except Exception:  # noqa: BLE001 — manifest is best-effort
+            pass
+
+    try:
+        files = gather_files(directory)
+        if not files:
+            print(f"no FK/LK .xlsx files found in "
+                  f"{'the reporting inbox' if args.email else directory}")
+            return 1
+        print(f"FSLS: {len(files)} candidate file(s) from "
+              f"{'email inbox' if args.email else directory}, "
+              f"dry_run={args.dry_run}")
+        run_first_last_sale(files, dry_run=args.dry_run)
+        if live:
+            try:
+                from automations.shared import run_manifest as _rm
+                names = ", ".join(sorted(p.name for p in files))
+                _rm.write_manifest(MANIFEST_ID, failed=[], retry_args=[],
+                                   kind="section",
+                                   note=f"pulled {len(files)} workbook(s): {names}")
+            except Exception:  # noqa: BLE001 — best-effort
+                pass
+            # Mark the Hub card 'ran' — this runs as its OWN Monday LaunchAgent,
+            # so it never passes through the orchestrator's publish_done.
+            try:
+                from automations.day_orchestrator import hub_publish as _hp
+                _hp.publish_done("first_last_sale", "First Sale / Last Sale")
+            except Exception:  # noqa: BLE001 — best-effort
+                pass
+        print("done")
+        return 0
+    finally:
+        if _tmpctx is not None:
+            _tmpctx.cleanup()
 
 
 if __name__ == "__main__":
