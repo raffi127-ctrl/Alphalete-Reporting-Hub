@@ -364,6 +364,27 @@
       "verify": null,
       "timeout_minutes": 5
     },
+    "install_fls_agent": {
+      "on_scheduler": true,
+      "_note": "NOT a report — one-shot LaunchAgent installer, run via `lucy rerun install_fls_agent` (same pattern as install_je_agent). on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Regens + launchctl-bootstraps com.alphalete.first-last-sale-mon on the mini so First/Last Sale's Mon 2pm job goes live with zero mini visit. Re-runnable any time.",
+      "display_name": "Install: First/Last Sale LaunchAgent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "first-last-sale-mon"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
+    },
     "daily_rep_breakdown": {
       "on_scheduler": true,
       "display_name": "Daily Rep Breakdown - ATT Program",
@@ -596,26 +617,6 @@
         ]
       },
       "priority": "P2",
-      "freshness_target": null,
-      "depends_on": [],
-      "verify": {
-        "type": "not_configured"
-      }
-    },
-    "restart_poller": {
-      "on_scheduler": true,
-      "_note": "MAINTENANCE — on_scheduler:true ONLY so registry.load_config (which drops on_scheduler:false) keeps it, making it rerunnable; cadence weekdays [] means it NEVER auto-runs in a batch. `lucy rerun restart_poller` bounces the mini's lucy poller (com.alphalete.mini-control) so it reloads new code after a `lucy update` — the poller keeps old modules in memory until restarted, so a newly-added lucy action reads as 'unknown action' until then. rerun spawns it as a fresh subprocess (current code); it schedules a detached, delayed kickstart. Use it, wait ~1min, then queue the new action.",
-      "display_name": "Restart mini poller (maintenance)",
-      "source_type": "api",
-      "data_sources": [],
-      "command": [
-        "automations.day_orchestrator.poller_restart"
-      ],
-      "base_args": [],
-      "cadence": {
-        "weekdays": []
-      },
-      "priority": "P3",
       "freshness_target": null,
       "depends_on": [],
       "verify": {
@@ -956,6 +957,24 @@
         "--only",
         "eveliz"
       ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
+    "opt_phase": {
+      "on_scheduler": true,
+      "_note": "MANUAL-ONLY (weekdays [] -> never auto-runs; the weekly Focus run already includes OPT). Lets you re-run JUST the OPT phase when the Focus completion email notes some ICDs missing their OPT section, instead of the whole ~30-min AppStream+OPT run: lucy rerun opt_phase  (or  lucy rerun opt_phase --only \"Marcellus Butler\" for one ICD).",
+      "display_name": "Focus — OPT phase only (refill)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.recruiting_report.opt_phase"
+      ],
+      "base_args": [],
       "cadence": {
         "weekdays": []
       },
