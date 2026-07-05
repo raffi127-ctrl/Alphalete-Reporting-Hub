@@ -130,8 +130,10 @@ def main(argv=None) -> int:
                   flush=True)
         return 0
 
+    # Bigger window -> Tableau's Download→Image exports at higher resolution
+    # (bigger/crisper text, closer to Jolie's zoomed-in posts).
     with tableau_session(headless=args.headless, allow_form_login=False,
-                         verbose=True) as page:
+                         verbose=True, window_size=(2560, 1600)) as page:
         for spec in selected:
             try:
                 png = cap.capture_page(page, spec, out_dir,

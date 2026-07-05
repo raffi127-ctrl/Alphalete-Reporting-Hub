@@ -109,7 +109,7 @@ def _is_profile_in_use(exc: Exception) -> bool:
 
 
 def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
-                       verbose: bool = True):
+                       verbose: bool = True, window_size: tuple = (1680, 1280)):
     """launch_persistent_context with the existing system-chrome → bundled-
     chromium fallback UNCHANGED, wrapped in a wait+retry for the "profile
     already in use" collision.
@@ -117,7 +117,11 @@ def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
     INERT on a normal launch: a healthy launch returns on the first try with
     byte-identical behavior to before. The retry only triggers on the exact
     profile-in-use failure that otherwise crashes the run — so it cannot
-    affect a working patchright run."""
+    affect a working patchright run.
+
+    window_size (default 1680x1280, unchanged for every existing caller): a
+    bigger window makes Tableau's Download→Image export a higher-resolution image
+    (the tableau_screenshots module passes a large size for crisper posts)."""
     # Force a large window so multi-sheet Tableau dashboards render fully
     # in-view (the Program Summary DOWNLINE VIEW's downline worksheet sits
     # below the fold at the old ~784x449 default, which made its header
@@ -126,7 +130,8 @@ def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
     # scrape sources are unaffected. no_viewport stays True (real window).
     base = dict(user_data_dir=str(user_data_dir), headless=headless,
                 no_viewport=True,
-                args=["--window-size=1680,1280", "--window-position=0,0"])
+                args=[f"--window-size={window_size[0]},{window_size[1]}",
+                      "--window-position=0,0"])
     prefer_chrome = True
     last: Optional[Exception] = None
     for attempt in range(_LAUNCH_RETRIES):
@@ -159,7 +164,8 @@ def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
 
 @contextmanager
 def tableau_session(headless: bool = False, verbose: bool = True,
-                    allow_form_login: bool = True) -> Iterator[Page]:
+                    allow_form_login: bool = True,
+                    window_size: tuple = (1680, 1280)) -> Iterator[Page]:
     """Yield a Page logged into Tableau via ownerville SSO.
 
     Uses Order Log's persistent profile + the exported ownerville
@@ -168,11 +174,15 @@ def tableau_session(headless: bool = False, verbose: bool = True,
     driving the OV login form unattended — verified 2026-07-01 that
     ownerville's Cloudflare now auto-passes the automation (mirrors the
     AppStream self-heal from 6/30). allow_form_login defaults True (the
-    self-heal); pass False for a reuse-only run that fails fast."""
+    self-heal); pass False for a reuse-only run that fails fast.
+
+    window_size (default 1680x1280, unchanged for existing callers): pass a
+    larger size for a higher-resolution Download→Image (tableau_screenshots)."""
     PROFILE_DIR.mkdir(exist_ok=True, parents=True)
     with sync_playwright() as p:
         ctx = _launch_persistent(p, PROFILE_DIR, headless=headless,
-                                 label="tableau_patchright", verbose=verbose)
+                                 label="tableau_patchright", verbose=verbose,
+                                 window_size=window_size)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
             _ensure_tableau_authenticated(page, verbose=verbose,
