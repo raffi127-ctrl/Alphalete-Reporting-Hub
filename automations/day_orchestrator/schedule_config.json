@@ -877,6 +877,27 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": null
+    },
+    "churn_eveliz_fix": {
+      "on_scheduler": true,
+      "_note": "MANUAL-ONLY (weekdays [] -> never auto-runs; reachable via lucy rerun). Targeted re-run of ONLY the Eveliz Wright (B2B) churn tab to apply the Eveliz Roca->Eveliz Wright alias after her Tableau rename (team flagged 2026-07-05). Remove after use.",
+      "display_name": "Owners Churn — Eveliz (manual fix)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.owners_metrics_churn.run"
+      ],
+      "base_args": [
+        "--only",
+        "eveliz"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
     }
   },
   "read_only_standalone": {
