@@ -66,6 +66,11 @@ WRAP_UP_PHRASES = [
     "just a reminder that tomorrow is your fiber installation",
     "fiber installation",
     "today's installation",
+    # Follow-up / check-in template ("Hello [name] this is Kim from AT&T ...
+    # writing to follow up and make sure you have everything you need ...").
+    # Rep-name-independent middle of the template so it matches every variant.
+    # Same protection applies: if the customer replied after it, stays unread.
+    "writing to follow up and make sure you have everything you need",
 ]
 
 
