@@ -2184,6 +2184,53 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "tableau-screenshots",
+        "name": "Alphalete Tableau Trackers",
+        "creator": "Megan",
+        "emoji": "📸",
+        "color": "#1F4E79",
+        "category": "📊 Metrics",
+        "description": "Captures the 8 Tableau sales trackers as images and posts them daily into an 'Alphalete Tableau Trackers M/D/YYYY' thread in #alphalete-sales + #top-leaders-alphalete-org. Replaces Jolie's manual tracker post.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Grabs each of the 8 Tableau trackers via Tableau's Download → Image "
+            "(2× DPI), crops the multi-page pagers to Page 1 (This Week) and "
+            "trims the footer/whitespace, then posts all 8 as a threaded batch.\n\n"
+            "TRACKERS\n"
+            "AT&T Internet Country (+ Internet Only), NDS, B2B AT&T Country "
+            "(+ CRU), B2B D2D Consolidated, B2B Box, ATT Quantum Fiber.\n\n"
+            "WHEN IT RUNS\n"
+            "**Every day** in the 4am orchestrator (wave 2, after Tableau "
+            "publishes).\n\n"
+            "SLACK\n"
+            "Posts as Lucy into its own dated **'Alphalete Tableau Trackers "
+            "M/D/YYYY'** thread (bold header + emoji per tracker, then each "
+            "image as a reply) in **#alphalete-sales** AND "
+            "**#top-leaders-alphalete-org**."
+        ),
+        "assignees": ["Fully Automated Alphalete Reports"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "5:00 AM",
+            "estimated_minutes": 12,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Tableau Trackers posted — all 8 tracker screenshots in the dated thread in #alphalete-sales + #top-leaders-alphalete-org.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Post Today's Trackers",
+                "icon": "▶",
+                "primary": True,
+                "help": "Captures the 8 Tableau trackers and posts them to the dated thread in #alphalete-sales + #top-leaders-alphalete-org. Needs a warm Tableau session (best run on the mini).",
+                "module": "automations.tableau_screenshots.run",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
         "id": "captainship-activations",
         "name": "Captainship Activations (per-captain)",
         "creator": "Eve",
