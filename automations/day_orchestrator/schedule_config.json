@@ -857,7 +857,7 @@
     },
     "tableau_preview": {
       "on_scheduler": true,
-      "_note": "MANUAL-ONLY (weekdays [] -> never auto-runs). Currently set LIVE (--only nds,b2b_att_country) to re-post the two corrected crops into today thread as Lucy in both channels. Revert to --preview-dm or remove after use.",
+      "_note": "MANUAL-ONLY preview harness (weekdays [] -> never auto-runs; reachable via lucy rerun). Captures the tracker(s) and DMs them to Megan via --preview-dm, posting NOTHING to the channels — safe for dialing in a crop. (Was briefly set live to re-post the corrected nds/b2b crops 2026-07-05; reverted to DM-only.)",
       "display_name": "Tableau Tracker Preview (manual)",
       "source_type": "tableau",
       "data_sources": [],
@@ -865,6 +865,8 @@
         "automations.tableau_screenshots.run"
       ],
       "base_args": [
+        "--preview-dm",
+        "U04G5HJBGFN",
         "--only",
         "nds,b2b_att_country"
       ],
