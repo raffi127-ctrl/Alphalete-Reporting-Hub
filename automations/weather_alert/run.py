@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 
 import requests
 
@@ -35,6 +36,13 @@ _WMO = {
 }
 
 
+# Open-Meteo is free/best-effort and occasionally throws a transient 503 or
+# connection blip (2026-07-05: one 503 killed the whole 6am post). Retry a few
+# times with backoff so a single upstream hiccup never eats the daily forecast.
+_FETCH_RETRIES = 4
+_FETCH_BACKOFF = (2, 5, 10)  # seconds between attempts 1→2, 2→3, 3→4
+
+
 def _fetch_forecast() -> dict:
     url = (
         "https://api.open-meteo.com/v1/forecast"
@@ -45,9 +53,20 @@ def _fetch_forecast() -> dict:
         "&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch"
         f"&timezone={TZ}&forecast_days=1"
     )
-    resp = requests.get(url, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
+    last_err: Exception | None = None
+    for attempt in range(_FETCH_RETRIES):
+        try:
+            resp = requests.get(url, timeout=30)
+            resp.raise_for_status()
+            return resp.json()
+        except requests.RequestException as e:
+            last_err = e
+            if attempt < _FETCH_RETRIES - 1:
+                wait = _FETCH_BACKOFF[attempt]
+                print(f"[weather] fetch attempt {attempt + 1} failed "
+                      f"({type(e).__name__}: {e}); retrying in {wait}s", flush=True)
+                time.sleep(wait)
+    raise last_err  # exhausted retries — surface the last error to main()
 
 
 def _fmt_hour(h: int) -> str:
