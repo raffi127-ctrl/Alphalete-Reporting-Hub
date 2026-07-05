@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import time
 from pathlib import Path
 
 from automations.shared import slack_metrics_post as smp
@@ -93,6 +94,10 @@ def _post_to_channel(client, channel: str, captures: list, pages: list,
         except Exception as e:
             out["reaction_warning"] = str(e)[:80]
         results.append(out)
+        # Slack posts a large file's message LATER than a small one uploaded
+        # after it, so images land out of header order. Pause so each image's
+        # message posts before the next upload starts (keeps them in order).
+        time.sleep(3)
     return {"channel": channel, "thread_ts": thread_ts,
             "created": thread["created"], "posted": results,
             "ok": all(r.get("ok") for r in results) if results else False}
