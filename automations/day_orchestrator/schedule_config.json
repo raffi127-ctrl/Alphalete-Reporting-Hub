@@ -983,6 +983,24 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": null
+    },
+    "kick_poller": {
+      "on_scheduler": true,
+      "_note": "MANUAL-ONLY (weekdays [] -> never auto-runs). Bootstrap: lucy rerun kick_poller restarts the mini-control poller so it reloads its code — works even when the running poller predates restart_poller/self-reload, because rerun spawns a fresh subprocess. After the poller has self-reload, lucy update alone suffices; keep this for a forced restart.",
+      "display_name": "Restart mini-control poller (bootstrap)",
+      "source_type": "api",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.kick_poller"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
     }
   },
   "read_only_standalone": {
