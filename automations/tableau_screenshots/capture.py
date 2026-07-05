@@ -19,6 +19,9 @@ import re
 import time
 from pathlib import Path
 
+# Diagnostic: per-tracker bottom-band structure, written to the sheet by run.py.
+TRIM_DEBUG: dict = {}
+
 _IFRAME = 'iframe[title="Data Visualization"]'
 _DL_BTN = '[data-tb-test-id="viz-viewer-toolbar-button-download"]'
 # Confirmed sibling id is 'download-flyout-download-crosstab-MenuItem'; Image is
@@ -184,7 +187,8 @@ def _crop_top(path: Path, frac: float, verbose: bool) -> None:
         print(f"   cropped {path.name} to top {frac:.1%} ({w}x{cut})", flush=True)
 
 
-def _trim_bottom(path: Path, verbose: bool, margin_px: int = 14) -> None:
+def _trim_bottom(path: Path, verbose: bool, margin_px: int = 14,
+                 spec_id: str = "") -> None:
     """Trim the bottom of the PNG to the board's real end. Download→Image leaves a
     big blank gap + a small footer ('Last Object Update…', '***CONFIDENTIAL***')
     below the content that Jolie's posts don't have. Split the image into content
@@ -210,6 +214,19 @@ def _trim_bottom(path: Path, verbose: bool, margin_px: int = 14) -> None:
             bands.append((s, y))
         else:
             y += 1
+    # DIAGNOSTIC: the last 8 content bands as (start,end,gap-before) + row-range
+    # stats for the bottom 700px, so we can see why the tail isn't registering.
+    tail = []
+    for k in range(max(0, len(bands) - 8), len(bands)):
+        s, e = bands[k]
+        gap = s - bands[k - 1][1] if k > 0 else 0
+        tail.append((int(s), int(e), int(gap)))
+    rng = arr.max(axis=1) - arr.min(axis=1)
+    bot = rng[-700:] if h > 700 else rng
+    TRIM_DEBUG[spec_id] = (
+        f"h={h} nbands={len(bands)} tail={tail} "
+        f"bot700_rng[min/med/max]={int(bot.min())}/{int(np.median(bot))}/{int(bot.max())}")
+
     if not bands:
         return
     main_end = bands[-1][1]
@@ -223,6 +240,7 @@ def _trim_bottom(path: Path, verbose: bool, margin_px: int = 14) -> None:
         else:
             break
     new_h = min(h, main_end + margin_px)
+    TRIM_DEBUG[spec_id] += f" -> cut={new_h}"
     if new_h < h - 2:
         im.crop((0, 0, w, new_h)).save(path)
         if verbose:
@@ -258,8 +276,9 @@ def _download_once(page, spec: dict, out_path: Path, *, hydrate_ms: int,
     if crop_frac is not None and 0.05 < crop_frac < 0.95:
         _crop_top(out_path, crop_frac, verbose)
     try:
-        _trim_bottom(out_path, verbose)
+        _trim_bottom(out_path, verbose, spec_id=spec.get("id", ""))
     except Exception as e:
+        TRIM_DEBUG[spec.get("id", "")] = f"ERROR {type(e).__name__}: {str(e)[:120]}"
         if verbose:
             print(f"   bottom-trim skipped ({type(e).__name__}: {str(e)[:80]})",
                   flush=True)
