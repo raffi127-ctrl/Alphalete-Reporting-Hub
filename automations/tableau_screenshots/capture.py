@@ -21,6 +21,9 @@ from pathlib import Path
 
 # Diagnostic: per-tracker bottom-band structure, written to the sheet by run.py.
 TRIM_DEBUG: dict = {}
+# Diagnostic: per-tracker crop math (marker frac, top ref, pre/post-crop height),
+# written to the sheet by run.py so the exact cut point is visible off-machine.
+CROP_DEBUG: dict = {}
 
 _IFRAME = 'iframe[title="Data Visualization"]'
 _DL_BTN = '[data-tb-test-id="viz-viewer-toolbar-button-download"]'
@@ -139,7 +142,9 @@ _CROP_JS = r"""
   const span = bottom - top;
   if (span <= 0) return null;
   return {frac: (hy - top) / span, text: hit.textContent.trim().slice(0,50),
-          topUsed: topEl ? topEl.textContent.trim().slice(0,40) : 'MIN-LEAF'};
+          topUsed: topEl ? topEl.textContent.trim().slice(0,40) : 'MIN-LEAF',
+          hy: Math.round(hy), top: Math.round(top), bottom: Math.round(bottom),
+          span: Math.round(span)};
 }
 """
 
@@ -163,6 +168,10 @@ def _page1_crop_fraction(page, spec: dict, verbose: bool):
     if not res:
         return None
     frac = res.get("frac")
+    CROP_DEBUG[spec.get("id", "")] = (
+        f"marker={res.get('text')!r} frac={frac:.4f} topUsed={res.get('topUsed')!r} "
+        f"hy={res.get('hy')} top={res.get('top')} bottom={res.get('bottom')} "
+        f"span={res.get('span')} margin={_CROP_MARGIN_FRAC}")
     if verbose:
         print(f"   page-2 marker {res.get('text')!r} at frac={frac:.3f} "
               f"— cropping to Page 1", flush=True)
@@ -272,8 +281,23 @@ def _download_once(page, spec: dict, out_path: Path, *, hydrate_ms: int,
         _maybe_click_export_dialog(viz, page)
     dl_info.value.save_as(str(out_path))
 
+    _sid = spec.get("id", "")
+    try:
+        from PIL import Image as _Im
+        with _Im.open(out_path) as _im0:
+            CROP_DEBUG[_sid] = CROP_DEBUG.get(_sid, "") + f" preCropH={_im0.height}"
+    except Exception:
+        pass
     if crop_frac is not None and 0.05 < crop_frac < 0.95:
         _crop_top(out_path, crop_frac, verbose)
+        try:
+            from PIL import Image as _Im
+            with _Im.open(out_path) as _im1:
+                CROP_DEBUG[_sid] = CROP_DEBUG.get(_sid, "") + f" postCropH={_im1.height}"
+        except Exception:
+            pass
+    else:
+        CROP_DEBUG[_sid] = CROP_DEBUG.get(_sid, "") + " NO-TOP-CROP"
     try:
         _trim_bottom(out_path, verbose, spec_id=spec.get("id", ""))
     except Exception as e:

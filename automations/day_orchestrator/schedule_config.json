@@ -854,6 +854,29 @@
         "type": "manifest",
         "report_id": "tableau-screenshots"
       }
+    },
+    "tableau_preview": {
+      "on_scheduler": true,
+      "_note": "MANUAL-ONLY preview harness (weekdays [] -> never auto-runs; only reachable via lucy rerun). Captures tracker(s) and DMs them to Megan via --preview-dm, posting NOTHING to the channels, so a crop can be dialed in safely. Change --only to the tracker id(s) under test.",
+      "display_name": "Tableau Tracker Preview (manual)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.tableau_screenshots.run"
+      ],
+      "base_args": [
+        "--preview-dm",
+        "U04G5HJBGFN",
+        "--only",
+        "nds,b2b_att_country"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
     }
   },
   "read_only_standalone": {

@@ -150,7 +150,7 @@ def main(argv=None) -> int:
     # Per-tracker summary (lands in the mini log) + written to the 'Inspect Out'
     # sheet (readable from any machine, since lucy status truncates to 280 chars).
     print("\n=== CAPTURE SUMMARY ===", flush=True)
-    sheet_rows = [["id", "dims(px)", "KB", "status", "trim_debug"]]
+    sheet_rows = [["id", "dims(px)", "KB", "status", "crop_debug", "trim_debug"]]
     for spec, png in captures:
         try:
             from PIL import Image
@@ -162,10 +162,11 @@ def main(argv=None) -> int:
         print(f"  ✓ {spec['id']:<28} {dims:>11}px  {kb:>5} KB  {Path(png).name}",
               flush=True)
         sheet_rows.append([spec["id"], dims, str(kb), "ok",
+                           cap.CROP_DEBUG.get(spec["id"], ""),
                            cap.TRIM_DEBUG.get(spec["id"], "")])
     for fid in failed:
         print(f"  ✗ {fid:<28} FAILED (no image)", flush=True)
-        sheet_rows.append([fid, "", "", "FAILED", ""])
+        sheet_rows.append([fid, "", "", "FAILED", "", ""])
     print(f"  saved to: {out_dir}", flush=True)
     try:
         import gspread
