@@ -109,21 +109,29 @@ def _maybe_click_export_dialog(viz, page) -> None:
 # wording. Self-classifying: single-page trackers have no such header -> no crop.
 _DEFAULT_CROP_MARKER = r"PAGE\s*2\b"
 
+# Measure where page 2 starts as a fraction of the DASHBOARD CONTENT span (top of
+# the PAGE-1 header -> bottom-most content), NOT of a scroll container (which can
+# include the toolbar/tab-strip above the dashboard and shrink the fraction, so the
+# crop cuts too high — the internet_only bug). Download→Image renders exactly this
+# content span, so the fraction maps straight onto the image height.
 _CROP_JS = r"""
 (marker) => {
   const re = new RegExp(marker, 'i');
-  const els = [...document.querySelectorAll('*')];
-  const hit = els.find(e => e.children.length === 0 &&
-                            re.test((e.textContent||'').trim()));
+  const leaves = [...document.querySelectorAll('*')]
+      .filter(e => e.children.length === 0 && (e.textContent||'').trim());
+  const hit = leaves.find(e => re.test(e.textContent.trim()));
   if (!hit) return null;
-  let c = hit.parentElement, cont = null;
-  while (c) { if (c.scrollHeight > c.clientHeight + 50) { cont = c; break; }
-             c = c.parentElement; }
-  if (!cont) cont = document.scrollingElement || document.body;
-  const cr = cont.getBoundingClientRect();
-  const pr = hit.getBoundingClientRect();
-  const y = pr.top - cr.top + cont.scrollTop;
-  return {frac: y / cont.scrollHeight, text: (hit.textContent||'').trim().slice(0,50)};
+  const p1 = leaves.find(e => /PAGE\s*1\b/i.test(e.textContent.trim()));
+  const rects = leaves.map(e => e.getBoundingClientRect())
+      .filter(r => r.width > 0 && r.height > 0);
+  if (!rects.length) return null;
+  const top = p1 ? p1.getBoundingClientRect().top : Math.min(...rects.map(r=>r.top));
+  const bottom = Math.max(...rects.map(r=>r.bottom));
+  const hy = hit.getBoundingClientRect().top;
+  const span = bottom - top;
+  if (span <= 0) return null;
+  return {frac: (hy - top) / span, text: hit.textContent.trim().slice(0,50),
+          p1: p1 ? p1.textContent.trim().slice(0,40) : null};
 }
 """
 
