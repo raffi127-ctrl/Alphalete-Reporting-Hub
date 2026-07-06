@@ -75,8 +75,36 @@ def _pmset() -> str:
     return " ".join(out)
 
 
+def _batch_state() -> str:
+    """From the current orchestrator log: which reports are NOT yet DONE, any
+    FAILED, and the last log line + how long ago (is the loop still alive?)."""
+    import os
+    today = dt.date.today().isoformat()
+    logs = sorted(glob.glob(f"output/logs/day-orchestrator-{today}-*.log"))
+    if not logs:
+        return "no-log"
+    try:
+        lines = open(logs[-1], errors="replace").read().splitlines()
+    except Exception:
+        return "log-read-err"
+    last_state = {}   # report_id -> latest status word
+    for l in lines:
+        m = re.match(r"\s+([a-z0-9_]+):\s+(DONE|FAILED|INCOMPLETE|data ready|"
+                     r"still trying|running)", l)
+        if m:
+            last_state[m.group(1)] = m.group(2)
+    failed = [r for r, s in last_state.items() if s == "FAILED"]
+    notdone = [f"{r}:{s}" for r, s in last_state.items()
+               if s in ("data ready", "running", "still trying")]
+    last = lines[-1][-70:] if lines else ""
+    mtime = dt.datetime.fromtimestamp(os.path.getmtime(logs[-1])).strftime("%H:%M")
+    return (f"FAILED={failed or 'none'} NOTDONE={notdone or 'none'} "
+            f"lastlog@{mtime}={last!r}")
+
+
 def main():
-    print(f"MORNING-DIAG {dt.date.today()} :: {_orchestrator_start()} :: {_pmset()}")
+    print(f"MORNING-DIAG {dt.date.today()} :: {_orchestrator_start()} :: "
+          f"{_batch_state()} :: {_pmset()}")
 
 
 if __name__ == "__main__":
