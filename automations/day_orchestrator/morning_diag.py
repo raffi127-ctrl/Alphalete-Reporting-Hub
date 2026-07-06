@@ -89,8 +89,8 @@ def _batch_state() -> str:
         return "log-read-err"
     last_state = {}   # report_id -> latest status word
     for l in lines:
-        m = re.match(r"\s+([a-z0-9_]+):\s+(DONE|FAILED|INCOMPLETE|data ready|"
-                     r"still trying|running)", l)
+        m = re.match(r"(?:\[[^\]]+\])?\s+([a-z0-9_]+):\s+(DONE|FAILED|INCOMPLETE|"
+                     r"data ready|still trying|running)", l)
         if m:
             last_state[m.group(1)] = m.group(2)
     failed = [r for r, s in last_state.items() if s == "FAILED"]
