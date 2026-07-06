@@ -82,9 +82,11 @@ if [ -d .git ]; then
   # silently missed teammates whose pull fell outside the change window
   # (Eve hit ModuleNotFoundError: slack_sdk on 2026-05-28). pip install
   # --quiet is ~2-4s when everything's already in place — cheap insurance.
-  if [ -x .venv/bin/pip ]; then
+  # Invoke pip as `python -m pip` (never the .venv/bin/pip script) so a stale
+  # pip shebang from a moved system Python can't run pip through the shell.
+  if [ -x .venv/bin/python ]; then
     echo "→ Syncing Python packages..."
-    ./.venv/bin/pip install --quiet -r automations/recruiting_report/requirements.txt 2>/dev/null \
+    ./.venv/bin/python -m pip install --quiet -r automations/recruiting_report/requirements.txt 2>/dev/null \
       || echo "⚠️  pip install hit an error (offline?) — reports will crash with ModuleNotFoundError if a dep is missing"
   fi
   if [ ! -f .venv/.patchright_chromium_installed ] && [ -x .venv/bin/patchright ]; then

@@ -84,14 +84,14 @@ fi
 cd "$INSTALL_DIR"
 
 # 3. Set up Python venv + install packages
-# Validate that any existing .venv has a working Python interpreter
-# before reusing it. If the system Python that built the venv has been
-# uninstalled/upgraded (e.g. 3.9 → 3.14), the venv's interpreter symlink
-# dangles and `.venv/bin/pip` crashes with "import: command not found".
-# Detect that and force a clean rebuild — much cheaper than trying to
-# repair a half-broken venv. Confirmed root cause for Maud 2026-05-21.
+# Validate that any existing .venv is fully working before reusing it. If the
+# system Python that built the venv moved/upgraded (e.g. 3.9 → 3.14, or a macOS
+# update), the venv's pip SCRIPT keeps a stale shebang and gets run as shell —
+# ".venv/bin/pip: line 3: import: command not found" (Carlos 2026-07-04). Test
+# via `python -m pip` (not just `import sys`) so a broken pip is caught too,
+# then force a clean rebuild — cheaper than repairing a half-broken venv.
 if [ -d ".venv" ]; then
-    if ! .venv/bin/python -c "import sys" >/dev/null 2>&1; then
+    if ! .venv/bin/python -m pip --version >/dev/null 2>&1; then
         echo "→ Existing .venv is broken (Python interpreter missing). Rebuilding…"
         rm -rf .venv
     else
@@ -112,7 +112,9 @@ if [ ! -d ".venv" ]; then
     "$PYTHON_BIN" -m venv .venv
 fi
 echo "→ Upgrading pip"
-.venv/bin/pip install --quiet --upgrade pip
+# Always invoke pip as `python -m pip` — never the .venv/bin/pip script — so a
+# stale pip shebang (from a moved system Python) can't run pip through the shell.
+.venv/bin/python -m pip install --quiet --upgrade pip
 echo "→ Installing Python packages (this takes a minute)"
 # Force ready-made wheels for the packages that otherwise compile native code
 # (cryptography = Rust+OpenSSL; pandas/numpy/pyarrow/pillow/cffi = C). If a
@@ -120,7 +122,7 @@ echo "→ Installing Python packages (this takes a minute)"
 # of dumping a wall of Rust/compiler errors. Pure-Python deps still install
 # normally (they're not in this --only-binary list), so sdist-only packages
 # aren't blocked.
-if ! .venv/bin/pip install --quiet \
+if ! .venv/bin/python -m pip install --quiet \
         --only-binary=cryptography,cffi,pandas,numpy,pyarrow,pillow \
         -r automations/recruiting_report/requirements.txt; then
     PYVER="$(.venv/bin/python -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || echo '?')"
