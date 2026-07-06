@@ -62,7 +62,9 @@ def find_week_tab(ss, target: dt.date):
     Falls back to the newest tab if none contains target (e.g. data-entry lag)."""
     parsed = []
     for w in ss.worksheets():
-        m = re.search(r"sales board we\s*(\d+)\.(\d+)", w.title.lower())
+        # anchor at START so "Energy Sales Board WE 7.5" (a different team's tab)
+        # doesn't match "Sales Board WE ..."
+        m = re.match(r"sales board we\s*(\d+)\.(\d+)", w.title.strip().lower())
         if not m:
             continue
         mo, d = int(m.group(1)), int(m.group(2))
@@ -80,9 +82,10 @@ def find_week_tab(ss, target: dt.date):
         raise RuntimeError("no 'Sales Board WE m.d' tab found")
     containing = [(end, w) for end, w in parsed
                   if end - dt.timedelta(days=6) <= target <= end]
+    # key on the date only -- never compare Worksheet objects (they're not orderable)
     if containing:
-        return sorted(containing)[-1][1]
-    return sorted(parsed)[-1][1]        # fallback: newest week-ending
+        return max(containing, key=lambda t: t[0])[1]
+    return max(parsed, key=lambda t: t[0])[1]        # fallback: newest week-ending
 
 
 def _totals_row(grid) -> int:
