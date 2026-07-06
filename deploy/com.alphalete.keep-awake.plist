@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.alphalete.keep-awake</string>
+  <!-- Prevent the mini from sleeping so launchd's 4am day-orchestrator isn't
+       deferred to ~6am. caffeinate -s = prevent SYSTEM sleep while on AC power;
+       runs forever, KeepAlive relaunches it if it ever dies. User-level agent,
+       NO root needed (unlike a pmset wake schedule). Diagnosed 2026-07-06. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-s</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/megan/1st Claude Folder/output/logs/keep-awake.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/megan/1st Claude Folder/output/logs/keep-awake.err.log</string>
+</dict>
+</plist>

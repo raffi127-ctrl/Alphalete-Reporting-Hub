@@ -69,6 +69,26 @@
     }
   },
   "reports": {
+    "install_keep_awake_agent": {
+      "on_scheduler": true,
+      "_note": "MANUAL-ONLY. `lucy rerun install_keep_awake_agent` installs the com.alphalete.keep-awake LaunchAgent on the mini (user-level, NO root) — runs `caffeinate -s` 24/7 so the mini never sleeps and launchd's 4am orchestrator isn't deferred to ~6am. The remote, no-sudo alternative to the pmset wake schedule (set_wake, which needs root the mini won't give). Diagnosed via morning_diag 2026-07-06.",
+      "display_name": "Install mini keep-awake agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "keep-awake"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
     "set_wake": {
       "on_scheduler": true,
       "_note": "MANUAL-ONLY (weekdays []). `lucy rerun set_wake` sets a daily 03:55 pmset wakeorpoweron schedule on the mini so the 4am orchestrator isn't deferred to ~6am (the mini deep-sleeps overnight; diagnosed via morning_diag 2026-07-06 — START=06:00 with daily_focus clean in 1 try, so NOT an AppStream issue). Uses sudo -n (needs passwordless sudo for pmset). Reversible: sudo pmset repeat cancel.",

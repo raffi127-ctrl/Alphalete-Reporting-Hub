@@ -55,6 +55,23 @@ def _pmset() -> str:
         out.append(f"sleep={m.group(1) if m else '?'}")
     except Exception:
         pass
+    # last system Wake reason (WHY it woke ~6am) — tells sleep apart from power-on
+    try:
+        log = subprocess.run(["pmset", "-g", "log"], capture_output=True,
+                             text=True, timeout=20).stdout
+        wakes = [l for l in log.splitlines()
+                 if re.search(r"\bWake\b.*due to", l) and "DarkWake" not in l]
+        if wakes:
+            out.append("lastwake={" + re.sub(r"\s+", " ", wakes[-1].strip())[:95] + "}")
+    except Exception:
+        pass
+    # is a no-sleep (caffeinate) assertion held right now?
+    try:
+        a = subprocess.run(["pmset", "-g", "assertions"], capture_output=True,
+                           text=True, timeout=10).stdout
+        out.append(f"caffeinate={'yes' if 'caffeinate' in a.lower() else 'no'}")
+    except Exception:
+        pass
     return " ".join(out)
 
 
