@@ -278,7 +278,13 @@ def _read_tab_csv(path: Path) -> List[List[str]]:
                 rows = list(csv.reader(f, delimiter="\t"))
             if rows and any(len(r) > 1 for r in rows):
                 return rows
-        except UnicodeDecodeError:
+        except (UnicodeError, csv.Error):
+            # UnicodeDecodeError is a UnicodeError subclass, but a UTF-16 file
+            # with no BOM raises a BARE UnicodeError ("UTF-16 stream does not
+            # start with BOM") — a flaky/partial Tableau download does exactly
+            # this. Catch the parent (plus csv.Error for a truncated file) so a
+            # bad download degrades to [] here instead of crashing the whole
+            # report; the fill code already treats an empty parse as a miss.
             continue
     return []
 

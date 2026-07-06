@@ -700,6 +700,27 @@
       },
       "_todo": "confirm opt_all picks the current week with no --week (verify in the dry-run week)."
     },
+    "alphalete_org_retail": {
+      "on_scheduler": true,
+      "_note": "Re-run ONLY the Retail OPT step of the Alphalete Org 1on1s report, via `lucy rerun alphalete_org_retail` — so a single-step failure (e.g. a flaky SARA Plus Tableau scrape) refills without re-doing the other 5 steps. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it (the full run via alphalete_org_focus already includes Retail). source_type 'tableau' so the Chrome-collision guard runs first. Not a Hub card.",
+      "display_name": "Alphalete Org 1on1s — Retail OPT only",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:product_sales"
+      ],
+      "command": [
+        "automations.alphalete_org_report.opt_retail"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 20
+    },
     "recruiter_retention_weekly": {
       "on_scheduler": true,
       "display_name": "Ongoing 1st Round Recruiter Retention",
