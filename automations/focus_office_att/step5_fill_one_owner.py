@@ -1154,6 +1154,45 @@ def _frozen_rep_rows(rep_vals):
     return rows
 
 
+def refresh_frozen_office_totals_apps(ws, layout, frozen_rows) -> int:
+    """Fix the frozen block's OFFICE TOTALS 'Total Apps' cells (the weekly
+    SUM total + each per-day total). At freeze time the per-rep Total Apps
+    were still blank, so their column total froze as 0 while every other
+    metric froze correctly (New INT, Talk To's, etc.). Recompute ONLY the
+    Total Apps totals as =SUM over the frozen rep rows — leaving the correct
+    cells untouched. Requires the per-rep Total Apps to already be written.
+    No-op if the frozen OFFICE TOTALS row or Total Apps cols can't be found.
+    """
+    if not frozen_rows:
+        return 0
+    first, last = min(frozen_rows), max(frozen_rows)
+    colb = ws.col_values(2)
+    ot_row = next(
+        (i for i in range(last + 1, len(colb) + 1)
+         if isinstance(colb[i - 1], str) and colb[i - 1].strip().upper() == "OFFICE TOTALS"),
+        None,
+    )
+    if ot_row is None:
+        return 0
+    cols = []
+    wk = _find_weekly_cols(ws)
+    if wk.get("SUM Total Apps"):
+        cols.append(wk["SUM Total Apps"])
+    for wd in layout.day_cols:
+        c = layout.day_cols[wd].get("Total Apps")
+        if c:
+            cols.append(c)
+    data = []
+    for c in cols:
+        L = _col_letter(c)
+        data.append({"range": f"'{ws.title}'!{L}{ot_row}",
+                     "values": [[f"=SUM({L}{first}:{L}{last})"]]})
+    if data:
+        ws.spreadsheet.values_batch_update(
+            {"valueInputOption": "USER_ENTERED", "data": data})
+    return len(data)
+
+
 def strip_rep_mark(name: str) -> str:
     """Strip the Tableau-only marker from a rep name. Used everywhere
     that compares rep names — Phase 2's ownerville matching must ignore

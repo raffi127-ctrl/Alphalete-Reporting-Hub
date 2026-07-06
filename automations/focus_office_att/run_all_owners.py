@@ -57,6 +57,7 @@ from automations.focus_office_att.step5_fill_one_owner import (
     design_cosmetic_ops,
     fill_owner_tab,
     page_rqst,
+    refresh_frozen_office_totals_apps,
     scrape_day,
     scrape_disposition_day,
     write_per_day_total_apps_formulas,
@@ -497,6 +498,9 @@ def _scrape_one_owner(page, ws, days: list[dt.date], rqst: str,
                 write_per_day_total_apps_formulas(
                     ws, layout, rep_rows=frozen_rows, clear_future=False)
                 write_weekly_formulas(ws, layout, rep_rows=frozen_rows)
+                # The OFFICE TOTALS row's Total Apps cells froze as 0 too (per-rep
+                # was blank at freeze); recompute them now that per-rep is filled.
+                refresh_frozen_office_totals_apps(ws, layout, frozen_rows)
         except Exception as e:
             print(f"  ⚠ frozen weekly-formula refresh failed: {e}")
         return {
