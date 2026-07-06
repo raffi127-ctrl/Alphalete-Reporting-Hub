@@ -88,12 +88,18 @@ def _batch_state() -> str:
     except Exception:
         return "log-read-err"
     last_state = {}   # report_id -> latest status word
+    fail_reason = {}  # report_id -> the "FAILED — <detail>" text
     for l in lines:
         m = re.match(r"(?:\[[^\]]+\])?\s+([a-z0-9_]+):\s+(DONE|FAILED|INCOMPLETE|"
-                     r"data ready|still trying|running)", l)
+                     r"data ready|still trying|running)(?:\s+[—-]+\s+(.*))?", l)
         if m:
             last_state[m.group(1)] = m.group(2)
-    failed = [r for r, s in last_state.items() if s == "FAILED"]
+            if m.group(2) == "FAILED":
+                fail_reason[m.group(1)] = (m.group(3) or "").strip()[:70]
+            else:
+                fail_reason.pop(m.group(1), None)
+    failed = [f"{r}({fail_reason.get(r, '')})" for r, s in last_state.items()
+              if s == "FAILED"]
     notdone = [f"{r}:{s}" for r, s in last_state.items()
                if s in ("data ready", "running", "still trying")]
     last = lines[-1][-70:] if lines else ""
