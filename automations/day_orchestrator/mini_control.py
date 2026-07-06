@@ -113,9 +113,9 @@ def _action_rerun(args: str) -> tuple[bool, str]:
         return False, "rerun needs a report_id (e.g. daily_focus)"
     report_id, extra = parts[0], parts[1:]
     cfg = registry.load_config()
-    r = cfg.reports.get(report_id)
+    r = registry.resolve_report(cfg, report_id)   # scheduler OR off-scheduler (e.g. leaders_call)
     if not r:
-        known = ", ".join(sorted(cfg.reports)[:10])
+        known = ", ".join(sorted(cfg.raw.get("reports", {}))[:10])
         return False, f"unknown report_id {report_id!r}. known: {known} …"
     # A stray HUMAN Chrome open on the mini single-instances with our automation
     # Chrome and breaks every browser report ("Opening in existing browser

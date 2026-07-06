@@ -42,35 +42,54 @@ class Config:
     raw: dict
 
 
+def _build_report(rid: str, r: dict) -> Report:
+    cad = r.get("cadence", {})
+    return Report(
+        report_id=rid,
+        display_name=r.get("display_name", rid),
+        source_type=r.get("source_type", "tableau"),
+        data_sources=r.get("data_sources", []),
+        command=r.get("command", []),
+        base_args=r.get("base_args", []),
+        weekdays=cad.get("weekdays", [0, 1, 2, 3, 4, 5, 6]),
+        not_before=cad.get("not_before"),
+        priority=r.get("priority", "P2"),
+        freshness_target=r.get("freshness_target"),
+        depends_on=r.get("depends_on", []),
+        verify=r.get("verify", {}),
+        timeout_minutes=int(r.get("timeout_minutes", 45)),
+        idempotency=r.get("idempotency", {}),
+    )
+
+
 def load_config(path: Path = CONFIG_PATH) -> Config:
     raw = json.loads(Path(path).read_text())
     reports: Dict[str, Report] = {}
     for rid, r in raw.get("reports", {}).items():
         if not r.get("on_scheduler", False):
             continue
-        cad = r.get("cadence", {})
-        reports[rid] = Report(
-            report_id=rid,
-            display_name=r.get("display_name", rid),
-            source_type=r.get("source_type", "tableau"),
-            data_sources=r.get("data_sources", []),
-            command=r.get("command", []),
-            base_args=r.get("base_args", []),
-            weekdays=cad.get("weekdays", [0, 1, 2, 3, 4, 5, 6]),
-            not_before=cad.get("not_before"),
-            priority=r.get("priority", "P2"),
-            freshness_target=r.get("freshness_target"),
-            depends_on=r.get("depends_on", []),
-            verify=r.get("verify", {}),
-            timeout_minutes=int(r.get("timeout_minutes", 45)),
-            idempotency=r.get("idempotency", {}),
-        )
+        reports[rid] = _build_report(rid, r)
     return Config(
         settings=raw.get("settings", {}),
         sources=raw.get("sources", {}),
         reports=reports,
         raw=raw,
     )
+
+
+def resolve_report(cfg: Config, report_id: str) -> Optional[Report]:
+    """Return a Report for `report_id` whether or not it's on the scheduler.
+
+    load_config intentionally drops on_scheduler:false reports (e.g. leaders_call,
+    which runs from its own Mon 2:05pm LaunchAgent, not the morning batch) so they
+    never enter the auto-run. But an EXPLICIT `lucy rerun <id>` should still be
+    able to fire them — so fall back to building one from the raw config.
+    """
+    r = cfg.reports.get(report_id)
+    if r:
+        return r
+    raw_r = cfg.raw.get("reports", {}).get(report_id)
+    return _build_report(report_id, raw_r) if raw_r else None
 
 
 def scheduled_today(cfg: Config, date: dt.date) -> List[Report]:
