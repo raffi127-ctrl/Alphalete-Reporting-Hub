@@ -632,10 +632,15 @@ def _find_weekly_cols(ws) -> dict:
     return out
 
 
-def write_weekly_formulas(ws, layout: Layout) -> int:
+def write_weekly_formulas(ws, layout: Layout, rep_rows=None) -> int:
     """Write SUM/AVERAGE formulas into every Weekly Total cell for every
     rep row. Idempotent — overwrites with the same formula every time, so
     re-runs are cheap and harmless.
+
+    rep_rows: pass an explicit list of 1-based rep rows to target a
+    specific block (e.g. the frozen LAST WEEK block via _frozen_rep_rows).
+    Default None resolves the current (top) zone. The SUM/AVG formulas
+    reference per-day cells on the SAME row, so they work in either block.
 
     Returns the count of cells written.
     """
@@ -643,14 +648,15 @@ def write_weekly_formulas(ws, layout: Layout) -> int:
     if not weekly_cols:
         return 0
 
-    rep_col_vals = ws.col_values(layout.rep_name_col)
-    # ONLY real rep rows — never the OFFICE TOTALS / TOTAL REPS IN FIELD / SOLD
-    # / ROLLED 0 / % ON BOARD rows. Writing the rep SUM/AVG formula into those
-    # turns e.g. TOTAL REPS IN FIELD into =SUM(daily counts) (74 instead of the
-    # unique weekly count). The full design pass masked it by rewriting the
-    # summary block afterward, but running this standalone left it clobbered
-    # (Megan 2026-05-31).
-    rep_rows = _current_zone_rep_rows(rep_col_vals)
+    if rep_rows is None:
+        rep_col_vals = ws.col_values(layout.rep_name_col)
+        # ONLY real rep rows — never the OFFICE TOTALS / TOTAL REPS IN FIELD / SOLD
+        # / ROLLED 0 / % ON BOARD rows. Writing the rep SUM/AVG formula into those
+        # turns e.g. TOTAL REPS IN FIELD into =SUM(daily counts) (74 instead of the
+        # unique weekly count). The full design pass masked it by rewriting the
+        # summary block afterward, but running this standalone left it clobbered
+        # (Megan 2026-05-31).
+        rep_rows = _current_zone_rep_rows(rep_col_vals)
     if not rep_rows:
         return 0
 
@@ -701,21 +707,29 @@ def write_weekly_formulas(ws, layout: Layout) -> int:
     return len(data)
 
 
-def write_per_day_total_apps_formulas(ws, layout: Layout) -> int:
+def write_per_day_total_apps_formulas(ws, layout: Layout, rep_rows=None,
+                                      clear_future=True) -> int:
     """Write =SUM(New INT, Upgrades, DTV, New Lines) into each rep's
     per-day Total Apps cell — but ONLY for days that have already
     happened (Mon..today). Future days in the current week get their
     Total Apps cell CLEARED, so an un-worked Saturday doesn't show a
     misleading '0'. Idempotent. Returns the count of cells touched.
+
+    rep_rows: explicit 1-based rep rows to target a specific block (e.g.
+    the frozen LAST WEEK block via _frozen_rep_rows). Default None resolves
+    the current (top) zone.
+    clear_future: for a COMPLETED week (the frozen block) pass False so all
+    7 days get their Total Apps roll-up — none are treated as "future".
     """
-    rep_vals = ws.col_values(layout.rep_name_col)
-    # CURRENT-zone rep rows ONLY — never the frozen LAST WEEK block. That block
-    # is a COMPLETED week (all 7 days); the broad "every named row" scan used to
-    # include it, and the today-based `is_future` cutoff below then CLEARED its
-    # Thu–Sun Total Apps as if they were future days (glitch 2026-07-01: last
-    # week's Total Apps stopped summing past today's weekday). _current_zone_rep_rows
-    # stops at the LAST WEEK label + skips summary rows (same as the weekly-sum writer).
-    rep_rows = _current_zone_rep_rows(rep_vals)
+    if rep_rows is None:
+        rep_vals = ws.col_values(layout.rep_name_col)
+        # CURRENT-zone rep rows ONLY — never the frozen LAST WEEK block. That block
+        # is a COMPLETED week (all 7 days); the broad "every named row" scan used to
+        # include it, and the today-based `is_future` cutoff below then CLEARED its
+        # Thu–Sun Total Apps as if they were future days (glitch 2026-07-01: last
+        # week's Total Apps stopped summing past today's weekday). _current_zone_rep_rows
+        # stops at the LAST WEEK label + skips summary rows (same as the weekly-sum writer).
+        rep_rows = _current_zone_rep_rows(rep_vals)
     if not rep_rows:
         return 0
 
@@ -728,7 +742,7 @@ def write_per_day_total_apps_formulas(ws, layout: Layout) -> int:
         if not ta_col:
             continue
         sale_cols = [c for c in (layout.day_cols[wd].get(m) for m in SALE_METRICS) if c]
-        is_future = wd > today_wd
+        is_future = clear_future and wd > today_wd
         for r in rep_rows:
             if is_future or not sale_cols:
                 value = ""  # clear — day hasn't happened (or no sale cols)
@@ -1107,6 +1121,36 @@ def _current_zone_rep_rows(rep_vals, totals_row=None):
         if _is_summary_label(v):
             continue
         rows.append(i)
+    return rows
+
+
+def _frozen_rep_rows(rep_vals):
+    """Rep rows (1-based) inside the frozen 'LAST WEEK' block only —
+    every named row between the LAST WEEK label and that block's own
+    OFFICE TOTALS, skipping the 'Rep Name' column-header row, blank rows,
+    and summary labels. Found dynamically (no fixed header offset) so a
+    one-row block drift doesn't drop the first rep. Returns [] if absent.
+    """
+    lw_idx = next(
+        (i for i, v in enumerate(rep_vals)
+         if isinstance(v, str) and v.strip().upper() == LAST_WEEK_LABEL),
+        None,
+    )
+    if lw_idx is None:
+        return []
+    rows = []
+    for i in range(lw_idx + 1, len(rep_vals)):
+        v = rep_vals[i]
+        if not (isinstance(v, str) and v.strip()):
+            continue
+        u = v.strip().upper()
+        if u == "OFFICE TOTALS":
+            break
+        if u == "REP NAME":          # frozen block's column-header row
+            continue
+        if _is_summary_label(v):
+            continue
+        rows.append(i + 1)           # 1-based
     return rows
 
 

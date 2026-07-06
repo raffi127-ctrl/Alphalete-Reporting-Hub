@@ -532,6 +532,56 @@ def _normalize_lastweek_conditional(ws) -> None:
         ws.spreadsheet.batch_update({"requests": requests})
 
 
+def hide_top_block_headroom(ws, logfn=print) -> int:
+    """Hide the blank rows between the last CURRENT-zone rep and the frozen
+    'LAST WEEK' label so the two blocks sit adjacent — otherwise the frozen
+    block drifts tens of rows down and the sheet 'looks empty' on open
+    (Megan 2026-07-06). Idempotent: recomputes the last rep every run (reps
+    get added mid-week, which un-hides the headroom the Monday freeze set),
+    leaves ONE spacer row visible, and un-hides any rep row that reappears
+    inside the old hidden range. Returns rows hidden (0 if none needed).
+    """
+    colb = ws.col_values(2)
+    lw = next((i for i, v in enumerate(colb, start=1)
+               if isinstance(v, str) and v.strip().upper() == "LAST WEEK"), None)
+    if lw is None:
+        return 0
+    last_rep = 2  # rows 1-2 are the header; reps start at 3
+    for i in range(3, lw):
+        v = colb[i - 1] if i - 1 < len(colb) else ""
+        if isinstance(v, str) and v.strip():
+            last_rep = i
+    if last_rep <= 2:
+        # Empty top zone (e.g. early Monday before this week's roster fills).
+        # NEVER hide it — the scrape writes reps here next, and hiding first
+        # would orphan them. The gap compacts once reps populate + this runs
+        # again from the daily fill.
+        return 0
+    sid = ws.id
+    requests = [
+        # Re-show the filled block + its one spacer row (in case a prior hide
+        # swallowed a row that now holds a rep).
+        {"updateDimensionProperties": {
+            "range": {"sheetId": sid, "dimension": "ROWS",
+                      "startIndex": 2, "endIndex": last_rep + 1},
+            "properties": {"hiddenByUser": False}, "fields": "hiddenByUser"}},
+    ]
+    # Hide the gap (spacer at last_rep+1 stays visible) up to the label row.
+    gap_start = last_rep + 1          # 0-based index of first row to hide
+    gap_end = lw - 1                  # 0-based end-exclusive = row (lw-1) 1-based
+    hidden = 0
+    if gap_start < gap_end:
+        requests.append({"updateDimensionProperties": {
+            "range": {"sheetId": sid, "dimension": "ROWS",
+                      "startIndex": gap_start, "endIndex": gap_end},
+            "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}})
+        hidden = gap_end - gap_start
+    ws.spreadsheet.batch_update({"requests": requests})
+    if hidden:
+        logfn(f"  {ws.title}: hid {hidden} headroom row(s) (reps end r{last_rep}, LAST WEEK r{lw})")
+    return hidden
+
+
 def rollover_to_last_week(sh, only=None, logfn=print) -> int:
     """Freeze each tab's current-week block (reps + OFFICE TOTALS + summary)
     into a fixed 'LAST WEEK' block at LAST_WEEK_LABEL_ROW (110), so last week's data 'stays

@@ -52,12 +52,14 @@ from automations.focus_office_att.step5_fill_one_owner import (
     TT_FIELD_TO_CANONICAL,
     DISP_FIELD_TO_CANONICAL,
     _merge_rep_records,
+    _frozen_rep_rows,
     backfill_lastweek_block,
     design_cosmetic_ops,
     fill_owner_tab,
     page_rqst,
     scrape_day,
     scrape_disposition_day,
+    write_per_day_total_apps_formulas,
     write_weekly_formulas,
 )
 
@@ -484,7 +486,17 @@ def _scrape_one_owner(page, ws, days: list[dt.date], rqst: str,
         # totals. No design pass — the frozen block is already styled.
         bstats = backfill_lastweek_block(ws, scraped_by_date, layout)
         try:
-            write_weekly_formulas(ws, layout)
+            # Refresh the FROZEN block's derived totals — NOT the top zone.
+            # backfill_lastweek_block only writes the raw per-day sale metrics;
+            # the per-day "Total Apps" roll-up and the weekly SUM/AVG cells must
+            # be recomputed on the frozen rows or they stay stale (Megan
+            # 2026-07-06: "Total apps for last week aren't summing"). Order
+            # matters: per-day Total Apps first, then the weekly SUM that sums it.
+            frozen_rows = _frozen_rep_rows(ws.col_values(layout.rep_name_col))
+            if frozen_rows:
+                write_per_day_total_apps_formulas(
+                    ws, layout, rep_rows=frozen_rows, clear_future=False)
+                write_weekly_formulas(ws, layout, rep_rows=frozen_rows)
         except Exception as e:
             print(f"  ⚠ frozen weekly-formula refresh failed: {e}")
         return {
@@ -533,6 +545,17 @@ def _scrape_one_owner(page, ws, days: list[dt.date], rqst: str,
             fn()
         except Exception as e:
             print(f"  ⚠ {label} failed (cosmetic, ignoring): {type(e).__name__}: {e}")
+
+    # Collapse the blank rows between this week's last rep and the frozen LAST
+    # WEEK block so the two charts sit adjacent (the freeze hides this headroom
+    # on Monday, but adding reps mid-week un-hides it — Megan 2026-07-06). Runs
+    # AFTER the fill+design so reps are already written; safe no-op on an empty
+    # top zone.
+    try:
+        from automations.focus_office_att.daily import hide_top_block_headroom
+        hide_top_block_headroom(ws)
+    except Exception as e:
+        print(f"  ⚠ headroom collapse failed (cosmetic, ignoring): {type(e).__name__}: {e}")
 
     return {
         "tt_counts": {d.isoformat(): len(tt_by_date[d]) for d in days},
