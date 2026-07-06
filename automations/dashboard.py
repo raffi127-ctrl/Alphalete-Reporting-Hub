@@ -2233,6 +2233,52 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "alphalete-production",
+        "name": "Alphalete Daily Production Slack Post",
+        "creator": "Eve",
+        "emoji": "🐺",
+        "color": "#6A4C93",
+        "category": "📊 Metrics",
+        "description": "Combines Jolie's two manual morning screenshot posts into ONE dated '🐺 Alphalete Production' thread in #alphalete-sales: Daily Production, a Team Sales board per team, Highrollers of the day, and 3 rankings (Apps / New Internets / Wireless).",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Screenshots the Sales Board tab into clean PNGs — off a hidden, "
+            "auto-deleted copy tab, so the live sheet is never touched — and posts "
+            "them as Lucy in one threaded post.\n\n"
+            "IMAGES\n"
+            "1. Daily Production\n"
+            "2. Team Sales — one image per team (auto-counts from the sheet)\n"
+            "3. Highrollers of the Day\n"
+            "4. Total Week Production (Ranking based on Apps)\n"
+            "5. Ranking based on New Internets\n"
+            "6. Ranking based on Wireless\n\n"
+            "WHEN IT RUNS\n"
+            "Daily, ~4 AM on the mini (before the manual post), into #alphalete-sales. "
+            "Monday shows the fully-completed prior Mon–Sun week."
+        ),
+        "assignees": ["Fully Automated Alphalete Reports"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "4:00 AM",
+            "estimated_minutes": 8,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Alphalete Production posted — Daily Production, team boards, Highrollers, and the 3 rankings in the dated thread in #alphalete-sales.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Post Today's Production",
+                "icon": "▶",
+                "primary": True,
+                "help": "Renders every section off a hidden copy of the Sales Board tab and posts them to the dated thread in #alphalete-sales. Best run on the mini (posts as Lucy).",
+                "module": "automations.alphalete_production.run",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
         "id": "captainship-activations",
         "name": "Captainship Activations (per-captain)",
         "creator": "Eve",
