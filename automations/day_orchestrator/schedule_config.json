@@ -69,6 +69,25 @@
     }
   },
   "reports": {
+    "alphalete_production": {
+      "on_scheduler": true,
+      "_note": "Combines Jolie's TWO manual morning screenshot posts into ONE dated thread in #alphalete-sales as Lucy: Daily Production, Team Sales (one per team from col CI), Highrollers of the day, + 3 rankings (Apps/New Internets/Wireless). Google-Sheet PNGs (Sales Board WE m.d) rendered off a hidden, auto-deleted COPY tab so the live sheet is never touched. MANUAL-ONLY for now (weekdays [] -> never auto-posts) while proving out: `lucy rerun alphalete_production --preview-dm U045Z8N0ZQC U04G5HJBGFN` DMs Raf+Megan as Lucy. GO LIVE = set weekdays [0-6] + a not-before after Jolie's ~6am, keep base_args [] (real post), add manifest verify, tell Jolie to stop. Built 2026-07-05.",
+      "display_name": "Alphalete Production",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.alphalete_production.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 20,
+      "verify": null
+    },
     "daily_metrics": {
       "on_scheduler": true,
       "display_name": "10 Daily Metrics Report",
