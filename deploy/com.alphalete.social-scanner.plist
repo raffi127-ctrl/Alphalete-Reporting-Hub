@@ -22,16 +22,26 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- 12:00 noon every day, machine LOCAL time (the mini is Central). Single
-         daily run — independent of the separate com.alphalete.brand-audit-noon
-         job that also fires at noon. -->
+    <!-- Twice daily — 12:00 noon AND 4:00 PM — machine LOCAL time (the mini is
+         Central). Two runs give ~2 approval round-trips/day so a submission
+         reaches "scheduled" ~twice as fast as the noon-only cadence. Independent
+         of the separate com.alphalete.brand-audit-noon job that also fires at
+         noon. -->
     <key>StartCalendarInterval</key>
-    <dict>
-        <key>Hour</key>
-        <integer>12</integer>
-        <key>Minute</key>
-        <integer>0</integer>
-    </dict>
+    <array>
+        <dict>
+            <key>Hour</key>
+            <integer>12</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>16</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+    </array>
 
     <key>StandardOutPath</key>
     <string>/Users/megan/1st Claude Folder/output/logs/social-scanner.launchd.out.log</string>

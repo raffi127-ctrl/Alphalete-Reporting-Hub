@@ -1,6 +1,6 @@
 #!/bin/bash
-# Noon social-media posting scan — runs ONCE daily at 12:00 PM CST on the
-# always-on Mac mini via launchd (com.alphalete.social-scanner). Walks the
+# Social-media posting scan — runs TWICE daily, at 12:00 PM and 4:00 PM CST, on
+# the always-on Mac mini via launchd (com.alphalete.social-scanner). Walks the
 # #alphaletesocialmedia intake channel and advances every submitted photo:
 # brand-safety screen -> auto-edit -> propose caption -> collect the approvers'
 # ✅/❌ reactions -> schedule the approved post (Zoho).
@@ -8,11 +8,12 @@
 # SAME entrypoint as a manual run and the Hub "Run Now" button:
 #   python -m automations.brand_audit.social_inbox      (LIVE — writes to Slack)
 #
-# NOT a poller — a single daily pass. Because the flow is human-in-the-loop, a
-# submission advances ONE approval stage per run: a photo dropped today gets its
-# photo+caption proposed at the next noon run, and the approvers' reactions are
-# collected at the FOLLOWING noon run (~24h per human-gated stage). Chosen by
-# Megan 2026-07-06; behavior documented in the commit + memory.
+# NOT a poller — two fixed daily passes (noon + 4pm). Because the flow is
+# human-in-the-loop, a submission advances one APPROVAL ROUND-TRIP per run: a
+# run proposes the photo+caption, the approvers react, and the NEXT run collects
+# those reactions and schedules. Two runs/day = ~2 round-trips/day, so a
+# submission reaches "scheduled" ~twice as fast as the noon-only cadence. Set to
+# noon+4pm by Megan 2026-07-06.
 #
 # Idempotent / no double-process:
 #   * state file ~/.config/brand-audit/social_inbox.json keys each submission by

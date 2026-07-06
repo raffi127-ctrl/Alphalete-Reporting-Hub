@@ -2858,10 +2858,10 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "social-media-posting",
-        # Non-breaking spaces keep "(12 CST Daily)" together so the cadence wraps
-        # as one clean unit onto line 2 of the strip pill (same trick as
+        # Non-breaking spaces keep "(12 + 4 CST Daily)" together so the cadence
+        # wraps as one clean unit onto line 2 of the strip pill (same trick as
         # rc-autoread's "(Q 10 Min)" and the Brand Health card).
-        "name": "Alphalete social media posting (12 CST Daily)",
+        "name": "Alphalete social media posting (12 + 4 CST Daily)",
         "creator": "Megan",
         "emoji": "📸",
         "color": "#EC4899",
@@ -2878,25 +2878,26 @@ AUTOMATED_REPORTS = [
             "caption, and (5) once both are approved, **schedules the post** "
             "(Zoho).\n\n"
             "WHEN IT RUNS\n"
-            "**Once a day at noon (Central)**, via a launchd timer on the Mac "
-            "mini (LUCY). The **Run Now** button here triggers an extra pass "
-            "any time.\n\n"
-            "ONE RUN PER DAY = ONE STAGE PER DAY\n"
+            "**Twice a day — noon and 4 PM (Central)** — via a launchd timer on "
+            "the Mac mini (LUCY). The **Run Now** button here triggers an extra "
+            "pass any time.\n\n"
+            "HOW FAST A PHOTO MOVES\n"
             "The approval flow is human-in-the-loop, so a submission advances "
-            "**one stage per run**: a photo dropped today has its photo + "
-            "caption **proposed at the next noon run**, and the approvers' "
-            "reactions are **collected the following noon run** (~24h per "
-            "human-gated step). Use **Run Now** to push a submission through "
-            "faster once people have reacted.\n\n"
+            "**one approval round-trip per run**: one run **proposes** the "
+            "photo + caption, people react ✅/❌, and the **next run collects** "
+            "those reactions and schedules. Two runs a day (noon + 4 PM) means "
+            "~2 round-trips daily, so a photo reaches *scheduled* roughly "
+            "**twice as fast** as a once-a-day cadence. Use **Run Now** to push "
+            "it through immediately once people have reacted.\n\n"
             "NO DOUBLE-POSTING\n"
             "Each submission is tracked by its Slack timestamp and handled "
-            "once; a lock stops a manual **Run Now** from colliding with the "
-            "noon run."
+            "once; a lock stops the two daily runs (or a manual **Run Now**) "
+            "from colliding on the same photo."
         ),
         # No Google Sheet — Slack + Anthropic + Zoho APIs only.
         "assignees": ["Fully Automated Alphalete Reports"],
-        # Runs on its own noon launchd timer — hide the DUE-TODAY + schedule
-        # pills on the report page (cadence is in the breakdown).
+        # Runs on its own launchd timer (noon + 4 PM) — hide the DUE-TODAY +
+        # schedule pills on the report page (cadence is in the breakdown).
         "hide_schedule": True,
         # Self-running background job: never reports a per-day completion to the
         # Hub, so keep it out of the "due today / not completed" tallies.
@@ -2908,7 +2909,7 @@ AUTOMATED_REPORTS = [
         },
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Scan complete — new photos screened + proposed, ready approvals scheduled. (Approvals move one stage per run; use Run Now to advance faster.)",
+            "message_success": "✅ Scan complete — new photos screened + proposed, ready approvals scheduled. (Approvals advance one round-trip per run; use Run Now to advance faster.)",
             "message_failed": "❌ Run failed. Check the log above (usually a Slack or Anthropic API / rate-limit issue), then run again.",
         },
         "actions": [
