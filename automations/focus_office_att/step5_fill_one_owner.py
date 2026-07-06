@@ -229,10 +229,18 @@ def _set_date_and_pagesize(page, target_mdy: str) -> bool:
 
 def _scrape_current_view(page) -> list[dict]:
     table = page.locator("table#timeTrackingTable")
-    page.wait_for_function(
-        "() => document.querySelectorAll('#timeTrackingTable tbody tr').length >= 1",
-        timeout=10000,
-    )
+    try:
+        page.wait_for_function(
+            "() => document.querySelectorAll('#timeTrackingTable tbody tr').length >= 1",
+            timeout=20000,
+        )
+    except Exception:
+        # No Time Tracker rows for this day (a rep/day with zero knock activity
+        # leaves the table empty) OR a slow AJAX load. Treat as no data and move
+        # on — mirrors _scrape_disposition_view's guard. Previously this raised
+        # and crashed the ENTIRE owner's scrape (Salik Mallick, 2026-07-06:
+        # an empty Time Tracker day in last week aborted his whole backfill).
+        return []
     out = []
     page_num = 1
     while page_num <= 20:
