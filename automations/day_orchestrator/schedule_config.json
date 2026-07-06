@@ -69,6 +69,24 @@
     }
   },
   "reports": {
+    "morning_diag": {
+      "on_scheduler": true,
+      "_note": "MANUAL-ONLY diagnostic (weekdays [] -> never auto-runs). `lucy rerun morning_diag` prints, from the mini, when the 4am launchd orchestrator ACTUALLY started (from its per-run log filename: ~04:00 = mini awake, so the ~6am report delay is the AppStream session; ~06:00 = mini was asleep and launchd deferred the job) + pmset wake schedule/sleep timer + daily_focus attempt/fail count. Built 2026-07-06 to diagnose why AppStream/recruiting reports land ~6am not 4am.",
+      "display_name": "Morning timing diagnostic",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.morning_diag"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
     "alphalete_production": {
       "on_scheduler": true,
       "_note": "LIVE daily (Megan approved preview 2026-07-05). Combines Jolie's TWO manual morning screenshot posts into ONE dated thread in #alphalete-sales as Lucy: Daily Production, Team Sales (one per team from col CI), Highrollers of the day, + 3 rankings (Apps/New Internets/Wireless). Google-Sheet PNGs (Sales Board WE m.d) rendered off a hidden, auto-deleted COPY tab so the live sheet is never touched. Uses the tab CONTAINING yesterday -> Monday shows the fully-completed prior M-S week. source_type local = wave 1 (runs ~4am; yesterday's data is complete by then, before Jolie's ~6am). Preview instead of post: base_args ['--preview-dm','U045Z8N0ZQC','U04G5HJBGFN']. Replaces Jolie's 2 manual production posts — tell her to stop at cutover.",
