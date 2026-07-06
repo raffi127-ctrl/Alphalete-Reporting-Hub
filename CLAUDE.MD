@@ -70,9 +70,6 @@ fluff. I need clear visuals and concise communications.
   primary card). AppStream + Tableau → ~52 ICD tabs weekly.
 - `automations/financial_report/` — financial section, uploaded xlsx.
   "Not Found In Email" for unmatched ICDs.
-- `automations/first_last_sale/` — First Sale/Last Sale section,
-  uploaded xlsx. "Not On Emailed Report" for missing ICDs (light-red
-  header).
 - `automations/production_breakdown/` + `automations/team_breakdowns/`
   — auto-run as last steps of the OPT phase. Don't have separate Hub
   cards.

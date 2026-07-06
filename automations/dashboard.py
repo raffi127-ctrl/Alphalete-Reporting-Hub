@@ -1707,61 +1707,6 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
-        "id": "first-last-sale",
-        "name": "First Sale / Last Sale (2 PM CST)",
-        "creator": "Megan",
-        "emoji": "🕰️",
-        "color": "#A78BFA",
-        "category": "🎯 Recruiting",
-        "description": "Parses the emailed B2B.D2D First Last Sale .xlsx "
-                       "and fills the FS/LS section (1 week behind) on "
-                       "every ICD tab.",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "Reads the weekly emailed **B2B.D2D First Last Sale** workbook "
-            "and fills the **First Sale / Last Sale times + Order Count** "
-            "table on each ICD tab.\n\n"
-            "WHEN IT RUNS\n"
-            "Auto-runs **Monday 2:00 PM** on the mac mini — it pulls the "
-            "week's **B2B.D2D First Last Sale** workbook straight from the "
-            "reporting inbox (Smart Circle emails it ~10 AM–1 PM Monday) and "
-            "fills, no upload needed. The manual upload button below stays as "
-            "a fallback re-run.\n\n"
-            "IF AN ICD ISN'T IN THE FILE\n"
-            "Their section header turns into **'Not On Emailed Report'**."
-        ),
-        "sheet_url": SHEET_URL,
-        "assignees": ["Fully Automated Alphalete Reports"],
-        "schedule": {
-            "frequency": "weekly",
-            "weekdays": [0],   # Monday
-            "time": "2:00 PM",
-            "estimated_minutes": 3,
-        },
-        "checklist": [
-            {"text": "Upload the emailed **B2B.D2D First Last Sale WE M.D.YYYY.xlsx**",
-             "uploader": {
-                 "target_dir": "automations/uploaded/first_last_sale",
-                 "accept": [".xlsx"],
-                 "multiple": False,
-             }},
-        ],
-        "post_run": {
-            "message_success": "✅ FS/LS table filled on every ICD tab.",
-            "message_failed": "❌ Run failed. Check the log above.",
-        },
-        "actions": [
-            {
-                "label": "Run FS/LS Fill",
-                "icon": "▶",
-                "primary": True,
-                "help": "Reads the latest uploaded .xlsx and fills every tab.",
-                "module": "automations.first_last_sale.run",
-                "args_fn": lambda: [],
-            },
-        ],
-    },
-    {
         "id": "frontier-opt-data-pull",
         "name": "Frontier OPT Data Pull",
         "creator": "Megan",

@@ -1,7 +1,7 @@
 {
   "_meta": {
     "purpose": "Single editable source of truth for the day orchestrator. Cadence, priority, and freshness are deliberately KNOBS — tuned by hand during the ~1-week parallel dry-run (Megan 2026-06-23).",
-    "scope": "ALL non-upload reports run on the scheduler (Megan 2026-06-23). Upload-gated reports still manual: First/Last Sale — see 'excluded'. Frontier + Financial moved to auto email-ingest 2026-07-01.",
+    "scope": "ALL non-upload reports run on the scheduler (Megan 2026-06-23). Frontier + Financial moved to auto email-ingest 2026-07-01. First/Last Sale RETIRED 2026-07-06.",
     "weekday_convention": "Python weekday(): Mon=0, Tue=1, Wed=2, Thu=3, Fri=4, Sat=5, Sun=6 (matches dashboard.py).",
     "times": "All times are CST (the mini is Central). HH:MM 24h.",
     "priority_tiers": "P1 critical (guaranteed done daily, runs first) > P2 standard > P3 best-effort (runs last).",
@@ -492,14 +492,14 @@
       "verify": null,
       "timeout_minutes": 5
     },
-    "install_fls_agent": {
+    "uninstall_fls_agent": {
       "on_scheduler": true,
-      "_note": "NOT a report — one-shot LaunchAgent installer, run via `lucy rerun install_fls_agent` (same pattern as install_je_agent). on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Regens + launchctl-bootstraps com.alphalete.first-last-sale-mon on the mini so First/Last Sale's Mon 2pm job goes live with zero mini visit. Re-runnable any time.",
-      "display_name": "Install: First/Last Sale LaunchAgent",
+      "_note": "NOT a report — one-shot LaunchAgent REMOVER for the retired First/Last Sale report (Megan 2026-07-06). Run via `lucy rerun uninstall_fls_agent`. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. launchctl-boots-out + deletes com.alphalete.first-last-sale-mon on the mini so the Mon 2pm job stops with zero mini visit. Idempotent — safe to re-run. Once confirmed gone, this entry + uninstall_agent.py can be dropped.",
+      "display_name": "Uninstall: First/Last Sale LaunchAgent",
       "source_type": "local",
       "data_sources": [],
       "command": [
-        "automations.day_orchestrator.install_agent"
+        "automations.day_orchestrator.uninstall_agent"
       ],
       "base_args": [
         "first-last-sale-mon"
@@ -735,30 +735,6 @@
       ],
       "base_args": [
         "--write"
-      ],
-      "cadence": {
-        "weekdays": [
-          0
-        ]
-      },
-      "priority": "P2",
-      "freshness_target": null,
-      "depends_on": [],
-      "verify": {
-        "type": "not_configured"
-      }
-    },
-    "first_last_sale": {
-      "on_scheduler": false,
-      "_off_scheduler_note": "Run by the dedicated com.alphalete.first-last-sale-mon launchd job at Mon 2:00pm CST (deploy/first_last_sale_mon.sh), NOT the morning orchestrator. Smart Circle (cdeliscu@thesmartcircle.com) emails the 'B2B.D2D First Last Sale WE ….xlsx' Monday ~8:50am–1:11pm CT; --email auto-fetches it. The morning noon-backstop can't wait for a ~1pm email, so this dedicated 2pm job runs it (≈50min buffer past the latest arrival). run.py publishes 'ran' to the Hub itself + writes its own manifest. Manual Upload card kept as fallback.",
-      "display_name": "First Sale / Last Sale",
-      "source_type": "email",
-      "data_sources": [],
-      "command": [
-        "automations.first_last_sale.run"
-      ],
-      "base_args": [
-        "--email"
       ],
       "cadence": {
         "weekdays": [
@@ -1156,6 +1132,6 @@
     "_note": "Empty now — the previously-standalone AppStream/weather/brand reports were folded into the scheduler above (Megan 2026-06-23). Retire their launchd jobs at cutover (see _meta.cutover_retire_jobs)."
   },
   "excluded": {
-    "_note": "Empty — all upload reports are now auto email-ingest: Frontier + Financial 2026-07-01, First/Last Sale wired to its own Mon 2pm job (Smart Circle resumed the email). Manual Upload cards kept as fallbacks."
+    "_note": "Empty — all upload reports are now auto email-ingest: Frontier + Financial 2026-07-01. First/Last Sale RETIRED 2026-07-06 (Megan) — card + scheduler + Mon 2pm mini job removed. Manual Upload cards kept as fallbacks."
   }
 }
