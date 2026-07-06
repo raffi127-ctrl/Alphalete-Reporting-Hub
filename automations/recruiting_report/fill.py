@@ -256,7 +256,8 @@ def _client() -> gspread.Client:
     if not OAUTH_TOKEN_PATH.exists():
         raise RuntimeError(
             f"No Sheets OAuth token at {OAUTH_TOKEN_PATH}. Run the one-time "
-            "authorization on this machine (never in an unattended run).")
+            "authorization on this machine (attended — opens a browser, never "
+            "in a batch run):  python -m automations.recruiting_report.sheets_auth")
     creds = Credentials.from_authorized_user_file(str(OAUTH_TOKEN_PATH), SCOPES)
     if not creds.valid:
         if creds.expired and creds.refresh_token:
@@ -265,7 +266,8 @@ def _client() -> gspread.Client:
         else:
             raise RuntimeError(
                 "Sheets OAuth token invalid and can't refresh — re-run the "
-                "one-time authorization. (Never opens a browser in a batch run.)")
+                "one-time authorization:  "
+                "python -m automations.recruiting_report.sheets_auth")
     return gspread.authorize(creds)
 
 
