@@ -78,8 +78,22 @@ def _instagram(token: str, ig_id: str) -> dict | None:
     }
 
 
+def _page_token(user_token: str, page_id: str) -> str:
+    """The Page's OWN access token (from /me/accounts) — reading /{page_id}/feed
+    needs it; a user / system-user token reads Instagram fine but is rejected on
+    the Page feed. Falls back to the passed token if the page isn't listed."""
+    try:
+        r = _get("me/accounts", user_token, fields="id,access_token", limit=100)
+        for p in r.get("data", []):
+            if str(p.get("id")) == str(page_id):
+                return p.get("access_token") or user_token
+    except Exception:
+        pass
+    return user_token
+
+
 def _facebook(token: str, page_id: str) -> dict | None:
-    r = _get(f"{page_id}/feed", token, limit=30,
+    r = _get(f"{page_id}/feed", _page_token(token, page_id), limit=30,
              fields="created_time,message,reactions.summary(true),comments.summary(true)")
     if "error" in r:
         return None
