@@ -207,6 +207,30 @@ def _action_ping(args: str) -> tuple[bool, str]:
     return True, f"pong from {socket.gethostname()} @ {_now()}"
 
 
+# Packages the mini may auto-install into the report venv — an ALLOWLIST, never
+# arbitrary pip (that would defeat the whole no-arbitrary-shell whitelist). These
+# are undeclared deps that can go missing on a venv rebuild; reportlab is the
+# Leader's Call PDF library (missing it silently blocks the recognition DM — the
+# run still exits 0 because PDF/Slack errors don't fail the pull).
+PIP_ALLOWLIST = {"reportlab"}
+
+
+def _action_pip_install(args: str) -> tuple[bool, str]:
+    """Install an ALLOWLISTED package into the report venv (the poller's own
+    python). Refuses anything not in PIP_ALLOWLIST."""
+    pkg = (args or "").strip()
+    if pkg not in PIP_ALLOWLIST:
+        allowed = ", ".join(sorted(PIP_ALLOWLIST)) or "(none)"
+        return False, f"pip_install refused {pkg!r}; allowed: {allowed}"
+    ok, res = _run_cmd([sys.executable, "-m", "pip", "install", "--upgrade", pkg],
+                       timeout_s=8 * 60)
+    if ok:
+        # Confirm it actually imports now (a wheel-build failure can exit 0-ish).
+        chk, _ = _run_cmd([sys.executable, "-c", f"import {pkg}"], timeout_s=60)
+        res += " · import OK" if chk else " · ⚠ installed but import still fails"
+    return ok, res
+
+
 def _action_update(args: str) -> tuple[bool, str]:
     """git pull the repo on the mini — deploy new code WITHOUT being physically
     at it. --ff-only so it never creates a merge commit (fails cleanly if the
@@ -274,6 +298,7 @@ def _action_set_meta_token(args: str) -> tuple[bool, str]:
 
 ACTIONS = {
     "ping": _action_ping,
+    "pip_install": _action_pip_install,
     "rerun": _action_rerun,
     "update": _action_update,
     "set_meta_token": _action_set_meta_token,
