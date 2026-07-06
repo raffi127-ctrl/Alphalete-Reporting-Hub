@@ -32,6 +32,7 @@ import argparse
 import datetime as dt
 import json
 import re
+import signal
 import sys
 import time
 import traceback
@@ -70,6 +71,21 @@ TIME_TRACKER_PAGE = "p=510"
 # to scrape ?p=510 + ?p=89 directly. Per Megan: Raf is the master
 # admin, so 'his dashboard' IS the master view.
 NO_IMPERSONATE_OWNERS = {"Rafael Hidalgo"}
+
+# Cap the TOTAL wall-clock ONE owner's scrape may take. The per-op 60s timeout
+# (set_default_timeout below) bounds any single browser call, but an owner doing
+# many slowish ops — or one wedged in a way the op-timeout doesn't catch — could
+# still eat huge chunks of the 60-min Phase-2 budget and time out the whole
+# report (2026-07-06: one owner hung, killed the phase at 22/28). This deadline
+# skips such an owner so the rest finish; a skipped owner isn't checkpoint-marked
+# done, so the next run (or a resume) retries it. Unix-only (SIGALRM); a Hub run
+# on Windows falls back to just the per-op cap.
+PER_OWNER_TIMEOUT_S = 300          # 5 min — well above a healthy owner (~1-3 min)
+_HAS_ALARM = hasattr(signal, "SIGALRM")
+
+
+class _OwnerTimeout(Exception):
+    """Raised when one owner blows PER_OWNER_TIMEOUT_S — caught per-owner, skipped."""
 
 # ----------------------------------------------------------------------
 # Resume checkpoint
@@ -652,11 +668,21 @@ def main() -> int:
         if _exit_impersonation(page):
             print("  ✓ Cleared lingering impersonation from prior session")
 
+        # Arm the per-owner deadline (SIGALRM fires _on_owner_alarm in the main
+        # thread; each owner sets alarm() at the top of its try + cancels in finally).
+        if _HAS_ALARM:
+            def _on_owner_alarm(signum, frame):
+                raise _OwnerTimeout(
+                    f"exceeded the {PER_OWNER_TIMEOUT_S // 60}-min per-owner budget")
+            signal.signal(signal.SIGALRM, _on_owner_alarm)
+
         for i, owner in enumerate(owner_tabs, 1):
             print(f"\n[{i}/{len(owner_tabs)}] === {owner} ===")
             scraped_ok = False
             is_master = owner in NO_IMPERSONATE_OWNERS
             try:
+                if _HAS_ALARM:
+                    signal.alarm(PER_OWNER_TIMEOUT_S)   # start this owner's deadline
                 if is_master:
                     # Master-level owner (e.g. Raf) — no impersonation. Get a
                     # fresh master rqst by navigating to root, then scrape
@@ -708,6 +734,8 @@ def main() -> int:
                 print(f"  ✗ {results[owner]}")
                 traceback.print_exc()
             finally:
+                if _HAS_ALARM:
+                    signal.alarm(0)     # clear this owner's deadline (success or not)
                 if is_master:
                     # No impersonation to exit; nothing to do.
                     continue
