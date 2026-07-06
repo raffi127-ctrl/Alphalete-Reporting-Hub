@@ -56,6 +56,7 @@ _HUB_CARD = {
     "first_last_sale": "first-last-sale",
     "brand_audit": "brand-health-audit",
     "alphalete_production": "alphalete-production",
+    "tableau_screenshots": "tableau-screenshots",
     # weather_alert: Slack-only, no Hub card → not published.
 }
 
