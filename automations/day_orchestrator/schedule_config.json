@@ -429,6 +429,27 @@
       ],
       "verify": null
     },
+    "install_retail_catchup_agent": {
+      "on_scheduler": true,
+      "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_retail_catchup_agent` (same pattern as install_je_agent). on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Regens + launchctl-bootstraps com.alphalete.retail-catchup on the mini — a Monday 3pm CST re-pull of Retail NL + Retail Internet + JE, so the weekend's late-posting (day-behind) retail days land before the Monday-night manual rollover. source_type 'local' skips the tableau/appstream chrome guard. Not a Hub card. Re-runnable any time.",
+      "display_name": "Install: Retail catch-up LaunchAgent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "retail-catchup"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
+    },
     "install_je_agent": {
       "on_scheduler": true,
       "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_je_agent`. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. It regens + launchctl-bootstraps com.alphalete.je-sunday-catchup on the mini. source_type 'local' skips the tableau/appstream chrome guard. Not a Hub card. Safe to leave here; re-runnable any time.",

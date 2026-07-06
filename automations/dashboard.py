@@ -1708,7 +1708,7 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "first-last-sale",
-        "name": "First Sale / Last Sale (Mon 2 PM CST)",
+        "name": "First Sale / Last Sale (2 PM CST)",
         "creator": "Megan",
         "emoji": "🕰️",
         "color": "#A78BFA",
@@ -1829,7 +1829,7 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "leaders-call",
-        "name": "Leader's Call - Weekly Recognition (Raf, Mon 2:05 PM CST)",
+        "name": "Leader's Call - Weekly Recognition (2:05 PM CST)",
         "creator": "Claude",
         "emoji": "📣",
         "color": "#F59E0B",

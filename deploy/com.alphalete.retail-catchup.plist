@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.retail-catchup</string>
+
+    <!-- Path is the laptop placeholder; on the mini, install_agent.py rewrites it
+         to the mini's repo path (lucy rerun install_retail_catchup_agent). -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/retail_catchup.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- Monday 3:00pm, machine LOCAL time (the mini is Central). launchd
+         Weekday: 1=Mon. Runs AFTER the retail sources publish the weekend
+         (~2pm) and BEFORE the Monday-night manual rollover freezes the week.
+         TIME KNOB: change Hour to shift the run time (15 = 3pm CST). -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>1</integer>
+        <key>Hour</key>
+        <integer>15</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/retail-catchup.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/retail-catchup.launchd.err.log</string>
+</dict>
+</plist>
