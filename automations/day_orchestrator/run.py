@@ -271,11 +271,28 @@ def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
         # ---- run it ----
         _log(f"  {r.report_id}: data ready — running"
              + (" [SIMULATE]" if simulate else (" [dry-run]" if dry_run else "")))
+        # Announce the START on the shared Hub Activity tab so every teammate's Hub
+        # shows this mini run pulsing yellow LIVE (not just green when it finishes).
+        # publish_done below flips this same row running->done. Best-effort.
+        hub_run_id = None
+        if not (dry_run or simulate):
+            try:
+                from automations.day_orchestrator import hub_publish
+                hub_run_id = hub_publish.publish_running(r.report_id, r.display_name)
+            except Exception:
+                hub_run_id = None
         ok, detail = _run_report(r, target, dry_run=dry_run, simulate=simulate)
         ds.set(r.report_id, state.PENDING, bump_attempt=True)  # stamp the attempt
 
         if not ok:
             ds.set(r.report_id, state.FAILED, reason=detail)
+            if hub_run_id:                     # close the yellow pill so it doesn't hang
+                try:
+                    from automations.day_orchestrator import hub_publish
+                    hub_publish.publish_done(r.report_id, r.display_name,
+                                             status="failed", run_id=hub_run_id)
+                except Exception:
+                    pass
             _log(f"  {r.report_id}: FAILED — {detail}")
             continue
 
@@ -313,7 +330,8 @@ def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
         if mark_ran and not (dry_run or simulate):
             try:
                 from automations.day_orchestrator import hub_publish
-                if hub_publish.publish_done(r.report_id, r.display_name):
+                if hub_publish.publish_done(r.report_id, r.display_name,
+                                            run_id=hub_run_id):
                     _log(f"  {r.report_id}: ✓ marked ran on the Hub")
             except Exception as e:
                 _log(f"  {r.report_id}: Hub publish skipped ({type(e).__name__}: {str(e)[:80]})")

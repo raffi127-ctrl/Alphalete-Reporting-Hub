@@ -65,27 +65,53 @@ def hub_card_id(report_id: str):
     return _HUB_CARD.get(report_id)
 
 
-def publish_done(report_id: str, report_name: str, status: str = "success") -> bool:
-    """Append a finished-run row to the Hub Activity tab so the Hub shows this
-    report as ran-today. Returns True if written, False if the report has no
-    Hub card. Raises on a Sheets error (caller should swallow it)."""
+def _ws():
+    return _fill._client().open_by_key(HUB_ACTIVITY_SHEET_ID).worksheet(HUB_ACTIVITY_TAB)
+
+
+def publish_running(report_id: str, report_name: str):
+    """Append a 'started' row so the Hub shows this mini run as RUNNING (yellow),
+    live, from ANY machine's Hub — the dashboard already reads these rows
+    (_hub_active_runs) with a 2h staleness guard. Returns the RunID to hand to
+    publish_done (which flips this same row running->done in place), or None if the
+    report has no Hub card / the write failed. Best-effort — never raises."""
+    card = _HUB_CARD.get(report_id)
+    if not card:
+        return None
+    run_id = uuid.uuid4().hex[:12]
+    try:
+        _ws().append_row(
+            [run_id, dt.datetime.now().isoformat(timespec="seconds"), card,
+             report_name, "Mini (auto)", socket.gethostname(), "", "started", ""],
+            value_input_option="RAW")     # column shape matches dashboard.HUB_ACTIVITY_HEADERS
+        return run_id
+    except Exception:
+        return None
+
+
+def publish_done(report_id: str, report_name: str, status: str = "success",
+                 run_id: str | None = None) -> bool:
+    """Mark a run finished on the Hub. If `run_id` (from publish_running) is given,
+    UPDATE that 'started' row in place (Status col 8 + Ended At col 9) so the card
+    flips running->done and doesn't leave a dangling yellow pill. Otherwise append a
+    fresh finished row (the reverify / no-prior-start path). Returns True if the Hub
+    was touched, False if the report has no Hub card. Best-effort — never raises."""
     card = _HUB_CARD.get(report_id)
     if not card:
         return False
-    ws = _fill._client().open_by_key(HUB_ACTIVITY_SHEET_ID).worksheet(HUB_ACTIVITY_TAB)
     now = dt.datetime.now().isoformat(timespec="seconds")
-    ws.append_row(
-        [
-            uuid.uuid4().hex[:12],   # RunID
-            now,                     # Started At
-            card,                    # Report ID  (Hub CARD id, not our report_id)
-            report_name,             # Report Name
-            "Mini (auto)",           # User
-            socket.gethostname(),    # Machine
-            "",                      # PID
-            status,                  # Status — "success" is what marks ran-today
-            now,                     # Ended At  (the Hub keys ran-today on this)
-        ],
-        value_input_option="RAW",    # keep ISO timestamps as plain strings
-    )
-    return True
+    try:
+        ws = _ws()
+        if run_id:
+            cell = ws.find(str(run_id))
+            if cell:
+                ws.update_cell(cell.row, 8, status)                       # Status
+                ws.update([[now]], f"I{cell.row}", value_input_option="RAW")  # Ended At
+                return True
+        ws.append_row(
+            [uuid.uuid4().hex[:12], now, card, report_name, "Mini (auto)",
+             socket.gethostname(), "", status, now],
+            value_input_option="RAW")
+        return True
+    except Exception:
+        return False
