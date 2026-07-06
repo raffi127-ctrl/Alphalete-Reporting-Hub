@@ -58,7 +58,7 @@ HEADERS = ["Queued At", "Action", "Args", "By", "Status", "Result", "Finished At
 # the cap pauses auto-run and leaves the rows queued for a human to look at.
 # Only the runaway-risk actions count (see PLUMBING_ACTIONS); a hands-on deploy
 # day with lots of update/restart/pip_install churn shouldn't trip it.
-DAILY_AUTORUN_CAP = 75
+DAILY_AUTORUN_CAP = 100
 # Bounded, idempotent operational actions — NOT runaway risks, so they don't burn
 # the daily budget (a multi-person deploy day generates lots of these). The
 # budget is meant to bound repeated REPORT runs (rerun), not deploy plumbing.
