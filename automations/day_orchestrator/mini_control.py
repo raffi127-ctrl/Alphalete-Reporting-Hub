@@ -18,6 +18,7 @@ Status flows  queued -> running -> done | failed.  Only 'queued' rows run.
 Actions:
   rerun <report_id>     re-run one orchestrator report (today's common fix)
   update                git pull the latest code onto the mini (remote deploy)
+  set_meta_token <tok>  install/refresh the brand-audit Meta page token in keys.json
   restart_holder        relaunch the ownerville session-holder LaunchAgent
   reseed_appstream      open the AppStream login (a human clears Cloudflare)
 
@@ -216,10 +217,66 @@ def _action_update(args: str) -> tuple[bool, str]:
                     timeout_s=120)
 
 
+def _action_set_meta_token(args: str) -> tuple[bool, str]:
+    """Install/refresh the Meta (Facebook + Instagram) page access token in the
+    mini's ~/.config/brand-audit/keys.json, so the noon brand-audit Social
+    section can pull IG data with no human at the mini. The token is passed as
+    the Args (a never-expiring system-user token, starts with 'EAA'). Backs up
+    keys.json first, rewrites ONLY facebook_page_token (every other key is left
+    untouched), then verifies against the IG account already on file and reports
+    the follower count as proof. NEVER echoes the token back into the result.
+
+    Note: the token transits the control Sheet's Args cell to get here — redact
+    that cell after this shows 'done' (the queuer does this from the laptop)."""
+    token = (args or "").strip()
+    if not token.startswith("EAA"):
+        return False, "set_meta_token needs a Meta token (starts with 'EAA') as the Args"
+    import json
+    import shutil
+    keys_path = Path.home() / ".config" / "brand-audit" / "keys.json"
+    if not keys_path.exists():
+        return False, f"keys.json not found at {keys_path} — seed the base keys first"
+    try:
+        data = json.loads(keys_path.read_text())
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't read keys.json: {str(e).splitlines()[0][:120]}"
+    # back up before touching a credential file (never clobber blindly)
+    stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+    try:
+        shutil.copy2(keys_path, keys_path.parent / f"keys.json.bak.{stamp}")
+    except Exception:  # noqa: BLE001 — a failed backup shouldn't block the fix
+        pass
+    data["facebook_page_token"] = token
+    try:
+        keys_path.write_text(json.dumps(data, indent=2))
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write keys.json: {str(e).splitlines()[0][:120]}"
+    # verify against the IG business account already on file — proof it works,
+    # surfaced in `lucy status`. Best-effort: a verify hiccup doesn't undo a
+    # write (the old token was dead anyway), it's just reported.
+    ig = data.get("ig_business_account_id")
+    if not ig:
+        return True, "facebook_page_token written (no ig_business_account_id to verify against)"
+    try:
+        import requests
+        r = requests.get(f"https://graph.facebook.com/v23.0/{ig}",
+                         params={"access_token": token,
+                                 "fields": "followers_count,username"},
+                         timeout=20).json()
+    except Exception as e:  # noqa: BLE001
+        return True, f"token written; verify call errored: {str(e).splitlines()[0][:100]}"
+    if "error" in r:
+        return False, ("token written but IG check FAILED: "
+                       + str(r["error"].get("message", ""))[:140])
+    return True, (f"token installed + verified: @{r.get('username')} "
+                  f"{r.get('followers_count')} followers")
+
+
 ACTIONS = {
     "ping": _action_ping,
     "rerun": _action_rerun,
     "update": _action_update,
+    "set_meta_token": _action_set_meta_token,
     "restart_holder": _action_restart_holder,
     "restart_poller": _action_restart_poller,
     "reseed_appstream": _action_reseed_appstream,
