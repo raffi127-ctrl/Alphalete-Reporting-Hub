@@ -69,6 +69,27 @@
     }
   },
   "reports": {
+    "drb_backfill_lastweek": {
+      "on_scheduler": true,
+      "_note": "MANUAL-ONLY recovery. `lucy rerun drb_backfill_lastweek <MONDAY>` re-pulls last week's Tue-Sun activity from ownerville and writes it into the frozen bottom LAST WEEK block (matched by rep name), touching NEITHER this week NOR the totals/Monday. For when last week's daily scrapes failed (e.g. the mini-sleep gaps) and the LAST WEEK block shows 'x' for Tue-Sun. Preview one tab first: `lucy rerun drb_backfill_lastweek 2026-06-29 --only \"Rafael Hidalgo\"`; then full: `lucy rerun drb_backfill_lastweek 2026-06-29`. Per-owner 5-min cap + 150-min report timeout. Built 2026-07-06.",
+      "display_name": "Daily Rep Breakdown — backfill LAST WEEK Tue-Sun",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.focus_office_att.run_all_owners"
+      ],
+      "base_args": [
+        "--backfill-lastweek"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 150,
+      "verify": null
+    },
     "install_keep_awake_agent": {
       "on_scheduler": true,
       "_note": "MANUAL-ONLY. `lucy rerun install_keep_awake_agent` installs the com.alphalete.keep-awake LaunchAgent on the mini (user-level, NO root) — runs `caffeinate -s` 24/7 so the mini never sleeps and launchd's 4am orchestrator isn't deferred to ~6am. The remote, no-sudo alternative to the pmset wake schedule (set_wake, which needs root the mini won't give). Diagnosed via morning_diag 2026-07-06.",
