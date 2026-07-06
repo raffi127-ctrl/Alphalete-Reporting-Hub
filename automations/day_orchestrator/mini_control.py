@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import os
+import re
 import subprocess
 import sys
 import time
@@ -52,10 +53,17 @@ CONTROL_TAB = "Mini Control"
 SANDBOX_TAB = "Mini Control TEST"
 HEADERS = ["Queued At", "Action", "Args", "By", "Status", "Result", "Finished At"]
 
-# Don't auto-run more than this many fixes in one day — a guard against a runaway
-# loop (a fix that re-queues itself, a stuck report). Hitting the cap pauses
-# auto-run and leaves the rows queued for a human to look at.
-DAILY_AUTORUN_CAP = 40
+# Don't auto-run more than this many SIDE-EFFECTING fixes in one day — a guard
+# against a runaway loop (a fix that re-queues itself, a stuck report). Hitting
+# the cap pauses auto-run and leaves the rows queued for a human to look at.
+# Only the runaway-risk actions count (see PLUMBING_ACTIONS); a hands-on deploy
+# day with lots of update/restart/pip_install churn shouldn't trip it.
+DAILY_AUTORUN_CAP = 75
+# Bounded, idempotent operational actions — NOT runaway risks, so they don't burn
+# the daily budget (a multi-person deploy day generates lots of these). The
+# budget is meant to bound repeated REPORT runs (rerun), not deploy plumbing.
+PLUMBING_ACTIONS = {"ping", "update", "restart_poller", "restart_holder",
+                    "pip_install", "watch_test"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
@@ -207,6 +215,73 @@ def _action_ping(args: str) -> tuple[bool, str]:
     return True, f"pong from {socket.gethostname()} @ {_now()}"
 
 
+# Lines worth surfacing when logtail has no explicit grep — the error/failure
+# signatures across every report's log (traceback frames, our own ✗/❌ markers,
+# HTTP/timeout errors, the opt_all per-step summary).
+_LOGTAIL_ERR_RE = re.compile(
+    r"traceback|error|exception|failed|timeout|✗|❌|skip-retail|HTTP \d", re.I)
+
+
+def _action_logtail(args: str) -> tuple[bool, str]:
+    """Read a log under output/logs/ and return its most relevant tail — the ONE
+    way to see a mini-only log from the laptop (no SSH, no arbitrary shell). READ
+    ONLY: it never runs or changes anything.
+
+      logtail <name> [grep] [n]
+        name  a bare filename OR substring of one in output/logs (NO path
+              separators); newest match wins. '.log' optional. e.g.
+              `orch-2026-07-06-alphalete_org_focus`.
+        grep  optional case-insensitive substring — only matching lines return.
+              Omit to auto-pick error/traceback lines (falls back to plain tail).
+        n     max lines to return (default 15, cap 60).
+
+    The result cell holds ~470 chars, so a big log is paged 470 chars at a time:
+    re-run with a narrower `grep` (e.g. the exception type) to walk it."""
+    import glob
+    import shlex
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()   # unbalanced quotes → best-effort
+    if not parts:
+        return False, "logtail needs a log name (e.g. orch-2026-07-06-alphalete_org_focus)"
+    name, grep = parts[0], (parts[1] if len(parts) > 1 else None)
+    try:
+        n = int(parts[2]) if len(parts) > 2 else 15
+    except ValueError:
+        n = 15
+    n = max(1, min(n, 60))
+    # Path safety: bare filename only, and the resolved path MUST stay inside
+    # output/logs (defense-in-depth against a crafted glob).
+    if "/" in name or "\\" in name or ".." in name:
+        return False, "logtail: name must be a bare filename (no path)"
+    logs_dir = (REPO_ROOT / "output" / "logs").resolve()
+    cands = sorted(glob.glob(str(logs_dir / f"*{name}*")), key=os.path.getmtime)
+    cands = [c for c in cands if os.path.isfile(c)]
+    if not cands:
+        return False, f"no log in output/logs matching {name!r}"
+    path = Path(cands[-1])
+    try:
+        path.resolve().relative_to(logs_dir)
+    except ValueError:
+        return False, "logtail: refused (path escaped output/logs)"
+    try:
+        lines = path.read_text(errors="replace").splitlines()
+    except Exception as e:  # noqa: BLE001
+        return False, f"read error: {str(e).splitlines()[0][:120]}"
+    if grep:
+        matched = [l for l in lines if grep.lower() in l.lower()]
+    else:
+        matched = [l for l in lines if _LOGTAIL_ERR_RE.search(l)]
+    if not matched:
+        matched = lines   # nothing matched → plain tail so the call still helps
+    picked = matched[-n:]
+    head = (f"{path.name} · {len(matched)} match/{len(lines)} lines · "
+            f"last {len(picked)}:\n")
+    body = "\n".join(l.strip()[:200] for l in picked)
+    return True, (head + body)[:470]
+
+
 # Packages the mini may auto-install into the report venv — an ALLOWLIST, never
 # arbitrary pip (that would defeat the whole no-arbitrary-shell whitelist). These
 # are undeclared deps that can go missing on a venv rebuild; reportlab is the
@@ -298,6 +373,7 @@ def _action_set_meta_token(args: str) -> tuple[bool, str]:
 
 ACTIONS = {
     "ping": _action_ping,
+    "logtail": _action_logtail,
     "pip_install": _action_pip_install,
     "rerun": _action_rerun,
     "update": _action_update,
@@ -334,15 +410,16 @@ def _set(ws, rownum: int, status: str, result: str = "", finished: bool = False)
 
 def _autoruns_today(rows: list[dict]) -> int:
     """How many SIDE-EFFECTING fixes already ran (or are running) today — for the
-    runaway cap. `ping` is a zero-side-effect liveness check, so it's excluded:
-    deploy/status churn (lots of pings on a hands-on day) shouldn't burn the
-    runaway budget meant to bound real reruns/updates."""
+    runaway cap. PLUMBING_ACTIONS (ping, update, restart_*, pip_install, …) are
+    bounded/idempotent deploy churn, not runaway risks, so they're excluded: a
+    hands-on multi-person deploy day shouldn't burn the budget that's meant to
+    bound repeated REPORT runs (rerun)."""
     today = dt.date.today().isoformat()
     return sum(
         1 for r in rows
         if str(r.get("Status", "")).strip().lower() in ("done", "failed", "running")
         and str(r.get("Queued At", "")).startswith(today)
-        and str(r.get("Action", "")).strip().lower() != "ping"
+        and str(r.get("Action", "")).strip().lower() not in PLUMBING_ACTIONS
     )
 
 
@@ -470,6 +547,7 @@ def print_help() -> None:
         "  lucy status               show the last 10 commands + their results\n"
         "  lucy status 25            show the last 25\n"
         "  lucy rerun <report_id>    re-run a report that failed in the daily email\n"
+        "  lucy logtail <name>       show the tail of a mini log in output/logs\n"
         "  lucy update               git pull the latest code onto the mini\n"
         "  lucy restart_holder       restart the session keep-alive\n"
         "  lucy reseed_appstream     open AppStream login (needs a human AT the mini)\n"
