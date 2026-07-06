@@ -71,7 +71,7 @@
   "reports": {
     "alphalete_production": {
       "on_scheduler": true,
-      "_note": "Combines Jolie's TWO manual morning screenshot posts into ONE dated thread in #alphalete-sales as Lucy: Daily Production, Team Sales (one per team from col CI), Highrollers of the day, + 3 rankings (Apps/New Internets/Wireless). Google-Sheet PNGs (Sales Board WE m.d) rendered off a hidden, auto-deleted COPY tab so the live sheet is never touched. MANUAL-ONLY for now (weekdays [] -> never auto-posts) while proving out: `lucy rerun alphalete_production --preview-dm U045Z8N0ZQC U04G5HJBGFN` DMs Raf+Megan as Lucy. GO LIVE = set weekdays [0-6] + a not-before after Jolie's ~6am, keep base_args [] (real post), add manifest verify, tell Jolie to stop. Built 2026-07-05.",
+      "_note": "LIVE daily (Megan approved preview 2026-07-05). Combines Jolie's TWO manual morning screenshot posts into ONE dated thread in #alphalete-sales as Lucy: Daily Production, Team Sales (one per team from col CI), Highrollers of the day, + 3 rankings (Apps/New Internets/Wireless). Google-Sheet PNGs (Sales Board WE m.d) rendered off a hidden, auto-deleted COPY tab so the live sheet is never touched. Uses the tab CONTAINING yesterday -> Monday shows the fully-completed prior M-S week. source_type local = wave 1 (runs ~4am; yesterday's data is complete by then, before Jolie's ~6am). Preview instead of post: base_args ['--preview-dm','U045Z8N0ZQC','U04G5HJBGFN']. Replaces Jolie's 2 manual production posts — tell her to stop at cutover.",
       "display_name": "Alphalete Production",
       "source_type": "local",
       "data_sources": [],
@@ -80,13 +80,24 @@
       ],
       "base_args": [],
       "cadence": {
-        "weekdays": []
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
       },
       "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
       "timeout_minutes": 20,
-      "verify": null
+      "verify": {
+        "type": "manifest",
+        "report_id": "alphalete-production"
+      }
     },
     "daily_metrics": {
       "on_scheduler": true,

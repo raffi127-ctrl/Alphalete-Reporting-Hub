@@ -54,17 +54,35 @@ def _cell(grid, r, c):        # 0-based
     return grid[r][c] if r < len(grid) and c < len(grid[r]) else ""
 
 
-def find_week_tab(ss):
-    """The current 'Sales Board WE m.d' tab -- the newest by week-ending date.
-    Named by week, so matched by pattern, never hardcoded."""
-    def wk(t):
-        m = re.search(r"sales board we\s*(\d+)\.(\d+)", t.lower())
-        return (int(m.group(1)), int(m.group(2))) if m else None
-    cands = [(wk(w.title), w) for w in ss.worksheets()]
-    cands = [(k, w) for k, w in cands if k]
-    if not cands:
+def find_week_tab(ss, target: dt.date):
+    """The 'Sales Board WE m.d' tab whose Mon-Sun week CONTAINS `target` (the last
+    completed day). Tab is named by its week-ENDING Sunday (m.d), so the week runs
+    (end-6 .. end). This makes MONDAY correct: yesterday=Sunday belongs to the just-
+    finished week's tab, not a fresh new-week tab. Matched by pattern, never hardcoded.
+    Falls back to the newest tab if none contains target (e.g. data-entry lag)."""
+    parsed = []
+    for w in ss.worksheets():
+        m = re.search(r"sales board we\s*(\d+)\.(\d+)", w.title.lower())
+        if not m:
+            continue
+        mo, d = int(m.group(1)), int(m.group(2))
+        end = None
+        for yr in (target.year, target.year - 1, target.year + 1):   # pick the near year
+            try:
+                cand = dt.date(yr, mo, d)
+            except ValueError:
+                continue
+            if end is None or abs((cand - target).days) < abs((end - target).days):
+                end = cand
+        if end:
+            parsed.append((end, w))
+    if not parsed:
         raise RuntimeError("no 'Sales Board WE m.d' tab found")
-    return sorted(cands)[-1][1]
+    containing = [(end, w) for end, w in parsed
+                  if end - dt.timedelta(days=6) <= target <= end]
+    if containing:
+        return sorted(containing)[-1][1]
+    return sorted(parsed)[-1][1]        # fallback: newest week-ending
 
 
 def _totals_row(grid) -> int:
@@ -348,7 +366,7 @@ def capture_all(sections, today: dt.date, out_dir: Path, only=None) -> List[Tupl
     post order; `meta` carries the caption title + emoji/react for slack_post."""
     ss = open_by_key(SHEET_ID)
     _sweep_temp(ss)                    # clear any orphan temp from a prior crashed run
-    ws = find_week_tab(ss)
+    ws = find_week_tab(ss, last_completed_day(today))   # tab that CONTAINS yesterday
     grid = ws.get_all_values()
     token = _access_token()
     out_dir.mkdir(parents=True, exist_ok=True)
