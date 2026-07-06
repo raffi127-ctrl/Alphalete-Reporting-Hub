@@ -415,6 +415,27 @@
       "verify": null,
       "timeout_minutes": 5
     },
+    "install_social_scanner_agent": {
+      "on_scheduler": true,
+      "_note": "NOT a report — one-shot LaunchAgent installer, run via `lucy rerun install_social_scanner_agent` (same pattern as install_je_agent / install_fls_agent). on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Regens + launchctl-bootstraps com.alphalete.social-scanner on the mini so the Social Media posting scanner's noon-daily job goes live with zero mini visit. Re-runnable any time.",
+      "display_name": "Install: Social Media Scanner LaunchAgent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "social-scanner"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
+    },
     "daily_rep_breakdown": {
       "on_scheduler": true,
       "display_name": "Daily Rep Breakdown - ATT Program",

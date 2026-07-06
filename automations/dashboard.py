@@ -2856,6 +2856,72 @@ AUTOMATED_REPORTS = [
             },
         ],
     },
+    {
+        "id": "social-media-posting",
+        # Non-breaking spaces keep "(12 CST Daily)" together so the cadence wraps
+        # as one clean unit onto line 2 of the strip pill (same trick as
+        # rc-autoread's "(Q 10 Min)" and the Brand Health card).
+        "name": "Alphalete social media posting (12 CST Daily)",
+        "creator": "Megan",
+        "emoji": "📸",
+        "color": "#EC4899",
+        "category": "📸 Social",
+        "description": "Turns photos reps drop in #alphaletesocialmedia into brand-safe, captioned social posts — screens the photo, auto-edits it, drafts a caption, collects ✅/❌ approvals, then schedules the approved post.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Watches the **#alphaletesocialmedia** Slack channel. When a rep "
+            "drops a photo, Lucy: (1) **brand-safety screens** it (flags "
+            "alcohol / profanity / anything unprofessional for approver "
+            "sign-off), (2) **auto-edits** the photo (enhance + crop), (3) "
+            "drafts a **caption** in our voice, (4) collects the approvers' "
+            "**:white_check_mark: / :x:** reactions on the photo and the "
+            "caption, and (5) once both are approved, **schedules the post** "
+            "(Zoho).\n\n"
+            "WHEN IT RUNS\n"
+            "**Once a day at noon (Central)**, via a launchd timer on the Mac "
+            "mini (LUCY). The **Run Now** button here triggers an extra pass "
+            "any time.\n\n"
+            "ONE RUN PER DAY = ONE STAGE PER DAY\n"
+            "The approval flow is human-in-the-loop, so a submission advances "
+            "**one stage per run**: a photo dropped today has its photo + "
+            "caption **proposed at the next noon run**, and the approvers' "
+            "reactions are **collected the following noon run** (~24h per "
+            "human-gated step). Use **Run Now** to push a submission through "
+            "faster once people have reacted.\n\n"
+            "NO DOUBLE-POSTING\n"
+            "Each submission is tracked by its Slack timestamp and handled "
+            "once; a lock stops a manual **Run Now** from colliding with the "
+            "noon run."
+        ),
+        # No Google Sheet — Slack + Anthropic + Zoho APIs only.
+        "assignees": ["Fully Automated Alphalete Reports"],
+        # Runs on its own noon launchd timer — hide the DUE-TODAY + schedule
+        # pills on the report page (cadence is in the breakdown).
+        "hide_schedule": True,
+        # Self-running background job: never reports a per-day completion to the
+        # Hub, so keep it out of the "due today / not completed" tallies.
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "12:00 PM",
+            "estimated_minutes": 3,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Scan complete — new photos screened + proposed, ready approvals scheduled. (Approvals move one stage per run; use Run Now to advance faster.)",
+            "message_failed": "❌ Run failed. Check the log above (usually a Slack or Anthropic API / rate-limit issue), then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run Now",
+                "icon": "▶",
+                "primary": True,
+                "help": "Do an extra pass now — screen + propose new photos and schedule any that are fully approved.",
+                "module": "automations.brand_audit.social_inbox",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
 ]
 
 # Merge in user-uploaded reports (saved by the Wire-Up dialog)

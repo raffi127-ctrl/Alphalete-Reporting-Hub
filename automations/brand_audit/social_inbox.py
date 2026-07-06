@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -32,7 +33,45 @@ from automations.brand_audit.config import (
 )
 
 _STATE = Path.home() / ".config" / "brand-audit" / "social_inbox.json"
+_LOCK = Path.home() / ".config" / "brand-audit" / "social_inbox.lock"
 MODEL = "claude-opus-4-8"
+
+
+# ---- singleton lock (already-running guard) ---------------------------------
+# The state file is written once at the END of process_inbox, so two overlapping
+# runs would both read the same state and both post the same photo. This
+# pid-lockfile lets only ONE run touch the inbox at a time — so the noon launchd
+# run and a manual Hub "Run Now" can never double-process a submission. Same
+# idiom as automations.day_orchestrator.state (pid-based, reclaims stale locks).
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except (OSError, ProcessLookupError):
+        return False
+    return True
+
+
+def acquire_lock() -> bool:
+    """True if we got the singleton lock. False if another LIVE run holds it.
+    A stale lock (dead pid) is reclaimed."""
+    _LOCK.parent.mkdir(parents=True, exist_ok=True)
+    if _LOCK.exists():
+        try:
+            old = int(_LOCK.read_text().strip() or "0")
+        except ValueError:
+            old = 0
+        if old and old != os.getpid() and _pid_alive(old):
+            return False
+    _LOCK.write_text(str(os.getpid()))
+    return True
+
+
+def release_lock() -> None:
+    try:
+        if _LOCK.exists() and _LOCK.read_text().strip() == str(os.getpid()):
+            _LOCK.unlink()
+    except OSError:
+        pass
 
 _CONTEXT_QUESTION = (
     "Thanks for the photo! To caption it right, can you reply here with:\n"
@@ -804,9 +843,21 @@ def main(argv=None) -> int:
     p.add_argument("--company", default=DEFAULT_COMPANY)
     p.add_argument("--dry-run", action="store_true",
                    help="report actions without writing to Slack or posting")
+    p.add_argument("--force", action="store_true",
+                   help="bypass the already-running lock (only if a stale lock "
+                        "is wrongly blocking a run)")
     args = p.parse_args(argv)
-    for a in process_inbox(args.company, dry_run=args.dry_run):
-        print(a.get("action"), "·", a.get("caption") or a.get("message") or a.get("error") or "")
+    if not args.force and not acquire_lock():
+        print("another social_inbox run is already in progress — skipping "
+              "(pass --force to override)")
+        print("=== done ===")
+        return 0
+    try:
+        for a in process_inbox(args.company, dry_run=args.dry_run):
+            print(a.get("action"), "·", a.get("caption") or a.get("message") or a.get("error") or "")
+    finally:
+        if not args.force:
+            release_lock()
     print("=== done ===")
     return 0
 
