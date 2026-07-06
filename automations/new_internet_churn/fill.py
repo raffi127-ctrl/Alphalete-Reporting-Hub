@@ -215,20 +215,44 @@ def detect_went_dark(values: list, sections: dict, parsed: dict) -> dict:
     {period: [display_name, ...]} (empty = clean).
 
     Read `values` (ws.get_all_values()) BEFORE today's column is inserted, so the
-    recent-history columns + `sections['rep_rows']` indices are still valid."""
+    recent-history columns + `sections['rep_rows']` indices are still valid.
+
+    Presence is judged against the WHOLE pull, not per-bucket: a rep in today's
+    pull with a pct in ANY period is present — an empty 0-30/30/60 bucket while
+    her 90-day fills is a normal data gap (no activations that bucket), NOT a
+    disappearance (Cordell Jones 2026-07-06). Only a rep absent from every
+    bucket — dropped from the view's filter or renamed past the alias — is dark.
+
+    A rep on the shared Terminated-ICDs list is NEVER dark: she's expected to
+    drop out of the pull once she's let go (Selena Powers 2026-07-06). Flagging
+    her as dark would block the run's retry and hold the Hub card red forever.
+    Her stale row is surfaced separately (advisory) by the report's
+    ti.alert_terminated() hook, not here."""
     reps = parsed.get("reps", {})
+    present_lc = {nm.lower() for nm, pd in reps.items()
+                  if isinstance(pd, dict)
+                  and any(isinstance(v, dict) and v.get("pct")
+                          for v in pd.values())}
+    # Cross-reference the Terminated-ICDs list (single cached Sheet read for the
+    # whole run) so a terminated rep's expected disappearance never reads as a
+    # broken filter. Import lazily — terminated_icds pulls in gspread, which a
+    # dry-run/offline unit test of this module shouldn't require.
+    try:
+        from automations.shared import terminated_icds as _ti
+        _is_terminated = _ti.terminated_lookup()
+    except Exception:  # noqa: BLE001 — advisory cross-check must never break fill
+        _is_terminated = lambda _n: False
     out: dict = {}
     for period, sect in sections.items():
-        pull_lc = {nm.lower() for nm, pd in reps.items()
-                   if isinstance(pd, dict) and pd.get(period)
-                   and pd[period].get("pct")}
         dark = []
         for name_lc, row in sect["rep_rows"].items():
-            if name_lc in pull_lc:
+            if name_lc in present_lc:
+                continue
+            disp = (values[row - 1][0].strip()
+                    if len(values) >= row and values[row - 1] else name_lc)
+            if _is_terminated(disp):
                 continue
             if recent_active(values, row):
-                disp = (values[row - 1][0].strip()
-                        if len(values) >= row and values[row - 1] else name_lc)
                 dark.append(disp)
         if dark:
             out[period] = sorted(set(dark))

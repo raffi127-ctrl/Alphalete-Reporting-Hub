@@ -37,6 +37,7 @@ The one-liner every report uses (call once per run, with the names it filled):
 """
 from __future__ import annotations
 
+import functools
 import logging
 
 from automations.recruiting_report import fill as _fill
@@ -101,6 +102,30 @@ def is_terminated(name: str) -> bool:
     for a one-off check; for a whole report use terminated_among() (one read)."""
     idx, raw = _index()
     return _canon(name, raw) in idx
+
+
+@functools.lru_cache(maxsize=1)
+def _cached_index() -> tuple[dict, dict]:
+    """Process-lifetime cache of _index(). A report run is short-lived and calls
+    the terminated check once per tab (~13x for Owners Metrics), so caching turns
+    N Sheet reads into ONE — respecting the 'call once per run' rule even when the
+    caller can't thread a shared read through. Call _cached_index.cache_clear() in
+    a long-lived process that needs to see a freshly-logged termination."""
+    return _index()
+
+
+def terminated_lookup():
+    """Return a callable `name -> bool` (alias-resolved) backed by a single cached
+    Sheet read for the process. For loops that check many names across many tabs —
+    e.g. the shared went-dark detector, which must not flag a terminated ICD as a
+    broken filter when she's simply been let go. Tolerant: on any Sheet error the
+    returned lookup is always False, so the cross-check can never break a run."""
+    try:
+        idx, raw = _cached_index()
+    except Exception as e:  # noqa: BLE001 — advisory check must never fail a run
+        print(f"⚠ terminated lookup skipped ({e})", flush=True)
+        return lambda _name: False
+    return lambda name: _canon(name, raw) in idx
 
 
 def terminated_among(names) -> list[dict]:
