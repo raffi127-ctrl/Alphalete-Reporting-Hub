@@ -63,7 +63,7 @@ auto-runs scheduled cards, running this one each morning is harmless.
             "phrase to WRAP_UP_PHRASES in automations/rc_autoread/run.py."
         ),
         # No Google Sheet — RingCentral API only.
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
             "time": "7:00 AM",

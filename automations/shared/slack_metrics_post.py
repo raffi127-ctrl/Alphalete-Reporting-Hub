@@ -58,7 +58,7 @@ def _client():
 
 
 def _load_bot_token() -> str:
-    """The 'Lucy' (Fully Automated Alphalete Reports) token — env SLACK_BOT_TOKEN
+    """The 'Lucy' (Lucy 1) token — env SLACK_BOT_TOKEN
     or the slack-bot-token file. Separate from the per-user metrics token so DMs
     are sent AS Lucy."""
     tok = os.environ.get("SLACK_BOT_TOKEN")

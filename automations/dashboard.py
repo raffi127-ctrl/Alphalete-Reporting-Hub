@@ -1101,16 +1101,14 @@ MEMBERS = [
     # `email` powers the "Ask for an update" button on claimed backlog cards.
     # Fill these in (or correct any guesses) — when blank, the button opens
     # an empty mailto and the requester types the address manually.
-    {"name": "Carlos",  "emoji": "🎩",        "color": "#E76F51", "email": "carloshidalgo349@gmail.com"},
     {"name": "Eve",     "emoji": "🌷",        "color": "#4ECDC4", "email": "alphaletereporting@gmail.com"},
-    # Not a person — the bucket for reports that run on a schedule with NO
-    # human trigger (fully unattended via patchright auto-login). No email.
-    {"name": "Fully Automated Alphalete Reports", "emoji": "🤖", "color": "#10B981", "email": ""},
-    {"name": "JD",      "emoji": "⚡",        "color": "#9B59B6", "email": "josh.mascorro17@gmail.com"},
+    # Not people — buckets for reports that run on a schedule with NO human
+    # trigger (fully unattended via patchright auto-login). No email.
+    # Lucy 1 = the main mini; Lucy 2 = Carlos's machine (his org's reports).
+    {"name": "Lucy 1", "emoji": "🤖", "color": "#10B981", "email": ""},
+    {"name": "Lucy 2", "emoji": "🦾", "color": "#E76F51", "email": ""},
     {"name": "Maud",    "emoji": "🌟",        "color": "#FF6B6B", "email": "maudmiller4@gmail.com"},
     {"name": "Megan",   "emoji": "👩‍💼",     "color": "#667eea", "email": "meganhidalgo1191@gmail.com"},
-    {"name": "Raf",     "emoji": "🚀",        "color": "#F4A261", "email": "raffi127@gmail.com"},
-    {"name": "Twaddle", "emoji": "🦊",        "color": "#2A9D8F", "email": "dylanjtwaddle@gmail.com"},
 ]
 
 
@@ -1191,7 +1189,7 @@ AUTOMATED_REPORTS = [
             "login can see it."
         ),
         "sheet_url": SHEET_URL,
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],  # Monday
@@ -1274,7 +1272,7 @@ AUTOMATED_REPORTS = [
             "permission to that ICD's data."
         ),
         "sheet_url": CARLOS_SHEET_URL,
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],  # Monday
@@ -1362,7 +1360,7 @@ AUTOMATED_REPORTS = [
             "hidden tabs — no mapping edit needed."
         ),
         "sheet_url": ALPHALETE_ORG_SHEET_URL,
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],  # Monday
@@ -1586,7 +1584,7 @@ AUTOMATED_REPORTS = [
             "prompts you to map it at the top — confirm the match, then re-run."
         ),
         "sheet_url": DAILY_FOCUS_SHEET_URL,
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             # Weekly with weekdays [0..4] = Mon–Fri. (frequency 'daily' would
             # short-circuit and ignore the weekdays filter, so it'd appear
@@ -1670,7 +1668,7 @@ AUTOMATED_REPORTS = [
             {"name": "Carlos 1on1s - Focus Report",         "url": CARLOS_SHEET_URL},
             {"name": "Alphalete Org 1on1s - Focus Reports", "url": ALPHALETE_ORG_SHEET_URL},
         ],
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [3],   # Thursday — 2026-07-01: cut over to auto
@@ -1736,7 +1734,7 @@ AUTOMATED_REPORTS = [
             "latest numbers)."
         ),
         "sheet_url": ALPHALETE_ORG_SHEET_URL,
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],   # Monday
@@ -1815,7 +1813,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],   # Monday
@@ -1881,7 +1879,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": "https://docs.google.com/spreadsheets/d/"
                      "1xgVE_e8bZimACgPdqcdNCr1qo4sedWect_zzEcUgEJY/edit",
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
             "time": "9:00 AM",
@@ -1982,7 +1980,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8/edit"),
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
             "time": "7:00 AM",
@@ -2086,7 +2084,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "11louWIU8IuSPrZLsMkRh8qEnO3wNqmeNwIOSKPpXzm8/edit"),
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
             "time": "6:00 AM",
@@ -2180,7 +2178,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
             "time": "5:00 AM",
@@ -2225,7 +2223,7 @@ AUTOMATED_REPORTS = [
             "WHEN IT RUNS\n"
             "Daily in Slack channels: #alphalete-sales & #top-leaders-alphalete-org."
         ),
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
             "time": "5:00 AM",
@@ -2271,7 +2269,7 @@ AUTOMATED_REPORTS = [
             "Daily, ~4 AM on the mini (before the manual post), into #alphalete-sales. "
             "Monday shows the fully-completed prior Mon–Sun week."
         ),
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
             "time": "4:00 AM",
@@ -2316,7 +2314,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "13-9f_aPDlPa6L6_Wash4ws7959mn822J__vB5OYmcB8/edit"),
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {"frequency": "daily", "time": "9:00 AM", "estimated_minutes": 6},
         "checklist": [],
         "post_run": {
@@ -2372,7 +2370,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8/edit"),
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
             "time": "7:00 AM",
@@ -2425,7 +2423,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1uFrT0EkkGT0QqlYTxw_uevZD3ObKxaVjWsvZAUDxK6c/edit"),
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
             "time": "7:00 AM",
@@ -2481,7 +2479,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],  # Monday
@@ -2534,7 +2532,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
             "weekdays": [0, 1, 2, 3, 4],   # Mon–Fri only
@@ -2578,7 +2576,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE/edit#gid=1044031962"),
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [3],  # Thursday
@@ -2632,7 +2630,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit#gid=1630583673"),
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [1],  # Tuesday
@@ -2702,7 +2700,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit#gid=388012799"),
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
             "time": "6:00 AM",
@@ -2746,7 +2744,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit#gid=25197725"),
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
             "time": "6:30 AM",
@@ -2792,7 +2790,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1zoRQRhvkpu7Vvw4TsC60ufja9XwpUR8hHvV7FyzezMY/edit"),
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         # Self-running background job (noon launchd) — keep it out of the "due
         # today / not completed" tallies; it doesn't report completion to the Hub.
         "self_scheduled": True,
@@ -2843,7 +2841,7 @@ AUTOMATED_REPORTS = [
             "phrase to WRAP_UP_PHRASES in automations/rc_autoread/run.py."
         ),
         # No Google Sheet — RingCentral API only.
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         # Runs on its own 10-min launchd timer — hide the DUE-TODAY + schedule
         # pills on the report page (cadence is in the breakdown).
         "hide_schedule": True,
@@ -2910,7 +2908,7 @@ AUTOMATED_REPORTS = [
             "from colliding on the same photo."
         ),
         # No Google Sheet — Slack + Anthropic + Zoho APIs only.
-        "assignees": ["Fully Automated Alphalete Reports"],
+        "assignees": ["Lucy 1"],
         # Runs on its own launchd timer (noon + 4 PM) — hide the DUE-TODAY +
         # schedule pills on the report page (cadence is in the breakdown).
         "hide_schedule": True,
@@ -5246,132 +5244,6 @@ def _read_intake() -> list[dict]:
 
 
 @st.cache_data(ttl=60)
-def _compute_leaderboard() -> list[dict]:
-    """Per-teammate Hub-activity stats + badges, ranked by total activity.
-
-    All from data the Hub already records — the intake Sheet (requests /
-    reports built / reviews) and the Hub Activity log (report runs). No
-    weighting: every action counts as 1. Cached 60s so it never slows a
-    page render. Returns one dict per MEMBER, in rank order."""
-    members = [m["name"] for m in MEMBERS]
-    stats = {n: {"requests": 0, "builds": 0, "runs": 0, "reviews": 0}
-             for n in members}
-    try:
-        intake = _read_intake()
-    except Exception:
-        intake = []
-    for r in intake:
-        submitter = str(r.get("Submitted By") or "").strip()
-        status = str(r.get("Status") or "").strip()
-        if submitter in stats:
-            stats[submitter]["requests"] += 1
-            if status == "Done":
-                stats[submitter]["reviews"] += 1   # reviewed + approved it
-
-    # Reports built — counted from the library itself (each report's
-    # `creator`), so built-in reports count too, not only ones that came
-    # through the intake/upload flow.
-    for rep in AUTOMATED_REPORTS:
-        creator = str(rep.get("creator") or "").strip()
-        if creator in stats:
-            stats[creator]["builds"] += 1
-
-    for run in _hub_activity_rows():
-        runner = str(run.get("User") or "").strip()
-        if runner in stats:
-            stats[runner]["runs"] += 1
-
-    board = []
-    for n in members:
-        s = stats[n]
-        board.append({
-            "name": n,
-            "requests": s["requests"], "builds": s["builds"],
-            "runs": s["runs"], "reviews": s["reviews"],
-            "total": s["requests"] + s["builds"] + s["runs"] + s["reviews"],
-        })
-    board.sort(key=lambda x: (-x["total"], x["name"]))
-    # 1-based rank; ties share a rank.
-    _rank, _prev = 0, None
-    for i, row in enumerate(board):
-        if row["total"] != _prev:
-            _rank, _prev = i + 1, row["total"]
-        row["rank"] = _rank
-
-    # Badges: #1 in each category, awarded only when the top count is > 0
-    # (no badge on a score of 0). Ties → everyone tied gets it.
-    _BADGES = [
-        ("total",    "👑", "Hub MVP"),
-        ("builds",   "🏆", "Top Creator"),
-        ("requests", "📨", "Top Requester"),
-        ("runs",     "🏃", "Top Runner"),
-        ("reviews",  "👀", "Top Reviewer"),
-    ]
-    for row in board:
-        row["badges"] = []
-    for stat, emoji, label in _BADGES:
-        top = max((r[stat] for r in board), default=0)
-        if top <= 0:
-            continue
-        for r in board:
-            if r[stat] == top:
-                r["badges"].append({"emoji": emoji, "label": label})
-    return board
-
-
-def _badge_chip(b: dict) -> str:
-    """Inline HTML chip for a leaderboard badge — emoji + label, so it
-    reads at a glance instead of being a bare emoji."""
-    return (
-        "<span style='display:inline-block;background:#FFF3D6;color:#8B6914;"
-        "border-radius:999px;padding:2px 9px;font-size:0.78rem;font-weight:700;"
-        f"margin:2px 3px 2px 0;white-space:nowrap'>{b['emoji']} {b['label']}</span>"
-    )
-
-
-def _render_leaderboard() -> None:
-    """Ranked board — every teammate by total Hub activity, with badges."""
-    board = _compute_leaderboard()
-    if not board or all(r["total"] == 0 for r in board):
-        st.caption("No Hub activity logged yet — the leaderboard fills in "
-                   "as people submit, build, run, and review reports.")
-        return
-    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
-    NUM = "padding:8px 14px;text-align:right;white-space:nowrap"
-    head = (
-        "<tr style='font-size:0.8rem;opacity:0.55;text-transform:uppercase;"
-        "letter-spacing:0.03em'>"
-        "<td style='padding:6px 12px'></td>"
-        "<td style='padding:6px 12px'>Teammate</td>"
-        f"<td style='{NUM}'>🏆 Built</td><td style='{NUM}'>📨 Requested</td>"
-        f"<td style='{NUM}'>🏃 Runs</td><td style='{NUM}'>👀 Reviews</td>"
-        f"<td style='{NUM}'>Total</td></tr>"
-    )
-    rows_html = ""
-    for r in board:
-        rk = medals.get(r["rank"], f"#{r['rank']}")
-        badges = "".join(_badge_chip(b) for b in r["badges"])
-        name_cell = r["name"]
-        if badges:
-            name_cell += f"<br><span style='font-weight:400'>{badges}</span>"
-        rows_html += (
-            "<tr style='border-top:1px solid rgba(0,0,0,0.08)'>"
-            f"<td style='padding:8px 12px;font-size:1.15rem'>{rk}</td>"
-            f"<td style='padding:8px 12px;font-weight:700'>{name_cell}</td>"
-            f"<td style='{NUM}'>{r['builds']}</td>"
-            f"<td style='{NUM}'>{r['requests']}</td>"
-            f"<td style='{NUM}'>{r['runs']}</td>"
-            f"<td style='{NUM}'>{r['reviews']}</td>"
-            f"<td style='{NUM};font-weight:800;font-size:1.15rem'>{r['total']}</td>"
-            "</tr>"
-        )
-    st.markdown(
-        "<table style='width:100%;border-collapse:collapse'>"
-        + head + rows_html + "</table>",
-        unsafe_allow_html=True,
-    )
-
-
 def _add_intake(title: str, sheet_link: str, loom_link: str, description: str,
                 submitted_by: str, preferred_creator: str = "",
                 currently_runs: str = "", priority: str = "",
@@ -7860,7 +7732,7 @@ if "view" not in st.session_state:
     _url_view = st.query_params.get("view", "").strip()
     st.session_state.view = (
         _url_view
-        if _url_view in {"home", "user", "overview", "library", "backlog", "bugs"}
+        if _url_view in {"home", "user", "library", "backlog", "bugs"}
         else "home"
     )
     # A library report-detail page encodes ?report=<id> in the URL; restore
@@ -8016,7 +7888,7 @@ def _ordinal(n: int) -> str:
 BIG_DATE = f"{weekday_name.upper()}, {today.strftime('%B').upper()} {_ordinal(today.day).upper()}"
 
 
-_VALID_VIEWS = {"home", "user", "overview", "library", "backlog", "bugs"}
+_VALID_VIEWS = {"home", "user", "library", "backlog", "bugs"}
 
 
 def _set_view(view: str) -> None:
@@ -8047,10 +7919,6 @@ def _go_user(name: str):
         st.query_params["user"] = name
     except Exception:
         pass
-
-
-def _go_overview():
-    _set_view("overview")
 
 
 def _go_library():
@@ -8253,9 +8121,6 @@ with st.sidebar:
     if st.button("📚 Report Library", use_container_width=True):
         _go_library()
         st.rerun()
-    if st.button("📊 7-Day Overview", use_container_width=True, key="nav_overview"):
-        _go_overview()
-        st.rerun()
 
     # --- Recent run logs: view a FINISHED run's log on the Hub (so you don't
     # have to open the terminal once it leaves the live panel — Eve 2026-06-01).
@@ -8376,7 +8241,7 @@ with st.sidebar:
 
 
 # --------------------------------------------------------------------------
-# HOME VIEW — name picker + Alphalete Overview button
+# HOME VIEW — logo + date header + The Pack
 # --------------------------------------------------------------------------
 
 if st.session_state.view == "home":
@@ -8414,12 +8279,10 @@ if st.session_state.view == "home":
     """, unsafe_allow_html=True)
 
     st.markdown("### 🐺 The Pack")
-    _badges_by_member = {r["name"]: r["badges"] for r in _compute_leaderboard()}
-    # Build pack cards: synthetic "Unassigned" card first, then real members.
-    # Clicking it opens a filtered user-style page showing only reports with
-    # no assignees, so someone can pick them up.
-    UNASSIGNED_CARD = {"name": "Unassigned", "emoji": "🔍", "is_unassigned": True}
-    pack_cards = [UNASSIGNED_CARD] + list(MEMBERS)
+    # Build pack cards from the real members. (The synthetic "Unassigned" card
+    # was removed 2026-07-07 at Megan's request — the is_unassigned branches
+    # below stay inert since no card sets that flag anymore.)
+    pack_cards = list(MEMBERS)
     PACK_COLS = 3
     rows = [pack_cards[i:i + PACK_COLS] for i in range(0, len(pack_cards), PACK_COLS)]
     for row in rows:
@@ -8459,13 +8322,6 @@ if st.session_state.view == "home":
                         f"<div style='text-align:center; font-size: 1.3rem; font-weight: 700; margin-bottom: 0.3rem'>{member['name']}</div>",
                         unsafe_allow_html=True,
                     )
-                    _mbadges = [] if is_unassigned else _badges_by_member.get(member["name"], [])
-                    if _mbadges:
-                        _bhtml = "".join(_badge_chip(b) for b in _mbadges)
-                        st.markdown(
-                            f"<div style='text-align:center; margin-bottom:0.3rem'>{_bhtml}</div>",
-                            unsafe_allow_html=True,
-                        )
                     if is_unassigned:
                         if count > 0:
                             st.markdown(
@@ -8636,85 +8492,6 @@ elif st.session_state.view == "bugs":
         completed_label="✅ Completed",
         completed_empty_label="Nothing fixed yet.",
     )
-
-
-# --------------------------------------------------------------------------
-# OVERVIEW VIEW — 7-day run log with miss alerts
-# --------------------------------------------------------------------------
-
-elif st.session_state.view == "overview":
-    st.markdown(f"""
-    <div class="hero">
-        <div class="big-date">{BIG_DATE}</div>
-        <h1>📊 Alphalete Marketing — 7-Day Overview</h1>
-        <p>Every report run by anyone, last 7 days.</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Hub leaderboard — every teammate ranked by total activity.
-    st.markdown("### 🏆 Hub Leaderboard")
-    _render_leaderboard()
-    st.markdown("")
-
-    # Currently-running activity log (anyone's runs)
-    active_now = _read_active_runs()
-    if active_now:
-        st.markdown("### 🏃 Running Right Now")
-        for run in active_now:
-            try:
-                started = dt.datetime.fromisoformat(run.get("started_at", ""))
-                elapsed = dt.datetime.now() - started
-                elapsed_str = f"{int(elapsed.total_seconds() // 60)}m {int(elapsed.total_seconds() % 60)}s"
-            except Exception:
-                elapsed_str = "?"
-            with st.container(border=True):
-                st.markdown(
-                    f"⏳ **{run.get('report_name', '?')}** — started by **{run.get('user', '?')}** • running for **{elapsed_str}**"
-                )
-
-    # Missed runs alert section
-    missed = _missed_runs(AUTOMATED_REPORTS, days=7, today=today)
-    if missed:
-        st.markdown("### ⚠️ Missed Runs")
-        with st.container(border=True):
-            for m in missed:
-                r = m["report"]
-                d = m["missed_date"]
-                assignees = ", ".join(r.get("assignees", [])) or "unassigned"
-                st.markdown(
-                    f"⚠️ **{r['name']}** was due on **{d.strftime('%a %b %d')}** — assigned to **{assignees}** — no successful run logged"
-                )
-    else:
-        st.success("✅ No missed runs in the last 7 days. Great work, team!")
-
-    # Recent runs activity feed — merged across all teammates' machines.
-    st.markdown("### 🗓️ Recent Activity")
-    runs = _all_runs_merged(days=7)
-    if not runs:
-        st.info("No runs logged yet. As people use the dashboard, runs will appear here.")
-    else:
-        # Group by date
-        by_date: dict = {}
-        for r in runs:
-            day = r["_dt"].date()
-            by_date.setdefault(day, []).append(r)
-        for day in sorted(by_date.keys(), reverse=True):
-            label = day.strftime("%A, %b %d")
-            if day == today:
-                label += "  •  TODAY"
-            elif day == today - dt.timedelta(days=1):
-                label += "  •  Yesterday"
-            report_lookup = {rep["id"]: rep for rep in AUTOMATED_REPORTS}
-            with st.expander(f"📅 {label}  —  {len(by_date[day])} run{'s' if len(by_date[day]) != 1 else ''}", expanded=(day == today)):
-                for r in by_date[day]:
-                    icon = "✅" if r.get("status") == "success" else "❌"
-                    time_str = r["_dt"].strftime("%I:%M %p")
-                    rep = report_lookup.get(r.get("report_id"))
-                    sheet_url = rep.get("sheet_url") if rep else None
-                    sheet_link = f"  •  [📂 Open Sheet]({sheet_url})" if sheet_url else ""
-                    st.markdown(
-                        f"{icon}  **{time_str}**  •  {r.get('report_name', r.get('report_id', '?'))}  •  ran by **{r.get('user', '?')}**{sheet_link}"
-                    )
 
 
 # --------------------------------------------------------------------------
@@ -8926,25 +8703,6 @@ else:  # st.session_state.view == "user"
         else:
             st.success("🎉 Every report has someone assigned. Nothing to pick up.")
     else:
-        # Personal Hub-activity standing — rank, the four stats, badges.
-        _lb = _compute_leaderboard()
-        _me = next((r for r in _lb if r["name"] == user_name), None)
-        if _me:
-            _medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(_me["rank"], f"#{_me['rank']}")
-            _bhtml = "".join(_badge_chip(b) for b in _me["badges"])
-            with st.container(border=True):
-                st.markdown(
-                    "<div style='font-size:1.1rem;font-weight:700;margin-bottom:6px'>"
-                    f"🏆 Your Hub standing — {_medal}</div>"
-                    "<div style='font-size:0.97rem;line-height:1.9'>"
-                    f"🏆 <b>{_me['builds']}</b> reports built &nbsp;&nbsp;&nbsp; "
-                    f"📨 <b>{_me['requests']}</b> requests submitted &nbsp;&nbsp;&nbsp; "
-                    f"🏃 <b>{_me['runs']}</b> report runs &nbsp;&nbsp;&nbsp; "
-                    f"👀 <b>{_me['reviews']}</b> reviews completed</div>"
-                    + (f"<div style='margin-top:8px'>{_bhtml}</div>" if _bhtml else ""),
-                    unsafe_allow_html=True,
-                )
-
         # 7-day schedule strip — visual overview of this user's responsibilities
         # for the week ahead. One row, 7 columns; auto-updates as new reports
         # get assigned to them (or as schedules change).
