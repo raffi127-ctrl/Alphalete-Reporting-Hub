@@ -1149,17 +1149,6 @@ def _scrape_one_view_data(page, ctx, view_url: str, verbose: bool = True,
         box = page.query_selector(
             'iframe[title="Data Visualization"]').bounding_box()
         x0, y0 = activate_xy
-        # TEMP DIAGNOSTIC: log the viz box + every activation attempt to a
-        # top-level (logtail-readable) file, so a coordinate miss on the mini is
-        # calibratable without a headed browser.
-        import pathlib as _pl
-        _adbg = _pl.Path("output/logs/carlos-dd-activate.log")
-        try:
-            _adbg.parent.mkdir(parents=True, exist_ok=True)
-            with _adbg.open("a") as _f:
-                _f.write(f"\n=== activate_xy={activate_xy} box={box}\n")
-        except Exception:
-            pass
         activated = False
         # Header/gap positions (0.0, up) tried before data-row positions (down),
         # since clicking a data mark would scope the View Data to one row.
@@ -1170,24 +1159,14 @@ def _scrape_one_view_data(page, ctx, view_url: str, verbose: bool = True,
             page.wait_for_timeout(1100)
             page.mouse.click(cx, cy)
             page.wait_for_timeout(1100)
-            opened = _open_flyout()
-            enabled = False
-            if opened:
-                page.wait_for_timeout(1400)
-                enabled = data_item.get_attribute("aria-disabled") != "true"
-            try:
-                with _adbg.open("a") as _f:
-                    _f.write(f"  dy={dy:+.2f} y_frac={y0 + dy:.3f} "
-                             f"px=({cx:.0f},{cy:.0f}) flyout={opened} "
-                             f"data_enabled={enabled}\n")
-            except Exception:
-                pass
-            if enabled:
+            if not _open_flyout():
+                continue
+            page.wait_for_timeout(1400)
+            if data_item.get_attribute("aria-disabled") != "true":
                 activated = True
                 break
-            if opened:
-                page.keyboard.press("Escape")
-                page.wait_for_timeout(600)
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(600)
         if not activated:
             raise RuntimeError("couldn't activate the worksheet for Download->Data")
     else:
