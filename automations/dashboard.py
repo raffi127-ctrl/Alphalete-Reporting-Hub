@@ -8278,23 +8278,25 @@ if st.session_state.view == "home":
     """, unsafe_allow_html=True)
 
     st.markdown("### 🐺 The Pack")
-    # Build pack cards from the real members. (The synthetic "Unassigned" card
-    # was removed 2026-07-07 at Megan's request — the is_unassigned branches
-    # below stay inert since no card sets that flag anymore.)
-    pack_cards = list(MEMBERS)
+    # Layout (Megan 2026-07-07): the two Lucy automations on the TOP row —
+    # Lucy 1 above the left column, Lucy 2 above the right — then Eve, Maud and
+    # the Unassigned bucket across the BOTTOM row.
+    UNASSIGNED_CARD = {"name": "Unassigned", "emoji": "🔍", "is_unassigned": True}
     PACK_COLS = 3
-    rows = [pack_cards[i:i + PACK_COLS] for i in range(0, len(pack_cards), PACK_COLS)]
-    for row in rows:
-        # Always use the same column count so a partial last row keeps cards
-        # at the same width as full rows. If the row is short, center it by
-        # leaving equal empty slots on either side.
-        if len(row) < PACK_COLS:
-            cols = st.columns(PACK_COLS)
-            pad = (PACK_COLS - len(row)) // 2
-            card_cols = cols[pad:pad + len(row)]
-        else:
-            cols = st.columns(PACK_COLS)
-            card_cols = cols
+    _by_name = {m["name"]: m for m in MEMBERS}
+    _bots = [_by_name[n] for n in ("Lucy 1", "Lucy 2") if n in _by_name]
+    _bottom = [m for m in MEMBERS if m["name"] not in ("Lucy 1", "Lucy 2")]
+    _bottom.append(UNASSIGNED_CARD)
+    # (row_cards, column_slots): slots pick which of the 3 columns each card
+    # fills, so the two top-row bots sit over the outer bottom-row cards. The
+    # bottom row wraps into further rows of 3 if more members are ever added.
+    pack_rows = [(_bots, [0, 2][:len(_bots)])]
+    for i in range(0, len(_bottom), PACK_COLS):
+        chunk = _bottom[i:i + PACK_COLS]
+        pack_rows.append((chunk, list(range(len(chunk)))))
+    for row, slots in pack_rows:
+        cols = st.columns(PACK_COLS)
+        card_cols = [cols[s] for s in slots]
         for col, member in zip(card_cols, row):
             with col:
                 is_unassigned = member.get("is_unassigned", False)
