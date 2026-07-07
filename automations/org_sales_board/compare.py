@@ -235,6 +235,41 @@ def run_compare(logfn=print) -> dict:
             "clean": clean}
 
 
+def _numeq(a: str, b: str) -> bool:
+    try:
+        return float(a) == float(b)
+    except (ValueError, TypeError):
+        return False
+
+
+def every_cell_diff() -> dict:
+    """RAW, exhaustive cell-by-cell diff of the whole copy tab vs the whole VA
+    tab — EVERY cell, not just the report's completed-day/total regions. Compares
+    DISPLAYED values (get_all_values), so a formula and a static value showing the
+    same number match. Classifies each difference as 'real' (different value) or
+    'fmt' (numerically equal, e.g. '2' vs '2.0'). This is the 'is every single
+    cell identical?' check, distinct from run_compare's region-scoped audit."""
+    import gspread
+    a1 = gspread.utils.rowcol_to_a1
+    sh = open_by_key(SHEET_ID)
+    copy = _retry(sh.worksheet(SANDBOX_TAB).get_all_values)
+    va = _retry(sh.worksheet(PROD_TAB).get_all_values)
+    real, fmt = [], []
+    for r in range(max(len(copy), len(va))):
+        cr = copy[r] if r < len(copy) else []
+        vr = va[r] if r < len(va) else []
+        for c in range(max(len(cr), len(vr))):
+            cv = (cr[c] if c < len(cr) else "").strip()
+            vv = (vr[c] if c < len(vr) else "").strip()
+            if cv == vv:
+                continue
+            (fmt if _numeq(cv, vv) else real).append((a1(r + 1, c + 1), cv, vv))
+    return {
+        "copy_rows": len(copy), "va_rows": len(va),
+        "real": real, "fmt": fmt,
+    }
+
+
 def main():
     """Standalone full comparison: copy tab vs the live VA tab, EVERY finding
     written to a pullable log. The mini's Mini-Control result cell truncates to
@@ -243,11 +278,37 @@ def main():
     `lucy logtail org_sales_board_compare`. Read-only (sheet vs sheet); safe
     any time. Always exits 0 — a compare difference is a finding, not a crash."""
     import datetime as _dt
+    import sys as _sys
     from pathlib import Path as _P
+    logdir = _P(__file__).resolve().parents[2] / "output" / "logs"
+    logdir.mkdir(parents=True, exist_ok=True)
+
+    # `--every-cell`: exhaustive raw diff of the two whole tabs (answers "is
+    # EVERY single cell identical?", not the region-scoped audit below).
+    if "--every-cell" in _sys.argv:
+        d = every_cell_diff()
+        stamp = _dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+        out = logdir / f"org_sales_board_everycell-{stamp}.log"
+        body = [f"ORG SALES BOARD — EVERY-CELL RAW DIFF {stamp}",
+                f"copy rows={d['copy_rows']} va rows={d['va_rows']}",
+                f"REAL value differences: {len(d['real'])}",
+                f"formatting-only (numerically equal, e.g. 2 vs 2.0): {len(d['fmt'])}",
+                "", "== REAL (cell: copy | VA) =="]
+        body += [f"  {a1}: {cv!r} | {vv!r}" for a1, cv, vv in d["real"]]
+        body += ["", "== FORMATTING-ONLY =="]
+        body += [f"  {a1}: {cv!r} | {vv!r}" for a1, cv, vv in d["fmt"]]
+        out.write_text("\n".join(body), encoding="utf-8")
+        identical = not d["real"] and not d["fmt"]
+        print(f"every-cell -> {out.name} | REAL diffs={len(d['real'])} "
+              f"fmt-only={len(d['fmt'])} | "
+              + ("EVERY CELL IDENTICAL ✓" if identical
+                 else ("VALUES MATCH (fmt-only diffs) ✓" if not d["real"]
+                       else f"{len(d['real'])} REAL cell(s) differ")))
+        print("=== done ===")
+        return 0
+
     res = run_compare()
     try:
-        logdir = _P(__file__).resolve().parents[2] / "output" / "logs"
-        logdir.mkdir(parents=True, exist_ok=True)
         stamp = _dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
         out = logdir / f"org_sales_board_compare-{stamp}.log"
         buckets = [
