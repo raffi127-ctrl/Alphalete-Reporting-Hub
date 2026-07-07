@@ -1814,4 +1814,16 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except BaseException as _e:   # TEMP DIAGNOSTIC — capture the real traceback
+        import traceback as _tb
+        _dbg = Path("output/logs/carlos-main-debug.log")
+        _dbg.parent.mkdir(parents=True, exist_ok=True)
+        with _dbg.open("a") as _f:
+            _f.write(f"\n=== main() raised: {type(_e).__name__}: "
+                     f"{str(_e)[:300]}\n")
+            _f.write(_tb.format_exc())
+        raise

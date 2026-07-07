@@ -208,8 +208,10 @@ PROGRAM_SUMMARY_VIEW_URL = (
 # Fractional (x, y) of the viz iframe to click — the DOWNLINE table's header
 # row ("Account.Name") — so 'Download -> Data' targets that worksheet (the
 # dashboard's top table is a 1-row owner summary; the downline table is the
-# full org). Calibrated to the enlarged window; the activate loop sweeps ±0.03y.
-PROGRAM_SUMMARY_XY = (0.033, 0.539)
+# full org). Recalibrated 2026-07-07 from a live screenshot of DOWNLINEVIEW:
+# the downline header sits ~47% down (the old 0.539 + ±0.03 sweep landed below
+# it in dead space, so activation never enabled Download->Data).
+PROGRAM_SUMMARY_XY = (0.05, 0.47)
 PROGRAM_SUMMARY_PATH = WORKSPACE / "output" / "opt_program_summary.csv"
 
 # Direct Deposit roster — the set of ICD owners ever seen in the DD view
@@ -1147,22 +1149,45 @@ def _scrape_one_view_data(page, ctx, view_url: str, verbose: bool = True,
         box = page.query_selector(
             'iframe[title="Data Visualization"]').bounding_box()
         x0, y0 = activate_xy
+        # TEMP DIAGNOSTIC: log the viz box + every activation attempt to a
+        # top-level (logtail-readable) file, so a coordinate miss on the mini is
+        # calibratable without a headed browser.
+        import pathlib as _pl
+        _adbg = _pl.Path("output/logs/carlos-dd-activate.log")
+        try:
+            _adbg.parent.mkdir(parents=True, exist_ok=True)
+            with _adbg.open("a") as _f:
+                _f.write(f"\n=== activate_xy={activate_xy} box={box}\n")
+        except Exception:
+            pass
         activated = False
-        for dy in (0.0, -0.02, 0.02, -0.03, 0.01, -0.01):
+        # Header/gap positions (0.0, up) tried before data-row positions (down),
+        # since clicking a data mark would scope the View Data to one row.
+        for dy in (0.0, -0.02, 0.02, -0.04, 0.04, -0.06, 0.06, 0.08, 0.10):
             cx = box["x"] + box["width"] * x0
             cy = box["y"] + box["height"] * (y0 + dy)
             page.mouse.click(cx, cy)
             page.wait_for_timeout(1100)
             page.mouse.click(cx, cy)
             page.wait_for_timeout(1100)
-            if not _open_flyout():
-                continue
-            page.wait_for_timeout(1400)
-            if data_item.get_attribute("aria-disabled") != "true":
+            opened = _open_flyout()
+            enabled = False
+            if opened:
+                page.wait_for_timeout(1400)
+                enabled = data_item.get_attribute("aria-disabled") != "true"
+            try:
+                with _adbg.open("a") as _f:
+                    _f.write(f"  dy={dy:+.2f} y_frac={y0 + dy:.3f} "
+                             f"px=({cx:.0f},{cy:.0f}) flyout={opened} "
+                             f"data_enabled={enabled}\n")
+            except Exception:
+                pass
+            if enabled:
                 activated = True
                 break
-            page.keyboard.press("Escape")
-            page.wait_for_timeout(600)
+            if opened:
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(600)
         if not activated:
             raise RuntimeError("couldn't activate the worksheet for Download->Data")
     else:
