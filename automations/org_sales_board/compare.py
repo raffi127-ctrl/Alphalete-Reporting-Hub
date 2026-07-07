@@ -280,6 +280,55 @@ def every_cell_diff(band_at: int = 1000) -> dict:
             "counts": dict(counts), "both_differ": both_differ}
 
 
+def content_diff() -> dict:
+    """CONTENT-keyed comparison (position-independent): match every labeled row
+    between the two tabs by its A/B label signature — wherever it physically sits
+    — then compare that row's values column-by-column. This answers 'does the
+    CONTENT match?' rather than 'is every cell in the same place?'. Only rows with
+    a unique, non-blank label on BOTH tabs are compared (blank/duplicate rows —
+    spacers, repeated headers — can't be keyed unambiguously, so they're skipped
+    and counted separately). Numerically-equal cells ('2' vs '2.0') are not
+    flagged. Returns matched-row count, per-cell mismatches, and label-only sets."""
+    from automations.org_sales_board import full_compare as _fc
+    import gspread
+    a1 = gspread.utils.rowcol_to_a1
+    sh = open_by_key(SHEET_ID)
+    copy = _retry(sh.worksheet(SANDBOX_TAB).get_all_values)
+    va = _retry(sh.worksheet(PROD_TAB).get_all_values)
+
+    def index(grid):
+        m = {}
+        for r in range(len(grid)):
+            sig = _fc._row_sig(grid, r + 1)
+            if sig[0] or sig[1]:
+                m.setdefault(sig, []).append(r)
+        return m
+
+    ci, vi = index(copy), index(va)
+    only_copy = sorted(f"{a}|{b}" for (a, b) in ci if (a, b) not in vi)
+    only_va = sorted(f"{a}|{b}" for (a, b) in vi if (a, b) not in ci)
+    mismatches, matched, ambiguous = [], 0, 0
+    for sig, crows in ci.items():
+        vrows = vi.get(sig)
+        if not vrows:
+            continue
+        if len(crows) != 1 or len(vrows) != 1:
+            ambiguous += 1          # dup label on one side — can't key 1:1
+            continue
+        matched += 1
+        cr, vr = copy[crows[0]], va[vrows[0]]
+        label = f"{sig[0]}|{sig[1]}".strip("|")[:44]
+        for c in range(max(len(cr), len(vr))):
+            cv = (cr[c] if c < len(cr) else "").strip()
+            vv = (vr[c] if c < len(vr) else "").strip()
+            if cv == vv or _numeq(cv, vv):
+                continue
+            mismatches.append((label, a1(crows[0] + 1, c + 1), cv, vv))
+    return {"matched_rows": matched, "ambiguous_labels": ambiguous,
+            "copy_labeled": len(ci), "va_labeled": len(vi),
+            "only_copy": only_copy, "only_va": only_va, "mismatches": mismatches}
+
+
 def main():
     """Standalone full comparison: copy tab vs the live VA tab, EVERY finding
     written to a pullable log. The mini's Mini-Control result cell truncates to
@@ -292,6 +341,33 @@ def main():
     from pathlib import Path as _P
     logdir = _P(__file__).resolve().parents[2] / "output" / "logs"
     logdir.mkdir(parents=True, exist_ok=True)
+
+    # `--content`: position-independent content match — every labeled row keyed
+    # by its A/B label and compared wherever it sits. Answers "does the CONTENT
+    # match?" (Megan 2026-07-07: "I want the CONTENT to be matching, not the
+    # locations.").
+    if "--content" in _sys.argv:
+        d = content_diff()
+        stamp = _dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+        out = logdir / f"org_sales_board_content-{stamp}.log"
+        mm = d["mismatches"]
+        body = [f"ORG SALES BOARD — CONTENT (position-independent) DIFF {stamp}",
+                f"labeled rows: copy={d['copy_labeled']} va={d['va_labeled']} | "
+                f"matched 1:1={d['matched_rows']} | ambiguous(dup label)={d['ambiguous_labels']}",
+                f"CONTENT MISMATCHES (same label, different value): {len(mm)}",
+                f"labels only on copy: {len(d['only_copy'])} | "
+                f"labels only on VA: {len(d['only_va'])}",
+                "", "== CONTENT MISMATCHES (label @ cell: copy | VA) =="]
+        body += [f"  {lbl} @ {a1}: {cv!r} | {vv!r}" for lbl, a1, cv, vv in mm]
+        body += ["", "== LABELS ONLY ON COPY ==", *[f"  {s}" for s in d["only_copy"]],
+                 "", "== LABELS ONLY ON VA ==", *[f"  {s}" for s in d["only_va"]]]
+        out.write_text("\n".join(body), encoding="utf-8")
+        print(f"content-diff -> {out.name} | matched {d['matched_rows']} rows | "
+              f"CONTENT MISMATCHES={len(mm)} | only-copy={len(d['only_copy'])} "
+              f"only-va={len(d['only_va'])} ambiguous={d['ambiguous_labels']} | "
+              + ("CONTENT MATCHES ✓" if not mm else f"{len(mm)} content cell(s) differ"))
+        print("=== done ===")
+        return 0
 
     # `--every-cell`: exhaustive raw diff of the two whole tabs (answers "is
     # EVERY single cell identical?", not the region-scoped audit below).
