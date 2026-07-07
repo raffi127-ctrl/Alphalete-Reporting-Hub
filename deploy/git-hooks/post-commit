@@ -1,0 +1,11 @@
+#!/bin/bash
+# After a commit that touches Python code, bounce a locally-running Hub so it
+# never serves STALE in-memory code. A long-lived Streamlit server (watcher
+# disabled) will white-screen with a getsource TokenError the moment its
+# @st.cache_data keys are recomputed against a file whose line numbers have
+# shifted under it (Lucy 1, 2026-07-07). No-op if no Hub is running here.
+# See deploy/restart_hub_if_running.sh.
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+git diff-tree --no-commit-id --name-only -r HEAD 2>/dev/null | grep -q '\.py$' || exit 0
+( "$ROOT/deploy/restart_hub_if_running.sh" >/dev/null 2>&1 & )
+exit 0

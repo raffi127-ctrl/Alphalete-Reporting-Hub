@@ -22,6 +22,11 @@ VENV_PY=".venv/bin/python"
 LOG_DIR="output/logs"
 mkdir -p "$LOG_DIR"
 
+# Activate the code-change → Hub-restart git hooks (idempotent). Must run BEFORE
+# the pull so the very next pull that lands new code fires post-merge and bounces
+# a stale Hub server on this box (Lucy 1 getsource crash, 2026-07-07).
+git config core.hooksPath deploy/git-hooks 2>/dev/null || true
+
 # Self-update: fast-forward to latest before the run so config/code changes land
 # without a manual pull (the source of all the babysitting on 2026-06-24).
 # Best-effort: only when the working tree is clean; never blocks the run.

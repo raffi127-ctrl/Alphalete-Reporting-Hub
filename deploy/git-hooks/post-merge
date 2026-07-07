@@ -1,0 +1,10 @@
+#!/bin/bash
+# After a pull/merge that brings in Python changes — e.g. day_orchestrator.sh's
+# 4am `git pull --ff-only` self-update on the mini, or a teammate pull — bounce
+# a locally-running Hub so it picks up the new code instead of white-screening
+# on a stale getsource (Lucy 1, 2026-07-07). No-op if no Hub is running here.
+# See deploy/restart_hub_if_running.sh.
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+git diff --name-only HEAD@{1} HEAD 2>/dev/null | grep -q '\.py$' || exit 0
+( "$ROOT/deploy/restart_hub_if_running.sh" >/dev/null 2>&1 & )
+exit 0

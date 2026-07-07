@@ -26,6 +26,12 @@ export NO_COLOR=1
 
 cd "$(dirname "$0")"
 
+# Activate the code-change → Hub-restart git hooks (idempotent). These bounce a
+# locally-running Hub after any commit/pull that touches Python, so a long-lived
+# server can't serve stale in-memory code and white-screen on a getsource
+# TokenError (Lucy 1, 2026-07-07). See deploy/git-hooks/ + restart_hub_if_running.sh.
+if [ -d .git ]; then git config core.hooksPath deploy/git-hooks 2>/dev/null || true; fi
+
 # ----- Auto-update from GitHub -----
 # Two modes, decided by the gitignored `.dev-machine` marker:
 #   • DEV machine (marker present): only fast-forward when the tree is clean,
