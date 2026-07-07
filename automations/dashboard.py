@@ -2869,6 +2869,75 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "resume-pushing",
+        # Non-breaking spaces keep "Resume Pushing" and "(8 AM Daily)" together
+        # so the cadence wraps as one clean unit onto line 2 of the This Week
+        # strip pill (same trick as rc-autoread's "(Q 10 Min)").
+        "name": "Resume Pushing (8 AM Daily)",
+        "creator": "Carlos",
+        "emoji": "📄",
+        "color": "#F59E0B",
+        "category": "📲 Ops",
+        "description": "Extracts new applicant resumes in Carlos's ApplicantStream office (11580) and sends the valid ones to the AI call list — the unattended, scheduled version of Carlos's uploaded resume-pusher.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "For **Carlos's office (11580)** in ApplicantStream: runs "
+            "**Process Emails → Process in Batches**, extracts every resume "
+            "marked **Ready For Extraction**, then **sends the valid "
+            "applicants to the AI call list**.\n\n"
+            "WHEN IT RUNS\n"
+            "**8 AM Central, Sun + Mon–Fri** (not Saturday), via a launchd "
+            "timer on **Lucy 2** (Carlos's machine). The **Dry Run** / "
+            "**Run Live** buttons here trigger an extra pass any time.\n\n"
+            "⚠️ SEND-TO-AI IS IRREVERSIBLE\n"
+            "A live run pushes applicants onto the AI call list and can't be "
+            "undone. **Dry Run** reads the counts it *would* extract/send "
+            "without pushing anything — always the safe first run.\n\n"
+            "HOW IT RUNS UNATTENDED\n"
+            "On the machine's own AppStream session (Lucy 2 = Carlos's "
+            "account, his own office), the same collision-safe path "
+            "daily_focus uses: dedicated Chrome profile, kept warm by the "
+            "session holder, protected by the chrome-guard."
+        ),
+        # No Google Sheet — ApplicantStream action bot only.
+        "assignees": ["Lucy 2"],
+        # Runs on its own 8am launchd timer on Lucy 2 — hide the DUE-TODAY +
+        # schedule pills on the report page (cadence is in the breakdown).
+        "hide_schedule": True,
+        # Self-running background job: never reports a per-day completion to the
+        # Hub, so keep it out of the "due today / not completed" tallies.
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "8:00 AM",
+            "estimated_minutes": 5,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Resume Pushing complete — resumes extracted and valid applicants sent to the AI call list.",
+            "message_failed": "❌ Run failed. Check the log above (usually an expired AppStream session or office 11580 not reachable), then run again.",
+        },
+        "actions": [
+            {
+                # Primary is the SAFE probe, not the live send — send-to-AI is
+                # irreversible, so the obvious one-click default must push nothing.
+                "label": "Dry Run (safe — sends nothing)",
+                "icon": "🔍",
+                "primary": True,
+                "help": "Reports what it WOULD extract/send by reading the counts — pushes NOTHING to the AI call list. Always the safe first run.",
+                "module": "automations.resume_pushing.run",
+                "args_fn": lambda: ["--dry-run"],
+            },
+            {
+                "label": "Run Live — sends to AI call list",
+                "icon": "▶",
+                "help": "IRREVERSIBLE: extracts resumes and pushes valid applicants onto the live AI call list.",
+                "module": "automations.resume_pushing.run",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
         "id": "social-media-posting",
         # Non-breaking spaces keep "(12 + 4 CST Daily)" together so the cadence
         # wraps as one clean unit onto line 2 of the strip pill (same trick as
@@ -8723,6 +8792,10 @@ else:  # st.session_state.view == "user"
             # pill in the orange OPS color, regardless of run-status (its launchd
             # job doesn't report status back, so the default pill would read gray).
             "[class*='rc-autoread__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
+            # Resume Pushing is the same kind of background OPS automation (Lucy 2
+            # launchd, no status reported back) — orange OPS pill regardless of
+            # run-status, so it doesn't read gray.
+            "[class*='resume-pushing__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
             "</style>",
             unsafe_allow_html=True,
         )

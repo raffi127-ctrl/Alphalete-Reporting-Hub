@@ -532,6 +532,26 @@
       "verify": null,
       "timeout_minutes": 10
     },
+    "resume_pushing": {
+      "on_scheduler": true,
+      "machine": "Lucy 2",
+      "_note": "Carlos's ApplicantStream office-11580 resume extract + send-to-AI, as a remote-runnable handle. cadence.weekdays [] = the 4am orchestrator NEVER auto-runs it — its real schedule is the 8am launchd job (com.alphalete.resume-pushing, installed via install_resume_pushing_agent). This entry exists so `lucy rerun resume_pushing --dry-run` (safe probe) and `lucy rerun resume_pushing` (LIVE) work on Lucy 2, and so the Hub card's Dry Run / Run Live buttons have a path. SEND-TO-AI IS IRREVERSIBLE — always --dry-run first. source_type 'appstream' so rerun runs the chrome-guard first.",
+      "display_name": "Resume Pushing (Carlos, office 11580)",
+      "source_type": "appstream",
+      "data_sources": [],
+      "command": [
+        "automations.resume_pushing.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 120
+    },
     "install_resume_pushing_agent": {
       "on_scheduler": true,
       "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_resume_pushing_agent` (same pattern as install_je_agent). on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Regens + launchctl-bootstraps com.alphalete.resume-pushing on Lucy 2 — Carlos's ApplicantStream office-11580 resume extract + send-to-AI, 8am Sun+Mon-Fri. Runs on the machine's own AppStream session (Lucy 2 = Carlos's account). NOTE: the scheduled run is LIVE (send-to-AI is IRREVERSIBLE) — dry-run first with `bash deploy/resume_pushing_8am.sh --dry-run` before installing. Not a Hub card. Re-runnable any time.",
