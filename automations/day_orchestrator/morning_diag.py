@@ -108,6 +108,27 @@ def _batch_state() -> str:
             f"lastlog@{mtime}={last!r}")
 
 
+def _installed_schedule() -> str:
+    """The day-orchestrator launchd job's ACTUAL loaded schedule on this mini —
+    from the INSTALLED plist, not the repo template (a `git pull` updates the
+    repo file but never reloads launchd, so a stale plist can keep firing at the
+    old time). If this shows Hour 6, THAT'S why the batch starts at 6am even
+    though the mini is awake at 4am."""
+    import os
+    import plistlib
+    p = os.path.expanduser(
+        "~/Library/LaunchAgents/com.alphalete.day-orchestrator.plist")
+    if not os.path.exists(p):
+        return "orch-plist=MISSING(not in ~/Library/LaunchAgents)"
+    try:
+        with open(p, "rb") as f:
+            d = plistlib.load(f)
+        sci = d.get("StartCalendarInterval")
+        return f"orch-schedule={sci}"
+    except Exception as e:  # noqa: BLE001
+        return f"orch-plist-err={type(e).__name__}:{str(e)[:60]}"
+
+
 def _boot_and_power() -> str:
     """Last boot time + the last few Sleep/Wake/power events, to tell apart
     'the mini slept and woke at 6am' (caffeinate should prevent — agent gap)
@@ -147,7 +168,8 @@ def main():
     # the pmset tail — so when diagnosing "why did it start at 6am not 4am?"
     # (is keep-awake actually holding?), ask for just this. (2026-07-07.)
     if "--pmset" in sys.argv:
-        print(f"PMSET {dt.date.today()} :: {_boot_and_power()} :: {_pmset()}")
+        print(f"PMSET {dt.date.today()} :: {_installed_schedule()} :: "
+              f"{_boot_and_power()} :: {_pmset()}")
         return
     print(f"MORNING-DIAG {dt.date.today()} :: {_orchestrator_start()} :: "
           f"{_batch_state()} :: {_pmset()}")
