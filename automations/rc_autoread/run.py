@@ -71,6 +71,21 @@ WRAP_UP_PHRASES = [
     # Rep-name-independent middle of the template so it matches every variant.
     # Same protection applies: if the customer replied after it, stays unread.
     "writing to follow up and make sure you have everything you need",
+    # More rep follow-up / check-in templates (rep-outbound only — a customer
+    # never types these). Each is ignorable unless the customer replies, which
+    # the customer-reply-after skip already handles.
+    "install coming up let me know if you need anything",
+    "just wanted to check up on you and ask",
+    "just reminding you about your install",
+    "this is your personal rep",
+    "how did the installation go",
+    "how was the installation",
+    "how did the setup go",
+    # Rep sign-offs. Broader than the check-ins (they ride on the end of
+    # substantive messages), so kept to distinctive phrasings a customer
+    # wouldn't use.
+    "reach out with any",
+    "any questions or concerns please reach out",
 ]
 
 
