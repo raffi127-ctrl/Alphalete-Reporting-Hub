@@ -80,6 +80,19 @@ def _je_url() -> str:
     return f"{base}?{quote('Sales Week Ending')}={sun.isoformat()}"
 
 
+def _box_url() -> str:
+    """BOX 'Box Sales Metrics' with 'Sale Date Weekending' PINNED to the target
+    week's Sunday. The view's filter defaults to a LAGGING week — on the 2026-07-06
+    run it sat on 6/28 (the prior week) instead of the target 7/5, so BOX showed
+    last week's numbers. Pin it like JE: the 'Sale Date Weekending' filter IS
+    URL-drivable in ISO format (verified 2026-07-07 — set 7/5/2026, data changed)."""
+    from urllib.parse import quote
+    _, sun = _target_week()
+    base = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+            "B2BBOXEnergyTracker/BoxSalesMetrics?:iid=1")
+    return f"{base}&{quote('Sale Date Weekending')}={sun.isoformat()}"
+
+
 def _costco_url() -> str:
     """The saved "Costco Rep All" custom view (Maud 2026-06-29) — rep-level SARA
     summary with Owner & Office=(All) (the base view was stuck on a single owner
@@ -180,18 +193,18 @@ CAMPAIGNS: dict[str, Campaign] = {
     ),
     "box": Campaign(
         key="box",
-        # Maud 2026-06-29: switched to the B2BBOXEnergyTracker workbook, 'Box
-        # Sales Metrics' tab. Recognize ALL reps with 12+ 'Complete Sales' (the
-        # old B2BBOXEnergy/WoWMetricsbyRep view wouldn't render unattended).
-        url=("https://us-east-1.online.tableau.com/#/site/sci/views/"
-             "B2BBOXEnergyTracker/BoxSalesMetrics?:iid=1"),
+        # Maud 2026-06-29: B2BBOXEnergyTracker workbook, 'Box Sales Metrics' tab.
+        # url pins 'Sale Date Weekending' to the target week (2026-07-07 fix — its
+        # filter defaulted to a LAGGING/prior week, so BOX showed last week's #s).
+        url=_box_url(),
         crosstab_sheet="Sales Metrics",
         threshold=8,                  # Maud 2026-06-29: 8+ Complete Sales (was 12)
         section_title="BOX",
         rep_hdr=("rep name", "rep"),
         owner_hdr=("owner name", "owner"),
         value_hdr=("complete sales",),   # exact-match column, not Sales/Rep etc.
-        owners=[],                        # all reps with 12+ Complete Sales
+        owners=[],                        # all reps with 8+ Complete Sales
+        flag_if_empty=True,           # pinned week may lag data — flag, don't stale
     ),
     "costco": Campaign(
         key="costco",
