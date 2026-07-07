@@ -595,6 +595,27 @@
       "verify": null,
       "timeout_minutes": 5
     },
+    "install_brand_audit_agent": {
+      "on_scheduler": true,
+      "_note": "NOT a report — one-shot LaunchAgent installer, run via `lucy rerun install_brand_audit_agent` (same pattern as install_social_scanner_agent). on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Re-bootstraps com.alphalete.brand-audit-noon from the committed Hour-12 plist. FIXES the 2026-07-07 drift: the mini's loaded launchd schedule was firing this at 14:00 (2pm) though deploy/com.alphalete.brand-audit-noon.plist has said Hour 12 since it was created — same stale-loaded-schedule class as install_orchestrator_agent. bootout+bootstrap makes launchd pick up noon. Re-runnable any time launchd drifts.",
+      "display_name": "Install: re-bootstrap brand-audit noon schedule",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "brand-audit-noon"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
+    },
     "daily_rep_breakdown": {
       "on_scheduler": true,
       "display_name": "Daily Rep Breakdown - ATT Program",

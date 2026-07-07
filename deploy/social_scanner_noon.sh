@@ -51,6 +51,20 @@ echo "[$(date)] social-scanner noon run starting (extra args: ${*:-none})" > "$L
 ST=$?
 
 echo "[$(date)] social-scanner noon run finished exit=$ST" >> "$LOG_FILE"
+
+# Report this standalone run to the Hub (shared Hub Activity sheet) so the
+# "Alphalete social media posting" card's pill reflects a REAL success/failure —
+# same mechanism the orchestrator + brand_audit_noon.sh use. Runs on BOTH the
+# noon and 4pm passes, so the card goes green after each pass. Skip on --dry-run
+# (a preview shouldn't mark the card as ran). Best-effort — never fail the job.
+case " $* " in
+  *" --dry-run "*) : ;;
+  *)
+    if [ "$ST" -eq 0 ]; then _PUB=success; else _PUB=failed; fi
+    "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('social_inbox','Alphalete social media posting','$_PUB')" >> "$LOG_FILE" 2>&1 || true
+    ;;
+esac
+
 if [ "$ST" -ne 0 ]; then
   osascript -e "display notification \"Social scanner noon run failed (exit $ST)\" with title \"Social Media Scanner\" sound name \"Sosumi\"" 2>/dev/null || true
 fi

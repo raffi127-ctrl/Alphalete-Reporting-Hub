@@ -54,6 +54,7 @@ _HUB_CARD = {
     "frontier_opt": "frontier-opt-data-pull",
     "financial_report": "financial-pull",
     "brand_audit": "brand-health-audit",
+    "social_inbox": "social-media-posting",
     "alphalete_production": "alphalete-production",
     "tableau_screenshots": "tableau-screenshots",
     # weather_alert: Slack-only, no Hub card → not published.
