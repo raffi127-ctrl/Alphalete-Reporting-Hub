@@ -264,9 +264,20 @@ def _action_diag(args: str) -> tuple[bool, str]:
     except Exception:  # noqa: BLE001
         prof = "?"
     out = [f"{prof} @ {socket.gethostname()} · {_now()}"]
-    ds = next((ln.strip() for ln in _sh(["/usr/bin/pmset", "-g"]).splitlines()
-               if "disablesleep" in ln.lower()), "disablesleep not shown")
-    out.append(f"sleep: {ds}")
+    # macOS shows the `pmset disablesleep 1` lock as `SleepDisabled 1` in
+    # `pmset -g`; caffeinate holds sleep off via an idle-sleep assertion. Report
+    # whichever is keeping it awake — or warn loudly if NEITHER is.
+    sd = next((ln.split()[-1] for ln in _sh(["/usr/bin/pmset", "-g"]).splitlines()
+               if "sleepdisabled" in ln.lower()), "0").strip()
+    asrt = _sh(["/usr/bin/pmset", "-g", "assertions"]).lower()
+    caff = any("systemsleep" in ln and ln.rstrip().endswith("1")
+               for ln in asrt.splitlines())
+    if sd == "1":
+        out.append("sleep: LOCKED OFF (SleepDisabled=1)")
+    elif caff:
+        out.append("sleep: held off by caffeinate (idle assertion)")
+    else:
+        out.append("sleep: ⚠️ NOT prevented — this machine may sleep")
     out.append("power: " + " ".join(_sh(["/usr/bin/pmset", "-g", "batt"]).split())[:70])
     ll = _sh(["/bin/launchctl", "list"])
     have = [a for a in ("keep-awake", "session-holder", "mini-control",
