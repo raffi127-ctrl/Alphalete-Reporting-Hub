@@ -1171,7 +1171,8 @@ def main() -> int:
         # the login click never completed (Eve 2026-06-01). Download every
         # crosstab + scrape dd through a single shared page.
         from automations.shared.tableau_patchright import tableau_session
-        from automations.recruiting_report.opt_phase import scrape_view_data
+        from automations.recruiting_report.opt_phase import (
+            scrape_view_data, PROGRAM_SUMMARY_XY)
         we = _current_we_sunday()
         crosstab_views = [v for v in VIEWS
                           if v.key not in ("dd", "personal_production")]
@@ -1190,8 +1191,14 @@ def main() -> int:
                     fails.append(v.key)
             dd_view = next(v for v in VIEWS if v.key == "dd")
             try:
+                # DD is the multi-sheet PROGRAM SUMMARY / DOWNLINEVIEW dashboard
+                # (same view as the org Program Summary pull) — Download->Data is
+                # disabled until the downline worksheet is activated, so pass the
+                # calibrated activate_xy. Without it data_item.click() hangs 30s
+                # (the 2026-06-29 switch to DOWNLINEVIEW made this view multi-sheet).
                 fields, records = scrape_view_data(
-                    _dd_week_url(dd_view.url, we), verbose=True, page=page)
+                    _dd_week_url(dd_view.url, we), verbose=True, page=page,
+                    activate_xy=PROGRAM_SUMMARY_XY)
                 dd_path = DOWNLOAD_DIR / "dd_view_data.csv"
                 dd_path.parent.mkdir(parents=True, exist_ok=True)
                 dd_path.write_text(
@@ -1547,7 +1554,7 @@ def main() -> int:
         # ICDs appear alongside Raf's (Raf's CAPTAINVIEW filters out
         # everyone but the logged-in user's downline).
         from automations.recruiting_report.opt_phase import (
-            scrape_view_data, parse_program_summary, _norm,
+            scrape_view_data, parse_program_summary, _norm, PROGRAM_SUMMARY_XY,
         )
         dd_view = next(v for v in VIEWS if v.key == "dd")
         # Use a distinct filename so the old UTF-16 crosstab attempts at
@@ -1570,7 +1577,10 @@ def main() -> int:
         elif not args.dry_run or not carlos_dd_path.exists():
             dd_url = _dd_week_url(dd_view.url, we)
             print(f"  → scraping View Data from {dd_url}")
-            fields, records = scrape_view_data(dd_url, verbose=True)
+            # Multi-sheet DOWNLINEVIEW dashboard — activate the downline
+            # worksheet first or Download->Data stays disabled (see download-all).
+            fields, records = scrape_view_data(dd_url, verbose=True,
+                                               activate_xy=PROGRAM_SUMMARY_XY)
             carlos_dd_path.parent.mkdir(parents=True, exist_ok=True)
             lines = ["\t".join(fields)] + ["\t".join(r) for r in records]
             carlos_dd_path.write_text("\n".join(lines), encoding="utf-8")
