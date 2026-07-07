@@ -107,6 +107,15 @@ def main(argv: Optional[List[str]] = None) -> int:
             _log(f"  {r.report_id:24s} [{r.priority}] {r.source_type:9s} {mark}: {rd.reason}")
         return 0
 
+    # Nothing scheduled for THIS machine today (e.g. a secondary runner like
+    # Lucy 2 on a day its weekly report doesn't run) — do nothing and DON'T send
+    # an empty summary email. Lucy 1 has daily reports, so this only short-
+    # circuits secondary runners on their off days.
+    if not todays:
+        _log(f"No reports scheduled for {registry.this_machine()} on "
+             f"{target.isoformat()} — nothing to do.")
+        return 0
+
     # ---- acquire the day lock ----
     if not state.acquire_lock(target.isoformat()):
         _log("another orchestrator already holds today's lock — exiting.")

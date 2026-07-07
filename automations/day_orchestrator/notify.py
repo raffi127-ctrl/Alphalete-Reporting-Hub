@@ -41,14 +41,26 @@ _LABELS = {
 
 # ---------------- public API ----------------
 
+def _machine_prefix() -> str:
+    """Label secondary runners (e.g. Lucy 2) in the subject so their summary is
+    clearly distinct from Lucy 1's. Empty for Lucy 1 (the primary) — its
+    subjects stay exactly as before."""
+    try:
+        from automations.day_orchestrator import registry
+        m = registry.this_machine()
+        return f"[{m}] " if m and m != registry.DEFAULT_MACHINE else ""
+    except Exception:
+        return ""
+
+
 def send_checkpoint(cfg, ds, *, channel="email", dry_run=False):
-    subj = f"Reports {_d(ds)} — 7:30 checkpoint · {_tally(ds)}"
+    subj = f"{_machine_prefix()}Reports {_d(ds)} — 7:30 checkpoint · {_tally(ds)}"
     html, text = _build_body(cfg, ds, checkpoint=True)
     _dispatch(cfg, subj, html, text, channel, dry_run, tag="checkpoint")
 
 
 def send_final(cfg, ds, *, channel="email", dry_run=False):
-    subj = f"Reports {_d(ds)} — FINAL · {_tally(ds)}"
+    subj = f"{_machine_prefix()}Reports {_d(ds)} — FINAL · {_tally(ds)}"
     html, text = _build_body(cfg, ds, checkpoint=False)
     _dispatch(cfg, subj, html, text, channel, dry_run, tag="final")
 
