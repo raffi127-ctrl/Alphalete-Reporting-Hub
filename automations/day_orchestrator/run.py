@@ -85,8 +85,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     # dry-run week's summaries actually reach Megan + Eve).
     email_dry = dry_run and not args.live_emails
 
-    # Reports scheduled today (weekday match), optionally narrowed by --only.
-    todays = registry.scheduled_today(cfg, target)
+    # Reports scheduled today (weekday match) for THIS runner (Lucy 1 / Lucy 2),
+    # optionally narrowed by --only. The machine filter keeps a second runner
+    # from re-running (and double-posting) Lucy 1's reports.
+    todays = registry.scheduled_today(cfg, target, machine=registry.this_machine())
     if only:
         todays = [r for r in todays if r.report_id in only]
     todays_by_id = {r.report_id: r for r in todays}

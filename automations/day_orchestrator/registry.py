@@ -15,6 +15,24 @@ CONFIG_PATH = Path(__file__).resolve().parent / "schedule_config.json"
 
 _PRIORITY_RANK = {"P1": 0, "P2": 1, "P3": 2}
 
+# Which runner am I? A gitignored `.machine-profile` marker at the repo root
+# names the profile ("Lucy 1" / "Lucy 2") — the SAME marker mini_control uses.
+# Absent → "Lucy 1" (the original mini). The orchestrator runs only reports
+# assigned to its own machine, so a second runner never double-posts.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+_MACHINE_MARKER = REPO_ROOT / ".machine-profile"
+DEFAULT_MACHINE = "Lucy 1"
+
+
+def this_machine() -> str:
+    try:
+        v = _MACHINE_MARKER.read_text().strip()
+        if v:
+            return v
+    except Exception:
+        pass
+    return DEFAULT_MACHINE
+
 
 @dataclass
 class Report:
@@ -32,6 +50,7 @@ class Report:
     verify: dict
     timeout_minutes: int = 45
     idempotency: dict = field(default_factory=dict)
+    machine: str = DEFAULT_MACHINE   # which runner (Lucy 1 / Lucy 2) owns this
 
 
 @dataclass
@@ -59,6 +78,7 @@ def _build_report(rid: str, r: dict) -> Report:
         verify=r.get("verify", {}),
         timeout_minutes=int(r.get("timeout_minutes", 45)),
         idempotency=r.get("idempotency", {}),
+        machine=r.get("machine", DEFAULT_MACHINE),
     )
 
 
@@ -92,10 +112,16 @@ def resolve_report(cfg: Config, report_id: str) -> Optional[Report]:
     return _build_report(report_id, raw_r) if raw_r else None
 
 
-def scheduled_today(cfg: Config, date: dt.date) -> List[Report]:
-    """Reports whose weekday matches `date`."""
+def scheduled_today(cfg: Config, date: dt.date,
+                    machine: Optional[str] = None) -> List[Report]:
+    """Reports whose weekday matches `date`. If `machine` is given, keep only
+    reports assigned to that runner (entries with no 'machine' key default to
+    'Lucy 1'); machine=None returns all — the Hub display path uses that."""
     wd = date.weekday()
-    return [r for r in cfg.reports.values() if wd in r.weekdays]
+    out = [r for r in cfg.reports.values() if wd in r.weekdays]
+    if machine is not None:
+        out = [r for r in out if r.machine == machine]
+    return out
 
 
 # --- Run-order flow (optimizes TOTAL runtime, not any single report) ---
