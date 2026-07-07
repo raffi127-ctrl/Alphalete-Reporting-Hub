@@ -109,6 +109,15 @@ def _batch_state() -> str:
 
 
 def main():
+    import sys
+    # `--pmset`: print ONLY the power diagnostic (wake schedule / sleep timer /
+    # last wake reason / caffeinate assertion). The full MORNING-DIAG line gets
+    # truncated to ~480 chars in the Mini Control result cell, which cuts off
+    # the pmset tail — so when diagnosing "why did it start at 6am not 4am?"
+    # (is keep-awake actually holding?), ask for just this. (2026-07-07.)
+    if "--pmset" in sys.argv:
+        print(f"PMSET {dt.date.today()} :: {_pmset()}")
+        return
     print(f"MORNING-DIAG {dt.date.today()} :: {_orchestrator_start()} :: "
           f"{_batch_state()} :: {_pmset()}")
 
