@@ -772,7 +772,21 @@ def write_icd_values(ws, icd_values: dict[int, object],
         # bypass the shared retry — DD (the last of 7 views) reliably hit the
         # quota once the 2026-07-01 PP fix added a write burst 45s ahead of it,
         # so DD's batch_update was 429ing with no backoff.
-        fill._retry(ws.batch_update, body, value_input_option="USER_ENTERED")
+        try:
+            fill._retry(ws.batch_update, body, value_input_option="USER_ENTERED")
+        except Exception as _e:
+            # TEMP DIAGNOSTIC: the mini keeps only 3 lines of stdout, so a write
+            # failure's traceback is otherwise unreachable. Persist tab + the
+            # exact body + full traceback to a top-level log logtail can read.
+            import traceback as _tb
+            _dbg = Path("output/logs/carlos-write-debug.log")
+            _dbg.parent.mkdir(parents=True, exist_ok=True)
+            with _dbg.open("a") as _f:
+                _f.write(f"\n=== {ws.title} col {col_a1} FAILED: "
+                         f"{type(_e).__name__}: {str(_e)[:300]}\n")
+                _f.write(f"body={body!r}\n")
+                _f.write(_tb.format_exc())
+            raise
         log.append(f"  [OK] {ws.title}: wrote {len(body)} cell(s) "
                    f"to col {col_a1}")
         for c in cells_summary:
