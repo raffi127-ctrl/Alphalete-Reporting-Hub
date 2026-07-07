@@ -70,14 +70,42 @@ DEFAULT_TIMEOUT_S = 130 * 60
 SESSION_HOLDER_LABEL = "com.alphalete.session-holder"
 MINI_CONTROL_LABEL = "com.alphalete.mini-control"   # this poller's own launchd label
 
+# Machine identity — which runner is this? A gitignored `.machine-profile` file
+# at the repo root names the profile ("Lucy 1" / "Lucy 2"). Each runner polls its
+# OWN control tab so two machines never grab the same queued row. Absent marker →
+# "Lucy 1" (the original mini), so its tab + behavior stay exactly as they were.
+_MACHINE_MARKER = REPO_ROOT / ".machine-profile"
+DEFAULT_MACHINE = "Lucy 1"
+
+
+def _machine_profile(explicit: str | None = None) -> str:
+    """This machine's profile: explicit arg → .machine-profile marker → 'Lucy 1'."""
+    if explicit and explicit.strip():
+        return explicit.strip()
+    try:
+        v = _MACHINE_MARKER.read_text().strip()
+        if v:
+            return v
+    except Exception:
+        pass
+    return DEFAULT_MACHINE
+
+
+def _control_tab_for(machine: str) -> str:
+    """Lucy 1 keeps the original 'Mini Control' tab (backward-compatible); every
+    other machine gets its own 'Mini Control - <machine>' tab."""
+    machine = (machine or DEFAULT_MACHINE).strip()
+    return CONTROL_TAB if machine == DEFAULT_MACHINE else f"{CONTROL_TAB} - {machine}"
+
 
 def _now() -> str:
     return dt.datetime.now().isoformat(timespec="seconds")
 
 
-def _open(sandbox: bool = False):
-    """Open (creating if needed) the control worksheet."""
-    tab = SANDBOX_TAB if sandbox else CONTROL_TAB
+def _open(sandbox: bool = False, machine: str | None = None):
+    """Open (creating if needed) the control worksheet for THIS machine — or the
+    shared TEST tab when sandbox."""
+    tab = SANDBOX_TAB if sandbox else _control_tab_for(_machine_profile(machine))
     sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
     try:
         return sh.worksheet(tab)
@@ -389,12 +417,15 @@ ACTIONS = {
 # Enqueue + poll
 # ---------------------------------------------------------------------------
 
-def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = False) -> None:
-    """Add a fix request to the queue (called by Eve / Megan / the orchestrator)."""
-    ws = _open(sandbox)
+def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = False,
+            machine: str | None = None) -> None:
+    """Add a fix request to the queue (called by Eve / Megan / the orchestrator).
+    Targets `machine`'s tab (default 'Lucy 1' → the original 'Mini Control')."""
+    ws = _open(sandbox, machine)
     ws.append_row([_now(), action, args, by, "queued", "", ""],
                   value_input_option="RAW")
-    print(f"[mini_control] queued: {action} {args} (by {by})")
+    print(f"[mini_control] queued: {action} {args} (by {by}) "
+          f"→ {_control_tab_for(_machine_profile(machine))}")
 
 
 def _set(ws, rownum: int, status: str, result: str = "", finished: bool = False) -> None:
@@ -423,10 +454,11 @@ def _autoruns_today(rows: list[dict]) -> int:
     )
 
 
-def poll_once(*, dry_run: bool = False, sandbox: bool = False) -> int:
+def poll_once(*, dry_run: bool = False, sandbox: bool = False,
+              machine: str | None = None) -> int:
     """One poll pass: run every 'queued' row's whitelisted action. Returns the
     number of rows acted on."""
-    ws = _open(sandbox)
+    ws = _open(sandbox, machine)
     rows = ws.get_all_records()           # list of dicts keyed by header
     cap_used = _autoruns_today(rows)
     acted = 0
@@ -476,9 +508,11 @@ def _git_head() -> "str | None":
         return None
 
 
-def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = False) -> None:
-    tab = SANDBOX_TAB if sandbox else CONTROL_TAB
-    print(f"[mini_control] poll loop every {interval_s}s on {tab!r}"
+def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = False,
+              machine: str | None = None) -> None:
+    mach = _machine_profile(machine)
+    tab = SANDBOX_TAB if sandbox else _control_tab_for(mach)
+    print(f"[mini_control] poll loop every {interval_s}s on {tab!r} (machine {mach!r})"
           + (" [DRY-RUN]" if dry_run else ""))
     startup_head = _git_head()
     while True:
@@ -500,17 +534,17 @@ def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = F
                 argv.append("--dry-run")
             os.execv(sys.executable, argv)
         try:
-            poll_once(dry_run=dry_run, sandbox=sandbox)
+            poll_once(dry_run=dry_run, sandbox=sandbox, machine=mach)
         except Exception as e:
             print(f"[mini_control] poll error (continuing): {type(e).__name__}: {str(e)[:160]}")
         time.sleep(interval_s)
 
 
-def print_status(n: int = 10, *, sandbox: bool = False) -> None:
+def print_status(n: int = 10, *, sandbox: bool = False, machine: str | None = None) -> None:
     """Print the last N queue rows + their results to the terminal, so you can
     check what the mini did WITHOUT opening the Sheet. Newest row last (right
     above your prompt)."""
-    ws = _open(sandbox)
+    ws = _open(sandbox, machine)
     rows = ws.get_all_records()
     if not rows:
         print("(no commands on the Mini Control queue yet)")
@@ -586,21 +620,26 @@ def main(argv=None) -> int:
     ap.add_argument("--interval", type=int, default=120, help="loop interval seconds")
     ap.add_argument("--dry-run", action="store_true", help="poll but execute nothing")
     ap.add_argument("--sandbox", action="store_true", help="use the TEST tab")
+    ap.add_argument("--machine", default=None,
+                    help="target machine profile, e.g. 'Lucy 2'. Enqueue side: "
+                         "which runner's tab to queue to (default 'Lucy 1'). Loop "
+                         "side: normally omitted — reads the .machine-profile marker.")
     a = ap.parse_args(argv)
 
     if a.actions:
         print_help()
         return 0
     if a.status is not None:
-        print_status(a.status, sandbox=a.sandbox)
+        print_status(a.status, sandbox=a.sandbox, machine=a.machine)
         return 0
     if a.enqueue:
-        enqueue(a.enqueue[0], " ".join(a.enqueue[1:]), by=a.by, sandbox=a.sandbox)
+        enqueue(a.enqueue[0], " ".join(a.enqueue[1:]), by=a.by,
+                sandbox=a.sandbox, machine=a.machine)
         return 0
     if a.loop:
-        poll_loop(a.interval, dry_run=a.dry_run, sandbox=a.sandbox)
+        poll_loop(a.interval, dry_run=a.dry_run, sandbox=a.sandbox, machine=a.machine)
         return 0
-    n = poll_once(dry_run=a.dry_run, sandbox=a.sandbox)   # default: one pass
+    n = poll_once(dry_run=a.dry_run, sandbox=a.sandbox, machine=a.machine)   # default: one pass
     print(f"[mini_control] acted on {n} row(s)")
     return 0
 

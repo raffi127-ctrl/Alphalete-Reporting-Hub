@@ -55,3 +55,6 @@ automations/*/_probe_*.py
 # (fill._load_office_index, dashboard._all_appstream_offices) fall back to an
 # empty list if it's missing, so a fresh clone just rebuilds it on first run.
 automations/recruiting_report/all-offices.json
+
+# Per-machine runner identity for mini_control (Lucy 1 / Lucy 2). Never commit.
+.machine-profile
