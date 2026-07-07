@@ -551,12 +551,11 @@ def hide_top_block_headroom(ws, logfn=print) -> int:
         v = colb[i - 1] if i - 1 < len(colb) else ""
         if isinstance(v, str) and v.strip():
             last_rep = i
-    if last_rep <= 2:
-        # Empty top zone (e.g. early Monday before this week's roster fills).
-        # NEVER hide it — the scrape writes reps here next, and hiding first
-        # would orphan them. The gap compacts once reps populate + this runs
-        # again from the daily fill.
-        return 0
+    # Note: an EMPTY top zone (last_rep == 2, e.g. early in the week before
+    # this week's roster fills) is collapsed too — otherwise LAST WEEK drifts
+    # ~108 rows down and the sheet 'looks empty' on open. This is safe: we only
+    # ever hide rows AFTER the last filled row (never a rep), and the daily fill
+    # re-runs this after writing reps, which un-hides whatever it just filled.
     sid = ws.id
     requests = [
         # Re-show the filled block + its one spacer row (in case a prior hide
