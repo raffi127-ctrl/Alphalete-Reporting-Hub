@@ -236,8 +236,9 @@ def run_compare(logfn=print) -> dict:
 
 
 def _numeq(a: str, b: str) -> bool:
-    try:
-        return float(a) == float(b)
+    try:  # strip thousands separators + a trailing % so '1,193'=='1193' etc.
+        return (float(str(a).replace(",", "").rstrip("%"))
+                == float(str(b).replace(",", "").rstrip("%")))
     except (ValueError, TypeError):
         return False
 
