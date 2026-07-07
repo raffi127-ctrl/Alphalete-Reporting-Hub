@@ -242,32 +242,42 @@ def _numeq(a: str, b: str) -> bool:
         return False
 
 
-def every_cell_diff() -> dict:
+def every_cell_diff(band_at: int = 1000) -> dict:
     """RAW, exhaustive cell-by-cell diff of the whole copy tab vs the whole VA
     tab — EVERY cell, not just the report's completed-day/total regions. Compares
     DISPLAYED values (get_all_values), so a formula and a static value showing the
-    same number match. Classifies each difference as 'real' (different value) or
-    'fmt' (numerically equal, e.g. '2' vs '2.0'). This is the 'is every single
-    cell identical?' check, distinct from run_compare's region-scoped audit."""
+    same number match, and numerically-equal cells ('2' vs '2.0') are NOT flagged.
+
+    Each real difference is bucketed by row band (< band_at vs >= band_at) and by
+    KIND — the distinction that matters:
+      copy-blank  : copy empty, VA has a value  (VA-only content / offset)
+      va-blank    : copy has a value, VA empty  (copy-only content / offset)
+      both-differ : BOTH populated but different (the only true data conflict)
+    Only 'both-differ' cells are genuine disagreements; the blanks are structural
+    (the two tabs aren't mirror layouts — different rows/summary blocks)."""
+    from collections import Counter
     import gspread
     a1 = gspread.utils.rowcol_to_a1
     sh = open_by_key(SHEET_ID)
     copy = _retry(sh.worksheet(SANDBOX_TAB).get_all_values)
     va = _retry(sh.worksheet(PROD_TAB).get_all_values)
-    real, fmt = [], []
+    counts: Counter = Counter()
+    both_differ = []   # (a1, copy, va, row)
     for r in range(max(len(copy), len(va))):
         cr = copy[r] if r < len(copy) else []
         vr = va[r] if r < len(va) else []
         for c in range(max(len(cr), len(vr))):
             cv = (cr[c] if c < len(cr) else "").strip()
             vv = (vr[c] if c < len(vr) else "").strip()
-            if cv == vv:
+            if cv == vv or _numeq(cv, vv):
                 continue
-            (fmt if _numeq(cv, vv) else real).append((a1(r + 1, c + 1), cv, vv))
-    return {
-        "copy_rows": len(copy), "va_rows": len(va),
-        "real": real, "fmt": fmt,
-    }
+            band = "below" if (r + 1) < band_at else "atplus"
+            kind = "copy-blank" if not cv else "va-blank" if not vv else "both-differ"
+            counts[(band, kind)] += 1
+            if kind == "both-differ":
+                both_differ.append((a1(r + 1, c + 1), cv, vv, r + 1))
+    return {"copy_rows": len(copy), "va_rows": len(va), "band_at": band_at,
+            "counts": dict(counts), "both_differ": both_differ}
 
 
 def main():
@@ -287,23 +297,35 @@ def main():
     # EVERY single cell identical?", not the region-scoped audit below).
     if "--every-cell" in _sys.argv:
         d = every_cell_diff()
+        b = d["band_at"]
+        cn = d["counts"]
+        g = lambda band, kind: cn.get((band, kind), 0)
         stamp = _dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
         out = logdir / f"org_sales_board_everycell-{stamp}.log"
+        bd = d["both_differ"]
+        bd_below = [x for x in bd if x[3] < b]
+        bd_at = [x for x in bd if x[3] >= b]
         body = [f"ORG SALES BOARD — EVERY-CELL RAW DIFF {stamp}",
-                f"copy rows={d['copy_rows']} va rows={d['va_rows']}",
-                f"REAL value differences: {len(d['real'])}",
-                f"formatting-only (numerically equal, e.g. 2 vs 2.0): {len(d['fmt'])}",
-                "", "== REAL (cell: copy | VA) =="]
-        body += [f"  {a1}: {cv!r} | {vv!r}" for a1, cv, vv in d["real"]]
-        body += ["", "== FORMATTING-ONLY =="]
-        body += [f"  {a1}: {cv!r} | {vv!r}" for a1, cv, vv in d["fmt"]]
+                f"copy rows={d['copy_rows']} va rows={d['va_rows']}", "",
+                f"ROWS BELOW {b}:  copy-blank={g('below','copy-blank')} "
+                f"va-blank={g('below','va-blank')} "
+                f"BOTH-DIFFER={g('below','both-differ')}",
+                f"ROWS {b}+:      copy-blank={g('atplus','copy-blank')} "
+                f"va-blank={g('atplus','va-blank')} "
+                f"BOTH-DIFFER={g('atplus','both-differ')}", "",
+                "Only BOTH-DIFFER = a real data conflict; blanks are structural "
+                "(the tabs aren't mirror layouts).", "",
+                f"== BOTH-DIFFER, rows below {b} ({len(bd_below)}) (cell: copy | VA) =="]
+        body += [f"  {a1}: {cv!r} | {vv!r}" for a1, cv, vv, _r in bd_below]
+        body += ["", f"== BOTH-DIFFER, rows {b}+ ({len(bd_at)}) =="]
+        body += [f"  {a1}: {cv!r} | {vv!r}" for a1, cv, vv, _r in bd_at]
         out.write_text("\n".join(body), encoding="utf-8")
-        identical = not d["real"] and not d["fmt"]
-        print(f"every-cell -> {out.name} | REAL diffs={len(d['real'])} "
-              f"fmt-only={len(d['fmt'])} | "
-              + ("EVERY CELL IDENTICAL ✓" if identical
-                 else ("VALUES MATCH (fmt-only diffs) ✓" if not d["real"]
-                       else f"{len(d['real'])} REAL cell(s) differ")))
+        nreal = len(bd)
+        print(f"every-cell -> {out.name} | below {b}: "
+              f"both-differ={g('below','both-differ')} "
+              f"(copy-blank {g('below','copy-blank')}, va-blank {g('below','va-blank')}) "
+              f"| {b}+: both-differ={g('atplus','both-differ')} "
+              f"| TOTAL real conflicts={nreal}")
         print("=== done ===")
         return 0
 
