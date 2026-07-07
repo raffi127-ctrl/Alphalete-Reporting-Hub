@@ -89,13 +89,15 @@ if [ -d .git ]; then
     ./.venv/bin/python -m pip install --quiet -r automations/recruiting_report/requirements.txt 2>/dev/null \
       || echo "⚠️  pip install hit an error (offline?) — reports will crash with ModuleNotFoundError if a dep is missing"
   fi
-  if [ ! -f .venv/.patchright_chromium_installed ] && [ -x .venv/bin/patchright ]; then
+  # Invoke patchright as `python -m patchright` (never the .venv/bin/patchright
+  # script) so a stale console-script shebang can't run it through the shell.
+  if [ ! -f .venv/.patchright_chromium_installed ] && ./.venv/bin/python -c "import patchright" 2>/dev/null; then
     echo "→ First-time: installing Chromium for patchright (one-time, ~150MB)..."
-    if ./.venv/bin/patchright install chromium >/dev/null 2>&1; then
+    if ./.venv/bin/python -m patchright install chromium >/dev/null 2>&1; then
       touch .venv/.patchright_chromium_installed
       echo "✅ Chromium installed for patchright"
     else
-      echo "⚠️  patchright Chromium install failed — run: ./.venv/bin/patchright install chromium"
+      echo "⚠️  patchright Chromium install failed — run: ./.venv/bin/python -m patchright install chromium"
     fi
   fi
 fi

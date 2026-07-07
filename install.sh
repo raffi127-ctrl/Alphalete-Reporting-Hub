@@ -142,16 +142,18 @@ if ! .venv/bin/python -m pip install --quiet \
 fi
 
 # 4. Install the Chromium build for the browser driver. The project uses
-# patchright (a Playwright fork) — the venv has `.venv/bin/patchright`, NOT
-# `.venv/bin/playwright` (the old name broke Camila's install 2026-06-16).
-# Prefer patchright; fall back to playwright only if that's what's present.
+# patchright (a Playwright fork). Invoke via `python -m patchright` — NOT the
+# .venv/bin/patchright script — so a stale console-script shebang (from a moved
+# system Python) can't run it through the shell (Lucy 2 2026-07-07:
+# ".venv/bin/patchright: line 2: import: command not found"). Fall back to
+# playwright only if patchright isn't importable.
 echo "→ Installing Chromium for patchright"
-if [ -x .venv/bin/patchright ]; then
-    .venv/bin/patchright install chromium >/dev/null
-elif [ -x .venv/bin/playwright ]; then
-    .venv/bin/playwright install chromium >/dev/null
+if .venv/bin/python -c "import patchright" 2>/dev/null; then
+    .venv/bin/python -m patchright install chromium >/dev/null
+elif .venv/bin/python -c "import playwright" 2>/dev/null; then
+    .venv/bin/python -m playwright install chromium >/dev/null
 else
-    red "⚠ neither patchright nor playwright CLI found in .venv — skipping Chromium install"
+    red "⚠ neither patchright nor playwright importable in .venv — skipping Chromium install"
 fi
 
 # 5. Write config (Sheet ID)
