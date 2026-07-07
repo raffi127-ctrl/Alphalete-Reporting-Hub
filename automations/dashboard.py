@@ -1108,7 +1108,6 @@ MEMBERS = [
     {"name": "Lucy 1", "emoji": "🤖", "color": "#10B981", "email": ""},
     {"name": "Lucy 2", "emoji": "🦾", "color": "#E76F51", "email": ""},
     {"name": "Maud",    "emoji": "🌟",        "color": "#FF6B6B", "email": "maudmiller4@gmail.com"},
-    {"name": "Megan",   "emoji": "👩‍💼",     "color": "#667eea", "email": "meganhidalgo1191@gmail.com"},
 ]
 
 
