@@ -2870,10 +2870,10 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "resume-pushing",
-        # Non-breaking spaces keep "Resume Pushing" and "(8 AM Daily)" together
+        # Non-breaking spaces keep "Resume Pushing" and "(Q 10 Min)" together
         # so the cadence wraps as one clean unit onto line 2 of the This Week
         # strip pill (same trick as rc-autoread's "(Q 10 Min)").
-        "name": "Resume Pushing (8 AM Daily)",
+        "name": "Resume Pushing (Q 10 Min)",
         "creator": "Carlos",
         "emoji": "📄",
         "color": "#F59E0B",
@@ -2886,9 +2886,10 @@ AUTOMATED_REPORTS = [
             "marked **Ready For Extraction**, then **sends the valid "
             "applicants to the AI call list**.\n\n"
             "WHEN IT RUNS\n"
-            "**8 AM Central, Sun + Mon–Fri** (not Saturday), via a launchd "
-            "timer on **Lucy 2** (Carlos's machine). The **Dry Run** / "
-            "**Run Live** buttons here trigger an extra pass any time.\n\n"
+            "**Every ~10 minutes, 8 AM–10 PM Central, Sun + Mon–Fri** (not "
+            "Saturday), via a launchd timer on **Lucy 2** (Carlos's machine). "
+            "The **Dry Run** / **Run Live** buttons here trigger an extra pass "
+            "any time.\n\n"
             "⚠️ SEND-TO-AI IS IRREVERSIBLE\n"
             "A live run pushes applicants onto the AI call list and can't be "
             "undone. **Dry Run** reads the counts it *would* extract/send "

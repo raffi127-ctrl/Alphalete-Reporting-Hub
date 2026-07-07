@@ -554,7 +554,7 @@
     },
     "install_resume_pushing_agent": {
       "on_scheduler": true,
-      "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_resume_pushing_agent` (same pattern as install_je_agent). on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Regens + launchctl-bootstraps com.alphalete.resume-pushing on Lucy 2 — Carlos's ApplicantStream office-11580 resume extract + send-to-AI, 8am Sun+Mon-Fri. Runs on the machine's own AppStream session (Lucy 2 = Carlos's account). NOTE: the scheduled run is LIVE (send-to-AI is IRREVERSIBLE) — dry-run first with `bash deploy/resume_pushing_8am.sh --dry-run` before installing. Not a Hub card. Re-runnable any time.",
+      "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_resume_pushing_agent` (same pattern as install_je_agent). on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Regens + launchctl-bootstraps com.alphalete.resume-pushing on Lucy 2 — Carlos's ApplicantStream office-11580 resume extract + send-to-AI, every 10 min 8am-10pm CST Sun+Mon-Fri (plist fires q10min; resume_pushing_10min.sh gates the window + skips Sat). Runs on the machine's own AppStream session (Lucy 2 = Carlos's account). NOTE: the scheduled run is LIVE (send-to-AI is IRREVERSIBLE) — dry-run first with `bash deploy/resume_pushing_10min.sh --dry-run` before installing. Re-runnable any time.",
       "display_name": "Install: Resume Pushing LaunchAgent",
       "source_type": "local",
       "data_sources": [],

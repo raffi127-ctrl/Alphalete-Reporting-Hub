@@ -10,7 +10,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/megan/1st Claude Folder/deploy/resume_pushing_8am.sh</string>
+        <string>/Users/megan/1st Claude Folder/deploy/resume_pushing_10min.sh</string>
     </array>
 
     <key>WorkingDirectory</key>
@@ -22,42 +22,19 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- 8:00am on Sun + Mon–Fri (NOT Saturday), machine LOCAL time (Central).
-         launchd Weekday: 0/7=Sun, 1=Mon … 6=Sat. An ARRAY of dicts = fire at
-         each listed weekday. TIME KNOB: change every Hour to shift the run
-         time; drop the Weekday 0 dict to skip Sunday. -->
+    <!-- Fire every 10 min around the clock (:00/:10/:20/:30/:40/:50). The
+         wrapper (resume_pushing_10min.sh) gates the ACTIVE window to 8am–10pm
+         CST and SKIPS Saturday; outside that it exits immediately. Machine LOCAL
+         time (Lucy 2 is Central). TIME KNOB for hours/days: edit the window +
+         day gates in the wrapper, NOT this array. -->
     <key>StartCalendarInterval</key>
     <array>
-        <dict>
-            <key>Weekday</key><integer>0</integer>
-            <key>Hour</key><integer>8</integer>
-            <key>Minute</key><integer>0</integer>
-        </dict>
-        <dict>
-            <key>Weekday</key><integer>1</integer>
-            <key>Hour</key><integer>8</integer>
-            <key>Minute</key><integer>0</integer>
-        </dict>
-        <dict>
-            <key>Weekday</key><integer>2</integer>
-            <key>Hour</key><integer>8</integer>
-            <key>Minute</key><integer>0</integer>
-        </dict>
-        <dict>
-            <key>Weekday</key><integer>3</integer>
-            <key>Hour</key><integer>8</integer>
-            <key>Minute</key><integer>0</integer>
-        </dict>
-        <dict>
-            <key>Weekday</key><integer>4</integer>
-            <key>Hour</key><integer>8</integer>
-            <key>Minute</key><integer>0</integer>
-        </dict>
-        <dict>
-            <key>Weekday</key><integer>5</integer>
-            <key>Hour</key><integer>8</integer>
-            <key>Minute</key><integer>0</integer>
-        </dict>
+        <dict><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Minute</key><integer>10</integer></dict>
+        <dict><key>Minute</key><integer>20</integer></dict>
+        <dict><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Minute</key><integer>40</integer></dict>
+        <dict><key>Minute</key><integer>50</integer></dict>
     </array>
 
     <key>StandardOutPath</key>
