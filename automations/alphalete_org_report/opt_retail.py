@@ -1175,13 +1175,30 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
 
     page = None  # bound by the `with` below; referenced in _try_with_retry
 
+    # Only reuse a fallback file that's from THIS week's run (≤3 days old). An
+    # older file is last week's data — writing it into this week's column would
+    # be a SILENT stale fill. Per [[feedback_flag_unfilled_cells]] / fill-but-
+    # flag, we'd rather leave those metrics blank + logged as a miss (with the
+    # scrape error surfaced in the run's errors count) than quietly wrong.
+    # (Megan 2026-07-06: SARA's per-owner table is a corporate/locked workbook,
+    # so the fast HTTP pull isn't available — the scrape can still time out, and
+    # when it does the fill must not fall back to stale numbers.)
+    _FALLBACK_MAX_AGE_S = 3 * 24 * 3600
+
     def _fallback_existing(filename: str) -> Optional[Path]:
         target = OUTPUT_DIR / filename
-        if target.exists() and target.stat().st_size > 500:
-            logfn(f"OPT Retail: using existing {filename} "
-                  f"({target.stat().st_size:,} bytes) as fallback")
-            return target
-        return None
+        if not (target.exists() and target.stat().st_size > 500):
+            return None
+        age_s = dt.datetime.now().timestamp() - target.stat().st_mtime
+        if age_s > _FALLBACK_MAX_AGE_S:
+            logfn(f"OPT Retail: NOT using stale {filename} "
+                  f"({age_s / 86400:.1f}d old) — leaving those metrics "
+                  f"unfilled/flagged rather than writing last week's numbers")
+            return None
+        logfn(f"OPT Retail: using existing {filename} "
+              f"({target.stat().st_size:,} bytes, {age_s / 3600:.1f}h old) "
+              f"as fallback")
+        return target
 
     def _try_with_retry(label: str, filename: str, max_attempts: int, op):
         """Run `op()` (download/scrape) up to max_attempts times, with an
