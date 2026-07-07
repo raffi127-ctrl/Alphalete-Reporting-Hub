@@ -1261,8 +1261,8 @@ AUTOMATED_REPORTS = [
             "(WE Sunday).\n\n"
             "TO ADD AN ICD\n"
             "**1.**  Add a tab named the ICD's exact AppStream name.\n"
-            "**2.**  Make sure the **rcaptain** AppStream login can see "
-            "that ICD.\n"
+            "**2.**  Make sure the **CarlosNLR** AppStream login (Lucy 2) can "
+            "see that ICD.\n"
             "✅  Next run auto-fills the new tab.\n\n"
             "IF DATA IS MISSING\n"
             "Cells marked **'No Data In Tableau'** mean the ICD is too "
@@ -1271,7 +1271,7 @@ AUTOMATED_REPORTS = [
             "permission to that ICD's data."
         ),
         "sheet_url": CARLOS_SHEET_URL,
-        "assignees": ["Lucy 1"],
+        "assignees": ["Lucy 2"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],  # Monday

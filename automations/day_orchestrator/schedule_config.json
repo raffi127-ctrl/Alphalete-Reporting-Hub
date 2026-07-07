@@ -714,6 +714,7 @@
     },
     "carlos_focus": {
       "on_scheduler": true,
+      "machine": "Lucy 2",
       "display_name": "Carlos 1on1s - Focus Report",
       "source_type": "tableau",
       "data_sources": [
