@@ -212,9 +212,19 @@ def parse_crosstab_byday(
     monday = _wk.reporting_monday(today)  # rolls Tuesday — Monday = last week
     def _distinct_days(r):
         return len({d for c in r if (d := _day_for_header(c, monday))})
+    def _has_owner(r):
+        return any(c.strip() == spec.owner_col for c in r)
     scan = min(6, len(rows))
-    hdr_idx = max(range(scan), key=lambda i: _distinct_days(rows[i]))
-    if _distinct_days(rows[hdr_idx]) == 0:
+    # Pick the real column-header row: most distinct weekday columns, TIE-BROKEN
+    # by actually containing the owner column. Early in the week only ONE day
+    # (Monday) has data, so the real header ties at 1 distinct day with the
+    # date-only chrome row above it (the week-ending date repeated); without the
+    # owner-col tiebreak the chrome row — which sorts first — wrongly wins and
+    # 'Owner & Office' reads blank, dropping the whole section. (Megan 2026-07-07:
+    # ATT NDS Team failed on a Tuesday with only Monday's data in.)
+    hdr_idx = max(range(scan),
+                  key=lambda i: (_distinct_days(rows[i]), _has_owner(rows[i])))
+    if _distinct_days(rows[hdr_idx]) == 0 and not _has_owner(rows[hdr_idx]):
         hdr_idx = 0
     header = [h.strip() for h in rows[hdr_idx]]
     data_rows = rows[hdr_idx + 1:]
