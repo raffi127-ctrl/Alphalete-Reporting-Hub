@@ -63,7 +63,7 @@ DAILY_AUTORUN_CAP = 100
 # the daily budget (a multi-person deploy day generates lots of these). The
 # budget is meant to bound repeated REPORT runs (rerun), not deploy plumbing.
 PLUMBING_ACTIONS = {"ping", "update", "restart_poller", "restart_holder",
-                    "pip_install", "watch_test"}
+                    "pip_install", "watch_test", "diag", "set_sleep"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
@@ -243,6 +243,67 @@ def _action_ping(args: str) -> tuple[bool, str]:
     return True, f"pong from {socket.gethostname()} @ {_now()}"
 
 
+def _action_diag(args: str) -> tuple[bool, str]:
+    """Read-only machine health — diagnose a runner remotely without anyone AT
+    the machine (the 'is it asleep / is the poller alive / is the OV session
+    fresh' questions we kept hitting). Reports sleep lock, loaded agents, OV
+    session age, power, disk. No side effects."""
+    import socket
+    import shutil
+    import time as _t
+
+    def _sh(cmd):
+        try:
+            return subprocess.run(cmd, capture_output=True, text=True,
+                                  timeout=10).stdout
+        except Exception as e:  # noqa: BLE001
+            return f"(err {type(e).__name__})"
+
+    try:
+        prof = _machine_profile()
+    except Exception:  # noqa: BLE001
+        prof = "?"
+    out = [f"{prof} @ {socket.gethostname()} · {_now()}"]
+    ds = next((ln.strip() for ln in _sh(["/usr/bin/pmset", "-g"]).splitlines()
+               if "disablesleep" in ln.lower()), "disablesleep not shown")
+    out.append(f"sleep: {ds}")
+    out.append("power: " + " ".join(_sh(["/usr/bin/pmset", "-g", "batt"]).split())[:70])
+    ll = _sh(["/bin/launchctl", "list"])
+    have = [a for a in ("keep-awake", "session-holder", "mini-control",
+                        "day-orchestrator")
+            if f"com.alphalete.{a}" in ll]
+    out.append("agents: " + (", ".join(have) if have else "NONE loaded"))
+    ov = REPO_ROOT / "automations" / "shared" / ".ownerville_storage_state.json"
+    if ov.exists():
+        out.append(f"OV session: {(_t.time() - ov.stat().st_mtime) / 60:.0f} min old")
+    else:
+        out.append("OV session: MISSING")
+    try:
+        out.append(f"disk free: {shutil.disk_usage(str(REPO_ROOT)).free // (1024**3)} GB")
+    except Exception:  # noqa: BLE001
+        pass
+    return True, "\n".join(out)
+
+
+def _action_set_sleep(args: str) -> tuple[bool, str]:
+    """Remotely prevent/allow system sleep via passwordless `sudo pmset` (needs a
+    one-time NOPASSWD sudoers entry for pmset on this machine — see
+    workflows/setup-new-runner.md). Args: '1'/'off'/'disable' = never sleep
+    (default); '0'/'on'/'allow' = allow sleep. Uses `sudo -n` so it fails CLEANLY
+    (never hangs on a password prompt) when NOPASSWD isn't configured."""
+    v = (args or "1").strip().lower()
+    allow = v in ("0", "on", "allow", "enable")
+    setting = "0" if allow else "1"
+    r = subprocess.run(
+        ["/usr/bin/sudo", "-n", "/usr/bin/pmset", "-a", "disablesleep", setting],
+        capture_output=True, text=True, timeout=15)
+    if r.returncode != 0:
+        return False, (f"sudo pmset failed (exit {r.returncode}): "
+                       f"{(r.stdout + r.stderr).strip()[:110]} — set up passwordless "
+                       "sudo for pmset (see setup-new-runner.md).")
+    return True, f"disablesleep={setting} — sleep {'ALLOWED' if allow else 'PREVENTED'}"
+
+
 # Lines worth surfacing when logtail has no explicit grep — the error/failure
 # signatures across every report's log (traceback frames, our own ✗/❌ markers,
 # HTTP/timeout errors, the opt_all per-step summary).
@@ -410,6 +471,8 @@ ACTIONS = {
     "restart_poller": _action_restart_poller,
     "reseed_appstream": _action_reseed_appstream,
     "watch_test": _action_watch_test,
+    "diag": _action_diag,
+    "set_sleep": _action_set_sleep,
 }
 
 
@@ -584,6 +647,8 @@ def print_help() -> None:
         "  lucy logtail <name>       show the tail of a mini log in output/logs\n"
         "  lucy update               git pull the latest code onto the mini\n"
         "  lucy restart_holder       restart the session keep-alive\n"
+        "  lucy diag                 machine health: sleep, agents, session, disk\n"
+        "  lucy set_sleep 1|0        prevent (1) / allow (0) sleep (needs NOPASSWD pmset)\n"
         "  lucy reseed_appstream     open AppStream login (needs a human AT the mini)\n"
         "  lucy watch_test           send a test of the 6pm session-expiry Slack ping\n"
         "  lucy help                 show this\n\n"
