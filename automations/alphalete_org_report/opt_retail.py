@@ -1197,12 +1197,21 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
             except Exception as e:
                 last_err = e
                 if attempt < max_attempts:
-                    logfn(f"OPT Retail:   {type(e).__name__}, retrying...")
+                    # Progressive backoff (6s, 12s, …) not a flat 3s: the
+                    # scrape/crosstab timeouts are LOAD-correlated — on the 4am
+                    # batch the mini is running several browser reports at once,
+                    # so the Tableau viz can't render inside the 40s toolbar
+                    # wait. A longer settle between tries lets the render catch
+                    # up before we re-hit it. (Megan 2026-07-06: SARA timed out
+                    # on both tries under 6am load and dropped the step.)
+                    backoff = min(6_000 * attempt, 18_000)
+                    logfn(f"OPT Retail:   {type(e).__name__}, "
+                          f"retrying in {backoff // 1000}s...")
                     try:
                         page.goto("about:blank",
                                   wait_until="domcontentloaded",
                                   timeout=10_000)
-                        page.wait_for_timeout(3_000)
+                        page.wait_for_timeout(backoff)
                     except Exception:
                         pass
         msg = f"{filename}: {type(last_err).__name__}: {str(last_err)[:120]}"
@@ -1239,7 +1248,7 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
                 #     Download → Data.
                 sara_target = OUTPUT_DIR / RETAIL_SARA_PLUS_OFFICE_FILENAME
                 sara_office_path = _try_with_retry(
-                    "patchright View Data", RETAIL_SARA_PLUS_OFFICE_FILENAME, 2,
+                    "patchright View Data", RETAIL_SARA_PLUS_OFFICE_FILENAME, 3,
                     lambda: scrape_view_data_patchright(
                         _sara_view_data_url(week_col_label), sara_target,
                         verbose=False, page=page,
@@ -1247,7 +1256,7 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
 
                 abp_target = OUTPUT_DIR / RETAIL_ABP_FILENAME
                 abp_path = _try_with_retry(
-                    "patchright Crosstab", RETAIL_ABP_FILENAME, 2,
+                    "patchright Crosstab", RETAIL_ABP_FILENAME, 3,
                     lambda: download_crosstab_patchright(
                         _abp_view_url(week_col_label),
                         RETAIL_ABP_SHEET, abp_target,
@@ -1255,7 +1264,7 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
 
                 money_target = OUTPUT_DIR / RETAIL_MONEY_LOST_FILENAME
                 money_lost_path = _try_with_retry(
-                    "patchright Crosstab", RETAIL_MONEY_LOST_FILENAME, 2,
+                    "patchright Crosstab", RETAIL_MONEY_LOST_FILENAME, 3,
                     lambda: download_crosstab_patchright(
                         RETAIL_MONEY_LOST_URL, RETAIL_MONEY_LOST_SHEET,
                         money_target, verbose=False, page=page))
@@ -1264,7 +1273,7 @@ def run_retail_costco(dry_run: bool = False, logfn=print) -> dict:
                 # uses; Megan 2026-05-25). Crosstab path like NDS.
                 dd_target = OUTPUT_DIR / RETAIL_DD_FILENAME
                 dd_path = _try_with_retry(
-                    "patchright Crosstab", RETAIL_DD_FILENAME, 2,
+                    "patchright Crosstab", RETAIL_DD_FILENAME, 3,
                     lambda: download_crosstab_patchright(
                         ORG_DD_URL, ORG_DD_SHEET, dd_target,
                         verbose=False, page=page))
