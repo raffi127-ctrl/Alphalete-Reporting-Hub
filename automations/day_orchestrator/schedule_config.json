@@ -513,6 +513,25 @@
       "verify": null,
       "timeout_minutes": 5
     },
+    "board_compare": {
+      "on_scheduler": true,
+      "_note": "NOT a report — standalone FULL comparison of the Org Sales Board copy tab vs the live VA tab, run via `lucy rerun board_compare`. Read-only (sheet vs sheet, no Tableau). Writes EVERY disagreeing cell to output/logs/org_sales_board_compare-<stamp>.log (the Mini-Control result cell truncates to ~480 chars, so read the full list with `lucy logtail org_sales_board_compare`). on_scheduler:true so registry keeps it; weekdays [] = never auto-runs. source_type 'local' (no chrome guard). Built 2026-07-07 to enumerate the residual VA-compare cells after the NDS section fix.",
+      "display_name": "Org Sales Board — full VA compare (diagnostic)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.org_sales_board.compare"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 10
+    },
     "install_resume_pushing_agent": {
       "on_scheduler": true,
       "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_resume_pushing_agent` (same pattern as install_je_agent). on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Regens + launchctl-bootstraps com.alphalete.resume-pushing on Lucy 2 — Carlos's ApplicantStream office-11580 resume extract + send-to-AI, 8am Sun+Mon-Fri. Runs on the machine's own AppStream session (Lucy 2 = Carlos's account). NOTE: the scheduled run is LIVE (send-to-AI is IRREVERSIBLE) — dry-run first with `bash deploy/resume_pushing_8am.sh --dry-run` before installing. Not a Hub card. Re-runnable any time.",

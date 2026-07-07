@@ -236,11 +236,46 @@ def run_compare(logfn=print) -> dict:
 
 
 def main():
+    """Standalone full comparison: copy tab vs the live VA tab, EVERY finding
+    written to a pullable log. The mini's Mini-Control result cell truncates to
+    ~480 chars, so the on-screen tail can't show a full glitch list — this writes
+    output/logs/org_sales_board_compare-<stamp>.log, read via
+    `lucy logtail org_sales_board_compare`. Read-only (sheet vs sheet); safe
+    any time. Always exits 0 — a compare difference is a finding, not a crash."""
+    import datetime as _dt
+    from pathlib import Path as _P
     res = run_compare()
-    if res["clean"]:
-        print("=== done ===")
-        return 0
-    return 1
+    try:
+        logdir = _P(__file__).resolve().parents[2] / "output" / "logs"
+        logdir.mkdir(parents=True, exist_ok=True)
+        stamp = _dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+        out = logdir / f"org_sales_board_compare-{stamp}.log"
+        buckets = [
+            ("GLITCHES (va_ahead / mismatch — automation behind or wrong)",
+             res.get("glitches", [])),
+            ("DERIVED total-table concerns (current week)",
+             res.get("derived", [])),
+            ("COPY MISSING (ICD on VA tab, no copy row)",
+             res.get("copy_missing", [])),
+            ("FORMULA DRIFT (a live VA formula got clobbered)",
+             res.get("formula_drift", [])),
+        ]
+        body = [f"ORG SALES BOARD — FULL COMPARE {stamp} — clean={res['clean']}",
+                f"tally={res.get('tally', {})}", ""]
+        for title, items in buckets:
+            body.append(f"== {title}: {len(items)} ==")
+            body += [f"  {it}" for it in items]
+            body.append("")
+        out.write_text("\n".join(str(x) for x in body), encoding="utf-8")
+        print(f"full compare -> {out.name} | "
+              f"{len(res.get('glitches', []))} glitch, "
+              f"{len(res.get('derived', []))} derived, "
+              f"{len(res.get('copy_missing', []))} copy-missing, "
+              f"{len(res.get('formula_drift', []))} formula-drift")
+    except Exception as e:  # noqa: BLE001 — the log is best-effort
+        print(f"(couldn't write full-compare log: {type(e).__name__}: {e})")
+    print("=== done ===")
+    return 0
 
 
 if __name__ == "__main__":
