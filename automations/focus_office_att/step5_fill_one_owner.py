@@ -780,10 +780,37 @@ def write_count_column(ws) -> None:
               value_input_option="USER_ENTERED")
 
 
+def _design_row_ranges(ws) -> list:
+    """The row ranges every column-scoped design formatter must cover: the
+    current zone (rows 3-109) AND the frozen LAST WEEK block (label row → 200),
+    as 0-based half-open (startRowIndex, endRowIndex) pairs.
+
+    SINGLE SOURCE OF TRUTH for "does this formatter reach the frozen block."
+    Historically each formatter hardcoded `endRowIndex: 109` and the frozen block
+    relied on the rollover's format-paste — so a repair/backfill that rewrote
+    frozen values as raw numbers silently un-formatted the block, over and over
+    (Megan 2026-07-07: "make sure formatting stops erroring"). Routing every
+    formatter through this helper means the frozen block can never be forgotten:
+    add a formatter → it covers the frozen block by construction."""
+    lw = next((i for i, v in enumerate(ws.col_values(2), 1)
+               if isinstance(v, str) and v.strip().upper() == LAST_WEEK_LABEL), None)
+    ranges = [(2, 109)]                 # current zone (0-based; rows 3-109)
+    if lw:
+        ranges.append((lw - 1, 200))   # frozen label/header/data (text cells ignore numFmt)
+    return ranges
+
+
 def apply_number_formats(ws, layout: Layout) -> None:
     """Time-of-day format on First/Last Knock cols, [h]h mm m on gap-time
     cols, and a 1-decimal number on AVG # Of Gaps — weekly block + every
-    per-day block. Col positions resolved from layout, never hardcoded."""
+    per-day block. Col positions resolved from layout, never hardcoded.
+
+    Applies to the current zone AND the frozen LAST WEEK block. The frozen
+    block has the same columns (it's a copy) and stores the same numeric values,
+    but it USED to depend on the rollover's format-paste — so any repair/backfill
+    path that rewrote frozen values as raw numbers made these formats drift
+    (recurring hand-fix, Megan 2026-07-07). Re-applying over the frozen rows every
+    daily pass makes the block self-heal regardless of how its values got there."""
     TIME_FMT = {"type": "TIME", "pattern": "h:mm AM/PM"}
     GAP_FMT = {"type": "TIME", "pattern": '[h]"h" mm"m"'}
     AVG_GAPS_FMT = {"type": "NUMBER", "pattern": "0.0"}
@@ -798,25 +825,32 @@ def apply_number_formats(ws, layout: Layout) -> None:
             c = metric_map.get(metric)
             if c:
                 fmt_targets.append((c, fmt))
+    row_ranges = _design_row_ranges(ws)   # current zone + frozen block
     requests = []
     for col, fmt in fmt_targets:
-        requests.append({
-            "repeatCell": {
-                "range": {"sheetId": ws.id, "startRowIndex": 2, "endRowIndex": 109,  # stop above frozen LAST WEEK block (row 110+)
-                          "startColumnIndex": col - 1, "endColumnIndex": col},
-                "cell": {"userEnteredFormat": {"numberFormat": fmt}},
-                "fields": "userEnteredFormat.numberFormat",
-            },
-        })
+        for s, e in row_ranges:
+            requests.append({
+                "repeatCell": {
+                    "range": {"sheetId": ws.id, "startRowIndex": s, "endRowIndex": e,
+                              "startColumnIndex": col - 1, "endColumnIndex": col},
+                    "cell": {"userEnteredFormat": {"numberFormat": fmt}},
+                    "fields": "userEnteredFormat.numberFormat",
+                },
+            })
     if requests:
         ws.spreadsheet.batch_update({"requests": requests})
 
 
 def apply_bold_center(ws) -> None:
-    """Bold + horizontal-center + vertical-middle across the data grid."""
+    """Bold + horizontal-center + vertical-middle across the data grid, INCLUDING
+    the frozen LAST WEEK block (rows 0-200). The frozen block used to inherit
+    bold/alignment only from the rollover's format-paste, so a repair/backfill
+    that rewrote its cells could leave it un-bolded / left-aligned (Megan
+    2026-07-07). Sweeping to row 200 makes it self-heal every daily pass; the
+    hidden headroom rows in between are blank so bolding them is a no-op."""
     ws.spreadsheet.batch_update({"requests": [{
         "repeatCell": {
-            "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 100,
+            "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 200,
                       "startColumnIndex": 0, "endColumnIndex": 96},
             "cell": {"userEnteredFormat": {
                 "horizontalAlignment": "CENTER",
@@ -851,6 +885,39 @@ def normalize_body_font(ws) -> None:
         "cell": cell, "fields": fields}} for s, e in ranges if e > s]
     if reqs:
         ws.spreadsheet.batch_update({"requests": reqs})
+
+
+def format_last_week_block(ws) -> None:
+    """Georgia 12pt, horizontally + vertically centered across the ENTIRE frozen
+    LAST WEEK block — the yellow 'LAST WEEK' label row, the frozen date/column-
+    header rows, AND every frozen rep row (Megan 2026-07-07: "the last week chart
+    should be centered / center anchor / 12pt / Georgia"). This intentionally
+    OVERRIDES the earlier 'leave the frozen headers as they were' carve-out
+    (normalize_body_font skips the label + col-header rows) so the whole block
+    reads uniformly.
+
+    Only sets font family/size + alignment via `fields`, so the label's yellow
+    background, the thick border box, bold, and number formats stay put. No-op on
+    a tab with no frozen block yet. Idempotent — safe to re-run every daily pass."""
+    lw = next((i for i, v in enumerate(ws.col_values(2), 1)
+               if isinstance(v, str) and v.strip().upper() == LAST_WEEK_LABEL), None)
+    if not lw:
+        return
+    ws.spreadsheet.batch_update({"requests": [{
+        "repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": lw - 1, "endRowIndex": 200,
+                      "startColumnIndex": 0, "endColumnIndex": 96},
+            "cell": {"userEnteredFormat": {
+                "horizontalAlignment": "CENTER",
+                "verticalAlignment": "MIDDLE",
+                "textFormat": {"fontFamily": "Georgia", "fontSize": 12},
+            }},
+            "fields": ("userEnteredFormat.horizontalAlignment,"
+                       "userEnteredFormat.verticalAlignment,"
+                       "userEnteredFormat.textFormat.fontFamily,"
+                       "userEnteredFormat.textFormat.fontSize"),
+        },
+    }]})
 
 
 def apply_day_block_borders(ws, layout: Layout) -> None:
@@ -895,6 +962,7 @@ def design_cosmetic_ops(ws, layout: Layout) -> list:
         ("apply_gap_time_format",        lambda: apply_gap_time_format(ws, layout)),
         ("apply_bold_center",            lambda: apply_bold_center(ws)),
         ("normalize_body_font",          lambda: normalize_body_font(ws)),
+        ("format_last_week_block",        lambda: format_last_week_block(ws)),
         ("reset_conditional_formatting", lambda: reset_conditional_formatting(ws)),
         ("write_office_totals_row",      lambda: write_office_totals_row(ws, layout)),
         ("write_office_summary_block",   lambda: write_office_summary_block(ws, layout)),
@@ -931,19 +999,19 @@ def apply_gap_time_format(ws, layout: Layout) -> None:
     if not gap_cols:
         return
 
-    requests = []
-    for col in gap_cols:
-        requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws.id,
-                    "startRowIndex": 2, "endRowIndex": 109,  # stop above frozen LAST WEEK block (row 110+)
-                    "startColumnIndex": col - 1, "endColumnIndex": col,
-                },
-                "cell": {"userEnteredFormat": {"numberFormat": {"type": "TIME", "pattern": '[h]"h" mm"m"'}}},
-                "fields": "userEnteredFormat.numberFormat",
-            },
-        })
+    # Current zone AND frozen LAST WEEK block (see _design_row_ranges): the frozen
+    # block stores gap time as fractional-day numbers too and used to rely on the
+    # rollover's format-paste, so a backfill/repair that rewrote raw values showed
+    # decimals (0.093…) instead of "2h 13m" (Megan 2026-07-07). Self-heals now.
+    row_ranges = _design_row_ranges(ws)
+    fmt = {"userEnteredFormat": {"numberFormat": {"type": "TIME", "pattern": '[h]"h" mm"m"'}}}
+    requests = [{
+        "repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": s, "endRowIndex": e,
+                      "startColumnIndex": col - 1, "endColumnIndex": col},
+            "cell": fmt, "fields": "userEnteredFormat.numberFormat",
+        },
+    } for col in gap_cols for (s, e) in row_ranges]
     ws.spreadsheet.batch_update({"requests": requests})
 
 
