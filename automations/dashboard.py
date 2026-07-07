@@ -2872,6 +2872,54 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "applicantstream-call-list",
+        "name": "ApplicantStream Call List",
+        "creator": "Carlos",
+        "emoji": "📋",
+        "color": "#F59E0B",
+        "category": "📲 Ops",
+        "description": "Extracts resumes and sends new applicants to the AI call list for office 11580 (Carlos Hidalgo).",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Selects office **11580**, opens Applicants → Process Emails → "
+            "Process in Batches, **extracts resumes** until none are left, "
+            "then **sends valid applicants to the AI call list** in repeated "
+            "passes.\n\n"
+            "LOGIN\n"
+            "You log into ApplicantStream **manually** in the Chrome window it "
+            "opens — the script never stores or types credentials and stops if "
+            "you aren't logged in.\n\n"
+            "IF IT STOPS EARLY\n"
+            "Usually the office picker or a menu item moved — check the console "
+            "output, then re-run."
+        ),
+        # No Google Sheet — drives ApplicantStream directly.
+        "assignees": ["Carlos"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "5:00 PM",
+            "estimated_minutes": 10,
+        },
+        "checklist": [
+            {"text": "Launch Report Chrome", "action": "launch_chrome"},
+            {"text": "Log into ApplicantStream in that Chrome window"},
+        ],
+        "post_run": {
+            "message_success": "✅ Run complete — new applicants sent to the call list. See the summary in the log.",
+            "message_failed": "❌ Run failed. Check the log above (login, office pick, or a moved menu item), then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run Now",
+                "icon": "▶",
+                "primary": True,
+                "help": "Extract resumes and send new applicants to the call list.",
+                "module": "automations.applicantstream_call_list.applicantstream_bot",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
         "id": "social-media-posting",
         # Non-breaking spaces keep "(12 + 4 CST Daily)" together so the cadence
         # wraps as one clean unit onto line 2 of the strip pill (same trick as
