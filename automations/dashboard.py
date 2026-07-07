@@ -2938,6 +2938,47 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "car-rides-cleanup",
+        "name": "Car-Rides Cleanup (8:30–11:20 AM)",
+        "creator": "Carlos",
+        "emoji": "🚗",
+        "color": "#F59E0B",
+        "category": "📲 Ops",
+        "description": "Reconciles each car-ride leader's OwnerVille/TeleMapper territory to the Stations tab of the Vantura Master Sales Board, for both the AT&T and BOX campaigns.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Makes each car-ride leader's territory in **OwnerVille → "
+            "TeleMapper → Territory Assignment** match the **Stations tab** of "
+            "the Vantura Master Sales Board — adds missing riders, removes "
+            "anyone not on the sheet row, enforces one-rep-one-car-ride, across "
+            "the **B2B AT&T SBS** and **B2B-BOX-Energy** campaigns.\n\n"
+            "WHEN IT RUNS\n"
+            "**Weekday mornings on Lucy 2:** an 8:30 full reconcile, mid-morning "
+            "scrubs (10:00 / 10:30 / 10:40 / 10:50), and pre-departure checks "
+            "(11:00 / 11:20).\n\n"
+            "WHAT IT FLAGS FOR CARLOS\n"
+            "Leaders with no territory (need a new team), riders not enrolled in "
+            "a campaign, name mismatches, and anything ambiguous. Only Carlos "
+            "assigns new territories — the job never creates one.\n\n"
+            "PROMPTS\n"
+            "The exact run prompts live in workflows/car-rides-cleanup.md."
+        ),
+        # No Google Sheet write — reads the Stations tab, edits OwnerVille.
+        "assignees": ["Lucy 2"],
+        # Runs on its own weekday-morning timers on Lucy 2 — hide the DUE-TODAY +
+        # schedule pills (the full cadence is in the breakdown).
+        "hide_schedule": True,
+        # Self-running background job: never reports a per-day completion to the
+        # Hub, so keep it out of the "due today / not completed" tallies.
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "8:30 AM",
+            "estimated_minutes": 15,
+        },
+        "checklist": [],
+    },
+    {
         "id": "social-media-posting",
         # Non-breaking spaces keep "(12 + 4 CST Daily)" together so the cadence
         # wraps as one clean unit onto line 2 of the strip pill (same trick as
