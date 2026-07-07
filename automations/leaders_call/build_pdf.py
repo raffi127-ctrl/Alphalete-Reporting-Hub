@@ -43,7 +43,8 @@ count_style = ParagraphStyle("count", parent=styles["Normal"], fontName="Helveti
     fontSize=9.5, textColor=MUTED, spaceAfter=10, leading=12)
 
 # Display order + which section_titles are app-pages (Revenue handled separately).
-SECTION_ORDER = ["Fiber", "NDS", "B2B", "JE", "BOX", "Costco", "Frontier"]
+# Frontier removed from the recognition (Maud 2026-06-29).
+SECTION_ORDER = ["Fiber", "NDS", "B2B", "JE", "BOX", "Costco"]
 REVENUE_TITLE = "Revenue over 2K"
 
 REV_HEADER = colors.HexColor("#0B3D2E")
@@ -298,11 +299,9 @@ def qualifiers_from_campaigns() -> dict:
     """Sub-title text per section, derived from each campaign's live threshold so
     the PDF label always tracks the config (e.g. BOX 12+ -> 8+)."""
     from automations.leaders_call.run import CAMPAIGNS
-    from automations.leaders_call import frontier as fr
     q = {}
     for k in ("fiber", "nds", "b2b", "je", "box", "costco"):
         c = CAMPAIGNS[k]
         q[c.section_title] = f"{int(c.threshold)}+ Apps"
     q["Costco"] = q["Costco"] + " (No Up)"
-    q["Frontier"] = f"{int(fr.THRESHOLD)}+ Apps"
     return q

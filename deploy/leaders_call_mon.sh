@@ -1,13 +1,11 @@
 #!/bin/bash
-# Monday 2:05pm CST — Alphalete Leader's Call weekly recognition, on the always-on
+# Monday 10:00am CST — Alphalete Leader's Call weekly recognition, on the always-on
 # Mac mini via launchd (com.alphalete.leaders-call-mon).
 #
-# WHY 2:05pm (not the morning day-orchestrator): the Frontier scorecard email
-# lands ~2pm CST, and the report auto-fetches it; 2:05pm is also still BEFORE the
-# Fiber/NDS/B2B "This Week" filter rolls to the new week (the run's week-guard
-# backs this up). The morning orchestrator's noon backstop can't do a 2:05pm run,
-# so this dedicated job replaces it — leaders_call is on_scheduler:false in
-# schedule_config.json so it doesn't also run in the morning.
+# Runs as a dedicated job (leaders_call on_scheduler:false in schedule_config.json)
+# rather than the morning day-orchestrator so it fires at a fixed 10:00am. 10am is
+# well before the Fiber/NDS/B2B "This Week" filter rolls to the new week (the run's
+# week-guard backs this up). Frontier was removed from the recognition 2026-06-29.
 #
 # The run itself: pulls every section (week-guard flags a rolled/wrong week),
 # writes the Leader's Call tab, and on a fully-clean pull builds the PDF + DMs it

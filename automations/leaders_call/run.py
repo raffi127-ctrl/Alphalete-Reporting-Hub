@@ -756,24 +756,9 @@ def run_all(write: bool = False) -> dict:
             for rep, owner, val in res:
                 v = f"${val:,.0f}" if camp.threshold >= 100 else f"{val:g}"
                 print(f"   {rep} | {owner} | {v}", flush=True)
-    # Frontier: auto-fetch this week's scorecard from Lucy's inbox (the
-    # "Frontier - Sales Verification … Abyl" email lands Mon ~2pm CST), then
-    # parse. Email fetch is best-effort — if it fails (no token / email not in
-    # yet) we fall back to whatever was last uploaded, so it never crashes.
-    try:
-        from automations.leaders_call import frontier as fr
-        try:
-            from automations.leaders_call import frontier_email as femail
-            femail.fetch_latest_scorecard(fr.UPLOAD_DIR)
-        except Exception as fe:
-            print(f"-> Frontier email fetch skipped ({type(fe).__name__}: "
-                  f"{str(fe).splitlines()[0][:120]}) — using last uploaded file",
-                  flush=True)
-        results["Frontier"] = fr.parse_uploaded()
-        print(f"\n=== Frontier: {len(results['Frontier'])} >= 8 ===", flush=True)
-    except Exception as e:
-        results["Frontier"] = None
-        print(f"\n(Frontier skipped: {type(e).__name__}: {str(e)[:120]})", flush=True)
+    # Frontier removed from the recognition (Maud 2026-06-29). The section is no
+    # longer pulled or written; the frontier.py / frontier_email.py modules and
+    # the read-only Gmail token are now dormant.
 
     if write:
         sh, ws = _open_tab()
