@@ -108,6 +108,37 @@ def _batch_state() -> str:
             f"lastlog@{mtime}={last!r}")
 
 
+def _boot_and_power() -> str:
+    """Last boot time + the last few Sleep/Wake/power events, to tell apart
+    'the mini slept and woke at 6am' (caffeinate should prevent — agent gap)
+    from 'the mini rebooted/powered on at 6am' (caffeinate CAN'T prevent —
+    needs a scheduled power-on). boottime ~6am today => it rebooted."""
+    out = []
+    try:
+        bt = subprocess.run(["sysctl", "-n", "kern.boottime"],
+                            capture_output=True, text=True, timeout=10).stdout
+        m = re.search(r"sec = (\d+)", bt)
+        if m:
+            boot = dt.datetime.fromtimestamp(int(m.group(1)))
+            up_h = (dt.datetime.now() - boot).total_seconds() / 3600
+            out.append(f"booted={boot.strftime('%m-%d %H:%M:%S')} (up {up_h:.1f}h)")
+    except Exception as e:
+        out.append(f"boottime-err={type(e).__name__}")
+    # Last few Sleep/Wake/power lines from the power log — did it sleep at all
+    # overnight, and why did it come up?
+    try:
+        log = subprocess.run(["pmset", "-g", "log"], capture_output=True,
+                             text=True, timeout=25).stdout
+        events = [l for l in log.splitlines()
+                  if re.search(r"\b(Sleep|Wake|DarkWake)\b\s+", l)
+                  and "Assertions" not in l]
+        for l in events[-3:]:
+            out.append("• " + re.sub(r"\s+", " ", l.strip())[:110])
+    except Exception as e:
+        out.append(f"pmlog-err={type(e).__name__}")
+    return " ".join(out)
+
+
 def main():
     import sys
     # `--pmset`: print ONLY the power diagnostic (wake schedule / sleep timer /
@@ -116,7 +147,7 @@ def main():
     # the pmset tail — so when diagnosing "why did it start at 6am not 4am?"
     # (is keep-awake actually holding?), ask for just this. (2026-07-07.)
     if "--pmset" in sys.argv:
-        print(f"PMSET {dt.date.today()} :: {_pmset()}")
+        print(f"PMSET {dt.date.today()} :: {_boot_and_power()} :: {_pmset()}")
         return
     print(f"MORNING-DIAG {dt.date.today()} :: {_orchestrator_start()} :: "
           f"{_batch_state()} :: {_pmset()}")
