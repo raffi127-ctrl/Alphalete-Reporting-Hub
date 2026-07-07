@@ -492,6 +492,27 @@
       "verify": null,
       "timeout_minutes": 5
     },
+    "install_orchestrator_agent": {
+      "on_scheduler": true,
+      "_note": "NOT a report — re-bootstraps the day-orchestrator LaunchAgent itself, run via `lucy rerun install_orchestrator_agent`. FIXES the 2026-07-07 finding: the mini was awake at 4am (up 14d, no sleep) yet the batch started at 6am — launchd was honoring a STALE loaded schedule while the plist file already said Hour 4 (a git pull updates the file but never reloads launchd). This does launchctl bootout+bootstrap of com.alphalete.day-orchestrator so launchd picks up the 4am schedule. on_scheduler:true ONLY so registry keeps it; weekdays [] = never auto-runs. source_type 'local'. Safe/idempotent; the plist has no RunAtLoad so it won't trigger an immediate run. Re-run any time launchd drifts.",
+      "display_name": "Install: re-bootstrap 4am orchestrator schedule",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "day-orchestrator"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
+    },
     "install_resume_pushing_agent": {
       "on_scheduler": true,
       "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_resume_pushing_agent` (same pattern as install_je_agent). on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Regens + launchctl-bootstraps com.alphalete.resume-pushing on Lucy 2 — Carlos's ApplicantStream office-11580 resume extract + send-to-AI, 8am Sun+Mon-Fri. Runs on the machine's own AppStream session (Lucy 2 = Carlos's account). NOTE: the scheduled run is LIVE (send-to-AI is IRREVERSIBLE) — dry-run first with `bash deploy/resume_pushing_8am.sh --dry-run` before installing. Not a Hub card. Re-runnable any time.",
