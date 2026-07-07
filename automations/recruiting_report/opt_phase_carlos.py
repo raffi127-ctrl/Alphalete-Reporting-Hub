@@ -766,7 +766,13 @@ def write_icd_values(ws, icd_values: dict[int, object],
         for c in cells_summary:
             log.append(f"    {c}")
     else:
-        ws.batch_update(body, value_input_option="USER_ENTERED")
+        # Go through fill._retry so a Sheets 429 (per-minute write quota)
+        # waits out the 60s window and retries instead of crashing the whole
+        # apply. This is the ONE write in the OPT apply path that used to
+        # bypass the shared retry — DD (the last of 7 views) reliably hit the
+        # quota once the 2026-07-01 PP fix added a write burst 45s ahead of it,
+        # so DD's batch_update was 429ing with no backoff.
+        fill._retry(ws.batch_update, body, value_input_option="USER_ENTERED")
         log.append(f"  [OK] {ws.title}: wrote {len(body)} cell(s) "
                    f"to col {col_a1}")
         for c in cells_summary:
