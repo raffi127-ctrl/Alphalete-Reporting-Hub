@@ -234,20 +234,22 @@ def send_all_to_ai(page, dry_run: bool, limit: int = 0) -> int:
     _dbg("[send] clicked #saveButtton2 (patchright)")
     page.wait_for_timeout(1500)
 
-    # If nothing happened (no dialog, grid unchanged), fire a REAL mouse sequence
-    # on the button's INNER <button> element — ExtJS binds the handler there, and
-    # a click on the table wrapper doesn't reach it (same reason select-all needed
-    # dispatched events).
+    # A real click / dispatched events don't fire this ExtJS button. Invoke the
+    # button COMPONENT's handler directly via the ExtJS API (main world, so
+    # add_script_tag). Find it by el id or by text "Send to AI".
     if page.locator(".x-window").count() == 0 and _grid_row_count(page) == before:
         try:
             page.add_script_tag(content=(
-                "(function(){var b=document.querySelector('#saveButtton2');if(!b)return;"
-                "var t=b.querySelector('button')||b.querySelector('.x-btn-text')||b;"
-                "['mousedown','mouseup','click'].forEach(function(e){"
-                "t.dispatchEvent(new MouseEvent(e,{bubbles:true,cancelable:true,view:window}));});})();"))
-            _dbg("[send] dispatched real events on #saveButtton2 inner button")
+                "(function(){try{if(!window.Ext)return;var t=null;"
+                "try{t=Ext.getCmp('saveButtton2');}catch(e){}"
+                "if((!t||!t.handler)&&Ext.ComponentMgr){Ext.ComponentMgr.all.each(function(c){try{"
+                "if(c&&c.handler&&((c.text&&(''+c.text).replace(/\\s+/g,' ').trim()==='Send to AI')||"
+                "(c.el&&c.el.dom&&c.el.dom.id==='saveButtton2'))){t=c;return false;}}catch(e){}return true;});}"
+                "if(t&&typeof t.handler==='function'){t.handler.call(t.scope||t,t);}"
+                "else if(t&&t.fireEvent){t.fireEvent('click',t);}}catch(e){}})();"))
+            _dbg("[send] invoked #saveButtton2 handler via Ext API")
         except Exception as e:
-            _dbg(f"[send] dispatch err: {e}")
+            _dbg(f"[send] Ext API fire err: {e}")
         page.wait_for_timeout(2500)
 
     # Log whatever popup appeared (text + its buttons) so we know the confirm flow.
