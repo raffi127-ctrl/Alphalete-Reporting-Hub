@@ -1658,20 +1658,6 @@ AUTOMATED_REPORTS = [
                 "module": "automations.carlos_captainship_bonus.run",
                 "args_fn": lambda: [],
             },
-            {
-                "label": "Preview (no write)",
-                "icon": "👁",
-                "help": "Pulls Tableau and shows the numbers + roster changes without touching the sheet or making a PDF.",
-                "module": "automations.carlos_captainship_bonus.run",
-                "args_fn": lambda: ["--dry-run"],
-            },
-            {
-                "label": "Re-insert a Fresh Column",
-                "icon": "➕",
-                "help": "Force a brand-new column even if this week's already exists (use only if the current column got messed up).",
-                "module": "automations.carlos_captainship_bonus.run",
-                "args_fn": lambda: ["--force-insert"],
-            },
         ],
     },
     {
