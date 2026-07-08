@@ -104,10 +104,15 @@ def _run(args) -> dict:
     if not args.dry_run and not args.no_pdf:
         import shutil
         import tempfile
-        from automations.shared import slack_metrics_post as smp
 
+        # The column fill above is the critical work and is already done. PDF
+        # export + Slack DM are DELIVERY — keep them best-effort so a Sheets/
+        # Slack hiccup (e.g. the Lucy bot token not yet seeded on Lucy 2) never
+        # fails an otherwise-good run. Failures print a loud ⚠ (surfaced in the
+        # log + orchestrator email) so we notice and fix, without losing the fill.
         tmpdir = Path(tempfile.mkdtemp(prefix="ccb_pdf_"))
         try:
+            from automations.shared import slack_metrics_post as smp
             pdf_path = tmpdir / pdf_export.default_name(we)
             pdf_export.export_pdf(sheet_fill.SPREADSHEET_ID, ws.id, pdf_path)
             # Optional local copy for debugging — OFF by default so nothing lands
@@ -123,6 +128,12 @@ def _run(args) -> dict:
             rep["slack"] = res
             print(f"\n  💬 PDF DM'd to Carlos + Maud via Lucy "
                   f"({res.get('mode', 'sent')}).", flush=True)
+        except Exception as e:  # noqa: BLE001 — delivery must not fail the fill
+            rep["slack"] = {"ok": False, "error": str(e)[:200]}
+            print(f"\n  ⚠ PDF delivery FAILED ({type(e).__name__}: "
+                  f"{str(e)[:160]}). The column IS filled — resend the PDF once "
+                  f"the Slack (Lucy) token is available on this machine.",
+                  flush=True)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
     return rep
