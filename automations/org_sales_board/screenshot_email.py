@@ -214,11 +214,12 @@ def _captainship_ranges(g) -> List[Tuple[str, str]]:
             dtot = find(lambda x: _cell(g, x, 1).lower() in ("totals", "total"),
                         dh + 2, dh + 40)
             if dtot:
-                out.append((f"cap{title}_daily", f"A{dh}:L{dtot}"))   # reps → Totals
-                # WE-history week-stack below Totals — last _LB_WEEKS weeks. These
-                # rows are HIDDEN on the copy tab, so capture() unhides exactly this
-                # span before the PDF export (then restores it); the export skips
-                # hidden rows, so without that the stack renders as one week only.
+                # WE-history week-stack sits directly below Totals — last _LB_WEEKS
+                # weeks. Render reps → Totals → stack as ONE image so there's no gap
+                # between the Totals row and WE 7.5. Those stack rows are HIDDEN on
+                # the copy tab, so emit a _wehide span marker; capture() unhides
+                # exactly that span before the PDF export (then restores it) — the
+                # export skips hidden rows, else the stack collapses to one week.
                 we_start, we_end, n = dtot + 1, dtot, 0
                 for rr in range(dtot + 1, min(dtot + 30, len(g) + 1)):
                     lab = (_cell(g, rr, 1) + " " + _cell(g, rr, 2)).strip().lower()
@@ -228,8 +229,11 @@ def _captainship_ranges(g) -> List[Tuple[str, str]]:
                             break
                     elif lab:
                         break                      # non-WE row → stack ended
-                if we_end >= we_start:
-                    out.append((f"cap{title}_wehistory", f"A{we_start}:L{we_end}"))
+                if we_end > dtot:
+                    out.append((f"cap{title}_daily", f"A{dh}:L{we_end}"))
+                    out.append((f"cap{title}_wehide", f"A{we_start}:L{we_end}"))
+                else:
+                    out.append((f"cap{title}_daily", f"A{dh}:L{dtot}"))
     return out
 
 
@@ -349,11 +353,13 @@ def _export_png(gid: int, rng: str, out_path: Path, token: str) -> Path:
 
 
 def _stack_row_spans(ranges) -> List[Tuple[int, int]]:
-    """1-based (first,last) row spans of the captainship WE-history stack images."""
+    """1-based (first,last) hidden row spans to reveal for the WE-history stacks.
+    These _wehide markers are NOT rendered — they only tell capture() which rows
+    to unhide (and later re-hide) so the merged daily image shows all 4 weeks."""
     import re
     spans = []
     for name, rng in ranges:
-        if name.endswith("_wehistory"):
+        if name.endswith("_wehide"):
             m = re.match(r"[A-Z]+(\d+):[A-Z]+(\d+)", rng)
             if m:
                 spans.append((int(m.group(1)), int(m.group(2))))
@@ -395,8 +401,9 @@ def capture(out_dir: Path) -> List[Tuple[str, Path]]:
               "for the render", flush=True)
     import time
     out = []
+    render = [(n, r) for (n, r) in ranges if not n.endswith("_wehide")]
     try:
-        for i, (name, rng) in enumerate(ranges):
+        for i, (name, rng) in enumerate(render):
             if i:
                 time.sleep(2)      # gentle pacing so the export endpoint doesn't 429
             p = _export_png(gid, rng, out_dir / f"{name}.png", token)
