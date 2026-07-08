@@ -169,20 +169,34 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     cmd = ([sys.executable, "-m", r.command[0]] + list(r.command[1:])
            + list(r.base_args) + extra)
     timeout_s = int(getattr(r, "timeout_minutes", 45) or 45) * 60
+
+    # Publish the yellow "running" pill BEFORE the run so the Hub shows a manual
+    # rerun IN PROGRESS, exactly like the orchestrator does. The rerun path used
+    # to only mark DONE at the end, so a report looked idle the whole time it ran
+    # (Megan 2026-07-08). Best-effort; publish_running is a no-op (returns None)
+    # when the report has no Hub card. [[project_hub_live_running_pill]]
+    hub_run_id = None
+    try:
+        from automations.day_orchestrator import hub_publish
+        hub_run_id = hub_publish.publish_running(
+            report_id, getattr(r, "display_name", report_id))
+    except Exception:  # noqa: BLE001 — Hub publish must never fail the rerun
+        hub_run_id = None
+
     ok, result = _run_cmd(cmd, timeout_s)
-    # On a clean exit, mark the report on the Hub — matching the orchestrator,
-    # which now publishes for DONE *and* INCOMPLETE (a report that RAN with an
-    # acceptable note — an owner pending OV access, a VA-compare lag — should
-    # show as run on the Hub, not like it never ran; Megan 2026-07-01). The
-    # exit code is the gate: a non-zero exit is a hard FAILURE and never reaches
-    # here, so it stays off the Hub. Best-effort; publish_done is a no-op when
-    # the report has no Hub card.
-    if ok:
-        try:
-            from automations.day_orchestrator import hub_publish
-            hub_publish.publish_done(report_id, getattr(r, "display_name", report_id))
-        except Exception:  # noqa: BLE001 — Hub publish must never fail the rerun
-            pass
+
+    # Close the pill: flip the SAME running row (via run_id) to success/failed so
+    # it never hangs yellow. Mirrors the orchestrator, which marks DONE *and*
+    # INCOMPLETE as run (a report that RAN with an acceptable note should show as
+    # run, not like it never ran; Megan 2026-07-01) and closes the pill on failure
+    # too. Best-effort; a no-op when the report has no Hub card.
+    try:
+        from automations.day_orchestrator import hub_publish
+        hub_publish.publish_done(
+            report_id, getattr(r, "display_name", report_id),
+            status=("success" if ok else "failed"), run_id=hub_run_id)
+    except Exception:  # noqa: BLE001 — Hub publish must never fail the rerun
+        pass
     return ok, result
 
 
