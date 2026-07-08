@@ -1493,14 +1493,9 @@ AUTOMATED_REPORTS = [
         "description": "Adds this week's column to the 'Captainship Head count' tab of the All In One - CARLOS sheet — each active owner's Rep Count from Tableau, retotaled and sorted high→low.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "**•** Inserts a fresh leftmost week column (this past Sunday, "
-            "e.g. `7.5`), pushing prior weeks right and keeping every "
-            "owner's history.\n"
+            "**•** Inserts a fresh leftmost week column.\n"
             "**•** Fills each **active** owner's **Rep Count**, pulled live "
-            "from Tableau (ATTTRACKER-B2B / D2D1-PAGERV3, the \"B2B One "
-            "Pager V3\"), matched by name.\n"
-            "**•** Recomputes the Total (SUM formula) and sorts the active "
-            "owners most→least.\n\n"
+            "from Tableau.\n\n"
             "WHEN IT RUNS\n"
             "**Mondays.** Each run fills the just-ended week. Re-running the "
             "same week refreshes the numbers in place (no duplicate column).\n\n"
@@ -1508,9 +1503,7 @@ AUTOMATED_REPORTS = [
             "The run only fills the owners already listed (rows 2–12). If it "
             "prints a **⚠ NOT FOUND** owner, that person may have left "
             "Carlos' team — move+hide their row. To add a new owner, add a "
-            "row with their short name; it fills on the next run.\n"
-            "(Auto add/hide isn't done because the current-week Tableau "
-            "export has no captain-team column to confirm membership.)"
+            "row with their short name; it fills on the next run."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1xQQLzE8mU-a4lpk1IK3WolTPlFxavuMzdK3jA7NGga8/edit"),
@@ -1545,20 +1538,6 @@ AUTOMATED_REPORTS = [
                 "help": "Fills the most recent WE Sunday column from Tableau (idempotent — refreshes if it already exists).",
                 "module": "automations.carlos_captainship_headcount.run",
                 "args_fn": lambda: [],
-            },
-            {
-                "label": "Preview (no write)",
-                "icon": "👁",
-                "help": "Pulls Tableau and shows the numbers + any roster flags without touching the sheet.",
-                "module": "automations.carlos_captainship_headcount.run",
-                "args_fn": lambda: ["--dry-run"],
-            },
-            {
-                "label": "Re-insert a Fresh Column",
-                "icon": "➕",
-                "help": "Force a brand-new column even if this week's already exists (use only if the current column got messed up).",
-                "module": "automations.carlos_captainship_headcount.run",
-                "args_fn": lambda: ["--force-insert"],
             },
         ],
     },
