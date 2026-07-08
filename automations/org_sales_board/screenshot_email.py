@@ -207,10 +207,13 @@ def _captainship_ranges(g) -> List[Tuple[str, str]]:
             dtot = find(lambda x: _cell(g, x, 1).lower() in ("totals", "total"),
                         dh + 2, dh + 40)
             if dtot:
-                # Include the WE-history stack below Totals, but ONLY the last 4
-                # weeks (Megan 2026-07-08: "like this but only with 4 weeks").
-                # Stack rows sit right under Totals, labeled "WE m.d".
-                we_end, n = dtot, 0
+                out.append((f"cap{title}_daily", f"A{dh}:L{dtot}"))   # reps → Totals
+                # WE-history stack as its OWN image, stacked right under the daily
+                # one (same A:L width, so it lines up seamlessly). A COMBINED tall
+                # range gets truncated by the screenshot render when it runs below
+                # the fold — the daily image alone renders fine, so keep them
+                # separate. Last 4 weeks only (Megan 2026-07-08).
+                we_start, we_end, n = dtot + 1, dtot, 0
                 for rr in range(dtot + 1, min(dtot + 30, len(g) + 1)):
                     lab = (_cell(g, rr, 1) + " " + _cell(g, rr, 2)).strip().lower()
                     if lab.startswith("we "):
@@ -219,7 +222,8 @@ def _captainship_ranges(g) -> List[Tuple[str, str]]:
                             break
                     elif lab:
                         break                      # non-WE row → stack ended
-                out.append((f"cap{title}_daily", f"A{dh}:L{we_end}"))
+                if we_end >= we_start:
+                    out.append((f"cap{title}_wehistory", f"A{we_start}:L{we_end}"))
     return out
 
 
