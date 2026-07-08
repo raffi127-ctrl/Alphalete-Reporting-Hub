@@ -2920,19 +2920,10 @@ AUTOMATED_REPORTS = [
         },
         "actions": [
             {
-                # Primary is the SAFE probe, not the live send — send-to-AI is
-                # irreversible, so the obvious one-click default must push nothing.
-                "label": "Dry Run (safe — sends nothing)",
-                "icon": "🔍",
-                "primary": True,
-                "help": "Reports what it WOULD extract/send by reading the counts — pushes NOTHING to the AI call list. Always the safe first run.",
-                "module": "automations.resume_pushing.run",
-                "args_fn": lambda: ["--dry-run"],
-            },
-            {
-                "label": "Run Live — sends to AI call list",
+                "label": "Run",
                 "icon": "▶",
-                "help": "IRREVERSIBLE: extracts resumes and pushes valid applicants onto the live AI call list.",
+                "primary": True,
+                "help": "Runs a full pass now: Auto-Extract, then send valid applicants to the AI call list. IRREVERSIBLE (only applicants with a valid, unique phone are sent).",
                 "module": "automations.resume_pushing.run",
                 "args_fn": lambda: [],
             },
