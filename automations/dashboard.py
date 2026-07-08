@@ -1554,6 +1554,139 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "raf-captainship-bonus",
+        "name": "Raf Captainship Bonus",
+        "creator": "Maud",
+        "emoji": "💰",
+        "color": "#E8612A",
+        "category": "📊 Metrics",
+        "description": "Adds this week's column to the 'Captainship Bonuses' tab of the Alphalete Org/Captainship Reports sheet — each rep's Total Activations + the team New Internet 60-day churn % and activation % from Tableau, recomputes Money Made, re-points the chart, and saves the PDF to Downloads.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Inserts a fresh leftmost week column (this past Sunday, "
+            "e.g. `WE 7.5`), pushing prior weeks right and keeping every "
+            "rep's history — the top tier tables stay put.\n"
+            "**•** Fills each **active** rep's **Total Activations** for Raf's "
+            "team (Tableau ATTTRACKER2_1-D2D / CaptainsBonus), plus the team "
+            "**60-day churn %** and **activation %** (Rolling 4 Weeks).\n"
+            "**•** Auto-syncs the roster: **adds** a row for a new rep and "
+            "**hides** one who left the team.\n"
+            "**•** Lets the Total Sales / Money Made / TOTAL MONEY MADE "
+            "formulas recompute and re-points the performance chart's series "
+            "at the Total Sales row.\n"
+            "**•** Saves **Raf Captainship WE <date>.pdf** (4 weeks + chart) "
+            "to your Downloads.\n\n"
+            "WHEN IT RUNS\n"
+            "**Tuesdays.** Each run fills the just-ended week. Re-running the "
+            "same week refreshes in place (no duplicate column)."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"),
+        "assignees": ["Maud"],
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [1],  # Tuesday
+            "time": "9:00 AM",
+            "estimated_minutes": 5,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Raf Captainship Bonus done — column filled, roster synced, Money Made recomputed, chart re-pointed, PDF saved to Downloads.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run This Week",
+                "icon": "▶",
+                "primary": True,
+                "help": "Fills the most recent WE Sunday column from Tableau, syncs the roster, and saves the PDF (idempotent — refreshes if it already exists).",
+                "module": "automations.raf_captainship_bonus.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Preview (no write)",
+                "icon": "👁",
+                "help": "Pulls Tableau and shows the numbers + roster changes without touching the sheet or making a PDF.",
+                "module": "automations.raf_captainship_bonus.run",
+                "args_fn": lambda: ["--dry-run"],
+            },
+            {
+                "label": "Re-insert a Fresh Column",
+                "icon": "➕",
+                "help": "Force a brand-new column even if this week's already exists (use only if the current column got messed up).",
+                "module": "automations.raf_captainship_bonus.run",
+                "args_fn": lambda: ["--force-insert"],
+            },
+        ],
+    },
+    {
+        "id": "carlos-captainship-bonus",
+        "name": "Carlos B2B Captainship Bonus",
+        "creator": "Maud",
+        "emoji": "💰",
+        "color": "#6AA84F",
+        "category": "📊 Metrics",
+        "description": "Adds this week's column to the 'Carlos B2B Captainship' tab of the All In One - CARLOS sheet — each rep's activations + the four churn / activation / non-payment metrics from Tableau, recomputes Money Made, re-points the chart, and saves the PDF to Downloads.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Inserts a fresh leftmost week column (this past Sunday, "
+            "e.g. `WE 7.5`), pushing prior weeks right and keeping every "
+            "rep's history — the top tier tables stay put.\n"
+            "**•** Fills each **active** rep's **weekly activations** for "
+            "Carlos' B2B team (Tableau ATTTRACKER-B2B / Captain Team), plus "
+            "the **team 0-30 churn %**, **Carlos' personal 0-30 churn %**, "
+            "**31-60 activation %**, and **non-payment %**.\n"
+            "**•** Auto-syncs the roster: **adds** a row for a new rep and "
+            "**hides** one who left the team.\n"
+            "**•** Lets the Total Activations / Money Made / TOTAL AMOUNT "
+            "formulas recompute and re-points the performance chart's series "
+            "at the Total - All Units row.\n"
+            "**•** Saves **Carlos Captainship WE <date>.pdf** (5 weeks + "
+            "chart) to your Downloads.\n\n"
+            "WHEN IT RUNS\n"
+            "**Tuesdays.** Each run fills the just-ended week. Re-running the "
+            "same week refreshes in place (no duplicate column)."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1xQQLzE8mU-a4lpk1IK3WolTPlFxavuMzdK3jA7NGga8/edit"),
+        "assignees": ["Maud"],
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [1],  # Tuesday
+            "time": "9:00 AM",
+            "estimated_minutes": 5,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Carlos B2B Captainship Bonus done — column filled, roster synced, Money Made recomputed, chart re-pointed, PDF saved to Downloads.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run This Week",
+                "icon": "▶",
+                "primary": True,
+                "help": "Fills the most recent WE Sunday column from Tableau, syncs the roster, and saves the PDF (idempotent — refreshes if it already exists).",
+                "module": "automations.carlos_captainship_bonus.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Preview (no write)",
+                "icon": "👁",
+                "help": "Pulls Tableau and shows the numbers + roster changes without touching the sheet or making a PDF.",
+                "module": "automations.carlos_captainship_bonus.run",
+                "args_fn": lambda: ["--dry-run"],
+            },
+            {
+                "label": "Re-insert a Fresh Column",
+                "icon": "➕",
+                "help": "Force a brand-new column even if this week's already exists (use only if the current column got messed up).",
+                "module": "automations.carlos_captainship_bonus.run",
+                "args_fn": lambda: ["--force-insert"],
+            },
+        ],
+    },
+    {
         "id": "daily-focus",
         "name": "Daily Recruiting Focus",
         "creator": "Megan",
