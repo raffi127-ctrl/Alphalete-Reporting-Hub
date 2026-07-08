@@ -2881,10 +2881,12 @@ AUTOMATED_REPORTS = [
         "description": "Extracts new applicant resumes in Carlos's ApplicantStream office (11580) and sends the valid ones to the AI call list — the unattended, scheduled version of Carlos's uploaded resume-pusher.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "For **Carlos's office (11580)** in ApplicantStream: runs "
-            "**Process Emails → Process in Batches**, extracts every resume "
-            "marked **Ready For Extraction**, then **sends the valid "
-            "applicants to the AI call list**.\n\n"
+            "For **Carlos's office (11580)** in ApplicantStream: opens the "
+            "**Batch Process of Emails** page, runs **Auto-Extract** (pulls "
+            "name / phone / email off each applicant's resume), **selects "
+            "everyone**, and clicks **Send to AI**. Only applicants with a "
+            "**valid, unique phone** actually go to the AI call list — the "
+            "rest are skipped and flagged (no phone / duplicate), not sent.\n\n"
             "WHEN IT RUNS\n"
             "**Every ~10 minutes, 8 AM–10 PM Central, Sun + Mon–Fri** (not "
             "Saturday).\n\n"
