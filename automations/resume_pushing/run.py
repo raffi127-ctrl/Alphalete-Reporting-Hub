@@ -287,7 +287,8 @@ def _health_check(page) -> None:
             "o=b?('grid '+b.id+' store='+b.store.getCount()):'no-grid';}}catch(e){o='err:'+e;}"
             "document.body.setAttribute('data-hc',o);})();"))
         page.wait_for_timeout(600)
-        _log(f"[debug] selection-model grid: {page.frames[0].evaluate('() => document.body.getAttribute(\"data-hc\")')}")
+        hc = page.frames[0].evaluate("() => document.body.getAttribute('data-hc')")
+        _log(f"[debug] selection-model grid: {hc}")
     except Exception as e:
         _log(f"[debug] ext grid probe err: {e}")
     _log("[debug] ===== end =====")
