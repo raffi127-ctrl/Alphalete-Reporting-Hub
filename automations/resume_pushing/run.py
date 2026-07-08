@@ -322,6 +322,21 @@ def main() -> int:
             except Exception as e:
                 _dbg(f"[dbg] click 'Process in Batch' failed: {e}")
             _debug_dump(page, "table")
+            # The menu nav drifts to p=701 (recruiting view). The real batch-of-
+            # emails page is p=616 (Megan's URL). Jump straight there on the same
+            # session/office and dump — navigation only, no extract/send.
+            try:
+                cur = page.url
+                if re.search(r"[?&]p=\d+", cur):
+                    target = re.sub(r"([?&])p=\d+", r"\g<1>p=616", cur)
+                else:
+                    target = cur + ("&" if "?" in cur else "?") + "p=616"
+                page.goto(target, wait_until="domcontentloaded")
+                page.wait_for_timeout(5000)
+                _dbg(f"[dbg] direct nav to p=616: {target[:95]}")
+            except Exception as e:
+                _dbg(f"[dbg] direct p=616 nav failed: {e}")
+            _debug_dump(page, "p616")
             return 0
 
         extracted = extract_resumes(page, args.dry_run)
