@@ -19,6 +19,7 @@ Actions:
   rerun <report_id>     re-run one orchestrator report (today's common fix)
   update                git pull the latest code onto the mini (remote deploy)
   set_meta_token <tok>  install/refresh the brand-audit Meta page token in keys.json
+  set_slack_token <tok> install/refresh the 'Lucy' Slack bot token (xoxb-…) on this machine
   restart_holder        relaunch the ownerville session-holder LaunchAgent
   reseed_appstream      open the AppStream login (a human clears Cloudflare)
 
@@ -75,7 +76,8 @@ DAILY_AUTORUN_CAP = 100
 # the daily budget (a multi-person deploy day generates lots of these). The
 # budget is meant to bound repeated REPORT runs (rerun), not deploy plumbing.
 PLUMBING_ACTIONS = {"ping", "update", "restart_poller", "restart_holder",
-                    "pip_install", "watch_test", "diag", "set_sleep"}
+                    "pip_install", "watch_test", "diag", "set_sleep",
+                    "set_slack_token"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
@@ -497,6 +499,51 @@ def _action_set_meta_token(args: str) -> tuple[bool, str]:
                   f"{r.get('followers_count')} followers")
 
 
+def _action_set_slack_token(args: str) -> tuple[bool, str]:
+    """Install/refresh the 'Lucy' Slack BOT token on THIS machine so reports that
+    DM/post as Lucy run unattended here (e.g. carlos_captainship_bonus DMing the
+    PDF to Carlos + Maud from Lucy 2 — the first Slack-posting report on that
+    runner). Token is passed as the Args (a bot token, starts 'xoxb-') and written
+    to ~/.config/recruiting-report/slack-bot-token — the path slack_metrics_post
+    reads. Backs up any existing token first, verifies with auth_test (reading the
+    file we just wrote, exactly as the reports will), and NEVER echoes the token
+    back into the result.
+
+    Note: the token transits the control Sheet's Args cell to get here — redact
+    that cell after this shows 'done' (the queuer does this from the laptop)."""
+    import shutil
+    token = (args or "").strip()
+    if not token.startswith("xoxb-"):
+        return False, "set_slack_token needs a Slack BOT token (starts with 'xoxb-') as the Args"
+    path = Path.home() / ".config" / "recruiting-report" / "slack-bot-token"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't create {path.parent}: {str(e).splitlines()[0][:120]}"
+    if path.exists():
+        stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+        try:
+            shutil.copy2(path, path.parent / f"slack-bot-token.bak.{stamp}")
+        except Exception:  # noqa: BLE001 — a failed backup shouldn't block the fix
+            pass
+    try:
+        path.write_text(token, encoding="utf-8")
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path}: {str(e).splitlines()[0][:120]}"
+    # Verify by reading the file back through the SAME client the reports use —
+    # proof it works, surfaced in `lucy status`. Never echo the token itself.
+    try:
+        from automations.shared import slack_metrics_post as smp
+        who = smp._bot_client().auth_test()
+    except Exception as e:  # noqa: BLE001
+        return True, (f"token written to {path} but auth_test errored "
+                      f"({type(e).__name__}: {str(e).splitlines()[0][:110]})")
+    if not who.get("ok"):
+        return False, f"token written but auth_test not ok: {str(who)[:120]}"
+    return True, (f"Lucy Slack token installed + verified: authed as "
+                  f"{who.get('user')} ({who.get('user_id')}) in team {who.get('team')}")
+
+
 ACTIONS = {
     "ping": _action_ping,
     "logtail": _action_logtail,
@@ -504,6 +551,7 @@ ACTIONS = {
     "rerun": _action_rerun,
     "update": _action_update,
     "set_meta_token": _action_set_meta_token,
+    "set_slack_token": _action_set_slack_token,
     "restart_holder": _action_restart_holder,
     "restart_poller": _action_restart_poller,
     "reseed_appstream": _action_reseed_appstream,
