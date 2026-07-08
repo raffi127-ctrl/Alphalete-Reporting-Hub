@@ -501,9 +501,11 @@
       "source_type": "local",
       "data_sources": [],
       "command": [
-        "automations.uploaded._shared.june_texas_de_brazil_monthly_competition"
+        "automations.day_orchestrator.run_library_report"
       ],
-      "base_args": [],
+      "base_args": [
+        "june_texas_de_brazil_monthly_competition"
+      ],
       "cadence": {
         "weekdays": []
       },
