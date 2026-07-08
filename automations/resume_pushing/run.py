@@ -419,6 +419,37 @@ def main() -> int:
                 _dbg(f"[PROBE] sendCL={probe['sendCL']}")
             except Exception as e:
                 _dbg(f"[PROBE] failed: {e}")
+            # Checkbox / button-state probe: is #saveButtton2 disabled, and does
+            # select-all enable it? This decides whether the blocker is "button
+            # inert until real checkboxes ticked" vs "button enabled but click
+            # won't fire". Selecting is reversible; no send.
+            try:
+                chk = page.frames[0].evaluate(r"""() => {
+                  const clip = s => (s||'').replace(/\s+/g,' ').trim().slice(0,45);
+                  const dis = el => el ? /disabl/i.test(el.className) : null;
+                  const b0 = document.querySelector('#saveButtton2');
+                  const before = {btnDisabled: dis(b0), btnCls: clip(b0?b0.className:'NONE'),
+                    checkerDiv: document.querySelectorAll('.x-grid3-hd-checker').length,
+                    checkCol: document.querySelectorAll('.x-grid3-check-col').length,
+                    tdChecker: document.querySelectorAll('.x-grid3-td-checker').length,
+                    bodyCbInputs: document.querySelectorAll('.x-grid3-body input[type=checkbox], .x-grid3-row input[type=checkbox]').length,
+                    firstCell: clip((document.querySelector('.x-grid3-row td')||{}).className||'NONE'),
+                    selected: document.querySelectorAll('.x-grid3-row-selected').length};
+                  // now select-all via the header checker and re-check
+                  const c = document.querySelector('.x-grid3-hd-checker');
+                  if (c) ['mousedown','mouseup','click'].forEach(t=>c.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window})));
+                  const b1 = document.querySelector('#saveButtton2');
+                  return {...before,
+                    afterSelected: document.querySelectorAll('.x-grid3-row-selected').length,
+                    afterBtnDisabled: dis(b1),
+                    afterCbChecked: document.querySelectorAll('.x-grid3-row input[type=checkbox]:checked').length};
+                }""")
+                _dbg(f"[CHK] btnDisabled={chk['btnDisabled']} btnCls={chk['btnCls']!r}")
+                _dbg(f"[CHK] checkerDiv={chk['checkerDiv']} checkCol={chk['checkCol']} tdChecker={chk['tdChecker']} bodyCbInputs={chk['bodyCbInputs']}")
+                _dbg(f"[CHK] firstCell={chk['firstCell']!r} selectedBefore={chk['selected']}")
+                _dbg(f"[CHK] afterSelectAll: selected={chk['afterSelected']} btnDisabled={chk['afterBtnDisabled']} cbChecked={chk['afterCbChecked']}")
+            except Exception as e:
+                _dbg(f"[CHK] failed: {e}")
             return 0
 
         rows = _grid_row_count(page)
