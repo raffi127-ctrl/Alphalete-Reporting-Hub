@@ -1570,11 +1570,11 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"),
-        "assignees": ["Maud"],
+        "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [1],  # Tuesday
-            "time": "9:00 AM",
+            "time": "9:50 AM",
             "estimated_minutes": 5,
         },
         "checklist": [],
