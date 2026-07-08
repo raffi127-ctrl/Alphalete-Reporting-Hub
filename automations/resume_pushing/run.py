@@ -171,13 +171,13 @@ def _select_all(page) -> int:
     first; if nothing selects, fall back to dispatched mouse events. Returns the
     count of selected rows."""
     if page.locator(".x-grid3-hd-checker").count() == 0:
-        _log("[send] select-all checker (.x-grid3-hd-checker) not found")
+        _dbg("[send] select-all checker (.x-grid3-hd-checker) not found")
         return 0
     try:
         page.locator(".x-grid3-hd-checker").first.click(timeout=8000)
         page.wait_for_timeout(800)
     except Exception as e:
-        _log(f"[send] checker click failed: {e}")
+        _dbg(f"[send] checker click failed: {e}")
     sel = page.locator(".x-grid3-row-selected").count()
     if sel == 0:
         _dispatch_mouse(page, ".x-grid3-hd-checker")
@@ -192,13 +192,18 @@ def send_all_to_ai(page, dry_run: bool, limit: int = 0) -> int:
     confirm. Count is honest — how many rows actually disappear from the grid."""
     before = _grid_row_count(page)
     if before == 0:
-        _log("[send] grid is empty — nothing to send")
+        _dbg("[send] grid is empty — nothing to send")
         return 0
     if dry_run:
         who = f"the first {limit}" if limit else "all"
-        _log(f"[send] DRY-RUN — {before} rows; would select {who} + click "
+        _dbg(f"[send] DRY-RUN — {before} rows; would select {who} + click "
              "'Send to AI' (#saveButtton2), no click made")
         return 0
+
+    try:
+        open(DEBUG_FILE, "w").close()   # clean send trace per run (read via logtail)
+    except Exception:
+        pass
 
     # Select rows: first `limit` (safe test) or all.
     if limit and limit > 0:
@@ -207,24 +212,24 @@ def send_all_to_ai(page, dry_run: bool, limit: int = 0) -> int:
             try:
                 rows.nth(i).locator(".x-grid3-td-checker").first.click(timeout=5000)
             except Exception as e:
-                _log(f"[send] row {i} check failed: {e}")
+                _dbg(f"[send] row {i} check failed: {e}")
         sel = page.locator(".x-grid3-row-selected").count()
-        _log(f"[send] limit={limit}: {sel} of {before} rows selected")
+        _dbg(f"[send] limit={limit}: {sel} of {before} rows selected")
     else:
         sel = _select_all(page)
-        _log(f"[send] selected {sel} of {before} rows")
+        _dbg(f"[send] selected {sel} of {before} rows")
     if sel == 0:
-        _log("[send] no rows selected — aborting (nothing sent)")
+        _dbg("[send] no rows selected — aborting (nothing sent)")
         return 0
 
     btn = page.locator("#saveButtton2")
     if btn.count() == 0:
-        _log("[send] Send-to-AI button (#saveButtton2) not found — aborting")
+        _dbg("[send] Send-to-AI button (#saveButtton2) not found — aborting")
         return 0
     # The send submits and AppStream RELOADS the page — no_wait_after so the
     # click doesn't hang waiting for that navigation (it timed out otherwise).
     btn.first.click(timeout=8000, no_wait_after=True)
-    _log("[send] clicked 'Send to AI' (#saveButtton2)")
+    _dbg("[send] clicked 'Send to AI' (#saveButtton2)")
     try:
         page.wait_for_load_state("domcontentloaded", timeout=20000)
     except Exception:
@@ -235,7 +240,7 @@ def send_all_to_ai(page, dry_run: bool, limit: int = 0) -> int:
     # just reload with no prompt).
     try:
         dlg = page.locator(".x-window").first.inner_text(timeout=2000)
-        _log(f"[send] dialog: {' '.join(dlg.split())[:160]!r}")
+        _dbg(f"[send] dialog: {' '.join(dlg.split())[:160]!r}")
         _click_if_present(page, ["Yes", "OK", "Continue"])
     except Exception:
         pass
@@ -247,7 +252,7 @@ def send_all_to_ai(page, dry_run: bool, limit: int = 0) -> int:
             break
     after = _grid_row_count(page)
     sent = max(0, before - after)
-    _log(f"[send] grid rows {before} -> {after} — actually sent ~{sent} to AI call list")
+    _dbg(f"[send] grid rows {before} -> {after} — actually sent ~{sent} to AI call list")
     _click_if_present(page, ["OK", "Close"])
     return sent
 
