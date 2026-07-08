@@ -71,9 +71,10 @@ def _deliver(sh, today, *, want_drive: bool, dry_run: bool) -> None:
         for name, status in results.items():
             print(f"   {status:8s} {name}")
     except Exception as e:
-        print(f"  ⚠ Drive upload skipped — {type(e).__name__}: {str(e)[:160]}")
-        print("    (Likely the Drive API isn't enabled yet. The PNGs are saved "
-              "in Downloads; re-run with --drive once the API is on.)")
+        print(f"  ⚠ Drive upload skipped — {type(e).__name__}: {str(e)[:200]}")
+        print("    (PNGs are saved in Downloads. Most likely the one-time Drive "
+              "token is missing — authorize ONCE as alphaletereporting@gmail.com "
+              "on this machine:  python -m automations.fiber_activations.drive_auth)")
     return skipped
 
 # Windows consoles default to cp1252; emoji status lines would crash AFTER the
