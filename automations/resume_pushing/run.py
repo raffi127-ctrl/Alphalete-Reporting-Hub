@@ -221,19 +221,30 @@ def send_all_to_ai(page, dry_run: bool, limit: int = 0) -> int:
     if btn.count() == 0:
         _log("[send] Send-to-AI button (#saveButtton2) not found — aborting")
         return 0
-    btn.first.click(timeout=8000)
+    # The send submits and AppStream RELOADS the page — no_wait_after so the
+    # click doesn't hang waiting for that navigation (it timed out otherwise).
+    btn.first.click(timeout=8000, no_wait_after=True)
     _log("[send] clicked 'Send to AI' (#saveButtton2)")
-    page.wait_for_timeout(2500)
-
-    # Capture + accept the ExtJS confirm dialog (log its text for the record).
     try:
-        dlg = page.locator(".x-window").first.inner_text(timeout=3000)
-        _log(f"[send] confirm dialog: {' '.join(dlg.split())[:180]!r}")
+        page.wait_for_load_state("domcontentloaded", timeout=20000)
     except Exception:
         pass
-    _click_if_present(page, ["Yes", "OK", "Continue"])
-    page.wait_for_timeout(5000)
+    page.wait_for_timeout(3000)
 
+    # Accept any ExtJS confirm dialog if one appears (best-effort; the send may
+    # just reload with no prompt).
+    try:
+        dlg = page.locator(".x-window").first.inner_text(timeout=2000)
+        _log(f"[send] dialog: {' '.join(dlg.split())[:160]!r}")
+        _click_if_present(page, ["Yes", "OK", "Continue"])
+    except Exception:
+        pass
+
+    # Let the grid re-render after the reload, then count how many rows are gone.
+    for _ in range(15):
+        page.wait_for_timeout(1000)
+        if _grid_row_count(page) > 0:
+            break
     after = _grid_row_count(page)
     sent = max(0, before - after)
     _log(f"[send] grid rows {before} -> {after} — actually sent ~{sent} to AI call list")
@@ -246,7 +257,7 @@ def _click_if_present(page, labels) -> bool:
         btn = page.locator(f"xpath=//button[contains(.,'{label}')]")
         if btn.count() > 0:
             try:
-                btn.first.click(timeout=5000)
+                btn.first.click(timeout=5000, no_wait_after=True)
                 page.wait_for_timeout(2000)
                 return True
             except Exception:
