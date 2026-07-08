@@ -1518,7 +1518,7 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],  # Monday
-            "time": "9:00 AM",
+            "time": "7:00 AM",
             "estimated_minutes": 3,
         },
         # Tableau login is unattended (ownerville SSO via patchright) — no
