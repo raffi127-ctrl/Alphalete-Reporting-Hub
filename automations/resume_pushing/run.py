@@ -450,6 +450,26 @@ def main() -> int:
                 _dbg(f"[CHK] afterSelectAll: selected={chk['afterSelected']} btnDisabled={chk['afterBtnDisabled']} cbChecked={chk['afterCbChecked']}")
             except Exception as e:
                 _dbg(f"[CHK] failed: {e}")
+            # What does the Send-to-AI button actually CALL? Dump its onclick +
+            # ExtJS handler source so we can invoke the real function directly.
+            try:
+                fn = page.frames[0].evaluate(r"""() => {
+                  const b = document.querySelector('#saveButtton2');
+                  const clip = s => (''+s).replace(/\s+/g,' ').slice(0,220);
+                  const out = {onclick: b&&b.onclick ? clip(b.onclick) : 'none'};
+                  // an inner <button> may hold the onclick
+                  const ib = b && b.querySelector('button');
+                  out.innerOnclick = ib&&ib.onclick ? clip(ib.onclick) : (ib?ib.getAttribute('onclick')||'none':'no-inner');
+                  if (window.Ext) {
+                    let c=null; try{c=Ext.getCmp('saveButtton2');}catch(e){}
+                    if(!c && Ext.ComponentMgr){Ext.ComponentMgr.all.each(x=>{try{if(x.el&&x.el.dom&&x.el.dom.id==='saveButtton2'){c=x;return false;}}catch(e){} return true;});}
+                    out.cmp = c ? {id:c.id, xtype:(c.getXType?c.getXType():''), handler: c.handler?clip(c.handler):'none'} : 'not-found';
+                  } else out.ext='no-Ext';
+                  return JSON.stringify(out);
+                }""")
+                _dbg(f"[FN] {fn[:400]}")
+            except Exception as e:
+                _dbg(f"[FN] failed: {e}")
             return 0
 
         rows = _grid_row_count(page)
