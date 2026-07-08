@@ -226,26 +226,51 @@ def send_all_to_ai(page, dry_run: bool, limit: int = 0) -> int:
     if btn.count() == 0:
         _dbg("[send] Send-to-AI button (#saveButtton2) not found — aborting")
         return 0
-    # The send submits and AppStream RELOADS the page — no_wait_after so the
-    # click doesn't hang waiting for that navigation (it timed out otherwise).
-    btn.first.click(timeout=8000, no_wait_after=True)
-    _dbg("[send] clicked 'Send to AI' (#saveButtton2)")
+    # Try patchright's real click first; no_wait_after in case it reloads.
     try:
-        page.wait_for_load_state("domcontentloaded", timeout=20000)
+        btn.first.click(timeout=8000, no_wait_after=True)
+    except Exception as e:
+        _dbg(f"[send] button click err: {e}")
+    _dbg("[send] clicked #saveButtton2 (patchright)")
+    page.wait_for_timeout(1500)
+
+    # If nothing happened (no dialog, grid unchanged), fire a REAL mouse sequence
+    # on the button's INNER <button> element — ExtJS binds the handler there, and
+    # a click on the table wrapper doesn't reach it (same reason select-all needed
+    # dispatched events).
+    if page.locator(".x-window").count() == 0 and _grid_row_count(page) == before:
+        try:
+            page.add_script_tag(content=(
+                "(function(){var b=document.querySelector('#saveButtton2');if(!b)return;"
+                "var t=b.querySelector('button')||b.querySelector('.x-btn-text')||b;"
+                "['mousedown','mouseup','click'].forEach(function(e){"
+                "t.dispatchEvent(new MouseEvent(e,{bubbles:true,cancelable:true,view:window}));});})();"))
+            _dbg("[send] dispatched real events on #saveButtton2 inner button")
+        except Exception as e:
+            _dbg(f"[send] dispatch err: {e}")
+        page.wait_for_timeout(2500)
+
+    # Log whatever popup appeared (text + its buttons) so we know the confirm flow.
+    try:
+        win = page.locator(".x-window")
+        if win.count() > 0:
+            _dbg(f"[send] dialog: {' '.join(win.first.inner_text().split())[:170]!r}")
+            wb = page.locator(".x-window button")
+            labels = []
+            for i in range(min(wb.count(), 6)):
+                try:
+                    labels.append(wb.nth(i).inner_text().strip())
+                except Exception:
+                    pass
+            _dbg(f"[send] dialog buttons: {labels}")
+    except Exception as e:
+        _dbg(f"[send] dialog read err: {e}")
+
+    _click_if_present(page, ["Yes", "OK", "Continue", "Send"])
+    try:
+        page.wait_for_load_state("domcontentloaded", timeout=15000)
     except Exception:
         pass
-    page.wait_for_timeout(3000)
-
-    # Accept any ExtJS confirm dialog if one appears (best-effort; the send may
-    # just reload with no prompt).
-    try:
-        dlg = page.locator(".x-window").first.inner_text(timeout=2000)
-        _dbg(f"[send] dialog: {' '.join(dlg.split())[:160]!r}")
-        _click_if_present(page, ["Yes", "OK", "Continue"])
-    except Exception:
-        pass
-
-    # Let the grid re-render after the reload, then count how many rows are gone.
     for _ in range(15):
         page.wait_for_timeout(1000)
         if _grid_row_count(page) > 0:
