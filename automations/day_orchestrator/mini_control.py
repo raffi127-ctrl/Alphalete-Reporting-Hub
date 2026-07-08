@@ -26,8 +26,19 @@ CLI:
   python -m automations.day_orchestrator.mini_control --loop      # on the mini
   python -m automations.day_orchestrator.mini_control --once
   python -m automations.day_orchestrator.mini_control --enqueue rerun daily_focus
+
+  --dry-run / --sandbox steer THIS tool, and ONLY on the poll side (--loop/--once):
       --dry-run    poll + show what WOULD run, execute nothing
       --sandbox    use the "Mini Control TEST" tab (build/verify safely)
+
+  Everything after `--enqueue <action>` is captured VERBATIM (argparse.REMAINDER)
+  and passed through to the report, so a report's OWN flags reach it — crucially
+  `--dry-run` there runs the REPORT dry (it is NOT swallowed by the poll-side
+  --dry-run above). e.g.
+      --enqueue rerun resume_pushing --dry-run   # dry-runs the REPORT (safe probe)
+      --enqueue rerun daily_metrics --only churn
+  Control flags (--machine/--by/--sandbox) are hoisted out first, so they still
+  route mini_control itself even when typed AFTER the action.
 """
 from __future__ import annotations
 
