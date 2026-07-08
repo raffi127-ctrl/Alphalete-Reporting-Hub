@@ -35,6 +35,7 @@ import argparse
 import datetime as dt
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -697,8 +698,13 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Mini remote-control command queue")
     ap.add_argument("--loop", action="store_true", help="poll forever (run on the mini)")
     ap.add_argument("--once", action="store_true", help="poll once and exit")
-    ap.add_argument("--enqueue", nargs="+", metavar="ACTION",
-                    help="queue an action, e.g. --enqueue rerun daily_focus")
+    ap.add_argument("--enqueue", nargs=argparse.REMAINDER, metavar="ACTION",
+                    help="queue an action + its args, e.g. --enqueue rerun "
+                         "daily_focus. REMAINDER: everything after --enqueue is "
+                         "captured VERBATIM, so report flags (--dry-run, --only, "
+                         "--week) pass through to the report instead of being "
+                         "eaten by mini_control's own --dry-run/--sandbox. Must "
+                         "come after --by/--machine (the lucy fn already does).")
     ap.add_argument("--by", default=os.environ.get("MINI_BY", "Eve"),
                     help="who queued this — the audit-log 'By' column (or set "
                          "MINI_BY in the shell). Default: Eve.")
@@ -723,7 +729,10 @@ def main(argv=None) -> int:
         print_status(a.status, sandbox=a.sandbox, machine=a.machine)
         return 0
     if a.enqueue:
-        enqueue(a.enqueue[0], " ".join(a.enqueue[1:]), by=a.by,
+        # shlex.join (paired with _action_rerun's shlex.split) so a quoted
+        # multi-word arg survives the Sheet round-trip, e.g.
+        # `lucy rerun opt_phase --only "Marcellus Butler"` stays ONE token.
+        enqueue(a.enqueue[0], shlex.join(a.enqueue[1:]), by=a.by,
                 sandbox=a.sandbox, machine=a.machine)
         return 0
     if a.loop:
