@@ -215,12 +215,62 @@ def _click_if_present(page, labels) -> bool:
 
 
 # --------------------------------------------------------------------------- #
+# Diagnostic — dump the batch page's actionable DOM (read-only, no clicks) so
+# we can rebuild selectors against the CURRENT AppStream UI. Runs across every
+# frame in case the batch table is inside an iframe.
+# --------------------------------------------------------------------------- #
+def _debug_dump(page) -> None:
+    js = r"""() => {
+      const clip = s => (s || '').replace(/\s+/g,' ').trim().slice(0,70);
+      const txt = el => clip(el.innerText || el.value || el.title ||
+                             el.getAttribute('aria-label') || '');
+      const KEY = /extract|send|call list|to ai|start|process|resume|continue|\byes\b/i;
+      const ctrls = [...document.querySelectorAll(
+        "button, a, input[type=button], input[type=submit], [role=button]")]
+        .map(el => ({tag: el.tagName, id: el.id, name: el.name || '',
+                     cls: (el.className || '').toString().slice(0,50), t: txt(el)}))
+        .filter(b => KEY.test(b.t) || KEY.test(b.id) || KEY.test(b.cls));
+      const tables = [...document.querySelectorAll("table")].map(t => ({
+        id: t.id, cls: (t.className || '').toString().slice(0,40),
+        rows: t.querySelectorAll("tbody tr").length,
+        headCb: !!t.querySelector("thead input[type=checkbox]"),
+        headers: [...t.querySelectorAll("thead th")].map(th => clip(th.innerText)).slice(0,10)
+      }));
+      return {url: location.href.slice(0,80),
+              hasReady: /Ready For Extraction/i.test(document.body.innerText),
+              checkboxes: document.querySelectorAll("input[type=checkbox]").length,
+              tables, ctrls};
+    }"""
+    _log("[debug] ===== BATCH PAGE DOM DUMP =====")
+    for fr in page.frames:
+        try:
+            info = fr.evaluate(js)
+        except Exception:
+            continue
+        if not info.get("tables") and not info.get("ctrls"):
+            continue
+        _log(f"[debug] FRAME {info['url']!r} hasReadyText={info['hasReady']} "
+             f"checkboxes={info['checkboxes']}")
+        for t in info["tables"]:
+            _log(f"[debug]   TABLE id={t['id']!r} rows={t['rows']} "
+                 f"headCb={t['headCb']} cls={t['cls']!r} headers={t['headers']}")
+        for b in info["ctrls"]:
+            _log(f"[debug]   CTRL <{b['tag']}> id={b['id']!r} name={b['name']!r} "
+                 f"text={b['t']!r} cls={b['cls']!r}")
+    _log("[debug] ===== END DUMP =====")
+
+
+# --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
 def main() -> int:
     ap = argparse.ArgumentParser(description="ApplicantStream extractor / sender")
     ap.add_argument("--dry-run", action="store_true",
                     help="Report counts only; no Start, no Send-To-AI clicks.")
+    ap.add_argument("--debug", action="store_true",
+                    help="Reach the batch page, dump its actionable DOM (buttons, "
+                         "tables, checkboxes) to the log, then STOP. Read-only — no "
+                         "extract, no send. For rebuilding selectors.")
     args = ap.parse_args()
 
     mode = "DRY-RUN (no writes)" if args.dry_run else "LIVE (sends to AI call list)"
@@ -240,6 +290,10 @@ def main() -> int:
         if not open_batch_page(page):
             _log("[STOP] could not reach the Process in Batches page.")
             return 1
+
+        if args.debug:
+            _debug_dump(page)
+            return 0
 
         extracted = extract_resumes(page, args.dry_run)
         sent = send_all_to_ai(page, args.dry_run)
