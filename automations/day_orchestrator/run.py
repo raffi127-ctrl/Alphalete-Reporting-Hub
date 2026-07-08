@@ -40,6 +40,14 @@ LOG_DIR = REPO_ROOT / "output" / "logs"
 # Generous per-report cap so a hung report can't block the whole day.
 REPORT_TIMEOUT_S = 45 * 60
 
+# Max RUN attempts for a Tableau report before it goes terminal FAILED. Tableau
+# crosstab pulls flake transiently (download-button timeout, half-rendered viz);
+# a FRESH subprocess on the next circle-back pass re-auths and usually clears it.
+# FAILED is terminal, so without this one flake permanently failed the report for
+# the day and needed a manual rerun (2026-07-08). Capped so a genuinely broken
+# report still gives up instead of hammering Tableau every pass all morning.
+MAX_RUN_RETRIES = 3
+
 
 def _parse_hhmm(s: str, on: dt.date) -> dt.datetime:
     h, m = s.split(":")
@@ -298,7 +306,6 @@ def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
         ds.set(r.report_id, state.PENDING, bump_attempt=True)  # stamp the attempt
 
         if not ok:
-            ds.set(r.report_id, state.FAILED, reason=detail)
             if hub_run_id:                     # close the yellow pill so it doesn't hang
                 try:
                     from automations.day_orchestrator import hub_publish
@@ -306,6 +313,21 @@ def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
                                              status="failed", run_id=hub_run_id)
                 except Exception:
                     pass
+            # Retry a failed TABLEAU report on a later pass instead of going
+            # terminal on the first flake: the next pass re-launches a fresh
+            # subprocess that RE-AUTHS Tableau, which is what a manual rerun did to
+            # recover Fiber et al. on 2026-07-08. Cap at MAX_RUN_RETRIES, then go
+            # terminal FAILED so a genuinely broken report still gives up. rs.attempts
+            # was just bumped above, so it counts this failed run.
+            if r.source_type == "tableau" and rs.attempts < MAX_RUN_RETRIES:
+                ds.set(r.report_id, state.STILL_TRYING,
+                       reason=(f"run failed (attempt {rs.attempts}/{MAX_RUN_RETRIES}) "
+                               f"— retrying next pass: {detail}"),
+                       waiting_on="prior run failed — retrying")
+                _log(f"  {r.report_id}: run failed "
+                     f"(attempt {rs.attempts}/{MAX_RUN_RETRIES}) — will retry: {detail}")
+                continue
+            ds.set(r.report_id, state.FAILED, reason=detail)
             _log(f"  {r.report_id}: FAILED — {detail}")
             continue
 
