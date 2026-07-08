@@ -167,23 +167,38 @@ def _dispatch_mouse(page, selector: str) -> None:
 
 
 def _select_all(page) -> int:
-    """Select every grid row. Try patchright's real click on the header checker
-    first; if nothing selects, fall back to dispatched mouse events. Returns the
-    count of selected rows."""
-    if page.locator(".x-grid3-hd-checker").count() == 0:
-        _dbg("[send] select-all checker (.x-grid3-hd-checker) not found")
-        return 0
+    """Select EVERY record in the grid's store, not just the ~18 rows ExtJS
+    renders (buffered view). A header-checker click only selects rendered rows,
+    so use the grid's selection model selectAll() in the main world. Returns the
+    store count on success (how many are selected), else the rendered-selected
+    count from a header-checker fallback."""
+    try:
+        page.add_script_tag(content=(
+            "(function(){try{if(!window.Ext){document.body.setAttribute('data-sel','no-ext');return;}"
+            "var g=null;Ext.ComponentMgr.all.each(function(c){try{"
+            "if(c.getSelectionModel&&c.store&&c.store.getCount&&c.store.getCount()>0&&"
+            "c.el&&c.el.dom&&c.el.dom.querySelector('.x-grid3-hd-checker')){g=c;return false;}}catch(e){}return true;});"
+            "if(!g){document.body.setAttribute('data-sel','no-grid');return;}"
+            "var sm=g.getSelectionModel();if(sm.selectAll){sm.selectAll();}"
+            "var n=sm.getCount?sm.getCount():(sm.getSelections?sm.getSelections().length:-1);"
+            "document.body.setAttribute('data-sel',g.store.getCount()+'/'+n);"
+            "}catch(e){document.body.setAttribute('data-sel','err:'+e);}})();"))
+        page.wait_for_timeout(900)
+        info = page.frames[0].evaluate("() => document.body.getAttribute('data-sel')")
+        _dbg(f"[send] selectAll via selection-model: store/selected = {info}")
+        if info and "/" in info:
+            selected = int(info.split("/")[1])
+            if selected > 0:
+                return selected
+    except Exception as e:
+        _dbg(f"[send] selectAll API err: {e}")
+    # Fallback: header-checker real click (rendered rows only).
     try:
         page.locator(".x-grid3-hd-checker").first.click(timeout=8000)
         page.wait_for_timeout(800)
     except Exception as e:
         _dbg(f"[send] checker click failed: {e}")
-    sel = page.locator(".x-grid3-row-selected").count()
-    if sel == 0:
-        _dispatch_mouse(page, ".x-grid3-hd-checker")
-        page.wait_for_timeout(800)
-        sel = page.locator(".x-grid3-row-selected").count()
-    return sel
+    return page.locator(".x-grid3-row-selected").count()
 
 
 def send_all_to_ai(page, dry_run: bool, limit: int = 0) -> int:
