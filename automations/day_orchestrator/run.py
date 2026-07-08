@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import os
+import signal
 import subprocess
 import sys
 import time
@@ -348,6 +350,30 @@ def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
                 _log(f"  {r.report_id}: Hub publish skipped ({type(e).__name__}: {str(e)[:80]})")
 
 
+def _kill_tree(proc) -> bool:
+    """Kill a report subprocess AND every descendant (its whole process group):
+    SIGTERM for a clean exit, then SIGKILL for anything still up. Plain
+    subprocess timeout only kills the DIRECT child — a wedged patchright/chromium
+    grandchild then keeps the report (and the entire batch behind it) frozen past
+    the timeout (the 2026-07-08 2.5h captainship_activations hang). Returns True if
+    the group is gone, False if something survived even SIGKILL (rare D-state)."""
+    try:
+        pgid = os.getpgid(proc.pid)
+    except (ProcessLookupError, PermissionError, ChildProcessError):
+        return True  # already gone
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(pgid, sig)
+        except ProcessLookupError:
+            return True
+        try:
+            proc.wait(timeout=10)
+            return True
+        except subprocess.TimeoutExpired:
+            continue
+    return False
+
+
 def _run_report(r, target, *, dry_run, simulate):
     """Run a report as a subprocess. Returns (ok, detail)."""
     if simulate:
@@ -370,13 +396,25 @@ def _run_report(r, target, *, dry_run, simulate):
             lf.write(f"\n===== {_now().isoformat()} :: {' '.join(cmd)} "
                      f"(timeout {timeout_s//60}m) =====\n")
             lf.flush()
-            proc = subprocess.run(cmd, stdout=lf, stderr=subprocess.STDOUT,
-                                  timeout=timeout_s, cwd=str(REPO_ROOT))
-        if proc.returncode == 0:
+            # start_new_session=True → the report runs in its OWN process group so a
+            # timeout can kill the WHOLE tree (see _kill_tree). subprocess.run(timeout=)
+            # only kills the direct child and, worse, can itself block cleaning up a
+            # wedged child — freezing the batch. So we Popen + wait + group-kill.
+            proc = subprocess.Popen(cmd, stdout=lf, stderr=subprocess.STDOUT,
+                                    cwd=str(REPO_ROOT), start_new_session=True)
+            try:
+                rc = proc.wait(timeout=timeout_s)
+            except subprocess.TimeoutExpired:
+                killed = _kill_tree(proc)
+                lf.write(f"\n===== {_now().isoformat()} :: TIMED OUT after "
+                         f"{timeout_s//60}m — process group "
+                         f"{'killed' if killed else 'SURVIVED SIGKILL (zombie)'} "
+                         f"=====\n")
+                note = "" if killed else " (WARNING: group survived SIGKILL)"
+                return False, f"timed out after {timeout_s//60}m{note}"
+        if rc == 0:
             return True, "exit 0"
-        return False, f"exit {proc.returncode} (see {logf.name})"
-    except subprocess.TimeoutExpired:
-        return False, f"timed out after {timeout_s//60}m"
+        return False, f"exit {rc} (see {logf.name})"
     except Exception as e:
         return False, f"launch error: {str(e).splitlines()[0][:120]}"
 
