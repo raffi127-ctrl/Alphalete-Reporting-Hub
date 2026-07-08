@@ -199,7 +199,14 @@ def _captainship_ranges(g) -> List[Tuple[str, str]]:
         if summ_end:
             out.append((f"cap{title}_summary", f"A{title}:J{summ_end}"))
         if lbh and tot:
-            right = min(_last_col(g, lbh, lbh), 12)       # header's WE cols, ≤10 wks
+            # Weeks run most-recent-LEFT from the first "WE " column; keep only the
+            # last _LB_WEEKS of them so each rep's row shows the past 4 weeks of
+            # sales (Megan 2026-07-08). Columns are all visible — unlike the daily
+            # WE-history stack, which lives in hidden rows and won't render.
+            hdr = g[lbh - 1] if lbh - 1 < len(g) else []
+            first_we = next((ci for ci in range(2, len(hdr) + 1)
+                             if (hdr[ci - 1] or "").strip().lower().startswith("we ")), 3)
+            right = min(first_we + _LB_WEEKS - 1, _last_col(g, lbh, lbh))
             out.append((f"cap{title}_leaderboard", f"A{lbh}:{_colletter(right)}{tot}"))
         anchor = tot or lbh or summ_end or ps
         dh = find(lambda x: "running week totals" in _rowtext(g, x), anchor + 1, anchor + 12)
@@ -208,22 +215,10 @@ def _captainship_ranges(g) -> List[Tuple[str, str]]:
                         dh + 2, dh + 40)
             if dtot:
                 out.append((f"cap{title}_daily", f"A{dh}:L{dtot}"))   # reps → Totals
-                # WE-history stack as its OWN image, stacked right under the daily
-                # one (same A:L width, so it lines up seamlessly). A COMBINED tall
-                # range gets truncated by the screenshot render when it runs below
-                # the fold — the daily image alone renders fine, so keep them
-                # separate. Last 4 weeks only (Megan 2026-07-08).
-                we_start, we_end, n = dtot + 1, dtot, 0
-                for rr in range(dtot + 1, min(dtot + 30, len(g) + 1)):
-                    lab = (_cell(g, rr, 1) + " " + _cell(g, rr, 2)).strip().lower()
-                    if lab.startswith("we "):
-                        we_end, n = rr, n + 1
-                        if n >= _LB_WEEKS:
-                            break
-                    elif lab:
-                        break                      # non-WE row → stack ended
-                if we_end >= we_start:
-                    out.append((f"cap{title}_wehistory", f"A{we_start}:L{we_end}"))
+                # (The WE-history week-stack below Totals lives in hidden rows on
+                # the copy tab, so the PDF export can't render it without unhiding
+                # rows every run. The per-rep leaderboard above already carries the
+                # past-4-weeks view, so we don't emit a separate stack image.)
     return out
 
 
