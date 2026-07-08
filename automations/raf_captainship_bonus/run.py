@@ -133,7 +133,13 @@ def _run(args) -> dict:
                 print(f"\n  📄 PDF also saved → {dest}", flush=True)
             res = smp.dm_users_with_file(
                 pdf_path, users=list(SLACK_RECIPIENTS),
-                comment=_slack_comment(rep), as_bot=True)
+                comment=_slack_comment(rep),
+                # Use the provisioned 'Lucy Reporting' USER token (slack-user-
+                # token, the same one the metrics posts use) — the separate
+                # bot-app token (SLACK_BOT_TOKEN) was never created on the mini,
+                # so as_bot=True fails here (unlike the Carlos twin, which runs
+                # on Lucy 2 where the bot token is seeded). Matches leaders_call.
+                as_bot=False)
             rep["slack"] = res
             print(f"\n  💬 PDF DM'd to Raf + Dylan + Maud via Lucy "
                   f"({res.get('mode', 'sent')}).", flush=True)
@@ -175,9 +181,11 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.check_slack:
+        # Delivery uses the USER token (as_bot=False), so verify THAT one — the
+        # bot-app token was never seeded on the mini.
         from automations.shared import slack_metrics_post as smp
-        who = smp._bot_client().auth_test()
-        print(f"✅ Lucy Slack token OK here — authed as {who.get('user')} "
+        who = smp._client().auth_test()
+        print(f"✅ Lucy Slack (user) token OK here — authed as {who.get('user')} "
               f"({who.get('user_id')}) in team {who.get('team')}. "
               f"The Tuesday PDF DM to Raf, Dylan + Maud will send.", flush=True)
         return 0
