@@ -2887,21 +2887,17 @@ AUTOMATED_REPORTS = [
             "applicants to the AI call list**.\n\n"
             "WHEN IT RUNS\n"
             "**Every ~10 minutes, 8 AM–10 PM Central, Sun + Mon–Fri** (not "
-            "Saturday), via a launchd timer on **Lucy 2** (Carlos's machine). "
-            "The **Dry Run** / **Run Live** buttons here trigger an extra pass "
-            "any time.\n\n"
-            "⚠️ SEND-TO-AI IS IRREVERSIBLE\n"
-            "A live run pushes applicants onto the AI call list and can't be "
-            "undone. **Dry Run** reads the counts it *would* extract/send "
-            "without pushing anything — always the safe first run.\n\n"
-            "HOW IT RUNS UNATTENDED\n"
-            "On the machine's own AppStream session (Lucy 2 = Carlos's "
-            "account, his own office), the same collision-safe path "
-            "daily_focus uses: dedicated Chrome profile, kept warm by the "
-            "session holder, protected by the chrome-guard."
+            "Saturday).\n\n"
+            "HOW IT RUNS\n"
+            "On Lucy 2 (Carlos' Neo Laptop)."
         ),
         # No Google Sheet — ApplicantStream action bot only.
         "assignees": ["Lucy 2"],
+        # Needs Carlos's AppStream session, which only exists on Lucy 2 — so a Hub
+        # "play" from ANY machine routes the run to Lucy 2 via the mini-control
+        # queue (run_rerun_id = the schedule_config id `rerun` resolves there).
+        "run_machine": "Lucy 2",
+        "run_rerun_id": "resume_pushing",
         # Runs on its own 8am launchd timer on Lucy 2 — hide the DUE-TODAY +
         # schedule pills on the report page (cadence is in the breakdown).
         "hide_schedule": True,
@@ -3875,6 +3871,31 @@ def _execute_action(report: dict, action: dict, picked, chrome_ok: bool) -> None
         args = action["args_fn"](picked)
     else:
         args = action["args_fn"]()
+    # Machine-bound reports (e.g. resume_pushing needs Carlos's AppStream session,
+    # which only exists on Lucy 2) route their run to that machine via the mini-
+    # control queue instead of spawning locally — so "play" always lands on the
+    # right machine no matter which machine is serving this Hub.
+    run_machine = report.get("run_machine")
+    if run_machine:
+        from automations.day_orchestrator import mini_control
+        try:
+            local = mini_control._machine_profile()
+        except Exception:
+            local = "Lucy 1"
+        if local != run_machine:
+            rerun_id = report.get("run_rerun_id") or report["id"]
+            queued = (f"{rerun_id} " + " ".join(args)).strip()
+            try:
+                mini_control.enqueue("rerun", queued, by=(me or "Hub"),
+                                     machine=run_machine)
+                st.success(
+                    f"▶ Sent to **{run_machine}** — this report only runs there "
+                    f"(Carlos's machine). It will start within ~2 min; track it "
+                    "with `lucy status` or check back here shortly."
+                )
+            except Exception as e:
+                st.error(f"Couldn't send the run to {run_machine}: {e}")
+            return
     # -u → unbuffered, so the live run panel sees log lines as they happen.
     cmd = [VENV_PY, "-u", "-m", action["module"]] + args
     # Per-report env overrides (e.g. captainship-scoped reports set
