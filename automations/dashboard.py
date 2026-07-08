@@ -1514,7 +1514,16 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1xQQLzE8mU-a4lpk1IK3WolTPlFxavuMzdK3jA7NGga8/edit"),
-        "assignees": ["Maud"],
+        "assignees": ["Lucy 2"],
+        # Runs on Lucy 2 (Carlos' Neo Laptop) — its Tableau session + the Monday
+        # 7am launchd job (com.alphalete.carlos-captainship-headcount-mon) live
+        # there. A Hub "play" from ANY machine routes the run to Lucy 2 via the
+        # mini-control queue (run_rerun_id = the schedule_config id `rerun` resolves).
+        "run_machine": "Lucy 2",
+        "run_rerun_id": "carlos_captainship_headcount",
+        # Self-running weekly launchd job: it doesn't report a per-day completion
+        # to the Hub, so keep it out of the "due today / not completed" tallies.
+        "self_scheduled": True,
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],  # Monday
@@ -1649,7 +1658,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1xQQLzE8mU-a4lpk1IK3WolTPlFxavuMzdK3jA7NGga8/edit"),
-        "assignees": ["Maud"],
+        "assignees": ["Lucy 2"],
         "schedule": {
             "frequency": "weekly",
             "weekdays": [1],  # Tuesday
