@@ -7,7 +7,8 @@
 # Carlos' B2B team + the four metric cells (team 0-30 churn %, personal 0-30
 # churn %, 31-60 activation %, non-payment %) pulled live from Tableau
 # (ATTTRACKER-B2B / Captain Team), lets Money Made / TOTAL AMOUNT recompute,
-# re-points the chart, and saves the PDF to Downloads. Idempotent: if this
+# re-points the chart, and DMs the PDF to Carlos + Maud on Slack (as Lucy).
+# Idempotent: if this
 # week's column already exists it refreshes in place (--force-insert overrides).
 #
 # Runs off THIS machine's warm Tableau session (patchright), same path the mini's

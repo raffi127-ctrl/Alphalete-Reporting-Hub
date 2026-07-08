@@ -1614,12 +1614,11 @@ AUTOMATED_REPORTS = [
         "emoji": "💰",
         "color": "#6AA84F",
         "category": "📊 Metrics",
-        "description": "Adds this week's column to the 'Carlos B2B Captainship' tab of the All In One - CARLOS sheet — each rep's activations + the four churn / activation / non-payment metrics from Tableau, recomputes Money Made, re-points the chart, and saves the PDF to Downloads.",
+        "description": "Adds this week's column to the 'Carlos B2B Captainship' tab of the All In One - CARLOS sheet — each rep's activations + the four churn / activation / non-payment metrics from Tableau, recomputes Money Made, re-points the chart, and DMs the PDF to Carlos + Maud on Slack.",
         "breakdown": (
             "WHAT IT DOES\n"
             "**•** Inserts a fresh leftmost week column (this past Sunday, "
-            "e.g. `WE 7.5`), pushing prior weeks right and keeping every "
-            "rep's history — the top tier tables stay put.\n"
+            "e.g. `WE 7.5`).\n"
             "**•** Fills each **active** rep's **weekly activations** for "
             "Carlos' B2B team (Tableau ATTTRACKER-B2B / Captain Team), plus "
             "the **team 0-30 churn %**, **Carlos' personal 0-30 churn %**, "
@@ -1629,8 +1628,8 @@ AUTOMATED_REPORTS = [
             "**•** Lets the Total Activations / Money Made / TOTAL AMOUNT "
             "formulas recompute and re-points the performance chart's series "
             "at the Total - All Units row.\n"
-            "**•** Saves **Carlos Captainship WE <date>.pdf** (5 weeks + "
-            "chart) to your Downloads.\n\n"
+            "**•** DMs **Carlos Captainship WE <date>.pdf** (5 weeks + "
+            "chart) to Carlos + Maud on Slack (as Lucy).\n\n"
             "WHEN IT RUNS\n"
             "**Tuesdays.** Each run fills the just-ended week. Re-running the "
             "same week refreshes in place (no duplicate column)."
@@ -1646,7 +1645,7 @@ AUTOMATED_REPORTS = [
         },
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Carlos B2B Captainship Bonus done — column filled, roster synced, Money Made recomputed, chart re-pointed, PDF saved to Downloads.",
+            "message_success": "✅ Carlos B2B Captainship Bonus done — column filled, roster synced, Money Made recomputed, chart re-pointed, PDF DM'd to Carlos + Maud on Slack.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
         },
         "actions": [

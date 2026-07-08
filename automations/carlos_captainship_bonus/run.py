@@ -6,8 +6,11 @@ Carlos' B2B team (Tableau ATTTRACKER-B2B / Captain Team, current cycle), sets
 the four metric cells (team 0-30 churn %, personal 0-30 churn %, 31-60
 activation %, non-payment %), lets the Total Activations / Money Made / TOTAL
 AMOUNT formulas recompute, re-points the chart's series at the Total - All
-Units row, and exports the 5-week + chart view to
-~/Downloads/Carlos Captainship Weekending <M.D>.pdf.
+Units row, and DMs the 5-week + chart PDF (Carlos Captainship Weekending
+<M.D>.pdf) to Carlos + Maud on Slack as Lucy. The PDF is built in a temp
+file and deleted after sending — nothing is saved to Downloads (this runs
+unattended on Lucy 2, where a local file is nobody's inbox). Pass --pdf-dir
+to ALSO drop a local copy for debugging.
 
 Idempotent: re-running the same week refreshes in place (--force-insert to
 override).
@@ -27,6 +30,17 @@ import traceback
 from pathlib import Path
 
 REPORT_ID = "carlos_captainship_bonus"
+
+# Lucy DMs the finished PDF to these people every run (Slack user ids — same
+# ids as focus_slack / leaders_call). Carlos = the captain, Maud = report owner.
+SLACK_RECIPIENTS = ("U046G04P5LG", "U045USN7NCD")  # Carlos Hidalgo, Maud Miller
+
+
+def _slack_comment(rep: dict) -> str:
+    """The DM's message text — emoji + Title Case title, then the headline number
+    (the PDF carries the full breakdown). Matches the Hub's metrics-post style."""
+    return (f"💰 *Carlos B2B Captainship Bonus — {rep['label']}*\n"
+            f"Total activations: {rep['total']} ({len(rep['matched'])} reps)")
 
 
 def _current_we_sunday(today: dt.date | None = None) -> dt.date:
@@ -86,11 +100,31 @@ def _run(args) -> dict:
               + ", ".join(rep["unmatched"]), flush=True)
 
     rep["pdf"] = None
+    rep["slack"] = None
     if not args.dry_run and not args.no_pdf:
-        out = Path(args.pdf_dir).expanduser() / pdf_export.default_name(we)
-        pdf_export.export_pdf(sheet_fill.SPREADSHEET_ID, ws.id, out)
-        rep["pdf"] = str(out)
-        print(f"\n  📄 PDF → {out}", flush=True)
+        import shutil
+        import tempfile
+        from automations.shared import slack_metrics_post as smp
+
+        tmpdir = Path(tempfile.mkdtemp(prefix="ccb_pdf_"))
+        try:
+            pdf_path = tmpdir / pdf_export.default_name(we)
+            pdf_export.export_pdf(sheet_fill.SPREADSHEET_ID, ws.id, pdf_path)
+            # Optional local copy for debugging — OFF by default so nothing lands
+            # in Downloads on the unattended Lucy 2 runner.
+            if args.pdf_dir:
+                dest = Path(args.pdf_dir).expanduser() / pdf_path.name
+                shutil.copy2(pdf_path, dest)
+                rep["pdf"] = str(dest)
+                print(f"\n  📄 PDF also saved → {dest}", flush=True)
+            res = smp.dm_users_with_file(
+                pdf_path, users=list(SLACK_RECIPIENTS),
+                comment=_slack_comment(rep), as_bot=True)
+            rep["slack"] = res
+            print(f"\n  💬 PDF DM'd to Carlos + Maud via Lucy "
+                  f"({res.get('mode', 'sent')}).", flush=True)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
     return rep
 
 
@@ -104,8 +138,11 @@ def main() -> int:
                     "use 'Copy of Carlos B2B Captainship' to test)")
     ap.add_argument("--force-insert", action="store_true")
     ap.add_argument("--skip-download", action="store_true")
-    ap.add_argument("--no-pdf", action="store_true")
-    ap.add_argument("--pdf-dir", default="~/Downloads")
+    ap.add_argument("--no-pdf", action="store_true",
+                    help="skip the PDF + Slack DM entirely (sheet fill only)")
+    ap.add_argument("--pdf-dir", default=None,
+                    help="ALSO save a local copy of the PDF here (default: none — "
+                         "the PDF is DM'd to Carlos + Maud on Slack, not saved)")
     ap.add_argument("--no-roster", action="store_true",
                     help="don't auto add/hide rows for roster changes (just flag them)")
     args = ap.parse_args()
