@@ -199,7 +199,12 @@ def _captainship_ranges(g) -> List[Tuple[str, str]]:
         if summ_end:
             out.append((f"cap{title}_summary", f"A{title}:J{summ_end}"))
         if lbh and tot:
-            right = min(_last_col(g, lbh, lbh), 12)       # header's WE cols, ≤10 wks
+            # Cap at _LB_WEEKS like the ORG leaderboard (Megan 2026-07-07: the
+            # captainships were showing up to ~10 weeks; match the 4-week ORG
+            # view). First WE column = first populated col from C.
+            _fv = next((c for c in range(3, len(g[lbh - 1]) + 1)
+                        if _cell(g, lbh, c)), 3)
+            right = min(_fv + _LB_WEEKS - 1, _last_col(g, lbh, lbh))
             out.append((f"cap{title}_leaderboard", f"A{lbh}:{_colletter(right)}{tot}"))
         anchor = tot or lbh or summ_end or ps
         dh = find(lambda x: "running week totals" in _rowtext(g, x), anchor + 1, anchor + 12)
