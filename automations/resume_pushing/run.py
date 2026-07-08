@@ -222,34 +222,38 @@ def send_all_to_ai(page, dry_run: bool, limit: int = 0) -> int:
         _dbg("[send] no rows selected — aborting (nothing sent)")
         return 0
 
-    btn = page.locator("#saveButtton2")
-    if btn.count() == 0:
+    if page.locator("#saveButtton2").count() == 0:
         _dbg("[send] Send-to-AI button (#saveButtton2) not found — aborting")
         return 0
-    # Try patchright's real click first; no_wait_after in case it reloads.
+    # The click is a raw DOM listener (no ExtJS handler/listener), so it needs a
+    # genuine click on the actual clickable element — the INNER <button>, not the
+    # table wrapper. Scroll it in, then real-click it.
+    target = page.locator("#saveButtton2 button")
+    if target.count() == 0:
+        target = page.locator("#saveButtton2 .x-btn-text")
+    if target.count() == 0:
+        target = page.locator("#saveButtton2")
     try:
-        btn.first.click(timeout=8000, no_wait_after=True)
+        target.first.scroll_into_view_if_needed(timeout=5000)
+    except Exception:
+        pass
+    try:
+        target.first.click(timeout=8000, no_wait_after=True, force=True)
+        _dbg("[send] real-clicked Send-to-AI inner button")
     except Exception as e:
-        _dbg(f"[send] button click err: {e}")
-    _dbg("[send] clicked #saveButtton2 (patchright)")
-    page.wait_for_timeout(1500)
+        _dbg(f"[send] inner button click err: {e}")
+    page.wait_for_timeout(2000)
 
-    # A real click / dispatched events don't fire this ExtJS button. Invoke the
-    # button COMPONENT's handler directly via the ExtJS API (main world, so
-    # add_script_tag). Find it by el id or by text "Send to AI".
+    # Still nothing? Do a true coordinate mouse-click on the button center — the
+    # most faithful reproduction of a human click.
     if page.locator(".x-window").count() == 0 and _grid_row_count(page) == before:
         try:
-            page.add_script_tag(content=(
-                "(function(){try{if(!window.Ext)return;var t=null;"
-                "try{t=Ext.getCmp('saveButtton2');}catch(e){}"
-                "if((!t||!t.handler)&&Ext.ComponentMgr){Ext.ComponentMgr.all.each(function(c){try{"
-                "if(c&&c.handler&&((c.text&&(''+c.text).replace(/\\s+/g,' ').trim()==='Send to AI')||"
-                "(c.el&&c.el.dom&&c.el.dom.id==='saveButtton2'))){t=c;return false;}}catch(e){}return true;});}"
-                "if(t&&typeof t.handler==='function'){t.handler.call(t.scope||t,t);}"
-                "else if(t&&t.fireEvent){t.fireEvent('click',t);}}catch(e){}})();"))
-            _dbg("[send] invoked #saveButtton2 handler via Ext API")
+            box = page.locator("#saveButtton2").first.bounding_box()
+            if box:
+                page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+                _dbg(f"[send] coordinate-clicked button center ({int(box['x'])},{int(box['y'])})")
         except Exception as e:
-            _dbg(f"[send] Ext API fire err: {e}")
+            _dbg(f"[send] coord click err: {e}")
         page.wait_for_timeout(2500)
 
     # Log whatever popup appeared (text + its buttons) so we know the confirm flow.
