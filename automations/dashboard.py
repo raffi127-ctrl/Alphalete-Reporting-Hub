@@ -4533,6 +4533,14 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                     _icon = {"ok": "✅ ", "fail": "⚠️ ", "miss": "– ",
                              "running": "🔄 "}.get(_stat, "")
                     _label = f"{_icon}{_r.get('emoji', '📄')} {_r['name']}"
+                    # Self-scheduled reports fire on their OWN fixed timer (not the
+                    # 4am batch), so show the run time on the tile — otherwise there
+                    # is no way to see WHEN it runs. Batch reports omit it (they run
+                    # in the morning sweep, no individual time).
+                    if _r.get("self_scheduled"):
+                        _sched_t = (_r.get("schedule") or {}).get("time")
+                        if _sched_t:
+                            _label += f" · {_sched_t}"
                     _help = {
                         "ok": "Ran OK — open to view",
                         "fail": "Failed / incomplete — open to see why",
