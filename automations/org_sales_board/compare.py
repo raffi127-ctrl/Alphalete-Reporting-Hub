@@ -306,28 +306,66 @@ def content_diff() -> dict:
         return m
 
     ci, vi = index(copy), index(va)
-    only_copy = sorted(f"{a}|{b}" for (a, b) in ci if (a, b) not in vi)
-    only_va = sorted(f"{a}|{b}" for (a, b) in vi if (a, b) not in ci)
     mismatches, matched, ambiguous = [], 0, 0
-    for sig, crows in ci.items():
-        vrows = vi.get(sig)
-        if not vrows:
-            continue
-        if len(crows) != 1 or len(vrows) != 1:
-            ambiguous += 1          # dup label on one side — can't key 1:1
-            continue
-        matched += 1
-        cr, vr = copy[crows[0]], va[vrows[0]]
+    only_copy, only_va = [], []
+    for sig in set(ci) | set(vi):
+        crows, vrows = ci.get(sig, []), vi.get(sig, [])
         label = f"{sig[0]}|{sig[1]}".strip("|")[:44]
-        for c in range(max(len(cr), len(vr))):
-            cv = (cr[c] if c < len(cr) else "").strip()
-            vv = (vr[c] if c < len(vr) else "").strip()
-            if cv == vv or _numeq(cv, vv):
-                continue
-            mismatches.append((label, a1(crows[0] + 1, c + 1), cv, vv))
+        # Sections sit in a FIXED vertical order and the leaderboard sort only
+        # reorders rows WITHIN a section, so the Kth top-to-bottom occurrence of
+        # a name on the copy corresponds to the Kth on the VA — pair them in
+        # order. This covers EVERY labeled row (no unkeyed dup-label gap) while
+        # still ignoring within-section row-order/sort differences.
+        if len(crows) != len(vrows):
+            ambiguous += 1          # appears a different number of times each side
+        for cr_i, vr_i in zip(crows, vrows):
+            matched += 1
+            cr, vr = copy[cr_i], va[vr_i]
+            for c in range(max(len(cr), len(vr))):
+                cv = (cr[c] if c < len(cr) else "").strip()
+                vv = (vr[c] if c < len(vr) else "").strip()
+                if cv == vv or _numeq(cv, vv):
+                    continue
+                if c == 0 and cv.isdigit() and vv.isdigit():
+                    continue   # col-A rank = sort POSITION, not a data value
+                if cv.lower() in ("", "0", "ns") and vv.lower() in ("", "0", "ns"):
+                    continue   # blank / 0 / NS both mean "no sale"
+                mismatches.append((label, a1(cr_i + 1, c + 1), cv, vv))
+        # occurrences with no partner on the other side = row present on one only
+        for extra in crows[len(vrows):]:
+            only_copy.append(f"{label} @ row {extra + 1}")
+        for extra in vrows[len(crows):]:
+            only_va.append(f"{label} @ row {extra + 1}")
     return {"matched_rows": matched, "ambiguous_labels": ambiguous,
             "copy_labeled": len(ci), "va_labeled": len(vi),
-            "only_copy": only_copy, "only_va": only_va, "mismatches": mismatches}
+            "only_copy": sorted(only_copy), "only_va": sorted(only_va),
+            "mismatches": mismatches}
+
+
+def format_va_check(d: dict, max_lines: int = 60) -> str:
+    """Render the whole-sheet content_diff() as a compact block for the daily
+    completion email: EVERY labeled cell (incl. below row 1000), matched by name
+    so row-order/sort differences don't count — only real value differences,
+    each with its cell + copy vs VA value. So Megan sees exactly what differs
+    without having to ask. (2026-07-07.)"""
+    mm = d.get("mismatches", [])
+    ov, oc = d.get("only_va", []), d.get("only_copy", [])
+    head = (f"VA whole-sheet check (every labeled cell incl. below row 1000; "
+            f"matched by name so row-order/rank/no-sale differences are ignored): "
+            f"{len(mm)} value diff(s)"
+            + (f", {len(ov)} row(s) only on VA" if ov else "")
+            + (f", {len(oc)} only on copy" if oc else "")
+            + f" [matched {d.get('matched_rows', 0)} rows; "
+              f"{d.get('ambiguous_labels', 0)} dup-label rows not keyed].")
+    if not mm and not ov and not oc:
+        return head + " ✅ all cells match."
+    lines = [f"  {lbl} @ {a1}: copy={cv!r} VA={vv!r}"
+             for lbl, a1, cv, vv in mm[:max_lines]]
+    if len(mm) > max_lines:
+        lines.append(f"  …and {len(mm) - max_lines} more value diff(s)")
+    lines += [f"  ROW only on VA: {s}" for s in ov[:15]]
+    lines += [f"  ROW only on copy: {s}" for s in oc[:15]]
+    return head + "\n" + "\n".join(lines)
 
 
 def main():

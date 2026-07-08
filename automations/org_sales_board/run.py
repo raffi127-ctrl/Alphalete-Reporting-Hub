@@ -231,6 +231,7 @@ def main(argv=None) -> int:
                 pass
             _compare_clean = True
             _compare_ndiff = 0
+            _va_note = ""
             if not args.dry_run and not args.real:
                 from automations.org_sales_board import compare
                 _cmp = compare.run_compare()
@@ -239,6 +240,15 @@ def main(argv=None) -> int:
                 # concerns (frozen + catch-all are report-only, never counted here)
                 _compare_ndiff = (len(_cmp.get("glitches", []))
                                   + len(_cmp.get("derived", [])))
+                # WHOLE-SHEET VA check — EVERY labeled cell incl. below row 1000,
+                # name-matched so sort/row-order differences don't count (only
+                # real value diffs). INFORMATIONAL: surfaced in the completion
+                # email so the differences are visible without asking; does NOT
+                # gate the run (Megan 2026-07-07).
+                try:
+                    _va_note = compare.format_va_check(compare.content_diff())
+                except Exception as _e:  # noqa: BLE001 — never fail the run on this
+                    _va_note = f"VA whole-sheet check errored ({type(_e).__name__})."
             # Standard failure manifest → Hub failure-help callout + a granular
             # "Retry failed only" button where the failure is one clean category
             # (--step captainships / --step daily); mixed/compare failures show
@@ -283,7 +293,8 @@ def main(argv=None) -> int:
                             "org-sales-board", failed=_failed_all, retry_args=_ra,
                             kind="section",
                             note=f"{len(_failed_all)} part(s) missing this run."
-                                 + (f" ⚠ {_term_note}" if _term_note else ""),
+                                 + (f" ⚠ {_term_note}" if _term_note else "")
+                                 + (f"\n{_va_note}" if _va_note else ""),
                             remediation=_rm.make_remediation(
                                 reason=("Org Sales Board run is missing data — "
                                         + "; ".join(_failed_all) + "."),
@@ -302,9 +313,14 @@ def main(argv=None) -> int:
                                          "often clears a flaky Tableau load; if a "
                                          "view keeps failing it may need "
                                          "re-creating in Tableau.")))
-                    elif _term_note:
-                        _rm.write_manifest("org-sales-board", failed=[],
-                                           kind="section", note="⚠ " + _term_note)
+                    elif _term_note or _va_note:
+                        # Clean run (nothing missing) — still record the whole-
+                        # sheet VA check so the completion email always shows what
+                        # differs. failed=[] keeps it DONE, not INCOMPLETE.
+                        _rm.write_manifest(
+                            "org-sales-board", failed=[], kind="section", ok=True,
+                            note=(("⚠ " + _term_note + "\n") if _term_note else "")
+                                 + _va_note)
                     else:
                         _rm.mark_clean("org-sales-board", kind="section")
                 except Exception:
