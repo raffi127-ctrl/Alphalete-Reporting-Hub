@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.board-catchup</string>
+
+    <!-- Path is the laptop placeholder; on the mini, install_agent.py rewrites it
+         to the mini's repo path (lucy rerun install_board_catchup_agent). -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/board_catchup.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- EVERY day at 2:30pm, machine LOCAL time (the mini is Central). No Weekday
+         key = daily. Runs AFTER the late-posting sources publish (JE ~1:53pm,
+         SARA ~2pm observed) and, on Monday, BEFORE the Monday-night manual
+         rollover freezes the week — so the just-closed Sunday lands in time.
+         TIME KNOB: change Hour/Minute to shift the run (14:30 = 2:30pm CST).
+         Confirm the real post time this Sunday and tune. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>14</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/board-catchup.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/board-catchup.launchd.err.log</string>
+</dict>
+</plist>

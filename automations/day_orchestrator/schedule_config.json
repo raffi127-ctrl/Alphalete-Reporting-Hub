@@ -471,6 +471,27 @@
       "verify": null,
       "timeout_minutes": 5
     },
+    "install_board_catchup_agent": {
+      "on_scheduler": true,
+      "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_board_catchup_agent` (same pattern as install_retail_catchup_agent). on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Regens + launchctl-bootstraps com.alphalete.board-catchup on the mini — a DAILY 2:30pm CST re-pull of the day-behind sections (Retail NL/Internet/JE + BOX + Frontier) for the current week, so yesterday's late-posting numbers land the same day and, on Monday, the just-closed Sunday lands before the Monday-night manual rollover. BOX is week-pinned so it re-pulls the right week even after its view rolls. source_type 'local' skips the tableau/appstream chrome guard. Not a Hub card. Re-runnable any time. TIME KNOB lives in the plist (confirm the real post time this Sunday and tune).",
+      "display_name": "Install: daily board catch-up LaunchAgent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "board-catchup"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
+    },
     "install_je_agent": {
       "on_scheduler": true,
       "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_je_agent`. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. It regens + launchctl-bootstraps com.alphalete.je-sunday-catchup on the mini. source_type 'local' skips the tableau/appstream chrome guard. Not a Hub card. Safe to leave here; re-runnable any time.",
