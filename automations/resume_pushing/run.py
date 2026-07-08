@@ -387,6 +387,9 @@ def main() -> int:
                     help="Click Auto-Extract but do NOT send to the AI call list. "
                          "Safe: extraction fills resume data, it's not the "
                          "irreversible push.")
+    ap.add_argument("--send-only", action="store_true",
+                    help="Skip Auto-Extract; go straight to select-all + send. "
+                         "Tests whether extract is shrinking the grid.")
     ap.add_argument("--limit", type=int, default=0, metavar="N",
                     help="Send only the first N applicants (safe live test). "
                          "0 = all rows via select-all.")
@@ -501,7 +504,7 @@ def main() -> int:
             return 0
 
         rows = _grid_row_count(page)
-        extracted = extract_resumes(page, args.dry_run)
+        extracted = 0 if args.send_only else extract_resumes(page, args.dry_run)
 
         if args.extract_only:
             _log("\n===== SUMMARY (extract-only) =====")
