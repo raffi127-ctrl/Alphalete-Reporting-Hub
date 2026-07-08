@@ -31,6 +31,7 @@ import plistlib
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -67,22 +68,41 @@ def install(name: str) -> tuple[bool, str]:
         return False, f"plutil lint failed: {(lint.stdout + lint.stderr).strip()[:160]}"
 
     domain = f"gui/{os.getuid()}"
-    subprocess.run(["launchctl", "bootout", f"{domain}/{label}"],
+    target = f"{domain}/{label}"
+
+    def _loaded() -> bool:
+        return subprocess.run(["launchctl", "print", target],
+                              capture_output=True, text=True,
+                              timeout=30).returncode == 0
+
+    # `launchctl bootout` is ASYNCHRONOUS — it returns before the old job is fully
+    # torn down. Bootstrapping immediately (as this used to) races: launchd still
+    # sees the old job, the bootstrap silently no-ops, and the STALE schedule keeps
+    # firing while we falsely report "loaded ✓" (it only checked the label exists).
+    # That's the 2026-07-08 bug: the plist FILE said Hour 4, but launchd kept firing
+    # the boot-time Hour 6 schedule for 15 days across repeated "successful" reloads.
+    # Fix: bootout, then POLL until the job is genuinely gone, THEN bootstrap, and
+    # fail LOUDLY (never a false ✓) if either step doesn't take.
+    subprocess.run(["launchctl", "bootout", target],
                    capture_output=True, text=True, timeout=30)   # ignore if absent
+    gone = False
+    for _ in range(40):                     # up to ~10s for launchd to release it
+        if not _loaded():
+            gone = True
+            break
+        time.sleep(0.25)
+    if not gone:
+        return False, (f"{label}: old job STILL loaded 10s after bootout — launchd "
+                       "won't release it (may need `launchctl remove` or a reboot); "
+                       "reload aborted, schedule UNCHANGED")
+
     boot = subprocess.run(["launchctl", "bootstrap", domain, str(dest)],
                           capture_output=True, text=True, timeout=30)
-    chk = subprocess.run(["launchctl", "print", f"{domain}/{label}"],
-                         capture_output=True, text=True, timeout=30)
-    if chk.returncode != 0:
-        return False, (f"not registered after bootstrap (exit {boot.returncode}): "
+    if boot.returncode != 0 or not _loaded():
+        return False, (f"{label}: bootstrap failed (exit {boot.returncode}): "
                        f"{(boot.stdout + boot.stderr).strip()[:180]}")
-    # surface the next fire time if launchctl reports it
-    nxt = ""
-    for line in chk.stdout.splitlines():
-        if "runatload" in line.lower() or "next" in line.lower():
-            nxt = " | " + line.strip()[:80]
-            break
-    return True, f"{label} installed + loaded in {domain} ✓{nxt}"
+    return True, (f"{label} reloaded in {domain} ✓ "
+                  "(race-free: old job confirmed gone before bootstrap)")
 
 
 def main(argv=None) -> int:
