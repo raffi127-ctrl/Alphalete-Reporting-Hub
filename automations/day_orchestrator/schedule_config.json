@@ -388,7 +388,7 @@
     },
     "org_sales_board": {
       "on_scheduler": true,
-      "_note": "ON the scheduler 2026-06-30 (Megan, vacation plan): fills the SANDBOX 'Copy of' tab daily at 8 AM CST, FILL-ONLY — the Tuesday auto-rollover was removed, so the weekly rollover is MANUAL (a person Monday night). Auto-compares vs the VA tab. Intentionally targets the sandbox; the real tab stays guarded (see _warn).",
+      "_note": "Fills the SANDBOX 'Copy of' tab daily, FILL-ONLY — the Tuesday auto-rollover was removed, so the weekly rollover is MANUAL (a person Monday night). Auto-compares vs the VA tab. Intentionally targets the sandbox; the real tab stays guarded (see _warn). TIMING (Megan 2026-07-08): cadence.not_before '08:00' holds it until 8am CST so it matches the VAs' ~8am pull — Box lands in Tableau ~7-8am and the old ~6:44am batch run missed it. The email (org_sales_board_email) depends_on this, so it follows right after (~8:15-8:45, before the 9am send window). ONLY JE stays a day behind (inherent — the VAs' manual board is too). Set 45m before Raf's send time if he names one.",
       "display_name": "Alphalete Org Sales Board",
       "source_type": "tableau",
       "data_sources": [
@@ -411,7 +411,8 @@
           4,
           5,
           6
-        ]
+        ],
+        "not_before": "08:00"
       },
       "priority": "P1",
       "freshness_target": null,
