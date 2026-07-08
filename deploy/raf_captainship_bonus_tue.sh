@@ -7,7 +7,9 @@
 # Activations for Raf's team (Tableau CaptainsBonus, current cycle), sets the
 # team New Internet 60-day Churn % + Activation % (Rolling 4 Weeks), lets the
 # Total Sales / Money Made / TOTAL MONEY MADE formulas recompute, re-points the
-# performance chart at the Total Sales row, and saves the PDF to Downloads.
+# performance chart at the Total Sales row, and DMs the PDF to Raf, Dylan + Maud
+# on Slack as Lucy (built in a temp file, deleted after — nothing saved to
+# Downloads on this unattended runner).
 # Idempotent: if this week's column already exists it refreshes in place
 # (--force-insert overrides).
 #

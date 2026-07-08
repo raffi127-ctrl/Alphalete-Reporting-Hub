@@ -5,8 +5,11 @@ Inserts a fresh week column on the "Captainship Bonuses" tab of the
 Activations for Raf's team (Tableau CaptainsBonus, current cycle), sets the
 team New Internet 60-day Churn % + Activation % (Rolling 4 Weeks), lets the
 Total Sales / Money Made / TOTAL MONEY MADE formulas recompute, re-points the
-performance chart's series at the Total Sales row, and exports the 4-week +
-chart view to ~/Downloads/RafCaptainship <M.D>.pdf.
+performance chart's series at the Total Sales row, and DMs the 4-week + chart
+PDF (Raf Captainship WE <M.D>.pdf) to Raf, Dylan + Maud on Slack as Lucy. The
+PDF is built in a temp file and deleted after sending — nothing is saved to
+Downloads (this runs unattended, where a local file is nobody's inbox). Pass
+--pdf-dir to ALSO drop a local copy for debugging.
 
 Idempotent: if this week's column already exists it refreshes in place
 (override with --force-insert).
@@ -27,6 +30,19 @@ import traceback
 from pathlib import Path
 
 REPORT_ID = "raf_captainship_bonus"
+
+# Lucy DMs the finished PDF to these people every run (Slack user ids — same
+# ids as fiber_activations / focus_slack). Raf = the captain, Maud = report
+# owner, Dylan on the distro.
+SLACK_RECIPIENTS = ("U045Z8N0ZQC", "U045USN7NCD", "U048V0YA5FC")  # Rafael Hidalgo, Maud Miller, Dylan
+
+
+def _slack_comment(rep: dict) -> str:
+    """The DM's message text — emoji + Title Case title, then the headline number
+    (the PDF carries the full breakdown). Matches the Hub's metrics-post style."""
+    return (f"💰 *Raf Captainship Bonus — {rep['label']}*\n"
+            f"Total sales: {rep['total']} ({len(rep['matched'])} reps) · "
+            f"churn {rep['churn']} · activation {rep['rolling']}")
 
 
 def _current_we_sunday(today: dt.date | None = None) -> dt.date:
@@ -90,13 +106,45 @@ def _run(args) -> dict:
         print("  ⚠ ACTIVE rep NOT in Tableau (roster off — handle manually): "
               + ", ".join(rep["unmatched"]), flush=True)
 
-    # 3) PDF (skip on dry-run or --no-pdf).
+    # 3) PDF + Slack DM (skip on dry-run or --no-pdf).
     rep["pdf"] = None
+    rep["slack"] = None
     if not args.dry_run and not args.no_pdf:
-        out = Path(args.pdf_dir).expanduser() / pdf_export.default_name(we)
-        pdf_export.export_pdf(sheet_fill.SPREADSHEET_ID, ws.id, out)
-        rep["pdf"] = str(out)
-        print(f"\n  📄 PDF → {out}", flush=True)
+        import shutil
+        import tempfile
+
+        # The column fill above is the critical work and is already done. PDF
+        # export + Slack DM are DELIVERY — keep them best-effort so a Sheets/
+        # Slack hiccup (e.g. the Lucy bot token not yet seeded on this machine)
+        # never fails an otherwise-good run. Failures print a loud ⚠ (surfaced
+        # in the log + orchestrator email) so we notice and fix, without losing
+        # the fill.
+        tmpdir = Path(tempfile.mkdtemp(prefix="rcb_pdf_"))
+        try:
+            from automations.shared import slack_metrics_post as smp
+            pdf_path = tmpdir / pdf_export.default_name(we)
+            pdf_export.export_pdf(sheet_fill.SPREADSHEET_ID, ws.id, pdf_path)
+            # Optional local copy for debugging — OFF by default so nothing lands
+            # in Downloads on the unattended runner.
+            if args.pdf_dir:
+                dest = Path(args.pdf_dir).expanduser() / pdf_path.name
+                shutil.copy2(pdf_path, dest)
+                rep["pdf"] = str(dest)
+                print(f"\n  📄 PDF also saved → {dest}", flush=True)
+            res = smp.dm_users_with_file(
+                pdf_path, users=list(SLACK_RECIPIENTS),
+                comment=_slack_comment(rep), as_bot=True)
+            rep["slack"] = res
+            print(f"\n  💬 PDF DM'd to Raf + Dylan + Maud via Lucy "
+                  f"({res.get('mode', 'sent')}).", flush=True)
+        except Exception as e:  # noqa: BLE001 — delivery must not fail the fill
+            rep["slack"] = {"ok": False, "error": str(e)[:200]}
+            print(f"\n  ⚠ PDF delivery FAILED ({type(e).__name__}: "
+                  f"{str(e)[:160]}). The column IS filled — resend the PDF once "
+                  f"the Slack (Lucy) token is available on this machine.",
+                  flush=True)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
     return rep
 
 
@@ -114,12 +162,25 @@ def main() -> int:
                     help="insert a new column even if this week's exists")
     ap.add_argument("--skip-download", action="store_true",
                     help="reuse the cached Tableau CSVs (no live pull)")
-    ap.add_argument("--no-pdf", action="store_true", help="skip the PDF export")
-    ap.add_argument("--pdf-dir", default="~/Downloads",
-                    help="where to write the PDF (default ~/Downloads)")
+    ap.add_argument("--no-pdf", action="store_true",
+                    help="skip the PDF + Slack DM entirely (sheet fill only)")
+    ap.add_argument("--pdf-dir", default=None,
+                    help="ALSO save a local copy of the PDF here (default: none — "
+                         "the PDF is DM'd to Raf, Dylan + Maud on Slack, not saved)")
     ap.add_argument("--no-roster", action="store_true",
                     help="don't auto add/hide rows for roster changes (just flag them)")
+    ap.add_argument("--check-slack", action="store_true",
+                    help="verify the Lucy Slack token on THIS machine (auth_test "
+                         "only — no message, no fill, no PDF) and exit")
     args = ap.parse_args()
+
+    if args.check_slack:
+        from automations.shared import slack_metrics_post as smp
+        who = smp._bot_client().auth_test()
+        print(f"✅ Lucy Slack token OK here — authed as {who.get('user')} "
+              f"({who.get('user_id')}) in team {who.get('team')}. "
+              f"The Tuesday PDF DM to Raf, Dylan + Maud will send.", flush=True)
+        return 0
 
     rep = _run(args)
     if args.dry_run:

@@ -1548,7 +1548,7 @@ AUTOMATED_REPORTS = [
         "emoji": "💰",
         "color": "#E8612A",
         "category": "📊 Metrics",
-        "description": "Adds this week's column to the 'Captainship Bonuses' tab of the Alphalete Org/Captainship Reports sheet — each rep's Total Activations + the team New Internet 60-day churn % and activation % from Tableau, recomputes Money Made, re-points the chart, and saves the PDF to Downloads.",
+        "description": "Adds this week's column to the 'Captainship Bonuses' tab of the Alphalete Org/Captainship Reports sheet — each rep's Total Activations + the team New Internet 60-day churn % and activation % from Tableau, recomputes Money Made, re-points the chart, and DMs the PDF to Raf, Dylan + Maud on Slack as Lucy.",
         "breakdown": (
             "WHAT IT DOES\n"
             "**•** Inserts a fresh leftmost week column (this past Sunday, "
@@ -1562,8 +1562,9 @@ AUTOMATED_REPORTS = [
             "**•** Lets the Total Sales / Money Made / TOTAL MONEY MADE "
             "formulas recompute and re-points the performance chart's series "
             "at the Total Sales row.\n"
-            "**•** Saves **Raf Captainship WE <date>.pdf** (4 weeks + chart) "
-            "to your Downloads.\n\n"
+            "**•** DMs **Raf Captainship WE <date>.pdf** (4 weeks + chart) "
+            "to Raf, Dylan + Maud on Slack as Lucy (nothing saved to "
+            "Downloads).\n\n"
             "WHEN IT RUNS\n"
             "**Tuesdays.** Each run fills the just-ended week. Re-running the "
             "same week refreshes in place (no duplicate column)."
@@ -1579,7 +1580,7 @@ AUTOMATED_REPORTS = [
         },
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Raf Captainship Bonus done — column filled, roster synced, Money Made recomputed, chart re-pointed, PDF saved to Downloads.",
+            "message_success": "✅ Raf Captainship Bonus done — column filled, roster synced, Money Made recomputed, chart re-pointed, PDF DM'd to Raf, Dylan + Maud on Slack.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
         },
         "actions": [
@@ -1587,7 +1588,7 @@ AUTOMATED_REPORTS = [
                 "label": "Run This Week",
                 "icon": "▶",
                 "primary": True,
-                "help": "Fills the most recent WE Sunday column from Tableau, syncs the roster, and saves the PDF (idempotent — refreshes if it already exists).",
+                "help": "Fills the most recent WE Sunday column from Tableau, syncs the roster, and DMs the PDF to Raf, Dylan + Maud on Slack (idempotent — refreshes if it already exists).",
                 "module": "automations.raf_captainship_bonus.run",
                 "args_fn": lambda: [],
             },
