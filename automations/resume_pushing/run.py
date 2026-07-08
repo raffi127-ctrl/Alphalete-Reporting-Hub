@@ -175,19 +175,21 @@ def _select_all(page) -> int:
     try:
         page.add_script_tag(content=(
             "(function(){try{if(!window.Ext){document.body.setAttribute('data-sel','no-ext');return;}"
-            "var g=null;Ext.ComponentMgr.all.each(function(c){try{"
-            "if(c.getSelectionModel&&c.store&&c.store.getCount&&c.store.getCount()>0&&"
-            "c.el&&c.el.dom&&c.el.dom.querySelector('.x-grid3-hd-checker')){g=c;return false;}}catch(e){}return true;});"
-            "if(!g){document.body.setAttribute('data-sel','no-grid');return;}"
-            "var sm=g.getSelectionModel();if(sm.selectAll){sm.selectAll();}"
+            "var best=null,list=[];Ext.ComponentMgr.all.each(function(c){try{"
+            "if(c.getSelectionModel&&c.store&&c.store.getCount&&c.getView&&"
+            "c.el&&c.el.dom&&c.el.dom.querySelector('.x-grid3-hd-checker')){"
+            "list.push((c.id||'?')+':'+c.store.getCount());"
+            "if(!best||c.store.getCount()>best.store.getCount()){best=c;}}}catch(e){}return true;});"
+            "if(!best){document.body.setAttribute('data-sel','no-grid grids['+list.join(',')+']');return;}"
+            "var sm=best.getSelectionModel();if(sm.selectAll){sm.selectAll();}"
             "var n=sm.getCount?sm.getCount():(sm.getSelections?sm.getSelections().length:-1);"
-            "document.body.setAttribute('data-sel',g.store.getCount()+'/'+n);"
+            "document.body.setAttribute('data-sel',best.store.getCount()+'/'+n+' grids['+list.join(',')+']');"
             "}catch(e){document.body.setAttribute('data-sel','err:'+e);}})();"))
         page.wait_for_timeout(900)
         info = page.frames[0].evaluate("() => document.body.getAttribute('data-sel')")
-        _dbg(f"[send] selectAll via selection-model: store/selected = {info}")
+        _dbg(f"[send] selectAll (largest grid): store/selected = {info}")
         if info and "/" in info:
-            selected = int(info.split("/")[1])
+            selected = int(info.split("/")[1].split()[0])
             if selected > 0:
                 return selected
     except Exception as e:
