@@ -1637,6 +1637,10 @@ AUTOMATED_REPORTS = [
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1xQQLzE8mU-a4lpk1IK3WolTPlFxavuMzdK3jA7NGga8/edit"),
         "assignees": ["Lucy 2"],
+        # Self-running weekly launchd job on Lucy 2 (Tue 10am), not the 4am
+        # batch — show the run time on the tile and keep it out of the
+        # "due today / not completed" tallies.
+        "self_scheduled": True,
         "schedule": {
             "frequency": "weekly",
             "weekdays": [1],  # Tuesday
