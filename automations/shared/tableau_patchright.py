@@ -108,9 +108,16 @@ def _is_profile_in_use(exc: Exception) -> bool:
             or ("profile" in s and "in use" in s))
 
 
+class AppStreamBusy(Exception):
+    """Raised by appstream_direct_session(yield_if_busy=True) when the profile is
+    already in use by another run — so a LOW-PRIORITY caller (resume_pushing) can
+    step aside and retry later instead of making the other run wait."""
+
+
 def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
                        verbose: bool = True, window_size: tuple = (1680, 1280),
-                       device_scale: float | None = None):
+                       device_scale: float | None = None,
+                       busy_retries: int | None = None):
     """launch_persistent_context with the existing system-chrome → bundled-
     chromium fallback UNCHANGED, wrapped in a wait+retry for the "profile
     already in use" collision.
@@ -141,7 +148,10 @@ def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
                 no_viewport=True, args=_args)
     prefer_chrome = True
     last: Optional[Exception] = None
-    for attempt in range(_LAUNCH_RETRIES):
+    # Low-priority callers (resume_pushing) pass busy_retries=1 to fail fast on a
+    # profile-in-use collision (yield) instead of waiting for the other run.
+    retries = busy_retries if busy_retries is not None else _LAUNCH_RETRIES
+    for attempt in range(retries):
         try:
             if prefer_chrome:
                 try:
@@ -157,11 +167,11 @@ def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
             return p.chromium.launch_persistent_context(**base)
         except Exception as e:
             last = e
-            if _is_profile_in_use(e) and attempt < _LAUNCH_RETRIES - 1:
+            if _is_profile_in_use(e) and attempt < retries - 1:
                 if verbose:
                     print(f"[{label}] browser profile is in use by another run "
                           f"— waiting {_LAUNCH_WAIT_S:.0f}s then retrying "
-                          f"({attempt + 1}/{_LAUNCH_RETRIES})", flush=True)
+                          f"({attempt + 1}/{retries})", flush=True)
                 time.sleep(_LAUNCH_WAIT_S)
                 continue
             raise
@@ -711,11 +721,16 @@ def appstream_direct_session(headless: bool = False,
                              username: Optional[str] = None,
                              password: Optional[str] = None,
                              allow_form_login: bool = True,
-                             force_form_login: bool = False) -> Iterator[Page]:
+                             force_form_login: bool = False,
+                             yield_if_busy: bool = False) -> Iterator[Page]:
     """Yield a Page on the AppStream recruiting console (#searchMC office
     switcher) for the rcaptain account, via patchright stealth. Unattended
     replacement for fetch_office._attach() (debug-Chrome CDP, broken on Chrome
     148).
+
+    yield_if_busy=True: if the Chrome profile is already in use by another run,
+    DON'T wait — raise AppStreamBusy immediately so a low-priority caller
+    (resume_pushing) can step aside and let the other report have the session.
 
     Auth path (2026-06-30): reuse the saved session (APPSTREAM_STORAGE_STATE)
     if it's still live; otherwise drive the rcaptain login form and save a
@@ -739,8 +754,14 @@ def appstream_direct_session(headless: bool = False,
     profile = profile_dir or APPSTREAM_PROFILE_DIR
     profile.mkdir(exist_ok=True, parents=True)
     with sync_playwright() as p:
-        ctx = _launch_persistent(p, profile, headless=headless,
-                                 label="appstream_direct", verbose=verbose)
+        try:
+            ctx = _launch_persistent(p, profile, headless=headless,
+                                     label="appstream_direct", verbose=verbose,
+                                     busy_retries=1 if yield_if_busy else None)
+        except Exception as e:
+            if yield_if_busy and _is_profile_in_use(e):
+                raise AppStreamBusy(str(e)) from e
+            raise
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
             # Primary (automated) path: restore the exported session. Never

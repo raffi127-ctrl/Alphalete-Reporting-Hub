@@ -48,7 +48,8 @@ import re
 import sys
 
 # Reused, collision-safe infra (the same modules daily_focus runs on).
-from automations.shared.tableau_patchright import appstream_direct_session
+from automations.shared.tableau_patchright import (
+    appstream_direct_session, AppStreamBusy)
 from automations.recruiting_report import fetch_office
 
 OFFICE_ID = "11580"
@@ -314,42 +315,52 @@ def main() -> int:
     mode = "DRY-RUN (no writes)" if args.dry_run else "LIVE (sends to AI call list)"
     _log(f"=== Resume Pushing — office {OFFICE_ID} — {mode} ===")
 
-    with appstream_direct_session() as page:
-        if not fetch_office._switch_office(page, OFFICE_ID, OFFICE_HINT):
-            _log(f"[office] STOP — this AppStream account cannot reach office "
-                 f"{OFFICE_ID}. Confirm the machine is logged in as an account "
-                 "with access to that office.")
-            return 2
-        page.wait_for_timeout(2000)
+    # Resume Pushing is the LOWEST-priority AppStream job on Lucy 2 — it runs
+    # every 10 min, so if any other report (e.g. Carlos 1on1s) is using Carlos's
+    # AppStream session, we STEP ASIDE and let it finish. yield_if_busy makes the
+    # session attach fail fast (AppStreamBusy) instead of waiting and holding the
+    # other run up; the next 10-min tick retries, so nothing is lost.
+    try:
+        with appstream_direct_session(yield_if_busy=True) as page:
+            if not fetch_office._switch_office(page, OFFICE_ID, OFFICE_HINT):
+                _log(f"[office] STOP — this AppStream account cannot reach office "
+                     f"{OFFICE_ID}. Confirm the machine is logged in as an account "
+                     "with access to that office.")
+                return 2
+            page.wait_for_timeout(2000)
 
-        if not goto_batch_page(page):
-            _log("[STOP] could not reach the batch page (p=616).")
-            return 1
+            if not goto_batch_page(page):
+                _log("[STOP] could not reach the batch page (p=616).")
+                return 1
 
-        if args.debug:
-            _health_check(page)
-            return 0
+            if args.debug:
+                _health_check(page)
+                return 0
 
-        rows = _grid_row_count(page)
-        if not args.send_only:
-            extract_resumes(page, args.dry_run)
+            rows = _grid_row_count(page)
+            if not args.send_only:
+                extract_resumes(page, args.dry_run)
 
-        if args.extract_only:
-            _log("\n===== SUMMARY (extract-only) =====")
-            _log(f"Rendered rows                : {rows}")
-            _log(f"Auto-Extract                 : {'skipped (dry-run)' if args.dry_run else 'clicked'}")
-            _log("(--extract-only — nothing was sent to the AI call list.)")
-            return 0
+            if args.extract_only:
+                _log("\n===== SUMMARY (extract-only) =====")
+                _log(f"Rendered rows                : {rows}")
+                _log(f"Auto-Extract                 : {'skipped (dry-run)' if args.dry_run else 'clicked'}")
+                _log("(--extract-only — nothing was sent to the AI call list.)")
+                return 0
 
-        sent = send_all_to_ai(page, args.dry_run, limit=args.limit)
+            sent = send_all_to_ai(page, args.dry_run, limit=args.limit)
 
-        _log("\n===== SUMMARY =====")
-        _log(f"Mode                         : {mode}")
-        _log(f"Applicants sent to call list : {sent}")
-        if args.dry_run:
-            _log("(DRY-RUN — nothing was pushed to the AI call list.)")
-        elif args.limit:
-            _log(f"(--limit {args.limit} — sent only the first {args.limit} as a test.)")
+            _log("\n===== SUMMARY =====")
+            _log(f"Mode                         : {mode}")
+            _log(f"Applicants sent to call list : {sent}")
+            if args.dry_run:
+                _log("(DRY-RUN — nothing was pushed to the AI call list.)")
+            elif args.limit:
+                _log(f"(--limit {args.limit} — sent only the first {args.limit} as a test.)")
+    except AppStreamBusy:
+        _log("[yield] AppStream session is busy (another report is running) — "
+             "yielding; the next 10-min run will retry.")
+        return 0
     return 0
 
 
