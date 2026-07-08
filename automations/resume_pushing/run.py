@@ -89,116 +89,134 @@ def open_batch_page(page) -> bool:
 # --------------------------------------------------------------------------- #
 # Extraction
 # --------------------------------------------------------------------------- #
-def read_ready_count(page):
-    """Parse 'Ready For Extraction: N' from the page body."""
-    body = page.locator("body").inner_text()
-    m = re.search(r"Ready For Extraction[^0-9]*([0-9,]+)", body, re.I)
-    return int(m.group(1).replace(",", "")) if m else None
+BATCH_PAGE_ID = "616"   # index.cfm?p=616 = "Process emails in batches" (ExtJS grid)
+
+
+def _grid_row_count(page) -> int:
+    """Applicant rows in the ExtJS grid (.x-grid3-row)."""
+    try:
+        return page.locator(".x-grid3-row").count()
+    except Exception:
+        return 0
+
+
+def goto_batch_page(page) -> bool:
+    """Go straight to the batch grid (p=616) on the live session + office. The
+    old menu nav (Applicants->Process Emails->Process in Batches) drifts to
+    p=701 (the recruiting view) and never reaches this grid — so build the URL
+    from the session's own rqst token instead."""
+    m = re.search(r"rqst=([A-Za-z0-9-]+)", page.url or "")
+    if not m:
+        _log(f"[nav] no rqst token in session URL {(page.url or '')[:80]!r}")
+        return False
+    target = (f"https://applicantstream.com/index.cfm?rqst={m.group(1)}"
+              f"&p={BATCH_PAGE_ID}&newOfficeId={OFFICE_ID}")
+    try:
+        page.goto(target, wait_until="domcontentloaded")
+    except Exception as e:
+        _log(f"[nav] goto batch page (p={BATCH_PAGE_ID}) failed: {e}")
+        return False
+    for _ in range(25):                       # ExtJS grid renders after page load
+        page.wait_for_timeout(1000)
+        n = _grid_row_count(page)
+        if n > 0:
+            _log(f"[nav] batch page p={BATCH_PAGE_ID} — {n} applicant rows")
+            return True
+    _log(f"[nav] batch page p={BATCH_PAGE_ID} loaded but 0 grid rows (nothing waiting)")
+    return True
 
 
 def extract_resumes(page, dry_run: bool) -> int:
-    total_seen_start = None
-    loops = 0
-    while loops < MAX_EXTRACT_LOOPS:
-        count = read_ready_count(page)
-        if total_seen_start is None:
-            total_seen_start = count or 0
-        _log(f"[extract] Ready For Extraction = {count}")
-        if not count or count <= 0:
-            break
-        if dry_run:
-            _log(f"[extract] DRY-RUN — would extract {count} (skipping Start)")
-            break
-
-        try:
-            page.locator(
-                "[class*='robot'], [title*='Resume Helper' i], .fa-robot"
-            ).first.click(timeout=15000)
-            page.wait_for_timeout(1000)
-            page.locator("xpath=//button[contains(.,'Start')]").first.click(timeout=15000)
-            _log(f"[extract] Start clicked — waiting ~{EXTRACT_WAIT_SECONDS}s …")
-        except Exception as e:
-            _log(f"[extract] could not start extraction: {e}")
-            break
-
-        page.wait_for_timeout(EXTRACT_WAIT_SECONDS * 1000)
-        page.reload(wait_until="domcontentloaded")  # elapsed timer isn't reliable
-        page.wait_for_timeout(4000)
-        loops += 1
-
-    remaining = read_ready_count(page) or 0
-    extracted = max(0, (total_seen_start or 0) - remaining)
-    _log(f"[extract] done. ~{extracted} extracted this run, {remaining} still ready")
-    return extracted
+    """Click "Auto Extract Information from Resume" (#btnExtractResume). Fills
+    contact info from the attached resumes; not the irreversible step."""
+    n = _grid_row_count(page)
+    if dry_run:
+        _log(f"[extract] DRY-RUN — {n} rows; would click Auto-Extract "
+             "(#btnExtractResume), no click made")
+        return 0
+    btn = page.locator("#btnExtractResume")
+    if btn.count() == 0:
+        _log("[extract] Auto-Extract button (#btnExtractResume) not found — skipping")
+        return 0
+    try:
+        btn.first.click(timeout=15000)
+        _log(f"[extract] clicked Auto-Extract on {n} rows — processing …")
+    except Exception as e:
+        _log(f"[extract] click failed: {e}")
+        return 0
+    page.wait_for_timeout(2000)
+    _click_if_present(page, ["Yes", "OK", "Continue"])   # accept any confirm
+    page.wait_for_timeout(EXTRACT_WAIT_SECONDS * 1000)   # let it finish
+    _click_if_present(page, ["OK", "Close"])
+    _log(f"[extract] done (waited ~{EXTRACT_WAIT_SECONDS}s)")
+    return n
 
 
 # --------------------------------------------------------------------------- #
 # Send to AI
 # --------------------------------------------------------------------------- #
-def _sendable_row_count(page) -> int:
-    """Best-effort count of rows currently in the batch table."""
-    try:
-        return page.locator(f"{BATCH_TABLE} tbody tr").count()
-    except Exception:
+def send_all_to_ai(page, dry_run: bool, limit: int = 0) -> int:
+    """ExtJS grid: select rows, click the "Send to AI" toolbar button, confirm.
+    The button id is dynamic (ext-gen*), so match it by visible text. `limit`>0
+    selects only the first N rows — the safe single-applicant live test."""
+    n = _grid_row_count(page)
+    if n == 0:
+        _log("[send] grid is empty — nothing to send")
+        return 0
+    if dry_run:
+        who = f"the first {limit}" if limit else "all"
+        _log(f"[send] DRY-RUN — {n} rows; would select {who} + click 'Send to AI', "
+             "no click made")
         return 0
 
+    # Select rows: first `limit` (safe test) or all via the header checker.
+    if limit and limit > 0:
+        rows = page.locator(".x-grid3-row")
+        picked = 0
+        for i in range(min(limit, rows.count())):
+            try:
+                rows.nth(i).locator(
+                    ".x-grid3-row-checker, .x-grid3-td-checker, .x-grid3-check-col, td"
+                ).first.click(timeout=5000)
+                picked += 1
+            except Exception as e:
+                _log(f"[send] could not check row {i}: {e}")
+        _log(f"[send] selected {picked} of {n} row(s) (limit={limit})")
+        if picked == 0:
+            _log("[send] no rows selected — aborting send")
+            return 0
+    else:
+        checker = page.locator(".x-grid3-hd-checker")
+        if checker.count() == 0:
+            _log("[send] select-all checker (.x-grid3-hd-checker) not found — aborting")
+            return 0
+        checker.first.click(timeout=8000)
+        _log(f"[send] selected all {n} rows")
+    page.wait_for_timeout(1000)
 
-def _show_all_rows(page) -> None:
-    """Put every record on one page. jQuery/DataTables lives in the page's MAIN
-    world; patchright's page.evaluate runs ISOLATED (site globals invisible), so
-    inject a <script> tag — that runs in the main world where jQuery is defined.
-    Falls back silently if the table isn't a DataTable."""
+    send = page.locator("xpath=//*[normalize-space(text())='Send to AI']")
+    if send.count() == 0:
+        _log("[send] 'Send to AI' control not found — aborting")
+        return 0
+    send.first.click(timeout=8000)
+    _log("[send] clicked 'Send to AI'")
+    page.wait_for_timeout(2500)
+
+    # Capture + accept the ExtJS confirm dialog (log its text for the record).
     try:
-        page.add_script_tag(content=(
-            f"try{{jQuery('{BATCH_TABLE}').DataTable().page.len(1000).draw();}}"
-            "catch(e){}"))
-        page.wait_for_timeout(3000)
+        dlg = page.locator(".x-window").first.inner_text(timeout=3000)
+        _log(f"[send] confirm dialog: {' '.join(dlg.split())[:180]!r}")
     except Exception:
         pass
+    _click_if_present(page, ["Yes", "OK", "Continue"])
+    page.wait_for_timeout(4000)
 
-
-def send_all_to_ai(page, dry_run: bool) -> int:
-    total_sent = 0
-    for p in range(1, MAX_SEND_PASSES + 1):
-        _show_all_rows(page)
-
-        header_cb = page.locator(f"{BATCH_TABLE} thead input[type='checkbox']")
-        if header_cb.count() == 0:
-            _log("[send] no select-all checkbox — table may be empty")
-            break
-
-        if dry_run:
-            n = _sendable_row_count(page)
-            _log(f"[send] DRY-RUN — would send ~{n} applicants to the AI call "
-                 "list (skipping Send To AI)")
-            return 0
-
-        if not header_cb.first.is_checked():
-            header_cb.first.check(timeout=8000)
-        page.wait_for_timeout(1000)
-
-        send_btn = page.locator("xpath=//button[contains(.,'Send To AI')]")
-        if send_btn.count() == 0:
-            _log("[send] 'Send To AI' button not found")
-            break
-        send_btn.first.click(timeout=8000)
-        page.wait_for_timeout(2000)
-
-        dialog = page.locator("body").inner_text()
-        m = re.search(r"Sent to Call List[^0-9]*([0-9,]+)", dialog, re.I)
-        sent = int(m.group(1).replace(",", "")) if m else 0
-
-        if "no applicants to send" in dialog.lower() or sent == 0:
-            _log(f"[send] pass {p}: Sent to Call List = 0 — stopping")
-            _click_if_present(page, ["Close", "Yes"])
-            break
-
-        _click_if_present(page, ["Yes"])   # confirm "Do you want to continue?"
-        total_sent += sent
-        _log(f"[send] pass {p}: sent {sent} (running total {total_sent})")
-        page.wait_for_timeout(4000)
-
-    return total_sent
+    body = page.locator("body").inner_text()
+    m = re.search(r"Sent to Call List[^0-9]*([0-9,]+)", body, re.I)
+    sent = int(m.group(1).replace(",", "")) if m else (limit or n)
+    _log(f"[send] reported sent to AI call list: {sent}")
+    _click_if_present(page, ["OK", "Close"])
+    return sent
 
 
 def _click_if_present(page, labels) -> bool:
@@ -277,9 +295,15 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true",
                     help="Report counts only; no Start, no Send-To-AI clicks.")
     ap.add_argument("--debug", action="store_true",
-                    help="Reach the batch page, dump its actionable DOM (buttons, "
-                         "tables, checkboxes) to the log, then STOP. Read-only — no "
-                         "extract, no send. For rebuilding selectors.")
+                    help="Reach the batch page, dump its actionable DOM to the log, "
+                         "then STOP. Read-only — no extract, no send.")
+    ap.add_argument("--extract-only", action="store_true",
+                    help="Click Auto-Extract but do NOT send to the AI call list. "
+                         "Safe: extraction fills resume data, it's not the "
+                         "irreversible push.")
+    ap.add_argument("--limit", type=int, default=0, metavar="N",
+                    help="Send only the first N applicants (safe live test). "
+                         "0 = all rows via select-all.")
     args = ap.parse_args()
 
     mode = "DRY-RUN (no writes)" if args.dry_run else "LIVE (sends to AI call list)"
@@ -296,8 +320,8 @@ def main() -> int:
             return 2
         page.wait_for_timeout(2000)
 
-        if not open_batch_page(page):
-            _log("[STOP] could not reach the Process in Batches page.")
+        if not goto_batch_page(page):
+            _log("[STOP] could not reach the batch page (p=616).")
             return 1
 
         if args.debug:
@@ -305,41 +329,9 @@ def main() -> int:
                 open(DEBUG_FILE, "w").close()   # start a clean dedicated dump file
             except Exception:
                 pass
-            _debug_dump(page, "chooser")
-            # The batch nav lands on a chooser ("Process in Batch" vs "Process
-            # Using Combo Screen"); the real 50-row table is behind that link.
-            # Clicking it is navigation only — no extract, no send.
-            try:
-                lnk = page.locator(
-                    "xpath=//a[normalize-space()='Process in Batch'] | "
-                    "//button[normalize-space()='Process in Batch']").first
-                if lnk.count() > 0:
-                    lnk.click(timeout=8000)
-                    page.wait_for_timeout(5000)
-                    _dbg("[dbg] clicked 'Process in Batch' → dumping table page")
-                else:
-                    _dbg("[dbg] no 'Process in Batch' link to click")
-            except Exception as e:
-                _dbg(f"[dbg] click 'Process in Batch' failed: {e}")
-            _debug_dump(page, "table")
-            # The menu nav drifts to p=701 (recruiting view). The real batch-of-
-            # emails page is p=616 (Megan's URL). Jump straight there on the same
-            # session/office and dump — navigation only, no extract/send.
-            try:
-                cur = page.url
-                if re.search(r"[?&]p=\d+", cur):
-                    target = re.sub(r"([?&])p=\d+", r"\g<1>p=616", cur)
-                else:
-                    target = cur + ("&" if "?" in cur else "?") + "p=616"
-                page.goto(target, wait_until="domcontentloaded")
-                page.wait_for_timeout(5000)
-                _dbg(f"[dbg] direct nav to p=616: {target[:95]}")
-            except Exception as e:
-                _dbg(f"[dbg] direct p=616 nav failed: {e}")
             _debug_dump(page, "p616")
-            # Compact probe: locate the exact controls we need to rebuild against,
-            # by visible text (ExtJS ids are dynamic). Short output so it fits one
-            # logtail cell. grep "PROBE".
+            # Compact probe: locate the exact controls, by visible text (ExtJS
+            # ids are dynamic). Short output so it fits one logtail cell.
             try:
                 probe = page.frames[0].evaluate(r"""() => {
                   const norm = s => (s||'').replace(/\s+/g,' ').trim();
@@ -364,18 +356,26 @@ def main() -> int:
                 _dbg(f"[PROBE] failed: {e}")
             return 0
 
+        rows = _grid_row_count(page)
         extracted = extract_resumes(page, args.dry_run)
-        sent = send_all_to_ai(page, args.dry_run)
+
+        if args.extract_only:
+            _log("\n===== SUMMARY (extract-only) =====")
+            _log(f"Grid rows                    : {rows}")
+            _log(f"Auto-Extract                 : {'skipped (dry-run)' if args.dry_run else 'clicked'}")
+            _log("(--extract-only — nothing was sent to the AI call list.)")
+            return 0
+
+        sent = send_all_to_ai(page, args.dry_run, limit=args.limit)
 
         _log("\n===== SUMMARY =====")
         _log(f"Mode                         : {mode}")
-        _log(f"Resumes extracted this run   : ~{extracted}")
+        _log(f"Grid rows                    : {rows}")
         _log(f"Applicants sent to call list : {sent}")
         if args.dry_run:
             _log("(DRY-RUN — nothing was pushed to the AI call list.)")
-        else:
-            _log("Remaining records are structural duplicates or data-error rows "
-                 "(blank/placeholder email or phone) that this tool cannot send.")
+        elif args.limit:
+            _log(f"(--limit {args.limit} — sent only the first {args.limit} as a test.)")
     return 0
 
 
