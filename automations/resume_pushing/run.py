@@ -337,6 +337,31 @@ def main() -> int:
             except Exception as e:
                 _dbg(f"[dbg] direct p=616 nav failed: {e}")
             _debug_dump(page, "p616")
+            # Compact probe: locate the exact controls we need to rebuild against,
+            # by visible text (ExtJS ids are dynamic). Short output so it fits one
+            # logtail cell. grep "PROBE".
+            try:
+                probe = page.frames[0].evaluate(r"""() => {
+                  const norm = s => (s||'').replace(/\s+/g,' ').trim();
+                  const all = [...document.querySelectorAll('a,button,span,div,td,input[type=button],[role=button]')];
+                  const find = t => { const e = all.find(x => norm(x.innerText||x.value).toLowerCase() === t)
+                                             || all.find(x => norm(x.innerText||x.value).toLowerCase().includes(t));
+                    return e ? `<${e.tagName} id='${e.id}' cls='${(e.className||'').toString().slice(0,28)}'>` : 'NONE'; };
+                  const rowSel = ['.x-grid3-row','.x-grid-row','.x-grid-item','tr.x-grid3-row'].map(s=>`${s}:${document.querySelectorAll(s).length}`);
+                  const checker = document.querySelector('.x-grid3-hd-checker, .x-grid3-check-col, .x-column-header-checkbox, .x-grid-checkheader');
+                  return {title: norm(document.title).slice(0,40),
+                          rows: rowSel, cbs: document.querySelectorAll('input[type=checkbox]').length,
+                          checker: checker ? `<${checker.tagName} cls='${(checker.className||'').toString().slice(0,32)}'>` : 'NONE',
+                          extract: find('auto extract information from resume'),
+                          sendAI: find('send to ai'), sendCL: find('send to call list')};
+                }""")
+                _dbg(f"[PROBE] title={probe['title']!r} cbs={probe['cbs']} rows={probe['rows']}")
+                _dbg(f"[PROBE] checker={probe['checker']}")
+                _dbg(f"[PROBE] extract={probe['extract']}")
+                _dbg(f"[PROBE] sendAI={probe['sendAI']}")
+                _dbg(f"[PROBE] sendCL={probe['sendCL']}")
+            except Exception as e:
+                _dbg(f"[PROBE] failed: {e}")
             return 0
 
         extracted = extract_resumes(page, args.dry_run)
