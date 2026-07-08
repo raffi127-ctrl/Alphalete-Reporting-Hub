@@ -493,6 +493,47 @@
       "verify": null,
       "timeout_minutes": 5
     },
+    "texas_de_brazil": {
+      "on_scheduler": true,
+      "machine": "Lucy 1",
+      "_note": "Maud's Texas de Brazil monthly competition standings, as a remote-runnable handle. cadence.weekdays [] = the 4am orchestrator NEVER auto-runs it — its real schedule is the DAILY 7:45am CST launchd job (com.alphalete.texas-de-brazil-745, installed via install_texas_de_brazil_agent) on Lucy 1 (the mini). This handle exists so `lucy rerun texas_de_brazil --dry-run` (build the PDF + print the delivery plan, NO posts) and `lucy rerun texas_de_brazil --send` (LIVE: post the PDF AS Lucy to #alphalete-sales + #alphalete-lvl1-chat + iMessage the 'Alphalete A-Team Chat' group) both work. The report lives in the shared Report Library (Sheet); its module is the local cache the Hub materializes. Default (no args) is DRY-RUN — pass --send for a live post. Month is auto-derived. source_type 'local' (the module runs its own isolated headless Chrome for the PDF).",
+      "display_name": "Texas de Brazil Competition Standings",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.uploaded._shared.june_texas_de_brazil_monthly_competition"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 10
+    },
+    "install_texas_de_brazil_agent": {
+      "on_scheduler": true,
+      "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_texas_de_brazil_agent` (same pattern as install_je_agent). on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Regens + launchctl-bootstraps com.alphalete.texas-de-brazil-745 on Lucy 1 (the mini) — Maud's daily 7:45am CST Texas de Brazil competition standings PDF, posted AS Lucy to #alphalete-sales + #alphalete-lvl1-chat + iMessaged to the 'Alphalete A-Team Chat' group. The wrapper materializes the latest library code, runs chrome_guard, then runs the report with --send. source_type 'local' skips the tableau/appstream chrome guard (the wrapper handles Chrome). Not a Hub card. Re-runnable any time.",
+      "display_name": "Install: Texas de Brazil daily LaunchAgent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "texas-de-brazil-745"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
+    },
     "install_je_agent": {
       "on_scheduler": true,
       "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_je_agent`. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. It regens + launchctl-bootstraps com.alphalete.je-sunday-catchup on the mini. source_type 'local' skips the tableau/appstream chrome guard. Not a Hub card. Safe to leave here; re-runnable any time.",
