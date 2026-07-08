@@ -159,15 +159,16 @@ def _store_city(details: str) -> str:
 
 
 class _StoreRow:
-    __slots__ = ("owner", "store_num", "city", "details", "data", "hc")
+    __slots__ = ("owner", "store_num", "city", "details", "data", "hc", "daily")
 
-    def __init__(self, owner, store_num, city, details, data, hc):
+    def __init__(self, owner, store_num, city, details, data, hc, daily=None):
         self.owner = owner
         self.store_num = store_num
         self.city = city
         self.details = details
         self.data = data
         self.hc = hc
+        self.daily = list(daily) if daily else []   # 7 per-day values (board pull)
 
 
 class _PageWeek:
@@ -218,7 +219,8 @@ def _parse_data_row(line: str) -> Optional[Tuple[str, _StoreRow]]:
     store_num = _store_key(details)
     if store_num is None:
         return None
-    return pre, _StoreRow(pre, store_num, _store_city(details), details, data, hc)
+    return pre, _StoreRow(pre, store_num, _store_city(details), details, data, hc,
+                          daily)
 
 
 def parse_frontier_pdf(path: Path, icd_name: str) -> List[_PageWeek]:
