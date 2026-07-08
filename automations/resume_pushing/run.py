@@ -450,26 +450,31 @@ def main() -> int:
                 _dbg(f"[CHK] afterSelectAll: selected={chk['afterSelected']} btnDisabled={chk['afterBtnDisabled']} cbChecked={chk['afterCbChecked']}")
             except Exception as e:
                 _dbg(f"[CHK] failed: {e}")
-            # What does the Send-to-AI button actually CALL? Dump its onclick +
-            # ExtJS handler source so we can invoke the real function directly.
+            # window.Ext lives in the MAIN world (invisible to evaluate's isolated
+            # world). Run in the main world via add_script_tag, stash findings on a
+            # DOM attribute, then read that attribute back from the isolated world.
             try:
-                fn = page.frames[0].evaluate(r"""() => {
-                  const b = document.querySelector('#saveButtton2');
-                  const clip = s => (''+s).replace(/\s+/g,' ').slice(0,220);
-                  const out = {onclick: b&&b.onclick ? clip(b.onclick) : 'none'};
-                  // an inner <button> may hold the onclick
-                  const ib = b && b.querySelector('button');
-                  out.innerOnclick = ib&&ib.onclick ? clip(ib.onclick) : (ib?ib.getAttribute('onclick')||'none':'no-inner');
-                  if (window.Ext) {
-                    let c=null; try{c=Ext.getCmp('saveButtton2');}catch(e){}
-                    if(!c && Ext.ComponentMgr){Ext.ComponentMgr.all.each(x=>{try{if(x.el&&x.el.dom&&x.el.dom.id==='saveButtton2'){c=x;return false;}}catch(e){} return true;});}
-                    out.cmp = c ? {id:c.id, xtype:(c.getXType?c.getXType():''), handler: c.handler?clip(c.handler):'none'} : 'not-found';
-                  } else out.ext='no-Ext';
-                  return JSON.stringify(out);
-                }""")
-                _dbg(f"[FN] {fn[:400]}")
+                page.add_script_tag(content=r"""(function(){
+                  var out={ext: typeof Ext};
+                  try{ if(typeof Ext!=='undefined'){
+                    out.ver = Ext.version||'';
+                    var byId=null; try{byId=Ext.getCmp('saveButtton2');}catch(e){}
+                    out.getCmp = byId?('id='+byId.id+' h='+(typeof byId.handler)):'undef';
+                    var m=[];
+                    if(Ext.ComponentMgr){Ext.ComponentMgr.all.each(function(c){try{
+                      var isBtn = c.el&&c.el.dom&&c.el.dom.id==='saveButtton2';
+                      var isTxt = c.text&&(''+c.text).replace(/\s+/g,' ').trim()==='Send to AI';
+                      if(isBtn||isTxt){m.push((isBtn?'el':'txt')+':'+c.id+':h='+(typeof c.handler)+':'+(c.handler?(''+c.handler).replace(/\s+/g,' ').slice(0,140):'none'));}
+                    }catch(e){} return true;});}
+                    out.matches=m;
+                  }}catch(e){out.err=''+e;}
+                  document.body.setAttribute('data-fnprobe', JSON.stringify(out));
+                })();""")
+                page.wait_for_timeout(500)
+                data = page.frames[0].evaluate("() => document.body.getAttribute('data-fnprobe')")
+                _dbg(f"[FN2] {str(data)[:500]}")
             except Exception as e:
-                _dbg(f"[FN] failed: {e}")
+                _dbg(f"[FN2] failed: {e}")
             return 0
 
         rows = _grid_row_count(page)
