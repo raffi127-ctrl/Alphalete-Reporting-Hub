@@ -199,12 +199,7 @@ def _captainship_ranges(g) -> List[Tuple[str, str]]:
         if summ_end:
             out.append((f"cap{title}_summary", f"A{title}:J{summ_end}"))
         if lbh and tot:
-            # Cap at _LB_WEEKS like the ORG leaderboard (Megan 2026-07-07: the
-            # captainships were showing up to ~10 weeks; match the 4-week ORG
-            # view). First WE column = first populated col from C.
-            _fv = next((c for c in range(3, len(g[lbh - 1]) + 1)
-                        if _cell(g, lbh, c)), 3)
-            right = min(_fv + _LB_WEEKS - 1, _last_col(g, lbh, lbh))
+            right = min(_last_col(g, lbh, lbh), 12)       # header's WE cols, ≤10 wks
             out.append((f"cap{title}_leaderboard", f"A{lbh}:{_colletter(right)}{tot}"))
         anchor = tot or lbh or summ_end or ps
         dh = find(lambda x: "running week totals" in _rowtext(g, x), anchor + 1, anchor + 12)
@@ -212,7 +207,19 @@ def _captainship_ranges(g) -> List[Tuple[str, str]]:
             dtot = find(lambda x: _cell(g, x, 1).lower() in ("totals", "total"),
                         dh + 2, dh + 40)
             if dtot:
-                out.append((f"cap{title}_daily", f"A{dh}:L{dtot}"))
+                # Include the WE-history stack below Totals, but ONLY the last 4
+                # weeks (Megan 2026-07-08: "like this but only with 4 weeks").
+                # Stack rows sit right under Totals, labeled "WE m.d".
+                we_end, n = dtot, 0
+                for rr in range(dtot + 1, min(dtot + 30, len(g) + 1)):
+                    lab = (_cell(g, rr, 1) + " " + _cell(g, rr, 2)).strip().lower()
+                    if lab.startswith("we "):
+                        we_end, n = rr, n + 1
+                        if n >= _LB_WEEKS:
+                            break
+                    elif lab:
+                        break                      # non-WE row → stack ended
+                out.append((f"cap{title}_daily", f"A{dh}:L{we_end}"))
     return out
 
 
