@@ -156,7 +156,18 @@ def main() -> int:
                          "the PDF is DM'd to Carlos + Maud on Slack, not saved)")
     ap.add_argument("--no-roster", action="store_true",
                     help="don't auto add/hide rows for roster changes (just flag them)")
+    ap.add_argument("--check-slack", action="store_true",
+                    help="verify the Lucy Slack token on THIS machine (auth_test "
+                         "only — no message, no fill, no PDF) and exit")
     args = ap.parse_args()
+
+    if args.check_slack:
+        from automations.shared import slack_metrics_post as smp
+        who = smp._bot_client().auth_test()
+        print(f"✅ Lucy Slack token OK here — authed as {who.get('user')} "
+              f"({who.get('user_id')}) in team {who.get('team')}. "
+              f"The Tuesday PDF DM to Carlos + Maud will send.", flush=True)
+        return 0
 
     rep = _run(args)
     if args.dry_run:
