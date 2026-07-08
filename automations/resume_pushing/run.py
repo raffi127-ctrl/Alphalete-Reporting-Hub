@@ -155,51 +155,74 @@ def extract_resumes(page, dry_run: bool) -> int:
 # --------------------------------------------------------------------------- #
 # Send to AI
 # --------------------------------------------------------------------------- #
+def _dispatch_mouse(page, selector: str) -> None:
+    """Fire a REAL mousedown->mouseup->click sequence on an element in the page's
+    MAIN world. ExtJS ignores a synthetic .click() (only a click event, untrusted),
+    so this mirrors the mouse-event trick Carlos's original used for the office
+    dropdown. Runs via add_script_tag because patchright's evaluate is isolated."""
+    page.add_script_tag(content=(
+        "(function(){var el=document.querySelector(" + repr(selector) + ");"
+        "if(el){['mousedown','mouseup','click'].forEach(function(t){"
+        "el.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window}));});}})();"))
+
+
+def _select_all(page) -> int:
+    """Select every grid row. Try patchright's real click on the header checker
+    first; if nothing selects, fall back to dispatched mouse events. Returns the
+    count of selected rows."""
+    if page.locator(".x-grid3-hd-checker").count() == 0:
+        _log("[send] select-all checker (.x-grid3-hd-checker) not found")
+        return 0
+    try:
+        page.locator(".x-grid3-hd-checker").first.click(timeout=8000)
+        page.wait_for_timeout(800)
+    except Exception as e:
+        _log(f"[send] checker click failed: {e}")
+    sel = page.locator(".x-grid3-row-selected").count()
+    if sel == 0:
+        _dispatch_mouse(page, ".x-grid3-hd-checker")
+        page.wait_for_timeout(800)
+        sel = page.locator(".x-grid3-row-selected").count()
+    return sel
+
+
 def send_all_to_ai(page, dry_run: bool, limit: int = 0) -> int:
-    """ExtJS grid: select rows, click the "Send to AI" toolbar button, confirm.
-    The button id is dynamic (ext-gen*), so match it by visible text. `limit`>0
-    selects only the first N rows — the safe single-applicant live test."""
-    n = _grid_row_count(page)
-    if n == 0:
+    """ExtJS grid: select rows, click the "Send to AI" button (#saveButtton2 —
+    a stable id; the inner ext-gen* cell does NOT fire the handler), accept the
+    confirm. Count is honest — how many rows actually disappear from the grid."""
+    before = _grid_row_count(page)
+    if before == 0:
         _log("[send] grid is empty — nothing to send")
         return 0
     if dry_run:
         who = f"the first {limit}" if limit else "all"
-        _log(f"[send] DRY-RUN — {n} rows; would select {who} + click 'Send to AI', "
-             "no click made")
+        _log(f"[send] DRY-RUN — {before} rows; would select {who} + click "
+             "'Send to AI' (#saveButtton2), no click made")
         return 0
 
-    # Select rows: first `limit` (safe test) or all via the header checker.
+    # Select rows: first `limit` (safe test) or all.
     if limit and limit > 0:
         rows = page.locator(".x-grid3-row")
-        picked = 0
         for i in range(min(limit, rows.count())):
             try:
-                rows.nth(i).locator(
-                    ".x-grid3-row-checker, .x-grid3-td-checker, .x-grid3-check-col, td"
-                ).first.click(timeout=5000)
-                picked += 1
+                rows.nth(i).locator(".x-grid3-td-checker").first.click(timeout=5000)
             except Exception as e:
-                _log(f"[send] could not check row {i}: {e}")
-        _log(f"[send] selected {picked} of {n} row(s) (limit={limit})")
-        if picked == 0:
-            _log("[send] no rows selected — aborting send")
-            return 0
+                _log(f"[send] row {i} check failed: {e}")
+        sel = page.locator(".x-grid3-row-selected").count()
+        _log(f"[send] limit={limit}: {sel} of {before} rows selected")
     else:
-        checker = page.locator(".x-grid3-hd-checker")
-        if checker.count() == 0:
-            _log("[send] select-all checker (.x-grid3-hd-checker) not found — aborting")
-            return 0
-        checker.first.click(timeout=8000)
-        _log(f"[send] selected all {n} rows")
-    page.wait_for_timeout(1000)
-
-    send = page.locator("xpath=//*[normalize-space(text())='Send to AI']")
-    if send.count() == 0:
-        _log("[send] 'Send to AI' control not found — aborting")
+        sel = _select_all(page)
+        _log(f"[send] selected {sel} of {before} rows")
+    if sel == 0:
+        _log("[send] no rows selected — aborting (nothing sent)")
         return 0
-    send.first.click(timeout=8000)
-    _log("[send] clicked 'Send to AI'")
+
+    btn = page.locator("#saveButtton2")
+    if btn.count() == 0:
+        _log("[send] Send-to-AI button (#saveButtton2) not found — aborting")
+        return 0
+    btn.first.click(timeout=8000)
+    _log("[send] clicked 'Send to AI' (#saveButtton2)")
     page.wait_for_timeout(2500)
 
     # Capture + accept the ExtJS confirm dialog (log its text for the record).
@@ -209,12 +232,11 @@ def send_all_to_ai(page, dry_run: bool, limit: int = 0) -> int:
     except Exception:
         pass
     _click_if_present(page, ["Yes", "OK", "Continue"])
-    page.wait_for_timeout(4000)
+    page.wait_for_timeout(5000)
 
-    body = page.locator("body").inner_text()
-    m = re.search(r"Sent to Call List[^0-9]*([0-9,]+)", body, re.I)
-    sent = int(m.group(1).replace(",", "")) if m else (limit or n)
-    _log(f"[send] reported sent to AI call list: {sent}")
+    after = _grid_row_count(page)
+    sent = max(0, before - after)
+    _log(f"[send] grid rows {before} -> {after} — actually sent ~{sent} to AI call list")
     _click_if_present(page, ["OK", "Close"])
     return sent
 
