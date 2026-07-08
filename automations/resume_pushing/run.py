@@ -215,11 +215,24 @@ def _click_if_present(page, labels) -> bool:
 
 
 # --------------------------------------------------------------------------- #
-# Diagnostic — dump the batch page's actionable DOM (read-only, no clicks) so
-# we can rebuild selectors against the CURRENT AppStream UI. Runs across every
-# frame in case the batch table is inside an iframe.
+# Diagnostic — dump the batch page's actionable DOM (read-only) so we can
+# rebuild selectors against the CURRENT AppStream UI. Writes to a DEDICATED
+# file (resume-debug.log) so the read isn't buried under the every-10-min
+# scheduled runs in the shared daily log. Runs across every frame (iframe-safe).
 # --------------------------------------------------------------------------- #
-def _debug_dump(page) -> None:
+DEBUG_FILE = "output/logs/resume-debug.log"
+
+
+def _dbg(msg: str) -> None:
+    print(msg, flush=True)
+    try:
+        with open(DEBUG_FILE, "a") as f:
+            f.write(msg + "\n")
+    except Exception:
+        pass
+
+
+def _debug_dump(page, label: str) -> None:
     js = r"""() => {
       const clip = s => (s || '').replace(/\s+/g,' ').trim().slice(0,70);
       const txt = el => clip(el.innerText || el.value || el.title ||
@@ -227,8 +240,7 @@ def _debug_dump(page) -> None:
       const KEY = /extract|send|call list|to ai|start|process|resume|continue|\byes\b/i;
       const ctrls = [...document.querySelectorAll(
         "button, a, input[type=button], input[type=submit], [role=button]")]
-        .map(el => ({tag: el.tagName, id: el.id, name: el.name || '',
-                     cls: (el.className || '').toString().slice(0,50), t: txt(el)}))
+        .map(el => ({tag: el.tagName, id: el.id, cls: (el.className||'').toString().slice(0,40), t: txt(el)}))
         .filter(b => KEY.test(b.t) || KEY.test(b.id) || KEY.test(b.cls));
       const tables = [...document.querySelectorAll("table")].map(t => ({
         id: t.id, cls: (t.className || '').toString().slice(0,40),
@@ -236,28 +248,25 @@ def _debug_dump(page) -> None:
         headCb: !!t.querySelector("thead input[type=checkbox]"),
         headers: [...t.querySelectorAll("thead th")].map(th => clip(th.innerText)).slice(0,10)
       }));
-      return {url: location.href.slice(0,80),
+      return {url: location.href.slice(0,90),
               hasReady: /Ready For Extraction/i.test(document.body.innerText),
               checkboxes: document.querySelectorAll("input[type=checkbox]").length,
               tables, ctrls};
     }"""
-    _log("[debug] ===== BATCH PAGE DOM DUMP =====")
-    for fr in page.frames:
+    _dbg(f"[dbg:{label}] ===== DUMP @ {label} =====")
+    for i, fr in enumerate(page.frames):
         try:
             info = fr.evaluate(js)
         except Exception:
             continue
         if not info.get("tables") and not info.get("ctrls"):
             continue
-        _log(f"[debug] FRAME {info['url']!r} hasReadyText={info['hasReady']} "
-             f"checkboxes={info['checkboxes']}")
+        _dbg(f"[dbg:{label}] FRAME{i} {info['url']} ready={info['hasReady']} cbs={info['checkboxes']}")
         for t in info["tables"]:
-            _log(f"[debug]   TABLE id={t['id']!r} rows={t['rows']} "
-                 f"headCb={t['headCb']} cls={t['cls']!r} headers={t['headers']}")
+            _dbg(f"[dbg:{label}] TBL id={t['id']!r} rows={t['rows']} headCb={t['headCb']} hdr={t['headers']}")
         for b in info["ctrls"]:
-            _log(f"[debug]   CTRL <{b['tag']}> id={b['id']!r} name={b['name']!r} "
-                 f"text={b['t']!r} cls={b['cls']!r}")
-    _log("[debug] ===== END DUMP =====")
+            _dbg(f"[dbg:{label}] CTRL <{b['tag']}> id={b['id']!r} txt={b['t']!r} cls={b['cls']!r}")
+    _dbg(f"[dbg:{label}] ===== END {label} =====")
 
 
 # --------------------------------------------------------------------------- #
@@ -292,7 +301,27 @@ def main() -> int:
             return 1
 
         if args.debug:
-            _debug_dump(page)
+            try:
+                open(DEBUG_FILE, "w").close()   # start a clean dedicated dump file
+            except Exception:
+                pass
+            _debug_dump(page, "chooser")
+            # The batch nav lands on a chooser ("Process in Batch" vs "Process
+            # Using Combo Screen"); the real 50-row table is behind that link.
+            # Clicking it is navigation only — no extract, no send.
+            try:
+                lnk = page.locator(
+                    "xpath=//a[normalize-space()='Process in Batch'] | "
+                    "//button[normalize-space()='Process in Batch']").first
+                if lnk.count() > 0:
+                    lnk.click(timeout=8000)
+                    page.wait_for_timeout(5000)
+                    _dbg("[dbg] clicked 'Process in Batch' → dumping table page")
+                else:
+                    _dbg("[dbg] no 'Process in Batch' link to click")
+            except Exception as e:
+                _dbg(f"[dbg] click 'Process in Batch' failed: {e}")
+            _debug_dump(page, "table")
             return 0
 
         extracted = extract_resumes(page, args.dry_run)
