@@ -1653,7 +1653,7 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "weekly",
             "weekdays": [1],  # Tuesday
-            "time": "9:00 AM",
+            "time": "10:00 AM",
             "estimated_minutes": 5,
         },
         "checklist": [],
