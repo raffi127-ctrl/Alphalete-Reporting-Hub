@@ -455,26 +455,28 @@ def main() -> int:
             # DOM attribute, then read that attribute back from the isolated world.
             try:
                 page.add_script_tag(content=r"""(function(){
-                  var out={ext: typeof Ext};
-                  try{ if(typeof Ext!=='undefined'){
-                    out.ver = Ext.version||'';
-                    var byId=null; try{byId=Ext.getCmp('saveButtton2');}catch(e){}
-                    out.getCmp = byId?('id='+byId.id+' h='+(typeof byId.handler)):'undef';
-                    var m=[];
-                    if(Ext.ComponentMgr){Ext.ComponentMgr.all.each(function(c){try{
-                      var isBtn = c.el&&c.el.dom&&c.el.dom.id==='saveButtton2';
-                      var isTxt = c.text&&(''+c.text).replace(/\s+/g,' ').trim()==='Send to AI';
-                      if(isBtn||isTxt){m.push((isBtn?'el':'txt')+':'+c.id+':h='+(typeof c.handler)+':'+(c.handler?(''+c.handler).replace(/\s+/g,' ').slice(0,140):'none'));}
-                    }catch(e){} return true;});}
-                    out.matches=m;
-                  }}catch(e){out.err=''+e;}
+                  var out={};
+                  try{
+                    var c=Ext.getCmp('saveButtton2');
+                    out.found=!!c;
+                    if(c){
+                      out.handler=typeof c.handler;
+                      // ExtJS 2.2.1 click listeners
+                      var L=[];
+                      try{ if(c.events&&c.events.click&&c.events.click.listeners){
+                        c.events.click.listeners.forEach(function(l){L.push((''+(l.fn||l)).replace(/\s+/g,' ').slice(0,200));});
+                      }}catch(e){out.lerr=''+e;}
+                      out.clickListeners=L;
+                      out.hasClick = c.hasListener?c.hasListener('click'):'?';
+                    }
+                  }catch(e){out.err=''+e;}
                   document.body.setAttribute('data-fnprobe', JSON.stringify(out));
                 })();""")
                 page.wait_for_timeout(500)
                 data = page.frames[0].evaluate("() => document.body.getAttribute('data-fnprobe')")
-                _dbg(f"[FN2] {str(data)[:500]}")
+                _dbg(f"[FN3] {str(data)[:600]}")
             except Exception as e:
-                _dbg(f"[FN2] failed: {e}")
+                _dbg(f"[FN3] failed: {e}")
             return 0
 
         rows = _grid_row_count(page)
