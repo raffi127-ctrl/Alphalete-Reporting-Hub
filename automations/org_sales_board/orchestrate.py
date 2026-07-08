@@ -122,10 +122,33 @@ def _make_section_adapter(spec_key: str):
     return _adapter
 
 
+def _adapter_frontier(ctx: AdapterContext) -> PullDict:
+    """Frontier daily production (Frontier section, 1 ICD: Abel Draper).
+
+    Automated 2026-07-07 (was hand-keyed): pulls the emailed Credico 'Daily
+    Sales - Frontier - Events by Store' PDF via frontier_pull — NOT Tableau, so
+    ctx.page is unused. Day-behind like JE (Sunday posts Monday); to_board_pull
+    returns the CURRENT Frontier week only, so a not-yet-posted week never writes
+    a stale week's numbers into this week's Sun-Sat columns."""
+    from automations.org_sales_board import frontier_pull
+    pdf = ctx.from_csv or frontier_pull.fetch(ctx.out_dir)
+    if not pdf:
+        ctx.logfn("  ⚠ Frontier by-store PDF not in the inbox yet — skipping.")
+        return {}
+    pull = frontier_pull.to_board_pull(frontier_pull.parse(pdf, today=ctx.today))
+    if not pull:
+        ctx.logfn("  ⚠ Frontier current week not posted yet (day behind) — "
+                  "skipping so no stale week is written.")
+    else:
+        ctx.logfn("  [frontier] Abel Draper daily filled from the emailed PDF.")
+    return pull
+
+
 # shared_key -> adapter. Unlisted keys are not yet implemented.
 ADAPTERS: Dict[str, Callable[[AdapterContext], PullDict]] = {
     "sara_retail": _adapter_sara_retail,
     "je": _adapter_je_retail,
+    "frontier": _adapter_frontier,
     "fiber": _make_section_adapter("fiber"),
     "nds": _make_section_adapter("nds"),
     "b2b": _make_section_adapter("b2b"),

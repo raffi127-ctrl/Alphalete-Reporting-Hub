@@ -126,9 +126,16 @@ DAILY_SOURCES: List[Source] = [
               "flags (never writes last week's numbers into this week)."),
     Source(
         label="Frontier", metric="sales",
-        method=MANUAL, date_mode=MANUAL_DATE, column_verified=True,
-        notes="Emailed Verizon PDF, 1 ICD (Abel Draper), Sun-Sat. Hand-keyed "
-              "for now. Rollover must still freeze its weekly total."),
+        method=SCRAPE, date_mode=RELATIVE, shared_key="frontier",
+        column_verified=True,
+        notes="AUTOMATED 2026-07-07 (was hand-keyed): pulled from the emailed "
+              "Credico 'Daily Sales - Frontier - Events by Store' PDF via "
+              "frontier_pull (fetch->parse->to_board_pull, adapter "
+              "_adapter_frontier) — NOT Tableau. 1 ICD (Abel Draper), Sun-Sat "
+              "section. Validated the PDF summed dailies map 1:1 to the board's "
+              "Sun-Sat columns + matched Abel's VA row exactly. Day-behind like "
+              "JE (Sunday posts Monday); current-week-only so no stale week is "
+              "written. Rollover must still freeze its weekly total."),
 ]
 
 
