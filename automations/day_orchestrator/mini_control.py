@@ -694,6 +694,41 @@ def print_help() -> None:
     print()
 
 
+# Reserved control flags — they steer mini_control ITSELF (which tab, who queued,
+# sandbox), never a report's own args. --enqueue uses argparse.REMAINDER so report
+# flags (--dry-run/--only/--week) pass through VERBATIM; the downside of REMAINDER
+# is it also swallows these control flags when they TRAIL the action — e.g.
+# `lucy rerun X --machine "Lucy 2"` (the lucy fn appends the user's words after
+# --enqueue), which would silently queue to Lucy 1 instead of Lucy 2. So hoist any
+# control flags to the FRONT before parsing, wherever the user put them, while
+# everything else stays in the REMAINDER for the report.
+_VALUE_CONTROL_FLAGS = ("--machine", "--by")   # take a value
+_BOOL_CONTROL_FLAGS = ("--sandbox",)           # bare toggle
+
+
+def _hoist_control_flags(argv: List[str]) -> List[str]:
+    hoisted: List[str] = []
+    rest: List[str] = []
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        if tok in _VALUE_CONTROL_FLAGS and i + 1 < len(argv):
+            hoisted += [tok, argv[i + 1]]
+            i += 2
+            continue
+        if any(tok.startswith(f + "=") for f in _VALUE_CONTROL_FLAGS):
+            hoisted.append(tok)
+            i += 1
+            continue
+        if tok in _BOOL_CONTROL_FLAGS:
+            hoisted.append(tok)
+            i += 1
+            continue
+        rest.append(tok)
+        i += 1
+    return hoisted + rest
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Mini remote-control command queue")
     ap.add_argument("--loop", action="store_true", help="poll forever (run on the mini)")
@@ -703,8 +738,9 @@ def main(argv=None) -> int:
                          "daily_focus. REMAINDER: everything after --enqueue is "
                          "captured VERBATIM, so report flags (--dry-run, --only, "
                          "--week) pass through to the report instead of being "
-                         "eaten by mini_control's own --dry-run/--sandbox. Must "
-                         "come after --by/--machine (the lucy fn already does).")
+                         "eaten by mini_control's own --dry-run/--sandbox. Control "
+                         "flags (--machine/--by/--sandbox) are hoisted out first, "
+                         "so they still route correctly even after the action.")
     ap.add_argument("--by", default=os.environ.get("MINI_BY", "Eve"),
                     help="who queued this — the audit-log 'By' column (or set "
                          "MINI_BY in the shell). Default: Eve.")
@@ -720,7 +756,8 @@ def main(argv=None) -> int:
                     help="target machine profile, e.g. 'Lucy 2'. Enqueue side: "
                          "which runner's tab to queue to (default 'Lucy 1'). Loop "
                          "side: normally omitted — reads the .machine-profile marker.")
-    a = ap.parse_args(argv)
+    raw = list(sys.argv[1:] if argv is None else argv)
+    a = ap.parse_args(_hoist_control_flags(raw))
 
     if a.actions:
         print_help()
