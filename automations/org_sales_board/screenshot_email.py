@@ -215,10 +215,21 @@ def _captainship_ranges(g) -> List[Tuple[str, str]]:
                         dh + 2, dh + 40)
             if dtot:
                 out.append((f"cap{title}_daily", f"A{dh}:L{dtot}"))   # reps → Totals
-                # (The WE-history week-stack below Totals lives in hidden rows on
-                # the copy tab, so the PDF export can't render it without unhiding
-                # rows every run. The per-rep leaderboard above already carries the
-                # past-4-weeks view, so we don't emit a separate stack image.)
+                # WE-history week-stack below Totals — last _LB_WEEKS weeks. These
+                # rows are HIDDEN on the copy tab, so capture() unhides exactly this
+                # span before the PDF export (then restores it); the export skips
+                # hidden rows, so without that the stack renders as one week only.
+                we_start, we_end, n = dtot + 1, dtot, 0
+                for rr in range(dtot + 1, min(dtot + 30, len(g) + 1)):
+                    lab = (_cell(g, rr, 1) + " " + _cell(g, rr, 2)).strip().lower()
+                    if lab.startswith("we "):
+                        we_end, n = rr, n + 1
+                        if n >= _LB_WEEKS:
+                            break
+                    elif lab:
+                        break                      # non-WE row → stack ended
+                if we_end >= we_start:
+                    out.append((f"cap{title}_wehistory", f"A{we_start}:L{we_end}"))
     return out
 
 
@@ -337,6 +348,29 @@ def _export_png(gid: int, rng: str, out_path: Path, token: str) -> Path:
     return out_path
 
 
+def _stack_row_spans(ranges) -> List[Tuple[int, int]]:
+    """1-based (first,last) row spans of the captainship WE-history stack images."""
+    import re
+    spans = []
+    for name, rng in ranges:
+        if name.endswith("_wehistory"):
+            m = re.match(r"[A-Z]+(\d+):[A-Z]+(\d+)", rng)
+            if m:
+                spans.append((int(m.group(1)), int(m.group(2))))
+    return spans
+
+
+def _set_rows_hidden(sh, gid: int, spans: List[Tuple[int, int]], hidden: bool) -> None:
+    reqs = [{"updateDimensionProperties": {
+                "range": {"sheetId": gid, "dimension": "ROWS",
+                          "startIndex": a - 1, "endIndex": b},
+                "properties": {"hiddenByUser": hidden},
+                "fields": "hiddenByUser"}}
+            for (a, b) in spans if b >= a]
+    if reqs:
+        _retry(lambda: sh.batch_update({"requests": reqs}))
+
+
 def capture(out_dir: Path) -> List[Tuple[str, Path]]:
     """Render each section of the COPY tab → PNGs via PDF export. [(name, path)]."""
     sh = open_by_key(SHEET_ID)
@@ -350,14 +384,28 @@ def capture(out_dir: Path) -> List[Tuple[str, Path]]:
     token = _access_token()
     print(f"[screenshot_email] rendering {len(ranges)} section(s) from copy tab "
           f"(gid={gid})", flush=True)
+    # The captainship WE-history stacks live in hidden rows; the PDF export skips
+    # hidden rows, so reveal exactly the 4-week spans we're about to shoot, then
+    # restore the copy tab's original state (only the first/most-recent week
+    # visible) in a finally so a render crash can't leave the tab expanded.
+    spans = _stack_row_spans(ranges)
+    if spans:
+        _set_rows_hidden(sh, gid, spans, hidden=False)
+        print(f"[screenshot_email] revealed {len(spans)} WE-history stack(s) "
+              "for the render", flush=True)
     import time
     out = []
-    for i, (name, rng) in enumerate(ranges):
-        if i:
-            time.sleep(2)          # gentle pacing so the export endpoint doesn't 429
-        p = _export_png(gid, rng, out_dir / f"{name}.png", token)
-        print(f"    {name:26} {rng}  -> {p.name}", flush=True)
-        out.append((name, p))
+    try:
+        for i, (name, rng) in enumerate(ranges):
+            if i:
+                time.sleep(2)      # gentle pacing so the export endpoint doesn't 429
+            p = _export_png(gid, rng, out_dir / f"{name}.png", token)
+            print(f"    {name:26} {rng}  -> {p.name}", flush=True)
+            out.append((name, p))
+    finally:
+        rehide = [(a + 1, b) for (a, b) in spans if b > a]   # keep 1st week visible
+        if rehide:
+            _set_rows_hidden(sh, gid, rehide, hidden=True)
     return out
 
 
