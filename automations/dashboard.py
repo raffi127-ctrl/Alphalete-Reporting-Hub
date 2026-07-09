@@ -1490,12 +1490,14 @@ AUTOMATED_REPORTS = [
         "emoji": "🧮",
         "color": "#FF6B6B",
         "category": "📊 Metrics",
-        "description": "Adds this week's column to the 'Captainship Head count' tab of the All In One - CARLOS sheet — each active owner's Rep Count from Tableau, retotaled and sorted high→low.",
+        "description": "Adds this week's column to the 'Captainship Head count' tab of the All In One - CARLOS sheet — each active owner's Rep Count from Tableau, retotaled and sorted high→low — then DMs a 4-week screenshot to Carlos + Maud on Slack.",
         "breakdown": (
             "WHAT IT DOES\n"
             "**•** Inserts a fresh leftmost week column.\n"
             "**•** Fills each **active** owner's **Rep Count**, pulled live "
-            "from Tableau.\n\n"
+            "from Tableau.\n"
+            "**•** DMs a screenshot of the past 4 weeks to **Carlos + Maud** "
+            "on Slack (as Lucy).\n\n"
             "WHEN IT RUNS\n"
             "**Mondays.** Each run fills the just-ended week. Re-running the "
             "same week refreshes the numbers in place (no duplicate column).\n\n"
@@ -1527,7 +1529,7 @@ AUTOMATED_REPORTS = [
         # pre-flight clicks needed.
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Captainship Headcount done — this week's column filled, total recomputed, owners sorted. Review any ⚠ roster flags in the log.",
+            "message_success": "✅ Captainship Headcount done — this week's column filled, total recomputed, owners sorted, and the 4-week screenshot DM'd to Carlos + Maud on Slack. Review any ⚠ roster flags in the log.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
         },
         "actions": [
@@ -1535,7 +1537,7 @@ AUTOMATED_REPORTS = [
                 "label": "Run This Week",
                 "icon": "▶",
                 "primary": True,
-                "help": "Fills the most recent WE Sunday column from Tableau (idempotent — refreshes if it already exists).",
+                "help": "Fills the most recent WE Sunday column from Tableau (idempotent — refreshes if it already exists), then DMs a 4-week screenshot to Carlos + Maud on Slack.",
                 "module": "automations.carlos_captainship_headcount.run",
                 "args_fn": lambda: [],
             },
