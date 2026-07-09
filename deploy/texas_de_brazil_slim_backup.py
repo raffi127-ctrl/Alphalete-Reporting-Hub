@@ -74,11 +74,21 @@ ALIAS        = {"Andrew Sanborn Roadtrip": "Andrew Sanborn", "Randy Amoo": "Rand
                 "Drew": "Andrew Sanborn", "D": "Deavion Allen", "Zoey": "Zoria Johnson",
                 "Al": "Algemar Kennel"}
 
-PROMOTIONS_BY_MONTH = {          # keyed "YYYY-MM"; report uses only the current month's,
-}                                # so last month's manual leaders auto-clear at rollover
+PROMOTIONS_BY_MONTH = {
+    "2026-07": [
+        ("Willie Henderson", "Jessie Gomez"),
+        ("Willie Henderson", "Jordan Ruiz"),
+        ("Safiya Mahmoud", "Abel Mireles"),
+        ("Tadana Manyangadze", "Giselle Loredo"),
+    ],
+}
 SOLO_LEADERS_BY_MONTH = {
 }
 CAR_RIDE_LEADERS_BY_MONTH = {
+    "2026-07": [
+        "Jordan Ruiz",
+        "Kaleb Muvunyi",
+    ],
 }
 
 ADJUSTMENTS = {
