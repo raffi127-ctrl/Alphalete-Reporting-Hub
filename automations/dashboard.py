@@ -4536,7 +4536,7 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                     if _r.get("self_scheduled"):
                         _sched_t = (_r.get("schedule") or {}).get("time")
                         if _sched_t:
-                            _label += f" · {_sched_t}"
+                            _label += f" · {_sched_t} CST"
                     _help = {
                         "ok": "Ran OK — open to view",
                         "fail": "Failed / incomplete — open to see why",
