@@ -1,5 +1,5 @@
 #!/bin/bash
-# Tuesday 9:50am CST — Raf Captainship Bonus, on Lucy 1 (the mini)
+# Tuesday 10:00am CST — Raf Captainship Bonus, on Lucy 1 (the mini)
 # via launchd (com.alphalete.raf-captainship-bonus-tue).
 #
 # Inserts a fresh leftmost week column on the "Captainship Bonuses" tab of the
@@ -25,7 +25,7 @@
 # Manual test without writing:  bash deploy/raf_captainship_bonus_tue.sh --dry-run
 # (--dry-run passes through to the module — pulls + shows the plan, writes nothing.)
 #
-# CADENCE: the plist fires once, Tuesday 9:50am, machine LOCAL time (the mini is
+# CADENCE: the plist fires once, Tuesday 10:00am, machine LOCAL time (the mini is
 # Central). TIME KNOB: edit StartCalendarInterval in the plist, not this wrapper.
 set -u
 cd "$(dirname "$0")/.." || exit 1

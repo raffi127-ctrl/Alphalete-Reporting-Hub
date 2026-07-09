@@ -23,16 +23,16 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Tuesday 9:50am, machine LOCAL time (the mini is Central). launchd
+    <!-- Tuesday 10:00am, machine LOCAL time (the mini is Central). launchd
          Weekday: 0/7=Sun, 1=Mon, 2=Tue … 6=Sat. -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Weekday</key>
         <integer>2</integer>
         <key>Hour</key>
-        <integer>9</integer>
+        <integer>10</integer>
         <key>Minute</key>
-        <integer>50</integer>
+        <integer>0</integer>
     </dict>
 
     <key>StandardOutPath</key>
