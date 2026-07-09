@@ -1,0 +1,8 @@
+{
+  "_note": "Synced Texas de Brazil dinner schedule. The Hub card writes the dinner date/time into ~/recruiting-report/output/texas_de_brazil_manual.json on whatever machine runs the Hub, but the report runs on the mini (Lucy 1) and reads its OWN local copy — so a date typed on the laptop never reached the mini's 8AM run (flyer showed 'TO BE DETERMINED'). This git-tracked seed carries the schedule across machines: tdb_sync_inputs.py merges it into the run machine's local JSON before each run. Keys are the COMPETITION month 'YYYY-MM' (load_dinner reads the current period). Leaders are NOT stored here — those live in the deployed cell's *_BY_MONTH dicts / new_leaders_text and are left untouched.",
+  "dinner_schedule": {
+    "2026-07": {"day": "Sat Aug 8th", "time": "7:00PM"},
+    "2026-08": {"day": "", "time": ""},
+    "2026-09": {"day": "", "time": ""}
+  }
+}

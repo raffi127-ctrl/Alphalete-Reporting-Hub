@@ -43,6 +43,12 @@ echo "[$(date)] Texas de Brazil daily run starting (extra args: ${*:-none})" > "
 # cache, so a Sheet edit propagates to the scheduled run without a code deploy.
 "$VENV_PY" -u -c "from automations import dashboard as D; D._read_shared_library_rows()" >> "$LOG_FILE" 2>&1 || true
 
+# Bridge the Hub-card dinner date across machines: merge the git-synced seed
+# (deploy/texas_de_brazil_manual_inputs.json) into this machine's local manual-
+# inputs JSON so the flyer shows the real date instead of "TO BE DETERMINED".
+# Only touches dinner_schedule — leaders are left untouched.
+"$VENV_PY" -u -m automations.day_orchestrator.tdb_sync_inputs >> "$LOG_FILE" 2>&1 || true
+
 # LIVE by default (--send). Any extra arg (e.g. --dry-run) is appended and wins.
 if [ "$#" -eq 0 ]; then set -- --send; fi
 "$VENV_PY" -u -m "$MODULE" "$@" >> "$LOG_FILE" 2>&1

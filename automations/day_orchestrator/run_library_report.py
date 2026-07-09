@@ -39,6 +39,18 @@ def main(argv: list[str] | None = None) -> None:
     except Exception as e:  # noqa: BLE001 — never block the run on a refresh hiccup
         print(f"(run_library_report: materialize skipped — {type(e).__name__}: {e})")
 
+    # 1b) Texas de Brazil: the dinner date is typed on the Hub card (any machine)
+    #     but the report reads a MACHINE-LOCAL manual-inputs JSON — so a date set
+    #     on the laptop never reached the mini's run (flyer showed "TBD"). Merge
+    #     the git-synced seed into this machine's local JSON before running.
+    #     Best-effort; only touches dinner_schedule (never leaders).
+    if lib_id == "june_texas_de_brazil_monthly_competition":
+        try:
+            from automations.day_orchestrator import tdb_sync_inputs
+            tdb_sync_inputs.main()
+        except Exception as e:  # noqa: BLE001 — never block the run on a sync hiccup
+            print(f"(run_library_report: tdb dinner sync skipped — {type(e).__name__}: {e})")
+
     # 2) Run the (now-current) module as __main__, passing the remaining args
     #    through so its own argparse sees them (e.g. --send / --dry-run).
     module = f"automations.uploaded._shared.{lib_id}"
