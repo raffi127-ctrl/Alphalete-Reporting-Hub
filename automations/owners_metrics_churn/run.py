@@ -102,6 +102,9 @@ REPORTS = [
 # process). Reps who moved captainships are backfilled from here so their old
 # captain's tab keeps filling instead of silently going dark.
 _ALLTEAMS_PARSE_CACHE: dict = {}
+# The all-teams backfill crosstab is as flake-prone as any Tableau download; retry
+# it so a transient flake doesn't falsely flag a moved rep as gone.
+BACKFILL_PULL_TRIES = 3
 
 
 def _program_of(parse_fn) -> str:
@@ -125,15 +128,25 @@ def _backfill_moved_owners(program: str, dark_names: list, aliases: dict) -> dic
     url, worksheet, parse_fn = src
     if program not in _ALLTEAMS_PARSE_CACHE:
         out = Path(tempfile.gettempdir()) / f"owners_{program}_allteams.csv"
-        try:
-            print(f"  ↻ pulling {program} all-teams churn to backfill "
-                  f"moved rep(s): {', '.join(dark_names)}")
-            download_crosstab_patchright(url, worksheet, out, verbose=False)
-            parsed_all = _apply_aliases(parse_fn(out), aliases)
-        except Exception as e:  # noqa: BLE001 — backfill is best-effort
-            print(f"  (all-teams backfill pull failed: {type(e).__name__}: "
-                  f"{str(e).splitlines()[0][:80]})")
-            parsed_all = {"reps": {}}
+        # RETRY the backfill pull: this all-teams crosstab is a second Tableau
+        # download and just as flake-prone as the rest (needs 2-3 tries). A single
+        # flake here used to silently drop a MOVED rep — she'd stay went-dark and
+        # the run flagged INCOMPLETE even though her data was right there in the
+        # all-teams view (Max Powell, moved Luis→Alex's team, 2026-07-09). Retry so
+        # a transient flake no longer falsely flags a moved rep.
+        parsed_all = {"reps": {}}
+        for _try in range(1, BACKFILL_PULL_TRIES + 1):
+            try:
+                print(f"  ↻ pulling {program} all-teams churn (try {_try}/"
+                      f"{BACKFILL_PULL_TRIES}) to backfill moved rep(s): "
+                      f"{', '.join(dark_names)}")
+                download_crosstab_patchright(url, worksheet, out, verbose=False)
+                parsed_all = _apply_aliases(parse_fn(out), aliases)
+                if parsed_all.get("reps"):
+                    break   # got names — good pull, stop retrying
+            except Exception as e:  # noqa: BLE001 — backfill is best-effort
+                print(f"  (all-teams backfill pull try {_try} failed: "
+                      f"{type(e).__name__}: {str(e).splitlines()[0][:80]})")
         _ALLTEAMS_PARSE_CACHE[program] = parsed_all
     allreps = _ALLTEAMS_PARSE_CACHE[program].get("reps", {})
     low = {k.lower(): k for k in allreps}
