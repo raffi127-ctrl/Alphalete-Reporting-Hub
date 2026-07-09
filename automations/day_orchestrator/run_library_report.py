@@ -84,6 +84,19 @@ def main(argv: list[str] | None = None) -> None:
         except Exception as e:  # noqa: BLE001
             print(f"(run_library_report: tdb date readout skipped — {type(e).__name__}: {e})")
 
+    # 4) Mark the Hub card GREEN. runpy raises on error, so reaching here means the
+    #    module finished cleanly. Only a LIVE run counts (a --send without a forced
+    #    --dry-run) — a dry-run built the PDF but didn't deliver. publish_done no-ops
+    #    for any report not in _HUB_CARD, so this is safe for every library report.
+    live = ("--send" in rest) and ("--dry-run" not in rest)
+    if live:
+        try:
+            from automations.day_orchestrator import hub_publish
+            if hub_publish.publish_done(lib_id, lib_id.replace("_", " ").title()):
+                print(f"({lib_id}: ✓ marked ran on the Hub)")
+        except Exception as e:  # noqa: BLE001
+            print(f"(run_library_report: hub mark skipped — {type(e).__name__}: {e})")
+
 
 if __name__ == "__main__":
     main()

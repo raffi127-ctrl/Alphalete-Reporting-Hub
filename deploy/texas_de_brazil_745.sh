@@ -57,6 +57,13 @@ if [ "$#" -eq 0 ]; then set -- --send; fi
 ST=$?
 
 echo "[$(date)] Texas de Brazil run finished exit=$ST" >> "$LOG_FILE"
+
+# Mark the Hub card GREEN on a successful LIVE run (skip dry-runs). Mirrors what
+# run_library_report does for the `lucy rerun --send` path.
+if [ "$ST" -eq 0 ] && [[ " $* " != *" --dry-run "* ]]; then
+  "$VENV_PY" -c "from automations.day_orchestrator import hub_publish as H; H.publish_done('june_texas_de_brazil_monthly_competition','Texas De Brazil Monthly Competition')" >> "$LOG_FILE" 2>&1 || true
+fi
+
 if [ "$ST" -ne 0 ]; then
   osascript -e "display notification \"Texas de Brazil daily post failed (exit $ST) — check the log; Chrome/OAuth/Slack or the iMessage group may need attention\" with title \"Texas de Brazil\" sound name \"Sosumi\"" 2>/dev/null || true
 fi
