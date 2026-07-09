@@ -174,6 +174,68 @@ def _diagnose(rs, cfg, date):
 
 # ---------------- body builders ----------------
 
+# Timed com.alphalete.* jobs that are NOT "a report running later today": the 4am
+# batch itself, its 3am pre-batch AppStream warmup, and the schedule guard.
+_REMAINING_SKIP = {"day-orchestrator", "appstream-morning", "orchestrator-schedule-guard"}
+# Friendly names for the later-today jobs (fallback: the label, Title-Cased).
+_REMAINING_NAMES = {
+    "weather-6am": "Weather Alert",
+    "texas-de-brazil-745": "Texas de Brazil Competition",
+    "brand-audit-noon": "Brand Health Audit",
+    "social-scanner": "Alphalete Social Media Posting",
+    "board-catchup": "Org Sales Board — catch-up re-pull",
+    "retail-catchup": "Retail — catch-up re-pull",
+    "je-sunday-catchup": "JE — Sunday catch-up",
+    "leaders-call-mon": "Leader's Call",
+    "carlos-captainship-headcount-mon": "Carlos Captainship Headcount",
+    "carlos-captainship-bonus-tue": "Carlos Captainship Bonus",
+    "raf-captainship-bonus-tue": "Raf Captainship Bonus",
+}
+
+
+def _fmt_ampm(h: int, m: int) -> str:
+    return f"{h % 12 or 12}:{m:02d} {'AM' if h < 12 else 'PM'} CST"
+
+
+def _remaining_today(now):
+    """Every report that still runs LATER today on its OWN launchd job (not the 4am
+    batch) — derived from the ACTUAL installed timed jobs so the list is COMPLETE
+    and can't drift from a hand-maintained field (Megan 2026-07-09: it was only ever
+    listing the one report that happened to carry a runs_at). Returns [(name, time),
+    …] for jobs whose next fire is later today, soonest first. Empty off-mini (no
+    launchctl) — best-effort, never raises into the email build."""
+    try:
+        from automations.day_orchestrator import schedule_guard
+        jobs = schedule_guard._timed_jobs()   # (label, name, entries)
+    except Exception:  # noqa: BLE001
+        return []
+    iso = now.isoweekday()   # Mon=1 … Sun=7
+    hits = []
+    for _label, name, entries in jobs:
+        if name in _REMAINING_SKIP:
+            continue
+        best = None
+        for e in entries:
+            wd = e.get("Weekday")
+            # launchd Weekday: 0 or 7 = Sunday, 1=Mon … 6=Sat. Skip a weekly job
+            # whose day isn't today.
+            if wd is not None and wd != iso and not (wd in (0, 7) and iso == 7):
+                continue
+            try:
+                fire = now.replace(hour=int(e.get("Hour", 0)),
+                                   minute=int(e.get("Minute", 0)),
+                                   second=0, microsecond=0)
+            except Exception:  # noqa: BLE001
+                continue
+            if fire > now and (best is None or fire < best):
+                best = fire
+        if best:
+            pretty = _REMAINING_NAMES.get(name, name.replace("-", " ").title())
+            hits.append((best, pretty, _fmt_ampm(best.hour, best.minute)))
+    hits.sort(key=lambda x: x[0])
+    return [(p, t) for _dt, p, t in hits]
+
+
 def _build_body(cfg, ds, *, checkpoint: bool):
     """Concise summary: what NEEDS ATTENTION (+ the fix) first, then one line of
     what ran clean. No verbose done-list / 'not scheduled' noise (Megan 2026-06-24)."""
@@ -282,47 +344,41 @@ def _build_body(cfg, ds, *, checkpoint: bool):
                 html.append(f"<li><b>{_esc(rs.display_name or rs.report_id)}</b> — "
                             f"waiting on {_esc(wait)}</li>")
             html.append("</ul>")
-            text.append(f"  (reply with subject  STOP {still[0].report_id}  to drop one from the loop)")
-            html.append("<div style='font-size:13px;color:#777'>Reply with subject "
-                        "<code>STOP &lt;report_id&gt;</code> to drop one from the loop.</div>")
 
-    # 3) RAN CLEAN — compact one-liner, no per-report bullets.
+    # 3) RAN CLEAN — one bullet per report, with its clean-run note (if any) inline
+    # on the SAME line (Megan 2026-07-09: bulleted for readability + the detail on
+    # the bullet, not a comma-list followed by a redundant per-report block).
     done = ds.by_status(st.DONE)
     if done:
-        names = ", ".join(sorted(r.display_name or r.report_id for r in done))
-        text.append("")
-        text.append(f"✅ Ran clean ({len(done)}): {names}")
-        html.append(f"<p style='font-size:13px;color:#555'>✅ <b>Ran clean ({len(done)}):</b> "
-                    f"{_esc(names)}</p>")
-        # Per-report clean-run detail — shown ONLY when the report attached a
-        # note to its clean manifest (e.g. Financial records which workbooks it
-        # pulled + how many tabs they filled). Reports without a note add
-        # nothing, so the compact one-liner above stays compact for everything
-        # else.
         _GENERIC = {"", "manifest clean", "simulated"}
-        detailed = [r for r in done
-                    if r.last_reason and r.last_reason not in _GENERIC
-                    and not r.last_reason.startswith("ran; ")]
-        for r in sorted(detailed, key=lambda x: (x.display_name or x.report_id)):
+        text.append("")
+        text.append(f"✅ Ran clean ({len(done)}):")
+        html.append(f"<h3 style='color:#1e7e34'>✅ Ran clean ({len(done)})</h3>"
+                    "<ul style='font-size:14px;line-height:1.6'>")
+        for r in sorted(done, key=lambda x: (x.display_name or x.report_id)):
             nm = r.display_name or r.report_id
-            text.append(f"   📄 {nm}: {r.last_reason}")
-            html.append("<div style='font-size:12px;color:#777;margin-left:14px'>"
-                        f"📄 <b>{_esc(nm)}</b>: {_esc(r.last_reason)}</div>")
+            note = r.last_reason if (r.last_reason and r.last_reason not in _GENERIC
+                                     and not r.last_reason.startswith("ran; ")) else ""
+            if note:
+                text.append(f"  • {nm} — {note}")
+                html.append(f"<li><b>{_esc(nm)}</b> — {_esc(note)}</li>")
+            else:
+                text.append(f"  • {nm}")
+                html.append(f"<li><b>{_esc(nm)}</b></li>")
+        html.append("</ul>")
 
-    # 4) REMAINING — reports that run on their OWN job later today (e.g. the noon
-    # brand audit). They never gate this email; we just note they're still coming.
-    remaining = [(rid, r) for rid, r in (cfg.raw.get("reports", {}) or {}).items()
-                 if not r.get("on_scheduler", False) and r.get("runs_at")]
+    # 4) REMAINING — every report that still runs LATER today on its OWN launchd job
+    # (derived from the installed timed jobs so the list is COMPLETE, not just the
+    # one report that happened to carry a runs_at field — Megan 2026-07-09).
+    remaining = _remaining_today(dt.datetime.now())
     if remaining:
         text.append("")
         text.append(f"🕐 REMAINING ({len(remaining)}) — runs later today:")
         html.append("<h3 style='color:#8a6d3b'>🕐 Remaining — runs later today</h3>"
                     "<ul style='font-size:14px'>")
-        for rid, r in remaining:
-            name = r.get("display_name", rid)
-            when = r.get("runs_at", "")
-            text.append(f"  • {name} — scheduled to run at {when}")
-            html.append(f"<li><b>{_esc(name)}</b> — scheduled to run at {_esc(when)}</li>")
+        for name, when in remaining:
+            text.append(f"  • {name} — {when}")
+            html.append(f"<li><b>{_esc(name)}</b> — {_esc(when)}</li>")
         html.append("</ul>")
 
     html.append("</div>")
