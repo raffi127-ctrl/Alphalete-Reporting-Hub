@@ -12,6 +12,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 from typing import List, Optional
@@ -23,13 +24,27 @@ from .parse import norm_name, parse_financial_files
 # Worksheet titles that aren't ICD tabs — don't touch them even if they
 # happen to have a 'Total Funds Available' label (templates, summary tabs).
 _NON_ICD_TAB_TITLES = {
-    "1on1's", "ATT owners list", "B2B Template", "Copy of Country Sales Board ",
-    "Copy of Country Stats", "Country Metrics", "Country Metrics pilot",
-    "Country Sales Board", "Country Sales Board (backup copy)",
-    "Country Stats", "Focus Office - Sales", "Hub Activity",
-    "OLD-Daily Focus Report", "Rafs", "Recruiting", "Template 1",
-    "Template Fiber",
+    "1on1's", "1on1 Convos", "ATT owners list", "B2B Template",
+    "Copy of Country Sales Board ", "Copy of Country Stats", "Country Metrics",
+    "Country Metrics pilot", "Country Sales Board",
+    "Country Sales Board (backup copy)", "Country Stats", "Focus Office - Sales",
+    "Hub Activity", "Indeed/DBAs", "OLD-Daily Focus Report",
+    "ORG Daily Focus Report", "Org Recruiting", "Org Recruiting AI",
+    "Org Sales Board", "Owner Headcount", "Rafs", "Recruiting", "Template 1",
+    "Template Fiber", "Trips", "Up and Coming",
 }
+
+
+def _is_non_icd_tab(title: str) -> bool:
+    """A tab that is NOT an ICD/rep tab, so it never gets flagged as "missing
+    financials." Covers the explicit set above PLUS patterns that catch the ones
+    that kept leaking into the 'got NO financials' note (Megan 2026-07-09): any
+    '<x> Template' tab, any default 'Sheet<n>' tab, and any '_'-prefixed tab."""
+    t = (title or "").strip()
+    return (t in _NON_ICD_TAB_TITLES
+            or t.startswith("_")
+            or t.lower().endswith("template")
+            or bool(re.fullmatch(r"sheet\s*\d+", t, re.I)))
 
 
 def _name_bridge() -> dict:
@@ -130,8 +145,7 @@ def run_financial_report(file_paths, dry_run: bool = False,
         hidden = _hidden_tab_titles(sh)
         all_tabs = rfill._retry(sh.worksheets)
         candidate_tabs = [w for w in all_tabs
-                          if w.title not in _NON_ICD_TAB_TITLES
-                          and not w.title.startswith("_")
+                          if not _is_non_icd_tab(w.title)
                           and w.title not in hidden]
         logfn(f"financial: {sheet_name} — {len(candidate_tabs)} ICD tab(s) to scan "
               f"({len(hidden)} hidden skipped)")
@@ -199,6 +213,7 @@ def main() -> int:
     args = ap.parse_args()
 
     _tmpctx = None
+    _missing_books: List[str] = []
     if args.email:
         from automations.financial_report import email_source as _fes
         _tmpctx = tempfile.TemporaryDirectory(prefix="financial_email_")
@@ -207,6 +222,18 @@ def main() -> int:
               "reporting inbox…")
         got = _fes.fetch(directory, verbose=True)
         print(f"  fetched {len(got)} workbook(s)")
+        # Flag whole books that didn't email this week (a SENDER to nudge) —
+        # distinct from an individual ICD with no data. Subject-based so a
+        # filename change can't misreport a book as missing.
+        _missing_books = _fes.missing_books()
+        if _missing_books:
+            print("")
+            print(f"===== ⚠ {len(_missing_books)} BOOK(S) DID NOT EMAIL this "
+                  f"week — nudge the sender =====")
+            for b in _missing_books:
+                print(f"  ✗ {b}")
+            print("  (their ICDs stay blank until the file arrives — a re-run "
+                  "then fills them; incremental, nothing is wiped.)")
     else:
         directory = Path(args.dir).expanduser() if args.dir else UPLOAD_DIR
 
@@ -265,6 +292,12 @@ def main() -> int:
                     # who to chase (Megan 2026-07-05). [[feedback_financial_incremental]]
                     names = ", ".join(sorted(p.name for p in files))
                     _note = f"pulled {len(files)} workbook(s): {names}"
+                    # Whole-book gaps first — the actionable "nudge this sender"
+                    # signal, ahead of the per-ICD list.
+                    if _missing_books:
+                        _note += (f" · ⚠ {len(_missing_books)} BOOK(S) did NOT "
+                                  f"email (nudge sender): "
+                                  + ", ".join(_missing_books))
                     _not = result.get("not_pulled") or []
                     if _not:
                         _note += (f" · ⚠ {len(_not)} ICD(s) got NO financials this "
