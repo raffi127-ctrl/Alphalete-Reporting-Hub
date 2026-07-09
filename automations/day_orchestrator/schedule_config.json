@@ -580,8 +580,8 @@
     },
     "install_orchestrator_guard_agent": {
       "on_scheduler": true,
-      "_note": "NOT a report — installs the SELF-HEAL for the recurring 4am->6am launchd drift, run via `lucy rerun install_orchestrator_guard_agent`. Bootstraps com.alphalete.orchestrator-schedule-guard, a launchd job that fires DAILY at 03:40 (20 min before the 4am orchestrator) and re-bootstraps com.alphalete.day-orchestrator from the current Hour-4 plist. WHY: `git pull` updates the plist FILE but never reloads launchd, so launchd kept firing a stale boot-time Hour-6 schedule for 15 days while every diagnostic read the FILE (Hour 4) and looked fixed (2026-07-07/-08/-09, 4 recurrences). This guard reloads the schedule every night so launchd can NEVER hold a stale one. on_scheduler:true ONLY so registry keeps it; weekdays [] = never auto-runs. source_type 'local'. Safe/idempotent; the guard plist has no RunAtLoad so installing it won't fire an immediate reload. Run once to install; re-run any time to refresh the guard itself.",
-      "display_name": "Install: nightly guard that keeps the 4am schedule from drifting",
+      "_note": "NOT a report — installs the SELF-HEAL for launchd schedule drift, run via `lucy rerun install_orchestrator_guard_agent` (on Lucy 2 too: add `--machine \"Lucy 2\"`). Bootstraps com.alphalete.orchestrator-schedule-guard, a launchd job that fires DAILY at 02:45 (before the earliest daily job, appstream-morning at 03:00) and runs schedule_guard.py, which re-bootstraps EVERY loaded, timed com.alphalete.* job from its current plist. WHY: `git pull` updates a plist FILE but never reloads launchd, so launchd kept firing stale boot-time schedules — the 4am orchestrator fired 6am for 15 days (2026-07-07/-08/-09, 4 recurrences) and brand-audit-noon once fired 2pm; every timed job carries the same risk. The guard reloads them all every night so launchd can NEVER hold a stale one and nobody has to remember to reinstall. Skips KeepAlive/always-on jobs and high-frequency pollers (rc-autoread, resume-pushing). on_scheduler:true ONLY so registry keeps it; weekdays [] = never auto-runs. source_type 'local'. Safe/idempotent; no committed plist has RunAtLoad so neither installing the guard nor its nightly reloads fire any job immediately. Run once per machine to install; re-run any time to refresh the guard itself.",
+      "display_name": "Install: nightly guard that keeps EVERY timed report's schedule from drifting",
       "source_type": "local",
       "data_sources": [],
       "command": [
@@ -589,6 +589,27 @@
       ],
       "base_args": [
         "orchestrator-schedule-guard"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
+    },
+    "schedule_audit": {
+      "on_scheduler": true,
+      "_note": "NOT a report — read-only audit of every timed launchd job on THIS machine, run via `lucy rerun schedule_audit` (Lucy 2: add `--machine \"Lucy 2\"`). Runs schedule_guard.py --audit, which lists each loaded, committed, timed com.alphalete.* job and the Hour:Minute (+ weekday) it's SCHEDULED to fire — so you can see at a glance what the schedule guard covers. Does NOT reload anything. For the actual-vs-scheduled START of the 4am batch specifically, use `lucy rerun morning_diag` (its DRIFT= field). on_scheduler:true ONLY so registry keeps it; weekdays [] = never auto-runs. source_type 'local'.",
+      "display_name": "Schedule audit — what each timed job is set to fire at",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.schedule_guard"
+      ],
+      "base_args": [
+        "--audit"
       ],
       "cadence": {
         "weekdays": []

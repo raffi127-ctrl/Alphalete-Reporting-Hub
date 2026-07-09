@@ -22,16 +22,16 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- 3:40am every day, in the machine's LOCAL time (mini is CST) — 20 minutes
-         before the 4:00am day-orchestrator, so launchd re-loads the Hour-4
-         schedule fresh from the plist file BEFORE it needs to fire. This is the
-         self-heal for the recurring 4am→6am drift. -->
+    <!-- 2:45am every day, in the machine's LOCAL time (mini is CST) — BEFORE the
+         earliest daily job (appstream-morning at 3:00am), so launchd re-loads
+         EVERY timed job's schedule fresh from its plist before any of them fire.
+         This is the self-heal for launchd schedule drift across all timed reports. -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
-        <integer>3</integer>
+        <integer>2</integer>
         <key>Minute</key>
-        <integer>40</integer>
+        <integer>45</integer>
     </dict>
 
     <key>StandardOutPath</key>
