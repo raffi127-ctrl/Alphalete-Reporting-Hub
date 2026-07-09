@@ -91,6 +91,41 @@ def resolve_layout(grid: List[List[str]], hidden: set) -> Layout:
     return Layout(header, total, active, first_week_col=1)
 
 
+def _col_a1(idx0: int) -> str:
+    """0-based column index -> A1 letter (0->A, 4->E, 26->AA…)."""
+    s, n = "", idx0
+    while True:
+        n, r = divmod(n, 26)
+        s = chr(65 + r) + s
+        if n == 0:
+            break
+        n -= 1
+    return s
+
+
+def screenshot_range(grid: List[List[str]], lay: "Layout",
+                     n_weeks: int = 4) -> str:
+    """A1 range for the Monday DM screenshot: owner names (col A) + the
+    `n_weeks` NEWEST week columns (B onward) + through the Total row. Clamps
+    n_weeks to however many week columns actually exist. Derived from the
+    live layout — never hardcoded indices."""
+    hdr = grid[lay.header] if lay.header < len(grid) else []
+    avail, c = 0, lay.first_week_col
+    while c < len(hdr) and str(hdr[c]).strip():
+        avail += 1
+        c += 1
+    n = max(1, min(n_weeks, avail or n_weeks))
+    end_col = lay.first_week_col + n - 1        # 0-based last week column
+    return f"A1:{_col_a1(end_col)}{lay.total + 1}"
+
+
+def load_layout(ws, sh) -> Tuple[List[List[str]], "Layout"]:
+    """Fresh (grid, Layout) read — used post-fill to compute the DM range."""
+    grid = rfill._retry(ws.get_all_values)
+    hidden = hidden_rows(sh, ws.id, len(grid))
+    return grid, resolve_layout(grid, hidden)
+
+
 def match_rep(sheet_name: str, counts: Dict[str, int]
               ) -> Tuple[Optional[int], Optional[str], List[str]]:
     """Resolve a sheet short-name to a Tableau Rep Count.
