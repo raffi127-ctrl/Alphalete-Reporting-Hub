@@ -965,6 +965,11 @@ def design_cosmetic_ops(ws, layout: Layout) -> list:
         ("format_last_week_block",        lambda: format_last_week_block(ws)),
         ("reset_conditional_formatting", lambda: reset_conditional_formatting(ws)),
         ("write_office_totals_row",      lambda: write_office_totals_row(ws, layout)),
+        # Frozen LAST WEEK OFFICE TOTALS self-heal (static frozen data → idempotent):
+        # avg times (First/Last Knock, Gap Time) + Total Apps sums. These froze
+        # blank / 0 after a backfill and used to need a hand-fix every time.
+        ("refresh_frozen_office_totals_avgs", lambda: refresh_frozen_office_totals_avgs(ws, layout, _frozen_rep_rows(ws.col_values(2)))),
+        ("refresh_frozen_office_totals_apps", lambda: refresh_frozen_office_totals_apps(ws, layout, _frozen_rep_rows(ws.col_values(2)))),
         ("write_office_summary_block",   lambda: write_office_summary_block(ws, layout)),
         ("apply_bold_border",            lambda: apply_bold_border(ws)),
         ("apply_day_block_borders",      lambda: apply_day_block_borders(ws, layout)),
@@ -1266,6 +1271,69 @@ def refresh_frozen_office_totals_apps(ws, layout, frozen_rows) -> int:
     if data:
         ws.spreadsheet.values_batch_update(
             {"valueInputOption": "USER_ENTERED", "data": data})
+    return len(data)
+
+
+def refresh_frozen_office_totals_avgs(ws, layout, frozen_rows) -> int:
+    """Recompute the frozen LAST WEEK OFFICE TOTALS row's AVERAGE cells — the
+    weekly AVG summary cols (AVG 1st Knock / AVG Last Knock / AVG Gap Time / AVG #
+    Of Gaps) AND each per-day time metric (First Knock, Last Knock Date, Total Gap
+    Time) — from the static frozen rep rows, mirroring write_office_totals_row's
+    aggregation rules exactly.
+
+    WHY: the freeze/backfill left these avg cells BLANK on the frozen OFFICE TOTALS
+    row while the SUM cells (New INT, Talk To's…) survived — "the avg times aren't
+    being done for last week's chart" (Megan 2026-07-07). The frozen per-rep time
+    cells are numeric serials, so averaging them reproduces the office-wide avg
+    (e.g. 2:18 PM). Idempotent — the frozen data is static, so the same result
+    every daily pass — which is why it can live in the design pass and self-heal.
+
+    Writes ONLY the AVG cells (each individually, so the SUM cells between them are
+    untouched); Total Apps sums are handled by refresh_frozen_office_totals_apps.
+    An all-'x' day (no rep data) averages to "" → blank, matching the current zone.
+    No-op if there's no frozen block / OFFICE TOTALS row. Returns cells written."""
+    if not frozen_rows:
+        return 0
+    first, last = min(frozen_rows), max(frozen_rows)
+    colb = ws.col_values(2)
+    ot_row = next(
+        (i for i in range(last + 1, len(colb) + 1)
+         if isinstance(colb[i - 1], str) and colb[i - 1].strip().upper() == "OFFICE TOTALS"),
+        None,
+    )
+    if ot_row is None:
+        return 0
+    PER_DAY_AVG_METRICS = {"First Knock", "Last Knock Date", "total gap time"}
+    header_row = ws.row_values(2)
+    avg_cols: list[int] = []
+    for col_idx in range(3, 13):  # weekly cols C..L classified by header prefix
+        h = (header_row[col_idx - 1] if col_idx - 1 < len(header_row) else "").strip()
+        if h.startswith("AVG "):
+            avg_cols.append(col_idx)
+    for wd in sorted(layout.day_cols.keys()):
+        for metric, col_idx in layout.day_cols[wd].items():
+            if metric in PER_DAY_AVG_METRICS:
+                avg_cols.append(col_idx)
+    avg_cols = sorted(set(avg_cols))
+    if not avg_cols:
+        return 0
+    last_col_letter = _col_letter(max(avg_cols))
+    rep_data = ws.get(f"A{first}:{last_col_letter}{last}",
+                      value_render_option="UNFORMATTED_VALUE")
+
+    def _avg(col_idx: int):
+        vals: list[float] = []
+        for row in rep_data:
+            if len(row) < col_idx:
+                continue
+            v = row[col_idx - 1]
+            if isinstance(v, (int, float)):
+                vals.append(float(v))
+        return sum(vals) / len(vals) if vals else ""
+
+    data = [{"range": f"'{ws.title}'!{_col_letter(c)}{ot_row}", "values": [[_avg(c)]]}
+            for c in avg_cols]
+    ws.spreadsheet.values_batch_update({"valueInputOption": "RAW", "data": data})
     return len(data)
 
 
