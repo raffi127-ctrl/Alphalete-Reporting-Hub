@@ -185,6 +185,19 @@ def main() -> int:
         awaiting_login = not seeded
         consecutive_errors = 0
         MAX_CONSECUTIVE_ERRORS = 3
+        # Self-heal the LOGIN-lapsed-but-browser-alive gap (2026-07-09): the old
+        # watchdog only exits on a DEAD browser, so when the ownerville login went
+        # stale while Chrome stayed up, the loop sat in awaiting_login logging
+        # "waiting for ownerville login…" for HOURS until a human / the re-seed email
+        # — even though a plain relaunch re-seeds UNATTENDED from the persistent
+        # profile's still-valid cookies (proven: `lucy restart_holder` recovered the
+        # session in seconds today). So if we haven't managed a good export in this
+        # long, EXIT(1) → launchd relaunches → the fresh-start goto re-navigates and
+        # re-seeds with no human. 25 min >> the 6–8 min export cadence (so it only
+        # fires when genuinely stuck) and >> any real human login (which _passive_rqst
+        # detects instantly anyway), so it won't interrupt someone mid-login.
+        NO_EXPORT_MAX_MIN = 25
+        last_export_ok = time.time()   # the seed export above counts as the first
         while True:
             try:
                 if not _browser_alive(ctx):
@@ -192,11 +205,19 @@ def main() -> int:
                           f"restarts the holder fresh on the persistent profile.",
                           flush=True)
                     return 1
+                stale_min = (time.time() - last_export_ok) / 60
+                if stale_min >= NO_EXPORT_MAX_MIN:
+                    print(f"[{_stamp()}] no good ownerville export in {stale_min:.0f} min "
+                          f"(login lapsed, browser still alive) — exiting (rc=1) so "
+                          f"launchd relaunches + re-seeds from the persistent profile.",
+                          flush=True)
+                    return 1
                 if awaiting_login:
                     # Human is (re)logging in on the tab — DON'T navigate it.
                     if _passive_rqst():
                         awaiting_login = False
                         ovn = _export_ownerville(ctx)
+                        last_export_ok = time.time()
                         print(f"[{_stamp()}] re-seeded ✓ — exported {ovn} ownerville "
                               f"cookies.", flush=True)
                     else:
@@ -206,6 +227,7 @@ def main() -> int:
                     # Healthy → navigate the one tab to keep the session warm.
                     if _ownerville_session_valid(login_page, verbose=False):
                         ovn = _export_ownerville(ctx)
+                        last_export_ok = time.time()
                         print(f"[{_stamp()}] warm ✓ — {ovn} ownerville cookies "
                               f"(stale = kept last good export)", flush=True)
                     else:
