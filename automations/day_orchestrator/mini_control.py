@@ -656,6 +656,41 @@ def _git_head() -> "str | None":
         return None
 
 
+# Daily schedule reconcile — the DRIFT-IMMUNE anchor for the 4am start. Every
+# timed report is a launchd StartCalendarInterval job that can drift (launchd keeps
+# a stale in-memory schedule when a `git pull` updates the plist FILE) — that's the
+# 4am->6am recurrence. The com.alphalete.orchestrator-schedule-guard fixes it, but
+# it is ITSELF a calendar job that could drift. THIS poller is KeepAlive (no
+# calendar → cannot drift; it ran every command all day), so reconciling the
+# schedules from HERE is the reliable belt the calendar guard can't be. Runs once
+# per day, on the first poll in the 1–2am window (well before the 3am/4am jobs).
+_RECONCILE_HOURS = (1, 2)
+
+
+def _maybe_reconcile_schedules() -> None:
+    """Once/day from the always-on poller: re-bootstrap every timed LaunchAgent's
+    schedule so launchd can never hold a stale one. Per-date marker (written FIRST
+    so a slow/failed run can't loop every 2 min); the 2:45 calendar guard is the
+    backup if this ever misses. Best-effort — never raises into the poll loop."""
+    now = dt.datetime.now()
+    if now.hour not in _RECONCILE_HOURS:
+        return
+    marker_dir = REPO_ROOT / "output" / "day_state"
+    marker = marker_dir / f".schedule_reconciled_{now.date().isoformat()}"
+    if marker.exists():
+        return
+    marker_dir.mkdir(parents=True, exist_ok=True)
+    marker.write_text(now.isoformat())
+    print(f"[mini_control] daily schedule reconcile (drift-immune anchor) @ {now.isoformat()}")
+    try:
+        r = subprocess.run(
+            [sys.executable, "-m", "automations.day_orchestrator.schedule_guard"],
+            cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=600)
+        print(f"[mini_control]   reconcile exit {r.returncode}: {(r.stdout or '')[-400:]}")
+    except Exception as e:  # noqa: BLE001 — a reconcile hiccup must not stall polling
+        print(f"[mini_control]   reconcile error: {type(e).__name__}: {str(e)[:160]}")
+
+
 def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = False,
               machine: str | None = None) -> None:
     mach = _machine_profile(machine)
@@ -685,6 +720,11 @@ def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = F
             poll_once(dry_run=dry_run, sandbox=sandbox, machine=mach)
         except Exception as e:
             print(f"[mini_control] poll error (continuing): {type(e).__name__}: {str(e)[:160]}")
+        # Drift-immune daily schedule reconcile (no-op except the first poll in the
+        # 1-2am window). Kept OUT of the try above so its own guard applies, but it
+        # never raises anyway.
+        if not (dry_run or sandbox):
+            _maybe_reconcile_schedules()
         time.sleep(interval_s)
 
 
