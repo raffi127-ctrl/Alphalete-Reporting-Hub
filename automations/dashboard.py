@@ -4680,11 +4680,13 @@ def _render_report_breakdown(report: dict) -> None:
 
 
 def _render_texas_de_brazil_dinner_inputs() -> None:
-    """Texas de Brazil card: let Maud set the dinner date/time each cycle. Writes
-    dinner_day / dinner_time into the report's manual-inputs JSON (merging with any
-    existing keys); the run reads it and prints it on the flyer (blank => the flyer
-    shows 'TO BE DETERMINED')."""
+    """Texas de Brazil card: a rolling dinner-date schedule. Shows THIS competition
+    month + the next 2, each with a date/time field, so Maud always sets ~2 months
+    ahead and the flyer never shows 'TO BE DETERMINED'. Writes
+    dinner_schedule["YYYY-MM"] = {"day","time"} into the report's manual-inputs JSON;
+    the run reads the current month's entry for the flyer."""
     import json as _json
+    import datetime as _dt
     from pathlib import Path as _Path
     jf = _Path.home() / "recruiting-report" / "output" / "texas_de_brazil_manual.json"
     data = {}
@@ -4693,18 +4695,40 @@ def _render_texas_de_brazil_dinner_inputs() -> None:
             data = _json.loads(jf.read_text())
     except Exception:
         data = {}
-    with st.expander("🍽️ Dinner date (shows on the flyer)"):
-        day = st.text_input("Dinner date", value=data.get("dinner_day", ""),
-                            placeholder="e.g. SAT · AUG 8", key="tdb_dinner_day")
-        tm = st.text_input("Dinner time", value=data.get("dinner_time", ""),
-                           placeholder="e.g. 7:00 PM", key="tdb_dinner_time")
-        if st.button("Save dinner date", key="tdb_dinner_save"):
+    sched = data.get("dinner_schedule") or {}
+    # This competition month (anchored to yesterday, matching the report) + next 2.
+    anchor = _dt.date.today() - _dt.timedelta(days=1)
+    y, mo = anchor.year, anchor.month
+    months = []
+    for _ in range(3):
+        months.append((y, mo))
+        mo += 1
+        if mo > 12:
+            mo, y = 1, y + 1
+    with st.expander("🍽️ Dinner dates (set ~2 months ahead so the flyer never says TBD)"):
+        inputs = []
+        for i, (yy, mm) in enumerate(months):
+            key = f"{yy}-{mm:02d}"
+            ent = sched.get(key) or {}
+            st.markdown(f"**{_dt.date(yy, mm, 1).strftime('%B %Y')}"
+                        f"{'  ← this run' if i == 0 else ''}**")
+            c1, c2 = st.columns(2)
+            day = c1.text_input("Dinner date", value=ent.get("day", ""),
+                                placeholder="e.g. SAT · AUG 11", key=f"tdb_dd_{key}",
+                                label_visibility="collapsed")
+            tm = c2.text_input("Dinner time", value=ent.get("time", ""),
+                               placeholder="e.g. 7:00 PM", key=f"tdb_dt_{key}",
+                               label_visibility="collapsed")
+            inputs.append((key, day, tm))
+        if st.button("Save dinner dates", key="tdb_dinner_save"):
             try:
                 jf.parent.mkdir(parents=True, exist_ok=True)
-                data["dinner_day"] = day.strip()
-                data["dinner_time"] = tm.strip()
+                sched = data.get("dinner_schedule") or {}
+                for key, day, tm in inputs:
+                    sched[key] = {"day": day.strip(), "time": tm.strip()}
+                data["dinner_schedule"] = sched
                 jf.write_text(_json.dumps(data, indent=2, ensure_ascii=False))
-                st.success("Saved — the next run will show it on the flyer.")
+                st.success("Saved.")
             except Exception as e:
                 st.error(f"Couldn't save: {e}")
 
