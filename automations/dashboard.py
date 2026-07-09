@@ -1813,27 +1813,32 @@ AUTOMATED_REPORTS = [
         "emoji": "📄",
         "color": "#10B981",
         "category": "🎯 Recruiting",
-        "description": "Parses the uploaded Frontier PDF reports (Daily "
+        "description": "Auto-ingests the Frontier PDF reports (Daily "
                        "Sales by Store, Daily Sales Events, Quality "
-                       "Scorecard) and fills the OPT section on every "
-                       "' - Frontier' tab of the Alphalete Org 1on1s "
-                       "focus report.",
+                       "Scorecard) straight from email "
+                       "(reports@credicousa.com) and fills the OPT section "
+                       "on every ' - Frontier' tab of the Alphalete Org "
+                       "1on1s focus report. No manual upload — the upload "
+                       "below is only a fallback.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Reads the Frontier PDFs and fills each Frontier tab:\n"
+            "Pulls the Frontier PDFs from email and fills each Frontier tab:\n"
             "- **Daily Sales - by Store** → per-store production, Total "
             "Sales, Total Store Count, AVG/Store, Active Headcount\n"
             "- **Daily Sales - Events** → GIG % / VAS % / ABP %\n"
             "- **Quality Scorecard** → Approval / Canceled / Pending "
             "(Four Weeks Rolling)\n\n"
             "WHEN IT RUNS\n"
-            "Mondays — upload whichever Frontier PDFs arrived, then Run.\n\n"
-            "PARTIAL UPLOADS ARE SAFE\n"
-            "Upload one, two, or all three PDFs — only the rows from the "
-            "PDFs you uploaded change; every other cell is left untouched. "
-            "The PDFs each carry their week-ending; data lands in the "
-            "correct week column automatically (re-uploads refresh to the "
-            "latest numbers)."
+            "Runs itself on the weekly 4am batch — it pulls the 3 Frontier "
+            "PDFs straight from email (reports@credicousa.com), no upload "
+            "needed. A readiness check waits until the PDFs are in the "
+            "inbox, then fills. The completed week is in Sunday's daily "
+            "email; the Quality Scorecard lags ~2 weeks by design.\n\n"
+            "PARTIAL DATA IS SAFE\n"
+            "Whichever of the 3 PDFs have arrived get filled — only their "
+            "rows change; every other cell is left untouched. Each PDF "
+            "carries its week-ending, so data lands in the correct week "
+            "column automatically (re-runs refresh to the latest numbers)."
         ),
         "sheet_url": ALPHALETE_ORG_SHEET_URL,
         "assignees": ["Lucy 1"],
@@ -1844,9 +1849,11 @@ AUTOMATED_REPORTS = [
             "estimated_minutes": 3,
         },
         "checklist": [
-            {"text": "Upload the Frontier PDF report(s) received via email "
+            {"text": "Automatic — the report pulls the Frontier PDFs from "
+                     "email and fills; no action needed. FALLBACK ONLY: if "
+                     "the email didn't arrive, upload the PDF(s) here "
                      "(Daily Sales by Store, Daily Sales Events, and/or "
-                     "Quality Scorecard)",
+                     "Quality Scorecard) and Run.",
              "uploader": {
                  "target_dir": "automations/uploaded/frontier",
                  "accept": [".pdf"],
@@ -1854,7 +1861,7 @@ AUTOMATED_REPORTS = [
              }},
         ],
         "post_run": {
-            "message_success": "✅ Frontier OPT filled from the uploaded "
+            "message_success": "✅ Frontier OPT filled from the emailed "
                                "PDF(s). Rows without a matching PDF were "
                                "left untouched.",
             "message_failed": "❌ Run failed. Check the log above.",
@@ -1864,9 +1871,10 @@ AUTOMATED_REPORTS = [
                 "label": "Run Frontier OPT Data Pull",
                 "icon": "▶",
                 "primary": True,
-                "help": "Parses every Frontier PDF in "
-                        "automations/uploaded/frontier/ and fills the "
-                        "Frontier tabs.",
+                "help": "FALLBACK run — parses whatever Frontier PDF(s) you "
+                        "uploaded above and fills the Frontier tabs. The "
+                        "scheduled 4am run instead auto-pulls the PDFs from "
+                        "email, so you normally don't need this.",
                 "module": "automations.alphalete_org_report.opt_frontier",
                 "args_fn": lambda: [],
             },
