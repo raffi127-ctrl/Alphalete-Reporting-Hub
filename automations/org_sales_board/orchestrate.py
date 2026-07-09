@@ -83,23 +83,25 @@ def _adapter_je_retail(ctx: AdapterContext) -> PullDict:
     """Just Energy retail production (Retail JE section).
 
     Pulls 'Daily Sales by ICD' (Total Sales per ICD per day) from JE's
-    'Thisweek' custom view, which auto-rolls to the latest week (Top-1-by-MAX
-    filter — URL params can't drive JE's week selector). STALENESS GUARD: at a
-    week's start JE runs a day behind, so if the latest posted week isn't the
-    current one, fill NOTHING and flag — never write last week's numbers."""
+    'Thisweek' custom view. fetch() DRIVES the 'Sales Week Ending' dropdown to
+    the current reporting week every run (the saved view's pinned week is
+    unreliable — it silently sticks on a stale week; see je_pull docstring).
+    STALENESS GUARD: at a week's start JE runs a day behind, so if JE hasn't
+    posted the current week yet (the date isn't in the dropdown), fill NOTHING
+    and flag — never write last week's numbers."""
     from automations.org_sales_board import je_pull
     if ctx.from_csv:
         csv_path = ctx.from_csv
         ctx.logfn(f"  [je] offline CSV {csv_path}")
     else:
-        csv_path = je_pull.fetch(page=ctx.page)
+        csv_path = je_pull.fetch(page=ctx.page, today=ctx.today, verbose=True)
     parsed = je_pull.parse(csv_path, today=ctx.today)
     we = parsed.get("week_ending")
     if not parsed.get("is_current_week"):
         ctx.logfn(
-            f"  ⚠ JE 'Thisweek' custom view shows week ending {we}, NOT the "
-            f"current week — skipping JE fill so stale numbers aren't written. "
-            f"Re-save the 'Thisweek' custom view to the current week + re-run.")
+            f"  ⚠ JE shows week ending {we}, NOT the current week — JE hasn't "
+            f"posted this week yet; skipping JE fill so stale numbers aren't "
+            f"written. Self-heals on the next run once JE posts the week.")
         return {}
     ctx.logfn(f"  [je] week ending {we} (current) — {len(parsed['reps'])} ICD(s)")
     return je_pull.to_board_pull(parsed)

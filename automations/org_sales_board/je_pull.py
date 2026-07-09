@@ -33,14 +33,24 @@ from typing import Optional
 
 from automations.shared.tableau_patchright import download_crosstab_patchright
 
-# Saved custom view "ThisWeek". This view PERIODICALLY corrupts / stops
-# rendering (the Download button never appears → 120s timeout) and gets rebuilt
-# with a NEW GUID each time: 4d55c69f → 828a12c2 → 41cac48e (last re-saved by
-# Megan 2026-06-30). When it breaks again, re-save the view in Tableau and
-# update the GUID in CV_URL below. Its week filter auto-rolls to the latest week
-# every pull (no re-save needed for the date). NOTE: this view puts the per-day
-# labels ('6/08 Mon' …) on the row ABOVE the 'ICD Office Name' row and repeats
-# the week-ending date ('6/14/2026') on it — parse() handles both layouts.
+# Saved custom view "ThisWeek". WEEK SELECTION IS NOW DRIVEN EXPLICITLY (2026-07-09):
+# the view was ASSUMED to auto-roll ("Top 1 by MAX(Sales Weekending Selected)"),
+# but a re-save baked in a FIXED 'Sales Week Ending' filter, so it silently stuck
+# on a stale week (found 2026-07-09: pinned to 7/5 while the board was on the 7/12
+# week → JE section blank all week). Rather than depend on the saved view's pinned
+# week, fetch() now drives the 'Sales Week Ending' multi-select dropdown to the
+# CURRENT reporting week every run (see _drive_week_selection). The custom view is
+# still used only for its stable layout/GUID; its saved week no longer matters.
+# When JE has NOT yet posted the current week, the dropdown simply lacks that date
+# and the selection is a no-op — parse() then reports is_current_week=False and the
+# caller skips (unchanged staleness behaviour).
+#
+# The view PERIODICALLY corrupts / stops rendering (Download button never appears →
+# 120s timeout) and gets rebuilt with a NEW GUID: 4d55c69f → 828a12c2 → 41cac48e
+# (last re-saved by Megan 2026-06-30). When it breaks again, re-save + update the
+# GUID below. NOTE: this view puts the per-day labels ('6/08 Mon' …) on the row
+# ABOVE the 'ICD Office Name' row and repeats the week-ending date ('6/14/2026') on
+# it — parse() handles both layouts.
 CV_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "JustEnergyRTL-SalesStaffingProductivityWorkbook/WeeklyMetricsbyICD/"
@@ -71,12 +81,107 @@ def _infer_date(mo: int, da: int, today: dt.date) -> Optional[dt.date]:
     return None
 
 
-def fetch(out_path: Optional[Path] = None, verbose: bool = False, page=None) -> Path:
-    """Download the JE 'Daily Sales by ICD' crosstab from the pinned
-    'Thisweek' custom view."""
+def _week_label(today: dt.date) -> str:
+    """The 'Sales Week Ending' dropdown label for the board's current
+    reporting week (M/D/YYYY, no zero-pad — matches Tableau's rendering)."""
+    from automations.org_sales_board import week as _wk
+    s = _wk.reporting_sunday(today)
+    return f"{s.month}/{s.day}/{s.year}"
+
+
+def _drive_week_selection(label: str, verbose: bool = False):
+    """Build a pre_export hook that drives the JE 'Sales Week Ending'
+    multi-select dropdown to exactly `label` (the current reporting week).
+
+    The saved custom view's pinned week is unreliable (it silently sticks on
+    a stale week), so we set the week ourselves every run. The dropdown is a
+    Tableau categorical (multi-value) quick filter: each option is a
+    `div.FIItem[role=checkbox]` toggled by clicking its `.FICheckRadio` glyph
+    (clicking the label anchor does NOT toggle); filters apply immediately (no
+    Apply button). We check the target week, uncheck every other still-checked
+    week, then collapse the dropdown so it can't overlay the Download button.
+
+    Idempotent: if the box already shows the target, it's a no-op. If JE
+    hasn't posted the target week yet, that date is absent from the list — we
+    leave the selection as-is and let parse()'s staleness guard handle it."""
+    import re as _re
+
+    def pre_export(page, viz):
+        boxes = viz.locator('span.tabComboBox[role="combobox"]')
+        tbox = cur = None
+        for _ in range(20):   # poll ~20s for the filter control to hydrate
+            for i in range(boxes.count()):
+                t = (boxes.nth(i).inner_text() or "").strip()
+                if _re.match(r"^\d{1,2}/\d{1,2}/\d{4}$", t):
+                    tbox, cur = boxes.nth(i), t
+                    break
+            if tbox is not None:
+                break
+            page.wait_for_timeout(1000)
+        if tbox is None:
+            if verbose:
+                print("  [je] ⚠ 'Sales Week Ending' dropdown not found — "
+                      "leaving whatever week the view shows")
+            return
+        if cur == label:
+            return   # already on the target week
+
+        def _toggle(week):
+            item = viz.locator('div.FIItem[role="checkbox"]').filter(
+                has_text=_re.compile(rf"^{_re.escape(week)}$")).first
+            glyph = item.locator(".FICheckRadio").first
+            glyph.scroll_into_view_if_needed()
+            glyph.click()
+
+        def _checked():
+            c = viz.locator('div.FIItem[role="checkbox"][aria-checked="true"]')
+            return [(c.nth(j).inner_text() or "").strip() for j in range(c.count())]
+
+        tbox.click()               # open the dropdown
+        page.wait_for_timeout(1200)
+        if viz.locator('div.FIItem[role="checkbox"]').filter(
+                has_text=_re.compile(rf"^{_re.escape(label)}$")).count() == 0:
+            # JE hasn't posted this week yet — nothing to select. Close + bail;
+            # parse() will report is_current_week=False and the caller skips.
+            if verbose:
+                print(f"  [je] week {label} not in the dropdown yet "
+                      "(JE hasn't posted it) — leaving selection unchanged")
+            tbox.click()
+            page.wait_for_timeout(1000)
+            return
+        _toggle(label)             # check the target week
+        page.wait_for_timeout(1200)
+        for _ in range(6):         # uncheck every other still-checked week
+            others = [o for o in _checked() if o and o != label]
+            if not others:
+                break
+            for o in others:
+                _toggle(o)
+                page.wait_for_timeout(800)
+        tbox.click()               # collapse the dropdown
+        page.wait_for_timeout(2500)
+        final = (tbox.inner_text() or "").strip()
+        if verbose:
+            print(f"  [je] Sales Week Ending set to {final}")
+        if final != label:
+            # raise so download_crosstab_patchright's retry re-navigates and
+            # re-applies the selection on a fresh load
+            raise RuntimeError(
+                f"JE week select failed: box={final!r} expected {label!r}")
+
+    return pre_export
+
+
+def fetch(out_path: Optional[Path] = None, verbose: bool = False, page=None,
+          today: Optional[dt.date] = None) -> Path:
+    """Download the JE 'Daily Sales by ICD' crosstab, driving the
+    'Sales Week Ending' filter to the current reporting week (the saved
+    view's pinned week is unreliable — see module docstring)."""
     out_path = out_path or Path(tempfile.gettempdir()) / "je_daily_sales.csv"
-    download_crosstab_patchright(CV_URL, WORKSHEET, out_path,
-                                 verbose=verbose, page=page)
+    label = _week_label(today or dt.date.today())
+    download_crosstab_patchright(CV_URL, WORKSHEET, out_path, verbose=verbose,
+                                 page=page,
+                                 pre_export=_drive_week_selection(label, verbose))
     return out_path
 
 
