@@ -57,6 +57,24 @@ def main(argv: list[str] | None = None) -> None:
     sys.argv = [module, *rest]
     runpy.run_module(module, run_name="__main__")
 
+    # 3) Texas de Brazil: echo the dinner date the flyer just used, LAST, so it
+    #    shows in the (short) status tail — a positive check that the Hub-card
+    #    date crossed over to this machine (vs. the old "TO BE DETERMINED").
+    if lib_id == "june_texas_de_brazil_monthly_competition":
+        try:
+            import datetime as _dt
+            import json
+            from automations.day_orchestrator import tdb_sync_inputs as _T
+            _anchor = _dt.date.today() - _dt.timedelta(days=1)
+            _period = f"{_anchor.year}-{_anchor.month:02d}"
+            _data = json.loads(_T.LOCAL_INPUTS.read_text())
+            _ent = (_data.get("dinner_schedule") or {}).get(_period) or {}
+            _day = str(_ent.get("day", "") or "").strip()
+            print(f"TDB FLYER DINNER DATE [{_period}]: "
+                  f"{(_day + ' / ' + str(_ent.get('time','')).strip()) if _day else 'TO BE DETERMINED (not set)'}")
+        except Exception as e:  # noqa: BLE001
+            print(f"(run_library_report: tdb date readout skipped — {type(e).__name__}: {e})")
+
 
 if __name__ == "__main__":
     main()
