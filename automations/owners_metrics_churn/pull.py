@@ -160,6 +160,29 @@ B2B_LUIS_URL = (
     "2d2a9ec0-8088-4e4e-8ada-ed370f4b9d8f/LuissCaptainship?:iid=1"
 )
 
+# All-teams B2B churn view (team filter = All) — every B2B owner regardless of
+# captainship. Same CHURNRATES dashboard + "ICD Churn" crosstab as the per-captain
+# B2B views above, so parse_b2b reads it unchanged. Used to BACKFILL an owner who
+# moved captainships: reps change teams routinely (Megan 2026-07-09), and once a
+# rep leaves a captain's SFDC team the per-captain pull no longer returns her even
+# though her row is still on that captain's sheet tab — she'd silently go dark.
+# Pulling her from here keeps the tab filling instead. (Proven view id — also used
+# by recruiting_report.opt_phase_carlos.)
+B2B_ALLTEAM_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER-B2B/CHURNRATES/"
+    "429cb06d-a32e-4d0e-bf06-9acb77587afd/ALLTEAMCHURN?:iid=1"
+)
+
+
+def fetch_b2b_allteams(out_path: Optional[Path] = None,
+                       verbose: bool = False, page=None) -> Path:
+    out_path = out_path or Path(tempfile.gettempdir()) / "owners_b2b_allteams.csv"
+    download_crosstab_patchright(B2B_ALLTEAM_URL, WORKSHEET, out_path,
+                                 verbose=verbose, page=page)
+    return out_path
+
+
 B2B_PERIODS = ("0-30", "30", "60", "90", "120")
 
 
@@ -358,3 +381,17 @@ def parse_nds(csv_path: Path) -> dict:
                 slot["denom"] = _ni_shared._to_num(cell)
 
     return {"office_total": office_total, "reps": reps}
+
+
+# ----- All-teams churn sources (for backfilling reps who moved captainships) --
+# program -> (all_teams_view_url, crosstab_worksheet, parse_fn). When an owner on
+# a captain's churn tab is absent from that captain's own pull (she moved SFDC
+# teams), the runner pulls the program's all-teams view here and re-fills her row
+# from it. Only B2B has a proven all-teams churn view today; a moved Fiber/NDS
+# owner still flags went-dark (unchanged) until their all-teams CHURN view id is
+# added here.
+ALLTEAMS_CHURN_SOURCE = {
+    "b2b": (B2B_ALLTEAM_URL, WORKSHEET, parse_b2b),
+    # "fiber": (FIBER_ALLTEAM_URL, WORKSHEET, parse),       # TODO: view id
+    # "nds":   (NDS_ALLTEAM_URL, NDS_WORKSHEET, parse_nds),  # TODO: view id
+}

@@ -25,7 +25,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from automations.shared.tableau_patchright import tableau_session
+from automations.shared.tableau_patchright import (
+    tableau_session, download_crosstab_patchright)
 from automations.owners_metrics_churn import pull, fill
 from automations.focus_office_att.aliases import load_aliases, alias_to_canonical
 
@@ -97,8 +98,58 @@ REPORTS = [
 ]
 
 
+# Parsed all-teams churn view per program, pulled at most ONCE per run (reset each
+# process). Reps who moved captainships are backfilled from here so their old
+# captain's tab keeps filling instead of silently going dark.
+_ALLTEAMS_PARSE_CACHE: dict = {}
+
+
+def _program_of(parse_fn) -> str:
+    """Map a REPORTS parse_fn to its program key for the all-teams source lookup."""
+    if parse_fn is pull.parse_b2b:
+        return "b2b"
+    if parse_fn is pull.parse_nds:
+        return "nds"
+    return "fiber"
+
+
+def _backfill_moved_owners(program: str, dark_names: list, aliases: dict) -> dict:
+    """Return {display_name: periods} for went-dark owners found in the program's
+    all-teams churn view — reps who moved SFDC captainships but are still on their
+    old captain's sheet tab. Pulls the all-teams view at most once per run (cached).
+    Empty when the program has no all-teams source wired or the owner is absent
+    everywhere (genuinely gone → stays flagged)."""
+    src = pull.ALLTEAMS_CHURN_SOURCE.get(program)
+    if not src or not dark_names:
+        return {}
+    url, worksheet, parse_fn = src
+    if program not in _ALLTEAMS_PARSE_CACHE:
+        out = Path(tempfile.gettempdir()) / f"owners_{program}_allteams.csv"
+        try:
+            print(f"  ↻ pulling {program} all-teams churn to backfill "
+                  f"moved rep(s): {', '.join(dark_names)}")
+            download_crosstab_patchright(url, worksheet, out, verbose=False)
+            parsed_all = _apply_aliases(parse_fn(out), aliases)
+        except Exception as e:  # noqa: BLE001 — backfill is best-effort
+            print(f"  (all-teams backfill pull failed: {type(e).__name__}: "
+                  f"{str(e).splitlines()[0][:80]})")
+            parsed_all = {"reps": {}}
+        _ALLTEAMS_PARSE_CACHE[program] = parsed_all
+    allreps = _ALLTEAMS_PARSE_CACHE[program].get("reps", {})
+    low = {k.lower(): k for k in allreps}
+    got: dict = {}
+    for nm in dark_names:
+        k = low.get(nm.lower())
+        # Only accept a real hit — a name present with an actual pct somewhere.
+        if k and any(isinstance(v, dict) and v.get("pct")
+                     for v in allreps[k].values()):
+            got[nm] = allreps[k]
+    return got
+
+
 def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
-                    today: dt.date, args) -> dict:
+                    today: dt.date, args, program: str = "fiber",
+                    aliases: dict | None = None) -> dict:
     """Fill one tab. Returns {period: [went_dark_rep, ...]} — reps on the tab +
     recently active but absent from today's pull (empty dict = clean)."""
     print(f"\n--- {label}: parse + fill ---")
@@ -131,6 +182,22 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
                       f"today's pull): {', '.join(names)}")
     except Exception as e:  # noqa: BLE001 — detection must never break the fill
         print(f"  (went-dark detection skipped: {type(e).__name__}: {str(e)[:80]})")
+
+    # A rep who WENT DARK because she moved captainships (still on THIS captain's
+    # tab, but no longer returned by his SFDC-team pull) is backfilled from the
+    # program's all-teams churn view so her row keeps filling — reps change teams
+    # routinely (Megan 2026-07-09). Only reps genuinely absent everywhere (gone
+    # from all teams) stay dark and get flagged as before.
+    if went_dark:
+        dark_names = sorted({n for names in went_dark.values() for n in names})
+        backfilled = _backfill_moved_owners(program, dark_names, aliases or {})
+        for nm, periods_data in backfilled.items():
+            parsed["reps"][nm] = periods_data
+            print(f"  ↳ backfilled {nm} from {program} all-teams churn "
+                  f"(moved captainships — kept on this tab)")
+        if backfilled:
+            # Re-detect: backfilled reps are now present in `parsed`, so they clear.
+            went_dark = fill.detect_went_dark(ws.get_all_values(), sections, parsed)
 
     already_filled = fill.today_already_filled(ws, sections, today)
     skip_insert = already_filled and not args.force_insert
@@ -295,7 +362,8 @@ def main(argv=None) -> int:
                 print(f"  (diag: dumped {len(_raw_names)} raw rep name(s) to Inspect Out)")
             except Exception as _e:  # noqa: BLE001 — diag must never fail the run
                 print(f"  (diag dump failed: {type(_e).__name__}: {str(_e)[:80]})")
-        _wd = _run_fill_phase(label, open_ws_fn, parsed, periods, today, args)
+        _wd = _run_fill_phase(label, open_ws_fn, parsed, periods, today, args,
+                              program=_program_of(parse_fn), aliases=aliases)
         if _wd:
             went_dark_all[label] = _wd
         all_reps.update(parsed.get("reps", {}).keys())
