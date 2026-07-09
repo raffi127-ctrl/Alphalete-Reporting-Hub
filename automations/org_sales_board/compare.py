@@ -326,8 +326,8 @@ def content_diff() -> dict:
                 vv = (vr[c] if c < len(vr) else "").strip()
                 if cv == vv or _numeq(cv, vv):
                     continue
-                if c == 0 and cv.isdigit() and vv.isdigit():
-                    continue   # col-A rank = sort POSITION, not a data value
+                if c == 0 and _rankish(cv) and _rankish(vv):
+                    continue   # col-A = rank/marker (digit, blank, '*'), not data
                 if cv.lower() in ("", "0", "ns") and vv.lower() in ("", "0", "ns"):
                     continue   # blank / 0 / NS both mean "no sale"
                 mismatches.append((label, a1(cr_i + 1, c + 1), cv, vv))
@@ -340,6 +340,263 @@ def content_diff() -> dict:
             "copy_labeled": len(ci), "va_labeled": len(vi),
             "only_copy": sorted(only_copy), "only_va": sorted(only_va),
             "mismatches": mismatches}
+
+
+def _fnum(s: str):
+    try:
+        return float(str(s).replace(",", "").rstrip("%"))
+    except (ValueError, TypeError):
+        return None
+
+
+def _rankish(s: str) -> bool:
+    """col-A content that is a rank/marker, never real data: blank, a bare
+    integer, an '=A+1' rank formula, or a pure-symbol marker like '*'."""
+    import re
+    s = (s or "").strip()
+    return (s == "" or s.isdigit() or s.startswith("=")
+            or bool(re.fullmatch(r"[\W_]+", s)))
+
+
+_ACRONYMS = {"Je": "JE", "Nl": "NL", "B2B": "B2B", "Nds": "NDS", "Box": "BOX",
+             "Att": "ATT", "Org": "ORG", "Pp": "PP", "Dd": "DD", "Opt": "OPT"}
+# col-B row labels that are auto-recomputed rollups, not rep data — collapsed in
+# the detail so the email leads with the actual per-rep differences.
+_ROLLUP = {"totals", "grand total", "all totals", "sales - this week",
+           "vs prior week", "vs 4 weekavg", "sales (last week)",
+           "sales ( 4 week avg)"}
+
+
+def _pretty(name: str) -> str:
+    """Title-case a row label but keep report acronyms upper (Retail JE, B2B…)."""
+    out = " ".join(_ACRONYMS.get(w, w) for w in name.title().split())
+    return out
+
+
+_TABLEAU_BASE = "https://us-east-1.online.tableau.com/#/site/sci/views/"
+
+
+def _source_view_url(s) -> str:
+    if s.label == "Retail JE":
+        from automations.org_sales_board import je_pull
+        return je_pull.CV_URL                    # the pinned custom-view URL
+    if s.workbook and s.view:
+        return f"{_TABLEAU_BASE}{s.workbook}/{s.view}"
+    return ""                                    # Frontier = emailed PDF, no view
+
+
+def _section_url(grid, r0):
+    """The Tableau source-view URL for the daily section a row sits in — found
+    by walking UP to the nearest section-title cell that matches a registered
+    Source label. Each daily section names itself in col A (e.g. 'Retail JE' on
+    the day-header row); the top product-summary block names them in col B — so
+    check BOTH. '' when none is found. NOTE: callers pass '' for org-level
+    rollup rows so they don't wrongly inherit the section title sitting above
+    them in the summary block."""
+    from automations.org_sales_board import sources as _src
+    labels = {s.label.lower(): s for s in _src.DAILY_SOURCES}
+    for rr in range(r0, max(-1, r0 - 45), -1):
+        row = grid[rr] if rr < len(grid) else []
+        for ci in (0, 1):                        # col A (section header) then col B
+            s = labels.get((row[ci] if len(row) > ci else "").strip().lower())
+            if s:
+                return _source_view_url(s)
+    return ""
+
+
+def _col_header(grid, r0, c):
+    """Human label for a cell's COLUMN — the nearest header text above it in the
+    same column (a weekday name, 'Running Week Totals', 'Grand Total',
+    'WE 07.12', …). '' when none within reach (e.g. leaderboard total columns)."""
+    import re
+    for rr in range(r0 - 1, max(-1, r0 - 16), -1):
+        v = (grid[rr][c] if rr < len(grid) and c < len(grid[rr]) else "").strip()
+        if v and re.search(r"[A-Za-z]", v):
+            return " ".join(v.split())
+    return ""
+
+
+def breakdown(cd: dict | None = None) -> dict:
+    """Categorized copy-vs-VA comparison for the daily summary email — built on
+    top of the proven content_diff() (name-matched within sections, frozen
+    prior-week history excluded, no-sale/rank differences already filtered).
+
+    Each surviving mismatch is bucketed by severity AND enriched with a plain
+    COLUMN LABEL (day name / 'Grand Total' / etc.) and a flag for whether the row
+    is an auto-recomputed rollup, so the renderer can group by rep and read
+    clearly instead of listing raw cell coordinates. Buckets:
+      copy_missing — VA has a value, copy blank  (ATTENTION)
+      behind       — both numeric, copy < VA     (ATTENTION)
+      conflict     — both populated, non-numeric differ (ATTENTION)
+      ahead        — copy > VA, or copy has a value the VA hasn't keyed (benign)
+
+    `cd` lets a caller pass a content_diff() it already computed."""
+    from gspread.utils import a1_to_rowcol
+    d = cd if cd is not None else content_diff()
+    grid = _retry(open_by_key(SHEET_ID).worksheet(SANDBOX_TAB).get_all_values)
+    b = {k: [] for k in ("ahead", "behind", "conflict", "copy_missing")}
+    for label, cell, cv, vv in d.get("mismatches", []):
+        raw = label.split("|")[-1].strip()
+        name = _pretty(raw[:40] or label[:40])
+        rollup = raw.lower() in _ROLLUP
+        r, c = a1_to_rowcol(cell)
+        col = _col_header(grid, r - 1, c - 1)
+        # org-level rollups aggregate every section — don't inherit the section
+        # title that happens to sit above them in the summary block.
+        url = "" if rollup else _section_url(grid, r - 1)
+        rec = (name, cell, cv, vv, col, rollup, url)
+        cempty = cv.lower() in ("", "0", "ns")
+        vempty = vv.lower() in ("", "0", "ns")
+        if cempty and not vempty:
+            b["copy_missing"].append(rec)          # VA has it, copy blank
+        elif vempty and not cempty:
+            b["ahead"].append(rec)                 # copy ahead of the VA
+        else:
+            nc, nv = _fnum(cv), _fnum(vv)
+            if nc is not None and nv is not None:
+                b["ahead" if nc > nv else "behind"].append(rec)
+            else:
+                b["conflict"].append(rec)
+    only_va, only_copy = d.get("only_va", []), d.get("only_copy", [])
+    attention = (len(b["behind"]) + len(b["conflict"]) + len(b["copy_missing"])
+                 + len(only_va) + len(only_copy))
+    return {"matched": d.get("matched_rows", 0), "only_va": only_va,
+            "only_copy": only_copy, "attention": attention, **b}
+
+
+_WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday",
+             "saturday", "sunday")
+
+
+def _guess_reason(bucket: str, col: str, cv: str, vv: str) -> str:
+    """A best-effort GUESS at why a cell differs, for the email's reason column.
+    Heuristic only (never authoritative) — phrased so a reader knows it's a
+    guess."""
+    c = (col or "").strip().lower()
+    is_day = any(wd in c for wd in _WEEKDAYS)
+    is_total = "total" in c or c.startswith("we ")
+    is_pct = "%" in (cv or "") or "%" in (vv or "") or c.startswith("vs ")
+    va_blank = vv.strip().lower() in ("", "0", "ns")
+    if bucket == "copy_missing":
+        return "Likely a missed pull — the VA has this sale, the automation doesn't. Check the source view."
+    if bucket == "behind":
+        return "Automation is lower than the VA — possible undercount. Check the source view."
+    if bucket == "conflict":
+        return "The two tabs disagree — check the source view."
+    # ahead (benign)
+    if is_pct:
+        return "A percentage that recalculated off the more-current numbers."
+    if va_blank and is_day:
+        return f"VA hasn't hand-entered {col} yet — the automation already pulled it."
+    if is_total:
+        return "Automation is more current — includes a day the VA hasn't added yet."
+    return "Automation pulled a more recent number than the hand-entry."
+
+
+def format_breakdown_html(d: dict, max_rows: int = 40) -> str:
+    """Render breakdown() as a simple Excel-style table for the emails:
+    4 columns — Category | VA tab | Automation tab | Likely reason — one row
+    per real difference (rep-level cells; the auto-recomputed section/org totals
+    are collapsed to a single footnote). Rows are colored by type: red = needs a
+    look (VA has something the copy misses, or the copy is behind), plain = the
+    copy is just more current than the hand-entry. Green banner when in sync."""
+    def eb(x):
+        return _esc(x) if x else "(blank)"
+
+    # Flatten to table rows: (category, va, copy, attention?, reason). Group per
+    # row NAME and dedupe by value so a rep's 'week total' shows ONCE. Rep-data
+    # rows and the auto-recomputed rollup rows are returned SEPARATELY so the
+    # table can lead with the real per-rep differences and list the derived
+    # totals/percentages under their own separator.
+    def rows_for(items, attention, bucket):
+        reps, rolls = [], []
+        r_order, r_per, k_order, k_per = [], {}, [], {}
+        for nm, cell, cv, vv, col, rollup, url in items:
+            order, per = (k_order, k_per) if rollup else (r_order, r_per)
+            if nm not in per:
+                per[nm] = {}
+                order.append(nm)
+            k = (cv, vv)
+            if k not in per[nm]:
+                per[nm][k] = (col or "Week total", cv, vv, url)
+            else:                                # merge dup: keep best label + a url
+                plbl, pcv, pvv, purl = per[nm][k]
+                per[nm][k] = (col or plbl or "Week total", pcv, pvv, purl or url)
+        for order, per, is_roll in ((r_order, r_per, False), (k_order, k_per, True)):
+            bucket_rows = rolls if is_roll else reps
+            for nm in order:
+                for lbl, cv, vv, url in per[nm].values():
+                    cat = f"{nm} — {lbl}" if lbl else nm
+                    reason = ("Auto-recalculated total/percentage — reflects the "
+                              "rep rows above." if is_roll
+                              else _guess_reason(bucket, lbl, cv, vv))
+                    bucket_rows.append((cat, vv, cv, attention, reason, url))
+        return reps, rolls
+
+    table_rows, rollup_rows = [], []
+    for key, attn in (("copy_missing", True), ("behind", True),
+                      ("conflict", True), ("ahead", False)):
+        reps, rolls = rows_for(d.get(key, []), attn, key)
+        table_rows += reps
+        rollup_rows += rolls
+    for s in d.get("only_va", []):
+        table_rows.append((f"Row only on VA — {s}", "(row present)", "(missing)",
+                           True, "Row on the VA only — likely a name/marker mismatch, not missing data.", ""))
+    for s in d.get("only_copy", []):
+        table_rows.append((f"Row only on copy — {s}", "(missing)", "(row present)",
+                           True, "Row on the copy only — likely a name/marker mismatch, not missing data.", ""))
+
+    att = d.get("attention", 0)
+    banner = ("<div style='background:#eafaf1;border-left:4px solid #27ae60;"
+              "padding:8px 10px;margin:6px 0;font-size:13px'>✅ In sync — the "
+              "automation tab matches the VA tab. The only differences are the "
+              "automation being more current (VA not hand-entered yet).</div>"
+              if att == 0 else
+              f"<div style='background:#fdedec;border-left:4px solid #c0392b;"
+              f"padding:8px 10px;margin:6px 0;font-size:13px'>⚠ {att} difference(s) "
+              f"need a look (highlighted below).</div>")
+
+    html = ["<h3 style='margin:10px 0 4px'>📊 Copy vs VA — comparison</h3>", banner]
+    th = ("padding:5px 10px;border:1px solid #ccc;text-align:left;"
+          "background:#f0f0f0;font-size:13px")
+    td = "padding:4px 10px;border:1px solid #ddd;font-size:13px;vertical-align:top"
+    tdr = td + ";color:#555"
+    html.append("<table style='border-collapse:collapse;max-width:760px;width:100%'>"
+                f"<tr><th style='{th}'>Category</th>"
+                f"<th style='{th}'>VA tab</th>"
+                f"<th style='{th}'>Automation tab</th>"
+                f"<th style='{th}'>Likely reason (best guess)</th></tr>")
+    def emit(rows):
+        for cat, va, copy, attn, reason, url in rows:
+            bg = "background:#fdecea" if attn else ""
+            cat_html = _esc(cat)
+            if url:
+                cat_html += (f" <a href='{_esc(url)}' style='font-size:11px;"
+                             f"color:#1a6fc4;text-decoration:none;white-space:nowrap'>"
+                             f"(Tableau ↗)</a>")
+            html.append(f"<tr style='{bg}'><td style='{td}'>{cat_html}</td>"
+                        f"<td style='{td}'>{eb(va)}</td>"
+                        f"<td style='{td}'>{eb(copy)}</td>"
+                        f"<td style='{tdr}'>{_esc(reason)}</td></tr>")
+
+    emit(table_rows[:max_rows])
+    shown = min(len(table_rows), max_rows)
+    if rollup_rows and shown < max_rows:
+        html.append(f"<tr><td colspan='4' style='padding:5px 10px;border:1px solid "
+                    f"#ccc;background:#f7f7f7;font-size:12px;color:#666'>"
+                    f"Totals &amp; percentages — recomputed automatically from the "
+                    f"rows above (shown for completeness):</td></tr>")
+        emit(rollup_rows[:max_rows - shown])
+    html.append("</table>")
+    dropped = (len(table_rows) - shown) + max(0, len(rollup_rows) - max(0, max_rows - shown))
+    if dropped > 0:
+        html.append(f"<div style='font-size:12px;color:#888;margin:4px 0'>"
+                    f"…and {dropped} more difference(s)</div>")
+    return "".join(html)
+
+
+def _esc(s: str) -> str:
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
 
 def format_va_check(d: dict, max_lines: int = 60) -> str:

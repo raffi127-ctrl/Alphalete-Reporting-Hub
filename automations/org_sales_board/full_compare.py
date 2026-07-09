@@ -241,11 +241,15 @@ def content_row_map(cS, vS, aliases):
 def _row_sig(g, r):
     """Content signature of a row: (col-A label, col-B label), with rank cells
     (a bare integer or an '=A+1' formula) neutralized so a rep row is identified by
-    its NAME, not its (differing) rank."""
+    its NAME, not its (differing) rank. Pure-symbol markers (e.g. a manual '*' in
+    the bottom delta tables) are ALSO neutralized — they drift between the VA and
+    the copy, and keying on them mis-flagged identical rows as 'only on one tab'
+    (2026-07-09). [[feedback_read_actual_content]]"""
     import re
     A = _acell(g, r)
     B = _bname(g, r)
-    if not A or re.fullmatch(r"\d+", A) or A.startswith("="):
+    if (not A or re.fullmatch(r"\d+", A) or A.startswith("=")
+            or re.fullmatch(r"[\W_]+", A)):
         A = ""
     return (A.strip().lower(), B.strip().lower())
 

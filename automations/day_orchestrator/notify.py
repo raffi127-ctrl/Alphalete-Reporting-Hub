@@ -236,6 +236,39 @@ def _remaining_today(now):
     return [(p, t) for _dt, p, t in hits]
 
 
+def _board_compare_section(ds):
+    """Org Sales Board copy-vs-VA comparison breakdown → (html_chart, text).
+    Best-effort: only when the board ran; reads both Sheet tabs; returns
+    ('','') on any error so the summary email is never blocked. (2026-07-09,
+    Megan: 'we should get a comparison breakdown chart there'.)"""
+    rs = ds.reports.get("org_sales_board")
+    if not rs or rs.status not in (st.DONE, st.INCOMPLETE):
+        return "", ""
+    try:
+        from automations.org_sales_board import compare as _cmp
+        d = _cmp.breakdown()
+        att = d.get("attention", 0)
+        tl = ["📊 Copy vs VA — " + (f"{att} difference(s) need a look:" if att
+              else "in sync (only the automation running ahead of the VA).")]
+        names = {"copy_missing": "copy missing", "behind": "behind VA",
+                 "conflict": "value conflict"}
+        for k, lbl in names.items():
+            for rec in d.get(k, []):
+                nm, cell, cv, vv = rec[0], rec[1], rec[2], rec[3]
+                col = rec[4] if len(rec) > 4 else ""
+                where = col or cell
+                tl.append(f"   {lbl}: {nm} — {where} "
+                          f"copy={cv or '(blank)'} VA={vv or '(blank)'}")
+        for s in d.get("only_va", []):
+            tl.append(f"   row only on VA: {s}")
+        for s in d.get("only_copy", []):
+            tl.append(f"   row only on copy: {s}")
+        return _cmp.format_breakdown_html(d), "\n".join(tl)
+    except Exception as e:  # noqa: BLE001 — never block the email on the compare
+        return (f"<div style='font-size:12px;color:#999'>📊 Copy-vs-VA breakdown "
+                f"unavailable ({_esc(str(e)[:80])}).</div>", "")
+
+
 def _build_body(cfg, ds, *, checkpoint: bool):
     """Concise summary: what NEEDS ATTENTION (+ the fix) first, then one line of
     what ran clean. No verbose done-list / 'not scheduled' noise (Megan 2026-06-24)."""
@@ -380,6 +413,14 @@ def _build_body(cfg, ds, *, checkpoint: bool):
             text.append(f"  • {name} — {when}")
             html.append(f"<li><b>{_esc(name)}</b> — {_esc(when)}</li>")
         html.append("</ul>")
+
+    # 5) ORG SALES BOARD — copy-vs-VA comparison breakdown chart (when it ran)
+    bd_html, bd_text = _board_compare_section(ds)
+    if bd_html:
+        html.append(bd_html)
+    if bd_text:
+        text.append("")
+        text.append(bd_text)
 
     html.append("</div>")
     return "".join(html), "\n".join(text)
