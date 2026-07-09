@@ -165,6 +165,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             _run_pass(cfg, ds, todays, cache, target,
                       dry_run=dry_run, simulate=args.simulate, stale_after=stale_after,
                       channel=channel, email_dry=email_dry)
+            # Reflect what's still in-progress vs finished as yellow/closed pills on
+            # the shared Hub, every pass, so the batch never looks idle while working.
+            _sync_hub_pills(ds, dry_run=dry_run, simulate=args.simulate)
             state.save(ds)
 
             now = _now()
@@ -199,6 +202,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             if now >= backstop_at:
                 _log(f"backstop {backstop_at.time()} reached — marking stragglers MISSED.")
                 _apply_backstop(ds, stale_after)
+                # Close the yellow pills of the stragglers we just gave up on (red).
+                _sync_hub_pills(ds, dry_run=dry_run, simulate=args.simulate)
                 _finalize(cfg, ds, channel, email_dry, target, stale_after)
                 break
 
@@ -214,6 +219,47 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
     finally:
         state.release_lock(target.isoformat())
+
+
+def _sync_hub_pills(ds, *, dry_run, simulate):
+    """Reconcile every report's yellow 'in-progress' pill on the shared Hub
+    Activity tab with its live state, once per pass. Without this the Hub only
+    pulsed yellow for the few SECONDS a subprocess was executing — a report
+    WAITING on data, deps, a not_before clock, or a stale ownerville session
+    showed no pill at all, so the batch looked idle while it was actually working
+    (Megan 2026-07-09: "nothing blinking yellow to let me know what is running").
+
+    Rules (best-effort; a Hub hiccup never stalls the batch):
+      • non-terminal report with a Hub card → keep a live yellow pill: open one
+        (publish_running) if it has none, else heartbeat it so it survives the
+        Hub's 2h staleness window across a long wait.
+      • terminal report that still holds an open pill (e.g. backstop flipped it to
+        MISSED/BLOCKED outside the run loop) → close it so it doesn't hang yellow:
+        green for DONE/INCOMPLETE, red otherwise.
+    SKIPPED (not scheduled today) is terminal and never carried a pill → no-op."""
+    if dry_run or simulate:
+        return
+    from automations.day_orchestrator import hub_publish
+    for rs in ds.reports.values():
+        if not hub_publish.hub_card_id(rs.report_id):
+            continue
+        try:
+            if rs.is_terminal():
+                if rs.hub_run_id:
+                    good = rs.status in (state.DONE, state.INCOMPLETE)
+                    hub_publish.publish_done(
+                        rs.report_id, rs.display_name,
+                        status="success" if good else "failed",
+                        run_id=rs.hub_run_id)
+                    rs.hub_run_id = None
+            else:  # non-terminal → keep it visibly in-progress
+                if rs.hub_run_id:
+                    hub_publish.publish_heartbeat(rs.hub_run_id)
+                else:
+                    rs.hub_run_id = hub_publish.publish_running(
+                        rs.report_id, rs.display_name)
+        except Exception:  # noqa: BLE001 — never let a Hub write stall the loop
+            continue
 
 
 def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
@@ -294,31 +340,28 @@ def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
              + (" [SIMULATE]" if simulate else (" [dry-run]" if dry_run else "")))
         # Announce the START on the shared Hub Activity tab so every teammate's Hub
         # shows this mini run pulsing yellow LIVE (not just green when it finishes).
-        # publish_done below flips this same row running->done. Best-effort.
-        hub_run_id = None
-        if not (dry_run or simulate):
+        # Reuse the pill this report may already carry from an earlier pass (while it
+        # was waiting on data / deps / a stale session — opened by _sync_hub_pills) so
+        # we don't open a second row; publish one now only if it has none. The DONE /
+        # failure branches below flip this SAME row. Best-effort.
+        if not (dry_run or simulate) and not rs.hub_run_id:
             try:
                 from automations.day_orchestrator import hub_publish
-                hub_run_id = hub_publish.publish_running(r.report_id, r.display_name)
+                rs.hub_run_id = hub_publish.publish_running(r.report_id, r.display_name)
             except Exception:
-                hub_run_id = None
+                pass
         ok, detail = _run_report(r, target, dry_run=dry_run, simulate=simulate)
         ds.set(r.report_id, state.PENDING, bump_attempt=True)  # stamp the attempt
 
         if not ok:
-            if hub_run_id:                     # close the yellow pill so it doesn't hang
-                try:
-                    from automations.day_orchestrator import hub_publish
-                    hub_publish.publish_done(r.report_id, r.display_name,
-                                             status="failed", run_id=hub_run_id)
-                except Exception:
-                    pass
             # Retry a failed TABLEAU report on a later pass instead of going
             # terminal on the first flake: the next pass re-launches a fresh
             # subprocess that RE-AUTHS Tableau, which is what a manual rerun did to
             # recover Fiber et al. on 2026-07-08. Cap at MAX_RUN_RETRIES, then go
             # terminal FAILED so a genuinely broken report still gives up. rs.attempts
-            # was just bumped above, so it counts this failed run.
+            # was just bumped above, so it counts this failed run. Keep the pill
+            # yellow across retries (it IS still being worked); _sync_hub_pills
+            # heartbeats it so it doesn't go stale between passes.
             if r.source_type == "tableau" and rs.attempts < MAX_RUN_RETRIES:
                 ds.set(r.report_id, state.STILL_TRYING,
                        reason=(f"run failed (attempt {rs.attempts}/{MAX_RUN_RETRIES}) "
@@ -327,6 +370,14 @@ def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
                 _log(f"  {r.report_id}: run failed "
                      f"(attempt {rs.attempts}/{MAX_RUN_RETRIES}) — will retry: {detail}")
                 continue
+            if rs.hub_run_id:                  # terminal fail → close the pill red
+                try:
+                    from automations.day_orchestrator import hub_publish
+                    hub_publish.publish_done(r.report_id, r.display_name,
+                                             status="failed", run_id=rs.hub_run_id)
+                except Exception:
+                    pass
+                rs.hub_run_id = None
             ds.set(r.report_id, state.FAILED, reason=detail)
             _log(f"  {r.report_id}: FAILED — {detail}")
             continue
@@ -366,10 +417,11 @@ def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
             try:
                 from automations.day_orchestrator import hub_publish
                 if hub_publish.publish_done(r.report_id, r.display_name,
-                                            run_id=hub_run_id):
+                                            run_id=rs.hub_run_id):
                     _log(f"  {r.report_id}: ✓ marked ran on the Hub")
             except Exception as e:
                 _log(f"  {r.report_id}: Hub publish skipped ({type(e).__name__}: {str(e)[:80]})")
+            rs.hub_run_id = None
 
 
 def _kill_tree(proc) -> bool:

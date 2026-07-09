@@ -578,6 +578,27 @@
       "verify": null,
       "timeout_minutes": 5
     },
+    "install_orchestrator_guard_agent": {
+      "on_scheduler": true,
+      "_note": "NOT a report — installs the SELF-HEAL for the recurring 4am->6am launchd drift, run via `lucy rerun install_orchestrator_guard_agent`. Bootstraps com.alphalete.orchestrator-schedule-guard, a launchd job that fires DAILY at 03:40 (20 min before the 4am orchestrator) and re-bootstraps com.alphalete.day-orchestrator from the current Hour-4 plist. WHY: `git pull` updates the plist FILE but never reloads launchd, so launchd kept firing a stale boot-time Hour-6 schedule for 15 days while every diagnostic read the FILE (Hour 4) and looked fixed (2026-07-07/-08/-09, 4 recurrences). This guard reloads the schedule every night so launchd can NEVER hold a stale one. on_scheduler:true ONLY so registry keeps it; weekdays [] = never auto-runs. source_type 'local'. Safe/idempotent; the guard plist has no RunAtLoad so installing it won't fire an immediate reload. Run once to install; re-run any time to refresh the guard itself.",
+      "display_name": "Install: nightly guard that keeps the 4am schedule from drifting",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "orchestrator-schedule-guard"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
+    },
     "board_compare": {
       "on_scheduler": true,
       "_note": "NOT a report — standalone FULL comparison of the Org Sales Board copy tab vs the live VA tab, run via `lucy rerun board_compare`. Read-only (sheet vs sheet, no Tableau). Writes EVERY disagreeing cell to output/logs/org_sales_board_compare-<stamp>.log (the Mini-Control result cell truncates to ~480 chars, so read the full list with `lucy logtail org_sales_board_compare`). on_scheduler:true so registry keeps it; weekdays [] = never auto-runs. source_type 'local' (no chrome guard). Built 2026-07-07 to enumerate the residual VA-compare cells after the NDS section fix.",

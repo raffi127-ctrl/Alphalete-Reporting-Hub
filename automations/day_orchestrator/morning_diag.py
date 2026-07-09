@@ -160,6 +160,43 @@ def _boot_and_power() -> str:
     return " ".join(out)
 
 
+def _drift_check() -> str:
+    """The HONEST drift signal. Every prior check read the plist FILE (which a
+    `git pull` keeps current at Hour 4) and so always said 'schedule=Hour 4 ✓' —
+    even while launchd kept firing the stale boot-time Hour 6. The only truth is
+    the ACTUAL start time (from the per-run log filename) vs the scheduled
+    Hour:Minute. Flags LOUDLY when they disagree, with the one-line fix. This is
+    what should have caught the 4x-recurring 4am->6am drift."""
+    import os
+    import plistlib
+    p = os.path.expanduser(
+        "~/Library/LaunchAgents/com.alphalete.day-orchestrator.plist")
+    sched_min = None
+    try:
+        with open(p, "rb") as f:
+            sci = plistlib.load(f).get("StartCalendarInterval") or {}
+        if isinstance(sci, dict):
+            sched_min = int(sci.get("Hour", 0)) * 60 + int(sci.get("Minute", 0))
+    except Exception:  # noqa: BLE001
+        pass
+    if sched_min is None:
+        return "DRIFT=unknown(no-plist)"
+    today = dt.date.today().isoformat()
+    logs = sorted(glob.glob(f"output/logs/day-orchestrator-{today}-*.log"))
+    if not logs:
+        return "DRIFT=unknown(no-orch-log-today)"
+    m = re.search(r"-(\d{2})(\d{2})(\d{2})\.log$", logs[-1])
+    if not m:
+        return "DRIFT=unknown(bad-log-name)"
+    start_min = int(m.group(1)) * 60 + int(m.group(2))
+    drift = start_min - sched_min
+    sh, sm = divmod(sched_min, 60)
+    if drift > 30:
+        return (f"DRIFT=+{drift}m ⚠️ launchd fired {m.group(1)}:{m.group(2)} but "
+                f"schedule={sh:02d}:{sm:02d} — reload: lucy rerun install_orchestrator_agent")
+    return f"DRIFT={drift:+d}m vs {sh:02d}:{sm:02d} (on-time)"
+
+
 def main():
     import sys
     # `--pmset`: print ONLY the power diagnostic (wake schedule / sleep timer /
@@ -172,7 +209,7 @@ def main():
               f"{_boot_and_power()} :: {_pmset()}")
         return
     print(f"MORNING-DIAG {dt.date.today()} :: {_orchestrator_start()} :: "
-          f"{_batch_state()} :: {_pmset()}")
+          f"{_drift_check()} :: {_batch_state()} :: {_pmset()}")
 
 
 if __name__ == "__main__":

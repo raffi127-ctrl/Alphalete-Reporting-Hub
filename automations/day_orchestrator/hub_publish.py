@@ -90,6 +90,27 @@ def publish_running(report_id: str, report_name: str):
         return None
 
 
+def publish_heartbeat(run_id: str) -> bool:
+    """Re-stamp an open 'started' row's Started At (col 2) to now so its yellow
+    pill stays LIVE past the Hub's 2h staleness window (dashboard.HUB_STALE_AFTER)
+    — for a report the orchestrator is still working hours later (e.g. a board
+    waiting on its not_before, or a Tableau report retrying while data lands).
+    Only touches a row we opened (matched by RunID) and never its Status/Ended At.
+    Best-effort — never raises. Returns True if a row was re-stamped."""
+    if not run_id:
+        return False
+    now = dt.datetime.now().isoformat(timespec="seconds")
+    try:
+        ws = _ws()
+        cell = ws.find(str(run_id))
+        if not cell:
+            return False
+        ws.update([[now]], f"B{cell.row}", value_input_option="RAW")   # Started At
+        return True
+    except Exception:
+        return False
+
+
 def publish_done(report_id: str, report_name: str, status: str = "success",
                  run_id: str | None = None) -> bool:
     """Mark a run finished on the Hub. If `run_id` (from publish_running) is given,

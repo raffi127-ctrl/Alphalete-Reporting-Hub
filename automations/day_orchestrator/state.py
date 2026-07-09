@@ -57,6 +57,7 @@ class ReportState:
     waiting_on: Optional[str] = None          # which source it's blocked on (for the email)
     missing: List[str] = field(default_factory=list)  # specific blanks from reconcile
     display_name: str = ""
+    hub_run_id: Optional[str] = None          # open Hub Activity "started" row (yellow pill); None = no live pill
 
     def is_terminal(self) -> bool:
         return self.status in TERMINAL
