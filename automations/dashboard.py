@@ -4679,6 +4679,36 @@ def _render_report_breakdown(report: dict) -> None:
     )
 
 
+def _render_texas_de_brazil_dinner_inputs() -> None:
+    """Texas de Brazil card: let Maud set the dinner date/time each cycle. Writes
+    dinner_day / dinner_time into the report's manual-inputs JSON (merging with any
+    existing keys); the run reads it and prints it on the flyer (blank => the flyer
+    shows 'TO BE DETERMINED')."""
+    import json as _json
+    from pathlib import Path as _Path
+    jf = _Path.home() / "recruiting-report" / "output" / "texas_de_brazil_manual.json"
+    data = {}
+    try:
+        if jf.exists():
+            data = _json.loads(jf.read_text())
+    except Exception:
+        data = {}
+    with st.expander("🍽️ Dinner date (shows on the flyer)"):
+        day = st.text_input("Dinner date", value=data.get("dinner_day", ""),
+                            placeholder="e.g. SAT · AUG 8", key="tdb_dinner_day")
+        tm = st.text_input("Dinner time", value=data.get("dinner_time", ""),
+                           placeholder="e.g. 7:00 PM", key="tdb_dinner_time")
+        if st.button("Save dinner date", key="tdb_dinner_save"):
+            try:
+                jf.parent.mkdir(parents=True, exist_ok=True)
+                data["dinner_day"] = day.strip()
+                data["dinner_time"] = tm.strip()
+                jf.write_text(_json.dumps(data, indent=2, ensure_ascii=False))
+                st.success("Saved — the next run will show it on the flyer.")
+            except Exception as e:
+                st.error(f"Couldn't save: {e}")
+
+
 def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
     """One unified card per report: header, gated checklist, primary run button,
     secondary actions inside an expander."""
@@ -4802,6 +4832,11 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
         # matches more than one AppStream office, before the run.
         if report["id"] == "recruiting":
             _render_recruiting_office_picker()
+
+        # Texas de Brazil only: let Maud set the dinner date/time each cycle
+        # (written to the report's manual-inputs JSON that the run reads).
+        if report["id"] == "june_texas_de_brazil_monthly_competition":
+            _render_texas_de_brazil_dinner_inputs()
 
         # Checklist (gates the primary run button)
         all_checked = True
