@@ -122,11 +122,14 @@ def _run(args) -> dict:
                 shutil.copy2(pdf_path, dest)
                 rep["pdf"] = str(dest)
                 print(f"\n  📄 PDF also saved → {dest}", flush=True)
+            recipients = ([u.strip() for u in args.slack_to.split(",") if u.strip()]
+                          if args.slack_to else list(SLACK_RECIPIENTS))
             res = smp.dm_users_with_file(
-                pdf_path, users=list(SLACK_RECIPIENTS),
+                pdf_path, users=recipients,
                 comment=_slack_comment(rep), as_bot=True)
             rep["slack"] = res
-            print(f"\n  💬 PDF DM'd to Carlos + Maud via Lucy "
+            who = "test recipient(s)" if args.slack_to else "Carlos + Maud"
+            print(f"\n  💬 PDF DM'd to {who} via Lucy "
                   f"({res.get('mode', 'sent')}).", flush=True)
         except Exception as e:  # noqa: BLE001 — delivery must not fail the fill
             rep["slack"] = {"ok": False, "error": str(e)[:200]}
@@ -156,6 +159,10 @@ def main() -> int:
                          "the PDF is DM'd to Carlos + Maud on Slack, not saved)")
     ap.add_argument("--no-roster", action="store_true",
                     help="don't auto add/hide rows for roster changes (just flag them)")
+    ap.add_argument("--slack-to",
+                    help="override the PDF DM recipients (comma-separated Slack "
+                         "ids/emails/names) — for testing, so a live run DMs you "
+                         "instead of Carlos + Maud")
     ap.add_argument("--check-slack", action="store_true",
                     help="verify the Lucy Slack token on THIS machine (auth_test "
                          "only — no message, no fill, no PDF) and exit")
