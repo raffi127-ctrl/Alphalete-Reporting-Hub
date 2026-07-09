@@ -4735,11 +4735,12 @@ def _tdb_store_all() -> dict:
 
 
 def _render_texas_de_brazil_dinner_inputs() -> None:
-    """Texas de Brazil card: dinner dates + BACKFILL leaders, in the shared
+    """Texas de Brazil card: the rolling DINNER-date schedule, in the shared
     'TdB Manual Inputs' Sheet store (live cross-machine — reaches the mini with
-    no code editing, no git push). The board auto-detects most leaders on its
-    own; the leader boxes here are only for ones it missed. Dinner shows THIS
-    competition month + the next 2 so Maud sets ~2 months ahead."""
+    no code editing, no git push). Shows THIS competition month + the next 2 so
+    Maud sets ~2 months ahead and the flyer never says 'TO BE DETERMINED'.
+    Leaders are NOT set here — the board auto-detects them (promotions + car-ride)
+    on its own; a rare miss gets backfilled straight into the sheet."""
     import datetime as _dt
     from automations.day_orchestrator import tdb_manual_store as _store
     store = _tdb_store_all()
@@ -4752,13 +4753,10 @@ def _render_texas_de_brazil_dinner_inputs() -> None:
         mo += 1
         if mo > 12:
             mo, y = 1, y + 1
-    cur_period = f"{months[0][0]}-{months[0][1]:02d}"
-    cur = store.get(cur_period, {})
-    with st.expander("🍽️ Dinner dates & leaders (auto-syncs to the mini)"):
-        st.caption("Dinner: set ~2 months ahead so the flyer never says TBD. "
-                   "Leaders auto-track from the board — only add ones below that "
-                   "the board missed. Saves to the shared sheet; no code editing.")
-        st.markdown("**Dinner dates**")
+    with st.expander("🍽️ Dinner dates (auto-syncs to the mini)"):
+        st.caption("Set ~2 months ahead so the flyer never says TBD. Leaders "
+                   "auto-track from the board — nothing to enter. Saves to the "
+                   "shared sheet; no code editing.")
         dinner_inputs = []
         for i, (yy, mm) in enumerate(months):
             key = f"{yy}-{mm:02d}"                 # storage key = competition month
@@ -4776,23 +4774,11 @@ def _render_texas_de_brazil_dinner_inputs() -> None:
                                label_visibility="collapsed")
             dinner_inputs.append((key, day, tm))
 
-        st.markdown(f"**Backfill leaders — {_dt.date(months[0][0], months[0][1], 1).strftime('%B')} "
-                    "(only if the board missed them)**")
-        promotions = st.text_area(
-            "Promotions", value=cur.get("promotions", ""),
-            placeholder="One per line:  Promoter > New Leader\ne.g. Willie Henderson > Jessie Gomez",
-            key="tdb_promos", height=90)
-        car_ride = st.text_area(
-            "Car-ride leaders", value=cur.get("car_ride", ""),
-            placeholder="One name per line", key="tdb_cars", height=68)
-
-        if st.button("Save dinner & leaders", key="tdb_dinner_save"):
+        if st.button("Save dinner dates", key="tdb_dinner_save"):
             try:
                 for key, day, tm in dinner_inputs:
                     _store.set(key, dinner_day=day.strip(), dinner_time=tm.strip(),
                                by="hub")
-                _store.set(cur_period, promotions=promotions.strip(),
-                           car_ride=car_ride.strip(), by="hub")
                 _tdb_store_all.clear()
                 st.success("Saved — syncs to the mini on the next run.")
             except Exception as e:
