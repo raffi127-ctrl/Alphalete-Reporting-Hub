@@ -13,7 +13,7 @@
   },
   "settings": {
     "start_time": "04:00",
-    "interval_minutes": 25,
+    "interval_minutes": 12,
     "checkpoint_time": "07:30",
     "backstop_time": "12:00",
     "channel": "email",

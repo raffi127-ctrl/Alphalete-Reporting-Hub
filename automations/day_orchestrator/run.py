@@ -47,6 +47,12 @@ REPORT_TIMEOUT_S = 45 * 60
 # the day and needed a manual rerun (2026-07-08). Capped so a genuinely broken
 # report still gives up instead of hammering Tableau every pass all morning.
 MAX_RUN_RETRIES = 3
+# When a Tableau report FLAKES (errors), retry it fast at END OF PASS after this
+# backoff — run the other ready reports first, then come back to the flaked one
+# (Megan 2026-07-09) — so a transient flake recovers in ~90s instead of waiting a
+# full inter-pass gap. One quick retry per flaked report per pass; anything still
+# flaking defers to the next pass, bounded overall by MAX_RUN_RETRIES.
+FLAKE_RETRY_BACKOFF_S = 90
 
 
 def _parse_hhmm(s: str, on: dt.date) -> dt.datetime:
@@ -262,6 +268,113 @@ def _sync_hub_pills(ds, *, dry_run, simulate):
             continue
 
 
+def _attempt_report(ds, r, rs, target, *, dry_run, simulate) -> str:
+    """Run ONE ready report: publish its Hub pill, run the subprocess, reconcile,
+    set state. Returns the outcome:
+      'done'   — ran (DONE or INCOMPLETE); terminal for this batch
+      'flaked' — a TABLEAU run errored but is still retryable (attempts < cap); left
+                 STILL_TRYING with its yellow pill kept, for a fast end-of-pass retry
+      'failed' — terminal FAILED (a non-tableau error, or retries exhausted)
+    Extracted from the pass loop so a flaked report can be retried end-of-pass (fast)
+    instead of only on the next full pass."""
+    _log(f"  {r.report_id}: data ready — running"
+         + (" [SIMULATE]" if simulate else (" [dry-run]" if dry_run else "")))
+    # Announce the START on the shared Hub Activity tab. Reuse the pill this report
+    # may already carry from an earlier pass (opened by _sync_hub_pills while it was
+    # waiting) so we don't open a second row; publish one now only if it has none.
+    if not (dry_run or simulate) and not rs.hub_run_id:
+        try:
+            from automations.day_orchestrator import hub_publish
+            rs.hub_run_id = hub_publish.publish_running(r.report_id, r.display_name)
+        except Exception:
+            pass
+    ok, detail = _run_report(r, target, dry_run=dry_run, simulate=simulate)
+    ds.set(r.report_id, state.PENDING, bump_attempt=True)  # stamp the attempt
+
+    if not ok:
+        # A TABLEAU flake is retryable — a fresh subprocess re-auths Tableau, which
+        # is what a manual rerun did to recover Fiber et al. (2026-07-08). Cap at
+        # MAX_RUN_RETRIES, then go terminal FAILED. Keep the pill yellow across
+        # retries (it IS still being worked); _sync_hub_pills heartbeats it.
+        if r.source_type == "tableau" and rs.attempts < MAX_RUN_RETRIES:
+            ds.set(r.report_id, state.STILL_TRYING,
+                   reason=(f"run failed (attempt {rs.attempts}/{MAX_RUN_RETRIES}) "
+                           f"— retrying: {detail}"),
+                   waiting_on="prior run failed — retrying")
+            _log(f"  {r.report_id}: run failed "
+                 f"(attempt {rs.attempts}/{MAX_RUN_RETRIES}) — will retry: {detail}")
+            return "flaked"
+        if rs.hub_run_id:                  # terminal fail → close the pill red
+            try:
+                from automations.day_orchestrator import hub_publish
+                hub_publish.publish_done(r.report_id, r.display_name,
+                                         status="failed", run_id=rs.hub_run_id)
+            except Exception:
+                pass
+            rs.hub_run_id = None
+        ds.set(r.report_id, state.FAILED, reason=detail)
+        _log(f"  {r.report_id}: FAILED — {detail}")
+        return "failed"
+
+    # ---- reconcile (don't trust exit 0) ----
+    if simulate:
+        recon = reconcile.ReconResult(ok=True, unknown=True, note="simulated")
+    else:
+        recon = reconcile.verify(r, target, dry_run=dry_run)
+    mark_ran = False    # publish to the Hub? true for DONE *and* INCOMPLETE
+    if recon.ok and not recon.unknown:
+        ds.set(r.report_id, state.DONE, reason=recon.note)
+        _log(f"  {r.report_id}: DONE — {recon.note}")
+        mark_ran = True
+    elif recon.unknown:
+        ds.set(r.report_id, state.DONE, reason=f"ran; {recon.note}")
+        _log(f"  {r.report_id}: DONE (unverified) — {recon.note}")
+        mark_ran = True
+    else:
+        ds.set(r.report_id, state.INCOMPLETE, reason=recon.note, missing=recon.missing)
+        _log(f"  {r.report_id}: INCOMPLETE — {recon.note}: {', '.join(recon.missing)}")
+        # INCOMPLETE = it RAN, just with a note — still mark it on the Hub so the
+        # card shows it ran (Megan 2026-07-01). The email renders the note separately.
+        mark_ran = True
+
+    if mark_ran and not (dry_run or simulate):
+        try:
+            from automations.day_orchestrator import hub_publish
+            if hub_publish.publish_done(r.report_id, r.display_name,
+                                        run_id=rs.hub_run_id):
+                _log(f"  {r.report_id}: ✓ marked ran on the Hub")
+        except Exception as e:
+            _log(f"  {r.report_id}: Hub publish skipped ({type(e).__name__}: {str(e)[:80]})")
+        rs.hub_run_id = None
+    return "done"
+
+
+def _retry_flaked(ds, flaked, target, *, dry_run, simulate):
+    """End-of-pass fast retry for reports that FLAKED this pass. The main loop runs
+    every READY report first; then this comes back and retries the flaked one(s)
+    after a short backoff — so a transient Tableau flake recovers in ~90s instead of
+    waiting a full inter-pass gap, WITHOUT holding up the reports that were ready
+    (Megan 2026-07-09: "move to the next report, run it, then go back to the tableau
+    report, run it"). ONE quick retry per flaked report per pass; anything still
+    flaking stays STILL_TRYING for the next pass (retried again there), bounded
+    overall by MAX_RUN_RETRIES."""
+    pending = [(r, rs) for (r, rs) in flaked
+               if not rs.is_terminal() and rs.status == state.STILL_TRYING]
+    if not pending:
+        return
+    if not (dry_run or simulate):
+        _log(f"  end-of-pass: {len(pending)} flaked report(s) — backing off "
+             f"{FLAKE_RETRY_BACKOFF_S}s then retrying")
+        time.sleep(FLAKE_RETRY_BACKOFF_S)
+    for r, rs in pending:
+        if rs.is_terminal():
+            continue
+        _log(f"  {r.report_id}: end-of-pass fast retry "
+             f"(attempt {rs.attempts + 1}/{MAX_RUN_RETRIES})")
+        _attempt_report(ds, r, rs, target, dry_run=dry_run, simulate=simulate)
+    state.save(ds)
+
+
 def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
               channel, email_dry):
     from automations.day_orchestrator import control
@@ -278,6 +391,7 @@ def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
         state.save(ds)
 
     now = _now()
+    flaked = []   # (r, rs) that flaked this pass — retried fast at end-of-pass
     for r in registry.run_order(todays, target):
         rs = ds.reports[r.report_id]
         if rs.is_terminal():
@@ -335,93 +449,15 @@ def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
             _log(f"  {r.report_id}: still trying — {rd.reason}")
             continue
 
-        # ---- run it ----
-        _log(f"  {r.report_id}: data ready — running"
-             + (" [SIMULATE]" if simulate else (" [dry-run]" if dry_run else "")))
-        # Announce the START on the shared Hub Activity tab so every teammate's Hub
-        # shows this mini run pulsing yellow LIVE (not just green when it finishes).
-        # Reuse the pill this report may already carry from an earlier pass (while it
-        # was waiting on data / deps / a stale session — opened by _sync_hub_pills) so
-        # we don't open a second row; publish one now only if it has none. The DONE /
-        # failure branches below flip this SAME row. Best-effort.
-        if not (dry_run or simulate) and not rs.hub_run_id:
-            try:
-                from automations.day_orchestrator import hub_publish
-                rs.hub_run_id = hub_publish.publish_running(r.report_id, r.display_name)
-            except Exception:
-                pass
-        ok, detail = _run_report(r, target, dry_run=dry_run, simulate=simulate)
-        ds.set(r.report_id, state.PENDING, bump_attempt=True)  # stamp the attempt
+        # ---- run it ---- (a flaked TABLEAU report is retried fast END-OF-PASS,
+        # after the other ready reports, rather than waiting a full inter-pass gap.)
+        outcome = _attempt_report(ds, r, rs, target, dry_run=dry_run, simulate=simulate)
+        if outcome == "flaked":
+            flaked.append((r, rs))
 
-        if not ok:
-            # Retry a failed TABLEAU report on a later pass instead of going
-            # terminal on the first flake: the next pass re-launches a fresh
-            # subprocess that RE-AUTHS Tableau, which is what a manual rerun did to
-            # recover Fiber et al. on 2026-07-08. Cap at MAX_RUN_RETRIES, then go
-            # terminal FAILED so a genuinely broken report still gives up. rs.attempts
-            # was just bumped above, so it counts this failed run. Keep the pill
-            # yellow across retries (it IS still being worked); _sync_hub_pills
-            # heartbeats it so it doesn't go stale between passes.
-            if r.source_type == "tableau" and rs.attempts < MAX_RUN_RETRIES:
-                ds.set(r.report_id, state.STILL_TRYING,
-                       reason=(f"run failed (attempt {rs.attempts}/{MAX_RUN_RETRIES}) "
-                               f"— retrying next pass: {detail}"),
-                       waiting_on="prior run failed — retrying")
-                _log(f"  {r.report_id}: run failed "
-                     f"(attempt {rs.attempts}/{MAX_RUN_RETRIES}) — will retry: {detail}")
-                continue
-            if rs.hub_run_id:                  # terminal fail → close the pill red
-                try:
-                    from automations.day_orchestrator import hub_publish
-                    hub_publish.publish_done(r.report_id, r.display_name,
-                                             status="failed", run_id=rs.hub_run_id)
-                except Exception:
-                    pass
-                rs.hub_run_id = None
-            ds.set(r.report_id, state.FAILED, reason=detail)
-            _log(f"  {r.report_id}: FAILED — {detail}")
-            continue
-
-        # ---- reconcile (don't trust exit 0) ----
-        if simulate:
-            recon = reconcile.ReconResult(ok=True, unknown=True, note="simulated")
-        else:
-            recon = reconcile.verify(r, target, dry_run=dry_run)
-        done = False
-        mark_ran = False    # publish to the Hub? true for DONE *and* INCOMPLETE
-        if recon.ok and not recon.unknown:
-            ds.set(r.report_id, state.DONE, reason=recon.note)
-            _log(f"  {r.report_id}: DONE — {recon.note}")
-            done = True
-            mark_ran = True
-        elif recon.unknown:
-            # Ran clean but we can't verify cells yet (verify not wired).
-            ds.set(r.report_id, state.DONE, reason=f"ran; {recon.note}")
-            _log(f"  {r.report_id}: DONE (unverified) — {recon.note}")
-            done = True
-            mark_ran = True
-        else:
-            ds.set(r.report_id, state.INCOMPLETE, reason=recon.note, missing=recon.missing)
-            _log(f"  {r.report_id}: INCOMPLETE — {recon.note}: {', '.join(recon.missing)}")
-            # INCOMPLETE = it RAN, just with a note (e.g. an owner pending OV
-            # access, a VA-compare lag). Still mark it on the Hub so the card
-            # shows it ran — the exit code already kept a hard FAILURE (non-zero)
-            # out of this branch, and the email renders the note separately.
-            # (Megan 2026-07-01: 'ran with a note' should be marked complete on
-            # the Hub, not left looking like it never ran.)
-            mark_ran = True
-
-        # Mark it ran on the Hub (shared "Hub Activity" tab) so the Hub reflects
-        # mini runs, not just click-runs (Megan 2026-06-25). Best-effort.
-        if mark_ran and not (dry_run or simulate):
-            try:
-                from automations.day_orchestrator import hub_publish
-                if hub_publish.publish_done(r.report_id, r.display_name,
-                                            run_id=rs.hub_run_id):
-                    _log(f"  {r.report_id}: ✓ marked ran on the Hub")
-            except Exception as e:
-                _log(f"  {r.report_id}: Hub publish skipped ({type(e).__name__}: {str(e)[:80]})")
-            rs.hub_run_id = None
+    # End-of-pass: come back and retry any flaked report fast, now that the ready
+    # reports have all run — instead of making it wait a full inter-pass gap.
+    _retry_flaked(ds, flaked, target, dry_run=dry_run, simulate=simulate)
 
 
 def _kill_tree(proc) -> bool:
