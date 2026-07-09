@@ -145,6 +145,69 @@ def _closest_col(date_cols: Dict[dt.date, int], target: dt.date,
     return best
 
 
+def _has_data(v) -> bool:
+    """A financial cell counts as filled only if it's non-blank AND not the
+    legacy 'Not Found In Email' placeholder (which meant absent data)."""
+    s = str(v or "").strip()
+    return bool(s) and "not found" not in s.lower()
+
+
+def _this_and_prior_week_cols(
+        date_cols: Dict[dt.date, int],
+        today: dt.date) -> Tuple[Optional[int], Optional[int]]:
+    """(this-week col, prior-week col) for the financial section: the sheet
+    column the current week's data lands in, and the one before it. Financial
+    files arrive ~a week late (see _WEEK_OFFSET_DAYS), so 'this week' is the
+    most recent date column on/just after today; 'prior' is the one before."""
+    ds = sorted(date_cols)
+    cur = None
+    for d in ds:
+        if d <= today + dt.timedelta(days=8):
+            cur = d
+    if cur is None:
+        return None, None
+    i = ds.index(cur)
+    prior = ds[i - 1] if i > 0 else None
+    return date_cols[cur], (date_cols[prior] if prior is not None else None)
+
+
+def find_went_dark(sh, titles, today: Optional[dt.date] = None) -> List[str]:
+    """Of the unmatched `titles` on this spreadsheet, the tabs whose financial
+    section had a value LAST week but is EMPTY this week — an ACTUAL missing
+    cell (the tab's book didn't refresh this run), as opposed to a
+    never-filled template/rep tab or one that went dark weeks ago. One batched
+    read for the whole set; advisory-only (never raises). Megan 2026-07-09:
+    only flag cells that actually lost data this week."""
+    titles = list(titles)
+    if not titles:
+        return []
+    today = today or dt.date.today()
+    try:
+        ranges = [f"'{t}'" for t in titles]      # bare sheet name = whole tab
+        resp = rfill._retry(lambda: sh.values_batch_get(ranges))
+        value_ranges = resp.get("valueRanges", [])
+    except Exception:
+        return []
+    tfa = _norm("Total Funds Available")
+    dark: List[str] = []
+    for t, vr in zip(titles, value_ranges):
+        grid = vr.get("values", [])
+        if not grid:
+            continue
+        cur, prior = _this_and_prior_week_cols(_date_columns(grid[0]), today)
+        if cur is None or prior is None:
+            continue
+        col_b = [(r[1] if len(r) > 1 else "") for r in grid]
+        for a in (j for j, v in enumerate(col_b) if _norm(v).startswith(tfa)):
+            row = grid[a]
+            pv = row[prior] if prior < len(row) else ""
+            cv = row[cur] if cur < len(row) else ""
+            if _has_data(pv) and not _has_data(cv):
+                dark.append(t)
+                break
+    return dark
+
+
 def fill_financial_for_tab(ws: gspread.Worksheet, offices, weeks: List[dt.date],
                            dry_run: bool) -> List[str]:
     """Write the financial rows for one ICD tab. `offices` is a list — one

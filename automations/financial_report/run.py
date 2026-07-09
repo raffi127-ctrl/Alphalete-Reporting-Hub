@@ -125,7 +125,13 @@ def run_financial_report(file_paths, dry_run: bool = False,
     # ICD means someone's numbers didn't come through — SURFACE it as a note so
     # Megan can chase that sender. Still NOT a failure: the run stays complete +
     # never wipes a tab (incremental). [[feedback_financial_incremental]]
-    not_pulled: set = set()
+    # WENT-DARK = an ACTUAL missing cell: a tab that had a financial value LAST
+    # week but is blank THIS week (its book didn't refresh). Only these are
+    # flagged — never-filled template/rep tabs and long-stale owners are NOT,
+    # so the note is signal, not a wall of 66 names (Megan 2026-07-09).
+    # Incremental still holds: nothing is wiped, a re-run fills them once the
+    # file lands. [[feedback_financial_incremental]] [[feedback_flag_unfilled_cells]]
+    went_dark: set = set()
     matched_titles: set = set()   # a tab matched in ANY sheet isn't "missing"
     for sheet_name, sid in ffill.OUTPUT_SHEETS.items():
         if only_sheet and only_sheet.lower() not in sheet_name.lower():
@@ -150,6 +156,7 @@ def run_financial_report(file_paths, dry_run: bool = False,
         logfn(f"financial: {sheet_name} — {len(candidate_tabs)} ICD tab(s) to scan "
               f"({len(hidden)} hidden skipped)")
         filled = matched = 0
+        sheet_unmatched: list = []
         for idx, ws in enumerate(candidate_tabs, start=1):
             tab_offices = ffill._match_owner(ws.title, by_owner, bridge)
             if not tab_offices:
@@ -157,9 +164,8 @@ def run_financial_report(file_paths, dry_run: bool = False,
                 # filled by a previous run stays put; when an upload that
                 # DOES include this ICD arrives, the cells get filled then.
                 # (Megan, 2026-05-20: incremental uploads must never wipe
-                # previously-entered data.) Record it so the run notes who's
-                # missing this week (Megan 2026-07-05, auto email-ingest era).
-                not_pulled.add(ws.title)
+                # previously-entered data.) Held for the went-dark check below.
+                sheet_unmatched.append(ws.title)
                 continue
             matched += 1
             matched_titles.add(ws.title)
@@ -175,17 +181,21 @@ def run_financial_report(file_paths, dry_run: bool = False,
                       f"tabs scanned, {filled} filled so far...")
         logfn(f"financial: {sheet_name} — {filled}/{matched} matched tabs filled "
               f"(unmatched tabs left untouched)")
+        # Of this sheet's unmatched tabs, which actually LOST data this week
+        # (had a value last week, blank now)? One batched read.
+        went_dark |= set(ffill.find_went_dark(sh, sheet_unmatched))
         total_matched += matched
         total_filled += filled
-    # A tab matched in any sheet isn't "missing" — only tabs that got NO data
-    # anywhere this week remain.
-    not_pulled -= matched_titles
-    if not_pulled:
+    # A tab matched in another sheet this week isn't dark.
+    went_dark -= matched_titles
+    if went_dark:
         logfn("")
-        logfn(f"===== ℹ️  {len(not_pulled)} ICD(s) had NO financials this week "
-              f"(not in any email) — NOTE only, run still complete =====")
-        for t in sorted(not_pulled):
+        logfn(f"===== ⚠ {len(went_dark)} ICD(s) WENT DARK — had financials last "
+              f"week, none this week (actual missing cells) =====")
+        for t in sorted(went_dark):
             logfn(f"  – {t}")
+        logfn("(Their book didn't refresh this week — a re-run fills them once "
+              "the file arrives; nothing was wiped.)")
     if problems:
         logfn("")
         logfn("===== ❌ UPLOAD PROBLEMS — Megan check these files =====")
@@ -195,7 +205,7 @@ def run_financial_report(file_paths, dry_run: bool = False,
               "template is new — Claude needs to add a parser for that "
               "layout. Send the file to Claude.)")
     return {"filled": total_filled, "matched": total_matched,
-            "problems": problems, "not_pulled": sorted(not_pulled)}
+            "problems": problems, "went_dark": sorted(went_dark)}
 
 
 def main() -> int:
@@ -298,10 +308,13 @@ def main() -> int:
                         _note += (f" · ⚠ {len(_missing_books)} BOOK(S) did NOT "
                                   f"email (nudge sender): "
                                   + ", ".join(_missing_books))
-                    _not = result.get("not_pulled") or []
-                    if _not:
-                        _note += (f" · ⚠ {len(_not)} ICD(s) got NO financials this "
-                                  f"week (not in any email): " + ", ".join(_not))
+                    # Then the ACTUAL missing cells — tabs that went dark this
+                    # week (had data last week, blank now). Never-filled/rep tabs
+                    # are excluded, so this is signal not noise (Megan 2026-07-09).
+                    _dark = result.get("went_dark") or []
+                    if _dark:
+                        _note += (f" · ⚠ {len(_dark)} ICD(s) went DARK (had data "
+                                  f"last week, none this week): " + ", ".join(_dark))
                     _rm.write_manifest(
                         MANIFEST_ID, failed=[], retry_args=[], kind="section",
                         note=_note)
