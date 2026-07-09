@@ -3413,6 +3413,21 @@ def _was_due_on(report: dict, day: dt.date) -> bool:
 _SCHED_REGISTRY_CACHE: dict = {}
 
 
+def _report_time_minutes(report: dict) -> int:
+    """Minutes-since-midnight of a report's scheduled run time (schedule.time,
+    e.g. '8:00 AM' or '12:00 PM CST'), for ordering the Time Set Reports section
+    earliest-first. Missing / unparseable → sorts last."""
+    t = ((report.get("schedule") or {}).get("time") or "")
+    t = t.replace("CST", "").replace("cst", "").strip()
+    for fmt in ("%I:%M %p", "%I %p", "%H:%M"):
+        try:
+            parsed = dt.datetime.strptime(t, fmt)
+            return parsed.hour * 60 + parsed.minute
+        except ValueError:
+            continue
+    return 10_000
+
+
 def _sched_sorted(reports: list[dict], day: dt.date) -> list[dict]:
     """Order Hub cards to match the day-orchestrator's ACTUAL run sequence for
     `day` (registry.run_order — flow_rank -> priority -> id), so the schedule
@@ -4493,12 +4508,44 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                 _main = [r for r in _due if r.get("category") not in ("🏢 Other Offices", "📲 Ops")]
                 _other = [r for r in _due if r.get("category") == "🏢 Other Offices"]
                 _ops = [r for r in _due if r.get("category") == "📲 Ops"]
+                # Split the main block into the 4am orchestrator sweep vs reports on
+                # their OWN fixed timer (self_scheduled — the same flag that puts the
+                # "· HH:MM CST" time on the tile), each under its own divider so the
+                # morning batch reads as its own section (Megan 2026-07-09).
+                _batch = [r for r in _main if not r.get("self_scheduled")]
+                # Time Set reports run on their own clock → order them by that clock
+                # (earliest first: 8am steak before the noon ones), Megan 2026-07-09.
+                _timed = sorted(
+                    [r for r in _main if r.get("self_scheduled")],
+                    key=_report_time_minutes,
+                )
                 _ordered = (
-                    _main
+                    (["__MORNING__"] if _batch else []) + _batch
+                    + (["__TIMESET__"] if _timed else []) + _timed
                     + (["__OTHER_OFFICES__"] if _other else []) + _other
                     + (["__OPS__"] if _ops else []) + _ops
                 )
                 for _r in _ordered:
+                    if _r == "__MORNING__":
+                        st.markdown(
+                            "<div style='border-top:3px solid #10B981; "
+                            "margin:10px 0 5px; padding-top:6px; "
+                            "font-size:0.95em; font-weight:700; color:#10B981; "
+                            "letter-spacing:0.05em; text-align:center'>"
+                            "☀️ MORNING BATCH</div>",
+                            unsafe_allow_html=True,
+                        )
+                        continue
+                    if _r == "__TIMESET__":
+                        st.markdown(
+                            "<div style='border-top:3px solid #6366F1; "
+                            "margin:10px 0 5px; padding-top:6px; "
+                            "font-size:0.95em; font-weight:700; color:#6366F1; "
+                            "letter-spacing:0.05em; text-align:center'>"
+                            "⏰ TIME SET REPORTS</div>",
+                            unsafe_allow_html=True,
+                        )
+                        continue
                     if _r == "__OTHER_OFFICES__":
                         st.markdown(
                             "<div style='border-top:3px solid #DC2626; "
@@ -4679,23 +4726,23 @@ def _render_report_breakdown(report: dict) -> None:
     )
 
 
+@st.cache_data(ttl=30, show_spinner=False)
+def _tdb_store_all() -> dict:
+    """Cached read of the shared 'TdB Manual Inputs' store (dinner + backfill
+    leaders). 30s TTL so the card doesn't hit the Sheet on every rerender."""
+    from automations.day_orchestrator import tdb_manual_store as _s
+    return _s.all()
+
+
 def _render_texas_de_brazil_dinner_inputs() -> None:
-    """Texas de Brazil card: a rolling dinner-date schedule. Shows THIS competition
-    month + the next 2, each with a date/time field, so Maud always sets ~2 months
-    ahead and the flyer never shows 'TO BE DETERMINED'. Writes
-    dinner_schedule["YYYY-MM"] = {"day","time"} into the report's manual-inputs JSON;
-    the run reads the current month's entry for the flyer."""
-    import json as _json
+    """Texas de Brazil card: dinner dates + BACKFILL leaders, in the shared
+    'TdB Manual Inputs' Sheet store (live cross-machine — reaches the mini with
+    no code editing, no git push). The board auto-detects most leaders on its
+    own; the leader boxes here are only for ones it missed. Dinner shows THIS
+    competition month + the next 2 so Maud sets ~2 months ahead."""
     import datetime as _dt
-    from pathlib import Path as _Path
-    jf = _Path.home() / "recruiting-report" / "output" / "texas_de_brazil_manual.json"
-    data = {}
-    try:
-        if jf.exists():
-            data = _json.loads(jf.read_text())
-    except Exception:
-        data = {}
-    sched = data.get("dinner_schedule") or {}
+    from automations.day_orchestrator import tdb_manual_store as _store
+    store = _tdb_store_all()
     # This competition month (anchored to yesterday, matching the report) + next 2.
     anchor = _dt.date.today() - _dt.timedelta(days=1)
     y, mo = anchor.year, anchor.month
@@ -4705,33 +4752,49 @@ def _render_texas_de_brazil_dinner_inputs() -> None:
         mo += 1
         if mo > 12:
             mo, y = 1, y + 1
-    with st.expander("🍽️ Dinner dates (set ~2 months ahead so the flyer never says TBD)"):
-        inputs = []
+    cur_period = f"{months[0][0]}-{months[0][1]:02d}"
+    cur = store.get(cur_period, {})
+    with st.expander("🍽️ Dinner dates & leaders (auto-syncs to the mini)"):
+        st.caption("Dinner: set ~2 months ahead so the flyer never says TBD. "
+                   "Leaders auto-track from the board — only add ones below that "
+                   "the board missed. Saves to the shared sheet; no code editing.")
+        st.markdown("**Dinner dates**")
+        dinner_inputs = []
         for i, (yy, mm) in enumerate(months):
             key = f"{yy}-{mm:02d}"                 # storage key = competition month
-            ent = sched.get(key) or {}
-            # Label by the DINNER month (competition month + 1) — the dinner happens
-            # after that month's competition closes.
+            ent = store.get(key, {})
+            # Label by the DINNER month (competition month + 1).
             dyy, dmm = (yy, mm + 1) if mm < 12 else (yy + 1, 1)
-            st.markdown(f"**{_dt.date(dyy, dmm, 1).strftime('%B')} Date"
-                        f"{'  ← this run' if i == 0 else ''}**")
+            st.markdown(f"*{_dt.date(dyy, dmm, 1).strftime('%B')} Date"
+                        f"{'  ← this run' if i == 0 else ''}*")
             c1, c2 = st.columns(2)
-            day = c1.text_input("Dinner date", value=ent.get("day", ""),
+            day = c1.text_input("Dinner date", value=ent.get("dinner_day", ""),
                                 placeholder="e.g. SAT · AUG 11", key=f"tdb_dd_{key}",
                                 label_visibility="collapsed")
-            tm = c2.text_input("Dinner time", value=ent.get("time", ""),
+            tm = c2.text_input("Dinner time", value=ent.get("dinner_time", ""),
                                placeholder="e.g. 7:00 PM", key=f"tdb_dt_{key}",
                                label_visibility="collapsed")
-            inputs.append((key, day, tm))
-        if st.button("Save dinner dates", key="tdb_dinner_save"):
+            dinner_inputs.append((key, day, tm))
+
+        st.markdown(f"**Backfill leaders — {_dt.date(months[0][0], months[0][1], 1).strftime('%B')} "
+                    "(only if the board missed them)**")
+        promotions = st.text_area(
+            "Promotions", value=cur.get("promotions", ""),
+            placeholder="One per line:  Promoter > New Leader\ne.g. Willie Henderson > Jessie Gomez",
+            key="tdb_promos", height=90)
+        car_ride = st.text_area(
+            "Car-ride leaders", value=cur.get("car_ride", ""),
+            placeholder="One name per line", key="tdb_cars", height=68)
+
+        if st.button("Save dinner & leaders", key="tdb_dinner_save"):
             try:
-                jf.parent.mkdir(parents=True, exist_ok=True)
-                sched = data.get("dinner_schedule") or {}
-                for key, day, tm in inputs:
-                    sched[key] = {"day": day.strip(), "time": tm.strip()}
-                data["dinner_schedule"] = sched
-                jf.write_text(_json.dumps(data, indent=2, ensure_ascii=False))
-                st.success("Saved.")
+                for key, day, tm in dinner_inputs:
+                    _store.set(key, dinner_day=day.strip(), dinner_time=tm.strip(),
+                               by="hub")
+                _store.set(cur_period, promotions=promotions.strip(),
+                           car_ride=car_ride.strip(), by="hub")
+                _tdb_store_all.clear()
+                st.success("Saved — syncs to the mini on the next run.")
             except Exception as e:
                 st.error(f"Couldn't save: {e}")
 
