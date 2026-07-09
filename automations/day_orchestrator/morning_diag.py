@@ -197,8 +197,37 @@ def _drift_check() -> str:
     return f"DRIFT={drift:+d}m vs {sh:02d}:{sm:02d} (on-time)"
 
 
+def _loaded_schedule() -> str:
+    """Read the LIVE launchd schedule for the day-orchestrator — what launchd will
+    ACTUALLY fire, not the plist FILE (which read 'Hour 4 ✓' for 15 days while the
+    live job fired 6am). This is the verify that was missing. `launchctl print`
+    output varies by macOS, so we surface the schedule-relevant lines; if it exposes
+    the calendar we can read Hour 4 directly, else the raw tail is short enough to
+    eyeball. Compares to the installed plist FILE so a mismatch is obvious."""
+    import os
+    uid = os.getuid()
+    label = "com.alphalete.day-orchestrator"
+    try:
+        p = subprocess.run(["launchctl", "print", f"gui/{uid}/{label}"],
+                           capture_output=True, text=True, timeout=20)
+    except Exception as e:  # noqa: BLE001
+        return f"LOADED=launchctl-print-err({type(e).__name__})"
+    if p.returncode != 0:
+        return f"LOADED=NOT-LOADED(launchctl print rc={p.returncode})"
+    out = p.stdout
+    # Surface any schedule/calendar/interval/next-run lines launchd exposes.
+    keep = [re.sub(r"\s+", " ", l.strip()) for l in out.splitlines()
+            if re.search(r"calendar|interval|next\b|schedule|runatload|periodic|minute|hour",
+                         l, re.I)]
+    sched = " | ".join(keep)[:360] if keep else "(launchctl print exposes no calendar field on this macOS)"
+    return f"LOADED[{label}]: {sched} :: FILE={_installed_schedule()}"
+
+
 def main():
     import sys
+    if "--loaded" in sys.argv:
+        print(f"LOADED-SCHED {dt.date.today()} :: {_loaded_schedule()}")
+        return
     # `--pmset`: print ONLY the power diagnostic (wake schedule / sleep timer /
     # last wake reason / caffeinate assertion). The full MORNING-DIAG line gets
     # truncated to ~480 chars in the Mini Control result cell, which cuts off
