@@ -1,22 +1,3 @@
-# =====================================================================
-# BACKUP — Texas de Brazil Monthly Competition ("Steak on the Line")
-# DELIVERY-ENABLED source of truth for the Report Library Sheet cell.
-#
-# The live report code lives ONLY in the shared Report Library Sheet
-# (AUTOMATION MASTER > Report Library tab, row 3, Script column) and a
-# git-ignored local cache (automations/uploaded/_shared/...). On 2026-07-09
-# that Sheet cell was found overwritten with an OLD PDF-only version —
-# the entire Slack + iMessage + --send + auto-month delivery layer (and
-# Maud's month-keyed leader dicts) had been wiped. This file is the
-# restored slim (49,565-char, <50K cell cap) version, committed so the
-# good code can be re-restored if the cell is ever silently wiped again.
-#
-# To re-restore: write this file's contents into that Script cell (see
-# the restore procedure in the session notes / _materialize_shared_script).
-# NOTE: before overwriting, READ the live cell first and MERGE any newer
-# PROMOTIONS_BY_MONTH / SOLO_LEADERS_BY_MONTH / CAR_RIDE_LEADERS_BY_MONTH
-# entries Maud may have added — do not blind-clobber her leader edits.
-# =====================================================================
 
 
 """Steak on the Line — Texas de Brazil monthly competition.
@@ -433,9 +414,9 @@ def build_board(sales_file, recruit_file):
     m_prom, m_solo, m_car = load_manual_inputs()
     a_prom, a_car = update_leaders_state(read_leadership(sales_file))
     _mp = _current_period()
-    promotions   = PROMOTIONS_BY_MONTH.get(_mp, []) + m_prom + [tuple(p) for p in a_prom]
-    solo_leaders = SOLO_LEADERS_BY_MONTH.get(_mp, []) + m_solo
-    car_leaders  = CAR_RIDE_LEADERS_BY_MONTH.get(_mp, []) + m_car + a_car
+    promotions   = list(dict.fromkeys(PROMOTIONS_BY_MONTH.get(_mp, []) + m_prom + [tuple(p) for p in a_prom]))
+    solo_leaders = list(dict.fromkeys(SOLO_LEADERS_BY_MONTH.get(_mp, []) + m_solo))
+    car_leaders  = list(dict.fromkeys(CAR_RIDE_LEADERS_BY_MONTH.get(_mp, []) + m_car + a_car))
     if a_prom or a_car:
         print(f"Auto-detected: {len(a_prom)} new leaders, {len(a_car)} car-ride")
     if m_prom or m_solo or m_car:
@@ -770,9 +751,9 @@ def flyer_html():
     m_prom, m_solo, m_car = load_manual_inputs()
     a_prom, a_car = load_leaders_state()
     _mp = _current_period()
-    promotions = PROMOTIONS_BY_MONTH.get(_mp, []) + m_prom + [tuple(p) for p in a_prom]
-    solos = SOLO_LEADERS_BY_MONTH.get(_mp, []) + m_solo
-    cars = CAR_RIDE_LEADERS_BY_MONTH.get(_mp, []) + m_car + a_car
+    promotions = list(dict.fromkeys(PROMOTIONS_BY_MONTH.get(_mp, []) + m_prom + [tuple(p) for p in a_prom]))
+    solos = list(dict.fromkeys(SOLO_LEADERS_BY_MONTH.get(_mp, []) + m_solo))
+    cars = list(dict.fromkeys(CAR_RIDE_LEADERS_BY_MONTH.get(_mp, []) + m_car + a_car))
     prom_rows = [
         f'    <div class="prow"><div class="who"><span class="pp">{esc(p)}</span>'
         f'<span class="arrow">&rarr;</span><span class="nl">{esc(q)}</span></div>'
