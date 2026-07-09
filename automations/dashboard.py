@@ -4708,9 +4708,12 @@ def _render_texas_de_brazil_dinner_inputs() -> None:
     with st.expander("🍽️ Dinner dates (set ~2 months ahead so the flyer never says TBD)"):
         inputs = []
         for i, (yy, mm) in enumerate(months):
-            key = f"{yy}-{mm:02d}"
+            key = f"{yy}-{mm:02d}"                 # storage key = competition month
             ent = sched.get(key) or {}
-            st.markdown(f"**{_dt.date(yy, mm, 1).strftime('%B %Y')}"
+            # Label by the DINNER month (competition month + 1) — the dinner happens
+            # after that month's competition closes.
+            dyy, dmm = (yy, mm + 1) if mm < 12 else (yy + 1, 1)
+            st.markdown(f"**{_dt.date(dyy, dmm, 1).strftime('%B')} Date"
                         f"{'  ← this run' if i == 0 else ''}**")
             c1, c2 = st.columns(2)
             day = c1.text_input("Dinner date", value=ent.get("day", ""),
