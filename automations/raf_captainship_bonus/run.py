@@ -41,7 +41,7 @@ def _slack_comment(rep: dict) -> str:
     """The DM's message text — emoji + Title Case title, then the headline number
     (the PDF carries the full breakdown). Matches the Hub's metrics-post style."""
     return (f"💰 *Raf Captainship Bonus — {rep['label']}*\n"
-            f"Total sales: {rep['total']} ({len(rep['matched'])} reps) · "
+            f"Total sales: {rep['total']} ({len(rep['matched'])} owners) · "
             f"churn {rep['churn']} · activation {rep['rolling']}")
 
 

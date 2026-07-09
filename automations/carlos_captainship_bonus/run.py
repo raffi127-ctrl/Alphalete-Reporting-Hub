@@ -40,7 +40,7 @@ def _slack_comment(rep: dict) -> str:
     """The DM's message text — emoji + Title Case title, then the headline number
     (the PDF carries the full breakdown). Matches the Hub's metrics-post style."""
     return (f"💰 *Carlos B2B Captainship Bonus — {rep['label']}*\n"
-            f"Total activations: {rep['total']} ({len(rep['matched'])} reps)")
+            f"Total activations: {rep['total']} ({len(rep['matched'])} owners)")
 
 
 def _current_we_sunday(today: dt.date | None = None) -> dt.date:
