@@ -620,6 +620,25 @@
       "verify": null,
       "timeout_minutes": 5
     },
+    "send_email_preview": {
+      "on_scheduler": true,
+      "_note": "NOT a report — renders + SENDS the current day's checkpoint email from today's saved day_state so you can VIEW the email format on demand (runs NO reports). Run via `lucy rerun send_email_preview` (add `--final` for the end-of-day summary, `--machine \"Lucy 2\"` for the other box). The Remaining-runs-later-today section reads this machine's real installed jobs, so it must run ON the mini to be accurate. on_scheduler:true ONLY so registry keeps it; weekdays [] = never auto-runs. source_type 'local'.",
+      "display_name": "Send a preview of the daily email",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.send_email_preview"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
+    },
     "board_compare": {
       "on_scheduler": true,
       "_note": "NOT a report — standalone FULL comparison of the Org Sales Board copy tab vs the live VA tab, run via `lucy rerun board_compare`. Read-only (sheet vs sheet, no Tableau). Writes EVERY disagreeing cell to output/logs/org_sales_board_compare-<stamp>.log (the Mini-Control result cell truncates to ~480 chars, so read the full list with `lucy logtail org_sales_board_compare`). on_scheduler:true so registry keeps it; weekdays [] = never auto-runs. source_type 'local' (no chrome guard). Built 2026-07-07 to enumerate the residual VA-compare cells after the NDS section fix.",
