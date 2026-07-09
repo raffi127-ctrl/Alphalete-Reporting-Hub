@@ -39,17 +39,27 @@ def main(argv: list[str] | None = None) -> None:
     except Exception as e:  # noqa: BLE001 — never block the run on a refresh hiccup
         print(f"(run_library_report: materialize skipped — {type(e).__name__}: {e})")
 
-    # 1b) Texas de Brazil: the dinner date is typed on the Hub card (any machine)
-    #     but the report reads a MACHINE-LOCAL manual-inputs JSON — so a date set
-    #     on the laptop never reached the mini's run (flyer showed "TBD"). Merge
-    #     the git-synced seed into this machine's local JSON before running.
-    #     Best-effort; only touches dinner_schedule (never leaders).
+    # 1a) Texas de Brazil: self-heal a WIPED cell. If someone saved an old
+    #     PDF-only copy over the Report Library cell (loses Slack/iMessage/--send),
+    #     restore the known-good delivery version from the committed backup — to
+    #     the cache AND the cell — before running, so the run still sends.
+    if lib_id == "june_texas_de_brazil_monthly_competition":
+        try:
+            from automations.day_orchestrator import tdb_self_heal
+            tdb_self_heal.main()
+        except Exception as e:  # noqa: BLE001 — never block the run on a heal hiccup
+            print(f"(run_library_report: tdb self-heal skipped — {type(e).__name__}: {e})")
+
+    # 1b) Texas de Brazil: the dinner date + backfill leaders live in the shared
+    #     'TdB Manual Inputs' Sheet store; the report reads a MACHINE-LOCAL JSON.
+    #     Merge the store's current-period row into this machine's local JSON
+    #     before running (dinner_schedule + new_leaders_text + car_ride_text).
     if lib_id == "june_texas_de_brazil_monthly_competition":
         try:
             from automations.day_orchestrator import tdb_sync_inputs
             tdb_sync_inputs.main()
         except Exception as e:  # noqa: BLE001 — never block the run on a sync hiccup
-            print(f"(run_library_report: tdb dinner sync skipped — {type(e).__name__}: {e})")
+            print(f"(run_library_report: tdb input sync skipped — {type(e).__name__}: {e})")
 
     # 2) Run the (now-current) module as __main__, passing the remaining args
     #    through so its own argparse sees them (e.g. --send / --dry-run).

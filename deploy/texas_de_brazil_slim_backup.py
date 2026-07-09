@@ -1,5 +1,4 @@
 
-
 """Steak on the Line — Texas de Brazil monthly competition.
 Builds the flyer+standings PDF from the Sales Board + All-in-One sheets and
 (with --send) posts it to Slack (#alphalete-sales + #alphalete-lvl1-chat as
