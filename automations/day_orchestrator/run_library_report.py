@@ -39,16 +39,15 @@ def main(argv: list[str] | None = None) -> None:
     except Exception as e:  # noqa: BLE001 — never block the run on a refresh hiccup
         print(f"(run_library_report: materialize skipped — {type(e).__name__}: {e})")
 
-    # 1a) Texas de Brazil: self-heal a WIPED cell. If someone saved an old
-    #     PDF-only copy over the Report Library cell (loses Slack/iMessage/--send),
-    #     restore the known-good delivery version from the committed backup — to
-    #     the cache AND the cell — before running, so the run still sends.
-    if lib_id == "june_texas_de_brazil_monthly_competition":
-        try:
-            from automations.day_orchestrator import tdb_self_heal
-            tdb_self_heal.main()
-        except Exception as e:  # noqa: BLE001 — never block the run on a heal hiccup
-            print(f"(run_library_report: tdb self-heal skipped — {type(e).__name__}: {e})")
+    # 1a) GENERIC self-heal (every report): keep a last-known-good backup, and if
+    #     this report's code won't compile or lost a registered critical marker
+    #     (e.g. Texas de Brazil's send layer), restore the backup to the cache AND
+    #     the cell before running. Editing stays open; a bad save can't stick.
+    try:
+        from automations.day_orchestrator import library_self_heal
+        library_self_heal.guard(lib_id)
+    except Exception as e:  # noqa: BLE001 — never block the run on a heal hiccup
+        print(f"(run_library_report: self-heal skipped — {type(e).__name__}: {e})")
 
     # 1b) Texas de Brazil: the dinner date + backfill leaders live in the shared
     #     'TdB Manual Inputs' Sheet store; the report reads a MACHINE-LOCAL JSON.

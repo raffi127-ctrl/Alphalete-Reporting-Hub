@@ -43,10 +43,9 @@ echo "[$(date)] Texas de Brazil daily run starting (extra args: ${*:-none})" > "
 # cache, so a Sheet edit propagates to the scheduled run without a code deploy.
 "$VENV_PY" -u -c "from automations import dashboard as D; D._read_shared_library_rows()" >> "$LOG_FILE" 2>&1 || true
 
-# Self-heal a WIPED cell: if someone saved an old PDF-only copy over the Report
-# Library cell (loses Slack/iMessage/--send), restore the known-good delivery
-# version from the committed backup before running, so the run still sends.
-"$VENV_PY" -u -m automations.day_orchestrator.tdb_self_heal >> "$LOG_FILE" 2>&1 || true
+# Generic self-heal: if the cell was wiped/broken (lost the send layer or won't
+# compile), restore the last-known-good backup before running, so it still sends.
+"$VENV_PY" -u -m automations.day_orchestrator.library_self_heal june_texas_de_brazil_monthly_competition >> "$LOG_FILE" 2>&1 || true
 
 # Sync the Hub-card dinner date + backfill leaders from the shared 'TdB Manual
 # Inputs' store into this machine's local JSON (dinner_schedule + leaders text).
