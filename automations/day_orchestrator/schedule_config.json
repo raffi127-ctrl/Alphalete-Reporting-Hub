@@ -1393,6 +1393,7 @@
       }
     },
     "financial_report": {
+      "order": 4.5,
       "on_scheduler": true,
       "display_name": "Financial Report",
       "source_type": "email",
