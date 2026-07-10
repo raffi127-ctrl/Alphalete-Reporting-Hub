@@ -343,6 +343,32 @@ def _action_set_sleep(args: str) -> tuple[bool, str]:
     return True, f"disablesleep={setting} — sleep {'ALLOWED' if allow else 'PREVENTED'}"
 
 
+def _action_reboot(args: str) -> tuple[bool, str]:
+    """Reboot this machine remotely. The reason it exists: launchd caches the
+    timezone at boot and never refreshes it, so after a TZ change every calendar
+    job fires at the WRONG time (the mini fired all its jobs +2h — 4am->6am — for
+    weeks; 2026-07-10). bootout/bootstrap does NOT clear that; only a reboot does.
+    The mini auto-logs-in and reloads its LaunchAgents (poller, holder, keep-awake,
+    the 4am orchestrator) on boot, so everything comes back on its own with the
+    CORRECT timezone. Detached + delayed a few seconds so this poll writes its
+    result to the Sheet BEFORE the box goes down. Tries passwordless `sudo shutdown`
+    first (clean, no GUI), then a System Events restart AppleEvent as a fallback."""
+    script = (
+        "sleep 5; "
+        "sudo -n /sbin/shutdown -r now >/dev/null 2>&1 || "
+        "sudo -n /sbin/reboot >/dev/null 2>&1 || "
+        "osascript -e 'tell application \"System Events\" to restart' >/dev/null 2>&1"
+    )
+    try:
+        subprocess.Popen(["/bin/sh", "-c", script], stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't schedule reboot: {str(e)[:140]}"
+    return True, ("reboot scheduled (~5s): sudo shutdown -r, else System Events "
+                  "restart. Mini auto-logs-in + reloads its agents on boot (fixes "
+                  "the cached-timezone +2h drift). Check with `lucy ping` after ~2-3m.")
+
+
 # Lines worth surfacing when logtail has no explicit grep — the error/failure
 # signatures across every report's log (traceback frames, our own ✗/❌ markers,
 # HTTP/timeout errors, the opt_all per-step summary).
@@ -558,6 +584,7 @@ ACTIONS = {
     "watch_test": _action_watch_test,
     "diag": _action_diag,
     "set_sleep": _action_set_sleep,
+    "reboot": _action_reboot,
 }
 
 
