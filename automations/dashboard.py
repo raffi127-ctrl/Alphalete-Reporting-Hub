@@ -1813,6 +1813,7 @@ AUTOMATED_REPORTS = [
         "emoji": "📄",
         "color": "#10B981",
         "category": "🎯 Recruiting",
+        "self_scheduled": True,
         "description": "Auto-ingests the Frontier PDF reports (Daily "
                        "Sales by Store, Daily Sales Events, Quality "
                        "Scorecard) straight from email "
