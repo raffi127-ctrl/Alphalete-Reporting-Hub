@@ -2358,6 +2358,7 @@ AUTOMATED_REPORTS = [
         "emoji": "🌤️",
         "color": "#0EA5E9",
         "category": "📊 Metrics",
+        "self_scheduled": True,
         "description": "Lucy posts the daily DFW weather forecast to "
                        "#alphalete-sales each morning — temp, conditions, and "
                        "what to pack to change into for the field. Pulled from "
