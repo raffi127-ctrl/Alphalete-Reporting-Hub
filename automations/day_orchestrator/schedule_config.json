@@ -1148,6 +1148,7 @@
       }
     },
     "int_wow_penetration": {
+      "order": 15.5,
       "on_scheduler": true,
       "display_name": "Int WoW Report - Penetration %",
       "source_type": "tableau",
@@ -1176,6 +1177,7 @@
       }
     },
     "country_metrics": {
+      "order": 15.6,
       "on_scheduler": true,
       "display_name": "Country Metrics",
       "source_type": "tableau",
