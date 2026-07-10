@@ -51,6 +51,8 @@ class Report:
     timeout_minutes: int = 45
     idempotency: dict = field(default_factory=dict)
     machine: str = DEFAULT_MACHINE   # which runner (Lucy 1 / Lucy 2) owns this
+    order: Optional[int] = None      # explicit run-order (Megan's custom sequence);
+                                     # None = fall to the source-type flow ordering
 
 
 @dataclass
@@ -79,6 +81,7 @@ def _build_report(rid: str, r: dict) -> Report:
         timeout_minutes=int(r.get("timeout_minutes", 45)),
         idempotency=r.get("idempotency", {}),
         machine=r.get("machine", DEFAULT_MACHINE),
+        order=r.get("order"),
     )
 
 
@@ -179,9 +182,14 @@ def run_order(reports: List[Report], date: dt.date) -> List[Report]:
     for r in reports:
         dep_depth[r.report_id] = depth(r)
 
+    # Explicit `order` (Megan's custom sequence) is the PRIMARY key: a report with
+    # an order runs in that slot; reports without one fall to 10_000 and keep the
+    # source-type flow ordering AFTER the numbered ones. (Readiness still gates each
+    # report — a not-ready Tableau report waits + retries regardless of its slot.)
     ordered = sorted(
         reports,
-        key=lambda r: (flow_rank(r), effective_priority_rank(r, date),
+        key=lambda r: (r.order if r.order is not None else 10_000,
+                       flow_rank(r), effective_priority_rank(r, date),
                        dep_depth[r.report_id], r.report_id),
     )
     # Pull each dependent to sit IMMEDIATELY AFTER the last of its dependencies,

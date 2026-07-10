@@ -180,6 +180,7 @@ _REMAINING_SKIP = {"day-orchestrator", "appstream-morning", "orchestrator-schedu
 # Friendly names for the later-today jobs (fallback: the label, Title-Cased).
 _REMAINING_NAMES = {
     "weather-6am": "Weather Alert",
+    "frontier-sunday-6pm": "Frontier OPT Data Pull",
     "texas-de-brazil-745": "Texas de Brazil Competition",
     "brand-audit-noon": "Brand Health Audit",
     "social-scanner": "Alphalete Social Media Posting",

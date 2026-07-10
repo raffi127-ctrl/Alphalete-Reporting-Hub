@@ -1829,11 +1829,12 @@ AUTOMATED_REPORTS = [
             "- **Quality Scorecard** → Approval / Canceled / Pending "
             "(Four Weeks Rolling)\n\n"
             "WHEN IT RUNS\n"
-            "Runs itself on the weekly 4am batch — it pulls the 3 Frontier "
-            "PDFs straight from email (reports@credicousa.com), no upload "
-            "needed. A readiness check waits until the PDFs are in the "
-            "inbox, then fills. The completed week is in Sunday's daily "
-            "email; the Quality Scorecard lags ~2 weeks by design.\n\n"
+            "Runs itself on its own job every **Sunday at 6:00 PM CST** — it "
+            "pulls the 3 Frontier PDFs straight from email "
+            "(reports@credicousa.com), no upload needed. The completed week is "
+            "in Sunday's ~1:30pm daily email, so 6pm has it; the job waits for "
+            "the sales PDFs to arrive, then fills. The Quality Scorecard lags "
+            "~2 weeks by design.\n\n"
             "PARTIAL DATA IS SAFE\n"
             "Whichever of the 3 PDFs have arrived get filled — only their "
             "rows change; every other cell is left untouched. Each PDF "
@@ -1844,8 +1845,8 @@ AUTOMATED_REPORTS = [
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "weekly",
-            "weekdays": [0],   # Monday
-            "time": "9:30 AM",
+            "weekdays": [6],   # Sunday
+            "time": "6:00 PM",
             "estimated_minutes": 3,
         },
         "checklist": [

@@ -147,6 +147,7 @@
       "verify": null
     },
     "alphalete_production": {
+      "order": 4,
       "on_scheduler": true,
       "_note": "LIVE daily (Megan approved preview 2026-07-05). Combines Jolie's TWO manual morning screenshot posts into ONE dated thread in #alphalete-sales as Lucy: Daily Production, Team Sales (one per team from col CI), Highrollers of the day, + 3 rankings (Apps/New Internets/Wireless). Google-Sheet PNGs (Sales Board WE m.d) rendered off a hidden, auto-deleted COPY tab so the live sheet is never touched. Uses the tab CONTAINING yesterday -> Monday shows the fully-completed prior M-S week. source_type local = wave 1 (runs ~4am; yesterday's data is complete by then, before Jolie's ~6am). Preview instead of post: base_args ['--preview-dm','U045Z8N0ZQC','U04G5HJBGFN']. Replaces Jolie's 2 manual production posts — tell her to stop at cutover.",
       "display_name": "Alphalete Daily Production Slack Post",
@@ -177,6 +178,7 @@
       }
     },
     "daily_metrics": {
+      "order": 6,
       "on_scheduler": true,
       "display_name": "10 Daily Metrics Report",
       "source_type": "tableau",
@@ -208,6 +210,7 @@
       }
     },
     "daily_focus": {
+      "order": 1,
       "on_scheduler": true,
       "display_name": "Daily Recruiting Focus",
       "source_type": "appstream",
@@ -247,15 +250,7 @@
       ],
       "base_args": [],
       "cadence": {
-        "weekdays": [
-          0,
-          1,
-          2,
-          3,
-          4,
-          5,
-          6
-        ]
+        "weekdays": []
       },
       "_note": "Time-critical: posts to #alphalete-sales just before the 7am metrics thread.",
       "priority": "P1",
@@ -266,6 +261,7 @@
       }
     },
     "fiber_activations": {
+      "order": 14,
       "on_scheduler": true,
       "display_name": "Fiber Activations Report",
       "source_type": "tableau",
@@ -296,6 +292,7 @@
       }
     },
     "captainship_activations": {
+      "order": 12,
       "on_scheduler": true,
       "display_name": "Captainship Activations (per-captain)",
       "source_type": "tableau",
@@ -327,6 +324,7 @@
       }
     },
     "captainship_churn": {
+      "order": 13,
       "on_scheduler": true,
       "display_name": "Captainship - New Internet & Wireless Churn",
       "source_type": "tableau",
@@ -357,6 +355,7 @@
       }
     },
     "owners_metrics_churn": {
+      "order": 15,
       "on_scheduler": true,
       "display_name": "Captainship Churn - Owners Metrics",
       "source_type": "tableau",
@@ -387,6 +386,7 @@
       }
     },
     "org_sales_board": {
+      "order": 8,
       "on_scheduler": true,
       "_note": "Fills the SANDBOX 'Copy of' tab daily, FILL-ONLY — the Tuesday auto-rollover was removed, so the weekly rollover is MANUAL (a person Monday night). Auto-compares vs the VA tab. Intentionally targets the sandbox; the real tab stays guarded (see _warn). TIMING (Megan 2026-07-08): cadence.not_before '08:00' holds it until 8am CST so it matches the VAs' ~8am pull — Box lands in Tableau ~7-8am and the old ~6:44am batch run missed it. The email (org_sales_board_email) depends_on this, so it follows right after (~8:15-8:45, before the 9am send window). ONLY JE stays a day behind (inherent — the VAs' manual board is too). Set 45m before Raf's send time if he names one.",
       "display_name": "Alphalete Org Sales Board",
@@ -424,6 +424,7 @@
       "_warn": "Scheduled on the SANDBOX 'Copy of' tab ONLY. The real VA tab stays guarded (--real refuses live runs + a Copy-of-only assert); a real-tab cutover needs that guard relaxed first — do NOT point this at the real tab unattended without that work."
     },
     "org_sales_board_email": {
+      "order": 9,
       "on_scheduler": true,
       "_note": "Emails the Org Sales Board as exact-sheet screenshots (copy tab, Sheets PDF-export render — no browser). depends_on org_sales_board so it only runs AFTER the fill is DONE (fresh numbers). PROVING (Megan 2026-07-04): base_args '' (no --preview) sends to the proving list — Maud + Rafael + Megan — off the COPY tab; at go-live swap to '--distro' (Alphalete Org Owners / Carlos' / Raf's Captain Team). source_type 'tableau' only to phase it right after the board — it has no Tableau pull (reads the sheet via OAuth).",
       "display_name": "Org. Sales Board Email",
@@ -630,6 +631,27 @@
         "automations.day_orchestrator.send_email_preview"
       ],
       "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
+    },
+    "install_frontier_sunday_agent": {
+      "on_scheduler": true,
+      "_note": "NOT a report — installs the Frontier OPT Sunday 6pm job, run via `lucy rerun install_frontier_sunday_agent`. Bootstraps com.alphalete.frontier-sunday-6pm (Sunday 18:00), which waits for Credico's Sunday email then fills (frontier_sunday.py retries until the 2 sales PDFs are in the inbox). Frontier was moved OFF the Monday 4am batch (Megan 2026-07-09) — the completed week is in Sunday's ~1:30pm daily email, so 6pm has it. Covered by the nightly schedule guard. on_scheduler:true ONLY so registry keeps it; weekdays [] = never auto-runs. source_type 'local'.",
+      "display_name": "Install: Frontier OPT Sunday 6pm job",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "frontier-sunday-6pm"
+      ],
       "cadence": {
         "weekdays": []
       },
@@ -885,6 +907,7 @@
       "timeout_minutes": 5
     },
     "daily_rep_breakdown": {
+      "order": 16,
       "on_scheduler": true,
       "display_name": "Daily Rep Breakdown - ATT Program",
       "source_type": "tableau",
@@ -918,6 +941,7 @@
       }
     },
     "recruiter_retention_daily": {
+      "order": 2,
       "on_scheduler": true,
       "display_name": "Daily Recruiter 1st Round Retention",
       "source_type": "appstream",
@@ -977,6 +1001,7 @@
       }
     },
     "att_focus_raf": {
+      "order": 10,
       "on_scheduler": true,
       "display_name": "ATT Program - Focus Report (Raf)",
       "source_type": "tableau",
@@ -1027,6 +1052,7 @@
       }
     },
     "alphalete_org_focus": {
+      "order": 11,
       "on_scheduler": true,
       "display_name": "Alphalete Org 1on1s - Focus Report",
       "source_type": "tableau",
@@ -1073,6 +1099,7 @@
       "timeout_minutes": 20
     },
     "recruiter_retention_weekly": {
+      "order": 3,
       "on_scheduler": true,
       "display_name": "Ongoing 1st Round Recruiter Retention",
       "source_type": "appstream",
@@ -1219,9 +1246,7 @@
         "--email"
       ],
       "cadence": {
-        "weekdays": [
-          0
-        ]
+        "weekdays": []
       },
       "priority": "P2",
       "freshness_target": null,
@@ -1231,6 +1256,7 @@
       }
     },
     "rashad_metrics": {
+      "order": 7,
       "on_scheduler": true,
       "_disabled_reason": "BUILDING 2026-06-28. 4 of 7 metrics wired (order_log, canceled_orders, disconnects, sales_6plus) via the org-wide-pull → filter-to-Rashad pattern. Posts AS Lucy by reusing the SAME Slack token path as daily_metrics (no separate token — on the mini that file is Lucy). Remaining 3 are FLAGGED, each needs a Tableau asset that doesn't exist: ongoing_cancel (a Rashad/org-wide cancel-rates view — current RafExpanded is Raf-only computed), churn (a Rashad churn view — INTLocalOffice bakes owner=Raf; also sheet-coupled, needs a Rashad tab or direct-render), knocks_gaps (Rashad's rep roster — Disposition-by-Rep has no owner column). Flip true only after a clean dry-run of the 4 wired on the mini + Megan's go-ahead (and the 3 flagged either built or accepted as omitted).",
       "display_name": "Rashad's Daily Metrics (#elevate-sales)",
@@ -1390,6 +1416,7 @@
       }
     },
     "tableau_screenshots": {
+      "order": 5,
       "on_scheduler": true,
       "_note": "LIVE daily 8-tracker Tableau screenshots (Download->Image @ 2x DPI via device_scale=2, per-tracker page-1 crop + bottom footer/whitespace trim). Posts as Lucy into an own dated thread 'Alphalete Tableau Trackers M/D/YYYY' in BOTH #alphalete-sales (C068PH3RFSM) + #top-leaders-alphalete-org (C067TTGFEFR, private; Lucy U0BCG8F9B5Z is a member). Replaces Jolie's manual TRACKER post (her 3 'production' imgs stay manual/separate). source_type tableau = wave 2. Went live 2026-07-05. To preview instead of post: base_args ['--preview-dm','U04G5HJBGFN'].",
       "display_name": "Alphalete Tableau Trackers",
