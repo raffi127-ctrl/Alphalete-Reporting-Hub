@@ -1,10 +1,8 @@
 
 """Steak on the Line — Texas de Brazil monthly competition.
-Builds the flyer+standings PDF from the Sales Board + All-in-One sheets and
-(with --send) posts it to Slack (#alphalete-sales + #alphalete-lvl1-chat as
-Lucy) and iMessages a group on Lucy 1. Competition month is auto-derived.
-Deployed comment-light to fit the 50K Google-Sheets cell limit; the fully
-commented source lives in the repo/scratchpad."""
+Builds the flyer+standings PDF; with --send, posts to Slack
+(#alphalete-sales + #alphalete-lvl1-chat) + iMessage as Lucy on Lucy 1.
+Month auto-derived. Comment-light for the 50K cell limit; full src in repo."""
 
 import os, re, sys, html, glob, shutil, subprocess, tempfile, unicodedata, datetime, importlib, json, calendar, argparse
 from collections import defaultdict
@@ -59,7 +57,6 @@ PROMOTIONS_BY_MONTH = {
         ("Willie Henderson", "Jessie Gomez"),
         ("Willie Henderson", "Jordan Ruiz"),
         ("Safiya Mahmoud", "Abel Mireles"),
-        ("Tadana Manyangadze", "Giselle Loredo"),
     ],
 }
 SOLO_LEADERS_BY_MONTH = {
@@ -74,6 +71,8 @@ CAR_RIDE_LEADERS_BY_MONTH = {
 ADJUSTMENTS = {
     "Algemar Kennel": 15,
 }
+
+EXCLUDE_NEW_LEADERS = {"Giselle Loredo"}   # dropped everywhere even if a machine's state auto-detected it
 
 POS_HERE = {"Here", "H+DC", "RT", "H+LM"}
 LATE_PEN = {"Late"}
@@ -99,10 +98,8 @@ def norm(name):
     return re.sub(r"\s+", " ", n).strip()
 
 def resolve_roster(name, rized):
-    """Match a name (possibly a first-name/nickname like 'Safiya' or 'Pranish ')
-    to a full roster key in `rized`. Exact (after ALIAS) first, else a UNIQUE
-    first-name prefix match (with last-initial narrowing). Returns the roster
-    key or None if there's no unambiguous match."""
+    """Match a name/nickname to a full roster key: exact (after ALIAS), else a
+    unique first-name prefix (last-initial narrowed). None if ambiguous."""
     if not name:
         return None
     n = norm(ALIAS.get(str(name).strip(), str(name).strip()))
@@ -309,13 +306,9 @@ def read_leadership(sales_file):
     return out
 
 def update_leaders_state(leadership):
-    """Persist a per-rep baseline of Leadership Status and accumulate:
-      - NEW LEADERS: a rep who moves UP to 'Level 1' after we first saw them at
-        a non-Level-1 status (their Trainer gets the Break-a-Leader credit too).
-      - CAR-RIDE: any rep ever flagged 'BEST'.
-    First sighting of a rep just seeds their baseline (no detection), so reps
-    already at Level 1 today never count. Returns (promotions, car_names)
-    accumulated across the month."""
+    """Baseline each rep's Leadership Status; accumulate NEW LEADERS (moved UP to
+    'Level 1' after first sighting; Trainer gets Break-a-Leader too) + CAR-RIDE
+    ('BEST'). First sighting only seeds baseline. Returns (promotions, car)."""
     try:
         state = json.loads(open(LEADERS_STATE).read())
     except Exception:
@@ -413,8 +406,9 @@ def build_board(sales_file, recruit_file):
     m_prom, m_solo, m_car = load_manual_inputs()
     a_prom, a_car = update_leaders_state(read_leadership(sales_file))
     _mp = _current_period()
-    promotions   = list(dict.fromkeys(PROMOTIONS_BY_MONTH.get(_mp, []) + m_prom + [tuple(p) for p in a_prom]))
-    solo_leaders = list(dict.fromkeys(SOLO_LEADERS_BY_MONTH.get(_mp, []) + m_solo))
+    _excl = {norm(x) for x in EXCLUDE_NEW_LEADERS}
+    promotions   = [(p, q) for (p, q) in dict.fromkeys(PROMOTIONS_BY_MONTH.get(_mp, []) + m_prom + [tuple(p) for p in a_prom]) if norm(q) not in _excl]
+    solo_leaders = [q for q in dict.fromkeys(SOLO_LEADERS_BY_MONTH.get(_mp, []) + m_solo) if norm(q) not in _excl]
     car_leaders  = list(dict.fromkeys(CAR_RIDE_LEADERS_BY_MONTH.get(_mp, []) + m_car + a_car))
     if a_prom or a_car:
         print(f"Auto-detected: {len(a_prom)} new leaders, {len(a_car)} car-ride")
@@ -750,8 +744,9 @@ def flyer_html():
     m_prom, m_solo, m_car = load_manual_inputs()
     a_prom, a_car = load_leaders_state()
     _mp = _current_period()
-    promotions = list(dict.fromkeys(PROMOTIONS_BY_MONTH.get(_mp, []) + m_prom + [tuple(p) for p in a_prom]))
-    solos = list(dict.fromkeys(SOLO_LEADERS_BY_MONTH.get(_mp, []) + m_solo))
+    _excl = {norm(x) for x in EXCLUDE_NEW_LEADERS}
+    promotions = [(p, q) for (p, q) in dict.fromkeys(PROMOTIONS_BY_MONTH.get(_mp, []) + m_prom + [tuple(p) for p in a_prom]) if norm(q) not in _excl]
+    solos = [q for q in dict.fromkeys(SOLO_LEADERS_BY_MONTH.get(_mp, []) + m_solo) if norm(q) not in _excl]
     cars = list(dict.fromkeys(CAR_RIDE_LEADERS_BY_MONTH.get(_mp, []) + m_car + a_car))
     prom_rows = [
         f'    <div class="prow"><div class="who"><span class="pp">{esc(p)}</span>'
