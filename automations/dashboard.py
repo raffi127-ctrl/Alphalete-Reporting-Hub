@@ -1829,7 +1829,7 @@ AUTOMATED_REPORTS = [
             "- **Quality Scorecard** → Approval / Canceled / Pending "
             "(Four Weeks Rolling)\n\n"
             "WHEN IT RUNS\n"
-            "Runs itself on its own job every **Sunday at 6:00 PM CST**.\n\n"
+            "**Sunday at 6:00 PM CST**.\n\n"
             "PARTIAL DATA IS SAFE\n"
             "Whichever of the 3 PDFs have arrived get filled — only their "
             "rows change; every other cell is left untouched. Each PDF "
@@ -1869,8 +1869,8 @@ AUTOMATED_REPORTS = [
                 "primary": True,
                 "help": "FALLBACK run — parses whatever Frontier PDF(s) you "
                         "uploaded above and fills the Frontier tabs. The "
-                        "scheduled 4am run instead auto-pulls the PDFs from "
-                        "email, so you normally don't need this.",
+                        "scheduled Sunday 6pm run instead auto-pulls the PDFs "
+                        "from email, so you normally don't need this.",
                 "module": "automations.alphalete_org_report.opt_frontier",
                 "args_fn": lambda: [],
             },
