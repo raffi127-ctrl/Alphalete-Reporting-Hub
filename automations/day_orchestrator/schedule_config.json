@@ -1217,7 +1217,8 @@
       "base_args": [],
       "cadence": {
         "weekdays": [
-          4
+          4,
+          5
         ]
       },
       "priority": "P2",
