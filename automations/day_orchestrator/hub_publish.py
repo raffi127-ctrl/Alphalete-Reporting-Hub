@@ -57,6 +57,7 @@ _HUB_CARD = {
     "social_inbox": "social-media-posting",
     "alphalete_production": "alphalete-production",
     "tableau_screenshots": "tableau-screenshots",
+    "weather_alert": "lucy-weather-forecast",
     # Library reports run on their own LaunchAgent/rerun (not the 4am batch) and
     # mark themselves via run_library_report / their wrapper. Their Hub card id IS
     # the library id, so map it to itself so _cal_status matches (card goes green).

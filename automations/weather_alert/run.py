@@ -222,6 +222,15 @@ def main() -> int:
         print(f"[weather] Slack post failed: {type(e).__name__}: {e}", flush=True)
         return 1
     print("[weather] posted to #alphalete-sales ✓", flush=True)
+    # Mark the "Lucy Weather Forecast" Hub card green when the 6am job (or a manual
+    # run) posts — it runs on its own job, not the 4am batch, so nothing else marks
+    # it. Best-effort: never fail the post over a Hub write.
+    try:
+        from automations.day_orchestrator import hub_publish
+        hub_publish.publish_done("weather_alert", "Lucy Weather Forecast",
+                                 status="success")
+    except Exception:
+        pass
     return 0
 
 

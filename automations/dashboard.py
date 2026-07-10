@@ -2356,6 +2356,53 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "lucy-weather-forecast",
+        "name": "Lucy Weather Forecast",
+        "creator": "Megan",
+        "emoji": "🌤️",
+        "color": "#0EA5E9",
+        "category": "📊 Metrics",
+        "description": "Lucy posts the daily DFW weather forecast to "
+                       "#alphalete-sales each morning — temp, conditions, and "
+                       "what to pack to change into for the field. Pulled from "
+                       "Open-Meteo (no API key), worded by Claude in Lucy's voice.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Pulls today's Frisco/DFW forecast from Open-Meteo and posts a short, "
+            "fixed-layout note as Lucy 🐺 to #alphalete-sales: greeting, temp, "
+            "conditions, what to prepare / bring to change into for the field, and "
+            "a crush-it sign-off. Claude (haiku) writes the greeting + close; a "
+            "template covers it if Claude is down.\n\n"
+            "WHEN IT RUNS\n"
+            "Daily at 6:00 AM CST on the mini, on its own job — no upload, no "
+            "trigger. Run the button below to post it again any time."
+        ),
+        "assignees": ["Lucy 1"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "6:00 AM",
+            "estimated_minutes": 1,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Weather forecast posted to #alphalete-sales "
+                               "as Lucy.",
+            "message_failed": "❌ Run failed. Check the log above, fix, then "
+                              "run again.",
+        },
+        "actions": [
+            {
+                "label": "Post Today's Forecast",
+                "icon": "▶",
+                "primary": True,
+                "help": "Pulls today's DFW forecast and posts it to "
+                        "#alphalete-sales as Lucy. Runs from any machine.",
+                "module": "automations.weather_alert.run",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
         "id": "alphalete-production",
         "name": "Alphalete Daily Production Slack Post",
         "creator": "Eve",
