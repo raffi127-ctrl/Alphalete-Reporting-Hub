@@ -81,11 +81,18 @@ WRAP_UP_PHRASES = [
     "how did the installation go",
     "how was the installation",
     "how did the setup go",
+    "how did installation go",   # variant without "the"
+    "how did the install go",    # "install" vs "installation"
+    "just wanted to check in with you to see how everything went",
+    # Rep "your install didn't complete, reschedule" notice — invariant core
+    # catches both "schedule a new installation date" and "reschedule" variants.
+    "installation was never completed just letting you know you can",
     # Rep sign-offs. Broader than the check-ins (they ride on the end of
     # substantive messages), so kept to distinctive phrasings a customer
     # wouldn't use.
     "reach out with any",
     "any questions or concerns please reach out",
+    "feel free to reach out",
 ]
 
 
@@ -195,17 +202,42 @@ def run_autoread(dry_run: bool = False, logfn=print) -> dict:
         if conv_id and conv_id not in matched_conversations:
             all_msgs = get_all_conversation_messages(token, conv_id)
 
-            # For image-only messages, only treat as wrap-up if it's in the first 2 messages
-            if image_only and not phrase_match:
+            # Anchor the wrap-up on the whole conversation, not just the single
+            # unread message that triggered us. This catches trailing rep
+            # artifacts — e.g. the order-screen photo a rep sends AFTER the
+            # wrap-up text — that arrive once the wrap-up text was already marked
+            # read on a previous run. That photo is then the only unread message
+            # left, sits at the END of the thread, and would otherwise be
+            # rejected by the image-position rule below and never cleared.
+            phrase_msgs = [
+                m for m in all_msgs
+                if any(p in (m.get("subject", "") or "").lower() for p in phrases_lower)
+            ]
+            if phrase_msgs:
+                # Earliest wrap-up phrase message is the true wrap-up point.
+                anchor = min(phrase_msgs, key=lambda m: m.get("creationTime", ""))
+                rep_number = anchor.get("from", {}).get("phoneNumber")
+                wrapup_time = anchor.get("creationTime", "")
+            elif image_only:
+                # No wrap-up text anywhere in the thread — only accept an image
+                # as the wrap-up if it LEADS the thread (an image-led wrap-up).
                 all_msgs_sorted = sorted(all_msgs, key=lambda m: m.get("creationTime", ""))
                 msg_position = next(
                     (i for i, m in enumerate(all_msgs_sorted) if m.get("id") == msg.get("id")), None
                 )
                 if msg_position is None or msg_position > 1:
                     continue
+            else:
+                continue
 
             matched_conversations.add(conv_id)
 
+            # Any message after the wrap-up from a number OTHER than the rep who
+            # sent the wrap-up (or our own line) means the customer engaged, so
+            # keep the thread unread. The rep's own trailing order-screen photo
+            # is sent from the wrap-up number, so it does NOT count as a reply —
+            # and the anchor logic above still gets it marked. A photo (or text)
+            # from a customer's number DOES keep the thread unread.
             customer_replied = any(
                 m.get("from", {}).get("phoneNumber") not in (rep_number, MY_NUMBER)
                 and m.get("creationTime", "") > wrapup_time
