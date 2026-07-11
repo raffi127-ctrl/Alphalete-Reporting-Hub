@@ -170,7 +170,57 @@ class ReadinessCache:
         if ptype == "tableau_date_coverage":
             return self._probe_tableau_date_coverage(source_id, probe)
 
+        if ptype == "box_daily":
+            return self._probe_box_daily(source_id, probe)
+
         return Readiness(False, f"unknown probe type {ptype!r}")
+
+    def _probe_box_daily(self, source_id: str, probe: dict) -> Readiness:
+        """Box (B2BBOXEnergyTracker/BoxDailyTracker) is the ORG Sales Board's
+        LAST-landing source — its extract refreshes ~7-8am with the prior day's
+        final numbers, so a board run before that writes incomplete Box columns.
+        That's why the board used to sit on a hard cadence.not_before='08:00'
+        (Megan 2026-07-11: replace the clock with a real readiness gate so it runs
+        in its order the moment Box is in). This probe pulls the Box weekday-
+        crosstab and confirms its max date has reached the latest COMPLETED
+        reporting day — using the board's OWN week.completed_days (rollover-safe:
+        Tue→[Mon], Mon→last Sun, Sat→Fri) and its OWN pull+parse, so the gate
+        matches exactly what the fill reads. `min_rows` floors out a garbage/partial
+        pull. The session-warmth gate already ran in report_ready(), so the warm
+        ownerville cookies are reused (no fresh login)."""
+        min_rows = int(probe.get("min_rows", 5))
+        try:
+            from automations.org_sales_board import section_pull as _sp
+            from automations.org_sales_board import week as _wk
+            from automations.shared.tableau_patchright import download_crosstab_patchright
+        except Exception as e:  # noqa: BLE001
+            return Readiness(False, f"cannot import Box pull ({e})")
+        completed = _wk.completed_days(self.target_date)
+        if not completed:
+            return Readiness(True, "no completed reporting day to gate on — running")
+        target = max(completed)
+        spec = _sp.BOX_SPEC
+        out = Path(tempfile.gettempdir()) / f"probe_{source_id.replace(':', '_')}.csv"
+        try:
+            download_crosstab_patchright(spec.view_url, spec.crosstab_sheet, out,
+                                         verbose=False)
+        except Exception as e:  # noqa: BLE001
+            line = str(e).splitlines()[0][:120] if str(e) else repr(e)
+            return Readiness(False, f"Box extract not pullable yet ({line})")
+        try:
+            parsed = _sp.parse_crosstab_byday(spec, out, self.target_date)
+        except Exception as e:  # noqa: BLE001
+            return Readiness(False, f"Box crosstab not parseable yet ({str(e)[:100]})")
+        owners = [o for o, m in parsed.items() if m.get(spec.metric)]
+        if len(owners) < min_rows:
+            return Readiness(False, f"Box crosstab thin ({len(owners)} owners "
+                                    f"< {min_rows}) — extract not refreshed")
+        maxd = max(d for o in owners for d in parsed[o][spec.metric])
+        if maxd >= target:
+            return Readiness(True, f"Box fresh through {maxd.isoformat()} "
+                                   f"(need ≥ {target.isoformat()})")
+        return Readiness(False, f"Box only through {maxd.isoformat()}, need "
+                                f"{target.isoformat()} — extract not refreshed")
 
     def _probe_tableau_date_coverage(self, source_id: str, probe: dict) -> Readiness:
         """Lightweight: pull the source view's crosstab and confirm the target
