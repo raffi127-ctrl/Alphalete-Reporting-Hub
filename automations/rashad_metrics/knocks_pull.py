@@ -61,7 +61,10 @@ from automations.total_knocks.pull import (
 # Default office to impersonate. Env-targetable so the same module can be
 # pointed at another office without a code change (mirrors the churn
 # module's CHURN_*_VIEW_URL env overrides).
-DEFAULT_OFFICE = os.environ.get("RASHAD_KNOCKS_OFFICE", "Rashad Reed")
+# KNOCKS_OFFICE is the office-agnostic override (Aya + future offices);
+# RASHAD_KNOCKS_OFFICE stays as Rashad's back-compat name.
+DEFAULT_OFFICE = (os.environ.get("KNOCKS_OFFICE")
+                  or os.environ.get("RASHAD_KNOCKS_OFFICE", "Rashad Reed"))
 
 
 def pull_office_knocks(office_name: Optional[str] = None,

@@ -34,6 +34,7 @@ except Exception:
 
 DEFAULT_CHANNEL = "C068PH3RFSM"   # #alphalete-sales (Raf)
 ELEVATE_CHANNEL = "C0B3KTCCMT7"   # #elevate-sales (Rashad, private)
+INDELIBLE_CHANNEL = "C0AA85Y3FPE" # #indelible-sales (Aya, private)
 
 # Each office is fully self-contained — no globals, no crosstalk.
 OFFICES = [
@@ -67,7 +68,7 @@ OFFICES = [
                      "c51fa7b7-f75d-4ca0-bb6a-f63c9a83eb32/AyaINTABP?:iid=1"),
         "owner": "AYA AL-KHAFAJI",
         "sheet_id": "10t16jDAFDtQNytFWU6O6gJtoOFlg0UHLwoArTW_sRNg",   # Metrics Reports -Aya
-        "channel": None,   # TODO: Aya's Slack channel (pending — sheet-only until set)
+        "channel": INDELIBLE_CHANNEL,   # #indelible-sales
         "subtitle": "Aya's Local Office",
     },
 ]

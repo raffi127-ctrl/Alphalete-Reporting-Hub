@@ -125,6 +125,20 @@ METRICS = [
               "time-tracker scrape (total_knocks.pull), renders 2 images from "
               "the pulled rows (render rows= path), posts to #elevate-sales. "
               "Rides the ownerville session — same gate as order_log."),
+    dict(slug="abp",
+         label="💳 New Internet ABP %",
+         module="automations.new_internet_abp.run",
+         owner_args=[],
+         env={"ABP_NI_VIEW_URL": ("https://us-east-1.online.tableau.com/#/site/sci/"
+                                  "views/ATTTRACKER2_1-D2D/Metrics/"
+                                  "d932e0f6-72b4-4003-a5d1-4262137363de/RashadNLABP?:iid=1"),
+              "ABP_SHEET_ID": "11louWIU8IuSPrZLsMkRh8qEnO3wNqmeNwIOSKPpXzm8",
+              "ABP_OWNER": "RASHAD REED",
+              "ABP_SUBTITLE": "Rashad's Local Office"},
+         dry_flag="--dry-run", post_flag=None,
+         note="ready — new_internet_abp.run pulls RashadNLABP → fills his ABP tab "
+              "→ posts 💳 into today's #elevate-sales Metrics thread (honors "
+              "METRICS_CHANNEL_ID). Posts when NOT --dry-run/--skip-slack."),
 ]
 
 

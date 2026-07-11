@@ -1296,6 +1296,42 @@
         "report_id": "rashad_metrics"
       }
     },
+    "aya_metrics": {
+      "order": 8,
+      "on_scheduler": true,
+      "display_name": "Aya's Daily Metrics (#indelible-sales)",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:order_log"
+      ],
+      "_sources_note": "Single-office cut of the daily metrics for owner 'Aya Al-Khafaji', posted to her PRIVATE #indelible-sales (C0AA85Y3FPE) as the Lucy reporting bot. Same machinery as rashad_metrics (reuses its _metric_cmd/_run_one) with Aya's Tableau views: INTAYA/WirelessAYA churn, AyaExpanded cancel-rates, AyaINTABP. order_log/sales_6plus/cancels/disconnects auto-scope via --owner; knocks impersonates her OV office (KNOCKS_OFFICE). Built 2026-07-10.",
+      "command": [
+        "automations.aya_metrics.run"
+      ],
+      "base_args": [
+        "--live"
+      ],
+      "_base_args_note": "LIVE: pulls all metric slugs for Aya + POSTS to #indelible-sales. Continue-on-failure. RECOMMEND a `lucy rerun aya_metrics --dry-run` on the mini to verify her NEW views (INTAYA/WirelessAYA/AyaExpanded) before trusting the first live run; ABP + the --owner metrics reuse proven patterns.",
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P1",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 60,
+      "verify": {
+        "type": "manifest",
+        "report_id": "aya_metrics"
+      }
+    },
     "rashad_churn": {
       "on_scheduler": true,
       "_note": "weekdays=[] → NEVER auto-runs on schedule (scheduled_today filters by weekday); it exists ONLY so `lucy rerun rashad_churn` can run Rashad's churn fill on-demand on the mini. Fills the 'Metrics Reports - Rashad Reed' churn tabs (today's snapshot, sheet-only — churn_pull defaults to --skip-slack). Flip weekdays to daily + wire the #elevate-sales post once verified.",

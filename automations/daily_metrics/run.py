@@ -11,6 +11,7 @@ they produce the 10 metrics posted to that thread every morning:
     🔁 Ongoing Cancel                     (ongoing_cancel)
     ❎ Disconnected New Internets          (disconnects)
     🌐 New Internet Churn + 📊 Wireless    (churn)
+    💳 New Internet ABP %                  (new_internet_abp)
 
 Design:
   * Each module is launched the SAME way the Hub launches it on its own —
@@ -65,6 +66,8 @@ METRICS = [
      "automations.disconnects.run", []),
     ("churn", "🌐 New Internet Churn + 📊 Wireless Churn",
      "automations.churn.run", []),
+    ("abp", "💳 New Internet ABP %",
+     "automations.new_internet_abp.run", []),
 ]
 
 

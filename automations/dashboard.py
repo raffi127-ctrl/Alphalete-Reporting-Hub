@@ -2016,15 +2016,15 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "daily-metrics",
-        "name": "10 Daily Metrics Report",
+        "name": "Daily Metrics Report",
         "creator": "Megan",
         "emoji": "📊",
         "color": "#0EA5E9",
         "category": "📊 Metrics",
-        "description": "One run that fires all 10 daily #alphalete-sales metrics — Telemapper Knocks, Time Gaps, Order Log, Sales Scheduled 6+ Days, Canceled Orders, Ongoing Cancel, Disconnects, New Internet Churn, Wireless Churn, Rep Activations — each posting into today's Metrics thread.",
+        "description": "One run that fires all 11 daily #alphalete-sales metrics — Telemapper Knocks, Time Gaps, Order Log, Sales Scheduled 6+ Days, Canceled Orders, Ongoing Cancel, Disconnects, New Internet Churn, Wireless Churn, Rep Activations, New Internet ABP % — each posting into today's Metrics thread.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Runs all 10 metric reports back-to-back & posts into today's "
+            "Runs all 11 metric reports back-to-back & posts into today's "
             "Metrics thread in #alphalete-sales Slack. The day's header "
             "thread is posted first if it isn't already up.\n\n"
             "METRICS POSTED (in thread order)\n"
@@ -2037,7 +2037,8 @@ AUTOMATED_REPORTS = [
             "• ❎ Disconnected New Internets\n"
             "• 🌐 New Internet Churn\n"
             "• 📊 Wireless Churn\n"
-            "• 🆕 Rep Activations\n\n"
+            "• 🆕 Rep Activations\n"
+            "• 💳 New Internet ABP %\n\n"
             "IF ONE FAILS\n"
             "The run keeps going and ends with a ✅/❌ summary. Re-run just "
             "the ones that failed from 'More actions' below.\n\n"
@@ -2083,7 +2084,12 @@ AUTOMATED_REPORTS = [
             "🌐 NEW INTERNET CHURN + 📊 WIRELESS CHURN\n"
             "Fills Raf's Local Office churn on the AT&T Fiber Metrics Report "
             "sheet (tabs: Local Office - New Internet Churn, Local Office - "
-            "Wireless Churn) and posts both to the Metrics thread."
+            "Wireless Churn) and posts both to the Metrics thread.\n\n"
+            "💳 NEW INTERNET ABP %\n"
+            "Pulls each rep's New Internet Auto Bill Pay mix (4-wk rolling) "
+            "from the ATT TRACKER 2.1 Metrics view, fills the 'Local Office - "
+            "New Internet ABP%' tab, and posts a colored per-rep image "
+            "(total sales / ABP sales / %) to the Metrics thread."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8/edit"),
@@ -2094,15 +2100,15 @@ AUTOMATED_REPORTS = [
             "estimated_minutes": 15,
         },
         "post_run": {
-            "message_success": "✅ Daily Metrics done — all 10 posted to the Metrics thread.",
+            "message_success": "✅ Daily Metrics done — all 11 posted to the Metrics thread.",
             "message_failed": "❌ Some metrics failed — check the summary above, then re-run those from More actions.",
         },
         "actions": [
             {
-                "label": "Run All 10 Metrics",
+                "label": "Run All 11 Metrics",
                 "icon": "▶",
                 "primary": True,
-                "help": "Runs all 7 reports → 10 metrics posted to today's thread; continues past any that fail.",
+                "help": "Runs all 8 reports → 11 metrics posted to today's thread; continues past any that fail.",
                 "module": "automations.daily_metrics.run",
                 "args_fn": lambda: [],
             },
@@ -2164,10 +2170,10 @@ AUTOMATED_REPORTS = [
         "emoji": "📈",
         "color": "#8B5CF6",
         "category": "🏢 Other Offices",
-        "description": "The same 10 daily metrics as the main report, scoped to Rashad Reed's office and posted into his #elevate-sales Metrics thread — Telemapper Knocks, Time Gaps, Order Log, Sales Scheduled 6+ Days, Canceled Orders, Ongoing Cancel, Disconnects, New Internet Churn, Wireless Churn, Rep Activations.",
+        "description": "The same 11 daily metrics as the main report, scoped to Rashad Reed's office and posted into his #elevate-sales Metrics thread — Telemapper Knocks, Time Gaps, Order Log, Sales Scheduled 6+ Days, Canceled Orders, Ongoing Cancel, Disconnects, New Internet Churn, Wireless Churn, Rep Activations, New Internet ABP %.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "Runs all 10 daily metrics for Rashad Reed's office and posts each "
+            "Runs all 11 daily metrics for Rashad Reed's office and posts each "
             "into today's Metrics thread in #elevate-sales (one header thread "
             "per day, created first if it isn't up yet).\n\n"
             "METRICS POSTED (in thread order)\n"
@@ -2180,7 +2186,8 @@ AUTOMATED_REPORTS = [
             "• ❎ Disconnected New Internets\n"
             "• 🌐 New Internet Churn\n"
             "• 📊 Wireless Churn\n"
-            "• 🆕 Rep Activations\n\n"
+            "• 🆕 Rep Activations\n"
+            "• 💳 New Internet ABP %\n\n"
             "IF ONE FAILS\n"
             "The run keeps going and ends with a ✅/❌ summary. Re-run just the "
             "ones that failed from the per-metric buttons below.\n\n"
@@ -2206,7 +2213,7 @@ AUTOMATED_REPORTS = [
                 "label": "Run All Metrics",
                 "icon": "▶",
                 "primary": True,
-                "help": "Runs all 10 metrics → posted to today's #elevate-sales thread; continues past any that fail.",
+                "help": "Runs all 11 metrics → posted to today's #elevate-sales thread; continues past any that fail.",
                 "module": "automations.rashad_metrics.run",
                 "args_fn": lambda: ["--live"],
             },
@@ -2258,6 +2265,125 @@ AUTOMATED_REPORTS = [
                 "help": "Re-run just New Internet + Wireless Churn for Rashad (the recovery used 2026-06-30).",
                 "module": "automations.rashad_metrics.run",
                 "args_fn": lambda: ["--only", "churn", "--live"],
+            },
+            {
+                "label": "New Internet ABP %",
+                "icon": "💳",
+                "help": "Re-run just New Internet ABP % for Rashad.",
+                "module": "automations.rashad_metrics.run",
+                "args_fn": lambda: ["--only", "abp", "--live"],
+            },
+        ],
+    },
+    {
+        "id": "aya-metrics",
+        "name": "Aya's Daily Metrics (#indelible-sales)",
+        "creator": "Megan",
+        "emoji": "📈",
+        "color": "#8B5CF6",
+        "category": "🏢 Other Offices",
+        "description": "The same 11 daily metrics as the main report, scoped to Aya Al-Khafaji's office and posted into her #indelible-sales Metrics thread — Telemapper Knocks, Time Gaps, Order Log, Sales Scheduled 6+ Days, Canceled Orders, Ongoing Cancel, Disconnects, New Internet Churn, Wireless Churn, Rep Activations, New Internet ABP %.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Runs all 11 daily metrics for Aya Al-Khafaji's office and posts "
+            "each into today's Metrics thread in #indelible-sales (one header "
+            "thread per day, created first if it isn't up yet).\n\n"
+            "METRICS POSTED (in thread order)\n"
+            "• 🚪 Telemapper Knocks\n"
+            "• ⏰ Time Gaps\n"
+            "• 📋 Order Log\n"
+            "• 📅 Sales Scheduled 6+ Days Out\n"
+            "• 🚫 Canceled Orders\n"
+            "• 🔁 Ongoing Cancel\n"
+            "• ❎ Disconnected New Internets\n"
+            "• 🌐 New Internet Churn\n"
+            "• 📊 Wireless Churn\n"
+            "• 🆕 Rep Activations\n"
+            "• 💳 New Internet ABP %\n\n"
+            "IF ONE FAILS\n"
+            "The run keeps going and ends with a ✅/❌ summary. Re-run just the "
+            "ones that failed from the per-metric buttons below.\n\n"
+            "WHEN IT RUNS\n"
+            "Daily, not before 6am — same metric logic as the main report, "
+            "filtered to Aya's office (her INTAYA / WirelessAYA / AyaExpanded / "
+            "AyaINTABP Tableau views) and posted to #indelible-sales."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "10t16jDAFDtQNytFWU6O6gJtoOFlg0UHLwoArTW_sRNg/edit"),
+        "assignees": ["Lucy 1"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "6:00 AM",
+            "estimated_minutes": 12,
+        },
+        "post_run": {
+            "message_success": "✅ Aya's metrics posted to the #indelible-sales thread.",
+            "message_failed": "❌ A metric failed — check the summary above, then re-run that one from the buttons below.",
+        },
+        "actions": [
+            {
+                "label": "Run All Metrics",
+                "icon": "▶",
+                "primary": True,
+                "help": "Runs all 11 metrics → posted to today's #indelible-sales thread; continues past any that fail.",
+                "module": "automations.aya_metrics.run",
+                "args_fn": lambda: ["--live"],
+            },
+            {
+                "label": "Telemapper Knocks + Time Gaps",
+                "icon": "🚪",
+                "help": "Re-run just Knocks + Time Gaps for Aya.",
+                "module": "automations.aya_metrics.run",
+                "args_fn": lambda: ["--only", "knocks_gaps", "--live"],
+            },
+            {
+                "label": "Order Log + Rep Activations",
+                "icon": "📋",
+                "help": "Re-run just the Order Log + Rep Activations for Aya.",
+                "module": "automations.aya_metrics.run",
+                "args_fn": lambda: ["--only", "order_log", "--live"],
+            },
+            {
+                "label": "Sales Scheduled 6+ Days Out",
+                "icon": "📅",
+                "help": "Re-run just Sales Scheduled 6+ Days for Aya.",
+                "module": "automations.aya_metrics.run",
+                "args_fn": lambda: ["--only", "sales_6plus", "--live"],
+            },
+            {
+                "label": "Canceled Orders",
+                "icon": "🚫",
+                "help": "Re-run just Canceled Orders for Aya.",
+                "module": "automations.aya_metrics.run",
+                "args_fn": lambda: ["--only", "cancels", "--live"],
+            },
+            {
+                "label": "Ongoing Cancel",
+                "icon": "🔁",
+                "help": "Re-run just Ongoing Cancel for Aya.",
+                "module": "automations.aya_metrics.run",
+                "args_fn": lambda: ["--only", "ongoing_cancel", "--live"],
+            },
+            {
+                "label": "Disconnected New Internets",
+                "icon": "❎",
+                "help": "Re-run just Disconnects for Aya.",
+                "module": "automations.aya_metrics.run",
+                "args_fn": lambda: ["--only", "disconnects", "--live"],
+            },
+            {
+                "label": "New Internet + Wireless Churn",
+                "icon": "🌐",
+                "help": "Re-run just New Internet + Wireless Churn for Aya.",
+                "module": "automations.aya_metrics.run",
+                "args_fn": lambda: ["--only", "churn", "--live"],
+            },
+            {
+                "label": "New Internet ABP %",
+                "icon": "💳",
+                "help": "Re-run just New Internet ABP % for Aya.",
+                "module": "automations.aya_metrics.run",
+                "args_fn": lambda: ["--only", "abp", "--live"],
             },
         ],
     },

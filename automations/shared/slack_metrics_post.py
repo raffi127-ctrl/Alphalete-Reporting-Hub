@@ -254,7 +254,10 @@ def ensure_metrics_thread(today: dt.date | None = None,
     # only the fallback). Rep Activations added 2026-06-26 — add the matching
     # ":new: Rep Activations" line to the Workflow Builder header too.
     header_text = "\n".join([
-        f"Metrics for: {today.strftime('%B')} {_ordinal(today.day)} {today.year}",
+        # Bold first line (Megan 2026-07-10, to match the Alphalete Production /
+        # Tableau Trackers headers). find_metrics_thread_ts matches on a
+        # substring, so the '*...*' wrapper doesn't break thread detection.
+        f"*Metrics for: {today.strftime('%B')} {_ordinal(today.day)} {today.year}*",
         "",
         ":door: Telemapper Knocks",
         ":clock1: Time Gaps",
