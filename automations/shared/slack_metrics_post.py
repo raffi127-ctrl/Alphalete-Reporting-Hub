@@ -238,21 +238,18 @@ def ensure_metrics_thread(today: dt.date | None = None,
                           *, dry_run: bool = False) -> dict:
     """Make sure today's Metrics header thread exists in #alphalete-sales.
 
-    The daily Slack Workflow normally posts the 'Metrics for: <date>'
-    header early morning, and each per-metric report just replies to it.
-    This is a FALLBACK so a fully-automated run never depends on that
-    workflow firing: if today's header is already there (bot OR manual) we
-    do nothing and return its ts; if it's missing we post one ourselves,
+    OUR CODE posts this header (Megan 2026-07-10: the old Slack Workflow
+    that used to post it is retired). If today's header is somehow already
+    there (a manual post) we reuse its ts; otherwise we post one ourselves,
     in the exact 'Metrics for: <Month> <ordinal> <year>' format that
-    find_metrics_thread_ts recognises (so the replies still match it)."""
+    find_metrics_thread_ts recognises (so the replies still match it).
+    Because this is now the primary poster, the checklist below is the
+    source of truth — keep it in sync with the metrics actually posted."""
     today = today or dt.date.today()
-    # Match the Slack Workflow bot's header: the dated first line (which
-    # find_metrics_thread_ts recognises) + the metric checklist with the same
-    # emoji shortcodes the bot uses, so a fallback-posted header reads
-    # identically to the normal one. NOTE: this list must stay in sync with the
-    # Slack "Metrics" Workflow Builder header (that's the PRIMARY poster; this is
-    # only the fallback). Rep Activations added 2026-06-26 — add the matching
-    # ":new: Rep Activations" line to the Workflow Builder header too.
+    # The dated first line (which find_metrics_thread_ts recognises) + the
+    # metric checklist. This code is the poster now (no more Slack Workflow),
+    # so this list IS the header — keep it in sync with the metrics posted
+    # (Rep Activations 2026-06-26; New Internet ABP % 2026-07-10).
     header_text = "\n".join([
         # Bold first line (Megan 2026-07-10, to match the Alphalete Production /
         # Tableau Trackers headers). find_metrics_thread_ts matches on a

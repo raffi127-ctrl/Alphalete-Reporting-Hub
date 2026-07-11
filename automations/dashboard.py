@@ -2161,6 +2161,13 @@ AUTOMATED_REPORTS = [
                 "module": "automations.churn.run",
                 "args_fn": lambda: [],
             },
+            {
+                "label": "New Internet ABP %",
+                "icon": "💳",
+                "help": "Re-run just Raf's Local Office New Internet ABP %.",
+                "module": "automations.new_internet_abp.run",
+                "args_fn": lambda: [],
+            },
         ],
     },
     {
