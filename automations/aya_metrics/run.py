@@ -65,12 +65,12 @@ METRICS = [
          module="automations.disconnects.run",
          owner_args=["--owner", AYA_OWNER], dry_flag="--dry-run", post_flag=None,
          note="ready — single-owner (org-wide pull, filter to Aya)"),
-    # RE-ENABLED 2026-07-11: Megan cleared Aya's churn tabs to a clean empty-roster
-    # 4-section structure (+ the missing NI 90-day header added), so churn's fill
-    # inserts her reps into a clean layout like Rashad's first run — no more
-    # updateDimensionProperties inverted-range crash.
+    # DISABLED again 2026-07-11: churn STILL fails even on the cleared empty-roster
+    # tabs (the --only churn test still couldn't fill/post). Keep it off so Aya's
+    # daily run is clean (10 metrics, no crash) until the churn-fill issue on her
+    # tabs is diagnosed + fixed, then flip owner_args back to [].
     dict(slug="churn", label="🌐 New Internet + 📊 Wireless Churn",
-         module="automations.churn.run", owner_args=[],
+         module="automations.churn.run", owner_args=None,
          env={"CHURN_NI_VIEW_URL": _T + "ATTTRACKER2_1-D2D/CHURN/"
               "d3238662-2bb4-4e1f-86d0-487f13cc320b/INTAYA?:iid=1",
               "CHURN_WL_VIEW_URL": _T + "ATTTRACKER2_1-D2D/CHURN/"
