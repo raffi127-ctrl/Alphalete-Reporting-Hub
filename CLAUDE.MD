@@ -15,8 +15,16 @@ fluff. I need clear visuals and concise communications.
 
 # Rules — always
 
-- Ask clarifying questions before starting a complex task.
-- Show your plan and steps before executing.
+- Default to acting. Don't ask permission to proceed, don't ask me to
+  pick between options you can decide yourself, and don't stop to
+  confirm each step. Make the reasonable call and keep going.
+- Only stop to ask when you hit a GENUINE blocker: something
+  irreversible or destructive, a real fork where the wrong guess wastes
+  real work, or missing info you truly can't infer. When you do stop,
+  ask the one specific question and nothing else.
+- For a big/complex task, state your plan in a sentence or two and then
+  just start — don't wait for my sign-off unless the task hits a
+  blocker above.
 - Concise output, bullet points over paragraphs.
 - Cite sources when doing research.
 - Save any one-off outputs to `output/`.
@@ -27,9 +35,14 @@ fluff. I need clear visuals and concise communications.
   on ONE preview tab first (default: Marcellus Butler on the ATT
   Program - Focus Report). Wait for my "looks good, roll out" before
   touching the other tabs.
-- **Don't commit unless I ask.** Repo lives on GitHub
-  (raffi127-ctrl/Alphalete-Reporting-Hub). When I say commit, write a
-  lowercase title + bullet body, end with
+- **Prompt me to commit — I forget.** Repo lives on GitHub
+  (raffi127-ctrl/Alphalete-Reporting-Hub). Don't auto-commit, but
+  whenever we finish a working session or a report reaches a working
+  state, proactively ask "want me to commit + push?" — don't wait for
+  me to remember. Before staging, run `git diff` and add only the files
+  from this session; other Claude sessions may have work-in-progress in
+  the same repo, so never `git add .` blindly. When I say commit, write
+  a lowercase title + bullet body, end with
   `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
 - **No hardcoded rows or columns.** Find rows by column-B label, find
   weeks by date header (`fill.find_sunday_columns`). Templates change —
