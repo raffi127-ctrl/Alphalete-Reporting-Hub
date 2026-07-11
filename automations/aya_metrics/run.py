@@ -65,8 +65,14 @@ METRICS = [
          module="automations.disconnects.run",
          owner_args=["--owner", AYA_OWNER], dry_flag="--dry-run", post_flag=None,
          note="ready — single-owner (org-wide pull, filter to Aya)"),
+    # TEMP DISABLED 2026-07-11: churn FILL crashed live on Aya's tabs —
+    # updateDimensionProperties endIndex[51] < startIndex[113] (her newly-created
+    # churn tabs don't match the row layout churn's fill/hide expects). This was
+    # re-failing every orchestrator pass → full-report retries → double-posting.
+    # owner_args=None skips it so the report SUCCEEDS + stops retrying. Re-enable
+    # (owner_args=[]) once Aya's churn tabs are set up like Rashad's.
     dict(slug="churn", label="🌐 New Internet + 📊 Wireless Churn",
-         module="automations.churn.run", owner_args=[],
+         module="automations.churn.run", owner_args=None,
          env={"CHURN_NI_VIEW_URL": _T + "ATTTRACKER2_1-D2D/CHURN/"
               "d3238662-2bb4-4e1f-86d0-487f13cc320b/INTAYA?:iid=1",
               "CHURN_WL_VIEW_URL": _T + "ATTTRACKER2_1-D2D/CHURN/"
