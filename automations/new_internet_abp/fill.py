@@ -371,8 +371,24 @@ def apply_house_style(ws, *, last_row: Optional[int] = None, logfn=print) -> Non
             "range": {"sheetId": ws.id, "dimension": "COLUMNS",
                       "startIndex": col_0, "endIndex": col_0 + 1},
             "properties": {"pixelSize": px}, "fields": "pixelSize"}})
+    # Yellow on the date header (B1:C1) + the whole label row (A3:C3), per
+    # Megan's Raf formatting (2026-07-10). The daily insert PASTE_FORMATs it
+    # onto each new date column, so it propagates. Numeric %-cells still get
+    # their value-based color from apply_color_rules (text cells keep yellow).
+    yellow = {"red": 1, "green": 1, "blue": 0}
+    for rng in (
+        {"startRowIndex": HEADER_ROW - 1, "endRowIndex": HEADER_ROW,
+         "startColumnIndex": 0, "endColumnIndex": 3},               # A1:C1 header
+        {"startRowIndex": REP_HEADER_ROW - 1, "endRowIndex": REP_HEADER_ROW,
+         "startColumnIndex": 0, "endColumnIndex": 3},               # A3:C3 labels
+    ):
+        rng["sheetId"] = ws.id
+        requests.append({"repeatCell": {
+            "range": rng,
+            "cell": {"userEnteredFormat": {"backgroundColor": yellow}},
+            "fields": "userEnteredFormat.backgroundColor"}})
     ws.spreadsheet.batch_update({"requests": requests})
-    logfn("  applied house style (center/size-12/borders + A/B/C widths)")
+    logfn("  applied house style (center/size-12/borders + widths + yellow header/label)")
 
 
 def apply_color_rules(ws, *, clear_first: bool = True, logfn=print) -> None:
