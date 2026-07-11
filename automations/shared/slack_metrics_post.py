@@ -269,6 +269,7 @@ def ensure_metrics_thread(today: dt.date | None = None,
         ":globe_with_meridians: New Internet Churn",
         ":bar_chart: Wireless Churn",
         ":new: Rep Activations",
+        ":credit_card: New Internet ABP %",
     ])
     if dry_run:
         return {"dry_run": True, "header_text": header_text,
