@@ -13,8 +13,10 @@ For each image we:
 
 The live sheet the team is using is never touched. Recipes per 'kind':
   daily        -- full leaderboard, day-Apps columns, through Teams 'Alphaletes TOTALS'
+  field_status -- daily leaderboard, 1st-4th-week reps only, grouped by Field Status
   team         -- ONE per team (col CI): running Apps + last completed day expanded
   highrollers  -- only reps who produced yesterday, sorted by the day's Apps
+  zeros        -- reps who rolled a literal 0 on BOTH of the last two completed days
   ranking      -- running block E-J expanded, sorted by APPS/INT/NL
 """
 from __future__ import annotations
@@ -129,9 +131,21 @@ def _running_apps_col(grid) -> int:
     return 3            # D, first APPS under 'RUNNING WEEK TOTALS' (structurally fixed)
 
 
-def _daily_show_cols(grid) -> set:
+def _field_status_col(grid) -> int:
+    return next(c for c in range(len(grid[0])) if _cell(grid, 0, c).strip() == "Field Status")
+
+
+def _is_wk5_plus(v: str) -> bool:
+    """True if a Field Status value means 5th week or beyond (a 'veteran').
+    Robust to minor label drift: '5th wk+', '5th Wk +', '5+' all match; the
+    1st–4th-week and 'RT' values do not."""
+    s = v.strip().lower()
+    return s.startswith("5") or "+" in s
+
+
+def _daily_show_cols(grid, team_avgs: bool = True) -> set:
     """DP visible set (by header label): #, name, running-APPS, last-week-APPS, each
-    day's Apps, the identity columns, and the Teams-table avg columns."""
+    day's Apps, the identity columns, and (optionally) the Teams-table avg columns."""
     show = {0, 1, 2, 3}                                  # A, B, C, D(running APPS)
     # last-week APPS
     show.add(next(c for c in range(len(grid[0]))
@@ -148,13 +162,14 @@ def _daily_show_cols(grid) -> set:
     for lbl in ("Completed", "ATTUID"):
         show.add(next(c for c in range(len(grid[0])) if _cell(grid, 2, c).strip() == lbl))
     # Teams-table avg columns (row-158-ish header band); by label so they survive moves
-    for c in range(len(grid[0])):
-        for r in range(150, min(175, len(grid))):
-            if _cell(grid, r, c).strip().upper() in (
-                    "TOTAL UNITS AVG", "NEW INT AVG",
-                    "LW TOTAL UNITS AVG", "LW NEW INT AVG"):
-                show.add(c)
-                break
+    if team_avgs:
+        for c in range(len(grid[0])):
+            for r in range(150, min(175, len(grid))):
+                if _cell(grid, r, c).strip().upper() in (
+                        "TOTAL UNITS AVG", "NEW INT AVG",
+                        "LW TOTAL UNITS AVG", "LW NEW INT AVG"):
+                    show.add(c)
+                    break
     return show
 
 
@@ -294,6 +309,7 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
     try:
         tmp_ws = next(w for w in ss.worksheets() if w.title == TMP_TAB)
         reqs, filt_specs, sort_col, export_rng, subtotal_cols = [], [], 3, None, []
+        sorts = None            # [(col, order), ...]; None -> [(sort_col, "DESCENDING")]
 
         # common filters: hide blank rep names
         filt_specs.append({"columnIndex": 2, "filterCriteria": {"hiddenValues": [""]}})
@@ -333,14 +349,54 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
             sort_col = next(c for c in range(3, 10)
                             if _cell(grid, 2, c).strip().upper() == spec["sort"].upper())
             filt_specs.append({"columnIndex": sun, "filterCriteria": {"hiddenValues": ["F", "T"]}})
+
+        elif kind == "field_status":
+            # daily leaderboard, first-4-weeks only, organized by tenure (Raf 7/10):
+            # same columns as 'daily' minus the Teams-avg block, drop '5th wk+' reps,
+            # sort by Field Status then running APPS.
+            show = _daily_show_cols(grid, team_avgs=False)
+            right = col_letter(max(show))
+            export_rng = f"A1:{right}{tot_row}"
+            fs_col = _field_status_col(grid)
+            fs_vals = {_cell(grid, r, fs_col).strip() for r in range(3, tot_row - 1)
+                       if _cell(grid, r, 2).strip()}
+            # entry-level 1st–4th-week board: drop veterans ('5th wk+') AND 'RT'
+            hide_fs = [""] + [v for v in fs_vals
+                              if _is_wk5_plus(v) or v.strip().upper() == "RT"]
+            filt_specs.append({"columnIndex": sun, "filterCriteria": {"hiddenValues": ["F", "T"]}})
+            filt_specs.append({"columnIndex": fs_col, "filterCriteria": {"hiddenValues": hide_fs}})
+            sorts = [(3, "DESCENDING")]           # rank by running-week APPS, high -> low
+            subtotal_cols = [c for c in show if _cell(grid, 2, c).strip().lower() == "apps"]
+
+        elif kind == "zeros":
+            # anyone who rolled a literal 0 on BOTH of the last two completed days
+            # (Raf 7/10). NUMBER_EQ excludes X/T/F/blank, so only reps who worked
+            # and got shut out count. Both zero-days shown as proof; grouped by Team.
+            a1 = _day_block(grid, last_completed_day(today))[0]          # t-1 Apps col
+            a2 = _day_block(grid, last_completed_day(today) - dt.timedelta(days=1))[0]  # t-2 Apps col
+            fs_col = _field_status_col(grid)
+            team_col = next(c for c in range(len(grid[0])) if _cell(grid, 0, c).strip() == "Team")
+            trainer_col = next(c for c in range(len(grid[0])) if _cell(grid, 0, c).strip() == "Trainer")
+            show = {0, 1, 2, a2, a1, trainer_col, fs_col, team_col}   # #, name, the 2 zero-days, trainer, tenure, team
+            right = col_letter(max(show))
+            export_rng = f"A1:{right}{tot_row}"
+            for c in (a1, a2):
+                filt_specs.append({"columnIndex": c, "filterCriteria": {
+                    "condition": {"type": "NUMBER_EQ",
+                                  "values": [{"userEnteredValue": "0"}]}}})
+            sorts = [(2, "ASCENDING")]            # alphabetical by rep name
+            subtotal_cols = [a2, a1]
+
         else:
             raise ValueError(f"unknown kind {kind}")
 
+        if sorts is None:
+            sorts = [(sort_col, "DESCENDING")]
         reqs += _hide_cols(gid, show, ncols)
         reqs.append({"setBasicFilter": {"filter": {
             "range": {"sheetId": gid, "startRowIndex": 2, "endRowIndex": tot_row - 1,
                       "startColumnIndex": 1, "endColumnIndex": 104},
-            "sortSpecs": [{"dimensionIndex": sort_col, "sortOrder": "DESCENDING"}],
+            "sortSpecs": [{"dimensionIndex": c, "sortOrder": o} for c, o in sorts],
             "filterSpecs": filt_specs}}})
         ss.batch_update({"requests": reqs})
         time.sleep(1.0)
