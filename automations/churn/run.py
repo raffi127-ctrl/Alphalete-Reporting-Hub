@@ -137,6 +137,14 @@ def _run_fill_phase(label: str, pull_mod, fill_mod, parsed: dict,
     fill_mod.apply_units_white_override(ws, sections,
                                          dry_run=args.dry_run, logfn=print)
 
+    # Whiten blank cells so the PASTE_NORMAL insert's carried-over
+    # red/yellow/green doesn't stick on cells that have NO data today.
+    # captainship_churn + owners_metrics_churn already call this; the
+    # local-office New Internet + Wireless runner never did, so blank
+    # cells showed incorrect colors on Raf/Rashad/Aya (Megan 2026-07-10).
+    fill_mod.clear_empty_cell_backgrounds(ws, sections,
+                                          dry_run=args.dry_run, logfn=print)
+
     # Per-section filters: Megan 2026-05-28 — sortRange above already
     # gives reps highest-to-lowest within each section, so we let Eve
     # apply per-section filters from the Sheets UI as needed. The
