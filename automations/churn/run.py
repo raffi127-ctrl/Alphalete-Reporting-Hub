@@ -100,6 +100,18 @@ def _run_fill_phase(label: str, pull_mod, fill_mod, parsed: dict,
             fill_mod.insert_two_cols_at_b(ws, sections)
             fill_mod._merge_section_headers(ws, sections)
 
+    # RE-RESOLVE section bounds from the LIVE grid after the row inserts.
+    # insert_missing_reps inserts bottom-section-first, which shifts the lower
+    # sections DOWN but leaves their in-memory header_rows stale. On an
+    # established office (Raf/Rashad: tiny/no inserts) that's harmless, but on a
+    # FRESH office's big first-run insert (Aya's whole roster at once) the stale
+    # header_rows made unhide_all_rep_rows compute an inverted range
+    # (startIndex > endIndex) and crash BEFORE the tier-coloring step — leaving
+    # the tab all-orange with no red/yellow/green (Megan 2026-07-11). Re-finding
+    # is idempotent for established offices. (Skip on dry-run — no inserts ran.)
+    if not args.dry_run:
+        sections = fill_mod.find_sections(ws)
+
     print(f"  Write today ({fill_mod._date_label(today)})...")
     summary = fill_mod.write_today(ws, sections, today, parsed,
                                     dry_run=args.dry_run, logfn=print)

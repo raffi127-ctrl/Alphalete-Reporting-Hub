@@ -65,12 +65,12 @@ METRICS = [
          module="automations.disconnects.run",
          owner_args=["--owner", AYA_OWNER], dry_flag="--dry-run", post_flag=None,
          note="ready — single-owner (org-wide pull, filter to Aya)"),
-    # DISABLED again 2026-07-11: churn STILL fails even on the cleared empty-roster
-    # tabs (the --only churn test still couldn't fill/post). Keep it off so Aya's
-    # daily run is clean (10 metrics, no crash) until the churn-fill issue on her
-    # tabs is diagnosed + fixed, then flip owner_args back to [].
+    # RE-ENABLED 2026-07-11: root cause was churn/run.py using STALE section
+    # bounds after the fresh-office big insert (unhide crashed before coloring →
+    # all-orange). Fixed by re-resolving sections post-insert. Data was always
+    # correct; the fix lets the tier-coloring + borders complete.
     dict(slug="churn", label="🌐 New Internet + 📊 Wireless Churn",
-         module="automations.churn.run", owner_args=None,
+         module="automations.churn.run", owner_args=[],
          env={"CHURN_NI_VIEW_URL": _T + "ATTTRACKER2_1-D2D/CHURN/"
               "d3238662-2bb4-4e1f-86d0-487f13cc320b/INTAYA?:iid=1",
               "CHURN_WL_VIEW_URL": _T + "ATTTRACKER2_1-D2D/CHURN/"
