@@ -278,9 +278,10 @@ def _post_write_structure(ws, today, parsed, rep_rows, *, dry_run=False,
     ]
     ws.spreadsheet.batch_update({"requests": requests})
 
-    # Green/yellow/red banding — install the insert-proof, dedupe-safe rules
-    # at bootstrap (apply_color_rules clears any existing first).
+    # At bootstrap: install the house style (matches Raf) + the insert-proof
+    # color rules, so every new office's tab looks the same automatically.
     if bootstrapped:
+        apply_house_style(ws, last_row=last, logfn=logfn)
         apply_color_rules(ws, logfn=logfn)
 
     # Sort the rep block by today's % (col B) descending — server-side,
@@ -334,6 +335,44 @@ def _hide_blank_reps(ws) -> dict:
     if requests:
         ws.spreadsheet.batch_update({"requests": requests})
     return {"hidden": hidden, "unhidden": unhidden}
+
+
+# House style read off Raf's tab (Megan's formatting, 2026-07-10): every
+# cell centered, size-12, full grid borders, no bold; col widths A/B/C =
+# 185/90/67. Encoded here so every office's tab matches Raf and new
+# offices inherit it at onboarding. (No yellow header on Raf currently.)
+HOUSE_COL_WIDTHS = {0: 185, 1: 90, 2: 67}
+
+
+def apply_house_style(ws, *, last_row: Optional[int] = None, logfn=print) -> None:
+    """Match Megan's Raf formatting on this tab: center + size-12 + grid
+    borders across the data block, and the A/B/C column widths. Static only
+    — colors are handled by apply_color_rules. Idempotent."""
+    last_row = last_row or last_rep_row(find_rep_rows(ws))
+    solid = {"style": "SOLID"}
+    requests = [
+        {"repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": last_row,
+                      "startColumnIndex": 0, "endColumnIndex": ws.col_count},
+            "cell": {"userEnteredFormat": {
+                "horizontalAlignment": "CENTER",
+                "verticalAlignment": "MIDDLE",
+                "textFormat": {"fontSize": 12},
+                "borders": {"top": solid, "bottom": solid, "left": solid, "right": solid},
+            }},
+            "fields": ("userEnteredFormat.horizontalAlignment,"
+                       "userEnteredFormat.verticalAlignment,"
+                       "userEnteredFormat.textFormat.fontSize,"
+                       "userEnteredFormat.borders"),
+        }},
+    ]
+    for col_0, px in HOUSE_COL_WIDTHS.items():
+        requests.append({"updateDimensionProperties": {
+            "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                      "startIndex": col_0, "endIndex": col_0 + 1},
+            "properties": {"pixelSize": px}, "fields": "pixelSize"}})
+    ws.spreadsheet.batch_update({"requests": requests})
+    logfn("  applied house style (center/size-12/borders + A/B/C widths)")
 
 
 def apply_color_rules(ws, *, clear_first: bool = True, logfn=print) -> None:

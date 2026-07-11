@@ -46,6 +46,7 @@ OFFICES = [
         "owner": "RAFAEL HIDALGO",
         "sheet_id": "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8",
         "channel": DEFAULT_CHANNEL,
+        "subtitle": "Raf's Local Office",
     },
     {
         "key": "rashad",
@@ -56,6 +57,7 @@ OFFICES = [
         "owner": "RASHAD REED",
         "sheet_id": "11louWIU8IuSPrZLsMkRh8qEnO3wNqmeNwIOSKPpXzm8",   # Metrics Reports -Rashad Reed
         "channel": ELEVATE_CHANNEL,
+        "subtitle": "Rashad's Local Office",
     },
     {
         "key": "aya",
@@ -66,6 +68,7 @@ OFFICES = [
         "owner": "AYA AL-KHAFAJI",
         "sheet_id": "10t16jDAFDtQNytFWU6O6gJtoOFlg0UHLwoArTW_sRNg",   # Metrics Reports -Aya
         "channel": None,   # TODO: Aya's Slack channel (pending — sheet-only until set)
+        "subtitle": "Aya's Local Office",
     },
 ]
 
@@ -102,7 +105,8 @@ def _fill_and_post(off: dict, today: dt.date, args) -> tuple[bool, str]:
     import automations.shared.slack_metrics_post as smp
     smp.CHANNEL_ID = off["channel"]
     out_dir = Path(tempfile.gettempdir()) / "abp_slack_post"
-    png = render.render(ws, today, out_dir / f"{off['key']} ABP {today:%m-%d-%Y}.png")
+    png = render.render(ws, today, out_dir / f"{off['key']} ABP {today:%m-%d-%Y}.png",
+                        subtitle=off.get("subtitle", render.SUBTITLE))
     try:
         result = smp.post_reply_with_file(
             png, comment="💳 New Internet ABP %",

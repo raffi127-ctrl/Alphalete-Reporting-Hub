@@ -44,6 +44,7 @@ def main(argv=None) -> int:
                ABP_NI_VIEW_URL=NI_VIEW,
                ABP_SHEET_ID=SHEET_ID,
                ABP_OWNER=OWNER,
+               ABP_SUBTITLE="Rashad's Local Office",
                METRICS_CHANNEL_ID=ELEVATE_CHANNEL_ID)
     # --post opts INTO the Slack post; default is sheet-only (--skip-slack).
     if "--post" in argv:

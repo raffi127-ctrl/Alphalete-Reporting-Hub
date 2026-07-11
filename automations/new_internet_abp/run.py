@@ -95,7 +95,10 @@ def main(argv=None) -> int:
     print("Step 4: Render PNG + post to Metrics thread...")
     from automations.shared.slack_metrics_post import post_reply_with_file, SlackPostError
     out_dir = Path(tempfile.gettempdir()) / "abp_slack_post"
-    png = render.render(ws, today, out_dir / f"New Internet ABP {today:%m-%d-%Y}.png")
+    import os
+    subtitle = os.environ.get("ABP_SUBTITLE", "Raf's Local Office")
+    png = render.render(ws, today, out_dir / f"New Internet ABP {today:%m-%d-%Y}.png",
+                        subtitle=subtitle)
     print(f"  rendered {png}")
     try:
         result = post_reply_with_file(

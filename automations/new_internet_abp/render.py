@@ -111,16 +111,21 @@ def _data_from_parsed(parsed: dict, today: dt.date) -> dict:
             "reps": reps}
 
 
-def render_preview(parsed: dict, today: dt.date, out_path: Path) -> Path:
+def render_preview(parsed: dict, today: dt.date, out_path: Path,
+                   subtitle: str = SUBTITLE) -> Path:
     """Render the image from a parsed pull (single week), no Sheet needed."""
-    return _draw(_data_from_parsed(parsed, today), today, out_path, n_weeks=1)
+    return _draw(_data_from_parsed(parsed, today), today, out_path,
+                 n_weeks=1, subtitle=subtitle)
 
 
-def render(ws, today: dt.date, out_path: Path, n_weeks: int = N_WEEKS) -> Path:
-    return _draw(_read_tab(ws, n_weeks), today, out_path, n_weeks=n_weeks)
+def render(ws, today: dt.date, out_path: Path, n_weeks: int = N_WEEKS,
+           subtitle: str = SUBTITLE) -> Path:
+    return _draw(_read_tab(ws, n_weeks), today, out_path, n_weeks=n_weeks,
+                 subtitle=subtitle)
 
 
-def _draw(data: dict, today: dt.date, out_path: Path, n_weeks: int = N_WEEKS) -> Path:
+def _draw(data: dict, today: dt.date, out_path: Path, n_weeks: int = N_WEEKS,
+          subtitle: str = SUBTITLE) -> Path:
     dates, office_avg, reps = data["dates"], data["office_avg"], data["reps"]
 
     total_w = NAME_COL_W + WEEK_COL_W * n_weeks + PAD * 2
@@ -134,7 +139,7 @@ def _draw(data: dict, today: dt.date, out_path: Path, n_weeks: int = N_WEEKS) ->
     # Title bar
     d.rectangle([x, y, x + total_w - PAD * 2, y + TITLE_H], fill=TITLE_BG)
     d.text((x + 10, y + 6), TITLE, font=f16b, fill=TITLE_FG)
-    d.text((x + 10, y + 32), f"{SUBTITLE} — {today:%m/%d/%Y}", font=f11, fill=TITLE_FG)
+    d.text((x + 10, y + 32), f"{subtitle} — {today:%m/%d/%Y}", font=f11, fill=TITLE_FG)
     y += TITLE_H
 
     name_x = x
