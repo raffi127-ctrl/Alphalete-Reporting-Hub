@@ -1297,7 +1297,7 @@
       }
     },
     "aya_metrics": {
-      "order": 8,
+      "order": 7.5,
       "on_scheduler": true,
       "display_name": "Aya's Daily Metrics (#indelible-sales)",
       "source_type": "tableau",
@@ -1312,7 +1312,7 @@
         "--live"
       ],
       "_base_args_note": "LIVE: pulls all metric slugs for Aya + POSTS to #indelible-sales. Continue-on-failure. RECOMMEND a `lucy rerun aya_metrics --dry-run` on the mini to verify her NEW views (INTAYA/WirelessAYA/AyaExpanded) before trusting the first live run; ABP + the --owner metrics reuse proven patterns.",
-      "_sequence_note": "depends_on rashad_metrics → runs RIGHT AFTER Rashad's report finishes (Megan 2026-07-10), NOT an independent 6am start. Both are #Other-Offices single-office runs on the same ownerville/Tableau session gate; sequencing them avoids two heavy reports racing at 6am.",
+      "_sequence_note": "order 7.5 → runs as the NEXT report right after Rashad (order 7) in the list, NOT via depends_on (Megan 2026-07-10: don't gate Aya on Rashad succeeding — just sequence her next). No independent 6am start; run_order sorts by 'order' so 7.5 slots between Rashad (7) and the next numbered report (8). Readiness still gates the Tableau pulls.",
       "cadence": {
         "weekdays": [
           0,
@@ -1326,9 +1326,7 @@
       },
       "priority": "P1",
       "freshness_target": null,
-      "depends_on": [
-        "rashad_metrics"
-      ],
+      "depends_on": [],
       "timeout_minutes": 60,
       "verify": {
         "type": "manifest",

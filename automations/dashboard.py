@@ -2311,10 +2311,10 @@ AUTOMATED_REPORTS = [
             "The run keeps going and ends with a ✅/❌ summary. Re-run just the "
             "ones that failed from the per-metric buttons below.\n\n"
             "WHEN IT RUNS\n"
-            "Daily, right after Rashad's report finishes (not a separate 6am "
-            "start) — same metric logic as the main report, filtered to Aya's "
-            "office (her INTAYA / WirelessAYA / AyaExpanded / AyaINTABP Tableau "
-            "views) and posted to #indelible-sales."
+            "Daily, as the next report right after Rashad's in the morning "
+            "batch (not a separate 6am start) — same metric logic as the main "
+            "report, filtered to Aya's office (her INTAYA / WirelessAYA / "
+            "AyaExpanded / AyaINTABP Tableau views) and posted to #indelible-sales."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "10t16jDAFDtQNytFWU6O6gJtoOFlg0UHLwoArTW_sRNg/edit"),
