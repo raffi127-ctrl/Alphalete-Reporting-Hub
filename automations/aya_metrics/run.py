@@ -102,10 +102,11 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     target_chan = args.channel or INDELIBLE_CHANNEL_ID
 
-    if args.live and args.dry_run:
-        print("✗ --live and --dry-run are mutually exclusive.")
-        return 2
-    mode = "live" if args.live else ("dry-run" if args.dry_run else "plan")
+    # dry-run WINS if both are passed. `lucy rerun aya_metrics --dry-run`
+    # appends --dry-run onto the schedule's base --live, so a hard mutual-
+    # exclusion would make the verify path impossible. Dry-run is the safe
+    # default (no post), so prefer it.
+    mode = "dry-run" if args.dry_run else ("live" if args.live else "plan")
 
     wired = [m for m in METRICS if m["owner_args"] is not None]
     if args.only:
