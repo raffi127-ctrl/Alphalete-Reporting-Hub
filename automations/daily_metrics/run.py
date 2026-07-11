@@ -194,15 +194,19 @@ def main(argv=None) -> int:
         except Exception:  # noqa: BLE001 — manifest write must never fail the run
             pass
 
+    # PARTIAL FAILURE = "ran with a note", NOT a hard failure (Megan 2026-07-11).
+    # Exit 0 so the orchestrator does NOT retry the WHOLE --live run (which
+    # re-posts every metric = double-posting). The run-manifest above records the
+    # failed metric(s) + a scoped `--only <slug>` retry, so verify=manifest marks
+    # this INCOMPLETE ("it ran, just with a note") and the email surfaces the ONE
+    # missing metric to re-run — not the whole report.
     if failed:
-        print(f"\n{len(failed)} metric(s) failed — re-run just those with "
-              f"--only <slug>. Failed: {failed}")
-        return 1
-    print("\nAll metrics posted ✓")
-    # Canonical success sentinel — the Hub classifies a run done by finding
-    # '=== done ===' in the log (see dashboard _read_active_runs). Without it
-    # this report ran successfully but never showed done on the left-side
-    # task list / shared Hub Activity (Eve, 2026-05-31).
+        print(f"\n{len(failed)} metric(s) didn't post — run COMPLETE with a note. "
+              f"Re-run just those: --only <slug>. Missing: {failed}")
+    else:
+        print("\nAll metrics posted ✓")
+    # Canonical sentinel — the Hub classifies a run done by finding '=== done ==='
+    # in the log (see dashboard _read_active_runs). Printed on partial too: it RAN.
     print("=== done ===")
     return 0
 

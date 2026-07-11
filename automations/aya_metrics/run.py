@@ -191,11 +191,15 @@ def main(argv=None) -> int:
                            note=(f"{n_ok}/{len(results)} metrics posted to #indelible-sales"
                                  + (f"; failed: {', '.join(failed_slugs)}" if failed_slugs else "")))
 
+    # PARTIAL FAILURE = "ran with a note", NOT a hard failure (Megan 2026-07-11):
+    # exit 0 so the orchestrator doesn't retry the WHOLE --live run (= double-post).
+    # The manifest above records the failed metric + a scoped --only retry, so
+    # verify=manifest marks this INCOMPLETE and the email flags just that metric.
     if failed_slugs:
-        print(f"\n{len(failed_slugs)} metric(s) failed — re-run with --only <slug>. "
-              f"Failed: {failed_labels}")
-        return 1
-    print("\nAll wired metrics ok ✓")
+        print(f"\n{len(failed_slugs)} metric(s) didn't post — run COMPLETE with a "
+              f"note. Re-run just those: --only <slug>. Missing: {failed_labels}")
+    else:
+        print("\nAll wired metrics ok ✓")
     print("=== done ===")
     return 0
 
