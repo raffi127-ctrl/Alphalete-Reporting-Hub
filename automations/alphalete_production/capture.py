@@ -127,6 +127,30 @@ def last_completed_day(today: dt.date) -> dt.date:
     return today - dt.timedelta(days=1)
 
 
+def last_two_mandatory_days(today: dt.date) -> List[dt.date]:
+    """The two most recent completed days that have MANDATORY hours (Mon-Sat).
+    Sunday is skipped (Megan 7/10: no mandatory hours Sundays), so a Monday run
+    yields Sat+Fri, not Sun+Sat. Returns [most-recent, older]."""
+    days, d = [], last_completed_day(today)
+    while len(days) < 2:
+        if d.weekday() != 6:               # 6 = Sunday
+            days.append(d)
+        d -= dt.timedelta(days=1)
+    return days
+
+
+def _zero_names_for_day(grid, day: dt.date) -> set:
+    """Rep names (col C) who posted a numeric 0 in `day`'s Apps column (used to
+    match zeros across a week boundary, where the two days live in different tabs).
+    '0'/'0.00' count; X/T/F/blank do not."""
+    try:
+        c = _day_block(grid, day)[0]
+    except RuntimeError:
+        return set()
+    return {_cell(grid, r, 2).strip() for r in range(3, len(grid))
+            if _cell(grid, r, 2).strip() and re.fullmatch(r"0(\.0+)?", _cell(grid, r, c).strip())}
+
+
 def _running_apps_col(grid) -> int:
     return 3            # D, first APPS under 'RUNNING WEEK TOTALS' (structurally fixed)
 
@@ -369,23 +393,44 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
             subtotal_cols = [c for c in show if _cell(grid, 2, c).strip().lower() == "apps"]
 
         elif kind == "zeros":
-            # anyone who rolled a literal 0 on BOTH of the last two completed days
-            # (Raf 7/10). NUMBER_EQ excludes X/T/F/blank, so only reps who worked
-            # and got shut out count. Both zero-days shown as proof; grouped by Team.
-            a1 = _day_block(grid, last_completed_day(today))[0]          # t-1 Apps col
-            a2 = _day_block(grid, last_completed_day(today) - dt.timedelta(days=1))[0]  # t-2 Apps col
+            # anyone who rolled a literal 0 on BOTH of the last two MANDATORY days
+            # (Raf 7/10; Sunday skipped per Megan 7/10 -> Monday compares Fri+Sat).
+            # NUMBER_EQ excludes X/T/F/blank, so only reps who worked and got shut
+            # out count. Alphabetical by rep name; identity cols for accountability.
+            d_recent, d_older = last_two_mandatory_days(today)
+            c_recent = _day_block(grid, d_recent)[0]         # always in this week's tab
             fs_col = _field_status_col(grid)
             team_col = next(c for c in range(len(grid[0])) if _cell(grid, 0, c).strip() == "Team")
             trainer_col = next(c for c in range(len(grid[0])) if _cell(grid, 0, c).strip() == "Trainer")
-            show = {0, 1, 2, a2, a1, trainer_col, fs_col, team_col}   # #, name, the 2 zero-days, trainer, tenure, team
+            try:
+                c_older = _day_block(grid, d_older)[0]
+            except RuntimeError:
+                c_older = None                               # older day is in the PRIOR week's tab (Tue run)
+
+            if c_older is not None:
+                # both mandatory days on this tab -> show both as proof, filter each == 0
+                show = {0, 1, 2, c_older, c_recent, trainer_col, fs_col, team_col}
+                for c in (c_recent, c_older):
+                    filt_specs.append({"columnIndex": c, "filterCriteria": {
+                        "condition": {"type": "NUMBER_EQ",
+                                      "values": [{"userEnteredValue": "0"}]}}})
+                subtotal_cols = [c_older, c_recent]
+            else:
+                # cross-week (Tue: Mon + last Sat): match the older day's zeros BY NAME
+                # from the prior tab; the two day-cols can't share one image, so show
+                # rep + trainer/tenure/team only (both days named in the caption).
+                older_zeros = _zero_names_for_day(
+                    find_week_tab(ss, d_older).get_all_values(), d_older)
+                names = {_cell(grid, r, 2).strip() for r in range(3, tot_row - 1)
+                         if _cell(grid, r, 2).strip()}
+                filt_specs[0]["filterCriteria"]["hiddenValues"] = [""] + sorted(names - older_zeros)
+                filt_specs.append({"columnIndex": c_recent, "filterCriteria": {
+                    "condition": {"type": "NUMBER_EQ", "values": [{"userEnteredValue": "0"}]}}})
+                show = {0, 1, 2, trainer_col, fs_col, team_col}
+
             right = col_letter(max(show))
             export_rng = f"A1:{right}{tot_row}"
-            for c in (a1, a2):
-                filt_specs.append({"columnIndex": c, "filterCriteria": {
-                    "condition": {"type": "NUMBER_EQ",
-                                  "values": [{"userEnteredValue": "0"}]}}})
             sorts = [(2, "ASCENDING")]            # alphabetical by rep name
-            subtotal_cols = [a2, a1]
 
         else:
             raise ValueError(f"unknown kind {kind}")
