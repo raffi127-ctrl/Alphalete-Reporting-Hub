@@ -420,6 +420,90 @@ def _health_check(page) -> None:
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
+def _probe() -> int:
+    """Deep, honest re-check of whether the extractor plugin actually RUNS in the
+    automation browser (not just whether it's on the launch line). Reports the
+    extension's service-worker / background-page presence (proof it's live), the
+    page buttons before/after the robot click, all frames (an injected popup would
+    be a chrome-extension:// frame), and any Start controls. Writes everything to
+    the 'RP Diag' Google-Sheet tab so the queue's 3-line truncation can't hide it."""
+    from automations.shared.tableau_patchright import appstream_direct_session
+    from automations.recruiting_report import fill as _fill
+    lines = []
+
+    def L(s):
+        lines.append(str(s)[:600])
+        print(s, flush=True)
+
+    def buttons(page):
+        out = []
+        try:
+            b = page.locator("button:visible, a.btn:visible, [role='button']:visible")
+            for i in range(min(b.count(), 45)):
+                try:
+                    t = " ".join((b.nth(i).inner_text() or "").split())
+                    if t:
+                        out.append(t[:40])
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return list(dict.fromkeys(out))
+
+    with appstream_direct_session(yield_if_busy=True, load_extensions=True) as page:
+        ctx = page.context
+        L("service_workers@start: " + str([sw.url for sw in ctx.service_workers]))
+        try:
+            L("background_pages@start: " + str([bp.url for bp in ctx.background_pages]))
+        except Exception as e:
+            L(f"background_pages err: {e}")
+        fetch_office._switch_office(page, OFFICE_ID, OFFICE_HINT)
+        page.wait_for_timeout(1500)
+        page = open_v2_dashboard(page)
+        goto_process_in_batches(page)
+        page.wait_for_timeout(3000)
+        L("service_workers@batch: " + str([sw.url for sw in ctx.service_workers]))
+        L("url: " + (page.url or "")[:95])
+        L("buttons_before: " + str(buttons(page)))
+        rclick = None
+        for sel in ["[title*='extract resume data' i]", "[title*='Resume Helper' i]",
+                    "[title*='Resume' i]", ".fa-robot", "[class*='robot']"]:
+            loc = page.locator(sel)
+            if loc.count():
+                try:
+                    loc.first.click(timeout=8000)
+                    rclick = sel
+                    break
+                except Exception as e:
+                    L(f"robot click err {sel}: {e}")
+        L("robot_clicked_via: " + str(rclick))
+        page.wait_for_timeout(4500)
+        L("frames_after: " + str([(f.url or "")[:80] for f in page.frames]))
+        L("buttons_after: " + str(buttons(page)))
+        starts = []
+        for f in page.frames:
+            try:
+                loc = f.locator("xpath=//*[normalize-space(.)='Start' or contains(text(),'Start')]")
+                for i in range(min(loc.count(), 4)):
+                    starts.append(" ".join((loc.nth(i).inner_text() or "").split())[:50])
+            except Exception:
+                pass
+        L("start_elements: " + str(starts[:8]))
+
+    try:
+        sh = _fill._client().open_by_key("1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
+        try:
+            t = sh.worksheet("RP Diag")
+        except Exception:
+            t = sh.add_worksheet(title="RP Diag", rows=200, cols=1)
+        t.clear()
+        t.update([[x] for x in lines], "A1")
+        print(f"PROBE: wrote {len(lines)} lines to 'RP Diag' tab", flush=True)
+    except Exception as e:
+        print(f"PROBE: sheet write failed: {e}", flush=True)
+    return 0
+
+
 def _inspect_plugin() -> int:
     """Read the cached extractor plugin manifest(s) and report how ApplicantStream
     would detect the plugin — the fork we need to resolve the 'Download Resume
@@ -478,10 +562,16 @@ def main() -> int:
     ap.add_argument("--inspect-plugin", action="store_true",
                     help="Read the cached extractor plugin's manifest and print how it "
                          "proves it's installed (fixed id vs injected script). No browser.")
+    ap.add_argument("--probe", action="store_true",
+                    help="Deep probe: is the extension actually RUNNING (service worker/"
+                         "background), and what does the robot click do? Full output written "
+                         "to the 'RP Diag' Google-Sheet tab (not truncated).")
     args = ap.parse_args()
 
     if args.inspect_plugin:
         return _inspect_plugin()
+    if args.probe:
+        return _probe()
 
     mode = "DRY-RUN (no writes)" if args.dry_run else "LIVE (sends to AI call list)"
     _log(f"=== Resume Pushing v2 — office {OFFICE_ID} — {mode} ===")
