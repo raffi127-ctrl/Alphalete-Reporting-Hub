@@ -31,11 +31,29 @@ from automations.harvest import orgwide as OW
 from automations.harvest.proof import _flatten, diff_payloads
 
 
+def _strip_color(reps: dict) -> dict:
+    """Drop the parsed 'color' field — it is unused by the churn fill (colors are
+    derived from pct via _pct_color_for), so it never reaches the sheet and must
+    not enter a data diff."""
+    return {name: {p: {k: v for k, v in slot.items() if k != "color"}
+                   for p, slot in per.items()}
+            for name, per in reps.items()}
+
+
 def _family_table():
     """Lazily import the real report parsers and build the family table."""
     from automations.new_internet_churn import pull as nip
+    from automations.captainship_churn import pull as cap
     from automations.owners_metrics_churn import pull as omp
     return [
+        {"name": "D2D-NI-team", "org": N.NEED_D2D_NI_ALLTEAM, "parse": cap.parse,
+         "kind": "team", "periods": OW.D2D_PERIODS, "decimals": 2,
+         "title_fn": cap._smart_title,
+         "offices": [(N.NEED_NI_CAP, "Raf captainship")]},
+        {"name": "D2D-WL-team", "org": N.NEED_D2D_WL_ALLTEAM, "parse": cap.parse,
+         "kind": "team", "periods": OW.D2D_PERIODS, "decimals": 2,
+         "title_fn": cap._smart_title,
+         "offices": [(N.NEED_WL_CAP, "Raf captainship")]},
         {"name": "B2B", "org": N.NEED_B2B_ALLTEAM, "parse": omp.parse_b2b,
          "kind": "owner", "periods": OW.B2B_PERIODS, "decimals": 1,
          "owner_col": "Owner & Office", "total_bare": {"Grand Total"},
@@ -102,6 +120,7 @@ def run(target_date: dt.date, *, do_harvest: bool, logfn=print) -> dict:
             control_path = load_harvest(need, target_date)
             control = fam["parse"](control_path)
 
+            control_reps = control["reps"]
             if fam["kind"] == "owner":
                 member_cells = OW.owner_cells(control_path, fam["owner_col"], fam["total_bare"])
                 treatment = OW.slice_owner(org_path, member_cells, fam["parse"],
@@ -110,7 +129,16 @@ def run(target_date: dt.date, *, do_harvest: bool, logfn=print) -> dict:
                 missing = treatment["_missing_members"]
                 logfn(f"  membership : {len(member_cells)} owner-cells; "
                       + ("all present ✅" if not missing else f"MISSING: {missing} ❌"))
-            else:  # column-keyed D2D
+            elif fam["kind"] == "team":
+                members = set(control["reps"].keys())          # captainship's owners
+                treatment = OW.slice_d2d_team(org_path, members, fam["title_fn"],
+                                              periods=fam["periods"], decimals=fam["decimals"])
+                missing = treatment["_missing_members"]
+                # color is fill-derived from pct — exclude it from the data diff.
+                control_reps = _strip_color(control["reps"])
+                logfn(f"  membership : {len(members)} owners aggregated rep→owner; "
+                      + ("all present ✅" if not missing else f"MISSING: {missing} ❌"))
+            else:  # column-keyed D2D (per-office)
                 owner_value = _d2d_owner_value(load_harvest(need, target_date))
                 treatment = OW.slice_d2d(org_path, owner_value, fam["parse"],
                                          periods=fam["periods"], decimals=fam["decimals"])
@@ -118,8 +146,8 @@ def run(target_date: dt.date, *, do_harvest: bool, logfn=print) -> dict:
                       f"{treatment['_sliced_rows']} raw rows; "
                       f"{len(control['reps'])} reps in per-view")
 
-            rep_diffs = diff_payloads(control["reps"], treatment["reps"])
-            logfn(f"  rep cells  : {len(_flatten(control['reps']))} compared — "
+            rep_diffs = diff_payloads(control_reps, treatment["reps"])
+            logfn(f"  rep cells  : {len(_flatten(control_reps))} compared — "
                   + ("identical ✅" if not rep_diffs else f"{len(rep_diffs)} MISMATCH ❌"))
             for d in rep_diffs[:8]:
                 logfn(f"      {d}")

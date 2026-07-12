@@ -185,3 +185,66 @@ def slice_d2d(org_csv_path: Path, owner_value: str, parse_fn: Callable[[Path], d
         "_missing_members": [],
         "_sliced_rows": len(kept) - 1,
     }
+
+
+# D2D metric-row labels (New Internet + Wireless share them).
+_D2D_NUM_LABEL = "Disconnect count (SPE/SP)"
+_D2D_DENOM_LABEL = "Activated SPE/SP"
+
+
+def slice_d2d_team(org_csv_path: Path, member_owners: set, title_fn: Callable[[str], str],
+                   *, periods: Iterable[str] = D2D_PERIODS, decimals: int = 2,
+                   owner_col: str = "ICD Owner Name (rep)") -> dict:
+    """Slice a CAPTAINSHIP (a set of owners) from a rep-level D2D org crosstab AND
+    aggregate the rep rows UP to owner level — reproducing an owner-keyed
+    captainship view (e.g. RAFSTEAMCHURN) whose rows are per ICD-owner.
+
+    For each owner in `member_owners` (title-cased): office num/denom per period =
+    sum of that owner's reps' disconnect/activated; pct = Tableau format. The team
+    total is the sum across the member owners. The parsed 'color' field is NOT
+    reproduced — it is unused by the churn fill (colors are derived from pct via
+    _pct_color_for), so it never reaches the sheet.
+    """
+    rows = _read_utf16_tsv(org_csv_path)
+    if not rows:
+        return {"office_total": {}, "reps": {}, "_missing_members": sorted(member_owners)}
+    header = [h.lstrip("﻿").strip() for h in rows[0]]
+    oi = header.index(owner_col)
+    ri = header.index("Rep Name")
+    mi = header.index("0-30 Day Churn") - 1
+    pcol = {p: header.index(f"{p} Day Churn") for p in periods if f"{p} Day Churn" in header}
+
+    owners: Dict[str, dict] = {}
+    for r in rows[1:]:
+        if len(r) <= max(pcol.values(), default=0):
+            continue
+        if (r[ri] or "").strip() == "Total":
+            continue
+        owner = title_fn((r[oi] or "").strip())
+        if owner not in member_owners:
+            continue
+        metric = (r[mi] or "").strip()
+        if metric not in (_D2D_NUM_LABEL, _D2D_DENOM_LABEL):
+            continue                       # skip Churn Rate / Calculation1 rows
+        for p, ci in pcol.items():
+            cell = (r[ci] or "").strip()
+            if not cell:
+                continue
+            slot = owners.setdefault(owner, {}).setdefault(p, {"num": 0.0, "denom": 0.0})
+            val = float(cell.replace(",", ""))
+            if metric == _D2D_NUM_LABEL:
+                slot["num"] += val
+            else:
+                slot["denom"] += val
+
+    reps: Dict[str, dict] = {}
+    for owner, per in owners.items():
+        for p, s in per.items():
+            reps.setdefault(owner, {})[p] = {
+                "num": s["num"], "denom": s["denom"],
+                "pct": _fmt_pct(s["num"], s["denom"], decimals)}
+    return {
+        "office_total": recompute_office_total(reps, periods, decimals),
+        "reps": reps,
+        "_missing_members": sorted(member_owners - set(reps.keys())),
+    }

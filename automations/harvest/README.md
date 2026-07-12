@@ -60,9 +60,12 @@ Requires live Tableau access. Exit 0 iff every payload is identical cell-for-cel
 per office in Python instead of N per-office pulls. The hazard the design flagged —
 a naive collapse inherits the org-wide total, not the office's — is handled by
 **recomputing** each office's total row from its sliced reps. Two slicer shapes:
-`slice_owner` (B2B/NDS, owner-keyed rows) and `slice_d2d` (D2D NI/Wireless, sliced
-by the `ICD Owner Name (rep)` column). Proven 2026-07-12 across B2B + NDS + D2D
-NI/Wireless: **7 offices, 2,624 cells, 0 mismatches** vs per-view pulls.
+`slice_owner` (B2B/NDS, owner-keyed rows), `slice_d2d` (D2D NI/Wireless per office,
+sliced by the `ICD Owner Name (rep)` column), and `slice_d2d_team` (D2D
+captainship — slices a team's owners then AGGREGATES reps up to owner level).
+Proven 2026-07-12 across every destination-tab shape (per-office, captainship-team
+aggregation, owner-keyed captainship): **9 offices, 2,990 cells, 0 mismatches** vs
+per-view pulls.
 Views: `ALLTEAMCHURN` (B2B), `INTAllTeams`, `WirelessAllTeams`, `NDSAllTeamsChurn`.
 See `output/harvest-proof-orgwide-2026-07-12.md`.
 
