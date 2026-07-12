@@ -27,7 +27,9 @@
 set -u
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-PROFILE="$REPO/uploaded/.appstream_profile"
+# MUST match APPSTREAM_PROFILE_DIR in automations/shared/tableau_patchright.py,
+# which is <repo>/automations/uploaded/.appstream_profile (note: automations/).
+PROFILE="$REPO/automations/uploaded/.appstream_profile"
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 mkdir -p "$PROFILE"
