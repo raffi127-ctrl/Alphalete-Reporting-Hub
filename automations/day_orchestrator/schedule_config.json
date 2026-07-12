@@ -76,6 +76,50 @@
     }
   },
   "reports": {
+    "harvest_proof": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "SHADOW/INERT harvest-once proof (Stage c of output/harvest-architecture-design.md). on_scheduler:false = NEVER scheduled, structurally excluded from the 4am orchestrator (registry.load_config drops it; run_order never sees it) so it CANNOT affect the morning run. Run only by hand: `lucy rerun harvest_proof` (5-need structural cover) or `lucy rerun harvest_proof --full` (all 19 churn pulls). Runs automations.harvest.proof_mini: harvest the churn cluster once over one login, then diff live-pull-parse vs cache-parse cell-for-cell + a monkeypatch cutover check. Full result -> output/logs/harvest_proof-<date>.log (retrieve with `lucy logtail harvest_proof`); compact verdict lands in `lucy status`. source_type tableau only so the rerun runs chrome_guard first. Nothing production imports automations.harvest.",
+      "display_name": "Harvest Proof (shadow)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.harvest.proof_mini"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [0, 1, 2, 3, 4, 5, 6],
+        "not_before": "00:00"
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "timeout_minutes": 40
+    },
+    "install_harvest_proof_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch (the batch behavior is unchanged). Present only so `lucy rerun install_harvest_proof_agent` can install/refresh the STANDALONE com.alphalete.harvest-proof-1pm LaunchAgent on the mini, which runs the SHADOW harvest proof (automations.harvest.proof_mini) daily at 1pm CT — after the noon backstop, so no shared-Chrome-profile collision with the batch. install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
+      "display_name": "Install Harvest Proof agent (1pm shadow)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "harvest-proof-1pm"
+      ],
+      "cadence": {
+        "weekdays": [0, 1, 2, 3, 4, 5, 6]
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "drb_backfill_lastweek": {
       "on_scheduler": true,
       "_note": "MANUAL-ONLY recovery. `lucy rerun drb_backfill_lastweek <MONDAY>` re-pulls last week's Tue-Sun activity from ownerville and writes it into the frozen bottom LAST WEEK block (matched by rep name), touching NEITHER this week NOR the totals/Monday. For when last week's daily scrapes failed (e.g. the mini-sleep gaps) and the LAST WEEK block shows 'x' for Tue-Sun. Preview one tab first: `lucy rerun drb_backfill_lastweek 2026-06-29 --only \"Rafael Hidalgo\"`; then full: `lucy rerun drb_backfill_lastweek 2026-06-29`. Per-owner 5-min cap + 150-min report timeout. Built 2026-07-06.",
