@@ -66,7 +66,18 @@ Proven for B2B (2026-07-12): 3 offices, 477 cells (rep + recomputed Grand Total)
 python -m automations.harvest.proof_orgwide              # harvest + diff
 python -m automations.harvest.proof_orgwide --no-harvest # re-diff from cache
 ```
-Still open before any cutover: membership must come from the captainship roster
-(the proof took it from the per-view control to isolate aggregation;
-`slice_b2b` flags `_missing_members`), and Fiber (D2D) + NDS each need their own
-org-wide view + proof (different office-row / metric labels).
+**Membership** sources the same way `org_sales_board/captainship.py` already does
+in production — the destination tab's rep-row names (roster) matched by
+name+aliases, with an org-wide fallback; `slice_b2b` flags drift via
+`_missing_members`. So membership is a solved, proven pattern, not a new risk.
+
+**Blocker to extend the org-wide collapse beyond B2B:** it needs an all-teams
+(team=All) *churn* custom view per workbook, and only `ALLTEAMCHURN` (B2B)
+exists today. To apply the lever to the reports that actually scale with office
+count, Megan must save all-teams churn views (like `ALLTEAMCHURN`, 2026-06-01)
+for: D2D NI/Wireless churn + D2D fiber churn (`ATTTRACKER2_1-D2D/CHURN`) and NDS
+churn (`NDS-SNRES-ATT-OOFWorkbook/CHURNRATES`). Until then those stay on per-view
+pulls — still deduped + single-login + cached under Phase-1, just not collapsed.
+Each new org-wide view then needs its own `proof_orgwide`-style diff (Fiber/NDS
+office rows are `Grand Total` / `Office/Organization Average` with different
+metric labels — the recompute must be re-verified per workbook).
