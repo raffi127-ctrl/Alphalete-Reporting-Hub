@@ -420,6 +420,49 @@ def _health_check(page) -> None:
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
+def _inspect_plugin() -> int:
+    """Read the cached extractor plugin manifest(s) and report how ApplicantStream
+    would detect the plugin — the fork we need to resolve the 'Download Resume
+    Helper Plugin' wall. Runs via `rerun resume_pushing --inspect-plugin` (no
+    browser). The DECISIVE summary is on the LAST line so it survives the command
+    queue's 3-line result truncation.
+      - has_key=True  → --load-extension keeps the plugin's REAL id (so a fixed-id
+        site check would still recognize it → the wall is likely the account).
+      - externally_connectable set → site talks to the extension BY ID (our loaded
+        copy's id must match, else 'Download' no matter the account).
+      - content_scripts set → the extension injects into the page (id-independent;
+        our loaded copy WOULD be detected)."""
+    import json as _json
+    from automations.shared.tableau_patchright import APPSTREAM_PROFILE_DIR
+    cache = APPSTREAM_PROFILE_DIR.parent / ".extractor_cache"
+    if not cache.is_dir():
+        print(f"INSPECT: no cache at {cache} — install the plugin + run once first")
+        return 1
+    picks = []
+    for d in sorted(cache.glob("ext*")):
+        mf = d / "manifest.json"
+        if not mf.exists():
+            continue
+        try:
+            m = _json.loads(mf.read_text())
+        except Exception as e:
+            print(f"[inspect] {d.name}: bad manifest ({e})")
+            continue
+        name = m.get("name", "?")
+        ec = m.get("externally_connectable")
+        cs = [c.get("matches") for c in m.get("content_scripts", [])]
+        print(f"[inspect] {d.name} name={name!r} has_key={'key' in m} "
+              f"ext_connectable={ec} content_scripts={cs}")
+        picks.append((name, "key" in m, ec, cs))
+    rh = next((p for p in picks if "resume" in str(p[0]).lower()), picks[0] if picks else None)
+    if not rh:
+        print("INSPECT: no readable extension manifest in cache")
+        return 1
+    print(f"INSPECT resume-helper: has_key={rh[1]} externally_connectable={rh[2]} "
+          f"content_scripts={rh[3]}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="ApplicantStream v2 extractor / sender")
     ap.add_argument("--dry-run", action="store_true",
@@ -432,7 +475,13 @@ def main() -> int:
                     help="Run the extract loop only; never send to the AI call list.")
     ap.add_argument("--limit", type=int, default=0, metavar="N",
                     help="Send only the first N rows (single live test pass). 0 = all.")
+    ap.add_argument("--inspect-plugin", action="store_true",
+                    help="Read the cached extractor plugin's manifest and print how it "
+                         "proves it's installed (fixed id vs injected script). No browser.")
     args = ap.parse_args()
+
+    if args.inspect_plugin:
+        return _inspect_plugin()
 
     mode = "DRY-RUN (no writes)" if args.dry_run else "LIVE (sends to AI call list)"
     _log(f"=== Resume Pushing v2 — office {OFFICE_ID} — {mode} ===")
