@@ -55,13 +55,21 @@ python -m automations.harvest.proof --full     # all 19 pulls
 ```
 Requires live Tableau access. Exit 0 iff every payload is identical cell-for-cell.
 
-## Phase-2 — org-wide-pull-and-slice (`org_wide=True`, B2B PROVEN)
-`orgwide.py` + `proof_orgwide.py`. Pull ONE `ALLTEAMCHURN` view and slice per
-captainship in Python instead of N per-captain pulls. The hazard the design
-flagged — a naive collapse inherits the org-wide Grand Total, not the office's —
-is handled by **recomputing** each office's Grand-Total row from its sliced reps.
-Proven for B2B (2026-07-12): 3 offices, 477 cells (rep + recomputed Grand Total),
-0 mismatches vs the per-view pulls. See `output/harvest-proof-orgwide-2026-07-12.md`.
+## Phase-2 — org-wide-pull-and-slice (`org_wide=True`, ALL PROGRAMS PROVEN)
+`orgwide.py` + `proof_orgwide.py`. Pull ONE org-wide view per program and slice
+per office in Python instead of N per-office pulls. The hazard the design flagged —
+a naive collapse inherits the org-wide total, not the office's — is handled by
+**recomputing** each office's total row from its sliced reps. Two slicer shapes:
+`slice_owner` (B2B/NDS, owner-keyed rows) and `slice_d2d` (D2D NI/Wireless, sliced
+by the `ICD Owner Name (rep)` column). Proven 2026-07-12 across B2B + NDS + D2D
+NI/Wireless: **7 offices, 2,624 cells, 0 mismatches** vs per-view pulls.
+Views: `ALLTEAMCHURN` (B2B), `INTAllTeams`, `WirelessAllTeams`, `NDSAllTeamsChurn`.
+See `output/harvest-proof-orgwide-2026-07-12.md`.
+
+**Key correctness lesson (caught by this proof):** owner-keyed slices MUST match
+the full `NAME\n[office]` identity, not bare name — the same person can appear
+under two offices in an org-wide view (a bare-name slice merged two "Kyle Campas"
+and shipped one's churn to the other). `slice_owner` matches full owner cells.
 ```
 python -m automations.harvest.proof_orgwide              # harvest + diff
 python -m automations.harvest.proof_orgwide --no-harvest # re-diff from cache

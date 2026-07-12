@@ -136,6 +136,13 @@ NEED_OWN_CHAN = DataNeed(_D2D, _T + _D2D + "/42938560-8c7b-43c5-a897-2a851dda252
 NEED_OWN_TONY = DataNeed(_D2D, _T + _D2D + "/5115611a-86e9-4a5c-bab1-ccb5b85c546c/TONY%E2%80%99S%20TEAM%20CHURN?:iid=1", _ICD, label="Owners fiber — Tony")
 NEED_OWN_SAHIL = DataNeed(_D2D, _T + _D2D + "/e8557aee-2a5b-4c68-a6ad-a1da1394e198/SAHIL%E2%80%99S%20TEAM%20CHURN?:iid=1", _ICD, label="Owners fiber — Sahil")
 
+# Org-wide D2D + NDS churn (team/owner filter = All), saved by Megan 2026-07-12.
+# Phase-2 collapse for the reports that scale with office count. NI covers fiber
+# too (fiber owner churn IS New Internet churn — same '(copy)' color view).
+NEED_D2D_NI_ALLTEAM = DataNeed(_D2D, _T + _D2D + "/907184c5-3782-4c32-92ff-919b63d5d402/INTAllTeams?:iid=1", _ICD, org_wide=True, label="D2D New Internet — ALL TEAMS (org-wide)")
+NEED_D2D_WL_ALLTEAM = DataNeed(_D2D, _T + _D2D + "/66b10d0a-1bb2-441a-85b1-982977a9514e/WirelessAllTeams?:iid=1", _ICD, org_wide=True, label="D2D Wireless — ALL TEAMS (org-wide)")
+NEED_NDS_ALLTEAM = DataNeed(_NDS, _T + _NDS + "/3c48ac2a-0ccf-4fa8-9a88-efb59f75e821/NDSAllTeamsChurn?:iid=1", _NDS_WS, org_wide=True, label="NDS — ALL TEAMS (org-wide)")
+
 # Org-wide B2B churn (team filter = All — every B2B owner in ONE pull). The
 # Phase-2 scaling lever: pull this once and slice per captainship in Python
 # instead of N per-captain pulls. org_wide=True. Precedent: owners_metrics_churn
