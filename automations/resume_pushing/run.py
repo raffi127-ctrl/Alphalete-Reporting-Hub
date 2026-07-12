@@ -420,6 +420,90 @@ def _health_check(page) -> None:
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
+def _cdp_test() -> int:
+    """Decisive Option-A test. Drive the DEDICATED extract profile
+    (uploaded/.extract_profile — where the plugin was GENUINELY installed via
+    'Add to Chrome', and which patchright NEVER launches, so the install isn't
+    stripped) with a plain Chrome over CDP, and ask the page for chrome.runtime.
+    NO --load-extension — we rely on the genuine install. If chrome.runtime is
+    present here, the plain-Chrome extraction path is viable; if not, the plugin
+    is refusing to run under automation. Writes to the 'RP Diag' sheet tab."""
+    import subprocess
+    import time as _t
+    from patchright.sync_api import sync_playwright
+    from automations.shared.tableau_patchright import APPSTREAM_PROFILE_DIR
+    from automations.recruiting_report import fill as _fill
+    lines = []
+
+    def L(s):
+        lines.append(str(s)[:600])
+        print(s, flush=True)
+
+    profile = APPSTREAM_PROFILE_DIR.parent / ".extract_profile"
+    exts_dir = profile / "Default" / "Extensions"
+    L(f"dedicated profile exists: {profile.is_dir()}; Extensions dir: {exts_dir.is_dir()}")
+    if exts_dir.is_dir():
+        L("installed extension ids: " + str([d.name for d in exts_dir.iterdir() if d.is_dir()]))
+    chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    port = "9334"
+    subprocess.run(["pkill", "-f", ".extract_profile"], capture_output=True)
+    _t.sleep(3)
+    # NO --load-extension / --disable-extensions-except: use the genuine install.
+    launch = [chrome, f"--user-data-dir={profile}", f"--remote-debugging-port={port}",
+              "--no-first-run", "--no-default-browser-check",
+              "https://applicantstream.com/index.cfm"]
+    proc = subprocess.Popen(launch, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    L(f"launched plain Chrome pid={proc.pid} on dedicated profile, attaching…")
+    _t.sleep(11)
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
+            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            try:
+                page.goto("https://applicantstream.com/index.cfm", wait_until="domcontentloaded")
+            except Exception as e:
+                L("goto err: " + str(e)[:80])
+            page.wait_for_timeout(5000)
+            L("url: " + (page.url or "")[:95])
+            L("searchMC (logged in?): " + str(page.locator("#searchMC").count()))
+            L("service_workers: " + str([sw.url for sw in ctx.service_workers]))
+            page.add_script_tag(content=(
+                "(function(){try{if(typeof chrome==='undefined'||!chrome.runtime){"
+                "document.body.setAttribute('data-ext','NO chrome.runtime');return;}"
+                "document.body.setAttribute('data-ext','present, awaiting');"
+                "chrome.runtime.sendMessage('goofbdglmeckblcbcoffnkdnmpehhhmo',{rh:'ping'},"
+                "function(r){document.body.setAttribute('data-ext',chrome.runtime.lastError?"
+                "('NO_EXT: '+chrome.runtime.lastError.message):('EXT_OK: '+JSON.stringify(r)));});"
+                "}catch(e){document.body.setAttribute('data-ext','ERR:'+e);}})();"))
+            page.wait_for_timeout(3500)
+            L("*** chrome.runtime: " + str(page.evaluate("() => document.body.getAttribute('data-ext')")))
+            try:
+                browser.close()
+            except Exception:
+                pass
+    except Exception as e:
+        L("CDP error: " + str(e)[:220])
+    finally:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+        subprocess.run(["pkill", "-f", ".extract_profile"], capture_output=True)
+    try:
+        sh = _fill._client().open_by_key("1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
+        try:
+            t = sh.worksheet("RP Diag")
+        except Exception:
+            t = sh.add_worksheet(title="RP Diag", rows=200, cols=1)
+        t.clear()
+        t.update([[x] for x in lines], "A1")
+        print(f"CDP-TEST: wrote {len(lines)} lines to RP Diag", flush=True)
+    except Exception as e:
+        print(f"CDP-TEST sheet err: {e}", flush=True)
+    return 0
+
+
 def _plain_probe() -> int:
     """Launch a PLAIN Google Chrome (NOT patchright) on the pusher profile, with the
     cached plugin, expose CDP, connect Playwright to it, and ask the ApplicantStream
@@ -709,6 +793,10 @@ def main() -> int:
                     help="Launch a PLAIN Chrome (not patchright) on the profile with the "
                          "plugin, drive it via CDP, and check whether the page can reach the "
                          "extension. Tests the plain-Chrome extraction path. Writes to RP Diag.")
+    ap.add_argument("--cdp-test", action="store_true",
+                    help="Decisive test: drive the DEDICATED extract profile (where the plugin "
+                         "was GENUINELY installed, never touched by patchright) via CDP and check "
+                         "chrome.runtime. Genuine-install vs anti-automation. Writes to RP Diag.")
     args = ap.parse_args()
 
     if args.inspect_plugin:
@@ -717,6 +805,8 @@ def main() -> int:
         return _probe()
     if args.plain_probe:
         return _plain_probe()
+    if args.cdp_test:
+        return _cdp_test()
 
     mode = "DRY-RUN (no writes)" if args.dry_run else "LIVE (sends to AI call list)"
     _log(f"=== Resume Pushing v2 — office {OFFICE_ID} — {mode} ===")
