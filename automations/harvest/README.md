@@ -55,7 +55,18 @@ python -m automations.harvest.proof --full     # all 19 pulls
 ```
 Requires live Tableau access. Exit 0 iff every payload is identical cell-for-cell.
 
-## NOT in this build (deferred, per Option A)
-Org-wide-pull-and-slice (`org_wide=True`). A naive org-wide collapse breaks the
-Grand-Total row in `owners_metrics_churn`; that needs its own cell-for-cell diff
-before it's trusted. Flagged in the design §7, built only after this proof lands.
+## Phase-2 — org-wide-pull-and-slice (`org_wide=True`, B2B PROVEN)
+`orgwide.py` + `proof_orgwide.py`. Pull ONE `ALLTEAMCHURN` view and slice per
+captainship in Python instead of N per-captain pulls. The hazard the design
+flagged — a naive collapse inherits the org-wide Grand Total, not the office's —
+is handled by **recomputing** each office's Grand-Total row from its sliced reps.
+Proven for B2B (2026-07-12): 3 offices, 477 cells (rep + recomputed Grand Total),
+0 mismatches vs the per-view pulls. See `output/harvest-proof-orgwide-2026-07-12.md`.
+```
+python -m automations.harvest.proof_orgwide              # harvest + diff
+python -m automations.harvest.proof_orgwide --no-harvest # re-diff from cache
+```
+Still open before any cutover: membership must come from the captainship roster
+(the proof took it from the per-view control to isolate aggregation;
+`slice_b2b` flags `_missing_members`), and Fiber (D2D) + NDS each need their own
+org-wide view + proof (different office-row / metric labels).

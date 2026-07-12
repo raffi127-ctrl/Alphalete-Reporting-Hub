@@ -136,6 +136,12 @@ NEED_OWN_CHAN = DataNeed(_D2D, _T + _D2D + "/42938560-8c7b-43c5-a897-2a851dda252
 NEED_OWN_TONY = DataNeed(_D2D, _T + _D2D + "/5115611a-86e9-4a5c-bab1-ccb5b85c546c/TONY%E2%80%99S%20TEAM%20CHURN?:iid=1", _ICD, label="Owners fiber — Tony")
 NEED_OWN_SAHIL = DataNeed(_D2D, _T + _D2D + "/e8557aee-2a5b-4c68-a6ad-a1da1394e198/SAHIL%E2%80%99S%20TEAM%20CHURN?:iid=1", _ICD, label="Owners fiber — Sahil")
 
+# Org-wide B2B churn (team filter = All — every B2B owner in ONE pull). The
+# Phase-2 scaling lever: pull this once and slice per captainship in Python
+# instead of N per-captain pulls. org_wide=True. Precedent: owners_metrics_churn
+# already uses it (fetch_b2b_allteams) to backfill team-drifted reps.
+NEED_B2B_ALLTEAM = DataNeed(_B2B, _T + _B2B + "/429cb06d-a32e-4d0e-bf06-9acb77587afd/ALLTEAMCHURN?:iid=1", _ICD, org_wide=True, label="Owners B2B — ALL TEAMS (org-wide)")
+
 # Owners B2B (different workbook, 120-day bucket; Grand-Total row — hardest case)
 NEED_OWN_CARLOS = DataNeed(_B2B, _T + _B2B + "/77b888d4-dec2-45c9-bdce-5511f6055084/CarlosCaptainship?:iid=1", _ICD, label="Owners B2B — Carlos")
 NEED_OWN_EVELIZ = DataNeed(_B2B, _T + _B2B + "/867f88d3-4026-4c70-b275-330208a4053c/EvelizWOVan?:iid=1", _ICD, label="Owners B2B — Eveliz")
