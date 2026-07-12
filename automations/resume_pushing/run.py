@@ -453,8 +453,19 @@ def _cdp_test() -> int:
               "--no-first-run", "--no-default-browser-check",
               "https://applicantstream.com/index.cfm"]
     proc = subprocess.Popen(launch, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    L(f"launched plain Chrome pid={proc.pid} on dedicated profile, attaching…")
-    _t.sleep(11)
+    L(f"launched plain Chrome pid={proc.pid}; waiting 35s for policy/extension install…")
+    _t.sleep(35)
+    if exts_dir.is_dir():
+        L("Extensions after 35s: " + str([d.name for d in exts_dir.iterdir() if d.is_dir()]))
+    else:
+        L("Extensions dir STILL absent after 35s")
+    try:
+        pol = subprocess.run(["defaults", "read", "com.google.Chrome",
+                              "ExtensionInstallForcelist"], capture_output=True,
+                             text=True, timeout=10)
+        L("policy force-install list: " + ((pol.stdout or pol.stderr or "(empty)").strip())[:220])
+    except Exception as e:
+        L("policy read err: " + str(e)[:80])
     try:
         with sync_playwright() as p:
             browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
