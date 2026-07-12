@@ -96,23 +96,20 @@ def _first_int(text: str):
     return int(m.group(1).replace(",", "")) if m else None
 
 
-def _jq_eval(page, expr: str):
-    """Evaluate a jQuery expression and return its value. fetch_office proves
-    page.evaluate can reach jQuery on AppStream pages; if the v2 dashboard walls
-    it into the main world, fall back to add_script_tag + a DOM-attribute bridge
-    (the pattern the legacy grid used)."""
+def _main_world(page, expr: str):
+    """Evaluate `expr` in the page's MAIN world and return it as a string.
+    patchright runs page.evaluate in an ISOLATED world that can't see window.jQuery
+    (confirmed on the v2 batch page — DataTables lives in the main world), so we
+    inject a <script> that stringifies the result into a DOM attribute and read
+    that attribute back (the DOM is shared across worlds)."""
     try:
-        return page.evaluate(f"() => {{ try {{ return ({expr}); }} catch(e) {{ return '__ERR__:'+e; }} }}")
-    except Exception:
-        try:
-            page.add_script_tag(content=(
-                "(function(){try{var v=(" + expr + ");"
-                "document.body.setAttribute('data-jqr', ''+v);}"
-                "catch(e){document.body.setAttribute('data-jqr','__ERR__:'+e);}})();"))
-            page.wait_for_timeout(400)
-            return page.evaluate("() => document.body.getAttribute('data-jqr')")
-        except Exception as e:
-            return f"__ERR__:{e}"
+        page.add_script_tag(content=(
+            "(function(){try{document.body.setAttribute('data-mw', String(" + expr + "));}"
+            "catch(e){document.body.setAttribute('data-mw','__ERR__:'+e);}})();"))
+        page.wait_for_timeout(300)
+        return page.evaluate("() => document.body.getAttribute('data-mw')")
+    except Exception as e:
+        return f"__ERR__:{e}"
 
 
 # --------------------------------------------------------------------------- #
@@ -168,18 +165,16 @@ def goto_process_in_batches(page) -> bool:
 # Counts
 # --------------------------------------------------------------------------- #
 def ready_for_extraction(page):
-    """Read the "Ready For Extraction" number. The reliable progress signal (the
-    elapsed-time counter in the popup keeps ticking after a batch finishes, so we
-    reload and re-read this instead)."""
+    """Count rows still 'Ready For Extraction'. In v2 this is a PER-ROW status
+    badge (a title attribute), not a header number, so we render all rows first
+    and count the badges across the whole store. 0 = extraction complete. The
+    elapsed-time counter in the Resume Helper popup is NOT reliable (it keeps
+    ticking after a batch finishes), which is why we recount the DOM instead."""
+    render_all_rows(page)
+    res = _main_world(
+        page, f"document.querySelectorAll('{TABLE} tbody [title=\"Ready For Extraction\"]').length")
     try:
-        loc = page.locator(
-            "xpath=//*[contains(normalize-space(.),'Ready For Extraction')]")
-        if loc.count() == 0:
-            return None
-        # Prefer the smallest element containing the phrase (label + number).
-        txt = loc.last.inner_text()
-        n = _first_int(txt.split("Ready For Extraction")[-1]) if "Ready For Extraction" in txt else _first_int(txt)
-        return n
+        return int(res)
     except Exception:
         return None
 
@@ -192,16 +187,19 @@ def _rendered_row_count(page) -> int:
 
 
 def render_all_rows(page) -> int:
-    """Show every record on one page so select-all covers the whole store, not
-    just the DataTable's 10/20/50 page size (the "Show entries" dropdown maxes at
-    50). Returns the rendered row count."""
-    res = _jq_eval(page, f"jQuery('{TABLE}').DataTable().page.len(1000).draw() && "
-                          f"jQuery('{TABLE}').DataTable().rows().count()")
-    if isinstance(res, str) and res.startswith("__ERR__"):
-        _log(f"[send] page.len(1000).draw() error: {res}")
+    """Show every record on one page so select-all / status counts cover the whole
+    store, not just the 10 rows the DataTable renders by default (the "Show
+    entries" dropdown maxes at 50). Returns the total record count."""
+    _main_world(page, f"(function(){{jQuery('{TABLE}').DataTable().page.len(1000).draw();return 'ok';}})()")
     page.wait_for_timeout(1500)
-    n = _rendered_row_count(page)
-    _log(f"[send] rendered all rows: {n}")
+    total = _main_world(page, f"jQuery('{TABLE}').DataTable().page.info().recordsDisplay")
+    if isinstance(total, str) and total.startswith("__ERR__"):
+        _log(f"[rows] page.len(1000).draw() error: {total}")
+    try:
+        n = int(total)
+    except Exception:
+        n = _rendered_row_count(page)
+    _log(f"[rows] rendered all rows: {n}")
     return n
 
 
@@ -412,8 +410,10 @@ def _health_check(page) -> None:
             _log(f"[debug] {name}: {'FOUND' if page.locator(sel).count() else 'MISSING'}")
         except Exception as e:
             _log(f"[debug] {name}: err {e}")
-    jq = _jq_eval(page, "typeof jQuery !== 'undefined' && !!jQuery.fn.dataTable")
-    _log(f"[debug] jQuery + DataTables reachable: {jq}")
+    jq = _main_world(page, "!!(window.jQuery && jQuery.fn && jQuery.fn.dataTable)")
+    _log(f"[debug] jQuery + DataTables reachable (main world): {jq}")
+    total = _main_world(page, f"jQuery('{TABLE}').DataTable().page.info().recordsTotal")
+    _log(f"[debug] DataTable recordsTotal: {total}")
     _log("[debug] ===== end =====")
 
 
