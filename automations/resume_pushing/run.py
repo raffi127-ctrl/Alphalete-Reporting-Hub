@@ -442,7 +442,8 @@ def main() -> int:
     # fast (AppStreamBusy) instead of holding the other run up; the next tick
     # retries, so nothing is lost.
     try:
-        with appstream_direct_session(yield_if_busy=True) as page:
+        with appstream_direct_session(yield_if_busy=True,
+                                      load_extensions=True) as page:
             if not fetch_office._switch_office(page, OFFICE_ID, OFFICE_HINT):
                 _log(f"[office] STOP — this AppStream account cannot reach office "
                      f"{OFFICE_ID}. Confirm the machine is logged in as an account "
