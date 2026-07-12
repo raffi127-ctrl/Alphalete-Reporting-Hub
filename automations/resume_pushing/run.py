@@ -464,31 +464,66 @@ def _probe() -> int:
         page.wait_for_timeout(3000)
         L("service_workers@batch: " + str([sw.url for sw in ctx.service_workers]))
         L("url: " + (page.url or "")[:95])
+        L("ready_before: " + str(ready_for_extraction(page)))
         L("buttons_before: " + str(buttons(page)))
-        rclick = None
+
+        # Per Carlos: robot -> Start opens ANOTHER window and grinds a couple
+        # minutes, then returns to the main page. Catch the new page + click Start.
+        ctx2 = page.context
+        robot = None
+        rsel = None
         for sel in ["[title*='extract resume data' i]", "[title*='Resume Helper' i]",
                     "[title*='Resume' i]", ".fa-robot", "[class*='robot']"]:
-            loc = page.locator(sel)
-            if loc.count():
-                try:
-                    loc.first.click(timeout=8000)
-                    rclick = sel
-                    break
-                except Exception as e:
-                    L(f"robot click err {sel}: {e}")
-        L("robot_clicked_via: " + str(rclick))
-        page.wait_for_timeout(4500)
-        L("frames_after: " + str([(f.url or "")[:80] for f in page.frames]))
-        L("buttons_after: " + str(buttons(page)))
-        starts = []
-        for f in page.frames:
+            if page.locator(sel).count():
+                robot = page.locator(sel).first
+                rsel = sel
+                break
+        L("robot selector: " + str(rsel))
+        helper = None
+        if robot:
             try:
-                loc = f.locator("xpath=//*[normalize-space(.)='Start' or contains(text(),'Start')]")
-                for i in range(min(loc.count(), 4)):
-                    starts.append(" ".join((loc.nth(i).inner_text() or "").split())[:50])
-            except Exception:
-                pass
-        L("start_elements: " + str(starts[:8]))
+                with ctx2.expect_page(timeout=9000) as _pi:
+                    robot.click(timeout=8000)
+                helper = _pi.value
+                try:
+                    helper.wait_for_load_state("domcontentloaded", timeout=15000)
+                except Exception:
+                    pass
+                L("robot OPENED NEW WINDOW: " + (helper.url or "")[:95])
+            except Exception as e:
+                L("robot click: no new window (" + str(e)[:70] + ")")
+        page.wait_for_timeout(4000)
+        L("all open pages: " + str([(p.url or "")[:70] for p in ctx2.pages]))
+
+        # Find + click Start across every open page/frame
+        clicked_start = False
+        for p in ctx2.pages:
+            for f in p.frames:
+                try:
+                    loc = f.locator("xpath=//button[normalize-space(.)='Start'] | "
+                                    "//a[normalize-space(.)='Start'] | "
+                                    "//input[@type='button'][@value='Start']")
+                    if loc.count():
+                        L("START found on: " + (p.url or "")[:60])
+                        loc.first.click(timeout=8000)
+                        clicked_start = True
+                        break
+                except Exception:
+                    pass
+            if clicked_start:
+                break
+        L("clicked_start: " + str(clicked_start))
+        if clicked_start:
+            L("waiting ~160s for extraction to process…")
+            page.wait_for_timeout(160000)
+        L("pages after wait: " + str([(p.url or "")[:60] for p in ctx2.pages]))
+        try:
+            page.bring_to_front()
+            page.reload(wait_until="domcontentloaded")
+            page.wait_for_timeout(3000)
+        except Exception:
+            pass
+        L("ready_AFTER_extract: " + str(ready_for_extraction(page)))
 
     try:
         sh = _fill._client().open_by_key("1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
