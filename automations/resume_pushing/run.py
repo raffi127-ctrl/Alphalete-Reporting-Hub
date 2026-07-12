@@ -1,45 +1,52 @@
 #!/usr/bin/env python3
 """
-Resume Pushing — ApplicantStream: Extract Resumes & Send to AI
-Office 11580 (CARLOS HIDALGO - ALPHALETE SPECIALIZED MARKETING, INC.)
+Resume Pushing — ApplicantStream v2 ("Explore Appstream AI" / Ownerville v2):
+Extract Resumes & Send to AI. Office 11580 (CARLOS HIDALGO — ALPHALETE
+SPECIALIZED MARKETING, INC.)
 
-Committed, scheduled version of Carlos's uploaded Hub report. The uploaded
-original was Selenium + a manual-login wait + a blocking input() at the end —
-none of which can run unattended. This runs on the machine's own AppStream
-session via `appstream_direct_session` (on Lucy 2 that's Carlos's account = his
-own office), the collision-safe path daily_focus uses: dedicated Chrome profile,
-kept warm by the session holder, chrome-guard, retry-on-"already in use".
+Scheduled, unattended version of Carlos's Cowork skill. It runs on the machine's
+own warm AppStream session via `appstream_direct_session` (on Lucy 2 that's
+Carlos's account = his own office): dedicated Chrome profile, kept warm by the
+session holder, chrome-guard, retry-on-"already in use". No manual login.
 
-Flow (the batch page is index.cfm?p=616 — "Process emails in batches", an
-ExtJS 2.2.1 grid; the old Applicants->Process Emails menu drifts to the wrong
-page, so we go straight to p=616 via the session rqst token):
+WHY THIS WAS REWRITTEN (2026-07-12): the previous version went straight to the
+LEGACY batch grid at index.cfm?p=616 (an ExtJS 2.2.1 page on the classic
+homepage). That is the WRONG surface — the task is supposed to run on
+ApplicantStream **v2**, the modern "Explore Appstream AI" dashboard (jQuery
+DataTables, #table-batch-resume). The legacy page also did a SINGLE extract +
+SINGLE send, so it left resumes un-extracted (extract processes ≤50 per run) and
+sendable applicants behind (resolving duplicates frees up more each pass). This
+version mirrors Carlos's Cowork skill exactly:
+
+Flow:
   1. Attach the logged-in AppStream console (no manual login)
   2. Switch to office 11580 (fails loudly if the account can't see it)
-  3. Go directly to the p=616 batch grid
-  4. Auto-Extract resume info (#btnExtractResume) — fills contact info
-  5. Select ALL records (grid selection model), click "Send to AI" (#saveButtton2)
-  6. Read the "Batch Process Emails Save Report" popup, click OK, print a summary
+  3. Click the orange "Explore Appstream AI" button → the v2 dashboard
+  4. Applicants → Process Emails → Process in Batches
+  5. EXTRACT LOOP: open the robot (Resume Helper) → Start, wait, reload, re-read
+     "Ready For Extraction"; repeat until it hits 0 (extract does ≤50/run)
+  6. SEND LOOP: render all rows (DataTable page.len(1000).draw()), select-all,
+     "Send To AI", confirm "Yes"; repeat until "Sent to Call List: 0" / "no
+     applicants to send" / the record count stops dropping
+  7. Print a summary
 
---dry-run  Reports counts only — NO Auto-Extract, NO Send-To-AI clicks. Nothing
-           is pushed to the call list. Run this first after any change.
---send-only  Skip Auto-Extract; go straight to select-all + send.
---extract-only  Auto-Extract only; never send.
---limit N   Send only the first N rows (small live test).
---debug    Reach the page and print a health check (grid + control presence).
+--dry-run   Reports counts only — NO extract, NO send clicks. Nothing is pushed
+            to the call list. Run this first after any change.
+--send-only Skip extraction; go straight to the send loop.
+--extract-only  Run the extract loop only; never send.
+--limit N   Send only the first N rows (small live test); disables select-all.
+--debug     Reach the v2 batch page, print a health check (which controls +
+            counts are visible), then STOP. Use this first on a new machine or
+            after any UI change to confirm the selectors still match.
 
 NOTE: send-to-AI is IRREVERSIBLE (it pushes applicants onto the live AI call
 list). The scheduled LaunchAgent runs LIVE; --dry-run is the safe probe.
 
-WHY the send was hard (keep for future breakage): "Send to AI" (#saveButtton2)
-has no ExtJS handler/listener — its click is a raw DOM listener, so it fires
-ONLY on a genuine click of the inner <button> (not the table wrapper, not
-synthetic/dispatched events). Select-all must use the grid's selection model
-(grid.getSelectionModel().selectAll()) because the buffered view only renders
-~18 rows. Ext lives in the MAIN world — reach it via add_script_tag and bridge
-results back through a DOM attribute (page.evaluate is isolated-world).
-
-The standing "terminated-ICD" / "flag unfilled cells" report rules don't apply
-here — this is a single-office action bot, not a per-rep Sheet fill.
+SELECTORS: the control labels/ids below (Explore Appstream AI, robot / Resume
+Helper / Start, #table-batch-resume, Send To AI, the "Batch Process Emails
+Status" → Yes dialog, "Ready For Extraction", "Sent to Call List: N") come from
+the Cowork skill. If ApplicantStream v2 changes, run `--debug` and adjust the
+locators in the helpers — the health check reports exactly which ones matched.
 """
 from __future__ import annotations
 
@@ -54,8 +61,11 @@ from automations.recruiting_report import fetch_office
 
 OFFICE_ID = "11580"
 OFFICE_HINT = "CARLOS HIDALGO"
-BATCH_PAGE_ID = "616"          # index.cfm?p=616 = "Process emails in batches"
-EXTRACT_WAIT_SECONDS = 180     # let Auto-Extract finish before sending
+TABLE = "#table-batch-resume"        # v2 DataTable id (from the Cowork skill)
+
+EXTRACT_WAIT_SECONDS = 180           # let one Resume-Helper batch finish
+MAX_EXTRACT_CYCLES = 30              # safety cap (≤50 resumes/cycle → ~1500)
+MAX_SEND_PASSES = 8                  # safety cap for the send loop
 
 
 def _log(msg: str) -> None:
@@ -63,235 +73,347 @@ def _log(msg: str) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Navigation
+# Small helpers
 # --------------------------------------------------------------------------- #
-def _grid_row_count(page) -> int:
-    """Rendered applicant rows in the ExtJS grid (.x-grid3-row). Note the grid is
-    buffered, so this is the RENDERED count, not the full store — use the
-    selection model for the true total."""
-    try:
-        return page.locator(".x-grid3-row").count()
-    except Exception:
-        return 0
-
-
-def goto_batch_page(page) -> bool:
-    """Go straight to the batch grid (p=616) on the live session + office, built
-    from the session's own rqst token (the menu nav drifts to p=701)."""
-    m = re.search(r"rqst=([A-Za-z0-9-]+)", page.url or "")
-    if not m:
-        _log(f"[nav] no rqst token in session URL {(page.url or '')[:80]!r}")
-        return False
-    target = (f"https://applicantstream.com/index.cfm?rqst={m.group(1)}"
-              f"&p={BATCH_PAGE_ID}&newOfficeId={OFFICE_ID}")
-    try:
-        page.goto(target, wait_until="domcontentloaded")
-    except Exception as e:
-        _log(f"[nav] goto batch page (p={BATCH_PAGE_ID}) failed: {e}")
-        return False
-    for _ in range(25):                       # ExtJS grid renders after page load
-        page.wait_for_timeout(1000)
-        n = _grid_row_count(page)
-        if n > 0:
-            _log(f"[nav] batch page p={BATCH_PAGE_ID} — {n} rows rendered")
-            return True
-    _log(f"[nav] batch page p={BATCH_PAGE_ID} loaded but 0 grid rows (nothing waiting)")
-    return True
-
-
-# --------------------------------------------------------------------------- #
-# Extraction — "Auto Extract Information from Resume" (#btnExtractResume)
-# --------------------------------------------------------------------------- #
-def extract_resumes(page, dry_run: bool) -> int:
-    n = _grid_row_count(page)
-    if dry_run:
-        _log(f"[extract] DRY-RUN — {n} rows; would click Auto-Extract, no click made")
-        return 0
-    btn = page.locator("#btnExtractResume")
-    if btn.count() == 0:
-        _log("[extract] Auto-Extract button (#btnExtractResume) not found — skipping")
-        return 0
-    try:
-        btn.first.click(timeout=15000)
-        _log(f"[extract] clicked Auto-Extract on {n} rows — processing …")
-    except Exception as e:
-        _log(f"[extract] click failed: {e}")
-        return 0
-    page.wait_for_timeout(2000)
-    _click_if_present(page, ["Yes", "OK", "Continue"])   # accept any confirm
-    page.wait_for_timeout(EXTRACT_WAIT_SECONDS * 1000)   # let it finish
-    _click_if_present(page, ["OK", "Close"])
-    _log(f"[extract] done (waited ~{EXTRACT_WAIT_SECONDS}s)")
-    return n
-
-
-# --------------------------------------------------------------------------- #
-# Send to AI
-# --------------------------------------------------------------------------- #
-def _select_all(page) -> int:
-    """Select EVERY record in the grid's store, not just the ~18 rows the ExtJS
-    buffered view renders. A header-checker click only selects rendered rows, so
-    call the grid's selection-model selectAll() in the MAIN world (add_script_tag)
-    and bridge the count back via a DOM attribute. Returns the selected count."""
-    try:
-        page.add_script_tag(content=(
-            "(function(){try{if(!window.Ext){document.body.setAttribute('data-sel','no-ext');return;}"
-            "var best=null;Ext.ComponentMgr.all.each(function(c){try{"
-            "if(c.getSelectionModel&&c.store&&c.store.getCount&&c.getView&&"
-            "c.el&&c.el.dom&&c.el.dom.querySelector('.x-grid3-hd-checker')){"
-            "if(!best||c.store.getCount()>best.store.getCount()){best=c;}}}catch(e){}return true;});"
-            "if(!best){document.body.setAttribute('data-sel','no-grid');return;}"
-            "var sm=best.getSelectionModel();if(sm.selectAll){sm.selectAll();}"
-            "var n=sm.getCount?sm.getCount():(sm.getSelections?sm.getSelections().length:-1);"
-            "document.body.setAttribute('data-sel',best.store.getCount()+'/'+n);"
-            "}catch(e){document.body.setAttribute('data-sel','err:'+e);}})();"))
-        page.wait_for_timeout(900)
-        info = page.frames[0].evaluate("() => document.body.getAttribute('data-sel')")
-        _log(f"[send] select-all (selection model): store/selected = {info}")
-        if info and "/" in info:
-            selected = int(info.split("/")[1])
-            if selected > 0:
-                return selected
-    except Exception as e:
-        _log(f"[send] selectAll error: {e}")
-    # Fallback: header-checker real click (rendered rows only).
-    try:
-        page.locator(".x-grid3-hd-checker").first.click(timeout=8000)
-        page.wait_for_timeout(800)
-    except Exception as e:
-        _log(f"[send] checker click failed: {e}")
-    return page.locator(".x-grid3-row-selected").count()
-
-
-def send_all_to_ai(page, dry_run: bool, limit: int = 0) -> int:
-    """Select rows, click "Send to AI" (#saveButtton2), accept the "Save Report"
-    popup. Reports the count AppStream says it sent (falls back to the grid drop)."""
-    before = _grid_row_count(page)
-    if before == 0:
-        _log("[send] grid is empty — nothing to send")
-        return 0
-    if dry_run:
-        who = f"the first {limit}" if limit else "all"
-        _log(f"[send] DRY-RUN — {before} rows rendered; would select {who} + "
-             "click 'Send to AI', no click made")
-        return 0
-
-    # Select rows: first `limit` (small test) or all.
-    if limit and limit > 0:
-        rows = page.locator(".x-grid3-row")
-        for i in range(min(limit, rows.count())):
-            try:
-                rows.nth(i).locator(".x-grid3-td-checker").first.click(timeout=5000)
-            except Exception as e:
-                _log(f"[send] row {i} check failed: {e}")
-        sel = page.locator(".x-grid3-row-selected").count()
-        _log(f"[send] limit={limit}: {sel} rows selected")
-    else:
-        sel = _select_all(page)
-    if sel == 0:
-        _log("[send] no rows selected — aborting (nothing sent)")
-        return 0
-
-    if page.locator("#saveButtton2").count() == 0:
-        _log("[send] Send-to-AI button (#saveButtton2) not found — aborting")
-        return 0
-    # The click is a raw DOM listener (no ExtJS handler), so it needs a genuine
-    # click on the actual clickable element — the INNER <button>, not the wrapper.
-    target = page.locator("#saveButtton2 button")
-    if target.count() == 0:
-        target = page.locator("#saveButtton2 .x-btn-text")
-    if target.count() == 0:
-        target = page.locator("#saveButtton2")
-    try:
-        target.first.scroll_into_view_if_needed(timeout=5000)
-    except Exception:
-        pass
-    try:
-        target.first.click(timeout=8000, no_wait_after=True, force=True)
-        _log("[send] clicked 'Send to AI'")
-    except Exception as e:
-        _log(f"[send] send click err: {e}")
-    page.wait_for_timeout(2000)
-
-    # Fallback: a true coordinate mouse-click on the button center.
-    if page.locator(".x-window").count() == 0 and _grid_row_count(page) == before:
-        try:
-            box = page.locator("#saveButtton2").first.bounding_box()
-            if box:
-                page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-                _log("[send] coordinate-clicked button")
-        except Exception as e:
-            _log(f"[send] coord click err: {e}")
-        page.wait_for_timeout(2500)
-
-    # Read the "Batch Process Emails Save Report" popup for the real result.
-    reported = None
-    try:
-        win = page.locator(".x-window")
-        if win.count() > 0:
-            text = " ".join(win.first.inner_text().split())
-            _log(f"[send] save report: {text[:200]}")
-            m = re.search(r"Sent to Call List[^0-9]*([0-9,]+)", text, re.I)
-            if m:
-                reported = int(m.group(1).replace(",", ""))
-    except Exception as e:
-        _log(f"[send] report read err: {e}")
-
-    _click_if_present(page, ["OK", "Yes", "Continue"])   # dismiss the report
-    try:
-        page.wait_for_load_state("domcontentloaded", timeout=15000)
-    except Exception:
-        pass
-    for _ in range(15):
-        page.wait_for_timeout(1000)
-        if _grid_row_count(page) > 0:
-            break
-
-    sent = reported if reported is not None else max(0, before - _grid_row_count(page))
-    _log(f"[send] sent {sent} to the AI call list")
-    return sent
-
-
-def _click_if_present(page, labels) -> bool:
+def _click_if_present(page, labels, timeout: int = 5000) -> bool:
+    """Click the first visible button/element whose text contains one of `labels`."""
     for label in labels:
-        btn = page.locator(f"xpath=//button[contains(.,'{label}')]")
-        if btn.count() > 0:
+        loc = page.locator(f"xpath=//button[contains(normalize-space(.),'{label}')]"
+                           f" | //a[contains(normalize-space(.),'{label}')]"
+                           f" | //*[@role='button'][contains(normalize-space(.),'{label}')]")
+        if loc.count() > 0:
             try:
-                btn.first.click(timeout=5000, no_wait_after=True)
-                page.wait_for_timeout(2000)
+                loc.first.click(timeout=timeout, no_wait_after=True)
+                page.wait_for_timeout(1500)
                 return True
             except Exception:
                 continue
     return False
 
 
+def _first_int(text: str):
+    m = re.search(r"([0-9][0-9,]*)", text or "")
+    return int(m.group(1).replace(",", "")) if m else None
+
+
+def _jq_eval(page, expr: str):
+    """Evaluate a jQuery expression and return its value. fetch_office proves
+    page.evaluate can reach jQuery on AppStream pages; if the v2 dashboard walls
+    it into the main world, fall back to add_script_tag + a DOM-attribute bridge
+    (the pattern the legacy grid used)."""
+    try:
+        return page.evaluate(f"() => {{ try {{ return ({expr}); }} catch(e) {{ return '__ERR__:'+e; }} }}")
+    except Exception:
+        try:
+            page.add_script_tag(content=(
+                "(function(){try{var v=(" + expr + ");"
+                "document.body.setAttribute('data-jqr', ''+v);}"
+                "catch(e){document.body.setAttribute('data-jqr','__ERR__:'+e);}})();"))
+            page.wait_for_timeout(400)
+            return page.evaluate("() => document.body.getAttribute('data-jqr')")
+        except Exception as e:
+            return f"__ERR__:{e}"
+
+
 # --------------------------------------------------------------------------- #
-# Health check (--debug): confirm the page + the controls the send relies on.
+# Navigation → the v2 batch page
+# --------------------------------------------------------------------------- #
+def open_v2_dashboard(page):
+    """Click the orange "Explore Appstream AI" button to enter the modern (v2)
+    dashboard. Returns the page to use afterwards (v2 may open in a new tab)."""
+    ctx = page.context
+    before = len(ctx.pages)
+    clicked = _click_if_present(page, ["Explore Appstream AI", "Explore AppStream AI"],
+                                timeout=10000)
+    if not clicked:
+        _log("[v2] 'Explore Appstream AI' button not found — already on v2? continuing")
+        return page
+    page.wait_for_timeout(3000)
+    if len(ctx.pages) > before:               # opened in a new tab — switch to it
+        new_page = ctx.pages[-1]
+        try:
+            new_page.wait_for_load_state("domcontentloaded", timeout=20000)
+        except Exception:
+            pass
+        _log("[v2] dashboard opened in a new tab")
+        return new_page
+    _log("[v2] entered dashboard")
+    return page
+
+
+def goto_process_in_batches(page) -> bool:
+    """Applicants → Process Emails → Process in Batches (v2 top nav)."""
+    try:
+        page.locator("xpath=//*[normalize-space(.)='Applicants']").first.hover(timeout=8000)
+        page.wait_for_timeout(600)
+        page.locator("xpath=//*[normalize-space(.)='Process Emails']").first.hover(timeout=8000)
+        page.wait_for_timeout(600)
+    except Exception as e:
+        _log(f"[nav] hover Applicants/Process Emails failed: {e}")
+    if _click_if_present(page, ["Process in Batches", "Process In Batches"], timeout=10000):
+        page.wait_for_timeout(3000)
+        # Wait for the DataTable to render.
+        for _ in range(20):
+            if page.locator(f"{TABLE} tbody tr").count() > 0 or page.locator(TABLE).count() > 0:
+                _log("[nav] reached Process In Batches (v2 DataTable present)")
+                return True
+            page.wait_for_timeout(1000)
+        _log("[nav] Process In Batches clicked but the DataTable never rendered")
+        return True
+    _log("[nav] could not find 'Process in Batches'")
+    return False
+
+
+# --------------------------------------------------------------------------- #
+# Counts
+# --------------------------------------------------------------------------- #
+def ready_for_extraction(page):
+    """Read the "Ready For Extraction" number. The reliable progress signal (the
+    elapsed-time counter in the popup keeps ticking after a batch finishes, so we
+    reload and re-read this instead)."""
+    try:
+        loc = page.locator(
+            "xpath=//*[contains(normalize-space(.),'Ready For Extraction')]")
+        if loc.count() == 0:
+            return None
+        # Prefer the smallest element containing the phrase (label + number).
+        txt = loc.last.inner_text()
+        n = _first_int(txt.split("Ready For Extraction")[-1]) if "Ready For Extraction" in txt else _first_int(txt)
+        return n
+    except Exception:
+        return None
+
+
+def _rendered_row_count(page) -> int:
+    try:
+        return page.locator(f"{TABLE} tbody tr").count()
+    except Exception:
+        return 0
+
+
+def render_all_rows(page) -> int:
+    """Show every record on one page so select-all covers the whole store, not
+    just the DataTable's 10/20/50 page size (the "Show entries" dropdown maxes at
+    50). Returns the rendered row count."""
+    res = _jq_eval(page, f"jQuery('{TABLE}').DataTable().page.len(1000).draw() && "
+                          f"jQuery('{TABLE}').DataTable().rows().count()")
+    if isinstance(res, str) and res.startswith("__ERR__"):
+        _log(f"[send] page.len(1000).draw() error: {res}")
+    page.wait_for_timeout(1500)
+    n = _rendered_row_count(page)
+    _log(f"[send] rendered all rows: {n}")
+    return n
+
+
+# --------------------------------------------------------------------------- #
+# Extract loop
+# --------------------------------------------------------------------------- #
+def run_extract_once(page) -> bool:
+    """Open the robot (Resume Helper) popup and click Start. One Resume-Helper run
+    processes ≤50 resumes."""
+    # The robot icon sits top-right, just under the office name. Try a few
+    # plausible hooks, then fall back to opening anything titled "Resume Helper".
+    opened = False
+    for sel in ["button[title*='Resume' i]", "[title*='Resume Helper' i]",
+                "a[title*='Resume' i]", ".fa-robot", "i.fa-robot",
+                "button:has(.fa-robot)", "[class*='robot']"]:
+        loc = page.locator(sel)
+        if loc.count() > 0:
+            try:
+                loc.first.click(timeout=8000)
+                opened = True
+                break
+            except Exception:
+                continue
+    if not opened:
+        _log("[extract] robot / Resume Helper icon not found — skipping this cycle")
+        return False
+    page.wait_for_timeout(1500)
+    if not _click_if_present(page, ["Start"], timeout=8000):
+        _log("[extract] 'Start' not found in the Resume Helper popup")
+        return False
+    _log(f"[extract] Resume Helper started — waiting ~{EXTRACT_WAIT_SECONDS}s")
+    page.wait_for_timeout(EXTRACT_WAIT_SECONDS * 1000)
+    _click_if_present(page, ["OK", "Close", "Done"])
+    return True
+
+
+def extract_loop(page, dry_run: bool) -> int:
+    """Loop: Start → wait → reload → re-read "Ready For Extraction", until it hits
+    0 (or the safety cap). Returns the count still ready at the end."""
+    start = ready_for_extraction(page)
+    _log(f"[extract] Ready For Extraction at start: {start}")
+    if dry_run:
+        _log("[extract] DRY-RUN — would loop Resume Helper until 0; no clicks made")
+        return start or 0
+
+    cycles = 0
+    while cycles < MAX_EXTRACT_CYCLES:
+        remaining = ready_for_extraction(page)
+        if remaining is None:
+            _log("[extract] could not read 'Ready For Extraction' — stopping loop")
+            break
+        if remaining <= 0:
+            _log("[extract] Ready For Extraction = 0 — extraction complete")
+            break
+        cycles += 1
+        _log(f"[extract] cycle {cycles}: {remaining} ready — running Resume Helper")
+        if not run_extract_once(page):
+            break
+        # Reload and re-read (the elapsed timer is not a reliable done-signal).
+        try:
+            page.reload(wait_until="domcontentloaded")
+        except Exception:
+            pass
+        page.wait_for_timeout(3000)
+    else:
+        _log(f"[extract] hit safety cap ({MAX_EXTRACT_CYCLES} cycles) — stopping")
+
+    end = ready_for_extraction(page) or 0
+    _log(f"[extract] done — {cycles} cycle(s); still 'Not Extracted'/ready: {end}")
+    return end
+
+
+# --------------------------------------------------------------------------- #
+# Send loop
+# --------------------------------------------------------------------------- #
+def _select_all(page, limit: int = 0) -> int:
+    """Tick the header checkbox to select every rendered row. With --limit, tick
+    only the first N row checkboxes instead."""
+    if limit and limit > 0:
+        rows = page.locator(f"{TABLE} tbody tr")
+        n = min(limit, rows.count())
+        for i in range(n):
+            try:
+                rows.nth(i).locator("input[type='checkbox']").first.check(timeout=4000)
+            except Exception as e:
+                _log(f"[send] row {i} check failed: {e}")
+        sel = page.locator(f"{TABLE} tbody tr input[type='checkbox']:checked").count()
+        _log(f"[send] limit={limit}: {sel} rows selected")
+        return sel
+    # Select-all header checkbox (top-left, next to "Id").
+    for sel in [f"{TABLE} thead input[type='checkbox']",
+                f"{TABLE} th input[type='checkbox']",
+                "thead input[type='checkbox'].select-all",
+                "input#select-all"]:
+        cb = page.locator(sel)
+        if cb.count() > 0:
+            try:
+                cb.first.check(timeout=6000)
+                page.wait_for_timeout(800)
+                sel = page.locator(f"{TABLE} tbody tr input[type='checkbox']:checked").count()
+                _log(f"[send] select-all → {sel} rows selected")
+                return sel
+            except Exception as e:
+                _log(f"[send] select-all click failed ({sel}): {e}")
+    _log("[send] no select-all checkbox found")
+    return 0
+
+
+def _read_status_dialog(page):
+    """Read the "Batch Process Emails Status" dialog. Returns (sent, done):
+    sent = 'Sent to Call List' number (or None), done = True when the dialog says
+    there is nothing left to send."""
+    sent, done = None, False
+    dlg = page.locator(".modal:visible, .swal2-popup:visible, [role='dialog']:visible")
+    try:
+        if dlg.count() > 0:
+            text = " ".join(dlg.first.inner_text().split())
+            _log(f"[send] status: {text[:220]}")
+            m = re.search(r"Sent to Call List[^0-9]*([0-9,]+)", text, re.I)
+            if m:
+                sent = int(m.group(1).replace(",", ""))
+            if re.search(r"no applicants to send", text, re.I) or sent == 0:
+                done = True
+    except Exception as e:
+        _log(f"[send] status read err: {e}")
+    return sent, done
+
+
+def send_once(page, dry_run: bool, limit: int = 0):
+    """One send pass: render all → select rows → Send To AI → confirm Yes → read
+    the status dialog. Returns (sent, done, rows_before)."""
+    before = render_all_rows(page)
+    if before == 0:
+        _log("[send] table is empty — nothing to send")
+        return 0, True, 0
+    if dry_run:
+        who = f"the first {limit}" if limit else "all"
+        _log(f"[send] DRY-RUN — {before} rows; would select {who} + 'Send To AI', "
+             "no click made")
+        return 0, True, before
+
+    sel = _select_all(page, limit=limit)
+    if sel == 0:
+        _log("[send] no rows selected — aborting this pass")
+        return 0, True, before
+
+    if not _click_if_present(page, ["Send To AI", "Send to AI"], timeout=10000):
+        _log("[send] 'Send To AI' button not found — aborting")
+        return 0, True, before
+    page.wait_for_timeout(2000)
+
+    sent, done = _read_status_dialog(page)         # dialog asks "Do you want to continue?"
+    _click_if_present(page, ["Yes", "Continue", "OK"])   # confirm the send
+    try:
+        page.wait_for_load_state("domcontentloaded", timeout=15000)
+    except Exception:
+        pass
+    page.wait_for_timeout(2500)
+    return (sent if sent is not None else 0), done, before
+
+
+def send_loop(page, dry_run: bool, limit: int = 0) -> int:
+    """Repeat send passes until the status says 0 sent / no applicants, or the
+    record count stops dropping, or the safety cap. Returns total sent."""
+    if dry_run:
+        sent, _, _ = send_once(page, dry_run=True, limit=limit)
+        return 0
+    if limit and limit > 0:                        # a --limit test is a single pass
+        sent, _, _ = send_once(page, dry_run=False, limit=limit)
+        _log(f"[send] --limit {limit}: sent {sent} (single test pass)")
+        return sent
+
+    total = 0
+    prev_before = None
+    for p in range(1, MAX_SEND_PASSES + 1):
+        sent, done, before = send_once(page, dry_run=False, limit=0)
+        total += sent
+        _log(f"[send] pass {p}: sent {sent} (rows before pass: {before}; total {total})")
+        if done or sent == 0:
+            _log("[send] status reports nothing left to send — stopping")
+            break
+        if prev_before is not None and before >= prev_before:
+            _log("[send] record count stopped dropping — remaining are duplicates / "
+                 "data-error rows; stopping")
+            break
+        prev_before = before
+    else:
+        _log(f"[send] hit safety cap ({MAX_SEND_PASSES} passes) — stopping")
+    return total
+
+
+# --------------------------------------------------------------------------- #
+# Health check (--debug)
 # --------------------------------------------------------------------------- #
 def _health_check(page) -> None:
-    _log("[debug] ===== health check =====")
-    _log(f"[debug] url: {(page.url or '')[:90]}")
-    _log(f"[debug] rendered rows (.x-grid3-row): {_grid_row_count(page)}")
-    for sel, name in [("#btnExtractResume", "Auto-Extract button"),
-                      ("#saveButtton2", "Send-to-AI button"),
-                      ("#saveButtton", "Send-to-Call-List button"),
-                      (".x-grid3-hd-checker", "select-all checker")]:
+    _log("[debug] ===== v2 health check =====")
+    _log(f"[debug] url: {(page.url or '')[:100]}")
+    _log(f"[debug] DataTable ({TABLE}): {'FOUND' if page.locator(TABLE).count() else 'MISSING'}")
+    _log(f"[debug] rendered rows: {_rendered_row_count(page)}")
+    _log(f"[debug] Ready For Extraction: {ready_for_extraction(page)}")
+    probes = [
+        ("Send To AI button", "xpath=//button[contains(.,'Send To AI') or contains(.,'Send to AI')]"),
+        ("select-all checkbox", f"{TABLE} thead input[type='checkbox']"),
+        ("robot / Resume Helper", "[title*='Resume' i], .fa-robot, [class*='robot']"),
+    ]
+    for name, sel in probes:
         try:
-            _log(f"[debug] {name} ({sel}): {'FOUND' if page.locator(sel).count() else 'MISSING'}")
+            _log(f"[debug] {name}: {'FOUND' if page.locator(sel).count() else 'MISSING'}")
         except Exception as e:
-            _log(f"[debug] {name} ({sel}): err {e}")
-    try:
-        page.add_script_tag(content=(
-            "(function(){var o='no-ext';try{if(window.Ext){var b=null;"
-            "Ext.ComponentMgr.all.each(function(c){try{if(c.getSelectionModel&&c.store&&c.store.getCount&&"
-            "c.el&&c.el.dom&&c.el.dom.querySelector('.x-grid3-hd-checker')){if(!b||c.store.getCount()>b.store.getCount()){b=c;}}}catch(e){}return true;});"
-            "o=b?('grid '+b.id+' store='+b.store.getCount()):'no-grid';}}catch(e){o='err:'+e;}"
-            "document.body.setAttribute('data-hc',o);})();"))
-        page.wait_for_timeout(600)
-        hc = page.frames[0].evaluate("() => document.body.getAttribute('data-hc')")
-        _log(f"[debug] selection-model grid: {hc}")
-    except Exception as e:
-        _log(f"[debug] ext grid probe err: {e}")
+            _log(f"[debug] {name}: err {e}")
+    jq = _jq_eval(page, "typeof jQuery !== 'undefined' && !!jQuery.fn.dataTable")
+    _log(f"[debug] jQuery + DataTables reachable: {jq}")
     _log("[debug] ===== end =====")
 
 
@@ -299,27 +421,26 @@ def _health_check(page) -> None:
 # Main
 # --------------------------------------------------------------------------- #
 def main() -> int:
-    ap = argparse.ArgumentParser(description="ApplicantStream extractor / sender")
+    ap = argparse.ArgumentParser(description="ApplicantStream v2 extractor / sender")
     ap.add_argument("--dry-run", action="store_true",
-                    help="Report counts only; no Auto-Extract, no Send-to-AI clicks.")
+                    help="Report counts only; no extract, no Send-To-AI clicks.")
     ap.add_argument("--debug", action="store_true",
-                    help="Reach the batch page, print a health check, then STOP.")
+                    help="Reach the v2 batch page, print a health check, then STOP.")
     ap.add_argument("--send-only", action="store_true",
-                    help="Skip Auto-Extract; go straight to select-all + send.")
+                    help="Skip extraction; go straight to the send loop.")
     ap.add_argument("--extract-only", action="store_true",
-                    help="Auto-Extract only; never send to the AI call list.")
+                    help="Run the extract loop only; never send to the AI call list.")
     ap.add_argument("--limit", type=int, default=0, metavar="N",
-                    help="Send only the first N rows (small live test). 0 = all.")
+                    help="Send only the first N rows (single live test pass). 0 = all.")
     args = ap.parse_args()
 
     mode = "DRY-RUN (no writes)" if args.dry_run else "LIVE (sends to AI call list)"
-    _log(f"=== Resume Pushing — office {OFFICE_ID} — {mode} ===")
+    _log(f"=== Resume Pushing v2 — office {OFFICE_ID} — {mode} ===")
 
-    # Resume Pushing is the LOWEST-priority AppStream job on Lucy 2 — it runs
-    # every 10 min, so if any other report (e.g. Carlos 1on1s) is using Carlos's
-    # AppStream session, we STEP ASIDE and let it finish. yield_if_busy makes the
-    # session attach fail fast (AppStreamBusy) instead of waiting and holding the
-    # other run up; the next 10-min tick retries, so nothing is lost.
+    # Lowest-priority AppStream job on Lucy 2 (runs every 10 min): if Carlos's
+    # session is busy with another report, yield_if_busy makes the attach fail
+    # fast (AppStreamBusy) instead of holding the other run up; the next tick
+    # retries, so nothing is lost.
     try:
         with appstream_direct_session(yield_if_busy=True) as page:
             if not fetch_office._switch_office(page, OFFICE_ID, OFFICE_HINT):
@@ -329,29 +450,31 @@ def main() -> int:
                 return 2
             page.wait_for_timeout(2000)
 
-            if not goto_batch_page(page):
-                _log("[STOP] could not reach the batch page (p=616).")
+            page = open_v2_dashboard(page)          # enter "Explore Appstream AI"
+            if not goto_process_in_batches(page):
+                _log("[STOP] could not reach Process In Batches on v2.")
                 return 1
 
             if args.debug:
                 _health_check(page)
                 return 0
 
-            rows = _grid_row_count(page)
+            extracted_remaining = None
             if not args.send_only:
-                extract_resumes(page, args.dry_run)
+                extracted_remaining = extract_loop(page, args.dry_run)
 
             if args.extract_only:
                 _log("\n===== SUMMARY (extract-only) =====")
-                _log(f"Rendered rows                : {rows}")
-                _log(f"Auto-Extract                 : {'skipped (dry-run)' if args.dry_run else 'clicked'}")
+                _log(f"Still ready/not-extracted    : {extracted_remaining}")
                 _log("(--extract-only — nothing was sent to the AI call list.)")
                 return 0
 
-            sent = send_all_to_ai(page, args.dry_run, limit=args.limit)
+            sent = send_loop(page, args.dry_run, limit=args.limit)
 
             _log("\n===== SUMMARY =====")
             _log(f"Mode                         : {mode}")
+            if extracted_remaining is not None:
+                _log(f"Still ready/not-extracted    : {extracted_remaining}")
             _log(f"Applicants sent to call list : {sent}")
             if args.dry_run:
                 _log("(DRY-RUN — nothing was pushed to the AI call list.)")
