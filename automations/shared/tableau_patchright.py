@@ -720,7 +720,6 @@ def _reuse_appstream_storage_state(ctx, page: Page, verbose: bool) -> bool:
     return False
 
 
-@contextmanager
 def _profile_extension_paths(profile) -> list:
     """Unpacked-extension dirs installed in a persistent Chrome profile
     (<profile>/Default/Extensions/<id>/<version>/). Playwright launches Chrome
@@ -743,6 +742,7 @@ def _profile_extension_paths(profile) -> list:
     return out
 
 
+@contextmanager
 def appstream_direct_session(headless: bool = False,
                              verbose: bool = True,
                              profile_dir: Optional[Path] = None,
