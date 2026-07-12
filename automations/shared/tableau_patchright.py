@@ -790,8 +790,10 @@ def appstream_direct_session(headless: bool = False,
         _ext_paths = _profile_extension_paths(profile)
         if _ext_paths:
             _joined = ",".join(_ext_paths)
-            ext_args = [f"--disable-extensions-except={_joined}",
-                        f"--load-extension={_joined}"]
+            # ONLY --load-extension — NOT --disable-extensions-except (which would
+            # disable every extension NOT in this list, and could turn OFF the
+            # genuinely-installed extractor plugin if our scan missed its folder).
+            ext_args = [f"--load-extension={_joined}"]
             if verbose:
                 print(f"-> loading {len(_ext_paths)} profile extension(s): "
                       f"{_ext_paths}", flush=True)
