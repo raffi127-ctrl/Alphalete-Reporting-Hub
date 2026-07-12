@@ -16,7 +16,7 @@ pkill -f appstream_profile; sleep 3
 echo " STEP 2 — RE-SEED THE LOGIN (a browser will open)"
 echo "   In that browser window:"
 echo "     1) clear the Cloudflare 'verify you are human' check if shown"
-echo "     2) make sure you're logged in as rcaptain"
+echo "     2) LOG IN AS carlosnlr (your normal account — the one with the plugin)"
 echo "     3) then go to:   applicantstream.com/index.cfm?p=701"
 echo "     4) wait — it saves automatically once the office search box appears"
 echo "=============================================================="
