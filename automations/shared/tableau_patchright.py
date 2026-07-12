@@ -819,8 +819,15 @@ def appstream_direct_session(headless: bool = False,
             ext_args = [f"--disable-extensions-except={_joined}",
                         f"--load-extension={_joined}"]
             if verbose:
-                print(f"-> loading {len(cached)} extension(s) from cache: "
-                      f"{cached}", flush=True)
+                print(f"-> loading {len(cached)} extension(s) from cache:",
+                      flush=True)
+                for _c in cached:
+                    try:
+                        _m = json.loads((Path(_c) / "manifest.json").read_text())
+                        print(f"   - {_m.get('name', '?')}  (v{_m.get('version','?')})",
+                              flush=True)
+                    except Exception:
+                        print(f"   - {_c} (no readable manifest)", flush=True)
         elif verbose:
             print("-> load_extensions=True but no extension in profile OR cache — "
                   "install the plugin first, then run once to cache it", flush=True)
