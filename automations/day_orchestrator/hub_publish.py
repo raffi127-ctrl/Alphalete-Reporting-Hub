@@ -51,6 +51,7 @@ _HUB_CARD = {
     "leaders_call": "leaders-call",
     "residential_rep_count": "residential_rep_count",
     "rashad_metrics": "rashad-metrics",
+    "aya_metrics": "aya-metrics",
     "frontier_opt": "frontier-opt-data-pull",
     "financial_report": "financial-pull",
     "brand_audit": "brand-health-audit",
