@@ -464,6 +464,27 @@ def _probe() -> int:
         page.wait_for_timeout(3000)
         L("service_workers@batch: " + str([sw.url for sw in ctx.service_workers]))
         L("url: " + (page.url or "")[:95])
+
+        # DEFINITIVE: can the PAGE reach the extension? This is exactly how
+        # ApplicantStream itself detects the plugin — chrome.runtime.sendMessage to
+        # the ext id. Runs in the page's MAIN world; result bridged to a DOM attr.
+        page.add_script_tag(content=(
+            "(function(){try{"
+            "if(typeof chrome==='undefined'||!chrome.runtime){"
+            "document.body.setAttribute('data-ext','NO chrome.runtime on page');return;}"
+            "document.body.setAttribute('data-ext','runtime present, awaiting reply');"
+            "chrome.runtime.sendMessage('goofbdglmeckblcbcoffnkdnmpehhhmo',{rh:'ping'},"
+            "function(r){if(chrome.runtime.lastError){"
+            "document.body.setAttribute('data-ext','NO_EXT: '+chrome.runtime.lastError.message);}"
+            "else{document.body.setAttribute('data-ext','EXT_OK: '+JSON.stringify(r));}});"
+            "}catch(e){document.body.setAttribute('data-ext','ERR:'+e);}})();"))
+        page.wait_for_timeout(3000)
+        try:
+            extstate = page.evaluate("() => document.body.getAttribute('data-ext')")
+        except Exception as e:
+            extstate = f"read-err:{e}"
+        L("PAGE-SEES-EXTENSION: " + str(extstate))
+
         L("ready_before: " + str(ready_for_extraction(page)))
         L("buttons_before: " + str(buttons(page)))
 
