@@ -84,5 +84,17 @@ with appstream_direct_session(yield_if_busy=True, load_extensions=True) as page:
                 print(f"click {sel} failed: {e}")
     page.wait_for_timeout(4000)
 
+    print("\n--- dialogs / popups after robot click ---")
+    for sel in [".modal", "[role='dialog']", ".swal2-popup", ".ui-dialog",
+                "#window_dialog", ".popup", ".modal-content"]:
+        loc = page.locator(f"{sel}:visible")
+        for i in range(min(loc.count(), 3)):
+            try:
+                t = " ".join((loc.nth(i).inner_text() or "").split())
+                if t:
+                    print(f"  [{sel}] {t[:320]}")
+            except Exception:
+                pass
+
     _dump(page, "AFTER robot click")
     print("\n=== diagnose done ===")

@@ -787,19 +787,43 @@ def appstream_direct_session(headless: bool = False,
     # launches with extensions disabled, so the installed plugin sits unused.
     ext_args = []
     if load_extensions:
+        import shutil
         _ext_paths = _profile_extension_paths(profile)
-        if _ext_paths:
-            _joined = ",".join(_ext_paths)
-            # ONLY --load-extension — NOT --disable-extensions-except (which would
-            # disable every extension NOT in this list, and could turn OFF the
-            # genuinely-installed extractor plugin if our scan missed its folder).
-            ext_args = [f"--load-extension={_joined}"]
+        # patchright launches Chrome with flags (--use-mock-keychain etc.) that
+        # invalidate the profile's own extension registrations, so Chrome STRIPS a
+        # human-installed plugin on launch (6 -> 2 -> 0). Keep a copy OUTSIDE the
+        # profile and load THAT: a command-line --load-extension is unpacked/dev
+        # mode and isn't subject to that stripping, so it survives every launch.
+        cache = Path(profile).parent / ".extractor_cache"
+        if _ext_paths:                      # profile still has them → refresh cache
+            shutil.rmtree(cache, ignore_errors=True)
+            cache.mkdir(parents=True, exist_ok=True)
+            cached = []
+            for _i, _src in enumerate(_ext_paths):
+                _dst = cache / f"ext{_i}"
+                try:
+                    shutil.copytree(_src, _dst)
+                    cached.append(str(_dst))
+                except Exception as _e:
+                    if verbose:
+                        print(f"-> cache copy failed for {_src}: {_e}", flush=True)
+        else:                               # profile got wiped → reuse the cache
+            cached = ([str(d) for d in sorted(cache.glob("ext*"))
+                       if (d / "manifest.json").exists()]
+                      if cache.is_dir() else [])
+        if cached:
+            _joined = ",".join(cached)
+            # BOTH flags together (the documented Playwright combo) — required for
+            # a --load-extension'd extension to actually stay ENABLED. We include
+            # every cached extension in the allow-list, so nothing gets disabled.
+            ext_args = [f"--disable-extensions-except={_joined}",
+                        f"--load-extension={_joined}"]
             if verbose:
-                print(f"-> loading {len(_ext_paths)} profile extension(s): "
-                      f"{_ext_paths}", flush=True)
+                print(f"-> loading {len(cached)} extension(s) from cache: "
+                      f"{cached}", flush=True)
         elif verbose:
-            print(f"-> load_extensions=True but no extension found under "
-                  f"{profile}/Default/Extensions (install it first)", flush=True)
+            print("-> load_extensions=True but no extension in profile OR cache — "
+                  "install the plugin first, then run once to cache it", flush=True)
     with sync_playwright() as p:
         try:
             ctx = _launch_persistent(p, profile, headless=headless,
