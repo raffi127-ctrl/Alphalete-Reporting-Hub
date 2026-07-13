@@ -1108,6 +1108,10 @@ MEMBERS = [
     {"name": "Lucy 1", "emoji": "🤖", "color": "#10B981", "email": ""},
     {"name": "Lucy 2", "emoji": "🦾", "color": "#E76F51", "email": ""},
     {"name": "Maud",    "emoji": "🌟",        "color": "#FF6B6B", "email": "maudmiller4@gmail.com"},
+    # Office Operations — a functional profile (not a single person) that holds
+    # office-run workflows anyone on staff can pick up: new-hire swag texts,
+    # etc. People navigate here to find those cards. (Megan 2026-07-13)
+    {"name": "Office Operations", "emoji": "🏢", "color": "#6C5CE7", "email": ""},
 ]
 
 
