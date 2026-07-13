@@ -118,9 +118,9 @@ def _vbounds(mask, band, seg) -> tuple[int, int]:
 
 
 DESC_MARGIN = 110  # px to look below the band for a letter's descender loop
-X_MARGIN = 30      # px to look left/right — descender loops (g/y/j) curl OUT
-                   # past the letter's own column; connectivity keeps neighbors
-                   # out (they're separated by a gap)
+X_MARGIN = 55      # px to look left/right — descender loops/hooks (g/y/j) curl
+                   # OUT well past the letter's own column; connectivity keeps
+                   # neighbors out (they're separated by a gap)
 CAPTURE_THR = 205  # slightly looser than INK_THR so thin loop edges survive
 
 

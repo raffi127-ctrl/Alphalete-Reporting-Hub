@@ -36,7 +36,7 @@ st.caption("Upload the roster screenshot → check the names & numbers → send 
 # you can eyeball the look any time.
 with st.expander("👀 Preview the swag card", expanded=True):
     sample = st.text_input("Type a name to preview it on the card",
-                           value="Davone", key="sample_name")
+                           value="Lola", key="sample_name")
     if sample.strip():
         sp = Path(tempfile.gettempdir()) / f"swag_sample_{sample.strip()}.png"
         meta = compose.compose(sample.strip(), sp)
