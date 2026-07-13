@@ -88,49 +88,61 @@ def _probe(today: dt.date, log) -> int:
         lines.append(str(s))
 
     rec(f"probe @ {dt.datetime.now().isoformat(timespec='seconds')}")
-    # FALLBACK SOURCE TEST: the B2B ORDERLOG dashboard resists crosstab/data
-    # export under automation. The D2D ORDERLOG (ATTTRACKER2_1-D2D) downloads
-    # reliably (country_metrics uses it). Check whether it carries the columns
-    # churn needs (owner/product/posted/status/customer/phone) for Carlos.
+    # TIMING TEST: the B2B ORDERLOG is a heavy dashboard ('Computing models'
+    # ~50s per opt_phase). Crosstab may only enumerate its worksheets after a
+    # long render. Load, then open the crosstab dialog at escalating waits and
+    # report thumb counts to find the threshold.
+    url = pull.orderlog_url("carlos", today)
+    rec(f"goto: {url}")
     try:
-        from automations.shared.tableau_patchright import (
-            download_crosstab_patchright)
-        from urllib.parse import quote
-        import openpyxl
-        d2d_url = (
-            "https://us-east-1.online.tableau.com/#/site/sci/views/"
-            "ATTTRACKER2_1-D2D/ORDERLOG/"
-            "117748c0-9487-45e8-a5d4-c447093718d5/ALLREPS"
-            f"?:iid=1&Start%20Date={(today - dt.timedelta(days=60)).isoformat()}"
-            f"&End%20Date={today.isoformat()}")
-        out = Path("/tmp/vantura_d2d_orderlog.csv")
-        download_crosstab_patchright(d2d_url, "A.Order Log", out, verbose=False)
-        # crosstab CSVs are UTF-16 tab-delimited
-        import csv as _csv
-        rows = None
-        for enc in ("utf-16", "utf-8-sig", "utf-8"):
+        with tableau_session(verbose=False) as page:
             try:
-                with open(out, encoding=enc, newline="") as f:
-                    rows = list(_csv.reader(f, delimiter="\t"))
-                if rows and len(rows[0]) > 1:
-                    break
+                page.goto("about:blank", wait_until="domcontentloaded",
+                          timeout=10_000)
             except Exception:
-                continue
-        if rows:
-            hdr = rows[0]
-            rec(f"D2D order log: {len(rows) - 1} rows, {len(hdr)} cols")
-            for i in range(0, len(hdr), 6):
-                rec("D2DCOL| " + " | ".join(hdr[i:i + 6]))
-            oi = next((i for i, h in enumerate(hdr)
-                       if "Owner" in h), None)
-            if oi is not None:
-                carlos = [r for r in rows[1:]
-                          if r and "CARLOS" in (r[oi] or "").upper()]
-                rec(f"D2D Carlos rows: {len(carlos)}")
-        else:
-            rec("D2D order log: could not parse CSV")
+                pass
+            page.goto(url, wait_until="domcontentloaded")
+            viz = page.frame_locator('iframe[title="Data Visualization"]')
+            try:
+                viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
+                            'download"]').wait_for(state="visible",
+                                                   timeout=180_000)
+                rec("toolbar: visible")
+            except Exception as e:
+                rec(f"toolbar: NOT visible ({str(e)[:100]})")
+
+            def _open_and_count(tag):
+                try:
+                    page.keyboard.press("Escape")
+                    page.wait_for_timeout(600)
+                    viz.locator('[data-tb-test-id="viz-viewer-toolbar-'
+                                'button-download"]').click()
+                    page.wait_for_timeout(1500)
+                    viz.locator('[data-tb-test-id="download-flyout-'
+                                'download-crosstab-MenuItem"]').click()
+                    page.wait_for_timeout(5000)
+                    thumbs = viz.locator(
+                        '[data-tb-test-id^="sheet-thumbnail-"]')
+                    n = thumbs.count()
+                    names = [thumbs.nth(i).inner_text().strip()
+                             for i in range(n)]
+                    dlg = viz.locator('[role="dialog"]')
+                    dtxt = (dlg.first.inner_text(timeout=6000)[:120]
+                            if dlg.count() else "")
+                    rec(f"[{tag}] thumbs={n} names={names} dlg={dtxt!r}")
+                    return n
+                except Exception as e:
+                    rec(f"[{tag}] err {str(e)[:120]}"); return 0
+
+            waited = 0
+            for target in (30, 90, 150, 240):
+                page.wait_for_timeout((target - waited) * 1000)
+                waited = target
+                if _open_and_count(f"+{target}s") > 0:
+                    rec(f"*** thumbs appeared at +{target}s ***")
+                    break
     except Exception as e:  # noqa: BLE001
-        rec(f"D2D probe err: {str(e)[:200]}")
+        rec(f"PROBE ERROR: {str(e)[:300]}")
     _write_diag(lines)
     return 0
 
