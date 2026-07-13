@@ -161,32 +161,60 @@ def _probe(today: dt.date, log) -> int:
             except Exception as e:
                 rec(f"zone dump err: {str(e)[:120]}")
 
-            # Coordinate clicks across the viz (grid data usually fills the
-            # lower-centre) — then reopen the dialog and check for thumbs.
-            def _coord_try(tag, x, y):
+            # A 'Guided Walkthrough' / Data Guide overlay was seen in the body
+            # dump — it can intercept clicks. Dismiss anything dismissable.
+            for sel in ('[data-tb-test-id="data-guide-close-button"]',
+                        '[aria-label="Close"]', 'button:has-text("Got it")',
+                        'button:has-text("Skip")', '.f1sivl2j'):
+                try:
+                    el = viz.locator(sel)
+                    if el.count():
+                        el.first.click(timeout=2500)
+                        rec(f"dismissed overlay via {sel}")
+                except Exception:
+                    pass
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(800)
+
+            # Click the worksheet zone element directly (its own bbox centre),
+            # then reopen the dialog.
+            def _zone_try(tag, sel):
                 try:
                     page.keyboard.press("Escape")
                     page.wait_for_timeout(600)
-                    fe = page.frame_locator(
-                        'iframe[title="Data Visualization"]')
-                    # click at an absolute point inside the iframe via mouse
-                    ifr = page.locator('iframe[title="Data Visualization"]')
-                    b = ifr.bounding_box()
-                    if not b:
-                        rec(f"{tag}: no iframe box"); return 0
-                    page.mouse.click(b["x"] + x, b["y"] + y)
-                    rec(f"{tag}: clicked ({x},{y})")
+                    el = viz.locator(sel)
+                    if not el.count():
+                        rec(f"{tag}: no match {sel}"); return 0
+                    el.first.click(timeout=6000)
+                    rec(f"{tag}: clicked {sel}")
                     page.wait_for_timeout(1500)
                     _open_dialog()
                     return _dialog_state(tag)
                 except Exception as e:
                     rec(f"{tag}: err {str(e)[:120]}"); return 0
 
-            for tag, x, y in [("mid", 500, 400), ("lower", 500, 650),
-                              ("grid", 700, 500), ("left", 250, 500)]:
-                if _coord_try(tag, x, y) > 0:
+            for tag, sel in [("viz-zone", "#tabZoneId9"),
+                             ("viz-cls", ".tabZone-viz"),
+                             ("viz-inner", ".tabZone-viz .tab-zone-padding")]:
+                if _zone_try(tag, sel) > 0:
                     rec(f"*** SUCCESS via {tag} ***")
                     break
+            else:
+                # Last resort: a selected sheet may export DIRECTLY (no picker)
+                # — click the zone, then try the toolbar crosstab flow and
+                # report if a format/export appears without thumbnails.
+                try:
+                    viz.locator("#tabZoneId9").first.click(
+                        timeout=6000, position={"x": 400, "y": 300})
+                    page.wait_for_timeout(1200)
+                    _open_dialog()
+                    exp = viz.locator(
+                        '[data-tb-test-id="export-crosstab-export-Button"]')
+                    rec(f"direct-export: export btn count={exp.count()} "
+                        + (f"enabled={exp.first.is_enabled()}"
+                           if exp.count() else ""))
+                except Exception as e:
+                    rec(f"direct-export err: {str(e)[:120]}")
     except Exception as e:  # noqa: BLE001
         rec(f"PROBE ERROR: {str(e)[:300]}")
     _write_diag(lines)
