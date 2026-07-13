@@ -420,6 +420,30 @@ def _health_check(page) -> None:
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
+def _extract_loop(n: int) -> int:
+    """Automate the extraction rounds by REAL clicks (the only thing that keeps the
+    plugin alive): robot -> Start -> wait (you clear the human-check) -> reload.
+    Snaps after each round so progress can be read remotely. Coords are baked for a
+    maximized Chrome on the Process-in-Batches page."""
+    import time
+    ROBOT, START, RELOAD = "1380,250", "1206,260", "94,92"
+    for r in range(1, n + 1):
+        print(f"===== extraction round {r}/{n} =====", flush=True)
+        _click(ROBOT)
+        time.sleep(4)
+        _click(START)
+        print(">>> If a human-check pops up, CLICK IT NOW (you have ~2 min) <<<", flush=True)
+        time.sleep(135)
+        _click(RELOAD)
+        time.sleep(5)
+        try:
+            _snap()
+        except Exception as e:
+            print(f"[loop] snap error: {e}", flush=True)
+    print("EXTRACT-LOOP DONE — snap is the final state", flush=True)
+    return 0
+
+
 def _snap() -> int:
     """Capture the screen at LOGICAL-POINT resolution (so a pixel in the JPEG maps
     1:1 to a click coordinate), shrink to JPEG, and upload it (base64, chunked) to
@@ -955,6 +979,10 @@ def main() -> int:
     ap.add_argument("--click", metavar="X,Y",
                     help="Post real mouse click(s) at screen point(s) 'x,y' (or 'x,y;x,y'). "
                          "Brings Chrome to front first. Needs Accessibility on the Terminal.")
+    ap.add_argument("--extract-loop", type=int, metavar="N",
+                    help="Run N extraction rounds by real clicks: robot -> Start -> wait -> "
+                         "reload, snapping after each. The human clears the captcha when it pops. "
+                         "Coords baked for a maximized Chrome (robot 1380,250; Start 1206,260).")
     args = ap.parse_args()
 
     if args.inspect_plugin:
@@ -971,6 +999,8 @@ def main() -> int:
         return _snap()
     if args.click:
         return _click(args.click)
+    if args.extract_loop:
+        return _extract_loop(args.extract_loop)
 
     mode = "DRY-RUN (no writes)" if args.dry_run else "LIVE (sends to AI call list)"
     _log(f"=== Resume Pushing v2 — office {OFFICE_ID} — {mode} ===")
