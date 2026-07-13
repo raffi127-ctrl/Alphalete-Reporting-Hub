@@ -71,7 +71,8 @@
       "label": "BOX daily tracker (org sales board — last source to land, ~7-8am)",
       "probe": {
         "type": "box_daily",
-        "min_rows": 5
+        "min_rows": 5,
+        "fallback_hhmm": "08:00"
       }
     }
   },
