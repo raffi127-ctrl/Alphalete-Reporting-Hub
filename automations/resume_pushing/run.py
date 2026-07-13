@@ -421,17 +421,31 @@ def _health_check(page) -> None:
 # Main
 # --------------------------------------------------------------------------- #
 def _snap() -> int:
-    """Capture the screen, shrink to a JPEG, and upload it (base64, chunked across
-    rows) to the 'RP Shot' sheet tab so it can be reassembled + viewed remotely.
-    Run from a Terminal that has Screen-Recording permission (else the capture is
-    blank)."""
+    """Capture the screen at LOGICAL-POINT resolution (so a pixel in the JPEG maps
+    1:1 to a click coordinate), shrink to JPEG, and upload it (base64, chunked) to
+    the 'RP Shot' sheet tab for remote viewing. Run from a Terminal with
+    Screen-Recording permission."""
     import base64
     import subprocess
     from automations.recruiting_report import fill as _fill
+    W = H = None
+    try:
+        out = subprocess.run(
+            ["osascript", "-e",
+             'tell application "Finder" to get bounds of window of desktop'],
+            capture_output=True, text=True, timeout=10).stdout.strip()
+        p = [int(x.strip()) for x in out.split(",")]
+        W, H = p[2], p[3]
+    except Exception:
+        pass
     png, jpg = "/tmp/rpshot.png", "/tmp/rpshot.jpg"
     subprocess.run(["screencapture", "-x", png], capture_output=True)
-    subprocess.run(["sips", "-s", "format", "jpeg", "-s", "formatOptions", "50",
-                    "-Z", "1600", png, "--out", jpg], capture_output=True)
+    if W and H:
+        subprocess.run(["sips", "-z", str(H), str(W), "-s", "format", "jpeg",
+                        "-s", "formatOptions", "55", png, "--out", jpg], capture_output=True)
+    else:
+        subprocess.run(["sips", "-s", "format", "jpeg", "-s", "formatOptions", "50",
+                        "-Z", "1600", png, "--out", jpg], capture_output=True)
     try:
         data = open(jpg, "rb").read()
     except Exception:
@@ -445,7 +459,43 @@ def _snap() -> int:
         t = sh.add_worksheet(title="RP Shot", rows=100, cols=1)
     t.clear()
     t.update([[c] for c in chunks], "A1")
-    print(f"SNAP: {len(data)} bytes jpg, {len(chunks)} chunk(s) -> 'RP Shot' tab", flush=True)
+    print(f"SNAP: screen {W}x{H} pts, {len(data)}B jpg, {len(chunks)} chunk(s) -> 'RP Shot'", flush=True)
+    return 0
+
+
+def _click(spec: str) -> int:
+    """Bring Chrome to the front, then post REAL mouse clicks at screen point(s)
+    `spec` = 'x,y' or 'x,y;x,y;…'. Real CGEvent clicks (isTrusted) that the plugin
+    can't distinguish from a human. Needs Accessibility permission on the Terminal
+    that launches this."""
+    import subprocess
+    import time
+    try:
+        import Quartz
+    except Exception:
+        print("CLICK: Quartz missing — install with "
+              "'.venv/bin/python -m pip install pyobjc-framework-Quartz'", flush=True)
+        return 1
+    subprocess.run(["osascript", "-e", 'tell application "Google Chrome" to activate'],
+                   capture_output=True)
+    time.sleep(1.2)
+
+    def _post(ev, x, y, btn=0):
+        e = Quartz.CGEventCreateMouseEvent(None, ev, (x, y), btn)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, e)
+
+    for pt in spec.split(";"):
+        pt = pt.strip()
+        if not pt:
+            continue
+        x, y = [float(v) for v in pt.split(",")]
+        print(f"CLICK: ({x}, {y})", flush=True)
+        _post(Quartz.kCGEventMouseMoved, x, y)
+        time.sleep(0.25)
+        _post(Quartz.kCGEventLeftMouseDown, x, y, Quartz.kCGMouseButtonLeft)
+        time.sleep(0.08)
+        _post(Quartz.kCGEventLeftMouseUp, x, y, Quartz.kCGMouseButtonLeft)
+        time.sleep(0.6)
     return 0
 
 
@@ -895,6 +945,9 @@ def main() -> int:
                     help="Screenshot Lucy 2's screen, shrink it, and write it (base64, chunked) "
                          "to the 'RP Shot' sheet tab so it can be viewed remotely. Run from a "
                          "Terminal that has Screen-Recording permission.")
+    ap.add_argument("--click", metavar="X,Y",
+                    help="Post real mouse click(s) at screen point(s) 'x,y' (or 'x,y;x,y'). "
+                         "Brings Chrome to front first. Needs Accessibility on the Terminal.")
     args = ap.parse_args()
 
     if args.inspect_plugin:
@@ -909,6 +962,8 @@ def main() -> int:
         return _locate_plugin()
     if args.snap:
         return _snap()
+    if args.click:
+        return _click(args.click)
 
     mode = "DRY-RUN (no writes)" if args.dry_run else "LIVE (sends to AI call list)"
     _log(f"=== Resume Pushing v2 — office {OFFICE_ID} — {mode} ===")
