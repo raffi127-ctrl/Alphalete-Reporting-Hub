@@ -112,10 +112,41 @@ def _probe(today: dt.date, log) -> int:
                 body = viz.locator("body").inner_text(timeout=20_000)
                 rec(f"viz body chars: {len(body)}")
                 flat = body.replace("\n", " ⏎ ")
-                for i in range(0, min(len(flat), 8000), 400):
+                for i in range(0, min(len(flat), 4000), 400):
                     rec("BODY| " + flat[i:i + 400])
             except Exception as e:
                 rec(f"viz body: err {str(e)[:150]}")
+            # Open Download → Crosstab and dump what the dialog actually
+            # contains — the dry-run died on '0 sheet thumbnails', which
+            # would be NORMAL if ORDERLOG is a standalone worksheet (the
+            # dialog then skips sheet selection entirely).
+            try:
+                viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
+                            'download"]').click()
+                page.wait_for_timeout(1800)
+                viz.locator('[data-tb-test-id="download-flyout-download-'
+                            'crosstab-MenuItem"]').click()
+                page.wait_for_timeout(6000)
+                thumbs = viz.locator(
+                    '[data-tb-test-id^="sheet-thumbnail-"]')
+                rec(f"dialog thumbs: {thumbs.count()}")
+                dlg = viz.locator('[role="dialog"]')
+                rec(f"dialog count: {dlg.count()}")
+                if dlg.count():
+                    dtext = dlg.first.inner_text(timeout=10_000)
+                    rec("DIALOG| " + dtext.replace("\n", " ⏎ ")[:1600])
+                exp = viz.locator(
+                    '[data-tb-test-id="export-crosstab-export-Button"]')
+                rec(f"export btn: count={exp.count()}"
+                    + (f" enabled={exp.first.is_enabled()}"
+                       if exp.count() else ""))
+                for fmt in ("csv", "excel", "xlsx"):
+                    lab = viz.locator(
+                        f'[data-tb-test-id="crosstab-options-dialog-radio-'
+                        f'{fmt}-Label"]')
+                    rec(f"format radio '{fmt}': {lab.count()}")
+            except Exception as e:
+                rec(f"dialog probe: err {str(e)[:200]}")
     except Exception as e:  # noqa: BLE001
         rec(f"PROBE ERROR: {str(e)[:300]}")
     _write_diag(lines)
