@@ -50,6 +50,12 @@ def _team() -> str:
     return (_smtp() or {}).get("team", TEAM_FALLBACK)
 
 
+def _doc_copy() -> str:
+    """Who gets a BCC copy of each generated document. Set `doc_copy` under
+    [smtp] in secrets; falls back to the team address."""
+    return (_smtp() or {}).get("doc_copy") or _team()
+
+
 def _app_url() -> str:
     return st.secrets.get("app_url", "")
 
@@ -455,7 +461,7 @@ def builder_view():
                              f"  3. Canva turns it into a fully editable "
                              f"design — change the wording, colors, layout, "
                              f"anything.\n\n— Alphalete Marketing",
-                        attachment=(fname, data), bcc=[_team()])
+                        attachment=(fname, data), bcc=[_doc_copy()])
                 except Exception:                    # noqa: BLE001
                     sent = False
                 try:
@@ -477,7 +483,7 @@ def builder_view():
                            file_name=res["fname"], mime="application/pdf",
                            type="primary")
         if res["emailed"]:
-            st.info(f"📧 Emailed to {res['email']} (copy to {_team()}).")
+            st.info(f"📧 Emailed to {res['email']} (copy to {_doc_copy()}).")
         st.markdown("---")
         st.markdown(
             "### 🎨 Want to customize or restyle your packet?\n"
