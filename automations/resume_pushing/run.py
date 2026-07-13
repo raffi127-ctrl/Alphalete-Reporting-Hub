@@ -420,6 +420,57 @@ def _health_check(page) -> None:
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
+def _locate_plugin() -> int:
+    """Find where the Resume Helper extension actually installed — search every
+    Chrome profile on the machine + the repo's own profiles for the ext id. Tells
+    us which profile to drive. Writes to the 'RP Diag' sheet tab."""
+    import glob
+    import os
+    from automations.recruiting_report import fill as _fill
+    lines = []
+
+    def L(s):
+        lines.append(str(s)[:600])
+        print(s, flush=True)
+
+    EXT = "goofbdglmeckblcbcoffnkdnmpehhhmo"
+    home = os.path.expanduser("~")
+    patterns = [
+        home + "/Library/Application Support/Google/Chrome/*/Extensions/" + EXT,
+        home + "/Library/Application Support/Google/Chrome/*/*/Extensions/" + EXT,
+        home + "/recruiting-report/automations/uploaded/*/Default/Extensions/" + EXT,
+        home + "/recruiting-report/automations/uploaded/*/Extensions/" + EXT,
+    ]
+    found = []
+    for pat in patterns:
+        found += glob.glob(pat)
+    L("Resume Helper (" + EXT + ") found in:")
+    if found:
+        for f in found:
+            L("  " + f)
+    else:
+        L("  (NOT found in any profile)")
+    # list the real Chrome profiles present
+    profs = glob.glob(home + "/Library/Application Support/Google/Chrome/*/Preferences")
+    L("real Chrome profiles: " + str(sorted(os.path.basename(os.path.dirname(x)) for x in profs)))
+    # is this machine's Chrome managed?
+    mp = glob.glob("/Library/Managed Preferences/*/com.google.Chrome.plist") + \
+        glob.glob("/Library/Managed Preferences/com.google.Chrome.plist")
+    L("managed-Chrome policy files: " + str(mp))
+    try:
+        sh = _fill._client().open_by_key("1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
+        try:
+            t = sh.worksheet("RP Diag")
+        except Exception:
+            t = sh.add_worksheet(title="RP Diag", rows=200, cols=1)
+        t.clear()
+        t.update([[x] for x in lines], "A1")
+        print(f"LOCATE: wrote {len(lines)} lines to RP Diag", flush=True)
+    except Exception as e:
+        print(f"LOCATE sheet err: {e}", flush=True)
+    return 0
+
+
 def _cdp_test() -> int:
     """Decisive Option-A test. Drive the DEDICATED extract profile
     (uploaded/.extract_profile — where the plugin was GENUINELY installed via
@@ -808,6 +859,9 @@ def main() -> int:
                     help="Decisive test: drive the DEDICATED extract profile (where the plugin "
                          "was GENUINELY installed, never touched by patchright) via CDP and check "
                          "chrome.runtime. Genuine-install vs anti-automation. Writes to RP Diag.")
+    ap.add_argument("--locate-plugin", action="store_true",
+                    help="Search every Chrome profile on the machine for the Resume Helper "
+                         "extension id to find where the install actually landed. Writes to RP Diag.")
     args = ap.parse_args()
 
     if args.inspect_plugin:
@@ -818,6 +872,8 @@ def main() -> int:
         return _plain_probe()
     if args.cdp_test:
         return _cdp_test()
+    if args.locate_plugin:
+        return _locate_plugin()
 
     mode = "DRY-RUN (no writes)" if args.dry_run else "LIVE (sends to AI call list)"
     _log(f"=== Resume Pushing v2 — office {OFFICE_ID} — {mode} ===")
