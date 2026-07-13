@@ -420,6 +420,35 @@ def _health_check(page) -> None:
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
+def _snap() -> int:
+    """Capture the screen, shrink to a JPEG, and upload it (base64, chunked across
+    rows) to the 'RP Shot' sheet tab so it can be reassembled + viewed remotely.
+    Run from a Terminal that has Screen-Recording permission (else the capture is
+    blank)."""
+    import base64
+    import subprocess
+    from automations.recruiting_report import fill as _fill
+    png, jpg = "/tmp/rpshot.png", "/tmp/rpshot.jpg"
+    subprocess.run(["screencapture", "-x", png], capture_output=True)
+    subprocess.run(["sips", "-s", "format", "jpeg", "-s", "formatOptions", "50",
+                    "-Z", "1600", png, "--out", jpg], capture_output=True)
+    try:
+        data = open(jpg, "rb").read()
+    except Exception:
+        data = open(png, "rb").read()
+    b64 = base64.b64encode(data).decode()
+    chunks = [b64[i:i + 45000] for i in range(0, len(b64), 45000)]
+    sh = _fill._client().open_by_key("1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
+    try:
+        t = sh.worksheet("RP Shot")
+    except Exception:
+        t = sh.add_worksheet(title="RP Shot", rows=100, cols=1)
+    t.clear()
+    t.update([[c] for c in chunks], "A1")
+    print(f"SNAP: {len(data)} bytes jpg, {len(chunks)} chunk(s) -> 'RP Shot' tab", flush=True)
+    return 0
+
+
 def _locate_plugin() -> int:
     """Find where the Resume Helper extension actually installed — search every
     Chrome profile on the machine + the repo's own profiles for the ext id. Tells
@@ -862,6 +891,10 @@ def main() -> int:
     ap.add_argument("--locate-plugin", action="store_true",
                     help="Search every Chrome profile on the machine for the Resume Helper "
                          "extension id to find where the install actually landed. Writes to RP Diag.")
+    ap.add_argument("--snap", action="store_true",
+                    help="Screenshot Lucy 2's screen, shrink it, and write it (base64, chunked) "
+                         "to the 'RP Shot' sheet tab so it can be viewed remotely. Run from a "
+                         "Terminal that has Screen-Recording permission.")
     args = ap.parse_args()
 
     if args.inspect_plugin:
@@ -874,6 +907,8 @@ def main() -> int:
         return _cdp_test()
     if args.locate_plugin:
         return _locate_plugin()
+    if args.snap:
+        return _snap()
 
     mode = "DRY-RUN (no writes)" if args.dry_run else "LIVE (sends to AI call list)"
     _log(f"=== Resume Pushing v2 — office {OFFICE_ID} — {mode} ===")
