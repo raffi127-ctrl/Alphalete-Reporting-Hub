@@ -75,7 +75,7 @@ DAILY_AUTORUN_CAP = 100
 # Bounded, idempotent operational actions — NOT runaway risks, so they don't burn
 # the daily budget (a multi-person deploy day generates lots of these). The
 # budget is meant to bound repeated REPORT runs (rerun), not deploy plumbing.
-PLUMBING_ACTIONS = {"ping", "update", "restart_poller", "restart_holder",
+PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_holder",
                     "pip_install", "watch_test", "diag", "set_sleep",
                     "set_slack_token"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
@@ -570,8 +570,24 @@ def _action_set_slack_token(args: str) -> tuple[bool, str]:
                   f"{who.get('user')} ({who.get('user_id')}) in team {who.get('team')}")
 
 
+def _action_screendrive(args: str) -> tuple[bool, str]:
+    """Drive the on-screen ApplicantStream extractor via real clicks/screenshots
+    (resume_pushing.run --snap / --click / --extract-smart). Unlike `rerun`, it
+    does NOT close Chrome — it operates the EXISTING logged-in browser where the
+    plugin is alive. Needs Accessibility + Screen-Recording granted to THIS poller's
+    python (System Settings → Privacy). shlex so quoted coords survive."""
+    import shlex
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()
+    cmd = [sys.executable, "-m", "automations.resume_pushing.run"] + parts
+    return _run_cmd(cmd, timeout_s=1500)
+
+
 ACTIONS = {
     "ping": _action_ping,
+    "screendrive": _action_screendrive,
     "logtail": _action_logtail,
     "pip_install": _action_pip_install,
     "rerun": _action_rerun,
