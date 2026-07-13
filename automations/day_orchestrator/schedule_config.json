@@ -1053,6 +1053,40 @@
         "report_id": "recruiting"
       }
     },
+    "vantura_churn": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "display_name": "Vantura Sales Board - Churn & Activations",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:order_log",
+        "tableau:churn"
+      ],
+      "command": [
+        "automations.vantura_churn.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "not_before": "05:00"
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 30,
+      "verify": {
+        "type": "manifest",
+        "report_id": "vantura-churn"
+      }
+    },
     "carlos_focus": {
       "on_scheduler": true,
       "machine": "Lucy 2",
