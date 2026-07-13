@@ -516,6 +516,59 @@ def _extract_loop(n: int) -> int:
     return 0
 
 
+def _screen_agent() -> int:
+    """Persistent Terminal-side agent. macOS lets Terminal simulate clicks but NOT
+    a background launchd helper, so we run the clicks HERE and let Claude queue work
+    remotely: poll the 'Screen Agent' sheet tab (Cmd | Args | Status | Result | At)
+    for status 'queued', run it, mark done. Keep this window open."""
+    import time
+    from automations.recruiting_report import fill as _fill
+    SHEET = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
+    sh = _fill._client().open_by_key(SHEET)
+    try:
+        ws = sh.worksheet("Screen Agent")
+    except Exception:
+        ws = sh.add_worksheet(title="Screen Agent", rows=300, cols=5)
+        ws.update([["Cmd", "Args", "Status", "Result", "At"]], "A1")
+    print("=== SCREEN AGENT RUNNING — leave this window open. Polling for commands. ===",
+          flush=True)
+    dispatch = {"snap": lambda a: _snap(),
+                "click": lambda a: _click(a),
+                "extract-smart": lambda a: _extract_smart(),
+                "extract-loop": lambda a: _extract_loop(int(a or "1"))}
+    while True:
+        try:
+            rows = ws.get_all_values()
+            for i, r in enumerate(rows):
+                if i == 0 or len(r) < 3:
+                    continue
+                if (r[2] or "").strip().lower() != "queued":
+                    continue
+                cmd = (r[0] or "").strip()
+                args = (r[1] if len(r) > 1 else "").strip()
+                ws.update_cell(i + 1, 3, "running")
+                print(f"[agent] running: {cmd} {args}", flush=True)
+                try:
+                    fn = dispatch.get(cmd)
+                    if fn is None:
+                        res = f"unknown cmd {cmd!r}"
+                    else:
+                        fn(args)
+                        res = "ok"
+                except Exception as e:
+                    res = f"err: {str(e)[:130]}"
+                ws.update_cell(i + 1, 3, "done")
+                ws.update_cell(i + 1, 4, res[:250])
+                print(f"[agent] done: {cmd} -> {res[:80]}", flush=True)
+            time.sleep(6)
+        except KeyboardInterrupt:
+            print("[agent] stopped", flush=True)
+            return 0
+        except Exception as e:
+            print(f"[agent] loop error: {str(e)[:130]}", flush=True)
+            time.sleep(10)
+
+
 def _snap() -> int:
     """Capture the screen at LOGICAL-POINT resolution (so a pixel in the JPEG maps
     1:1 to a click coordinate), shrink to JPEG, and upload it (base64, chunked) to
@@ -1048,6 +1101,10 @@ def main() -> int:
                     help="Screenshot Lucy 2's screen, shrink it, and write it (base64, chunked) "
                          "to the 'RP Shot' sheet tab so it can be viewed remotely. Run from a "
                          "Terminal that has Screen-Recording permission.")
+    ap.add_argument("--screen-agent", action="store_true",
+                    help="Run a persistent agent IN TERMINAL that polls the 'Screen Agent' sheet "
+                         "tab and executes snap/click/extract-smart there (Terminal has the click "
+                         "permission the background poller can't get). One paste, then hands-off.")
     ap.add_argument("--whoami", action="store_true",
                     help="Write this process's python path (sys.executable + realpath) to "
                          "'RP Diag' — so we know which binary to grant Accessibility to.")
@@ -1075,6 +1132,8 @@ def main() -> int:
         return _locate_plugin()
     if args.snap:
         return _snap()
+    if args.screen_agent:
+        return _screen_agent()
     if args.whoami:
         import os
         from automations.recruiting_report import fill as _fill
