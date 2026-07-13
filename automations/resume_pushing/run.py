@@ -554,8 +554,8 @@ def _screen_agent() -> int:
                     if fn is None:
                         res = f"unknown cmd {cmd!r}"
                     else:
-                        fn(args)
-                        res = "ok"
+                        ret = fn(args)
+                        res = ret if isinstance(ret, str) else "ok"
                 except Exception as e:
                     res = f"err: {str(e)[:130]}"
                 ws.update_cell(i + 1, 3, "done")
@@ -634,15 +634,49 @@ def _focus_batch() -> None:
     subprocess.run(["osascript", "-e", s], capture_output=True)
 
 
+def _parse_xy(pt: str):
+    """Parse one point tolerant of thousands-separator commas and ':'/'x'/'|'
+    delimiters. '1,385,220' -> (1385.0, 220.0); '1385:220' -> (1385.0, 220.0);
+    '1385,220' -> (1385.0, 220.0). The comma double-duty (x/y sep AND thousands
+    sep) was silently killing every click via 'too many values to unpack'."""
+    pt = pt.strip().replace(" ", "")
+    for sep in (":", "x", "|"):
+        if sep in pt:
+            xs, ys = pt.split(sep, 1)
+            return float(xs.replace(",", "")), float(ys.replace(",", ""))
+    parts = pt.split(",")
+    if len(parts) == 2:
+        return float(parts[0]), float(parts[1])
+    # 3+ parts => the commas are thousands separators; last part is y, rest is x
+    return float("".join(parts[:-1])), float(parts[-1])
+
+
+def _ax_trusted() -> bool:
+    """True iff THIS process holds macOS Accessibility (the permission CGEvent
+    clicks silently need — without it CGEventPost is a no-op with no error)."""
+    import ctypes
+    import ctypes.util
+    try:
+        ax = ctypes.CDLL(ctypes.util.find_library("ApplicationServices") or
+                         "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")
+        ax.AXIsProcessTrusted.restype = ctypes.c_bool
+        return bool(ax.AXIsProcessTrusted())
+    except Exception:
+        return False
+
+
 def _click(spec: str) -> int:
     """Bring Chrome to the front, then post REAL mouse clicks at screen point(s)
-    `spec` = 'x,y' or 'x,y;x,y;…'. Real CGEvent clicks (isTrusted) that the plugin
-    can't distinguish from a human. Needs Accessibility permission on the Terminal
-    that launches this."""
+    `spec` = 'x,y' or 'x,y;x,y;…' (commas may be thousands separators). Real CGEvent
+    clicks (isTrusted) the plugin can't distinguish from a human. Needs Accessibility
+    permission on the process that launches this — logs AXIsProcessTrusted so a
+    silent TCC no-op is visible instead of looking like a successful click."""
     import ctypes
     import ctypes.util
     import subprocess
     import time
+    trusted = _ax_trusted()
+    print(f"AXIsProcessTrusted: {trusted}", flush=True)
     cg_path = ctypes.util.find_library("CoreGraphics") or \
         "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
     cg = ctypes.CDLL(cg_path)
@@ -661,11 +695,13 @@ def _click(spec: str) -> int:
 
     _focus_batch()
     time.sleep(1.4)
+    pts = []
     for pt in spec.split(";"):
         pt = pt.strip()
         if not pt:
             continue
-        x, y = [float(v) for v in pt.split(",")]
+        x, y = _parse_xy(pt)
+        pts.append((x, y))
         print(f"CLICK: ({x}, {y})", flush=True)
         _post(K_MOVE, x, y)
         time.sleep(0.25)
@@ -673,7 +709,7 @@ def _click(spec: str) -> int:
         time.sleep(0.08)
         _post(K_UP, x, y)
         time.sleep(0.6)
-    return 0
+    return f"clicked {pts} AX_trusted={trusted}"
 
 
 def _locate_plugin() -> int:
