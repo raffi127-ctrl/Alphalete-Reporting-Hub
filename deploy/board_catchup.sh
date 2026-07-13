@@ -57,9 +57,22 @@ echo "[$(date)] Board catch-up starting (extra args: ${*:-none})" > "$LOG_FILE"
 
 # Fill ONLY the late-posting sections on the copy tab (comma-separated; run.py
 # splits on ','). No --with-captainships. Any extra arg (e.g. --dry-run) wins.
-"$VENV_PY" -u -m automations.org_sales_board.run --step daily \
-  --sections "Retail NL,Retail Internet,Retail JE,BOX,Frontier" "$@" >> "$LOG_FILE" 2>&1
-ST=$?
+if [ "$(date +%u)" = "1" ]; then
+  # MONDAY: last week's Sunday lands in the sources through the day, so the morning
+  # board is incomplete and the morning email is SKIPPED (org_sales_board_email
+  # cadence excludes Monday). THIS run is Monday's real board — do a FULL fill (incl
+  # captainships, so a late captainship Sunday is caught too) and SEND the email.
+  # (Megan 2026-07-13: move Monday's board + email to the afternoon when Sunday's in.)
+  echo "[$(date)] MONDAY: full board fill + email (afternoon — Sunday has landed)" >> "$LOG_FILE"
+  "$VENV_PY" -u -m automations.org_sales_board.run --step daily --with-captainships "$@" >> "$LOG_FILE" 2>&1
+  ST=$?
+  echo "[$(date)] MONDAY: sending board email" >> "$LOG_FILE"
+  "$VENV_PY" -u -m automations.org_sales_board.screenshot_email >> "$LOG_FILE" 2>&1
+else
+  "$VENV_PY" -u -m automations.org_sales_board.run --step daily \
+    --sections "Retail NL,Retail Internet,Retail JE,BOX,Frontier" "$@" >> "$LOG_FILE" 2>&1
+  ST=$?
+fi
 
 echo "[$(date)] Board catch-up finished exit=$ST" >> "$LOG_FILE"
 if [ "$ST" -ne 0 ]; then

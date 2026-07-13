@@ -546,8 +546,8 @@
       ],
       "base_args": [],
       "cadence": {
+        "_note": "Monday (0) EXCLUDED (Megan 2026-07-13): last week's Sunday lands in the sources only through Monday afternoon, so a morning email undercounts. On Mondays the board+email run in the afternoon via board_catchup.sh instead. Tue-Sun email in the morning batch as usual.",
         "weekdays": [
-          0,
           1,
           2,
           3,
