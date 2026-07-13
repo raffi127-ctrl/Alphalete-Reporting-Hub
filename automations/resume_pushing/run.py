@@ -1048,6 +1048,9 @@ def main() -> int:
                     help="Screenshot Lucy 2's screen, shrink it, and write it (base64, chunked) "
                          "to the 'RP Shot' sheet tab so it can be viewed remotely. Run from a "
                          "Terminal that has Screen-Recording permission.")
+    ap.add_argument("--whoami", action="store_true",
+                    help="Write this process's python path (sys.executable + realpath) to "
+                         "'RP Diag' — so we know which binary to grant Accessibility to.")
     ap.add_argument("--click", metavar="X,Y",
                     help="Post real mouse click(s) at screen point(s) 'x,y' (or 'x,y;x,y'). "
                          "Brings Chrome to front first. Needs Accessibility on the Terminal.")
@@ -1072,6 +1075,21 @@ def main() -> int:
         return _locate_plugin()
     if args.snap:
         return _snap()
+    if args.whoami:
+        import os
+        from automations.recruiting_report import fill as _fill
+        lines=[f"sys.executable: {sys.executable}",
+               f"realpath: {os.path.realpath(sys.executable)}",
+               f"argv0: {sys.argv[0]}", f"cwd: {os.getcwd()}",
+               f"ppid: {os.getppid()}"]
+        try:
+            sh=_fill._client().open_by_key("1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
+            try: t=sh.worksheet("RP Diag")
+            except Exception: t=sh.add_worksheet(title="RP Diag",rows=100,cols=1)
+            t.clear(); t.update([[l] for l in lines],"A1")
+        except Exception as e: print("sheet err",e)
+        print("WHOAMI written:", lines[0], flush=True)
+        return 0
     if args.click:
         return _click(args.click)
     if args.extract_loop:
