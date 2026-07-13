@@ -15,13 +15,27 @@ structure but with two important differences vs Local Office:
 from __future__ import annotations
 
 import csv
+import os
 import re
 import tempfile
 from pathlib import Path
 from typing import Optional
 
-from automations.shared.tableau_patchright import download_crosstab_patchright
+from automations.shared.tableau_patchright import download_crosstab_patchright as _dcp
 from automations.new_internet_churn import pull as _shared
+
+
+def _dl(view_url, crosstab_sheet, out_path, verbose=False, page=None, pre_export=None):
+    """Harvest cutover (DEFAULT-OFF): read the dated cache when HARVEST_MODE=on,
+    else scrape live. A cache miss/stale/error falls through to the live pull, so
+    with no env var behaviour is identical to today."""
+    if os.environ.get("HARVEST_MODE", "off").strip().lower() == "on":
+        from automations.harvest import adapter
+        cached = adapter.try_cache_view(view_url, crosstab_sheet, out_path)
+        if cached is not None:
+            return cached
+    return _dcp(view_url, crosstab_sheet, out_path,
+                verbose=verbose, page=page, pre_export=pre_export)
 
 
 _ROMAN_RE = re.compile(r"^I{1,3}V?$|^IV$|^VI{0,3}$", re.IGNORECASE)
@@ -57,7 +71,7 @@ def fetch_new_int(out_path: Optional[Path] = None,
                   page=None) -> Path:
     """Download the Captainship NEW INTERNET Churn Crosstab."""
     out_path = out_path or Path(tempfile.gettempdir()) / "captainship_new_int_churn.csv"
-    download_crosstab_patchright(NEW_INT_VIEW_URL, WORKSHEET, out_path,
+    _dl(NEW_INT_VIEW_URL, WORKSHEET, out_path,
                                   verbose=verbose, page=page)
     return out_path
 
@@ -67,7 +81,7 @@ def fetch_wireless(out_path: Optional[Path] = None,
                    page=None) -> Path:
     """Download the Captainship WIRELESS Churn Crosstab."""
     out_path = out_path or Path(tempfile.gettempdir()) / "captainship_wireless_churn.csv"
-    download_crosstab_patchright(WIRELESS_VIEW_URL, WORKSHEET, out_path,
+    _dl(WIRELESS_VIEW_URL, WORKSHEET, out_path,
                                   verbose=verbose, page=page)
     return out_path
 

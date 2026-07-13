@@ -1,22 +1,26 @@
-# automations/harvest — harvest-once Tableau cache (SHADOW-ONLY)
+# automations/harvest — harvest-once Tableau cache
 
-**Status: inert. Nothing on the live 4am path imports this package.**
-It exists to be proven, not to run in production yet. Implements Stage (b)+(c)
-of `output/harvest-architecture-design.md` (design approved).
+**Status: proven; cutover built but DEFAULT-OFF.** The live 4am path is
+byte-for-byte unchanged until `HARVEST_MODE=on`. Implements the full design in
+`output/harvest-architecture-design.md`; flip procedure in
+`output/harvest-cutover-plan.md`.
 
-## Why it can't affect the 4am run
-- No existing report `run.py` / `pull.py` imports `automations.harvest`.
-- No `day_orchestrator/*` module imports it.
-- No `schedule_config.json` entry, no LaunchAgent, no plist references it.
-- The proof (`proof.py`) runs in a throwaway process and calls only report
-  **pull + parse** (pure functions: crosstab → dict). It never fills a Sheet,
-  never posts Slack, and cannot reach the live 4am subprocesses.
+## Why it can't affect the 4am run (until you flip it)
+- The churn `pull.py` guards import `automations.harvest.adapter` **only when
+  `HARVEST_MODE=on`**. With no env var the guard is a single dict lookup that
+  short-circuits — no import, no behaviour change, identical to before.
+- `day_orchestrator/*`, `schedule_config.json`, LaunchAgents, plists: no
+  references (the one exception is the OFF-scheduler `install_harvest_proof_agent`
+  / `harvest_proof` entries, which only drive the standalone 1pm shadow proof).
+- Cache reads fail SAFE: miss / stale / any error → live scrape. The cache can
+  only replace a pull with byte-identical data or defer to live; it can never
+  serve stale data (loader hard-fails) or break a report.
 
-Verify at any time:
+Verify the default path is untouched:
 ```
-grep -rl "automations.harvest" automations --include=*.py | grep -v automations/harvest/
+HARVEST_MODE unset → grep the guards: each is `if os.environ.get("HARVEST_MODE"
+,"off")... == "on":` — false by default, so the live download runs unchanged.
 ```
-(should print nothing).
 
 ## Modules
 | file | role |
@@ -27,6 +31,8 @@ grep -rl "automations.harvest" automations --include=*.py | grep -v automations/
 | `loader.py` | `load_harvest(need, date)` / `load_harvest_rows` with the **hard-fail** staleness/provenance guard. |
 | `compute.py` | bounded `ThreadPoolExecutor` compute pool with a per-spreadsheet lock (Phase-2 model; inert). |
 | `proof.py` | Stage (c): harvest once, then parse twice (live control vs cache treatment), diff cell-for-cell. |
+| `adapter.py` | **Cutover seam.** `try_cache_view(view_url, sheet, out)` — serves cache when `HARVEST_MODE=on`, else None (→ live). Fail-safe. |
+| `run.py` | **Harvest-prime entrypoint.** `python -m automations.harvest.run` pulls today's churn views once → cache (runs first at cutover). |
 | `config.py` | knobs: `CACHE_ROOT`, `RETENTION_DAYS` (default 3), `COMPUTE_MAX_WORKERS`. |
 
 ## Cache layout & retention

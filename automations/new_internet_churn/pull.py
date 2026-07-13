@@ -57,6 +57,14 @@ def fetch_crosstab(out_path: Optional[Path] = None,
     tableau_session (the combined churn runner opens one session and
     reuses it for both New Internet + Wireless pulls)."""
     out_path = out_path or Path(tempfile.gettempdir()) / "new_internet_churn_local_office.csv"
+    # Harvest cutover (DEFAULT-OFF): only when HARVEST_MODE=on does this read the
+    # dated cache instead of scraping; a cache miss/stale/error falls straight
+    # through to the live download below. With no env var, behaviour is unchanged.
+    if os.environ.get("HARVEST_MODE", "off").strip().lower() == "on":
+        from automations.harvest import adapter
+        cached = adapter.try_cache_view(VIEW_URL, WORKSHEET, out_path)
+        if cached is not None:
+            return cached
     download_crosstab_patchright(VIEW_URL, WORKSHEET, out_path,
                                   verbose=verbose, page=page)
     return out_path

@@ -49,6 +49,12 @@ def fetch_crosstab(out_path: Optional[Path] = None,
     combined churn runner can call them interchangeably with a shared
     tableau_session `page`."""
     out_path = out_path or Path(tempfile.gettempdir()) / "wireless_churn_local_office.csv"
+    # Harvest cutover (DEFAULT-OFF) — see new_internet_churn.pull.fetch_crosstab.
+    if os.environ.get("HARVEST_MODE", "off").strip().lower() == "on":
+        from automations.harvest import adapter
+        cached = adapter.try_cache_view(VIEW_URL, WORKSHEET, out_path)
+        if cached is not None:
+            return cached
     download_crosstab_patchright(VIEW_URL, WORKSHEET, out_path,
                                   verbose=verbose, page=page)
     return out_path
