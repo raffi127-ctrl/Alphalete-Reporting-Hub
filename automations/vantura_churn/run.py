@@ -55,10 +55,80 @@ def _reconcile(who: str, summary: dict, dash: dict, log) -> list[str]:
     return problems
 
 
+CONTROL_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
+DIAG_TAB = "Vantura Diag"
+
+
+def _write_diag(lines: list[str]) -> None:
+    """Full probe output → a diag tab on the control sheet (the queue's
+    Result cell truncates at ~480 chars; this is the readable channel)."""
+    try:
+        from automations.recruiting_report.fill import _client
+        sh = _client().open_by_key(CONTROL_SHEET_ID)
+        try:
+            ws = sh.worksheet(DIAG_TAB)
+        except Exception:
+            ws = sh.add_worksheet(title=DIAG_TAB, rows=300, cols=2)
+        ws.clear()
+        ws.batch_update([{"range": f"A1:A{len(lines)}",
+                          "values": [[l[:2000]] for l in lines]}])
+    except Exception as e:  # noqa: BLE001 — diag must never mask the probe
+        print(f"diag write failed: {e}", flush=True)
+
+
+def _probe(today: dt.date, log) -> int:
+    """Read-only look at the filtered ORDERLOG view on this machine: does the
+    URL-param filtering (dates + owner) actually apply, and what does the viz
+    show? Findings land on the '{DIAG_TAB}' control-sheet tab."""
+    from automations.shared.tableau_patchright import tableau_session
+    lines: list[str] = []
+
+    def rec(s):
+        log(s)
+        lines.append(str(s))
+
+    url = pull.orderlog_url("carlos", today)
+    rec(f"probe @ {dt.datetime.now().isoformat(timespec='seconds')}")
+    rec(f"goto: {url}")
+    try:
+        with tableau_session(verbose=False) as page:
+            try:
+                page.goto("about:blank", wait_until="domcontentloaded",
+                          timeout=10_000)
+            except Exception:
+                pass
+            page.goto(url, wait_until="domcontentloaded")
+            viz = page.frame_locator('iframe[title="Data Visualization"]')
+            try:
+                viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
+                            'download"]').wait_for(state="visible",
+                                                   timeout=120_000)
+                rec("toolbar: visible")
+            except Exception as e:
+                rec(f"toolbar: NOT visible ({str(e)[:100]})")
+            page.wait_for_timeout(30_000)
+            rec("final url: " + page.url[:400])
+            try:
+                body = viz.locator("body").inner_text(timeout=20_000)
+                rec(f"viz body chars: {len(body)}")
+                flat = body.replace("\n", " ⏎ ")
+                for i in range(0, min(len(flat), 8000), 400):
+                    rec("BODY| " + flat[i:i + 400])
+            except Exception as e:
+                rec(f"viz body: err {str(e)[:150]}")
+    except Exception as e:  # noqa: BLE001
+        rec(f"PROBE ERROR: {str(e)[:300]}")
+    _write_diag(lines)
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="vantura_churn")
     ap.add_argument("--dry-run", action="store_true",
                     help="compute + reconcile + print; write nothing")
+    ap.add_argument("--probe", action="store_true",
+                    help="diagnostics only: load the filtered Order Log view "
+                         "and dump what it shows to the control sheet")
     ap.add_argument("--owner", choices=("both", "carlos", "atef"),
                     default="both")
     ap.add_argument("--today", default=None,
@@ -75,6 +145,8 @@ def main(argv=None) -> int:
     log = lambda *a: print(*a, flush=True)  # noqa: E731
     today = (dt.date.fromisoformat(args.today) if args.today
              else dt.date.today())
+    if args.probe:
+        return _probe(today, log)
     owners = [o for o in OWNER_CFG
               if args.owner in ("both", o[0])]
 
