@@ -319,6 +319,13 @@ def pull_section_byday(
                     f"{quote('Sale Date Week Ending (mon-sun)')}"
                     f"={quote(we_sunday.isoformat())}")
         logfn(f"  [{spec.section_label}] week-pinned to WE {we_sunday.isoformat()}")
+    # Force a fresh server-side query so the crosstab download reflects LIVE data,
+    # not Tableau's cached render. The VAs read the live view and have Sunday by ~8am;
+    # our cached download lagged ~2h (empty Sunday until ~10am on Mondays). :refresh=yes
+    # re-runs the query against the current extract on load, matching what they see.
+    # (Megan 2026-07-13: beat the VA — complete board emailed by 8am CST.)
+    sep_r = "&" if "?" in view_url else "?"
+    view_url = f"{view_url}{sep_r}:refresh=yes"
     if spec.method == CROSSTAB:
         from automations.shared.tableau_patchright import download_crosstab_patchright
         logfn(f"  downloading {spec.section_label} crosstab "
