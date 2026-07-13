@@ -8820,19 +8820,20 @@ if st.session_state.view == "home":
     """, unsafe_allow_html=True)
 
     st.markdown("### 🐺 The Pack")
-    # Layout (Megan 2026-07-07): the two Lucy automations on the TOP row —
-    # Lucy 1 above the left column, Lucy 2 above the right — then Eve, Maud and
-    # the Unassigned bucket across the BOTTOM row.
+    # Layout (Megan 2026-07-13): two full, gap-free rows of 3. Top row = the
+    # Lucy automations on the outer columns (Megan's preference) with Office
+    # Operations filling the middle; bottom row = the people (Eve, Maud) + the
+    # Unassigned bucket. Any other/new members flow into full rows below.
     UNASSIGNED_CARD = {"name": "Unassigned", "emoji": "🔍", "is_unassigned": True}
     PACK_COLS = 3
     _by_name = {m["name"]: m for m in MEMBERS}
-    _bots = [_by_name[n] for n in ("Lucy 1", "Lucy 2") if n in _by_name]
-    _bottom = [m for m in MEMBERS if m["name"] not in ("Lucy 1", "Lucy 2")]
+    _top = [_by_name.get("Lucy 1"), _by_name.get("Office Operations"),
+            _by_name.get("Lucy 2")]
+    _top = [c for c in _top if c]
+    _placed = {"Lucy 1", "Lucy 2", "Office Operations"}
+    _bottom = [m for m in MEMBERS if m["name"] not in _placed]
     _bottom.append(UNASSIGNED_CARD)
-    # (row_cards, column_slots): slots pick which of the 3 columns each card
-    # fills, so the two top-row bots sit over the outer bottom-row cards. The
-    # bottom row wraps into further rows of 3 if more members are ever added.
-    pack_rows = [(_bots, [0, 2][:len(_bots)])]
+    pack_rows = [(_top, list(range(len(_top))))]
     for i in range(0, len(_bottom), PACK_COLS):
         chunk = _bottom[i:i + PACK_COLS]
         pack_rows.append((chunk, list(range(len(chunk)))))
