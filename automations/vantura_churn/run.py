@@ -87,8 +87,54 @@ def _probe(today: dt.date, log) -> int:
         log(s)
         lines.append(str(s))
 
-    url = pull.orderlog_url("carlos", today)
     rec(f"probe @ {dt.datetime.now().isoformat(timespec='seconds')}")
+    # FALLBACK SOURCE TEST: the B2B ORDERLOG dashboard resists crosstab/data
+    # export under automation. The D2D ORDERLOG (ATTTRACKER2_1-D2D) downloads
+    # reliably (country_metrics uses it). Check whether it carries the columns
+    # churn needs (owner/product/posted/status/customer/phone) for Carlos.
+    try:
+        from automations.shared.tableau_patchright import (
+            download_crosstab_patchright)
+        from urllib.parse import quote
+        import openpyxl
+        d2d_url = (
+            "https://us-east-1.online.tableau.com/#/site/sci/views/"
+            "ATTTRACKER2_1-D2D/ORDERLOG/"
+            "117748c0-9487-45e8-a5d4-c447093718d5/ALLREPS"
+            f"?:iid=1&Start%20Date={(today - dt.timedelta(days=60)).isoformat()}"
+            f"&End%20Date={today.isoformat()}")
+        out = Path("/tmp/vantura_d2d_orderlog.csv")
+        download_crosstab_patchright(d2d_url, "A.Order Log", out, verbose=False)
+        # crosstab CSVs are UTF-16 tab-delimited
+        import csv as _csv
+        rows = None
+        for enc in ("utf-16", "utf-8-sig", "utf-8"):
+            try:
+                with open(out, encoding=enc, newline="") as f:
+                    rows = list(_csv.reader(f, delimiter="\t"))
+                if rows and len(rows[0]) > 1:
+                    break
+            except Exception:
+                continue
+        if rows:
+            hdr = rows[0]
+            rec(f"D2D order log: {len(rows) - 1} rows, {len(hdr)} cols")
+            for i in range(0, len(hdr), 6):
+                rec("D2DCOL| " + " | ".join(hdr[i:i + 6]))
+            oi = next((i for i, h in enumerate(hdr)
+                       if "Owner" in h), None)
+            if oi is not None:
+                carlos = [r for r in rows[1:]
+                          if r and "CARLOS" in (r[oi] or "").upper()]
+                rec(f"D2D Carlos rows: {len(carlos)}")
+        else:
+            rec("D2D order log: could not parse CSV")
+    except Exception as e:  # noqa: BLE001
+        rec(f"D2D probe err: {str(e)[:200]}")
+    _write_diag(lines)
+    return 0
+
+    url = pull.orderlog_url("carlos", today)
     rec(f"goto: {url}")
     try:
         with tableau_session(verbose=False) as page:
