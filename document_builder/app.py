@@ -202,7 +202,7 @@ def _schedule_grid(f, inputs):
     if f.image:
         try:
             st.image(f.image, caption="Example — set your own hours below",
-                     use_container_width=True)
+                     width='stretch')
         except Exception:                            # noqa: BLE001
             pass
     if f.help:
@@ -258,7 +258,7 @@ def builder_view():
             st.markdown(f"**{f.label}**")
             if f.image:
                 try:
-                    st.image(f.image, use_container_width=True)
+                    st.image(f.image, width='stretch')
                 except Exception:                    # noqa: BLE001
                     pass
             if f.help:
@@ -406,7 +406,7 @@ def admin_view():
 
     st.subheader("Generation log")
     if body_rows:
-        st.dataframe(body_rows, use_container_width=True)
+        st.dataframe(body_rows, width='stretch')
     else:
         st.info("No submissions logged yet (or Sheet logging isn't configured "
                 "in secrets).")
