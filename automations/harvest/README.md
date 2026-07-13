@@ -63,16 +63,20 @@ a naive collapse inherits the org-wide total, not the office's — is handled by
 `slice_owner` (B2B/NDS, owner-keyed rows), `slice_d2d` (D2D NI/Wireless per office,
 sliced by the `ICD Owner Name (rep)` column), and `slice_d2d_team` (D2D
 captainship — slices a team's owners then AGGREGATES reps up to owner level).
-Proven 2026-07-12 across every destination-tab shape (per-office, captainship-team
-aggregation, owner-keyed captainship): **9 offices, 2,990 cells, 0 mismatches** vs
-per-view pulls.
+Proven 2026-07-12 across EVERY current churn destination tab (3 B2B + 3 NDS
+captainships, 3 D2D local offices ×NI/WL, 6 D2D captainship teams): **19 offices,
+~4,330 cells, 0 mismatches** vs per-view pulls. `slice_d2d_team` filters by the
+`Captain's Bonus Teams` column (the SFDC team filter) — owner-only aggregation
+over-counts owners with cross-team reps.
 Views: `ALLTEAMCHURN` (B2B), `INTAllTeams`, `WirelessAllTeams`, `NDSAllTeamsChurn`.
 See `output/harvest-proof-orgwide-2026-07-12.md`.
 
-**Key correctness lesson (caught by this proof):** owner-keyed slices MUST match
-the full `NAME\n[office]` identity, not bare name — the same person can appear
-under two offices in an org-wide view (a bare-name slice merged two "Kyle Campas"
-and shipped one's churn to the other). `slice_owner` matches full owner cells.
+**Two correctness lessons (caught by this proof):** (1) owner-keyed slices MUST
+match the full `NAME\n[office]` identity, not bare name — the same person can
+appear under two offices in an org-wide view (a bare-name slice merged two "Kyle
+Campas"). (2) captainship-team slices MUST filter by the `Captain's Bonus Teams`
+column, not just owner — an owner's reps can span teams, so owner-only
+aggregation over-counts (William Sassenberg: 165 on-team vs 194 all).
 ```
 python -m automations.harvest.proof_orgwide              # harvest + diff
 python -m automations.harvest.proof_orgwide --no-harvest # re-diff from cache

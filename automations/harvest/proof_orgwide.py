@@ -49,7 +49,10 @@ def _family_table():
         {"name": "D2D-NI-team", "org": N.NEED_D2D_NI_ALLTEAM, "parse": cap.parse,
          "kind": "team", "periods": OW.D2D_PERIODS, "decimals": 2,
          "title_fn": cap._smart_title,
-         "offices": [(N.NEED_NI_CAP, "Raf captainship")]},
+         "offices": [(N.NEED_NI_CAP, "Raf captainship"),
+                     (N.NEED_OWN_WAYNE, "Wayne"), (N.NEED_OWN_STARR, "Starr"),
+                     (N.NEED_OWN_CHAN, "Chan"), (N.NEED_OWN_TONY, "Tony"),
+                     (N.NEED_OWN_SAHIL, "Sahil")]},
         {"name": "D2D-WL-team", "org": N.NEED_D2D_WL_ALLTEAM, "parse": cap.parse,
          "kind": "team", "periods": OW.D2D_PERIODS, "decimals": 2,
          "title_fn": cap._smart_title,
@@ -57,17 +60,21 @@ def _family_table():
         {"name": "B2B", "org": N.NEED_B2B_ALLTEAM, "parse": omp.parse_b2b,
          "kind": "owner", "periods": OW.B2B_PERIODS, "decimals": 1,
          "owner_col": "Owner & Office", "total_bare": {"Grand Total"},
-         "offices": [(N.NEED_OWN_CARLOS, "Carlos"), (N.NEED_OWN_LUIS, "Luis")]},
+         "offices": [(N.NEED_OWN_CARLOS, "Carlos"), (N.NEED_OWN_LUIS, "Luis"),
+                     (N.NEED_OWN_EVELIZ, "Eveliz")]},
         {"name": "NDS", "org": N.NEED_NDS_ALLTEAM, "parse": omp.parse_nds,
          "kind": "owner", "periods": OW.NDS_PERIODS, "decimals": 1,
          "owner_col": 0, "total_bare": {"Office/Organization Average"},
-         "offices": [(N.NEED_OWN_KHALIL, "Khalil"), (N.NEED_OWN_COLTEN, "Colten")]},
+         "offices": [(N.NEED_OWN_KHALIL, "Khalil"), (N.NEED_OWN_COLTEN, "Colten"),
+                     (N.NEED_OWN_JAIRO, "Jairo")]},
         {"name": "D2D-NI", "org": N.NEED_D2D_NI_ALLTEAM, "parse": nip.parse,
          "kind": "column", "periods": OW.D2D_PERIODS, "decimals": 2,
-         "offices": [(N.NEED_NI_LOCAL, "Raf office"), (N.NEED_NI_RASHAD, "Rashad")]},
+         "offices": [(N.NEED_NI_LOCAL, "Raf office"), (N.NEED_NI_RASHAD, "Rashad"),
+                     (N.NEED_NI_AYA, "Aya")]},
         {"name": "D2D-WL", "org": N.NEED_D2D_WL_ALLTEAM, "parse": nip.parse,
          "kind": "column", "periods": OW.D2D_PERIODS, "decimals": 2,
-         "offices": [(N.NEED_WL_LOCAL, "Raf office")]},
+         "offices": [(N.NEED_WL_LOCAL, "Raf office"), (N.NEED_WL_RASHAD, "Rashad"),
+                     (N.NEED_WL_AYA, "Aya")]},
     ]
 
 
@@ -130,14 +137,17 @@ def run(target_date: dt.date, *, do_harvest: bool, logfn=print) -> dict:
                 logfn(f"  membership : {len(member_cells)} owner-cells; "
                       + ("all present ✅" if not missing else f"MISSING: {missing} ❌"))
             elif fam["kind"] == "team":
-                members = set(control["reps"].keys())          # captainship's owners
-                treatment = OW.slice_d2d_team(org_path, members, fam["title_fn"],
+                team_value = OW.d2d_team_value(control_path)    # SFDC team filter
+                treatment = OW.slice_d2d_team(org_path, team_value, fam["title_fn"],
                                               periods=fam["periods"], decimals=fam["decimals"])
-                missing = treatment["_missing_members"]
                 # color is fill-derived from pct — exclude it from the data diff.
                 control_reps = _strip_color(control["reps"])
-                logfn(f"  membership : {len(members)} owners aggregated rep→owner; "
-                      + ("all present ✅" if not missing else f"MISSING: {missing} ❌"))
+                extra = set(treatment["reps"]) - set(control["reps"])
+                missing_o = set(control["reps"]) - set(treatment["reps"])
+                logfn(f"  team filter: {team_value!r} → {len(treatment['reps'])} owners "
+                      f"(rep→owner agg); control has {len(control['reps'])}"
+                      + ("" if not (extra or missing_o)
+                         else f"  ⚠ extra={sorted(extra)} missing={sorted(missing_o)}"))
             else:  # column-keyed D2D (per-office)
                 owner_value = _d2d_owner_value(load_harvest(need, target_date))
                 treatment = OW.slice_d2d(org_path, owner_value, fam["parse"],

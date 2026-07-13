@@ -192,25 +192,50 @@ _D2D_NUM_LABEL = "Disconnect count (SPE/SP)"
 _D2D_DENOM_LABEL = "Activated SPE/SP"
 
 
-def slice_d2d_team(org_csv_path: Path, member_owners: set, title_fn: Callable[[str], str],
+def _team_col(header) -> int:
+    """The 'Captain's Bonus Teams' column — the SFDC team filter. Its name varies
+    ('...v2' on NI, no suffix on Wireless), so match by prefix."""
+    return next(i for i, h in enumerate(header) if h.startswith("Captain's Bonus Teams"))
+
+
+def d2d_team_value(control_path: Path,
+                   owner_col: str = "ICD Owner Name (rep)") -> str:
+    """The (constant) team value in a per-team captainship control crosstab
+    (e.g. 'Starr's Team'). The per-team view is filtered to exactly this team."""
+    rows = _read_utf16_tsv(control_path)
+    if not rows:
+        return ""
+    header = [h.lstrip("﻿").strip() for h in rows[0]]
+    ti = _team_col(header)
+    oi = header.index(owner_col)
+    for r in rows[1:]:
+        if len(r) > max(ti, oi) and (r[ti] or "").strip() \
+                and (r[oi] or "").strip() != "Grand Total":
+            return (r[ti] or "").strip()
+    return ""
+
+
+def slice_d2d_team(org_csv_path: Path, team_value: str, title_fn: Callable[[str], str],
                    *, periods: Iterable[str] = D2D_PERIODS, decimals: int = 2,
                    owner_col: str = "ICD Owner Name (rep)") -> dict:
-    """Slice a CAPTAINSHIP (a set of owners) from a rep-level D2D org crosstab AND
-    aggregate the rep rows UP to owner level — reproducing an owner-keyed
-    captainship view (e.g. RAFSTEAMCHURN) whose rows are per ICD-owner.
+    """Slice a CAPTAINSHIP from a rep-level D2D org crosstab AND aggregate rep rows
+    UP to owner level — reproducing an owner-keyed captainship view (e.g.
+    RAFSTEAMCHURN, WAYNESTEAMCHURN) whose rows are per ICD-owner.
 
-    For each owner in `member_owners` (title-cased): office num/denom per period =
-    sum of that owner's reps' disconnect/activated; pct = Tableau format. The team
-    total is the sum across the member owners. The parsed 'color' field is NOT
-    reproduced — it is unused by the churn fill (colors are derived from pct via
-    _pct_color_for), so it never reaches the sheet.
+    Filters by the `Captain's Bonus Teams` COLUMN == team_value — the same SFDC
+    team filter the per-team view uses. Owner-only slicing over-counts owners with
+    cross-team reps (an owner's reps can sit on another captain's team); the team
+    column is the correct scope. Per owner/period: num/denom = sum of that team's
+    reps' disconnect/activated; pct = Tableau format. The parsed 'color' field is
+    NOT reproduced — it is unused by the churn fill (colors derive from pct).
     """
     rows = _read_utf16_tsv(org_csv_path)
     if not rows:
-        return {"office_total": {}, "reps": {}, "_missing_members": sorted(member_owners)}
+        return {"office_total": {}, "reps": {}, "_team": team_value}
     header = [h.lstrip("﻿").strip() for h in rows[0]]
     oi = header.index(owner_col)
     ri = header.index("Rep Name")
+    ti = _team_col(header)
     mi = header.index("0-30 Day Churn") - 1
     pcol = {p: header.index(f"{p} Day Churn") for p in periods if f"{p} Day Churn" in header}
 
@@ -220,9 +245,9 @@ def slice_d2d_team(org_csv_path: Path, member_owners: set, title_fn: Callable[[s
             continue
         if (r[ri] or "").strip() == "Total":
             continue
-        owner = title_fn((r[oi] or "").strip())
-        if owner not in member_owners:
+        if (r[ti] or "").strip() != team_value:       # SFDC team filter
             continue
+        owner = title_fn((r[oi] or "").strip())
         metric = (r[mi] or "").strip()
         if metric not in (_D2D_NUM_LABEL, _D2D_DENOM_LABEL):
             continue                       # skip Churn Rate / Calculation1 rows
@@ -246,5 +271,6 @@ def slice_d2d_team(org_csv_path: Path, member_owners: set, title_fn: Callable[[s
     return {
         "office_total": recompute_office_total(reps, periods, decimals),
         "reps": reps,
-        "_missing_members": sorted(member_owners - set(reps.keys())),
+        "_team": team_value,
+        "_missing_members": [],
     }
