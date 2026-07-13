@@ -1207,7 +1207,8 @@ def main() -> int:
         print("WHOAMI written:", lines[0], flush=True)
         return 0
     if args.click:
-        return _click(args.click)
+        print(_click(args.click), flush=True)
+        return 0
     if args.extract_loop:
         return _extract_loop(args.extract_loop)
     if args.extract_smart:
