@@ -80,15 +80,43 @@ LOG_HEADER = ["timestamp", "document", "company", "owner", "location",
               "primary", "accent", "email"]
 
 
+def _gs_client():
+    """A gspread client from whatever Google creds are available:
+    a service account, an OAuth block in secrets, or (local dev) the Hub's
+    OAuth token file."""
+    import gspread
+    sa = st.secrets.get("gcp_service_account")
+    if sa:
+        return gspread.service_account_from_dict(dict(sa))
+    o = st.secrets.get("gcp_oauth")
+    if not o:                                        # local dev fallback
+        tok = Path.home() / ".config" / "recruiting-report" / \
+            "oauth-token.json"
+        if tok.exists():
+            import json
+            o = json.loads(tok.read_text())
+    if o:
+        from google.oauth2.credentials import Credentials
+        creds = Credentials(
+            token=o.get("token"), refresh_token=o.get("refresh_token"),
+            token_uri=o.get("token_uri", "https://oauth2.googleapis.com/token"),
+            client_id=o.get("client_id"), client_secret=o.get("client_secret"),
+            scopes=list(o.get("scopes") or
+                        ["https://www.googleapis.com/auth/spreadsheets"]))
+        return gspread.authorize(creds)
+    return None
+
+
 def _sheet():
     """The 'Document Builder Log' tab in the configured Google Sheet
     (created if it doesn't exist yet)."""
-    sa = st.secrets.get("gcp_service_account")
     sid = st.secrets.get("log_sheet_id")
-    if not sa or not sid:
+    if not sid:
         return None
-    import gspread
-    ss = gspread.service_account_from_dict(dict(sa)).open_by_key(sid)
+    gc = _gs_client()
+    if not gc:
+        return None
+    ss = gc.open_by_key(sid)
     tab = st.secrets.get("log_worksheet", "Document Builder Log")
     try:
         return ss.worksheet(tab)
