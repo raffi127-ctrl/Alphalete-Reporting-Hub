@@ -444,12 +444,17 @@ def builder_view():
                         subject=f"Your {gen.label} — "
                                 f"{inputs.get('company', '')}".strip(),
                         body=f"Attached is your branded {gen.label}.\n\n"
-                             f"Need any other changes to your document? Reply "
-                             f"to this email (or reach out to "
-                             f"alphaletereporting@gmail.com) and tell us "
-                             f"exactly what you'd like changed. The more "
-                             f"specific, the better — examples are "
-                             f"appreciated!\n\n— Alphalete Marketing",
+                             f"Want to customize or restyle it yourself? You "
+                             f"can turn it into a fully editable Canva design "
+                             f"in about a minute:\n"
+                             f"  1. Create a free Canva account (or log in): "
+                             f"https://www.canva.com/signup\n"
+                             f"  2. In Canva click \"Create a design,\" then "
+                             f"\"Upload,\" and upload the PDF attached to this "
+                             f"email.\n"
+                             f"  3. Canva turns it into a fully editable "
+                             f"design — change the wording, colors, layout, "
+                             f"anything.\n\n— Alphalete Marketing",
                         attachment=(fname, data), bcc=[_team()])
                 except Exception:                    # noqa: BLE001
                     sent = False
@@ -475,10 +480,15 @@ def builder_view():
             st.info(f"📧 Emailed to {res['email']} (copy to {_team()}).")
         st.markdown("---")
         st.markdown(
-            "**Need any other changes to your document?** Email "
-            "**alphaletereporting@gmail.com** and tell us exactly what you'd "
-            "like changed. The more specific, the better — examples are "
-            "appreciated! 🙌")
+            "### 🎨 Want to customize or restyle your packet?\n"
+            "Turn it into a **fully editable Canva design** in about a "
+            "minute:\n\n"
+            "1. **Create a free Canva account** (or log in) → "
+            "[canva.com/signup](https://www.canva.com/signup)\n"
+            "2. Click **Create a design → Upload**, and upload the **PDF you "
+            "just downloaded** above.\n"
+            "3. Canva converts it into a fully editable design — change the "
+            "wording, colors, layout, anything. ✨")
 
 
 # --------------------------------------------------------------------------
