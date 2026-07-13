@@ -1006,8 +1006,9 @@
       "timeout_minutes": 130,
       "_timeout_note": "Heavy: ~30-owner ownerville scrape (60m budget) + Tableau fill (35m). The flat 45m orchestrator cap killed it mid-scrape every run, which corrupted the sheet. Runs last (P3) so a long run blocks nothing.",
       "_freshness_note": "Megan's example: least important day-to-day, but should be as current as possible by Monday morning.",
-      "_depends_note": "Waits for org_sales_board (Megan 2026-07-13): this is the heaviest run (~90m) and must NEVER start before the board, or the board gets stuck waiting behind it for the browser/session. With org_sales_board fail-open by 8am it can't block drb for long.",
-      "depends_on": [
+      "_depends_note": "Runs AFTER org_sales_board via SOFT `after` ordering (Megan 2026-07-13): this is the heaviest run (~90m) and must never start before the board (or the board gets stuck behind it for the browser). But a board GLITCH must never skip this — so `after` (unblocks once the board hits ANY terminal state: done/incomplete/FAILED/missed), NOT depends_on (which would strand it on a board failure).",
+      "depends_on": [],
+      "after": [
         "org_sales_board"
       ],
       "verify": {

@@ -424,6 +424,21 @@ def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
                    waiting_on=", ".join(unmet))
             continue
 
+        # SOFT ordering (`after`): wait until these reports FINISH (any terminal
+        # state — DONE / INCOMPLETE / FAILED / MISSED), but — unlike depends_on — a
+        # FAILED `after` dep does NOT strand us. Lets a heavy report run strictly
+        # after a lighter one without being skipped if that one glitches
+        # (daily_rep_breakdown after org_sales_board: board runs first, but a board
+        # glitch must never skip the breakdown; the noon backstop makes every dep
+        # terminal, so this can't wait forever). Megan 2026-07-13.
+        pending_after = [d for d in r.after
+                         if d in ds.reports
+                         and ds.reports[d].status not in state.TERMINAL]
+        if pending_after:
+            ds.set(r.report_id, state.PENDING, reason=f"after {', '.join(pending_after)}",
+                   waiting_on=", ".join(pending_after))
+            continue
+
         # A human Chrome opened AFTER batch start single-instances with our
         # automation Chrome and hangs every browser report — and can break the
         # holder session so this report never even reaches readiness. The
