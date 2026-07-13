@@ -88,7 +88,7 @@ def render(show_header: bool = True) -> None:
     # --- message ----------------------------------------------------------
     st.markdown("### Message")
     manager = st.text_input("Manager name (signs the text)", value="",
-                            placeholder="e.g. Megan", key="swag_manager")
+                            placeholder="e.g. Rafael", key="swag_manager")
     template = st.text_area("Welcome text ({name} = first name, {manager} = manager)",
                             value=message.DEFAULT_TEMPLATE, height=120, key="swag_template")
 
