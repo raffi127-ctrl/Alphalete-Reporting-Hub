@@ -420,6 +420,78 @@ def _health_check(page) -> None:
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
+def _chrome_tab_count() -> int:
+    """Total Chrome tabs across all windows (via AppleScript). The extractor opens
+    a NEW TAB while it works and closes it when done — so this is our done-signal,
+    replacing a fixed timer."""
+    import subprocess
+    s = ('tell application "Google Chrome"\n'
+         '  set n to 0\n'
+         '  repeat with w in windows\n'
+         '    set n to n + (count of tabs of w)\n'
+         '  end repeat\n'
+         '  return n\n'
+         'end tell')
+    try:
+        r = subprocess.run(["osascript", "-e", s], capture_output=True, text=True, timeout=10)
+        return int((r.stdout or "0").strip())
+    except Exception:
+        return -1
+
+
+def _reload_batch_tab() -> None:
+    """Reload the ApplicantStream batch tab (p=616) wherever it is, so the counts
+    refresh — without depending on which tab is focused."""
+    import subprocess
+    s = ('tell application "Google Chrome"\n'
+         '  repeat with w in windows\n'
+         '    repeat with t in tabs of w\n'
+         '      if URL of t contains "p=616" then reload t\n'
+         '    end repeat\n'
+         '  end repeat\n'
+         'end tell')
+    subprocess.run(["osascript", "-e", s], capture_output=True)
+
+
+def _extract_smart() -> int:
+    """One extraction round, timed by REALITY not a stopwatch: click robot -> Start,
+    then wait for the extractor's tab to OPEN and then CLOSE (however long the AI
+    takes), then reload the batch tab + snap. You clear the human-check if it pops."""
+    import time
+    base = _chrome_tab_count()
+    print(f"[smart] baseline tabs = {base}", flush=True)
+    _click("1380,250")
+    time.sleep(4)
+    _click("1206,260")
+    print(">>> CLEAR THE HUMAN-CHECK NOW IF IT POPS UP <<<", flush=True)
+    # wait up to 90s for the extractor tab to open (covers the captcha clear)
+    t0 = time.time()
+    opened = False
+    while time.time() - t0 < 90:
+        time.sleep(4)
+        if _chrome_tab_count() > base:
+            opened = True
+            print("[smart] extractor tab opened — waiting for it to finish…", flush=True)
+            break
+    if not opened:
+        print("[smart] no extractor tab appeared (captcha not cleared, or nothing to do)", flush=True)
+    # wait (up to 20 min) for the extractor tab to CLOSE = done
+    t0 = time.time()
+    while time.time() - t0 < 1200:
+        time.sleep(8)
+        if _chrome_tab_count() <= base:
+            print(f"[smart] extractor finished after {int(time.time()-t0)}s", flush=True)
+            break
+    else:
+        print("[smart] gave up waiting after 20 min", flush=True)
+    time.sleep(3)
+    _reload_batch_tab()
+    time.sleep(6)
+    _snap()
+    print("EXTRACT-SMART DONE", flush=True)
+    return 0
+
+
 def _extract_loop(n: int) -> int:
     """Automate the extraction rounds by REAL clicks (the only thing that keeps the
     plugin alive): robot -> Start -> wait (you clear the human-check) -> reload.
@@ -983,6 +1055,9 @@ def main() -> int:
                     help="Run N extraction rounds by real clicks: robot -> Start -> wait -> "
                          "reload, snapping after each. The human clears the captcha when it pops. "
                          "Coords baked for a maximized Chrome (robot 1380,250; Start 1206,260).")
+    ap.add_argument("--extract-smart", action="store_true",
+                    help="One extraction round timed by the extractor's own tab opening/closing "
+                         "(no fixed timer), then reload + snap. You clear the captcha if it pops.")
     args = ap.parse_args()
 
     if args.inspect_plugin:
@@ -1001,6 +1076,8 @@ def main() -> int:
         return _click(args.click)
     if args.extract_loop:
         return _extract_loop(args.extract_loop)
+    if args.extract_smart:
+        return _extract_smart()
 
     mode = "DRY-RUN (no writes)" if args.dry_run else "LIVE (sends to AI call list)"
     _log(f"=== Resume Pushing v2 — office {OFFICE_ID} — {mode} ===")
