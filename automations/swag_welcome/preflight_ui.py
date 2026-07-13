@@ -135,19 +135,54 @@ def render(show_header: bool = True) -> None:
     with cdry:
         if st.button("🔍 Dry run (preview all, send nothing)",
                      use_container_width=True, key="swag_dry"):
-            summary = run_mod.run(roster, send=False)
-            st.success(f"Composited {summary['total']} card(s) → {summary['out_dir']}. "
-                       "Nothing was texted.")
+            st.session_state["swag_summary"] = run_mod.run(roster, send=False)
     with csend:
         # Two-step confirm so a 30-person batch can't fire on a single stray click.
         confirm = st.checkbox(f"Yes, text all {len(ready)} now",
                               key="swag_confirm", disabled=needs_manager or not ready)
         if st.button("📲 Send texts now", type="primary", use_container_width=True,
                      disabled=needs_manager or not confirm or not ready, key="swag_send"):
-            summary = run_mod.run(roster, send=True)
-            st.success(f"Sent {summary['sent']}/{summary['total']} "
-                       f"(failed {summary['failed']}, skipped {summary['skipped']}).")
-            if summary["failed"]:
-                st.error("Some failed:\n" + "\n".join(
-                    f"- {row['name']} ({row['phone']}): {row['error']}"
-                    for row in summary["rows"] if row.get("error")))
+            st.session_state["swag_summary"] = run_mod.run(roster, send=True)
+
+    # Show the last dry-run / send result as a card grid, right here in the Hub
+    # (no folder-digging) — each card + its message + per-person status.
+    _render_summary(st.session_state.get("swag_summary"))
+
+
+def _render_summary(summary: dict | None) -> None:
+    if not summary:
+        return
+    from PIL import Image
+    dry = summary.get("dry_run")
+    st.markdown("---")
+    if dry:
+        st.success(f"👀 Dry run — {summary['total']} card(s) generated. "
+                   "Nothing was texted. Check them below, then send.")
+    else:
+        st.success(f"📲 Sent {summary['sent']}/{summary['total']} "
+                   f"(failed {summary['failed']}, skipped {summary['skipped']}).")
+
+    rows = [r for r in summary.get("rows", []) if r.get("card")]
+    per_row = 3
+    for i in range(0, len(rows), per_row):
+        cols = st.columns(per_row)
+        for col, row in zip(cols, rows[i:i + per_row]):
+            with col:
+                try:
+                    img = Image.open(row["card"])
+                    img.thumbnail((520, 520))
+                    st.image(img, use_container_width=True)
+                except Exception:
+                    st.caption("(card image unavailable)")
+                if dry:
+                    status = "— preview only"
+                elif row.get("sent"):
+                    status = "✅ sent"
+                elif row.get("error"):
+                    status = f"❌ {row['error']}"
+                else:
+                    status = "⏭️ skipped"
+                st.markdown(f"**{row['name']}** · {row['phone']}  \n{status}")
+                if row.get("text"):
+                    with st.expander("message"):
+                        st.write(row["text"])
