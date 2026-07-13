@@ -97,12 +97,18 @@ def _strip_accents(name: str) -> str:
                    if not unicodedata.combining(c))
 
 
+def _titlecase(name: str) -> str:
+    """Capitalize the first letter of each word — names always start with a
+    capital ('james' → 'James'), and the capital glyphs are the clean ones."""
+    return " ".join(w[:1].upper() + w[1:] if w else w for w in name.split(" "))
+
+
 def _render_from_glyphs(name: str) -> Image.Image | None:
     """Stamp Megan's real letters into a word (RGBA), baseline-aligned, jittered.
     Returns None if the glyph library isn't available."""
     if not _metrics():
         return None
-    name = _strip_accents(name)
+    name = _titlecase(_strip_accents(name))
     rng = random.Random(name)
 
     avg_w = sum(m["w"] for m in _metrics().values()) / len(_metrics())

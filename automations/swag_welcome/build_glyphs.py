@@ -117,19 +117,50 @@ def _vbounds(mask, band, seg) -> tuple[int, int]:
     return int(ys[0]), int(ys[-1])
 
 
-def _extract(norm, mask, band, seg) -> Image.Image:
+DESC_MARGIN = 55   # px to look below the band for a letter's descender
+
+
+def _extract(norm, mask, band, seg) -> tuple[Image.Image, int, int]:
+    """Cut one letter as RGBA, capturing its full descender. The line bands end
+    near the baseline (descenders have too little ink to survive the row
+    threshold), so we look DESC_MARGIN px lower and keep only ink that is
+    connected (flood-filled) to the letter's body — the next line, separated by
+    a gap, isn't grabbed. Returns (image, true_top_abs, true_bottom_abs)."""
+    from collections import deque
     y0, y1 = band
+    y1e = min(mask.shape[0], y1 + DESC_MARGIN)
     x0, x1 = seg
-    sm = mask[y0:y1, x0:x1]
-    ys = np.where(sm.any(axis=1))[0]
-    xs = np.where(sm.any(axis=0))[0]
-    sub = norm[y0 + ys[0]:y0 + ys[-1] + 1, x0 + xs[0]:x0 + xs[-1] + 1]
-    cov = np.clip((235.0 - sub) / (235.0 - 130.0) * 255.0, 0, 255).astype(np.uint8)
+    sub = mask[y0:y1e, x0:x1]
+    body_rows = y1 - y0            # rows belonging to the original band
+    keep = np.zeros_like(sub)
+    dq = deque()
+    seed = np.argwhere(sub[:body_rows])
+    for r, c in seed:
+        if not keep[r, c]:
+            keep[r, c] = True
+            dq.append((int(r), int(c)))
+    H, W = sub.shape
+    while dq:
+        r, c = dq.popleft()
+        for dr in (-1, 0, 1):
+            for dc in (-1, 0, 1):
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < H and 0 <= nc < W and sub[nr, nc] and not keep[nr, nc]:
+                    keep[nr, nc] = True
+                    dq.append((nr, nc))
+    ys = np.where(keep.any(axis=1))[0]
+    xs = np.where(keep.any(axis=0))[0]
+    t, b = int(ys[0]), int(ys[-1])
+    l, r = int(xs[0]), int(xs[-1])
+    sub_norm = norm[y0 + t:y0 + b + 1, x0 + l:x0 + r + 1]
+    sub_keep = keep[t:b + 1, l:r + 1]
+    cov = np.clip((235.0 - sub_norm) / (235.0 - 130.0) * 255.0, 0, 255).astype(np.uint8)
+    cov[~sub_keep] = 0            # drop any stray ink not part of this letter
     h, w = cov.shape
     rgba = np.zeros((h, w, 4), np.uint8)
     rgba[..., 0], rgba[..., 1], rgba[..., 2] = GLYPH_INK
     rgba[..., 3] = cov
-    return Image.fromarray(rgba, "RGBA")
+    return Image.fromarray(rgba, "RGBA"), y0 + t, y0 + b
 
 
 def main():
@@ -138,7 +169,8 @@ def main():
     bands = _bands(mask)
     print(f"lines: {len(bands)}")
     line_segs = {k: _letters(mask, bd) for k, bd in enumerate(bands)}
-    baselines = {k: (float(np.median([_vbounds(mask, bands[k], s)[1] for s in segs]))
+    # Baseline in ABSOLUTE (crop) y, to match _extract's returned bounds.
+    baselines = {k: (bands[k][0] + float(np.median([_vbounds(mask, bands[k], s)[1] for s in segs]))
                      if segs else 0.0) for k, segs in line_segs.items()}
 
     out_u = RES / "glyphs" / "upper"
@@ -154,9 +186,8 @@ def main():
             if si >= len(segs):
                 print(f"  !! {tag}:{letter} seg {line}.{si} missing")
                 continue
-            g = _extract(norm, mask, bands[line], segs[si])
+            g, top, bot = _extract(norm, mask, bands[line], segs[si])
             g.save(outdir / f"{letter}.png")
-            top, bot = _vbounds(mask, bands[line], segs[si])
             base = baselines[line]
             metrics[f"{tag}:{letter}"] = {"w": g.width, "h": g.height,
                                           "asc": round(base - top, 1),
