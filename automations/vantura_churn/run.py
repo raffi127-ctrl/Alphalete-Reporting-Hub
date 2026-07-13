@@ -143,27 +143,50 @@ def _probe(today: dt.date, log) -> int:
                 rec(f"[{tag}] thumbs={n} names={names} dlg={dtxt!r}")
                 return n
 
-            strategies = [
-                ("canvas-click", lambda: viz.locator("canvas").first.click(
-                    timeout=6000, position={"x": 200, "y": 200})),
-                ("grid-text-click", lambda: viz.get_by_text(
-                    "B2B ORDER LOG", exact=False).first.click(timeout=6000)),
-                ("tab-canvas-dblclick", lambda: viz.locator(
-                    ".tab-widget, canvas").first.click(timeout=6000)),
-            ]
-            for tag, act in strategies:
+            # Dump the dashboard's worksheet-zone elements so we can pick a
+            # real click target for the data grid.
+            try:
+                zones = viz.locator('[class*="tab-zone"], [id^="tabZone"], '
+                                    '[class*="dashboard-zone"]')
+                rec(f"zone elements: {zones.count()}")
+                for i in range(min(zones.count(), 20)):
+                    z = zones.nth(i)
+                    try:
+                        cls = z.get_attribute("class") or ""
+                        zid = z.get_attribute("id") or ""
+                        box = z.bounding_box()
+                        rec(f"  zone[{i}] id={zid!r} cls={cls[:60]!r} box={box}")
+                    except Exception:
+                        pass
+            except Exception as e:
+                rec(f"zone dump err: {str(e)[:120]}")
+
+            # Coordinate clicks across the viz (grid data usually fills the
+            # lower-centre) — then reopen the dialog and check for thumbs.
+            def _coord_try(tag, x, y):
                 try:
                     page.keyboard.press("Escape")
-                    page.wait_for_timeout(800)
-                    act()
-                    rec(f"activation '{tag}': clicked")
+                    page.wait_for_timeout(600)
+                    fe = page.frame_locator(
+                        'iframe[title="Data Visualization"]')
+                    # click at an absolute point inside the iframe via mouse
+                    ifr = page.locator('iframe[title="Data Visualization"]')
+                    b = ifr.bounding_box()
+                    if not b:
+                        rec(f"{tag}: no iframe box"); return 0
+                    page.mouse.click(b["x"] + x, b["y"] + y)
+                    rec(f"{tag}: clicked ({x},{y})")
                     page.wait_for_timeout(1500)
                     _open_dialog()
-                    if _dialog_state(tag) > 0:
-                        rec(f"*** SUCCESS via {tag} ***")
-                        break
+                    return _dialog_state(tag)
                 except Exception as e:
-                    rec(f"activation '{tag}': err {str(e)[:120]}")
+                    rec(f"{tag}: err {str(e)[:120]}"); return 0
+
+            for tag, x, y in [("mid", 500, 400), ("lower", 500, 650),
+                              ("grid", 700, 500), ("left", 250, 500)]:
+                if _coord_try(tag, x, y) > 0:
+                    rec(f"*** SUCCESS via {tag} ***")
+                    break
     except Exception as e:  # noqa: BLE001
         rec(f"PROBE ERROR: {str(e)[:300]}")
     _write_diag(lines)
