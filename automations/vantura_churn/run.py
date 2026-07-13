@@ -177,27 +177,66 @@ def _probe(today: dt.date, log) -> int:
             except Exception as e:
                 rec(f"flyout dump err: {str(e)[:120]}")
 
-            # Try 'Download → Data' (full underlying data) — the most robust
-            # path for a table view; opens a data window with a download link.
+            # Focus a worksheet by clicking a DATA MARK inside each viz zone,
+            # then check whether 'Data' enables + Crosstab enumerates — a
+            # focused sheet is the missing precondition.
+            def _data_disabled():
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(500)
+                viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
+                            'download"]').click()
+                page.wait_for_timeout(1200)
+                di = viz.locator('[data-tb-test-id="download-flyout-'
+                                 'download-data-MenuItem"]')
+                dis = di.get_attribute("aria-disabled") if di.count() else "?"
+                page.keyboard.press("Escape")
+                return dis
+
+            zone_ids = ["#tabZoneId9", "#tabZoneId6"]
+            for zid in zone_ids:
+                try:
+                    z = viz.locator(zid)
+                    if not z.count():
+                        rec(f"focus {zid}: absent"); continue
+                    bb = z.bounding_box()
+                    ifr = page.locator(
+                        'iframe[title="Data Visualization"]').bounding_box()
+                    # click several points down the grid to hit a text mark
+                    for dy in (60, 140, 240):
+                        page.mouse.click(ifr["x"] + bb["x"] + 120,
+                                         ifr["y"] + bb["y"] + dy)
+                        page.wait_for_timeout(700)
+                    rec(f"focus {zid}: Data disabled now = {_data_disabled()}")
+                    # with a focused sheet, reopen crosstab
+                    _open_dialog()
+                    if _dialog_state(f"after-focus {zid}") > 0:
+                        rec(f"*** crosstab thumbs after focusing {zid} ***")
+                        break
+                except Exception as e:
+                    rec(f"focus {zid}: err {str(e)[:120]}")
+
+            # If Data is now enabled, drive the full-data download flow.
             try:
                 page.keyboard.press("Escape")
                 page.wait_for_timeout(500)
                 viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
                             'download"]').click()
-                page.wait_for_timeout(1500)
-                data_item = viz.locator(
-                    '[data-tb-test-id="download-flyout-download-data-MenuItem"]')
-                rec(f"data menu item: {data_item.count()}")
-                if data_item.count():
-                    data_item.first.click()
-                    page.wait_for_timeout(4000)
-                    dlg = viz.locator('[role="dialog"]')
-                    rec("DATA-DLG| " + (dlg.first.inner_text(timeout=8000)[:220]
-                                        if dlg.count() else "no dialog"))
-                    # count new tabs/pages (Download Data opens a new window)
-                    rec(f"open pages: {len(page.context.pages)}")
+                page.wait_for_timeout(1200)
+                di = viz.locator('[data-tb-test-id="download-flyout-'
+                                 'download-data-MenuItem"]')
+                if di.count() and di.get_attribute("aria-disabled") == "false":
+                    with page.context.expect_page(timeout=15000) as popinfo:
+                        di.first.click()
+                    pop = popinfo.value
+                    pop.wait_for_load_state("domcontentloaded")
+                    rec(f"data window opened: {pop.url[:120]}")
+                    ptxt = pop.locator("body").inner_text(timeout=15000)[:300]
+                    rec("DATA-WIN| " + ptxt.replace("\n", " ⏎ "))
+                else:
+                    rec(f"data still disabled: "
+                        f"{di.get_attribute('aria-disabled') if di.count() else 'absent'}")
             except Exception as e:
-                rec(f"data-download err: {str(e)[:150]}")
+                rec(f"data-flow err: {str(e)[:150]}")
     except Exception as e:  # noqa: BLE001
         rec(f"PROBE ERROR: {str(e)[:300]}")
     _write_diag(lines)
