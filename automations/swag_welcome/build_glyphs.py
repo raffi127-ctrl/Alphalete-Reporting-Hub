@@ -117,7 +117,11 @@ def _vbounds(mask, band, seg) -> tuple[int, int]:
     return int(ys[0]), int(ys[-1])
 
 
-DESC_MARGIN = 55   # px to look below the band for a letter's descender
+DESC_MARGIN = 110  # px to look below the band for a letter's descender loop
+X_MARGIN = 30      # px to look left/right — descender loops (g/y/j) curl OUT
+                   # past the letter's own column; connectivity keeps neighbors
+                   # out (they're separated by a gap)
+CAPTURE_THR = 205  # slightly looser than INK_THR so thin loop edges survive
 
 
 def _extract(norm, mask, band, seg) -> tuple[Image.Image, int, int]:
@@ -130,15 +134,20 @@ def _extract(norm, mask, band, seg) -> tuple[Image.Image, int, int]:
     y0, y1 = band
     y1e = min(mask.shape[0], y1 + DESC_MARGIN)
     x0, x1 = seg
-    sub = mask[y0:y1e, x0:x1]
-    body_rows = y1 - y0            # rows belonging to the original band
+    xa = max(0, x0 - X_MARGIN)
+    xb = min(mask.shape[1], x1 + X_MARGIN)
+    # Flood over a LOOSER capture threshold, in a window widened left/right so a
+    # descender loop that curls past the letter's column is followed. Seed only
+    # from the SOLID body (main mask) so we don't start from paper noise; a gap
+    # to any neighbour keeps that neighbour out.
+    sub = norm[y0:y1e, xa:xb] < CAPTURE_THR
     keep = np.zeros_like(sub)
     dq = deque()
-    seed = np.argwhere(sub[:body_rows])
-    for r, c in seed:
-        if not keep[r, c]:
-            keep[r, c] = True
-            dq.append((int(r), int(c)))
+    dx = x0 - xa                  # body's column offset inside the window
+    for r, c in np.argwhere(mask[y0:y1, x0:x1]):
+        if not keep[r, c + dx]:
+            keep[r, c + dx] = True
+            dq.append((int(r), int(c + dx)))
     H, W = sub.shape
     while dq:
         r, c = dq.popleft()
@@ -152,7 +161,7 @@ def _extract(norm, mask, band, seg) -> tuple[Image.Image, int, int]:
     xs = np.where(keep.any(axis=0))[0]
     t, b = int(ys[0]), int(ys[-1])
     l, r = int(xs[0]), int(xs[-1])
-    sub_norm = norm[y0 + t:y0 + b + 1, x0 + l:x0 + r + 1]
+    sub_norm = norm[y0 + t:y0 + b + 1, xa + l:xa + r + 1]
     sub_keep = keep[t:b + 1, l:r + 1]
     cov = np.clip((235.0 - sub_norm) / (235.0 - 130.0) * 255.0, 0, 255).astype(np.uint8)
     cov[~sub_keep] = 0            # drop any stray ink not part of this letter
