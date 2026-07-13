@@ -116,37 +116,54 @@ def _probe(today: dt.date, log) -> int:
                     rec("BODY| " + flat[i:i + 400])
             except Exception as e:
                 rec(f"viz body: err {str(e)[:150]}")
-            # Open Download → Crosstab and dump what the dialog actually
-            # contains — the dry-run died on '0 sheet thumbnails', which
-            # would be NORMAL if ORDERLOG is a standalone worksheet (the
-            # dialog then skips sheet selection entirely).
-            try:
+            # The dialog says 'No sheets to select' because ORDERLOG is a
+            # DASHBOARD and no worksheet is active. Try each activation
+            # strategy, reopen the crosstab dialog, and report whether the
+            # 'Order Log' sheet appears — so we know which one to bake in.
+            def _open_dialog():
                 viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
                             'download"]').click()
-                page.wait_for_timeout(1800)
+                page.wait_for_timeout(1500)
                 viz.locator('[data-tb-test-id="download-flyout-download-'
                             'crosstab-MenuItem"]').click()
-                page.wait_for_timeout(6000)
-                thumbs = viz.locator(
-                    '[data-tb-test-id^="sheet-thumbnail-"]')
-                rec(f"dialog thumbs: {thumbs.count()}")
+                page.wait_for_timeout(5000)
+
+            def _dialog_state(tag):
+                thumbs = viz.locator('[data-tb-test-id^="sheet-thumbnail-"]')
+                n = thumbs.count()
+                names = []
+                for i in range(n):
+                    try:
+                        names.append(thumbs.nth(i).inner_text().strip())
+                    except Exception:
+                        names.append("?")
                 dlg = viz.locator('[role="dialog"]')
-                rec(f"dialog count: {dlg.count()}")
-                if dlg.count():
-                    dtext = dlg.first.inner_text(timeout=10_000)
-                    rec("DIALOG| " + dtext.replace("\n", " ⏎ ")[:1600])
-                exp = viz.locator(
-                    '[data-tb-test-id="export-crosstab-export-Button"]')
-                rec(f"export btn: count={exp.count()}"
-                    + (f" enabled={exp.first.is_enabled()}"
-                       if exp.count() else ""))
-                for fmt in ("csv", "excel", "xlsx"):
-                    lab = viz.locator(
-                        f'[data-tb-test-id="crosstab-options-dialog-radio-'
-                        f'{fmt}-Label"]')
-                    rec(f"format radio '{fmt}': {lab.count()}")
-            except Exception as e:
-                rec(f"dialog probe: err {str(e)[:200]}")
+                dtxt = (dlg.first.inner_text(timeout=8000)[:200]
+                        if dlg.count() else "")
+                rec(f"[{tag}] thumbs={n} names={names} dlg={dtxt!r}")
+                return n
+
+            strategies = [
+                ("canvas-click", lambda: viz.locator("canvas").first.click(
+                    timeout=6000, position={"x": 200, "y": 200})),
+                ("grid-text-click", lambda: viz.get_by_text(
+                    "B2B ORDER LOG", exact=False).first.click(timeout=6000)),
+                ("tab-canvas-dblclick", lambda: viz.locator(
+                    ".tab-widget, canvas").first.click(timeout=6000)),
+            ]
+            for tag, act in strategies:
+                try:
+                    page.keyboard.press("Escape")
+                    page.wait_for_timeout(800)
+                    act()
+                    rec(f"activation '{tag}': clicked")
+                    page.wait_for_timeout(1500)
+                    _open_dialog()
+                    if _dialog_state(tag) > 0:
+                        rec(f"*** SUCCESS via {tag} ***")
+                        break
+                except Exception as e:
+                    rec(f"activation '{tag}': err {str(e)[:120]}")
     except Exception as e:  # noqa: BLE001
         rec(f"PROBE ERROR: {str(e)[:300]}")
     _write_diag(lines)
