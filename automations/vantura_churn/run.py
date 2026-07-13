@@ -192,6 +192,29 @@ def _probe(today: dt.date, log) -> int:
                 page.keyboard.press("Escape")
                 return dis
 
+            # Nuke onboarding / guided-walkthrough / data-guide overlays that
+            # sit on top of the viz and swallow clicks. Report what was removed.
+            try:
+                removed = viz.locator(":root").evaluate(
+                    """() => {
+                        const pats = ['walkthrough','onboarding','data-guide',
+                            'dataGuide','coachmark','tooltip-overlay','f-overlay',
+                            'ftdue','pendo','beacon'];
+                        let n = 0; const hits = [];
+                        for (const el of Array.from(document.querySelectorAll('*'))) {
+                            const id=(el.id||'')+' '+(el.className&&el.className.baseVal!==undefined?el.className.baseVal:(el.className||''));
+                            const low=id.toLowerCase();
+                            if (pats.some(p=>low.includes(p))) {
+                                const r=el.getBoundingClientRect();
+                                if (r.width>50&&r.height>50){hits.push(id.slice(0,40));el.remove();n++;}
+                            }
+                        }
+                        return {n, hits: hits.slice(0,8)};
+                    }""")
+                rec(f"overlay nuke: {removed}")
+            except Exception as e:
+                rec(f"overlay nuke err: {str(e)[:120]}")
+
             zone_ids = ["#tabZoneId9", "#tabZoneId6"]
             for zid in zone_ids:
                 try:
