@@ -143,78 +143,61 @@ def _probe(today: dt.date, log) -> int:
                 rec(f"[{tag}] thumbs={n} names={names} dlg={dtxt!r}")
                 return n
 
-            # Dump the dashboard's worksheet-zone elements so we can pick a
-            # real click target for the data grid.
+            # Is this a dashboard or a single worksheet?
+            for cls in ("tab-dashboard", "tab-worksheet", "tabDashboard",
+                        "tab-viz-worksheet"):
+                try:
+                    rec(f"has .{cls}: {viz.locator('.' + cls).count()}")
+                except Exception:
+                    pass
             try:
-                zones = viz.locator('[class*="tab-zone"], [id^="tabZone"], '
-                                    '[class*="dashboard-zone"]')
-                rec(f"zone elements: {zones.count()}")
-                for i in range(min(zones.count(), 20)):
-                    z = zones.nth(i)
+                rec(f"tabZone-viz count: {viz.locator('.tabZone-viz').count()}")
+            except Exception:
+                pass
+
+            # Dump the whole Download flyout so we know every export option
+            # (Crosstab needs a sheet; 'Data' / 'Image' / 'PDF' may not).
+            try:
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(600)
+                viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
+                            'download"]').click()
+                page.wait_for_timeout(1800)
+                items = viz.locator('[data-tb-test-id$="-MenuItem"]')
+                rec(f"download flyout items: {items.count()}")
+                for i in range(items.count()):
+                    it = items.nth(i)
                     try:
-                        cls = z.get_attribute("class") or ""
-                        zid = z.get_attribute("id") or ""
-                        box = z.bounding_box()
-                        rec(f"  zone[{i}] id={zid!r} cls={cls[:60]!r} box={box}")
+                        tid = it.get_attribute("data-tb-test-id")
+                        txt = it.inner_text().strip()
+                        dis = it.get_attribute("aria-disabled")
+                        rec(f"  menu[{i}] {tid} txt={txt!r} disabled={dis}")
                     except Exception:
                         pass
             except Exception as e:
-                rec(f"zone dump err: {str(e)[:120]}")
+                rec(f"flyout dump err: {str(e)[:120]}")
 
-            # A 'Guided Walkthrough' / Data Guide overlay was seen in the body
-            # dump — it can intercept clicks. Dismiss anything dismissable.
-            for sel in ('[data-tb-test-id="data-guide-close-button"]',
-                        '[aria-label="Close"]', 'button:has-text("Got it")',
-                        'button:has-text("Skip")', '.f1sivl2j'):
-                try:
-                    el = viz.locator(sel)
-                    if el.count():
-                        el.first.click(timeout=2500)
-                        rec(f"dismissed overlay via {sel}")
-                except Exception:
-                    pass
-            page.keyboard.press("Escape")
-            page.wait_for_timeout(800)
-
-            # Click the worksheet zone element directly (its own bbox centre),
-            # then reopen the dialog.
-            def _zone_try(tag, sel):
-                try:
-                    page.keyboard.press("Escape")
-                    page.wait_for_timeout(600)
-                    el = viz.locator(sel)
-                    if not el.count():
-                        rec(f"{tag}: no match {sel}"); return 0
-                    el.first.click(timeout=6000)
-                    rec(f"{tag}: clicked {sel}")
-                    page.wait_for_timeout(1500)
-                    _open_dialog()
-                    return _dialog_state(tag)
-                except Exception as e:
-                    rec(f"{tag}: err {str(e)[:120]}"); return 0
-
-            for tag, sel in [("viz-zone", "#tabZoneId9"),
-                             ("viz-cls", ".tabZone-viz"),
-                             ("viz-inner", ".tabZone-viz .tab-zone-padding")]:
-                if _zone_try(tag, sel) > 0:
-                    rec(f"*** SUCCESS via {tag} ***")
-                    break
-            else:
-                # Last resort: a selected sheet may export DIRECTLY (no picker)
-                # — click the zone, then try the toolbar crosstab flow and
-                # report if a format/export appears without thumbnails.
-                try:
-                    viz.locator("#tabZoneId9").first.click(
-                        timeout=6000, position={"x": 400, "y": 300})
-                    page.wait_for_timeout(1200)
-                    _open_dialog()
-                    exp = viz.locator(
-                        '[data-tb-test-id="export-crosstab-export-Button"]')
-                    rec(f"direct-export: export btn count={exp.count()} "
-                        + (f"enabled={exp.first.is_enabled()}"
-                           if exp.count() else ""))
-                except Exception as e:
-                    rec(f"direct-export err: {str(e)[:120]}")
+            # Try 'Download → Data' (full underlying data) — the most robust
+            # path for a table view; opens a data window with a download link.
+            try:
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(500)
+                viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
+                            'download"]').click()
+                page.wait_for_timeout(1500)
+                data_item = viz.locator(
+                    '[data-tb-test-id="download-flyout-download-data-MenuItem"]')
+                rec(f"data menu item: {data_item.count()}")
+                if data_item.count():
+                    data_item.first.click()
+                    page.wait_for_timeout(4000)
+                    dlg = viz.locator('[role="dialog"]')
+                    rec("DATA-DLG| " + (dlg.first.inner_text(timeout=8000)[:220]
+                                        if dlg.count() else "no dialog"))
+                    # count new tabs/pages (Download Data opens a new window)
+                    rec(f"open pages: {len(page.context.pages)}")
+            except Exception as e:
+                rec(f"data-download err: {str(e)[:150]}")
     except Exception as e:  # noqa: BLE001
         rec(f"PROBE ERROR: {str(e)[:300]}")
     _write_diag(lines)
