@@ -625,6 +625,27 @@
       "verify": null,
       "timeout_minutes": 5
     },
+    "install_board_probe_agent": {
+      "on_scheduler": true,
+      "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_board_probe_agent` (same pattern as install_board_catchup_agent). Regens + launchctl-bootstraps com.alphalete.board-probe on the mini — a MONDAY-ONLY, READ-ONLY diagnostic that runs sunday_coverage at 7:15/7:45/8:15am CST to measure whether :refresh=yes (commit 378a275) delivers COMPLETE last-Sunday data early enough to email the board before 8am (Raf's deadline), and which week BOX returns (box=N = its pin is still broken). Writes NOTHING to any Sheet. Read results: `lucy logtail board-probe 'SUMMARY|box' 12`. REMOVE after the Monday timing is nailed (launchctl bootout gui/UID/com.alphalete.board-probe). on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. source_type 'local' skips the tableau/appstream chrome guard.",
+      "display_name": "Install: Monday board timing probe LaunchAgent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "board-probe"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
+    },
     "texas_de_brazil": {
       "on_scheduler": true,
       "machine": "Lucy 1",
