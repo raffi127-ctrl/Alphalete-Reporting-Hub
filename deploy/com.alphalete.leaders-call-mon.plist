@@ -22,14 +22,16 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Monday 10:00am, machine LOCAL time (the mini is Central). launchd
-         Weekday: 0/7=Sun, 1=Mon … 6=Sat. -->
+    <!-- Monday 2:00pm CST (14:00), machine LOCAL time (the mini is Central).
+         2pm not 10am (Megan 2026-07-13): the run needs the Frontier 'Sales
+         Verification' email that lands ~2pm Monday. launchd Weekday: 0/7=Sun,
+         1=Mon … 6=Sat. -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Weekday</key>
         <integer>1</integer>
         <key>Hour</key>
-        <integer>10</integer>
+        <integer>14</integer>
         <key>Minute</key>
         <integer>0</integer>
     </dict>

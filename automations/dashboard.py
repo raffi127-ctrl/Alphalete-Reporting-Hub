@@ -1108,10 +1108,6 @@ MEMBERS = [
     {"name": "Lucy 1", "emoji": "🤖", "color": "#10B981", "email": ""},
     {"name": "Lucy 2", "emoji": "🦾", "color": "#E76F51", "email": ""},
     {"name": "Maud",    "emoji": "🌟",        "color": "#FF6B6B", "email": "maudmiller4@gmail.com"},
-    # Office Operations — a functional profile (not a single person) that holds
-    # office-run workflows anyone on staff can pick up: new-hire swag texts,
-    # etc. People navigate here to find those cards. (Megan 2026-07-13)
-    {"name": "Office Operations", "emoji": "🏢", "color": "#6C5CE7", "email": ""},
 ]
 
 
@@ -1883,11 +1879,12 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "leaders-call",
-        "name": "Leader's Call - Weekly Recognition (2:05 PM CST)",
+        "name": "Leader's Call - Weekly Recognition",
         "creator": "Claude",
         "emoji": "📣",
         "color": "#F59E0B",
         "category": "🎯 Recruiting",
+        "self_scheduled": True,
         "description": "Pulls each campaign's qualifying reps from Tableau "
                        "(Fiber, NDS, B2B, JE, BOX, Costco, Revenue) + the "
                        "Frontier scorecard auto-pulled from Lucy's Monday email, "
@@ -1928,7 +1925,7 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],   # Monday
-            "time": "2:05 PM",
+            "time": "2:00 PM",
             "estimated_minutes": 8,
         },
         "checklist": [
