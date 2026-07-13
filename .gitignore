@@ -61,3 +61,8 @@ automations/recruiting_report/all-offices.json
 
 # Streamlit secrets (never commit — contains access codes, SMTP + service-account creds)
 .streamlit/secrets.toml
+
+# swag_welcome: keep the raw personal handwriting sample + build debug art off the public repo
+# (the derived glyph library IS committed, so the tool still works)
+resources/swag/handwriting-raw.png
+resources/swag/glyphs/_debug/
