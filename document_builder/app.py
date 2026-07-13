@@ -18,6 +18,7 @@ See README.md for the full template.
 """
 from __future__ import annotations
 
+import json
 import smtplib
 import sys
 import tempfile
@@ -28,6 +29,7 @@ from pathlib import Path
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from document_builder import master  # noqa: E402
 from document_builder.registry import (by_label, GENERATORS,  # noqa: E402
                                        SCHED_DEFAULTS, _DAYS)
 
@@ -158,6 +160,41 @@ def read_log() -> list:
     return ws.get_all_values() if ws else []
 
 
+def load_overrides() -> dict:
+    """Admin-edited master content (JSON in cell A1 of the content tab)."""
+    gc = _gs_client()
+    sid = st.secrets.get("log_sheet_id")
+    if not gc or not sid:
+        return {}
+    try:
+        ws = gc.open_by_key(sid).worksheet(master.CONTENT_TAB)
+        raw = ws.acell("A1").value
+        return json.loads(raw) if raw else {}
+    except Exception:                                # noqa: BLE001
+        return {}
+
+
+def save_overrides(data: dict) -> bool:
+    gc = _gs_client()
+    sid = st.secrets.get("log_sheet_id")
+    if not gc or not sid:
+        return False
+    ss = gc.open_by_key(sid)
+    try:
+        ws = ss.worksheet(master.CONTENT_TAB)
+    except Exception:                                # noqa: BLE001
+        ws = ss.add_worksheet(master.CONTENT_TAB, rows=10, cols=2)
+    ws.update_acell("A1", json.dumps(data))
+    return True
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _template_overrides() -> dict:
+    """Admin master edits, cached briefly so the builder page doesn't re-read
+    the Sheet on every rerun (new admin saves show up within ~2 minutes)."""
+    return load_overrides()
+
+
 def _gate(code_key: str, flag: str, title: str) -> bool:
     """Password gate. Returns True once the right code is entered."""
     code = st.secrets.get(code_key)
@@ -247,6 +284,32 @@ def _schedule_grid(f, inputs):
         inputs[f"field_{d.lower()}"] = row[2].text_input(
             f"field_{d}", value=SCHED_DEFAULTS["field"][d],
             key=f"field_{d}", label_visibility="collapsed")
+
+
+def _advanced_options(tmpl_over: dict) -> dict:
+    """One-off edits that apply to THIS packet only (not the shared master).
+    Currently: a per-office commission rate card. Returns a dict of master-block
+    overrides to layer on top of the template for this single generation."""
+    import pandas as pd
+    per = {}
+    blk = master._BY_ID["commission_rate"]
+    base = master.defaults()["commission_rate"]
+    cur = tmpl_over.get("commission_rate", base)
+    with st.expander("⚙️ Advanced options — one-off edits for THIS office only"):
+        st.caption("These changes apply only to the packet you generate now. "
+                   "They do NOT change the shared master template or anyone "
+                   "else's packet. Use this when one office runs a different "
+                   "commission structure.")
+        st.markdown("**Commission — AT&T INT Fiber rate card** (this office "
+                    "only)")
+        df = pd.DataFrame(cur, columns=blk["columns"])
+        ed = st.data_editor(df, num_rows="dynamic", width="stretch",
+                            key="adv_commission")
+        rows = [[("" if v is None else str(v)) for v in r]
+                for r in ed.fillna("").values.tolist()]
+        if rows != cur:
+            per["commission_rate"] = rows
+    return per
 
 
 # --------------------------------------------------------------------------
@@ -340,6 +403,9 @@ def builder_view():
                                "your logo — adjust them below if needed.")
 
     st.divider()
+    tmpl_over = _template_overrides()                 # shared master edits
+    per_office = _advanced_options(tmpl_over)          # this-packet-only edits
+
     if st.button("Generate PDF", type="primary"):
         missing = [f.label for f in gen.fields
                    if f.required and f.kind == "text" and not inputs.get(f.key)]
@@ -352,6 +418,8 @@ def builder_view():
             st.error("Please fill in: " + ", ".join(missing))
         else:
             inputs["logo_path"] = logo_path
+            # shared master edits, then this-office-only advanced edits on top
+            inputs["_overrides"] = {**tmpl_over, **per_office}
             fname = gen.filename(inputs)
             out = Path(tempfile.gettempdir()) / fname
             with st.spinner("Building your document…"):
@@ -434,7 +502,13 @@ def admin_view():
 
     st.subheader("Generation log")
     if body_rows:
-        st.dataframe(body_rows, width='stretch')
+        import pandas as pd
+        ncol = len(LOG_HEADER)
+        norm = [(list(r) + [""] * ncol)[:ncol] for r in body_rows]
+        heads = ["Generated", "Document", "Company", "ICD Name", "Location",
+                 "Primary color", "Accent color", "Email"]
+        df = pd.DataFrame(norm, columns=heads)
+        st.dataframe(df, width='stretch', hide_index=True)
     else:
         st.info("No submissions logged yet (or Sheet logging isn't configured "
                 "in secrets).")
@@ -445,16 +519,31 @@ def admin_view():
     doc = st.selectbox("Which document was updated?",
                        [g.label for g in GENERATORS])
     only_doc = st.checkbox("Only people who generated this document", value=True)
-    if only_doc and body_rows:
-        emails = sorted({r[7] for r in body_rows
-                         if len(r) > 7 and r[7] and "@" in r[7] and r[1] == doc})
+    # candidate ICDs (optionally filtered to this document); pick who to notify
+    by_email = {}
+    for r in body_rows:
+        if len(r) > 7 and r[7] and "@" in r[7] and (not only_doc or r[1] == doc):
+            by_email[r[7]] = r[3] or ""          # latest owner name wins
+    cand_emails = sorted(by_email)
+
+    def _fmt(e):
+        nm = by_email.get(e)
+        return f"{nm} — {e}" if nm else e
+
+    picked = st.multiselect(
+        "Who to notify", cand_emails, default=cand_emails, format_func=_fmt,
+        help="Everyone is selected by default. Remove anyone you don't want to "
+             "email, or clear it and add just a few.")
     note = st.text_area("What changed? (goes in the email)",
                         placeholder="e.g. Updated the commission rate card and "
                                     "added a seasonal recommendations page.")
-    st.write(f"Will notify **{len(emails)}** ICD(s) + {_team()}.")
+    st.write(f"Will notify **{len(picked)}** ICD(s) + {_team()}.")
     if st.button("Send update notice", type="primary"):
         if not note.strip():
             st.error("Add a short note describing what changed.")
+            return
+        if not picked:
+            st.error("Pick at least one ICD to notify.")
             return
         link = _app_url()
         body = (f"Heads up — the {doc} has been updated.\n\n"
@@ -464,15 +553,75 @@ def admin_view():
                 + "— Alphalete Marketing")
         try:
             ok = send_email([_team()], subject=f"Update to your {doc}",
-                            body=body, bcc=emails)
+                            body=body, bcc=picked)
         except Exception as e:                       # noqa: BLE001
             st.error(f"Couldn't send: {e}")
             return
         if ok:
-            st.success(f"Update notice sent to {len(emails)} ICD(s) + "
+            st.success(f"Update notice sent to {len(picked)} ICD(s) + "
                        f"{_team()}.")
         else:
             st.error("Email isn't configured — add the [smtp] secrets first.")
+
+    _master_editor()
+
+
+def _master_editor():
+    """Edit the shared master content; saved edits apply to every new packet."""
+    st.divider()
+    st.subheader("Edit master content")
+    st.caption("Change the shared wording/numbers used in every generated "
+               "packet. Edits save to the AUTOMATION MASTER sheet and apply "
+               "to all future generations. Branding (name, colors, logo, "
+               "schedule, upline) is set per-ICD on the form, not here.")
+
+    overrides = load_overrides()
+    base = master.defaults()
+    edits = {}
+
+    for b in master.BLOCKS:
+        cur = overrides.get(b["id"], base[b["id"]])
+        with st.expander(b["label"]):
+            kind = b["kind"]
+            if kind == "paragraphs":
+                txt = st.text_area("One paragraph per block (blank line "
+                                   "between)", value="\n\n".join(cur),
+                                   height=220, key=f"ed_{b['id']}")
+                edits[b["id"]] = [p.strip() for p in txt.split("\n\n")
+                                  if p.strip()]
+            elif kind == "lines":
+                txt = st.text_area("One item per line",
+                                   value="\n".join(cur), height=180,
+                                   key=f"ed_{b['id']}")
+                edits[b["id"]] = [ln.strip() for ln in txt.splitlines()
+                                  if ln.strip()]
+            elif kind == "steps":
+                rows = []
+                for i, (title, bullets) in enumerate(cur):
+                    t = st.text_input("Step", value=title,
+                                      key=f"ed_{b['id']}_t{i}")
+                    bl = st.text_area("Bullets (indent a line with 2 spaces "
+                                      "to make it a sub-bullet)", value=bullets,
+                                      height=130, key=f"ed_{b['id']}_b{i}")
+                    rows.append([t, bl])
+                edits[b["id"]] = rows
+            else:                                    # table
+                import pandas as pd
+                df = pd.DataFrame(cur, columns=b["columns"])
+                ed = st.data_editor(df, num_rows="dynamic", width="stretch",
+                                    key=f"ed_{b['id']}")
+                edits[b["id"]] = [[("" if v is None else str(v)) for v in r]
+                                  for r in ed.fillna("").values.tolist()]
+
+    if st.button("Save master content", type="primary"):
+        # store only blocks that differ from the base, so future base updates
+        # still flow through for untouched blocks
+        new_over = {k: v for k, v in edits.items() if v != base[k]}
+        if save_overrides(new_over):
+            st.success(f"Saved. {len(new_over)} block(s) overridden; applies "
+                       f"to new packets from now on.")
+        else:
+            st.error("Couldn't save — the Sheet/creds aren't configured.")
 
 
 # --------------------------------------------------------------------------

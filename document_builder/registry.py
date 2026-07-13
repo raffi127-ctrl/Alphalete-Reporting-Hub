@@ -46,12 +46,16 @@ class Generator:
 # Orientation Packet
 # --------------------------------------------------------------------------
 def _orientation_build(inputs: dict, out_path: str) -> str:
+    from automations.orientation_packet import content as C
     from automations.orientation_packet.build import build_pdf, Brand
+    from document_builder import master
     brand = Brand.from_args(
         primary=inputs.get("primary") or None,
         accent=inputs.get("accent") or None,
         dark=None,
     )
+    # apply any admin-edited master content on top of the base pages
+    pages = master.apply_overrides(C.PAGES, inputs.get("_overrides"))
     schedule = {k: v for k, v in inputs.items()
                 if k.startswith(("office_", "field_"))}
     build_pdf(
@@ -65,6 +69,7 @@ def _orientation_build(inputs: dict, out_path: str) -> str:
         upline=inputs.get("upline") or None,
         backend=inputs.get("backend") or None,
         schedule=schedule,
+        pages=pages,
     )
     return out_path
 
