@@ -468,33 +468,40 @@ def _click(spec: str) -> int:
     `spec` = 'x,y' or 'x,y;x,y;…'. Real CGEvent clicks (isTrusted) that the plugin
     can't distinguish from a human. Needs Accessibility permission on the Terminal
     that launches this."""
+    import ctypes
+    import ctypes.util
     import subprocess
     import time
-    try:
-        import Quartz
-    except Exception:
-        print("CLICK: Quartz missing — install with "
-              "'.venv/bin/python -m pip install pyobjc-framework-Quartz'", flush=True)
-        return 1
+    cg_path = ctypes.util.find_library("CoreGraphics") or \
+        "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
+    cg = ctypes.CDLL(cg_path)
+
+    class CGPoint(ctypes.Structure):
+        _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
+
+    cg.CGEventCreateMouseEvent.restype = ctypes.c_void_p
+    cg.CGEventCreateMouseEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint32, CGPoint, ctypes.c_uint32]
+    cg.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
+    K_MOVE, K_DOWN, K_UP, HID, BTN_L = 5, 1, 2, 0, 0
+
+    def _post(ev, x, y):
+        e = cg.CGEventCreateMouseEvent(None, ev, CGPoint(x, y), BTN_L)
+        cg.CGEventPost(HID, e)
+
     subprocess.run(["osascript", "-e", 'tell application "Google Chrome" to activate'],
                    capture_output=True)
     time.sleep(1.2)
-
-    def _post(ev, x, y, btn=0):
-        e = Quartz.CGEventCreateMouseEvent(None, ev, (x, y), btn)
-        Quartz.CGEventPost(Quartz.kCGHIDEventTap, e)
-
     for pt in spec.split(";"):
         pt = pt.strip()
         if not pt:
             continue
         x, y = [float(v) for v in pt.split(",")]
         print(f"CLICK: ({x}, {y})", flush=True)
-        _post(Quartz.kCGEventMouseMoved, x, y)
+        _post(K_MOVE, x, y)
         time.sleep(0.25)
-        _post(Quartz.kCGEventLeftMouseDown, x, y, Quartz.kCGMouseButtonLeft)
+        _post(K_DOWN, x, y)
         time.sleep(0.08)
-        _post(Quartz.kCGEventLeftMouseUp, x, y, Quartz.kCGMouseButtonLeft)
+        _post(K_UP, x, y)
         time.sleep(0.6)
     return 0
 
