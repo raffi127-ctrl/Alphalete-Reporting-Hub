@@ -535,7 +535,8 @@ def _screen_agent() -> int:
     dispatch = {"snap": lambda a: _snap(),
                 "click": lambda a: _click(a),
                 "extract-smart": lambda a: _extract_smart(),
-                "extract-loop": lambda a: _extract_loop(int(a or "1"))}
+                "extract-loop": lambda a: _extract_loop(int(a or "1")),
+                "focus": lambda a: _focus_batch()}
     while True:
         try:
             rows = ws.get_all_values()
@@ -612,6 +613,27 @@ def _snap() -> int:
     return 0
 
 
+def _focus_batch() -> None:
+    """Bring the ApplicantStream batch window/tab (p=616) to the FRONT — there can
+    be OTHER Chrome windows open (e.g. a Tableau automation), so 'activate' alone
+    grabs the wrong one. Select the p=616 tab and raise its window."""
+    import subprocess
+    s = ('tell application "Google Chrome"\n'
+         '  repeat with w in windows\n'
+         '    set ti to 0\n'
+         '    repeat with t in tabs of w\n'
+         '      set ti to ti + 1\n'
+         '      if (URL of t contains "p=616") then\n'
+         '        set active tab index of w to ti\n'
+         '        set index of w to 1\n'
+         '      end if\n'
+         '    end repeat\n'
+         '  end repeat\n'
+         '  activate\n'
+         'end tell')
+    subprocess.run(["osascript", "-e", s], capture_output=True)
+
+
 def _click(spec: str) -> int:
     """Bring Chrome to the front, then post REAL mouse clicks at screen point(s)
     `spec` = 'x,y' or 'x,y;x,y;…'. Real CGEvent clicks (isTrusted) that the plugin
@@ -637,9 +659,8 @@ def _click(spec: str) -> int:
         e = cg.CGEventCreateMouseEvent(None, ev, CGPoint(x, y), BTN_L)
         cg.CGEventPost(HID, e)
 
-    subprocess.run(["osascript", "-e", 'tell application "Google Chrome" to activate'],
-                   capture_output=True)
-    time.sleep(1.2)
+    _focus_batch()
+    time.sleep(1.4)
     for pt in spec.split(";"):
         pt = pt.strip()
         if not pt:
