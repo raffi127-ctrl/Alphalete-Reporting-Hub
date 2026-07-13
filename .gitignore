@@ -58,3 +58,6 @@ automations/recruiting_report/all-offices.json
 
 # Per-machine runner identity for mini_control (Lucy 1 / Lucy 2). Never commit.
 .machine-profile
+
+# Streamlit secrets (never commit — contains access codes, SMTP + service-account creds)
+.streamlit/secrets.toml
