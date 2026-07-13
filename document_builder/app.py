@@ -296,7 +296,7 @@ def _advanced_options(tmpl_over: dict) -> dict:
     per = {}
     base = master.defaults()
     comm = [b for b in master.BLOCKS if b.get("group") == "commission"]
-    with st.expander("⚙️ Commission Structures"):
+    with st.expander("⚙️ Advanced Options — Commission Structures"):
         for blk in comm:
             cur = tmpl_over.get(blk["id"], base[blk["id"]])
             name = re.sub(r"\s*\(page \d+\)$", "", blk["label"])
