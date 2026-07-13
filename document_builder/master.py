@@ -86,10 +86,55 @@ def _steps_apply(pages, value):
     _find(pages, type="framework")["steps"] = steps
 
 
-def _rate_tbl(pages):
-    return _find(pages, type="paytable",
-                 subtitle="Rate Card")["blocks"][0]["tables"][0]
+# --- generic paytable-table access (handles the 5 commission charts) --------
+def _tbl(pages, subtitle, heading, tindex=0):
+    """The table dict for a given commission page/section (by label, not
+    index — templates move)."""
+    page = _find(pages, type="paytable", subtitle=subtitle)
+    for blk in page["blocks"]:
+        if blk.get("kind") == "tables" and blk.get("heading") == heading:
+            return blk["tables"][tindex]
+    raise KeyError((subtitle, heading, tindex))
 
+
+def _tbl_get(pages, subtitle, heading, cols, tindex=0):
+    """Rows padded to the column count so they fit an editable grid."""
+    n = len(cols)
+    t = _tbl(pages, subtitle, heading, tindex)
+    return [(list(r) + [""] * n)[:n] for r in t["rows"]]
+
+
+def _tbl_apply(pages, subtitle, heading, value, tindex=0):
+    """Write rows back; trailing blank cells are dropped so a short row still
+    renders as a single value spanning the remaining columns (matches the
+    original layout, e.g. '1 GIG + Auto Bill Pay … $150')."""
+    t = _tbl(pages, subtitle, heading, tindex)
+    rows = []
+    for r in value:
+        if not r or not str(r[0]).strip():
+            continue
+        cells = ["" if v is None else str(v) for v in r]
+        while len(cells) > 1 and cells[-1] == "":
+            cells.pop()
+        rows.append(cells)
+    t["rows"] = rows
+
+
+def _tbl_block(bid, label, subtitle, heading, cols, tindex=0):
+    """A commission-table BLOCK entry (also flagged group='commission' so the
+    per-office Advanced options on the builder can surface it). `tindex` picks
+    which table when a section holds two side-by-side (page 9)."""
+    return {"id": bid, "label": label, "kind": "table", "group": "commission",
+            "columns": cols,
+            "get": (lambda p, s=subtitle, h=heading, c=cols, ti=tindex:
+                    _tbl_get(p, s, h, c, ti)),
+            "apply": (lambda p, v, s=subtitle, h=heading, ti=tindex:
+                      _tbl_apply(p, s, h, v, ti))}
+
+
+_TRAIN = "1st Two Weeks · Training Pay"      # page 9 paytable subtitle
+_RATE = "Rate Card"                          # page 10 paytable subtitle
+_WK3 = "WEEK 3+ — FULL BONUSES + COMMISSIONS"
 
 BLOCKS = [
     {"id": "welcome_letter", "label": "Welcome letter (page 1)",
@@ -115,12 +160,25 @@ BLOCKS = [
      "columns": ["Step title", "Bullets (indent 2 spaces = sub-bullet)"],
      "get": _steps_get, "apply": _steps_apply},
 
-    {"id": "commission_rate", "label": "Commission — AT&T INT Fiber rate card "
-     "(page 10)", "kind": "table",
-     "columns": ["ATT INT Fiber", "With ABP", "No ABP", "Owner Pay"],
-     "get": lambda p: [list(r) for r in _rate_tbl(p)["rows"]],
-     "apply": lambda p, v: _rate_tbl(p).__setitem__(
-         "rows", [r for r in v if r and r[0]])},
+    # --- the 5 commission charts (pages 9 + 10) ----------------------------
+    _tbl_block("commission_int_only",
+               "Commission — Training pay: INT only (page 9)",
+               _TRAIN, _WK3, ["Examples", "Per Sale", "Payout"]),
+    _tbl_block("commission_int_lines",
+               "Commission — Training pay: INT + 5 new lines (page 9)",
+               _TRAIN, _WK3, ["Examples", "Breakdown", "Payout"], tindex=1),
+    _tbl_block("commission_rate",
+               "Commission — AT&T INT Fiber rate card (page 10)",
+               _RATE, "AT&T INT FIBER",
+               ["ATT INT Fiber", "With ABP", "No ABP", "Owner Pay"]),
+    _tbl_block("commission_dtv",
+               "Commission — DTV Stream (page 10)",
+               _RATE, "DTV STREAM", ["DTV Stream", "Commission"]),
+    _tbl_block("commission_new_lines",
+               "Commission — New lines (page 10)",
+               _RATE, "NEW LINES",
+               ["New Lines", "With Next Up", "No Next Up",
+                "Bonus · 5 new INTs same week"]),
 
     {"id": "seasonal_always", "label": "Seasonal — Always bring (page 15)",
      "kind": "lines",

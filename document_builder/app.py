@@ -288,27 +288,27 @@ def _schedule_grid(f, inputs):
 
 def _advanced_options(tmpl_over: dict) -> dict:
     """One-off edits that apply to THIS packet only (not the shared master).
-    Currently: a per-office commission rate card. Returns a dict of master-block
-    overrides to layer on top of the template for this single generation."""
+    Surfaces every commission chart (pages 9 + 10) as an editable grid. Returns
+    a dict of master-block overrides to layer on top of the template for this
+    single generation."""
     import pandas as pd
+    import re
     per = {}
-    blk = master._BY_ID["commission_rate"]
-    base = master.defaults()["commission_rate"]
-    cur = tmpl_over.get("commission_rate", base)
-    with st.expander("⚙️ Advanced options — one-off edits for THIS office only"):
-        st.caption("These changes apply only to the packet you generate now. "
-                   "They do NOT change the shared master template or anyone "
-                   "else's packet. Use this when one office runs a different "
-                   "commission structure.")
-        st.markdown("**Commission — AT&T INT Fiber rate card** (this office "
-                    "only)")
-        df = pd.DataFrame(cur, columns=blk["columns"])
-        ed = st.data_editor(df, num_rows="dynamic", width="stretch",
-                            key="adv_commission")
-        rows = [[("" if v is None else str(v)) for v in r]
-                for r in ed.fillna("").values.tolist()]
-        if rows != cur:
-            per["commission_rate"] = rows
+    base = master.defaults()
+    comm = [b for b in master.BLOCKS if b.get("group") == "commission"]
+    with st.expander("⚙️ Commission Structures"):
+        for blk in comm:
+            cur = tmpl_over.get(blk["id"], base[blk["id"]])
+            name = re.sub(r"\s*\(page \d+\)$", "", blk["label"])
+            name = name.replace("Commission — ", "")
+            st.markdown(f"**{name}**")
+            df = pd.DataFrame(cur, columns=blk["columns"])
+            ed = st.data_editor(df, num_rows="dynamic", width="stretch",
+                                key=f"adv_{blk['id']}")
+            rows = [[("" if v is None else str(v)) for v in r]
+                    for r in ed.fillna("").values.tolist()]
+            if rows != cur:
+                per[blk["id"]] = rows
     return per
 
 
@@ -530,10 +530,17 @@ def admin_view():
         nm = by_email.get(e)
         return f"{nm} — {e}" if nm else e
 
-    picked = st.multiselect(
-        "Who to notify", cand_emails, default=cand_emails, format_func=_fmt,
-        help="Everyone is selected by default. Remove anyone you don't want to "
-             "email, or clear it and add just a few.")
+    st.markdown("**Who to notify** — everyone's checked; uncheck anyone you "
+                "don't want to email.")
+    picked = []
+    if cand_emails:
+        cols = st.columns(2)
+        for i, e in enumerate(cand_emails):
+            with cols[i % 2]:
+                if st.checkbox(_fmt(e), value=True, key=f"notify_{e}"):
+                    picked.append(e)
+    else:
+        st.caption("No ICDs have generated this document yet.")
     note = st.text_area("What changed? (goes in the email)",
                         placeholder="e.g. Updated the commission rate card and "
                                     "added a seasonal recommendations page.")
