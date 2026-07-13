@@ -1173,7 +1173,7 @@ AUTOMATED_REPORTS = [
     {
         "id": "swag-welcome",
         "name": "New-Hire Swag Texts",
-        "creator": "Claude",
+        "creator": "Megan & Claude",
         "emoji": "🎁",
         "color": "#6C5CE7",
         # 📲 Ops category → renders under the "OPS" divider on its day (not the

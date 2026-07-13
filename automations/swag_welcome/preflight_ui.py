@@ -101,7 +101,7 @@ def render(show_header: bool = True) -> None:
         if preview_name:
             out = Path(tempfile.gettempdir()) / f"swag_preview_{preview_name}.png"
             meta = compose.compose(preview_name, out)
-            colp, colt = st.columns([2, 3])
+            colp, colt = st.columns([3, 2])
             with colp:
                 st.image(str(out))
                 if not meta["used_real_photo"]:
