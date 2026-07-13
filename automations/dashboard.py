@@ -1166,6 +1166,39 @@ def _last_completed_as_picker(today: dt.date | None = None) -> dt.date:
 
 
 AUTOMATED_REPORTS = [
+    # 🏢 Office Operations — New-Hire Swag Texts. Renders a custom upload →
+    # preflight → send UI via the report-id hook in _render_report_card (not
+    # the standard checklist/run-button flow). `actions` is present only to
+    # satisfy the card schema; it's never used.
+    {
+        "id": "swag-welcome",
+        "name": "New-Hire Swag Texts",
+        "creator": "Claude",
+        "emoji": "🎁",
+        "color": "#6C5CE7",
+        "category": "🏢 Office Operations",
+        "assignees": ["Office Operations"],
+        # Manual weekly task: run Friday to text next Monday's new hires. The
+        # schedule makes it surface on Friday's tile in the profile's "This
+        # week" strip; self_scheduled keeps it out of the 4am batch + the
+        # due-today counter (a human runs it on demand).
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [4],   # Friday
+            "time": "9:00 AM",
+            "estimated_minutes": 10,
+        },
+        "description": (
+            "Upload the Friday new-hire roster screenshot → review names & "
+            "phone numbers → text each hire a welcome message with their name "
+            "handwritten on the swag-package card. Sends via iMessage from "
+            "whatever machine runs the Hub."
+        ),
+        "actions": [
+            {"label": "Open", "args_fn": (lambda: []), "primary": True},
+        ],
+    },
     {
         "id": "recruiting",
         "name": "ATT Program - Focus Report (Raf)",
@@ -5091,6 +5124,13 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
         )
         if _active_for_this:
             _render_active_run_panel(report, _active_for_this)
+            return
+
+        # Swag Texts (Office Operations) renders its own upload → preflight →
+        # send UI instead of the standard checklist/run-button flow.
+        if report["id"] == "swag-welcome":
+            from automations.swag_welcome import preflight_ui
+            preflight_ui.render(show_header=False)
             return
 
         # Daily-Focus only: prompt for any new ICDs in col V that don't have
