@@ -77,7 +77,7 @@ def send_email(to_addrs, subject, body, attachment=None, bcc=None) -> bool:
         fname, data = attachment
         msg.add_attachment(data, maintype="application", subtype="pdf",
                            filename=fname)
-    with smtplib.SMTP(s["host"], int(s.get("port", 587))) as srv:
+    with smtplib.SMTP(s["host"], int(s.get("port", 587)), timeout=60) as srv:
         srv.starttls()
         srv.login(s["user"], s["password"])
         srv.send_message(msg, to_addrs=to + bcc)
@@ -462,8 +462,11 @@ def builder_view():
                              f"design — change the wording, colors, layout, "
                              f"anything.\n\n— Alphalete Marketing",
                         attachment=(fname, data), bcc=[_doc_copy()])
-                except Exception:                    # noqa: BLE001
+                    email_err = None if sent else (
+                        "email isn't configured (missing [smtp] secrets)")
+                except Exception as e:               # noqa: BLE001
                     sent = False
+                    email_err = f"{type(e).__name__}: {e}"
                 try:
                     log_submission(gen, inputs, email)
                 except Exception:                    # noqa: BLE001
@@ -471,6 +474,7 @@ def builder_view():
                 st.session_state["result"] = {
                     "data": data, "fname": fname, "preview": preview,
                     "emailed": bool(sent), "email": email,
+                    "email_err": email_err,
                 }
 
     # render the result (persists across the download-button rerun)
@@ -484,6 +488,9 @@ def builder_view():
                            type="primary")
         if res["emailed"]:
             st.info(f"📧 Emailed to {res['email']} (copy to {_doc_copy()}).")
+        elif res.get("email_err"):
+            st.warning(f"⚠️ Your PDF is ready to download above, but we "
+                       f"couldn't email a copy. Reason: {res['email_err']}")
         st.markdown("---")
         st.markdown(
             "### 🎨 Want to customize or restyle your packet?\n"
