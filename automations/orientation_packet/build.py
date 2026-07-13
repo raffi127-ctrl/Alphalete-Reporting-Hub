@@ -2315,20 +2315,19 @@ def render_qrpage(c, brand, ctx, p, logo):
     if logo is not None:
         _place_logo(c, logo, cxm, PAGE_H - 150, max_w=210, max_h=98,
                     align="center")
-    # big script-style title (two-tone). Keep generous vertical gaps between
-    # these elements: Canva's PDF importer pads each text box, so tightly
-    # stacked lines collide (and drop spaces) when a packet is imported to edit.
+    # Title as a SINGLE centered text element. The old two-tone stacked
+    # "Suggestions / BOX" was two separate text boxes, which Canva's PDF
+    # importer overlaps (and the collision bleeds into the subtitle, dropping
+    # its spaces) when a packet is imported for editing. One box can't collide
+    # with itself, and the wide gaps keep the subtitle/QR isolated too.
+    title = p["title"] + (" " + p["title2"] if p.get("title2") else "")
     c.setFillColorRGB(*brand.primary)
-    c.setFont(FONT_B, 46)
-    c.drawCentredString(cxm, PAGE_H - 205, p["title"])
-    if p.get("title2"):
-        c.setFillColorRGB(*brand.accent)
-        c.setFont(FONT_B, 54)
-        c.drawCentredString(cxm, PAGE_H - 268, p["title2"])
+    c.setFont(FONT_B, 50)
+    c.drawCentredString(cxm, PAGE_H - 240, title)
     if p.get("subtitle"):
         c.setFillColorRGB(*brand.muted)
         c.setFont(FONT_I, 13)
-        c.drawCentredString(cxm, PAGE_H - 315, p["subtitle"])
+        c.drawCentredString(cxm, PAGE_H - 300, p["subtitle"])
     # big QR centered
     qr = 240
     qy = 210
