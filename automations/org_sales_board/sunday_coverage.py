@@ -34,6 +34,7 @@ def main() -> int:
     except Exception as e:  # noqa: BLE001
         print(f"cannot import tableau_session: {e}", flush=True)
         return 1
+    summary = {}
     with tableau_session() as page:
         for key, spec in sp.SPECS.items():
             try:
@@ -42,11 +43,17 @@ def main() -> int:
                 dates = sorted({d for m in parsed.values() for md in m.values() for d in md})
                 sun_rows = sum(1 for m in parsed.values() for md in m.values() if sun in md)
                 rng = f"{dates[0].isoformat()}..{dates[-1].isoformat()}" if dates else "(none)"
+                maxd = dates[-1].isoformat() if dates else "-"
                 verdict = "HAS Sunday" if sun_rows else "NO Sunday"
                 print(f"  {key:5}: {rng}  ->  {verdict} ({sun_rows} rows on {sun.isoformat()})",
                       flush=True)
+                summary[key] = f"{'Y' if sun_rows else 'N'}(max {maxd})"
             except Exception as e:  # noqa: BLE001
                 print(f"  {key:5}: ERROR {str(e).splitlines()[0][:90]}", flush=True)
+                summary[key] = "ERR"
+    # One compact line LAST so it survives the mini_control cell truncation (tail-kept).
+    print("SUMMARY " + "  ".join(f"{k}={v}" for k, v in summary.items())
+          + f"  (Sunday={sun.isoformat()}; Y=has it, N=pin ignored/missing)", flush=True)
     print("=== done ===", flush=True)
     return 0
 
