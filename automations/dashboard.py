@@ -9108,18 +9108,23 @@ elif st.session_state.view == "library":
                             else:
                                 st.error("Couldn't save — try again.")
 
-            # Run controls on the left, the report's screenshot on the
-            # right; the how-it-works breakdown spans full width below.
-            _run_col, _shot_col = st.columns([1, 1])
-            with _run_col:
+            # Swag Texts is a full custom tool — give it the full width and
+            # skip the screenshot column + how-it-works panel (Megan 2026-07-13).
+            if report["id"] == "swag-welcome":
                 _render_report_card(report, today, chrome_ok)
-            with _shot_col:
-                _render_report_screenshot(report)
-            # Breathing room between the run/screenshot row and the
-            # full-width how-it-works breakdown below it.
-            st.markdown("<div style='height:1.6rem'></div>",
-                        unsafe_allow_html=True)
-            _render_report_breakdown(report)
+            else:
+                # Run controls on the left, the report's screenshot on the
+                # right; the how-it-works breakdown spans full width below.
+                _run_col, _shot_col = st.columns([1, 1])
+                with _run_col:
+                    _render_report_card(report, today, chrome_ok)
+                with _shot_col:
+                    _render_report_screenshot(report)
+                # Breathing room between the run/screenshot row and the
+                # full-width how-it-works breakdown below it.
+                st.markdown("<div style='height:1.6rem'></div>",
+                            unsafe_allow_html=True)
+                _render_report_breakdown(report)
     else:
         st.markdown(
             "<div style='font-size:2.4rem; font-weight:800; letter-spacing:-0.5px; "
