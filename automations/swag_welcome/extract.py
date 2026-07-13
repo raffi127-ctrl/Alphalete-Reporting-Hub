@@ -42,10 +42,12 @@ _SCHEMA = {
                     },
                 },
                 "required": ["name", "phone"],
+                "additionalProperties": False,
             },
         }
     },
     "required": ["rows"],
+    "additionalProperties": False,
 }
 
 _PROMPT = (
