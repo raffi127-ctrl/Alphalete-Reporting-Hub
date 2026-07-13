@@ -25,7 +25,7 @@ def render(show_header: bool = True) -> None:
                "Texts send from THIS machine's iMessage account.")
 
     # --- 0. Always-on card preview ----------------------------------------
-    with st.expander("👀 Preview the swag card", expanded=True):
+    with st.expander("👀 Preview the swag card", expanded=False):
         sample = st.text_input("Type a name to preview it on the card",
                                value="Lola", key="swag_sample_name")
         if sample.strip():
