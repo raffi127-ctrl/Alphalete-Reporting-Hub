@@ -24,19 +24,8 @@ def render(show_header: bool = True) -> None:
                "each new hire a welcome text with their name on the swag card. "
                "Texts send from THIS machine's iMessage account.")
 
-    # --- 0. Always-on card preview ----------------------------------------
-    with st.expander("👀 Preview the swag card", expanded=False):
-        sample = st.text_input("Type a name to preview it on the card",
-                               value="Lola", key="swag_sample_name")
-        if sample.strip():
-            sp = Path(tempfile.gettempdir()) / f"swag_sample_{sample.strip()}.png"
-            meta = compose.compose(sample.strip(), sp)
-            st.image(str(sp), use_container_width=True)
-            if not meta["used_real_photo"]:
-                st.caption("⚠️ Placeholder card — real swag photo not found in "
-                           "resources/swag/.")
-
-    st.markdown("---")
+    # (The always-on name-preview was removed — there's a per-person preview
+    # below once a roster is uploaded, so it was redundant. Megan 2026-07-13.)
 
     # --- 1. Upload --------------------------------------------------------
     up = st.file_uploader("Roster screenshot (Name · Last Name · Phone)",

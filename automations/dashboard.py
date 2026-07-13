@@ -1176,17 +1176,20 @@ AUTOMATED_REPORTS = [
         "creator": "Claude",
         "emoji": "🎁",
         "color": "#6C5CE7",
-        "category": "🏢 Office Operations",
+        # 📲 Ops category → renders under the "OPS" divider on its day (not the
+        # timed/morning-batch sections), so NO run-time is shown — it's a manual
+        # task, not a scheduled auto-run.
+        "category": "📲 Ops",
         "assignees": ["Office Operations"],
         # Manual weekly task: run Friday to text next Monday's new hires. The
-        # schedule makes it surface on Friday's tile in the profile's "This
-        # week" strip; self_scheduled keeps it out of the 4am batch + the
-        # due-today counter (a human runs it on demand).
+        # weekly schedule just surfaces it on Friday's tile; self_scheduled +
+        # hide_schedule keep it out of the 4am batch, the due-today counter, and
+        # any time/DUE pills (a human runs it on demand, no fixed time).
         "self_scheduled": True,
+        "hide_schedule": True,
         "schedule": {
             "frequency": "weekly",
             "weekdays": [4],   # Friday
-            "time": "9:00 AM",
             "estimated_minutes": 10,
         },
         "description": (
@@ -9109,22 +9112,20 @@ elif st.session_state.view == "library":
                             else:
                                 st.error("Couldn't save — try again.")
 
-            # Swag Texts is a full custom tool — give it the full width and
-            # skip the screenshot column + how-it-works panel (Megan 2026-07-13).
-            if report["id"] == "swag-welcome":
+            # Run controls on the left, the report's screenshot on the
+            # right; the how-it-works breakdown spans full width below.
+            _run_col, _shot_col = st.columns([1, 1])
+            with _run_col:
                 _render_report_card(report, today, chrome_ok)
-            else:
-                # Run controls on the left, the report's screenshot on the
-                # right; the how-it-works breakdown spans full width below.
-                _run_col, _shot_col = st.columns([1, 1])
-                with _run_col:
-                    _render_report_card(report, today, chrome_ok)
-                with _shot_col:
-                    _render_report_screenshot(report)
-                # Breathing room between the run/screenshot row and the
-                # full-width how-it-works breakdown below it.
-                st.markdown("<div style='height:1.6rem'></div>",
-                            unsafe_allow_html=True)
+            with _shot_col:
+                _render_report_screenshot(report)
+            # Breathing room between the run/screenshot row and the
+            # full-width how-it-works breakdown below it.
+            st.markdown("<div style='height:1.6rem'></div>",
+                        unsafe_allow_html=True)
+            # Swag Texts skips the how-it-works panel (Megan 2026-07-13); every
+            # other report shows it.
+            if report["id"] != "swag-welcome":
                 _render_report_breakdown(report)
     else:
         st.markdown(
