@@ -60,17 +60,23 @@ def _app_url() -> str:
     return st.secrets.get("app_url", "")
 
 
-def send_email(to_addrs, subject, body, attachment=None, bcc=None) -> bool:
-    """Send mail. `bcc` recipients receive it without appearing in headers."""
+def send_email(to_addrs, subject, body, attachment=None, bcc=None,
+               cc=None) -> bool:
+    """Send mail. `cc` recipients are visible in headers (so reply-all reaches
+    them); `bcc` recipients receive it without appearing in headers."""
     s = _smtp()
     to = [a for a in dict.fromkeys(to_addrs or []) if a and "@" in a]
-    bcc = [a for a in dict.fromkeys(bcc or []) if a and "@" in a and a not in to]
+    cc = [a for a in dict.fromkeys(cc or []) if a and "@" in a and a not in to]
+    bcc = [a for a in dict.fromkeys(bcc or [])
+           if a and "@" in a and a not in to and a not in cc]
     pw = (s or {}).get("password", "")
-    if not s or not (to or bcc) or not pw or pw.startswith("PASTE"):
+    if not s or not (to or cc or bcc) or not pw or pw.startswith("PASTE"):
         return False
     msg = EmailMessage()
     msg["From"] = s.get("from", s["user"])
     msg["To"] = ", ".join(to)
+    if cc:
+        msg["Cc"] = ", ".join(cc)
     msg["Subject"] = subject
     msg.set_content(body)
     if attachment:
@@ -80,7 +86,7 @@ def send_email(to_addrs, subject, body, attachment=None, bcc=None) -> bool:
     with smtplib.SMTP(s["host"], int(s.get("port", 587)), timeout=60) as srv:
         srv.starttls()
         srv.login(s["user"], s["password"])
-        srv.send_message(msg, to_addrs=to + bcc)
+        srv.send_message(msg, to_addrs=to + cc + bcc)
     return True
 
 
@@ -462,7 +468,7 @@ def builder_view():
                              f"  3. Canva turns it into a fully editable "
                              f"design — change the wording, colors, layout, "
                              f"anything.\n\n— Alphalete Marketing",
-                        attachment=(fname, data), bcc=[_doc_copy()])
+                        attachment=(fname, data), cc=[_doc_copy()])
                     email_err = None if sent else (
                         "email isn't configured (missing [smtp] secrets)")
                 except Exception as e:               # noqa: BLE001
