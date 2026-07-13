@@ -344,8 +344,9 @@ def builder_view():
     st.write(gen.description)
     st.divider()
 
-    email = st.text_input("Your email",
-                          help="We'll email you a copy of the finished PDF.")
+    email = st.text_input("Admin or ICD email",
+                          help="Who the finished PDF will be emailed to — the "
+                               "ICD receiving the packet (or yourself).")
 
     inputs, logo_path = {}, None
     for f in gen.fields:
@@ -419,7 +420,7 @@ def builder_view():
                 and not logo_path:
             missing.append("Company logo")
         if not email or "@" not in email:
-            missing.append("Your email")
+            missing.append("Admin or ICD email")
         if missing:
             st.error("Please fill in: " + ", ".join(missing))
         else:
