@@ -200,6 +200,27 @@
       "depends_on": [],
       "verify": null
     },
+    "recruiting_backfill_juan": {
+      "on_scheduler": true,
+      "_note": "MANUAL-ONLY (weekdays [] -> never auto-runs). `lucy rerun recruiting_backfill_juan` backfills Juan Botero Berrio's blank recruiting weeks on Lucy 1 (needs the AppStream session). Added 2026-07-13 after moving him from sales_only -> confirmed (office 23703). One-off — safe to delete once his history is filled.",
+      "display_name": "Recruiting backfill — Juan Botero Berrio",
+      "source_type": "appstream",
+      "data_sources": [],
+      "command": [
+        "automations.recruiting_report.backfill_blanks"
+      ],
+      "base_args": [
+        "--only",
+        "Juan Botero Berrio"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
     "morning_diag": {
       "on_scheduler": true,
       "_note": "MANUAL-ONLY diagnostic (weekdays [] -> never auto-runs). `lucy rerun morning_diag` prints, from the mini, when the 4am launchd orchestrator ACTUALLY started (from its per-run log filename: ~04:00 = mini awake, so the ~6am report delay is the AppStream session; ~06:00 = mini was asleep and launchd deferred the job) + pmset wake schedule/sleep timer + daily_focus attempt/fail count. Built 2026-07-06 to diagnose why AppStream/recruiting reports land ~6am not 4am.",
