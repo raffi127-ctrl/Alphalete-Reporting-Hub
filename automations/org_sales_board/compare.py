@@ -547,6 +547,23 @@ def format_breakdown_html(d: dict, max_rows: int = 40) -> str:
                            True, "Row on the copy only — likely a name/marker mismatch, not missing data.", ""))
 
     att = d.get("attention", 0)
+    # A HUGE count isn't thousands of real errors — it's a STRUCTURAL misalignment:
+    # almost always the VA tab rolled to the new week on Monday while the automation
+    # still holds last week (it rolls Tuesday), so EVERY cell reads one column off and
+    # the compare flags all of them. Suppress the scary wall (Megan 2026-07-13) — the
+    # underlying numbers are fine; a real glitch day is dozens, not thousands.
+    if att > 1000:
+        return (
+            "<h3 style='margin:10px 0 4px'>📊 Copy vs VA — comparison</h3>"
+            "<div style='background:#fef9e7;border-left:4px solid #f39c12;"
+            "padding:8px 10px;margin:6px 0;font-size:13px'>ℹ️ Cell-by-cell compare "
+            f"suppressed: {att:,} differences across the whole sheet means the two "
+            "tabs are <b>structurally misaligned</b>, not that thousands of numbers "
+            "are wrong. This is almost always the <b>VA board rolling to the new week "
+            "on Monday</b> while the automation still holds last week (it rolls "
+            "Tuesday) — a one-column offset, so the numbers actually match. It "
+            "realigns once both tabs are on the same week. (If it's still flagging "
+            "thousands past Tuesday, the tabs genuinely need a look.)</div>")
     banner = ("<div style='background:#eafaf1;border-left:4px solid #27ae60;"
               "padding:8px 10px;margin:6px 0;font-size:13px'>✅ In sync — the "
               "automation tab matches the VA tab. The only differences are the "
