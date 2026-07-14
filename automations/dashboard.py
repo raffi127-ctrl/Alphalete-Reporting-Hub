@@ -3254,7 +3254,12 @@ AUTOMATED_REPORTS = [
         "self_scheduled": True,
         "schedule": {
             "frequency": "daily",
+            # Runs every ~10 min across a WINDOW, so a bare "7:00 AM" reads as if
+            # it fires once. time_label shows the real window at a glance (Megan
+            # 2026-07-14); schedule.time stays the sortable START time so
+            # _report_time_minutes still orders the card at 7am.
             "time": "7:00 AM",
+            "time_label": "7am–12am CST",
             "estimated_minutes": 1,
         },
         "checklist": [],
@@ -3313,7 +3318,11 @@ AUTOMATED_REPORTS = [
         "self_scheduled": True,
         "schedule": {
             "frequency": "daily",
+            # `time` = the START of the window: keeps the card sorted at 8am.
+            # `time_label` = what the This Week tile actually shows, because this
+            # one runs every 10 min across a window, not once at 8am.
             "time": "8:00 AM",
+            "time_label": "8am–10pm CST",
             "estimated_minutes": 5,
         },
         "checklist": [],
@@ -4883,9 +4892,18 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                     # is no way to see WHEN it runs. Batch reports omit it (they run
                     # in the morning sweep, no individual time).
                     if _r.get("self_scheduled"):
-                        _sched_t = (_r.get("schedule") or {}).get("time")
-                        if _sched_t:
-                            _label += f" · {_sched_t} CST"
+                        _sched = _r.get("schedule") or {}
+                        # A report that runs across a WINDOW (Resume Pushing:
+                        # every 10 min, 8am-10pm) has no single run time, so a
+                        # bare "8:00 AM" reads as if it fires once. schedule
+                        # .time_label overrides the tile text (it carries its own
+                        # timezone); schedule.time stays the sortable START time
+                        # so _report_time_minutes still orders the card at 8am.
+                        _sched_lbl = _sched.get("time_label")
+                        if _sched_lbl:
+                            _label += f" · {_sched_lbl}"
+                        elif _sched.get("time"):
+                            _label += f" · {_sched['time']} CST"
                     _help = {
                         "ok": "Ran OK — open to view",
                         "fail": "Failed / incomplete — open to see why",
