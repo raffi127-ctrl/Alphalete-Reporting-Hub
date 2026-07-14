@@ -84,6 +84,10 @@ def _send_text(phone: str, text: str) -> None:
 SHORTCUT_NAME = "Alphalete Swag Card"
 _SWAG_DIR = Path.home() / ".swag_cards"
 _SWAG_IMG = _SWAG_DIR / "current.png"
+# Auto-sending the card image to unsaved 1:1 numbers isn't reliably solvable on
+# macOS yet — keep it OFF so batches are text-only + safe. The Shortcut path is
+# kept below for when it can be finished; flip this to True to re-enable.
+_AUTO_SEND_CARD = False
 
 
 def _find_shortcut(name: str = SHORTCUT_NAME) -> str | None:
@@ -117,7 +121,13 @@ def _send_image_via_shortcut(phone: str, attachment: str,
     actual = _find_shortcut(name) or name   # use the real name (may hold spaces)
     _SWAG_DIR.mkdir(exist_ok=True)
     shutil.copy(ap, _SWAG_IMG)                       # card → Shortcut input file
-    safe = phone.replace("\\", "\\\\").replace('"', '\\"')
+    # FORMAT the number (e.g. "+1 (419) 769-7114") so the Shortcut's "Get Phone
+    # Numbers" data-detector recognizes it — a bare "+14197697114" isn't matched.
+    from automations.swag_welcome.roster import pretty_phone
+    disp = pretty_phone(phone)
+    if disp.startswith("("):
+        disp = "+1 " + disp
+    safe = disp.replace("\\", "\\\\").replace('"', '\\"')
     _osascript(f'set the clipboard to "{safe}"')     # phone → clipboard (text)
     proc = subprocess.run(["shortcuts", "run", actual, "-i", str(_SWAG_IMG)],
                           capture_output=True, text=True, timeout=60)
@@ -141,18 +151,18 @@ def send(phone: str, text: str, attachment: str | None = None,
         if text:
             _send_text(phone, text)
         result["sent"] = True
+        # Image auto-send is OFF (text-only): reliably sending a card to an
+        # unsaved 1:1 number on macOS isn't solved (AppleScript won't deliver
+        # images; the Shortcut path can't resolve unsaved numbers). Cards are
+        # still generated in the grid + output folder to attach manually. Flip
+        # _AUTO_SEND_CARD to re-enable once the Shortcut path is proven.
         result["image_auto_sent"] = False
-        if attachment:
-            if shortcut_installed():
-                try:
-                    _send_image_via_shortcut(phone, attachment)
-                    result["image_auto_sent"] = True
-                except Exception as e:
-                    result["image_error"] = str(e)
-            else:
-                result["image_error"] = (
-                    f"card not sent — Shortcut '{SHORTCUT_NAME}' not installed "
-                    "(text sent). Build it once, then re-run.")
+        if attachment and _AUTO_SEND_CARD and shortcut_installed():
+            try:
+                _send_image_via_shortcut(phone, attachment)
+                result["image_auto_sent"] = True
+            except Exception as e:
+                result["image_error"] = str(e)
     except Exception as e:
         result["error"] = str(e)
     return result
