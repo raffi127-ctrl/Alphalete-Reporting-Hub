@@ -21,7 +21,7 @@ DEFAULT_TEMPLATE = (
 
 # Same copy, with a "See you Monday at {time}!" line appended. {time} is filled
 # per-recipient from the roster's Start Time column.
-DEFAULT_TEMPLATE_WITH_TIME = DEFAULT_TEMPLATE + " See you Monday at {time}!"
+DEFAULT_TEMPLATE_WITH_TIME = DEFAULT_TEMPLATE + " See you at {time}!"
 
 
 def render(name: str, template: str | None = None, manager: str = "",
