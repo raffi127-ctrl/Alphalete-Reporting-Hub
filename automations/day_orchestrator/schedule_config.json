@@ -88,7 +88,15 @@
       ],
       "base_args": [],
       "cadence": {
-        "weekdays": [0, 1, 2, 3, 4, 5, 6],
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
         "not_before": "00:00"
       },
       "priority": "P3",
@@ -112,7 +120,15 @@
         "harvest-proof-1pm"
       ],
       "cadence": {
-        "weekdays": [0, 1, 2, 3, 4, 5, 6]
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
       },
       "priority": "P3",
       "freshness_target": null,
@@ -519,7 +535,7 @@
     "org_sales_board": {
       "order": 8,
       "on_scheduler": true,
-      "_note": "Fills the SANDBOX 'Copy of' tab daily, FILL-ONLY — the Tuesday auto-rollover was removed, so the weekly rollover is MANUAL (a person Monday night). Auto-compares vs the VA tab. Intentionally targets the sandbox; the real tab stays guarded (see _warn). TIMING (Megan 2026-07-11): runs in its ORDER (8), gated on DATA readiness — the not_before '08:00' clock was removed. The board's last-landing source is BOX (extract refreshes ~7-8am); data_sources now includes 'tableau:box_daily' with a box_daily readiness probe, so the orchestrator holds the board until Box has the latest completed day, then it runs (no more fixed 8am wait when Box is in early). The email (org_sales_board_email) depends_on this, so it follows right after. The 2:30pm com.alphalete.board-catchup remains the backstop. ONLY JE stays a day behind (inherent — the VAs' manual board is too).",
+      "_note": "Fills the SANDBOX 'Copy of' tab daily, FILL-ONLY — the Tuesday auto-rollover was removed, so the weekly rollover is MANUAL (a person Monday night). Auto-compares vs the VA tab. Intentionally targets the sandbox; the real tab stays guarded (see _warn). TIMING (Megan 2026-07-11): runs in its ORDER (8), gated on DATA readiness — the not_before '08:00' clock was removed. The board's last-landing source is BOX (extract refreshes ~7-8am); data_sources now includes 'tableau:box_daily' with a box_daily readiness probe, so the orchestrator holds the board until Box has the latest completed day, then it runs (no more fixed 8am wait when Box is in early). The email (org_sales_board_email) depends_on this, so it follows right after. The 2:30pm com.alphalete.board-catchup remains the backstop. ONLY JE stays a day behind (inherent — the VAs' manual board is too). COMPARE DEFERRED (Megan 2026-07-14): the fill now runs with --skip-compare. Comparing right after the 4am fill pitted us against a VA tab the VAs hadn't touched yet, so every cell we were merely AHEAD on counted as a difference and the fill closed INCOMPLETE every morning. The real compare is report_id 'board_compare', which runs at 9am CST once the VAs have finished keying.",
       "display_name": "Alphalete Org Sales Board",
       "source_type": "tableau",
       "data_sources": [
@@ -532,7 +548,8 @@
       "base_args": [
         "--step",
         "daily",
-        "--with-captainships"
+        "--with-captainships",
+        "--skip-compare"
       ],
       "cadence": {
         "weekdays": [
@@ -815,8 +832,8 @@
     },
     "board_compare": {
       "on_scheduler": true,
-      "_note": "NOT a report — standalone FULL comparison of the Org Sales Board copy tab vs the live VA tab, run via `lucy rerun board_compare`. Read-only (sheet vs sheet, no Tableau). Writes EVERY disagreeing cell to output/logs/org_sales_board_compare-<stamp>.log (the Mini-Control result cell truncates to ~480 chars, so read the full list with `lucy logtail org_sales_board_compare`). on_scheduler:true so registry keeps it; weekdays [] = never auto-runs. source_type 'local' (no chrome guard). Built 2026-07-07 to enumerate the residual VA-compare cells after the NDS section fix.",
-      "display_name": "Org Sales Board — full VA compare (diagnostic)",
+      "_note": "Full copy-vs-VA comparison of the Org Sales Board, run DAILY at 9am CST (not_before 09:00) — deliberately NOT straight after the 4am fill. At 4am the VAs have keyed nothing, so the automation is ahead on every cell it pulled and the compare is pure noise (it marked the fill INCOMPLETE every morning). By 9am the VAs are done, so a difference here is a REAL disagreement worth looking at. Read-only (sheet vs sheet, no Tableau). Writes every disagreeing cell to output/logs/org_sales_board_compare-*.log — read it with `lucy logtail org_sales_board_compare`. For the every-single-cell go-live gate (incl. rows past 1000) run `lucy rerun board_compare --all`.",
+      "display_name": "Org Sales Board — VA compare (9am)",
       "source_type": "local",
       "data_sources": [],
       "command": [
@@ -824,9 +841,18 @@
       ],
       "base_args": [],
       "cadence": {
-        "weekdays": []
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "not_before": "09:00"
       },
-      "priority": "P3",
+      "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
       "verify": null,

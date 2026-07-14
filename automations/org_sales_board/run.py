@@ -135,6 +135,13 @@ def main(argv=None) -> int:
     ap.add_argument("--programs",
                     help="Comma-separated captainship program keys to pull ONLY "
                          "(granular retry of just the failed programs). Omit = all.")
+    ap.add_argument("--skip-compare", action="store_true",
+                    help="Don't compare against the VA tab after the fill. The "
+                         "scheduled 4am run sets this: at 4am the VAs have keyed "
+                         "NOTHING yet, so every 'difference' is just the automation "
+                         "being ahead — pure noise that marked the fill INCOMPLETE "
+                         "every morning. The compare runs on its own at 9am CST "
+                         "(report_id 'board_compare'), once the VAs are done.")
     args = ap.parse_args(argv)
     _sections = [s.strip() for s in args.sections.split(",") if s.strip()] if args.sections else None
     _programs = [p.strip() for p in args.programs.split(",") if p.strip()] if args.programs else None
@@ -260,7 +267,15 @@ def main(argv=None) -> int:
             _compare_clean = True
             _compare_ndiff = 0
             _va_note = ""
-            if not args.dry_run and not args.real:
+            # The VA compare is DEFERRED to 9am CST (Megan 2026-07-14). Running it
+            # straight after the 4am fill compared us against a VA tab the VAs had
+            # not touched yet, so every cell we were simply AHEAD on counted as a
+            # "difference": the fill logged compare=FLAGGED and closed INCOMPLETE
+            # every single morning, which is exactly the kind of routine red that
+            # trains everyone to ignore the board. The scheduled run now passes
+            # --skip-compare, and report_id 'board_compare' runs the real compare at
+            # 9am once the VAs have finished keying. A manual run still compares.
+            if not args.dry_run and not args.real and not args.skip_compare:
                 from automations.org_sales_board import compare
                 _cmp = compare.run_compare()
                 _compare_clean = _cmp["clean"]
