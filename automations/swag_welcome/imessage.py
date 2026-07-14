@@ -96,43 +96,36 @@ IMG_UPLOAD_DELAY = 12
 
 
 def _send_image(phone: str, attachment: str) -> None:
-    """Send the card as an inline iMessage image — no GUI, no extra permissions,
-    straight from this machine's iMessage account.
+    """Send the card as an inline photo by PASTING it into the open chat.
 
-    Two things matter (both from the Texas de Brazil sender):
-    - the card is a PNG — Messages sends PNGs inline; a JPEG file-send comes
-      through as a raw document (file icon) that won't deliver.
-    - a trailing `delay` lets Messages finish UPLOADING before osascript exits,
-      else the image shows on the sender but never reaches the recipient.
+    Scripted `send <file>` (to a buddy or a chat) attaches images as raw
+    documents that Messages won't deliver in a 1:1 chat — confirmed across every
+    variant on this machine. Pasting clipboard image data (like a screenshot) is
+    the only reliable path. GUI-driven, so the process needs Accessibility
+    permission; run it where it won't fight you for the screen (the mini).
     """
     ap = Path(attachment)
     if not ap.exists():
         raise IMessageError(f"attachment not found: {attachment}")
-    clean = _clean_path(str(ap))
-    # Send to the 1:1 CHAT reference (prefix "any;-;<phone>", confirmed on this
-    # machine) — a file sent to a chat goes inline; to a buddy it attaches as a
-    # document. The chat exists because _send_text ran first. Fall back to the
-    # buddy form only if the chat can't be resolved.
-    try:
-        _osascript(
-            'tell application "Messages"\n'
-            f'  set theChat to chat id "any;-;{phone}"\n'
-            f'  send (POSIX file "{clean}") to theChat\n'
-            f'  delay {IMG_UPLOAD_DELAY}\n'
-            'end tell',
-            timeout=IMG_UPLOAD_DELAY + 30,
-        )
-    except Exception:
-        _osascript(
-            'tell application "Messages"\n'
-            '  set svcId to id of 1st service whose service type = iMessage\n'
-            '  set targetService to service id svcId\n'
-            f'  set targetBuddy to buddy "{phone}" of targetService\n'
-            f'  send (POSIX file "{clean}") to targetBuddy\n'
-            f'  delay {IMG_UPLOAD_DELAY}\n'
-            'end tell',
-            timeout=IMG_UPLOAD_DELAY + 30,
-        )
+    # Scripted `send <file>` (buddy OR chat) attaches images as raw documents
+    # that Messages won't deliver in a 1:1 chat — confirmed across every variant
+    # on this machine. The only reliable way is to PASTE the image (clipboard)
+    # into the chat _send_text just opened, exactly like sending a screenshot.
+    # GUI-driven: needs Accessibility permission for the process running it.
+    klass = "«class PNGf»" if ap.suffix.lower() == ".png" else "JPEG picture"
+    _osascript(f'set the clipboard to (read (POSIX file "{ap.resolve()}") '
+               f'as {klass})')
+    _osascript(
+        'tell application "Messages" to activate\n'
+        'delay 0.7\n'
+        'tell application "System Events"\n'
+        '  keystroke "v" using command down\n'   # paste the card
+        '  delay 1.0\n'
+        '  key code 36\n'                         # Return → send
+        f'  delay {IMG_UPLOAD_DELAY}\n'           # let it upload before we return
+        'end tell',
+        timeout=IMG_UPLOAD_DELAY + 30,
+    )
 
 
 def send(phone: str, text: str, attachment: str | None = None,
