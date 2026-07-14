@@ -213,6 +213,45 @@ def render_all_rows(page) -> int:
 # --------------------------------------------------------------------------- #
 # Extract loop
 # --------------------------------------------------------------------------- #
+def _robot_center(page):
+    """Locate the Resume Helper plugin's robot launcher — a small fixed-position
+    square the content script injects in the top-right corner — and return its
+    (cx, cy) viewport centre, or None."""
+    r = page.evaluate(r"""() => {
+      const cs=[...document.querySelectorAll('div,img,button,a')].filter(e=>{
+        const b=e.getBoundingClientRect();
+        return b.width>=28&&b.width<=72&&b.height>=28&&b.height<=72
+               && b.left>innerWidth-130 && b.top<200 && b.top>=40;
+      });
+      if(!cs.length) return null;
+      const b=cs[0].getBoundingClientRect();
+      return [Math.round(b.left+b.width/2), Math.round(b.top+b.height/2)];
+    }""")
+    return tuple(r) if r else None
+
+
+def _shadow_find(page, text: str):
+    """Find an element whose trimmed text == `text`, PIERCING open shadow roots
+    (the plugin renders its popup — incl. the 'Start' button — inside a shadow
+    DOM, invisible to document.querySelectorAll). Returns its (cx, cy) centre."""
+    r = page.evaluate(
+        "(want) => {"
+        "  function* walk(root){"
+        "    for (const e of root.querySelectorAll('*')){"
+        "      yield e; if (e.shadowRoot) yield* walk(e.shadowRoot);"
+        "    }"
+        "  }"
+        "  for (const e of walk(document)){"
+        "    const t=(e.innerText||e.value||'').trim();"
+        "    if (t===want){ const b=e.getBoundingClientRect();"
+        "      if (b.width>0&&b.height>0)"
+        "        return [Math.round(b.left+b.width/2), Math.round(b.top+b.height/2)]; }"
+        "  }"
+        "  return null;"
+        "}", text)
+    return tuple(r) if r else None
+
+
 def _extract_wait_v2(page, tag: str = "") -> bool:
     """Wait for a v2 'Processing… x/n' run to finish: poll until no 'Processing'
     button and no visible 'Stop' remain (the Resume Helper plugin — live service
@@ -1092,42 +1131,33 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
                 #    log its HTML for a stable selector, click its centre, then
                 #    screenshot + dump whatever popup opens.
                 try:
-                    rob = page.evaluate(r"""() => {
-                      const cs=[...document.querySelectorAll('div,img,button,a')].filter(e=>{
-                        const r=e.getBoundingClientRect();
-                        return r.width>=30&&r.width<=70&&r.height>=30&&r.height<=70
-                               && r.left>innerWidth-130 && r.top<200 && r.top>=40;
-                      });
-                      return cs.map(e=>{const r=e.getBoundingClientRect();
-                        return {cx:Math.round(r.left+r.width/2),cy:Math.round(r.top+r.height/2),
-                                html:e.outerHTML.slice(0,160)};});
-                    }""")
-                    _log(f"[inspect] robot candidates: {rob}")
-                    if rob:
-                        cx, cy = rob[0]["cx"], rob[0]["cy"]
-                        _log(f"[inspect] clicking robot centre @ ({cx},{cy})")
-                        page.mouse.click(cx, cy)
-                        page.wait_for_timeout(4000)
+                    c = _robot_center(page)
+                    _log(f"[inspect] robot centre: {c}")
+                    if c:
+                        page.mouse.click(c[0], c[1])
+                        page.wait_for_timeout(2500)
+                        st = _shadow_find(page, "Start")
+                        _log(f"[inspect] Start (shadow walk): {st}")
+                        if st:
+                            base = len(ctx.pages)
+                            page.mouse.click(st[0], st[1])
+                            _log(f"[inspect] clicked Start @ ({st[0]},{st[1]}) — monitoring 75s")
+                            import time as _t
+                            t0 = _t.time()
+                            while _t.time() - t0 < 75:
+                                page.wait_for_timeout(10000)
+                                proc = page.locator(
+                                    "xpath=//button[contains(.,'Processing')]").count()
+                                npages = len(ctx.pages)
+                                _log(f"[inspect] +{int(_t.time()-t0)}s pages={npages} "
+                                     f"proc_btn={proc} ready={ready_for_extraction(page)}")
                         try:
                             _upload_png_b64(page.screenshot(full_page=False))
-                            _log("[inspect] popup screenshot -> 'RP Shot'")
+                            _log("[inspect] post-Start screenshot -> 'RP Shot'")
                         except Exception as e:
-                            _log("[inspect] popup shot err: " + str(e)[:70])
-                        # dump popup controls across pages/frames
-                        for pi, pg in enumerate(ctx.pages):
-                            try:
-                                arr = pg.evaluate(
-                                    "() => Array.from(document.querySelectorAll("
-                                    "'button,a,input,[role=button],[class*=btn],[class*=start]'))"
-                                    ".filter(e=>e.offsetParent!==null)"
-                                    ".map(e=>e.tagName+':'+((e.innerText||e.value||e.title||'')"
-                                    ".trim().slice(0,28))).filter(s=>s.length>7).slice(0,35)")
-                                if arr:
-                                    _log(f"[inspect] popup ctrl page{pi}: {arr}")
-                            except Exception:
-                                pass
+                            _log("[inspect] shot err: " + str(e)[:70])
                 except Exception as e:
-                    _log("[inspect] robot click err: " + str(e)[:90])
+                    _log("[inspect] robot flow err: " + str(e)[:100])
                 rc = 0
                 return 0
 
