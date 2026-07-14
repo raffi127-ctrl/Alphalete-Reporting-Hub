@@ -370,6 +370,9 @@ def builder_view():
         elif f.kind == "text":
             inputs[f.key] = st.text_input(lbl, value=f.default,
                                           help=f.help or None)
+        elif f.kind == "checkbox":
+            inputs[f.key] = st.checkbox(f.label, value=bool(f.default),
+                                        help=f.help or None)
         elif f.kind == "select":
             opts = list(f.options)
             idx = opts.index(f.default) if f.default in opts else 0

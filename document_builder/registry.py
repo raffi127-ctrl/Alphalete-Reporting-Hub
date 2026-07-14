@@ -56,6 +56,10 @@ def _orientation_build(inputs: dict, out_path: str) -> str:
     )
     # apply any admin-edited master content on top of the base pages
     pages = master.apply_overrides(C.PAGES, inputs.get("_overrides"))
+    # The Suggestions Box page runs on a paid service only Raf subscribes to,
+    # so it's OFF by default — other owners don't have it. Opt in per packet.
+    if not inputs.get("include_suggestions"):
+        pages = [p for p in pages if p.get("type") != "qrpage"]
     schedule = {k: v for k, v in inputs.items()
                 if k.startswith(("office_", "field_"))}
     build_pdf(
@@ -137,6 +141,13 @@ ORIENTATION = Generator(
         Field("backend", "Backend support", "text", default="", required=False,
               help="Who provides backend support — one or more names. Leave "
                    "blank if it's just you. e.g. JD"),
+
+        Field("include_suggestions",
+              "Include the Suggestions Box page (Raf only)", "checkbox",
+              default=False, required=False,
+              help="Off for everyone else. The Suggestions Box runs on a paid "
+                   "service only Raf subscribes to, so other owners don't get "
+                   "this page."),
     ],
     build=_orientation_build,
     filename=lambda i: f"{_safe(i.get('company') or 'Company')} "
