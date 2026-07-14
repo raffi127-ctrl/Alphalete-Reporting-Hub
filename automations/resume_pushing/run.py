@@ -858,6 +858,137 @@ def _cdp_test() -> int:
     return 0
 
 
+# --------------------------------------------------------------------------- #
+# CDP-on-real-profile: the permission-free extraction path
+# --------------------------------------------------------------------------- #
+CDP_PROFILE = "/tmp/rp_cdp_profile"
+CDP_PORT = "9245"
+EXT_ID = "goofbdglmeckblcbcoffnkdnmpehhhmo"
+
+
+def _copy_default_profile() -> str:
+    """Copy the user's real Chrome Default profile (which holds the Resume Helper
+    plugin AND the live ApplicantStream login) to a NON-default dir so Chrome will
+    honour --remote-debugging-port on it (Chrome 136+ disables the debug port on the
+    real default dir). Skips the big cache dirs so the copy is quick. Returns the
+    dest user-data-dir. Two Chromes on two dirs coexist fine, so the user's own
+    Chrome need not be closed."""
+    import os
+    import subprocess
+    home = os.path.expanduser("~")
+    src = f"{home}/Library/Application Support/Google/Chrome"
+    dst = CDP_PROFILE
+    subprocess.run(["pkill", "-f", "rp_cdp_profile"], capture_output=True)
+    import time as _t
+    _t.sleep(2)
+    subprocess.run(["rm", "-rf", dst], capture_output=True)
+    os.makedirs(f"{dst}/Default", exist_ok=True)
+    subprocess.run(["rsync", "-a", f"{src}/Local State", f"{dst}/Local State"],
+                   capture_output=True)
+    subprocess.run(
+        ["rsync", "-a",
+         "--exclude", "Cache", "--exclude", "Code Cache", "--exclude", "GPUCache",
+         "--exclude", "DawnCache", "--exclude", "GraphiteDawnCache",
+         "--exclude", "Application Cache", "--exclude", "Service Worker/CacheStorage",
+         f"{src}/Default/", f"{dst}/Default/"],
+        capture_output=True)
+    return dst
+
+
+def _launch_cdp_chrome(url: str = "https://applicantstream.com/index.cfm"):
+    """Launch the REAL Google Chrome on the copied profile with the debug port and
+    return the Popen. Real Chrome (no patchright mock-keychain) runs the extension
+    normally, so its service worker is live and the robot performs real extraction."""
+    import subprocess
+    chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    launch = [chrome, f"--user-data-dir={CDP_PROFILE}", "--profile-directory=Default",
+              f"--remote-debugging-port={CDP_PORT}", "--no-first-run",
+              "--no-default-browser-check", "--restore-last-session=false",
+              "--disable-session-crashed-bubble", "--disable-infobars", url]
+    return subprocess.Popen(launch, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def _cdp_real() -> int:
+    """Probe the permission-free path: real Chrome on a COPY of the Default profile
+    (plugin + login) over CDP. Reports whether the extension's service worker is
+    live, whether we're still logged in (#searchMC), whether the robot button is
+    present, and — the decisive check — whether CLICKING the robot opens the real
+    extraction popup vs. the Chrome Web Store 'install' page (which means the plugin
+    is not truly active). Writes to 'RP Diag'."""
+    import os
+    import subprocess
+    import time as _t
+    from patchright.sync_api import sync_playwright
+    from automations.recruiting_report import fill as _fill
+    lines = []
+
+    def L(s):
+        lines.append(str(s)[:600])
+        print(s, flush=True)
+
+    dst = _copy_default_profile()
+    ext_ok = os.path.isdir(f"{dst}/Default/Extensions/{EXT_ID}")
+    L(f"copied -> {dst}; Default: {os.path.isdir(dst+'/Default')}; plugin dir: {ext_ok}")
+    proc = _launch_cdp_chrome()
+    L(f"launched real Chrome pid={proc.pid} on copy; waiting 25s…")
+    _t.sleep(25)
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
+            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            try:
+                page.goto("https://applicantstream.com/index.cfm",
+                          wait_until="domcontentloaded")
+            except Exception as e:
+                L("goto err: " + str(e)[:80])
+            page.wait_for_timeout(6000)
+            L("url: " + (page.url or "")[:95])
+            L("logged_in (#searchMC): " + str(page.locator("#searchMC").count()))
+            L("service_workers: " + str([sw.url for sw in ctx.service_workers]))
+            # decisive: click the robot, see whether the web store opens (bad) or a
+            # real extraction popup/frame (good).
+            rc = page.locator("[title*='extract resume data' i]").count()
+            L("robot button count: " + str(rc))
+            before = set(pg.url for pg in ctx.pages)
+            if rc:
+                try:
+                    page.locator("[title*='extract resume data' i]").first.click(timeout=8000)
+                except Exception as e:
+                    L("robot click err: " + str(e)[:80])
+                page.wait_for_timeout(6000)
+                after = [pg.url for pg in ctx.pages if pg.url not in before]
+                L("robot opened: " + str([u[:80] for u in after]))
+                webstore = any("chromewebstore" in (u or "") for u in after)
+                L("VERDICT: " + ("WEBSTORE (plugin inactive)" if webstore
+                                 else ("EXTRACTION POPUP (plugin ACTIVE)" if after
+                                       else "no new tab — popup may be inline/frame")))
+            try:
+                browser.close()
+            except Exception:
+                pass
+    except Exception as e:
+        L("CDP error: " + str(e)[:220])
+    finally:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+        subprocess.run(["pkill", "-f", "rp_cdp_profile"], capture_output=True)
+    try:
+        sh = _fill._client().open_by_key("1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
+        try:
+            t = sh.worksheet("RP Diag")
+        except Exception:
+            t = sh.add_worksheet(title="RP Diag", rows=200, cols=1)
+        t.clear()
+        t.update([[x] for x in lines], "A1")
+        print(f"CDP-REAL: wrote {len(lines)} lines to RP Diag", flush=True)
+    except Exception as e:
+        print(f"CDP-REAL sheet err: {e}", flush=True)
+    return 0
+
+
 def _plain_probe() -> int:
     """Launch a PLAIN Google Chrome (NOT patchright) on the pusher profile, with the
     cached plugin, expose CDP, connect Playwright to it, and ask the ApplicantStream
@@ -1151,6 +1282,10 @@ def main() -> int:
                     help="Decisive test: drive the DEDICATED extract profile (where the plugin "
                          "was GENUINELY installed, never touched by patchright) via CDP and check "
                          "chrome.runtime. Genuine-install vs anti-automation. Writes to RP Diag.")
+    ap.add_argument("--cdp-real", action="store_true",
+                    help="Permission-free path probe: real Chrome on a COPY of the Default profile "
+                         "(plugin + login) over CDP; reports SW liveness, login, and whether the "
+                         "robot opens the real extraction popup vs the web store. Writes to RP Diag.")
     ap.add_argument("--locate-plugin", action="store_true",
                     help="Search every Chrome profile on the machine for the Resume Helper "
                          "extension id to find where the install actually landed. Writes to RP Diag.")
@@ -1185,6 +1320,8 @@ def main() -> int:
         return _plain_probe()
     if args.cdp_test:
         return _cdp_test()
+    if args.cdp_real:
+        return _cdp_real()
     if args.locate_plugin:
         return _locate_plugin()
     if args.snap:
