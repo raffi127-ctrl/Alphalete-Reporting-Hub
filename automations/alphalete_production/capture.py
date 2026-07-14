@@ -139,15 +139,23 @@ def last_two_mandatory_days(today: dt.date) -> List[dt.date]:
     return days
 
 
+def _norm_name(s: str) -> str:
+    """Rep name stripped of parenthetical suffixes ('(Wk 3)', '(NC)', nicknames
+    like '(Shun)') + collapsed whitespace, lowercased. The week suffix INCREMENTS
+    every week ('… (Wk 2)' -> '(Wk 3)'), so a raw name won't match the same rep
+    across weekly tabs — normalize both sides before comparing."""
+    return re.sub(r"\s+", " ", re.sub(r"\([^)]*\)", "", s)).strip().lower()
+
+
 def _zero_names_for_day(grid, day: dt.date) -> set:
-    """Rep names (col C) who posted a numeric 0 in `day`'s Apps column (used to
+    """Normalized rep names who posted a numeric 0 in `day`'s Apps column (used to
     match zeros across a week boundary, where the two days live in different tabs).
     '0'/'0.00' count; X/T/F/blank do not."""
     try:
         c = _day_block(grid, day)[0]
     except RuntimeError:
         return set()
-    return {_cell(grid, r, 2).strip() for r in range(3, len(grid))
+    return {_norm_name(_cell(grid, r, 2)) for r in range(3, len(grid))
             if _cell(grid, r, 2).strip() and re.fullmatch(r"0(\.0+)?", _cell(grid, r, c).strip())}
 
 
@@ -416,14 +424,16 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
                                       "values": [{"userEnteredValue": "0"}]}}})
                 subtotal_cols = [c_older, c_recent]
             else:
-                # cross-week (Tue: Mon + last Sat): match the older day's zeros BY NAME
-                # from the prior tab; the two day-cols can't share one image, so show
-                # rep + trainer/tenure/team only (both days named in the caption).
-                older_zeros = _zero_names_for_day(
+                # cross-week (Tue: Mon + last Sat): the two days live in different
+                # weekly tabs, so match the older day's zeros by NORMALIZED rep name
+                # (week suffix increments across weeks). Show rep + trainer/tenure/
+                # team only (the two day-cols can't share one image).
+                older_norms = _zero_names_for_day(
                     find_week_tab(ss, d_older).get_all_values(), d_older)
-                names = {_cell(grid, r, 2).strip() for r in range(3, tot_row - 1)
-                         if _cell(grid, r, 2).strip()}
-                filt_specs[0]["filterCriteria"]["hiddenValues"] = [""] + sorted(names - older_zeros)
+                cur_names = [_cell(grid, r, 2).strip() for r in range(3, tot_row - 1)
+                             if _cell(grid, r, 2).strip()]
+                hide = sorted({n for n in cur_names if _norm_name(n) not in older_norms})
+                filt_specs[0]["filterCriteria"]["hiddenValues"] = [""] + hide
                 filt_specs.append({"columnIndex": c_recent, "filterCriteria": {
                     "condition": {"type": "NUMBER_EQ", "values": [{"userEnteredValue": "0"}]}}})
                 show = {0, 1, 2, trainer_col, fs_col, team_col}
