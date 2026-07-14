@@ -109,16 +109,30 @@ def _send_image(phone: str, attachment: str) -> None:
     if not ap.exists():
         raise IMessageError(f"attachment not found: {attachment}")
     clean = _clean_path(str(ap))
-    _osascript(
-        'tell application "Messages"\n'
-        '  set svcId to id of 1st service whose service type = iMessage\n'
-        '  set targetService to service id svcId\n'
-        f'  set targetBuddy to buddy "{phone}" of targetService\n'
-        f'  send (POSIX file "{clean}") to targetBuddy\n'
-        f'  delay {IMG_UPLOAD_DELAY}\n'
-        'end tell',
-        timeout=IMG_UPLOAD_DELAY + 30,
-    )
+    # Send to the 1:1 CHAT reference (prefix "any;-;<phone>", confirmed on this
+    # machine) — a file sent to a chat goes inline; to a buddy it attaches as a
+    # document. The chat exists because _send_text ran first. Fall back to the
+    # buddy form only if the chat can't be resolved.
+    try:
+        _osascript(
+            'tell application "Messages"\n'
+            f'  set theChat to chat id "any;-;{phone}"\n'
+            f'  send (POSIX file "{clean}") to theChat\n'
+            f'  delay {IMG_UPLOAD_DELAY}\n'
+            'end tell',
+            timeout=IMG_UPLOAD_DELAY + 30,
+        )
+    except Exception:
+        _osascript(
+            'tell application "Messages"\n'
+            '  set svcId to id of 1st service whose service type = iMessage\n'
+            '  set targetService to service id svcId\n'
+            f'  set targetBuddy to buddy "{phone}" of targetService\n'
+            f'  send (POSIX file "{clean}") to targetBuddy\n'
+            f'  delay {IMG_UPLOAD_DELAY}\n'
+            'end tell',
+            timeout=IMG_UPLOAD_DELAY + 30,
+        )
 
 
 def send(phone: str, text: str, attachment: str | None = None,
