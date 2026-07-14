@@ -143,6 +143,19 @@ def final_status(report_id: str, ok: bool) -> str:
         return "failed"
 
 
+def incomplete_status(report_id: str) -> str:
+    """Pill status for a run the orchestrator marked INCOMPLETE (it RAN, with a
+    note). Historically these show green ('ran') — keep that, EXCEPT upgrade to
+    'partial' (orange) when the report's manifest explicitly records some parts
+    succeeded and some failed (e.g. metrics posted to 6 of 8 channels). Reports
+    that don't record `succeeded` are unchanged (still green)."""
+    try:
+        from automations.shared import run_manifest
+        return "partial" if run_manifest.outcome(report_id) == "partial" else "success"
+    except Exception:      # noqa: BLE001 — status must never break the run
+        return "success"
+
+
 def publish_done(report_id: str, report_name: str, status: str = "success",
                  run_id: str | None = None) -> bool:
     """Mark a run finished on the Hub. If `run_id` (from publish_running) is given,

@@ -326,6 +326,7 @@ def _attempt_report(ds, r, rs, target, *, dry_run, simulate) -> str:
     else:
         recon = reconcile.verify(r, target, dry_run=dry_run)
     mark_ran = False    # publish to the Hub? true for DONE *and* INCOMPLETE
+    incomplete = False  # INCOMPLETE branch → maybe-orange pill (vs green DONE)
     if recon.ok and not recon.unknown:
         ds.set(r.report_id, state.DONE, reason=recon.note)
         _log(f"  {r.report_id}: DONE — {recon.note}")
@@ -340,13 +341,20 @@ def _attempt_report(ds, r, rs, target, *, dry_run, simulate) -> str:
         # INCOMPLETE = it RAN, just with a note — still mark it on the Hub so the
         # card shows it ran (Megan 2026-07-01). The email renders the note separately.
         mark_ran = True
+        incomplete = True
 
     if mark_ran and not (dry_run or simulate):
         try:
             from automations.day_orchestrator import hub_publish
+            # DONE → green. INCOMPLETE → still 'ran' (green) UNLESS the report's
+            # manifest records some parts succeeded AND some failed, in which case
+            # orange 'partial' (e.g. metrics posted to 6 of 8 → orange, not green).
+            # Reports that don't record `succeeded` keep the historical green.
+            _status = (hub_publish.incomplete_status(r.report_id)
+                       if incomplete else "success")
             if hub_publish.publish_done(r.report_id, r.display_name,
-                                        run_id=rs.hub_run_id):
-                _log(f"  {r.report_id}: ✓ marked ran on the Hub")
+                                        status=_status, run_id=rs.hub_run_id):
+                _log(f"  {r.report_id}: ✓ marked ran on the Hub ({_status})")
         except Exception as e:
             _log(f"  {r.report_id}: Hub publish skipped ({type(e).__name__}: {str(e)[:80]})")
         rs.hub_run_id = None
