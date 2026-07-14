@@ -35,6 +35,7 @@ CARD_IMAGE_CANDIDATES = [
 NAME_BOX = (0.11, 0.64, 0.46, 0.80)
 ROTATION_DEG = -1.0
 GLYPH_INK = (24, 28, 46)
+OUT_MAX_PX = 1600   # longest side of the saved card — keeps iMessage happy
 
 # Layout tuning (fractions of the average glyph width / line height).
 _GAP = 0.02           # space between letters — tight, like real writing
@@ -215,8 +216,18 @@ def compose(name: str, out_path: str | Path) -> dict:
     blended = Image.composite(inked, region, alpha)
     img.paste(blended, (cx, cy))
 
+    # Downscale + JPEG so the card is a normal-sized photo (~a few hundred KB),
+    # not a 15 MB PNG — big files send as an undelivered "file" in iMessage
+    # instead of an inline image.
+    if max(img.size) > OUT_MAX_PX:
+        s = OUT_MAX_PX / max(img.size)
+        img = img.resize((int(img.width * s), int(img.height * s)), Image.LANCZOS)
+
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    img.save(out_path)
+    if out_path.suffix.lower() in (".jpg", ".jpeg"):
+        img.convert("RGB").save(out_path, "JPEG", quality=88, optimize=True)
+    else:
+        img.save(out_path)
     return {"path": str(out_path), "used_real_photo": is_real,
             "used_handwriting": used_handwriting}
