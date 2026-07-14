@@ -8,7 +8,10 @@ widget keys are prefixed `swag_` so it composes cleanly inside the Hub.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
@@ -23,6 +26,19 @@ _SETUP_SHOT = compose.RESOURCE_DIR / "shortcut-setup.png"
 def _pick_name(i: int) -> None:
     """Quick-pick radio → drop the choice into the editable name field."""
     st.session_state[f"swag_name_{i}"] = st.session_state[f"swag_pick_{i}"]
+
+
+def _batch_sig(roster: dict, ready: list[dict]) -> str:
+    """Stable fingerprint of a send: the copy + every recipient who'd get it.
+    Two identical clicks produce the same signature, so the send-guard can tell
+    a duplicate from a genuinely new batch (roster or message changed)."""
+    payload = {
+        "template": roster.get("template", ""),
+        "manager": roster.get("manager", ""),
+        "recips": sorted((r.get("phone_e164", ""), r.get("chosen_name", ""),
+                          r.get("start_time", "")) for r in ready),
+    }
+    return hashlib.sha1(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
 def _render_setup() -> None:
@@ -209,18 +225,53 @@ def render(show_header: bool = True) -> None:
         st.warning("✍️ Enter the **manager name** above — it goes in every text.")
 
     roster = {"template": template, "manager": manager, "recipients": recips}
+    sig = _batch_sig(roster, ready)
+    sent_sigs = st.session_state.setdefault("swag_sent_sigs", [])
+    already = sig in sent_sigs
+
     cdry, csend = st.columns(2)
     with cdry:
         if st.button("🔍 Dry run (preview all, send nothing)",
                      use_container_width=True, key="swag_dry"):
-            st.session_state["swag_summary"] = run_mod.run(roster, send=False)
+            with st.spinner(f"Building {len(ready)} card(s)…"):
+                st.session_state["swag_summary"] = run_mod.run(roster, send=False)
     with csend:
         # Two-step confirm so a 30-person batch can't fire on a single stray click.
         confirm = st.checkbox(f"Yes, text all {len(ready)} now",
                               key="swag_confirm", disabled=needs_manager or not ready)
         if st.button("📲 Send texts now", type="primary", use_container_width=True,
-                     disabled=needs_manager or not confirm or not ready, key="swag_send"):
-            st.session_state["swag_summary"] = run_mod.run(roster, send=True)
+                     disabled=needs_manager or not confirm or not ready or already,
+                     key="swag_send"):
+            # TRIPWIRE against the double-send. A real batch takes a while and the
+            # button gives no instant feedback, so people click again — Streamlit
+            # then queues a SECOND run that re-fires this handler. Guards:
+            #  1. record this exact batch's signature BEFORE sending, so the queued
+            #     click sees it's already done and bails,
+            #  2. inside run(), skip any number already texted this session,
+            #  3. a spinner so it's obviously working (kills the urge to re-click).
+            if sig in st.session_state.get("swag_sent_sigs", []):
+                st.info("That batch just went out — ignoring the duplicate click.")
+            else:
+                st.session_state["swag_sent_sigs"].append(sig)
+                already_texted = set(st.session_state.get("swag_texted_phones", {}))
+                with st.spinner(f"Texting {len(ready)} — about {max(5, len(ready) * 3)}s. "
+                                "Working… don't click again or refresh."):
+                    summ = run_mod.run(roster, send=True, skip_phones=already_texted)
+                st.session_state["swag_summary"] = summ
+                # Remember who actually got a text, so an edited-then-resent batch
+                # can never text the same person twice this session.
+                led = st.session_state.setdefault("swag_texted_phones", {})
+                stamp = datetime.now().strftime("%I:%M %p").lstrip("0")
+                for row in summ.get("rows", []):
+                    if row.get("sent") and row.get("phone"):
+                        led[row["phone"]] = stamp
+
+    if already:
+        st.caption("✅ This exact batch already went out this session — Send is "
+                   "locked so it can't double-fire.")
+        if st.button("🔄 Start a new batch (unlock Send)", key="swag_reset_guard"):
+            st.session_state["swag_sent_sigs"] = []
+            st.rerun()
 
     # Show the last dry-run / send result as a card grid, right here in the Hub
     # (no folder-digging) — each card + its message + per-person status.

@@ -43,12 +43,17 @@ def _slug(name: str) -> str:
     return "".join(c if c.isalnum() else "_" for c in name).strip("_") or "recipient"
 
 
-def run(roster: dict, send: bool = False, out_dir: Path | None = None) -> dict:
+def run(roster: dict, send: bool = False, out_dir: Path | None = None,
+        skip_phones: set[str] | None = None) -> dict:
     out_dir = out_dir or (OUTPUT_DIR / date.today().isoformat())
     out_dir.mkdir(parents=True, exist_ok=True)
     template = roster.get("template")
     manager = roster.get("manager", "")
     recips = [r for r in roster.get("recipients", []) if r.get("include", True)]
+    # Numbers already texted this session — a hard stop against double-texting the
+    # same person, even if the roster was edited between sends. Only bites a real
+    # send; a dry run passes nothing here.
+    skip = {(p or "").strip() for p in (skip_phones or set())}
 
     summary = {"total": len(recips), "sent": 0, "skipped": 0, "failed": 0,
                "dry_run": not send, "used_placeholder_card": False, "rows": []}
@@ -66,6 +71,13 @@ def run(roster: dict, send: bool = False, out_dir: Path | None = None) -> dict:
 
         if not name or not phone:
             row["error"] = "missing name or phone"
+            summary["skipped"] += 1
+            summary["rows"].append(row)
+            continue
+
+        if send and phone in skip:
+            row["error"] = "already texted this session — skipped (duplicate guard)"
+            row["skipped_dupe"] = True
             summary["skipped"] += 1
             summary["rows"].append(row)
             continue
