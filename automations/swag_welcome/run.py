@@ -70,7 +70,7 @@ def run(roster: dict, send: bool = False, out_dir: Path | None = None) -> dict:
             summary["rows"].append(row)
             continue
 
-        card_path = out_dir / f"{_slug(name)}_{phone.lstrip('+')}.jpg"
+        card_path = out_dir / f"{_slug(name)}_{phone.lstrip('+')}.png"
         meta = compose.compose(name, card_path)
         row["card"] = meta["path"]
         if not meta["used_real_photo"]:
