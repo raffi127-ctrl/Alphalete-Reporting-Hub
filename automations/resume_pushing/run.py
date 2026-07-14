@@ -1019,42 +1019,68 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
             _log(f"[cdp] Ready For Extraction before: {ready0}")
 
             if inspect:
-                rob = page.locator("[title*='extract resume data' i]")
-                _log(f"[inspect] robot count (title~='extract resume data'): {rob.count()}")
+                # which page holds the batch DataTable?
+                for pi, pg in enumerate(ctx.pages):
+                    try:
+                        has = pg.locator(TABLE).count()
+                    except Exception:
+                        has = -1
+                    _log(f"[inspect] page{pi} {TABLE}={has} url={(pg.url or '')[:55]}")
+                # hunt the robot on the batch page (`page`) — any titled/robot/img elt
                 try:
-                    rob.first.click(timeout=8000)
-                    _log("[inspect] robot clicked")
+                    cand = page.evaluate(r"""() => {
+                      const out=[];
+                      document.querySelectorAll('[title]').forEach(e=>{
+                        const t=(e.getAttribute('title')||'');
+                        if(/resume|extract|robot|helper|\bai\b/i.test(t))
+                          out.push('TITLE|'+e.tagName+'|title="'+t.slice(0,45)+'"|cls='+(''+(e.className||'')).slice(0,30));
+                      });
+                      document.querySelectorAll('[class*=robot],[class*=fa-robot],[onclick]').forEach(e=>{
+                        const c=(''+(e.className||''));
+                        if(/robot|resume|extract/i.test(c) || /robot|resume|extract/i.test(e.getAttribute('onclick')||''))
+                          out.push('CLS|'+e.tagName+'|cls='+c.slice(0,40)+'|title='+(e.getAttribute('title')||'').slice(0,25));
+                      });
+                      return out.slice(0,40);
+                    }""")
+                    _log(f"[inspect] robot candidates: {cand}")
                 except Exception as e:
-                    _log("[inspect] robot click err: " + str(e)[:120])
+                    _log("[inspect] robot hunt err: " + str(e)[:90])
+                # try clicking the first titled candidate via a broad selector
+                clicked = False
+                for sel in ["[title*='extract' i]", "[title*='resume helper' i]",
+                            "[class*='robot']", "[title*='resume' i]"]:
+                    loc = page.locator(sel)
+                    if loc.count() > 0:
+                        _log(f"[inspect] trying robot sel {sel!r} count={loc.count()}")
+                        try:
+                            loc.first.click(timeout=6000)
+                            clicked = True
+                            _log(f"[inspect] clicked via {sel!r}")
+                            break
+                        except Exception as e:
+                            _log(f"[inspect] click {sel!r} err: {str(e)[:60]}")
                 page.wait_for_timeout(4000)
-                _log(f"[inspect] pages now: {[(pg.url or '')[:70] for pg in ctx.pages]}")
+                _log(f"[inspect] pages after click: {[(pg.url or '')[:55] for pg in ctx.pages]}")
 
                 def _dump(fr, label):
                     try:
                         arr = fr.evaluate(
                             "() => Array.from(document.querySelectorAll("
-                            "'button,a,input[type=button],input[type=submit],[role=button]'))"
+                            "'button,a,input[type=button],input[type=submit],[role=button],"
+                            "[class*=start],[class*=btn]'))"
                             ".filter(e=>e.offsetParent!==null)"
                             ".map(e=>e.tagName+':'+((e.innerText||e.value||e.title||'')"
-                            ".trim().slice(0,35))).slice(0,45)")
+                            ".trim().slice(0,30))).filter(s=>s.length>7).slice(0,40)")
                         if arr:
                             _log(f"[inspect] {label}: {arr}")
                     except Exception as e:
-                        _log(f"[inspect] {label} err: {str(e)[:70]}")
+                        _log(f"[inspect] {label} err: {str(e)[:60]}")
 
                 for pi, pg in enumerate(ctx.pages):
-                    _dump(pg, f"page{pi}[{(pg.url or '')[:35]}]")
+                    _dump(pg, f"ctrl page{pi}")
                     for fi, fr in enumerate(pg.frames):
                         if fr != pg.main_frame:
-                            _dump(fr, f"page{pi}.frame{fi}[{(fr.url or '')[:30]}]")
-                try:
-                    starts = page.evaluate(
-                        "() => Array.from(document.querySelectorAll('*'))"
-                        ".filter(e=>e.children.length===0 && /start/i.test(e.innerText||''))"
-                        ".map(e=>e.tagName+':'+(e.innerText||'').trim().slice(0,25)).slice(0,15)")
-                    _log(f"[inspect] leaf elements mentioning 'start': {starts}")
-                except Exception as e:
-                    _log("[inspect] start-scan err: " + str(e)[:70])
+                            _dump(fr, f"ctrl page{pi}.frame{fi}[{(fr.url or '')[:28]}]")
                 rc = 0
                 return 0
 
