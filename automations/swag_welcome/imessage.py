@@ -143,12 +143,14 @@ def send(phone: str, text: str, attachment: str | None = None,
     if dry_run:
         return result
     try:
-        # Text first, then the image (its AppleScript waits out the upload).
+        # Text only. Automated 1:1 IMAGE sending is disabled: scripted send-file
+        # won't deliver, and clipboard-paste can't safely target an unsaved
+        # number's chat (it pasted into the wrong thread). The card is still
+        # generated (grid + output folder) for manual send or a future Shortcut.
         if text:
             _send_text(phone, text)
-        if attachment:
-            _send_image(phone, attachment)
         result["sent"] = True
+        result["image_auto_sent"] = False
     except Exception as e:
         result["error"] = str(e)
     return result
