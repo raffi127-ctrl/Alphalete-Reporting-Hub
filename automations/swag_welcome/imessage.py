@@ -45,20 +45,16 @@ def messages_ready() -> tuple[bool, str]:
     if platform.system() != "Darwin":
         return False, "not macOS — no Messages.app"
     try:
-        # Launch Messages if needed, then confirm an enabled iMessage service.
+        # `id of 1st service whose service type = iMessage` is the reliable probe:
+        # iterating services + reading `service type` throws -10000 on recent
+        # macOS, but the whose-filter works. A non-empty id = iMessage is ready.
         out = _osascript(
-            'tell application "Messages"\n'
-            '  set svc to 0\n'
-            '  repeat with s in services\n'
-            '    if (service type of s) is iMessage then set svc to svc + 1\n'
-            '  end repeat\n'
-            '  return svc\n'
-            'end tell'
+            'tell application "Messages" to get id of 1st service '
+            'whose service type = iMessage'
         )
-        n = int(out or "0")
-        if n < 1:
-            return False, "Messages has no active iMessage account signed in"
-        return True, "Messages ready"
+        if out.strip():
+            return True, "Messages ready"
+        return False, "Messages has no active iMessage account signed in"
     except Exception as e:
         return False, f"couldn't reach Messages: {e}"
 
@@ -66,9 +62,11 @@ def messages_ready() -> tuple[bool, str]:
 def _send_applescript(phone: str, text: str, attachment: str | None) -> None:
     # Send to the phone number over the iMessage service. Text first, then the
     # image as a follow-up attachment (Messages sends them as two bubbles).
+    # Resolve the service by id (whose-filter works; index access throws -10000).
     lines = [
         'tell application "Messages"',
-        '  set targetService to 1st service whose service type = iMessage',
+        '  set svcId to id of 1st service whose service type = iMessage',
+        '  set targetService to service id svcId',
         f'  set targetBuddy to buddy "{phone}" of targetService',
     ]
     if text:
