@@ -1165,6 +1165,27 @@ def _last_completed_as_picker(today: dt.date | None = None) -> dt.date:
     return _last_completed_we_sunday(today) - dt.timedelta(days=7)
 
 
+# The 8 country-wide Tableau trackers go to three orgs (Raf 2026-07-14) — one Hub
+# card each, same boards, only the channel differs. One template so the tracker
+# list can't drift between the three cards.
+_TABLEAU_TRACKERS_BREAKDOWN = (
+    "WHAT IT DOES\n"
+    "Grabs each of the 8 Tableau country trackers as an image and posts them "
+    "into today's dated thread.\n\n"
+    "TRACKERS\n"
+    "1. AT&T Internet Country Sales Tracker\n"
+    "2. AT&T Internet Country Sales Tracker (Internet Only)\n"
+    "3. NDS Tracker\n"
+    "4. B2B AT&T Internet Country Sales Tracker\n"
+    "5. B2B AT&T Internet Country Sales Tracker (CRU)\n"
+    "6. B2B D2D Consolidated\n"
+    "7. B2B Box Tracker\n"
+    "8. ATT Quantum Fiber Daily Tracker\n\n"
+    "WHEN IT RUNS\n"
+    "Daily in Slack channels: {channels}."
+)
+
+
 AUTOMATED_REPORTS = [
     # 🏢 Office Operations — New-Hire Swag Texts. Renders a custom upload →
     # preflight → send UI via the report-id hook in _render_report_card (not
@@ -2484,27 +2505,14 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "tableau-screenshots",
-        "name": "Alphalete Tableau Trackers",
+        "name": "Tableau Country Trackers (#alphalete-sales)",
         "creator": "Megan",
         "emoji": "📸",
         "color": "#1F4E79",
         "category": "📊 Metrics",
-        "description": "Captures the 8 Tableau sales trackers as images and posts them daily into an 'Alphalete Tableau Trackers M/D/YYYY' thread in #alphalete-sales + #top-leaders-alphalete-org. Replaces Jolie's manual tracker post.",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "Grabs each of the 8 Tableau trackers \n\n"
-            "TRACKERS\n"
-            "1. AT&T Internet Country Sales Tracker\n"
-            "2. AT&T Internet Country Sales Tracker (Internet Only)\n"
-            "3. NDS Tracker\n"
-            "4. B2B AT&T Internet Country Sales Tracker\n"
-            "5. B2B AT&T Internet Country Sales Tracker (CRU)\n"
-            "6. B2B D2D Consolidated\n"
-            "7. B2B Box Tracker\n"
-            "8. ATT Quantum Fiber Daily Tracker\n\n"
-            "WHEN IT RUNS\n"
-            "Daily in Slack channels: #alphalete-sales & #top-leaders-alphalete-org."
-        ),
+        "description": "Captures the 8 Tableau country sales trackers as images and posts them daily into a 'Tableau Country Trackers M/D/YYYY' thread in #alphalete-sales + #top-leaders-alphalete-org. Replaces Jolie's manual tracker post. The same 8 boards also go to Elevate and Indelible — see their own cards.",
+        "breakdown": _TABLEAU_TRACKERS_BREAKDOWN.format(
+            channels="#alphalete-sales & #top-leaders-alphalete-org"),
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
@@ -2513,7 +2521,7 @@ AUTOMATED_REPORTS = [
         },
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Tableau Trackers posted — all 8 tracker screenshots in the dated thread in #alphalete-sales + #top-leaders-alphalete-org.",
+            "message_success": "✅ Tableau Country Trackers posted — all 8 tracker screenshots in the dated thread in #alphalete-sales + #top-leaders-alphalete-org.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
         },
         "actions": [
@@ -2523,7 +2531,69 @@ AUTOMATED_REPORTS = [
                 "primary": True,
                 "help": "Captures the 8 Tableau trackers and posts them to the dated thread in #alphalete-sales + #top-leaders-alphalete-org. Needs a warm Tableau session (best run on the mini).",
                 "module": "automations.tableau_screenshots.run",
-                "args_fn": lambda: [],
+                "args_fn": lambda: ["--org", "alphalete"],
+            },
+        ],
+    },
+    {
+        "id": "tableau-country-trackers-elevate",
+        "name": "Tableau Country Trackers (#elevate-sales)",
+        "creator": "Megan",
+        "emoji": "📸",
+        "color": "#1F4E79",
+        "category": "🏢 Other Offices",
+        "description": "The same 8 Tableau country sales trackers as the main card, posted daily into a 'Tableau Country Trackers M/D/YYYY' thread in #elevate-sales. Country-wide boards, so the images are identical to Alphalete's — this card just posts them to Elevate.",
+        "breakdown": _TABLEAU_TRACKERS_BREAKDOWN.format(channels="#elevate-sales"),
+        "assignees": ["Lucy 1"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "5:00 AM",
+            "estimated_minutes": 2,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Tableau Country Trackers posted — all 8 tracker screenshots in the dated thread in #elevate-sales.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Post Today's Trackers",
+                "icon": "▶",
+                "primary": True,
+                "help": "Posts the 8 Tableau trackers to the dated thread in #elevate-sales. Reuses the images captured for Alphalete earlier today (same boards), so this is fast and needs no Tableau session; it only opens Tableau if today's images aren't there yet.",
+                "module": "automations.tableau_screenshots.run",
+                "args_fn": lambda: ["--org", "elevate"],
+            },
+        ],
+    },
+    {
+        "id": "tableau-country-trackers-indelible",
+        "name": "Tableau Country Trackers (#indelible-sales)",
+        "creator": "Megan",
+        "emoji": "📸",
+        "color": "#1F4E79",
+        "category": "🏢 Other Offices",
+        "description": "The same 8 Tableau country sales trackers as the main card, posted daily into a 'Tableau Country Trackers M/D/YYYY' thread in #indelible-sales. Country-wide boards, so the images are identical to Alphalete's — this card just posts them to Indelible.",
+        "breakdown": _TABLEAU_TRACKERS_BREAKDOWN.format(channels="#indelible-sales"),
+        "assignees": ["Lucy 1"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "5:00 AM",
+            "estimated_minutes": 2,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Tableau Country Trackers posted — all 8 tracker screenshots in the dated thread in #indelible-sales.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Post Today's Trackers",
+                "icon": "▶",
+                "primary": True,
+                "help": "Posts the 8 Tableau trackers to the dated thread in #indelible-sales. Reuses the images captured for Alphalete earlier today (same boards), so this is fast and needs no Tableau session; it only opens Tableau if today's images aren't there yet.",
+                "module": "automations.tableau_screenshots.run",
+                "args_fn": lambda: ["--org", "indelible"],
             },
         ],
     },

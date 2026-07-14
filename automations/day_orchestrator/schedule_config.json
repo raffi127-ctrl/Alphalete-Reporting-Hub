@@ -1650,14 +1650,17 @@
     "tableau_screenshots": {
       "order": 5,
       "on_scheduler": true,
-      "_note": "LIVE daily 8-tracker Tableau screenshots (Download->Image @ 2x DPI via device_scale=2, per-tracker page-1 crop + bottom footer/whitespace trim). Posts as Lucy into an own dated thread 'Alphalete Tableau Trackers M/D/YYYY' in BOTH #alphalete-sales (C068PH3RFSM) + #top-leaders-alphalete-org (C067TTGFEFR, private; Lucy U0BCG8F9B5Z is a member). Replaces Jolie's manual TRACKER post (her 3 'production' imgs stay manual/separate). source_type tableau = wave 2. Went live 2026-07-05. To preview instead of post: base_args ['--preview-dm','U04G5HJBGFN'].",
-      "display_name": "Alphalete Tableau Trackers",
+      "_note": "LIVE daily 8-tracker Tableau COUNTRY trackers (Download->Image, per-tracker page-1 crop_to_bar + bottom trim). Posts as Lucy into an own dated thread 'Tableau Country Trackers M/D/YYYY'. THIS card = the ALPHALETE org: #alphalete-sales (C068PH3RFSM) + #top-leaders-alphalete-org (C067TTGFEFR, private). The SAME 8 country-wide images also go to #elevate-sales + #indelible-sales via tableau_screenshots_elevate / _indelible (Raf 2026-07-14). THIS org runs FIRST and CAPTURES; the other two REUSE today's PNGs (no Tableau session, seconds) -- keep order 5 < 5.1 < 5.2. source_type tableau = wave 2. Went live 2026-07-05. To preview instead of post: base_args ['--preview-dm','U04G5HJBGFN'].",
+      "display_name": "Tableau Country Trackers (#alphalete-sales)",
       "source_type": "tableau",
       "data_sources": [],
       "command": [
         "automations.tableau_screenshots.run"
       ],
-      "base_args": [],
+      "base_args": [
+        "--org",
+        "alphalete"
+      ],
       "cadence": {
         "weekdays": [
           0,
@@ -1676,6 +1679,74 @@
       "verify": {
         "type": "manifest",
         "report_id": "tableau-screenshots"
+      }
+    },
+    "tableau_screenshots_elevate": {
+      "order": 5.1,
+      "on_scheduler": true,
+      "_note": "Same 8 country-wide Tableau trackers as tableau_screenshots, posted to #elevate-sales (C0B3KTCCMT7, private; Lucy is a member) for the Elevate org (Raf 2026-07-14). REUSES the PNGs the alphalete run (order 5) captured minutes earlier -- identical boards, so no Tableau session and it finishes in seconds. If that capture is missing/incomplete it captures for itself, so this is a CACHE, not a hard dependency (no depends_on).",
+      "display_name": "Tableau Country Trackers (#elevate-sales)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.tableau_screenshots.run"
+      ],
+      "base_args": [
+        "--org",
+        "elevate"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 30,
+      "verify": {
+        "type": "manifest",
+        "report_id": "tableau-screenshots-elevate"
+      }
+    },
+    "tableau_screenshots_indelible": {
+      "order": 5.2,
+      "on_scheduler": true,
+      "_note": "Same 8 country-wide Tableau trackers as tableau_screenshots, posted to #indelible-sales (C0AA85Y3FPE, private; Lucy is a member) for the Indelible org (Raf 2026-07-14). REUSES the PNGs the alphalete run (order 5) captured minutes earlier -- identical boards, so no Tableau session and it finishes in seconds. If that capture is missing/incomplete it captures for itself, so this is a CACHE, not a hard dependency (no depends_on).",
+      "display_name": "Tableau Country Trackers (#indelible-sales)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.tableau_screenshots.run"
+      ],
+      "base_args": [
+        "--org",
+        "indelible"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 30,
+      "verify": {
+        "type": "manifest",
+        "report_id": "tableau-screenshots-indelible"
       }
     },
     "tableau_preview": {

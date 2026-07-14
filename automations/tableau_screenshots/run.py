@@ -1,7 +1,15 @@
-"""Daily Tableau tracker screenshots -> #alphalete-sales.
+"""Daily "Tableau Country Trackers" -> one thread per ORG.
 
-Flow: open ONE warm Tableau session (reused for all pages) -> capture each view
-to a PNG -> post them into today's own dated thread -> write a run manifest.
+The same 8 COUNTRY-wide boards go to three orgs (Raf, 2026-07-14) — identical
+images, one Hub card each:
+  --org alphalete   #alphalete-sales + #top-leaders-alphalete-org   (default)
+  --org elevate     #elevate-sales
+  --org indelible   #indelible-sales
+
+Flow: reuse today's PNGs if another org already captured them, else open ONE warm
+Tableau session -> capture each view to a PNG -> post them into today's own dated
+thread for this org -> write a per-org run manifest. Only the first org of the
+day drives Tableau (the boards are the same for everyone); --fresh overrides.
 
 Usage
   # capture-only, writes PNGs to output/tableau_screenshots/, posts NOTHING:
@@ -10,7 +18,8 @@ Usage
   python -m automations.tableau_screenshots.run --dry-run --only nds,b2b_box
 
   # live (captures + posts to Slack):
-  python -m automations.tableau_screenshots.run
+  python -m automations.tableau_screenshots.run                    # alphalete
+  python -m automations.tableau_screenshots.run --org elevate      # reuses PNGs
 
 Build discipline (CLAUDE.md): stays on --dry-run until Megan confirms the PNGs +
 crop look right; a scratch channel can be forced via TABLEAU_TRACKERS_CHANNEL_ID
@@ -28,7 +37,59 @@ from automations.tableau_screenshots import capture as cap
 from automations.tableau_screenshots import slack_post as sp
 
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "tableau_screenshots"
-REPORT_ID = "tableau-screenshots"
+
+# One manifest id PER ORG, or three runs would clobber each other's manifest and
+# the orchestrator's verify step would read the wrong run. alphalete keeps the
+# original id so its existing Hub card / verify history stays continuous.
+_REPORT_ID = {"alphalete": "tableau-screenshots",
+              "elevate": "tableau-screenshots-elevate",
+              "indelible": "tableau-screenshots-indelible"}
+
+# The 8 boards are COUNTRY-wide -- all three orgs post byte-identical images. So
+# capture ONCE per day and let the other orgs reuse the PNGs: re-driving Tableau
+# for 8 Download->Image exports is the slowest thing in the batch (~7 min) and
+# every extra run is another chance to hit a Tableau flake, all for the same
+# pixels. The reuse is a CACHE, not a dependency -- if today's capture is missing
+# or incomplete (e.g. the alphalete run failed), the org captures for itself.
+# --fresh forces a re-capture regardless.
+STAMP = OUT_DIR / "_captured.json"
+
+
+def _write_stamp(out_dir: Path, captured: list, today: dt.date) -> None:
+    """Record which trackers were captured, and when, so a later org run can tell
+    whether today's PNGs are complete enough to reuse."""
+    import json
+    try:
+        (out_dir / STAMP.name).write_text(json.dumps({
+            "date": today.isoformat(),
+            "ids": [spec["id"] for spec, _ in captured],
+        }))
+    except Exception:            # best-effort — a missing stamp just means recapture
+        pass
+
+
+def _reusable(out_dir: Path, selected: list, today: dt.date) -> list | None:
+    """Today's captures as [(spec, png)] if EVERY selected tracker was captured
+    today and its PNG is still on disk — else None (→ capture fresh). Deliberately
+    strict: a partial set would silently post a short thread."""
+    import json
+    stamp = out_dir / STAMP.name
+    if not stamp.exists():
+        return None
+    try:
+        data = json.loads(stamp.read_text())
+    except Exception:
+        return None
+    if data.get("date") != today.isoformat():
+        return None              # yesterday's images — never post stale boards
+    have = set(data.get("ids") or [])
+    out = []
+    for spec in selected:
+        png = out_dir / f"{cap._sanitize(spec['title'])}.png"
+        if spec["id"] not in have or not png.exists():
+            return None
+        out.append((spec, png))
+    return out
 
 
 def _select(only: str | None) -> list:
@@ -63,6 +124,16 @@ def main(argv=None) -> int:
                     help="Read-only: dump each view's dashboard tab strip + "
                          "Download→Image dialog so we can target a single page. "
                          "No capture, no post.")
+    ap.add_argument("--org", default=sp.DEFAULT_ORG, choices=sp.ORGS,
+                    help="Which org's channel(s) to post into. "
+                         "alphalete = #alphalete-sales + #top-leaders-alphalete-org, "
+                         "elevate = #elevate-sales, indelible = #indelible-sales. "
+                         "Same 8 country-wide images for every org.")
+    ap.add_argument("--fresh", action="store_true",
+                    help="Force a re-capture even if today's PNGs already exist. "
+                         "By default an org reuses images captured earlier today "
+                         "(the boards are identical for all orgs), so only the "
+                         "first run of the day drives Tableau.")
     ap.add_argument("--replace", action="store_true",
                     help="Re-post TODAY's thread: delete the image replies "
                          "already under today's parent, then post this capture "
@@ -82,7 +153,9 @@ def main(argv=None) -> int:
     out_dir = Path(args.out_dir)
     force_crop = "full" if args.full else None
 
-    print(f"Tableau tracker screenshots -- {len(selected)} view(s), "
+    report_id = _REPORT_ID[args.org]
+    print(f"Tableau country trackers -- {len(selected)} view(s), org={args.org} "
+          f"({sp.ORG_LABEL[args.org]}), "
           f"{'DRY-RUN (no Slack)' if args.dry_run else 'LIVE'}, "
           f"out={out_dir}", flush=True)
 
@@ -137,22 +210,34 @@ def main(argv=None) -> int:
                   flush=True)
         return 0
 
-    # NOTE: device_scale=2 (2x DPI) broke the live all-8 run 2026-07-05 (SSO/session
-    # setup failed before any capture) — reverted to native res, which captured all
-    # 8 cleanly in testing. Re-add the zoom only after debugging why it fails at
-    # scale (the single-tracker dry-run worked, the full run didn't).
-    with tableau_session(headless=args.headless, allow_form_login=False,
-                         verbose=True) as page:
-        for spec in selected:
-            try:
-                png = cap.capture_page(page, spec, out_dir,
-                                       force_crop=force_crop, verbose=True)
-                captures.append((spec, png))
-            except Exception as e:
-                failed.append(spec["id"])
-                print(f"   ⚠ {spec['id']} FAILED: "
-                      f"{type(e).__name__}: {str(e).splitlines()[0][:120]}",
-                      flush=True)
+    # Reuse today's images when another org already captured them — no browser, no
+    # Tableau session at all, so elevate/indelible finish in seconds. --fresh (and
+    # --full, which changes how the boards are captured) always re-captures.
+    reused = None if (args.fresh or args.full) else _reusable(out_dir, selected, today)
+    if reused is not None:
+        captures = reused
+        print(f"   ↺ reusing {len(captures)} image(s) captured earlier today "
+              f"(same country-wide boards; --fresh to re-capture)", flush=True)
+    else:
+        # NOTE: device_scale=2 (2x DPI) broke the live all-8 run 2026-07-05 (SSO/session
+        # setup failed before any capture) — reverted to native res, which captured all
+        # 8 cleanly in testing. Re-add the zoom only after debugging why it fails at
+        # scale (the single-tracker dry-run worked, the full run didn't).
+        with tableau_session(headless=args.headless, allow_form_login=False,
+                             verbose=True) as page:
+            for spec in selected:
+                try:
+                    png = cap.capture_page(page, spec, out_dir,
+                                           force_crop=force_crop, verbose=True)
+                    captures.append((spec, png))
+                except Exception as e:
+                    failed.append(spec["id"])
+                    print(f"   ⚠ {spec['id']} FAILED: "
+                          f"{type(e).__name__}: {str(e).splitlines()[0][:120]}",
+                          flush=True)
+        # Only a COMPLETE capture is worth reusing — stamp it so the next org can.
+        if captures and not failed:
+            _write_stamp(out_dir, captures, today)
 
     # Per-tracker summary (lands in the mini log) + written to the 'Inspect Out'
     # sheet (readable from any machine, since lucy status truncates to 280 chars).
@@ -193,7 +278,7 @@ def main(argv=None) -> int:
 
     if not captures:
         run_manifest.write_manifest(
-            REPORT_ID, ok=False, failed=failed, kind="tracker",
+            report_id, ok=False, failed=failed, kind="tracker",
             retry_args=["--only", ",".join(failed)] if failed else [],
             note="no trackers captured")
         print("\n❌ Captured nothing. See errors above.", flush=True)
@@ -213,13 +298,13 @@ def main(argv=None) -> int:
                   f"(mode={pv.get('mode')}) — {len(captures)} image(s), "
                   f"nothing posted to the channels.", flush=True)
         run_manifest.write_manifest(
-            REPORT_ID, ok=bool(not failed), failed=failed, kind="tracker",
+            report_id, ok=bool(not failed), failed=failed, kind="tracker",
             note="preview-dm run" + (f"; {len(failed)} failed" if failed else ""))
         return 1 if failed else 0
 
     # Post (or preview) into today's own dated thread.
     result = sp.post_all(captures, pages_mod.PAGES, today, dry_run=args.dry_run,
-                         replace=args.replace)
+                         replace=args.replace, org=args.org)
 
     if args.dry_run:
         print(f"\n✓ DRY-RUN: captured {len(captures)} PNG(s) to {out_dir}",
@@ -247,7 +332,7 @@ def main(argv=None) -> int:
     # Manifest: clean iff every selected tracker captured (and, live, posted).
     ok = not failed and (args.dry_run or result.get("ok"))
     run_manifest.write_manifest(
-        REPORT_ID, ok=bool(ok), failed=failed, kind="tracker",
+        report_id, ok=bool(ok), failed=failed, kind="tracker",
         retry_args=["--only", ",".join(failed)] if failed else [],
         note=("" if ok else f"{len(failed)} tracker(s) failed: {', '.join(failed)}"))
 
