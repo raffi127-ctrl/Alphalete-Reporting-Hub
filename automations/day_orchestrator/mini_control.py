@@ -250,7 +250,7 @@ def _action_rerun(args: str) -> tuple[bool, str]:
         from automations.day_orchestrator import hub_publish
         hub_publish.publish_done(
             report_id, getattr(r, "display_name", report_id),
-            status=("success" if ok else "failed"), run_id=hub_run_id)
+            status=hub_publish.final_status(report_id, ok), run_id=hub_run_id)
     except Exception:  # noqa: BLE001 — Hub publish must never fail the rerun
         pass
     return ok, result

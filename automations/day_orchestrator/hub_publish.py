@@ -125,6 +125,24 @@ def publish_heartbeat(run_id: str) -> bool:
         return False
 
 
+def final_status(report_id: str, ok: bool) -> str:
+    """The status to close a run's pill with: 'success' | 'partial' | 'failed'.
+
+    A report that fans out to many parts (the Tableau trackers post to 5 Slack
+    channels) can land MOST of them and miss one. Closing that red is wrong — a
+    red pill on a report that mostly worked teaches people to ignore red. If the
+    report wrote a manifest saying some parts succeeded and some failed, this
+    returns 'partial' (the Hub colours it orange). Reports that don't record
+    `succeeded` are unaffected: they still resolve to plain success/failed."""
+    if ok:
+        return "success"
+    try:
+        from automations.shared import run_manifest
+        return run_manifest.outcome(report_id) or "failed"
+    except Exception:      # noqa: BLE001 — status must never break the run
+        return "failed"
+
+
 def publish_done(report_id: str, report_name: str, status: str = "success",
                  run_id: str | None = None) -> bool:
     """Mark a run finished on the Hub. If `run_id` (from publish_running) is given,

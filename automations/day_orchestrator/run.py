@@ -304,11 +304,15 @@ def _attempt_report(ds, r, rs, target, *, dry_run, simulate) -> str:
             _log(f"  {r.report_id}: run failed "
                  f"(attempt {rs.attempts}/{MAX_RUN_RETRIES}) — will retry: {detail}")
             return "flaked"
-        if rs.hub_run_id:                  # terminal fail → close the pill red
+        if rs.hub_run_id:                  # terminal fail → close the pill
             try:
                 from automations.day_orchestrator import hub_publish
-                hub_publish.publish_done(r.report_id, r.display_name,
-                                         status="failed", run_id=rs.hub_run_id)
+                # red, OR orange when the report landed some parts and missed
+                # others (e.g. the trackers posted to 4 of 5 Slack channels).
+                hub_publish.publish_done(
+                    r.report_id, r.display_name,
+                    status=hub_publish.final_status(r.report_id, ok=False),
+                    run_id=rs.hub_run_id)
             except Exception:
                 pass
             rs.hub_run_id = None

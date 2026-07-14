@@ -401,15 +401,18 @@ def main(argv=None) -> int:
     for org in orgs:
         print(f"  {'✅' if org in posted_ok else '❌'} {sp.ORG_LABEL[org]}", flush=True)
 
-    # Manifest drives the Hub's "Retry failed only" button. The failed PARTS are
-    # the channels that missed (not the trackers), and retry_args re-posts exactly
-    # those — with --replace, so a channel that half-posted doesn't end up with
-    # duplicate images. A capture failure is surfaced too, since a short thread is
-    # a real failure even when every channel accepted it.
+    # Manifest drives BOTH the Hub's "Retry failed only" button and its pill
+    # colour. The failed PARTS are the channels that missed (not the trackers),
+    # and retry_args re-posts exactly those. `succeeded` is what lets the Hub tell
+    # a PARTIAL run (orange — most channels landed) from a total failure (red);
+    # without it every miss would look equally fatal. A capture failure is
+    # surfaced too, since a short thread is a real failure even when every channel
+    # accepted it.
     ok = (not failed) and not posted_bad
     parts = [sp.ORG_LABEL[o] for o in posted_bad] + [f"tracker:{f}" for f in failed]
     run_manifest.write_manifest(
         report_id, ok=bool(ok), failed=parts, kind="channel",
+        succeeded=[sp.ORG_LABEL[o] for o in posted_ok],
         retry_args=(["--orgs", ",".join(posted_bad), "--replace"]
                     if posted_bad else []),
         note=("" if ok else
@@ -420,6 +423,9 @@ def main(argv=None) -> int:
                   f"{', '.join(failed)}" if failed else "",
               ]))))
 
+    # Non-zero on any miss, so the orchestrator RETRIES — which is safe and
+    # useful now that posting is idempotent: the retry skips the channels that
+    # already have today's images and re-posts only the ones that missed.
     if posted_bad or failed:
         return 1
     return 0

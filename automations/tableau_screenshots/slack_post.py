@@ -155,18 +155,45 @@ def delete_image_replies(client, channel: str, thread_ts: str) -> int:
     return deleted
 
 
+def count_image_replies(client, channel: str, thread_ts: str) -> int:
+    """How many image replies today's parent already has."""
+    resp = client.conversations_replies(channel=channel, ts=thread_ts, limit=200)
+    return sum(1 for m in resp.get("messages", [])
+               if m.get("ts") != thread_ts and m.get("files"))
+
+
 def _post_to_channel(client, channel: str, captures: list, pages: list,
                      today: dt.date, replace: bool = False) -> dict:
     """Ensure the parent + post every image reply (with parent reaction) in one
-    channel. A failure in one channel is caught by the caller so the other still
-    posts. replace=True first clears the existing image replies, so the fresh set
-    posts in header order."""
+    channel. A failure in one channel is caught by the caller so the others still
+    post.
+
+    IDEMPOTENT — posting the same day twice must not duplicate. This matters
+    because a partial run exits non-zero and the ORCHESTRATOR RETRIES IT (up to
+    MAX_RUN_RETRIES): without this, every retry would append another 8 images to
+    the channels that already succeeded, so healing one broken channel would
+    trash the healthy ones. Per channel:
+      already has the full set -> SKIP (ok, nothing posted)
+      has a partial set        -> clear + re-post (heal a half-finished upload)
+      has none                 -> post
+      replace=True             -> always clear + re-post, in header order
+    """
     thread = ensure_thread(client, channel, pages, today)
     thread_ts = thread["thread_ts"]
     removed = 0
-    if replace and not thread["created"]:
+    existing = 0 if thread["created"] else count_image_replies(client, channel,
+                                                               thread_ts)
+    if not replace and existing >= len(captures) > 0:
+        print(f"  {channel}: already has {existing} image(s) today — skipping "
+              f"(nothing re-posted)", flush=True)
+        return {"channel": channel, "thread_ts": thread_ts, "created": False,
+                "posted": [], "removed": 0, "skipped": True, "ok": True}
+    if (replace or existing) and not thread["created"]:
         removed = delete_image_replies(client, channel, thread_ts)
-        print(f"  {channel}: cleared {removed} old image reply(ies)", flush=True)
+        if removed:
+            why = "replacing" if replace else "healing a partial set"
+            print(f"  {channel}: cleared {removed} old image reply(ies) ({why})",
+                  flush=True)
     results = []
     for spec, png in captures:
         up = client.files_upload_v2(
@@ -187,6 +214,7 @@ def _post_to_channel(client, channel: str, captures: list, pages: list,
         time.sleep(3)
     return {"channel": channel, "thread_ts": thread_ts,
             "created": thread["created"], "posted": results, "removed": removed,
+            "skipped": False,
             "ok": all(r.get("ok") for r in results) if results else False}
 
 

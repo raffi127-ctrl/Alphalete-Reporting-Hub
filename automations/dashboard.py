@@ -390,6 +390,19 @@ def _record_active_run(report_id: str, report_name: str, user: str, log_path: Pa
     ACTIVE_RUNS_FILE.write_text(json.dumps(active, indent=2))
 
 
+def _manifest_failed_parts(report_id: str) -> list:
+    """The parts (channels/ICDs/…) today's run missed, for the calendar tooltip.
+    Empty when there's no manifest or it's from an earlier day."""
+    try:
+        from automations.shared import run_manifest as _rm
+        m = _rm.read_manifest(report_id) or {}
+        if (m.get("run_ts") or "")[:10] != dt.date.today().isoformat():
+            return []
+        return list(m.get("failed") or [])
+    except Exception:
+        return []
+
+
 def _channel_status(report: dict):
     """TODAY's per-channel post results for a card that fans one run out to many
     Slack channels, or None. Opt in with post_run.channel_status_file — a JSON
@@ -1263,11 +1276,10 @@ def _tableau_trackers_card() -> dict:
             },
         ] + [
             {
+                # No help text — the label says it. It's just a full re-run of
+                # that one channel (Megan 2026-07-14).
                 "label": f"Re-post {_sp.ORG_LABEL[o]}",
                 "icon": "🔁",
-                "help": (f"Re-posts today's trackers to {_sp.ORG_LABEL[o]} only. "
-                         "Reuses images already captured today and replaces that "
-                         "channel's existing images, so it can't duplicate."),
                 "module": "automations.tableau_screenshots.run",
                 # default-bind o — a bare closure would capture the loop variable
                 # and every button would post to the LAST org.
@@ -3356,17 +3368,30 @@ AUTOMATED_REPORTS = [
         "description": "Extracts new applicant resumes in Carlos's ApplicantStream office (11580) and sends the valid ones to the AI call list — the unattended, scheduled version of Carlos's uploaded resume-pusher.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "For **Carlos's office (11580)** in ApplicantStream: opens the "
-            "**Batch Process of Emails** page, runs **Auto-Extract** (pulls "
-            "name / phone / email off each applicant's resume), **selects "
-            "everyone**, and clicks **Send to AI**. Only applicants with a "
-            "**valid, unique phone** actually go to the AI call list — the "
-            "rest are skipped and flagged (no phone / duplicate), not sent.\n\n"
+            "For **Carlos's office (11580)** in ApplicantStream **v2** (the "
+            "orange **Explore Appstream AI** dashboard): goes to **Applicants → "
+            "Process Emails → Process in Batches**, then works in two passes.\n\n"
+            "**1. Extract.** Clicks the **robot** (Resume Helper) → **Start**, "
+            "which reads the name / phone / email off each applicant's resume. "
+            "It only does ~50 at a time, so it **repeats until "
+            "\"Ready For Extraction\" hits 0** — nobody gets left behind.\n\n"
+            "**2. Send.** Selects everyone and clicks **Send to AI**, and "
+            "**keeps going until there's nothing left to send** (clearing "
+            "duplicates frees up more applicants each pass).\n\n"
+            "Only applicants with a **valid, unique phone** actually reach the "
+            "AI call list — the rest are left behind (no phone / duplicate), "
+            "not sent.\n\n"
             "WHEN IT RUNS\n"
             "**Every ~10 minutes, 8 AM–10 PM Central, Sun + Mon–Fri** (not "
             "Saturday).\n\n"
             "HOW IT RUNS\n"
-            "On Lucy 2 (Carlos' Neo Laptop)."
+            "On **Lucy 2** (Carlos' Neo Laptop). Unlike every other report, this "
+            "one drives a **real Google Chrome**, using a copy of Carlos's "
+            "everyday Chrome profile. That's because the resume extractor is a "
+            "**Chrome plug-in**, and plug-ins simply don't run in the browser "
+            "our other automations use. **If that plug-in is ever removed from "
+            "that Chrome profile, extraction stops** — that's the one thing to "
+            "check first if this report goes quiet."
         ),
         # No Google Sheet — ApplicantStream action bot only.
         "assignees": ["Lucy 2"],
@@ -4014,13 +4039,17 @@ def _hub_active_runs() -> list[dict]:
 
 
 def _hub_recent_runs(days: int = 14) -> list[dict]:
-    """Return finished hub rows (success/failed/stopped) within the window,
-    newest first. Used to merge cross-user 'Last ran' timestamps."""
+    """Return finished hub rows (success/partial/failed/stopped) within the
+    window, newest first. Used to merge cross-user 'Last ran' timestamps.
+
+    'partial' = it ran and landed some parts but missed others (orange pill).
+    It is a TERMINAL status like the rest — leaving it out of this filter would
+    silently drop those runs from the week grid and 'Last ran'."""
     cutoff = dt.datetime.now() - dt.timedelta(days=days)
     out = []
     for r in _hub_activity_rows():
         status = str(r.get("Status", "")).lower()
-        if status not in ("success", "failed", "stopped"):
+        if status not in ("success", "partial", "failed", "stopped"):
             continue
         ts = _parse_hub_ts(r.get("Ended At") or r.get("Started At"))
         if ts is None or ts < cutoff:
@@ -4846,12 +4875,14 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
         _running_ids = set()
 
     def _cal_status(_rid: str, _day: dt.date) -> str:
-        """Per-card outcome for a day: ok / fail / miss / up(coming)."""
+        """Per-card outcome for a day: ok / partial / fail / miss / up(coming)."""
         if _day > today:
             return "up"                       # future — hasn't run
         _s = _cal_statuses.get((_rid, _day))
         if _s == "success":
             return "ok"
+        if _s == "partial":                   # some parts landed, some missed
+            return "partial"                  # orange, NOT red — it mostly worked
         if _s is None:                        # no run recorded
             return "up" if _day == today else "miss"
         if _s in ("running", "started", "in progress", "in-progress"):
@@ -4954,8 +4985,8 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                     _stat = _cal_status(_r["id"], _day)
                     if _day == today and _r["id"] in _running_ids:
                         _stat = "running"          # live subprocess right now
-                    _icon = {"ok": "✅ ", "fail": "⚠️ ", "miss": "– ",
-                             "running": "🔄 "}.get(_stat, "")
+                    _icon = {"ok": "✅ ", "partial": "🟠 ", "fail": "⚠️ ",
+                             "miss": "– ", "running": "🔄 "}.get(_stat, "")
                     _label = f"{_icon}{_r.get('emoji', '📄')} {_r['name']}"
                     # Self-scheduled reports fire on their OWN fixed timer (not the
                     # 4am batch), so show the run time on the tile — otherwise there
@@ -4976,11 +5007,20 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                             _label += f" · {_sched['time']} CST"
                     _help = {
                         "ok": "Ran OK — open to view",
+                        "partial": "Ran, but some parts missed — open to see which",
                         "fail": "Failed / incomplete — open to see why",
                         "miss": "Was scheduled but didn't run — open to run",
                         "up": "Open this report to run it",
                         "running": "Running now — open to watch",
                     }.get(_stat, "Open this report to run it")
+                    # Name the parts that missed right in the tooltip, so you can
+                    # see WHICH channel failed without opening the card.
+                    if _stat == "partial" and _day == today:
+                        _missed = _manifest_failed_parts(_r["id"])
+                        if _missed:
+                            _help = ("Ran, but these missed: "
+                                     + ", ".join(_missed)
+                                     + " — open to re-post just those")
                     if st.button(
                         _label,
                         key=f"cal_{user_name}_{_day.strftime('%Y%m%d')}_{_r['id']}__calstat_{_stat}",
@@ -9556,6 +9596,11 @@ else:  # st.session_state.view == "user"
             "<style>"
             "@keyframes calpulse{0%{opacity:1}50%{opacity:.5}100%{opacity:1}}"
             "[class*='__calstat_ok'] button{background:#E1F5EE!important;color:#04342C!important;border-color:#5DCAA5!important}"
+            # PARTIAL = it ran and most parts landed, but some missed (e.g. the
+            # trackers posted to 4 of 5 Slack channels). Orange, deliberately NOT
+            # the red 'fail' — a red pill on a report that mostly worked trains
+            # people to ignore red. Distinct hue from the yellow 'running' pill.
+            "[class*='__calstat_partial'] button{background:#FFEDD5!important;color:#7C2D12!important;border-color:#FB923C!important}"
             "[class*='__calstat_fail'] button{background:#FAECE7!important;color:#712B13!important;border-color:#F0997B!important}"
             "[class*='__calstat_miss'] button{background:transparent!important;color:#888780!important;border-color:var(--border)!important;opacity:.75}"
             "[class*='__calstat_running'] button{background:#FBF3DE!important;color:#6B5210!important;border-color:#C9A85C!important;animation:calpulse 1.4s ease-in-out infinite}"
