@@ -134,6 +134,10 @@ def main(argv=None) -> int:
                          "By default an org reuses images captured earlier today "
                          "(the boards are identical for all orgs), so only the "
                          "first run of the day drives Tableau.")
+    ap.add_argument("--retitle-only", action="store_true",
+                    help="Rename today's already-posted thread header to the "
+                         "current title and do nothing else (no capture, no "
+                         "post). For the day the title changed.")
     ap.add_argument("--replace", action="store_true",
                     help="Re-post TODAY's thread: delete the image replies "
                          "already under today's parent, then post this capture "
@@ -158,6 +162,17 @@ def main(argv=None) -> int:
           f"({sp.ORG_LABEL[args.org]}), "
           f"{'DRY-RUN (no Slack)' if args.dry_run else 'LIVE'}, "
           f"out={out_dir}", flush=True)
+
+    # Header-only rename of today's existing thread — no browser, no capture, no
+    # new messages. Runs before anything else touches Tableau.
+    if args.retitle_only:
+        res = sp.retitle_today(pages_mod.PAGES, today, org=args.org)
+        for r in res["results"]:
+            print(f"  {r['channel']}: {r['status']}", flush=True)
+        bad = [r for r in res["results"] if str(r["status"]).startswith("FAILED")]
+        print(f"\n{'⚠' if bad else '✓'} retitle-only ({args.org}): "
+              f"{sp.header_title(today)}", flush=True)
+        return 1 if bad else 0
 
     from automations.shared.tableau_patchright import tableau_session
     from automations.shared import run_manifest

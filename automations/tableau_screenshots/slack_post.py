@@ -240,6 +240,33 @@ def preview_dm(captures: list, pages: list, users: list,
                 "user_ids": user_ids, "results": results}
 
 
+def retitle_today(pages: list, today: dt.date | None = None,
+                  *, org: str = DEFAULT_ORG) -> dict:
+    """Rename today's ALREADY-POSTED parent to the current title, touching nothing
+    else. For the day the title changes: the images under the old thread are fine,
+    so re-posting them just to fix the header would churn every reply's timestamp.
+    Never creates a thread; a no-op if today's parent is already current."""
+    today = today or dt.date.today()
+    client = smp._client()
+    out = []
+    for channel in channels_for(org):
+        ts, is_legacy = find_thread_ts(client, channel, today)
+        if not ts:
+            out.append({"channel": channel, "status": "no thread today"})
+            continue
+        if not is_legacy:
+            out.append({"channel": channel, "status": "already current"})
+            continue
+        try:
+            client.chat_update(channel=channel, ts=ts,
+                               text=header_text(pages, today))
+            out.append({"channel": channel, "status": "retitled", "ts": ts})
+        except Exception as e:
+            out.append({"channel": channel,
+                        "status": f"FAILED {type(e).__name__}: {str(e)[:80]}"})
+    return {"org": org, "results": out}
+
+
 def post_all(captures: list, pages: list, today: dt.date | None = None,
              *, dry_run: bool = False, replace: bool = False,
              org: str = DEFAULT_ORG) -> dict:
