@@ -1,10 +1,12 @@
 """Daily "Tableau Country Trackers" -> one thread per ORG.
 
-The same 8 COUNTRY-wide boards go to three orgs (Raf, 2026-07-14) — identical
+The same 8 COUNTRY-wide boards go to five orgs (Raf, 2026-07-14) — identical
 images, one Hub card each:
-  --org alphalete   #alphalete-sales + #top-leaders-alphalete-org   (default)
-  --org elevate     #elevate-sales
-  --org indelible   #indelible-sales
+  --org alphalete     #alphalete-sales + #top-leaders-alphalete-org  (default)
+  --org elevate       #elevate-sales
+  --org indelible     #indelible-sales
+  --org palace        #palace-sales
+  --org elite_prime   #elite-prime-sales
 
 Flow: reuse today's PNGs if another org already captured them, else open ONE warm
 Tableau session -> capture each view to a PNG -> post them into today's own dated
@@ -43,7 +45,9 @@ OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "tableau_screenshots"
 # original id so its existing Hub card / verify history stays continuous.
 _REPORT_ID = {"alphalete": "tableau-screenshots",
               "elevate": "tableau-screenshots-elevate",
-              "indelible": "tableau-screenshots-indelible"}
+              "indelible": "tableau-screenshots-indelible",
+              "palace": "tableau-screenshots-palace",
+              "elite_prime": "tableau-screenshots-elite-prime"}
 
 # The 8 boards are COUNTRY-wide -- all three orgs post byte-identical images. So
 # capture ONCE per day and let the other orgs reuse the PNGs: re-driving Tableau
@@ -125,10 +129,9 @@ def main(argv=None) -> int:
                          "Download→Image dialog so we can target a single page. "
                          "No capture, no post.")
     ap.add_argument("--org", default=sp.DEFAULT_ORG, choices=sp.ORGS,
-                    help="Which org's channel(s) to post into. "
-                         "alphalete = #alphalete-sales + #top-leaders-alphalete-org, "
-                         "elevate = #elevate-sales, indelible = #indelible-sales. "
-                         "Same 8 country-wide images for every org.")
+                    help="Which org's channel(s) to post into: "
+                         + "; ".join(f"{o} = {sp.ORG_LABEL[o]}" for o in sp.ORGS)
+                         + ". Same 8 country-wide images for every org.")
     ap.add_argument("--fresh", action="store_true",
                     help="Force a re-capture even if today's PNGs already exist. "
                          "By default an org reuses images captured earlier today "

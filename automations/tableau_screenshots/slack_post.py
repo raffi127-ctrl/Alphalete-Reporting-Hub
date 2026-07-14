@@ -33,10 +33,12 @@ from automations.shared import slack_metrics_post as smp
 # three private ones (#top-leaders, #elevate-sales, #indelible-sales) fail
 # files_upload_v2 with not_in_channel if she is ever removed.
 ORG_CHANNELS = {
-    "alphalete": ["C068PH3RFSM",          # #alphalete-sales
-                  "C067TTGFEFR"],         # #top-leaders-alphalete-org (private)
-    "elevate":   ["C0B3KTCCMT7"],         # #elevate-sales (private)
-    "indelible": ["C0AA85Y3FPE"],         # #indelible-sales (private)
+    "alphalete":   ["C068PH3RFSM",        # #alphalete-sales
+                    "C067TTGFEFR"],       # #top-leaders-alphalete-org (private)
+    "elevate":     ["C0B3KTCCMT7"],       # #elevate-sales (private)
+    "indelible":   ["C0AA85Y3FPE"],       # #indelible-sales (private)
+    "palace":      ["C09AVM17PAR"],       # #palace-sales (private)
+    "elite_prime": ["C06A6A8ED34"],       # #elite-prime-sales (private)
 }
 ORGS = list(ORG_CHANNELS)
 DEFAULT_ORG = "alphalete"
@@ -44,7 +46,9 @@ DEFAULT_ORG = "alphalete"
 # Human labels for the Hub card / logs.
 ORG_LABEL = {"alphalete": "#alphalete-sales + #top-leaders-alphalete-org",
              "elevate": "#elevate-sales",
-             "indelible": "#indelible-sales"}
+             "indelible": "#indelible-sales",
+             "palace": "#palace-sales",
+             "elite_prime": "#elite-prime-sales"}
 
 
 def channels_for(org: str) -> list:

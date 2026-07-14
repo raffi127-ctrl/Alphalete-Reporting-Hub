@@ -1775,6 +1775,74 @@
         "report_id": "tableau-screenshots-indelible"
       }
     },
+    "tableau_screenshots_palace": {
+      "order": 5.3,
+      "on_scheduler": true,
+      "_note": "Same 8 country-wide Tableau trackers as tableau_screenshots, posted to #palace-sales (C09AVM17PAR, private; Lucy is a member) for the Palace org (Raf 2026-07-14). REUSES the PNGs the alphalete run (order 5) captured minutes earlier -- identical boards, so no Tableau session and it finishes in seconds. If that capture is missing/incomplete it captures for itself, so this is a CACHE, not a hard dependency (no depends_on).",
+      "display_name": "Tableau Country Trackers (#palace-sales)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.tableau_screenshots.run"
+      ],
+      "base_args": [
+        "--org",
+        "palace"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 30,
+      "verify": {
+        "type": "manifest",
+        "report_id": "tableau-screenshots-palace"
+      }
+    },
+    "tableau_screenshots_elite_prime": {
+      "order": 5.4,
+      "on_scheduler": true,
+      "_note": "Same 8 country-wide Tableau trackers as tableau_screenshots, posted to #elite-prime-sales (C06A6A8ED34, private; Lucy is a member) for the Elite Prime org (Raf 2026-07-14). REUSES the PNGs the alphalete run (order 5) captured minutes earlier -- identical boards, so no Tableau session and it finishes in seconds. If that capture is missing/incomplete it captures for itself, so this is a CACHE, not a hard dependency (no depends_on).",
+      "display_name": "Tableau Country Trackers (#elite-prime-sales)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.tableau_screenshots.run"
+      ],
+      "base_args": [
+        "--org",
+        "elite_prime"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 30,
+      "verify": {
+        "type": "manifest",
+        "report_id": "tableau-screenshots-elite-prime"
+      }
+    },
     "tableau_preview": {
       "on_scheduler": true,
       "_note": "MANUAL-ONLY preview harness (weekdays [] -> never auto-runs; reachable via lucy rerun). Captures the tracker(s) and DMs them to Megan via --preview-dm, posting NOTHING to the channels — safe for dialing in a crop. (Was briefly set live to re-post the corrected nds/b2b crops 2026-07-05; reverted to DM-only.)",
