@@ -1088,30 +1088,32 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
                     _log(f"[inspect] screenshot uploaded to 'RP Shot' ({len(png)}B)")
                 except Exception as e:
                     _log("[inspect] screenshot err: " + str(e)[:90])
-                # 2) dump EVERY visible clickable icon/image (i/img/svg/span with a
-                #    click handler or fa- class), with tag/class/title/id + x,y — the
-                #    real robot is one of these near the top, NOT the row badges.
+                # 2) hunt the plugin's injected robot: any element in the TOP-RIGHT
+                #    corner (the blue robot launcher lives there), with full detail.
                 try:
-                    icons = page.evaluate(r"""() => {
-                      const els = document.querySelectorAll(
-                        'i,img,svg,span,button,a,[onclick],[class*=fa-]');
+                    vp = page.evaluate(
+                        "() => ({w:innerWidth,h:innerHeight,dpr:devicePixelRatio})")
+                    _log(f"[inspect] viewport {vp}")
+                    corner = page.evaluate(r"""() => {
                       const out=[];
-                      els.forEach(e=>{
-                        if(e.offsetParent===null) return;
+                      document.querySelectorAll('*').forEach(e=>{
+                        if(e.offsetParent===null && getComputedStyle(e).position!=='fixed') return;
                         const r=e.getBoundingClientRect();
-                        if(r.width<8||r.height<8||r.top>260) return;   // top toolbar only
-                        const c=(''+(e.className||'')).slice(0,45);
-                        const t=(e.getAttribute&&e.getAttribute('title')||'').slice(0,30);
-                        const oc=(e.getAttribute&&e.getAttribute('onclick')||'').slice(0,25);
-                        out.push(e.tagName+' cls='+c+' title='+t+' oc='+oc+
-                                 ' @'+Math.round(r.left)+','+Math.round(r.top));
+                        if(r.width<12||r.height<12||r.width>140||r.height>140) return;
+                        if(r.left < innerWidth-230 || r.top > 320) return;   // top-right only
+                        const c=(''+(e.className||'')).slice(0,40);
+                        const src=(e.getAttribute&&(e.getAttribute('src')||e.getAttribute('data-src'))||'').slice(-40);
+                        const bg=(getComputedStyle(e).backgroundImage||'').slice(0,30);
+                        out.push(e.tagName+'#'+(e.id||'')+' cls='+c+' src='+src+' bg='+bg+
+                                 ' @'+Math.round(r.left)+','+Math.round(r.top)+
+                                 ' '+Math.round(r.width)+'x'+Math.round(r.height));
                       });
-                      return out.slice(0,60);
+                      return out.slice(0,40);
                     }""")
-                    for ic in icons:
-                        _log("[inspect][icon] " + ic)
+                    for ic in corner:
+                        _log("[inspect][corner] " + ic)
                 except Exception as e:
-                    _log("[inspect] icon dump err: " + str(e)[:90])
+                    _log("[inspect] corner hunt err: " + str(e)[:90])
                 rc = 0
                 return 0
 
