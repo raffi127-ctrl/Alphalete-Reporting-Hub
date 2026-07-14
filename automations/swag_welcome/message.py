@@ -14,8 +14,8 @@ from __future__ import annotations
 
 DEFAULT_TEMPLATE = (
     "Hey {name}! This is {manager}, one of the managers at Alphalete "
-    "Marketing 🐺 I was prepping for your orientation Monday and just wrapped "
-    "up your welcome package! 👀 We're excited to have you starting with the "
+    "Marketing. I was prepping for your orientation Monday and just wrapped "
+    "up your welcome package! We're excited to have you starting with the "
     "team! If any questions come up before Monday, just let me know!"
 )
 
