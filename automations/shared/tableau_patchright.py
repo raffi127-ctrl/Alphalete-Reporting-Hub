@@ -117,7 +117,8 @@ class AppStreamBusy(Exception):
 def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
                        verbose: bool = True, window_size: tuple = (1680, 1280),
                        device_scale: float | None = None,
-                       busy_retries: int | None = None):
+                       busy_retries: int | None = None,
+                       enable_extensions: bool = False):
     """launch_persistent_context with the existing system-chrome → bundled-
     chromium fallback UNCHANGED, wrapped in a wait+retry for the "profile
     already in use" collision.
@@ -146,6 +147,15 @@ def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
                   "--high-dpi-support=1"]
     base = dict(user_data_dir=str(user_data_dir), headless=headless,
                 no_viewport=True, args=_args)
+    # Chrome EXTENSIONS: patchright's DEFAULT chromium args include
+    # "--disable-extensions", which switches off any extension installed in the
+    # persistent profile. ApplicantStream's resume extractor ("the robot" in
+    # Carlos's walkthrough) IS a Chrome extension — installed into the profile it
+    # still never appears, because this default flag kills it. Dropping the flag
+    # is what makes the robot show up for resume_pushing. OPT-IN: default False
+    # keeps every other caller's launch byte-identical.
+    if enable_extensions:
+        base["ignore_default_args"] = ["--disable-extensions"]
     prefer_chrome = True
     last: Optional[Exception] = None
     # Low-priority callers (resume_pushing) pass busy_retries=1 to fail fast on a
@@ -722,7 +732,8 @@ def appstream_direct_session(headless: bool = False,
                              password: Optional[str] = None,
                              allow_form_login: bool = True,
                              force_form_login: bool = False,
-                             yield_if_busy: bool = False) -> Iterator[Page]:
+                             yield_if_busy: bool = False,
+                             enable_extensions: bool = False) -> Iterator[Page]:
     """Yield a Page on the AppStream recruiting console (#searchMC office
     switcher) for the rcaptain account, via patchright stealth. Unattended
     replacement for fetch_office._attach() (debug-Chrome CDP, broken on Chrome
@@ -731,6 +742,13 @@ def appstream_direct_session(headless: bool = False,
     yield_if_busy=True: if the Chrome profile is already in use by another run,
     DON'T wait — raise AppStreamBusy immediately so a low-priority caller
     (resume_pushing) can step aside and let the other report have the session.
+
+    enable_extensions=True: drop patchright's default "--disable-extensions" so a
+    Chrome extension installed in this profile actually LOADS. Required by
+    resume_pushing — ApplicantStream's resume extractor ("the robot") is an
+    extension, and the default flag silently disables it. Seed the extension into
+    the profile once with:  python -m automations.shared.tableau_patchright
+    --appstream-extension
 
     Auth path (2026-06-30): reuse the saved session (APPSTREAM_STORAGE_STATE)
     if it's still live; otherwise drive the rcaptain login form and save a
@@ -757,7 +775,8 @@ def appstream_direct_session(headless: bool = False,
         try:
             ctx = _launch_persistent(p, profile, headless=headless,
                                      label="appstream_direct", verbose=verbose,
-                                     busy_retries=1 if yield_if_busy else None)
+                                     busy_retries=1 if yield_if_busy else None,
+                                     enable_extensions=enable_extensions)
         except Exception as e:
             if yield_if_busy and _is_profile_in_use(e):
                 raise AppStreamBusy(str(e)) from e
@@ -948,7 +967,35 @@ if __name__ == "__main__":
     ap.add_argument("--ownerville-form-login", action="store_true",
                     help="Test whether ownerville's Cloudflare auto-passes now: "
                          "drive the OV login in a THROWAWAY profile, unattended.")
+    ap.add_argument("--appstream-extension", action="store_true",
+                    help="One-time: open the AppStream profile HEADED with "
+                         "extensions ENABLED so you can install the resume-"
+                         "extractor plugin (the robot) into it. It then persists "
+                         "for every scheduled resume_pushing run.")
     args = ap.parse_args()
+    if args.appstream_extension:
+        import sys as _sys
+        print("Opening the AppStream automation profile with extensions ENABLED.\n"
+              "  1. The AppStream console opens in the window that appears.\n"
+              "  2. Go to Applicants -> Process Emails -> Process in Batches.\n"
+              "  3. If there's no robot icon, click the DOWNLOAD PLUGIN option and\n"
+              "     install the extension INTO THIS BROWSER WINDOW.\n"
+              "  4. Refresh the page and confirm the robot icon now appears.\n"
+              "  5. Come back to this terminal and press Enter to close.\n"
+              "The extension is saved in the PERSISTENT profile, so every scheduled\n"
+              "run gets it from then on.\n", flush=True)
+        try:
+            with appstream_direct_session(headless=False, verbose=True,
+                                          enable_extensions=True) as _pg:
+                print(f"\n-> console at {(_pg.url or '')[:78]}", flush=True)
+                input("\nPress Enter once the robot icon is showing… ")
+            print("✓ closed — the extension is saved in the profile. Now verify "
+                  "unattended with:\n"
+                  "    python -m automations.resume_pushing.run --debug")
+            _sys.exit(0)
+        except Exception as _e:
+            print(f"❌ {type(_e).__name__}: {str(_e)[:200]}")
+            _sys.exit(1)
     if args.appstream_form_login:
         import sys as _sys
         _ok = False
