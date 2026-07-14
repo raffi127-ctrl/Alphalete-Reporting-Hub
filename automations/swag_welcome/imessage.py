@@ -16,6 +16,7 @@ Guardrails:
 from __future__ import annotations
 
 import platform
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -82,7 +83,7 @@ def _send_text(phone: str, text: str) -> None:
 # build. (Text still goes via AppleScript, which is rock-solid.)
 SHORTCUT_NAME = "Alphalete Swag Card"
 _SWAG_DIR = Path.home() / ".swag_cards"
-_RECIP_FILE = _SWAG_DIR / "recipient.txt"
+_SWAG_IMG = _SWAG_DIR / "current.png"
 
 
 def _find_shortcut(name: str = SHORTCUT_NAME) -> str | None:
@@ -105,19 +106,20 @@ def shortcut_installed(name: str = SHORTCUT_NAME) -> bool:
 
 def _send_image_via_shortcut(phone: str, attachment: str,
                              name: str = SHORTCUT_NAME) -> None:
-    """Card → clipboard, phone → the Shortcut's input. The Shortcut just does
-    Get Text from Input (phone) → Get Clipboard (card) → Send Message. No
-    finicky file-path reading, no focus-steal, sends from this Mac's iMessage."""
+    """Phone → clipboard (text), card → the Shortcut's input file. The Shortcut
+    does Get Clipboard (phone) → Send [Shortcut Input] to [Clipboard]. `shortcuts
+    run` only passes input as a FILE, and reading text from it is unreliable —
+    so the phone (which must be text) rides the clipboard, and the card (a file)
+    rides the input. No focus-steal; sends from this Mac's iMessage."""
     ap = Path(attachment)
     if not ap.exists():
         raise IMessageError(f"attachment not found: {attachment}")
     actual = _find_shortcut(name) or name   # use the real name (may hold spaces)
     _SWAG_DIR.mkdir(exist_ok=True)
-    klass = "«class PNGf»" if ap.suffix.lower() == ".png" else "JPEG picture"
-    _osascript(f'set the clipboard to (read (POSIX file "{ap.resolve()}") '
-               f'as {klass})')
-    _RECIP_FILE.write_text(phone)
-    proc = subprocess.run(["shortcuts", "run", actual, "-i", str(_RECIP_FILE)],
+    shutil.copy(ap, _SWAG_IMG)                       # card → Shortcut input file
+    safe = phone.replace("\\", "\\\\").replace('"', '\\"')
+    _osascript(f'set the clipboard to "{safe}"')     # phone → clipboard (text)
+    proc = subprocess.run(["shortcuts", "run", actual, "-i", str(_SWAG_IMG)],
                           capture_output=True, text=True, timeout=60)
     if proc.returncode != 0:
         raise IMessageError((proc.stderr or "shortcut run failed").strip()[:200])
