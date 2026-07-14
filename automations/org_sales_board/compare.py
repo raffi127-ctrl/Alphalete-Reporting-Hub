@@ -892,6 +892,21 @@ def main():
               f"{len(res.get('formula_drift', []))} formula-drift")
     except Exception as e:  # noqa: BLE001 — the log is best-effort
         print(f"(couldn't write full-compare log: {type(e).__name__}: {e})")
+    # This used to ALWAYS exit 0 ("a compare difference is a finding, not a crash")
+    # — fine while it was a hand-run diagnostic. It is now a SCHEDULED 9am gate, and
+    # an exit-0 with the done sentinel would let a REAL disagreement pass silently:
+    # the orchestrator would mark it done and nobody would ever hear about it. So a
+    # NOT-clean compare now fails the run, which surfaces it in the failure email
+    # with the paste-to-Claude block. (Megan 2026-07-14.)
+    #
+    # This only fires on genuine problems. `clean` is False only for va_ahead /
+    # mismatch / copy-missing / formula-drift — the automation being AHEAD of the VA
+    # (copy_ahead) is explicitly NOT counted, so the ordinary mid-week state where
+    # the VAs haven't finished keying stays green.
+    if not res["clean"]:
+        print("=== VA COMPARE FOUND REAL DIFFERENCES — the board disagrees with "
+              "the VA tab (see the buckets above / the log). ===")
+        return 1
     print("=== done ===")
     return 0
 
