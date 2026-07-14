@@ -342,6 +342,8 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
         tmp_ws = next(w for w in ss.worksheets() if w.title == TMP_TAB)
         reqs, filt_specs, sort_col, export_rng, subtotal_cols = [], [], 3, None, []
         sorts = None            # [(col, order), ...]; None -> [(sort_col, "DESCENDING")]
+        cross_write = None      # zeros cross-week: values to write onto the copy pre-filter
+        cross_col = None        # zeros cross-week: the borrowed Saturday column index
 
         # common filters: hide blank rep names
         filt_specs.append({"columnIndex": 2, "filterCriteria": {"hiddenValues": [""]}})
@@ -424,19 +426,38 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
                                       "values": [{"userEnteredValue": "0"}]}}})
                 subtotal_cols = [c_older, c_recent]
             else:
-                # cross-week (Tue: Mon + last Sat): the two days live in different
-                # weekly tabs, so match the older day's zeros by NORMALIZED rep name
-                # (week suffix increments across weeks). Show rep + trainer/tenure/
-                # team only (the two day-cols can't share one image).
-                older_norms = _zero_names_for_day(
-                    find_week_tab(ss, d_older).get_all_values(), d_older)
-                cur_names = [_cell(grid, r, 2).strip() for r in range(3, tot_row - 1)
-                             if _cell(grid, r, 2).strip()]
-                hide = sorted({n for n in cur_names if _norm_name(n) not in older_norms})
-                filt_specs[0]["filterCriteria"]["hiddenValues"] = [""] + hide
-                filt_specs.append({"columnIndex": c_recent, "filterCriteria": {
-                    "condition": {"type": "NUMBER_EQ", "values": [{"userEnteredValue": "0"}]}}})
-                show = {0, 1, 2, trainer_col, fs_col, team_col}
+                # cross-week (Tue: Mon + last Sat). The older day lives in the prior
+                # week's tab, so COPY each rep's Saturday Apps onto this copy — into the
+                # spacer column just left of Monday, matched by NORMALIZED name (the
+                # week suffix increments across weeks). Then both days filter + display
+                # natively, identical to any other day.
+                older_grid = find_week_tab(ss, d_older).get_all_values()
+                sc = _day_block(older_grid, d_older)[0]
+                sat_by_name = {_norm_name(_cell(older_grid, r, 2)): _cell(older_grid, r, sc).strip()
+                               for r in range(3, len(older_grid)) if _cell(older_grid, r, 2).strip()}
+                c_older = c_recent - 1                       # spacer col immediately left of Monday
+                cross_col = c_older
+                col_v = [[sat_by_name.get(_norm_name(_cell(grid, r - 1, 2)), "")]
+                         for r in range(4, tot_row)]         # 1-based rows 4..tot_row-1 (grid idx r-1)
+                cl = col_letter(c_older)
+                cross_write = [
+                    {"range": f"{cl}1", "values": [["SAT"]]},
+                    {"range": f"{cl}2", "values": [[str(d_older.day)]]},
+                    {"range": f"{cl}3", "values": [["Apps"]]},
+                    {"range": f"{cl}4:{cl}{tot_row - 1}", "values": col_v},
+                ]
+                show = {0, 1, 2, c_older, c_recent, trainer_col, fs_col, team_col}
+                for c in (c_recent, c_older):
+                    filt_specs.append({"columnIndex": c, "filterCriteria": {
+                        "condition": {"type": "NUMBER_EQ", "values": [{"userEnteredValue": "0"}]}}})
+                subtotal_cols = [c_older, c_recent]
+                # make the borrowed Saturday column look like a native day column
+                reqs.append({"copyPaste": {
+                    "source": {"sheetId": gid, "startRowIndex": 0, "endRowIndex": tot_row,
+                               "startColumnIndex": c_recent, "endColumnIndex": c_recent + 1},
+                    "destination": {"sheetId": gid, "startRowIndex": 0, "endRowIndex": tot_row,
+                                    "startColumnIndex": c_older, "endColumnIndex": c_older + 1},
+                    "pasteType": "PASTE_FORMAT"}})
 
             right = col_letter(max(show))
             export_rng = f"A1:{right}{tot_row}"
@@ -447,6 +468,12 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
 
         if sorts is None:
             sorts = [(sort_col, "DESCENDING")]
+        if cross_write:                    # write the older day's column BEFORE filtering/sorting
+            ss.batch_update({"requests": [{"unmergeCells": {"range": {   # header may be merged
+                "sheetId": gid, "startRowIndex": 0, "endRowIndex": 3,
+                "startColumnIndex": cross_col, "endColumnIndex": cross_col + 1}}}]})
+            tmp_ws.batch_update(cross_write, value_input_option="USER_ENTERED")
+            time.sleep(0.5)
         reqs += _hide_cols(gid, show, ncols)
         reqs.append({"setBasicFilter": {"filter": {
             "range": {"sheetId": gid, "startRowIndex": 2, "endRowIndex": tot_row - 1,
