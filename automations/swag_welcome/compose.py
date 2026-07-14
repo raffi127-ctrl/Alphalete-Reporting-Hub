@@ -35,7 +35,7 @@ CARD_IMAGE_CANDIDATES = [
 NAME_BOX = (0.11, 0.64, 0.46, 0.80)
 ROTATION_DEG = -1.0
 GLYPH_INK = (24, 28, 46)
-OUT_MAX_PX = 1600   # longest side of the saved card — keeps iMessage happy
+OUT_MAX_PX = 1200   # longest side of the saved card — small + fast to paste
 
 # Layout tuning (fractions of the average glyph width / line height).
 _GAP = 0.02           # space between letters — tight, like real writing

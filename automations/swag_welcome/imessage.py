@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import platform
 import subprocess
+import time
 from pathlib import Path
 
 
@@ -59,29 +60,45 @@ def messages_ready() -> tuple[bool, str]:
         return False, f"couldn't reach Messages: {e}"
 
 
-def _send_applescript(phone: str, text: str, attachment: str | None) -> None:
-    # Send to the phone number over the iMessage service. Text first, then the
-    # image as a follow-up attachment (Messages sends them as two bubbles).
-    # Resolve the service by id (whose-filter works; index access throws -10000).
-    lines = [
-        'tell application "Messages"',
-        '  set svcId to id of 1st service whose service type = iMessage',
-        '  set targetService to service id svcId',
-        f'  set targetBuddy to buddy "{phone}" of targetService',
-    ]
-    # Send the image FIRST (it needs a moment to upload), pause, then the text,
-    # so the two don't race — sending both back-to-back can drop the image.
-    if attachment:
-        ap = Path(attachment)
-        if not ap.exists():
-            raise IMessageError(f"attachment not found: {attachment}")
-        lines.append(f'  send (POSIX file "{ap.resolve()}") to targetBuddy')
-        lines.append('  delay 2')
-    if text:
-        safe = text.replace("\\", "\\\\").replace('"', '\\"')
-        lines.append(f'  send "{safe}" to targetBuddy')
-    lines.append("end tell")
-    _osascript("\n".join(lines))
+def _send_text(phone: str, text: str) -> None:
+    # Text over the iMessage service. Resolve service by id (the whose-filter
+    # works; index access throws -10000 on recent macOS).
+    safe = text.replace("\\", "\\\\").replace('"', '\\"')
+    _osascript(
+        'tell application "Messages"\n'
+        '  set svcId to id of 1st service whose service type = iMessage\n'
+        '  set targetService to service id svcId\n'
+        f'  set targetBuddy to buddy "{phone}" of targetService\n'
+        f'  send "{safe}" to targetBuddy\n'
+        'end tell'
+    )
+
+
+def _paste_image_into_chat(attachment: str) -> None:
+    """Send an image by pasting it (clipboard) into the focused Messages chat.
+
+    AppleScript's `send <file>` attaches images as raw documents that Messages
+    fails to DELIVER on recent macOS (they show as an undelivered file icon).
+    Pasting clipboard image data — exactly like sending a screenshot — makes
+    Messages treat it as an inline photo, which delivers. This is GUI driven,
+    so it needs Accessibility permission and drives the Messages window.
+    """
+    ap = Path(attachment)
+    if not ap.exists():
+        raise IMessageError(f"attachment not found: {attachment}")
+    # 1. Put the card on the clipboard as image data (like a screenshot).
+    _osascript(f'set the clipboard to (read (POSIX file "{ap.resolve()}") '
+               'as JPEG picture)')
+    # 2. Paste into the chat the text-send just opened, and hit send.
+    _osascript(
+        'tell application "Messages" to activate\n'
+        'delay 0.7\n'
+        'tell application "System Events"\n'
+        '  keystroke "v" using command down\n'
+        '  delay 1.0\n'
+        '  key code 36\n'          # Return → send
+        'end tell'
+    )
 
 
 def send(phone: str, text: str, attachment: str | None = None,
@@ -93,7 +110,13 @@ def send(phone: str, text: str, attachment: str | None = None,
     if dry_run:
         return result
     try:
-        _send_applescript(phone, text, attachment)
+        # Text first — this opens/focuses the recipient's chat — then paste the
+        # card image into that focused chat.
+        if text:
+            _send_text(phone, text)
+        if attachment:
+            time.sleep(1.5)
+            _paste_image_into_chat(attachment)
         result["sent"] = True
     except Exception as e:
         result["error"] = str(e)
