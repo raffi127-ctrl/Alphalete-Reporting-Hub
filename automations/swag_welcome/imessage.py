@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import platform
 import subprocess
-import time
 from pathlib import Path
 
 
@@ -25,7 +24,7 @@ class IMessageError(RuntimeError):
     pass
 
 
-def _osascript(script: str) -> str:
+def _osascript(script: str, timeout: int = 60) -> str:
     if platform.system() != "Darwin":
         raise IMessageError(
             "iMessage sending only works on macOS (needs Messages.app)."
@@ -34,6 +33,7 @@ def _osascript(script: str) -> str:
         ["osascript", "-e", script],
         capture_output=True,
         text=True,
+        timeout=timeout,
     )
     if proc.returncode != 0:
         raise IMessageError(proc.stderr.strip() or "osascript failed")
@@ -87,9 +87,18 @@ def _clean_path(attachment: str) -> Path:
     return dest
 
 
+# Seconds to wait AFTER sending the image, inside the AppleScript, so Messages
+# finishes UPLOADING before the process returns. Without this the image shows on
+# the sender but never reaches the recipient ("Not Delivered"). This is the fix
+# the Texas de Brazil sender uses (it waits 18s per full-page poster; our card
+# is a small ~280 KB JPEG, so a shorter wait is plenty).
+IMG_UPLOAD_DELAY = 12
+
+
 def _send_image(phone: str, attachment: str) -> None:
-    """Send the card as a normal iMessage attachment from a clean path — no GUI,
-    no extra permissions, straight from this machine's iMessage account."""
+    """Send the card as an inline iMessage image — no GUI, no extra permissions,
+    straight from this machine's iMessage account. The trailing `delay` lets
+    Messages finish uploading before osascript exits (else it never delivers)."""
     ap = Path(attachment)
     if not ap.exists():
         raise IMessageError(f"attachment not found: {attachment}")
@@ -100,7 +109,9 @@ def _send_image(phone: str, attachment: str) -> None:
         '  set targetService to service id svcId\n'
         f'  set targetBuddy to buddy "{phone}" of targetService\n'
         f'  send (POSIX file "{clean}") to targetBuddy\n'
-        'end tell'
+        f'  delay {IMG_UPLOAD_DELAY}\n'
+        'end tell',
+        timeout=IMG_UPLOAD_DELAY + 30,
     )
 
 
@@ -113,13 +124,11 @@ def send(phone: str, text: str, attachment: str | None = None,
     if dry_run:
         return result
     try:
-        # Image first (from a clean path), brief pause, then the text — sending
-        # both back-to-back can drop the image.
-        if attachment:
-            _send_image(phone, attachment)
-            time.sleep(2)
+        # Text first, then the image (its AppleScript waits out the upload).
         if text:
             _send_text(phone, text)
+        if attachment:
+            _send_image(phone, attachment)
         result["sent"] = True
     except Exception as e:
         result["error"] = str(e)
