@@ -1045,22 +1045,31 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
                     _log(f"[inspect] robot candidates: {cand}")
                 except Exception as e:
                     _log("[inspect] robot hunt err: " + str(e)[:90])
-                # try clicking the first titled candidate via a broad selector
-                clicked = False
-                for sel in ["[title*='extract' i]", "[title*='resume helper' i]",
-                            "[class*='robot']", "[title*='resume' i]"]:
-                    loc = page.locator(sel)
-                    if loc.count() > 0:
-                        _log(f"[inspect] trying robot sel {sel!r} count={loc.count()}")
-                        try:
-                            loc.first.click(timeout=6000)
-                            clicked = True
-                            _log(f"[inspect] clicked via {sel!r}")
-                            break
-                        except Exception as e:
-                            _log(f"[inspect] click {sel!r} err: {str(e)[:60]}")
-                page.wait_for_timeout(4000)
+                # v2: extraction is the native "Auto Extract Resumes" button.
+                aer = page.locator(
+                    "xpath=//button[contains(normalize-space(.),'Auto Extract Resumes')]")
+                _log(f"[inspect] 'Auto Extract Resumes' button count: {aer.count()}")
+                pre = set(id(pg) for pg in ctx.pages)
+                if aer.count() > 0:
+                    try:
+                        aer.first.click(timeout=6000)
+                        _log("[inspect] clicked 'Auto Extract Resumes'")
+                    except Exception as e:
+                        _log("[inspect] AER click err: " + str(e)[:70])
+                page.wait_for_timeout(5000)
                 _log(f"[inspect] pages after click: {[(pg.url or '')[:55] for pg in ctx.pages]}")
+                new_pages = [pg for pg in ctx.pages if id(pg) not in pre]
+                _log(f"[inspect] new pages: {[(pg.url or '')[:60] for pg in new_pages]}")
+                # any modal / swal dialog text?
+                for pi, pg in enumerate(ctx.pages):
+                    try:
+                        dlg = pg.locator(
+                            ".modal:visible, .swal2-popup:visible, [role='dialog']:visible")
+                        if dlg.count() > 0:
+                            _log(f"[inspect] page{pi} dialog: "
+                                 f"{' '.join(dlg.first.inner_text().split())[:180]}")
+                    except Exception:
+                        pass
 
                 def _dump(fr, label):
                     try:
