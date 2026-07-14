@@ -28,6 +28,12 @@ _SCHEMA = {
             "items": {
                 "type": "object",
                 "properties": {
+                    "start_time": {
+                        "type": "string",
+                        "description": "The Start Time cell exactly as shown, e.g. "
+                        "'1:00', '12:30'. Empty string if there is no Start Time "
+                        "column or the cell is blank.",
+                    },
                     "name": {
                         "type": "string",
                         "description": "The exact text of the first-name (Name) "
@@ -51,10 +57,13 @@ _SCHEMA = {
 }
 
 _PROMPT = (
-    "This is a screenshot of a new-hire roster table with three columns: "
-    "Name (first name), Last Name, and Phone. Read every data row top to "
+    "This is a screenshot of a new-hire roster table. Columns are usually "
+    "Name (first name), Last Name, and Phone, and MAY also include a Start "
+    "Time column (the Monday orientation time). Read every data row top to "
     "bottom and return them in order.\n\n"
     "Rules:\n"
+    "- If there's a Start Time column, copy each cell exactly (e.g. '1:00', "
+    "'12:30'); otherwise leave start_time empty.\n"
     "- Copy the Name cell EXACTLY, including anything in quotes (e.g. "
     "'Auryn \"RN\"'). Do not strip or interpret the quotes — a human decides "
     "later whether a quoted part is a pronunciation or a nickname.\n"

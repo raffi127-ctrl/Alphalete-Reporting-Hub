@@ -57,7 +57,7 @@ def render(show_header: bool = True) -> None:
                "version goes on the card. Uncheck anyone you don't want texted.")
 
     for i, r in enumerate(recips):
-        c1, c2, c3, c4 = st.columns([0.5, 3, 3, 2])
+        c1, c2, c3, c4, c5 = st.columns([0.5, 3, 2.4, 1.3, 1.3])
         with c1:
             r["include"] = st.checkbox("send", value=r.get("include", True),
                                        key=f"swag_inc_{i}", label_visibility="collapsed")
@@ -79,6 +79,10 @@ def render(show_header: bool = True) -> None:
             r["phone_e164"] = e164
             r["phone_pretty"] = pretty_phone(e164)
         with c4:
+            r["start_time"] = st.text_input("Mon. time", value=r.get("start_time", ""),
+                                            key=f"swag_time_{i}",
+                                            placeholder="1:00")
+        with c5:
             ok = r["include"] and r["phone_e164"] and r["chosen_name"]
             st.markdown(f"<div style='padding-top:1.9rem;opacity:0.7'>"
                         f"{'✅' if ok else '—'}</div>", unsafe_allow_html=True)
@@ -89,8 +93,28 @@ def render(show_header: bool = True) -> None:
     st.markdown("### Message")
     manager = st.text_input("Manager name (signs the text)", value="",
                             placeholder="e.g. Rafael", key="swag_manager")
-    template = st.text_area("Welcome text ({name} = first name, {manager} = manager)",
-                            value=message.DEFAULT_TEMPLATE, height=120, key="swag_template")
+
+    # Optional: name each person's Monday start time. Defaults on when the
+    # roster came with times; toggling swaps the template preset (dynamic key).
+    _has_times = any((r.get("start_time") or "").strip() for r in recips)
+    include_time = st.checkbox(
+        "⏰ Include each person's Monday start time in the text",
+        value=_has_times, key="swag_include_time",
+        help="Uses the Start Time column, e.g. “…orientation Monday at 1:00…”")
+    _default_tmpl = (message.DEFAULT_TEMPLATE_WITH_TIME if include_time
+                     else message.DEFAULT_TEMPLATE)
+    _ph = "{name}, {manager}" + (", {time}" if include_time else "")
+    template = st.text_area(f"Welcome text ({_ph})",
+                            value=_default_tmpl, height=140,
+                            key=f"swag_template_{include_time}")
+
+    if include_time:
+        _missing_t = [r["chosen_name"] for r in recips
+                      if r.get("include") and not (r.get("start_time") or "").strip()]
+        if _missing_t:
+            st.warning("⏰ No Monday time for: " + ", ".join(_missing_t)
+                       + " — add it in the table above or their text will read "
+                       "“…Monday at  …”.")
 
     included = [r for r in recips if r.get("include") and r.get("chosen_name")]
     if included:
@@ -99,6 +123,7 @@ def render(show_header: bool = True) -> None:
                                     [r["chosen_name"] for r in included],
                                     key="swag_preview_pick")
         if preview_name:
+            _prow = next((r for r in included if r["chosen_name"] == preview_name), {})
             out = Path(tempfile.gettempdir()) / f"swag_preview_{preview_name}.png"
             meta = compose.compose(preview_name, out)
             colp, colt = st.columns([3, 2])
@@ -108,7 +133,8 @@ def render(show_header: bool = True) -> None:
                     st.caption("⚠️ Placeholder card — drop the real photo into "
                                "resources/swag/ to use the real one.")
             with colt:
-                st.info(message.render(preview_name, template, manager=manager))
+                st.info(message.render(preview_name, template, manager=manager,
+                                       time=_prow.get("start_time", "")))
 
     # --- run --------------------------------------------------------------
     st.markdown("---")

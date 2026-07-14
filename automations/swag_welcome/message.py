@@ -19,11 +19,22 @@ DEFAULT_TEMPLATE = (
     "team! If any questions come up before Monday, just let me know!"
 )
 
+# Same copy, but names the person's Monday start time. {time} is filled
+# per-recipient from the roster's Start Time column.
+DEFAULT_TEMPLATE_WITH_TIME = (
+    "Hey {name}! This is {manager}, one of the managers at Alphalete "
+    "Marketing 🐺 I was prepping for your orientation Monday at {time} and just "
+    "wrapped up your welcome package! 👀 We're excited to have you starting with "
+    "the team! If any questions come up before Monday, just let me know!"
+)
 
-def render(name: str, template: str | None = None, manager: str = "") -> str:
+
+def render(name: str, template: str | None = None, manager: str = "",
+           time: str = "") -> str:
     tmpl = template or DEFAULT_TEMPLATE
-    # Tolerate a template that omits {manager}.
+    # Fill whatever placeholders the template uses; extras are ignored, and a
+    # template missing one of these just renders without it.
     try:
-        return tmpl.format(name=name, manager=manager)
-    except KeyError:
-        return tmpl.format(name=name)
+        return tmpl.format(name=name, manager=manager, time=time)
+    except (KeyError, IndexError):
+        return tmpl.replace("{name}", name)

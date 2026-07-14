@@ -104,6 +104,7 @@ class Recipient:
     phone_e164: str | None
     phone_raw: str = ""
     chosen_name: str = ""    # what to print/text; defaults to base_name
+    start_time: str = ""     # Monday orientation time from the roster (optional)
     include: bool = True     # preflight can toggle a row out of the batch
     warnings: list[str] = field(default_factory=list)
 
@@ -112,7 +113,8 @@ class Recipient:
         return self.quoted_alt is not None
 
     @classmethod
-    def from_cells(cls, name_cell: str, phone_cell: str) -> "Recipient":
+    def from_cells(cls, name_cell: str, phone_cell: str,
+                   start_time: str = "") -> "Recipient":
         base, quoted = split_quoted_name(name_cell)
         e164, warn = normalize_phone(phone_cell)
         warnings = [warn] if warn else []
@@ -125,6 +127,7 @@ class Recipient:
             phone_e164=e164,
             phone_raw=str(phone_cell or "").strip(),
             chosen_name=base,
+            start_time=str(start_time or "").strip(),
             warnings=warnings,
         )
 
@@ -140,5 +143,6 @@ def build_roster(rows: list[dict]) -> list[Recipient]:
     (the 'last_name' column is ignored — we only text first name + phone)."""
     out = []
     for r in rows:
-        out.append(Recipient.from_cells(r.get("name", ""), r.get("phone", "")))
+        out.append(Recipient.from_cells(r.get("name", ""), r.get("phone", ""),
+                                        r.get("start_time", "")))
     return out

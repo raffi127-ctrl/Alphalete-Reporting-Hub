@@ -76,7 +76,8 @@ def run(roster: dict, send: bool = False, out_dir: Path | None = None) -> dict:
         if not meta["used_real_photo"]:
             summary["used_placeholder_card"] = True
 
-        text = message.render(name, template, manager=manager)
+        text = message.render(name, template, manager=manager,
+                              time=(r.get("start_time") or ""))
         row["text"] = text
 
         res = imessage.send(phone, text, attachment=str(card_path), dry_run=not send)
