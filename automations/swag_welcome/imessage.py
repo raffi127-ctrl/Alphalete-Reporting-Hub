@@ -85,13 +85,22 @@ _SWAG_DIR = Path.home() / ".swag_cards"
 _RECIP_FILE = _SWAG_DIR / "recipient.txt"
 
 
-def shortcut_installed(name: str = SHORTCUT_NAME) -> bool:
+def _find_shortcut(name: str = SHORTCUT_NAME) -> str | None:
+    """Return the shortcut's ACTUAL name (matched ignoring surrounding space —
+    Shortcuts silently keeps trailing spaces in names), or None."""
     try:
         out = subprocess.run(["shortcuts", "list"], capture_output=True,
-                             text=True, timeout=15)
-        return name in out.stdout.splitlines()
+                             text=True, timeout=15).stdout
+        for line in out.splitlines():
+            if line.strip() == name.strip():
+                return line
     except Exception:
-        return False
+        pass
+    return None
+
+
+def shortcut_installed(name: str = SHORTCUT_NAME) -> bool:
+    return _find_shortcut(name) is not None
 
 
 def _send_image_via_shortcut(phone: str, attachment: str,
@@ -102,12 +111,13 @@ def _send_image_via_shortcut(phone: str, attachment: str,
     ap = Path(attachment)
     if not ap.exists():
         raise IMessageError(f"attachment not found: {attachment}")
+    actual = _find_shortcut(name) or name   # use the real name (may hold spaces)
     _SWAG_DIR.mkdir(exist_ok=True)
     klass = "«class PNGf»" if ap.suffix.lower() == ".png" else "JPEG picture"
     _osascript(f'set the clipboard to (read (POSIX file "{ap.resolve()}") '
                f'as {klass})')
     _RECIP_FILE.write_text(phone)
-    proc = subprocess.run(["shortcuts", "run", name, "-i", str(_RECIP_FILE)],
+    proc = subprocess.run(["shortcuts", "run", actual, "-i", str(_RECIP_FILE)],
                           capture_output=True, text=True, timeout=60)
     if proc.returncode != 0:
         raise IMessageError((proc.stderr or "shortcut run failed").strip()[:200])
