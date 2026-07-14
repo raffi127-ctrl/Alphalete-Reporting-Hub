@@ -19,14 +19,9 @@ DEFAULT_TEMPLATE = (
     "team! If any questions come up before Monday, just let me know!"
 )
 
-# Same copy, but names the person's Monday start time. {time} is filled
+# Same copy, with a "See you Monday at {time}!" line appended. {time} is filled
 # per-recipient from the roster's Start Time column.
-DEFAULT_TEMPLATE_WITH_TIME = (
-    "Hey {name}! This is {manager}, one of the managers at Alphalete "
-    "Marketing 🐺 I was prepping for your orientation Monday at {time} and just "
-    "wrapped up your welcome package! 👀 We're excited to have you starting with "
-    "the team! If any questions come up before Monday, just let me know!"
-)
+DEFAULT_TEMPLATE_WITH_TIME = DEFAULT_TEMPLATE + " See you Monday at {time}!"
 
 
 def render(name: str, template: str | None = None, manager: str = "",
