@@ -65,6 +65,13 @@ _HUB_CARD = {
     # mark themselves via run_library_report / their wrapper. Their Hub card id IS
     # the library id, so map it to itself so _cal_status matches (card goes green).
     "june_texas_de_brazil_monthly_competition": "june_texas_de_brazil_monthly_competition",
+    # Weekly captainship reports: standalone LaunchAgents (Lucy 2 Mon/Tue, mini Tue)
+    # that call publish_done from their wrapper. They ran fine for weeks but their
+    # cards never went green — they were simply missing from this map, so Megan had
+    # no way to tell a successful run from a silent miss (2026-07-14).
+    "carlos_captainship_bonus": "carlos-captainship-bonus",
+    "carlos_captainship_headcount": "carlos-captainship-headcount",
+    "raf_captainship_bonus": "raf-captainship-bonus",
     # weather_alert: Slack-only, no Hub card → not published.
 }
 
