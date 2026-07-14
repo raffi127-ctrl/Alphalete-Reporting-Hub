@@ -107,20 +107,26 @@ def _send_image(phone: str, attachment: str) -> None:
     ap = Path(attachment)
     if not ap.exists():
         raise IMessageError(f"attachment not found: {attachment}")
-    # Scripted `send <file>` (buddy OR chat) attaches images as raw documents
-    # that Messages won't deliver in a 1:1 chat — confirmed across every variant
-    # on this machine. The only reliable way is to PASTE the image (clipboard)
-    # into the chat _send_text just opened, exactly like sending a screenshot.
-    # GUI-driven: needs Accessibility permission for the process running it.
+    # Scripted `send <file>` attaches images as raw documents that Messages
+    # won't deliver in a 1:1 chat (confirmed across every variant). The reliable
+    # way is to PASTE the image like a screenshot. CRITICAL: open the EXACT
+    # recipient's conversation first (imessage:// scheme) so the paste can never
+    # land in whatever chat happened to be on screen. GUI-driven → needs
+    # Accessibility permission for the process running it.
+    _osascript(
+        'tell application "Messages"\n'
+        '  activate\n'
+        f'  open location "imessage://{phone}"\n'
+        'end tell'
+    )
     klass = "«class PNGf»" if ap.suffix.lower() == ".png" else "JPEG picture"
     _osascript(f'set the clipboard to (read (POSIX file "{ap.resolve()}") '
                f'as {klass})')
     _osascript(
-        'tell application "Messages" to activate\n'
-        'delay 0.7\n'
+        'delay 1.3\n'                             # let the chat come to front
         'tell application "System Events"\n'
-        '  keystroke "v" using command down\n'   # paste the card
-        '  delay 1.0\n'
+        '  keystroke "v" using command down\n'    # paste the card
+        '  delay 1.2\n'
         '  key code 36\n'                         # Return → send
         f'  delay {IMG_UPLOAD_DELAY}\n'           # let it upload before we return
         'end tell',
