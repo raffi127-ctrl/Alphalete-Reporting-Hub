@@ -122,6 +122,32 @@ def _find_grand_total_rows(g):
     return [r for r in range(1, len(g) + 1) if _acell(g, r) == "TOTALS"]
 
 
+def org_row_pairs(cS, vS, ob_c, ob_v, aliases):
+    """Pair the ORG-leaderboard data rows copy->VA, OCCURRENCE BY OCCURRENCE.
+
+    A name can legitimately appear MORE THAN ONCE in the ORG leaderboard — one row
+    per campaign (Akib Chowdhury sits at both row 29 and row 83, each summing a
+    different section). The old `{name: row}` dict silently collapsed those dupes to
+    the LAST row, so copy row 29 (Retail NL, 0) was compared against VA row 83
+    (the other campaign, 2) and the gate cried 'va_ahead' on a board that matched
+    the VA perfectly (2026-07-14, blocking go-live).
+
+    Both tabs list the same rows in the same top-to-bottom order, so the Kth
+    occurrence of a name on the copy is the Kth on the VA. Returns [(copy_row,
+    va_row)]; a copy row with no VA twin is omitted (never falsely paired)."""
+    from collections import defaultdict
+    vq = defaultdict(list)
+    for r in ob_v.data_rows:
+        vq[_norm_owner(_bname(vS, r))].append(r)
+    pairs = []
+    for r in ob_c.data_rows:
+        for k in fs._candidates_for(_bname(cS, r), aliases):
+            if vq.get(k):
+                pairs.append((r, vq[k].pop(0)))   # consume -> next dupe pairs next
+                break
+    return pairs
+
+
 def content_row_map(cS, vS, aliases):
     """Map every content-identifiable COPY row -> the VA row holding the SAME
     content, using the label/name finders — NEVER absolute position. The two tabs
@@ -180,15 +206,13 @@ def content_row_map(cS, vS, aliases):
             vr = match(name, vp_l)
             if vr:
                 m[r] = vr
-    # ORG leaderboard rows (name-matched)
+    # ORG leaderboard rows (name-matched, occurrence-aware — a name can appear once
+    # per campaign, so a plain {name: row} dict would collapse the dupes)
     try:
         ob_c = rollover.find_org_block(cS)
         ob_v = rollover.find_org_block(vS)
-        vp = {_norm_owner(_bname(vS, r)): r for r in ob_v.data_rows}
-        for r in ob_c.data_rows:
-            vr = match(_bname(cS, r), vp)
-            if vr:
-                m[r] = vr
+        for cr, vr in org_row_pairs(cS, vS, ob_c, ob_v, aliases):
+            m[cr] = vr
     except Exception:
         pass
     # delta tables: pair each copy table to its VA twin by ORDER (count-guarded),
@@ -425,17 +449,14 @@ def run_derived_compare(sh, cS, vS, aliases, logfn=print) -> dict:
                 continue
             cmp_cell(f"{t} leaderboard total", name, r, ca.week_total_col, vr)
 
-    # ALPHALETE ORG leaderboard (col C this-week)
+    # ALPHALETE ORG leaderboard (col C this-week). Occurrence-aware pairing: a name
+    # can appear once per campaign, and collapsing the dupes mis-paired the rows.
     try:
         ob_c = rollover.find_org_block(cS)
         ob_v = rollover.find_org_block(vS)
-        vpool = {_norm_owner(_bname(vS, r)): r for r in ob_v.data_rows}
-        for r in ob_c.data_rows:
-            name = _bname(cS, r)
-            vr = match_row(name, vpool)
-            if vr is None:
-                continue
-            cmp_cell("ORG leaderboard this-week", name, r, ob_c.first_col, vr)
+        for r, vr in org_row_pairs(cS, vS, ob_c, ob_v, aliases):
+            cmp_cell("ORG leaderboard this-week", _bname(cS, r), r,
+                     ob_c.first_col, vr)
     except Exception as e:  # noqa: BLE001
         logfn(f"  ⚠ ORG leaderboard skipped ({str(e)[:50]})")
 
@@ -549,11 +570,7 @@ def run_derived_compare(sh, cS, vS, aliases, logfn=print) -> dict:
         _ob_c = rollover.find_org_block(cS)
         _ob_v = rollover.find_org_block(vS)
         _last = _ob_c.last_col
-        vpool = {_norm_owner(_bname(vS, r)): r for r in _ob_v.data_rows}
-        for r in _ob_c.data_rows:
-            vr = match_row(_bname(cS, r), vpool)
-            if vr is None:
-                continue
+        for r, vr in org_row_pairs(cS, vS, _ob_c, _ob_v, aliases):
             for c1 in range(_ob_c.first_col + 1, _last + 1):
                 frz_named("ORG leaderboard history", _bname(cS, r), r, vr, c1)
         # Captainship leaderboards shift right in lock-step with ORG, so their
@@ -662,12 +679,9 @@ def run_derived_compare(sh, cS, vS, aliases, logfn=print) -> dict:
                     sorted_rows[r] = vr
         _ob = rollover.find_org_block(cS)
         _obv = rollover.find_org_block(vS)
-        vp = {_norm_owner(_bname(vS, r)): r for r in _obv.data_rows}
-        for r in _ob.data_rows:
-            sorted_all.add(r)
-            vr = match_row(_bname(cS, r), vp)
-            if vr:
-                sorted_rows[r] = vr
+        sorted_all.update(_ob.data_rows)
+        for r, vr in org_row_pairs(cS, vS, _ob, _obv, aliases):
+            sorted_rows[r] = vr
         for t in rollover.find_delta_tables(cS):
             vt = v_deltas.get(t["header_row"])
             if not vt:

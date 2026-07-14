@@ -106,6 +106,33 @@ def _drive_week_selection(label: str, verbose: bool = False):
     leave the selection as-is and let parse()'s staleness guard handle it."""
     import re as _re
 
+    def _close_dropdown(page, viz):
+        """Collapse the open quick-filter dropdown — WITHOUT clicking the combobox.
+
+        While the menu is open Tableau lays a `div.tab-glass` outside-click catcher
+        over the whole viz, so clicking the combobox a second time to collapse it is
+        intercepted ("tab-glass intercepts pointer events") and Locator.click burns
+        its full 30s actionability timeout, then raises. That turned the benign
+        "JE hasn't posted this week yet" bail-out into a hard pull FAILURE — the
+        section got marked missing, the fill manifest went INCOMPLETE and the Sales
+        Board email was gated off (2026-07-14, first Tuesday of a new week).
+
+        Escape closes the menu without touching the glass; clicking the glass itself
+        is the fallback. Best-effort by design: a dropdown left open is cosmetic, but
+        a raised timeout kills the whole JE pull."""
+        try:
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(600)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            glass = viz.locator("div.tab-glass").first
+            if glass.count():
+                glass.click(timeout=3000)      # bounded — never the 30s default
+                page.wait_for_timeout(400)
+        except Exception:  # noqa: BLE001
+            pass
+
     def pre_export(page, viz):
         boxes = viz.locator('span.tabComboBox[role="combobox"]')
         tbox = cur = None
@@ -131,7 +158,8 @@ def _drive_week_selection(label: str, verbose: bool = False):
                 has_text=_re.compile(rf"^{_re.escape(week)}$")).first
             glyph = item.locator(".FICheckRadio").first
             glyph.scroll_into_view_if_needed()
-            glyph.click()
+            glyph.click(timeout=10000)   # bounded: 3 retries x 30s default = a 90s
+                                         # hang on a glass-intercept regression
 
         def _checked():
             c = viz.locator('div.FIItem[role="checkbox"][aria-checked="true"]')
@@ -146,8 +174,7 @@ def _drive_week_selection(label: str, verbose: bool = False):
             if verbose:
                 print(f"  [je] week {label} not in the dropdown yet "
                       "(JE hasn't posted it) — leaving selection unchanged")
-            tbox.click()
-            page.wait_for_timeout(1000)
+            _close_dropdown(page, viz)
             return
         _toggle(label)             # check the target week
         page.wait_for_timeout(1200)
@@ -158,7 +185,7 @@ def _drive_week_selection(label: str, verbose: bool = False):
             for o in others:
                 _toggle(o)
                 page.wait_for_timeout(800)
-        tbox.click()               # collapse the dropdown
+        _close_dropdown(page, viz)  # collapse (never via the combobox — see above)
         page.wait_for_timeout(2500)
         final = (tbox.inner_text() or "").strip()
         if verbose:

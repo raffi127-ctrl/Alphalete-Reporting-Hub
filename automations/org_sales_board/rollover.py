@@ -175,6 +175,13 @@ DAILY_SECTION_LABELS = [
     "BOX", "Frontier", "Retail Internet",
 ]
 
+# Weekday name -> Python weekday() index. A daily section's week starts on the
+# weekday named in its first day column: Monday for most, SUNDAY for Frontier —
+# which is why Frontier carries its own static date anchor (see step 5/5).
+_WD_INDEX = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+             "friday": 4, "saturday": 5, "sunday": 6}
+
+
 def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     """The whole TUESDAY rollover in order — run BEFORE the new week's daily
     fill, AFTER a fresh pull has finalized the just-finished week:
@@ -300,36 +307,55 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     summary["cleared_ranges"] = len(ranges)
     logfn(f"  4/5 daily charts cleared ({len(ranges)} ranges) — new week blank")
 
-    # 5/5 Advance the daily-section week dates. Each daily section's day-of-month
-    # row derives from ONE static anchor cell (the first/Retail NL section's
-    # Monday); every other section references it (=C81…), so setting that single
-    # cell rolls all the daily sections to the new week. Without this the daily
-    # fill skips the new week's pulls ("not on the sheet's current week → 0
-    # cells") and the whole current week stays blank (found 2026-06-02).
+    # 5/5 Advance the daily-section week dates. Most daily sections' day-of-month
+    # rows derive from ONE static anchor cell (the first/Retail NL section's
+    # Monday); the others reference it (=C81…), so setting that cell rolls them
+    # all. Without this the daily fill skips the new week's pulls ("not on the
+    # sheet's current week → 0 cells") and the whole current week stays blank
+    # (found 2026-06-02).
+    #
+    # But there is MORE THAN ONE static anchor: a section whose week does not start
+    # on Monday can't reference the Monday anchor and carries its own. Frontier runs
+    # SUNDAY–Saturday (automated 2026-07-07, after this step was written) and has a
+    # second static anchor. The old code set the first static anchor it found and
+    # `break`ed, so Frontier never advanced — it sat a full week behind the rest of
+    # the board, its daily fill silently wrote nothing, and the VA-compare lit up
+    # (found 2026-07-14). So: advance EVERY static anchor, and derive each section's
+    # start date from ITS OWN first weekday header rather than assuming Monday.
     from automations.org_sales_board import fill_section as fs
     new_monday = new_week_ending(today) - dt.timedelta(days=6)
-    anchor_cell = None
+    anchors = []
     for label in DAILY_SECTION_LABELS:
         try:
             a = fs.find_daily_section(grid, label)
         except Exception:
             continue
-        cell = f"{a1col(min(a.day_col_by_daynum.values()))}{a.daynum_row}"
+        first_col = min(a.day_col_by_daynum.values())
+        cell = f"{a1col(first_col)}{a.daynum_row}"
         try:
             fcur = ws.get(cell, value_render_option="FORMULA")
             cur = (fcur[0][0] if fcur and fcur[0] else "")
         except Exception:
             cur = ""
-        if not str(cur).startswith("="):          # the static master anchor
-            if not dry_run:
-                ws.update(cell, [[new_monday.day]],
-                          value_input_option="USER_ENTERED")
-            anchor_cell = cell
-            break
-    if anchor_cell:
-        summary["daily_anchor"] = anchor_cell
-        logfn(f"  5/5 daily date anchor {anchor_cell} → {new_monday.day} "
-              f"(week of {new_monday.isoformat()})")
+        if str(cur).startswith("="):     # derives from another section's anchor
+            continue
+        # This section's week starts on the weekday named in its first day column
+        # (header row sits directly above the day-number row) — Monday for most,
+        # Sunday for Frontier. Sunday-first means the Sunday BEFORE the new Monday.
+        hdr = grid[a.daynum_row - 2] if 1 < a.daynum_row <= len(grid) + 1 else []
+        wd = (hdr[first_col - 1] if first_col - 1 < len(hdr) else "").strip().lower()
+        idx = _WD_INDEX.get(wd)
+        start = (new_monday - dt.timedelta(days=(7 - idx) % 7)
+                 if idx is not None else new_monday)
+        if not dry_run:
+            ws.update(cell, [[start.day]], value_input_option="USER_ENTERED")
+        anchors.append((label, cell, start))
+    if anchors:
+        summary["daily_anchors"] = [(c, s.isoformat()) for _l, c, s in anchors]
+        summary["daily_anchor"] = anchors[0][1]        # back-compat: master anchor
+        for label, cell, start in anchors:
+            logfn(f"  5/5 daily date anchor {cell} → {start.day} "
+                  f"({label}, week of {start.isoformat()})")
     else:
         logfn("  ⚠ 5/5 no static daily date anchor found — daily dates may not "
               "have advanced (daily fill could skip the new week)")
