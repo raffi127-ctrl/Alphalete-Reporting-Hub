@@ -59,17 +59,19 @@ def _render_setup() -> None:
             "That's it — after that, the Hub sends the card automatically from this "
             "Mac's iMessage."
         )
-        # Reference screenshot of the finished shortcut.
-        shot = st.file_uploader("📸 Reference screenshot of the finished Shortcut "
-                                "(optional — for whoever sets up the next Mac)",
-                                type=["png", "jpg", "jpeg"], key="swag_setup_shot")
-        if shot is not None:
-            _SETUP_SHOT.parent.mkdir(parents=True, exist_ok=True)
-            _SETUP_SHOT.write_bytes(shot.getbuffer())
-            st.success("Saved — it'll show here for everyone.")
+        # Reference screenshot of the finished shortcut. Once one exists, just
+        # show it — the uploader only appears when there's nothing yet.
         if _SETUP_SHOT.exists():
-            st.image(str(_SETUP_SHOT), caption="What the finished Shortcut should "
-                     "look like", use_container_width=True)
+            st.markdown("**What the finished Shortcut should look like:**")
+            st.image(str(_SETUP_SHOT), use_container_width=True)
+        else:
+            shot = st.file_uploader("📸 Add a reference screenshot of the finished "
+                                    "Shortcut (for whoever sets up the next Mac)",
+                                    type=["png", "jpg", "jpeg"], key="swag_setup_shot")
+            if shot is not None:
+                _SETUP_SHOT.parent.mkdir(parents=True, exist_ok=True)
+                _SETUP_SHOT.write_bytes(shot.getbuffer())
+                st.rerun()
 
 
 def render(show_header: bool = True) -> None:
