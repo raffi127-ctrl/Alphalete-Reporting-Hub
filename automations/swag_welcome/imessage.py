@@ -82,8 +82,7 @@ def _send_text(phone: str, text: str) -> None:
 # build. (Text still goes via AppleScript, which is rock-solid.)
 SHORTCUT_NAME = "Alphalete Swag Card"
 _SWAG_DIR = Path.home() / ".swag_cards"
-_SWAG_IMG = _SWAG_DIR / "current.png"
-_SWAG_PHONE = _SWAG_DIR / "current_phone.txt"
+_RECIP_FILE = _SWAG_DIR / "recipient.txt"
 
 
 def shortcut_installed(name: str = SHORTCUT_NAME) -> bool:
@@ -97,14 +96,18 @@ def shortcut_installed(name: str = SHORTCUT_NAME) -> bool:
 
 def _send_image_via_shortcut(phone: str, attachment: str,
                              name: str = SHORTCUT_NAME) -> None:
-    import shutil
+    """Card → clipboard, phone → the Shortcut's input. The Shortcut just does
+    Get Text from Input (phone) → Get Clipboard (card) → Send Message. No
+    finicky file-path reading, no focus-steal, sends from this Mac's iMessage."""
     ap = Path(attachment)
     if not ap.exists():
         raise IMessageError(f"attachment not found: {attachment}")
     _SWAG_DIR.mkdir(exist_ok=True)
-    shutil.copy(ap, _SWAG_IMG)          # image passed to the Shortcut as input
-    _SWAG_PHONE.write_text(phone)       # Shortcut reads the recipient from here
-    proc = subprocess.run(["shortcuts", "run", name, "-i", str(_SWAG_IMG)],
+    klass = "«class PNGf»" if ap.suffix.lower() == ".png" else "JPEG picture"
+    _osascript(f'set the clipboard to (read (POSIX file "{ap.resolve()}") '
+               f'as {klass})')
+    _RECIP_FILE.write_text(phone)
+    proc = subprocess.run(["shortcuts", "run", name, "-i", str(_RECIP_FILE)],
                           capture_output=True, text=True, timeout=60)
     if proc.returncode != 0:
         raise IMessageError((proc.stderr or "shortcut run failed").strip()[:200])
