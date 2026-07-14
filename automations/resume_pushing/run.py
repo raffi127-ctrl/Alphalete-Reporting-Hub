@@ -934,7 +934,8 @@ def _flush_diag(tab: str = "RP Diag") -> None:
 
 
 def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
-             send_only: bool = False, extract_only: bool = False) -> int:
+             send_only: bool = False, extract_only: bool = False,
+             inspect: bool = False) -> int:
     """THE permission-free driver. Launch a REAL Google Chrome on a copy of the
     Default profile (Resume Helper plugin is genuinely installed there, so its
     service worker runs — unlike patchright), inject the saved AppStream session
@@ -1016,6 +1017,46 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
 
             ready0 = ready_for_extraction(page)
             _log(f"[cdp] Ready For Extraction before: {ready0}")
+
+            if inspect:
+                rob = page.locator("[title*='extract resume data' i]")
+                _log(f"[inspect] robot count (title~='extract resume data'): {rob.count()}")
+                try:
+                    rob.first.click(timeout=8000)
+                    _log("[inspect] robot clicked")
+                except Exception as e:
+                    _log("[inspect] robot click err: " + str(e)[:120])
+                page.wait_for_timeout(4000)
+                _log(f"[inspect] pages now: {[(pg.url or '')[:70] for pg in ctx.pages]}")
+
+                def _dump(fr, label):
+                    try:
+                        arr = fr.evaluate(
+                            "() => Array.from(document.querySelectorAll("
+                            "'button,a,input[type=button],input[type=submit],[role=button]'))"
+                            ".filter(e=>e.offsetParent!==null)"
+                            ".map(e=>e.tagName+':'+((e.innerText||e.value||e.title||'')"
+                            ".trim().slice(0,35))).slice(0,45)")
+                        if arr:
+                            _log(f"[inspect] {label}: {arr}")
+                    except Exception as e:
+                        _log(f"[inspect] {label} err: {str(e)[:70]}")
+
+                for pi, pg in enumerate(ctx.pages):
+                    _dump(pg, f"page{pi}[{(pg.url or '')[:35]}]")
+                    for fi, fr in enumerate(pg.frames):
+                        if fr != pg.main_frame:
+                            _dump(fr, f"page{pi}.frame{fi}[{(fr.url or '')[:30]}]")
+                try:
+                    starts = page.evaluate(
+                        "() => Array.from(document.querySelectorAll('*'))"
+                        ".filter(e=>e.children.length===0 && /start/i.test(e.innerText||''))"
+                        ".map(e=>e.tagName+':'+(e.innerText||'').trim().slice(0,25)).slice(0,15)")
+                    _log(f"[inspect] leaf elements mentioning 'start': {starts}")
+                except Exception as e:
+                    _log("[inspect] start-scan err: " + str(e)[:70])
+                rc = 0
+                return 0
 
             if probe:
                 before = set(pg.url for pg in ctx.pages)
@@ -1366,6 +1407,9 @@ def main() -> int:
                     help="THE permission-free driver: real Chrome + CDP, extract_loop then "
                          "send_loop (office 11580). Honours --dry-run/--send-only/--extract-only/"
                          "--limit. Runs unattended from the launchd poller. Writes to RP Diag.")
+    ap.add_argument("--cdp-inspect", action="store_true",
+                    help="Click the robot over the CDP real-Chrome path and dump every control "
+                         "across all pages/frames — to find the Resume Helper 'Start' selector.")
     ap.add_argument("--locate-plugin", action="store_true",
                     help="Search every Chrome profile on the machine for the Resume Helper "
                          "extension id to find where the install actually landed. Writes to RP Diag.")
@@ -1405,6 +1449,8 @@ def main() -> int:
     if args.cdp_run:
         return _cdp_run(dry_run=args.dry_run, limit=args.limit,
                         send_only=args.send_only, extract_only=args.extract_only)
+    if args.cdp_inspect:
+        return _cdp_run(inspect=True)
     if args.locate_plugin:
         return _locate_plugin()
     if args.snap:
