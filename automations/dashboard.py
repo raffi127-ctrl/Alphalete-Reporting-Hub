@@ -3172,6 +3172,72 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "org-sales-board-compare",
+        "name": "Org Sales Board — VA Compare (9 AM)",
+        "creator": "Megan",
+        "emoji": "🔍",
+        "color": "#0EA5E9",
+        "category": "📊 Metrics",
+        "description": "Checks the automation's Sales Board copy tab against the VAs' hand-filled tab — every cell, including below row 1000. Runs at 9 AM Central, once the VAs have finished keying.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Compares the automation's **copy tab** against the VAs' "
+            "hand-filled **Alphalete ORG Sales Board** tab and reports every "
+            "cell that disagrees. Rows are matched by NAME, not by position — "
+            "the two tabs sort differently — so a re-sorted leaderboard never "
+            "counts as a difference.\n\n"
+            "WHEN IT RUNS\n"
+            "**Every day at 9:00 AM Central.** Deliberately NOT straight after "
+            "the 4 AM fill: at 4 AM the VAs haven't keyed anything yet, so the "
+            "automation is ahead on every cell it pulled and the compare is "
+            "pure noise. By 9 AM the VAs are done, so a difference it reports "
+            "is a REAL disagreement.\n\n"
+            "WHAT COUNTS AS A PROBLEM\n"
+            "The automation being **behind** the VA, the two tabs **conflicting**, "
+            "an ICD on the VA tab with no row on the copy, or a live formula the "
+            "report clobbered. The automation being **AHEAD** of the VA is normal "
+            "(we pull faster than they type) and is **not** flagged.\n\n"
+            "READING THE RESULT\n"
+            "Green = the board matches the VA. Red = a real disagreement — the "
+            "run log lists every differing cell.\n\n"
+            "GO-LIVE CHECK\n"
+            "**Check EVERY Cell** compares all ~280,000 cells (including past "
+            "row 1000) and confirms nothing is skipped. A result of "
+            "**0 differences** is the proof needed before pointing the board at "
+            "the real tab / the full distribution list."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
+        "assignees": ["Lucy 1"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "9:00 AM",
+            "estimated_minutes": 3,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ The board matches the VA tab — no real disagreements.",
+            "message_failed": "❌ The board DISAGREES with the VA tab. The log above lists every differing cell — fix the board before trusting/sending it.",
+        },
+        "actions": [
+            {
+                "label": "Compare vs VA Tab",
+                "icon": "▶",
+                "primary": True,
+                "help": "Compares every completed day + every derived total against the VA tab. Read-only — reads both tabs, changes nothing.",
+                "module": "automations.org_sales_board.compare",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Check EVERY Cell (go-live gate)",
+                "icon": "🔬",
+                "help": "Every single cell of both tabs, including rows past 1000, with a full coverage accounting so nothing is skipped. 0 differences = ready to go live. Read-only.",
+                "module": "automations.org_sales_board.compare",
+                "args_fn": lambda: ["--all"],
+            },
+        ],
+    },
+    {
         "id": "brand-health-audit",
         # Non-breaking spaces keep "(12 CST Daily)" together so the cadence
         # wraps as one clean unit onto line 2 of the strip pill (same trick as
