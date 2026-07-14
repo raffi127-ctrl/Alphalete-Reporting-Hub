@@ -97,22 +97,40 @@ IMG_UPLOAD_DELAY = 12
 
 def _send_image(phone: str, attachment: str) -> None:
     """Send the card as an inline iMessage image — no GUI, no extra permissions,
-    straight from this machine's iMessage account. The trailing `delay` lets
-    Messages finish uploading before osascript exits (else it never delivers)."""
+    straight from this machine's iMessage account.
+
+    Two things matter (both learned from the Texas de Brazil sender):
+    - send to a CHAT reference, not a buddy — a file sent to a buddy attaches as
+      a raw document (file icon) that won't deliver; to a chat it goes inline.
+    - a trailing `delay` lets Messages finish UPLOADING before osascript exits,
+      else the image shows on the sender but never reaches the recipient.
+    The 1:1 chat (`iMessage;-;<phone>`) exists because _send_text ran first.
+    Falls back to the buddy form if the chat reference can't be resolved.
+    """
     ap = Path(attachment)
     if not ap.exists():
         raise IMessageError(f"attachment not found: {attachment}")
     clean = _clean_path(str(ap))
-    _osascript(
-        'tell application "Messages"\n'
-        '  set svcId to id of 1st service whose service type = iMessage\n'
-        '  set targetService to service id svcId\n'
-        f'  set targetBuddy to buddy "{phone}" of targetService\n'
-        f'  send (POSIX file "{clean}") to targetBuddy\n'
-        f'  delay {IMG_UPLOAD_DELAY}\n'
-        'end tell',
-        timeout=IMG_UPLOAD_DELAY + 30,
-    )
+    try:
+        _osascript(
+            'tell application "Messages"\n'
+            f'  set theChat to a reference to chat id "iMessage;-;{phone}"\n'
+            f'  send (POSIX file "{clean}") to theChat\n'
+            f'  delay {IMG_UPLOAD_DELAY}\n'
+            'end tell',
+            timeout=IMG_UPLOAD_DELAY + 30,
+        )
+    except Exception:
+        _osascript(
+            'tell application "Messages"\n'
+            '  set svcId to id of 1st service whose service type = iMessage\n'
+            '  set targetService to service id svcId\n'
+            f'  set targetBuddy to buddy "{phone}" of targetService\n'
+            f'  send (POSIX file "{clean}") to targetBuddy\n'
+            f'  delay {IMG_UPLOAD_DELAY}\n'
+            'end tell',
+            timeout=IMG_UPLOAD_DELAY + 30,
+        )
 
 
 def send(phone: str, text: str, attachment: str | None = None,
