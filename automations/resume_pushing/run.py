@@ -964,12 +964,43 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
 
+            from automations.shared import creds
             logged = tp._reuse_appstream_storage_state(ctx, page, True)
-            _log(f"[cdp] logged_in via storage_state: {logged}; "
-                 f"#searchMC={page.locator('#searchMC').count()}")
-            if not logged:
-                _log("[cdp][STOP] could not restore the AppStream session over CDP "
-                     "(storage_state stale — re-seed with --appstream-login).")
+            if logged and page.locator("#searchMC").count() > 0:
+                _log("[cdp] logged in via saved session (storage_state).")
+            else:
+                # stale/missing token → drive the rcaptain form login (real Chrome
+                # passes Cloudflare cleanly), then hop to the office switcher.
+                _log("[cdp] saved session had no #searchMC — driving the form login")
+                try:
+                    user = creds.appstream_username()
+                    pwd = creds.appstream_password()
+                    page.goto("https://applicantstream.com/",
+                              wait_until="domcontentloaded")
+                    page.wait_for_timeout(3000)
+                    if (page.locator(tp._PASSWORD_SELECTOR).count() > 0
+                            or page.locator(tp._APPSTREAM_USERNAME_SELECTOR).count() > 0):
+                        tp._drive_login_form(page, True, username=user, password=pwd)
+                    page.wait_for_timeout(3000)
+                    if page.locator("#searchMC").count() == 0:
+                        tp._reuse_appstream_storage_state(ctx, page, True)
+                    # persist a fresh session for next time
+                    try:
+                        _st = ctx.storage_state()
+                        if any(c.get("name", "").startswith("rqst_")
+                               for c in _st.get("cookies", [])):
+                            import json as _json
+                            tp.APPSTREAM_STORAGE_STATE.write_text(_json.dumps(_st))
+                            _log("[cdp] saved a fresh AppStream session for reuse")
+                    except Exception:
+                        pass
+                except Exception as e:
+                    _log("[cdp] form login error: " + str(e)[:160])
+            mc = page.locator("#searchMC").count()
+            _log(f"[cdp] logged_in check: #searchMC={mc}")
+            if mc == 0:
+                _log("[cdp][STOP] AppStream console never rendered #searchMC — login "
+                     "did not complete (Cloudflare re-challenge?).")
                 return 2
 
             if not fetch_office._switch_office(page, OFFICE_ID, OFFICE_HINT):
