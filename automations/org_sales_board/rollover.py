@@ -182,6 +182,57 @@ _WD_INDEX = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
              "friday": 4, "saturday": 5, "sunday": 6}
 
 
+def week_label_of(grid) -> str:
+    """The week a board tab is currently ON — its ORG-leaderboard col-C header
+    ('WE 07.19'). Works on either tab. '' if the block can't be found."""
+    try:
+        ob = find_org_block(grid)
+        return _cell(grid, ob.header_row - 1, ob.first_col - 1).strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def target_week_label(today=None) -> str:
+    """The week the board SHOULD be on right now — the label of the REPORTING
+    week's Sunday (week.reporting_sunday), i.e. the week the daily fill is about
+    to write into.
+
+    NOT new_week_ending(today), which is the calendar week and rolls a day early.
+    The board's reporting week does not advance until TUESDAY: on MONDAY,
+    reporting_sunday is still the CLOSING Sunday, because Monday's fill exists to
+    write SUNDAY's production into the week that just ended (JE/Frontier post a day
+    behind). Rolling on Monday would advance the columns out from under that fill —
+    day-12 columns would no longer exist and Sunday would be lost from the frozen
+    history, every week. Anchoring to the reporting week keeps the board on exactly
+    the week the fill targets."""
+    import datetime as _dt
+    from automations.org_sales_board import week as _wk
+    return we_label(_wk.reporting_sunday(today or _dt.date.today()))
+
+
+def needs_rollover(cS, today=None, vS=None) -> tuple:
+    """Should the COPY roll? True when the copy is NOT on the week the fill is
+    about to write (target_week_label). Fires on the first run of a Tuesday and is
+    a no-op every other run.
+
+    Self-healing by construction: the target stays fixed all week, so if Tuesday's
+    run is missed entirely, Wednesday's rolls instead and its fill still backfills
+    every completed day. That is the whole point — the rollover used to be a MANUAL
+    step, and when a human forgot it (2026-07-14) the copy sat a full week behind
+    the VA: the fill had no columns for the new week, a week of data silently never
+    landed, and the board email was gated for days.
+
+    `vS` (the VA grid) is optional and used ONLY as a cross-check signal — if the
+    VA is on a different week than we computed, something is off and the caller
+    should say so rather than silently diverge.
+
+    Returns (needed, target_label, copy_label, va_label)."""
+    tgt = target_week_label(today)
+    cp = week_label_of(cS)
+    va = week_label_of(vS) if vS is not None else ""
+    return (bool(cp and tgt and cp != tgt), tgt, cp, va)
+
+
 def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     """The whole TUESDAY rollover in order — run BEFORE the new week's daily
     fill, AFTER a fresh pull has finalized the just-finished week:
@@ -201,11 +252,17 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     from automations.org_sales_board import captainship as cap
     today = today or _dt.date.today()
     if today.weekday() != 1:   # 1 == Tuesday
-        logfn(f"  ⚠ rollover is meant to run TUESDAY (after Monday's Sunday "
-              f"entry); today is {today:%A} {today.isoformat()} — double-check "
-              f"the just-finished week is complete before relying on this.")
-    new_label = we_label(new_week_ending(today))
-    logfn(f"=== ORG board Tuesday rollover — new week {new_label} "
+        logfn(f"  ℹ rollover running on {today:%A} {today.isoformat()} (not the "
+              f"historical Tuesday slot). Expected when it's VA-driven — the copy "
+              f"follows whenever the VA rolls. The closing week is frozen from the "
+              f"copy's CURRENT daily grid, so it must be filled first "
+              f"(auto_rollover does this); a day-behind source missing its Sunday "
+              f"would otherwise freeze short.")
+    # Target the REPORTING week (the week the fill writes), NOT the calendar week —
+    # new_week_ending() rolls a day early and on a MONDAY would advance the board
+    # out from under the fill that is about to write Sunday. See target_week_label.
+    new_label = target_week_label(today)
+    logfn(f"=== ORG board rollover — new week {new_label} "
           f"(dry_run={dry_run}) ===")
     summary = {"new_label": new_label, "captainships": 0, "delta_tables": 0,
                "org_history_tables": 0, "cleared_ranges": 0}
@@ -323,7 +380,8 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     # (found 2026-07-14). So: advance EVERY static anchor, and derive each section's
     # start date from ITS OWN first weekday header rather than assuming Monday.
     from automations.org_sales_board import fill_section as fs
-    new_monday = new_week_ending(today) - dt.timedelta(days=6)
+    from automations.org_sales_board import week as _wk
+    new_monday = _wk.reporting_sunday(today) - dt.timedelta(days=6)   # reporting wk
     anchors = []
     for label in DAILY_SECTION_LABELS:
         try:

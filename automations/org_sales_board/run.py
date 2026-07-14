@@ -179,13 +179,41 @@ def main(argv=None) -> int:
         if _sections:                     # granular retry: fill ONLY these sections
             only = _sections
         from_csv = Path(args.from_csv) if args.from_csv else None
-        # WEEKLY ROLLOVER IS MANUAL (Megan 2026-06-30, vacation plan): a person
-        # rolls the board over Monday night — advances the week + archives the
-        # closing one. The Tuesday report must NEVER roll; it ONLY fills the
-        # day's sales into the already-advanced active week. The former
-        # "Tuesday: run_rollover first" auto-trigger is therefore removed, so an
-        # unattended run can't double-shift/clear a week the human already
-        # rolled. To roll deliberately, run `--step rollover` (still wired).
+        # WEEKLY ROLLOVER — AUTOMATIC AGAIN (2026-07-14), keyed to the REPORTING
+        # week rather than a weekday.
+        #
+        # It was made manual on 2026-06-30 ("a person rolls it Monday night") so an
+        # unattended run couldn't double-shift a week a human had already rolled.
+        # That trade cost more than it saved: on 2026-07-14 the manual step was
+        # simply forgotten, the copy sat a FULL WEEK behind the VA, the daily fill
+        # had no columns for the new week so nothing landed at all, and the board
+        # email was gated for days before anyone noticed.
+        #
+        # The double-shift fear is now moot: run_rollover is idempotent (it skips
+        # when the leaderboard header already reads the target week), and
+        # needs_rollover only fires when the board is not on the week the fill is
+        # about to write. So it rolls at most once per week, on the first run of a
+        # Tuesday, and re-running is a no-op. If a Tuesday run is missed entirely,
+        # the next run rolls and backfills every completed day — it self-heals.
+        #
+        # Skipped on --dry-run and on a --sections/--programs granular retry (those
+        # are surgical re-fills of an already-rolled board, not a fresh week).
+        if not (args.dry_run or _sections or _programs):
+            from automations.org_sales_board import rollover as _ro
+            _cS = ws.get_all_values()
+            _vS = open_by_key(SHEET_ID).worksheet(PROD_TAB).get_all_values()
+            _need, _tgt, _cur, _va = _ro.needs_rollover(_cS, vS=_vS)
+            if _need:
+                print(f"--- weekly rollover: board is on {_cur!r}, this week is "
+                      f"{_tgt!r} (VA is on {_va!r}) — rolling before the fill ---")
+                if _va and _va != _tgt:
+                    print(f"  ⚠ the VA tab is on {_va!r}, not {_tgt!r} — rolling to "
+                          f"{_tgt!r} (the week the fill writes). If the VA really is "
+                          f"on a different week, the compare will flag it.")
+                _ro.run_rollover(ws, dry_run=False)
+                ws = open_by_key(SHEET_ID).worksheet(tab)   # re-open post-roll
+            else:
+                print(f"--- weekly rollover: board already on {_cur!r} — no roll ---")
         _summary = orchestrate.run_daily(ws, dry_run=args.dry_run, only=only,
                               from_csv=from_csv,
                               include_captainships=args.with_captainships,
