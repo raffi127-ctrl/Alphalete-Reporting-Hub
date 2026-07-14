@@ -69,14 +69,17 @@ def _send_applescript(phone: str, text: str, attachment: str | None) -> None:
         '  set targetService to service id svcId',
         f'  set targetBuddy to buddy "{phone}" of targetService',
     ]
-    if text:
-        safe = text.replace("\\", "\\\\").replace('"', '\\"')
-        lines.append(f'  send "{safe}" to targetBuddy')
+    # Send the image FIRST (it needs a moment to upload), pause, then the text,
+    # so the two don't race — sending both back-to-back can drop the image.
     if attachment:
         ap = Path(attachment)
         if not ap.exists():
             raise IMessageError(f"attachment not found: {attachment}")
         lines.append(f'  send (POSIX file "{ap.resolve()}") to targetBuddy')
+        lines.append('  delay 2')
+    if text:
+        safe = text.replace("\\", "\\\\").replace('"', '\\"')
+        lines.append(f'  send "{safe}" to targetBuddy')
     lines.append("end tell")
     _osascript("\n".join(lines))
 
