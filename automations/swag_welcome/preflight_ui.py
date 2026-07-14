@@ -17,6 +17,11 @@ from automations.swag_welcome import compose, extract, message, run as run_mod
 from automations.swag_welcome.roster import build_roster, pretty_phone, normalize_phone
 
 
+def _pick_name(i: int) -> None:
+    """Quick-pick radio → drop the choice into the editable name field."""
+    st.session_state[f"swag_name_{i}"] = st.session_state[f"swag_pick_{i}"]
+
+
 def render(show_header: bool = True) -> None:
     if show_header:
         st.title("🏢 New-Hire Swag Texts")
@@ -63,15 +68,19 @@ def render(show_header: bool = True) -> None:
                                        key=f"swag_inc_{i}", label_visibility="collapsed")
         with c2:
             if r.get("needs_quote_decision"):
+                # Quick-pick between the real name and the quoted part; tapping
+                # one drops it into the editable field below (still fully typeable).
                 opts = [r["base_name"], r["quoted_alt"]]
-                r["chosen_name"] = st.radio(
-                    f"Name (quoted: “{r['quoted_alt']}”)", opts,
-                    index=opts.index(r["chosen_name"]) if r["chosen_name"] in opts else 0,
-                    key=f"swag_name_{i}", horizontal=True,
+                st.radio(
+                    f"Quoted “{r['quoted_alt']}” — tap to use, or edit below",
+                    opts, index=0, key=f"swag_pick_{i}", horizontal=True,
+                    on_change=_pick_name, args=(i,),
                     help="Real name (pronunciation guide) vs. preferred nickname")
-            else:
-                r["chosen_name"] = st.text_input("Name", value=r["chosen_name"],
-                                                 key=f"swag_name_{i}")
+            r["chosen_name"] = st.text_input(
+                "Name", value=r.get("chosen_name") or r.get("base_name", ""),
+                key=f"swag_name_{i}",
+                label_visibility=("collapsed" if r.get("needs_quote_decision")
+                                  else "visible"))
         with c3:
             new_phone = st.text_input("Phone", value=pretty_phone(r["phone_e164"]),
                                       key=f"swag_phone_{i}")
