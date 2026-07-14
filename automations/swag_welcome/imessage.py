@@ -84,10 +84,10 @@ def _send_text(phone: str, text: str) -> None:
 SHORTCUT_NAME = "Alphalete Swag Card"
 _SWAG_DIR = Path.home() / ".swag_cards"
 _SWAG_IMG = _SWAG_DIR / "current.png"
-# Auto-sending the card image to unsaved 1:1 numbers isn't reliably solvable on
-# macOS yet — keep it OFF so batches are text-only + safe. The Shortcut path is
-# kept below for when it can be finished; flip this to True to re-enable.
-_AUTO_SEND_CARD = False
+# Card auto-send via the "Alphalete Swag Card" Shortcut is WORKING (verified
+# 2026-07-13): text via AppleScript, card via the Shortcut. Needs the Shortcut
+# built + its send-messages permission granted on each sending machine.
+_AUTO_SEND_CARD = True
 
 
 def _find_shortcut(name: str = SHORTCUT_NAME) -> str | None:
@@ -120,15 +120,12 @@ def _send_image_via_shortcut(phone: str, attachment: str,
         raise IMessageError(f"attachment not found: {attachment}")
     actual = _find_shortcut(name) or name   # use the real name (may hold spaces)
     _SWAG_DIR.mkdir(exist_ok=True)
-    shutil.copy(ap, _SWAG_IMG)                       # card → Shortcut input file
-    # FORMAT the number (e.g. "+1 (419) 769-7114") so the Shortcut's "Get Phone
-    # Numbers" data-detector recognizes it — a bare "+14197697114" isn't matched.
-    from automations.swag_welcome.roster import pretty_phone
-    disp = pretty_phone(phone)
-    if disp.startswith("("):
-        disp = "+1 " + disp
-    safe = disp.replace("\\", "\\\\").replace('"', '\\"')
-    _osascript(f'set the clipboard to "{safe}"')     # phone → clipboard (text)
+    if ap.resolve() != _SWAG_IMG.resolve():
+        shutil.copy(ap, _SWAG_IMG)                   # card → Shortcut input file
+    # Put the phone on the clipboard with pbcopy (clean UTF-8). Setting it via
+    # AppleScript makes Shortcuts read it with a space between every character
+    # ("+ 1 4 1 9…"), which "Get Phone Numbers" can't parse.
+    subprocess.run(["pbcopy"], input=phone, text=True, timeout=10)
     proc = subprocess.run(["shortcuts", "run", actual, "-i", str(_SWAG_IMG)],
                           capture_output=True, text=True, timeout=60)
     if proc.returncode != 0:
