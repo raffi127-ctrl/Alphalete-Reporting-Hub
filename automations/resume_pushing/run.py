@@ -287,43 +287,38 @@ def _extract_wait_v2(page, tag: str = "") -> bool:
 
 
 def run_extract_once(page) -> bool:
-    """One extraction pass. v2 (Process In Batches) uses the native 'Auto Extract
-    Resumes' button, which drives the Resume Helper plugin and turns into
-    'Processing… x/n'. Falls back to the legacy robot→Start popup on the old grid."""
-    aer = page.locator(
-        "xpath=//button[contains(normalize-space(.),'Auto Extract Resumes')]")
-    if aer.count() > 0:
-        try:
-            aer.first.click(timeout=8000)
-        except Exception as e:
-            _log(f"[extract] 'Auto Extract Resumes' click failed: {e}")
+    """One extraction pass, THE v2 way the user does it by hand: click the Resume
+    Helper robot launcher (a plugin-injected square in the top-right), then 'Start'
+    in its popup (rendered in the plugin's shadow DOM). The plugin opens an
+    extractor tab that downloads + parses the resumes and fills phones; AppStream's
+    own AI clears the human-check. Done when the popup flips to 'Reset' (100%).
+    NOTE: clicking the page's native 'Auto Extract Resumes' button instead just
+    hangs on 'Processing…' forever — the robot popup is the only path that works."""
+    import time as _t
+    # open the popup if it isn't already showing Start
+    st = _shadow_find(page, "Start")
+    if st is None:
+        c = _robot_center(page)
+        if c is None:
+            _log("[extract] robot launcher not found (plugin not injected?) — skip")
             return False
-        _log("[extract] Auto Extract Resumes clicked — extracting")
-        return _extract_wait_v2(page)
-
-    # --- legacy robot→Start popup fallback ---
-    opened = False
-    for sel in ["button[title*='Resume' i]", "[title*='Resume Helper' i]",
-                "a[title*='Resume' i]", ".fa-robot", "i.fa-robot",
-                "button:has(.fa-robot)", "[class*='robot']"]:
-        loc = page.locator(sel)
-        if loc.count() > 0:
-            try:
-                loc.first.click(timeout=8000)
-                opened = True
-                break
-            except Exception:
-                continue
-    if not opened:
-        _log("[extract] robot / Resume Helper icon not found — skipping this cycle")
+        page.mouse.click(c[0], c[1])
+        page.wait_for_timeout(2500)
+        st = _shadow_find(page, "Start")
+    if st is None:
+        _log("[extract] Resume Helper popup opened but 'Start' not found")
         return False
-    page.wait_for_timeout(1500)
-    if not _click_if_present(page, ["Start"], timeout=8000):
-        _log("[extract] 'Start' not found in the Resume Helper popup")
-        return False
-    _log(f"[extract] Resume Helper started — waiting ~{EXTRACT_WAIT_SECONDS}s")
-    page.wait_for_timeout(EXTRACT_WAIT_SECONDS * 1000)
-    _click_if_present(page, ["OK", "Close", "Done"])
+    page.mouse.click(st[0], st[1])
+    _log("[extract] Resume Helper → Start clicked; extracting (AI clears the check)")
+    t0 = _t.time()
+    page.wait_for_timeout(5000)                 # let the run kick off
+    while _t.time() - t0 < 1500:                # ≤25 min for a big batch
+        if _shadow_find(page, "Reset") is not None:
+            _log(f"[extract] batch finished after {int(_t.time() - t0)}s (Reset shown)")
+            page.wait_for_timeout(1500)
+            return True
+        page.wait_for_timeout(6000)
+    _log("[extract] extraction wait hit the 25-min cap — moving on")
     return True
 
 
