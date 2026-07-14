@@ -479,9 +479,13 @@ def _xtab_cache_lookup(view_url: str, sheet: str, verbose: bool) -> Optional[Pat
         p = _xtab_cache_path(root, view_url, sheet)
         if (p.exists() and p.stat().st_size > 0
                 and (time.time() - p.stat().st_mtime) < _XTAB_CACHE_TTL_S):
-            if verbose:
-                print(f"  ↺ crosstab cache HIT ({sheet}) — {p.name}, no download",
-                      flush=True)
+            # ALWAYS print the hit, even when the caller pulls with verbose=False
+            # (canceled_orders/disconnects do) — a silent dedup is impossible to
+            # verify or debug. This only ever fires when the cache is enabled AND
+            # hits, so it adds no noise to any other report.
+            print(f"  ↺ crosstab cache HIT ({sheet}) — served from "
+                  f"{p.parent.name}/{p.name}, skipped the browser download",
+                  flush=True)
             return p
     except Exception:
         return None
