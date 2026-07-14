@@ -74,64 +74,40 @@ def _send_text(phone: str, text: str) -> None:
     )
 
 
-def _clean_path(attachment: str) -> Path:
-    """Copy the card to a short, SPACE-FREE path. A space in the attachment
-    path (e.g. '/Users/megan/1st Claude Folder/…') makes Messages silently fail
-    to deliver the file while the text still goes through."""
+# --- Shortcut-based image send (the reliable path) -------------------------
+# A macOS Shortcut's "Send Message" action sends an image to an explicitly-typed
+# phone number — no focus-stealing, no clipboard paste, no wrong-chat risk, and
+# it works for unsaved numbers. It sends from THIS machine's iMessage account.
+# The Shortcut reads two files we drop next to it; see README for the 3-action
+# build. (Text still goes via AppleScript, which is rock-solid.)
+SHORTCUT_NAME = "Alphalete Swag Card"
+_SWAG_DIR = Path.home() / ".swag_cards"
+_SWAG_IMG = _SWAG_DIR / "current.png"
+_SWAG_PHONE = _SWAG_DIR / "current_phone.txt"
+
+
+def shortcut_installed(name: str = SHORTCUT_NAME) -> bool:
+    try:
+        out = subprocess.run(["shortcuts", "list"], capture_output=True,
+                             text=True, timeout=15)
+        return name in out.stdout.splitlines()
+    except Exception:
+        return False
+
+
+def _send_image_via_shortcut(phone: str, attachment: str,
+                             name: str = SHORTCUT_NAME) -> None:
     import shutil
-    dest_dir = Path.home() / ".swag_cards"
-    dest_dir.mkdir(exist_ok=True)
-    # slug already uses underscores, so the filename itself has no spaces
-    dest = dest_dir / Path(attachment).name.replace(" ", "_")
-    shutil.copy(attachment, dest)
-    return dest
-
-
-# Seconds to wait AFTER sending the image, inside the AppleScript, so Messages
-# finishes UPLOADING before the process returns. Without this the image shows on
-# the sender but never reaches the recipient ("Not Delivered"). This is the fix
-# the Texas de Brazil sender uses (it waits 18s per full-page poster; our card
-# is a small ~280 KB JPEG, so a shorter wait is plenty).
-IMG_UPLOAD_DELAY = 12
-
-
-def _send_image(phone: str, attachment: str) -> None:
-    """Send the card as an inline photo by PASTING it into the open chat.
-
-    Scripted `send <file>` (to a buddy or a chat) attaches images as raw
-    documents that Messages won't deliver in a 1:1 chat — confirmed across every
-    variant on this machine. Pasting clipboard image data (like a screenshot) is
-    the only reliable path. GUI-driven, so the process needs Accessibility
-    permission; run it where it won't fight you for the screen (the mini).
-    """
     ap = Path(attachment)
     if not ap.exists():
         raise IMessageError(f"attachment not found: {attachment}")
-    # Scripted `send <file>` attaches images as raw documents that Messages
-    # won't deliver in a 1:1 chat (confirmed across every variant). The reliable
-    # way is to PASTE the image like a screenshot. CRITICAL: open the EXACT
-    # recipient's conversation first (imessage:// scheme) so the paste can never
-    # land in whatever chat happened to be on screen. GUI-driven → needs
-    # Accessibility permission for the process running it.
-    _osascript(
-        'tell application "Messages"\n'
-        '  activate\n'
-        f'  open location "imessage://{phone}"\n'
-        'end tell'
-    )
-    klass = "«class PNGf»" if ap.suffix.lower() == ".png" else "JPEG picture"
-    _osascript(f'set the clipboard to (read (POSIX file "{ap.resolve()}") '
-               f'as {klass})')
-    _osascript(
-        'delay 1.3\n'                             # let the chat come to front
-        'tell application "System Events"\n'
-        '  keystroke "v" using command down\n'    # paste the card
-        '  delay 1.2\n'
-        '  key code 36\n'                         # Return → send
-        f'  delay {IMG_UPLOAD_DELAY}\n'           # let it upload before we return
-        'end tell',
-        timeout=IMG_UPLOAD_DELAY + 30,
-    )
+    _SWAG_DIR.mkdir(exist_ok=True)
+    shutil.copy(ap, _SWAG_IMG)          # image passed to the Shortcut as input
+    _SWAG_PHONE.write_text(phone)       # Shortcut reads the recipient from here
+    proc = subprocess.run(["shortcuts", "run", name, "-i", str(_SWAG_IMG)],
+                          capture_output=True, text=True, timeout=60)
+    if proc.returncode != 0:
+        raise IMessageError((proc.stderr or "shortcut run failed").strip()[:200])
 
 
 def send(phone: str, text: str, attachment: str | None = None,
@@ -143,14 +119,25 @@ def send(phone: str, text: str, attachment: str | None = None,
     if dry_run:
         return result
     try:
-        # Text only. Automated 1:1 IMAGE sending is disabled: scripted send-file
-        # won't deliver, and clipboard-paste can't safely target an unsaved
-        # number's chat (it pasted into the wrong thread). The card is still
-        # generated (grid + output folder) for manual send or a future Shortcut.
+        # Text via AppleScript (rock-solid). Card via the Shortcut if it's
+        # installed — the only reliable, safe way to send an image to an
+        # unsaved 1:1 number. If the Shortcut isn't built yet, the text still
+        # goes and the card is left for manual send.
         if text:
             _send_text(phone, text)
         result["sent"] = True
         result["image_auto_sent"] = False
+        if attachment:
+            if shortcut_installed():
+                try:
+                    _send_image_via_shortcut(phone, attachment)
+                    result["image_auto_sent"] = True
+                except Exception as e:
+                    result["image_error"] = str(e)
+            else:
+                result["image_error"] = (
+                    f"card not sent — Shortcut '{SHORTCUT_NAME}' not installed "
+                    "(text sent). Build it once, then re-run.")
     except Exception as e:
         result["error"] = str(e)
     return result
