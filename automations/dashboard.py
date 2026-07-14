@@ -42,6 +42,7 @@ if sys.platform == "win32":
         pass
 
 import streamlit as st
+import streamlit.components.v1 as _components
 
 WORKSPACE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(WORKSPACE))
@@ -4917,9 +4918,7 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                         use_container_width=True,
                         help=_help,
                     ):
-                        st.session_state["library_report_id"] = _r["id"]
-                        st.session_state["library_came_from"] = ("user", user_name)
-                        _set_view("library")
+                        _go_report(_r["id"], from_user=user_name)
                         st.rerun(scope="app")
             else:
                 st.markdown(
@@ -8105,10 +8104,10 @@ def _render_bug_typed_view(
             st.markdown("#### 📌 You came here from an email")
             _render_bug_card(_hit)
             if st.button("← Back to full list", key=f"clear_{type_keyword}_focus"):
-                try:
-                    st.query_params.clear()
-                except Exception:
-                    pass
+                # Re-assert ?view= rather than clearing outright: a bare URL
+                # means "home" to the browser-nav sync, so a plain clear()
+                # here would bounce the user off this view on the next rerun.
+                _set_view(st.session_state.view)
                 st.rerun()
             st.markdown("---")
         else:
@@ -8357,21 +8356,24 @@ st.markdown("""
 # Session state init + view router
 # --------------------------------------------------------------------------
 
+_VALID_VIEWS = {"home", "user", "library", "backlog", "bugs", "changes", "audit"}
+
 if "view" not in st.session_state:
-    # Restore from URL on first load so refresh stays on the same page.
-    # Inline set (instead of _VALID_VIEWS) so this block doesn't depend on
-    # helpers defined further down in the file — Streamlit runs top-to-bottom.
+    # Restore from URL on load so refresh — and the browser back/forward
+    # arrows (see _install_back_button_support) — land on the right page.
     _url_view = st.query_params.get("view", "").strip()
-    st.session_state.view = (
-        _url_view
-        if _url_view in {"home", "user", "library", "backlog", "bugs"}
-        else "home"
-    )
+    st.session_state.view = _url_view if _url_view in _VALID_VIEWS else "home"
     # A library report-detail page encodes ?report=<id> in the URL; restore
     # it so a browser refresh reloads that report's page, not the list.
     _url_report = st.query_params.get("report", "").strip()
     if _url_report:
         st.session_state["library_report_id"] = _url_report
+        # A report opened FROM a profile also carries ?user=. Restore the
+        # breadcrumb so its Back button still says "Back to <name>'s profile"
+        # after a reload — which is what a back/forward press now does.
+        _url_from = st.query_params.get("user", "").strip()
+        if st.session_state.view == "library" and _url_from:
+            st.session_state["library_came_from"] = ("user", _url_from)
 if "user" not in st.session_state:
     _url_user = st.query_params.get("user", "").strip()
     st.session_state.user = _url_user or None
@@ -8504,6 +8506,88 @@ if not st.session_state.authed:
 _refresh_session()
 
 
+def _install_back_button_support() -> None:
+    """Make the browser's back/forward arrows work on the Hub.
+
+    Navigation lives in the query string (?view=user&user=Lucy 1), and
+    Streamlit pushes a history entry for it — so the arrows DO rewind the URL.
+    But Streamlit's own popstate handler only reruns the script when the URL
+    *path* changes (multi-page apps); a query-string-only change is ignored.
+    The URL would rewind while the page kept rendering the old view, so the
+    back arrow looked broken — press it on a profile card and nothing happens
+    (Megan 2026-07-14).
+
+    So we listen for popstate ourselves and reload at the rewound URL. On load
+    the router already restores the view from ?view= (see above), so back and
+    forward both land where they should. A reload (not a rerun) is the point:
+    it starts a fresh session whose state is rebuilt from the URL, instead of
+    the stale session_state that was overriding it. Sign-in survives — the
+    auth gate reads the session file, not session_state — and a report that's
+    mid-run is unaffected: it runs in its own process and the "currently
+    running" banner is rebuilt from the run-state file on disk.
+
+    The listener is installed from a component iframe (same origin, so it can
+    reach window.parent). It is RE-registered on every rerun rather than
+    installed once behind a flag: Streamlit tears down and rebuilds the
+    component iframe each rerun, which destroys the JS context that owns the
+    callback, leaving a dead listener that fires and does nothing. So each
+    render removes the previous handler and attaches a fresh live one.
+
+    It reloads only when the URL actually disagrees with the page on screen.
+    That guard is load-bearing, not defensive: one back press fires popstate
+    TWICE (the component iframe has its own entry in the joint session
+    history), so an unconditional reload() reloads again on the second event
+    and storms the app into a reload loop. Comparing against the page identity
+    Streamlit just rendered makes the extra event a no-op, and makes a reload
+    that lands on the right page settle instead of bouncing.
+    """
+    _here = {
+        "view": st.session_state.view,
+        "user": st.session_state.user or "",
+        "report": st.session_state.get("library_report_id") or "",
+    }
+    _components.html(
+        f"""
+        <script>
+        const hub = window.parent;
+        // Which page the app is CURRENTLY showing. Re-stamped every rerun.
+        hub.__hubNavHere = {json.dumps(_here)};
+
+        // Identity of a page: only the params that actually pick it out. The
+        // library detail sets `user` as a side effect without putting it in
+        // the URL, so comparing user outside the profile view would report a
+        // phantom mismatch.
+        hub.__hubNavKey = (p) => (
+            p.view === "user"    ? "user:" + p.user :
+            p.view === "library" ? "library:" + p.report :
+            p.view
+        );
+
+        // Swap in a handler owned by THIS (live) iframe — see the docstring.
+        if (hub.__hubNavHandler) {{
+            hub.removeEventListener("popstate", hub.__hubNavHandler);
+        }}
+        hub.__hubNavHandler = () => {{
+            if (hub.__hubNavReloading) return;
+            const q = new URLSearchParams(hub.location.search);
+            // No ?view= is the first entry the app ever pushed — that's home.
+            const there = {{
+                view: q.get("view") || "home",
+                user: q.get("user") || "",
+                report: q.get("report") || "",
+            }};
+            if (hub.__hubNavKey(there) !== hub.__hubNavKey(hub.__hubNavHere)) {{
+                hub.__hubNavReloading = true;
+                hub.location.reload();
+            }}
+        }};
+        hub.addEventListener("popstate", hub.__hubNavHandler);
+        </script>
+        """,
+        height=0,
+    )
+
+
 today = dt.date.today()
 weekday_name = WEEKDAY_NAMES[today.weekday()]
 hour = dt.datetime.now().hour
@@ -8523,18 +8607,25 @@ BIG_DATE = f"{weekday_name.upper()}, {today.strftime('%B').upper()} {_ordinal(to
 _VALID_VIEWS = {"home", "user", "library", "backlog", "bugs"}
 
 
-def _set_view(view: str) -> None:
+def _set_view(view: str, **extra: str) -> None:
     """Set the active view and mirror it into the URL.
 
     Persisting `?view=…` in the URL keeps the user on the same page after
     a hard refresh; without this, refreshing would always drop them back
-    to home. Clearing the query params first also drops any one-shot
+    to home. Replacing the whole param dict also drops any one-shot
     deep-link params (?request=, ?bug=) when the user navigates away.
+
+    The params go in as ONE from_dict() call on purpose. Streamlit pushes a
+    browser history entry per mutation, so writing ?view= and then ?user=
+    separately stacked TWO entries for a single click — and the user's first
+    back press only undid the invisible half of it, which read as the back
+    arrow being dead (Megan 2026-07-14).
     """
     st.session_state.view = view
     try:
-        st.query_params.clear()
-        st.query_params["view"] = view
+        st.query_params.from_dict(
+            {"view": view, **{k: v for k, v in extra.items() if v}}
+        )
     except Exception:
         pass
 
@@ -8546,11 +8637,7 @@ def _go_home():
 
 def _go_user(name: str):
     st.session_state.user = name
-    _set_view("user")
-    try:
-        st.query_params["user"] = name
-    except Exception:
-        pass
+    _set_view("user", user=name)
 
 
 def _go_library():
@@ -8561,6 +8648,27 @@ def _go_library():
     st.session_state.pop("library_report_id", None)
     st.session_state.pop("library_came_from", None)
     _set_view("library")
+
+
+def _go_report(report_id: str, from_user: str | None = None) -> None:
+    """Open a report's detail page, in ONE URL write.
+
+    Opening a report used to take two steps — _set_view("library") and then
+    the detail's ?report= — which pushed the library LIST as a history entry
+    in between. Backing out of a report opened from a profile then landed on
+    the library instead of the profile (Megan 2026-07-14).
+
+    `from_user` is the profile the report was opened from. It rides along in
+    the URL (?user=) rather than living only in session state, so the "← Back
+    to <name>'s profile" button survives a reload — which is exactly what a
+    back/forward press does now.
+    """
+    st.session_state["library_report_id"] = report_id
+    if from_user:
+        st.session_state["library_came_from"] = ("user", from_user)
+    else:
+        st.session_state.pop("library_came_from", None)
+    _set_view("library", report=str(report_id), user=from_user or "")
 
 
 def _go_backlog():
@@ -9019,10 +9127,9 @@ elif st.session_state.view == "backlog":
                 allow_done=(_hit_status == "In Progress"),
             )
             if st.button("← Back to full backlog", key="clear_request_focus"):
-                try:
-                    st.query_params.clear()
-                except Exception:
-                    pass
+                # Keep ?view= (see the bug-page twin above) — a bare URL reads
+                # as "home" to the browser-nav sync.
+                _set_view(st.session_state.view)
                 st.rerun()
             st.markdown("---")
         else:
@@ -9138,11 +9245,17 @@ elif st.session_state.view == "library":
 
     # Keep the URL in sync so a browser refresh reloads the SAME page — the
     # open report's detail page if one is selected, else the library list.
+    # Written as one from_dict, and only when it actually differs: param-by-param
+    # writes each push their own browser history entry, so the old version put a
+    # phantom library-list entry behind every report detail.
+    _want_params = {"view": "library"}
     if selected_id:
-        st.query_params["view"] = "library"
-        st.query_params["report"] = str(selected_id)
-    elif "report" in st.query_params:
-        del st.query_params["report"]
+        _want_params["report"] = str(selected_id)
+        _cf_url = st.session_state.get("library_came_from")
+        if _cf_url and _cf_url[0] == "user":
+            _want_params["user"] = _cf_url[1]
+    if dict(st.query_params) != _want_params:
+        st.query_params.from_dict(_want_params)
 
     # If we got here from a user profile, the Back button should return there
     # instead of bouncing to the library list. Tracked via library_came_from
@@ -9156,9 +9269,10 @@ elif st.session_state.view == "library":
     def _back_from_library_detail() -> None:
         st.session_state.pop("library_report_id", None)
         if _came_from and _came_from[0] == "user":
-            st.session_state.user = _came_from[1]
             st.session_state.pop("library_came_from", None)
-            _set_view("user")
+            # _go_user (not _set_view) so the URL carries ?user=… too — a bare
+            # ?view=user reloads into a profile page with nobody selected.
+            _go_user(_came_from[1])
         st.rerun()
 
     if selected_id:
@@ -9272,7 +9386,7 @@ elif st.session_state.view == "library":
                             help=("Mid-run — pick up where you left off"
                                   if _pickup else report.get("description") or None),
                         ):
-                            st.session_state["library_report_id"] = report["id"]
+                            _go_report(report["id"])
                             st.rerun()
 
 
@@ -9784,3 +9898,8 @@ st.divider()
 st.caption(
     "🐺 **Live more. Dream more. Do more.** — Alphalete Marketing"
 )
+
+# Dead last on purpose: this renders a 0-height component iframe, and Streamlit
+# still gives it a slot in the vertical layout. Anywhere higher up and it pushes
+# every view down by the block gap.
+_install_back_button_support()
