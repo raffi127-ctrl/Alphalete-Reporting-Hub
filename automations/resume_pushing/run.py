@@ -1088,32 +1088,46 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
                     _log(f"[inspect] screenshot uploaded to 'RP Shot' ({len(png)}B)")
                 except Exception as e:
                     _log("[inspect] screenshot err: " + str(e)[:90])
-                # 2) hunt the plugin's injected robot: any element in the TOP-RIGHT
-                #    corner (the blue robot launcher lives there), with full detail.
+                # 2) locate the plugin's robot launcher (small square in the top-right),
+                #    log its HTML for a stable selector, click its centre, then
+                #    screenshot + dump whatever popup opens.
                 try:
-                    vp = page.evaluate(
-                        "() => ({w:innerWidth,h:innerHeight,dpr:devicePixelRatio})")
-                    _log(f"[inspect] viewport {vp}")
-                    corner = page.evaluate(r"""() => {
-                      const out=[];
-                      document.querySelectorAll('*').forEach(e=>{
-                        if(e.offsetParent===null && getComputedStyle(e).position!=='fixed') return;
+                    rob = page.evaluate(r"""() => {
+                      const cs=[...document.querySelectorAll('div,img,button,a')].filter(e=>{
                         const r=e.getBoundingClientRect();
-                        if(r.width<12||r.height<12||r.width>140||r.height>140) return;
-                        if(r.left < innerWidth-230 || r.top > 320) return;   // top-right only
-                        const c=(''+(e.className||'')).slice(0,40);
-                        const src=(e.getAttribute&&(e.getAttribute('src')||e.getAttribute('data-src'))||'').slice(-40);
-                        const bg=(getComputedStyle(e).backgroundImage||'').slice(0,30);
-                        out.push(e.tagName+'#'+(e.id||'')+' cls='+c+' src='+src+' bg='+bg+
-                                 ' @'+Math.round(r.left)+','+Math.round(r.top)+
-                                 ' '+Math.round(r.width)+'x'+Math.round(r.height));
+                        return r.width>=30&&r.width<=70&&r.height>=30&&r.height<=70
+                               && r.left>innerWidth-130 && r.top<200 && r.top>=40;
                       });
-                      return out.slice(0,40);
+                      return cs.map(e=>{const r=e.getBoundingClientRect();
+                        return {cx:Math.round(r.left+r.width/2),cy:Math.round(r.top+r.height/2),
+                                html:e.outerHTML.slice(0,160)};});
                     }""")
-                    for ic in corner:
-                        _log("[inspect][corner] " + ic)
+                    _log(f"[inspect] robot candidates: {rob}")
+                    if rob:
+                        cx, cy = rob[0]["cx"], rob[0]["cy"]
+                        _log(f"[inspect] clicking robot centre @ ({cx},{cy})")
+                        page.mouse.click(cx, cy)
+                        page.wait_for_timeout(4000)
+                        try:
+                            _upload_png_b64(page.screenshot(full_page=False))
+                            _log("[inspect] popup screenshot -> 'RP Shot'")
+                        except Exception as e:
+                            _log("[inspect] popup shot err: " + str(e)[:70])
+                        # dump popup controls across pages/frames
+                        for pi, pg in enumerate(ctx.pages):
+                            try:
+                                arr = pg.evaluate(
+                                    "() => Array.from(document.querySelectorAll("
+                                    "'button,a,input,[role=button],[class*=btn],[class*=start]'))"
+                                    ".filter(e=>e.offsetParent!==null)"
+                                    ".map(e=>e.tagName+':'+((e.innerText||e.value||e.title||'')"
+                                    ".trim().slice(0,28))).filter(s=>s.length>7).slice(0,35)")
+                                if arr:
+                                    _log(f"[inspect] popup ctrl page{pi}: {arr}")
+                            except Exception:
+                                pass
                 except Exception as e:
-                    _log("[inspect] corner hunt err: " + str(e)[:90])
+                    _log("[inspect] robot click err: " + str(e)[:90])
                 rc = 0
                 return 0
 
