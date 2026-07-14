@@ -1031,7 +1031,7 @@ def _flush_diag(tab: str = "RP Diag") -> None:
 
 def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
              send_only: bool = False, extract_only: bool = False,
-             inspect: bool = False) -> int:
+             inspect: bool = False, debug: bool = False) -> int:
     """THE permission-free driver. Launch a REAL Google Chrome on a copy of the
     Default profile (Resume Helper plugin is genuinely installed there, so its
     service worker runs — unlike patchright), inject the saved AppStream session
@@ -1110,6 +1110,11 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
                 _log("[cdp][STOP] could not reach Process In Batches on v2.")
                 return 1
             _log(f"[cdp] service_workers: {[sw.url for sw in ctx.service_workers]}")
+
+            if debug:
+                _health_check(page)
+                rc = 0
+                return 0
 
             ready0 = ready_for_extraction(page)
             _log(f"[cdp] Ready For Extraction before: {ready0}")
@@ -1579,57 +1584,19 @@ def main() -> int:
         return _extract_smart()
 
     mode = "DRY-RUN (no writes)" if args.dry_run else "LIVE (sends to AI call list)"
-    _log(f"=== Resume Pushing v2 — office {OFFICE_ID} — {mode} ===")
+    _log(f"=== Resume Pushing v2 — office {OFFICE_ID} — {mode} — CDP real-Chrome path ===")
 
-    # Lowest-priority AppStream job on Lucy 2 (runs every 10 min): if Carlos's
-    # session is busy with another report, yield_if_busy makes the attach fail
-    # fast (AppStreamBusy) instead of holding the other run up; the next tick
-    # retries, so nothing is lost.
-    try:
-        with appstream_direct_session(yield_if_busy=True,
-                                      load_extensions=True) as page:
-            if not fetch_office._switch_office(page, OFFICE_ID, OFFICE_HINT):
-                _log(f"[office] STOP — this AppStream account cannot reach office "
-                     f"{OFFICE_ID}. Confirm the machine is logged in as an account "
-                     "with access to that office.")
-                return 2
-            page.wait_for_timeout(2000)
-
-            page = open_v2_dashboard(page)          # enter "Explore Appstream AI"
-            if not goto_process_in_batches(page):
-                _log("[STOP] could not reach Process In Batches on v2.")
-                return 1
-
-            if args.debug:
-                _health_check(page)
-                return 0
-
-            extracted_remaining = None
-            if not args.send_only:
-                extracted_remaining = extract_loop(page, args.dry_run)
-
-            if args.extract_only:
-                _log("\n===== SUMMARY (extract-only) =====")
-                _log(f"Still ready/not-extracted    : {extracted_remaining}")
-                _log("(--extract-only — nothing was sent to the AI call list.)")
-                return 0
-
-            sent = send_loop(page, args.dry_run, limit=args.limit)
-
-            _log("\n===== SUMMARY =====")
-            _log(f"Mode                         : {mode}")
-            if extracted_remaining is not None:
-                _log(f"Still ready/not-extracted    : {extracted_remaining}")
-            _log(f"Applicants sent to call list : {sent}")
-            if args.dry_run:
-                _log("(DRY-RUN — nothing was pushed to the AI call list.)")
-            elif args.limit:
-                _log(f"(--limit {args.limit} — sent only the first {args.limit} as a test.)")
-    except AppStreamBusy:
-        _log("[yield] AppStream session is busy (another report is running) — "
-             "yielding; the next 10-min run will retry.")
-        return 0
-    return 0
+    # THE LIVE PATH. The resume extractor is a Chrome EXTENSION whose service
+    # worker only runs in a REAL Chrome — never under patchright (proven on Lucy 2:
+    # service_workers=[], the robot opens the Chrome Web Store instead of the
+    # popup). So the scheduled run drives a real Google Chrome over CDP on a copy
+    # of the everyday profile (where the plugin is genuinely installed): log in,
+    # office 11580, v2 Process-In-Batches, click the robot → Start until Ready For
+    # Extraction = 0, then Send To AI. Trusted CDP clicks need NO macOS
+    # Accessibility, so this runs unattended from launchd. See _cdp_run.
+    return _cdp_run(dry_run=args.dry_run, limit=args.limit,
+                    send_only=args.send_only, extract_only=args.extract_only,
+                    debug=args.debug)
 
 
 if __name__ == "__main__":

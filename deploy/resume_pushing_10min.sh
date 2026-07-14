@@ -28,16 +28,9 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
-# ========================= PAUSED (off switch, 2026-07-12) =========================
-# resume-pushing is intentionally PAUSED while the v2 extractor plugin is being
-# finished. The scheduled launchd run exits right here and does NOTHING — no
-# browser, no extract, no send — so it can't collide with manual testing.
-# Manual test helpers (deploy/test_extract.command, reseed_and_test.command, etc.)
-# call the module directly and are UNAFFECTED by this. TO RESUME LATER: delete
-# this block and pull, then re-enable the launch agent.
-echo "resume-pushing is PAUSED (off switch in wrapper) — exiting without running" >&2
-exit 0
-# ==================================================================================
+# RESUMED 2026-07-14: the v2 extractor now works via the CDP real-Chrome path
+# (run.py → _cdp_run: real Google Chrome over CDP, robot → Start extraction, then
+# Send To AI). The off-switch that used to exit 0 here has been removed.
 
 VENV_PY=".venv/bin/python3.14"
 [ -x "$VENV_PY" ] || VENV_PY=".venv/bin/python"
