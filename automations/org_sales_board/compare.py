@@ -342,6 +342,109 @@ def content_diff() -> dict:
             "mismatches": mismatches}
 
 
+def exhaustive_diff() -> dict:
+    """THE GO-LIVE GATE: every single cell of the copy tab vs the VA tab, rows 1..end
+    — INCLUDING rows past 1000 (Megan has asked for this repeatedly) — with a FULL
+    coverage accounting so nothing can hide.
+
+    Every non-empty row is either paired to its VA twin BY CONTENT (col-A label +
+    col-B name, occurrence by occurrence — the leaderboards sort differently, so row
+    N on the copy is NOT row N on the VA) or reported as UNPAIRED. Label-less rows
+    (spacers/strips with no name to key on) are compared POSITIONALLY so they are
+    not left unchecked either.
+
+    HARD GUARD: two rows are never compared unless their label+name are identical.
+    Without it a positional fallback lined 'Kash Rai' up against 'Cyrus Wade' and
+    invented ~200 differences that did not exist (2026-07-14).
+
+    Values compare NUMERICALLY: 2 == 2.0 == '2', and blank == 0 == 'NS' (all three
+    mean 'no sale'). Col A is skipped — it's the rank, re-ranked every run by design.
+
+    Returns {compared, diffs, only_copy, only_va, labelless_rows, labelless_diffs,
+    total} — total == 0 means EVERY cell matches."""
+    import collections
+    from gspread.utils import rowcol_to_a1
+    from automations.org_sales_board import full_compare as _fc
+
+    sh = open_by_key(SHEET_ID)
+    cS = _retry(sh.worksheet(SANDBOX_TAB).get_all_values)
+    vS = _retry(sh.worksheet(PROD_TAB).get_all_values)
+    cU = _retry(lambda: sh.worksheet(SANDBOX_TAB).get_all_values(
+        value_render_option="UNFORMATTED_VALUE"))
+    vU = _retry(lambda: sh.worksheet(PROD_TAB).get_all_values(
+        value_render_option="UNFORMATTED_VALUE"))
+
+    def nonempty(g, r):
+        return any(str(x).strip() for x in (g[r - 1] if r - 1 < len(g) else []))
+
+    def norm(x):
+        if isinstance(x, (int, float)):
+            return float(x)
+        s = str(x).strip()
+        if s.upper() in ("", "NS"):
+            return 0.0            # blank / 0 / NS all mean "no sale"
+        try:
+            f = float(s.replace(",", "").replace("$", "").rstrip("%"))
+            return f / 100.0 if s.endswith("%") else f
+        except ValueError:
+            return s.lower()
+
+    def cell(U, r, c):
+        return U[r - 1][c - 1] if r - 1 < len(U) and c - 1 < len(U[r - 1]) else ""
+
+    ci, vi = collections.defaultdict(list), collections.defaultdict(list)
+    for r in range(1, len(cS) + 1):
+        if nonempty(cS, r):
+            ci[_fc._row_sig(cS, r)].append(r)
+    for r in range(1, len(vS) + 1):
+        if nonempty(vS, r):
+            vi[_fc._row_sig(vS, r)].append(r)
+
+    pairs, only_copy, only_va, labelless = [], [], [], []
+    for s, crows in ci.items():
+        if s == ("", ""):                       # no label -> can't key by content
+            labelless.extend(crows)
+            continue
+        vrows = vi.get(s, [])
+        pairs += list(zip(crows, vrows))
+        only_copy += crows[len(vrows):]
+    for s, vrows in vi.items():
+        if s != ("", ""):
+            only_va += vrows[len(ci.get(s, [])):]
+
+    for cr, vr in pairs:                        # the guard
+        if _fc._row_sig(cS, cr) != _fc._row_sig(vS, vr):
+            raise AssertionError(f"pairing guard: copy r{cr} vs VA r{vr}")
+
+    compared, diffs = 0, []
+    for cr, vr in pairs:
+        w = max(len(cU[cr - 1]) if cr - 1 < len(cU) else 0,
+                len(vU[vr - 1]) if vr - 1 < len(vU) else 0)
+        for c in range(2, w + 1):               # skip col A (rank)
+            cv, vv = cell(cU, cr, c), cell(vU, vr, c)
+            compared += 1
+            if norm(cv) != norm(vv):
+                nm = (cS[cr - 1][1] if len(cS[cr - 1]) > 1 else "") or \
+                     (cS[cr - 1][0] if cS[cr - 1] else "")
+                diffs.append((rowcol_to_a1(cr, c), cr, vr, nm, cv, vv))
+
+    ll_diffs = []
+    for r in labelless:                          # positional (tabs are same shape)
+        w = max(len(cU[r - 1]) if r - 1 < len(cU) else 0,
+                len(vU[r - 1]) if r - 1 < len(vU) else 0)
+        for c in range(2, w + 1):
+            cv, vv = cell(cU, r, c), cell(vU, r, c)
+            compared += 1
+            if norm(cv) != norm(vv):
+                ll_diffs.append((rowcol_to_a1(r, c), r, r, "(no label)", cv, vv))
+
+    total = len(diffs) + len(ll_diffs) + len(only_copy) + len(only_va)
+    return {"compared": compared, "diffs": diffs, "only_copy": only_copy,
+            "only_va": only_va, "labelless_rows": len(labelless),
+            "labelless_diffs": ll_diffs, "pairs": len(pairs),
+            "copy_rows": len(cS), "va_rows": len(vS), "total": total}
+
+
 def _fnum(s: str):
     try:
         return float(str(s).replace(",", "").rstrip("%"))
@@ -654,6 +757,49 @@ def main():
     from pathlib import Path as _P
     logdir = _P(__file__).resolve().parents[2] / "output" / "logs"
     logdir.mkdir(parents=True, exist_ok=True)
+
+    # `--all`: THE GO-LIVE GATE. Every single cell, rows 1..end incl. past 1000,
+    # content-matched, with a full coverage accounting (Megan 2026-07-14: "I want to
+    # just make sure EVERY SINGLE cell is matching — that includes rows past 1000").
+    # total == 0 means the copy tab matches the VA everywhere.
+    if "--all" in _sys.argv:
+        d = exhaustive_diff()
+        stamp = _dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+        out = logdir / f"org_sales_board_everycell_all-{stamp}.log"
+        alld = d["diffs"] + d["labelless_diffs"]
+        over = [x for x in alld if x[1] >= 1000]
+        body = [f"ORG SALES BOARD — EVERY SINGLE CELL (copy vs VA) {stamp}",
+                f"copy rows={d['copy_rows']}  VA rows={d['va_rows']}",
+                f"rows paired by content : {d['pairs']}",
+                f"label-less rows        : {d['labelless_rows']} (compared positionally)",
+                f"CELLS COMPARED         : {d['compared']}",
+                f"CELLS DIFFERING        : {len(alld)}  "
+                f"(rows<1000: {len(alld) - len(over)} | rows>=1000: {len(over)})",
+                f"copy rows w/ no VA twin: {len(d['only_copy'])}",
+                f"VA rows w/ no copy twin: {len(d['only_va'])}",
+                "", "== EVERY DIFFERING CELL (cell | copyRow | vaRow | name | copy | VA) =="]
+        body += [f"  {a1} | r{cr} | r{vr} | {nm[:24]} | {cv!r} | {vv!r}"
+                 for a1, cr, vr, nm, cv, vv in alld]
+        body += ["", "== COPY ROWS WITH NO VA TWIN ==",
+                 *[f"  row {r}" for r in d["only_copy"]],
+                 "", "== VA ROWS WITH NO COPY TWIN ==",
+                 *[f"  row {r}" for r in d["only_va"]]]
+        out.write_text("\n".join(body), encoding="utf-8")
+        print(f"EVERY-CELL -> {out.name}")
+        print(f"  cells compared = {d['compared']:,}  (rows paired {d['pairs']}, "
+              f"label-less {d['labelless_rows']}, uncovered rows "
+              f"{len(d['only_copy']) + len(d['only_va'])})")
+        print(f"  CELLS DIFFERING = {len(alld)}  "
+              f"(rows<1000: {len(alld) - len(over)} | rows>=1000: {len(over)})")
+        for a1, cr, _vr, nm, cv, vv in alld[:40]:
+            print(f"      {a1:<8} {nm[:22]:<22} copy={cv!r} VA={vv!r}")
+        if len(alld) > 40:
+            print(f"      …and {len(alld) - 40} more (full list in the log)")
+        print("  ✅ EVERY SINGLE CELL MATCHES (incl. rows past 1000)"
+              if d["total"] == 0 else
+              f"  ❌ {d['total']} difference(s) — NOT yet 100% in line with the VA")
+        print("=== done ===")
+        return 0
 
     # `--content`: position-independent content match — every labeled row keyed
     # by its A/B label and compared wherever it sits. Answers "does the CONTENT
