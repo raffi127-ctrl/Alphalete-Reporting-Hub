@@ -134,18 +134,57 @@ def _open(sandbox: bool = False, machine: str | None = None):
 # (ok, short_result). Add a new fix = add a function here; nothing else runs.
 # ---------------------------------------------------------------------------
 
-def _run_cmd(cmd: list[str], timeout_s: int = DEFAULT_TIMEOUT_S) -> tuple[bool, str]:
-    """Run a command in the repo root; return (ok, 'exit N · <tail>')."""
+def _run_cmd(cmd: list[str], timeout_s: int = DEFAULT_TIMEOUT_S,
+             log_name: str | None = None) -> tuple[bool, str]:
+    """Run a command in the repo root; return (ok, 'exit N · <tail>').
+
+    log_name: write the run's FULL output to output/logs/<log_name> so
+    `lucy logtail <log_name>` can read it. The 3-line tail in the result cell is
+    routinely useless on a browser report — Playwright's teardown chatter
+    ("finished temporary directories cleanup") lands last and buries the actual
+    traceback, which cost three blind probes to diagnose a crop bug on
+    2026-07-14. The log is the only way to see a mini-only failure from the
+    laptop (no SSH), so write it even when the run SUCCEEDS."""
+    log_path = None
+    if log_name:
+        try:
+            log_dir = REPO_ROOT / "output" / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_path = log_dir / log_name
+        except Exception:  # noqa: BLE001 — logging must never fail the run
+            log_path = None
     try:
         proc = subprocess.run(cmd, cwd=str(REPO_ROOT), timeout=timeout_s,
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                               text=True)
-    except subprocess.TimeoutExpired:
-        return False, f"timed out after {timeout_s // 60}m"
+    except subprocess.TimeoutExpired as e:
+        # A timeout still produced output — persist it, or the slowest failures
+        # (the ones most worth debugging) are the ones with no log at all.
+        if log_path is not None:
+            out = e.stdout or ""
+            if isinstance(out, bytes):
+                out = out.decode("utf-8", "replace")
+            _write_log(log_path, cmd, out + f"\n\n*** TIMED OUT after {timeout_s}s ***")
+        return False, (f"timed out after {timeout_s // 60}m"
+                       + (f" · log: {log_path.name}" if log_path else ""))
     except Exception as e:
         return False, f"launch error: {str(e).splitlines()[0][:140]}"
+    if log_path is not None:
+        _write_log(log_path, cmd, proc.stdout or "")
     tail = "\n".join((proc.stdout or "").splitlines()[-3:])[:280]
-    return proc.returncode == 0, f"exit {proc.returncode}" + (f" · {tail}" if tail else "")
+    return proc.returncode == 0, (
+        f"exit {proc.returncode}"
+        + (f" · log: {log_path.name}" if log_path else "")
+        + (f" · {tail}" if tail else ""))
+
+
+def _write_log(path: Path, cmd: list[str], output: str) -> None:
+    """Best-effort: full run output to output/logs/, for `lucy logtail`."""
+    try:
+        path.write_text(f"$ {' '.join(cmd)}\n[{_now()}]\n\n{output}",
+                        errors="replace")
+    except Exception:  # noqa: BLE001 — logging must never fail the run
+        pass
 
 
 def _action_rerun(args: str) -> tuple[bool, str]:
@@ -197,7 +236,10 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     except Exception:  # noqa: BLE001 — Hub publish must never fail the rerun
         hub_run_id = None
 
-    ok, result = _run_cmd(cmd, timeout_s)
+    # One log per rerun, timestamped so repeated reruns of the same report don't
+    # clobber each other (logtail's newest-match-wins then picks the latest).
+    stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    ok, result = _run_cmd(cmd, timeout_s, log_name=f"rerun-{stamp}-{report_id}.log")
 
     # Close the pill: flip the SAME running row (via run_id) to success/failed so
     # it never hangs yellow. Mirrors the orchestrator, which marks DONE *and*
