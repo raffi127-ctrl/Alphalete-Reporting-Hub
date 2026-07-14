@@ -74,29 +74,32 @@ def _send_text(phone: str, text: str) -> None:
     )
 
 
-def _paste_image_into_chat(attachment: str) -> None:
-    """Send an image by pasting it (clipboard) into the focused Messages chat.
+def _clean_path(attachment: str) -> Path:
+    """Copy the card to a short, SPACE-FREE path. A space in the attachment
+    path (e.g. '/Users/megan/1st Claude Folder/…') makes Messages silently fail
+    to deliver the file while the text still goes through."""
+    import shutil
+    dest_dir = Path.home() / ".swag_cards"
+    dest_dir.mkdir(exist_ok=True)
+    # slug already uses underscores, so the filename itself has no spaces
+    dest = dest_dir / Path(attachment).name.replace(" ", "_")
+    shutil.copy(attachment, dest)
+    return dest
 
-    AppleScript's `send <file>` attaches images as raw documents that Messages
-    fails to DELIVER on recent macOS (they show as an undelivered file icon).
-    Pasting clipboard image data — exactly like sending a screenshot — makes
-    Messages treat it as an inline photo, which delivers. This is GUI driven,
-    so it needs Accessibility permission and drives the Messages window.
-    """
+
+def _send_image(phone: str, attachment: str) -> None:
+    """Send the card as a normal iMessage attachment from a clean path — no GUI,
+    no extra permissions, straight from this machine's iMessage account."""
     ap = Path(attachment)
     if not ap.exists():
         raise IMessageError(f"attachment not found: {attachment}")
-    # 1. Put the card on the clipboard as image data (like a screenshot).
-    _osascript(f'set the clipboard to (read (POSIX file "{ap.resolve()}") '
-               'as JPEG picture)')
-    # 2. Paste into the chat the text-send just opened, and hit send.
+    clean = _clean_path(str(ap))
     _osascript(
-        'tell application "Messages" to activate\n'
-        'delay 0.7\n'
-        'tell application "System Events"\n'
-        '  keystroke "v" using command down\n'
-        '  delay 1.0\n'
-        '  key code 36\n'          # Return → send
+        'tell application "Messages"\n'
+        '  set svcId to id of 1st service whose service type = iMessage\n'
+        '  set targetService to service id svcId\n'
+        f'  set targetBuddy to buddy "{phone}" of targetService\n'
+        f'  send (POSIX file "{clean}") to targetBuddy\n'
         'end tell'
     )
 
@@ -110,13 +113,13 @@ def send(phone: str, text: str, attachment: str | None = None,
     if dry_run:
         return result
     try:
-        # Text first — this opens/focuses the recipient's chat — then paste the
-        # card image into that focused chat.
+        # Image first (from a clean path), brief pause, then the text — sending
+        # both back-to-back can drop the image.
+        if attachment:
+            _send_image(phone, attachment)
+            time.sleep(2)
         if text:
             _send_text(phone, text)
-        if attachment:
-            time.sleep(1.5)
-            _paste_image_into_chat(attachment)
         result["sent"] = True
     except Exception as e:
         result["error"] = str(e)
