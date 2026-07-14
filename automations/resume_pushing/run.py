@@ -960,6 +960,23 @@ def _launch_cdp_chrome(url: str = "https://applicantstream.com/index.cfm"):
     return subprocess.Popen(launch, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def _upload_png_b64(png_bytes: bytes) -> None:
+    """base64-chunk a PNG (from Playwright page.screenshot) into the 'RP Shot' tab
+    for remote viewing — same scheme as _snap, but the image comes from CDP, not
+    screencapture (so it works headless / with no Screen-Recording permission)."""
+    import base64
+    from automations.recruiting_report import fill as _fill
+    b64 = base64.b64encode(png_bytes).decode()
+    chunks = [b64[i:i + 45000] for i in range(0, len(b64), 45000)]
+    sh = _fill._client().open_by_key("1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
+    try:
+        t = sh.worksheet("RP Shot")
+    except Exception:
+        t = sh.add_worksheet(title="RP Shot", rows=100, cols=1)
+    t.clear()
+    t.update([[c] for c in chunks], "A1")
+
+
 def _flush_diag(tab: str = "RP Diag") -> None:
     """Dump the _LOG_BUFFER transcript to a sheet tab for remote reading (the mini-
     control Result cell truncates hard)."""
@@ -1064,77 +1081,37 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
             _log(f"[cdp] Ready For Extraction before: {ready0}")
 
             if inspect:
-                # which page holds the batch DataTable?
-                for pi, pg in enumerate(ctx.pages):
-                    try:
-                        has = pg.locator(TABLE).count()
-                    except Exception:
-                        has = -1
-                    _log(f"[inspect] page{pi} {TABLE}={has} url={(pg.url or '')[:55]}")
-                # hunt the robot on the batch page (`page`) — any titled/robot/img elt
+                # 1) SCREENSHOT the batch page so I can SEE the robot's location.
                 try:
-                    cand = page.evaluate(r"""() => {
-                      const out=[];
-                      document.querySelectorAll('[title]').forEach(e=>{
-                        const t=(e.getAttribute('title')||'');
-                        if(/resume|extract|robot|helper|\bai\b/i.test(t))
-                          out.push('TITLE|'+e.tagName+'|title="'+t.slice(0,45)+'"|cls='+(''+(e.className||'')).slice(0,30));
-                      });
-                      document.querySelectorAll('[class*=robot],[class*=fa-robot],[onclick]').forEach(e=>{
-                        const c=(''+(e.className||''));
-                        if(/robot|resume|extract/i.test(c) || /robot|resume|extract/i.test(e.getAttribute('onclick')||''))
-                          out.push('CLS|'+e.tagName+'|cls='+c.slice(0,40)+'|title='+(e.getAttribute('title')||'').slice(0,25));
-                      });
-                      return out.slice(0,40);
-                    }""")
-                    _log(f"[inspect] robot candidates: {cand}")
+                    png = page.screenshot(full_page=False)
+                    _upload_png_b64(png)
+                    _log(f"[inspect] screenshot uploaded to 'RP Shot' ({len(png)}B)")
                 except Exception as e:
-                    _log("[inspect] robot hunt err: " + str(e)[:90])
-                # v2: extraction is the native "Auto Extract Resumes" button.
-                aer = page.locator(
-                    "xpath=//button[contains(normalize-space(.),'Auto Extract Resumes')]")
-                _log(f"[inspect] 'Auto Extract Resumes' button count: {aer.count()}")
-                pre = set(id(pg) for pg in ctx.pages)
-                if aer.count() > 0:
-                    try:
-                        aer.first.click(timeout=6000)
-                        _log("[inspect] clicked 'Auto Extract Resumes'")
-                    except Exception as e:
-                        _log("[inspect] AER click err: " + str(e)[:70])
-                page.wait_for_timeout(5000)
-                _log(f"[inspect] pages after click: {[(pg.url or '')[:55] for pg in ctx.pages]}")
-                new_pages = [pg for pg in ctx.pages if id(pg) not in pre]
-                _log(f"[inspect] new pages: {[(pg.url or '')[:60] for pg in new_pages]}")
-                # any modal / swal dialog text?
-                for pi, pg in enumerate(ctx.pages):
-                    try:
-                        dlg = pg.locator(
-                            ".modal:visible, .swal2-popup:visible, [role='dialog']:visible")
-                        if dlg.count() > 0:
-                            _log(f"[inspect] page{pi} dialog: "
-                                 f"{' '.join(dlg.first.inner_text().split())[:180]}")
-                    except Exception:
-                        pass
-
-                def _dump(fr, label):
-                    try:
-                        arr = fr.evaluate(
-                            "() => Array.from(document.querySelectorAll("
-                            "'button,a,input[type=button],input[type=submit],[role=button],"
-                            "[class*=start],[class*=btn]'))"
-                            ".filter(e=>e.offsetParent!==null)"
-                            ".map(e=>e.tagName+':'+((e.innerText||e.value||e.title||'')"
-                            ".trim().slice(0,30))).filter(s=>s.length>7).slice(0,40)")
-                        if arr:
-                            _log(f"[inspect] {label}: {arr}")
-                    except Exception as e:
-                        _log(f"[inspect] {label} err: {str(e)[:60]}")
-
-                for pi, pg in enumerate(ctx.pages):
-                    _dump(pg, f"ctrl page{pi}")
-                    for fi, fr in enumerate(pg.frames):
-                        if fr != pg.main_frame:
-                            _dump(fr, f"ctrl page{pi}.frame{fi}[{(fr.url or '')[:28]}]")
+                    _log("[inspect] screenshot err: " + str(e)[:90])
+                # 2) dump EVERY visible clickable icon/image (i/img/svg/span with a
+                #    click handler or fa- class), with tag/class/title/id + x,y — the
+                #    real robot is one of these near the top, NOT the row badges.
+                try:
+                    icons = page.evaluate(r"""() => {
+                      const els = document.querySelectorAll(
+                        'i,img,svg,span,button,a,[onclick],[class*=fa-]');
+                      const out=[];
+                      els.forEach(e=>{
+                        if(e.offsetParent===null) return;
+                        const r=e.getBoundingClientRect();
+                        if(r.width<8||r.height<8||r.top>260) return;   // top toolbar only
+                        const c=(''+(e.className||'')).slice(0,45);
+                        const t=(e.getAttribute&&e.getAttribute('title')||'').slice(0,30);
+                        const oc=(e.getAttribute&&e.getAttribute('onclick')||'').slice(0,25);
+                        out.push(e.tagName+' cls='+c+' title='+t+' oc='+oc+
+                                 ' @'+Math.round(r.left)+','+Math.round(r.top));
+                      });
+                      return out.slice(0,60);
+                    }""")
+                    for ic in icons:
+                        _log("[inspect][icon] " + ic)
+                except Exception as e:
+                    _log("[inspect] icon dump err: " + str(e)[:90])
                 rc = 0
                 return 0
 
