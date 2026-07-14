@@ -213,11 +213,56 @@ def render_all_rows(page) -> int:
 # --------------------------------------------------------------------------- #
 # Extract loop
 # --------------------------------------------------------------------------- #
+def _extract_wait_v2(page, tag: str = "") -> bool:
+    """Wait for a v2 'Processing… x/n' run to finish: poll until no 'Processing'
+    button and no visible 'Stop' remain (the Resume Helper plugin — live service
+    worker — does the work; AppStream's own AI auto-clears the human-check). Long
+    cap because a big batch can grind for many minutes."""
+    import time as _t
+    t0 = _t.time()
+    page.wait_for_timeout(2500)
+    last = ""
+    while _t.time() - t0 < 1500:
+        try:
+            pc = page.locator("xpath=//button[contains(.,'Processing')]").count()
+            sc = page.locator("xpath=//button[normalize-space(.)='Stop']").count()
+        except Exception:
+            pc, sc = 0, 0
+        txt = ""
+        if pc:
+            try:
+                txt = " ".join(
+                    page.locator("xpath=//button[contains(.,'Processing')]")
+                    .first.inner_text().split())[:30]
+            except Exception:
+                pass
+        if txt and txt != last:
+            _log(f"[extract]{tag} {txt}")
+            last = txt
+        if pc == 0 and sc == 0:
+            _log(f"[extract]{tag} processing finished after {int(_t.time() - t0)}s")
+            return True
+        page.wait_for_timeout(5000)
+    _log(f"[extract]{tag} processing wait hit 25-min cap — moving on")
+    return True
+
+
 def run_extract_once(page) -> bool:
-    """Open the robot (Resume Helper) popup and click Start. One Resume-Helper run
-    processes ≤50 resumes."""
-    # The robot icon sits top-right, just under the office name. Try a few
-    # plausible hooks, then fall back to opening anything titled "Resume Helper".
+    """One extraction pass. v2 (Process In Batches) uses the native 'Auto Extract
+    Resumes' button, which drives the Resume Helper plugin and turns into
+    'Processing… x/n'. Falls back to the legacy robot→Start popup on the old grid."""
+    aer = page.locator(
+        "xpath=//button[contains(normalize-space(.),'Auto Extract Resumes')]")
+    if aer.count() > 0:
+        try:
+            aer.first.click(timeout=8000)
+        except Exception as e:
+            _log(f"[extract] 'Auto Extract Resumes' click failed: {e}")
+            return False
+        _log("[extract] Auto Extract Resumes clicked — extracting")
+        return _extract_wait_v2(page)
+
+    # --- legacy robot→Start popup fallback ---
     opened = False
     for sel in ["button[title*='Resume' i]", "[title*='Resume Helper' i]",
                 "a[title*='Resume' i]", ".fa-robot", "i.fa-robot",
