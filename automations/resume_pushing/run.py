@@ -68,8 +68,15 @@ MAX_EXTRACT_CYCLES = 30              # safety cap (≤50 resumes/cycle → ~1500
 MAX_SEND_PASSES = 8                  # safety cap for the send loop
 
 
+_LOG_BUFFER: list = []
+
+
 def _log(msg: str) -> None:
     print(msg, flush=True)
+    try:
+        _LOG_BUFFER.append(str(msg)[:600])
+    except Exception:
+        pass
 
 
 # --------------------------------------------------------------------------- #
@@ -908,85 +915,123 @@ def _launch_cdp_chrome(url: str = "https://applicantstream.com/index.cfm"):
     return subprocess.Popen(launch, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def _cdp_real() -> int:
-    """Probe the permission-free path: real Chrome on a COPY of the Default profile
-    (plugin + login) over CDP. Reports whether the extension's service worker is
-    live, whether we're still logged in (#searchMC), whether the robot button is
-    present, and — the decisive check — whether CLICKING the robot opens the real
-    extraction popup vs. the Chrome Web Store 'install' page (which means the plugin
-    is not truly active). Writes to 'RP Diag'."""
+def _flush_diag(tab: str = "RP Diag") -> None:
+    """Dump the _LOG_BUFFER transcript to a sheet tab for remote reading (the mini-
+    control Result cell truncates hard)."""
+    from automations.recruiting_report import fill as _fill
+    try:
+        sh = _fill._client().open_by_key("1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
+        try:
+            t = sh.worksheet(tab)
+        except Exception:
+            t = sh.add_worksheet(title=tab, rows=400, cols=1)
+        t.clear()
+        rows = _LOG_BUFFER[-380:] or ["(empty)"]
+        t.update([[x] for x in rows], "A1")
+        print(f"DIAG: wrote {len(rows)} lines to {tab}", flush=True)
+    except Exception as e:
+        print(f"DIAG sheet err: {e}", flush=True)
+
+
+def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
+             send_only: bool = False, extract_only: bool = False) -> int:
+    """THE permission-free driver. Launch a REAL Google Chrome on a copy of the
+    Default profile (Resume Helper plugin is genuinely installed there, so its
+    service worker runs — unlike patchright), inject the saved AppStream session
+    cookies to log in, switch to office 11580, enter v2 → Process In Batches, then
+    reuse the SAME extract_loop / send_loop as main() — but now the robot actually
+    extracts because the plugin is live. Every click is a trusted CDP DOM event, so
+    NO macOS Accessibility is needed and this runs unattended from the launchd
+    poller. probe=True: just run ONE extract cycle and report the verdict."""
     import os
     import subprocess
     import time as _t
     from patchright.sync_api import sync_playwright
-    from automations.recruiting_report import fill as _fill
-    lines = []
-
-    def L(s):
-        lines.append(str(s)[:600])
-        print(s, flush=True)
+    from automations.shared import tableau_patchright as tp
+    from automations.recruiting_report import fetch_office
+    _LOG_BUFFER.clear()
 
     dst = _copy_default_profile()
-    ext_ok = os.path.isdir(f"{dst}/Default/Extensions/{EXT_ID}")
-    L(f"copied -> {dst}; Default: {os.path.isdir(dst+'/Default')}; plugin dir: {ext_ok}")
+    _log(f"[cdp] profile copy; plugin present: "
+         f"{os.path.isdir(dst + '/Default/Extensions/' + EXT_ID)}")
     proc = _launch_cdp_chrome()
-    L(f"launched real Chrome pid={proc.pid} on copy; waiting 25s…")
-    _t.sleep(25)
+    _log(f"[cdp] launched real Chrome pid={proc.pid}; waiting 22s for startup")
+    _t.sleep(22)
+    rc = 1
     try:
         with sync_playwright() as p:
             browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            try:
-                page.goto("https://applicantstream.com/index.cfm",
-                          wait_until="domcontentloaded")
-            except Exception as e:
-                L("goto err: " + str(e)[:80])
-            page.wait_for_timeout(6000)
-            L("url: " + (page.url or "")[:95])
-            L("logged_in (#searchMC): " + str(page.locator("#searchMC").count()))
-            L("service_workers: " + str([sw.url for sw in ctx.service_workers]))
-            # decisive: click the robot, see whether the web store opens (bad) or a
-            # real extraction popup/frame (good).
-            rc = page.locator("[title*='extract resume data' i]").count()
-            L("robot button count: " + str(rc))
-            before = set(pg.url for pg in ctx.pages)
-            if rc:
-                try:
-                    page.locator("[title*='extract resume data' i]").first.click(timeout=8000)
-                except Exception as e:
-                    L("robot click err: " + str(e)[:80])
-                page.wait_for_timeout(6000)
+
+            logged = tp._reuse_appstream_storage_state(ctx, page, True)
+            _log(f"[cdp] logged_in via storage_state: {logged}; "
+                 f"#searchMC={page.locator('#searchMC').count()}")
+            if not logged:
+                _log("[cdp][STOP] could not restore the AppStream session over CDP "
+                     "(storage_state stale — re-seed with --appstream-login).")
+                return 2
+
+            if not fetch_office._switch_office(page, OFFICE_ID, OFFICE_HINT):
+                _log(f"[cdp][STOP] office switch to {OFFICE_ID} failed.")
+                return 2
+            page.wait_for_timeout(2000)
+
+            page = open_v2_dashboard(page)
+            if not goto_process_in_batches(page):
+                _log("[cdp][STOP] could not reach Process In Batches on v2.")
+                return 1
+            _log(f"[cdp] service_workers: {[sw.url for sw in ctx.service_workers]}")
+
+            ready0 = ready_for_extraction(page)
+            _log(f"[cdp] Ready For Extraction before: {ready0}")
+
+            if probe:
+                before = set(pg.url for pg in ctx.pages)
+                ok = run_extract_once(page)
                 after = [pg.url for pg in ctx.pages if pg.url not in before]
-                L("robot opened: " + str([u[:80] for u in after]))
                 webstore = any("chromewebstore" in (u or "") for u in after)
-                L("VERDICT: " + ("WEBSTORE (plugin inactive)" if webstore
-                                 else ("EXTRACTION POPUP (plugin ACTIVE)" if after
-                                       else "no new tab — popup may be inline/frame")))
-            try:
-                browser.close()
-            except Exception:
-                pass
+                _log(f"[cdp][probe] run_extract_once={ok}; new tabs={[u[:70] for u in after]}")
+                _log(f"[cdp][probe] VERDICT: "
+                     f"{'WEBSTORE — plugin INACTIVE' if webstore else 'plugin ENGAGED (real Chrome)'}")
+                _log(f"[cdp][probe] Ready For Extraction after 1 cycle: "
+                     f"{ready_for_extraction(page)}")
+                rc = 0
+                return 0
+
+            remaining = None
+            if not send_only:
+                remaining = extract_loop(page, dry_run)
+                _log(f"[cdp] extract complete; still ready: {remaining}")
+            if extract_only:
+                _log("[cdp] --extract-only — not sending.")
+                rc = 0
+                return 0
+            sent = send_loop(page, dry_run, limit=limit)
+            _log("[cdp] ===== SUMMARY =====")
+            _log(f"[cdp] mode: {'DRY-RUN' if dry_run else 'LIVE'}  "
+                 f"limit={limit or 'none'}")
+            if remaining is not None:
+                _log(f"[cdp] still ready/not-extracted: {remaining}")
+            _log(f"[cdp] applicants sent to call list: {sent}")
+            rc = 0
     except Exception as e:
-        L("CDP error: " + str(e)[:220])
+        import traceback
+        _log("[cdp] ERROR: " + str(e)[:220])
+        _log(traceback.format_exc()[-500:])
     finally:
         try:
             proc.terminate()
         except Exception:
             pass
         subprocess.run(["pkill", "-f", "rp_cdp_profile"], capture_output=True)
-    try:
-        sh = _fill._client().open_by_key("1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
-        try:
-            t = sh.worksheet("RP Diag")
-        except Exception:
-            t = sh.add_worksheet(title="RP Diag", rows=200, cols=1)
-        t.clear()
-        t.update([[x] for x in lines], "A1")
-        print(f"CDP-REAL: wrote {len(lines)} lines to RP Diag", flush=True)
-    except Exception as e:
-        print(f"CDP-REAL sheet err: {e}", flush=True)
-    return 0
+        _flush_diag()
+    return rc
+
+
+def _cdp_real() -> int:
+    """Thin probe: one extract cycle over the CDP real-Chrome path, report verdict."""
+    return _cdp_run(probe=True)
 
 
 def _plain_probe() -> int:
@@ -1286,6 +1331,10 @@ def main() -> int:
                     help="Permission-free path probe: real Chrome on a COPY of the Default profile "
                          "(plugin + login) over CDP; reports SW liveness, login, and whether the "
                          "robot opens the real extraction popup vs the web store. Writes to RP Diag.")
+    ap.add_argument("--cdp-run", action="store_true",
+                    help="THE permission-free driver: real Chrome + CDP, extract_loop then "
+                         "send_loop (office 11580). Honours --dry-run/--send-only/--extract-only/"
+                         "--limit. Runs unattended from the launchd poller. Writes to RP Diag.")
     ap.add_argument("--locate-plugin", action="store_true",
                     help="Search every Chrome profile on the machine for the Resume Helper "
                          "extension id to find where the install actually landed. Writes to RP Diag.")
@@ -1322,6 +1371,9 @@ def main() -> int:
         return _cdp_test()
     if args.cdp_real:
         return _cdp_real()
+    if args.cdp_run:
+        return _cdp_run(dry_run=args.dry_run, limit=args.limit,
+                        send_only=args.send_only, extract_only=args.extract_only)
     if args.locate_plugin:
         return _locate_plugin()
     if args.snap:
