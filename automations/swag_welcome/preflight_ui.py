@@ -13,13 +13,63 @@ from pathlib import Path
 
 import streamlit as st
 
-from automations.swag_welcome import compose, extract, message, run as run_mod
+from automations.swag_welcome import compose, extract, imessage, message, run as run_mod
 from automations.swag_welcome.roster import build_roster, pretty_phone, normalize_phone
+
+# Reference screenshot of the finished Shortcut (Megan can drop one in here).
+_SETUP_SHOT = compose.RESOURCE_DIR / "shortcut-setup.png"
 
 
 def _pick_name(i: int) -> None:
     """Quick-pick radio → drop the choice into the editable name field."""
     st.session_state[f"swag_name_{i}"] = st.session_state[f"swag_pick_{i}"]
+
+
+def _render_setup() -> None:
+    """First-time, per-machine setup for auto-sending the CARD image."""
+    ready = imessage.shortcut_installed()
+    title = ("✅ Card sending is set up on this Mac"
+             if ready else "🛠️ First-time setup — sending the card (do once per Mac)")
+    with st.expander(title, expanded=not ready):
+        if ready:
+            st.success("This Mac has the **Alphalete Swag Card** Shortcut — cards "
+                       "will send automatically. (The text needs no setup.)")
+        else:
+            st.warning("This Mac can send the **text** with no setup, but to also "
+                       "auto-send the **card image** it needs a one-time Shortcut. "
+                       "Without it, texts still send and cards are saved to the "
+                       "output folder to attach by hand.")
+        st.markdown(
+            "**Why:** macOS won't let a script send an iMessage photo directly, so "
+            "the card goes out through a tiny Shortcut. Build it once on each Mac "
+            "that will send from its own number.\n\n"
+            "**Steps (~2 min):**\n"
+            "1. Make sure **Messages is signed into iMessage** on this Mac (the "
+            "number these should come from).\n"
+            "2. Open the **Shortcuts** app → **＋ New Shortcut** → name it exactly "
+            "`Alphalete Swag Card`.\n"
+            "3. Add these **3 actions, in order**:\n"
+            "   - **Get Clipboard**\n"
+            "   - **Get Phone Numbers from Input** — set its input to **Clipboard**\n"
+            "   - **Send Message** — set **Message** = **Shortcut Input**, "
+            "**Recipients** = **Phone Numbers**, and **uncheck “Show Compose "
+            "Sheet.”**\n"
+            "4. Close it (auto-saves). The **first** time a card sends, macOS asks "
+            "**“Shortcuts can send messages” → click Allow**.\n\n"
+            "That's it — after that, the Hub sends the card automatically from this "
+            "Mac's iMessage."
+        )
+        # Reference screenshot of the finished shortcut.
+        shot = st.file_uploader("📸 Reference screenshot of the finished Shortcut "
+                                "(optional — for whoever sets up the next Mac)",
+                                type=["png", "jpg", "jpeg"], key="swag_setup_shot")
+        if shot is not None:
+            _SETUP_SHOT.parent.mkdir(parents=True, exist_ok=True)
+            _SETUP_SHOT.write_bytes(shot.getbuffer())
+            st.success("Saved — it'll show here for everyone.")
+        if _SETUP_SHOT.exists():
+            st.image(str(_SETUP_SHOT), caption="What the finished Shortcut should "
+                     "look like", use_container_width=True)
 
 
 def render(show_header: bool = True) -> None:
@@ -28,6 +78,8 @@ def render(show_header: bool = True) -> None:
     st.caption("Upload the roster screenshot → check the names & numbers → send "
                "each new hire a welcome text with their name on the swag card. "
                "Texts send from THIS machine's iMessage account.")
+
+    _render_setup()
 
     # (The always-on name-preview was removed — there's a per-person preview
     # below once a roster is uploaded, so it was redundant. Megan 2026-07-13.)
