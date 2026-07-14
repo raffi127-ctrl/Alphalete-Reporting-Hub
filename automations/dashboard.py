@@ -9286,6 +9286,31 @@ else:  # st.session_state.view == "user"
         _this_week_strip(today, my_reports, user_name)
         st.markdown("---")
 
+        # ---- Document Generations (Maud) — quick links to the self-serve
+        # Document Builder app + its access codes, so she can jump straight in
+        # without hunting for the URLs. Its own labeled area (not the schedule).
+        if user_name == "Maud":
+            st.markdown("### 🧾 Document Generations")
+            with st.container(border=True):
+                st.markdown(
+                    "**🐺 Document Builder** — generate a branded ICD "
+                    "orientation packet (auto-emails the PDF; editable in Canva)."
+                )
+                _dg = st.columns(2)
+                with _dg[0]:
+                    _safe_link_button(
+                        "🛠️ Generator",
+                        "https://alphaletedocuments.streamlit.app",
+                        use_container_width=True)
+                    st.markdown("Access code: **D\\*\\*\\*\\*\\*123!**")
+                with _dg[1]:
+                    _safe_link_button(
+                        "⚙️ Admin",
+                        "https://alphaletedocuments.streamlit.app/?admin=1",
+                        use_container_width=True)
+                    st.markdown("Admin code: **B\\*\\*\\*\\*\\*123!**")
+            st.markdown("---")
+
         # ---- Personal portfolio: projects this user has claimed / shipped ----
         # Pulled from the Automation Request Log. "In progress" = anything
         # this user has currently claimed (Assigned To matches). "Shipped" =
