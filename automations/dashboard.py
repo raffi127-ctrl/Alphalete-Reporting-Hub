@@ -3201,7 +3201,12 @@ AUTOMATED_REPORTS = [
         # Hub, so keep it out of the "due today / not completed" tallies.
         "self_scheduled": True,
         "schedule": {
-            "frequency": "daily",
+            # Sun + Mon–Fri, NOT Saturday. 'weekly' + weekdays filters the This-Week
+            # calendar (frequency 'daily' would short-circuit and show all 7 days);
+            # weekday indices: Mon=0 … Sat=5 … Sun=6, so Saturday (5) is excluded —
+            # matching the wrapper's own `date +%u -eq 6 → exit 0` Saturday gate.
+            "frequency": "weekly",
+            "weekdays": [0, 1, 2, 3, 4, 6],
             "time": "8:00 AM",
             "estimated_minutes": 5,
         },
