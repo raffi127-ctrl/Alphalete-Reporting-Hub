@@ -34,6 +34,14 @@ PAGES = [
         "react": "flag-us",
         "url": _BASE + "ATTTRACKER2_1-D2D/D2D1-PAGERV4?:iid=1",
         "crop": "canvas",
+        # Multi-page: PAGE 1 THIS WEEK, then "D2D PAGE 2 LAST WEEK". The DOM-
+        # fraction crop landed ABOVE the real page-2 bar and sliced the last row
+        # off the "Current Vs Prior Weeks" (WoW delta) table, so snap the bottom
+        # to just above that bar in IMAGE space: it's the 2nd full-width blue
+        # section bar (the title is the 1st). Scale-proof.
+        "crop_to_bar": 2,
+        "crop_before": r"D2D PAGE 2 LAST WEEK",
+        "crop_top": r"D2D PAGE 1 THIS WEEK",
     },
     {
         "id": "att_country_internet_only",
@@ -42,6 +50,14 @@ PAGES = [
         "react": "globe_with_meridians",
         "url": _BASE + "ATTTRACKER2_1-D2D/D2D1-PAGERV2InternetOnly?:iid=1",
         "crop": "canvas",
+        # Same two-page shape as att_country, and the same bug bit harder here
+        # (Raf 2026-07-14): the fraction crop cut just below "Product Summary -
+        # This Week", leaving only an 86px stub of the WoW-delta table, which
+        # _trim_bottom then peeled as a footer -- so the delta vanished entirely.
+        # Snap to the "D2D PAGE 2 LAST WEEK (Internet Only)" bar instead.
+        "crop_to_bar": 2,
+        "crop_before": r"D2D PAGE 2 LAST WEEK",
+        "crop_top": r"D2D PAGE 1 THIS WEEK",
     },
     {
         "id": "nds",

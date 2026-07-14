@@ -63,6 +63,13 @@ def main(argv=None) -> int:
                     help="Read-only: dump each view's dashboard tab strip + "
                          "Download→Image dialog so we can target a single page. "
                          "No capture, no post.")
+    ap.add_argument("--replace", action="store_true",
+                    help="Re-post TODAY's thread: delete the image replies "
+                         "already under today's parent, then post this capture "
+                         "in header order. Use after a crop fix so the corrected "
+                         "images land in the right position (Slack appends "
+                         "replies, so a plain re-post would land at the bottom). "
+                         "Run with all 8 trackers -- it replaces the whole set.")
     ap.add_argument("--headless", action="store_true",
                     help="Run the browser headless (default: headed, matches the "
                          "other Tableau reports + renders more reliably).")
@@ -211,7 +218,8 @@ def main(argv=None) -> int:
         return 1 if failed else 0
 
     # Post (or preview) into today's own dated thread.
-    result = sp.post_all(captures, pages_mod.PAGES, today, dry_run=args.dry_run)
+    result = sp.post_all(captures, pages_mod.PAGES, today, dry_run=args.dry_run,
+                         replace=args.replace)
 
     if args.dry_run:
         print(f"\n✓ DRY-RUN: captured {len(captures)} PNG(s) to {out_dir}",
@@ -226,9 +234,11 @@ def main(argv=None) -> int:
     else:
         for c in result.get("channels", []):
             if c.get("ok"):
+                rm = c.get("removed") or 0
                 print(f"\n✓ posted {len(c.get('posted', []))} image(s) to "
                       f"thread {c.get('thread_ts')} in {c['channel']} "
-                      f"(thread {'created' if c.get('created') else 'reused'})",
+                      f"(thread {'created' if c.get('created') else 'reused'}"
+                      + (f", replaced {rm} old image(s)" if rm else "") + ")",
                       flush=True)
             else:
                 print(f"\n⚠ channel {c['channel']} post FAILED: "

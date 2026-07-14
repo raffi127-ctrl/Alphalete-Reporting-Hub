@@ -73,13 +73,41 @@ def ensure_thread(client, channel: str, pages: list, today: dt.date) -> dict:
     return {"thread_ts": resp.get("ts"), "created": True}
 
 
+def delete_image_replies(client, channel: str, thread_ts: str) -> int:
+    """Delete every IMAGE reply under today's parent (the parent itself is never
+    touched, so the thread link + its reactions survive). Used by --replace to
+    re-post a corrected set of images IN ORDER: Slack appends replies, so a single
+    re-upload would land at the bottom instead of in its header position."""
+    resp = client.conversations_replies(channel=channel, ts=thread_ts, limit=200)
+    deleted = 0
+    for msg in resp.get("messages", []):
+        if msg.get("ts") == thread_ts or not msg.get("files"):
+            continue
+        for f in msg.get("files") or []:
+            try:
+                client.files_delete(file=f["id"])
+            except Exception:
+                pass          # already gone, or removed with the message
+        try:
+            client.chat_delete(channel=channel, ts=msg["ts"])
+            deleted += 1
+        except Exception:
+            pass              # files_delete can take the message with it
+    return deleted
+
+
 def _post_to_channel(client, channel: str, captures: list, pages: list,
-                     today: dt.date) -> dict:
+                     today: dt.date, replace: bool = False) -> dict:
     """Ensure the parent + post every image reply (with parent reaction) in one
     channel. A failure in one channel is caught by the caller so the other still
-    posts."""
+    posts. replace=True first clears the existing image replies, so the fresh set
+    posts in header order."""
     thread = ensure_thread(client, channel, pages, today)
     thread_ts = thread["thread_ts"]
+    removed = 0
+    if replace and not thread["created"]:
+        removed = delete_image_replies(client, channel, thread_ts)
+        print(f"  {channel}: cleared {removed} old image reply(ies)", flush=True)
     results = []
     for spec, png in captures:
         up = client.files_upload_v2(
@@ -99,7 +127,7 @@ def _post_to_channel(client, channel: str, captures: list, pages: list,
         # message posts before the next upload starts (keeps them in order).
         time.sleep(3)
     return {"channel": channel, "thread_ts": thread_ts,
-            "created": thread["created"], "posted": results,
+            "created": thread["created"], "posted": results, "removed": removed,
             "ok": all(r.get("ok") for r in results) if results else False}
 
 
@@ -158,16 +186,18 @@ def preview_dm(captures: list, pages: list, users: list,
 
 
 def post_all(captures: list, pages: list, today: dt.date | None = None,
-             *, dry_run: bool = False) -> dict:
+             *, dry_run: bool = False, replace: bool = False) -> dict:
     """Post the thread + one image reply per captured tracker, to every channel
     in CHANNELS. `captures` is (spec, png_path) in post order; `pages` is the full
     ordered list used to build the header (so the header lists every tracker even
-    if one failed to capture)."""
+    if one failed to capture). replace=True re-posts today's thread: clear the old
+    image replies, then post this set in order (for a same-day crop fix)."""
     today = today or dt.date.today()
 
     if dry_run:
         return {
             "dry_run": True,
+            "replace": replace,
             "channels": list(CHANNELS),
             "header": header_text(pages, today),
             "replies": [
@@ -182,7 +212,8 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
     for channel in CHANNELS:
         try:
             channel_results.append(
-                _post_to_channel(client, channel, captures, pages, today))
+                _post_to_channel(client, channel, captures, pages, today,
+                                 replace=replace))
         except Exception as e:
             channel_results.append(
                 {"channel": channel, "ok": False,
