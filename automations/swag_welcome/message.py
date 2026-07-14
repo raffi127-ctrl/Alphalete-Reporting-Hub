@@ -24,9 +24,16 @@ DEFAULT_TEMPLATE = (
 DEFAULT_TEMPLATE_WITH_TIME = DEFAULT_TEMPLATE + " See you at {time}!"
 
 
+def _cap(s: str) -> str:
+    """Capitalize the first letter of each word ('rafael' → 'Rafael'), leaving
+    the rest as typed (so 'McCoy'/'Jose Angel' survive)."""
+    return " ".join(w[:1].upper() + w[1:] if w else w for w in (s or "").split(" "))
+
+
 def render(name: str, template: str | None = None, manager: str = "",
            time: str = "") -> str:
     tmpl = template or DEFAULT_TEMPLATE
+    name, manager = _cap(name), _cap(manager)
     # Fill whatever placeholders the template uses; extras are ignored, and a
     # template missing one of these just renders without it.
     try:
