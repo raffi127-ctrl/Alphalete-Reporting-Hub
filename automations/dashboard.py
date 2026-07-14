@@ -1203,7 +1203,15 @@ def _tableau_trackers_card() -> dict:
     from automations.tableau_screenshots import pages as _pages
     trackers = "\n".join(
         f"{i}. {p['title']}" for i, p in enumerate(_pages.PAGES, 1))
+    # Prose form (one line, for the card description sentence).
     channels = ", ".join(_sp.ORG_LABEL[o] for o in _sp.ORGS)
+    # Bulleted form (one Slack channel per line, for the breakdown panel — the
+    # panel is white-space:pre-wrap, so the newlines survive). An org whose label
+    # covers two channels ("#a + #b") is split so each channel gets its own line.
+    channel_bullets = "\n".join(
+        f"• {name.strip()}"
+        for o in _sp.ORGS
+        for name in _sp.ORG_LABEL[o].split(" + "))
     return {
         "id": "tableau-screenshots",
         "name": "Tableau Country Trackers",
@@ -1222,7 +1230,7 @@ def _tableau_trackers_card() -> dict:
             "Grabs each of the 8 Tableau country trackers as an image and posts "
             "them into today's dated thread in every channel below.\n\n"
             f"TRACKERS\n{trackers}\n\n"
-            f"CHANNELS\n{channels}\n\n"
+            f"CHANNELS\n{channel_bullets}\n\n"
             "IF A CHANNEL MISSES\n"
             "The card shows a per-channel checklist after the run. Use "
             "'Retry failed only' to re-post just the channels that missed, or "
