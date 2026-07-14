@@ -29,8 +29,12 @@ interactive/debug use only.
 
 from __future__ import annotations
 
+import datetime as _dt
+import hashlib
 import json
+import os
 import re
+import shutil
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -439,6 +443,87 @@ def _ensure_ownerville_logged_in(page: Page, verbose: bool = True,
         f"Profile: {PROFILE_DIR}")
 
 
+# --- Opt-in cross-run crosstab cache -----------------------------------------
+# The per-office metrics feeds each pull the SAME org-wide crosstabs (Order Log,
+# Canceled Orders, Disconnects, Scheduled-6+) and filter to their owner — so with
+# N offices the same view is downloaded N times. Set METRICS_XTAB_CACHE=<dir> and
+# download_crosstab_patchright caches each (view_url, sheet) to a dated folder;
+# the next run that asks for the same view + sheet the same day reads the cache
+# and skips the browser entirely. OFF by default (env unset) → identical to
+# before for every other report. Self-keying: it dedupes only genuinely-identical
+# pulls (same URL + sheet + day) and is a harmless no-op for owner-specific views.
+# Fail-safe throughout: any cache error falls through to a normal live download.
+_XTAB_CACHE_TTL_S = 12 * 3600     # a same-day snapshot; ignore anything older
+
+
+def _xtab_cache_dir() -> Optional[Path]:
+    d = os.environ.get("METRICS_XTAB_CACHE")
+    return Path(d) if d else None
+
+
+def _xtab_cache_key(view_url: str, sheet: str) -> str:
+    # :iid is a UI tab index, not identity — drop it so the same view matches.
+    norm = re.sub(r"[?&]:iid=\d+", "", (view_url or "").strip())
+    return hashlib.sha256(f"{norm}\0{sheet}".encode("utf-8")).hexdigest()[:32]
+
+
+def _xtab_cache_path(root: Path, view_url: str, sheet: str) -> Path:
+    return root / _dt.date.today().isoformat() / f"{_xtab_cache_key(view_url, sheet)}.csv"
+
+
+def _xtab_cache_lookup(view_url: str, sheet: str, verbose: bool) -> Optional[Path]:
+    root = _xtab_cache_dir()
+    if root is None:
+        return None
+    try:
+        p = _xtab_cache_path(root, view_url, sheet)
+        if (p.exists() and p.stat().st_size > 0
+                and (time.time() - p.stat().st_mtime) < _XTAB_CACHE_TTL_S):
+            if verbose:
+                print(f"  ↺ crosstab cache HIT ({sheet}) — {p.name}, no download",
+                      flush=True)
+            return p
+    except Exception:
+        return None
+    return None
+
+
+def _xtab_cache_store(view_url: str, sheet: str, produced: Path) -> None:
+    root = _xtab_cache_dir()
+    if root is None:
+        return
+    try:
+        produced = Path(produced)
+        if not (produced.exists() and produced.stat().st_size > 0):
+            return
+        dest = _xtab_cache_path(root, view_url, sheet)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_suffix(".csv.tmp")
+        shutil.copyfile(produced, tmp)
+        os.replace(tmp, dest)          # atomic publish — no half-written cache file
+        _xtab_cache_prune(root)
+    except Exception:
+        pass                            # caching is best-effort; the pull succeeded
+
+
+def _xtab_cache_prune(root: Path, keep_days: int = 3) -> None:
+    """Drop dated cache folders older than keep_days. Only removes YYYY-MM-DD dirs
+    directly under our own cache root, so it can't touch anything else."""
+    try:
+        cutoff = _dt.date.today() - _dt.timedelta(days=keep_days)
+        for child in root.iterdir():
+            if not child.is_dir():
+                continue
+            try:
+                d = _dt.date.fromisoformat(child.name)
+            except ValueError:
+                continue                # not a dated dir — leave it alone
+            if d < cutoff:
+                shutil.rmtree(child, ignore_errors=True)
+    except Exception:
+        pass
+
+
 def download_crosstab_patchright(
     view_url: str,
     crosstab_sheet: str,
@@ -468,19 +553,38 @@ def download_crosstab_patchright(
     backoff (lets Tableau's server-side render settle) clears most of the
     remainder. Retries only fire on failure, so happy-path runtime is
     unchanged."""
+    # Opt-in cache — serve a same-day pull of this exact (view, sheet) without a
+    # browser. Skipped when pre_export is set: that callback customizes the export
+    # (e.g. drives date fields), so the URL+sheet don't fully determine the output.
+    cacheable = pre_export is None
+    if cacheable:
+        hit = _xtab_cache_lookup(view_url, crosstab_sheet, verbose)
+        if hit is not None:
+            try:
+                out_path = Path(out_path)
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(hit, out_path)
+                return out_path
+            except Exception:
+                pass            # copy failed → fall through to a live download
+
     MAX_ATTEMPTS = 3
     BACKOFF_S = 3
     last_err = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             if page is not None:
-                return drive_crosstab_dialog(page, view_url, crosstab_sheet,
-                                             out_path, verbose=verbose,
-                                             pre_export=pre_export)
-            with tableau_session(verbose=verbose) as pg:
-                return drive_crosstab_dialog(pg, view_url, crosstab_sheet,
-                                             out_path, verbose=verbose,
-                                             pre_export=pre_export)
+                result = drive_crosstab_dialog(page, view_url, crosstab_sheet,
+                                               out_path, verbose=verbose,
+                                               pre_export=pre_export)
+            else:
+                with tableau_session(verbose=verbose) as pg:
+                    result = drive_crosstab_dialog(pg, view_url, crosstab_sheet,
+                                                   out_path, verbose=verbose,
+                                                   pre_export=pre_export)
+            if cacheable:
+                _xtab_cache_store(view_url, crosstab_sheet, result)
+            return result
         except Exception as e:
             last_err = e
             if attempt < MAX_ATTEMPTS:

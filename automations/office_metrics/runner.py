@@ -124,6 +124,9 @@ def main(argv=None, *, office_key: str | None = None) -> int:
     ap.add_argument("--check", action="store_true",
                     help="validate the whole office table and exit (no pull, no "
                          "post).")
+    ap.add_argument("--fresh", action="store_true",
+                    help="ignore the shared crosstab cache and re-pull every view "
+                         "live (use if a cached org-wide pull went bad).")
     args = ap.parse_args(argv)
 
     # Structural guard FIRST — a duplicated channel or view URL (the copy-paste
@@ -178,6 +181,17 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         return 0
 
     child_env = dict(os.environ, METRICS_CHANNEL_ID=target_chan)
+
+    # Share the org-wide crosstab pulls across offices: the FIRST office to pull a
+    # given view (Order Log, Cancels, Disconnects, Scheduled-6+) downloads it; the
+    # next office the same morning reads the dated cache and skips the browser. So
+    # the org-wide pulls cost the same whether there are 2 offices or 20. Only the
+    # 3 per-office ICD views (churn/ongoing_cancel/abp) still pull per office (each
+    # is a distinct URL → its own cache key, no false sharing). --fresh forces a
+    # live re-pull. See tableau_patchright._xtab_cache_*.
+    if not args.fresh:
+        child_env["METRICS_XTAB_CACHE"] = str(
+            REPO_ROOT / "output" / "metrics_xtab_cache")
 
     if mode == "live":
         from automations.shared import slack_metrics_post as smp
