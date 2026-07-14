@@ -43,11 +43,12 @@ OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "tableau_screenshots"
 # One manifest id PER ORG, or three runs would clobber each other's manifest and
 # the orchestrator's verify step would read the wrong run. alphalete keeps the
 # original id so its existing Hub card / verify history stays continuous.
-_REPORT_ID = {"alphalete": "tableau-screenshots",
-              "elevate": "tableau-screenshots-elevate",
-              "indelible": "tableau-screenshots-indelible",
-              "palace": "tableau-screenshots-palace",
-              "elite_prime": "tableau-screenshots-elite-prime"}
+REPORT_ID = "tableau-screenshots"
+
+# Per-channel outcome of today's run, read by the Hub card to show its ✅/❌
+# checklist. One card posts to EVERY channel, so the card needs to say which
+# channels actually landed -- a single red/green light would hide a lone failure.
+STATUS_FILE = OUT_DIR / "_posted_today.json"
 
 # The 8 boards are COUNTRY-wide -- all three orgs post byte-identical images. So
 # capture ONCE per day and let the other orgs reuse the PNGs: re-driving Tableau
@@ -96,6 +97,31 @@ def _reusable(out_dir: Path, selected: list, today: dt.date) -> list | None:
     return out
 
 
+def _select_orgs(orgs: str) -> list:
+    """'all' -> every org, in channel order; else the named comma-separated subset."""
+    raw = (orgs or "all").strip()
+    if raw.lower() == "all":
+        return list(sp.ORGS)
+    want = [o.strip() for o in raw.split(",") if o.strip()]
+    bad = [o for o in want if o not in sp.ORGS]
+    if bad:
+        raise SystemExit(f"--orgs: unknown org(s) {', '.join(bad)}. "
+                         f"Known: {', '.join(sp.ORGS)} (or 'all')")
+    return want
+
+
+def _write_status(out_dir: Path, results: list, today: dt.date) -> None:
+    """Today's per-channel outcome, for the Hub card's checklist."""
+    import json
+    try:
+        (out_dir / STATUS_FILE.name).write_text(json.dumps({
+            "date": today.isoformat(),
+            "channels": results,
+        }, indent=2))
+    except Exception:            # best-effort — the post already happened
+        pass
+
+
 def _select(only: str | None) -> list:
     if not only:
         return list(pages_mod.PAGES)
@@ -128,10 +154,12 @@ def main(argv=None) -> int:
                     help="Read-only: dump each view's dashboard tab strip + "
                          "Download→Image dialog so we can target a single page. "
                          "No capture, no post.")
-    ap.add_argument("--org", default=sp.DEFAULT_ORG, choices=sp.ORGS,
-                    help="Which org's channel(s) to post into: "
-                         + "; ".join(f"{o} = {sp.ORG_LABEL[o]}" for o in sp.ORGS)
-                         + ". Same 8 country-wide images for every org.")
+    ap.add_argument("--orgs", default="all",
+                    help="Which org(s) to post to — comma-separated, or 'all' "
+                         "(the default: every channel, in one run off ONE "
+                         "capture). Use a subset to re-post just the channels "
+                         "that missed, e.g. --orgs elevate,palace. Orgs: "
+                         + "; ".join(f"{o} = {sp.ORG_LABEL[o]}" for o in sp.ORGS))
     ap.add_argument("--fresh", action="store_true",
                     help="Force a re-capture even if today's PNGs already exist. "
                          "By default an org reuses images captured earlier today "
@@ -160,21 +188,24 @@ def main(argv=None) -> int:
     out_dir = Path(args.out_dir)
     force_crop = "full" if args.full else None
 
-    report_id = _REPORT_ID[args.org]
-    print(f"Tableau country trackers -- {len(selected)} view(s), org={args.org} "
-          f"({sp.ORG_LABEL[args.org]}), "
+    orgs = _select_orgs(args.orgs)
+    report_id = REPORT_ID
+    print(f"Tableau country trackers -- {len(selected)} view(s) -> {len(orgs)} org(s): "
+          f"{', '.join(sp.ORG_LABEL[o] for o in orgs)}, "
           f"{'DRY-RUN (no Slack)' if args.dry_run else 'LIVE'}, "
           f"out={out_dir}", flush=True)
 
     # Header-only rename of today's existing thread — no browser, no capture, no
     # new messages. Runs before anything else touches Tableau.
     if args.retitle_only:
-        res = sp.retitle_today(pages_mod.PAGES, today, org=args.org)
-        for r in res["results"]:
-            print(f"  {r['channel']}: {r['status']}", flush=True)
-        bad = [r for r in res["results"] if str(r["status"]).startswith("FAILED")]
-        print(f"\n{'⚠' if bad else '✓'} retitle-only ({args.org}): "
-              f"{sp.header_title(today)}", flush=True)
+        bad = []
+        for org in orgs:
+            res = sp.retitle_today(pages_mod.PAGES, today, org=org)
+            for r in res["results"]:
+                print(f"  [{org}] {r['channel']}: {r['status']}", flush=True)
+            bad += [r for r in res["results"] if str(r["status"]).startswith("FAILED")]
+        print(f"\n{'⚠' if bad else '✓'} retitle-only: {sp.header_title(today)}",
+              flush=True)
         return 1 if bad else 0
 
     from automations.shared.tableau_patchright import tableau_session
@@ -320,42 +351,76 @@ def main(argv=None) -> int:
             note="preview-dm run" + (f"; {len(failed)} failed" if failed else ""))
         return 1 if failed else 0
 
-    # Post (or preview) into today's own dated thread.
-    result = sp.post_all(captures, pages_mod.PAGES, today, dry_run=args.dry_run,
-                         replace=args.replace, org=args.org)
-
+    # Post into each org's own dated thread — ONE capture feeds them all. An org
+    # that blows up must NOT take the rest down with it (that's the whole point of
+    # posting them from one run but tracking them separately), so each is caught
+    # and recorded; the failures come back as the manifest's retry list.
     if args.dry_run:
-        print(f"\n✓ DRY-RUN: captured {len(captures)} PNG(s) to {out_dir}",
-              flush=True)
-        print(f"  would post to channels {', '.join(result['channels'])} as:")
-        print("  --- header ---")
-        for ln in result["header"].splitlines():
-            print(f"    {ln}")
-        print("  --- replies ---")
-        for r in result["replies"]:
-            print(f"    {r['caption']}  [{r['file']}]  :{r['react']}:")
-    else:
+        for org in orgs:
+            result = sp.post_all(captures, pages_mod.PAGES, today, dry_run=True,
+                                 replace=args.replace, org=org)
+            print(f"\n  [{org}] would post to {', '.join(result['channels'])} as "
+                  f"{sp.header_title(today)}", flush=True)
+        print(f"\n✓ DRY-RUN: captured {len(captures)} PNG(s) to {out_dir}; "
+              f"posted NOTHING.", flush=True)
+        run_manifest.write_manifest(
+            report_id, ok=bool(not failed), failed=failed, kind="tracker",
+            note="dry run")
+        return 1 if failed else 0
+
+    posted_ok, posted_bad, status_rows = [], [], []
+    for org in orgs:
+        label = sp.ORG_LABEL[org]
+        try:
+            result = sp.post_all(captures, pages_mod.PAGES, today,
+                                 replace=args.replace, org=org)
+        except Exception as e:                        # noqa: BLE001
+            result = {"ok": False, "channels": [],
+                      "error": f"{type(e).__name__}: {str(e)[:120]}"}
         for c in result.get("channels", []):
             if c.get("ok"):
                 rm = c.get("removed") or 0
-                print(f"\n✓ posted {len(c.get('posted', []))} image(s) to "
-                      f"thread {c.get('thread_ts')} in {c['channel']} "
-                      f"(thread {'created' if c.get('created') else 'reused'}"
-                      + (f", replaced {rm} old image(s)" if rm else "") + ")",
-                      flush=True)
+                print(f"✓ [{org}] posted {len(c.get('posted', []))} image(s) to "
+                      f"{c['channel']} thread {c.get('thread_ts')}"
+                      + (f", replaced {rm} old" if rm else ""), flush=True)
             else:
-                print(f"\n⚠ channel {c['channel']} post FAILED: "
+                print(f"⚠ [{org}] {c['channel']} post FAILED: "
                       f"{c.get('error', 'see above')}", flush=True)
+        (posted_ok if result.get("ok") else posted_bad).append(org)
+        status_rows.append({
+            "org": org, "label": label, "ok": bool(result.get("ok")),
+            "channels": [{"channel": c.get("channel"), "ok": bool(c.get("ok")),
+                          "thread_ts": c.get("thread_ts"),
+                          "error": c.get("error")}
+                         for c in result.get("channels", [])],
+            "error": result.get("error"),
+        })
+    _write_status(out_dir, status_rows, today)
 
-    # Manifest: clean iff every selected tracker captured (and, live, posted).
-    ok = not failed and (args.dry_run or result.get("ok"))
+    print(f"\n=== POSTED: {len(posted_ok)}/{len(orgs)} org(s)", flush=True)
+    for org in orgs:
+        print(f"  {'✅' if org in posted_ok else '❌'} {sp.ORG_LABEL[org]}", flush=True)
+
+    # Manifest drives the Hub's "Retry failed only" button. The failed PARTS are
+    # the channels that missed (not the trackers), and retry_args re-posts exactly
+    # those — with --replace, so a channel that half-posted doesn't end up with
+    # duplicate images. A capture failure is surfaced too, since a short thread is
+    # a real failure even when every channel accepted it.
+    ok = (not failed) and not posted_bad
+    parts = [sp.ORG_LABEL[o] for o in posted_bad] + [f"tracker:{f}" for f in failed]
     run_manifest.write_manifest(
-        report_id, ok=bool(ok), failed=failed, kind="tracker",
-        retry_args=["--only", ",".join(failed)] if failed else [],
-        note=("" if ok else f"{len(failed)} tracker(s) failed: {', '.join(failed)}"))
+        report_id, ok=bool(ok), failed=parts, kind="channel",
+        retry_args=(["--orgs", ",".join(posted_bad), "--replace"]
+                    if posted_bad else []),
+        note=("" if ok else
+              "; ".join(filter(None, [
+                  f"{len(posted_bad)} channel(s) missed: "
+                  f"{', '.join(sp.ORG_LABEL[o] for o in posted_bad)}" if posted_bad else "",
+                  f"{len(failed)} tracker(s) failed to capture: "
+                  f"{', '.join(failed)}" if failed else "",
+              ]))))
 
-    if failed:
-        print(f"\n⚠ {len(failed)} failed: {', '.join(failed)}", flush=True)
+    if posted_bad or failed:
         return 1
     return 0
 

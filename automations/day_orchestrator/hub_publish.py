@@ -59,10 +59,6 @@ _HUB_CARD = {
     "social_inbox": "social-media-posting",
     "alphalete_production": "alphalete-production",
     "tableau_screenshots": "tableau-screenshots",
-    "tableau_screenshots_elevate": "tableau-country-trackers-elevate",
-    "tableau_screenshots_indelible": "tableau-country-trackers-indelible",
-    "tableau_screenshots_palace": "tableau-country-trackers-palace",
-    "tableau_screenshots_elite_prime": "tableau-country-trackers-elite-prime",
     "weather_alert": "lucy-weather-forecast",
     # Library reports run on their own LaunchAgent/rerun (not the 4am batch) and
     # mark themselves via run_library_report / their wrapper. Their Hub card id IS

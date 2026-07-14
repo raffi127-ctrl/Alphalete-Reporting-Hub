@@ -390,6 +390,28 @@ def _record_active_run(report_id: str, report_name: str, user: str, log_path: Pa
     ACTIVE_RUNS_FILE.write_text(json.dumps(active, indent=2))
 
 
+def _channel_status(report: dict):
+    """TODAY's per-channel post results for a card that fans one run out to many
+    Slack channels, or None. Opt in with post_run.channel_status_file — a JSON
+    {"date": "YYYY-MM-DD", "channels": [{"label", "ok", "error"}, ...]} written by
+    the run. Returns None when the file is missing or is from an earlier day, so a
+    stale checklist can never be mistaken for today's. Never raises into the UI."""
+    rel = (report.get("post_run") or {}).get("channel_status_file")
+    if not rel:
+        return None
+    try:
+        path = WORKSPACE / rel
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text())
+        if data.get("date") != dt.date.today().isoformat():
+            return None
+        rows = data.get("channels") or []
+        return rows or None
+    except Exception:
+        return None
+
+
 def _manifest_retry(report: dict):
     """STANDARD failure-manifest retry context for a card, or None.
 
@@ -1166,25 +1188,86 @@ def _last_completed_as_picker(today: dt.date | None = None) -> dt.date:
     return _last_completed_we_sunday(today) - dt.timedelta(days=7)
 
 
-# The 8 country-wide Tableau trackers go to three orgs (Raf 2026-07-14) — one Hub
-# card each, same boards, only the channel differs. One template so the tracker
-# list can't drift between the three cards.
-_TABLEAU_TRACKERS_BREAKDOWN = (
-    "WHAT IT DOES\n"
-    "Grabs each of the 8 Tableau country trackers as an image and posts them "
-    "into today's dated thread.\n\n"
-    "TRACKERS\n"
-    "1. AT&T Internet Country Sales Tracker\n"
-    "2. AT&T Internet Country Sales Tracker (Internet Only)\n"
-    "3. NDS Tracker\n"
-    "4. B2B AT&T Internet Country Sales Tracker\n"
-    "5. B2B AT&T Internet Country Sales Tracker (CRU)\n"
-    "6. B2B D2D Consolidated\n"
-    "7. B2B Box Tracker\n"
-    "8. ATT Quantum Fiber Daily Tracker\n\n"
-    "WHEN IT RUNS\n"
-    "Daily in Slack channels: {channels}."
-)
+def _tableau_trackers_card() -> dict:
+    """ONE card for the 8 country-wide Tableau trackers, posted to EVERY channel
+    off a single capture (Megan 2026-07-14 — was 5 cards, one per org).
+
+    The channel list is read from slack_post.ORG_CHANNELS, and the per-channel
+    "re-post" buttons are GENERATED from it — so adding a channel is one line in
+    that map and the Hub picks it up automatically, with no card to hand-write.
+    Per-channel outcomes show as a ✅/❌ checklist (see _tableau_channel_status),
+    and the standard manifest-retry button re-posts only the channels that
+    missed. That's what makes one card safe here: a single red light would hide
+    a lone channel failing."""
+    from automations.tableau_screenshots import slack_post as _sp
+    from automations.tableau_screenshots import pages as _pages
+    trackers = "\n".join(
+        f"{i}. {p['title']}" for i, p in enumerate(_pages.PAGES, 1))
+    channels = ", ".join(_sp.ORG_LABEL[o] for o in _sp.ORGS)
+    return {
+        "id": "tableau-screenshots",
+        "name": "Tableau Country Trackers",
+        "creator": "Megan",
+        "emoji": "📸",
+        "color": "#1F4E79",
+        "category": "📊 Metrics",
+        "description": (
+            "Captures the 8 Tableau country sales trackers as images and posts "
+            "them daily into a 'Tableau Country Trackers M/D/YYYY' thread in "
+            f"every sales channel: {channels}. The boards are country-wide, so "
+            "all channels get identical images from a single capture (one "
+            "Tableau login). Replaces Jolie's manual tracker post."),
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Grabs each of the 8 Tableau country trackers as an image and posts "
+            "them into today's dated thread in every channel below.\n\n"
+            f"TRACKERS\n{trackers}\n\n"
+            f"CHANNELS\n{channels}\n\n"
+            "IF A CHANNEL MISSES\n"
+            "The card shows a per-channel checklist after the run. Use "
+            "'Retry failed only' to re-post just the channels that missed, or "
+            "the per-channel buttons under More actions."),
+        "assignees": ["Lucy 1"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "5:00 AM",
+            "estimated_minutes": 12,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": (
+                "✅ Tableau Country Trackers posted — all 8 tracker screenshots "
+                "in the dated thread in every channel."),
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+            # Drives the ✅/❌ per-channel checklist on the card (_channel_status).
+            "channel_status_file": "output/tableau_screenshots/_posted_today.json",
+        },
+        "actions": [
+            {
+                "label": "Post Today's Trackers (all channels)",
+                "icon": "▶",
+                "primary": True,
+                "help": ("Captures the 8 Tableau trackers once and posts them to "
+                         "every channel. Needs a warm Tableau session (best run "
+                         "on the mini)."),
+                "module": "automations.tableau_screenshots.run",
+                "args_fn": lambda: [],
+            },
+        ] + [
+            {
+                "label": f"Re-post {_sp.ORG_LABEL[o]}",
+                "icon": "🔁",
+                "help": (f"Re-posts today's trackers to {_sp.ORG_LABEL[o]} only. "
+                         "Reuses images already captured today and replaces that "
+                         "channel's existing images, so it can't duplicate."),
+                "module": "automations.tableau_screenshots.run",
+                # default-bind o — a bare closure would capture the loop variable
+                # and every button would post to the LAST org.
+                "args_fn": (lambda org=o: ["--orgs", org, "--replace"]),
+            }
+            for o in _sp.ORGS
+        ],
+    }
 
 
 AUTOMATED_REPORTS = [
@@ -2504,162 +2587,7 @@ AUTOMATED_REPORTS = [
             },
         ],
     },
-    {
-        "id": "tableau-screenshots",
-        "name": "Tableau Country Trackers (#alphalete-sales)",
-        "creator": "Megan",
-        "emoji": "📸",
-        "color": "#1F4E79",
-        "category": "📊 Metrics",
-        "description": "Captures the 8 Tableau country sales trackers as images and posts them daily into a 'Tableau Country Trackers M/D/YYYY' thread in #alphalete-sales + #top-leaders-alphalete-org. Replaces Jolie's manual tracker post. The same 8 boards also go to Elevate and Indelible — see their own cards.",
-        "breakdown": _TABLEAU_TRACKERS_BREAKDOWN.format(
-            channels="#alphalete-sales & #top-leaders-alphalete-org"),
-        "assignees": ["Lucy 1"],
-        "schedule": {
-            "frequency": "daily",
-            "time": "5:00 AM",
-            "estimated_minutes": 12,
-        },
-        "checklist": [],
-        "post_run": {
-            "message_success": "✅ Tableau Country Trackers posted — all 8 tracker screenshots in the dated thread in #alphalete-sales + #top-leaders-alphalete-org.",
-            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
-        },
-        "actions": [
-            {
-                "label": "Post Today's Trackers",
-                "icon": "▶",
-                "primary": True,
-                "help": "Captures the 8 Tableau trackers and posts them to the dated thread in #alphalete-sales + #top-leaders-alphalete-org. Needs a warm Tableau session (best run on the mini).",
-                "module": "automations.tableau_screenshots.run",
-                "args_fn": lambda: ["--org", "alphalete"],
-            },
-        ],
-    },
-    {
-        "id": "tableau-country-trackers-elevate",
-        "name": "Tableau Country Trackers (#elevate-sales)",
-        "creator": "Megan",
-        "emoji": "📸",
-        "color": "#1F4E79",
-        "category": "🏢 Other Offices",
-        "description": "The same 8 Tableau country sales trackers as the main card, posted daily into a 'Tableau Country Trackers M/D/YYYY' thread in #elevate-sales. Country-wide boards, so the images are identical to Alphalete's — this card just posts them to Elevate.",
-        "breakdown": _TABLEAU_TRACKERS_BREAKDOWN.format(channels="#elevate-sales"),
-        "assignees": ["Lucy 1"],
-        "schedule": {
-            "frequency": "daily",
-            "time": "5:00 AM",
-            "estimated_minutes": 2,
-        },
-        "checklist": [],
-        "post_run": {
-            "message_success": "✅ Tableau Country Trackers posted — all 8 tracker screenshots in the dated thread in #elevate-sales.",
-            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
-        },
-        "actions": [
-            {
-                "label": "Post Today's Trackers",
-                "icon": "▶",
-                "primary": True,
-                "help": "Posts the 8 Tableau trackers to the dated thread in #elevate-sales. Reuses the images captured for Alphalete earlier today (same boards), so this is fast and needs no Tableau session; it only opens Tableau if today's images aren't there yet.",
-                "module": "automations.tableau_screenshots.run",
-                "args_fn": lambda: ["--org", "elevate"],
-            },
-        ],
-    },
-    {
-        "id": "tableau-country-trackers-indelible",
-        "name": "Tableau Country Trackers (#indelible-sales)",
-        "creator": "Megan",
-        "emoji": "📸",
-        "color": "#1F4E79",
-        "category": "🏢 Other Offices",
-        "description": "The same 8 Tableau country sales trackers as the main card, posted daily into a 'Tableau Country Trackers M/D/YYYY' thread in #indelible-sales. Country-wide boards, so the images are identical to Alphalete's — this card just posts them to Indelible.",
-        "breakdown": _TABLEAU_TRACKERS_BREAKDOWN.format(channels="#indelible-sales"),
-        "assignees": ["Lucy 1"],
-        "schedule": {
-            "frequency": "daily",
-            "time": "5:00 AM",
-            "estimated_minutes": 2,
-        },
-        "checklist": [],
-        "post_run": {
-            "message_success": "✅ Tableau Country Trackers posted — all 8 tracker screenshots in the dated thread in #indelible-sales.",
-            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
-        },
-        "actions": [
-            {
-                "label": "Post Today's Trackers",
-                "icon": "▶",
-                "primary": True,
-                "help": "Posts the 8 Tableau trackers to the dated thread in #indelible-sales. Reuses the images captured for Alphalete earlier today (same boards), so this is fast and needs no Tableau session; it only opens Tableau if today's images aren't there yet.",
-                "module": "automations.tableau_screenshots.run",
-                "args_fn": lambda: ["--org", "indelible"],
-            },
-        ],
-    },
-    {
-        "id": "tableau-country-trackers-palace",
-        "name": "Tableau Country Trackers (#palace-sales)",
-        "creator": "Megan",
-        "emoji": "📸",
-        "color": "#1F4E79",
-        "category": "🏢 Other Offices",
-        "description": "The same 8 Tableau country sales trackers as the main card, posted daily into a 'Tableau Country Trackers M/D/YYYY' thread in #palace-sales. Country-wide boards, so the images are identical to Alphalete's — this card just posts them to Palace.",
-        "breakdown": _TABLEAU_TRACKERS_BREAKDOWN.format(channels="#palace-sales"),
-        "assignees": ["Lucy 1"],
-        "schedule": {
-            "frequency": "daily",
-            "time": "5:00 AM",
-            "estimated_minutes": 2,
-        },
-        "checklist": [],
-        "post_run": {
-            "message_success": "✅ Tableau Country Trackers posted — all 8 tracker screenshots in the dated thread in #palace-sales.",
-            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
-        },
-        "actions": [
-            {
-                "label": "Post Today's Trackers",
-                "icon": "▶",
-                "primary": True,
-                "help": "Posts the 8 Tableau trackers to the dated thread in #palace-sales. Reuses the images captured for Alphalete earlier today (same boards), so this is fast and needs no Tableau session; it only opens Tableau if today's images aren't there yet.",
-                "module": "automations.tableau_screenshots.run",
-                "args_fn": lambda: ["--org", "palace"],
-            },
-        ],
-    },
-    {
-        "id": "tableau-country-trackers-elite-prime",
-        "name": "Tableau Country Trackers (#elite-prime-sales)",
-        "creator": "Megan",
-        "emoji": "📸",
-        "color": "#1F4E79",
-        "category": "🏢 Other Offices",
-        "description": "The same 8 Tableau country sales trackers as the main card, posted daily into a 'Tableau Country Trackers M/D/YYYY' thread in #elite-prime-sales. Country-wide boards, so the images are identical to Alphalete's — this card just posts them to Elite Prime.",
-        "breakdown": _TABLEAU_TRACKERS_BREAKDOWN.format(channels="#elite-prime-sales"),
-        "assignees": ["Lucy 1"],
-        "schedule": {
-            "frequency": "daily",
-            "time": "5:00 AM",
-            "estimated_minutes": 2,
-        },
-        "checklist": [],
-        "post_run": {
-            "message_success": "✅ Tableau Country Trackers posted — all 8 tracker screenshots in the dated thread in #elite-prime-sales.",
-            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
-        },
-        "actions": [
-            {
-                "label": "Post Today's Trackers",
-                "icon": "▶",
-                "primary": True,
-                "help": "Posts the 8 Tableau trackers to the dated thread in #elite-prime-sales. Reuses the images captured for Alphalete earlier today (same boards), so this is fast and needs no Tableau session; it only opens Tableau if today's images aren't there yet.",
-                "module": "automations.tableau_screenshots.run",
-                "args_fn": lambda: ["--org", "elite_prime"],
-            },
-        ],
-    },
+    _tableau_trackers_card(),
     {
         "id": "lucy-weather-forecast",
         "name": "Lucy Weather Forecast",
@@ -5572,6 +5500,26 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
             nothing_to_retry = state_file_exists and not missing_items
 
             with st.container(border=True):
+                # Per-channel checklist for a card that fans one run out to many
+                # Slack channels (the Tableau trackers). A single success/fail
+                # light would hide one channel missing, so show every channel.
+                _chan_status = _channel_status(report)
+                if _chan_status:
+                    _ok_n = sum(1 for c in _chan_status if c["ok"])
+                    st.markdown(
+                        f"**Posted to {_ok_n}/{len(_chan_status)} channels today**")
+                    for _c in _chan_status:
+                        st.markdown(
+                            f"{'✅' if _c['ok'] else '❌'} {_c['label']}"
+                            + ("" if _c["ok"]
+                               else f" — <span style='color:#B42318'>"
+                                    f"{_c.get('error') or 'did not post'}</span>"),
+                            unsafe_allow_html=True)
+                    if _ok_n < len(_chan_status):
+                        st.caption("Use **Retry failed only** below to re-post just "
+                                   "the channels that missed.")
+                    st.divider()
+
                 if last_run["status"] == "success":
                     if missing_items:
                         # When the state file gives us the split (denied vs
