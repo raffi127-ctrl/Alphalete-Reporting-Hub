@@ -127,7 +127,40 @@ def probe(url, sheet, out, today, log=print) -> dict:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             tp._ensure_tableau_authenticated(page, verbose=False,
                                              allow_form_login=True)
-            log("[cdp] auth OK; loading view")
+            log("[cdp] auth OK")
+
+            # DIAGNOSTIC: try the URL 3 ways and report which populates the
+            # grid (body-text length). Isolates whether the Owner filter or the
+            # uncommitted dates are what leaves the grid empty.
+            base = "https://us-east-1.online.tableau.com/#/site/sci/views/" \
+                   "ATTTRACKER-B2B/ORDERLOG"
+            s = (today - dt.timedelta(days=60)).isoformat()
+            e = today.isoformat()
+            variants = {
+                "full": url,
+                "dates-only": f"{base}?:iid=1&Start%20Date={s}&End%20Date={e}",
+                "bare": f"{base}?:iid=1",
+            }
+            for name, vurl in variants.items():
+                try:
+                    page.goto(vurl, wait_until="domcontentloaded")
+                    vz = page.frame_locator('iframe[title="Data Visualization"]')
+                    try:
+                        vz.locator('[data-tb-test-id="viz-viewer-toolbar-'
+                                   'button-download"]').wait_for(
+                            state="visible", timeout=120_000)
+                    except Exception:
+                        pass
+                    page.wait_for_timeout(25_000)
+                    bt = vz.locator("body").inner_text(timeout=15000)
+                    log(f"[variant {name}] body {len(bt)} chars")
+                    if name == "dates-only":
+                        _upload_png(page.screenshot(full_page=False),
+                                    tab="Vantura Shot2")
+                except Exception as ex:
+                    log(f"[variant {name}] err {str(ex)[:80]}")
+
+            log("[cdp] loading full view for the rest of the probe")
             page.goto(url, wait_until="domcontentloaded")
             viz = page.frame_locator('iframe[title="Data Visualization"]')
             try:
