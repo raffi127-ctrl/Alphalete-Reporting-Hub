@@ -139,44 +139,17 @@ def _select_worksheet(page, log) -> bool:
 
 
 def probe(url, sheet, out, today, log=print) -> dict:
-    """Decisive test: inside ONE CDP real-Chrome session, actually DOWNLOAD
-    the D2D order log (known-good control) and the B2B order log (target),
-    reporting real row counts. innerText can't see canvas tables, so a
-    download is the only true signal. If D2D has rows but B2B doesn't, the
-    B2B view needs its filter triggered (not a login/permission problem)."""
-    import csv as _csv
+    """Find how to make the B2B ORDER LOG worksheet populate: enumerate the
+    viz toolbar buttons + the 'View:' custom-views dropdown (a saved view may
+    auto-load data like D2D's ALLREPS), and try clicking each toolbar control
+    that could trigger a query. Screenshot for ground truth."""
     from patchright.sync_api import sync_playwright
     from automations.shared import tableau_patchright as tp
-    from automations.shared.tableau_patchright import download_crosstab_patchright
     _kill_ours()
     proc = _launch()
     log(f"[cdp] real Chrome pid={proc.pid}; waiting 20s")
     time.sleep(20)
     info = {}
-
-    def _rows(path):
-        for enc in ("utf-16", "utf-8-sig", "utf-8"):
-            try:
-                with open(path, encoding=enc, newline="") as f:
-                    rr = list(_csv.reader(f, delimiter="\t"))
-                if rr and len(rr[0]) > 1:
-                    return len(rr) - 1
-            except Exception:
-                continue
-        try:
-            import openpyxl, warnings
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                wb = openpyxl.load_workbook(path, read_only=True)
-            return wb.active.max_row - 1
-        except Exception:
-            return -1
-
-    s = (today - dt.timedelta(days=60)).isoformat()
-    e = today.isoformat()
-    d2d_url = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
-               "ATTTRACKER2_1-D2D/ORDERLOG/117748c0-9487-45e8-a5d4-c447093718d5/"
-               f"ALLREPS?:iid=1&Start%20Date={s}&End%20Date={e}")
     try:
         with sync_playwright() as p:
             browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
@@ -184,25 +157,57 @@ def probe(url, sheet, out, today, log=print) -> dict:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             tp._ensure_tableau_authenticated(page, verbose=False,
                                              allow_form_login=True)
-            log("[cdp] authenticated")
-            for tag, u, sh in [("d2d(control)", d2d_url, "A.Order Log"),
-                               ("b2b(target)", url, sheet)]:
-                dst = Path(f"/tmp/vantura_probe_{tag.split('(')[0]}.xlsx")
+            log("[cdp] authenticated; loading B2B ORDER LOG")
+            page.goto(url, wait_until="domcontentloaded")
+            viz = page.frame_locator('iframe[title="Data Visualization"]')
+            try:
+                viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
+                            'download"]').wait_for(state="visible",
+                                                   timeout=150_000)
+            except Exception:
+                pass
+            page.wait_for_timeout(20_000)
+
+            # 1) enumerate every toolbar button test-id + label
+            try:
+                btns = viz.locator('[data-tb-test-id^="viz-viewer-toolbar-"]')
+                n = btns.count()
+                log(f"[toolbar] {n} controls")
+                for i in range(n):
+                    b = btns.nth(i)
+                    try:
+                        tid = b.get_attribute("data-tb-test-id") or ""
+                        al = b.get_attribute("aria-label") or b.inner_text() or ""
+                        log(f"  tb {tid} | {al[:30]}")
+                    except Exception:
+                        pass
+            except Exception as ex:
+                log(f"[toolbar] err {str(ex)[:80]}")
+
+            # 2) open the 'View:' custom-views dropdown, list saved views
+            for tid in ("viz-viewer-toolbar-button-customViews",
+                        "viz-viewer-toolbar-button-customView",
+                        "viz-viewer-toolbar-button-view",
+                        "viz-viewer-toolbar-button-revert"):
                 try:
-                    download_crosstab_patchright(u, sh, dst, page=page,
-                                                 verbose=False)
-                    n = _rows(dst)
-                    info[tag] = n
-                    log(f"[{tag}] DOWNLOADED {n} rows ({dst.stat().st_size:,} b)")
+                    el = viz.locator(f'[data-tb-test-id="{tid}"]')
+                    if el.count():
+                        el.first.click()
+                        page.wait_for_timeout(2500)
+                        dlg = viz.locator('[role="dialog"], [role="menu"]')
+                        if dlg.count():
+                            txt = dlg.first.inner_text(timeout=6000)
+                            log(f"[customviews via {tid}] "
+                                + txt.replace(chr(10), ' | ')[:400])
+                        _upload_png(page.screenshot(full_page=False),
+                                    tab="Vantura Shot2")
+                        page.keyboard.press("Escape")
+                        break
                 except Exception as ex:
-                    info[tag] = f"ERR: {str(ex)[:90]}"
-                    log(f"[{tag}] {str(ex)[:120]}")
-                    if tag.startswith("b2b"):
-                        try:
-                            _upload_png(page.screenshot(full_page=False))
-                            log("[cdp] b2b screenshot -> 'Vantura Shot'")
-                        except Exception:
-                            pass
+                    log(f"[customviews {tid}] err {str(ex)[:60]}")
+
+            _upload_png(page.screenshot(full_page=False))
+            log("[cdp] screenshot -> 'Vantura Shot'")
     finally:
         try:
             proc.terminate()
