@@ -3,12 +3,12 @@ Activations' tab as PNGs that mirror the sheet, for the daily Slack post in
 #level10-alphalete.
 
 Two images per run:
-  - 'Fiber Activations Report by {M.D}.png'         (blue):
+  - 'Fiber Activations Report {M.D}.png'            (blue):
         main weekly table (cols A-L, header + last 9 WE rows)
         + the 4 secondary tables below it (RAF CAPTAIN OVERRIDES,
           Captainship Metrics, New Internet 60 day Churn %,
           New Internet Activation %)
-  - 'Country Fiber Activations Report by {M.D}.png' (orange):
+  - 'Country Fiber Activations Report {M.D}.png'    (orange):
         Country weekly table (cols Q-Z, header + last 9 WE rows)
 
 Anchors are resolved by label (the 'Last 4 week AVG' row in col A) and the
@@ -349,8 +349,8 @@ def render_both(ws, today: dt.date, out_dir: Path) -> dict:
     stems double as the Slack post names (post name == PNG name)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     md = f"{today.month}.{today.day}"
-    fiber_name = f"Fiber Activations Report by {md}"
-    country_name = f"Country Fiber Activations Report by {md}"
+    fiber_name = f"Fiber Activations Report {md}"
+    country_name = f"Country Fiber Activations Report {md}"
     return {
         "fiber": _render_blue(ws, today, out_dir / f"{fiber_name}.png",
                               fiber_name),
