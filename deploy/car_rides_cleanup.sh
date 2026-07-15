@@ -1,5 +1,6 @@
 #!/bin/bash
-# Weekdays 9:30am — Car-Rides Cleanup, on Lucy 2, via launchd
+# Mon-Sat, 9 morning passes (8:30, 9:00, 9:30, 10:00, 10:30, 10:40, 10:50,
+# 11:00, 11:15) — Car-Rides Cleanup, on Lucy 2, via launchd
 # (com.alphalete.car-rides-cleanup).
 #
 # Reconciles each car-ride leader's OwnerVille/TeleMapper territory against the
@@ -15,10 +16,17 @@
 # Manual test:   bash deploy/car_rides_cleanup.sh            # dry-run
 #                bash deploy/car_rides_cleanup.sh --probe    # DOM evidence dump
 #
-# CADENCE: plist fires weekdays 9:30am machine LOCAL time. TIME KNOB: edit
-# StartCalendarInterval in the plist, not this wrapper.
+# CADENCE: plist fires Mon-Sat at the 9 morning times above, machine LOCAL
+# time. TIME KNOB: edit StartCalendarInterval in the plist, not this wrapper.
 set -u
 cd "$(dirname "$0")/.." || exit 1
+
+# Overlap guard: passes come as close as 10 min apart; if the previous pass is
+# still going, SKIP this tick instead of fighting it over the browser profile.
+if pgrep -f "automations.car_rides.run" > /dev/null 2>&1; then
+    echo "[$(date)] car-rides cleanup SKIPPED — previous pass still running"
+    exit 0
+fi
 
 VENV_PY=".venv/bin/python3.14"
 [ -x "$VENV_PY" ] || VENV_PY=".venv/bin/python"
