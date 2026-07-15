@@ -208,11 +208,12 @@ def probe(url, sheet, out, today, log=print) -> dict:
 
 
 def _prime_orderlog(page, url, today, log):
-    """The B2B ORDER LOG dashboard loads with an EMPTY worksheet until its
-    query is triggered — so the crosstab dialog has no sheet to export. Load
-    it, commit the date range via trusted CDP clicks, then Refresh + Revert to
-    force the query (proven sequence 2026-07-15). After this the worksheet has
-    data and the crosstab download succeeds."""
+    """The B2B ORDER LOG dashboard loads with an EMPTY worksheet until its date
+    parameters actually CHANGE and re-query — so the crosstab dialog has no
+    sheet to export. The URL pre-fills the date fields with the target values,
+    so re-typing the SAME value is a no-op that never fires the query. Force a
+    real change: type a throwaway date, Enter, then the correct date, Enter —
+    for BOTH fields. That runs the 60-day query and populates the worksheet."""
     import datetime as _dt
     page.goto(url, wait_until="domcontentloaded")
     viz = page.frame_locator('iframe[title="Data Visualization"]')
@@ -227,26 +228,23 @@ def _prime_orderlog(page, url, today, log):
     end_s = f"{today.month}/{today.day}/{today.year}"
     vp = page.evaluate("() => ({w:window.innerWidth,h:window.innerHeight})")
     W, H = vp["w"], vp["h"]
-    for fx, val in [(0.13, start_s), (0.213, end_s)]:
-        try:
+
+    def _set_date(fx, val):
+        # throwaway first (a real change), then the correct value
+        for typed in ("1/1/2020", val):
             page.mouse.click(W * fx, H * 0.255, click_count=3)
             page.wait_for_timeout(300)
             page.keyboard.press("Backspace")
-            page.keyboard.type(val, delay=40)
+            page.keyboard.type(typed, delay=40)
             page.keyboard.press("Enter")
-            page.wait_for_timeout(2500)
+            page.wait_for_timeout(4000)
+
+    for fx, val in [(0.13, start_s), (0.213, end_s)]:
+        try:
+            _set_date(fx, val)
         except Exception as ex:
             log(f"[prime] date err {str(ex)[:50]}")
-    # Refresh re-runs the query with the committed 60-day dates. Do NOT
-    # Revert — it discards the dates and snaps back to the dashboard's narrow
-    # default window (which yielded only ~2 days of data).
-    try:
-        viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
-                    'refresh"]').first.click()
-        page.wait_for_timeout(15_000)
-    except Exception:
-        pass
-    page.wait_for_timeout(6_000)
+    page.wait_for_timeout(8_000)
 
 
 def download_views(specs, today=None, verbose=True, log=print):
