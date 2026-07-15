@@ -85,16 +85,38 @@ OWNERVILLE_TERRITORY_URL = "https://v2.ownerville.com/index.cfm?p=158"
 #   Jayden Luna = Jayden Willingham ("Jayden W."); Melanie = Melanie Hernandez.
 ALIAS_GROUPS = [
     {"didi", "ndifreke"},
-    {"nimo", "warimu"},
+    {"nimo", "warimu", "wairimu"},      # OwnerVille spells it Wairimu
     {"jayden", "luna", "willingham"},
     {"melanie", "hernandez"},
+]
+
+# Common nickname equivalences — OwnerVille shows legal first names + a last
+# initial ("William B."), the board uses short names ("Will Bautista").
+# Verified against the live p=158 list 2026-07-15 (Will/William B.,
+# Nick/Nicholas S. were false mismatches before this).
+NICKNAME_GROUPS = [
+    {"will", "william", "willy", "bill", "billy"},
+    {"nick", "nicholas", "nico", "nicky"},
+    {"jake", "jacob"},
+    {"greg", "gregory"},
+    {"jon", "jonathan", "jonathon", "john", "johnny"},
+    {"alex", "alexander", "alejandro"},
+    {"gio", "giovanni"},
+    {"dan", "daniel", "danny"},
+    {"matt", "matthew"},
+    {"mike", "michael"},
+    {"chris", "christopher", "christian"},
+    {"tony", "antonio", "anthony"},
+    {"eric", "erik"},
+    {"beca", "rebeca", "rebecca"},
 ]
 
 # Territory names to leave alone: road trips, location/zip names, unassigned.
 SKIP_NAME_PATTERNS = [
     r"^rt\b",                # "RT ..."
-    r"\b\d{5}\b",            # zip code in the name ("02780 06/5")
+    r"\b\d{5}\b",            # zip code in the name ("02780 06/5 (840)")
     r"\d{1,2}/\d{1,2}",      # date-suffixed place names ("west warwick 04/13")
+    r"\b\d{1,2}\.\d{1,2}\b", # dotted-date names ("Jonathon 4.28")
     r"^unassigned\b",
     r"^open\b",
 ]
@@ -114,18 +136,31 @@ def _tokens(s: str) -> set[str]:
     return set(_norm(s).split())
 
 
-def names_match(board_name: str, ov_name: str) -> bool:
-    """Board short name vs OwnerVille legal name: shared first token, ANY shared
-    token, or two tokens in the same alias group."""
-    bt, ot = _tokens(board_name), _tokens(ov_name)
-    if not bt or not ot:
+def _tok_eq(a: str, b: str) -> bool:
+    """One name token vs another. Single letters (last initials) NEVER match —
+    they'd pair everyone with everyone. Beyond exact: alias/nickname groups,
+    prefix (Luisa/Luis), and small-typo fuzz (Warimu/Wairimu)."""
+    if len(a) < 2 or len(b) < 2:
         return False
-    if bt & ot:
+    if a == b:
         return True
-    for grp in ALIAS_GROUPS:
-        if (bt & grp) and (ot & grp):
+    for grp in ALIAS_GROUPS + NICKNAME_GROUPS:
+        if a in grp and b in grp:
+            return True
+    if len(a) >= 4 and len(b) >= 4:
+        if a.startswith(b) or b.startswith(a):
+            return True
+        import difflib
+        if difflib.SequenceMatcher(None, a, b).ratio() >= 0.85:
             return True
     return False
+
+
+def names_match(board_name: str, ov_name: str) -> bool:
+    """Board short name ("Will Bautista") vs OwnerVille display name
+    ("William B."): ANY strong token match (see _tok_eq)."""
+    bt, ot = _tokens(board_name), _tokens(ov_name)
+    return any(_tok_eq(a, b) for a in bt for b in ot)
 
 
 def is_skip_territory(name: str) -> bool:
@@ -189,106 +224,82 @@ def _open_ownerville(p, headless: bool, verbose: bool):
 
 
 # --- Step 2: territory list extraction ---------------------------------------
-_EXTRACT_JS = r"""
+# DOM facts pinned against the LIVE p=158 page 2026-07-15 (driven read-only via
+# Carlos's Chrome): the left panel is DataTable #territoryTable (cols Name |
+# Sales Rep(s) | Start/End Date | Locations); its DataTables API returns EVERY
+# page's rows at once. The top-right campaign switcher is a dropdown of plain
+# <a> links (B2B AT&T SBS / B2B-BOX-Energy / BASE Energy); picking one reloads
+# with &invD2DClientId=<id> (BOX=16). p=158 itself needs the live rqst token in
+# the URL or it bounces to Welcome (p=2) — mint it from v2 first.
+_HARVEST_JS = r"""
 () => {
-  // Generic, layout-tolerant harvest of the Territory Assignment left panel.
-  // A territory entry shows Name + Sales Rep(s) + dates + Locations count.
-  const out = [];
-  const seen = new Set();
-  const nodes = [...document.querySelectorAll(
-    'li, tr, .territory, .panel, .card, [class*="territor" i], [id*="territor" i]')];
-  for (const n of nodes) {
-    const t = (n.innerText || '').trim();
-    if (!t || t.length > 900) continue;              // skip page-sized containers
-    if (!/sales\s*rep/i.test(t)) continue;           // territory entries name their reps
-    if (n.querySelector('li, tr')) continue;         // keep leaves only
-    if (seen.has(t)) continue;
-    seen.add(t);
-    out.push(t);
-  }
-  const sel = [...document.querySelectorAll('select')].map(s => ({
-    name: s.name || s.id || '',
-    options: [...s.options].map(o => o.text.trim()).slice(0, 40),
-    value: s.options[s.selectedIndex] ? s.options[s.selectedIndex].text.trim() : ''
-  }));
-  const pager = [...document.querySelectorAll('a, button')]
-    .map(a => (a.innerText || '').trim())
-    .filter(x => /^(next|›|»|more)$/i.test(x));
-  return {entries: out, selects: sel, pagers: pager,
-          url: location.href, title: document.title};
+  const row = tr => {
+    const tds = [...tr.querySelectorAll('td')];
+    return {name: (tds[0]?.innerText || '').trim(),
+            reps: tds[1] ? tds[1].innerText.split('\n').map(s => s.trim()).filter(Boolean) : []};
+  };
+  try {
+    if (window.$ && $.fn.dataTable && $('#territoryTable').length) {
+      return {via: 'datatables-api',
+              rows: $('#territoryTable').DataTable().rows().nodes().toArray().map(row)};
+    }
+  } catch (e) {}
+  return {via: 'tbody',
+          rows: [...document.querySelectorAll('#territoryTable tbody tr')].map(row)};
 }
 """
 
+_CAMPAIGN_RX = r"^(B2B AT&T SBS|B2B-BOX-Energy|BASE Energy)$"
+_CURRENT_CAMPAIGN_JS = (
+    "() => { const e = [...document.querySelectorAll('span,a')]"
+    ".find(x => /" + _CAMPAIGN_RX.replace("/", r"\/") + r"/.test((x.innerText||'').trim())"
+    " && x.offsetParent !== null); return e ? e.innerText.trim() : ''; }")
 
-def _parse_entry(text: str) -> dict:
-    """One left-panel text block -> {name, reps[]}. Reps come from the line(s)
-    after 'Sales Rep'; the first line is the territory name."""
-    lines = [l.strip() for l in text.splitlines() if l.strip()]
-    name = lines[0] if lines else ""
-    reps: list[str] = []
-    grab = False
-    for l in lines[1:]:
-        if re.match(r"sales\s*reps?\b[:]?", l, re.I):
-            grab = True
-            rest = re.sub(r"^sales\s*reps?\b[:]?\s*", "", l, flags=re.I)
-            if rest:
-                reps += [x.strip() for x in re.split(r"[,;]", rest) if x.strip()]
-            continue
-        if grab:
-            if re.match(r"(start|end|locations?|date)\b", l, re.I):
-                grab = False
-                continue
-            reps += [x.strip() for x in re.split(r"[,;]", l) if x.strip()]
-    return {"name": name, "reps": reps}
+
+def goto_territory_assignment(page, log=_log) -> None:
+    """v2 mints a fresh rqst from the login cookie; p=158 needs it in the URL
+    (a bare p=158 bounces to the Welcome page)."""
+    page.goto("https://v2.ownerville.com/index.cfm", wait_until="domcontentloaded")
+    page.wait_for_timeout(6_000)
+    m = re.search(r"rqst=([A-Za-z0-9_]+)", page.url or "")
+    if not m:
+        href = page.evaluate(
+            "() => { const a=[...document.querySelectorAll('a')]"
+            ".find(x=>/rqst=/.test(x.getAttribute('href')||'')); "
+            "return a?a.getAttribute('href'):''; }")
+        m = re.search(r"rqst=([A-Za-z0-9_]+)", href or "")
+    if not m:
+        raise RuntimeError("no rqst token on v2 — session not genuinely live")
+    page.goto(f"https://v2.ownerville.com/index.cfm?p=158&rqst={m.group(1)}",
+              wait_until="domcontentloaded")
+    page.wait_for_timeout(10_000)
 
 
 def _select_campaign(page, campaign: str, log=_log) -> bool:
-    """Switch the top-right campaign selector. True if selected (or already)."""
+    """Switch the top-right campaign dropdown (plain <a> links). True when the
+    toolbar shows `campaign` (or already did)."""
     try:
-        info = page.evaluate(_EXTRACT_JS)
-        for s in info.get("selects", []):
-            if any(campaign.lower() == o.lower() for o in s.get("options", [])):
-                if s.get("value", "").lower() == campaign.lower():
-                    return True
-                sel = f'select[name="{s["name"]}"]' if s.get("name") else "select"
-                page.select_option(sel, label=campaign)
-                page.wait_for_timeout(6_000)
-                return True
-        # select2-style dropdown fallback: click the visible campaign control.
-        ctl = page.get_by_text(re.compile(r"B2B[- ]", re.I)).first
-        if ctl.is_visible(timeout=3_000):
-            ctl.click()
-            page.wait_for_timeout(1_000)
-            opt = page.get_by_text(campaign, exact=False).first
-            opt.click()
-            page.wait_for_timeout(6_000)
+        cur = page.evaluate(_CURRENT_CAMPAIGN_JS)
+        if cur == campaign:
             return True
+        page.get_by_text(re.compile(_CAMPAIGN_RX)).first.click()
+        page.wait_for_timeout(1_500)
+        page.get_by_role("link", name=campaign, exact=True).first.click()
+        page.wait_for_timeout(8_000)
+        cur = page.evaluate(_CURRENT_CAMPAIGN_JS)
+        if cur == campaign:
+            return True
+        log(f"campaign switch: toolbar shows {cur!r}, wanted {campaign!r}")
     except Exception as e:
         log(f"campaign switch to {campaign!r} failed: {e!r}")
     return False
 
 
-def list_territories(page, log=_log, max_pages: int = 30) -> list[dict]:
-    """All territories on all pages of the left panel."""
-    got: list[dict] = []
-    seen_names: set[str] = set()
-    for pageno in range(max_pages):
-        info = page.evaluate(_EXTRACT_JS)
-        fresh = 0
-        for t in info.get("entries", []):
-            e = _parse_entry(t)
-            if e["name"] and e["name"] not in seen_names:
-                seen_names.add(e["name"])
-                got.append(e)
-                fresh += 1
-        if not info.get("pagers") or fresh == 0:
-            break
-        try:
-            page.get_by_text(re.compile(r"^(next|›|»)$", re.I)).first.click()
-            page.wait_for_timeout(4_000)
-        except Exception:
-            break
-    log(f"territory list: {len(got)} entries harvested")
+def list_territories(page, log=_log) -> list[dict]:
+    """All territories, every page at once, via the DataTables API."""
+    info = page.evaluate(_HARVEST_JS)
+    got = [r for r in info.get("rows", []) if r.get("name")]
+    log(f"territory list: {len(got)} entries via {info.get('via')}")
     return got
 
 
@@ -469,17 +480,18 @@ def main(argv: list[str] | None = None) -> int:
                 _log(report)
                 return 3
             try:
-                page.goto(OWNERVILLE_TERRITORY_URL, wait_until="domcontentloaded")
-                page.wait_for_timeout(10_000)
+                goto_territory_assignment(page)
 
                 if args.probe:
-                    info = page.evaluate(_EXTRACT_JS)
+                    info = page.evaluate(_HARVEST_JS)
+                    info["campaign"] = page.evaluate(_CURRENT_CAMPAIGN_JS)
+                    info["url"] = page.url
                     STATE_DIR.mkdir(parents=True, exist_ok=True)
                     (STATE_DIR / "probe.json").write_text(json.dumps(info, indent=1))
                     page.screenshot(path=str(STATE_DIR / "probe.png"), full_page=True)
-                    _log(f"probe: {len(info.get('entries', []))} entries, "
-                         f"selects={[s['name'] for s in info.get('selects', [])]}, "
-                         f"pagers={info.get('pagers')} -> {STATE_DIR}/probe.json|png")
+                    _log(f"probe: campaign={info['campaign']!r}, "
+                         f"{len(info.get('rows', []))} rows via {info.get('via')} "
+                         f"-> {STATE_DIR}/probe.json|png")
                     return 0
 
                 for key in keys:
