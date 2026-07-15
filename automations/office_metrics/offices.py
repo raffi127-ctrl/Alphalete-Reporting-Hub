@@ -43,7 +43,9 @@ ALL_OFFICE_ABP_VIEW = (_T + "ATTTRACKER2_1-D2D/Metrics/"
                        "b0b90f8f-e597-425d-93ae-c55cf1898ae1/AllOfficeINTABP?:iid=1")
 # Flip to True only after the proof is clean for every office (sliced all-office
 # == per-office view). When True, metrics_for() points ABP at the shared view.
-ABP_USE_ALL_OFFICE = False
+# PROVEN + flipped 2026-07-15: --prove-abp IDENTICAL for rashad (21 reps) + aya
+# (23 reps) — sliced all-office == per-office view, cell for cell.
+ABP_USE_ALL_OFFICE = True
 
 
 @dataclass(frozen=True)
