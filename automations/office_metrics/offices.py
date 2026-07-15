@@ -73,8 +73,14 @@ CHURN_USE_ALL_OFFICE = True
 # ONGOING_CANCEL_SLICE_OWNER drives it. Prove: runner --office X --prove-cancel.
 ALL_OFFICE_CANCEL_VIEW = (_T + "CancelRatesRunningSumRaf/InternetCancelRatesDoD/"
                           "878f4f05-e565-4e93-9c78-be4a8f96b73c/AllExpanded?:iid=1")
-# Flip True only after --prove-cancel is IDENTICAL for every office.
-CANCEL_USE_ALL_OFFICE = False
+# TRUE (Megan 2026-07-15): EVERY office slices the one shared AllExpanded view —
+# consistent (all offices computed identically, same window/colors) + fastest
+# (one cached pull), same as churn/ABP. --prove-cancel confirmed the office TOTAL
+# matches per-office cell-for-cell on shared days (rashad); the only per-office
+# difference was that the OLD per-office views had a different date window, which
+# standardising on AllExpanded removes. So no per-office cancel view is needed
+# for anyone — a new office is pure config.
+CANCEL_USE_ALL_OFFICE = True
 
 
 @dataclass(frozen=True)
