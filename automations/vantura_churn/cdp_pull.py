@@ -161,6 +161,30 @@ def probe(url, sheet, out, today, log=print) -> dict:
                                              allow_form_login=True)
             dst = Path("/tmp/vantura_probe_ol.csv")
             _prime_orderlog(page, url, today, log)
+            # Open the Owner & Office dropdown and dump/screenshot its panel
+            # (Apply button etc.) — the runbook's Apply may be the render
+            # trigger the dates alone don't fire.
+            try:
+                vp = page.evaluate("() => ({w:window.innerWidth,"
+                                   "h:window.innerHeight})")
+                W, H = vp["w"], vp["h"]
+                page.mouse.click(W * 0.155, H * 0.327)  # dropdown caret area
+                page.wait_for_timeout(3000)
+                _upload_png(page.screenshot(full_page=False), tab="Vantura Shot2")
+                pvz = page.frame_locator('iframe[title="Data Visualization"]')
+                # dump any Apply/OK buttons + their test-ids
+                btns = pvz.locator('button, [role="button"]')
+                labs = []
+                for i in range(min(btns.count(), 40)):
+                    try:
+                        t = (btns.nth(i).inner_text() or "").strip()
+                        if t and len(t) < 24:
+                            labs.append(t)
+                    except Exception:
+                        pass
+                log("[owner-panel] buttons: " + " | ".join(labs[:30]))
+            except Exception as ex:
+                log(f"[owner-panel] err {str(ex)[:70]}")
             try:
                 _upload_png(page.screenshot(full_page=False))
                 log("[cdp] post-prime screenshot -> 'Vantura Shot'")
