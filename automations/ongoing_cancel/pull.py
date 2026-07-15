@@ -18,6 +18,21 @@ VIEW_URL = os.environ.get("ONGOING_CANCEL_VIEW_URL") or (
 )
 WORKSHEET = "Internet Cancel Rates (Daily)"
 RATE_METRIC = "Internet Cancel Rates Running Sum along sp.Order Date"
+# The two summable count measures behind the rate (running sums along Order Date).
+# Used by the office slice: office rate = sum(cancels)/sum(sales) — the rate itself
+# can't be averaged, but these counts sum cleanly (same trick as churn).
+CANCELS_METRIC = "Running Sum of Canceled Internet Orders along sp.Order Date"
+SALES_METRIC = "Running Sum of Internet Sales along sp.Order Date"
+
+
+def _num(v: str):
+    v = (v or "").strip().replace(",", "")
+    if not v:
+        return None
+    try:
+        return float(v)
+    except ValueError:
+        return None
 
 
 def fetch_crosstab(out_path: Optional[Path] = None, verbose: bool = False) -> Path:
@@ -49,8 +64,18 @@ def parse(path: Path, days: int = 7) -> dict:
     date_cols = header[metric_i + 1:]
     target_days = date_cols[:days]
 
+    # SLICE MODE (office_metrics, opt-in): ONGOING_CANCEL_SLICE_OWNER points
+    # fetch_crosstab at the ALL-OFFICE view (AllExpanded) and this keeps only that
+    # office's rows, then RECOMPUTES the office rate from its reps' summed counts
+    # (cancels/sales) — the all-office view has one combined Grand Total, and the
+    # rate can't be averaged, but the counts sum cleanly. Unset = the original
+    # per-office-view behaviour, byte-identical.
+    slice_owner = os.environ.get("ONGOING_CANCEL_SLICE_OWNER", "").strip()
+
     grand_totals: dict = {}
     by_rep: dict = {}
+    office_cancels: dict = {}          # slice: day -> summed cancels
+    office_sales: dict = {}            # slice: day -> summed sales
     for r in rows[1:]:
         if len(r) <= metric_i:
             continue
@@ -58,25 +83,46 @@ def parse(path: Path, days: int = 7) -> dict:
         rep = (r[rep_i] or "").strip()
         color = (r[color_i] or "").strip()
         metric = (r[metric_i] or "").strip()
-        if metric != RATE_METRIC:
-            continue
-        if owner == "Grand Total":
-            for di, day in enumerate(target_days, start=metric_i + 1):
-                if di < len(r) and r[di].strip():
-                    grand_totals[day] = r[di].strip()
-            continue
-        if not rep or rep == "Total":
-            continue
-        key = (owner, rep)
-        slot = by_rep.setdefault(key, {})
+
+        if slice_owner and owner.upper() != slice_owner.upper():
+            continue                   # slicing: keep only this office's rows
+
+        if metric == RATE_METRIC:
+            if owner == "Grand Total":
+                for di, day in enumerate(target_days, start=metric_i + 1):
+                    if di < len(r) and r[di].strip():
+                        grand_totals[day] = r[di].strip()
+                continue
+            if not rep or rep == "Total":
+                continue
+            key = (owner, rep)
+            slot = by_rep.setdefault(key, {})
+            for day in target_days:
+                di = header.index(day)
+                if di >= len(r):
+                    continue
+                val = (r[di] or "").strip()
+                if not val:
+                    continue
+                slot[day] = (val, color)
+        elif slice_owner and metric in (CANCELS_METRIC, SALES_METRIC):
+            if not rep or rep == "Total":
+                continue               # sum only real reps → recompute the total
+            bucket = office_cancels if metric == CANCELS_METRIC else office_sales
+            for day in target_days:
+                di = header.index(day)
+                if di >= len(r):
+                    continue
+                n = _num(r[di])
+                if n is not None:
+                    bucket[day] = bucket.get(day, 0.0) + n
+
+    if slice_owner:                    # recompute the office total: cancels/sales
+        grand_totals = {}
         for day in target_days:
-            di = header.index(day)
-            if di >= len(r):
-                continue
-            val = (r[di] or "").strip()
-            if not val:
-                continue
-            slot[day] = (val, color)
+            sales = office_sales.get(day)
+            if sales:
+                grand_totals[day] = f"{office_cancels.get(day, 0.0) / sales * 100:.1f}%"
 
     sorted_keys = sorted(by_rep.keys(), key=lambda k: (k[0].lower(), k[1].lower()))
     return {

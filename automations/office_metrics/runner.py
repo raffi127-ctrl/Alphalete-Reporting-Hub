@@ -57,7 +57,13 @@ def metrics_for(o: Office) -> list[dict]:
              dry_flag="--dry-run", post_flag=None),
         dict(slug="ongoing_cancel", label="🔁 Ongoing Cancel",
              module="automations.ongoing_cancel.run", owner_args=[],
-             env={"ONGOING_CANCEL_VIEW_URL": o.view_ongoing_cancel},
+             # Once proven, pulls the shared ALL-OFFICE cancel view and slices to
+             # this office's owner (recompute rate from summed counts) — no
+             # per-office cancel view needed. Else the office's own view.
+             env=({"ONGOING_CANCEL_VIEW_URL": _off.ALL_OFFICE_CANCEL_VIEW,
+                   "ONGOING_CANCEL_SLICE_OWNER": o.owner}
+                  if _off.CANCEL_USE_ALL_OFFICE else
+                  {"ONGOING_CANCEL_VIEW_URL": o.view_ongoing_cancel}),
              dry_flag="--dry-run", post_flag=None),
         dict(slug="disconnects", label="❎ Disconnected New Internets",
              module="automations.disconnects.run",
@@ -302,6 +308,47 @@ def _prove_churn(office_key: str) -> int:
     return 0 if all_ok else 1
 
 
+def _prove_cancel(office_key: str) -> int:
+    """Pull the office's per-office ongoing-cancel view AND the shared all-office
+    view sliced to the office, parse both, and diff the reps + the recomputed
+    office total. The slice must match the per-office view before we trust it."""
+    import tempfile
+    from pathlib import Path
+    from automations.ongoing_cancel import pull as oc_pull
+
+    o = _off.get(office_key)
+    d = Path(tempfile.gettempdir())
+    print(f"=== ongoing-cancel all-office proof — office={office_key} "
+          f"owner={o.owner!r} ===", flush=True)
+    os.environ.pop("ONGOING_CANCEL_SLICE_OWNER", None)      # per-office = no slice
+    oc_pull.VIEW_URL = o.view_ongoing_cancel
+    per = oc_pull.parse(oc_pull.fetch_crosstab(d / f"oc_per_{office_key}.csv"))
+    os.environ["ONGOING_CANCEL_SLICE_OWNER"] = o.owner       # all-office = slice
+    oc_pull.VIEW_URL = _off.ALL_OFFICE_CANCEL_VIEW
+    allo = oc_pull.parse(oc_pull.fetch_crosstab(d / f"oc_all_{office_key}.csv"))
+    os.environ.pop("ONGOING_CANCEL_SLICE_OWNER", None)
+
+    # Key reps by name (owner-name casing can differ between views).
+    per_rows = {r["rep"]: r["per_day"] for r in per["rows"]}
+    all_rows = {r["rep"]: r["per_day"] for r in allo["rows"]}
+    gt_same = per["grand_total_per_day"] == allo["grand_total_per_day"]
+    keys = sorted(set(per_rows) | set(all_rows))
+    row_diffs = [k for k in keys if per_rows.get(k) != all_rows.get(k)]
+    ok = gt_same and not row_diffs
+    print(f"\n  office total match: {gt_same}  reps per={len(per_rows)} "
+          f"all={len(all_rows)}  rep diffs: {len(row_diffs)}", flush=True)
+    if not gt_same:
+        print(f"    per office total: {per['grand_total_per_day']}", flush=True)
+        print(f"    all office total: {allo['grand_total_per_day']}", flush=True)
+    for k in row_diffs[:6]:
+        print(f"    ⚠ rep {k!r}: per={per_rows.get(k)} all={all_rows.get(k)}",
+              flush=True)
+    print(f"\n=== CANCEL PROOF [{office_key}]: "
+          f"{'IDENTICAL ✅ — safe to flip' if ok else 'MISMATCH ❌ — do NOT flip'} ===",
+          flush=True)
+    return 0 if ok else 1
+
+
 def _inspect_churn(view_url: str) -> int:
     """Read-only: pull a churn view and dump its distinct ICD Owner Name (rep)
     values, so we can confirm it's genuinely all-office (contains Rashad, Aya,
@@ -387,6 +434,10 @@ def main(argv=None, *, office_key: str | None = None) -> int:
                     help="cell-for-cell proof that the all-office churn views "
                          "(NI + WL) sliced to this office match its per-office "
                          "views. No post. Run before flipping CHURN_USE_ALL_OFFICE.")
+    ap.add_argument("--prove-cancel", action="store_true",
+                    help="cell-for-cell proof that the all-office ongoing-cancel "
+                         "view sliced to this office matches its per-office view. "
+                         "No post. Run before flipping CANCEL_USE_ALL_OFFICE.")
     args = ap.parse_args(argv)
 
     # Structural guard FIRST — a duplicated channel or view URL (the copy-paste
@@ -420,6 +471,8 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         return _inspect_churn(args.inspect_churn)
     if args.prove_churn:
         return _prove_churn(args.office)
+    if args.prove_cancel:
+        return _prove_cancel(args.office)
 
     o = _off.get(args.office)
     metrics = metrics_for(o)

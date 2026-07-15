@@ -65,6 +65,17 @@ ALL_OFFICE_CHURN_WL = (_T + "ATTTRACKER2_1-D2D/CHURN/"
 # per-office view, cell for cell.
 CHURN_USE_ALL_OFFICE = True
 
+# Shared ALL-OFFICE ongoing-cancel view (AllExpanded, verified all-office). It has
+# one combined Grand Total (no per-office subtotal) and the rate can't be
+# averaged — but the crosstab carries summable count measures (Running Sum of
+# Canceled Internet Orders / Internet Sales), so the slice recomputes each
+# office's rate = sum(cancels)/sum(sales), the same trick as churn. Env
+# ONGOING_CANCEL_SLICE_OWNER drives it. Prove: runner --office X --prove-cancel.
+ALL_OFFICE_CANCEL_VIEW = (_T + "CancelRatesRunningSumRaf/InternetCancelRatesDoD/"
+                          "878f4f05-e565-4e93-9c78-be4a8f96b73c/AllExpanded?:iid=1")
+# Flip True only after --prove-cancel is IDENTICAL for every office.
+CANCEL_USE_ALL_OFFICE = False
+
 
 @dataclass(frozen=True)
 class Office:
