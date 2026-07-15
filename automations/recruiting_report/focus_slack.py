@@ -36,6 +36,8 @@ FOCUS_DM_RECIPIENTS = {
     "Colten Wright": {
         "Colten Wright":    "U047M3AAN0G",
         "Megan Hidalgo":    "U04G5HJBGFN",
+        "Eveliz Wright":    "U048WU3EUFJ",
+        "Valeria Zavala":   "U054BLVL94N",
     },
     "Jairo Ruiz": {
         "Jairo Ruiz":       "U04Q6T14M34",
