@@ -241,6 +241,26 @@ def _select_owner(page, owner_name, log):
     # click Apply (right button at the panel bottom)
     page.mouse.click(W * 0.29, H * 0.975)
     log("[owner] apply clicked; waiting for query")
+    # If auto-updates got paused (observed 'Resume' in the toolbar), the
+    # filter changes are queued but never rendered — resume + refresh so the
+    # query actually runs.
+    try:
+        pb = viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
+                         'pause-updates"]')
+        lbl = pb.get_attribute("aria-label") or ""
+        log(f"[owner] pause-btn label={lbl!r}")
+        if "Resume" in lbl:
+            pb.click()
+            log("[owner] clicked Resume (auto-updates were paused)")
+            page.wait_for_timeout(6000)
+    except Exception as ex:
+        log(f"[owner] resume err {str(ex)[:50]}")
+    try:
+        viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
+                    'refresh"]').first.click()
+        page.wait_for_timeout(8000)
+    except Exception:
+        pass
     # wait for the "Working on it" overlay to clear
     for _ in range(50):
         page.wait_for_timeout(3000)
