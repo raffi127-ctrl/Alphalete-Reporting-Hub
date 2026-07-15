@@ -33,14 +33,16 @@ from dataclasses import dataclass
 
 _T = "https://us-east-1.online.tableau.com/#/site/sci/views/"
 
-# Shared ALL-OFFICE ABP view (Megan 2026-07-15). The ABP module already FILTERS by
-# owner, so every office can pull this ONE view (deduped across offices by the
-# Step-2 crosstab cache) and slice to its own owner — no per-office ABP view
-# needed. Flip via runner (env ABP_NI_VIEW_URL). Per-office view_abp fields stay
-# for the cell-for-cell proof + as a fallback. Prove before flipping:
-#   python -m automations.office_metrics.runner --office rashad --prove-abp
+# Shared ALL-OFFICE ABP view. The ABP module already FILTERS by owner, so every
+# office can pull this ONE view (deduped across offices by the Step-2 crosstab
+# cache) and slice to its own owner — no per-office ABP view needed. This is
+# RafLocalofficeINTABP: it's all-teams (Megan 2026-07-15) AND is the ABP module's
+# built-in default — the view Raf's daily_metrics already uses in production, so
+# it's battle-tested and won't be deleted (preferred over a freshly-made view).
+# Per-office view_abp fields stay for the cell-for-cell proof + fallback. Prove
+# before flipping: `runner --office rashad --prove-abp`.
 ALL_OFFICE_ABP_VIEW = (_T + "ATTTRACKER2_1-D2D/Metrics/"
-                       "b0b90f8f-e597-425d-93ae-c55cf1898ae1/AllOfficeINTABP?:iid=1")
+                       "07afddc4-36b3-4ecc-98a8-28b9ef1648c1/RafLocalofficeINTABP?:iid=1")
 # Flip to True only after the proof is clean for every office (sliced all-office
 # == per-office view). When True, metrics_for() points ABP at the shared view.
 # PROVEN + flipped 2026-07-15: --prove-abp IDENTICAL for rashad (21 reps) + aya
