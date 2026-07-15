@@ -250,6 +250,25 @@ def main(argv=None) -> int:
             _caps_summary = _summary.get("captainships") or {}
             _failed_prog = list(_caps_summary.get("failed_programs") or [])
             _failed_caps = list(_caps_summary.get("failed_captainships") or [])
+            # ROSTER SYNC — reps on a VA captainship roster with NO row on the
+            # copy tab. The fill only fills EXISTING copy rows, so a rep added on
+            # the VA but never added to the copy silently sums the total short
+            # (Blue Mendoza / Starr, 2026-07-15). Diff the rosters by name and
+            # GATE on it so it can never be a silent miss. Runs even under
+            # --skip-compare: the rosters are present at 4am even before the VAs
+            # key any sales. Advisory guard — must never crash the run.
+            _missing_reps = []
+            try:
+                from automations.org_sales_board import roster_sync as _rsync
+                from automations.focus_office_att.aliases import load_aliases
+                _va_grid = open_by_key(SHEET_ID).worksheet(PROD_TAB).get_all_values()
+                _missing_reps = _rsync.missing_va_reps(
+                    ws.get_all_values(), _va_grid, load_aliases())
+                if _missing_reps:
+                    print("  " + _rsync.format_missing(_missing_reps).replace(
+                        "\n", "\n  "))
+            except Exception:  # noqa: BLE001 — advisory must never fail the run
+                pass
             # Cross-reference every owner/ICD pulled onto the board against the
             # 'Terminated ICDs' tab + ALERT the runner (advisory — prints to the
             # output + log, never removes a row). Folded into the manifest note.
@@ -299,11 +318,14 @@ def main(argv=None) -> int:
             if not args.dry_run:
                 try:
                     from automations.shared import run_manifest as _rm
-                    if _skipped or _failed_prog or _failed_caps or not _compare_clean:
+                    if (_skipped or _failed_prog or _failed_caps
+                            or not _compare_clean or _missing_reps):
                         _failed_all = (
                             [f"section: {s}" for s in _skipped]
                             + [f"program: {c}" for c in _failed_prog]
                             + [f"captainship: {c}" for c in _failed_caps]
+                            + [f"roster: {m['name']} ({m['captain']} cap) has no "
+                               "copy row — add it" for m in _missing_reps]
                             + ([] if _compare_clean
                                else [f"compare: {_compare_ndiff} cell(s) disagree "
                                      "with the VA tab"]))
@@ -368,7 +390,8 @@ def main(argv=None) -> int:
                         _rm.mark_clean("org-sales-board", kind="section")
                 except Exception:
                     pass
-            if _skipped or _failed_prog or _failed_caps or not _compare_clean:
+            if (_skipped or _failed_prog or _failed_caps or not _compare_clean
+                    or _missing_reps):
                 # RAN but with a note (missing pull or a VA-compare difference).
                 # Exit 0 — NOT a hard failure: the manifest written above carries
                 # the failed parts, so the orchestrator's verify marks this
@@ -382,6 +405,8 @@ def main(argv=None) -> int:
                       f"skipped/failed section pull(s)={_skipped or 'none'}; "
                       f"failed captainship program pull(s)={_failed_prog or 'none'}; "
                       f"failed captainship fill(s)={_failed_caps or 'none'}; "
+                      f"missing copy row(s)="
+                      f"{[m['name'] for m in _missing_reps] or 'none'}; "
                       f"compare={'clean' if _compare_clean else 'FLAGGED differences'}. "
                       "Re-run to retry the missing pull(s). ===")
                 return 0
