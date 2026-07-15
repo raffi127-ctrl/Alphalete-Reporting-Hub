@@ -139,54 +139,51 @@ def _select_worksheet(page, log) -> bool:
 
 
 def probe(url, sheet, out, today, log=print) -> dict:
-    """Diagnostic: copy Carlos's real Chrome profile (logged into Tableau as
-    HIM), load the Order Log, and report whether the grid now has data —
-    then screenshot + try the crosstab download."""
+    """Diagnostic on a FRESH profile reusing the (just-refreshed) warm
+    ownerville storage_state. Control = CHURN RATES (production reads it);
+    target = ORDER LOG. If CHURN RATES has data but ORDER LOG does not, the
+    Order Log is permission-gated; if both have data, we can download."""
     from patchright.sync_api import sync_playwright
     from automations.shared import tableau_patchright as tp
-    dst = _copy_default_profile()
-    proc = _launch(url)
-    log(f"[cdp] real Chrome pid={proc.pid} on copied profile; waiting 22s")
-    time.sleep(22)
+    _kill_ours()
+    proc = _launch()
+    log(f"[cdp] real Chrome pid={proc.pid} (fresh profile); waiting 20s")
+    time.sleep(20)
     info = {}
     try:
         with sync_playwright() as p:
             browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            page.goto(url, wait_until="domcontentloaded")
-            viz = page.frame_locator('iframe[title="Data Visualization"]')
-            # If the copied profile's Tableau session is live we see the viz
-            # toolbar straight away; if it bounced to login, self-heal via SSO.
-            try:
-                viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
-                            'download"]').wait_for(state="visible", timeout=60_000)
-                log("[cdp] view loaded from copied profile (already logged in)")
-            except Exception:
-                log("[cdp] no toolbar — profile session stale, SSO self-heal")
-                tp._ensure_tableau_authenticated(page, verbose=False,
-                                                 allow_form_login=True)
-                page.goto(url, wait_until="domcontentloaded")
+            tp._ensure_tableau_authenticated(page, verbose=False,
+                                             allow_form_login=True)
+            log("[cdp] auth via warm storage_state")
+
+            churn_url = ("https://us-east-1.online.tableau.com/#/site/sci/"
+                         "views/ATTTRACKER-B2B/CHURNRATES/"
+                         "429cb06d-a32e-4d0e-bf06-9acb77587afd/ALLTEAMCHURN")
+            for tag, u, shot in [("churnrates(control)", churn_url, None),
+                                 ("orderlog(target)", url, "Vantura Shot")]:
                 try:
-                    viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
-                                'download"]').wait_for(state="visible",
-                                                       timeout=120_000)
+                    page.goto(u, wait_until="domcontentloaded")
+                    vz = page.frame_locator('iframe[title="Data Visualization"]')
+                    try:
+                        vz.locator('[data-tb-test-id="viz-viewer-toolbar-'
+                                   'button-download"]').wait_for(
+                            state="visible", timeout=120_000)
+                    except Exception:
+                        pass
+                    page.wait_for_timeout(28_000)
+                    bt = vz.locator("body").inner_text(timeout=15000)
+                    info[tag] = len(bt)
+                    log(f"[{tag}] body {len(bt)} chars (DATA if >>3000)")
+                    if shot:
+                        _upload_png(page.screenshot(full_page=False))
+                        log(f"[cdp] screenshot -> '{shot}'")
                 except Exception as e:
-                    log(f"[cdp] still no toolbar: {str(e)[:80]}")
-            page.wait_for_timeout(30_000)
-            try:
-                body = viz.locator("body").inner_text(timeout=15000)
-                info["body_chars"] = len(body)
-                log(f"[body] viz text {len(body)} chars (DATA PRESENT if >>3000)")
-            except Exception as e:
-                log(f"[body] err {str(e)[:60]}")
-            try:
-                _upload_png(page.screenshot(full_page=False))
-                log("[cdp] screenshot -> 'Vantura Shot' tab")
-            except Exception as e:
-                log(f"[cdp] shot err {str(e)[:60]}")
-            # try the crosstab download if the grid has data
-            if info.get("body_chars", 0) > 3000:
+                    log(f"[{tag}] err {str(e)[:100]}")
+
+            if info.get("orderlog(target)", 0) > 3000:
                 try:
                     from automations.shared.tableau_patchright import (
                         download_crosstab_patchright)
@@ -203,8 +200,6 @@ def probe(url, sheet, out, today, log=print) -> dict:
             pass
         _kill_ours()
     return info
-
-
 def download_views(specs, verbose=True, log=print):
     """Download each (view_url, crosstab_sheet, out_path) via one real-Chrome
     CDP session. Auth is seeded once (ownerville storage_state → Tableau SSO,
