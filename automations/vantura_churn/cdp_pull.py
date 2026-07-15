@@ -286,9 +286,10 @@ def download_views(specs, today=None, verbose=True, log=print):
     # Mirror every log line to the 'Vantura Diag' tab so failures are visible
     # remotely (the mini-control Result cell truncates hard).
     _buf = []
+    _orig_log = log
 
     def dlog(msg):
-        log(msg)
+        _orig_log(msg)
         _buf.append(str(msg))
     log = dlog
 
