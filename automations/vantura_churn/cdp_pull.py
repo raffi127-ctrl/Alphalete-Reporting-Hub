@@ -269,14 +269,19 @@ def _prime_orderlog(page, url, today, log):
             _set_date(fx, val)
         except Exception as ex:
             log(f"[prime] date err {str(ex)[:50]}")
-    # Refresh re-runs the query with the committed dates.
-    try:
-        viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
-                    'refresh"]').first.click()
-        page.wait_for_timeout(15_000)
-    except Exception:
-        pass
-    page.wait_for_timeout(6_000)
+    # The date edits fire the query — WAIT for the "Working on it / Computing
+    # models" overlay to clear before the worksheet is exportable. Poll up to
+    # ~150s.
+    for _ in range(50):
+        page.wait_for_timeout(3000)
+        try:
+            body = viz.locator("body").inner_text(timeout=8000)
+        except Exception:
+            continue
+        if not any(m in body for m in ("Working on it", "Computing models",
+                                       "Processing request", "Preparing result")):
+            break
+    page.wait_for_timeout(4_000)
 
 
 def download_views(specs, today=None, verbose=True, log=print):
