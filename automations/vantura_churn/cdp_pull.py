@@ -139,17 +139,44 @@ def _select_worksheet(page, log) -> bool:
 
 
 def probe(url, sheet, out, today, log=print) -> dict:
-    """Diagnostic on a FRESH profile reusing the (just-refreshed) warm
-    ownerville storage_state. Control = CHURN RATES (production reads it);
-    target = ORDER LOG. If CHURN RATES has data but ORDER LOG does not, the
-    Order Log is permission-gated; if both have data, we can download."""
+    """Decisive test: inside ONE CDP real-Chrome session, actually DOWNLOAD
+    the D2D order log (known-good control) and the B2B order log (target),
+    reporting real row counts. innerText can't see canvas tables, so a
+    download is the only true signal. If D2D has rows but B2B doesn't, the
+    B2B view needs its filter triggered (not a login/permission problem)."""
+    import csv as _csv
     from patchright.sync_api import sync_playwright
     from automations.shared import tableau_patchright as tp
+    from automations.shared.tableau_patchright import download_crosstab_patchright
     _kill_ours()
     proc = _launch()
-    log(f"[cdp] real Chrome pid={proc.pid} (fresh profile); waiting 20s")
+    log(f"[cdp] real Chrome pid={proc.pid}; waiting 20s")
     time.sleep(20)
     info = {}
+
+    def _rows(path):
+        for enc in ("utf-16", "utf-8-sig", "utf-8"):
+            try:
+                with open(path, encoding=enc, newline="") as f:
+                    rr = list(_csv.reader(f, delimiter="\t"))
+                if rr and len(rr[0]) > 1:
+                    return len(rr) - 1
+            except Exception:
+                continue
+        try:
+            import openpyxl, warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                wb = openpyxl.load_workbook(path, read_only=True)
+            return wb.active.max_row - 1
+        except Exception:
+            return -1
+
+    s = (today - dt.timedelta(days=60)).isoformat()
+    e = today.isoformat()
+    d2d_url = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+               "ATTTRACKER2_1-D2D/ORDERLOG/117748c0-9487-45e8-a5d4-c447093718d5/"
+               f"ALLREPS?:iid=1&Start%20Date={s}&End%20Date={e}")
     try:
         with sync_playwright() as p:
             browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
@@ -157,42 +184,25 @@ def probe(url, sheet, out, today, log=print) -> dict:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             tp._ensure_tableau_authenticated(page, verbose=False,
                                              allow_form_login=True)
-            log("[cdp] auth via warm storage_state")
-
-            churn_url = ("https://us-east-1.online.tableau.com/#/site/sci/"
-                         "views/ATTTRACKER-B2B/CHURNRATES/"
-                         "429cb06d-a32e-4d0e-bf06-9acb77587afd/ALLTEAMCHURN")
-            for tag, u, shot in [("churnrates(control)", churn_url, None),
-                                 ("orderlog(target)", url, "Vantura Shot")]:
+            log("[cdp] authenticated")
+            for tag, u, sh in [("d2d(control)", d2d_url, "A.Order Log"),
+                               ("b2b(target)", url, sheet)]:
+                dst = Path(f"/tmp/vantura_probe_{tag.split('(')[0]}.xlsx")
                 try:
-                    page.goto(u, wait_until="domcontentloaded")
-                    vz = page.frame_locator('iframe[title="Data Visualization"]')
-                    try:
-                        vz.locator('[data-tb-test-id="viz-viewer-toolbar-'
-                                   'button-download"]').wait_for(
-                            state="visible", timeout=120_000)
-                    except Exception:
-                        pass
-                    page.wait_for_timeout(28_000)
-                    bt = vz.locator("body").inner_text(timeout=15000)
-                    info[tag] = len(bt)
-                    log(f"[{tag}] body {len(bt)} chars (DATA if >>3000)")
-                    if shot:
-                        _upload_png(page.screenshot(full_page=False))
-                        log(f"[cdp] screenshot -> '{shot}'")
-                except Exception as e:
-                    log(f"[{tag}] err {str(e)[:100]}")
-
-            if info.get("orderlog(target)", 0) > 3000:
-                try:
-                    from automations.shared.tableau_patchright import (
-                        download_crosstab_patchright)
-                    download_crosstab_patchright(url, sheet, Path(out),
-                                                 page=page, verbose=False)
-                    info["downloaded"] = Path(out).stat().st_size
-                    log(f"*** DOWNLOAD OK: {out} ({info['downloaded']:,} b) ***")
-                except Exception as e:
-                    log(f"[download] err {str(e)[:120]}")
+                    download_crosstab_patchright(u, sh, dst, page=page,
+                                                 verbose=False)
+                    n = _rows(dst)
+                    info[tag] = n
+                    log(f"[{tag}] DOWNLOADED {n} rows ({dst.stat().st_size:,} b)")
+                except Exception as ex:
+                    info[tag] = f"ERR: {str(ex)[:90]}"
+                    log(f"[{tag}] {str(ex)[:120]}")
+                    if tag.startswith("b2b"):
+                        try:
+                            _upload_png(page.screenshot(full_page=False))
+                            log("[cdp] b2b screenshot -> 'Vantura Shot'")
+                        except Exception:
+                            pass
     finally:
         try:
             proc.terminate()
@@ -200,6 +210,8 @@ def probe(url, sheet, out, today, log=print) -> dict:
             pass
         _kill_ours()
     return info
+
+
 def download_views(specs, verbose=True, log=print):
     """Download each (view_url, crosstab_sheet, out_path) via one real-Chrome
     CDP session. Auth is seeded once (ownerville storage_state → Tableau SSO,
