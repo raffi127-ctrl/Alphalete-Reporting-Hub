@@ -258,20 +258,31 @@ def _select_owner(page, owner_name, log):
     try:
         viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
                     'refresh"]').first.click()
-        page.wait_for_timeout(8000)
     except Exception:
         pass
-    # wait for the "Working on it" overlay to clear
-    for _ in range(50):
+    _wait_query(page, viz, log)
+
+
+def _wait_query(page, viz, log):
+    """Wait for the 'Working on it / Computing models' overlay to APPEAR and
+    then CLEAR — polling for absence alone races the query start (the loop can
+    exit before the overlay even shows)."""
+    msgs = ("Working on it", "Computing models", "Processing request",
+            "Preparing result")
+    appeared = False
+    for _ in range(70):
         page.wait_for_timeout(3000)
         try:
             body = viz.locator("body").inner_text(timeout=8000)
         except Exception:
             continue
-        if not any(m in body for m in ("Working on it", "Computing models",
-                                       "Processing request", "Preparing result")):
+        busy = any(m in body for m in msgs)
+        if busy:
+            appeared = True
+        elif appeared:
+            log("[query] overlay cleared")
             break
-    page.wait_for_timeout(4_000)
+    page.wait_for_timeout(8_000)
 
 
 def _prime_orderlog(page, url, today, log):
