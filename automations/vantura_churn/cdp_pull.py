@@ -149,7 +149,6 @@ def probe(url, sheet, out, today, log=print) -> dict:
     log(f"[cdp] real Chrome pid={proc.pid}; waiting 20s")
     time.sleep(20)
     info = {}
-    lines = []
     try:
         with sync_playwright() as p:
             browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
@@ -163,7 +162,7 @@ def probe(url, sheet, out, today, log=print) -> dict:
             dst = Path("/tmp/vantura_churn_probe.csv")
             download_crosstab_patchright(churn_url, "ICD Churn", dst,
                                          page=page, verbose=False)
-            lines.append(f"downloaded {dst.stat().st_size} bytes")
+            log(f"downloaded {dst.stat().st_size} bytes")
             import csv as _csv
             rows = None
             for enc in ("utf-16", "utf-8-sig", "utf-8"):
@@ -171,20 +170,20 @@ def probe(url, sheet, out, today, log=print) -> dict:
                     with open(dst, encoding=enc, newline="") as fh:
                         rows = list(_csv.reader(fh, delimiter="\t"))
                     if rows and len(rows[0]) > 1:
-                        lines.append(f"parsed enc={enc} rows={len(rows)} cols={len(rows[0])}")
+                        log(f"parsed enc={enc} rows={len(rows)} cols={len(rows[0])}")
                         break
                 except Exception:
                     continue
             if rows:
-                lines.append("HEADER: " + " | ".join(rows[0]))
+                log("HEADER: " + " | ".join(rows[0]))
                 for r in rows[1:16]:
-                    lines.append("ROW: " + " | ".join(c[:22] for c in r))
+                    log("ROW: " + " | ".join(c[:22] for c in r))
                 for i, r in enumerate(rows):
                     if any("CARLOS" in str(c).upper() for c in r):
-                        lines.append(f"CARLOS@{i}: " + " | ".join(c[:22] for c in r))
+                        log(f"CARLOS@{i}: " + " | ".join(c[:22] for c in r))
     except Exception as ex:
         import traceback
-        lines.append("ERR: " + str(ex)[:120])
+        log("ERR: " + str(ex)[:120])
         lines += traceback.format_exc().splitlines()[-6:]
     finally:
         try:
@@ -192,10 +191,6 @@ def probe(url, sheet, out, today, log=print) -> dict:
         except Exception:
             pass
         _kill_ours()
-        try:
-            _upload_lines(lines, tab="Vantura Diag")
-        except Exception:
-            pass
     return info
 
 
