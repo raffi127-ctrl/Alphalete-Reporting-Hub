@@ -111,7 +111,7 @@ def _run_one(label: str, cmd: list[str], env: dict) -> tuple[bool, str]:
         return False, f"launch error: {e}"
 
 
-def _prove_abp(office_key: str, *, headless: bool) -> int:
+def _prove_abp(office_key: str, *, headless: bool = False) -> int:
     """Pull the office's per-office ABP view AND the shared all-office view under
     one session, filter BOTH to the office's owner, and diff. The all-office
     slice must byte-match the per-office pull before we trust it. No post."""
@@ -204,7 +204,7 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         return 2
 
     if args.prove_abp:
-        return _prove_abp(args.office, headless=args.headless)
+        return _prove_abp(args.office)
 
     o = _off.get(args.office)
     metrics = metrics_for(o)
