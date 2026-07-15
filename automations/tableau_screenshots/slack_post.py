@@ -50,6 +50,25 @@ ORG_LABEL = {"alphalete": "#alphalete-sales + #top-leaders-alphalete-org",
              "palace": "#palace-sales",
              "elite_prime": "#elite-prime-sales"}
 
+# Per-org tracker ORDER override (Carlos wants the B2B trackers + Box first in his
+# channel, 2026-07-14). An org NOT listed here posts in the default pages.py
+# order. A tracker id missing from a listed order still posts — appended after the
+# listed ones, in default order — so adding a new tracker never silently drops it
+# from a custom-ordered feed. Keys are org keys from ORG_CHANNELS; values are
+# lists of tracker ids (pages.py `id`s).
+ORG_ORDER: dict[str, list[str]] = {
+}
+
+
+def _ordered(items: list, id_of, order_ids: list[str] | None) -> list:
+    """Reorder `items` by `order_ids` (tracker ids). Items whose id isn't listed
+    keep their original relative order, appended after the listed ones (stable
+    sort), so a partial order never drops or shuffles the rest."""
+    if not order_ids:
+        return list(items)
+    rank = {tid: i for i, tid in enumerate(order_ids)}
+    return sorted(items, key=lambda it: rank.get(id_of(it), len(order_ids)))
+
 
 def channels_for(org: str) -> list:
     """The channel id(s) this org posts into. Set TABLEAU_TRACKERS_CHANNEL_ID to a
@@ -307,9 +326,16 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
     the full ordered list used to build the header (so the header lists every
     tracker even if one failed to capture). replace=True re-posts today's thread:
     clear the old image replies, then post this set in order (for a same-day crop
-    fix)."""
+    fix). An org in ORG_ORDER gets its own tracker order (header + replies)."""
     today = today or dt.date.today()
     channels = channels_for(org)
+
+    # Per-org custom order (Carlos): reorder BOTH the header (pages) and the image
+    # replies (captures) so they match. Other orgs use the default pages.py order.
+    order_ids = ORG_ORDER.get(org)
+    if order_ids:
+        captures = _ordered(captures, lambda c: c[0]["id"], order_ids)
+        pages = _ordered(pages, lambda p: p["id"], order_ids)
 
     if dry_run:
         return {
