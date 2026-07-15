@@ -252,15 +252,19 @@ def _prime_orderlog(page, url, today, log):
         page.keyboard.press("Escape")
         page.wait_for_timeout(600)
 
-    # Order matters: setting Start AFTER End while Start > End is an invalid
-    # range, so Tableau rejects the edit and keeps the old value. Always keep
-    # start <= end at every step, and force a real change on each field (URL
-    # pre-fills the targets, so retyping them is a no-op). End first (bump
-    # later then real), then Start (bump earlier then real).
-    later = f"{today.month}/{today.day}/{today.year + 1}"      # end+1yr
-    earlier = f"1/1/{today.year}"                              # Jan 1 this yr
-    for fx, val in [(0.213, later), (0.213, end_s),
-                    (0.13, earlier), (0.13, start_s)]:
+    # Two rules make the edits stick: (1) ALTERNATE fields — two consecutive
+    # writes to the SAME field leave the 2nd rejected, so never edit the same
+    # field twice in a row; (2) keep start <= end at EVERY step — an inverted
+    # range is rejected. Each field is bumped to a throwaway (real change) then
+    # to its target, ending at exactly the 60-day window (small → renders).
+    later = today + _dt.timedelta(days=31)
+    earlier = start - _dt.timedelta(days=31)
+    later_s = f"{later.month}/{later.day}/{later.year}"
+    earlier_s = f"{earlier.month}/{earlier.day}/{earlier.year}"
+    for fx, val in [(0.213, later_s),    # End → later  (start < later)
+                    (0.13, earlier_s),   # Start → earlier (earlier < later)
+                    (0.213, end_s),      # End → target (earlier < end)
+                    (0.13, start_s)]:    # Start → target (start < end)
         try:
             _set_date(fx, val)
         except Exception as ex:
