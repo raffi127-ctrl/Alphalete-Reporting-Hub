@@ -177,7 +177,9 @@ def _recompute_office_total(reps: dict) -> dict:
             if slot.get("denom") is not None:
                 t["denom"] += slot["denom"]
     for t in total.values():
-        t["pct"] = f"{(t['num'] / t['denom'] * 100):.1f}%" if t["denom"] else "0.0%"
+        # Churn rate = disconnects/activations, formatted to 2 decimals to match
+        # the view's crosstab text (proven: 6/152 → '3.95%', not '3.9%').
+        t["pct"] = f"{(t['num'] / t['denom'] * 100):.2f}%" if t["denom"] else "0.00%"
     return total
 
 
