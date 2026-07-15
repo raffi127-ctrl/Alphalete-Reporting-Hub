@@ -142,6 +142,65 @@ def probe(url, sheet, out, today, log=print) -> dict:
                 log("[cdp] screenshot → 'Vantura Shot' tab")
             except Exception as e:
                 log(f"[cdp] screenshot err: {str(e)[:80]}")
+            # The grid is empty because the URL set the date VALUES but never
+            # committed them (the runbook: type the date, press ENTER). Dump
+            # the date inputs, then commit each with a trusted Enter to fire
+            # the query.
+            try:
+                inputs = viz.locator("input")
+                ni = inputs.count()
+                log(f"[inputs] {ni} input(s)")
+                for i in range(min(ni, 12)):
+                    el = inputs.nth(i)
+                    try:
+                        val = el.input_value(timeout=1500)
+                    except Exception:
+                        val = "?"
+                    try:
+                        tid = el.get_attribute("data-tb-test-id") or ""
+                        al = el.get_attribute("aria-label") or ""
+                    except Exception:
+                        tid = al = ""
+                    log(f"  input[{i}] val={val!r} tid={tid[:30]!r} aria={al[:30]!r}")
+            except Exception as e:
+                log(f"[inputs] err {str(e)[:80]}")
+
+            # Commit the two date fields (Start=2026-05-15, End=today). Find by
+            # current value = the date strings we passed, then re-type + Enter.
+            start_s = f"{(today - dt.timedelta(days=60)).month}/" \
+                      f"{(today - dt.timedelta(days=60)).day}/" \
+                      f"{(today - dt.timedelta(days=60)).year}"
+            end_s = f"{today.month}/{today.day}/{today.year}"
+            committed = 0
+            for want in (start_s, end_s):
+                try:
+                    inputs = viz.locator("input")
+                    for i in range(inputs.count()):
+                        el = inputs.nth(i)
+                        try:
+                            if el.input_value(timeout=1000).strip() == want:
+                                el.click()
+                                page.keyboard.press(
+                                    "Meta+A" if False else "Control+A")
+                                el.click(click_count=3)
+                                page.keyboard.type(want, delay=30)
+                                page.keyboard.press("Enter")
+                                page.wait_for_timeout(2500)
+                                committed += 1
+                                log(f"[date] committed {want!r}")
+                                break
+                        except Exception:
+                            continue
+                except Exception as e:
+                    log(f"[date] {want} err {str(e)[:80]}")
+            log(f"[date] committed {committed}/2; waiting 20s for grid")
+            page.wait_for_timeout(20_000)
+            try:
+                _upload_png(page.screenshot(full_page=False), tab="Vantura Shot2")
+                log("[cdp] post-commit screenshot → 'Vantura Shot2'")
+            except Exception as e:
+                log(f"[cdp] shot2 err {str(e)[:60]}")
+
             focused = _select_worksheet(page, log)
             info["focused"] = focused
             # open crosstab, count thumbs
