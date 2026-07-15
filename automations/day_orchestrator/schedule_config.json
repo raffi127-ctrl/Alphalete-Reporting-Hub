@@ -98,6 +98,27 @@
       "timeout_minutes": 30,
       "verify": null
     },
+    "car_rides": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "_note": "Car-Rides Cleanup (Carlos). on_scheduler:false = the 4am orchestrator NEVER runs it — its real schedule is the weekdays-9:30am launchd job (com.alphalete.car-rides-cleanup, wrapper deploy/car_rides_cleanup.sh) on Lucy 2. Reconciles each car-ride leader's OwnerVille/TeleMapper territory (index.cfm?p=158) against the Stations tab of the Vantura Master Sales Board, both campaigns (B2B AT&T SBS + B2B-BOX-Energy). Fully unattended by design: board via recruiting_report.fill gspread, OwnerVille via tableau_patchright's exported storage_state (session-holder keeps it warm) — a stale/missing session is FLAGGED, never re-authed (no form / Turnstile). DRY-RUN default: plans + reports to output/car_rides/, changes nothing; --live applies select2 add/remove+Save edits. Never creates or Removes territories (flag-only), never touches Assign Clients / sharing / Slack. This handle exists so `lucy rerun car_rides --dry-run` and `--probe` work.",
+      "display_name": "Car-Rides Cleanup (OwnerVille territories)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.car_rides.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [0, 1, 2, 3, 4],
+        "not_before": "09:30"
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 30,
+      "verify": null
+    },
     "harvest_proof": {
       "on_scheduler": false,
       "_off_scheduler_note": "SHADOW/INERT harvest-once proof (Stage c of output/harvest-architecture-design.md). on_scheduler:false = NEVER scheduled, structurally excluded from the 4am orchestrator (registry.load_config drops it; run_order never sees it) so it CANNOT affect the morning run. Run only by hand: `lucy rerun harvest_proof` (5-need structural cover) or `lucy rerun harvest_proof --full` (all 19 churn pulls). Runs automations.harvest.proof_mini: harvest the churn cluster once over one login, then diff live-pull-parse vs cache-parse cell-for-cell + a monkeypatch cutover check. Full result -> output/logs/harvest_proof-<date>.log (retrieve with `lucy logtail harvest_proof`); compact verdict lands in `lucy status`. source_type tableau only so the rerun runs chrome_guard first. Nothing production imports automations.harvest.",
