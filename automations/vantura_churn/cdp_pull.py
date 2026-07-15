@@ -139,11 +139,14 @@ def _select_worksheet(page, log) -> bool:
 
 
 def probe(url, sheet, out, today, log=print) -> dict:
-    """Download the CHURN RATES crosstab and dump its raw CSV structure so we
-    can fix parse_churnrates for the automated (CSV) format."""
+    """Download the Carlos ORDER LOG via the real prime path and report what
+    it actually contains: total rows, Carlos rows, Carlos rows posted in the
+    last 30 days, and the posted-date range — to see if the date/owner filter
+    took."""
     from patchright.sync_api import sync_playwright
     from automations.shared import tableau_patchright as tp
-    from automations.shared.tableau_patchright import download_crosstab_patchright
+    from automations.recruiting_report.opt_phase import drive_crosstab_dialog
+    from automations.vantura_churn import compute
     _kill_ours()
     proc = _launch()
     log(f"[cdp] real Chrome pid={proc.pid}; waiting 20s")
@@ -156,35 +159,45 @@ def probe(url, sheet, out, today, log=print) -> dict:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             tp._ensure_tableau_authenticated(page, verbose=False,
                                              allow_form_login=True)
-            churn_url = ("https://us-east-1.online.tableau.com/#/site/sci/"
-                         "views/ATTTRACKER-B2B/CHURNRATES/"
-                         "429cb06d-a32e-4d0e-bf06-9acb77587afd/ALLTEAMCHURN")
-            dst = Path("/tmp/vantura_churn_probe.csv")
-            download_crosstab_patchright(churn_url, "ICD Churn", dst,
-                                         page=page, verbose=False)
+            dst = Path("/tmp/vantura_probe_ol.csv")
+            _prime_orderlog(page, url, today, log)
+            drive_crosstab_dialog(page, url, sheet, dst, verbose=False,
+                                  skip_nav=True)
             log(f"downloaded {dst.stat().st_size} bytes")
-            import csv as _csv
-            rows = None
-            for enc in ("utf-16", "utf-8-sig", "utf-8"):
-                try:
-                    with open(dst, encoding=enc, newline="") as fh:
-                        rows = list(_csv.reader(fh, delimiter="\t"))
-                    if rows and len(rows[0]) > 1:
-                        log(f"parsed enc={enc} rows={len(rows)} cols={len(rows[0])}")
-                        break
-                except Exception:
+            grid = compute._load_grid(dst)
+            hdr = [str(h or "").strip() for h in grid[0]]
+            log("HDRCOLS: " + " | ".join(hdr[:6]) + " ... (%d cols)" % len(hdr))
+            oi = hdr.index(compute.COLS["owner"]) if compute.COLS["owner"] in hdr else 0
+            pi = hdr.index(compute.COLS["posted"]) if compute.COLS["posted"] in hdr else -1
+            owners = {}
+            carlos = 0
+            posted_dates = []
+            for r in grid[1:]:
+                if len(r) <= oi:
                     continue
-            if rows:
-                log("HEADER: " + " | ".join(rows[0]))
-                for r in rows[1:16]:
-                    log("ROW: " + " | ".join(c[:22] for c in r))
-                for i, r in enumerate(rows):
-                    if any("CARLOS" in str(c).upper() for c in r):
-                        log(f"CARLOS@{i}: " + " | ".join(c[:22] for c in r))
+                ownr = str(r[oi] or "").split(chr(10))[0].strip().upper()
+                owners[ownr] = owners.get(ownr, 0) + 1
+                if ownr.startswith("CARLOS HIDALGO"):
+                    carlos += 1
+                    if pi >= 0 and pi < len(r):
+                        d = compute._parse_date(r[pi])
+                        if d:
+                            posted_dates.append(d)
+            log(f"total rows: {len(grid)-1}  distinct owners: {len(owners)}")
+            log(f"CARLOS rows: {carlos}")
+            if posted_dates:
+                log(f"CARLOS posted range: {min(posted_dates)} .. {max(posted_dates)}")
+            top = sorted(owners.items(), key=lambda kv: -kv[1])[:5]
+            log("top owners: " + " | ".join(f"{k[:20]}={v}" for k, v in top))
+            lines_c = compute.load_orderlog(dst, "CARLOS HIDALGO")
+            s = compute.churn_summary(lines_c, today)
+            log(f"computed base={s['base_total']} disc={s['disc_total']}")
+            info = {"carlos_rows": carlos, "base": s['base_total']}
     except Exception as ex:
         import traceback
-        log("ERR: " + str(ex)[:120])
-        lines += traceback.format_exc().splitlines()[-6:]
+        log("ERR " + str(ex)[:120])
+        for x in traceback.format_exc().splitlines()[-6:]:
+            log(x[:150])
     finally:
         try:
             proc.terminate()
