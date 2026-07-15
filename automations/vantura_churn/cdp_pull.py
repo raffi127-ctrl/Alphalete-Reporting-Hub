@@ -129,6 +129,36 @@ def probe(url, sheet, out, today, log=print) -> dict:
                                              allow_form_login=True)
             log("[cdp] auth OK")
 
+            # WHO are we? and does another B2B view (CHURN RATES, which the
+            # production churn report reads fine) show data in THIS session?
+            try:
+                page.goto("https://us-east-1.online.tableau.com/#/site/sci/"
+                          "views/ATTTRACKER-B2B/CHURNRATES/"
+                          "429cb06d-a32e-4d0e-bf06-9acb77587afd/ALLTEAMCHURN",
+                          wait_until="domcontentloaded")
+                cvz = page.frame_locator('iframe[title="Data Visualization"]')
+                try:
+                    cvz.locator('[data-tb-test-id="viz-viewer-toolbar-'
+                                'button-download"]').wait_for(
+                        state="visible", timeout=120_000)
+                except Exception:
+                    pass
+                page.wait_for_timeout(25_000)
+                cb = cvz.locator("body").inner_text(timeout=15000)
+                log(f"[churnrates] body {len(cb)} chars (data if >>3000)")
+            except Exception as ex:
+                log(f"[churnrates] err {str(ex)[:80]}")
+            try:
+                whoami = page.evaluate(
+                    "() => { const a=document.querySelector("
+                    "'[data-tb-test-id=\"global-nav-user-menu-button\"],"
+                    " .tab-globalNav-user, [aria-label*=\"account\" i]');"
+                    " return (a?a.getAttribute('aria-label')||a.title||"
+                    "a.innerText:'') + ' | ' + document.title; }")
+                log(f"[whoami] {str(whoami)[:120]}")
+            except Exception as ex:
+                log(f"[whoami] err {str(ex)[:80]}")
+
             # DIAGNOSTIC: try the URL 3 ways and report which populates the
             # grid (body-text length). Isolates whether the Owner filter or the
             # uncommitted dates are what leaves the grid empty.
