@@ -77,7 +77,7 @@ PAGES = [
     },
     {
         "id": "b2b_att_country",
-        "title": "B2B AT&T Internet Country Sales Tracker",
+        "title": "B2B AT&T",
         "emoji": "\U0001F3E2",                     # office
         "react": "office",
         "url": _BASE + ("ATTTRACKER-B2B/D2D1-PAGERV3/"
@@ -94,7 +94,7 @@ PAGES = [
     },
     {
         "id": "b2b_att_country_cru",
-        "title": "B2B AT&T Internet Country Sales Tracker (CRU)",
+        "title": "B2B AT&T (CRU)",
         "emoji": "\U0001F3EC",                     # department_store
         "react": "department_store",
         "url": _BASE + ("ATTTRACKER-B2B/B2BCRU1-PAGER/"
