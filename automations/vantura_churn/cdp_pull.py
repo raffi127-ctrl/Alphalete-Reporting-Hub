@@ -139,10 +139,8 @@ def _select_worksheet(page, log) -> bool:
 
 
 def probe(url, sheet, out, today, log=print) -> dict:
-    """Make the B2B ORDER LOG worksheet populate, then download. Try: list
-    saved custom views (manage-customviews); commit the dates via trusted
-    clicks; click Refresh to force the query; screenshot; then attempt the
-    crosstab download."""
+    """Download the CHURN RATES crosstab and dump its raw CSV structure so we
+    can fix parse_churnrates for the automated (CSV) format."""
     from patchright.sync_api import sync_playwright
     from automations.shared import tableau_patchright as tp
     from automations.shared.tableau_patchright import download_crosstab_patchright
@@ -151,6 +149,7 @@ def probe(url, sheet, out, today, log=print) -> dict:
     log(f"[cdp] real Chrome pid={proc.pid}; waiting 20s")
     time.sleep(20)
     info = {}
+    lines = []
     try:
         with sync_playwright() as p:
             browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
@@ -158,116 +157,46 @@ def probe(url, sheet, out, today, log=print) -> dict:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             tp._ensure_tableau_authenticated(page, verbose=False,
                                              allow_form_login=True)
-            page.goto(url, wait_until="domcontentloaded")
-            viz = page.frame_locator('iframe[title="Data Visualization"]')
-            try:
-                viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
-                            'download"]').wait_for(state="visible", timeout=150_000)
-            except Exception:
-                pass
-            page.wait_for_timeout(18_000)
-
-            # 1) list saved custom views
-            try:
-                viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
-                            'manage-customviews"]').click()
-                page.wait_for_timeout(2500)
-                menu = viz.locator('[role="dialog"], [role="menu"]')
-                if menu.count():
-                    log("[customviews] " + menu.first.inner_text(
-                        timeout=6000).replace(chr(10), " | ")[:400])
-                _upload_png(page.screenshot(full_page=False), tab="Vantura Shot2")
-                page.keyboard.press("Escape"); page.wait_for_timeout(800)
-            except Exception as ex:
-                log(f"[customviews] err {str(ex)[:80]}")
-
-            # 2) commit the date range via trusted positional clicks
-            start_s = f"{(today-dt.timedelta(days=60)).month}/{(today-dt.timedelta(days=60)).day}/{(today-dt.timedelta(days=60)).year}"
-            end_s = f"{today.month}/{today.day}/{today.year}"
-            vp = page.evaluate("() => ({w:window.innerWidth,h:window.innerHeight})")
-            W, H = vp["w"], vp["h"]
-            for lbl, fx, val in [("Start", 0.13, start_s), ("End", 0.213, end_s)]:
+            churn_url = ("https://us-east-1.online.tableau.com/#/site/sci/"
+                         "views/ATTTRACKER-B2B/CHURNRATES/"
+                         "429cb06d-a32e-4d0e-bf06-9acb77587afd/ALLTEAMCHURN")
+            dst = Path("/tmp/vantura_churn_probe.csv")
+            download_crosstab_patchright(churn_url, "ICD Churn", dst,
+                                         page=page, verbose=False)
+            lines.append(f"downloaded {dst.stat().st_size} bytes")
+            import csv as _csv
+            rows = None
+            for enc in ("utf-16", "utf-8-sig", "utf-8"):
                 try:
-                    page.mouse.click(W*fx, H*0.255, click_count=3)
-                    page.wait_for_timeout(300)
-                    page.keyboard.press("Backspace")
-                    page.keyboard.type(val, delay=40)
-                    page.keyboard.press("Enter")
-                    page.wait_for_timeout(2500)
-                    log(f"[date] {lbl}={val}")
-                except Exception as ex:
-                    log(f"[date] {lbl} err {str(ex)[:50]}")
-
-            # 3) force a re-query
-            for tid in ("refresh", "revert"):
-                try:
-                    viz.locator(f'[data-tb-test-id="viz-viewer-toolbar-'
-                                f'button-{tid}"]').first.click()
-                    log(f"[trigger] clicked {tid}")
-                    page.wait_for_timeout(12_000)
-                except Exception as ex:
-                    log(f"[trigger] {tid} err {str(ex)[:50]}")
-
-            page.wait_for_timeout(8_000)
-            _upload_png(page.screenshot(full_page=False))
-            log("[cdp] screenshot -> 'Vantura Shot'")
-
-            # 4) attempt the download
-            try:
-                download_crosstab_patchright(url, sheet, Path(out), page=page,
-                                             verbose=False)
-                info["downloaded"] = Path(out).stat().st_size
-                log(f"*** DOWNLOAD OK: {out} ({info['downloaded']:,} b) ***")
-            except Exception as ex:
-                info["download_err"] = str(ex)[:100]
-                log(f"[download] {str(ex)[:120]}")
+                    with open(dst, encoding=enc, newline="") as fh:
+                        rows = list(_csv.reader(fh, delimiter="\t"))
+                    if rows and len(rows[0]) > 1:
+                        lines.append(f"parsed enc={enc} rows={len(rows)} cols={len(rows[0])}")
+                        break
+                except Exception:
+                    continue
+            if rows:
+                lines.append("HEADER: " + " | ".join(rows[0]))
+                for r in rows[1:16]:
+                    lines.append("ROW: " + " | ".join(c[:22] for c in r))
+                for i, r in enumerate(rows):
+                    if any("CARLOS" in str(c).upper() for c in r):
+                        lines.append(f"CARLOS@{i}: " + " | ".join(c[:22] for c in r))
+    except Exception as ex:
+        import traceback
+        lines.append("ERR: " + str(ex)[:120])
+        lines += traceback.format_exc().splitlines()[-6:]
     finally:
         try:
             proc.terminate()
         except Exception:
             pass
         _kill_ours()
-    return info
-
-
-def _prime_orderlog(page, url, today, log):
-    """The B2B ORDER LOG dashboard loads with an EMPTY worksheet until its
-    query is triggered — so the crosstab dialog has no sheet to export. Load
-    it, commit the date range via trusted CDP clicks, then Refresh + Revert to
-    force the query (proven sequence 2026-07-15). After this the worksheet has
-    data and the crosstab download succeeds."""
-    page.goto(url, wait_until="domcontentloaded")
-    viz = page.frame_locator('iframe[title="Data Visualization"]')
-    try:
-        viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
-                    'download"]').wait_for(state="visible", timeout=150_000)
-    except Exception:
-        pass
-    page.wait_for_timeout(18_000)
-    start_s = (f"{(today-dt.timedelta(days=60)).month}/"
-               f"{(today-dt.timedelta(days=60)).day}/"
-               f"{(today-dt.timedelta(days=60)).year}")
-    end_s = f"{today.month}/{today.day}/{today.year}"
-    vp = page.evaluate("() => ({w:window.innerWidth,h:window.innerHeight})")
-    W, H = vp["w"], vp["h"]
-    for fx, val in [(0.13, start_s), (0.213, end_s)]:
         try:
-            page.mouse.click(W * fx, H * 0.255, click_count=3)
-            page.wait_for_timeout(300)
-            page.keyboard.press("Backspace")
-            page.keyboard.type(val, delay=40)
-            page.keyboard.press("Enter")
-            page.wait_for_timeout(2500)
-        except Exception as ex:
-            log(f"[prime] date err {str(ex)[:50]}")
-    for tid in ("refresh", "revert"):
-        try:
-            viz.locator(f'[data-tb-test-id="viz-viewer-toolbar-button-'
-                        f'{tid}"]').first.click()
-            page.wait_for_timeout(12_000)
+            _upload_lines(lines, tab="Vantura Diag")
         except Exception:
             pass
-    page.wait_for_timeout(6_000)
+    return info
 
 
 def download_views(specs, today=None, verbose=True, log=print):
