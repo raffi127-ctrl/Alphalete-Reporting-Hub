@@ -203,6 +203,22 @@ def _inspect_cancel(office_key: str, view_override: str | None = None) -> int:
     print(f"\n  VERDICT: {'MULTI-OFFICE' if len(real) > 1 else 'SINGLE-OFFICE'}; "
           f"{len(total_owners)} owner(s) have a subtotal row; "
           f"{target} subtotal row: {'YES ✅' if tgt_has else 'NO ❌'}", flush=True)
+
+    # Do the cells carry counts (cancels/orders) we can sum per office? Dump the
+    # header + a couple raw rows under the run office so we can see the schema.
+    print(f"\n  === HEADER ({len(header)} cols) ===", flush=True)
+    for i, h in enumerate(header):
+        print(f"    [{i}] {h!r}", flush=True)
+    print(f"\n  === sample raw rows under {target!r} ===", flush=True)
+    shown = 0
+    for r in rows[1:]:
+        if len(r) <= ri:
+            continue
+        if (r[oi] or "").strip().upper() == target.upper():
+            print(f"    {[c for c in r[:min(len(r), ri+6)]]}", flush=True)
+            shown += 1
+            if shown >= 4:
+                break
     return 0
 
 
