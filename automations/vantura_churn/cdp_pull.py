@@ -194,6 +194,46 @@ def probe(url, sheet, out, today, log=print) -> dict:
     return info
 
 
+def _prime_orderlog(page, url, today, log):
+    """The B2B ORDER LOG dashboard loads with an EMPTY worksheet until its
+    query is triggered — so the crosstab dialog has no sheet to export. Load
+    it, commit the date range via trusted CDP clicks, then Refresh + Revert to
+    force the query (proven sequence 2026-07-15). After this the worksheet has
+    data and the crosstab download succeeds."""
+    import datetime as _dt
+    page.goto(url, wait_until="domcontentloaded")
+    viz = page.frame_locator('iframe[title="Data Visualization"]')
+    try:
+        viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
+                    'download"]').wait_for(state="visible", timeout=150_000)
+    except Exception:
+        pass
+    page.wait_for_timeout(18_000)
+    start = today - _dt.timedelta(days=60)
+    start_s = f"{start.month}/{start.day}/{start.year}"
+    end_s = f"{today.month}/{today.day}/{today.year}"
+    vp = page.evaluate("() => ({w:window.innerWidth,h:window.innerHeight})")
+    W, H = vp["w"], vp["h"]
+    for fx, val in [(0.13, start_s), (0.213, end_s)]:
+        try:
+            page.mouse.click(W * fx, H * 0.255, click_count=3)
+            page.wait_for_timeout(300)
+            page.keyboard.press("Backspace")
+            page.keyboard.type(val, delay=40)
+            page.keyboard.press("Enter")
+            page.wait_for_timeout(2500)
+        except Exception as ex:
+            log(f"[prime] date err {str(ex)[:50]}")
+    for tid in ("refresh", "revert"):
+        try:
+            viz.locator(f'[data-tb-test-id="viz-viewer-toolbar-button-'
+                        f'{tid}"]').first.click()
+            page.wait_for_timeout(12_000)
+        except Exception:
+            pass
+    page.wait_for_timeout(6_000)
+
+
 def download_views(specs, today=None, verbose=True, log=print):
     """Download each (view_url, crosstab_sheet, out_path) via one real-Chrome
     CDP session. Auth seeded once (ownerville storage_state → Tableau SSO).
