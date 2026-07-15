@@ -180,53 +180,39 @@ def probe(url, sheet, out, today, log=print) -> dict:
             # committed them (the runbook: type the date, press ENTER). Dump
             # the date inputs, then commit each with a trusted Enter to fire
             # the query.
-            # Does the grid actually have data? Body-text length is the tell
-            # (an empty grid = only filter labels; a populated grid = thousands
-            # of chars of rows).
+            # Does the grid actually have data? Body-text length is the tell.
             try:
                 body = viz.locator("body").inner_text(timeout=15000)
-                log(f"[body] viz text {len(body)} chars "
-                    f"(data present if >>3000)")
+                log(f"[body] viz text {len(body)} chars (data if >>3000)")
             except Exception as e:
                 log(f"[body] err {str(e)[:60]}")
 
-            # Hunt date inputs across EVERY frame (Tableau nests them). Commit
-            # each with a trusted select-all + type + Enter to fire the query.
+            # The date fields are canvas-rendered (0 DOM inputs), so commit them
+            # by TRUSTED positional click (CDP events Tableau honours). Field
+            # centres as viewport proportions, read off the screenshot:
+            #   Start Date ≈ (0.13 W, 0.255 H), End Date ≈ (0.213 W, 0.255 H).
             start_s = f"{(today - dt.timedelta(days=60)).month}/" \
                       f"{(today - dt.timedelta(days=60)).day}/" \
                       f"{(today - dt.timedelta(days=60)).year}"
             end_s = f"{today.month}/{today.day}/{today.year}"
-            all_inputs = []
-            for fr in page.frames:
+            vp = page.evaluate("() => ({w: window.innerWidth, "
+                               "h: window.innerHeight, dpr: window.devicePixelRatio})")
+            log(f"[viewport] {vp}")
+            W, H = vp["w"], vp["h"]
+            for label, fx, fy, val in [("Start", 0.13, 0.255, start_s),
+                                       ("End", 0.213, 0.255, end_s)]:
+                x, y = W * fx, H * fy
                 try:
-                    els = fr.locator("input")
-                    for i in range(els.count()):
-                        el = els.nth(i)
-                        try:
-                            v = el.input_value(timeout=800)
-                        except Exception:
-                            v = None
-                        all_inputs.append((fr, el, v))
-                except Exception:
-                    continue
-            log(f"[inputs] {len(all_inputs)} input(s) across "
-                f"{len(page.frames)} frame(s): "
-                f"{[v for _, _, v in all_inputs][:12]}")
-            committed = 0
-            for want in (start_s, end_s):
-                for fr, el, v in all_inputs:
-                    if v and v.strip() == want:
-                        try:
-                            el.click(click_count=3)
-                            page.keyboard.type(want, delay=30)
-                            page.keyboard.press("Enter")
-                            page.wait_for_timeout(2500)
-                            committed += 1
-                            log(f"[date] committed {want!r}")
-                        except Exception as e:
-                            log(f"[date] {want} click err {str(e)[:60]}")
-                        break
-            log(f"[date] committed {committed}/2; waiting 25s for grid")
+                    page.mouse.click(x, y, click_count=3)  # select existing
+                    page.wait_for_timeout(400)
+                    page.keyboard.press("Backspace")
+                    page.keyboard.type(val, delay=40)
+                    page.keyboard.press("Enter")
+                    page.wait_for_timeout(3000)
+                    log(f"[date] typed {label}={val} at ({x:.0f},{y:.0f})")
+                except Exception as ex:
+                    log(f"[date] {label} err {str(ex)[:70]}")
+            log("[date] committed; waiting 25s for grid")
             page.wait_for_timeout(25_000)
             try:
                 b2 = viz.locator("body").inner_text(timeout=15000)
