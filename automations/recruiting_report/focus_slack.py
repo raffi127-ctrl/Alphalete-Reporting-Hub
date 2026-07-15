@@ -16,16 +16,38 @@ from typing import Optional
 
 from automations.shared import slack_metrics_post as smp
 
-# Group-DM recipients (resolved + confirmed by Megan 2026-06-05). The posting
-# token's own user (Eve) is added automatically by Slack, so this is exactly
-# the four-person DM: Carlos, Elena, Valeria, Eve.
-RECIPIENTS = {
-    "Carlos Hidalgo":   "U046G04P5LG",
-    "Elena Camargo":    "U0B1G4T0MUN",
-    "Valeria Rodea":    "U06JQ4S1MRA",
-    "Evelyn Sobrino":   "U088E2KJEV8",
-    "Maud Miller":      "U045USN7NCD",
+# Per-captainship group-DM recipients, keyed by the captainship name used in
+# daily_focus.CAPTAINSHIPS / find_captainship_worksheet. The posting token's own
+# user (Eve, U088E2KJEV8) is auto-added by Slack to every group DM, so she is on
+# each DM implicitly even when not listed.
+#
+# - "Carlos": resolved + confirmed by Megan 2026-06-05 (Carlos, Elena, Valeria,
+#   Eve, Maud).
+# - "Colten Wright" / "Jairo Ruiz": confirmed by Megan 2026-07-15 when the two
+#   new captainship tabs went live.
+FOCUS_DM_RECIPIENTS = {
+    "Carlos": {
+        "Carlos Hidalgo":   "U046G04P5LG",
+        "Elena Camargo":    "U0B1G4T0MUN",
+        "Valeria Rodea":    "U06JQ4S1MRA",
+        "Evelyn Sobrino":   "U088E2KJEV8",
+        "Maud Miller":      "U045USN7NCD",
+    },
+    "Colten Wright": {
+        "Colten Wright":    "U047M3AAN0G",
+        "Rafael Hidalgo":   "U045Z8N0ZQC",
+        "Megan Hidalgo":    "U04G5HJBGFN",
+    },
+    "Jairo Ruiz": {
+        "Jairo Ruiz":       "U04Q6T14M34",
+        "Colten Wright":    "U047M3AAN0G",
+        "Rafael Hidalgo":   "U045Z8N0ZQC",
+        "Megan Hidalgo":    "U04G5HJBGFN",
+    },
 }
+
+# Back-compat: the original Carlos-only constant.
+RECIPIENTS = FOCUS_DM_RECIPIENTS["Carlos"]
 
 
 def _caption(today: dt.date, summary: Optional[str]) -> str:
@@ -37,31 +59,36 @@ def _caption(today: dt.date, summary: Optional[str]) -> str:
     return f"{head}\n{summary}" if summary else head
 
 
-def post_carlos_screenshots(
+def post_focus_screenshots(
     png_paths,
+    recipients: dict,
+    tab_label: str,
     today: Optional[dt.date] = None,
     summary: Optional[str] = None,
     *,
     dry_run: bool = False,
 ) -> dict:
-    """Open the group DM and upload one or more PNGs in a single message.
+    """Open a group DM with ``recipients`` and upload one or more PNGs.
 
     ``png_paths`` is a path or an ordered list of paths (3 owners each).
-    The dated caption is the message's initial_comment; the images attach
-    in top-to-bottom order. Returns a dict describing what was (or, on
-    dry_run, would be) sent. Raises smp.SlackPostError on token / API error.
+    ``recipients`` is a {display_name: user_id} map (the posting token's own
+    user is auto-added by Slack). ``tab_label`` names the tab in the image
+    titles (e.g. "Carlos", "Colten Wright"). The dated caption is the
+    message's initial_comment; images attach top-to-bottom. Returns a dict
+    describing what was (or, on dry_run, would be) sent. Raises
+    smp.SlackPostError on token / API error.
     """
     today = today or dt.date.today()
     if isinstance(png_paths, (str, Path)):
         png_paths = [png_paths]
     paths = [Path(p) for p in png_paths]
-    user_ids = list(RECIPIENTS.values())
+    user_ids = list(recipients.values())
     caption = _caption(today, summary)
 
     if dry_run:
         return {
             "dry_run": True,
-            "recipients": list(RECIPIENTS),
+            "recipients": list(recipients),
             "user_ids": user_ids,
             "files": [str(p) for p in paths],
             "caption": caption,
@@ -73,7 +100,7 @@ def post_carlos_screenshots(
 
     client = smp._client()
 
-    # Open (or reuse) the multi-person DM with the four users.
+    # Open (or reuse) the multi-person DM with the listed users.
     resp = client.conversations_open(users=",".join(user_ids))
     if not resp.get("ok"):
         raise smp.SlackPostError(f"conversations.open failed: {resp.get('error')}")
@@ -84,7 +111,7 @@ def post_carlos_screenshots(
         {
             "file": str(p),
             "filename": p.name,
-            "title": f"Daily Recruiting Focus — Carlos ({i} of {n})",
+            "title": f"Daily Recruiting Focus — {tab_label} ({i} of {n})",
         }
         for i, p in enumerate(paths, 1)
     ]
@@ -99,11 +126,23 @@ def post_carlos_screenshots(
     return {
         "dry_run": False,
         "channel": channel,
-        "recipients": list(RECIPIENTS),
+        "recipients": list(recipients),
         "user_ids": user_ids,
         "files": [str(p) for p in paths],
         "caption": caption,
     }
+
+
+def post_carlos_screenshots(
+    png_paths,
+    today: Optional[dt.date] = None,
+    summary: Optional[str] = None,
+    *,
+    dry_run: bool = False,
+) -> dict:
+    """Back-compat wrapper: post the Carlos tab to the Carlos group DM."""
+    return post_focus_screenshots(
+        png_paths, RECIPIENTS, "Carlos", today, summary, dry_run=dry_run)
 
 
 # Back-compat alias (single screenshot → list of one).

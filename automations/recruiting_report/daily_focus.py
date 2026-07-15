@@ -1246,7 +1246,7 @@ def main() -> int:
     fetch_errors: List[str] = []
     unmapped: List[str] = []
     icds_by_tab: dict = {}   # tab title -> col-V names, for the terminated check
-    carlos_result = None
+    results_by_cs: dict = {}  # captainship name -> its run result (for screenshot DMs)
     # Shared across all captainships so a duplicated office (an ICD on more than
     # one tab, e.g. Rafael Hidalgo / office 11280 on 4 tabs) is scraped ONCE per
     # week and reused — ~24% of the fetches across the 5 tabs are duplicates.
@@ -1262,8 +1262,7 @@ def main() -> int:
         tab = cs_result.get("tab")
         if tab:
             icds_by_tab.setdefault(tab, []).extend(cs_result.get("icds", []))
-        if cs == "Carlos":
-            carlos_result = cs_result
+        results_by_cs[cs] = cs_result
 
     # One shared retry-state file for the whole run — the Hub reads it to list
     # the skipped ICDs and power the "Retry the skipped ICDs" button. Not
@@ -1338,33 +1337,39 @@ def main() -> int:
     # recover from) flips the whole run to 'failed' even though it
     # completed and the data is correct (Maud, 2026-06-02). Only emitted
     # on rc == 0 so genuine failures still fall through to the scan.
-    # Carlos screenshot DM — after the Carlos tab is filled, render it to a
-    # PNG and DM it to the recruiting group (Carlos + Elena + Valeria + Eve).
-    # Best-effort: a Slack failure logs a warning but never fails the run or
-    # blocks the success sentinel (the data fill already succeeded). Skipped
-    # on --dry-run / --only (partial views) and with --no-slack.
-    if ("Carlos" in targets and not args.dry_run
-            and not args.only and not args.no_slack):
-        try:
-            from automations.recruiting_report import focus_render, focus_slack
-            sh = fill.open_by_key(DAILY_FOCUS_SPREADSHEET_ID)
-            ws = find_captainship_worksheet(sh, "Carlos")
-            if ws is None:
-                raise RuntimeError("Carlos tab not found — skipping Slack DM.")
-            # Split into one image per 3 owners so the DM is easy to read.
-            pngs = focus_render.render_tab_grouped(
-                sh, ws.title, _OUTPUT_DIR,
-                prefix=f"daily-focus-carlos-{today.isoformat()}", per=3)
-            summary = None
-            inaccessible = (carlos_result or {}).get("inaccessible", [])
-            if inaccessible:
-                summary = (f"⚠️ {len(inaccessible)} ICD(s) couldn't be pulled: "
-                           + ", ".join(inaccessible))
-            res = focus_slack.post_carlos_screenshots(pngs, today, summary=summary)
-            log.info("Slack DM sent — %d Carlos screenshot(s) → %s",
-                     len(pngs), ", ".join(res["recipients"]))
-        except Exception as e:  # noqa: BLE001 — post is best-effort
-            log.warning("Carlos screenshot DM failed (run still OK): %s", e)
+    # Per-captainship screenshot DMs — after a captainship's tab is filled,
+    # render it to PNG(s) and DM it to that captainship's group DM (recipients
+    # in focus_slack.FOCUS_DM_RECIPIENTS: Carlos, Colten Wright, Jairo Ruiz).
+    # Best-effort per tab: a Slack failure on one tab logs a warning but never
+    # fails the run, blocks the success sentinel, or stops the other tabs' DMs
+    # (the data fill already succeeded). Skipped on --dry-run / --only (partial
+    # views) and with --no-slack.
+    if not args.dry_run and not args.only and not args.no_slack:
+        from automations.recruiting_report import focus_render, focus_slack
+        sh = fill.open_by_key(DAILY_FOCUS_SPREADSHEET_ID)
+        for cs, recipients in focus_slack.FOCUS_DM_RECIPIENTS.items():
+            if cs not in targets:
+                continue
+            try:
+                ws = find_captainship_worksheet(sh, cs)
+                if ws is None:
+                    raise RuntimeError(f"{cs} tab not found — skipping Slack DM.")
+                # Split into one image per 3 owners so the DM is easy to read.
+                slug = cs.lower().replace(" ", "-")
+                pngs = focus_render.render_tab_grouped(
+                    sh, ws.title, _OUTPUT_DIR,
+                    prefix=f"daily-focus-{slug}-{today.isoformat()}", per=3)
+                summary = None
+                inaccessible = (results_by_cs.get(cs) or {}).get("inaccessible", [])
+                if inaccessible:
+                    summary = (f"⚠️ {len(inaccessible)} ICD(s) couldn't be pulled: "
+                               + ", ".join(inaccessible))
+                res = focus_slack.post_focus_screenshots(
+                    pngs, recipients, cs, today, summary=summary)
+                log.info("Slack DM sent — %d %s screenshot(s) → %s",
+                         len(pngs), cs, ", ".join(res["recipients"]))
+            except Exception as e:  # noqa: BLE001 — post is best-effort
+                log.warning("%s screenshot DM failed (run still OK): %s", cs, e)
 
     if rc == 0:
         log.info("=== done ===")
