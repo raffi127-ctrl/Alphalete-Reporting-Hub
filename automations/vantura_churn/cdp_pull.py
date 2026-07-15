@@ -237,34 +237,37 @@ def _prime_orderlog(page, url, today, log):
     vp = page.evaluate("() => ({w:window.innerWidth,h:window.innerHeight})")
     W, H = vp["w"], vp["h"]
 
-    def _dismiss_calendar():
-        # A calendar pop-up opens after a date edit and blocks the next field
-        # (runbook: dismiss it by clicking the dark "B2B ORDER LOG" banner).
-        try:
-            page.mouse.click(W * 0.5, H * 0.18)
-            page.wait_for_timeout(700)
-        except Exception:
-            pass
-
     def _set_date(fx, val):
-        page.mouse.click(W * fx, H * 0.255, click_count=3)
+        # Escape first to kill any open calendar popup that would swallow the
+        # click; then select-all + retype + Enter; Escape again to close the
+        # calendar the edit re-opens.
+        page.keyboard.press("Escape")
         page.wait_for_timeout(400)
+        page.mouse.click(W * fx, H * 0.255, click_count=3)
+        page.wait_for_timeout(500)
         page.keyboard.press("Backspace")
         page.keyboard.type(val, delay=45)
         page.keyboard.press("Enter")
-        page.wait_for_timeout(2500)
-        _dismiss_calendar()
+        page.wait_for_timeout(2000)
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(600)
 
-    # Two passes: the URL pre-fills the fields with the target values, so the
-    # first pass (same value) may be a no-op; a throwaway pass guarantees a
-    # real change so the query fires. Dismiss the calendar between every edit.
-    for fx, val in [(0.13, "1/1/2000"), (0.213, "1/2/2000"),
+    # Throwaway pass forces a real change (URL pre-fills the target values, so
+    # retyping them is a no-op); real pass sets the correct 60-day range.
+    for fx, val in [(0.13, "6/1/2020"), (0.213, "6/2/2020"),
                     (0.13, start_s), (0.213, end_s)]:
         try:
             _set_date(fx, val)
         except Exception as ex:
             log(f"[prime] date err {str(ex)[:50]}")
-    page.wait_for_timeout(10_000)
+    # Refresh re-runs the query with the committed dates.
+    try:
+        viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
+                    'refresh"]').first.click()
+        page.wait_for_timeout(15_000)
+    except Exception:
+        pass
+    page.wait_for_timeout(6_000)
 
 
 def download_views(specs, today=None, verbose=True, log=print):
