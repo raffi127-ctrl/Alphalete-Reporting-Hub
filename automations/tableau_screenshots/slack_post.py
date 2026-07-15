@@ -41,6 +41,7 @@ ORG_CHANNELS = {
     "elite_prime": ["C06A6A8ED34"],       # #elite-prime-sales (private)
     "carlos_gp":   ["C07J46MQNUX"],       # #alphalete-gp-sales (private, Carlos)
     "ambient_1":   ["C0B1DHEFVLH"],       # #ambient-sales-1 (private, Cy Wade)
+    "aeon":        ["C0849EPM4LD"],       # #aeon-sales (private, Cody Cannon)
 }
 ORGS = list(ORG_CHANNELS)
 DEFAULT_ORG = "alphalete"
@@ -52,7 +53,8 @@ ORG_LABEL = {"alphalete": "#alphalete-sales + #top-leaders-alphalete-org",
              "palace": "#palace-sales",
              "elite_prime": "#elite-prime-sales",
              "carlos_gp": "#alphalete-gp-sales",
-             "ambient_1": "#ambient-sales-1"}
+             "ambient_1": "#ambient-sales-1",
+             "aeon": "#aeon-sales"}
 
 # Per-org tracker ORDER override (Carlos wants the B2B trackers + Box first in his
 # channel, 2026-07-14). An org NOT listed here posts in the default pages.py
