@@ -139,14 +139,11 @@ def _select_worksheet(page, log) -> bool:
 
 
 def probe(url, sheet, out, today, log=print) -> dict:
-    """Download the Carlos ORDER LOG via the real prime path and report what
-    it actually contains: total rows, Carlos rows, Carlos rows posted in the
-    last 30 days, and the posted-date range — to see if the date/owner filter
-    took."""
+    """Inspect the Tableau JS API inside the viz frame — if reachable, we can
+    set the date parameters + owner filter via API (reliable) instead of
+    pixel-clicking the canvas dropdown."""
     from patchright.sync_api import sync_playwright
     from automations.shared import tableau_patchright as tp
-    from automations.recruiting_report.opt_phase import drive_crosstab_dialog
-    from automations.vantura_churn import compute
     _kill_ours()
     proc = _launch()
     log(f"[cdp] real Chrome pid={proc.pid}; waiting 20s")
@@ -159,49 +156,45 @@ def probe(url, sheet, out, today, log=print) -> dict:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             tp._ensure_tableau_authenticated(page, verbose=False,
                                              allow_form_login=True)
-            dst = Path("/tmp/vantura_probe_ol.csv")
-            _prime_orderlog(page, url, today, log)
-            _select_owner(page, "CARLOS HIDALGO", log)
+            page.goto(url, wait_until="domcontentloaded")
+            viz = page.frame_locator('iframe[title="Data Visualization"]')
             try:
-                _upload_png(page.screenshot(full_page=False))
-                log("[cdp] post-select screenshot -> 'Vantura Shot'")
-                pvz = page.frame_locator('iframe[title="Data Visualization"]')
-                body = pvz.locator("body").inner_text(timeout=12000)
-                log(f"[post-select] viz body {len(body)} chars")
-            except Exception as ex:
-                log(f"[post-select] shot err {str(ex)[:60]}")
-            drive_crosstab_dialog(page, url, sheet, dst, verbose=False,
-                                  skip_nav=True)
-            log(f"downloaded {dst.stat().st_size} bytes")
-            grid = compute._load_grid(dst)
-            hdr = [str(h or "").strip() for h in grid[0]]
-            log("HDRCOLS: " + " | ".join(hdr[:6]) + " ... (%d cols)" % len(hdr))
-            oi = hdr.index(compute.COLS["owner"]) if compute.COLS["owner"] in hdr else 0
-            pi = hdr.index(compute.COLS["posted"]) if compute.COLS["posted"] in hdr else -1
-            owners = {}
-            carlos = 0
-            posted_dates = []
-            for r in grid[1:]:
-                if len(r) <= oi:
-                    continue
-                ownr = str(r[oi] or "").split(chr(10))[0].strip().upper()
-                owners[ownr] = owners.get(ownr, 0) + 1
-                if ownr.startswith("CARLOS HIDALGO"):
-                    carlos += 1
-                    if pi >= 0 and pi < len(r):
-                        d = compute._parse_date(r[pi])
-                        if d:
-                            posted_dates.append(d)
-            log(f"total rows: {len(grid)-1}  distinct owners: {len(owners)}")
-            log(f"CARLOS rows: {carlos}")
-            if posted_dates:
-                log(f"CARLOS posted range: {min(posted_dates)} .. {max(posted_dates)}")
-            top = sorted(owners.items(), key=lambda kv: -kv[1])[:5]
-            log("top owners: " + " | ".join(f"{k[:20]}={v}" for k, v in top))
-            lines_c = compute.load_orderlog(dst, "CARLOS HIDALGO")
-            s = compute.churn_summary(lines_c, today)
-            log(f"computed base={s['base_total']} disc={s['disc_total']}")
-            info = {"carlos_rows": carlos, "base": s['base_total']}
+                viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
+                            'download"]').wait_for(state="visible", timeout=150_000)
+            except Exception:
+                pass
+            page.wait_for_timeout(20_000)
+            log(f"frames: {len(page.frames)}")
+            for fr in page.frames:
+                u = (fr.url or "")[:70]
+                try:
+                    keys = fr.evaluate(
+                        "() => Object.keys(window).filter(k=>"
+                        "/tableau|viz|embed/i.test(k)).slice(0,25)")
+                except Exception as e:
+                    keys = f"eval-err {str(e)[:40]}"
+                log(f"FRAME {u} | tableau-ish keys: {keys}")
+                # deeper: look for a viz/workbook API on any tableau global
+                try:
+                    api = fr.evaluate("""() => {
+                        const out = {};
+                        for (const k of Object.keys(window)) {
+                            if (!/tableau/i.test(k)) continue;
+                            const v = window[k];
+                            if (v && typeof v === 'object') {
+                                out[k] = Object.keys(v).slice(0,15);
+                            } else { out[k] = typeof v; }
+                        }
+                        // web component?
+                        const tv = document.querySelector('tableau-viz, tableau-authoring-viz');
+                        if (tv) out['__tableau-viz-element'] =
+                            Object.getOwnPropertyNames(Object.getPrototypeOf(tv)).slice(0,25);
+                        return out;
+                    }""")
+                    if api:
+                        log(f"  API on {u[:40]}: {str(api)[:600]}")
+                except Exception as e:
+                    log(f"  api-probe err {str(e)[:50]}")
     except Exception as ex:
         import traceback
         log("ERR " + str(ex)[:120])
