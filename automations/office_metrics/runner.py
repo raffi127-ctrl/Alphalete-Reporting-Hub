@@ -153,6 +153,49 @@ def _prove_abp(office_key: str, *, headless: bool = False) -> int:
     return 0 if ok else 1
 
 
+def _inspect_cancel(office_key: str) -> int:
+    """Read-only: pull the office's ongoing-cancel view and report its distinct
+    owners + which owners carry a per-owner 'Total' subtotal row. If the office's
+    view already shows MANY owners with per-owner Total rows, ongoing-cancel is
+    sliceable (read the office's Total row, like ABP). If it shows one owner +
+    only a Grand Total, the view is office-scoped and can't be sliced as-is."""
+    import csv
+    import tempfile
+    from pathlib import Path
+    from automations.ongoing_cancel import pull as oc_pull
+
+    o = _off.get(office_key)
+    oc_pull.VIEW_URL = o.view_ongoing_cancel     # inspect THIS office's view
+    print(f"=== inspect cancel view [{office_key}] ===\n  {oc_pull.VIEW_URL}",
+          flush=True)
+    out = Path(tempfile.gettempdir()) / f"oc_inspect_{office_key}.csv"
+    oc_pull.fetch_crosstab(out, verbose=True)
+    with open(out, "r", encoding="utf-16-le") as f:
+        rows = list(csv.reader(f, delimiter="\t"))
+    header = [h.lstrip("﻿").strip() for h in rows[0]]
+    oi, ri = header.index("Owner Name"), header.index("Rep")
+    owners: dict = {}
+    total_owners: set = set()
+    for r in rows[1:]:
+        if len(r) <= ri:
+            continue
+        own = (r[oi] or "").strip()
+        rep = (r[ri] or "").strip()
+        if not own:
+            continue
+        owners[own] = owners.get(own, 0) + 1
+        if rep == "Total":
+            total_owners.add(own)
+    print(f"\n  distinct owners: {len(owners)}", flush=True)
+    for own, c in sorted(owners.items()):
+        mark = "  [has per-owner Total row]" if own in total_owners else ""
+        print(f"    {own!r}: {c} rows{mark}", flush=True)
+    real = [x for x in owners if x not in ("Grand Total",)]
+    print(f"\n  VERDICT: {'MULTI-OFFICE' if len(real) > 1 else 'SINGLE-OFFICE'} view; "
+          f"{len(total_owners)} owner(s) have a Total subtotal row.", flush=True)
+    return 0
+
+
 def main(argv=None, *, office_key: str | None = None) -> int:
     ap = argparse.ArgumentParser(prog="office_metrics")
     ap.add_argument("--office", default=office_key,
@@ -178,6 +221,10 @@ def main(argv=None, *, office_key: str | None = None) -> int:
                          "sliced to this office's owner, matches the office's "
                          "current per-office ABP view. No post. Run before "
                          "flipping ABP_USE_ALL_OFFICE on.")
+    ap.add_argument("--inspect-cancel", action="store_true",
+                    help="read-only: pull the ongoing-cancel view and dump its "
+                         "distinct owners + which have a per-owner 'Total' "
+                         "subtotal row (decides whether it's sliceable).")
     args = ap.parse_args(argv)
 
     # Structural guard FIRST — a duplicated channel or view URL (the copy-paste
@@ -205,6 +252,8 @@ def main(argv=None, *, office_key: str | None = None) -> int:
 
     if args.prove_abp:
         return _prove_abp(args.office)
+    if args.inspect_cancel:
+        return _inspect_cancel(args.office)
 
     o = _off.get(args.office)
     metrics = metrics_for(o)
