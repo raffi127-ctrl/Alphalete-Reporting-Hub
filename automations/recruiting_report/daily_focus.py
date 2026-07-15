@@ -55,7 +55,8 @@ ICD_LIST_COLUMN = 22  # col V
 # name here finds the matching tab. Each captain owns their tab's col V
 # list — add a name here to include that captain's tab in the run.
 DAILY_FOCUS_SPREADSHEET_ID = "11FRYGG1hvuxcbWiYtDv7LzVss6ujZE_SOpqfhrQrVAo"
-CAPTAINSHIPS = ["Raf", "Carlos", "Sahil Multani", "Chan Park", "Jose Antonio Chavez"]
+CAPTAINSHIPS = ["Raf", "Carlos", "Sahil Multani", "Chan Park", "Jose Antonio Chavez",
+                "Colten Wright", "Jairo Ruiz"]
 DEFAULT_CAPTAINSHIP = "Raf"
 
 # Sidecar state file, one per captainship: tracks which ICDs the *most
