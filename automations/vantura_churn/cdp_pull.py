@@ -283,6 +283,15 @@ def download_views(specs, today=None, verbose=True, log=print):
 
     if today is None:
         today = _dt.date.today()
+    # Mirror every log line to the 'Vantura Diag' tab so failures are visible
+    # remotely (the mini-control Result cell truncates hard).
+    _buf = []
+
+    def dlog(msg):
+        log(msg)
+        _buf.append(str(msg))
+    log = dlog
+
     _kill_ours()
     proc = _launch()
     log(f"[cdp] launched real Chrome pid={proc.pid}; waiting 20s")
@@ -334,10 +343,31 @@ def download_views(specs, today=None, verbose=True, log=print):
                 results[str(out)] = out
                 log(f"[cdp] saved {sheet} → {out} "
                     f"({out.stat().st_size:,} bytes)")
+    except Exception:
+        import traceback
+        _buf.append("TRACEBACK:")
+        _buf.extend(traceback.format_exc().splitlines()[-14:])
+        raise
     finally:
         try:
             proc.terminate()
         except Exception:
             pass
         _kill_ours()
+        try:
+            _upload_lines(_buf, tab="Vantura Diag")
+        except Exception:
+            pass
     return results
+
+
+def _upload_lines(lines, tab="Vantura Diag"):
+    from automations.recruiting_report import fill as _fill
+    sh = _fill._client().open_by_key(
+        "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
+    try:
+        t = sh.worksheet(tab)
+    except Exception:
+        t = sh.add_worksheet(title=tab, rows=400, cols=1)
+    t.clear()
+    t.update([[x[:900]] for x in (lines[-380:] or ["(empty)"])], "A1")
