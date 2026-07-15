@@ -39,6 +39,7 @@ ORG_CHANNELS = {
     "indelible":   ["C0AA85Y3FPE"],       # #indelible-sales (private)
     "palace":      ["C09AVM17PAR"],       # #palace-sales (private)
     "elite_prime": ["C06A6A8ED34"],       # #elite-prime-sales (private)
+    "carlos_gp":   ["C07J46MQNUX"],       # #alphalete-gp-sales (private, Carlos)
 }
 ORGS = list(ORG_CHANNELS)
 DEFAULT_ORG = "alphalete"
@@ -48,7 +49,8 @@ ORG_LABEL = {"alphalete": "#alphalete-sales + #top-leaders-alphalete-org",
              "elevate": "#elevate-sales",
              "indelible": "#indelible-sales",
              "palace": "#palace-sales",
-             "elite_prime": "#elite-prime-sales"}
+             "elite_prime": "#elite-prime-sales",
+             "carlos_gp": "#alphalete-gp-sales"}
 
 # Per-org tracker ORDER override (Carlos wants the B2B trackers + Box first in his
 # channel, 2026-07-14). An org NOT listed here posts in the default pages.py
@@ -57,6 +59,12 @@ ORG_LABEL = {"alphalete": "#alphalete-sales + #top-leaders-alphalete-org",
 # from a custom-ordered feed. Keys are org keys from ORG_CHANNELS; values are
 # lists of tracker ids (pages.py `id`s).
 ORG_ORDER: dict[str, list[str]] = {
+    # Carlos wants B2B (AT&T, CRU, Box, D2D) first, then the AT&T/NDS/Fiber ones.
+    "carlos_gp": [
+        "b2b_att_country", "b2b_att_country_cru", "b2b_box",
+        "b2b_d2d_consolidated", "att_country", "att_country_internet_only",
+        "nds", "quantum_fiber",
+    ],
 }
 
 
