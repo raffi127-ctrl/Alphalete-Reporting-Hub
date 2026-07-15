@@ -328,21 +328,34 @@ def _prove_cancel(office_key: str) -> int:
     allo = oc_pull.parse(oc_pull.fetch_crosstab(d / f"oc_all_{office_key}.csv"))
     os.environ.pop("ONGOING_CANCEL_SLICE_OWNER", None)
 
-    # Key reps by name (owner-name casing can differ between views).
+    # The two views may show different date WINDOWS (custom-view date filters), so
+    # compare only the days they share — a window shift is benign, a value diff
+    # on a shared day is a real slice error.
+    print(f"\n  per-office days: {per['days']}", flush=True)
+    print(f"  all-office days: {allo['days']}", flush=True)
+    shared = [d for d in per["days"] if d in set(allo["days"])]
+    print(f"  shared days: {shared}", flush=True)
     per_rows = {r["rep"]: r["per_day"] for r in per["rows"]}
     all_rows = {r["rep"]: r["per_day"] for r in allo["rows"]}
-    gt_same = per["grand_total_per_day"] == allo["grand_total_per_day"]
+
+    def _on_shared(pd):
+        return {d: pd[d] for d in shared if d in pd}
+    gt_same = ({d: per["grand_total_per_day"].get(d) for d in shared}
+               == {d: allo["grand_total_per_day"].get(d) for d in shared})
     keys = sorted(set(per_rows) | set(all_rows))
-    row_diffs = [k for k in keys if per_rows.get(k) != all_rows.get(k)]
-    ok = gt_same and not row_diffs
-    print(f"\n  office total match: {gt_same}  reps per={len(per_rows)} "
+    row_diffs = [k for k in keys if _on_shared(per_rows.get(k, {}))
+                 != _on_shared(all_rows.get(k, {}))]
+    ok = bool(shared) and gt_same and not row_diffs
+    print(f"\n  office total match (shared days): {gt_same}  reps per={len(per_rows)} "
           f"all={len(all_rows)}  rep diffs: {len(row_diffs)}", flush=True)
     if not gt_same:
-        print(f"    per office total: {per['grand_total_per_day']}", flush=True)
-        print(f"    all office total: {allo['grand_total_per_day']}", flush=True)
+        print(f"    per office total: "
+              f"{ {d: per['grand_total_per_day'].get(d) for d in shared} }", flush=True)
+        print(f"    all office total: "
+              f"{ {d: allo['grand_total_per_day'].get(d) for d in shared} }", flush=True)
     for k in row_diffs[:6]:
-        print(f"    ⚠ rep {k!r}: per={per_rows.get(k)} all={all_rows.get(k)}",
-              flush=True)
+        print(f"    ⚠ rep {k!r}: per={_on_shared(per_rows.get(k, {}))} "
+              f"all={_on_shared(all_rows.get(k, {}))}", flush=True)
     print(f"\n=== CANCEL PROOF [{office_key}]: "
           f"{'IDENTICAL ✅ — safe to flip' if ok else 'MISMATCH ❌ — do NOT flip'} ===",
           flush=True)
