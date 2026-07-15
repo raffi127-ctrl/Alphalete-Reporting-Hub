@@ -239,22 +239,31 @@ def _inspect_churn(view_url: str) -> int:
         rows = list(csv.reader(f, delimiter="\t"))
     header = [h.lstrip("﻿").strip() for h in rows[0]]
     oi = header.index("ICD Owner Name (rep)")
+    ri = header.index("Rep Name")
     owners: dict = {}
+    total_owners: set = set()          # owners with a per-office Rep Name=='Total' row
     for r in rows[1:]:
-        if len(r) <= oi:
+        if len(r) <= max(oi, ri):
             continue
         own = (r[oi] or "").strip()
+        rep = (r[ri] or "").strip()
         if own:
             owners[own] = owners.get(own, 0) + 1
+            if rep == "Total":
+                total_owners.add(own)
     real = [o for o in owners if o not in ("Grand Total",)]
     print(f"\n  distinct ICD owners: {len(owners)}", flush=True)
-    for own, c in sorted(owners.items()):
-        print(f"    {own!r}: {c} rows", flush=True)
     for who in ("Rashad Reed", "Aya Al-Khafaji"):
-        hit = any(o.upper() == who.upper() for o in owners)
-        print(f"  {who}: {'PRESENT ✅' if hit else 'MISSING ❌'}", flush=True)
-    print(f"\n  VERDICT: {'ALL-OFFICE' if len(real) > 1 else 'SINGLE-OFFICE'} "
-          f"({len(real)} offices)", flush=True)
+        present = any(o.upper() == who.upper() for o in owners)
+        has_total = any(o.upper() == who.upper() for o in total_owners)
+        print(f"  {who}: {'PRESENT ✅' if present else 'MISSING ❌'} | "
+              f"per-office Total row: {'YES ✅' if has_total else 'NO'}", flush=True)
+    print(f"\n  owners with a per-office Total row: {len(total_owners)} "
+          f"(of {len(real)} offices)", flush=True)
+    print(f"  VERDICT: {'ALL-OFFICE' if len(real) > 1 else 'SINGLE-OFFICE'} "
+          f"({len(real)} offices); "
+          f"{'per-office Totals present → read directly' if len(total_owners) > 1 else 'no per-office Totals → recompute from reps'}",
+          flush=True)
     return 0
 
 
