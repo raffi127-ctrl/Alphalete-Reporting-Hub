@@ -153,7 +153,7 @@ def _prove_abp(office_key: str, *, headless: bool = False) -> int:
     return 0 if ok else 1
 
 
-def _inspect_cancel(office_key: str) -> int:
+def _inspect_cancel(office_key: str, view_override: str | None = None) -> int:
     """Read-only: pull the office's ongoing-cancel view and report its distinct
     owners + which owners carry a per-owner 'Total' subtotal row. If the office's
     view already shows MANY owners with per-owner Total rows, ongoing-cancel is
@@ -165,7 +165,7 @@ def _inspect_cancel(office_key: str) -> int:
     from automations.ongoing_cancel import pull as oc_pull
 
     o = _off.get(office_key)
-    oc_pull.VIEW_URL = o.view_ongoing_cancel     # inspect THIS office's view
+    oc_pull.VIEW_URL = view_override or o.view_ongoing_cancel
     print(f"=== inspect cancel view [{office_key}] ===\n  {oc_pull.VIEW_URL}",
           flush=True)
     out = Path(tempfile.gettempdir()) / f"oc_inspect_{office_key}.csv"
@@ -225,6 +225,10 @@ def main(argv=None, *, office_key: str | None = None) -> int:
                     help="read-only: pull the ongoing-cancel view and dump its "
                          "distinct owners + which have a per-owner 'Total' "
                          "subtotal row (decides whether it's sliceable).")
+    ap.add_argument("--cancel-view", default=None,
+                    help="with --inspect-cancel: inspect THIS view URL instead of "
+                         "the office's per-office view (e.g. an all-office "
+                         "candidate).")
     args = ap.parse_args(argv)
 
     # Structural guard FIRST — a duplicated channel or view URL (the copy-paste
@@ -253,7 +257,7 @@ def main(argv=None, *, office_key: str | None = None) -> int:
     if args.prove_abp:
         return _prove_abp(args.office)
     if args.inspect_cancel:
-        return _inspect_cancel(args.office)
+        return _inspect_cancel(args.office, view_override=args.cancel_view)
 
     o = _off.get(args.office)
     metrics = metrics_for(o)
