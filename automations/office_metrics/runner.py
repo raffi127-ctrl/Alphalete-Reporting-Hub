@@ -175,7 +175,9 @@ def _inspect_cancel(office_key: str, view_override: str | None = None) -> int:
     header = [h.lstrip("﻿").strip() for h in rows[0]]
     oi, ri = header.index("Owner Name"), header.index("Rep")
     owners: dict = {}
-    total_owners: set = set()
+    total_owners: set = set()          # owner has a subtotal row (rep blank/Total)
+    target = o.owner
+    target_reps: dict = {}             # rep-value -> count, under the run office
     for r in rows[1:]:
         if len(r) <= ri:
             continue
@@ -184,15 +186,23 @@ def _inspect_cancel(office_key: str, view_override: str | None = None) -> int:
         if not own:
             continue
         owners[own] = owners.get(own, 0) + 1
-        if rep == "Total":
+        if rep in ("", "Total"):       # a subtotal-shaped row (blank OR 'Total')
             total_owners.add(own)
+        if own.upper() == target.upper():
+            target_reps[rep or "(blank)"] = target_reps.get(rep or "(blank)", 0) + 1
     print(f"\n  distinct owners: {len(owners)}", flush=True)
     for own, c in sorted(owners.items()):
-        mark = "  [has per-owner Total row]" if own in total_owners else ""
+        mark = "  [has subtotal row]" if own in total_owners else ""
         print(f"    {own!r}: {c} rows{mark}", flush=True)
-    real = [x for x in owners if x not in ("Grand Total",)]
-    print(f"\n  VERDICT: {'MULTI-OFFICE' if len(real) > 1 else 'SINGLE-OFFICE'} view; "
-          f"{len(total_owners)} owner(s) have a Total subtotal row.", flush=True)
+    print(f"\n  rep values under {target!r} (the run office):", flush=True)
+    for rep, c in sorted(target_reps.items()):
+        flag = "  <<< SUBTOTAL row" if rep in ("(blank)", "Total") else ""
+        print(f"    rep={rep!r}: {c}{flag}", flush=True)
+    real = [x for x in owners if x != "Grand Total"]
+    tgt_has = target in total_owners or target.upper() in {t.upper() for t in total_owners}
+    print(f"\n  VERDICT: {'MULTI-OFFICE' if len(real) > 1 else 'SINGLE-OFFICE'}; "
+          f"{len(total_owners)} owner(s) have a subtotal row; "
+          f"{target} subtotal row: {'YES ✅' if tgt_has else 'NO ❌'}", flush=True)
     return 0
 
 
