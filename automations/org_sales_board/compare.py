@@ -519,6 +519,53 @@ def _col_header(grid, r0, c):
     return ""
 
 
+# Row labels / column headers that mark a cell as DERIVED-from-frozen-history —
+# a %-change or a prior-week baseline the two tabs maintain and roll INDEPENDENTLY,
+# so a copy-vs-VA difference there is expected (different roll moments), not a data
+# error. full_compare.py already treats these as report-only for the GATE; the
+# email must too, or a week-rollover day flags hundreds of benign delta cells as
+# "needs a look" (Megan 2026-07-15: the rollover deltas are the real glitch — a
+# week-boundary artifact, not bad numbers).
+_REPORT_ONLY_MARKERS = ("delta", "vs prior", "vs 4", "weekavg", "4 week avg",
+                        "4 weekavg", "last week", "prior week", "weeks prior")
+
+
+def _we_md(col: str):
+    """(month, day) parsed from a 'WE 07.19' / 'WE 7.5' column header, else None."""
+    import re
+    m = re.match(r"\s*we\s+(\d{1,2})[./](\d{1,2})", (col or "").lower())
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def _is_report_only(label: str, col: str, cv: str, vv: str,
+                    current_we=None) -> bool:
+    """True for a %-change / frozen prior-week cell whose divergence is a rollover
+    artifact, not a data glitch — surfaced informationally, never counted toward
+    'needs a look'. A RAW current-week integer in a weekday/total column is NOT
+    report-only and still counts — and, crucially, neither is the CURRENT week's
+    'WE mm.dd' column (only PAST 'WE' columns are frozen history; matching the
+    live week here would hide a real current-week undercount from the email)."""
+    lab, c = (label or "").lower(), (col or "").lower()
+    if any(k in lab for k in _REPORT_ONLY_MARKERS):
+        return True
+    if (c.startswith("vs ") or "delta" in c or "%" in c
+            or "last week" in c or "4 week" in c or "prior" in c):
+        return True
+    we = _we_md(c)                           # a 'WE mm.dd' column?
+    if we is not None and we != current_we:  # a PAST week's frozen history only
+        return True
+    if "%" in (cv or "") or "%" in (vv or ""):
+        return True
+    for x in (cv, vv):                       # a fractional ratio = a %-change raw
+        try:
+            f = float(str(x).replace(",", ""))
+            if f != int(f):
+                return True
+        except (ValueError, TypeError):
+            pass
+    return False
+
+
 def breakdown(cd: dict | None = None) -> dict:
     """Categorized copy-vs-VA comparison for the daily summary email — built on
     top of the proven content_diff() (name-matched within sections, frozen
@@ -532,12 +579,18 @@ def breakdown(cd: dict | None = None) -> dict:
       behind       — both numeric, copy < VA     (ATTENTION)
       conflict     — both populated, non-numeric differ (ATTENTION)
       ahead        — copy > VA, or copy has a value the VA hasn't keyed (benign)
+      report_only  — %-change / frozen prior-week baseline (rollover artifact —
+                     informational, NOT counted toward attention)
 
     `cd` lets a caller pass a content_diff() it already computed."""
     from gspread.utils import a1_to_rowcol
+    from automations.org_sales_board import week as _wk
     d = cd if cd is not None else content_diff()
     grid = _retry(open_by_key(SHEET_ID).worksheet(SANDBOX_TAB).get_all_values)
-    b = {k: [] for k in ("ahead", "behind", "conflict", "copy_missing")}
+    _sun = _wk.reporting_sunday(dt.date.today())      # the LIVE week-ending
+    current_we = (_sun.month, _sun.day)               # never treat this WE as frozen
+    b = {k: [] for k in ("ahead", "behind", "conflict", "copy_missing",
+                         "report_only")}
     for label, cell, cv, vv in d.get("mismatches", []):
         raw = label.split("|")[-1].strip()
         name = _pretty(raw[:40] or label[:40])
@@ -548,6 +601,11 @@ def breakdown(cd: dict | None = None) -> dict:
         # title that happens to sit above them in the summary block.
         url = "" if rollup else _section_url(grid, r - 1)
         rec = (name, cell, cv, vv, col, rollup, url)
+        # A %-change / frozen prior-week cell rolls independently on each tab —
+        # report it, never gate on it (mirrors full_compare's report-only split).
+        if _is_report_only(label, col, cv, vv, current_we):
+            b["report_only"].append(rec)
+            continue
         cempty = cv.lower() in ("", "0", "ns")
         vempty = vv.lower() in ("", "0", "ns")
         if cempty and not vempty:
@@ -648,6 +706,9 @@ def format_breakdown_html(d: dict, max_rows: int = 40) -> str:
     for s in d.get("only_copy", []):
         table_rows.append((f"Row only on copy — {s}", "(missing)", "(row present)",
                            True, "Row on the copy only — likely a name/marker mismatch, not missing data.", ""))
+    # %-change / prior-week baseline cells — informational only (rollover artifact)
+    rr_reps, rr_rolls = rows_for(d.get("report_only", []), False, "report_only")
+    report_rows = rr_reps + rr_rolls
 
     att = d.get("attention", 0)
     # A HUGE count isn't thousands of real errors — it's a STRUCTURAL misalignment:
@@ -707,11 +768,24 @@ def format_breakdown_html(d: dict, max_rows: int = 40) -> str:
                     f"Totals &amp; percentages — recomputed automatically from the "
                     f"rows above (shown for completeness):</td></tr>")
         emit(rollup_rows[:max_rows - shown])
+    if report_rows:
+        _rr_cap = 12
+        html.append(f"<tr><td colspan='4' style='padding:5px 10px;border:1px solid "
+                    f"#ccc;background:#eef4fb;font-size:12px;color:#557'>"
+                    f"↺ Week-over-week %s &amp; prior-week baselines "
+                    f"({len(report_rows)}) — the two tabs roll their frozen history "
+                    f"independently, so these differ by design on a rollover day. "
+                    f"Informational, <b>not</b> a data problem:</td></tr>")
+        emit(report_rows[:_rr_cap])
     html.append("</table>")
     dropped = (len(table_rows) - shown) + max(0, len(rollup_rows) - max(0, max_rows - shown))
     if dropped > 0:
         html.append(f"<div style='font-size:12px;color:#888;margin:4px 0'>"
                     f"…and {dropped} more difference(s)</div>")
+    if len(report_rows) > 12:
+        html.append(f"<div style='font-size:12px;color:#889;margin:4px 0'>"
+                    f"…and {len(report_rows) - 12} more informational "
+                    f"%-change/baseline row(s)</div>")
     return "".join(html)
 
 
