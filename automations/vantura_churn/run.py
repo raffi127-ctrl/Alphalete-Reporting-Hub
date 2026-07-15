@@ -89,17 +89,9 @@ def _probe(today: dt.date, log) -> int:
     try:
         from automations.vantura_churn import cdp_pull
         out = Path("/tmp/vantura_probe_carlos.xlsx")
-        specs = [(pull.orderlog_url("carlos", today), pull.ORDERLOG_SHEET, out)]
-        cdp_pull.download_views(specs, verbose=False, log=rec)
-        rec(f"downloaded: {out} ({out.stat().st_size:,} bytes)")
-        lines_c = compute.load_orderlog(out, "CARLOS HIDALGO")
-        s = compute.churn_summary(lines_c, today)
-        b, d = s["base"], s["disc"]
-        rec(f"CARLOS parsed: {len(lines_c)} lines | base W/A/I "
-            f"{b['Wireless']}/{b['Air']}/{b['Internet']} | disc "
-            f"{d['Wireless']}/{d['Air']}/{d['Internet']} "
-            f"({s['disc_total']}/{s['base_total']})")
-        rec("*** CDP DOWNLOAD + PARSE OK ***")
+        info = cdp_pull.probe(pull.orderlog_url("carlos", today),
+                              pull.ORDERLOG_SHEET, out, today, log=rec)
+        rec(f"RESULT: {info}")
     except Exception as e:  # noqa: BLE001
         import traceback
         rec(f"CDP PROBE ERROR: {str(e)[:200]}")
