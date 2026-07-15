@@ -237,13 +237,15 @@ def _prime_orderlog(page, url, today, log):
             page.wait_for_timeout(2500)
         except Exception as ex:
             log(f"[prime] date err {str(ex)[:50]}")
-    for tid in ("refresh", "revert"):
-        try:
-            viz.locator(f'[data-tb-test-id="viz-viewer-toolbar-button-'
-                        f'{tid}"]').first.click()
-            page.wait_for_timeout(12_000)
-        except Exception:
-            pass
+    # Refresh re-runs the query with the committed 60-day dates. Do NOT
+    # Revert — it discards the dates and snaps back to the dashboard's narrow
+    # default window (which yielded only ~2 days of data).
+    try:
+        viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
+                    'refresh"]').first.click()
+        page.wait_for_timeout(15_000)
+    except Exception:
+        pass
     page.wait_for_timeout(6_000)
 
 
