@@ -20,6 +20,7 @@ Actions:
   update                git pull the latest code onto the mini (remote deploy)
   set_meta_token <tok>  install/refresh the brand-audit Meta page token in keys.json
   set_slack_token <tok> install/refresh the 'Lucy' Slack bot token (xoxb-…) on this machine
+  set_gbp_token <json>  install the Google Business Profile OAuth token (gbp-token.json contents)
   restart_holder        relaunch the ownerville session-holder LaunchAgent
   reseed_appstream      open the AppStream login (a human clears Cloudflare)
 
@@ -77,7 +78,7 @@ DAILY_AUTORUN_CAP = 100
 # budget is meant to bound repeated REPORT runs (rerun), not deploy plumbing.
 PLUMBING_ACTIONS = {"ping", "update", "restart_poller", "restart_holder",
                     "pip_install", "watch_test", "diag", "set_sleep",
-                    "set_slack_token"}
+                    "set_slack_token", "set_gbp_token"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
@@ -612,6 +613,57 @@ def _action_set_slack_token(args: str) -> tuple[bool, str]:
                   f"{who.get('user')} ({who.get('user_id')}) in team {who.get('team')}")
 
 
+def _action_set_gbp_token(args: str) -> tuple[bool, str]:
+    """Install the Google Business Profile OAuth token on THIS machine so the
+    noon review-replies run can read reviews + post replies unattended. The Args
+    is the CONTENTS of ~/.config/brand-audit/gbp-token.json (a JSON object with a
+    refresh_token; it self-contains client_id/secret so no oauth-client.json is
+    needed here). Backs up any existing token, writes it, then verifies by
+    resolving the configured location. NEVER echoes the token.
+
+    Note: the token transits the control Sheet's Args cell to get here — redact
+    that cell after this shows 'done' (the queuer does this from the laptop)."""
+    blob = (args or "").strip()
+    if not blob.startswith("{"):
+        return False, "set_gbp_token needs the gbp-token.json CONTENTS (a JSON object) as Args"
+    import json
+    import shutil
+    try:
+        parsed = json.loads(blob)
+    except Exception as e:  # noqa: BLE001
+        return False, f"Args isn't valid JSON: {str(e).splitlines()[0][:120]}"
+    if not parsed.get("refresh_token"):
+        return False, "token JSON has no refresh_token — re-authorize and pass the whole file"
+    path = Path.home() / ".config" / "brand-audit" / "gbp-token.json"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't create {path.parent}: {str(e).splitlines()[0][:120]}"
+    if path.exists():
+        stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+        try:
+            shutil.copy2(path, path.parent / f"gbp-token.json.bak.{stamp}")
+        except Exception:  # noqa: BLE001 — a failed backup shouldn't block the fix
+            pass
+    try:
+        path.write_text(json.dumps(parsed, indent=2), encoding="utf-8")
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path}: {str(e).splitlines()[0][:120]}"
+    # Verify: resolve the configured location through the SAME client the noon
+    # job uses — proof it works, surfaced in `lucy status`. Never echo the token.
+    try:
+        from automations.brand_audit import gbp_api
+        from automations.brand_audit.config import GBP_LOCATION_PATH
+        if not GBP_LOCATION_PATH:
+            return True, "gbp token written (GBP_LOCATION_PATH not set — can't verify a location)"
+        sample = gbp_api.list_reviews(GBP_LOCATION_PATH, limit=1)
+    except Exception as e:  # noqa: BLE001
+        return True, (f"token written to {path} but verify errored "
+                      f"({type(e).__name__}: {str(e).splitlines()[0][:110]})")
+    return True, (f"GBP token installed + verified: location reachable "
+                  f"(fetched {len(sample)} review as a check)")
+
+
 ACTIONS = {
     "ping": _action_ping,
     "logtail": _action_logtail,
@@ -620,6 +672,7 @@ ACTIONS = {
     "update": _action_update,
     "set_meta_token": _action_set_meta_token,
     "set_slack_token": _action_set_slack_token,
+    "set_gbp_token": _action_set_gbp_token,
     "restart_holder": _action_restart_holder,
     "restart_poller": _action_restart_poller,
     "reseed_appstream": _action_reseed_appstream,
