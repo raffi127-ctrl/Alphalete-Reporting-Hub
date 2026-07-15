@@ -18,6 +18,13 @@ import ssl
 from pathlib import Path
 
 CHANNEL_ID = os.environ.get("METRICS_CHANNEL_ID", "C068PH3RFSM")  # default #alphalete-sales; override via METRICS_CHANNEL_ID (e.g. Rashad's private #elevate-sales) — read at import so subprocesses pick it up
+# Optional per-office label appended to the Metrics header, e.g. "Salik Mallick".
+# REQUIRED when two offices post to the SAME channel (Salik + Hammad both in
+# #elite-prime-sales) so each gets its OWN thread and you can tell them apart —
+# ensure_metrics_thread adds it to the header, find_metrics_thread_ts requires it
+# so an office finds ITS thread, not the other's. Unset = original single-office
+# behaviour, unchanged. Read at import so metric subprocesses inherit it.
+HEADER_LABEL = os.environ.get("METRICS_HEADER_LABEL", "").strip()
 TOKEN_PATH = Path.home() / ".config" / "recruiting-report" / "slack-user-token"
 # Token for the automated-reports identity 'Lucy' (alphaletereporting@gmail.com)
 # used to DM finished reports so they come FROM Lucy, not the person running it.
@@ -217,12 +224,20 @@ def find_metrics_thread_ts(client, today: dt.date) -> str:
         channel=CHANNEL_ID, oldest=str(oldest), limit=100
     )
     for msg in resp.get("messages", []):
+        text = msg.get("text", "")
+        # LABELLED (two offices share a channel): the office's thread must carry
+        # BOTH today's date line AND this office's label — otherwise office A
+        # would grab office B's thread. The 'Metrics' workflow-bot shortcut is
+        # skipped here (labelled threads are posted by our code, not that bot).
+        if HEADER_LABEL:
+            if HEADER_LABEL in text and any(c in text for c in text_candidates):
+                return msg.get("thread_ts") or msg.get("ts")
+            continue
         # Identity match — Workflow Builder bot named 'Metrics'.
         bot_name = (msg.get("bot_profile") or {}).get("name") or msg.get("username") or ""
         if bot_name.strip().lower() == "metrics":
             return msg.get("thread_ts") or msg.get("ts")
         # Body-text fallback for manual posts.
-        text = msg.get("text", "")
         if any(c in text for c in text_candidates):
             return msg.get("thread_ts") or msg.get("ts")
     expected = (f"'Metrics for: {today.strftime('%B')} "
@@ -250,11 +265,15 @@ def ensure_metrics_thread(today: dt.date | None = None,
     # metric checklist. This code is the poster now (no more Slack Workflow),
     # so this list IS the header — keep it in sync with the metrics posted
     # (Rep Activations 2026-06-26; New Internet ABP % 2026-07-10).
+    # When two offices share a channel, the label (owner name) goes in the header
+    # so each thread is distinct + human-distinguishable (Megan 2026-07-15).
+    _label_suffix = f" — {HEADER_LABEL}" if HEADER_LABEL else ""
     header_text = "\n".join([
         # Bold first line (Megan 2026-07-10, to match the Alphalete Production /
         # Tableau Trackers headers). find_metrics_thread_ts matches on a
         # substring, so the '*...*' wrapper doesn't break thread detection.
-        f"*Metrics for: {today.strftime('%B')} {_ordinal(today.day)} {today.year}*",
+        f"*Metrics for: {today.strftime('%B')} {_ordinal(today.day)} {today.year}"
+        f"{_label_suffix}*",
         "",
         ":door: Telemapper Knocks",
         ":clock1: Time Gaps",

@@ -80,6 +80,10 @@ class Office:
     view_churn_ni: str          # New-Internet churn view (INTRashad-style).
     view_churn_wl: str          # Wireless churn view (WirelessRashad-style).
     view_abp: str               # New-Internet ABP view (RashadNLABP-style).
+    # Set ONLY when two offices share a channel (Salik + Hammad → #elite-prime-
+    # sales): the owner name is added to the Metrics header so each gets its own
+    # distinguishable thread. Empty = single-office channel, no label (default).
+    header_label: str = ""
 
     @property
     def views(self) -> dict:

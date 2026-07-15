@@ -432,6 +432,11 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         return 0
 
     child_env = dict(os.environ, METRICS_CHANNEL_ID=target_chan)
+    # Per-office thread label (only when offices share a channel) so each gets its
+    # own distinguishable Metrics thread. Subprocesses inherit it via child_env;
+    # the parent's ensure_metrics_thread reads the module attr (set below).
+    if o.header_label:
+        child_env["METRICS_HEADER_LABEL"] = o.header_label
 
     # Share the org-wide crosstab pulls across offices: the FIRST office to pull a
     # given view (Order Log, Cancels, Disconnects, Scheduled-6+) downloads it; the
@@ -475,11 +480,15 @@ def main(argv=None, *, office_key: str | None = None) -> int:
                       f"{type(e).__name__}: {str(e)[:140]}")
                 return 2
 
-        # slack_metrics_post read CHANNEL_ID at import (wrong channel) — rebind so
-        # the header thread + replies land in this office's channel.
+        # slack_metrics_post read CHANNEL_ID + HEADER_LABEL at import — rebind both
+        # so the header thread + replies land in this office's channel, and (when
+        # two offices share a channel) under this office's labelled thread.
         smp.CHANNEL_ID = target_chan
+        smp.HEADER_LABEL = o.header_label
         if not args.only:
             os.environ["METRICS_CHANNEL_ID"] = target_chan
+            if o.header_label:
+                os.environ["METRICS_HEADER_LABEL"] = o.header_label
             try:
                 res = smp.ensure_metrics_thread()
                 print(f"  header thread: "
