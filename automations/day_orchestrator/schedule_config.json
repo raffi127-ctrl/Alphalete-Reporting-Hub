@@ -77,6 +77,27 @@
     }
   },
   "reports": {
+    "vantura_payroll": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "_note": "Vantura Weekly Payroll PREP (Carlos). on_scheduler:false = the 4am orchestrator NEVER runs it — its real schedule is the Wednesday 11:00am CT launchd job (com.alphalete.vantura-payroll-wed, wrapper deploy/vantura_payroll_wed.sh) on Lucy 2. SCAFFOLD/DRY-RUN: automations.vantura_payroll.run defaults to --dry-run (no board writes, no Slack); the board-write internals (RAW load, Commission!B1, per-campaign P&L formulas, Refresh trigger) are stubbed until verified against a SANDBOX copy of the Vantura Master Sales Board. Reuses vantura_churn's CDP Tableau pull + recruiting_report.fill board auth + shared.slack_metrics_post (as Lucy). Automates the deterministic prep only; bonuses/no-pay/rates + verify + print stay with Carlos, and the week auto-locks Thursday ~11am via the board's own Apps Script trigger. This handle exists so `lucy rerun vantura_payroll --dry-run` works.",
+      "display_name": "Vantura Weekly Payroll (prep)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.vantura_payroll.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [],
+        "not_before": "11:00"
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 30,
+      "verify": null
+    },
     "harvest_proof": {
       "on_scheduler": false,
       "_off_scheduler_note": "SHADOW/INERT harvest-once proof (Stage c of output/harvest-architecture-design.md). on_scheduler:false = NEVER scheduled, structurally excluded from the 4am orchestrator (registry.load_config drops it; run_order never sees it) so it CANNOT affect the morning run. Run only by hand: `lucy rerun harvest_proof` (5-need structural cover) or `lucy rerun harvest_proof --full` (all 19 churn pulls). Runs automations.harvest.proof_mini: harvest the churn cluster once over one login, then diff live-pull-parse vs cache-parse cell-for-cell + a monkeypatch cutover check. Full result -> output/logs/harvest_proof-<date>.log (retrieve with `lucy logtail harvest_proof`); compact verdict lands in `lucy status`. source_type tableau only so the rerun runs chrome_guard first. Nothing production imports automations.harvest.",
