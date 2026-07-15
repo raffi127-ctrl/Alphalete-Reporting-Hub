@@ -17,9 +17,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from automations.brand_audit import credentials
+from automations.brand_audit import credentials, gbp_api
 from automations.brand_audit.collectors import google_reviews
-from automations.brand_audit.config import ALERT_SLACK_CHANNEL_ID, DEFAULT_COMPANY
+from automations.brand_audit.config import (
+    ALERT_SLACK_CHANNEL_ID, DEFAULT_COMPANY, GBP_LOCATION_PATH,
+    AUTO_POST_MIN_STARS, AUTO_POST_DAILY_CAP,
+)
 from automations.brand_audit.social_inbox import (
     _client, _reacted, _thread_reactions,
 )
@@ -59,8 +62,29 @@ def _key(rv: dict) -> str:
     return f"{rv.get('author','')}|{rv.get('publish_time','') or (rv.get('text','') or '')[:50]}"
 
 
+def gbp_ready() -> bool:
+    """True once we can both READ the full review list and POST replies:
+    a location is configured AND a Business Profile token exists. Until then
+    the workflow reads the Places 5-review sample and only drafts (no posting)."""
+    return bool(GBP_LOCATION_PATH) and gbp_api.has_token()
+
+
 def get_reviews(company) -> list[dict]:
-    """The review sample for a company (rating/text/author/when)."""
+    """Reviews for a company (rating/text/author/when/name/has_reply).
+
+    Prefers the Business Profile API (FULL history + a review 'name' we can
+    reply to). Falls back to the Places API 5-review sample if GBP isn't set up
+    yet, access isn't granted (403), or anything errors — so the drafting side
+    keeps working while access is pending. Already-answered reviews are dropped."""
+    if gbp_ready():
+        try:
+            revs = gbp_api.list_reviews(GBP_LOCATION_PATH)
+            # Don't re-reply to reviews that already have a business reply.
+            return [r for r in revs if not r.get("has_reply")]
+        except gbp_api.GBPAccessError:
+            pass  # allowlist not granted yet — fall back to the sample
+        except Exception:
+            pass
     res = google_reviews.collect(company)
     return ((res.as_dict().get("evidence") or {}).get("reviews")) or \
         (res.evidence.get("reviews") if hasattr(res, "evidence") else []) or []
@@ -86,7 +110,10 @@ def draft_reply(review: dict, company_name: str, feedback: str = "",
         "DON'T SOUND AI: no balanced three-part phrases (tricolons), no filler "
         "('made our day', 'means the world', 'couldn't be happier', 'so glad'), "
         "no over-polished marketing tone. Write plainly, like a real teammate "
-        "typing a quick, genuine thanks — short and human, not a press release.")
+        "typing a quick, genuine thanks, short and human, not a press release.\n"
+        "Avoid the em-dash-heavy rhythm that reads as AI (don't string clauses "
+        "with ' — '); use plain periods/commas and vary how sentences open. "
+        "Contractions are good. It should read like a busy human typed it fast.")
     stars = review.get("rating")
     user = (f"Review — {stars}★ from {review.get('author') or 'a customer'}:\n"
             f"\"{review.get('text') or '(no text, just a rating)'}\"\n\n"
@@ -107,11 +134,36 @@ def draft_reply(review: dict, company_name: str, feedback: str = "",
 
 
 def post_reply_to_google(review: dict, reply: str, company) -> dict:
-    """Publish the reply to the Google review. PENDING the Business Profile API
-    (access not yet granted). Approved replies wait for this seam."""
-    raise NotImplementedError(
-        "Google review replies need the Business Profile API "
-        "(accounts.locations.reviews.updateReply) — access pending.")
+    """Publish the reply to the Google review via the Business Profile API.
+
+    Needs the review's full v4 resource name (present on GBP-sourced reviews,
+    absent on the Places-API sample) AND granted API access. Raises
+    gbp_api.GBPAccessError if access isn't live yet — callers treat that as
+    'not ready, keep the draft'."""
+    name = review.get("name")
+    if not name:
+        raise NotImplementedError(
+            "This review came from the Places sample (no reply target). Posting "
+            "needs the Business Profile API review list — set GBP_LOCATION_PATH "
+            "and authorize (python -m automations.brand_audit.gbp_api --setup).")
+    return gbp_api.reply_to_review(name, reply)
+
+
+def _auto_block(review: dict, reply: str, entry: dict) -> str:
+    """FYI posted to Slack when a 4-5★ review was auto-replied (no approval
+    step) — so there's always a visible trail of what went public."""
+    stars = review.get("rating")
+    star_str = ("⭐" * int(stars)) if isinstance(stars, (int, float)) else "?"
+    if entry.get("posted"):
+        head = ":white_check_mark: *Auto-replied — posted to Google*"
+    elif entry.get("approved_pending_api"):
+        head = ":hourglass_flowing_sand: *Auto-reply held* (API access not live)"
+    else:
+        head = (":warning: *Auto-reply failed to post* — "
+                + (entry.get("post_error") or "unknown error"))
+    return (f"{head}  {star_str} — *{review.get('author') or 'Anonymous'}*\n"
+            f"> {(review.get('text') or '(rating only, no text)')}\n\n"
+            f":pencil2: _Reply:_ {reply}")
 
 
 def _review_block(review: dict, reply: str) -> str:
@@ -155,21 +207,58 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
         hdr = state["headers"][today] = {"ts": r.get("ts"), "completed": False}
         actions.append({"action": "header_created", "date": today})
 
-    # 2) draft + post any NEW reviews as replies under today's header
+    # 2) draft a reply for each NEW review. HYBRID model (Megan 2026-07-15):
+    #    rating >= AUTO_POST_MIN_STARS  -> auto-post to Google now + FYI to Slack.
+    #    below that / no reply target   -> queue in Slack for approve/redo/skip.
     new_count = 0
+    auto_ok = gbp_ready()
+    counts = state.setdefault("auto_post_counts", {})
+    posted_today = counts.get(today, 0)          # throttle across runs in a day
+    deferred = 0
     for rv in get_reviews(company):
         k = _key(rv)
         if k in state["reviews"]:
             continue
+        stars = rv.get("rating")
+        auto = (auto_ok and isinstance(stars, (int, float))
+                and stars >= AUTO_POST_MIN_STARS and rv.get("name"))
+        # Throttle: once today's auto-post cap is hit, leave the rest UNTOUCHED
+        # (don't draft, don't record) so the next daily run picks them up.
+        if auto and posted_today >= AUTO_POST_DAILY_CAP:
+            deferred += 1
+            continue
         reply = draft_reply(rv, company_name, avoid=recent[:15])
         recent.insert(0, reply)
         new_count += 1
-        actions.append({"action": "draft", "rating": rv.get("rating"), "reply": reply})
+        if auto:
+            posted_today += 1
+            counts[today] = posted_today
+            actions.append({"action": "auto_post", "rating": stars, "reply": reply})
+            if not dry_run:
+                entry = {"reply": reply, "date": today, "review": rv, "auto": True}
+                try:
+                    post_reply_to_google(rv, reply, company)
+                    entry["posted"] = True
+                except gbp_api.GBPAccessError:
+                    entry["approved_pending_api"] = True   # access dropped; hold
+                except Exception as e:
+                    entry["post_error"] = str(e)[:200]
+                if hdr:
+                    cl.chat_postMessage(channel=channel, thread_ts=hdr["ts"],
+                                        text=_auto_block(rv, reply, entry))
+                state["reviews"][k] = entry
+            continue
+        # queue for approval (negatives + anything we can't/won't auto-post)
+        actions.append({"action": "draft", "rating": stars, "reply": reply})
         if not dry_run and hdr:
             r = cl.chat_postMessage(channel=channel, thread_ts=hdr["ts"],
                                     text=_review_block(rv, reply))
             state["reviews"][k] = {"reply": reply, "reply_ts": r.get("ts"),
                                    "date": today, "review": rv}
+    if deferred:
+        actions.append({"action": "deferred", "count": deferred,
+                        "note": f"{deferred} more held for later daily runs "
+                                f"(cap {AUTO_POST_DAILY_CAP} auto-posts/day)"})
     if not dry_run and hdr and new_count == 0 and not hdr.get("noted_empty"):
         cl.chat_postMessage(channel=channel, thread_ts=hdr["ts"],
                             text="No new reviews needing a response today. React "

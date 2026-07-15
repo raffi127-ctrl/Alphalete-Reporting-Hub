@@ -53,6 +53,35 @@ SOCIAL_KILL_EMOJI = ("skull", "skull_and_crossbones")
 # Rocket stands out far more than a checkmark in a busy thread.
 SOCIAL_POSTED_EMOJI = "rocket"
 
+# Google Business Profile location for review replies, once API access is
+# granted + the token is authorized. Full v4 resource path, e.g.
+#   "accounts/1234567890/locations/9876543210"
+# Discover yours with:  python -m automations.brand_audit.gbp_api --locations
+# None until setup is done — the review workflow stays draft-only (no auto-post,
+# reads the Places 5-review sample) until this is filled in.
+GBP_LOCATION_PATH = "accounts/116205840161551097995/locations/8038298569275098536"
+
+# The Google Cloud project that holds the Business Profile API ALLOWLIST
+# approval (case 2-3440000041693, project "alphalete-brand-profile"). The
+# OAuth login reuses the shared "rafael-crm" client, which lives in a DIFFERENT
+# project — so we attribute the API calls to the approved project via the
+# quota-project header (x-goog-user-project). The authorizing account must own
+# / have serviceusage rights on this project. None = use the client's own
+# project (only correct if that project is the allowlisted one).
+GBP_QUOTA_PROJECT = "1008284642441"
+
+# Hybrid auto-post model (Megan, 2026-07-15): reviews at/above this star level
+# get an auto-posted thank-you (no human step); anything BELOW is queued to
+# Slack for approve/redo/skip before it ever posts. 4 = auto-post 4★ & 5★.
+AUTO_POST_MIN_STARS = 4
+
+# Throttle (Megan, 2026-07-15): never blast. Cap auto-posts per calendar day so
+# a large backlog is worked ~this-many at a time (looks human, respects the
+# freshly-approved API quota, avoids Google spam-flagging). ~349 backlog / 25 =
+# ~2 weeks to clear; new-review volume is far below the cap day-to-day.
+# Negatives are NOT throttled (they only queue to Slack, nothing public).
+AUTO_POST_DAILY_CAP = 25
+
 # 🚫 HARD RULE: never post to / never treat these as postable channels.
 # Raf's personal LinkedIn is off-limits (Megan, 2026-06-17). Matched loosely
 # against channel display names when we reach the posting/draft layer.
