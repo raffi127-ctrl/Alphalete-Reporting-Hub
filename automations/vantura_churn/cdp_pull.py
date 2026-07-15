@@ -237,22 +237,34 @@ def _prime_orderlog(page, url, today, log):
     vp = page.evaluate("() => ({w:window.innerWidth,h:window.innerHeight})")
     W, H = vp["w"], vp["h"]
 
-    def _set_date(fx, val):
-        # throwaway first (a real change), then the correct value
-        for typed in ("1/1/2020", val):
-            page.mouse.click(W * fx, H * 0.255, click_count=3)
-            page.wait_for_timeout(300)
-            page.keyboard.press("Backspace")
-            page.keyboard.type(typed, delay=40)
-            page.keyboard.press("Enter")
-            page.wait_for_timeout(4000)
+    def _dismiss_calendar():
+        # A calendar pop-up opens after a date edit and blocks the next field
+        # (runbook: dismiss it by clicking the dark "B2B ORDER LOG" banner).
+        try:
+            page.mouse.click(W * 0.5, H * 0.18)
+            page.wait_for_timeout(700)
+        except Exception:
+            pass
 
-    for fx, val in [(0.13, start_s), (0.213, end_s)]:
+    def _set_date(fx, val):
+        page.mouse.click(W * fx, H * 0.255, click_count=3)
+        page.wait_for_timeout(400)
+        page.keyboard.press("Backspace")
+        page.keyboard.type(val, delay=45)
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(2500)
+        _dismiss_calendar()
+
+    # Two passes: the URL pre-fills the fields with the target values, so the
+    # first pass (same value) may be a no-op; a throwaway pass guarantees a
+    # real change so the query fires. Dismiss the calendar between every edit.
+    for fx, val in [(0.13, "1/1/2000"), (0.213, "1/2/2000"),
+                    (0.13, start_s), (0.213, end_s)]:
         try:
             _set_date(fx, val)
         except Exception as ex:
             log(f"[prime] date err {str(ex)[:50]}")
-    page.wait_for_timeout(8_000)
+    page.wait_for_timeout(10_000)
 
 
 def download_views(specs, today=None, verbose=True, log=print):
