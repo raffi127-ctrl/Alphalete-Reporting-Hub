@@ -33,6 +33,34 @@ def _kill_ours() -> None:
     time.sleep(2)
 
 
+def _copy_default_profile() -> str:
+    """Copy Carlos's REAL everyday Chrome Default profile — which is logged
+    into Tableau AS HIM (the identity that actually sees the Order Log rows,
+    unlike the ownerville-SSO service identity) — to our own NON-default dir
+    so Chrome honours the debug port (Chrome 136+ blocks it on the true
+    default dir). READ-ONLY on the source: nothing of Carlos's own Chrome is
+    modified. Separate dest dir from resume_pushing's, so the two never
+    collide. Skips cache dirs for speed."""
+    import os
+    home = os.path.expanduser("~")
+    src = f"{home}/Library/Application Support/Google/Chrome"
+    dst = CDP_PROFILE
+    _kill_ours()
+    subprocess.run(["rm", "-rf", dst], capture_output=True)
+    os.makedirs(f"{dst}/Default", exist_ok=True)
+    subprocess.run(["rsync", "-a", f"{src}/Local State",
+                    f"{dst}/Local State"], capture_output=True)
+    subprocess.run(
+        ["rsync", "-a",
+         "--exclude", "Cache", "--exclude", "Code Cache", "--exclude", "GPUCache",
+         "--exclude", "DawnCache", "--exclude", "GraphiteDawnCache",
+         "--exclude", "Application Cache",
+         "--exclude", "Service Worker/CacheStorage",
+         f"{src}/Default/", f"{dst}/Default/"],
+        capture_output=True)
+    return dst
+
+
 def _launch(url: str = "about:blank"):
     """Launch the REAL Google Chrome on a fresh dedicated profile with the
     debug port. Returns the Popen."""
@@ -111,168 +139,63 @@ def _select_worksheet(page, log) -> bool:
 
 
 def probe(url, sheet, out, today, log=print) -> dict:
-    """Diagnostic: load the view in real Chrome, screenshot it (→ 'Vantura
-    Shot' tab), try to select the worksheet, and report crosstab thumbs."""
+    """Diagnostic: copy Carlos's real Chrome profile (logged into Tableau as
+    HIM), load the Order Log, and report whether the grid now has data —
+    then screenshot + try the crosstab download."""
     from patchright.sync_api import sync_playwright
     from automations.shared import tableau_patchright as tp
-    _kill_ours()
-    proc = _launch()
-    log(f"[cdp] real Chrome pid={proc.pid}; waiting 20s")
-    time.sleep(20)
+    dst = _copy_default_profile()
+    proc = _launch(url)
+    log(f"[cdp] real Chrome pid={proc.pid} on copied profile; waiting 22s")
+    time.sleep(22)
     info = {}
     try:
         with sync_playwright() as p:
             browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            tp._ensure_tableau_authenticated(page, verbose=False,
-                                             allow_form_login=True)
-            log("[cdp] auth OK")
-
-            # WHO are we? and does another B2B view (CHURN RATES, which the
-            # production churn report reads fine) show data in THIS session?
-            try:
-                page.goto("https://us-east-1.online.tableau.com/#/site/sci/"
-                          "views/ATTTRACKER-B2B/CHURNRATES/"
-                          "429cb06d-a32e-4d0e-bf06-9acb77587afd/ALLTEAMCHURN",
-                          wait_until="domcontentloaded")
-                cvz = page.frame_locator('iframe[title="Data Visualization"]')
-                try:
-                    cvz.locator('[data-tb-test-id="viz-viewer-toolbar-'
-                                'button-download"]').wait_for(
-                        state="visible", timeout=120_000)
-                except Exception:
-                    pass
-                page.wait_for_timeout(25_000)
-                cb = cvz.locator("body").inner_text(timeout=15000)
-                log(f"[churnrates] body {len(cb)} chars (data if >>3000)")
-            except Exception as ex:
-                log(f"[churnrates] err {str(ex)[:80]}")
-            try:
-                whoami = page.evaluate(
-                    "() => { const a=document.querySelector("
-                    "'[data-tb-test-id=\"global-nav-user-menu-button\"],"
-                    " .tab-globalNav-user, [aria-label*=\"account\" i]');"
-                    " return (a?a.getAttribute('aria-label')||a.title||"
-                    "a.innerText:'') + ' | ' + document.title; }")
-                log(f"[whoami] {str(whoami)[:120]}")
-            except Exception as ex:
-                log(f"[whoami] err {str(ex)[:80]}")
-
-            # DIAGNOSTIC: try the URL 3 ways and report which populates the
-            # grid (body-text length). Isolates whether the Owner filter or the
-            # uncommitted dates are what leaves the grid empty.
-            base = "https://us-east-1.online.tableau.com/#/site/sci/views/" \
-                   "ATTTRACKER-B2B/ORDERLOG"
-            s = (today - dt.timedelta(days=60)).isoformat()
-            e = today.isoformat()
-            variants = {
-                "full": url,
-                "dates-only": f"{base}?:iid=1&Start%20Date={s}&End%20Date={e}",
-                "bare": f"{base}?:iid=1",
-            }
-            for name, vurl in variants.items():
-                try:
-                    page.goto(vurl, wait_until="domcontentloaded")
-                    vz = page.frame_locator('iframe[title="Data Visualization"]')
-                    try:
-                        vz.locator('[data-tb-test-id="viz-viewer-toolbar-'
-                                   'button-download"]').wait_for(
-                            state="visible", timeout=120_000)
-                    except Exception:
-                        pass
-                    page.wait_for_timeout(25_000)
-                    bt = vz.locator("body").inner_text(timeout=15000)
-                    log(f"[variant {name}] body {len(bt)} chars")
-                    if name == "dates-only":
-                        _upload_png(page.screenshot(full_page=False),
-                                    tab="Vantura Shot2")
-                except Exception as ex:
-                    log(f"[variant {name}] err {str(ex)[:80]}")
-
-            log("[cdp] loading full view for the rest of the probe")
             page.goto(url, wait_until="domcontentloaded")
             viz = page.frame_locator('iframe[title="Data Visualization"]')
+            # If the copied profile's Tableau session is live we see the viz
+            # toolbar straight away; if it bounced to login, self-heal via SSO.
             try:
                 viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
-                            'download"]').wait_for(state="visible",
-                                                   timeout=180_000)
-                log("[cdp] toolbar visible")
-            except Exception as e:
-                log(f"[cdp] toolbar NOT visible: {str(e)[:80]}")
+                            'download"]').wait_for(state="visible", timeout=60_000)
+                log("[cdp] view loaded from copied profile (already logged in)")
+            except Exception:
+                log("[cdp] no toolbar — profile session stale, SSO self-heal")
+                tp._ensure_tableau_authenticated(page, verbose=False,
+                                                 allow_form_login=True)
+                page.goto(url, wait_until="domcontentloaded")
+                try:
+                    viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
+                                'download"]').wait_for(state="visible",
+                                                       timeout=120_000)
+                except Exception as e:
+                    log(f"[cdp] still no toolbar: {str(e)[:80]}")
             page.wait_for_timeout(30_000)
             try:
-                _upload_png(page.screenshot(full_page=False))
-                log("[cdp] screenshot → 'Vantura Shot' tab")
-            except Exception as e:
-                log(f"[cdp] screenshot err: {str(e)[:80]}")
-            # The grid is empty because the URL set the date VALUES but never
-            # committed them (the runbook: type the date, press ENTER). Dump
-            # the date inputs, then commit each with a trusted Enter to fire
-            # the query.
-            # Does the grid actually have data? Body-text length is the tell.
-            try:
                 body = viz.locator("body").inner_text(timeout=15000)
-                log(f"[body] viz text {len(body)} chars (data if >>3000)")
+                info["body_chars"] = len(body)
+                log(f"[body] viz text {len(body)} chars (DATA PRESENT if >>3000)")
             except Exception as e:
                 log(f"[body] err {str(e)[:60]}")
-
-            # The date fields are canvas-rendered (0 DOM inputs), so commit them
-            # by TRUSTED positional click (CDP events Tableau honours). Field
-            # centres as viewport proportions, read off the screenshot:
-            #   Start Date ≈ (0.13 W, 0.255 H), End Date ≈ (0.213 W, 0.255 H).
-            start_s = f"{(today - dt.timedelta(days=60)).month}/" \
-                      f"{(today - dt.timedelta(days=60)).day}/" \
-                      f"{(today - dt.timedelta(days=60)).year}"
-            end_s = f"{today.month}/{today.day}/{today.year}"
-            vp = page.evaluate("() => ({w: window.innerWidth, "
-                               "h: window.innerHeight, dpr: window.devicePixelRatio})")
-            log(f"[viewport] {vp}")
-            W, H = vp["w"], vp["h"]
-            for label, fx, fy, val in [("Start", 0.13, 0.255, start_s),
-                                       ("End", 0.213, 0.255, end_s)]:
-                x, y = W * fx, H * fy
+            try:
+                _upload_png(page.screenshot(full_page=False))
+                log("[cdp] screenshot -> 'Vantura Shot' tab")
+            except Exception as e:
+                log(f"[cdp] shot err {str(e)[:60]}")
+            # try the crosstab download if the grid has data
+            if info.get("body_chars", 0) > 3000:
                 try:
-                    page.mouse.click(x, y, click_count=3)  # select existing
-                    page.wait_for_timeout(400)
-                    page.keyboard.press("Backspace")
-                    page.keyboard.type(val, delay=40)
-                    page.keyboard.press("Enter")
-                    page.wait_for_timeout(3000)
-                    log(f"[date] typed {label}={val} at ({x:.0f},{y:.0f})")
-                except Exception as ex:
-                    log(f"[date] {label} err {str(ex)[:70]}")
-            log("[date] committed; waiting 25s for grid")
-            page.wait_for_timeout(25_000)
-            try:
-                b2 = viz.locator("body").inner_text(timeout=15000)
-                log(f"[body2] viz text {len(b2)} chars after commit")
-            except Exception:
-                pass
-            try:
-                _upload_png(page.screenshot(full_page=False), tab="Vantura Shot2")
-                log("[cdp] post-commit screenshot → 'Vantura Shot2'")
-            except Exception as e:
-                log(f"[cdp] shot2 err {str(e)[:60]}")
-
-            focused = _select_worksheet(page, log)
-            info["focused"] = focused
-            # open crosstab, count thumbs
-            try:
-                page.keyboard.press("Escape"); page.wait_for_timeout(500)
-                viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
-                            'download"]').click(); page.wait_for_timeout(1500)
-                viz.locator('[data-tb-test-id="download-flyout-download-'
-                            'crosstab-MenuItem"]').click()
-                page.wait_for_timeout(5000)
-                thumbs = viz.locator('[data-tb-test-id^="sheet-thumbnail-"]')
-                n = thumbs.count()
-                names = [thumbs.nth(i).inner_text().strip() for i in range(n)]
-                info["thumbs"] = n
-                info["names"] = names
-                log(f"[cdp] crosstab thumbs={n} names={names}")
-            except Exception as e:
-                log(f"[cdp] crosstab err: {str(e)[:100]}")
+                    from automations.shared.tableau_patchright import (
+                        download_crosstab_patchright)
+                    download_crosstab_patchright(url, sheet, Path(out),
+                                                 page=page, verbose=False)
+                    info["downloaded"] = Path(out).stat().st_size
+                    log(f"*** DOWNLOAD OK: {out} ({info['downloaded']:,} b) ***")
+                except Exception as e:
+                    log(f"[download] err {str(e)[:120]}")
     finally:
         try:
             proc.terminate()
