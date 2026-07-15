@@ -176,7 +176,8 @@ def _review_block(review: dict, reply: str) -> str:
             f"({review.get('when') or ''})\n"
             f"> {(review.get('text') or '(rating only, no text)')}\n\n"
             f":pencil2: *Drafted reply* — react :white_check_mark: to approve, "
-            f":x: + a note to redo, :skull: to skip:\n{reply}")
+            f":x: + a note to redo, :skull: to scrap it and bring it back "
+            f"fresh:\n{reply}")
 
 
 def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
@@ -266,14 +267,18 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
         hdr["noted_empty"] = True
 
     # 3) handle reactions on every still-open review reply (any day)
+    resurface = []   # 💀'd reviews: forget them so they come back for a fresh reply
     for k, st in state["reviews"].items():
         if st.get("posted") or st.get("skipped") or not st.get("reply_ts"):
             continue
         rv = st.get("review") or {}
         rx = _thread_reactions(cl, st["reply_ts"]).get(st["reply_ts"])
         if _reacted(rx, SOCIAL_KILL_EMOJI):
-            st["skipped"] = True
-            actions.append({"action": "skipped", "review": k})
+            # UNLIKE the social-post workflow, 💀 does NOT kill a review — every
+            # review still needs a response. Drop its handled-state so the next
+            # scan re-drafts it fresh and it comes back up on the list.
+            resurface.append(k)
+            actions.append({"action": "resurface", "review": k})
             continue
         rejected = st.setdefault("rejected", [])
         cur = st.get("reply")
@@ -300,6 +305,11 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
                     st["approved_pending_api"] = True   # auto-posts once GBP API on
             continue
         actions.append({"action": "awaiting", "review": k})
+
+    # drop 💀'd reviews from state AFTER the loop (can't mutate mid-iteration) so
+    # the next scan sees them as new and drafts a fresh reply.
+    for k in resurface:
+        state["reviews"].pop(k, None)
 
     # 4) mark a day's header complete once an approver reacts a 'done' emoji
     for date, h in state["headers"].items():

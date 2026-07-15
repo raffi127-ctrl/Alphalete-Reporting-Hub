@@ -623,11 +623,19 @@ def _action_set_gbp_token(args: str) -> tuple[bool, str]:
 
     Note: the token transits the control Sheet's Args cell to get here — redact
     that cell after this shows 'done' (the queuer does this from the laptop)."""
-    blob = (args or "").strip()
+    import json
+    import shlex
+    import shutil
+    # `lucy` shlex-joins multi-char args before the Sheet round-trip, so undo it
+    # to recover the raw JSON (mirrors _action_rerun's shlex.split pairing).
+    raw = (args or "").strip()
+    try:
+        parts = shlex.split(raw)
+        blob = parts[0].strip() if parts else raw
+    except Exception:  # noqa: BLE001
+        blob = raw
     if not blob.startswith("{"):
         return False, "set_gbp_token needs the gbp-token.json CONTENTS (a JSON object) as Args"
-    import json
-    import shutil
     try:
         parsed = json.loads(blob)
     except Exception as e:  # noqa: BLE001
