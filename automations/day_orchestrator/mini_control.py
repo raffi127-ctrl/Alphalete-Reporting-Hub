@@ -84,6 +84,7 @@ PLUMBING_ACTIONS = {"ping", "update", "restart_poller", "restart_holder",
 DEFAULT_TIMEOUT_S = 130 * 60
 SESSION_HOLDER_LABEL = "com.alphalete.session-holder"
 MINI_CONTROL_LABEL = "com.alphalete.mini-control"   # this poller's own launchd label
+HUB_WATCH_LABEL = "com.alphalete.hub-watch"          # the Hub change-watcher
 
 # Machine identity — which runner is this? A gitignored `.machine-profile` file
 # at the repo root names the profile ("Lucy 1" / "Lucy 2"). Each runner polls its
@@ -286,6 +287,90 @@ def _action_restart_poller(args: str) -> tuple[bool, str]:
     except Exception as e:  # noqa: BLE001
         return False, f"couldn't schedule restart: {str(e)[:140]}"
     return True, f"restart scheduled for {label} (~3s) — poller reloads its code"
+
+
+def _action_install_hub_watch(args: str) -> tuple[bool, str]:
+    """Install (or reinstall) the Hub change-watcher LaunchAgent on THIS machine
+    — deploy the on-every-Hub-change email notifier remotely, no human at the
+    mini. Steps, in order:
+      1. Regenerate deploy/com.alphalete.hub-watch.plist with the mini's repo
+         path → ~/Library/LaunchAgents, and plutil-lint it.
+      2. Send ONE live confirmation email — proves SMTP works from here
+         end-to-end; if it fails we DON'T go live (a broken credential is caught
+         at install, not silently on the first real change).
+      3. `--init` both watchers so the first live poll doesn't email a backlog.
+      4. bootout (if loaded) + enable + bootstrap; report the loaded state.
+    Run `update` (git pull) + `restart_poller` first so this action exists in the
+    running poller. Idempotent — safe to re-run to redeploy after a plist change."""
+    uid = os.getuid()
+    label = HUB_WATCH_LABEL
+    src_plist = REPO_ROOT / "deploy" / f"{label}.plist"
+    wrapper = REPO_ROOT / "deploy" / "hub_watch_10min.sh"
+    dst_plist = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+    if not src_plist.exists() or not wrapper.exists():
+        return False, (f"missing {src_plist.name} or {wrapper.name} — run "
+                       "`update` first to pull them")
+
+    # 1) plist with THIS machine's path (same replace trick as the other agents).
+    try:
+        text = src_plist.read_text().replace(
+            "/Users/megan/1st Claude Folder", str(REPO_ROOT))
+        dst_plist.parent.mkdir(parents=True, exist_ok=True)
+        dst_plist.write_text(text)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write plist: {str(e).splitlines()[0][:140]}"
+    lint = subprocess.run(["plutil", "-lint", str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if lint.returncode != 0:
+        return False, f"plist lint failed: {(lint.stdout or '')[:160]}"
+    try:
+        os.chmod(wrapper, 0o755)
+    except Exception:  # noqa: BLE001
+        pass
+
+    # 2) live confirmation email — end-to-end SMTP proof from this machine.
+    try:
+        import socket as _sock
+        from automations.shared import hub_notify_email
+        host = _sock.gethostname()
+        hub_notify_email.send_html(
+            "✅ Hub change-watcher installed",
+            f'<p>The Hub change-watcher is now installed on <b>{host}</b>. '
+            "You'll get an email whenever Hub code or a card changes — a commit "
+            "pushed to the repo, or a card published/edited through the Hub. "
+            "This is a one-time install confirmation.</p>",
+            f"Hub change-watcher installed on {host} — you'll be emailed on "
+            "every Hub code/card change (git push or Hub upload).",
+            tag="hub-watch-installed")
+    except Exception as e:  # noqa: BLE001
+        return False, ("plist OK but the confirmation email FAILED — SMTP/creds "
+                       "broken here, NOT going live: "
+                       f"{type(e).__name__}: {str(e).splitlines()[0][:120]}")
+
+    # 3) snapshot current state BEFORE going live (no backlog blast).
+    p_ok, _ = _run_cmd([sys.executable, "-m", "automations.hub_push_watch.run",
+                        "--init"], timeout_s=120)
+    l_ok, _ = _run_cmd([sys.executable, "-m", "automations.hub_library_watch.run",
+                        "--init"], timeout_s=120)
+
+    # 4) (re)bootstrap the agent.
+    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["launchctl", "enable", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    boot = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if boot.returncode != 0:
+        return False, (f"snapshots push={'ok' if p_ok else 'FAIL'} "
+                       f"lib={'ok' if l_ok else 'FAIL'}; bootstrap FAILED: "
+                       f"{(boot.stdout or '').strip()[:150]}")
+    pr = subprocess.run(["launchctl", "print", f"gui/{uid}/{label}"],
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    state = next((ln.strip() for ln in (pr.stdout or "").splitlines()
+                  if "state =" in ln), "loaded")
+    return True, (f"installed {label} · {state} · confirmation email sent · "
+                  f"snapshots push={'ok' if p_ok else 'FAIL'} "
+                  f"lib={'ok' if l_ok else 'FAIL'}")
 
 
 def _action_watch_test(args: str) -> tuple[bool, str]:
@@ -683,6 +768,7 @@ ACTIONS = {
     "set_gbp_token": _action_set_gbp_token,
     "restart_holder": _action_restart_holder,
     "restart_poller": _action_restart_poller,
+    "install_hub_watch": _action_install_hub_watch,
     "reseed_appstream": _action_reseed_appstream,
     "watch_test": _action_watch_test,
     "diag": _action_diag,

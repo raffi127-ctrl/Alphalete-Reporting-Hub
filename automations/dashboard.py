@@ -6759,7 +6759,11 @@ def _save_uploaded_report(metadata: dict, script_text: str) -> tuple[bool, str]:
         _materialize_shared_script(safe_id, script_text)
     except Exception as e:
         return False, f"Couldn't cache the script locally: {e}"
-    # Publish to the shared store → visible + runnable on every Hub.
+    # Publish to the shared store → visible + runnable on every Hub. The owner
+    # gets an email about the new/edited card from the mini's shared-library
+    # watcher (automations.hub_library_watch), NOT from here — the uploading
+    # machine may be a teammate's without the mail app password, whereas the
+    # always-on mini always has it.
     ok, msg = _shared_library_upsert(metadata, script_text)
     if not ok:
         return False, f"Saved locally but couldn't publish to the shared library: {msg}"
