@@ -161,38 +161,15 @@ def probe(url, sheet, out, today, log=print) -> dict:
                                              allow_form_login=True)
             dst = Path("/tmp/vantura_probe_ol.csv")
             _prime_orderlog(page, url, today, log)
-            # Open the Owner & Office dropdown and dump/screenshot its panel
-            # (Apply button etc.) — the runbook's Apply may be the render
-            # trigger the dates alone don't fire.
-            try:
-                vp = page.evaluate("() => ({w:window.innerWidth,"
-                                   "h:window.innerHeight})")
-                W, H = vp["w"], vp["h"]
-                page.mouse.click(W * 0.155, H * 0.327)  # dropdown caret area
-                page.wait_for_timeout(3000)
-                _upload_png(page.screenshot(full_page=False), tab="Vantura Shot2")
-                pvz = page.frame_locator('iframe[title="Data Visualization"]')
-                # dump any Apply/OK buttons + their test-ids
-                btns = pvz.locator('button, [role="button"]')
-                labs = []
-                for i in range(min(btns.count(), 40)):
-                    try:
-                        t = (btns.nth(i).inner_text() or "").strip()
-                        if t and len(t) < 24:
-                            labs.append(t)
-                    except Exception:
-                        pass
-                log("[owner-panel] buttons: " + " | ".join(labs[:30]))
-            except Exception as ex:
-                log(f"[owner-panel] err {str(ex)[:70]}")
+            _select_owner(page, "CARLOS HIDALGO", log)
             try:
                 _upload_png(page.screenshot(full_page=False))
-                log("[cdp] post-prime screenshot -> 'Vantura Shot'")
+                log("[cdp] post-select screenshot -> 'Vantura Shot'")
                 pvz = page.frame_locator('iframe[title="Data Visualization"]')
                 body = pvz.locator("body").inner_text(timeout=12000)
-                log(f"[post-prime] viz body {len(body)} chars")
+                log(f"[post-select] viz body {len(body)} chars")
             except Exception as ex:
-                log(f"[post-prime] shot err {str(ex)[:60]}")
+                log(f"[post-select] shot err {str(ex)[:60]}")
             drive_crosstab_dialog(page, url, sheet, dst, verbose=False,
                                   skip_nav=True)
             log(f"downloaded {dst.stat().st_size} bytes")
@@ -237,6 +214,50 @@ def probe(url, sheet, out, today, log=print) -> dict:
             pass
         _kill_ours()
     return info
+
+
+def _select_owner(page, owner_name, log):
+    """Filter the Order Log to ONE owner via the Owner & Office quick-filter,
+    then Apply — the field can DISPLAY an owner while no checkbox is actually
+    ticked (so the filter is empty and the grid stays blank). Open the panel,
+    tick the owner, click Apply. Keeping it to one owner also keeps the result
+    small enough for the worksheet to render."""
+    viz = page.frame_locator('iframe[title="Data Visualization"]')
+    vp = page.evaluate("() => ({w:window.innerWidth,h:window.innerHeight})")
+    W, H = vp["w"], vp["h"]
+    # open the Owner & Office dropdown (caret in the 2nd filter row)
+    page.mouse.click(W * 0.155, H * 0.327)
+    page.wait_for_timeout(2500)
+    # tick the owner's checkbox (match by visible text; the label toggles it)
+    try:
+        viz.get_by_text(owner_name, exact=False).first.click(timeout=6000)
+        log(f"[owner] ticked {owner_name}")
+    except Exception as ex:
+        log(f"[owner] tick err {str(ex)[:60]}")
+    page.wait_for_timeout(1500)
+    # click Apply
+    clicked = False
+    try:
+        viz.get_by_text("Apply", exact=True).first.click(timeout=5000)
+        clicked = True
+    except Exception:
+        try:
+            page.mouse.click(W * 0.29, H * 0.975)  # Apply button position
+            clicked = True
+        except Exception as ex:
+            log(f"[owner] apply err {str(ex)[:50]}")
+    log(f"[owner] apply clicked={clicked}; waiting for query")
+    # wait for the "Working on it" overlay to clear
+    for _ in range(50):
+        page.wait_for_timeout(3000)
+        try:
+            body = viz.locator("body").inner_text(timeout=8000)
+        except Exception:
+            continue
+        if not any(m in body for m in ("Working on it", "Computing models",
+                                       "Processing request", "Preparing result")):
+            break
+    page.wait_for_timeout(4_000)
 
 
 def _prime_orderlog(page, url, today, log):
