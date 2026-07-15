@@ -66,20 +66,43 @@ def download_churnrates(out_path: Path, page=None, verbose: bool = True) -> Path
 
 
 def _load_grid(path: Path) -> list[list]:
-    """xlsx → grid with Tableau's merged row-header cells back-filled."""
-    import openpyxl
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        wb = openpyxl.load_workbook(path)
-    ws = wb.active
-    grid = [list(r) for r in ws.iter_rows(values_only=True)]
-    for mr in ws.merged_cells.ranges:
-        v = grid[mr.min_row - 1][mr.min_col - 1]
-        for rr in range(mr.min_row - 1, min(mr.max_row, len(grid))):
-            for cc in range(mr.min_col - 1, mr.max_col):
-                grid[rr][cc] = v
-    wb.close()
-    return grid
+    """Crosstab → grid, back-filling merged/blanked row-header cells. Handles
+    the manual .xlsx (merged) AND the automated CSV download (UTF-16 tab), so
+    the same parser works for both. Detected by the zip magic bytes."""
+    with open(path, "rb") as f:
+        magic = f.read(2)
+    if magic == b"PK":
+        import openpyxl
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            wb = openpyxl.load_workbook(path)
+        ws = wb.active
+        grid = [list(r) for r in ws.iter_rows(values_only=True)]
+        for mr in ws.merged_cells.ranges:
+            v = grid[mr.min_row - 1][mr.min_col - 1]
+            for rr in range(mr.min_row - 1, min(mr.max_row, len(grid))):
+                for cc in range(mr.min_col - 1, mr.max_col):
+                    grid[rr][cc] = v
+        wb.close()
+        return grid
+    import csv as _csv
+    for enc in ("utf-16", "utf-8-sig", "utf-8"):
+        try:
+            with open(path, encoding=enc, newline="") as fh:
+                rows = list(_csv.reader(fh, delimiter="\t"))
+            if rows and len(rows[0]) > 1:
+                # forward-fill blanked left (owner) column so measure sub-rows
+                # inherit their owner name
+                prev = ""
+                for r in rows[1:]:
+                    if r and str(r[0]).strip():
+                        prev = r[0]
+                    elif r:
+                        r[0] = prev
+                return rows
+        except Exception:
+            continue
+    raise RuntimeError(f"Could not parse CHURNRATES crosstab at {path}")
 
 
 def parse_churnrates(path: Path, owner_prefix: str) -> dict:

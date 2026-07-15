@@ -66,29 +66,67 @@ def _fmt_date(d: Optional[dt.date]) -> str:
     return f"{d.month}/{d.day}/{d.year}" if d else ""
 
 
-def load_orderlog(path: Path, owner_prefix: str) -> list[dict]:
-    """Parse the Order Log crosstab .xlsx into line-level dicts for one owner.
+# Row-header columns Tableau merges (Excel) / blanks-on-continuation (CSV):
+# the account-level fields that span an account's product lines. Forward-fill
+# these so every line row carries them; per-line fields stay as-is.
+_GROUP_COLS = ("owner", "rep", "customer", "order_date", "spm", "ban", "spe")
 
-    Grand Total / blank-owner rows are dropped; the Owner & Office cell
-    carries an embedded newline before the office suffix, so match on the
-    person-name prefix only.
-    """
-    import openpyxl
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        # NOT read_only: we need ws.merged_cells. Tableau's Excel crosstab
-        # merges repeated row-header cells (Owner, Rep, Customer, ...), so
-        # only the first row of each block carries the value — every merged
-        # range must be back-filled with its top-left value or an owner
-        # filter matches almost nothing.
-        wb = openpyxl.load_workbook(path)
-    ws = wb.active
-    grid = [list(r) for r in ws.iter_rows(values_only=True)]
-    for mr in ws.merged_cells.ranges:
-        v = grid[mr.min_row - 1][mr.min_col - 1]
-        for rr in range(mr.min_row - 1, min(mr.max_row, len(grid))):
-            for cc in range(mr.min_col - 1, mr.max_col):
-                grid[rr][cc] = v
+
+def _load_grid(path: Path) -> list[list]:
+    """Read a Tableau crosstab export into a cell grid, back-filling the merged
+    / blanked row-header cells. Handles BOTH formats: the manual download is a
+    real .xlsx (merged cells); the automated crosstab download is UTF-16
+    tab-delimited CSV (row-headers blanked on continuation rows). Detected by
+    the zip magic bytes, since both may carry an .xlsx name."""
+    with open(path, "rb") as f:
+        head = f.read(4)
+    if head[:2] == b"PK":  # xlsx (zip)
+        import openpyxl
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            wb = openpyxl.load_workbook(path)  # need merged_cells
+        ws = wb.active
+        grid = [list(r) for r in ws.iter_rows(values_only=True)]
+        for mr in ws.merged_cells.ranges:
+            v = grid[mr.min_row - 1][mr.min_col - 1]
+            for rr in range(mr.min_row - 1, min(mr.max_row, len(grid))):
+                for cc in range(mr.min_col - 1, mr.max_col):
+                    grid[rr][cc] = v
+        wb.close()
+        return grid
+    # CSV (tab-delimited, usually UTF-16)
+    import csv as _csv
+    rows = None
+    for enc in ("utf-16", "utf-8-sig", "utf-8"):
+        try:
+            with open(path, encoding=enc, newline="") as fh:
+                rows = list(_csv.reader(fh, delimiter="\t"))
+            if rows and len(rows[0]) > 1:
+                break
+        except Exception:
+            continue
+    if not rows:
+        raise RuntimeError(f"Could not parse Order Log crosstab at {path}")
+    hdr = [str(h or "").strip() for h in rows[0]]
+    gidx = [hdr.index(COLS[k]) for k in _GROUP_COLS if COLS[k] in hdr]
+    prev = {}
+    for r in rows[1:]:
+        for ci in gidx:
+            if ci < len(r) and str(r[ci]).strip():
+                prev[ci] = r[ci]
+            elif ci in prev:
+                if ci >= len(r):
+                    r.extend([""] * (ci - len(r) + 1))
+                r[ci] = prev[ci]
+    return rows
+
+
+def load_orderlog(path: Path, owner_prefix: str) -> list[dict]:
+    """Parse the Order Log crosstab (xlsx or CSV) into line-level dicts for
+    one owner. Grand Total / blank-owner rows are dropped; the Owner & Office
+    cell carries an embedded newline before the office suffix, so match on the
+    person-name prefix only."""
+    grid = _load_grid(path)
     rows_iter = iter(grid)
     hdr = [str(h or "").strip() for h in next(rows_iter)]
     missing = [c for c in COLS.values() if c not in hdr]
@@ -96,8 +134,11 @@ def load_orderlog(path: Path, owner_prefix: str) -> list[dict]:
         raise RuntimeError(f"Order Log crosstab missing columns: {missing}")
     ix = {k: hdr.index(c) for k, c in COLS.items()}
 
+    ncol = len(hdr)
     out = []
     for r in rows_iter:
+        if len(r) < ncol:  # CSV rows can be ragged
+            r = list(r) + [""] * (ncol - len(r))
         owner = str(r[ix["owner"]] or "").split("\n")[0].strip().upper()
         if not owner.startswith(owner_prefix.upper()):
             continue
@@ -106,7 +147,6 @@ def load_orderlog(path: Path, owner_prefix: str) -> list[dict]:
         rec["order_date"] = _parse_date(r[ix["order_date"]])
         rec["posted"] = _parse_date(r[ix["posted"]])
         out.append(rec)
-    wb.close()
     if not out:
         raise RuntimeError(f"Order Log has 0 rows for owner '{owner_prefix}' — "
                            "wrong file or the Tableau owner filter didn't apply.")
