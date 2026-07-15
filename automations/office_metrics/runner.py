@@ -77,7 +77,11 @@ def metrics_for(o: Office) -> list[dict]:
              dry_flag="--dry-run", post_flag="--live"),
         dict(slug="abp", label="💳 New Internet ABP %",
              module="automations.new_internet_abp.run", owner_args=[],
-             env={"ABP_NI_VIEW_URL": o.view_abp, "ABP_SHEET_ID": o.sheet_id,
+             # ABP filters by owner, so once proven it pulls ONE shared all-office
+             # view (deduped across offices) instead of a per-office view.
+             env={"ABP_NI_VIEW_URL": (_off.ALL_OFFICE_ABP_VIEW
+                                      if _off.ABP_USE_ALL_OFFICE else o.view_abp),
+                  "ABP_SHEET_ID": o.sheet_id,
                   "ABP_OWNER": o.owner.upper(), "ABP_SUBTITLE": o.label},
              dry_flag="--dry-run", post_flag=None),
     ]
@@ -107,6 +111,48 @@ def _run_one(label: str, cmd: list[str], env: dict) -> tuple[bool, str]:
         return False, f"launch error: {e}"
 
 
+def _prove_abp(office_key: str, *, headless: bool) -> int:
+    """Pull the office's per-office ABP view AND the shared all-office view under
+    one session, filter BOTH to the office's owner, and diff. The all-office
+    slice must byte-match the per-office pull before we trust it. No post."""
+    import tempfile
+    from pathlib import Path
+    from automations.shared.tableau_patchright import tableau_session
+    from automations.new_internet_abp import pull as abp_pull
+
+    o = _off.get(office_key)
+    d = Path(tempfile.gettempdir())
+    print(f"=== ABP all-office proof — office={office_key} owner={o.owner!r} ===",
+          flush=True)
+    print(f"  per-office view: {o.view_abp}", flush=True)
+    print(f"  all-office view: {_off.ALL_OFFICE_ABP_VIEW}", flush=True)
+    with tableau_session(headless=headless, allow_form_login=False,
+                         verbose=True) as page:
+        per_csv = abp_pull.fetch_crosstab(d / f"abp_per_{office_key}.csv",
+                                          view_url=o.view_abp, page=page)
+        all_csv = abp_pull.fetch_crosstab(d / f"abp_all_{office_key}.csv",
+                                          view_url=_off.ALL_OFFICE_ABP_VIEW, page=page)
+    per = abp_pull.parse(per_csv, owner=o.owner)
+    allo = abp_pull.parse(all_csv, owner=o.owner)
+
+    same_total = per["office_total"] == allo["office_total"]
+    all_reps = sorted(set(per["reps"]) | set(allo["reps"]))
+    diffs = [r for r in all_reps if per["reps"].get(r) != allo["reps"].get(r)]
+    print(f"\n  office_total  per-office: {per['office_total']}", flush=True)
+    print(f"  office_total  all-office: {allo['office_total']}", flush=True)
+    print(f"  reps: per-office={len(per['reps'])}  all-office(sliced)={len(allo['reps'])}",
+          flush=True)
+    for r in diffs[:12]:
+        print(f"    ⚠ {r!r}: per={per['reps'].get(r)}  all={allo['reps'].get(r)}",
+              flush=True)
+    ok = same_total and not diffs
+    print(f"\n  VERDICT [{office_key}]: "
+          + ("IDENTICAL ✅ — safe to flip ABP to all-office"
+             if ok else f"MISMATCH ❌ ({'' if same_total else 'office_total; '}"
+                        f"{len(diffs)} rep diff) — do NOT flip"), flush=True)
+    return 0 if ok else 1
+
+
 def main(argv=None, *, office_key: str | None = None) -> int:
     ap = argparse.ArgumentParser(prog="office_metrics")
     ap.add_argument("--office", default=office_key,
@@ -127,6 +173,11 @@ def main(argv=None, *, office_key: str | None = None) -> int:
     ap.add_argument("--fresh", action="store_true",
                     help="ignore the shared crosstab cache and re-pull every view "
                          "live (use if a cached org-wide pull went bad).")
+    ap.add_argument("--prove-abp", action="store_true",
+                    help="cell-for-cell proof that the shared all-office ABP view, "
+                         "sliced to this office's owner, matches the office's "
+                         "current per-office ABP view. No post. Run before "
+                         "flipping ABP_USE_ALL_OFFICE on.")
     args = ap.parse_args(argv)
 
     # Structural guard FIRST — a duplicated channel or view URL (the copy-paste
@@ -151,6 +202,10 @@ def main(argv=None, *, office_key: str | None = None) -> int:
     if not args.office:
         print(f"--office is required (one of: {', '.join(_off.ORDER)})")
         return 2
+
+    if args.prove_abp:
+        return _prove_abp(args.office, headless=args.headless)
+
     o = _off.get(args.office)
     metrics = metrics_for(o)
     target_chan = args.channel or o.channel_id

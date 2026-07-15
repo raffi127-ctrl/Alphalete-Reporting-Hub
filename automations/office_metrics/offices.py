@@ -33,6 +33,18 @@ from dataclasses import dataclass
 
 _T = "https://us-east-1.online.tableau.com/#/site/sci/views/"
 
+# Shared ALL-OFFICE ABP view (Megan 2026-07-15). The ABP module already FILTERS by
+# owner, so every office can pull this ONE view (deduped across offices by the
+# Step-2 crosstab cache) and slice to its own owner — no per-office ABP view
+# needed. Flip via runner (env ABP_NI_VIEW_URL). Per-office view_abp fields stay
+# for the cell-for-cell proof + as a fallback. Prove before flipping:
+#   python -m automations.office_metrics.runner --office rashad --prove-abp
+ALL_OFFICE_ABP_VIEW = (_T + "ATTTRACKER2_1-D2D/Metrics/"
+                       "b0b90f8f-e597-425d-93ae-c55cf1898ae1/AllOfficeINTABP?:iid=1")
+# Flip to True only after the proof is clean for every office (sliced all-office
+# == per-office view). When True, metrics_for() points ABP at the shared view.
+ABP_USE_ALL_OFFICE = False
+
 
 @dataclass(frozen=True)
 class Office:
