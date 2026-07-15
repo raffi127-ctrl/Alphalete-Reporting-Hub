@@ -161,6 +161,14 @@ def probe(url, sheet, out, today, log=print) -> dict:
                                              allow_form_login=True)
             dst = Path("/tmp/vantura_probe_ol.csv")
             _prime_orderlog(page, url, today, log)
+            try:
+                _upload_png(page.screenshot(full_page=False))
+                log("[cdp] post-prime screenshot -> 'Vantura Shot'")
+                pvz = page.frame_locator('iframe[title="Data Visualization"]')
+                body = pvz.locator("body").inner_text(timeout=12000)
+                log(f"[post-prime] viz body {len(body)} chars")
+            except Exception as ex:
+                log(f"[post-prime] shot err {str(ex)[:60]}")
             drive_crosstab_dialog(page, url, sheet, dst, verbose=False,
                                   skip_nav=True)
             log(f"downloaded {dst.stat().st_size} bytes")
