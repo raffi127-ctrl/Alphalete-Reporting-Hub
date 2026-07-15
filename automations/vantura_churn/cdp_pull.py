@@ -230,17 +230,58 @@ def probe(url, sheet, out, today, log=print) -> dict:
     return info
 
 
-def download_views(specs, verbose=True, log=print):
-    """Download each (view_url, crosstab_sheet, out_path) via one real-Chrome
-    CDP session. Auth is seeded once (ownerville storage_state → Tableau SSO,
-    form-login self-heal). Returns {out_path: Path} for successes.
+def _prime_orderlog(page, url, today, log):
+    """The B2B ORDER LOG dashboard loads with an EMPTY worksheet until its
+    query is triggered — so the crosstab dialog has no sheet to export. Load
+    it, commit the date range via trusted CDP clicks, then Refresh + Revert to
+    force the query (proven sequence 2026-07-15). After this the worksheet has
+    data and the crosstab download succeeds."""
+    page.goto(url, wait_until="domcontentloaded")
+    viz = page.frame_locator('iframe[title="Data Visualization"]')
+    try:
+        viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
+                    'download"]').wait_for(state="visible", timeout=150_000)
+    except Exception:
+        pass
+    page.wait_for_timeout(18_000)
+    start_s = (f"{(today-dt.timedelta(days=60)).month}/"
+               f"{(today-dt.timedelta(days=60)).day}/"
+               f"{(today-dt.timedelta(days=60)).year}")
+    end_s = f"{today.month}/{today.day}/{today.year}"
+    vp = page.evaluate("() => ({w:window.innerWidth,h:window.innerHeight})")
+    W, H = vp["w"], vp["h"]
+    for fx, val in [(0.13, start_s), (0.213, end_s)]:
+        try:
+            page.mouse.click(W * fx, H * 0.255, click_count=3)
+            page.wait_for_timeout(300)
+            page.keyboard.press("Backspace")
+            page.keyboard.type(val, delay=40)
+            page.keyboard.press("Enter")
+            page.wait_for_timeout(2500)
+        except Exception as ex:
+            log(f"[prime] date err {str(ex)[:50]}")
+    for tid in ("refresh", "revert"):
+        try:
+            viz.locator(f'[data-tb-test-id="viz-viewer-toolbar-button-'
+                        f'{tid}"]').first.click()
+            page.wait_for_timeout(12_000)
+        except Exception:
+            pass
+    page.wait_for_timeout(6_000)
 
-    Raises if the CDP session or auth fails; per-view failures propagate from
-    download_crosstab_patchright (which already retries 3x)."""
+
+def download_views(specs, today=None, verbose=True, log=print):
+    """Download each (view_url, crosstab_sheet, out_path) via one real-Chrome
+    CDP session. Auth seeded once (ownerville storage_state → Tableau SSO).
+    ORDER LOG views are primed first (see _prime_orderlog) so their worksheet
+    has data before the crosstab export. Returns {out_path: Path}."""
+    import datetime as _dt
     from patchright.sync_api import sync_playwright
     from automations.shared import tableau_patchright as tp
     from automations.shared.tableau_patchright import download_crosstab_patchright
 
+    if today is None:
+        today = _dt.date.today()
     _kill_ours()
     proc = _launch()
     log(f"[cdp] launched real Chrome pid={proc.pid}; waiting 20s")
@@ -253,9 +294,6 @@ def download_views(specs, verbose=True, log=print):
             browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            # Make Chrome save downloads to a known dir (Playwright's
-            # expect_download still intercepts, but this is the belt-and-braces
-            # for CDP-attached contexts).
             try:
                 client = ctx.new_cdp_session(page)
                 client.send("Browser.setDownloadBehavior",
@@ -270,6 +308,9 @@ def download_views(specs, verbose=True, log=print):
 
             for url, sheet, out in specs:
                 out = Path(out)
+                if "ATTTRACKER-B2B/ORDERLOG" in url:
+                    log(f"[cdp] priming ORDER LOG query for {out.name}…")
+                    _prime_orderlog(page, url, today, log)
                 download_crosstab_patchright(url, sheet, out, page=page,
                                              verbose=verbose)
                 results[str(out)] = out

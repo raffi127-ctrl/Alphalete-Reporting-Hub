@@ -163,7 +163,7 @@ def main(argv=None) -> int:
             specs.append((pull.CHURNRATES_URL, pull.CHURNRATES_SHEET,
                           churnrates_path))
             log("▶ Churn Rates dashboard…")
-        cdp_pull.download_views(specs, verbose=False, log=log)
+        cdp_pull.download_views(specs, today=today, verbose=False, log=log)
 
     # ------------------------------------------------- compute + reconcile
     results = {}
