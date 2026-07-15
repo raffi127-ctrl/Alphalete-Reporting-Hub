@@ -139,16 +139,20 @@ def _select_worksheet(page, log) -> bool:
 
 
 def probe(url, sheet, out, today, log=print) -> dict:
-    """Inspect the Tableau JS API inside the viz frame — if reachable, we can
-    set the date parameters + owner filter via API (reliable) instead of
-    pixel-clicking the canvas dropdown."""
+    """Load the BARE ORDER LOG (no filter changes at all), screenshot + download
+    the DEFAULT rendered worksheet, and report its row count + date range — to
+    see what the untouched view yields (it renders where changed filters don't)."""
     from patchright.sync_api import sync_playwright
     from automations.shared import tableau_patchright as tp
+    from automations.recruiting_report.opt_phase import drive_crosstab_dialog
+    from automations.vantura_churn import compute
     _kill_ours()
     proc = _launch()
     log(f"[cdp] real Chrome pid={proc.pid}; waiting 20s")
     time.sleep(20)
     info = {}
+    bare = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+            "ATTTRACKER-B2B/ORDERLOG?:iid=1")
     try:
         with sync_playwright() as p:
             browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
@@ -156,45 +160,41 @@ def probe(url, sheet, out, today, log=print) -> dict:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             tp._ensure_tableau_authenticated(page, verbose=False,
                                              allow_form_login=True)
-            page.goto(url, wait_until="domcontentloaded")
+            page.goto(bare, wait_until="domcontentloaded")
             viz = page.frame_locator('iframe[title="Data Visualization"]')
             try:
                 viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
                             'download"]').wait_for(state="visible", timeout=150_000)
             except Exception:
                 pass
-            page.wait_for_timeout(20_000)
-            log(f"frames: {len(page.frames)}")
-            for fr in page.frames:
-                u = (fr.url or "")[:70]
-                try:
-                    keys = fr.evaluate(
-                        "() => Object.keys(window).filter(k=>"
-                        "/tableau|viz|embed/i.test(k)).slice(0,25)")
-                except Exception as e:
-                    keys = f"eval-err {str(e)[:40]}"
-                log(f"FRAME {u} | tableau-ish keys: {keys}")
-                # deeper: look for a viz/workbook API on any tableau global
-                try:
-                    api = fr.evaluate("""() => {
-                        const out = {};
-                        for (const k of Object.keys(window)) {
-                            if (!/tableau/i.test(k)) continue;
-                            const v = window[k];
-                            if (v && typeof v === 'object') {
-                                out[k] = Object.keys(v).slice(0,15);
-                            } else { out[k] = typeof v; }
-                        }
-                        // web component?
-                        const tv = document.querySelector('tableau-viz, tableau-authoring-viz');
-                        if (tv) out['__tableau-viz-element'] =
-                            Object.getOwnPropertyNames(Object.getPrototypeOf(tv)).slice(0,25);
-                        return out;
-                    }""")
-                    if api:
-                        log(f"  API on {u[:40]}: {str(api)[:600]}")
-                except Exception as e:
-                    log(f"  api-probe err {str(e)[:50]}")
+            page.wait_for_timeout(30_000)
+            try:
+                _upload_png(page.screenshot(full_page=False))
+                log("[cdp] default screenshot -> 'Vantura Shot'")
+            except Exception:
+                pass
+            dst = Path("/tmp/vantura_default.csv")
+            try:
+                drive_crosstab_dialog(page, bare, sheet, dst, verbose=False,
+                                      skip_nav=True)
+                log(f"downloaded default {dst.stat().st_size} bytes")
+                grid = compute._load_grid(dst)
+                hdr = [str(h or "").strip() for h in grid[0]]
+                oi = hdr.index(compute.COLS["owner"]) if compute.COLS["owner"] in hdr else 0
+                odi = hdr.index(compute.COLS["order_date"]) if compute.COLS["order_date"] in hdr else -1
+                carlos = 0; odates = []
+                for r in grid[1:]:
+                    if len(r) <= oi: continue
+                    if str(r[oi] or "").split(chr(10))[0].strip().upper().startswith("CARLOS HIDALGO"):
+                        carlos += 1
+                    if odi >= 0 and odi < len(r):
+                        d = compute._parse_date(r[odi])
+                        if d: odates.append(d)
+                log(f"[default] total rows {len(grid)-1}  CARLOS {carlos}")
+                if odates:
+                    log(f"[default] order-date range {min(odates)} .. {max(odates)}")
+            except Exception as ex:
+                log(f"[default] download err {str(ex)[:100]}")
     except Exception as ex:
         import traceback
         log("ERR " + str(ex)[:120])
