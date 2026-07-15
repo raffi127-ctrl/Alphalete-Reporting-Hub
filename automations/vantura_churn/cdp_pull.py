@@ -139,12 +139,13 @@ def _select_worksheet(page, log) -> bool:
 
 
 def probe(url, sheet, out, today, log=print) -> dict:
-    """Find how to make the B2B ORDER LOG worksheet populate: enumerate the
-    viz toolbar buttons + the 'View:' custom-views dropdown (a saved view may
-    auto-load data like D2D's ALLREPS), and try clicking each toolbar control
-    that could trigger a query. Screenshot for ground truth."""
+    """Make the B2B ORDER LOG worksheet populate, then download. Try: list
+    saved custom views (manage-customviews); commit the dates via trusted
+    clicks; click Refresh to force the query; screenshot; then attempt the
+    crosstab download."""
     from patchright.sync_api import sync_playwright
     from automations.shared import tableau_patchright as tp
+    from automations.shared.tableau_patchright import download_crosstab_patchright
     _kill_ours()
     proc = _launch()
     log(f"[cdp] real Chrome pid={proc.pid}; waiting 20s")
@@ -157,57 +158,69 @@ def probe(url, sheet, out, today, log=print) -> dict:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             tp._ensure_tableau_authenticated(page, verbose=False,
                                              allow_form_login=True)
-            log("[cdp] authenticated; loading B2B ORDER LOG")
             page.goto(url, wait_until="domcontentloaded")
             viz = page.frame_locator('iframe[title="Data Visualization"]')
             try:
                 viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
-                            'download"]').wait_for(state="visible",
-                                                   timeout=150_000)
+                            'download"]').wait_for(state="visible", timeout=150_000)
             except Exception:
                 pass
-            page.wait_for_timeout(20_000)
+            page.wait_for_timeout(18_000)
 
-            # 1) enumerate every toolbar button test-id + label
+            # 1) list saved custom views
             try:
-                btns = viz.locator('[data-tb-test-id^="viz-viewer-toolbar-"]')
-                n = btns.count()
-                log(f"[toolbar] {n} controls")
-                for i in range(n):
-                    b = btns.nth(i)
-                    try:
-                        tid = b.get_attribute("data-tb-test-id") or ""
-                        al = b.get_attribute("aria-label") or b.inner_text() or ""
-                        log(f"  tb {tid} | {al[:30]}")
-                    except Exception:
-                        pass
+                viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-'
+                            'manage-customviews"]').click()
+                page.wait_for_timeout(2500)
+                menu = viz.locator('[role="dialog"], [role="menu"]')
+                if menu.count():
+                    log("[customviews] " + menu.first.inner_text(
+                        timeout=6000).replace(chr(10), " | ")[:400])
+                _upload_png(page.screenshot(full_page=False), tab="Vantura Shot2")
+                page.keyboard.press("Escape"); page.wait_for_timeout(800)
             except Exception as ex:
-                log(f"[toolbar] err {str(ex)[:80]}")
+                log(f"[customviews] err {str(ex)[:80]}")
 
-            # 2) open the 'View:' custom-views dropdown, list saved views
-            for tid in ("viz-viewer-toolbar-button-customViews",
-                        "viz-viewer-toolbar-button-customView",
-                        "viz-viewer-toolbar-button-view",
-                        "viz-viewer-toolbar-button-revert"):
+            # 2) commit the date range via trusted positional clicks
+            start_s = f"{(today-dt.timedelta(days=60)).month}/{(today-dt.timedelta(days=60)).day}/{(today-dt.timedelta(days=60)).year}"
+            end_s = f"{today.month}/{today.day}/{today.year}"
+            vp = page.evaluate("() => ({w:window.innerWidth,h:window.innerHeight})")
+            W, H = vp["w"], vp["h"]
+            for lbl, fx, val in [("Start", 0.13, start_s), ("End", 0.213, end_s)]:
                 try:
-                    el = viz.locator(f'[data-tb-test-id="{tid}"]')
-                    if el.count():
-                        el.first.click()
-                        page.wait_for_timeout(2500)
-                        dlg = viz.locator('[role="dialog"], [role="menu"]')
-                        if dlg.count():
-                            txt = dlg.first.inner_text(timeout=6000)
-                            log(f"[customviews via {tid}] "
-                                + txt.replace(chr(10), ' | ')[:400])
-                        _upload_png(page.screenshot(full_page=False),
-                                    tab="Vantura Shot2")
-                        page.keyboard.press("Escape")
-                        break
+                    page.mouse.click(W*fx, H*0.255, click_count=3)
+                    page.wait_for_timeout(300)
+                    page.keyboard.press("Backspace")
+                    page.keyboard.type(val, delay=40)
+                    page.keyboard.press("Enter")
+                    page.wait_for_timeout(2500)
+                    log(f"[date] {lbl}={val}")
                 except Exception as ex:
-                    log(f"[customviews {tid}] err {str(ex)[:60]}")
+                    log(f"[date] {lbl} err {str(ex)[:50]}")
 
+            # 3) force a re-query
+            for tid in ("refresh", "revert"):
+                try:
+                    viz.locator(f'[data-tb-test-id="viz-viewer-toolbar-'
+                                f'button-{tid}"]').first.click()
+                    log(f"[trigger] clicked {tid}")
+                    page.wait_for_timeout(12_000)
+                except Exception as ex:
+                    log(f"[trigger] {tid} err {str(ex)[:50]}")
+
+            page.wait_for_timeout(8_000)
             _upload_png(page.screenshot(full_page=False))
             log("[cdp] screenshot -> 'Vantura Shot'")
+
+            # 4) attempt the download
+            try:
+                download_crosstab_patchright(url, sheet, Path(out), page=page,
+                                             verbose=False)
+                info["downloaded"] = Path(out).stat().st_size
+                log(f"*** DOWNLOAD OK: {out} ({info['downloaded']:,} b) ***")
+            except Exception as ex:
+                info["download_err"] = str(ex)[:100]
+                log(f"[download] {str(ex)[:120]}")
     finally:
         try:
             proc.terminate()
