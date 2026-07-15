@@ -26,8 +26,7 @@ from automations.shared.tableau_patchright import download_crosstab_patchright
 ORDERLOG_URL_TMPL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER-B2B/ORDERLOG"
-    "?:iid=1&Start%20Date={start}&End%20Date={end}"
-    "&Owner%20%26%20Office={owner}")
+    "?:iid=1&Start%20Date={start}&End%20Date={end}")
 ORDERLOG_SHEET = "Order Log"
 
 CHURNRATES_URL = (
@@ -46,10 +45,12 @@ OWNERS = {
 
 
 def orderlog_url(owner_key: str, today: dt.date) -> str:
+    # All-reps download (no owner URL filter — it displays but doesn't filter
+    # the rows, and compute.load_orderlog filters by owner name anyway). One
+    # download serves both owners.
     start = today - dt.timedelta(days=60)
     return ORDERLOG_URL_TMPL.format(
-        start=start.isoformat(), end=today.isoformat(),
-        owner=quote(OWNERS[owner_key], safe=""))
+        start=start.isoformat(), end=today.isoformat())
 
 
 def download_orderlog(owner_key: str, today: dt.date, out_path: Path,
