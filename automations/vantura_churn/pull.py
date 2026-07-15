@@ -136,7 +136,11 @@ def parse_churnrates(path: Path, owner_prefix: str) -> dict:
             if str(v or "").strip() in ("Activated SPE/SP", "Calculation1 (1)",
                                         "Churn Rate", "Disconnects"):
                 measure = str(v).strip()
-        if owner and measure:
+        # An owner spans multiple color-band blocks (Red/Yellow/Green); each
+        # holds only some day-buckets, so the 0-30 value is present in exactly
+        # one block and BLANK in the others. Never overwrite a real value with
+        # a blank — keep the first non-empty 0-30 reading per measure.
+        if owner and measure and str(row[col_030] or "").strip():
             raw[measure] = row[col_030]
     if not raw:
         raise RuntimeError(
