@@ -217,16 +217,35 @@ def _inspect_cancel(office_key: str, view_override: str | None = None) -> int:
     print(f"\n  === HEADER ({len(header)} cols) ===", flush=True)
     for i, h in enumerate(header):
         print(f"    [{i}] {h!r}", flush=True)
-    print(f"\n  === sample raw rows under {target!r} ===", flush=True)
-    shown = 0
+    # Distinct MEASURE names (the column just after the color column) — this tells
+    # us whether cancel/order COUNTS exist as summable measures (so we could
+    # recompute the office rate like churn), or only the rate does.
+    color_i = next((i for i, h in enumerate(header)
+                    if h.startswith("Internet Cancel Color")), 2)
+    mi = color_i + 1
+    measures: dict = {}
     for r in rows[1:]:
-        if len(r) <= ri:
-            continue
-        if (r[oi] or "").strip().upper() == target.upper():
-            print(f"    {[c for c in r[:min(len(r), ri+6)]]}", flush=True)
-            shown += 1
-            if shown >= 4:
+        if len(r) > mi:
+            measures[(r[mi] or "").strip()] = measures.get((r[mi] or "").strip(), 0) + 1
+    print(f"\n  === distinct MEASURES (col [{mi}]) ===", flush=True)
+    for m, c in sorted(measures.items()):
+        print(f"    {m!r}: {c} rows", flush=True)
+    # Dump EVERY measure row for one rep under the target that has non-blank data,
+    # so we can see if counts are present + summable.
+    print(f"\n  === all measure rows for one active rep under {target!r} ===",
+          flush=True)
+    picked = None
+    for r in rows[1:]:
+        if len(r) > mi and (r[oi] or "").strip().upper() == target.upper():
+            rep = (r[ri] or "").strip()
+            if rep and rep not in ("Total",) and any(c.strip() for c in r[mi+1:mi+4]):
+                picked = rep
                 break
+    if picked:
+        for r in rows[1:]:
+            if (len(r) > mi and (r[oi] or "").strip().upper() == target.upper()
+                    and (r[ri] or "").strip() == picked):
+                print(f"    measure={r[mi]!r}  vals={r[mi+1:mi+5]}", flush=True)
     return 0
 
 
