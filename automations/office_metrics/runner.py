@@ -65,9 +65,17 @@ def metrics_for(o: Office) -> list[dict]:
              dry_flag="--dry-run", post_flag=None),
         dict(slug="churn", label="🌐 New Internet + 📊 Wireless Churn",
              module="automations.churn.run", owner_args=[],
-             env={"CHURN_NI_VIEW_URL": o.view_churn_ni,
-                  "CHURN_WL_VIEW_URL": o.view_churn_wl,
-                  "CHURN_SHEET_ID": o.sheet_id},
+             # Once proven, churn pulls the two shared ALL-OFFICE views and slices
+             # to this office's owner (CHURN_SLICE_OWNER) — no per-office churn
+             # views needed. Else the office's own INT<Office>/Wireless<Office>.
+             env=({"CHURN_NI_VIEW_URL": _off.ALL_OFFICE_CHURN_NI,
+                   "CHURN_WL_VIEW_URL": _off.ALL_OFFICE_CHURN_WL,
+                   "CHURN_SLICE_OWNER": o.owner,
+                   "CHURN_SHEET_ID": o.sheet_id}
+                  if _off.CHURN_USE_ALL_OFFICE else
+                  {"CHURN_NI_VIEW_URL": o.view_churn_ni,
+                   "CHURN_WL_VIEW_URL": o.view_churn_wl,
+                   "CHURN_SHEET_ID": o.sheet_id}),
              dry_flag="--dry-run", post_flag=None),
         dict(slug="knocks_gaps", label="🚪 Total Knocks + 🕐 Time Gaps",
              module="automations.rashad_metrics.knocks_run", owner_args=[],
@@ -222,6 +230,59 @@ def _inspect_cancel(office_key: str, view_override: str | None = None) -> int:
     return 0
 
 
+def _prove_churn(office_key: str) -> int:
+    """For each churn view (NI + WL): pull the office's per-office view AND the
+    shared all-office view sliced to the office's owner, parse both, and diff
+    office_total + every rep. The slice must byte-match before we trust it."""
+    import tempfile
+    from pathlib import Path
+    from automations.shared.tableau_patchright import tableau_session
+    from automations.new_internet_churn import pull as ni_pull
+    from automations.wireless_churn import pull as wl_pull
+
+    o = _off.get(office_key)
+    d = Path(tempfile.gettempdir())
+    plan = [("New Internet", ni_pull, o.view_churn_ni, _off.ALL_OFFICE_CHURN_NI),
+            ("Wireless", wl_pull, o.view_churn_wl, _off.ALL_OFFICE_CHURN_WL)]
+    print(f"=== churn all-office proof — office={office_key} owner={o.owner!r} ===",
+          flush=True)
+    all_ok = True
+    with tableau_session(allow_form_login=False, verbose=True) as page:
+        for label, mod, per_view, all_view in plan:
+            os.environ.pop("CHURN_SLICE_OWNER", None)     # per-office = no slice
+            mod.VIEW_URL = per_view
+            per_csv = mod.fetch_crosstab(d / f"churn_per_{label[:2]}_{office_key}.csv",
+                                         page=page)
+            per = mod.parse(per_csv)
+            os.environ["CHURN_SLICE_OWNER"] = o.owner      # all-office = slice
+            mod.VIEW_URL = all_view
+            all_csv = mod.fetch_crosstab(d / f"churn_all_{label[:2]}_{office_key}.csv",
+                                         page=page)
+            allo = mod.parse(all_csv)
+            os.environ.pop("CHURN_SLICE_OWNER", None)
+
+            ot_same = per["office_total"] == allo["office_total"]
+            rep_keys = sorted(set(per["reps"]) | set(allo["reps"]))
+            rep_diffs = [k for k in rep_keys if per["reps"].get(k) != allo["reps"].get(k)]
+            ok = ot_same and not rep_diffs
+            all_ok &= ok
+            print(f"\n  [{label}] office_total match: {ot_same}  "
+                  f"reps per={len(per['reps'])} all={len(allo['reps'])}  "
+                  f"rep diffs: {len(rep_diffs)}", flush=True)
+            if not ot_same:
+                print(f"     per office_total: {per['office_total']}", flush=True)
+                print(f"     all office_total: {allo['office_total']}", flush=True)
+            for k in rep_diffs[:6]:
+                print(f"     ⚠ rep {k!r}: per={per['reps'].get(k)} all={allo['reps'].get(k)}",
+                      flush=True)
+            print(f"  VERDICT [{label}]: {'IDENTICAL ✅' if ok else 'MISMATCH ❌'}",
+                  flush=True)
+    print(f"\n=== CHURN PROOF [{office_key}]: "
+          f"{'ALL IDENTICAL ✅ — safe to flip' if all_ok else 'MISMATCH ❌ — do NOT flip'} ===",
+          flush=True)
+    return 0 if all_ok else 1
+
+
 def _inspect_churn(view_url: str) -> int:
     """Read-only: pull a churn view and dump its distinct ICD Owner Name (rep)
     values, so we can confirm it's genuinely all-office (contains Rashad, Aya,
@@ -303,6 +364,10 @@ def main(argv=None, *, office_key: str | None = None) -> int:
     ap.add_argument("--inspect-churn", default=None, metavar="VIEW_URL",
                     help="read-only: pull this churn view and dump its distinct "
                          "ICD Owner Name (rep) values (is it all-office?).")
+    ap.add_argument("--prove-churn", action="store_true",
+                    help="cell-for-cell proof that the all-office churn views "
+                         "(NI + WL) sliced to this office match its per-office "
+                         "views. No post. Run before flipping CHURN_USE_ALL_OFFICE.")
     args = ap.parse_args(argv)
 
     # Structural guard FIRST — a duplicated channel or view URL (the copy-paste
@@ -334,6 +399,8 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         return _inspect_cancel(args.office, view_override=args.cancel_view)
     if args.inspect_churn:
         return _inspect_churn(args.inspect_churn)
+    if args.prove_churn:
+        return _prove_churn(args.office)
 
     o = _off.get(args.office)
     metrics = metrics_for(o)

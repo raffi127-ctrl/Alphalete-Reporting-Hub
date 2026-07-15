@@ -49,6 +49,19 @@ ALL_OFFICE_ABP_VIEW = (_T + "ATTTRACKER2_1-D2D/Metrics/"
 # (23 reps) — sliced all-office == per-office view, cell for cell.
 ABP_USE_ALL_OFFICE = True
 
+# Shared ALL-OFFICE churn views (verified all-office 2026-07-15: INTAllTeams = 88
+# offices, WirelessAllTeams = 87, both contain Rashad + Aya). The churn parse,
+# with env CHURN_SLICE_OWNER set, filters to the office's ICD owner and RECOMPUTES
+# the office total from its reps (these views have no per-office Total row — churn
+# counts sum cleanly, unlike the ongoing-cancel rate). Prove before flipping:
+#   runner --office rashad --prove-churn
+ALL_OFFICE_CHURN_NI = (_T + "ATTTRACKER2_1-D2D/CHURN/"
+                       "907184c5-3782-4c32-92ff-919b63d5d402/INTAllTeams?:iid=1")
+ALL_OFFICE_CHURN_WL = (_T + "ATTTRACKER2_1-D2D/CHURN/"
+                       "66b10d0a-1bb2-441a-85b1-982977a9514e/WirelessAllTeams?:iid=1")
+# Flip True only after --prove-churn is IDENTICAL for every office.
+CHURN_USE_ALL_OFFICE = False
+
 
 @dataclass(frozen=True)
 class Office:
