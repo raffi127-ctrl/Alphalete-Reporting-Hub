@@ -228,25 +228,19 @@ def _select_owner(page, owner_name, log):
     # open the Owner & Office dropdown (caret in the 2nd filter row)
     page.mouse.click(W * 0.155, H * 0.327)
     page.wait_for_timeout(2500)
-    # tick the owner's checkbox (match by visible text; the label toggles it)
-    try:
-        viz.get_by_text(owner_name, exact=False).first.click(timeout=6000)
-        log(f"[owner] ticked {owner_name}")
-    except Exception as ex:
-        log(f"[owner] tick err {str(ex)[:60]}")
+    # the rows are canvas — can't click by text. Use the panel's SEARCH box to
+    # filter to just this owner, then click "(All)" (selects the filtered set =
+    # the one owner), which is position-stable regardless of list order.
+    page.mouse.click(W * 0.225, H * 0.356)          # search box
+    page.wait_for_timeout(700)
+    page.keyboard.type(owner_name, delay=40)
+    page.wait_for_timeout(2500)
+    page.mouse.click(W * 0.0987, H * 0.386)         # "(All)" checkbox (filtered)
     page.wait_for_timeout(1500)
-    # click Apply
-    clicked = False
-    try:
-        viz.get_by_text("Apply", exact=True).first.click(timeout=5000)
-        clicked = True
-    except Exception:
-        try:
-            page.mouse.click(W * 0.29, H * 0.975)  # Apply button position
-            clicked = True
-        except Exception as ex:
-            log(f"[owner] apply err {str(ex)[:50]}")
-    log(f"[owner] apply clicked={clicked}; waiting for query")
+    log(f"[owner] searched+selected {owner_name}")
+    # click Apply (right button at the panel bottom)
+    page.mouse.click(W * 0.29, H * 0.975)
+    log("[owner] apply clicked; waiting for query")
     # wait for the "Working on it" overlay to clear
     for _ in range(50):
         page.wait_for_timeout(3000)
