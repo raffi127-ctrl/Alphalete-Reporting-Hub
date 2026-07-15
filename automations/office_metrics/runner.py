@@ -222,6 +222,42 @@ def _inspect_cancel(office_key: str, view_override: str | None = None) -> int:
     return 0
 
 
+def _inspect_churn(view_url: str) -> int:
+    """Read-only: pull a churn view and dump its distinct ICD Owner Name (rep)
+    values, so we can confirm it's genuinely all-office (contains Rashad, Aya,
+    and the rest) before slicing it."""
+    import csv
+    import tempfile
+    from pathlib import Path
+    from automations.new_internet_churn import pull as ni_pull
+
+    ni_pull.VIEW_URL = view_url
+    print(f"=== inspect churn view ===\n  {view_url}", flush=True)
+    out = Path(tempfile.gettempdir()) / "churn_inspect.csv"
+    ni_pull.fetch_crosstab(out, verbose=True)
+    with open(out, "r", encoding="utf-16-le") as f:
+        rows = list(csv.reader(f, delimiter="\t"))
+    header = [h.lstrip("﻿").strip() for h in rows[0]]
+    oi = header.index("ICD Owner Name (rep)")
+    owners: dict = {}
+    for r in rows[1:]:
+        if len(r) <= oi:
+            continue
+        own = (r[oi] or "").strip()
+        if own:
+            owners[own] = owners.get(own, 0) + 1
+    real = [o for o in owners if o not in ("Grand Total",)]
+    print(f"\n  distinct ICD owners: {len(owners)}", flush=True)
+    for own, c in sorted(owners.items()):
+        print(f"    {own!r}: {c} rows", flush=True)
+    for who in ("Rashad Reed", "Aya Al-Khafaji"):
+        hit = any(o.upper() == who.upper() for o in owners)
+        print(f"  {who}: {'PRESENT ✅' if hit else 'MISSING ❌'}", flush=True)
+    print(f"\n  VERDICT: {'ALL-OFFICE' if len(real) > 1 else 'SINGLE-OFFICE'} "
+          f"({len(real)} offices)", flush=True)
+    return 0
+
+
 def main(argv=None, *, office_key: str | None = None) -> int:
     ap = argparse.ArgumentParser(prog="office_metrics")
     ap.add_argument("--office", default=office_key,
@@ -255,6 +291,9 @@ def main(argv=None, *, office_key: str | None = None) -> int:
                     help="with --inspect-cancel: inspect THIS view URL instead of "
                          "the office's per-office view (e.g. an all-office "
                          "candidate).")
+    ap.add_argument("--inspect-churn", default=None, metavar="VIEW_URL",
+                    help="read-only: pull this churn view and dump its distinct "
+                         "ICD Owner Name (rep) values (is it all-office?).")
     args = ap.parse_args(argv)
 
     # Structural guard FIRST — a duplicated channel or view URL (the copy-paste
@@ -284,6 +323,8 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         return _prove_abp(args.office)
     if args.inspect_cancel:
         return _inspect_cancel(args.office, view_override=args.cancel_view)
+    if args.inspect_churn:
+        return _inspect_churn(args.inspect_churn)
 
     o = _off.get(args.office)
     metrics = metrics_for(o)
