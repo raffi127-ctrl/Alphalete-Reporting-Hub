@@ -298,19 +298,14 @@ def download_views(specs, today=None, verbose=True, log=print):
     log(f"[cdp] launched real Chrome pid={proc.pid}; waiting 20s")
     time.sleep(20)
     results = {}
-    dl_dir = Path("/tmp/vantura_dl")
-    dl_dir.mkdir(exist_ok=True)
     try:
         with sync_playwright() as p:
             browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            try:
-                client = ctx.new_cdp_session(page)
-                client.send("Browser.setDownloadBehavior",
-                            {"behavior": "allow", "downloadPath": str(dl_dir)})
-            except Exception as e:
-                log(f"[cdp] setDownloadBehavior warn: {str(e)[:80]}")
+            # NB: do NOT set Browser.setDownloadBehavior — it makes Chrome save
+            # the file directly and bypasses Playwright's expect_download, which
+            # drive_crosstab_dialog uses to capture + save_as (→ 0-byte files).
 
             log("[cdp] authenticating (ownerville storage_state → Tableau SSO)…")
             tp._ensure_tableau_authenticated(page, verbose=verbose,
