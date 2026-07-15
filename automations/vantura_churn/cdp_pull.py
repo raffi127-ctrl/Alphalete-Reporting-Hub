@@ -252,10 +252,15 @@ def _prime_orderlog(page, url, today, log):
         page.keyboard.press("Escape")
         page.wait_for_timeout(600)
 
-    # Throwaway pass forces a real change (URL pre-fills the target values, so
-    # retyping them is a no-op); real pass sets the correct 60-day range.
-    for fx, val in [(0.13, "6/1/2020"), (0.213, "6/2/2020"),
-                    (0.13, start_s), (0.213, end_s)]:
+    # Order matters: setting Start AFTER End while Start > End is an invalid
+    # range, so Tableau rejects the edit and keeps the old value. Always keep
+    # start <= end at every step, and force a real change on each field (URL
+    # pre-fills the targets, so retyping them is a no-op). End first (bump
+    # later then real), then Start (bump earlier then real).
+    later = f"{today.month}/{today.day}/{today.year + 1}"      # end+1yr
+    earlier = f"1/1/{today.year}"                              # Jan 1 this yr
+    for fx, val in [(0.213, later), (0.213, end_s),
+                    (0.13, earlier), (0.13, start_s)]:
         try:
             _set_date(fx, val)
         except Exception as ex:
