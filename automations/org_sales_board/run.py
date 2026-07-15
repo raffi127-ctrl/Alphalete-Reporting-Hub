@@ -250,6 +250,16 @@ def main(argv=None) -> int:
             _caps_summary = _summary.get("captainships") or {}
             _failed_prog = list(_caps_summary.get("failed_programs") or [])
             _failed_caps = list(_caps_summary.get("failed_captainships") or [])
+            # Reps the captainship fill AUTO-ADDED this run (VA-only reps that had
+            # no copy row — inserted + filled in the same run). Informational: the
+            # self-heal worked, so it does NOT gate; surfaced so Megan sees a new
+            # rep was added rather than it happening silently.
+            _auto_added = list(_caps_summary.get("auto_added") or [])
+            _auto_note = ("" if not _auto_added else
+                          "✚ auto-added " + str(len(_auto_added)) + " new rep(s) "
+                          "(VA-only, no copy row): "
+                          + ", ".join(f"{a['name']} ({a['captain']})"
+                                      for a in _auto_added))
             # ROSTER SYNC — reps on a VA captainship roster with NO row on the
             # copy tab. The fill only fills EXISTING copy rows, so a rep added on
             # the VA but never added to the copy silently sums the total short
@@ -359,6 +369,7 @@ def main(argv=None) -> int:
                             kind="section",
                             note=f"{len(_failed_all)} part(s) missing this run."
                                  + (f" ⚠ {_term_note}" if _term_note else "")
+                                 + (f"\n{_auto_note}" if _auto_note else "")
                                  + (f"\n{_va_note}" if _va_note else ""),
                             remediation=_rm.make_remediation(
                                 reason=("Org Sales Board run is missing data — "
@@ -378,13 +389,14 @@ def main(argv=None) -> int:
                                          "often clears a flaky Tableau load; if a "
                                          "view keeps failing it may need "
                                          "re-creating in Tableau.")))
-                    elif _term_note or _va_note:
+                    elif _term_note or _va_note or _auto_note:
                         # Clean run (nothing missing) — still record the whole-
-                        # sheet VA check so the completion email always shows what
-                        # differs. failed=[] keeps it DONE, not INCOMPLETE.
+                        # sheet VA check + any auto-added rep so the completion
+                        # email shows them. failed=[] keeps it DONE, not INCOMPLETE.
                         _rm.write_manifest(
                             "org-sales-board", failed=[], kind="section", ok=True,
                             note=(("⚠ " + _term_note + "\n") if _term_note else "")
+                                 + (_auto_note + "\n" if _auto_note else "")
                                  + _va_note)
                     else:
                         _rm.mark_clean("org-sales-board", kind="section")
