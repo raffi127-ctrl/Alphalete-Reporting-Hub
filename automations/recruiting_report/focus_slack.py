@@ -35,13 +35,11 @@ FOCUS_DM_RECIPIENTS = {
     },
     "Colten Wright": {
         "Colten Wright":    "U047M3AAN0G",
-        "Rafael Hidalgo":   "U045Z8N0ZQC",
         "Megan Hidalgo":    "U04G5HJBGFN",
     },
     "Jairo Ruiz": {
         "Jairo Ruiz":       "U04Q6T14M34",
         "Colten Wright":    "U047M3AAN0G",
-        "Rafael Hidalgo":   "U045Z8N0ZQC",
         "Megan Hidalgo":    "U04G5HJBGFN",
         "Analay Ruiz":      "U069URK7752",
     },
