@@ -18,6 +18,7 @@ Isolation invariants (do not change to collide with resume_pushing):
 """
 from __future__ import annotations
 
+import datetime as dt
 import subprocess
 import time
 from pathlib import Path
@@ -146,55 +147,59 @@ def probe(url, sheet, out, today, log=print) -> dict:
             # committed them (the runbook: type the date, press ENTER). Dump
             # the date inputs, then commit each with a trusted Enter to fire
             # the query.
+            # Does the grid actually have data? Body-text length is the tell
+            # (an empty grid = only filter labels; a populated grid = thousands
+            # of chars of rows).
             try:
-                inputs = viz.locator("input")
-                ni = inputs.count()
-                log(f"[inputs] {ni} input(s)")
-                for i in range(min(ni, 12)):
-                    el = inputs.nth(i)
-                    try:
-                        val = el.input_value(timeout=1500)
-                    except Exception:
-                        val = "?"
-                    try:
-                        tid = el.get_attribute("data-tb-test-id") or ""
-                        al = el.get_attribute("aria-label") or ""
-                    except Exception:
-                        tid = al = ""
-                    log(f"  input[{i}] val={val!r} tid={tid[:30]!r} aria={al[:30]!r}")
+                body = viz.locator("body").inner_text(timeout=15000)
+                log(f"[body] viz text {len(body)} chars "
+                    f"(data present if >>3000)")
             except Exception as e:
-                log(f"[inputs] err {str(e)[:80]}")
+                log(f"[body] err {str(e)[:60]}")
 
-            # Commit the two date fields (Start=2026-05-15, End=today). Find by
-            # current value = the date strings we passed, then re-type + Enter.
+            # Hunt date inputs across EVERY frame (Tableau nests them). Commit
+            # each with a trusted select-all + type + Enter to fire the query.
             start_s = f"{(today - dt.timedelta(days=60)).month}/" \
                       f"{(today - dt.timedelta(days=60)).day}/" \
                       f"{(today - dt.timedelta(days=60)).year}"
             end_s = f"{today.month}/{today.day}/{today.year}"
+            all_inputs = []
+            for fr in page.frames:
+                try:
+                    els = fr.locator("input")
+                    for i in range(els.count()):
+                        el = els.nth(i)
+                        try:
+                            v = el.input_value(timeout=800)
+                        except Exception:
+                            v = None
+                        all_inputs.append((fr, el, v))
+                except Exception:
+                    continue
+            log(f"[inputs] {len(all_inputs)} input(s) across "
+                f"{len(page.frames)} frame(s): "
+                f"{[v for _, _, v in all_inputs][:12]}")
             committed = 0
             for want in (start_s, end_s):
-                try:
-                    inputs = viz.locator("input")
-                    for i in range(inputs.count()):
-                        el = inputs.nth(i)
+                for fr, el, v in all_inputs:
+                    if v and v.strip() == want:
                         try:
-                            if el.input_value(timeout=1000).strip() == want:
-                                el.click()
-                                page.keyboard.press(
-                                    "Meta+A" if False else "Control+A")
-                                el.click(click_count=3)
-                                page.keyboard.type(want, delay=30)
-                                page.keyboard.press("Enter")
-                                page.wait_for_timeout(2500)
-                                committed += 1
-                                log(f"[date] committed {want!r}")
-                                break
-                        except Exception:
-                            continue
-                except Exception as e:
-                    log(f"[date] {want} err {str(e)[:80]}")
-            log(f"[date] committed {committed}/2; waiting 20s for grid")
-            page.wait_for_timeout(20_000)
+                            el.click(click_count=3)
+                            page.keyboard.type(want, delay=30)
+                            page.keyboard.press("Enter")
+                            page.wait_for_timeout(2500)
+                            committed += 1
+                            log(f"[date] committed {want!r}")
+                        except Exception as e:
+                            log(f"[date] {want} click err {str(e)[:60]}")
+                        break
+            log(f"[date] committed {committed}/2; waiting 25s for grid")
+            page.wait_for_timeout(25_000)
+            try:
+                b2 = viz.locator("body").inner_text(timeout=15000)
+                log(f"[body2] viz text {len(b2)} chars after commit")
+            except Exception:
+                pass
             try:
                 _upload_png(page.screenshot(full_page=False), tab="Vantura Shot2")
                 log("[cdp] post-commit screenshot → 'Vantura Shot2'")
