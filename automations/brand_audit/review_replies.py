@@ -21,7 +21,7 @@ from automations.brand_audit import credentials, gbp_api
 from automations.brand_audit.collectors import google_reviews
 from automations.brand_audit.config import (
     ALERT_SLACK_CHANNEL_ID, DEFAULT_COMPANY, GBP_LOCATION_PATH,
-    AUTO_POST_MIN_STARS, AUTO_POST_DAILY_CAP,
+    AUTO_POST_MIN_STARS, AUTO_POST_DAILY_CAP, REVIEW_REPLY_CONTACT,
 )
 from automations.brand_audit.social_inbox import (
     _client, _reacted, _thread_reactions,
@@ -113,7 +113,12 @@ def draft_reply(review: dict, company_name: str, feedback: str = "",
         "typing a quick, genuine thanks, short and human, not a press release.\n"
         "Avoid the em-dash-heavy rhythm that reads as AI (don't string clauses "
         "with ' — '); use plain periods/commas and vary how sentences open. "
-        "Contractions are good. It should read like a busy human typed it fast.")
+        "Contractions are good. It should read like a busy human typed it fast."
+        + (f"\nWhen a reply invites an unhappy reviewer to take it offline, give "
+           f"them a REAL place to reach us: {REVIEW_REPLY_CONTACT}. Weave it in "
+           f"naturally (e.g. 'email us at {REVIEW_REPLY_CONTACT}'), don't make it "
+           f"sound like a canned support line, and only include it for criticism "
+           f"— positive replies don't need it." if REVIEW_REPLY_CONTACT else ""))
     stars = review.get("rating")
     user = (f"Review — {stars}★ from {review.get('author') or 'a customer'}:\n"
             f"\"{review.get('text') or '(no text, just a rating)'}\"\n\n"
