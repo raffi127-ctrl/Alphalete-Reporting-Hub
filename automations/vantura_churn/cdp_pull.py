@@ -279,6 +279,7 @@ def download_views(specs, today=None, verbose=True, log=print):
     from patchright.sync_api import sync_playwright
     from automations.shared import tableau_patchright as tp
     from automations.shared.tableau_patchright import download_crosstab_patchright
+    from automations.recruiting_report.opt_phase import drive_crosstab_dialog
 
     if today is None:
         today = _dt.date.today()
@@ -309,10 +310,27 @@ def download_views(specs, today=None, verbose=True, log=print):
             for url, sheet, out in specs:
                 out = Path(out)
                 if "ATTTRACKER-B2B/ORDERLOG" in url:
-                    log(f"[cdp] priming ORDER LOG query for {out.name}…")
-                    _prime_orderlog(page, url, today, log)
-                download_crosstab_patchright(url, sheet, out, page=page,
-                                             verbose=verbose)
+                    # Prime the empty worksheet, then export from the CURRENT
+                    # primed state — skip_nav=True so we DON'T re-navigate
+                    # (which would reset the query back to empty). Re-prime
+                    # once on failure since the trigger is timing-sensitive.
+                    last = None
+                    for attempt in (1, 2):
+                        log(f"[cdp] priming ORDER LOG {out.name} (try {attempt})…")
+                        _prime_orderlog(page, url, today, log)
+                        try:
+                            drive_crosstab_dialog(page, url, sheet, out,
+                                                  verbose=verbose, skip_nav=True)
+                            last = None
+                            break
+                        except Exception as ex:
+                            last = ex
+                            log(f"[cdp] export retry: {str(ex)[:90]}")
+                    if last is not None:
+                        raise last
+                else:
+                    download_crosstab_patchright(url, sheet, out, page=page,
+                                                 verbose=verbose)
                 results[str(out)] = out
                 log(f"[cdp] saved {sheet} → {out} "
                     f"({out.stat().st_size:,} bytes)")
