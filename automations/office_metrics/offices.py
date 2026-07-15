@@ -60,7 +60,10 @@ ALL_OFFICE_CHURN_NI = (_T + "ATTTRACKER2_1-D2D/CHURN/"
 ALL_OFFICE_CHURN_WL = (_T + "ATTTRACKER2_1-D2D/CHURN/"
                        "66b10d0a-1bb2-441a-85b1-982977a9514e/WirelessAllTeams?:iid=1")
 # Flip True only after --prove-churn is IDENTICAL for every office.
-CHURN_USE_ALL_OFFICE = False
+# PROVEN + flipped 2026-07-15: --prove-churn ALL IDENTICAL for rashad + aya
+# (both NI + WL, 0 rep diffs, office totals match) — sliced all-office ==
+# per-office view, cell for cell.
+CHURN_USE_ALL_OFFICE = True
 
 
 @dataclass(frozen=True)
