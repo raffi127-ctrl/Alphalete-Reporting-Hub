@@ -14,7 +14,7 @@ import datetime as dt
 import difflib
 import html
 
-from automations.shared import hub_notify_email
+from automations.shared import hub_notify_email, hub_schedule_status
 
 # Keep emails readable — cap the code preview / diff. Uploads that blow past
 # this still notify; the body just says how much was elided.
@@ -129,10 +129,13 @@ def build_and_send(metadata: dict, script_text: str,
     # NB: no "Machine" row — this email is sent by the mini watcher, so
     # socket.gethostname() would always read the mini, not where the edit was
     # actually made (the Sheet doesn't record the uploader's machine).
+    _sched = metadata.get("schedule")
+    _sched_human = (hub_schedule_status._human_schedule(_sched)
+                    if isinstance(_sched, dict) else _fmt(_sched))
     facts = [
         ("Card", name), ("ID", rid), (who_label, who), ("When", when),
         ("Module", _fmt(metadata.get("module"))),
-        ("Schedule", _fmt(metadata.get("schedule"))),
+        ("Schedule", _sched_human),
         ("Assignees", _fmt(metadata.get("assignees"))),
         ("Description", _fmt(metadata.get("description"))),
     ]
@@ -146,6 +149,20 @@ def build_and_send(metadata: dict, script_text: str,
          _rows_html(facts)]
     t = [f"{icon} Hub card {verb}", ""]
     t += [f"{k}: {v}" for k, v in facts]
+
+    # ---- Auto-run status (only for cards assigned to a Lucy machine) ----
+    sched = hub_schedule_status.resolve(
+        metadata.get("id"), metadata.get("assignees"), metadata.get("schedule"))
+    if sched:
+        auto_rows = [("Runner", sched["machine"]),
+                     ("Schedule", sched["human_schedule"]),
+                     ("Status", sched["status"])]
+        if not sched["wired"]:
+            auto_rows.append(("Should be", f"Per the rule → {sched['intended']}."))
+        h.append('<h3 style="margin:18px 0 6px">Auto-run</h3>')
+        h.append(_rows_html(auto_rows))
+        t += ["", "Auto-run:"]
+        t += [f"  {k}: {v}" for k, v in auto_rows]
 
     if is_update:
         changes = _meta_changes(preimage.get("metadata") or {}, metadata)
