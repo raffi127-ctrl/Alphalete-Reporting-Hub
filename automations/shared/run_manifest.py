@@ -54,11 +54,14 @@ def make_remediation(*, reason: str, fix: str, link: str = "",
 def write_manifest(report_id: str, *, failed: List[str] = (),
                    retry_args: List[str] = (), kind: str = "part",
                    note: str = "", remediation: Optional[dict] = None,
-                   ok: Optional[bool] = None,
+                   ok: Optional[bool] = None, succeeded: List[str] = (),
                    run_ts: Optional[_dt.datetime] = None) -> Path:
     """Record this run's outcome for `report_id`:
       - `failed` + `retry_args`: the parts that failed and the CLI args that
         re-run ONLY those (powers the Hub's 'Retry failed only' button).
+      - `succeeded`: the parts that DID land. Optional, but passing it is what
+        lets `outcome()` tell a PARTIAL run (some parts landed) from a total
+        failure — the Hub colours those differently (orange vs red).
       - `remediation`: an optional {reason, fix, link, message} block explaining
         WHY it failed + how to fix it (powers the Hub's failure-help callout).
     `ok` defaults to True only when nothing failed AND there's no remediation.
@@ -74,6 +77,7 @@ def write_manifest(report_id: str, *, failed: List[str] = (),
         "ok": ok,
         "kind": kind,
         "failed": failed,
+        "succeeded": list(succeeded),
         "retry_args": list(retry_args),
         "note": note,
         "remediation": remediation,
@@ -89,6 +93,31 @@ def mark_clean(report_id: str, *, kind: str = "part",
     manifest so the Hub's retry button disappears."""
     return write_manifest(report_id, failed=[], retry_args=[], kind=kind,
                           note="", run_ts=run_ts)
+
+
+def outcome(report_id: str, *, today_only: bool = True) -> Optional[str]:
+    """'success' | 'partial' | 'failed' from this report's last manifest, or None.
+
+    PARTIAL = some parts failed but others landed (e.g. the trackers posted to 4
+    of 5 Slack channels). The Hub colours that ORANGE, not red: a red pill next
+    to a report that mostly worked trains people to ignore red. Needs the run to
+    pass `succeeded` — without it a failed run can't be told from a partial one,
+    so it reads as 'failed' (the safe direction: never green).
+
+    today_only (default) ignores a stale manifest from an earlier day, so
+    yesterday's failure can't colour today's pill."""
+    m = read_manifest(report_id)
+    if not m:
+        return None
+    if today_only:
+        try:
+            if (m.get("run_ts") or "")[:10] != _dt.date.today().isoformat():
+                return None
+        except Exception:
+            return None
+    if m.get("ok"):
+        return "success"
+    return "partial" if (m.get("succeeded") and m.get("failed")) else "failed"
 
 
 def read_manifest(report_id: str) -> Optional[dict]:

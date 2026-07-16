@@ -135,6 +135,13 @@ def main(argv=None) -> int:
     ap.add_argument("--programs",
                     help="Comma-separated captainship program keys to pull ONLY "
                          "(granular retry of just the failed programs). Omit = all.")
+    ap.add_argument("--skip-compare", action="store_true",
+                    help="Don't compare against the VA tab after the fill. The "
+                         "scheduled 4am run sets this: at 4am the VAs have keyed "
+                         "NOTHING yet, so every 'difference' is just the automation "
+                         "being ahead — pure noise that marked the fill INCOMPLETE "
+                         "every morning. The compare runs on its own at 9am CST "
+                         "(report_id 'board_compare'), once the VAs are done.")
     args = ap.parse_args(argv)
     _sections = [s.strip() for s in args.sections.split(",") if s.strip()] if args.sections else None
     _programs = [p.strip() for p in args.programs.split(",") if p.strip()] if args.programs else None
@@ -179,13 +186,41 @@ def main(argv=None) -> int:
         if _sections:                     # granular retry: fill ONLY these sections
             only = _sections
         from_csv = Path(args.from_csv) if args.from_csv else None
-        # WEEKLY ROLLOVER IS MANUAL (Megan 2026-06-30, vacation plan): a person
-        # rolls the board over Monday night — advances the week + archives the
-        # closing one. The Tuesday report must NEVER roll; it ONLY fills the
-        # day's sales into the already-advanced active week. The former
-        # "Tuesday: run_rollover first" auto-trigger is therefore removed, so an
-        # unattended run can't double-shift/clear a week the human already
-        # rolled. To roll deliberately, run `--step rollover` (still wired).
+        # WEEKLY ROLLOVER — AUTOMATIC AGAIN (2026-07-14), keyed to the REPORTING
+        # week rather than a weekday.
+        #
+        # It was made manual on 2026-06-30 ("a person rolls it Monday night") so an
+        # unattended run couldn't double-shift a week a human had already rolled.
+        # That trade cost more than it saved: on 2026-07-14 the manual step was
+        # simply forgotten, the copy sat a FULL WEEK behind the VA, the daily fill
+        # had no columns for the new week so nothing landed at all, and the board
+        # email was gated for days before anyone noticed.
+        #
+        # The double-shift fear is now moot: run_rollover is idempotent (it skips
+        # when the leaderboard header already reads the target week), and
+        # needs_rollover only fires when the board is not on the week the fill is
+        # about to write. So it rolls at most once per week, on the first run of a
+        # Tuesday, and re-running is a no-op. If a Tuesday run is missed entirely,
+        # the next run rolls and backfills every completed day — it self-heals.
+        #
+        # Skipped on --dry-run and on a --sections/--programs granular retry (those
+        # are surgical re-fills of an already-rolled board, not a fresh week).
+        if not (args.dry_run or _sections or _programs):
+            from automations.org_sales_board import rollover as _ro
+            _cS = ws.get_all_values()
+            _vS = open_by_key(SHEET_ID).worksheet(PROD_TAB).get_all_values()
+            _need, _tgt, _cur, _va = _ro.needs_rollover(_cS, vS=_vS)
+            if _need:
+                print(f"--- weekly rollover: board is on {_cur!r}, this week is "
+                      f"{_tgt!r} (VA is on {_va!r}) — rolling before the fill ---")
+                if _va and _va != _tgt:
+                    print(f"  ⚠ the VA tab is on {_va!r}, not {_tgt!r} — rolling to "
+                          f"{_tgt!r} (the week the fill writes). If the VA really is "
+                          f"on a different week, the compare will flag it.")
+                _ro.run_rollover(ws, dry_run=False)
+                ws = open_by_key(SHEET_ID).worksheet(tab)   # re-open post-roll
+            else:
+                print(f"--- weekly rollover: board already on {_cur!r} — no roll ---")
         _summary = orchestrate.run_daily(ws, dry_run=args.dry_run, only=only,
                               from_csv=from_csv,
                               include_captainships=args.with_captainships,
@@ -215,6 +250,35 @@ def main(argv=None) -> int:
             _caps_summary = _summary.get("captainships") or {}
             _failed_prog = list(_caps_summary.get("failed_programs") or [])
             _failed_caps = list(_caps_summary.get("failed_captainships") or [])
+            # Reps the captainship fill AUTO-ADDED this run (VA-only reps that had
+            # no copy row — inserted + filled in the same run). Informational: the
+            # self-heal worked, so it does NOT gate; surfaced so Megan sees a new
+            # rep was added rather than it happening silently.
+            _auto_added = list(_caps_summary.get("auto_added") or [])
+            _auto_note = ("" if not _auto_added else
+                          "✚ auto-added " + str(len(_auto_added)) + " new rep(s) "
+                          "(VA-only, no copy row): "
+                          + ", ".join(f"{a['name']} ({a['captain']})"
+                                      for a in _auto_added))
+            # ROSTER SYNC — reps on a VA captainship roster with NO row on the
+            # copy tab. The fill only fills EXISTING copy rows, so a rep added on
+            # the VA but never added to the copy silently sums the total short
+            # (Blue Mendoza / Starr, 2026-07-15). Diff the rosters by name and
+            # GATE on it so it can never be a silent miss. Runs even under
+            # --skip-compare: the rosters are present at 4am even before the VAs
+            # key any sales. Advisory guard — must never crash the run.
+            _missing_reps = []
+            try:
+                from automations.org_sales_board import roster_sync as _rsync
+                from automations.focus_office_att.aliases import load_aliases
+                _va_grid = open_by_key(SHEET_ID).worksheet(PROD_TAB).get_all_values()
+                _missing_reps = _rsync.missing_va_reps(
+                    ws.get_all_values(), _va_grid, load_aliases())
+                if _missing_reps:
+                    print("  " + _rsync.format_missing(_missing_reps).replace(
+                        "\n", "\n  "))
+            except Exception:  # noqa: BLE001 — advisory must never fail the run
+                pass
             # Cross-reference every owner/ICD pulled onto the board against the
             # 'Terminated ICDs' tab + ALERT the runner (advisory — prints to the
             # output + log, never removes a row). Folded into the manifest note.
@@ -232,7 +296,15 @@ def main(argv=None) -> int:
             _compare_clean = True
             _compare_ndiff = 0
             _va_note = ""
-            if not args.dry_run and not args.real:
+            # The VA compare is DEFERRED to 9am CST (Megan 2026-07-14). Running it
+            # straight after the 4am fill compared us against a VA tab the VAs had
+            # not touched yet, so every cell we were simply AHEAD on counted as a
+            # "difference": the fill logged compare=FLAGGED and closed INCOMPLETE
+            # every single morning, which is exactly the kind of routine red that
+            # trains everyone to ignore the board. The scheduled run now passes
+            # --skip-compare, and report_id 'board_compare' runs the real compare at
+            # 9am once the VAs have finished keying. A manual run still compares.
+            if not args.dry_run and not args.real and not args.skip_compare:
                 from automations.org_sales_board import compare
                 _cmp = compare.run_compare()
                 _compare_clean = _cmp["clean"]
@@ -256,11 +328,14 @@ def main(argv=None) -> int:
             if not args.dry_run:
                 try:
                     from automations.shared import run_manifest as _rm
-                    if _skipped or _failed_prog or _failed_caps or not _compare_clean:
+                    if (_skipped or _failed_prog or _failed_caps
+                            or not _compare_clean or _missing_reps):
                         _failed_all = (
                             [f"section: {s}" for s in _skipped]
                             + [f"program: {c}" for c in _failed_prog]
                             + [f"captainship: {c}" for c in _failed_caps]
+                            + [f"roster: {m['name']} ({m['captain']} cap) has no "
+                               "copy row — add it" for m in _missing_reps]
                             + ([] if _compare_clean
                                else [f"compare: {_compare_ndiff} cell(s) disagree "
                                      "with the VA tab"]))
@@ -294,6 +369,7 @@ def main(argv=None) -> int:
                             kind="section",
                             note=f"{len(_failed_all)} part(s) missing this run."
                                  + (f" ⚠ {_term_note}" if _term_note else "")
+                                 + (f"\n{_auto_note}" if _auto_note else "")
                                  + (f"\n{_va_note}" if _va_note else ""),
                             remediation=_rm.make_remediation(
                                 reason=("Org Sales Board run is missing data — "
@@ -313,19 +389,21 @@ def main(argv=None) -> int:
                                          "often clears a flaky Tableau load; if a "
                                          "view keeps failing it may need "
                                          "re-creating in Tableau.")))
-                    elif _term_note or _va_note:
+                    elif _term_note or _va_note or _auto_note:
                         # Clean run (nothing missing) — still record the whole-
-                        # sheet VA check so the completion email always shows what
-                        # differs. failed=[] keeps it DONE, not INCOMPLETE.
+                        # sheet VA check + any auto-added rep so the completion
+                        # email shows them. failed=[] keeps it DONE, not INCOMPLETE.
                         _rm.write_manifest(
                             "org-sales-board", failed=[], kind="section", ok=True,
                             note=(("⚠ " + _term_note + "\n") if _term_note else "")
+                                 + (_auto_note + "\n" if _auto_note else "")
                                  + _va_note)
                     else:
                         _rm.mark_clean("org-sales-board", kind="section")
                 except Exception:
                     pass
-            if _skipped or _failed_prog or _failed_caps or not _compare_clean:
+            if (_skipped or _failed_prog or _failed_caps or not _compare_clean
+                    or _missing_reps):
                 # RAN but with a note (missing pull or a VA-compare difference).
                 # Exit 0 — NOT a hard failure: the manifest written above carries
                 # the failed parts, so the orchestrator's verify marks this
@@ -339,6 +417,8 @@ def main(argv=None) -> int:
                       f"skipped/failed section pull(s)={_skipped or 'none'}; "
                       f"failed captainship program pull(s)={_failed_prog or 'none'}; "
                       f"failed captainship fill(s)={_failed_caps or 'none'}; "
+                      f"missing copy row(s)="
+                      f"{[m['name'] for m in _missing_reps] or 'none'}; "
                       f"compare={'clean' if _compare_clean else 'FLAGGED differences'}. "
                       "Re-run to retry the missing pull(s). ===")
                 return 0

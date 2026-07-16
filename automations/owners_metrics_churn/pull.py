@@ -15,11 +15,25 @@ identical (per-ICD-owner rows + Grand Total office row).
 """
 from __future__ import annotations
 
+import os
 import tempfile
 from pathlib import Path
 from typing import Optional
 
-from automations.shared.tableau_patchright import download_crosstab_patchright
+from automations.shared.tableau_patchright import download_crosstab_patchright as _dcp
+
+
+def _dl(view_url, crosstab_sheet, out_path, verbose=False, page=None, pre_export=None):
+    """Harvest cutover (DEFAULT-OFF): read the dated cache when HARVEST_MODE=on,
+    else scrape live. A cache miss/stale/error falls through to the live pull, so
+    with no env var behaviour is identical to today."""
+    if os.environ.get("HARVEST_MODE", "off").strip().lower() == "on":
+        from automations.harvest import adapter
+        cached = adapter.try_cache_view(view_url, crosstab_sheet, out_path)
+        if cached is not None:
+            return cached
+    return _dcp(view_url, crosstab_sheet, out_path,
+                verbose=verbose, page=page, pre_export=pre_export)
 from automations.captainship_churn import pull as _shared
 from automations.new_internet_churn import pull as _ni_shared  # for _to_num
 from automations.focus_office_att.aliases import alias_to_canonical
@@ -85,7 +99,7 @@ parse = _shared.parse
 def fetch_fiber_wayne(out_path: Optional[Path] = None,
                      verbose: bool = False, page=None) -> Path:
     out_path = out_path or Path(tempfile.gettempdir()) / "owners_fiber_wayne.csv"
-    download_crosstab_patchright(FIBER_WAYNE_URL, WORKSHEET, out_path,
+    _dl(FIBER_WAYNE_URL, WORKSHEET, out_path,
                                   verbose=verbose, page=page)
     return out_path
 
@@ -93,7 +107,7 @@ def fetch_fiber_wayne(out_path: Optional[Path] = None,
 def fetch_fiber_starr(out_path: Optional[Path] = None,
                      verbose: bool = False, page=None) -> Path:
     out_path = out_path or Path(tempfile.gettempdir()) / "owners_fiber_starr.csv"
-    download_crosstab_patchright(FIBER_STARR_URL, WORKSHEET, out_path,
+    _dl(FIBER_STARR_URL, WORKSHEET, out_path,
                                   verbose=verbose, page=page)
     return out_path
 
@@ -101,7 +115,7 @@ def fetch_fiber_starr(out_path: Optional[Path] = None,
 def fetch_fiber_aron(out_path: Optional[Path] = None,
                     verbose: bool = False, page=None) -> Path:
     out_path = out_path or Path(tempfile.gettempdir()) / "owners_fiber_aron.csv"
-    download_crosstab_patchright(FIBER_ARON_URL, WORKSHEET, out_path,
+    _dl(FIBER_ARON_URL, WORKSHEET, out_path,
                                   verbose=verbose, page=page)
     return out_path
 
@@ -109,7 +123,7 @@ def fetch_fiber_aron(out_path: Optional[Path] = None,
 def fetch_fiber_chan(out_path: Optional[Path] = None,
                     verbose: bool = False, page=None) -> Path:
     out_path = out_path or Path(tempfile.gettempdir()) / "owners_fiber_chan.csv"
-    download_crosstab_patchright(FIBER_CHAN_URL, WORKSHEET, out_path,
+    _dl(FIBER_CHAN_URL, WORKSHEET, out_path,
                                   verbose=verbose, page=page)
     return out_path
 
@@ -117,7 +131,7 @@ def fetch_fiber_chan(out_path: Optional[Path] = None,
 def fetch_fiber_tony(out_path: Optional[Path] = None,
                     verbose: bool = False, page=None) -> Path:
     out_path = out_path or Path(tempfile.gettempdir()) / "owners_fiber_tony.csv"
-    download_crosstab_patchright(FIBER_TONY_URL, WORKSHEET, out_path,
+    _dl(FIBER_TONY_URL, WORKSHEET, out_path,
                                   verbose=verbose, page=page)
     return out_path
 
@@ -125,7 +139,7 @@ def fetch_fiber_tony(out_path: Optional[Path] = None,
 def fetch_fiber_sahil(out_path: Optional[Path] = None,
                      verbose: bool = False, page=None) -> Path:
     out_path = out_path or Path(tempfile.gettempdir()) / "owners_fiber_sahil.csv"
-    download_crosstab_patchright(FIBER_SAHIL_URL, WORKSHEET, out_path,
+    _dl(FIBER_SAHIL_URL, WORKSHEET, out_path,
                                   verbose=verbose, page=page)
     return out_path
 
@@ -178,7 +192,7 @@ B2B_ALLTEAM_URL = (
 def fetch_b2b_allteams(out_path: Optional[Path] = None,
                        verbose: bool = False, page=None) -> Path:
     out_path = out_path or Path(tempfile.gettempdir()) / "owners_b2b_allteams.csv"
-    download_crosstab_patchright(B2B_ALLTEAM_URL, WORKSHEET, out_path,
+    _dl(B2B_ALLTEAM_URL, WORKSHEET, out_path,
                                  verbose=verbose, page=page)
     return out_path
 
@@ -189,7 +203,7 @@ B2B_PERIODS = ("0-30", "30", "60", "90", "120")
 def fetch_b2b_luis(out_path: Optional[Path] = None,
                    verbose: bool = False, page=None) -> Path:
     out_path = out_path or Path(tempfile.gettempdir()) / "owners_b2b_luis.csv"
-    download_crosstab_patchright(B2B_LUIS_URL, WORKSHEET, out_path,
+    _dl(B2B_LUIS_URL, WORKSHEET, out_path,
                                   verbose=verbose, page=page)
     return out_path
 
@@ -197,7 +211,7 @@ def fetch_b2b_luis(out_path: Optional[Path] = None,
 def fetch_b2b_carlos(out_path: Optional[Path] = None,
                      verbose: bool = False, page=None) -> Path:
     out_path = out_path or Path(tempfile.gettempdir()) / "owners_b2b_carlos.csv"
-    download_crosstab_patchright(B2B_CARLOS_URL, WORKSHEET, out_path,
+    _dl(B2B_CARLOS_URL, WORKSHEET, out_path,
                                   verbose=verbose, page=page)
     return out_path
 
@@ -205,7 +219,7 @@ def fetch_b2b_carlos(out_path: Optional[Path] = None,
 def fetch_b2b_eveliz(out_path: Optional[Path] = None,
                      verbose: bool = False, page=None) -> Path:
     out_path = out_path or Path(tempfile.gettempdir()) / "owners_b2b_eveliz.csv"
-    download_crosstab_patchright(B2B_EVELIZ_URL, WORKSHEET, out_path,
+    _dl(B2B_EVELIZ_URL, WORKSHEET, out_path,
                                   verbose=verbose, page=page)
     return out_path
 
@@ -307,7 +321,7 @@ NDS_PERIODS = ("0-30", "30", "60", "90")
 def fetch_nds_khalil(out_path: Optional[Path] = None,
                      verbose: bool = False, page=None) -> Path:
     out_path = out_path or Path(tempfile.gettempdir()) / "owners_nds_khalil.csv"
-    download_crosstab_patchright(NDS_KHALIL_URL, NDS_WORKSHEET, out_path,
+    _dl(NDS_KHALIL_URL, NDS_WORKSHEET, out_path,
                                   verbose=verbose, page=page)
     return out_path
 
@@ -315,7 +329,7 @@ def fetch_nds_khalil(out_path: Optional[Path] = None,
 def fetch_nds_colten(out_path: Optional[Path] = None,
                      verbose: bool = False, page=None) -> Path:
     out_path = out_path or Path(tempfile.gettempdir()) / "owners_nds_colten.csv"
-    download_crosstab_patchright(NDS_COLTEN_URL, NDS_WORKSHEET, out_path,
+    _dl(NDS_COLTEN_URL, NDS_WORKSHEET, out_path,
                                   verbose=verbose, page=page)
     return out_path
 
@@ -323,7 +337,7 @@ def fetch_nds_colten(out_path: Optional[Path] = None,
 def fetch_nds_jairo(out_path: Optional[Path] = None,
                     verbose: bool = False, page=None) -> Path:
     out_path = out_path or Path(tempfile.gettempdir()) / "owners_nds_jairo.csv"
-    download_crosstab_patchright(NDS_JAIRO_URL, NDS_WORKSHEET, out_path,
+    _dl(NDS_JAIRO_URL, NDS_WORKSHEET, out_path,
                                   verbose=verbose, page=page)
     return out_path
 

@@ -57,6 +57,14 @@ def fetch_crosstab(out_path: Optional[Path] = None,
     tableau_session (the combined churn runner opens one session and
     reuses it for both New Internet + Wireless pulls)."""
     out_path = out_path or Path(tempfile.gettempdir()) / "new_internet_churn_local_office.csv"
+    # Harvest cutover (DEFAULT-OFF): only when HARVEST_MODE=on does this read the
+    # dated cache instead of scraping; a cache miss/stale/error falls straight
+    # through to the live download below. With no env var, behaviour is unchanged.
+    if os.environ.get("HARVEST_MODE", "off").strip().lower() == "on":
+        from automations.harvest import adapter
+        cached = adapter.try_cache_view(VIEW_URL, WORKSHEET, out_path)
+        if cached is not None:
+            return cached
     download_crosstab_patchright(VIEW_URL, WORKSHEET, out_path,
                                   verbose=verbose, page=page)
     return out_path
@@ -110,12 +118,24 @@ def parse(csv_path: Path) -> dict:
     # The unnamed metric-type column sits just left of the first period column.
     metric_i = min(period_cols.values()) - 1
 
+    # SLICE MODE (office_metrics, opt-in): CHURN_SLICE_OWNER points fetch_crosstab
+    # at an ALL-OFFICE view (INTAllTeams / WirelessAllTeams) and this filters the
+    # rows to that office's ICD owner, then recomputes the office total from the
+    # office's own reps (the all-office view has NO per-office Total row — only a
+    # Grand Total — so we sum the counts, which aggregate cleanly). Unset = the
+    # original per-office-view behaviour, byte-identical.
+    slice_owner = os.environ.get("CHURN_SLICE_OWNER", "").strip()
+    owner_i = (header.index("ICD Owner Name (rep)")
+               if slice_owner and "ICD Owner Name (rep)" in header else None)
+
     office_total: dict = {}
     reps: dict = {}
 
     for r in rows[1:]:
         if len(r) <= max(period_cols.values()):
             continue
+        if owner_i is not None and (r[owner_i] or "").strip().upper() != slice_owner.upper():
+            continue                       # slicing: keep only this office's rows
         rep_name = r[rep_i].strip()
         color = r[color_i].strip()
         metric = r[metric_i].strip()
@@ -137,7 +157,30 @@ def parse(csv_path: Path) -> dict:
                 slot["denom"] = _to_num(cell)
             # Calculation1 (1) is a tableau normalizer — skip.
 
+    if owner_i is not None:
+        office_total = _recompute_office_total(reps)     # no per-office Total row
     return {"office_total": office_total, "reps": reps}
+
+
+def _recompute_office_total(reps: dict) -> dict:
+    """Office total from a sliced all-office pull: sum each period's disconnect
+    count + activations across the office's reps, then rate = num/denom. Churn
+    counts aggregate cleanly, so this equals the per-office view's Total row
+    (verified cell-for-cell via `runner --prove-churn`). Rate formatted to one
+    decimal to match the view's crosstab text (e.g. '7.7%')."""
+    total: dict = {}
+    for periods in reps.values():
+        for period, slot in periods.items():
+            t = total.setdefault(period, {"num": 0.0, "denom": 0.0})
+            if slot.get("num") is not None:
+                t["num"] += slot["num"]
+            if slot.get("denom") is not None:
+                t["denom"] += slot["denom"]
+    for t in total.values():
+        # Churn rate = disconnects/activations, formatted to 2 decimals to match
+        # the view's crosstab text (proven: 6/152 → '3.95%', not '3.9%').
+        t["pct"] = f"{(t['num'] / t['denom'] * 100):.2f}%" if t["denom"] else "0.00%"
+    return total
 
 
 def fmt_units(slot: dict) -> str:

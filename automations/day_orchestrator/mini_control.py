@@ -20,6 +20,7 @@ Actions:
   update                git pull the latest code onto the mini (remote deploy)
   set_meta_token <tok>  install/refresh the brand-audit Meta page token in keys.json
   set_slack_token <tok> install/refresh the 'Lucy' Slack bot token (xoxb-…) on this machine
+  set_gbp_token <json>  install the Google Business Profile OAuth token (gbp-token.json contents)
   restart_holder        relaunch the ownerville session-holder LaunchAgent
   reseed_appstream      open the AppStream login (a human clears Cloudflare)
 
@@ -77,12 +78,13 @@ DAILY_AUTORUN_CAP = 100
 # budget is meant to bound repeated REPORT runs (rerun), not deploy plumbing.
 PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_holder",
                     "pip_install", "watch_test", "diag", "set_sleep",
-                    "set_slack_token"}
+                    "set_slack_token", "set_gbp_token"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
 SESSION_HOLDER_LABEL = "com.alphalete.session-holder"
 MINI_CONTROL_LABEL = "com.alphalete.mini-control"   # this poller's own launchd label
+HUB_WATCH_LABEL = "com.alphalete.hub-watch"          # the Hub change-watcher
 
 # Machine identity — which runner is this? A gitignored `.machine-profile` file
 # at the repo root names the profile ("Lucy 1" / "Lucy 2"). Each runner polls its
@@ -134,18 +136,57 @@ def _open(sandbox: bool = False, machine: str | None = None):
 # (ok, short_result). Add a new fix = add a function here; nothing else runs.
 # ---------------------------------------------------------------------------
 
-def _run_cmd(cmd: list[str], timeout_s: int = DEFAULT_TIMEOUT_S) -> tuple[bool, str]:
-    """Run a command in the repo root; return (ok, 'exit N · <tail>')."""
+def _run_cmd(cmd: list[str], timeout_s: int = DEFAULT_TIMEOUT_S,
+             log_name: str | None = None) -> tuple[bool, str]:
+    """Run a command in the repo root; return (ok, 'exit N · <tail>').
+
+    log_name: write the run's FULL output to output/logs/<log_name> so
+    `lucy logtail <log_name>` can read it. The 3-line tail in the result cell is
+    routinely useless on a browser report — Playwright's teardown chatter
+    ("finished temporary directories cleanup") lands last and buries the actual
+    traceback, which cost three blind probes to diagnose a crop bug on
+    2026-07-14. The log is the only way to see a mini-only failure from the
+    laptop (no SSH), so write it even when the run SUCCEEDS."""
+    log_path = None
+    if log_name:
+        try:
+            log_dir = REPO_ROOT / "output" / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_path = log_dir / log_name
+        except Exception:  # noqa: BLE001 — logging must never fail the run
+            log_path = None
     try:
         proc = subprocess.run(cmd, cwd=str(REPO_ROOT), timeout=timeout_s,
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                               text=True)
-    except subprocess.TimeoutExpired:
-        return False, f"timed out after {timeout_s // 60}m"
+    except subprocess.TimeoutExpired as e:
+        # A timeout still produced output — persist it, or the slowest failures
+        # (the ones most worth debugging) are the ones with no log at all.
+        if log_path is not None:
+            out = e.stdout or ""
+            if isinstance(out, bytes):
+                out = out.decode("utf-8", "replace")
+            _write_log(log_path, cmd, out + f"\n\n*** TIMED OUT after {timeout_s}s ***")
+        return False, (f"timed out after {timeout_s // 60}m"
+                       + (f" · log: {log_path.name}" if log_path else ""))
     except Exception as e:
         return False, f"launch error: {str(e).splitlines()[0][:140]}"
+    if log_path is not None:
+        _write_log(log_path, cmd, proc.stdout or "")
     tail = "\n".join((proc.stdout or "").splitlines()[-3:])[:280]
-    return proc.returncode == 0, f"exit {proc.returncode}" + (f" · {tail}" if tail else "")
+    return proc.returncode == 0, (
+        f"exit {proc.returncode}"
+        + (f" · log: {log_path.name}" if log_path else "")
+        + (f" · {tail}" if tail else ""))
+
+
+def _write_log(path: Path, cmd: list[str], output: str) -> None:
+    """Best-effort: full run output to output/logs/, for `lucy logtail`."""
+    try:
+        path.write_text(f"$ {' '.join(cmd)}\n[{_now()}]\n\n{output}",
+                        errors="replace")
+    except Exception:  # noqa: BLE001 — logging must never fail the run
+        pass
 
 
 def _action_rerun(args: str) -> tuple[bool, str]:
@@ -197,7 +238,10 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     except Exception:  # noqa: BLE001 — Hub publish must never fail the rerun
         hub_run_id = None
 
-    ok, result = _run_cmd(cmd, timeout_s)
+    # One log per rerun, timestamped so repeated reruns of the same report don't
+    # clobber each other (logtail's newest-match-wins then picks the latest).
+    stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    ok, result = _run_cmd(cmd, timeout_s, log_name=f"rerun-{stamp}-{report_id}.log")
 
     # Close the pill: flip the SAME running row (via run_id) to success/failed so
     # it never hangs yellow. Mirrors the orchestrator, which marks DONE *and*
@@ -208,7 +252,7 @@ def _action_rerun(args: str) -> tuple[bool, str]:
         from automations.day_orchestrator import hub_publish
         hub_publish.publish_done(
             report_id, getattr(r, "display_name", report_id),
-            status=("success" if ok else "failed"), run_id=hub_run_id)
+            status=hub_publish.final_status(report_id, ok), run_id=hub_run_id)
     except Exception:  # noqa: BLE001 — Hub publish must never fail the rerun
         pass
     return ok, result
@@ -243,6 +287,140 @@ def _action_restart_poller(args: str) -> tuple[bool, str]:
     except Exception as e:  # noqa: BLE001
         return False, f"couldn't schedule restart: {str(e)[:140]}"
     return True, f"restart scheduled for {label} (~3s) — poller reloads its code"
+
+
+def _action_install_hub_watch(args: str) -> tuple[bool, str]:
+    """Install (or reinstall) the Hub change-watcher LaunchAgent on THIS machine
+    — deploy the on-every-Hub-change email notifier remotely, no human at the
+    mini. Steps, in order:
+      1. Regenerate deploy/com.alphalete.hub-watch.plist with the mini's repo
+         path → ~/Library/LaunchAgents, and plutil-lint it.
+      2. Send ONE live confirmation email — proves SMTP works from here
+         end-to-end; if it fails we DON'T go live (a broken credential is caught
+         at install, not silently on the first real change).
+      3. `--init` both watchers so the first live poll doesn't email a backlog.
+      4. bootout (if loaded) + enable + bootstrap; report the loaded state.
+    Run `update` (git pull) + `restart_poller` first so this action exists in the
+    running poller. Idempotent — safe to re-run to redeploy after a plist change."""
+    uid = os.getuid()
+    label = HUB_WATCH_LABEL
+    src_plist = REPO_ROOT / "deploy" / f"{label}.plist"
+    wrapper = REPO_ROOT / "deploy" / "hub_watch_10min.sh"
+    dst_plist = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+    if not src_plist.exists() or not wrapper.exists():
+        return False, (f"missing {src_plist.name} or {wrapper.name} — run "
+                       "`update` first to pull them")
+
+    # 1) plist with THIS machine's path (same replace trick as the other agents).
+    try:
+        text = src_plist.read_text().replace(
+            "/Users/megan/1st Claude Folder", str(REPO_ROOT))
+        dst_plist.parent.mkdir(parents=True, exist_ok=True)
+        dst_plist.write_text(text)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write plist: {str(e).splitlines()[0][:140]}"
+    lint = subprocess.run(["plutil", "-lint", str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if lint.returncode != 0:
+        return False, f"plist lint failed: {(lint.stdout or '')[:160]}"
+    try:
+        os.chmod(wrapper, 0o755)
+    except Exception:  # noqa: BLE001
+        pass
+
+    # 2) live confirmation email — end-to-end SMTP proof from this machine.
+    try:
+        from automations.shared import hub_notify_email, hub_identity
+        host = hub_identity.machine_name()   # friendly runner name, e.g. "Lucy 1"
+        hub_notify_email.send_html(
+            "✅ Hub change-watcher installed",
+            f'<p>The Hub change-watcher is now installed on <b>{host}</b>. '
+            "You'll get an email whenever Hub code or a card changes — a commit "
+            "pushed to the repo, or a card published/edited through the Hub. "
+            "This is a one-time install confirmation.</p>",
+            f"Hub change-watcher installed on {host} — you'll be emailed on "
+            "every Hub code/card change (git push or Hub upload).",
+            tag="hub-watch-installed")
+    except Exception as e:  # noqa: BLE001
+        return False, ("plist OK but the confirmation email FAILED — SMTP/creds "
+                       "broken here, NOT going live: "
+                       f"{type(e).__name__}: {str(e).splitlines()[0][:120]}")
+
+    # 3) snapshot current state BEFORE going live (no backlog blast).
+    p_ok, _ = _run_cmd([sys.executable, "-m", "automations.hub_push_watch.run",
+                        "--init"], timeout_s=120)
+    l_ok, _ = _run_cmd([sys.executable, "-m", "automations.hub_library_watch.run",
+                        "--init"], timeout_s=120)
+
+    # 4) (re)bootstrap the agent.
+    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["launchctl", "enable", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    boot = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if boot.returncode != 0:
+        return False, (f"snapshots push={'ok' if p_ok else 'FAIL'} "
+                       f"lib={'ok' if l_ok else 'FAIL'}; bootstrap FAILED: "
+                       f"{(boot.stdout or '').strip()[:150]}")
+    pr = subprocess.run(["launchctl", "print", f"gui/{uid}/{label}"],
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    state = next((ln.strip() for ln in (pr.stdout or "").splitlines()
+                  if "state =" in ln), "loaded")
+    return True, (f"installed {label} · {state} · confirmation email sent · "
+                  f"snapshots push={'ok' if p_ok else 'FAIL'} "
+                  f"lib={'ok' if l_ok else 'FAIL'}")
+
+
+def _action_install_machine_digest(args: str) -> tuple[bool, str]:
+    """Install (or reinstall) the daily 'what ran on this machine' summary
+    LaunchAgent (com.alphalete.machine-digest) on THIS machine — intended for
+    Lucy 2, which otherwise gets no daily summary. Regenerates the plist for the
+    mini's path, runs a --dry-run smoke test (proves the Hub Activity read +
+    render work here, no email), then bootstraps it (noon daily). Run `update` +
+    `restart_poller` first so this action exists in the running poller."""
+    uid = os.getuid()
+    label = "com.alphalete.machine-digest"
+    src_plist = REPO_ROOT / "deploy" / f"{label}.plist"
+    wrapper = REPO_ROOT / "deploy" / "machine_digest_daily.sh"
+    dst_plist = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+    if not src_plist.exists() or not wrapper.exists():
+        return False, (f"missing {src_plist.name} or {wrapper.name} — run "
+                       "`update` first to pull them")
+    try:
+        text = src_plist.read_text().replace(
+            "/Users/megan/1st Claude Folder", str(REPO_ROOT))
+        dst_plist.parent.mkdir(parents=True, exist_ok=True)
+        dst_plist.write_text(text)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write plist: {str(e).splitlines()[0][:140]}"
+    lint = subprocess.run(["plutil", "-lint", str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if lint.returncode != 0:
+        return False, f"plist lint failed: {(lint.stdout or '')[:160]}"
+    try:
+        os.chmod(wrapper, 0o755)
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Smoke test — build the email to an .eml without sending, proving the Hub
+    # Activity read + render work on THIS machine.
+    smoke_ok, smoke = _run_cmd(
+        [sys.executable, "-m", "automations.machine_digest.run", "--dry-run"],
+        timeout_s=120, log_name="machine-digest-install-smoke.log")
+    if not smoke_ok:
+        return False, f"smoke test failed — NOT going live: {smoke[:150]}"
+
+    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["launchctl", "enable", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    boot = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if boot.returncode != 0:
+        return False, f"smoke ok; bootstrap FAILED: {(boot.stdout or '').strip()[:150]}"
+    return True, (f"installed {label} (noon daily) · smoke test ok · "
+                  f"{smoke[:90]}")
 
 
 def _action_watch_test(args: str) -> tuple[bool, str]:
@@ -585,6 +763,65 @@ def _action_screendrive(args: str) -> tuple[bool, str]:
     return _run_cmd(cmd, timeout_s=1500)
 
 
+def _action_set_gbp_token(args: str) -> tuple[bool, str]:
+    """Install the Google Business Profile OAuth token on THIS machine so the
+    noon review-replies run can read reviews + post replies unattended. The Args
+    is the CONTENTS of ~/.config/brand-audit/gbp-token.json (a JSON object with a
+    refresh_token; it self-contains client_id/secret so no oauth-client.json is
+    needed here). Backs up any existing token, writes it, then verifies by
+    resolving the configured location. NEVER echoes the token.
+
+    Note: the token transits the control Sheet's Args cell to get here — redact
+    that cell after this shows 'done' (the queuer does this from the laptop)."""
+    import json
+    import shlex
+    import shutil
+    # `lucy` shlex-joins multi-char args before the Sheet round-trip, so undo it
+    # to recover the raw JSON (mirrors _action_rerun's shlex.split pairing).
+    raw = (args or "").strip()
+    try:
+        parts = shlex.split(raw)
+        blob = parts[0].strip() if parts else raw
+    except Exception:  # noqa: BLE001
+        blob = raw
+    if not blob.startswith("{"):
+        return False, "set_gbp_token needs the gbp-token.json CONTENTS (a JSON object) as Args"
+    try:
+        parsed = json.loads(blob)
+    except Exception as e:  # noqa: BLE001
+        return False, f"Args isn't valid JSON: {str(e).splitlines()[0][:120]}"
+    if not parsed.get("refresh_token"):
+        return False, "token JSON has no refresh_token — re-authorize and pass the whole file"
+    path = Path.home() / ".config" / "brand-audit" / "gbp-token.json"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't create {path.parent}: {str(e).splitlines()[0][:120]}"
+    if path.exists():
+        stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+        try:
+            shutil.copy2(path, path.parent / f"gbp-token.json.bak.{stamp}")
+        except Exception:  # noqa: BLE001 — a failed backup shouldn't block the fix
+            pass
+    try:
+        path.write_text(json.dumps(parsed, indent=2), encoding="utf-8")
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path}: {str(e).splitlines()[0][:120]}"
+    # Verify: resolve the configured location through the SAME client the noon
+    # job uses — proof it works, surfaced in `lucy status`. Never echo the token.
+    try:
+        from automations.brand_audit import gbp_api
+        from automations.brand_audit.config import GBP_LOCATION_PATH
+        if not GBP_LOCATION_PATH:
+            return True, "gbp token written (GBP_LOCATION_PATH not set — can't verify a location)"
+        sample = gbp_api.list_reviews(GBP_LOCATION_PATH, limit=1)
+    except Exception as e:  # noqa: BLE001
+        return True, (f"token written to {path} but verify errored "
+                      f"({type(e).__name__}: {str(e).splitlines()[0][:110]})")
+    return True, (f"GBP token installed + verified: location reachable "
+                  f"(fetched {len(sample)} review as a check)")
+
+
 ACTIONS = {
     "ping": _action_ping,
     "screendrive": _action_screendrive,
@@ -594,8 +831,11 @@ ACTIONS = {
     "update": _action_update,
     "set_meta_token": _action_set_meta_token,
     "set_slack_token": _action_set_slack_token,
+    "set_gbp_token": _action_set_gbp_token,
     "restart_holder": _action_restart_holder,
     "restart_poller": _action_restart_poller,
+    "install_hub_watch": _action_install_hub_watch,
+    "install_machine_digest": _action_install_machine_digest,
     "reseed_appstream": _action_reseed_appstream,
     "watch_test": _action_watch_test,
     "diag": _action_diag,

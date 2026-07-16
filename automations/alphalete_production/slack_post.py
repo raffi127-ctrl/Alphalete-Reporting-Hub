@@ -54,13 +54,26 @@ def _reactions(sections: list) -> list:
 
 
 def find_thread_ts(client, channel: str, today: dt.date):
+    """Today's 🐺 parent thread ts. PAGINATE today's history — a busy channel blows
+    past one 200-msg page, so a mid-day rerun otherwise can't see the 4am parent and
+    spawns a duplicate thread (happened 7/14). Return the OLDEST match = the canonical
+    morning thread, so reruns always APPEND to it."""
     oldest = dt.datetime.combine(today, dt.time.min).timestamp()
-    title = header_title(today)
-    resp = client.conversations_history(channel=channel, oldest=str(oldest), limit=200)
-    for msg in resp.get("messages", []):
-        if title in (msg.get("text", "") or ""):
-            return msg.get("thread_ts") or msg.get("ts")
-    return None
+    # match the EMOJI-FREE title: Slack stores the 🐺 as the shortcode ':wolf:' in the
+    # message text, so matching on the unicode 🐺 never hit -> every rerun duplicated.
+    title = header_title(today).split(" ", 1)[1]        # "Alphalete Production MM/DD/YYYY"
+    found, cursor = None, None
+    for _ in range(20):                     # cap pages (~4000 msgs) so we never loop forever
+        resp = client.conversations_history(
+            channel=channel, oldest=str(oldest), limit=200,
+            **({"cursor": cursor} if cursor else {}))
+        for msg in resp.get("messages", []):        # newest-first within a page
+            if title in (msg.get("text", "") or ""):
+                found = msg.get("thread_ts") or msg.get("ts")   # overwrite -> ends at oldest match
+        cursor = (resp.get("response_metadata") or {}).get("next_cursor")
+        if not cursor:
+            break
+    return found
 
 
 def _post_thread(client, channel: str, captures: list, sections: list,

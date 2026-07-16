@@ -38,6 +38,15 @@ ST=$?
 
 echo "[$(date)] brand-audit noon scan finished exit=$ST" >> "$LOG_FILE"
 
+# Google review replies — hybrid auto-post: 4-5star thank-yous post straight to
+# Google (throttled to AUTO_POST_DAILY_CAP/day so a backlog clears gradually),
+# 1-3star reviews queue to #alphaletemarketingbrandhealth for approve/redo/skip.
+# Honors --dry-run when passed (same as the audit above). Best-effort: its exit
+# is logged but doesn't change the Brand Health card pill (that's the audit's).
+echo "[$(date)] review-replies starting" >> "$LOG_FILE"
+"$VENV_PY" -m automations.brand_audit.review_replies --company "Alphalete Marketing" "$@" >> "$LOG_FILE" 2>&1
+echo "[$(date)] review-replies finished exit=$?" >> "$LOG_FILE"
+
 # Report this standalone run to the Hub (shared Hub Activity sheet) so the
 # Brand Health card's pill reflects a REAL success/failure — same mechanism the
 # orchestrator uses for the reports it runs. Skip when a --dry-run was passed

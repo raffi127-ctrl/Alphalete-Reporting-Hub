@@ -25,19 +25,91 @@ from pathlib import Path
 
 from automations.shared import slack_metrics_post as smp
 
-# Post to BOTH channels. Set TABLEAU_TRACKERS_CHANNEL_ID to a single scratch
-# channel while building to keep the real channels safe (overrides the whole list).
-_ALPHALETE_SALES = "C068PH3RFSM"          # #alphalete-sales
-_TOP_LEADERS = "C067TTGFEFR"              # #top-leaders-alphalete-org (private)
-_override = os.environ.get("TABLEAU_TRACKERS_CHANNEL_ID")
-CHANNELS = [_override] if _override else [_ALPHALETE_SALES, _TOP_LEADERS]
+# The same 8 COUNTRY-wide trackers go to three orgs (Raf, 2026-07-14). Same
+# images everywhere -- these are country/org-wide boards, not per-office cuts,
+# which is why the title dropped "Alphalete". One card per org on the Hub, same
+# convention as rashad_metrics (#elevate-sales) / aya_metrics (#indelible-sales).
+# Lucy (U0BCFGCR5PV) is a MEMBER of all four channels -- verified 2026-07-14. The
+# three private ones (#top-leaders, #elevate-sales, #indelible-sales) fail
+# files_upload_v2 with not_in_channel if she is ever removed.
+ORG_CHANNELS = {
+    "alphalete":   ["C068PH3RFSM",        # #alphalete-sales
+                    "C067TTGFEFR"],       # #top-leaders-alphalete-org (private)
+    "elevate":     ["C0B3KTCCMT7"],       # #elevate-sales (private)
+    "indelible":   ["C0AA85Y3FPE"],       # #indelible-sales (private)
+    "palace":      ["C09AVM17PAR"],       # #palace-sales (private)
+    "elite_prime": ["C06A6A8ED34"],       # #elite-prime-sales (private)
+    "carlos_gp":   ["C07J46MQNUX"],       # #alphalete-gp-sales (private, Carlos)
+    "ambient_1":   ["C0B1DHEFVLH"],       # #ambient-sales-1 (private, Cy Wade)
+    "aeon":        ["C0849EPM4LD"],       # #aeon-sales (private, Cody Cannon)
+}
+ORGS = list(ORG_CHANNELS)
+DEFAULT_ORG = "alphalete"
 
-TITLE_PREFIX = "Alphalete Tableau Trackers"
+# Human labels for the Hub card / logs.
+ORG_LABEL = {"alphalete": "#alphalete-sales + #top-leaders-alphalete-org",
+             "elevate": "#elevate-sales",
+             "indelible": "#indelible-sales",
+             "palace": "#palace-sales",
+             "elite_prime": "#elite-prime-sales",
+             "carlos_gp": "#alphalete-gp-sales",
+             "ambient_1": "#ambient-sales-1",
+             "aeon": "#aeon-sales"}
+
+# Per-org tracker ORDER override (Carlos wants the B2B trackers + Box first in his
+# channel, 2026-07-14). An org NOT listed here posts in the default pages.py
+# order. A tracker id missing from a listed order still posts — appended after the
+# listed ones, in default order — so adding a new tracker never silently drops it
+# from a custom-ordered feed. Keys are org keys from ORG_CHANNELS; values are
+# lists of tracker ids (pages.py `id`s).
+ORG_ORDER: dict[str, list[str]] = {
+    # Carlos wants B2B (AT&T, CRU, Box, D2D) first, then the AT&T/NDS/Fiber ones.
+    "carlos_gp": [
+        "b2b_att_country", "b2b_att_country_cru", "b2b_box",
+        "b2b_d2d_consolidated", "att_country", "att_country_internet_only",
+        "nds", "quantum_fiber",
+    ],
+}
+
+
+def _ordered(items: list, id_of, order_ids: list[str] | None) -> list:
+    """Reorder `items` by `order_ids` (tracker ids). Items whose id isn't listed
+    keep their original relative order, appended after the listed ones (stable
+    sort), so a partial order never drops or shuffles the rest."""
+    if not order_ids:
+        return list(items)
+    rank = {tid: i for i, tid in enumerate(order_ids)}
+    return sorted(items, key=lambda it: rank.get(id_of(it), len(order_ids)))
+
+
+def channels_for(org: str) -> list:
+    """The channel id(s) this org posts into. Set TABLEAU_TRACKERS_CHANNEL_ID to a
+    single scratch channel while building to keep every real channel safe (it
+    overrides the whole list, for every org)."""
+    override = os.environ.get("TABLEAU_TRACKERS_CHANNEL_ID")
+    if override:
+        return [override]
+    try:
+        return list(ORG_CHANNELS[org])
+    except KeyError:
+        raise SystemExit(f"unknown org {org!r}. known: {', '.join(ORGS)}")
+
+
+TITLE_PREFIX = "Tableau Country Trackers"
+# The pre-2026-07-14 title. Kept ONLY so find_thread_ts still recognises a thread
+# posted under the old name (otherwise a same-day rerun would not find today's
+# parent and would post a SECOND tracker thread into the channel). Retitled in
+# place on the next touch; delete this once no live thread uses it.
+_LEGACY_TITLE_PREFIX = "Alphalete Tableau Trackers"
 
 
 def header_title(today: dt.date) -> str:
-    """'Alphalete Tableau Trackers 7/4/2026' (M/D/YYYY, matches Megan's spec)."""
+    """'Tableau Country Trackers 7/14/2026' (M/D/YYYY, matches Megan's spec)."""
     return f"{TITLE_PREFIX} {today.month}/{today.day}/{today.year}"
+
+
+def _legacy_title(today: dt.date) -> str:
+    return f"{_LEGACY_TITLE_PREFIX} {today.month}/{today.day}/{today.year}"
 
 
 def header_text(pages: list, today: dt.date) -> str:
@@ -53,33 +125,106 @@ def reply_caption(spec: dict, today: dt.date) -> str:
 
 
 def find_thread_ts(client, channel: str, today: dt.date):
-    """ts of today's tracker parent in `channel`, or None if not posted yet."""
+    """(ts, is_legacy) of today's tracker parent in `channel`, or (None, False).
+
+    Matches the CURRENT title first, then the legacy one — a thread posted this
+    morning under the old name must still be found, or a rerun would post a
+    second tracker thread into the same channel."""
     oldest = dt.datetime.combine(today, dt.time.min).timestamp()
-    title = header_title(today)
+    title, legacy = header_title(today), _legacy_title(today)
     resp = client.conversations_history(
         channel=channel, oldest=str(oldest), limit=200)
-    for msg in resp.get("messages", []):
+    msgs = resp.get("messages", [])
+    for msg in msgs:
         if title in (msg.get("text", "") or ""):
-            return msg.get("thread_ts") or msg.get("ts")
-    return None
+            return (msg.get("thread_ts") or msg.get("ts")), False
+    for msg in msgs:
+        if legacy in (msg.get("text", "") or ""):
+            return (msg.get("thread_ts") or msg.get("ts")), True
+    return None, False
 
 
 def ensure_thread(client, channel: str, pages: list, today: dt.date) -> dict:
-    """Find today's tracker parent in `channel` or create it (bold header, Lucy)."""
-    ts = find_thread_ts(client, channel, today)
+    """Find today's tracker parent in `channel` or create it (bold header, Lucy).
+    A parent still carrying the legacy title is RETITLED in place, so today's
+    thread ends up reading the same as every other channel's."""
+    ts, is_legacy = find_thread_ts(client, channel, today)
     if ts:
+        if is_legacy:
+            try:
+                client.chat_update(channel=channel, ts=ts,
+                                   text=header_text(pages, today))
+                print(f"  {channel}: retitled today's parent → {header_title(today)}",
+                      flush=True)
+            except Exception as e:
+                print(f"  {channel}: retitle skipped ({type(e).__name__})", flush=True)
         return {"thread_ts": ts, "created": False}
     resp = client.chat_postMessage(channel=channel, text=header_text(pages, today))
     return {"thread_ts": resp.get("ts"), "created": True}
 
 
+def delete_image_replies(client, channel: str, thread_ts: str) -> int:
+    """Delete every IMAGE reply under today's parent (the parent itself is never
+    touched, so the thread link + its reactions survive). Used by --replace to
+    re-post a corrected set of images IN ORDER: Slack appends replies, so a single
+    re-upload would land at the bottom instead of in its header position."""
+    resp = client.conversations_replies(channel=channel, ts=thread_ts, limit=200)
+    deleted = 0
+    for msg in resp.get("messages", []):
+        if msg.get("ts") == thread_ts or not msg.get("files"):
+            continue
+        for f in msg.get("files") or []:
+            try:
+                client.files_delete(file=f["id"])
+            except Exception:
+                pass          # already gone, or removed with the message
+        try:
+            client.chat_delete(channel=channel, ts=msg["ts"])
+            deleted += 1
+        except Exception:
+            pass              # files_delete can take the message with it
+    return deleted
+
+
+def count_image_replies(client, channel: str, thread_ts: str) -> int:
+    """How many image replies today's parent already has."""
+    resp = client.conversations_replies(channel=channel, ts=thread_ts, limit=200)
+    return sum(1 for m in resp.get("messages", [])
+               if m.get("ts") != thread_ts and m.get("files"))
+
+
 def _post_to_channel(client, channel: str, captures: list, pages: list,
-                     today: dt.date) -> dict:
+                     today: dt.date, replace: bool = False) -> dict:
     """Ensure the parent + post every image reply (with parent reaction) in one
-    channel. A failure in one channel is caught by the caller so the other still
-    posts."""
+    channel. A failure in one channel is caught by the caller so the others still
+    post.
+
+    IDEMPOTENT — posting the same day twice must not duplicate. This matters
+    because a partial run exits non-zero and the ORCHESTRATOR RETRIES IT (up to
+    MAX_RUN_RETRIES): without this, every retry would append another 8 images to
+    the channels that already succeeded, so healing one broken channel would
+    trash the healthy ones. Per channel:
+      already has the full set -> SKIP (ok, nothing posted)
+      has a partial set        -> clear + re-post (heal a half-finished upload)
+      has none                 -> post
+      replace=True             -> always clear + re-post, in header order
+    """
     thread = ensure_thread(client, channel, pages, today)
     thread_ts = thread["thread_ts"]
+    removed = 0
+    existing = 0 if thread["created"] else count_image_replies(client, channel,
+                                                               thread_ts)
+    if not replace and existing >= len(captures) > 0:
+        print(f"  {channel}: already has {existing} image(s) today — skipping "
+              f"(nothing re-posted)", flush=True)
+        return {"channel": channel, "thread_ts": thread_ts, "created": False,
+                "posted": [], "removed": 0, "skipped": True, "ok": True}
+    if (replace or existing) and not thread["created"]:
+        removed = delete_image_replies(client, channel, thread_ts)
+        if removed:
+            why = "replacing" if replace else "healing a partial set"
+            print(f"  {channel}: cleared {removed} old image reply(ies) ({why})",
+                  flush=True)
     results = []
     for spec, png in captures:
         up = client.files_upload_v2(
@@ -99,7 +244,8 @@ def _post_to_channel(client, channel: str, captures: list, pages: list,
         # message posts before the next upload starts (keeps them in order).
         time.sleep(3)
     return {"channel": channel, "thread_ts": thread_ts,
-            "created": thread["created"], "posted": results,
+            "created": thread["created"], "posted": results, "removed": removed,
+            "skipped": False,
             "ok": all(r.get("ok") for r in results) if results else False}
 
 
@@ -157,18 +303,58 @@ def preview_dm(captures: list, pages: list, users: list,
                 "user_ids": user_ids, "results": results}
 
 
-def post_all(captures: list, pages: list, today: dt.date | None = None,
-             *, dry_run: bool = False) -> dict:
-    """Post the thread + one image reply per captured tracker, to every channel
-    in CHANNELS. `captures` is (spec, png_path) in post order; `pages` is the full
-    ordered list used to build the header (so the header lists every tracker even
-    if one failed to capture)."""
+def retitle_today(pages: list, today: dt.date | None = None,
+                  *, org: str = DEFAULT_ORG) -> dict:
+    """Rename today's ALREADY-POSTED parent to the current title, touching nothing
+    else. For the day the title changes: the images under the old thread are fine,
+    so re-posting them just to fix the header would churn every reply's timestamp.
+    Never creates a thread; a no-op if today's parent is already current."""
     today = today or dt.date.today()
+    client = smp._client()
+    out = []
+    for channel in channels_for(org):
+        ts, is_legacy = find_thread_ts(client, channel, today)
+        if not ts:
+            out.append({"channel": channel, "status": "no thread today"})
+            continue
+        if not is_legacy:
+            out.append({"channel": channel, "status": "already current"})
+            continue
+        try:
+            client.chat_update(channel=channel, ts=ts,
+                               text=header_text(pages, today))
+            out.append({"channel": channel, "status": "retitled", "ts": ts})
+        except Exception as e:
+            out.append({"channel": channel,
+                        "status": f"FAILED {type(e).__name__}: {str(e)[:80]}"})
+    return {"org": org, "results": out}
+
+
+def post_all(captures: list, pages: list, today: dt.date | None = None,
+             *, dry_run: bool = False, replace: bool = False,
+             org: str = DEFAULT_ORG) -> dict:
+    """Post the thread + one image reply per captured tracker, to every channel
+    this ORG posts into. `captures` is (spec, png_path) in post order; `pages` is
+    the full ordered list used to build the header (so the header lists every
+    tracker even if one failed to capture). replace=True re-posts today's thread:
+    clear the old image replies, then post this set in order (for a same-day crop
+    fix). An org in ORG_ORDER gets its own tracker order (header + replies)."""
+    today = today or dt.date.today()
+    channels = channels_for(org)
+
+    # Per-org custom order (Carlos): reorder BOTH the header (pages) and the image
+    # replies (captures) so they match. Other orgs use the default pages.py order.
+    order_ids = ORG_ORDER.get(org)
+    if order_ids:
+        captures = _ordered(captures, lambda c: c[0]["id"], order_ids)
+        pages = _ordered(pages, lambda p: p["id"], order_ids)
 
     if dry_run:
         return {
             "dry_run": True,
-            "channels": list(CHANNELS),
+            "replace": replace,
+            "org": org,
+            "channels": list(channels),
             "header": header_text(pages, today),
             "replies": [
                 {"file": Path(p).name, "caption": reply_caption(spec, today),
@@ -179,10 +365,11 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
 
     client = smp._client()
     channel_results = []
-    for channel in CHANNELS:
+    for channel in channels:
         try:
             channel_results.append(
-                _post_to_channel(client, channel, captures, pages, today))
+                _post_to_channel(client, channel, captures, pages, today,
+                                 replace=replace))
         except Exception as e:
             channel_results.append(
                 {"channel": channel, "ok": False,
@@ -190,5 +377,6 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
 
     return {
         "ok": all(c.get("ok") for c in channel_results) if channel_results else False,
+        "org": org,
         "channels": channel_results,
     }

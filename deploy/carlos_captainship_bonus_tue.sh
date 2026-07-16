@@ -46,6 +46,20 @@ echo "[$(date)] Carlos B2B Captainship Bonus weekly run starting (extra args: ${
 ST=$?
 
 echo "[$(date)] Carlos B2B Captainship Bonus run finished exit=$ST" >> "$LOG_FILE"
+
+# Report this standalone run to the Hub so the card's pill reflects a REAL
+# success/failure — same mechanism the orchestrator uses. Without this the report
+# ran fine every Tuesday but its card stayed grey, so a successful run was
+# indistinguishable from a silent miss (Megan 2026-07-14). Skip on --dry-run (a
+# preview shouldn't mark the card as ran). Best-effort — never fails the job.
+case " $* " in
+  *" --dry-run "*) : ;;
+  *)
+    if [ "$ST" -eq 0 ]; then _PUB=success; else _PUB=failed; fi
+    "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('carlos_captainship_bonus','Carlos B2B Captainship Bonus','$_PUB')" >> "$LOG_FILE" 2>&1 || true
+    ;;
+esac
+
 if [ "$ST" -ne 0 ]; then
   osascript -e "display notification \"Carlos B2B Captainship Bonus failed (exit $ST) — check the log; the Tableau login may have expired or a roster row didn't match\" with title \"Captainship Bonus\" sound name \"Sosumi\"" 2>/dev/null || true
 fi

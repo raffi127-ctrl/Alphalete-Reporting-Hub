@@ -559,6 +559,21 @@ def main(argv=None) -> int:
         return 0
     send(msg)
     print(f"[screenshot_email] sent to {to}", flush=True)
+    # Tell the Hub the board email ACTUALLY WENT OUT today — from WHATEVER machine
+    # sent it. The card used to reflect only the mini's 4am orchestrator run, so a
+    # morning failure left it red for the rest of the day even after the email had
+    # been sent by hand from another machine (Megan 2026-07-14: "this should go
+    # green if it's been sent for that day — not just the morning run"). The Hub
+    # marks a card run-today off any SUCCESS row on the Hub Activity tab, so
+    # publishing here makes the card tell the truth: sent = green.
+    # A run under the orchestrator / `lucy rerun` also publishes its own row; a
+    # second success row is harmless (the Hub looks for ANY success today).
+    try:
+        from automations.day_orchestrator import hub_publish
+        hub_publish.publish_done("org_sales_board_email",
+                                 "Org. Sales Board Email", status="success")
+    except Exception:  # noqa: BLE001 — the Hub must never fail a delivered email
+        pass
     print("=== done ===", flush=True)                 # Hub reads this as success
     return 0
 

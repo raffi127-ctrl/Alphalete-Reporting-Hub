@@ -187,7 +187,23 @@ class ReadinessCache:
         Tue→[Mon], Mon→last Sun, Sat→Fri) and its OWN pull+parse, so the gate
         matches exactly what the fill reads. `min_rows` floors out a garbage/partial
         pull. The session-warmth gate already ran in report_ready(), so the warm
-        ownerville cookies are reused (no fresh login)."""
+        ownerville cookies are reused (no fresh login).
+
+        FAIL-OPEN (Megan 2026-07-13): this gate must NEVER skip the board. Box is
+        reliably in by `fallback_hhmm` (the old not_before time), so if readiness
+        can't be confirmed by then — a no-Box-sales target day (the 7/13 Monday skip:
+        target was Sunday, which has no Box row, so max date never reached it), or a
+        flaky probe pull — RUN ANYWAY rather than hold forever. Keeps the run-early-
+        when-ready benefit but restores the old 8am reliability as a floor."""
+        fallback = str(probe.get("fallback_hhmm", "08:00"))
+        try:
+            fb_h, fb_m = (int(x) for x in fallback.split(":"))
+            now = dt.datetime.now()
+            if (now.hour, now.minute) >= (fb_h, fb_m):
+                return Readiness(True, f"past {fallback} fallback — running "
+                                       f"(Box gate not held this late; never skip)")
+        except Exception:  # noqa: BLE001 — a bad fallback string must not break the gate
+            pass
         min_rows = int(probe.get("min_rows", 5))
         try:
             from automations.org_sales_board import section_pull as _sp

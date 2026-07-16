@@ -42,6 +42,7 @@ if sys.platform == "win32":
         pass
 
 import streamlit as st
+import streamlit.components.v1 as _components
 
 WORKSPACE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(WORKSPACE))
@@ -387,6 +388,41 @@ def _record_active_run(report_id: str, report_name: str, user: str, log_path: Pa
     })
     ACTIVE_RUNS_FILE.parent.mkdir(parents=True, exist_ok=True)
     ACTIVE_RUNS_FILE.write_text(json.dumps(active, indent=2))
+
+
+def _manifest_failed_parts(report_id: str) -> list:
+    """The parts (channels/ICDs/…) today's run missed, for the calendar tooltip.
+    Empty when there's no manifest or it's from an earlier day."""
+    try:
+        from automations.shared import run_manifest as _rm
+        m = _rm.read_manifest(report_id) or {}
+        if (m.get("run_ts") or "")[:10] != dt.date.today().isoformat():
+            return []
+        return list(m.get("failed") or [])
+    except Exception:
+        return []
+
+
+def _channel_status(report: dict):
+    """TODAY's per-channel post results for a card that fans one run out to many
+    Slack channels, or None. Opt in with post_run.channel_status_file — a JSON
+    {"date": "YYYY-MM-DD", "channels": [{"label", "ok", "error"}, ...]} written by
+    the run. Returns None when the file is missing or is from an earlier day, so a
+    stale checklist can never be mistaken for today's. Never raises into the UI."""
+    rel = (report.get("post_run") or {}).get("channel_status_file")
+    if not rel:
+        return None
+    try:
+        path = WORKSPACE / rel
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text())
+        if data.get("date") != dt.date.today().isoformat():
+            return None
+        rows = data.get("channels") or []
+        return rows or None
+    except Exception:
+        return None
 
 
 def _manifest_retry(report: dict):
@@ -1108,6 +1144,10 @@ MEMBERS = [
     {"name": "Lucy 1", "emoji": "🤖", "color": "#10B981", "email": ""},
     {"name": "Lucy 2", "emoji": "🦾", "color": "#E76F51", "email": ""},
     {"name": "Maud",    "emoji": "🌟",        "color": "#FF6B6B", "email": "maudmiller4@gmail.com"},
+    # Office Operations — a functional profile (not a single person) that holds
+    # office-run workflows anyone on staff can pick up: new-hire swag texts,
+    # etc. People navigate here to find those cards. (Megan 2026-07-13)
+    {"name": "Office Operations", "emoji": "🏢", "color": "#6C5CE7", "email": ""},
 ]
 
 
@@ -1161,7 +1201,132 @@ def _last_completed_as_picker(today: dt.date | None = None) -> dt.date:
     return _last_completed_we_sunday(today) - dt.timedelta(days=7)
 
 
+def _tableau_trackers_card() -> dict:
+    """ONE card for the 8 country-wide Tableau trackers, posted to EVERY channel
+    off a single capture (Megan 2026-07-14 — was 5 cards, one per org).
+
+    The channel list is read from slack_post.ORG_CHANNELS, and the per-channel
+    "re-post" buttons are GENERATED from it — so adding a channel is one line in
+    that map and the Hub picks it up automatically, with no card to hand-write.
+    Per-channel outcomes show as a ✅/❌ checklist (see _tableau_channel_status),
+    and the standard manifest-retry button re-posts only the channels that
+    missed. That's what makes one card safe here: a single red light would hide
+    a lone channel failing."""
+    from automations.tableau_screenshots import slack_post as _sp
+    from automations.tableau_screenshots import pages as _pages
+    trackers = "\n".join(
+        f"{i}. {p['title']}" for i, p in enumerate(_pages.PAGES, 1))
+    # Prose form (one line, for the card description sentence).
+    channels = ", ".join(_sp.ORG_LABEL[o] for o in _sp.ORGS)
+    # Bulleted form (one Slack channel per line, for the breakdown panel — the
+    # panel is white-space:pre-wrap, so the newlines survive). An org whose label
+    # covers two channels ("#a + #b") is split so each channel gets its own line.
+    channel_bullets = "\n".join(
+        f"• {name.strip()}"
+        for o in _sp.ORGS
+        for name in _sp.ORG_LABEL[o].split(" + "))
+    return {
+        "id": "tableau-screenshots",
+        "name": "Tableau Country Trackers",
+        "creator": "Megan",
+        "emoji": "📸",
+        "color": "#1F4E79",
+        "category": "📊 Metrics",
+        "description": (
+            "Captures the 8 Tableau country sales trackers as images and posts "
+            "them daily into a 'Tableau Country Trackers M/D/YYYY' thread in "
+            f"every sales channel: {channels}. The boards are country-wide, so "
+            "all channels get identical images from a single capture (one "
+            "Tableau login). Replaces Jolie's manual tracker post."),
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Grabs each of the 8 Tableau country trackers as an image and posts "
+            "them into today's dated thread in every channel below.\n\n"
+            f"TRACKERS\n{trackers}\n\n"
+            f"CHANNELS\n{channel_bullets}\n\n"
+            "IF A CHANNEL MISSES\n"
+            "The card shows a per-channel checklist after the run. Use "
+            "'Retry failed only' to re-post just the channels that missed, or "
+            "the per-channel buttons under More actions."),
+        "assignees": ["Lucy 1"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "5:00 AM",
+            "estimated_minutes": 12,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": (
+                "✅ Tableau Country Trackers posted — all 8 tracker screenshots "
+                "in the dated thread in every channel."),
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+            # Drives the ✅/❌ per-channel checklist on the card (_channel_status).
+            "channel_status_file": "output/tableau_screenshots/_posted_today.json",
+        },
+        "actions": [
+            {
+                "label": "Post Today's Trackers (all channels)",
+                "icon": "▶",
+                "primary": True,
+                "help": ("Captures the 8 Tableau trackers once and posts them to "
+                         "every channel. Needs a warm Tableau session (best run "
+                         "on the mini)."),
+                "module": "automations.tableau_screenshots.run",
+                "args_fn": lambda: [],
+            },
+        ] + [
+            {
+                # No help text — the label says it. It's just a full re-run of
+                # that one channel (Megan 2026-07-14).
+                "label": f"Re-post {_sp.ORG_LABEL[o]}",
+                "icon": "🔁",
+                "module": "automations.tableau_screenshots.run",
+                # default-bind o — a bare closure would capture the loop variable
+                # and every button would post to the LAST org.
+                "args_fn": (lambda org=o: ["--orgs", org, "--replace"]),
+            }
+            for o in _sp.ORGS
+        ],
+    }
+
+
 AUTOMATED_REPORTS = [
+    # 🏢 Office Operations — New-Hire Swag Texts. Renders a custom upload →
+    # preflight → send UI via the report-id hook in _render_report_card (not
+    # the standard checklist/run-button flow). `actions` is present only to
+    # satisfy the card schema; it's never used.
+    {
+        "id": "swag-welcome",
+        "name": "New-Hire Swag Texts",
+        "creator": "Megan & Claude",
+        "emoji": "🎁",
+        "color": "#6C5CE7",
+        # 📲 Ops category → renders under the "OPS" divider on its day (not the
+        # timed/morning-batch sections), so NO run-time is shown — it's a manual
+        # task, not a scheduled auto-run.
+        "category": "📲 Ops",
+        "assignees": ["Office Operations"],
+        # Manual weekly task: run Friday to text next Monday's new hires. The
+        # weekly schedule just surfaces it on Friday's tile; self_scheduled +
+        # hide_schedule keep it out of the 4am batch, the due-today counter, and
+        # any time/DUE pills (a human runs it on demand, no fixed time).
+        "self_scheduled": True,
+        "hide_schedule": True,
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [4],   # Friday
+            "estimated_minutes": 10,
+        },
+        "description": (
+            "Upload the Friday new-hire roster screenshot → review names & "
+            "phone numbers → text each hire a welcome message with their name "
+            "handwritten on the swag-package card. Sends via iMessage from "
+            "whatever machine runs the Hub."
+        ),
+        "actions": [
+            {"label": "Open", "args_fn": (lambda: []), "primary": True},
+        ],
+    },
     {
         "id": "recruiting",
         "name": "ATT Program - Focus Report (Raf)",
@@ -1879,11 +2044,12 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "leaders-call",
-        "name": "Leader's Call - Weekly Recognition (2:05 PM CST)",
+        "name": "Leader's Call - Weekly Recognition",
         "creator": "Claude",
         "emoji": "📣",
         "color": "#F59E0B",
         "category": "🎯 Recruiting",
+        "self_scheduled": True,
         "description": "Pulls each campaign's qualifying reps from Tableau "
                        "(Fiber, NDS, B2B, JE, BOX, Costco, Revenue) + the "
                        "Frontier scorecard auto-pulled from Lucy's Monday email, "
@@ -1924,7 +2090,7 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0],   # Monday
-            "time": "2:05 PM",
+            "time": "2:00 PM",
             "estimated_minutes": 8,
         },
         "checklist": [
@@ -2441,51 +2607,7 @@ AUTOMATED_REPORTS = [
             },
         ],
     },
-    {
-        "id": "tableau-screenshots",
-        "name": "Alphalete Tableau Trackers",
-        "creator": "Megan",
-        "emoji": "📸",
-        "color": "#1F4E79",
-        "category": "📊 Metrics",
-        "description": "Captures the 8 Tableau sales trackers as images and posts them daily into an 'Alphalete Tableau Trackers M/D/YYYY' thread in #alphalete-sales + #top-leaders-alphalete-org. Replaces Jolie's manual tracker post.",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "Grabs each of the 8 Tableau trackers \n\n"
-            "TRACKERS\n"
-            "1. AT&T Internet Country Sales Tracker\n"
-            "2. AT&T Internet Country Sales Tracker (Internet Only)\n"
-            "3. NDS Tracker\n"
-            "4. B2B AT&T Internet Country Sales Tracker\n"
-            "5. B2B AT&T Internet Country Sales Tracker (CRU)\n"
-            "6. B2B D2D Consolidated\n"
-            "7. B2B Box Tracker\n"
-            "8. ATT Quantum Fiber Daily Tracker\n\n"
-            "WHEN IT RUNS\n"
-            "Daily in Slack channels: #alphalete-sales & #top-leaders-alphalete-org."
-        ),
-        "assignees": ["Lucy 1"],
-        "schedule": {
-            "frequency": "daily",
-            "time": "5:00 AM",
-            "estimated_minutes": 12,
-        },
-        "checklist": [],
-        "post_run": {
-            "message_success": "✅ Tableau Trackers posted — all 8 tracker screenshots in the dated thread in #alphalete-sales + #top-leaders-alphalete-org.",
-            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
-        },
-        "actions": [
-            {
-                "label": "Post Today's Trackers",
-                "icon": "▶",
-                "primary": True,
-                "help": "Captures the 8 Tableau trackers and posts them to the dated thread in #alphalete-sales + #top-leaders-alphalete-org. Needs a warm Tableau session (best run on the mini).",
-                "module": "automations.tableau_screenshots.run",
-                "args_fn": lambda: [],
-            },
-        ],
-    },
+    _tableau_trackers_card(),
     {
         "id": "lucy-weather-forecast",
         "name": "Lucy Weather Forecast",
@@ -3060,6 +3182,72 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "org-sales-board-compare",
+        "name": "Org Sales Board — VA Compare (9 AM)",
+        "creator": "Megan",
+        "emoji": "🔍",
+        "color": "#0EA5E9",
+        "category": "📊 Metrics",
+        "description": "Checks the automation's Sales Board copy tab against the VAs' hand-filled tab — every cell, including below row 1000. Runs at 9 AM Central, once the VAs have finished keying.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Compares the automation's **copy tab** against the VAs' "
+            "hand-filled **Alphalete ORG Sales Board** tab and reports every "
+            "cell that disagrees. Rows are matched by NAME, not by position — "
+            "the two tabs sort differently — so a re-sorted leaderboard never "
+            "counts as a difference.\n\n"
+            "WHEN IT RUNS\n"
+            "**Every day at 9:00 AM Central.** Deliberately NOT straight after "
+            "the 4 AM fill: at 4 AM the VAs haven't keyed anything yet, so the "
+            "automation is ahead on every cell it pulled and the compare is "
+            "pure noise. By 9 AM the VAs are done, so a difference it reports "
+            "is a REAL disagreement.\n\n"
+            "WHAT COUNTS AS A PROBLEM\n"
+            "The automation being **behind** the VA, the two tabs **conflicting**, "
+            "an ICD on the VA tab with no row on the copy, or a live formula the "
+            "report clobbered. The automation being **AHEAD** of the VA is normal "
+            "(we pull faster than they type) and is **not** flagged.\n\n"
+            "READING THE RESULT\n"
+            "Green = the board matches the VA. Red = a real disagreement — the "
+            "run log lists every differing cell.\n\n"
+            "GO-LIVE CHECK\n"
+            "**Check EVERY Cell** compares all ~280,000 cells (including past "
+            "row 1000) and confirms nothing is skipped. A result of "
+            "**0 differences** is the proof needed before pointing the board at "
+            "the real tab / the full distribution list."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
+        "assignees": ["Lucy 1"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "9:00 AM",
+            "estimated_minutes": 3,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ The board matches the VA tab — no real disagreements.",
+            "message_failed": "❌ The board DISAGREES with the VA tab. The log above lists every differing cell — fix the board before trusting/sending it.",
+        },
+        "actions": [
+            {
+                "label": "Compare vs VA Tab",
+                "icon": "▶",
+                "primary": True,
+                "help": "Compares every completed day + every derived total against the VA tab. Read-only — reads both tabs, changes nothing.",
+                "module": "automations.org_sales_board.compare",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Check EVERY Cell (go-live gate)",
+                "icon": "🔬",
+                "help": "Every single cell of both tabs, including rows past 1000, with a full coverage accounting so nothing is skipped. 0 differences = ready to go live. Read-only.",
+                "module": "automations.org_sales_board.compare",
+                "args_fn": lambda: ["--all"],
+            },
+        ],
+    },
+    {
         "id": "brand-health-audit",
         # Non-breaking spaces keep "(12 CST Daily)" together so the cadence
         # wraps as one clean unit onto line 2 of the strip pill (same trick as
@@ -3143,7 +3331,12 @@ AUTOMATED_REPORTS = [
         "self_scheduled": True,
         "schedule": {
             "frequency": "daily",
+            # Runs every ~10 min across a WINDOW, so a bare "7:00 AM" reads as if
+            # it fires once. time_label shows the real window at a glance (Megan
+            # 2026-07-14); schedule.time stays the sortable START time so
+            # _report_time_minutes still orders the card at 7am.
             "time": "7:00 AM",
+            "time_label": "7am–12am CST",
             "estimated_minutes": 1,
         },
         "checklist": [],
@@ -3175,17 +3368,30 @@ AUTOMATED_REPORTS = [
         "description": "Extracts new applicant resumes in Carlos's ApplicantStream office (11580) and sends the valid ones to the AI call list — the unattended, scheduled version of Carlos's uploaded resume-pusher.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "For **Carlos's office (11580)** in ApplicantStream: opens the "
-            "**Batch Process of Emails** page, runs **Auto-Extract** (pulls "
-            "name / phone / email off each applicant's resume), **selects "
-            "everyone**, and clicks **Send to AI**. Only applicants with a "
-            "**valid, unique phone** actually go to the AI call list — the "
-            "rest are skipped and flagged (no phone / duplicate), not sent.\n\n"
+            "For **Carlos's office (11580)** in ApplicantStream **v2** (the "
+            "orange **Explore Appstream AI** dashboard): goes to **Applicants → "
+            "Process Emails → Process in Batches**, then works in two passes.\n\n"
+            "**1. Extract.** Clicks the **robot** (Resume Helper) → **Start**, "
+            "which reads the name / phone / email off each applicant's resume. "
+            "It only does ~50 at a time, so it **repeats until "
+            "\"Ready For Extraction\" hits 0** — nobody gets left behind.\n\n"
+            "**2. Send.** Selects everyone and clicks **Send to AI**, and "
+            "**keeps going until there's nothing left to send** (clearing "
+            "duplicates frees up more applicants each pass).\n\n"
+            "Only applicants with a **valid, unique phone** actually reach the "
+            "AI call list — the rest are left behind (no phone / duplicate), "
+            "not sent.\n\n"
             "WHEN IT RUNS\n"
             "**Every ~10 minutes, 8 AM–10 PM Central, Sun + Mon–Fri** (not "
             "Saturday).\n\n"
             "HOW IT RUNS\n"
-            "On Lucy 2 (Carlos' Neo Laptop)."
+            "On **Lucy 2** (Carlos' Neo Laptop). Unlike every other report, this "
+            "one drives a **real Google Chrome**, using a copy of Carlos's "
+            "everyday Chrome profile. That's because the resume extractor is a "
+            "**Chrome plug-in**, and plug-ins simply don't run in the browser "
+            "our other automations use. **If that plug-in is ever removed from "
+            "that Chrome profile, extraction stops** — that's the one thing to "
+            "check first if this report goes quiet."
         ),
         # No Google Sheet — ApplicantStream action bot only.
         "assignees": ["Lucy 2"],
@@ -3203,11 +3409,15 @@ AUTOMATED_REPORTS = [
         "schedule": {
             # Sun + Mon–Fri, NOT Saturday. 'weekly' + weekdays filters the This-Week
             # calendar (frequency 'daily' would short-circuit and show all 7 days);
-            # weekday indices: Mon=0 … Sat=5 … Sun=6, so Saturday (5) is excluded —
+            # weekday indices Mon=0 … Sat=5 … Sun=6, so Saturday (5) is excluded —
             # matching the wrapper's own `date +%u -eq 6 → exit 0` Saturday gate.
             "frequency": "weekly",
             "weekdays": [0, 1, 2, 3, 4, 6],
+            # `time` = the START of the window: keeps the card sorted at 8am.
+            # `time_label` = what the This Week tile actually shows, because this
+            # one runs every 10 min across a window, not once at 8am.
             "time": "8:00 AM",
+            "time_label": "8am–10pm CST",
             "estimated_minutes": 5,
         },
         "checklist": [],
@@ -3289,6 +3499,69 @@ AUTOMATED_REPORTS = [
                 "primary": True,
                 "help": "Do an extra pass now — screen + propose new photos and schedule any that are fully approved.",
                 "module": "automations.brand_audit.social_inbox",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
+        "id": "vantura-payroll",
+        "name": "Vantura Weekly Payroll (prep)",
+        "creator": "Carlos",
+        "emoji": "🧾",
+        "color": "#2E86AB",
+        "category": "📊 Metrics",
+        "description": "Preps the week on the Vantura Master Sales Board so Carlos only enters judgement inputs: downloads the ICD dd Detail crosstab itself from Tableau (Direct Deposit ICD VIEW → DD DETAIL), loads it into RAW with the week stamp, sets Commission!B1, re-points the per-campaign P&L, refreshes, and DMs Carlos as Lucy.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Downloads the **ICD dd Detail** crosstab straight from "
+            "Tableau — no manual export needed (real-Chrome CDP pull, same "
+            "route as the churn report).\n"
+            "**•** Appends the week's rows to **RAW** (cols A–H; the "
+            "Commission ARRAYFORMULA in col I computes itself) and stamps "
+            "the week number in col A.\n"
+            "**•** Sets **Commission!B1** to the new week.\n"
+            "**•** Re-points the per-campaign **P&L** formulas, triggers "
+            "**Refresh commission sheets**, and runs the read-only checks.\n"
+            "**•** DMs **Carlos** as Lucy: week loaded, RAW row range, sync "
+            "summary, what's left to do by hand.\n\n"
+            "WHAT STAYS HUMAN\n"
+            "Bonuses / no-pay / rate changes, final verify, and printing the "
+            "commission pack. The week auto-locks Thursday ~11am via the "
+            "board's own Apps Script trigger.\n\n"
+            "WHEN IT RUNS\n"
+            "**Wednesdays 11:00 AM** on Lucy 2. Currently DRY-RUN gated: it "
+            "pulls and previews everything but writes nothing until the run "
+            "is sandbox-verified and the wrapper is flipped to --live."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"),
+        "assignees": ["Lucy 2"],
+        # Runs on Lucy 2 — its warm Tableau session + the Wednesday 11am launchd
+        # job (com.alphalete.vantura-payroll-wed) live there. A Hub "play" from
+        # ANY machine routes the run to Lucy 2 via the mini-control queue.
+        "run_machine": "Lucy 2",
+        "run_rerun_id": "vantura_payroll",
+        # Self-running weekly launchd job: it doesn't report a per-day completion
+        # to the Hub, so keep it out of the "due today / not completed" tallies.
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [2],  # Wednesday
+            "time": "11:00 AM",
+            "estimated_minutes": 10,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Payroll prep done — crosstab pulled, week loaded into RAW, Commission!B1 set, P&L refreshed. Check the log for the RAW row range and the checks, then enter bonuses/no-pay/rates, verify, and print.",
+            "message_failed": "❌ Run failed. Check the log above (usually the Tableau pull or a RAW column-map mismatch), fix, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run Prep",
+                "icon": "▶",
+                "primary": True,
+                "help": "Pulls the DD Detail crosstab from Tableau and preps the week (DRY-RUN while the scaffold is unverified — previews everything, writes nothing).",
+                "module": "automations.vantura_payroll.run",
                 "args_fn": lambda: [],
             },
         ],
@@ -3829,13 +4102,17 @@ def _hub_active_runs() -> list[dict]:
 
 
 def _hub_recent_runs(days: int = 14) -> list[dict]:
-    """Return finished hub rows (success/failed/stopped) within the window,
-    newest first. Used to merge cross-user 'Last ran' timestamps."""
+    """Return finished hub rows (success/partial/failed/stopped) within the
+    window, newest first. Used to merge cross-user 'Last ran' timestamps.
+
+    'partial' = it ran and landed some parts but missed others (orange pill).
+    It is a TERMINAL status like the rest — leaving it out of this filter would
+    silently drop those runs from the week grid and 'Last ran'."""
     cutoff = dt.datetime.now() - dt.timedelta(days=days)
     out = []
     for r in _hub_activity_rows():
         status = str(r.get("Status", "")).lower()
-        if status not in ("success", "failed", "stopped"):
+        if status not in ("success", "partial", "failed", "stopped"):
             continue
         ts = _parse_hub_ts(r.get("Ended At") or r.get("Started At"))
         if ts is None or ts < cutoff:
@@ -4661,12 +4938,14 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
         _running_ids = set()
 
     def _cal_status(_rid: str, _day: dt.date) -> str:
-        """Per-card outcome for a day: ok / fail / miss / up(coming)."""
+        """Per-card outcome for a day: ok / partial / fail / miss / up(coming)."""
         if _day > today:
             return "up"                       # future — hasn't run
         _s = _cal_statuses.get((_rid, _day))
         if _s == "success":
             return "ok"
+        if _s == "partial":                   # some parts landed, some missed
+            return "partial"                  # orange, NOT red — it mostly worked
         if _s is None:                        # no run recorded
             return "up" if _day == today else "miss"
         if _s in ("running", "started", "in progress", "in-progress"):
@@ -4769,33 +5048,49 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                     _stat = _cal_status(_r["id"], _day)
                     if _day == today and _r["id"] in _running_ids:
                         _stat = "running"          # live subprocess right now
-                    _icon = {"ok": "✅ ", "fail": "⚠️ ", "miss": "– ",
-                             "running": "🔄 "}.get(_stat, "")
+                    _icon = {"ok": "✅ ", "partial": "🟠 ", "fail": "⚠️ ",
+                             "miss": "– ", "running": "🔄 "}.get(_stat, "")
                     _label = f"{_icon}{_r.get('emoji', '📄')} {_r['name']}"
                     # Self-scheduled reports fire on their OWN fixed timer (not the
                     # 4am batch), so show the run time on the tile — otherwise there
                     # is no way to see WHEN it runs. Batch reports omit it (they run
                     # in the morning sweep, no individual time).
                     if _r.get("self_scheduled"):
-                        _sched_t = (_r.get("schedule") or {}).get("time")
-                        if _sched_t:
-                            _label += f" · {_sched_t} CST"
+                        _sched = _r.get("schedule") or {}
+                        # A report that runs across a WINDOW (Resume Pushing:
+                        # every 10 min, 8am-10pm) has no single run time, so a
+                        # bare "8:00 AM" reads as if it fires once. schedule
+                        # .time_label overrides the tile text (it carries its own
+                        # timezone); schedule.time stays the sortable START time
+                        # so _report_time_minutes still orders the card at 8am.
+                        _sched_lbl = _sched.get("time_label")
+                        if _sched_lbl:
+                            _label += f" · {_sched_lbl}"
+                        elif _sched.get("time"):
+                            _label += f" · {_sched['time']} CST"
                     _help = {
                         "ok": "Ran OK — open to view",
+                        "partial": "Ran, but some parts missed — open to see which",
                         "fail": "Failed / incomplete — open to see why",
                         "miss": "Was scheduled but didn't run — open to run",
                         "up": "Open this report to run it",
                         "running": "Running now — open to watch",
                     }.get(_stat, "Open this report to run it")
+                    # Name the parts that missed right in the tooltip, so you can
+                    # see WHICH channel failed without opening the card.
+                    if _stat == "partial" and _day == today:
+                        _missed = _manifest_failed_parts(_r["id"])
+                        if _missed:
+                            _help = ("Ran, but these missed: "
+                                     + ", ".join(_missed)
+                                     + " — open to re-post just those")
                     if st.button(
                         _label,
                         key=f"cal_{user_name}_{_day.strftime('%Y%m%d')}_{_r['id']}__calstat_{_stat}",
                         use_container_width=True,
                         help=_help,
                     ):
-                        st.session_state["library_report_id"] = _r["id"]
-                        st.session_state["library_came_from"] = ("user", user_name)
-                        _set_view("library")
+                        _go_report(_r["id"], from_user=user_name)
                         st.rerun(scope="app")
             else:
                 st.markdown(
@@ -5093,6 +5388,13 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
             _render_active_run_panel(report, _active_for_this)
             return
 
+        # Swag Texts (Office Operations) renders its own upload → preflight →
+        # send UI instead of the standard checklist/run-button flow.
+        if report["id"] == "swag-welcome":
+            from automations.swag_welcome import preflight_ui
+            preflight_ui.render(show_header=False)
+            return
+
         # Daily-Focus only: prompt for any new ICDs in col V that don't have
         # an AppStream office mapped yet. Once confirmed (or marked 'not an
         # ICD'), the choice is persisted so it never asks again.
@@ -5314,6 +5616,26 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
             nothing_to_retry = state_file_exists and not missing_items
 
             with st.container(border=True):
+                # Per-channel checklist for a card that fans one run out to many
+                # Slack channels (the Tableau trackers). A single success/fail
+                # light would hide one channel missing, so show every channel.
+                _chan_status = _channel_status(report)
+                if _chan_status:
+                    _ok_n = sum(1 for c in _chan_status if c["ok"])
+                    st.markdown(
+                        f"**Posted to {_ok_n}/{len(_chan_status)} channels today**")
+                    for _c in _chan_status:
+                        st.markdown(
+                            f"{'✅' if _c['ok'] else '❌'} {_c['label']}"
+                            + ("" if _c["ok"]
+                               else f" — <span style='color:#B42318'>"
+                                    f"{_c.get('error') or 'did not post'}</span>"),
+                            unsafe_allow_html=True)
+                    if _ok_n < len(_chan_status):
+                        st.caption("Use **Retry failed only** below to re-post just "
+                                   "the channels that missed.")
+                    st.divider()
+
                 if last_run["status"] == "success":
                     if missing_items:
                         # When the state file gives us the split (denied vs
@@ -6500,7 +6822,11 @@ def _save_uploaded_report(metadata: dict, script_text: str) -> tuple[bool, str]:
         _materialize_shared_script(safe_id, script_text)
     except Exception as e:
         return False, f"Couldn't cache the script locally: {e}"
-    # Publish to the shared store → visible + runnable on every Hub.
+    # Publish to the shared store → visible + runnable on every Hub. The owner
+    # gets an email about the new/edited card from the mini's shared-library
+    # watcher (automations.hub_library_watch), NOT from here — the uploading
+    # machine may be a teammate's without the mail app password, whereas the
+    # always-on mini always has it.
     ok, msg = _shared_library_upsert(metadata, script_text)
     if not ok:
         return False, f"Saved locally but couldn't publish to the shared library: {msg}"
@@ -7974,10 +8300,10 @@ def _render_bug_typed_view(
             st.markdown("#### 📌 You came here from an email")
             _render_bug_card(_hit)
             if st.button("← Back to full list", key=f"clear_{type_keyword}_focus"):
-                try:
-                    st.query_params.clear()
-                except Exception:
-                    pass
+                # Re-assert ?view= rather than clearing outright: a bare URL
+                # means "home" to the browser-nav sync, so a plain clear()
+                # here would bounce the user off this view on the next rerun.
+                _set_view(st.session_state.view)
                 st.rerun()
             st.markdown("---")
         else:
@@ -8226,21 +8552,24 @@ st.markdown("""
 # Session state init + view router
 # --------------------------------------------------------------------------
 
+_VALID_VIEWS = {"home", "user", "library", "backlog", "bugs", "changes", "audit"}
+
 if "view" not in st.session_state:
-    # Restore from URL on first load so refresh stays on the same page.
-    # Inline set (instead of _VALID_VIEWS) so this block doesn't depend on
-    # helpers defined further down in the file — Streamlit runs top-to-bottom.
+    # Restore from URL on load so refresh — and the browser back/forward
+    # arrows (see _install_back_button_support) — land on the right page.
     _url_view = st.query_params.get("view", "").strip()
-    st.session_state.view = (
-        _url_view
-        if _url_view in {"home", "user", "library", "backlog", "bugs"}
-        else "home"
-    )
+    st.session_state.view = _url_view if _url_view in _VALID_VIEWS else "home"
     # A library report-detail page encodes ?report=<id> in the URL; restore
     # it so a browser refresh reloads that report's page, not the list.
     _url_report = st.query_params.get("report", "").strip()
     if _url_report:
         st.session_state["library_report_id"] = _url_report
+        # A report opened FROM a profile also carries ?user=. Restore the
+        # breadcrumb so its Back button still says "Back to <name>'s profile"
+        # after a reload — which is what a back/forward press now does.
+        _url_from = st.query_params.get("user", "").strip()
+        if st.session_state.view == "library" and _url_from:
+            st.session_state["library_came_from"] = ("user", _url_from)
 if "user" not in st.session_state:
     _url_user = st.query_params.get("user", "").strip()
     st.session_state.user = _url_user or None
@@ -8373,6 +8702,88 @@ if not st.session_state.authed:
 _refresh_session()
 
 
+def _install_back_button_support() -> None:
+    """Make the browser's back/forward arrows work on the Hub.
+
+    Navigation lives in the query string (?view=user&user=Lucy 1), and
+    Streamlit pushes a history entry for it — so the arrows DO rewind the URL.
+    But Streamlit's own popstate handler only reruns the script when the URL
+    *path* changes (multi-page apps); a query-string-only change is ignored.
+    The URL would rewind while the page kept rendering the old view, so the
+    back arrow looked broken — press it on a profile card and nothing happens
+    (Megan 2026-07-14).
+
+    So we listen for popstate ourselves and reload at the rewound URL. On load
+    the router already restores the view from ?view= (see above), so back and
+    forward both land where they should. A reload (not a rerun) is the point:
+    it starts a fresh session whose state is rebuilt from the URL, instead of
+    the stale session_state that was overriding it. Sign-in survives — the
+    auth gate reads the session file, not session_state — and a report that's
+    mid-run is unaffected: it runs in its own process and the "currently
+    running" banner is rebuilt from the run-state file on disk.
+
+    The listener is installed from a component iframe (same origin, so it can
+    reach window.parent). It is RE-registered on every rerun rather than
+    installed once behind a flag: Streamlit tears down and rebuilds the
+    component iframe each rerun, which destroys the JS context that owns the
+    callback, leaving a dead listener that fires and does nothing. So each
+    render removes the previous handler and attaches a fresh live one.
+
+    It reloads only when the URL actually disagrees with the page on screen.
+    That guard is load-bearing, not defensive: one back press fires popstate
+    TWICE (the component iframe has its own entry in the joint session
+    history), so an unconditional reload() reloads again on the second event
+    and storms the app into a reload loop. Comparing against the page identity
+    Streamlit just rendered makes the extra event a no-op, and makes a reload
+    that lands on the right page settle instead of bouncing.
+    """
+    _here = {
+        "view": st.session_state.view,
+        "user": st.session_state.user or "",
+        "report": st.session_state.get("library_report_id") or "",
+    }
+    _components.html(
+        f"""
+        <script>
+        const hub = window.parent;
+        // Which page the app is CURRENTLY showing. Re-stamped every rerun.
+        hub.__hubNavHere = {json.dumps(_here)};
+
+        // Identity of a page: only the params that actually pick it out. The
+        // library detail sets `user` as a side effect without putting it in
+        // the URL, so comparing user outside the profile view would report a
+        // phantom mismatch.
+        hub.__hubNavKey = (p) => (
+            p.view === "user"    ? "user:" + p.user :
+            p.view === "library" ? "library:" + p.report :
+            p.view
+        );
+
+        // Swap in a handler owned by THIS (live) iframe — see the docstring.
+        if (hub.__hubNavHandler) {{
+            hub.removeEventListener("popstate", hub.__hubNavHandler);
+        }}
+        hub.__hubNavHandler = () => {{
+            if (hub.__hubNavReloading) return;
+            const q = new URLSearchParams(hub.location.search);
+            // No ?view= is the first entry the app ever pushed — that's home.
+            const there = {{
+                view: q.get("view") || "home",
+                user: q.get("user") || "",
+                report: q.get("report") || "",
+            }};
+            if (hub.__hubNavKey(there) !== hub.__hubNavKey(hub.__hubNavHere)) {{
+                hub.__hubNavReloading = true;
+                hub.location.reload();
+            }}
+        }};
+        hub.addEventListener("popstate", hub.__hubNavHandler);
+        </script>
+        """,
+        height=0,
+    )
+
+
 today = dt.date.today()
 weekday_name = WEEKDAY_NAMES[today.weekday()]
 hour = dt.datetime.now().hour
@@ -8392,18 +8803,25 @@ BIG_DATE = f"{weekday_name.upper()}, {today.strftime('%B').upper()} {_ordinal(to
 _VALID_VIEWS = {"home", "user", "library", "backlog", "bugs"}
 
 
-def _set_view(view: str) -> None:
+def _set_view(view: str, **extra: str) -> None:
     """Set the active view and mirror it into the URL.
 
     Persisting `?view=…` in the URL keeps the user on the same page after
     a hard refresh; without this, refreshing would always drop them back
-    to home. Clearing the query params first also drops any one-shot
+    to home. Replacing the whole param dict also drops any one-shot
     deep-link params (?request=, ?bug=) when the user navigates away.
+
+    The params go in as ONE from_dict() call on purpose. Streamlit pushes a
+    browser history entry per mutation, so writing ?view= and then ?user=
+    separately stacked TWO entries for a single click — and the user's first
+    back press only undid the invisible half of it, which read as the back
+    arrow being dead (Megan 2026-07-14).
     """
     st.session_state.view = view
     try:
-        st.query_params.clear()
-        st.query_params["view"] = view
+        st.query_params.from_dict(
+            {"view": view, **{k: v for k, v in extra.items() if v}}
+        )
     except Exception:
         pass
 
@@ -8415,11 +8833,7 @@ def _go_home():
 
 def _go_user(name: str):
     st.session_state.user = name
-    _set_view("user")
-    try:
-        st.query_params["user"] = name
-    except Exception:
-        pass
+    _set_view("user", user=name)
 
 
 def _go_library():
@@ -8430,6 +8844,27 @@ def _go_library():
     st.session_state.pop("library_report_id", None)
     st.session_state.pop("library_came_from", None)
     _set_view("library")
+
+
+def _go_report(report_id: str, from_user: str | None = None) -> None:
+    """Open a report's detail page, in ONE URL write.
+
+    Opening a report used to take two steps — _set_view("library") and then
+    the detail's ?report= — which pushed the library LIST as a history entry
+    in between. Backing out of a report opened from a profile then landed on
+    the library instead of the profile (Megan 2026-07-14).
+
+    `from_user` is the profile the report was opened from. It rides along in
+    the URL (?user=) rather than living only in session state, so the "← Back
+    to <name>'s profile" button survives a reload — which is exactly what a
+    back/forward press does now.
+    """
+    st.session_state["library_report_id"] = report_id
+    if from_user:
+        st.session_state["library_came_from"] = ("user", from_user)
+    else:
+        st.session_state.pop("library_came_from", None)
+    _set_view("library", report=str(report_id), user=from_user or "")
 
 
 def _go_backlog():
@@ -8780,19 +9215,20 @@ if st.session_state.view == "home":
     """, unsafe_allow_html=True)
 
     st.markdown("### 🐺 The Pack")
-    # Layout (Megan 2026-07-07): the two Lucy automations on the TOP row —
-    # Lucy 1 above the left column, Lucy 2 above the right — then Eve, Maud and
-    # the Unassigned bucket across the BOTTOM row.
+    # Layout (Megan 2026-07-13): two full, gap-free rows of 3. Top row = the
+    # Lucy automations on the outer columns (Megan's preference) with Office
+    # Operations filling the middle; bottom row = the people (Eve, Maud) + the
+    # Unassigned bucket. Any other/new members flow into full rows below.
     UNASSIGNED_CARD = {"name": "Unassigned", "emoji": "🔍", "is_unassigned": True}
     PACK_COLS = 3
     _by_name = {m["name"]: m for m in MEMBERS}
-    _bots = [_by_name[n] for n in ("Lucy 1", "Lucy 2") if n in _by_name]
-    _bottom = [m for m in MEMBERS if m["name"] not in ("Lucy 1", "Lucy 2")]
+    _top = [_by_name.get("Lucy 1"), _by_name.get("Office Operations"),
+            _by_name.get("Lucy 2")]
+    _top = [c for c in _top if c]
+    _placed = {"Lucy 1", "Lucy 2", "Office Operations"}
+    _bottom = [m for m in MEMBERS if m["name"] not in _placed]
     _bottom.append(UNASSIGNED_CARD)
-    # (row_cards, column_slots): slots pick which of the 3 columns each card
-    # fills, so the two top-row bots sit over the outer bottom-row cards. The
-    # bottom row wraps into further rows of 3 if more members are ever added.
-    pack_rows = [(_bots, [0, 2][:len(_bots)])]
+    pack_rows = [(_top, list(range(len(_top))))]
     for i in range(0, len(_bottom), PACK_COLS):
         chunk = _bottom[i:i + PACK_COLS]
         pack_rows.append((chunk, list(range(len(chunk)))))
@@ -8887,10 +9323,9 @@ elif st.session_state.view == "backlog":
                 allow_done=(_hit_status == "In Progress"),
             )
             if st.button("← Back to full backlog", key="clear_request_focus"):
-                try:
-                    st.query_params.clear()
-                except Exception:
-                    pass
+                # Keep ?view= (see the bug-page twin above) — a bare URL reads
+                # as "home" to the browser-nav sync.
+                _set_view(st.session_state.view)
                 st.rerun()
             st.markdown("---")
         else:
@@ -9006,11 +9441,17 @@ elif st.session_state.view == "library":
 
     # Keep the URL in sync so a browser refresh reloads the SAME page — the
     # open report's detail page if one is selected, else the library list.
+    # Written as one from_dict, and only when it actually differs: param-by-param
+    # writes each push their own browser history entry, so the old version put a
+    # phantom library-list entry behind every report detail.
+    _want_params = {"view": "library"}
     if selected_id:
-        st.query_params["view"] = "library"
-        st.query_params["report"] = str(selected_id)
-    elif "report" in st.query_params:
-        del st.query_params["report"]
+        _want_params["report"] = str(selected_id)
+        _cf_url = st.session_state.get("library_came_from")
+        if _cf_url and _cf_url[0] == "user":
+            _want_params["user"] = _cf_url[1]
+    if dict(st.query_params) != _want_params:
+        st.query_params.from_dict(_want_params)
 
     # If we got here from a user profile, the Back button should return there
     # instead of bouncing to the library list. Tracked via library_came_from
@@ -9024,9 +9465,10 @@ elif st.session_state.view == "library":
     def _back_from_library_detail() -> None:
         st.session_state.pop("library_report_id", None)
         if _came_from and _came_from[0] == "user":
-            st.session_state.user = _came_from[1]
             st.session_state.pop("library_came_from", None)
-            _set_view("user")
+            # _go_user (not _set_view) so the URL carries ?user=… too — a bare
+            # ?view=user reloads into a profile page with nobody selected.
+            _go_user(_came_from[1])
         st.rerun()
 
     if selected_id:
@@ -9079,7 +9521,10 @@ elif st.session_state.view == "library":
             # full-width how-it-works breakdown below it.
             st.markdown("<div style='height:1.6rem'></div>",
                         unsafe_allow_html=True)
-            _render_report_breakdown(report)
+            # Swag Texts skips the how-it-works panel (Megan 2026-07-13); every
+            # other report shows it.
+            if report["id"] != "swag-welcome":
+                _render_report_breakdown(report)
     else:
         st.markdown(
             "<div style='font-size:2.4rem; font-weight:800; letter-spacing:-0.5px; "
@@ -9137,7 +9582,7 @@ elif st.session_state.view == "library":
                             help=("Mid-run — pick up where you left off"
                                   if _pickup else report.get("description") or None),
                         ):
-                            st.session_state["library_report_id"] = report["id"]
+                            _go_report(report["id"])
                             st.rerun()
 
 
@@ -9218,6 +9663,11 @@ else:  # st.session_state.view == "user"
             "<style>"
             "@keyframes calpulse{0%{opacity:1}50%{opacity:.5}100%{opacity:1}}"
             "[class*='__calstat_ok'] button{background:#E1F5EE!important;color:#04342C!important;border-color:#5DCAA5!important}"
+            # PARTIAL = it ran and most parts landed, but some missed (e.g. the
+            # trackers posted to 4 of 5 Slack channels). Orange, deliberately NOT
+            # the red 'fail' — a red pill on a report that mostly worked trains
+            # people to ignore red. Distinct hue from the yellow 'running' pill.
+            "[class*='__calstat_partial'] button{background:#FFEDD5!important;color:#7C2D12!important;border-color:#FB923C!important}"
             "[class*='__calstat_fail'] button{background:#FAECE7!important;color:#712B13!important;border-color:#F0997B!important}"
             "[class*='__calstat_miss'] button{background:transparent!important;color:#888780!important;border-color:var(--border)!important;opacity:.75}"
             "[class*='__calstat_running'] button{background:#FBF3DE!important;color:#6B5210!important;border-color:#C9A85C!important;animation:calpulse 1.4s ease-in-out infinite}"
@@ -9238,6 +9688,31 @@ else:  # st.session_state.view == "user"
         # and persists across the fragment's reruns.
         _this_week_strip(today, my_reports, user_name)
         st.markdown("---")
+
+        # ---- Document Generations (Maud) — quick links to the self-serve
+        # Document Builder app + its access codes, so she can jump straight in
+        # without hunting for the URLs. Its own labeled area (not the schedule).
+        if user_name == "Maud":
+            st.markdown("### 🧾 Document Generations")
+            with st.container(border=True):
+                st.markdown(
+                    "**🐺 Document Builder** — generate a branded ICD "
+                    "orientation packet (auto-emails the PDF; editable in Canva)."
+                )
+                _dg = st.columns(2)
+                with _dg[0]:
+                    _safe_link_button(
+                        "🛠️ Generator",
+                        "https://alphaletedocuments.streamlit.app",
+                        use_container_width=True)
+                    st.markdown("Access code: **D\\*\\*\\*\\*\\*123!**")
+                with _dg[1]:
+                    _safe_link_button(
+                        "⚙️ Admin",
+                        "https://alphaletedocuments.streamlit.app/?admin=1",
+                        use_container_width=True)
+                    st.markdown("Admin code: **B\\*\\*\\*\\*\\*123!**")
+            st.markdown("---")
 
         # ---- Personal portfolio: projects this user has claimed / shipped ----
         # Pulled from the Automation Request Log. "In progress" = anything
@@ -9624,3 +10099,8 @@ st.divider()
 st.caption(
     "🐺 **Live more. Dream more. Do more.** — Alphalete Marketing"
 )
+
+# Dead last on purpose: this renders a 0-height component iframe, and Streamlit
+# still gives it a slot in the vertical layout. Anywhere higher up and it pushes
+# every view down by the block gap.
+_install_back_button_support()

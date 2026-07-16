@@ -21,27 +21,54 @@ TAB_STARR_SAHIL = "Starr Capi + Sahil - New Internet Disconnects"
 _HIGHLIGHT_BG = {"red": 213 / 255, "green": 232 / 255, "blue": 252 / 255}
 _WHITE_BG = {"red": 1.0, "green": 1.0, "blue": 1.0}
 
-# Sheet's column order — must match the keys produced by pull.parse_and_filter
+# Sheet's canonical field order — the keys produced by pull.parse_and_filter
+# (plus "Owner Name", injected from the pulled `_owner` at write time). Used
+# as a fallback when a tab has no header yet.
 SHEET_COLS = [
-    "Rep", "Order Date", "Customer Name", "SPM Number", "Account BAN",
-    "Product Type", "Customer Phone", "Package", "Install Date",
+    "Owner Name", "Rep", "Order Date", "Customer Name", "SPM Number",
+    "Account BAN", "Product Type", "Customer Phone", "Package", "Install Date",
     "DTR Status", "Status Date", "Eligibility Reason", "Auto Bill Pay",
     "Tech Install",
 ]
+
+# The 3 tabs use slightly different header wording, and the two Captainship
+# tabs carry an Owner column + manual columns the Local Office tab doesn't.
+# We map each tab's literal header to one canonical field key by label — never
+# by index — so the same writer fills every tab and stays correct when columns
+# are added/renamed. Mirrors canceled_orders.fill.
+#   canonical key  →  header strings seen in the wild
+_HEADER_ALIASES = {
+    "Owner Name":   ["Owner Name", "Owner Disconnects", "Owner"],
+    "SPM Number":   ["SPM Number", "SPM Number "],
+    "Install Date": ["Install Date", "spe.Install Date"],
+    "Tech Install": ["Tech Install", "Tech Install?", "Tech Install "],
+}
 
 
 def _norm(s: str) -> str:
     return (s or "").strip().lower()
 
 
+def _canonical(label: str) -> str:
+    """Map a sheet's literal header to our canonical field key.
+    Unknown headers (Eve's manual cols like '(DYLAN ONLY)', 'FEEDBACK')
+    pass through trimmed, so they resolve to no row value → left blank."""
+    s = (label or "").strip()
+    for canon, aliases in _HEADER_ALIASES.items():
+        if s in aliases:
+            return canon
+    return s
+
+
 def _find_col(header: list[str], name: str) -> int:
-    """Header lookup that tolerates trailing/leading whitespace
-    (the Disconnects sheet's 'SPM Number ' has a trailing space)."""
-    target = _norm(name)
+    """Find a column by name OR by any of its known aliases. Tolerates
+    trailing/leading whitespace (e.g. 'SPM Number ' with a trailing space)."""
+    aliases = _HEADER_ALIASES.get(name, [name])
+    alias_set = {_norm(a) for a in aliases} | {_norm(name)}
     for i, h in enumerate(header):
-        if _norm(h) == target:
+        if _norm(h) in alias_set:
             return i
-    raise ValueError(f"Column {name!r} not found in {header}")
+    raise ValueError(f"Column {name!r} (or aliases {aliases}) not found in {header}")
 
 
 def find_new_rows(sh, tab_name: str,
@@ -83,7 +110,17 @@ def insert_new_rows_at_top(sh, tab_name: str, rows: List[Dict[str, str]],
     rows_before = len(grid_before)
     header = grid_before[0] if grid_before else SHEET_COLS
 
-    matrix = [[r.get(col, "") for col in SHEET_COLS] for r in new]
+    # Expose the pulled owner under its canonical key so the Owner column
+    # (labeled 'Owner Disconnects' / 'Owner' on the Captainship tabs) gets
+    # filled. Local Office has no Owner column, so this key is simply unused.
+    for r in new:
+        r.setdefault("Owner Name", r.get("_owner", ""))
+
+    # Build each row against the tab's ACTUAL header, by label. Columns the
+    # tab has but we don't produce (manual '(DYLAN ONLY)', 'FEEDBACK') resolve
+    # to "" and are left for the team to fill. This keeps every field under
+    # its correct header even though the 3 tabs differ in width/wording.
+    matrix = [[r.get(_canonical(col), "") for col in header] for r in new]
     ws.insert_rows(matrix, row=2, value_input_option="USER_ENTERED")
 
     # Highlight the new rows light blue + reset every other data row to

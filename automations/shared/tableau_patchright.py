@@ -29,8 +29,12 @@ interactive/debug use only.
 
 from __future__ import annotations
 
+import datetime as _dt
+import hashlib
 import json
+import os
 import re
+import shutil
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -118,7 +122,8 @@ def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
                        verbose: bool = True, window_size: tuple = (1680, 1280),
                        device_scale: float | None = None,
                        extra_args: Optional[list] = None,
-                       busy_retries: int | None = None):
+                       busy_retries: int | None = None,
+                       enable_extensions: bool = False):
     """launch_persistent_context with the existing system-chrome → bundled-
     chromium fallback UNCHANGED, wrapped in a wait+retry for the "profile
     already in use" collision.
@@ -152,6 +157,15 @@ def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
         _args += list(extra_args)
     base = dict(user_data_dir=str(user_data_dir), headless=headless,
                 no_viewport=True, args=_args)
+    # Chrome EXTENSIONS: patchright's DEFAULT chromium args include
+    # "--disable-extensions", which switches off any extension installed in the
+    # persistent profile. ApplicantStream's resume extractor ("the robot" in
+    # Carlos's walkthrough) IS a Chrome extension — installed into the profile it
+    # still never appears, because this default flag kills it. Dropping the flag
+    # is what makes the robot show up for resume_pushing. OPT-IN: default False
+    # keeps every other caller's launch byte-identical.
+    if enable_extensions:
+        base["ignore_default_args"] = ["--disable-extensions"]
     prefer_chrome = True
     last: Optional[Exception] = None
     # Low-priority callers (resume_pushing) pass busy_retries=1 to fail fast on a
@@ -435,6 +449,91 @@ def _ensure_ownerville_logged_in(page: Page, verbose: bool = True,
         f"Profile: {PROFILE_DIR}")
 
 
+# --- Opt-in cross-run crosstab cache -----------------------------------------
+# The per-office metrics feeds each pull the SAME org-wide crosstabs (Order Log,
+# Canceled Orders, Disconnects, Scheduled-6+) and filter to their owner — so with
+# N offices the same view is downloaded N times. Set METRICS_XTAB_CACHE=<dir> and
+# download_crosstab_patchright caches each (view_url, sheet) to a dated folder;
+# the next run that asks for the same view + sheet the same day reads the cache
+# and skips the browser entirely. OFF by default (env unset) → identical to
+# before for every other report. Self-keying: it dedupes only genuinely-identical
+# pulls (same URL + sheet + day) and is a harmless no-op for owner-specific views.
+# Fail-safe throughout: any cache error falls through to a normal live download.
+_XTAB_CACHE_TTL_S = 12 * 3600     # a same-day snapshot; ignore anything older
+
+
+def _xtab_cache_dir() -> Optional[Path]:
+    d = os.environ.get("METRICS_XTAB_CACHE")
+    return Path(d) if d else None
+
+
+def _xtab_cache_key(view_url: str, sheet: str) -> str:
+    # :iid is a UI tab index, not identity — drop it so the same view matches.
+    norm = re.sub(r"[?&]:iid=\d+", "", (view_url or "").strip())
+    return hashlib.sha256(f"{norm}\0{sheet}".encode("utf-8")).hexdigest()[:32]
+
+
+def _xtab_cache_path(root: Path, view_url: str, sheet: str) -> Path:
+    return root / _dt.date.today().isoformat() / f"{_xtab_cache_key(view_url, sheet)}.csv"
+
+
+def _xtab_cache_lookup(view_url: str, sheet: str, verbose: bool) -> Optional[Path]:
+    root = _xtab_cache_dir()
+    if root is None:
+        return None
+    try:
+        p = _xtab_cache_path(root, view_url, sheet)
+        if (p.exists() and p.stat().st_size > 0
+                and (time.time() - p.stat().st_mtime) < _XTAB_CACHE_TTL_S):
+            # ALWAYS print the hit, even when the caller pulls with verbose=False
+            # (canceled_orders/disconnects do) — a silent dedup is impossible to
+            # verify or debug. This only ever fires when the cache is enabled AND
+            # hits, so it adds no noise to any other report.
+            print(f"  ↺ crosstab cache HIT ({sheet}) — served from "
+                  f"{p.parent.name}/{p.name}, skipped the browser download",
+                  flush=True)
+            return p
+    except Exception:
+        return None
+    return None
+
+
+def _xtab_cache_store(view_url: str, sheet: str, produced: Path) -> None:
+    root = _xtab_cache_dir()
+    if root is None:
+        return
+    try:
+        produced = Path(produced)
+        if not (produced.exists() and produced.stat().st_size > 0):
+            return
+        dest = _xtab_cache_path(root, view_url, sheet)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_suffix(".csv.tmp")
+        shutil.copyfile(produced, tmp)
+        os.replace(tmp, dest)          # atomic publish — no half-written cache file
+        _xtab_cache_prune(root)
+    except Exception:
+        pass                            # caching is best-effort; the pull succeeded
+
+
+def _xtab_cache_prune(root: Path, keep_days: int = 3) -> None:
+    """Drop dated cache folders older than keep_days. Only removes YYYY-MM-DD dirs
+    directly under our own cache root, so it can't touch anything else."""
+    try:
+        cutoff = _dt.date.today() - _dt.timedelta(days=keep_days)
+        for child in root.iterdir():
+            if not child.is_dir():
+                continue
+            try:
+                d = _dt.date.fromisoformat(child.name)
+            except ValueError:
+                continue                # not a dated dir — leave it alone
+            if d < cutoff:
+                shutil.rmtree(child, ignore_errors=True)
+    except Exception:
+        pass
+
+
 def download_crosstab_patchright(
     view_url: str,
     crosstab_sheet: str,
@@ -464,19 +563,38 @@ def download_crosstab_patchright(
     backoff (lets Tableau's server-side render settle) clears most of the
     remainder. Retries only fire on failure, so happy-path runtime is
     unchanged."""
+    # Opt-in cache — serve a same-day pull of this exact (view, sheet) without a
+    # browser. Skipped when pre_export is set: that callback customizes the export
+    # (e.g. drives date fields), so the URL+sheet don't fully determine the output.
+    cacheable = pre_export is None
+    if cacheable:
+        hit = _xtab_cache_lookup(view_url, crosstab_sheet, verbose)
+        if hit is not None:
+            try:
+                out_path = Path(out_path)
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(hit, out_path)
+                return out_path
+            except Exception:
+                pass            # copy failed → fall through to a live download
+
     MAX_ATTEMPTS = 3
     BACKOFF_S = 3
     last_err = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             if page is not None:
-                return drive_crosstab_dialog(page, view_url, crosstab_sheet,
-                                             out_path, verbose=verbose,
-                                             pre_export=pre_export)
-            with tableau_session(verbose=verbose) as pg:
-                return drive_crosstab_dialog(pg, view_url, crosstab_sheet,
-                                             out_path, verbose=verbose,
-                                             pre_export=pre_export)
+                result = drive_crosstab_dialog(page, view_url, crosstab_sheet,
+                                               out_path, verbose=verbose,
+                                               pre_export=pre_export)
+            else:
+                with tableau_session(verbose=verbose) as pg:
+                    result = drive_crosstab_dialog(pg, view_url, crosstab_sheet,
+                                                   out_path, verbose=verbose,
+                                                   pre_export=pre_export)
+            if cacheable:
+                _xtab_cache_store(view_url, crosstab_sheet, result)
+            return result
         except Exception as e:
             last_err = e
             if attempt < MAX_ATTEMPTS:
@@ -751,7 +869,8 @@ def appstream_direct_session(headless: bool = False,
                              allow_form_login: bool = True,
                              force_form_login: bool = False,
                              load_extensions: bool = False,
-                             yield_if_busy: bool = False) -> Iterator[Page]:
+                             yield_if_busy: bool = False,
+                             enable_extensions: bool = False) -> Iterator[Page]:
     """Yield a Page on the AppStream recruiting console (#searchMC office
     switcher) for the rcaptain account, via patchright stealth. Unattended
     replacement for fetch_office._attach() (debug-Chrome CDP, broken on Chrome
@@ -760,6 +879,13 @@ def appstream_direct_session(headless: bool = False,
     yield_if_busy=True: if the Chrome profile is already in use by another run,
     DON'T wait — raise AppStreamBusy immediately so a low-priority caller
     (resume_pushing) can step aside and let the other report have the session.
+
+    enable_extensions=True: drop patchright's default "--disable-extensions" so a
+    Chrome extension installed in this profile actually LOADS. Required by
+    resume_pushing — ApplicantStream's resume extractor ("the robot") is an
+    extension, and the default flag silently disables it. Seed the extension into
+    the profile once with:  python -m automations.shared.tableau_patchright
+    --appstream-extension
 
     Auth path (2026-06-30): reuse the saved session (APPSTREAM_STORAGE_STATE)
     if it's still live; otherwise drive the rcaptain login form and save a
@@ -836,7 +962,8 @@ def appstream_direct_session(headless: bool = False,
             ctx = _launch_persistent(p, profile, headless=headless,
                                      label="appstream_direct", verbose=verbose,
                                      extra_args=ext_args,
-                                     busy_retries=1 if yield_if_busy else None)
+                                     busy_retries=1 if yield_if_busy else None,
+                                     enable_extensions=enable_extensions)
         except Exception as e:
             if yield_if_busy and _is_profile_in_use(e):
                 raise AppStreamBusy(str(e)) from e
@@ -1027,7 +1154,35 @@ if __name__ == "__main__":
     ap.add_argument("--ownerville-form-login", action="store_true",
                     help="Test whether ownerville's Cloudflare auto-passes now: "
                          "drive the OV login in a THROWAWAY profile, unattended.")
+    ap.add_argument("--appstream-extension", action="store_true",
+                    help="One-time: open the AppStream profile HEADED with "
+                         "extensions ENABLED so you can install the resume-"
+                         "extractor plugin (the robot) into it. It then persists "
+                         "for every scheduled resume_pushing run.")
     args = ap.parse_args()
+    if args.appstream_extension:
+        import sys as _sys
+        print("Opening the AppStream automation profile with extensions ENABLED.\n"
+              "  1. The AppStream console opens in the window that appears.\n"
+              "  2. Go to Applicants -> Process Emails -> Process in Batches.\n"
+              "  3. If there's no robot icon, click the DOWNLOAD PLUGIN option and\n"
+              "     install the extension INTO THIS BROWSER WINDOW.\n"
+              "  4. Refresh the page and confirm the robot icon now appears.\n"
+              "  5. Come back to this terminal and press Enter to close.\n"
+              "The extension is saved in the PERSISTENT profile, so every scheduled\n"
+              "run gets it from then on.\n", flush=True)
+        try:
+            with appstream_direct_session(headless=False, verbose=True,
+                                          enable_extensions=True) as _pg:
+                print(f"\n-> console at {(_pg.url or '')[:78]}", flush=True)
+                input("\nPress Enter once the robot icon is showing… ")
+            print("✓ closed — the extension is saved in the profile. Now verify "
+                  "unattended with:\n"
+                  "    python -m automations.resume_pushing.run --debug")
+            _sys.exit(0)
+        except Exception as _e:
+            print(f"❌ {type(_e).__name__}: {str(_e)[:200]}")
+            _sys.exit(1)
     if args.appstream_form_login:
         import sys as _sys
         _ok = False

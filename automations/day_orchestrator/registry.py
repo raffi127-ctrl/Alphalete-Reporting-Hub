@@ -53,6 +53,11 @@ class Report:
     machine: str = DEFAULT_MACHINE   # which runner (Lucy 1 / Lucy 2) owns this
     order: Optional[int] = None      # explicit run-order (Megan's custom sequence);
                                      # None = fall to the source-type flow ordering
+    after: List[str] = field(default_factory=list)
+    # SOFT ordering: run only AFTER these reports reach a TERMINAL state (DONE /
+    # INCOMPLETE / FAILED / MISSED — any outcome). Unlike depends_on, a FAILED
+    # `after` dep does NOT block us — it just means "wait your turn behind it, but
+    # never get stranded if it glitches" (daily_rep_breakdown after org_sales_board).
 
 
 @dataclass
@@ -77,6 +82,7 @@ def _build_report(rid: str, r: dict) -> Report:
         priority=r.get("priority", "P2"),
         freshness_target=r.get("freshness_target"),
         depends_on=r.get("depends_on", []),
+        after=r.get("after", []),
         verify=r.get("verify", {}),
         timeout_minutes=int(r.get("timeout_minutes", 45)),
         idempotency=r.get("idempotency", {}),

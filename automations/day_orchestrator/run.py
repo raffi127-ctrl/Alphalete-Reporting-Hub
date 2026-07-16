@@ -304,11 +304,15 @@ def _attempt_report(ds, r, rs, target, *, dry_run, simulate) -> str:
             _log(f"  {r.report_id}: run failed "
                  f"(attempt {rs.attempts}/{MAX_RUN_RETRIES}) — will retry: {detail}")
             return "flaked"
-        if rs.hub_run_id:                  # terminal fail → close the pill red
+        if rs.hub_run_id:                  # terminal fail → close the pill
             try:
                 from automations.day_orchestrator import hub_publish
-                hub_publish.publish_done(r.report_id, r.display_name,
-                                         status="failed", run_id=rs.hub_run_id)
+                # red, OR orange when the report landed some parts and missed
+                # others (e.g. the trackers posted to 4 of 5 Slack channels).
+                hub_publish.publish_done(
+                    r.report_id, r.display_name,
+                    status=hub_publish.final_status(r.report_id, ok=False),
+                    run_id=rs.hub_run_id)
             except Exception:
                 pass
             rs.hub_run_id = None
@@ -322,6 +326,7 @@ def _attempt_report(ds, r, rs, target, *, dry_run, simulate) -> str:
     else:
         recon = reconcile.verify(r, target, dry_run=dry_run)
     mark_ran = False    # publish to the Hub? true for DONE *and* INCOMPLETE
+    incomplete = False  # INCOMPLETE branch → maybe-orange pill (vs green DONE)
     if recon.ok and not recon.unknown:
         ds.set(r.report_id, state.DONE, reason=recon.note)
         _log(f"  {r.report_id}: DONE — {recon.note}")
@@ -336,13 +341,20 @@ def _attempt_report(ds, r, rs, target, *, dry_run, simulate) -> str:
         # INCOMPLETE = it RAN, just with a note — still mark it on the Hub so the
         # card shows it ran (Megan 2026-07-01). The email renders the note separately.
         mark_ran = True
+        incomplete = True
 
     if mark_ran and not (dry_run or simulate):
         try:
             from automations.day_orchestrator import hub_publish
+            # DONE → green. INCOMPLETE → still 'ran' (green) UNLESS the report's
+            # manifest records some parts succeeded AND some failed, in which case
+            # orange 'partial' (e.g. metrics posted to 6 of 8 → orange, not green).
+            # Reports that don't record `succeeded` keep the historical green.
+            _status = (hub_publish.incomplete_status(r.report_id)
+                       if incomplete else "success")
             if hub_publish.publish_done(r.report_id, r.display_name,
-                                        run_id=rs.hub_run_id):
-                _log(f"  {r.report_id}: ✓ marked ran on the Hub")
+                                        status=_status, run_id=rs.hub_run_id):
+                _log(f"  {r.report_id}: ✓ marked ran on the Hub ({_status})")
         except Exception as e:
             _log(f"  {r.report_id}: Hub publish skipped ({type(e).__name__}: {str(e)[:80]})")
         rs.hub_run_id = None
@@ -422,6 +434,21 @@ def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
         if unmet:
             ds.set(r.report_id, state.PENDING, reason=f"waiting on {', '.join(unmet)}",
                    waiting_on=", ".join(unmet))
+            continue
+
+        # SOFT ordering (`after`): wait until these reports FINISH (any terminal
+        # state — DONE / INCOMPLETE / FAILED / MISSED), but — unlike depends_on — a
+        # FAILED `after` dep does NOT strand us. Lets a heavy report run strictly
+        # after a lighter one without being skipped if that one glitches
+        # (daily_rep_breakdown after org_sales_board: board runs first, but a board
+        # glitch must never skip the breakdown; the noon backstop makes every dep
+        # terminal, so this can't wait forever). Megan 2026-07-13.
+        pending_after = [d for d in r.after
+                         if d in ds.reports
+                         and ds.reports[d].status not in state.TERMINAL]
+        if pending_after:
+            ds.set(r.report_id, state.PENDING, reason=f"after {', '.join(pending_after)}",
+                   waiting_on=", ".join(pending_after))
             continue
 
         # A human Chrome opened AFTER batch start single-instances with our

@@ -1,22 +1,26 @@
-# automations/harvest — harvest-once Tableau cache (SHADOW-ONLY)
+# automations/harvest — harvest-once Tableau cache
 
-**Status: inert. Nothing on the live 4am path imports this package.**
-It exists to be proven, not to run in production yet. Implements Stage (b)+(c)
-of `output/harvest-architecture-design.md` (design approved).
+**Status: proven; cutover built but DEFAULT-OFF.** The live 4am path is
+byte-for-byte unchanged until `HARVEST_MODE=on`. Implements the full design in
+`output/harvest-architecture-design.md`; flip procedure in
+`output/harvest-cutover-plan.md`.
 
-## Why it can't affect the 4am run
-- No existing report `run.py` / `pull.py` imports `automations.harvest`.
-- No `day_orchestrator/*` module imports it.
-- No `schedule_config.json` entry, no LaunchAgent, no plist references it.
-- The proof (`proof.py`) runs in a throwaway process and calls only report
-  **pull + parse** (pure functions: crosstab → dict). It never fills a Sheet,
-  never posts Slack, and cannot reach the live 4am subprocesses.
+## Why it can't affect the 4am run (until you flip it)
+- The churn `pull.py` guards import `automations.harvest.adapter` **only when
+  `HARVEST_MODE=on`**. With no env var the guard is a single dict lookup that
+  short-circuits — no import, no behaviour change, identical to before.
+- `day_orchestrator/*`, `schedule_config.json`, LaunchAgents, plists: no
+  references (the one exception is the OFF-scheduler `install_harvest_proof_agent`
+  / `harvest_proof` entries, which only drive the standalone 1pm shadow proof).
+- Cache reads fail SAFE: miss / stale / any error → live scrape. The cache can
+  only replace a pull with byte-identical data or defer to live; it can never
+  serve stale data (loader hard-fails) or break a report.
 
-Verify at any time:
+Verify the default path is untouched:
 ```
-grep -rl "automations.harvest" automations --include=*.py | grep -v automations/harvest/
+HARVEST_MODE unset → grep the guards: each is `if os.environ.get("HARVEST_MODE"
+,"off")... == "on":` — false by default, so the live download runs unchanged.
 ```
-(should print nothing).
 
 ## Modules
 | file | role |
@@ -27,6 +31,8 @@ grep -rl "automations.harvest" automations --include=*.py | grep -v automations/
 | `loader.py` | `load_harvest(need, date)` / `load_harvest_rows` with the **hard-fail** staleness/provenance guard. |
 | `compute.py` | bounded `ThreadPoolExecutor` compute pool with a per-spreadsheet lock (Phase-2 model; inert). |
 | `proof.py` | Stage (c): harvest once, then parse twice (live control vs cache treatment), diff cell-for-cell. |
+| `adapter.py` | **Cutover seam.** `try_cache_view(view_url, sheet, out)` — serves cache when `HARVEST_MODE=on`, else None (→ live). Fail-safe. |
+| `run.py` | **Harvest-prime entrypoint.** `python -m automations.harvest.run` pulls today's churn views once → cache (runs first at cutover). |
 | `config.py` | knobs: `CACHE_ROOT`, `RETENTION_DAYS` (default 3), `COMPUTE_MAX_WORKERS`. |
 
 ## Cache layout & retention
@@ -55,13 +61,28 @@ python -m automations.harvest.proof --full     # all 19 pulls
 ```
 Requires live Tableau access. Exit 0 iff every payload is identical cell-for-cell.
 
-## Phase-2 — org-wide-pull-and-slice (`org_wide=True`, B2B PROVEN)
-`orgwide.py` + `proof_orgwide.py`. Pull ONE `ALLTEAMCHURN` view and slice per
-captainship in Python instead of N per-captain pulls. The hazard the design
-flagged — a naive collapse inherits the org-wide Grand Total, not the office's —
-is handled by **recomputing** each office's Grand-Total row from its sliced reps.
-Proven for B2B (2026-07-12): 3 offices, 477 cells (rep + recomputed Grand Total),
-0 mismatches vs the per-view pulls. See `output/harvest-proof-orgwide-2026-07-12.md`.
+## Phase-2 — org-wide-pull-and-slice (`org_wide=True`, ALL PROGRAMS PROVEN)
+`orgwide.py` + `proof_orgwide.py`. Pull ONE org-wide view per program and slice
+per office in Python instead of N per-office pulls. The hazard the design flagged —
+a naive collapse inherits the org-wide total, not the office's — is handled by
+**recomputing** each office's total row from its sliced reps. Two slicer shapes:
+`slice_owner` (B2B/NDS, owner-keyed rows), `slice_d2d` (D2D NI/Wireless per office,
+sliced by the `ICD Owner Name (rep)` column), and `slice_d2d_team` (D2D
+captainship — slices a team's owners then AGGREGATES reps up to owner level).
+Proven 2026-07-12 across EVERY current churn destination tab (3 B2B + 3 NDS
+captainships, 3 D2D local offices ×NI/WL, 6 D2D captainship teams): **19 offices,
+~4,330 cells, 0 mismatches** vs per-view pulls. `slice_d2d_team` filters by the
+`Captain's Bonus Teams` column (the SFDC team filter) — owner-only aggregation
+over-counts owners with cross-team reps.
+Views: `ALLTEAMCHURN` (B2B), `INTAllTeams`, `WirelessAllTeams`, `NDSAllTeamsChurn`.
+See `output/harvest-proof-orgwide-2026-07-12.md`.
+
+**Two correctness lessons (caught by this proof):** (1) owner-keyed slices MUST
+match the full `NAME\n[office]` identity, not bare name — the same person can
+appear under two offices in an org-wide view (a bare-name slice merged two "Kyle
+Campas"). (2) captainship-team slices MUST filter by the `Captain's Bonus Teams`
+column, not just owner — an owner's reps can span teams, so owner-only
+aggregation over-counts (William Sassenberg: 165 on-team vs 194 all).
 ```
 python -m automations.harvest.proof_orgwide              # harvest + diff
 python -m automations.harvest.proof_orgwide --no-harvest # re-diff from cache

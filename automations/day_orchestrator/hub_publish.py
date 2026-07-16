@@ -48,9 +48,11 @@ _HUB_CARD = {
     "int_wow_penetration": "int-wow-penetration",
     "org_sales_board": "org-sales-board",
     "org_sales_board_email": "sales-board-screenshot-email",
+    "board_compare": "org-sales-board-compare",
     "leaders_call": "leaders-call",
     "residential_rep_count": "residential_rep_count",
     "rashad_metrics": "rashad-metrics",
+    "aya_metrics": "aya-metrics",
     "frontier_opt": "frontier-opt-data-pull",
     "financial_report": "financial-pull",
     "brand_audit": "brand-health-audit",
@@ -62,6 +64,13 @@ _HUB_CARD = {
     # mark themselves via run_library_report / their wrapper. Their Hub card id IS
     # the library id, so map it to itself so _cal_status matches (card goes green).
     "june_texas_de_brazil_monthly_competition": "june_texas_de_brazil_monthly_competition",
+    # Weekly captainship reports: standalone LaunchAgents (Lucy 2 Mon/Tue, mini Tue)
+    # that call publish_done from their wrapper. They ran fine for weeks but their
+    # cards never went green — they were simply missing from this map, so Megan had
+    # no way to tell a successful run from a silent miss (2026-07-14).
+    "carlos_captainship_bonus": "carlos-captainship-bonus",
+    "carlos_captainship_headcount": "carlos-captainship-headcount",
+    "raf_captainship_bonus": "raf-captainship-bonus",
     # weather_alert: Slack-only, no Hub card → not published.
 }
 
@@ -114,6 +123,37 @@ def publish_heartbeat(run_id: str) -> bool:
         return True
     except Exception:
         return False
+
+
+def final_status(report_id: str, ok: bool) -> str:
+    """The status to close a run's pill with: 'success' | 'partial' | 'failed'.
+
+    A report that fans out to many parts (the Tableau trackers post to 5 Slack
+    channels) can land MOST of them and miss one. Closing that red is wrong — a
+    red pill on a report that mostly worked teaches people to ignore red. If the
+    report wrote a manifest saying some parts succeeded and some failed, this
+    returns 'partial' (the Hub colours it orange). Reports that don't record
+    `succeeded` are unaffected: they still resolve to plain success/failed."""
+    if ok:
+        return "success"
+    try:
+        from automations.shared import run_manifest
+        return run_manifest.outcome(report_id) or "failed"
+    except Exception:      # noqa: BLE001 — status must never break the run
+        return "failed"
+
+
+def incomplete_status(report_id: str) -> str:
+    """Pill status for a run the orchestrator marked INCOMPLETE (it RAN, with a
+    note). Historically these show green ('ran') — keep that, EXCEPT upgrade to
+    'partial' (orange) when the report's manifest explicitly records some parts
+    succeeded and some failed (e.g. metrics posted to 6 of 8 channels). Reports
+    that don't record `succeeded` are unchanged (still green)."""
+    try:
+        from automations.shared import run_manifest
+        return "partial" if run_manifest.outcome(report_id) == "partial" else "success"
+    except Exception:      # noqa: BLE001 — status must never break the run
+        return "success"
 
 
 def publish_done(report_id: str, report_name: str, status: str = "success",

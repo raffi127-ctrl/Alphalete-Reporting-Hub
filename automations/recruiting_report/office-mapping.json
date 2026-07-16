@@ -1,5 +1,5 @@
 {
-  "confirmed_count": 50,
+  "confirmed_count": 51,
   "needs_review_count": 0,
   "skip_count": 27,
   "confirmed": [
@@ -365,6 +365,13 @@
       "as_company": "Elevate Specialized Acquisitions, Inc",
       "confidence": 1.0,
       "auto_onboarded": true
+    },
+    {
+      "sheet_tab": "Juan Botero Berrio",
+      "office_id": "23703",
+      "as_owner": "Juan Botero-Berrio",
+      "as_company": "All For One Group, Inc.",
+      "confidence": 1.0
     }
   ],
   "needs_review": [],
@@ -482,11 +489,7 @@
     {
       "sheet_tab": "Salik Mallick",
       "reason": "no AppStream office (sales-only, no recruiting)"
-    },
-    {
-      "sheet_tab": "Juan Botero Berrio",
-      "reason": "no AppStream office (sales-only, no recruiting)"
     }
   ],
-  "sales_only_count": 2
+  "sales_only_count": 1
 }

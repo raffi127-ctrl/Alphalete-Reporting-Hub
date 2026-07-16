@@ -65,7 +65,7 @@ def _reply_image(client, thread_ts, path: Path, comment: str):
         channel=CHANNEL_ID,
         thread_ts=thread_ts,
         file=str(path),
-        filename=path.name,          # 'Fiber Activations Report by 5.30.png'
+        filename=path.name,          # 'Fiber Activations Report 5.30.png'
         initial_comment=comment,     # post name == file stem (bolded)
     )
 

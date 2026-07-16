@@ -377,6 +377,30 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
     aliases = load_aliases()
     grid = ws.get_all_values()
 
+    # ROSTER SELF-HEAL — before filling, give any VA-only captainship rep a row on
+    # the copy tab so THIS run fills it (the fill only touches EXISTING rows, so a
+    # rep on the VA with no copy row otherwise sums the total short — Blue Mendoza
+    # / Starr, 2026-07-15). Skipped on dry-run, on a granular --programs retry
+    # (surgical re-pull of an already-structured board) and on offline tests.
+    # Advisory: a failure here must never crash the fill — the post-fill roster
+    # gate still flags anyone who couldn't be placed.
+    auto_added: list = []
+    if not dry_run and _prog_filter is None and resolve_csv is None:
+        try:
+            from automations.org_sales_board import roster_sync as _rsync
+            from automations.org_sales_board.run import PROD_TAB
+            _va = ws.spreadsheet.worksheet(PROD_TAB).get_all_values()
+            auto_added = _rsync.auto_insert_missing(ws, _va, aliases,
+                                                    dry_run=False, logfn=logfn)
+            if auto_added:
+                logfn(f"  ✚ roster self-heal: auto-added {len(auto_added)} rep(s): "
+                      + ", ".join(f"{a['name']} ({a['captain']})"
+                                  for a in auto_added))
+                grid = ws.get_all_values()      # re-read: rows shifted by inserts
+        except Exception as e:  # noqa: BLE001 — must never crash the board fill
+            logfn(f"  ⚠ roster self-heal skipped "
+                  f"({type(e).__name__}: {str(e)[:60]})")
+
     def _pull(label, view_url, parse, metric):
         spec = _spec(label, view_url, parse, metric)
         if resolve_csv:
@@ -447,7 +471,8 @@ def run_captainships(ws, page, *, today=None, dry_run=False,
             prog[tkey] = {}
             failed_programs.append(tkey)
 
-    summary = {"filled": [], "missing": {}, "failed_programs": failed_programs}
+    summary = {"filled": [], "missing": {}, "failed_programs": failed_programs,
+               "auto_added": auto_added}
     failed_captainships: list = []   # per-captain fill errors — never crash the board
     captains = discover_captainships(grid)
     logfn(f"  discovered {len(captains)} captainship block(s) on the board: "

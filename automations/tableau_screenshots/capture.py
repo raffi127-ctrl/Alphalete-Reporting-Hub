@@ -244,14 +244,18 @@ def _crop_above_bar(path: Path, bar_index: int, verbose: bool, spec_id: str = ""
 
 
 def _trim_bottom(path: Path, verbose: bool, margin_px: int = 14,
-                 spec_id: str = "") -> None:
+                 spec_id: str = "", peel_footer: bool = True) -> None:
     """Trim the bottom of the PNG to the board's real end. Download→Image leaves a
     big blank gap + a small footer ('Last Object Update…', '***CONFIDENTIAL***')
     below the content that Jolie's posts don't have. Split the image into content
-    BANDS (runs of non-blank rows) and peel off trailing bands that are SMALL and
-    separated from the content above by a real gap (i.e. footer lines) — then cut
-    just below the last real content. Generic — single-page + cropped alike; a
-    cropped page-1 has no footer band so it just loses trailing whitespace."""
+    BANDS (runs of non-blank rows) and cut just below the last real content.
+
+    peel_footer=True (single-page boards): also drop trailing bands under 100px —
+    those are the footer lines. peel_footer=False (boards already cropped to page
+    1): the footer lives below page 2/3 and was cropped away, so there is nothing
+    to peel and the rule can only EAT CONTENT — a short trailing table (the
+    'Current Vs Prior Weeks' WoW delta, ~110px, and less when a fraction-crop had
+    already clipped it) looked exactly like a footer band and got deleted."""
     import numpy as np
     from PIL import Image
     im = Image.open(path).convert("RGB")
@@ -285,15 +289,17 @@ def _trim_bottom(path: Path, verbose: bool, margin_px: int = 14,
 
     if not bands:
         return
-    # Cut just after the last SUBSTANTIAL content band (>= 100px tall). Trailing
-    # bands smaller than that are footer lines ("Last Object Update…",
+    # Cut just after the last real content band. On an UNCROPPED board, trailing
+    # bands under 100px are footer lines ("Last Object Update…",
     # "***CONFIDENTIAL***") — drop them and any whitespace, regardless of the gaps
-    # between them. Real tables are >=140px, footers <=~76px, so 100 separates.
+    # between them (real tables are >=140px, footers <=~76px, so 100 separates).
+    # On a board already cropped to page 1 there is no footer, so keep every band.
     main_end = bands[-1][1]
-    for s, e in reversed(bands):
-        if (e - s) >= 100:
-            main_end = e
-            break
+    if peel_footer:
+        for s, e in reversed(bands):
+            if (e - s) >= 100:
+                main_end = e
+                break
     new_h = min(h, main_end + margin_px)
     TRIM_DEBUG[spec_id] += f" -> cut={new_h}"
     if new_h < h - 2:
@@ -338,11 +344,13 @@ def _download_once(page, spec: dict, out_path: Path, *, hydrate_ms: int,
     # Two crop strategies. crop_to_bar (nds, b2b): snap the bottom to just above
     # the Nth blue section bar in IMAGE space — exact, scale-proof. Otherwise the
     # DOM-fraction crop (default for the approved single/pager trackers).
+    cropped = True
     if spec.get("crop_to_bar"):
         _crop_above_bar(out_path, int(spec["crop_to_bar"]), verbose, spec_id=_sid)
     elif crop_frac is not None and 0.05 < crop_frac < 0.95:
         _crop_top(out_path, crop_frac, verbose)
     else:
+        cropped = False
         CROP_DEBUG[_sid] = CROP_DEBUG.get(_sid, "") + " NO-TOP-CROP"
     try:
         from PIL import Image as _Im
@@ -351,7 +359,8 @@ def _download_once(page, spec: dict, out_path: Path, *, hydrate_ms: int,
     except Exception:
         pass
     try:
-        _trim_bottom(out_path, verbose, spec_id=spec.get("id", ""))
+        _trim_bottom(out_path, verbose, spec_id=spec.get("id", ""),
+                     peel_footer=not cropped)
     except Exception as e:
         TRIM_DEBUG[spec.get("id", "")] = f"ERROR {type(e).__name__}: {str(e)[:120]}"
         if verbose:

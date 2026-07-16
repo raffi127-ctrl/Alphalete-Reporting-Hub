@@ -71,11 +71,144 @@
       "label": "BOX daily tracker (org sales board — last source to land, ~7-8am)",
       "probe": {
         "type": "box_daily",
-        "min_rows": 5
+        "min_rows": 5,
+        "fallback_hhmm": "08:00"
       }
     }
   },
   "reports": {
+    "vantura_payroll": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "_note": "Vantura Weekly Payroll PREP (Carlos). on_scheduler:false = the 4am orchestrator NEVER runs it — its real schedule is the Wednesday 11:00am CT launchd job (com.alphalete.vantura-payroll-wed, wrapper deploy/vantura_payroll_wed.sh) on Lucy 2. DRY-RUN GATED: automations.vantura_payroll.run defaults to --dry-run (no board writes, no Slack); the board-write internals (RAW load incl. self-pulled Tableau crosstab, Commission!B1, per-campaign P&L formulas, headless Refresh via the Payroll.gs web app, read-only checks, kickoff DM) are implemented but stay dry-run until verified against a SANDBOX copy of the Vantura Master Sales Board (see automations/vantura_payroll/PAYROLL_RUNBOOK.md). Reuses vantura_churn's CDP Tableau pull + recruiting_report.fill board auth + shared.slack_metrics_post (as Lucy). Automates the deterministic prep only; bonuses/no-pay/rates + verify + print stay with Carlos, and the week auto-locks Thursday ~11am via the board's own Apps Script trigger. This handle exists so `lucy rerun vantura_payroll --dry-run` works.",
+      "display_name": "Vantura Weekly Payroll (prep)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.vantura_payroll.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [],
+        "not_before": "11:00"
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 30,
+      "verify": null
+    },
+    "install_vantura_payroll_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_vantura_payroll_agent` can install/refresh the STANDALONE com.alphalete.vantura-payroll-wed LaunchAgent on Lucy 2, which runs the Vantura payroll PREP (automations.vantura_payroll.run) Wednesday 11:00am machine-local time via deploy/vantura_payroll_wed.sh. The wrapper passes no mode flag, so the module's --dry-run default applies until sandbox sign-off flips it to --live in the wrapper. install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
+      "display_name": "Install Vantura Payroll agent (Wed 11am)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "vantura-payroll-wed"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
+    "car_rides": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "_note": "Car-Rides Cleanup (Carlos). on_scheduler:false = the 4am orchestrator NEVER runs it — its real schedule is the Mon-Sat launchd job (com.alphalete.car-rides-cleanup, wrapper deploy/car_rides_cleanup.sh) on Lucy 2: 9 morning passes at 8:30/9:00/9:30/10:00/10:30/10:40/10:50/11:00/11:15, with a skip-if-still-running guard in the wrapper. Reconciles each car-ride leader's OwnerVille/TeleMapper territory (index.cfm?p=158) against the Stations tab of the Vantura Master Sales Board, both campaigns (B2B AT&T SBS + B2B-BOX-Energy). Fully unattended by design: board via recruiting_report.fill gspread, OwnerVille via tableau_patchright's exported storage_state (session-holder keeps it warm) — a stale/missing session is FLAGGED, never re-authed (no form / Turnstile). DRY-RUN default: plans + reports to output/car_rides/, changes nothing; --live applies select2 add/remove+Save edits. Never creates or Removes territories (flag-only), never touches Assign Clients / sharing / Slack. This handle exists so `lucy rerun car_rides --dry-run` and `--probe` work.",
+      "display_name": "Car-Rides Cleanup (OwnerVille territories)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.car_rides.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [0, 1, 2, 3, 4, 5],
+        "not_before": "08:30"
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 30,
+      "verify": null
+    },
+    "harvest_proof": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "SHADOW/INERT harvest-once proof (Stage c of output/harvest-architecture-design.md). on_scheduler:false = NEVER scheduled, structurally excluded from the 4am orchestrator (registry.load_config drops it; run_order never sees it) so it CANNOT affect the morning run. Run only by hand: `lucy rerun harvest_proof` (5-need structural cover) or `lucy rerun harvest_proof --full` (all 19 churn pulls). Runs automations.harvest.proof_mini: harvest the churn cluster once over one login, then diff live-pull-parse vs cache-parse cell-for-cell + a monkeypatch cutover check. Full result -> output/logs/harvest_proof-<date>.log (retrieve with `lucy logtail harvest_proof`); compact verdict lands in `lucy status`. source_type tableau only so the rerun runs chrome_guard first. Nothing production imports automations.harvest.",
+      "display_name": "Harvest Proof (shadow)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.harvest.proof_mini"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "not_before": "00:00"
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "timeout_minutes": 40
+    },
+    "install_harvest_proof_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch (the batch behavior is unchanged). Present only so `lucy rerun install_harvest_proof_agent` can install/refresh the STANDALONE com.alphalete.harvest-proof-1pm LaunchAgent on the mini, which runs the SHADOW harvest proof (automations.harvest.proof_mini) daily at 1pm CT — after the noon backstop, so no shared-Chrome-profile collision with the batch. install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
+      "display_name": "Install Harvest Proof agent (1pm shadow)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "harvest-proof-1pm"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "drb_backfill_lastweek": {
       "on_scheduler": true,
       "_note": "MANUAL-ONLY recovery. `lucy rerun drb_backfill_lastweek <MONDAY>` re-pulls last week's Tue-Sun activity from ownerville and writes it into the frozen bottom LAST WEEK block (matched by rep name), touching NEITHER this week NOR the totals/Monday. For when last week's daily scrapes failed (e.g. the mini-sleep gaps) and the LAST WEEK block shows 'x' for Tue-Sun. Preview one tab first: `lucy rerun drb_backfill_lastweek 2026-06-29 --only \"Rafael Hidalgo\"`; then full: `lucy rerun drb_backfill_lastweek 2026-06-29`. Per-owner 5-min cap + 150-min report timeout. Built 2026-07-06.",
@@ -146,6 +279,65 @@
       ],
       "base_args": [
         "--probe-only"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
+    "recruiting_backfill_juan": {
+      "on_scheduler": true,
+      "_note": "MANUAL-ONLY (weekdays [] -> never auto-runs). `lucy rerun recruiting_backfill_juan` backfills Juan Botero Berrio's blank recruiting weeks on Lucy 1 (needs the AppStream session). Added 2026-07-13 after moving him from sales_only -> confirmed (office 23703). One-off — safe to delete once his history is filled.",
+      "display_name": "Recruiting backfill — Juan Botero Berrio",
+      "source_type": "appstream",
+      "data_sources": [],
+      "command": [
+        "automations.recruiting_report.backfill_blanks"
+      ],
+      "base_args": [
+        "--only",
+        "Juan Botero Berrio"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
+    "sunday_coverage": {
+      "on_scheduler": true,
+      "_note": "MANUAL-ONLY diagnostic. `lucy rerun sunday_coverage` pulls each ORG board CROSSTAB source on Lucy 1 and prints whether last Sunday's data is actually in the extract at pull time — diagnoses the 2026-07-13 Monday undercount (board missing the just-completed Sunday). Read-only.",
+      "display_name": "Sunday coverage check (org board sources)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.org_sales_board.sunday_coverage"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
+    "install_leaders_call_agent": {
+      "on_scheduler": true,
+      "_note": "MANUAL: `lucy rerun install_leaders_call_agent` (re)installs the weekly Leader's Call launchd job (com.alphalete.leaders-call-mon, Mon 10:00am CST). The 7/10 reboot dropped it (the schedule-guard only reloads jobs that are ALREADY loaded), so it silently missed Mon 7/13 — reinstalling reloads it now AND makes it auto-load on future logins. weekdays [] = manual only.",
+      "display_name": "Install Leader's Call agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "leaders-call-mon"
       ],
       "cadence": {
         "weekdays": []
@@ -415,7 +607,7 @@
     "org_sales_board": {
       "order": 8,
       "on_scheduler": true,
-      "_note": "Fills the SANDBOX 'Copy of' tab daily, FILL-ONLY — the Tuesday auto-rollover was removed, so the weekly rollover is MANUAL (a person Monday night). Auto-compares vs the VA tab. Intentionally targets the sandbox; the real tab stays guarded (see _warn). TIMING (Megan 2026-07-11): runs in its ORDER (8), gated on DATA readiness — the not_before '08:00' clock was removed. The board's last-landing source is BOX (extract refreshes ~7-8am); data_sources now includes 'tableau:box_daily' with a box_daily readiness probe, so the orchestrator holds the board until Box has the latest completed day, then it runs (no more fixed 8am wait when Box is in early). The email (org_sales_board_email) depends_on this, so it follows right after. The 2:30pm com.alphalete.board-catchup remains the backstop. ONLY JE stays a day behind (inherent — the VAs' manual board is too).",
+      "_note": "Fills the SANDBOX 'Copy of' tab daily, FILL-ONLY — the Tuesday auto-rollover was removed, so the weekly rollover is MANUAL (a person Monday night). Auto-compares vs the VA tab. Intentionally targets the sandbox; the real tab stays guarded (see _warn). TIMING (Megan 2026-07-11): runs in its ORDER (8), gated on DATA readiness — the not_before '08:00' clock was removed. The board's last-landing source is BOX (extract refreshes ~7-8am); data_sources now includes 'tableau:box_daily' with a box_daily readiness probe, so the orchestrator holds the board until Box has the latest completed day, then it runs (no more fixed 8am wait when Box is in early). The email (org_sales_board_email) depends_on this, so it follows right after. The 2:30pm com.alphalete.board-catchup remains the backstop. ONLY JE stays a day behind (inherent — the VAs' manual board is too). COMPARE DEFERRED (Megan 2026-07-14): the fill now runs with --skip-compare. Comparing right after the 4am fill pitted us against a VA tab the VAs hadn't touched yet, so every cell we were merely AHEAD on counted as a difference and the fill closed INCOMPLETE every morning. The real compare is report_id 'board_compare', which runs at 9am CST once the VAs have finished keying.",
       "display_name": "Alphalete Org Sales Board",
       "source_type": "tableau",
       "data_sources": [
@@ -428,7 +620,8 @@
       "base_args": [
         "--step",
         "daily",
-        "--with-captainships"
+        "--with-captainships",
+        "--skip-compare"
       ],
       "cadence": {
         "weekdays": [
@@ -462,8 +655,8 @@
       ],
       "base_args": [],
       "cadence": {
+        "_note": "Monday (0) EXCLUDED (Megan 2026-07-13): last week's Sunday lands in the sources only through Monday afternoon, so a morning email undercounts. On Mondays the board+email run in the afternoon via board_catchup.sh instead. Tue-Sun email in the morning batch as usual.",
         "weekdays": [
-          0,
           1,
           2,
           3,
@@ -511,6 +704,27 @@
       ],
       "base_args": [
         "board-catchup"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5
+    },
+    "install_board_probe_agent": {
+      "on_scheduler": true,
+      "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_board_probe_agent` (same pattern as install_board_catchup_agent). Regens + launchctl-bootstraps com.alphalete.board-probe on the mini — a MONDAY-ONLY, READ-ONLY diagnostic that runs sunday_coverage at 7:15/7:45/8:15am CST to measure whether :refresh=yes (commit 378a275) delivers COMPLETE last-Sunday data early enough to email the board before 8am (Raf's deadline), and which week BOX returns (box=N = its pin is still broken). Writes NOTHING to any Sheet. Read results: `lucy logtail board-probe 'SUMMARY|box' 12`. REMOVE after the Monday timing is nailed (launchctl bootout gui/UID/com.alphalete.board-probe). on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. source_type 'local' skips the tableau/appstream chrome guard.",
+      "display_name": "Install: Monday board timing probe LaunchAgent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "board-probe"
       ],
       "cadence": {
         "weekdays": []
@@ -690,8 +904,8 @@
     },
     "board_compare": {
       "on_scheduler": true,
-      "_note": "NOT a report — standalone FULL comparison of the Org Sales Board copy tab vs the live VA tab, run via `lucy rerun board_compare`. Read-only (sheet vs sheet, no Tableau). Writes EVERY disagreeing cell to output/logs/org_sales_board_compare-<stamp>.log (the Mini-Control result cell truncates to ~480 chars, so read the full list with `lucy logtail org_sales_board_compare`). on_scheduler:true so registry keeps it; weekdays [] = never auto-runs. source_type 'local' (no chrome guard). Built 2026-07-07 to enumerate the residual VA-compare cells after the NDS section fix.",
-      "display_name": "Org Sales Board — full VA compare (diagnostic)",
+      "_note": "Full copy-vs-VA comparison of the Org Sales Board, run DAILY at 9am CST (not_before 09:00) — deliberately NOT straight after the 4am fill. At 4am the VAs have keyed nothing, so the automation is ahead on every cell it pulled and the compare is pure noise (it marked the fill INCOMPLETE every morning). By 9am the VAs are done, so a difference here is a REAL disagreement worth looking at. Read-only (sheet vs sheet, no Tableau). Writes every disagreeing cell to output/logs/org_sales_board_compare-*.log — read it with `lucy logtail org_sales_board_compare`. For the every-single-cell go-live gate (incl. rows past 1000) run `lucy rerun board_compare --all`.",
+      "display_name": "Org Sales Board — VA compare (9am)",
       "source_type": "local",
       "data_sources": [],
       "command": [
@@ -699,9 +913,18 @@
       ],
       "base_args": [],
       "cadence": {
-        "weekdays": []
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "not_before": "09:00"
       },
-      "priority": "P3",
+      "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
       "verify": null,
@@ -961,7 +1184,11 @@
       "timeout_minutes": 130,
       "_timeout_note": "Heavy: ~30-owner ownerville scrape (60m budget) + Tableau fill (35m). The flat 45m orchestrator cap killed it mid-scrape every run, which corrupted the sheet. Runs last (P3) so a long run blocks nothing.",
       "_freshness_note": "Megan's example: least important day-to-day, but should be as current as possible by Monday morning.",
+      "_depends_note": "Runs AFTER org_sales_board via SOFT `after` ordering (Megan 2026-07-13): this is the heaviest run (~90m) and must never start before the board (or the board gets stuck behind it for the browser). But a board GLITCH must never skip this — so `after` (unblocks once the board hits ANY terminal state: done/incomplete/FAILED/missed), NOT depends_on (which would strand it on a board failure).",
       "depends_on": [],
+      "after": [
+        "org_sales_board"
+      ],
       "verify": {
         "type": "manifest",
         "report_id": "daily-rep-breakdown"
@@ -1521,8 +1748,8 @@
     "tableau_screenshots": {
       "order": 5,
       "on_scheduler": true,
-      "_note": "LIVE daily 8-tracker Tableau screenshots (Download->Image @ 2x DPI via device_scale=2, per-tracker page-1 crop + bottom footer/whitespace trim). Posts as Lucy into an own dated thread 'Alphalete Tableau Trackers M/D/YYYY' in BOTH #alphalete-sales (C068PH3RFSM) + #top-leaders-alphalete-org (C067TTGFEFR, private; Lucy U0BCG8F9B5Z is a member). Replaces Jolie's manual TRACKER post (her 3 'production' imgs stay manual/separate). source_type tableau = wave 2. Went live 2026-07-05. To preview instead of post: base_args ['--preview-dm','U04G5HJBGFN'].",
-      "display_name": "Alphalete Tableau Trackers",
+      "_note": "LIVE daily 8-tracker Tableau COUNTRY trackers (Download->Image, per-tracker page-1 crop_to_bar + bottom trim). ONE run captures the 8 boards once and posts them as Lucy into a dated thread 'Tableau Country Trackers M/D/YYYY' in EVERY channel (--orgs all): #alphalete-sales + #top-leaders-alphalete-org, #elevate-sales, #indelible-sales, #palace-sales, #elite-prime-sales. The boards are country-wide, so every channel gets identical images off the single capture -- one Tableau login a day. ADD A CHANNEL = one line in slack_post.ORG_CHANNELS, nothing else. A channel that fails does NOT sink the others: it lands in the run manifest's failed list, so the Hub card shows a per-channel checklist + a 'Retry failed only' button that re-posts just the misses (--orgs <them> --replace). source_type tableau = wave 2. Went live 2026-07-05. To preview instead of post: base_args ['--preview-dm','U04G5HJBGFN'].",
+      "display_name": "Tableau Country Trackers",
       "source_type": "tableau",
       "data_sources": [],
       "command": [
@@ -1628,6 +1855,166 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": null
+    },
+    "cyrus_metrics": {
+      "order": 7.6,
+      "on_scheduler": true,
+      "display_name": "Cyrus's Daily Metrics (#ambient-sales-1)",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:order_log"
+      ],
+      "_sources_note": "Single-office cut of the daily metrics for owner 'Aya Al-Khafaji', posted to her PRIVATE #indelible-sales (C0AA85Y3FPE) as the Lucy reporting bot. Same machinery as rashad_metrics (reuses its _metric_cmd/_run_one) with Aya's Tableau views: INTAYA/WirelessAYA churn, AyaExpanded cancel-rates, AyaINTABP. order_log/sales_6plus/cancels/disconnects auto-scope via --owner; knocks impersonates her OV office (KNOCKS_OFFICE). Built 2026-07-10.",
+      "command": [
+        "automations.office_metrics.runner"
+      ],
+      "base_args": [
+        "--office",
+        "cyrus",
+        "--live"
+      ],
+      "_base_args_note": "LIVE: pulls all metric slugs for Aya + POSTS to #indelible-sales. Continue-on-failure. RECOMMEND a `lucy rerun aya_metrics --dry-run` on the mini to verify her NEW views (INTAYA/WirelessAYA/AyaExpanded) before trusting the first live run; ABP + the --owner metrics reuse proven patterns.",
+      "_sequence_note": "order 7.5 → runs as the NEXT report right after Rashad (order 7) in the list, NOT via depends_on (Megan 2026-07-10: don't gate Aya on Rashad succeeding — just sequence her next). No independent 6am start; run_order sorts by 'order' so 7.5 slots between Rashad (7) and the next numbered report (8). Readiness still gates the Tableau pulls.",
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P1",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 60,
+      "verify": {
+        "type": "manifest",
+        "report_id": "cyrus_metrics"
+      },
+      "_note": "Office metrics for cyrus → #ambient-sales-1. Pure-config office (all metrics slice shared views). Runs office_metrics.runner directly. Added 2026-07-15."
+    },
+    "hammad_metrics": {
+      "order": 7.7,
+      "on_scheduler": true,
+      "display_name": "Hammad's Daily Metrics (#elite-prime-sales)",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:order_log"
+      ],
+      "_sources_note": "Single-office cut of the daily metrics for owner 'Aya Al-Khafaji', posted to her PRIVATE #indelible-sales (C0AA85Y3FPE) as the Lucy reporting bot. Same machinery as rashad_metrics (reuses its _metric_cmd/_run_one) with Aya's Tableau views: INTAYA/WirelessAYA churn, AyaExpanded cancel-rates, AyaINTABP. order_log/sales_6plus/cancels/disconnects auto-scope via --owner; knocks impersonates her OV office (KNOCKS_OFFICE). Built 2026-07-10.",
+      "command": [
+        "automations.office_metrics.runner"
+      ],
+      "base_args": [
+        "--office",
+        "hammad",
+        "--live"
+      ],
+      "_base_args_note": "LIVE: pulls all metric slugs for Aya + POSTS to #indelible-sales. Continue-on-failure. RECOMMEND a `lucy rerun aya_metrics --dry-run` on the mini to verify her NEW views (INTAYA/WirelessAYA/AyaExpanded) before trusting the first live run; ABP + the --owner metrics reuse proven patterns.",
+      "_sequence_note": "order 7.5 → runs as the NEXT report right after Rashad (order 7) in the list, NOT via depends_on (Megan 2026-07-10: don't gate Aya on Rashad succeeding — just sequence her next). No independent 6am start; run_order sorts by 'order' so 7.5 slots between Rashad (7) and the next numbered report (8). Readiness still gates the Tableau pulls.",
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P1",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 60,
+      "verify": {
+        "type": "manifest",
+        "report_id": "hammad_metrics"
+      },
+      "_note": "Office metrics for hammad → #elite-prime-sales. Pure-config office (all metrics slice shared views). Runs office_metrics.runner directly. Added 2026-07-15."
+    },
+    "kash_metrics": {
+      "order": 7.8,
+      "on_scheduler": true,
+      "display_name": "Kash's Daily Metrics (#palace-sales)",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:order_log"
+      ],
+      "_sources_note": "Single-office cut of the daily metrics for owner 'Aya Al-Khafaji', posted to her PRIVATE #indelible-sales (C0AA85Y3FPE) as the Lucy reporting bot. Same machinery as rashad_metrics (reuses its _metric_cmd/_run_one) with Aya's Tableau views: INTAYA/WirelessAYA churn, AyaExpanded cancel-rates, AyaINTABP. order_log/sales_6plus/cancels/disconnects auto-scope via --owner; knocks impersonates her OV office (KNOCKS_OFFICE). Built 2026-07-10.",
+      "command": [
+        "automations.office_metrics.runner"
+      ],
+      "base_args": [
+        "--office",
+        "kash",
+        "--live"
+      ],
+      "_base_args_note": "LIVE: pulls all metric slugs for Aya + POSTS to #indelible-sales. Continue-on-failure. RECOMMEND a `lucy rerun aya_metrics --dry-run` on the mini to verify her NEW views (INTAYA/WirelessAYA/AyaExpanded) before trusting the first live run; ABP + the --owner metrics reuse proven patterns.",
+      "_sequence_note": "order 7.5 → runs as the NEXT report right after Rashad (order 7) in the list, NOT via depends_on (Megan 2026-07-10: don't gate Aya on Rashad succeeding — just sequence her next). No independent 6am start; run_order sorts by 'order' so 7.5 slots between Rashad (7) and the next numbered report (8). Readiness still gates the Tableau pulls.",
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P1",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 60,
+      "verify": {
+        "type": "manifest",
+        "report_id": "kash_metrics"
+      },
+      "_note": "Office metrics for kash → #palace-sales. Pure-config office (all metrics slice shared views). Runs office_metrics.runner directly. Added 2026-07-15."
+    },
+    "salik_metrics": {
+      "order": 7.9,
+      "on_scheduler": true,
+      "display_name": "Salik's Daily Metrics (#elite-prime-sales)",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:order_log"
+      ],
+      "_sources_note": "Single-office cut of the daily metrics for owner 'Aya Al-Khafaji', posted to her PRIVATE #indelible-sales (C0AA85Y3FPE) as the Lucy reporting bot. Same machinery as rashad_metrics (reuses its _metric_cmd/_run_one) with Aya's Tableau views: INTAYA/WirelessAYA churn, AyaExpanded cancel-rates, AyaINTABP. order_log/sales_6plus/cancels/disconnects auto-scope via --owner; knocks impersonates her OV office (KNOCKS_OFFICE). Built 2026-07-10.",
+      "command": [
+        "automations.office_metrics.runner"
+      ],
+      "base_args": [
+        "--office",
+        "salik",
+        "--live"
+      ],
+      "_base_args_note": "LIVE: pulls all metric slugs for Aya + POSTS to #indelible-sales. Continue-on-failure. RECOMMEND a `lucy rerun aya_metrics --dry-run` on the mini to verify her NEW views (INTAYA/WirelessAYA/AyaExpanded) before trusting the first live run; ABP + the --owner metrics reuse proven patterns.",
+      "_sequence_note": "order 7.5 → runs as the NEXT report right after Rashad (order 7) in the list, NOT via depends_on (Megan 2026-07-10: don't gate Aya on Rashad succeeding — just sequence her next). No independent 6am start; run_order sorts by 'order' so 7.5 slots between Rashad (7) and the next numbered report (8). Readiness still gates the Tableau pulls.",
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P1",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 60,
+      "verify": {
+        "type": "manifest",
+        "report_id": "salik_metrics"
+      },
+      "_note": "Office metrics for salik → #elite-prime-sales. Pure-config office (all metrics slice shared views). Runs office_metrics.runner directly. Added 2026-07-15."
     }
   },
   "read_only_standalone": {
