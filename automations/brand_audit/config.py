@@ -82,11 +82,12 @@ AUTO_POST_MIN_STARS = 4
 # Negatives are NOT throttled (they only queue to Slack, nothing public).
 AUTO_POST_DAILY_CAP = 25
 
-# Where a negative reply invites the reviewer to take it offline (Megan,
-# 2026-07-15). Woven into the draft only for criticism, so unhappy reviewers get
-# a real place to reach the business instead of a vague "reach out". None = keep
-# the generic "please reach out to us directly" wording.
-REVIEW_REPLY_CONTACT = "alphaletemarketing@gmail.com"
+# Where a critical reply invites the reviewer to take it offline. This is the
+# address Alphalete's OWN hand-written replies use (Luke 7/16, Mladen 6/23,
+# Hisham 1/5, Ashley 12/15) — the negatives are overwhelmingly ex-employees and
+# applicants, so they belong with HR, not the marketing inbox. Only used for
+# criticism; positive replies never include it.
+REVIEW_REPLY_CONTACT = "hr@alphaletemarketing.com"
 
 # 🚫 HARD RULE: never post to / never treat these as postable channels.
 # Raf's personal LinkedIn is off-limits (Megan, 2026-06-17). Matched loosely

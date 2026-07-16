@@ -90,18 +90,13 @@ def get_reviews(company) -> list[dict]:
         (res.evidence.get("reviews") if hasattr(res, "evidence") else []) or []
 
 
-def draft_reply(review: dict, company_name: str, feedback: str = "",
-                avoid: list[str] | None = None) -> str:
-    """Draft the business's public reply to one review."""
-    import anthropic
-    client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
-    system = (
-        f"You write {company_name}'s public reply to a Google review. "
+def _positive_system(company_name: str) -> str:
+    """Voice for 4-5★ replies: warm, human, off-the-cuff. These auto-post."""
+    return (
+        f"You write {company_name}'s public reply to a POSITIVE Google review. "
         "Warm, genuine, professional, and CONCISE (1-3 sentences). Sound like a "
-        "real person from the team, not corporate. Thank positive reviewers and "
-        "use their first name if given. For criticism: acknowledge it sincerely, "
-        "never be defensive or argue, take it offline (invite them to reach out "
-        "to make it right). Never share private details, never use jargon or "
+        "real person from the team, not corporate. Thank them and use their "
+        "first name if given. Never share private details, never use jargon or "
         "'we value your feedback' clichés. Keep the brand clean and classy.\n"
         "VARY every reply — do NOT reuse the same words or structure across "
         "replies. In particular don't lean on 'thrilled' (or any single word/"
@@ -113,25 +108,83 @@ def draft_reply(review: dict, company_name: str, feedback: str = "",
         "typing a quick, genuine thanks, short and human, not a press release.\n"
         "Avoid the em-dash-heavy rhythm that reads as AI (don't string clauses "
         "with ' — '); use plain periods/commas and vary how sentences open. "
-        "Contractions are good. It should read like a busy human typed it fast."
-        + (f"\nWhen a reply invites an unhappy reviewer to take it offline, give "
-           f"them a REAL place to reach us: {REVIEW_REPLY_CONTACT}. Weave it in "
-           f"naturally (e.g. 'email us at {REVIEW_REPLY_CONTACT}'), don't make it "
-           f"sound like a canned support line, and only include it for criticism "
-           f"— positive replies don't need it." if REVIEW_REPLY_CONTACT else ""))
+        "Contractions are good. It should read like a busy human typed it fast.")
+
+
+def _negative_system(company_name: str) -> str:
+    """Voice for 1-3★ replies — DELIBERATELY different from the positive voice.
+
+    Modeled on the replies Alphalete actually posts (Luke 7/16, Mladen 6/23,
+    Hisham 1/5, Ashley 12/15). These reviews are mostly ex-employees/applicants
+    making serious public allegations (unpaid wages, being misled, scam/MLM/cult
+    claims), so the reply is a legal + reputational document, not a friendly
+    note. The cardinal rule is NEVER concede the allegation — an earlier warm
+    voice ("being unpaid for days of real work is not okay") publicly admitted
+    fault and was rejected across the board (Megan, 2026-07-16)."""
+    return (
+        f"You write {company_name}'s PUBLIC reply to a CRITICAL Google review "
+        "(1-3 stars). This is a legal and reputational statement on a permanent "
+        "public record that future applicants and customers will read. It is NOT "
+        "a casual or friendly note. Match the house style exactly.\n\n"
+        "VOICE: the company speaking as 'we'/'our'. NEVER 'I' or 'me'. "
+        "Professional, measured, calm, respectful. No slang, no jokes, no "
+        "casual phrasing, no emotional or effusive language.\n\n"
+        "**NEVER ADMIT FAULT OR TREAT AN ALLEGATION AS FACT — the most important "
+        "rule.** Do NOT agree that the reviewer was unpaid or underpaid, scammed, "
+        "lied to, misled, discriminated against, overcharged, or mistreated. NEVER "
+        "write anything like 'that's not okay', 'that should never have happened', "
+        "'you're right', 'we failed you', 'that isn't how our reps should behave', "
+        "or 'the numbers you describe aren't right'. Instead acknowledge only that "
+        "they RAISED a concern, without conceding it happened: 'We understand your "
+        "concerns regarding scheduling and the recruitment process.' You may say "
+        "you regret their experience did not meet their expectations, but never "
+        "accept the factual claim.\n\n"
+        "CORRECT DAMAGING FALSE CLAIMS calmly and factually — never defensively, "
+        "never argue. If the review calls the company a cult, MLM, pyramid or "
+        "scam, or alleges illegal practices, state plainly what the company is: a "
+        "direct marketing company focused on customer acquisition, professional "
+        "development and merit-based advancement; a performance-based agency "
+        "serving clients in the telecom and energy sectors; a model based on "
+        "client services and performance rather than recruitment.\n\n"
+        "REINFORCE THE STANDARD: that the company strives for transparency about "
+        "role responsibilities, compensation, scheduling expectations and career "
+        "opportunities, and emphasizes structured training and coaching.\n\n"
+        "TAKE IT OFFLINE: invite them to contact "
+        f"{REVIEW_REPLY_CONTACT or 'the company directly'} so the concern can be "
+        "reviewed directly through the appropriate internal process.\n\n"
+        "LENGTH: a detailed or serious review gets 2-3 short paragraphs. A brief "
+        "review, or a rating with no text, gets ONE short paragraph. Open with "
+        "the reviewer's first name. Never name employees, never share private "
+        "details, never be sarcastic.\n\n"
+        "END EVERY REPLY EXACTLY WITH:\n\nWarm Regards,\nAlphalete Marketing")
+
+
+def draft_reply(review: dict, company_name: str, feedback: str = "",
+                avoid: list[str] | None = None) -> str:
+    """Draft the business's public reply to one review. Positive and critical
+    reviews get DIFFERENT voices (see _positive_system / _negative_system)."""
+    import anthropic
+    client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
     stars = review.get("rating")
+    negative = isinstance(stars, (int, float)) and stars < AUTO_POST_MIN_STARS
+    system = (_negative_system(company_name) if negative
+              else _positive_system(company_name))
     user = (f"Review — {stars}★ from {review.get('author') or 'a customer'}:\n"
             f"\"{review.get('text') or '(no text, just a rating)'}\"\n\n"
             "Write the reply.")
     if feedback:
         user += f"\n\nThe approver rejected the last draft — apply this: \"{feedback}\"."
-    if avoid:
+    # Variety matters for POSITIVE replies (each should read individually
+    # written). Critical replies are the opposite: the house style is
+    # deliberately consistent (same measured framing, identical sign-off), so
+    # don't push them to differ — only the specifics of the concern change.
+    if avoid and not negative:
         user += ("\n\nDo NOT reuse the wording or structure of these other "
                  "recent replies — make this one clearly different (and don't "
                  "repeat words like 'thrilled' that appear in them):\n"
                  + "\n".join(f"- {a}" for a in avoid if a))
     resp = client.messages.create(
-        model=MODEL, max_tokens=300, system=system,
+        model=MODEL, max_tokens=700 if negative else 300, system=system,
         output_config={"format": {"type": "json_schema", "schema": _REPLY_SCHEMA}},
         messages=[{"role": "user", "content": user}])
     body = next((b.text for b in resp.content if b.type == "text"), "{}")
