@@ -179,3 +179,25 @@ and it re-does work that already succeeded.
 **When we pick it up (tomorrow+):**
 - Standard per-report failure manifest (phase/section/ICD list) written on
   every run; a generic "Retry failed only" Hub action that reads it.
+
+---
+
+## Office-metrics Hub card consolidation (Megan — do 2026-07-17)
+
+The per-office daily-metrics reports (rashad #elevate-sales, aya #indelible-sales,
++ the 5 added 2026-07-15/16: cyrus #ambient-sales-1, hammad + salik
+#elite-prime-sales, kash #palace-sales, cody #aeon-sales) all run off ONE
+declarative table (`automations/office_metrics/offices.py`) + generic runner, and
+are wired into the 4am orchestrator (schedule_config `*_metrics`, order 7–8), but
+they have **no Hub cards / pills** yet — they only run on schedule + via
+`lucy rerun <office>_metrics`.
+
+**Goal:** consolidate them into a clean Hub presence instead of one card per
+office. Likely one "Office Daily Metrics" card that lists + launches all offices
+(driven by the offices.py registry so adding an office stays pure-config), with
+per-office status pills (green/orange-partial/red) fed by each run's manifest
+(`report_id = <office>_metrics`, already written with succeeded/failed labels).
+hub_publish map entries for the 5 new report_ids still need adding so pills show.
+
+Reference: [[project_office_metrics]] memory. Dashboard structure is Megan-owned —
+confirm the card layout with her before building.
