@@ -13,6 +13,22 @@ Tableau session -> capture each view to a PNG -> post them into today's own date
 thread for this org -> write a per-org run manifest. Only the first org of the
 day drives Tableau (the boards are the same for everyone); --fresh overrides.
 
+TWO RUNS A DAY (Carlos via Megan, 2026-07-16). The morning batch posts every
+board EXCEPT the late ones; a second run posts the late ones once their data is
+actually in:
+  4:31am  (no flag)     the 7 boards whose data is current -> full thread, with
+                        Box listed in the header as still coming
+  ~7am    --late-only   B2B Box only, once day_orchestrator's `box_daily`
+                        readiness probe says its extract has landed -> appended
+                        into each channel's SAME thread, header note cleared
+Box's numbers don't settle until its extract refreshes ~7-8am, so at 4:31 it was
+posting yesterday's figures into every channel, every morning. The gate is data
+readiness, not a clock: the probe is shared (and cached) with org_sales_board,
+which already waits on the same extract, so Box posts the moment it's real —
+typically well before 7 — and never later than the probe's 08:00 fail-open floor.
+Box's image lands LAST in the thread (Slack only appends replies) while keeping
+its normal slot in the header list.
+
 Usage
   # capture-only, writes PNGs to output/tableau_screenshots/, posts NOTHING:
   python -m automations.tableau_screenshots.run --dry-run
@@ -45,10 +61,17 @@ OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "tableau_screenshots"
 # original id so its existing Hub card / verify history stays continuous.
 REPORT_ID = "tableau-screenshots"
 
+# The ~7am late catch-up (--late-only) reports SEPARATELY: Box lands hours after
+# the morning batch, so folding it into the morning manifest would either re-open
+# a finished run or overwrite its verify record. Its own id = its own Hub card,
+# its own pill, its own retry button.
+LATE_REPORT_ID = "tableau-screenshots-box"
+
 # Per-channel outcome of today's run, read by the Hub card to show its ✅/❌
 # checklist. One card posts to EVERY channel, so the card needs to say which
 # channels actually landed -- a single red/green light would hide a lone failure.
 STATUS_FILE = OUT_DIR / "_posted_today.json"
+LATE_STATUS_FILE = OUT_DIR / "_posted_today_box.json"
 
 # The 8 boards are COUNTRY-wide -- all three orgs post byte-identical images. So
 # capture ONCE per day and let the other orgs reuse the PNGs: re-driving Tableau
@@ -62,13 +85,26 @@ STAMP = OUT_DIR / "_captured.json"
 
 def _write_stamp(out_dir: Path, captured: list, today: dt.date) -> None:
     """Record which trackers were captured, and when, so a later org run can tell
-    whether today's PNGs are complete enough to reuse."""
+    whether today's PNGs are complete enough to reuse.
+
+    MERGES into today's stamp rather than replacing it: the late catch-up captures
+    only Box, and a blind overwrite would drop the morning's 7 ids, so a later
+    re-post would re-drive Tableau for boards already sitting on disk. Yesterday's
+    stamp is discarded, not merged — stale images must never be reusable."""
     import json
+    stamp = out_dir / STAMP.name
+    have: list = []
     try:
-        (out_dir / STAMP.name).write_text(json.dumps({
-            "date": today.isoformat(),
-            "ids": [spec["id"] for spec, _ in captured],
-        }))
+        prev = json.loads(stamp.read_text())
+        if prev.get("date") == today.isoformat():
+            have = list(prev.get("ids") or [])
+    except Exception:            # no stamp yet, or unreadable — start clean
+        have = []
+    for spec, _ in captured:
+        if spec["id"] not in have:
+            have.append(spec["id"])
+    try:
+        stamp.write_text(json.dumps({"date": today.isoformat(), "ids": have}))
     except Exception:            # best-effort — a missing stamp just means recapture
         pass
 
@@ -110,11 +146,12 @@ def _select_orgs(orgs: str) -> list:
     return want
 
 
-def _write_status(out_dir: Path, results: list, today: dt.date) -> None:
+def _write_status(out_dir: Path, results: list, today: dt.date,
+                  status_file: Path = STATUS_FILE) -> None:
     """Today's per-channel outcome, for the Hub card's checklist."""
     import json
     try:
-        (out_dir / STATUS_FILE.name).write_text(json.dumps({
+        (out_dir / status_file.name).write_text(json.dumps({
             "date": today.isoformat(),
             "channels": results,
         }, indent=2))
@@ -122,9 +159,27 @@ def _write_status(out_dir: Path, results: list, today: dt.date) -> None:
         pass
 
 
-def _select(only: str | None) -> list:
+def _select(only: str | None, *, late_only: bool = False,
+            include_late: bool = False) -> list:
+    """The trackers this run posts.
+
+    Default = every board EXCEPT the late ones (pages.py `late`): at 4:31am their
+    data isn't in yet, so posting them means posting yesterday's numbers. The late
+    catch-up run picks them up with --late-only once the readiness probe clears.
+    An explicit --only always wins — naming a tracker means you want that tracker.
+    """
     if not only:
-        return list(pages_mod.PAGES)
+        if late_only:
+            late = [p for p in pages_mod.PAGES if pages_mod.is_late(p)]
+            if not late:
+                raise SystemExit("--late-only: no tracker is marked late in pages.py")
+            return late
+        if include_late:
+            return list(pages_mod.PAGES)
+        return [p for p in pages_mod.PAGES if not pages_mod.is_late(p)]
+    if late_only:
+        raise SystemExit("--late-only and --only are mutually exclusive — "
+                         "--only already names exactly what to post.")
     wanted = [s.strip() for s in only.split(",") if s.strip()]
     out = []
     for w in wanted:
@@ -141,7 +196,19 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-run", action="store_true",
                     help="Capture PNGs to output/ but post NOTHING to Slack.")
     ap.add_argument("--only", default=None,
-                    help="Comma-separated tracker id(s) to run (default: all).")
+                    help="Comma-separated tracker id(s) to run (default: every "
+                         "tracker except the late ones — see --late-only).")
+    ap.add_argument("--late-only", action="store_true",
+                    help="Post ONLY the late tracker(s) — the boards whose data "
+                         "isn't current at 4:31am (B2B Box). This is the ~7am "
+                         "catch-up: it captures Box once its extract has landed "
+                         "and posts it into today's existing thread in every "
+                         "channel. Safe to re-run — a channel that already has "
+                         "today's Box image is left alone.")
+    ap.add_argument("--include-late", action="store_true",
+                    help="Post every tracker INCLUDING the late ones, in one go. "
+                         "For a manual same-day re-post after Box has landed "
+                         "(pair with --replace to fix the whole thread's order).")
     ap.add_argument("--full", action="store_true",
                     help="Force full_page capture (whole board) for every "
                          "tracker, overriding each page's crop -- use on the "
@@ -184,12 +251,18 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     today = dt.date.today()
-    selected = _select(args.only)
+    selected = _select(args.only, late_only=args.late_only,
+                       include_late=args.include_late)
     out_dir = Path(args.out_dir)
     force_crop = "full" if args.full else None
 
     orgs = _select_orgs(args.orgs)
-    report_id = REPORT_ID
+    # The late catch-up is its OWN report to the Hub + orchestrator: its own
+    # manifest (else it overwrites the morning run's verify record) and its own
+    # per-channel status file (else the morning card's checklist gets rewritten
+    # to show one tracker). Same code, same channels, separate accounting.
+    report_id = LATE_REPORT_ID if args.late_only else REPORT_ID
+    status_file = LATE_STATUS_FILE if args.late_only else STATUS_FILE
     print(f"Tableau country trackers -- {len(selected)} view(s) -> {len(orgs)} org(s): "
           f"{', '.join(sp.ORG_LABEL[o] for o in orgs)}, "
           f"{'DRY-RUN (no Slack)' if args.dry_run else 'LIVE'}, "
@@ -378,7 +451,10 @@ def main(argv=None) -> int:
             result = {"ok": False, "channels": [],
                       "error": f"{type(e).__name__}: {str(e)[:120]}"}
         for c in result.get("channels", []):
-            if c.get("ok"):
+            if c.get("skipped"):
+                print(f"↷ [{org}] {c['channel']} already had today's images — "
+                      f"left alone", flush=True)
+            elif c.get("ok"):
                 rm = c.get("removed") or 0
                 print(f"✓ [{org}] posted {len(c.get('posted', []))} image(s) to "
                       f"{c['channel']} thread {c.get('thread_ts')}"
@@ -395,7 +471,7 @@ def main(argv=None) -> int:
                          for c in result.get("channels", [])],
             "error": result.get("error"),
         })
-    _write_status(out_dir, status_rows, today)
+    _write_status(out_dir, status_rows, today, status_file)
 
     print(f"\n=== POSTED: {len(posted_ok)}/{len(orgs)} org(s)", flush=True)
     for org in orgs:
@@ -413,7 +489,10 @@ def main(argv=None) -> int:
     run_manifest.write_manifest(
         report_id, ok=bool(ok), failed=parts, kind="channel",
         succeeded=[sp.ORG_LABEL[o] for o in posted_ok],
-        retry_args=(["--orgs", ",".join(posted_bad), "--replace"]
+        # A late run's retry must stay a LATE run — without --late-only the retry
+        # would post the morning's 7 boards instead of the tracker that missed.
+        retry_args=(((["--late-only"] if args.late_only else [])
+                     + ["--orgs", ",".join(posted_bad), "--replace"])
                     if posted_bad else []),
         note=("" if ok else
               "; ".join(filter(None, [

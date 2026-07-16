@@ -1748,7 +1748,7 @@
     "tableau_screenshots": {
       "order": 5,
       "on_scheduler": true,
-      "_note": "LIVE daily 8-tracker Tableau COUNTRY trackers (Download->Image, per-tracker page-1 crop_to_bar + bottom trim). ONE run captures the 8 boards once and posts them as Lucy into a dated thread 'Tableau Country Trackers M/D/YYYY' in EVERY channel (--orgs all): #alphalete-sales + #top-leaders-alphalete-org, #elevate-sales, #indelible-sales, #palace-sales, #elite-prime-sales. The boards are country-wide, so every channel gets identical images off the single capture -- one Tableau login a day. ADD A CHANNEL = one line in slack_post.ORG_CHANNELS, nothing else. A channel that fails does NOT sink the others: it lands in the run manifest's failed list, so the Hub card shows a per-channel checklist + a 'Retry failed only' button that re-posts just the misses (--orgs <them> --replace). source_type tableau = wave 2. Went live 2026-07-05. To preview instead of post: base_args ['--preview-dm','U04G5HJBGFN'].",
+      "_note": "LIVE daily Tableau COUNTRY trackers (Download->Image, per-tracker page-1 crop_to_bar + bottom trim). Posts the 7 boards whose data IS current at 4:31 -- B2B Box is `late: True` in pages.py and rides the tableau_screenshots_box catch-up at ~7am instead, because its extract doesn't refresh until then (see that report's note). The header still lists Box in its normal slot, flagged as still coming. ONE run captures the boards once and posts them as Lucy into a dated thread 'Tableau Country Trackers M/D/YYYY' in EVERY channel (--orgs all): #alphalete-sales + #top-leaders-alphalete-org, #elevate-sales, #indelible-sales, #palace-sales, #elite-prime-sales. The boards are country-wide, so every channel gets identical images off the single capture -- one Tableau login a day. ADD A CHANNEL = one line in slack_post.ORG_CHANNELS, nothing else. A channel that fails does NOT sink the others: it lands in the run manifest's failed list, so the Hub card shows a per-channel checklist + a 'Retry failed only' button that re-posts just the misses (--orgs <them> --replace). source_type tableau = wave 2. Went live 2026-07-05. To preview instead of post: base_args ['--preview-dm','U04G5HJBGFN'].",
       "display_name": "Tableau Country Trackers",
       "source_type": "tableau",
       "data_sources": [],
@@ -1774,6 +1774,41 @@
       "verify": {
         "type": "manifest",
         "report_id": "tableau-screenshots"
+      }
+    },
+    "tableau_screenshots_box": {
+      "order": 5.5,
+      "on_scheduler": true,
+      "_note": "The ~7am B2B BOX catch-up for the Tableau Country Trackers. Box's extract refreshes ~7-8am with the prior day's FINAL numbers, so at 4:31 it posted yesterday's figures into every channel every morning (Carlos flagged it 2026-07-16, 'Box isn't updated, it was off yesterday too'). The other 7 boards are correct at 4:31, so they still post then -- pages.py marks Box `late: True`, the morning run drops it, and THIS run posts it with --late-only once its data is actually in. NOT A CLOCK: data_sources 'tableau:box_daily' is the SAME readiness probe org_sales_board already waits on, and ReadinessCache is per-run + shared, so this costs no extra Tableau pull and Box posts the moment its extract lands (typically well before 7) -- never later than the probe's 08:00 fail-open floor, which exists so the gate can never skip the post. Appends Box's image into today's EXISTING thread in every channel (find-or-create by dated title, same routing as the morning run) and clears the header's 'data lands ~7am' note. Idempotent per tracker: a re-run leaves a channel that already has today's Box alone. Own report_id/manifest/status file so it can't overwrite the morning card's per-channel checklist.",
+      "display_name": "Tableau Country Trackers — Box (late)",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:box_daily"
+      ],
+      "command": [
+        "automations.tableau_screenshots.run"
+      ],
+      "base_args": [
+        "--late-only"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 20,
+      "verify": {
+        "type": "manifest",
+        "report_id": "tableau-screenshots-box"
       }
     },
     "tableau_preview": {

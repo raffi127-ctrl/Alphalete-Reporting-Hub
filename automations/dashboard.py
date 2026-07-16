@@ -1202,7 +1202,7 @@ def _last_completed_as_picker(today: dt.date | None = None) -> dt.date:
 
 
 def _tableau_trackers_card() -> dict:
-    """ONE card for the 8 country-wide Tableau trackers, posted to EVERY channel
+    """ONE card for the country-wide Tableau trackers, posted to EVERY channel
     off a single capture (Megan 2026-07-14 — was 5 cards, one per org).
 
     The channel list is read from slack_post.ORG_CHANNELS, and the per-channel
@@ -1211,11 +1211,19 @@ def _tableau_trackers_card() -> dict:
     Per-channel outcomes show as a ✅/❌ checklist (see _tableau_channel_status),
     and the standard manifest-retry button re-posts only the channels that
     missed. That's what makes one card safe here: a single red light would hide
-    a lone channel failing."""
+    a lone channel failing.
+
+    B2B Box is NOT on this card — its data isn't in at 4:31, so it posts hours
+    later on its own card (_tableau_box_card). Two runs, two pills: one card
+    covering both would go red at 4:31 every morning for a board that simply
+    hasn't landed yet."""
     from automations.tableau_screenshots import slack_post as _sp
     from automations.tableau_screenshots import pages as _pages
+    morning = [p for p in _pages.PAGES if not _pages.is_late(p)]
+    late = [p for p in _pages.PAGES if _pages.is_late(p)]
     trackers = "\n".join(
-        f"{i}. {p['title']}" for i, p in enumerate(_pages.PAGES, 1))
+        f"{i}. {p['title']}" for i, p in enumerate(morning, 1))
+    late_names = ", ".join(p["title"] for p in late)
     # Prose form (one line, for the card description sentence).
     channels = ", ".join(_sp.ORG_LABEL[o] for o in _sp.ORGS)
     # Bulleted form (one Slack channel per line, for the breakdown panel — the
@@ -1233,17 +1241,26 @@ def _tableau_trackers_card() -> dict:
         "color": "#1F4E79",
         "category": "📊 Metrics",
         "description": (
-            "Captures the 8 Tableau country sales trackers as images and posts "
-            "them daily into a 'Tableau Country Trackers M/D/YYYY' thread in "
-            f"every sales channel: {channels}. The boards are country-wide, so "
-            "all channels get identical images from a single capture (one "
-            "Tableau login). Replaces Jolie's manual tracker post."),
+            f"Captures {len(morning)} Tableau country sales trackers as images "
+            "and posts them daily into a 'Tableau Country Trackers M/D/YYYY' "
+            f"thread in every sales channel: {channels}. The boards are "
+            "country-wide, so all channels get identical images from a single "
+            "capture (one Tableau login). Replaces Jolie's manual tracker post. "
+            f"{late_names} posts later, on its own card — its data isn't in "
+            "this early."),
         "breakdown": (
             "WHAT IT DOES\n"
-            "Grabs each of the 8 Tableau country trackers as an image and posts "
-            "them into today's dated thread in every channel below.\n\n"
+            f"Grabs each of these {len(morning)} Tableau country trackers as an "
+            "image and posts them into today's dated thread in every channel "
+            "below.\n\n"
             f"TRACKERS\n{trackers}\n\n"
             f"CHANNELS\n{channel_bullets}\n\n"
+            "WHY BOX ISN'T HERE\n"
+            f"{late_names}'s numbers don't settle until its Tableau data "
+            "refreshes (~7am), so posting it at 4:31 posted yesterday's "
+            "figures. It's listed in the Slack thread's header from 4:31 — "
+            "marked as still coming — and its image is added to that same "
+            "thread by the 'Box (late)' card as soon as the data is real.\n\n"
             "IF A CHANNEL MISSES\n"
             "The card shows a per-channel checklist after the run. Use "
             "'Retry failed only' to re-post just the channels that missed, or "
@@ -1257,8 +1274,9 @@ def _tableau_trackers_card() -> dict:
         "checklist": [],
         "post_run": {
             "message_success": (
-                "✅ Tableau Country Trackers posted — all 8 tracker screenshots "
-                "in the dated thread in every channel."),
+                f"✅ Tableau Country Trackers posted — all {len(morning)} tracker "
+                f"screenshots in the dated thread in every channel. "
+                f"({late_names} follows on its own card once its data lands.)"),
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
             # Drives the ✅/❌ per-channel checklist on the card (_channel_status).
             "channel_status_file": "output/tableau_screenshots/_posted_today.json",
@@ -1268,9 +1286,10 @@ def _tableau_trackers_card() -> dict:
                 "label": "Post Today's Trackers (all channels)",
                 "icon": "▶",
                 "primary": True,
-                "help": ("Captures the 8 Tableau trackers once and posts them to "
-                         "every channel. Needs a warm Tableau session (best run "
-                         "on the mini)."),
+                "help": (f"Captures the {len(morning)} Tableau trackers once and "
+                         f"posts them to every channel. Needs a warm Tableau "
+                         f"session (best run on the mini). {late_names} is not "
+                         f"included — use its own card."),
                 "module": "automations.tableau_screenshots.run",
                 "args_fn": lambda: [],
             },
@@ -1284,6 +1303,94 @@ def _tableau_trackers_card() -> dict:
                 # default-bind o — a bare closure would capture the loop variable
                 # and every button would post to the LAST org.
                 "args_fn": (lambda org=o: ["--orgs", org, "--replace"]),
+            }
+            for o in _sp.ORGS
+        ],
+    }
+
+
+def _tableau_box_card() -> dict:
+    """The late half of the tracker set: B2B Box, posted once its data is in.
+
+    Same code, same channels, same thread as _tableau_trackers_card — only the
+    timing differs, so everything here is derived from the same pages.py/
+    ORG_CHANNELS source rather than restated. Its own card because it's its own
+    run with its own outcome: Box failing at 7am and the 4:31 batch failing are
+    different problems, and one pill couldn't tell Megan which happened."""
+    from automations.tableau_screenshots import slack_post as _sp
+    from automations.tableau_screenshots import pages as _pages
+    late = [p for p in _pages.PAGES if _pages.is_late(p)]
+    late_names = ", ".join(p["title"] for p in late)
+    channels = ", ".join(_sp.ORG_LABEL[o] for o in _sp.ORGS)
+    channel_bullets = "\n".join(
+        f"• {name.strip()}"
+        for o in _sp.ORGS
+        for name in _sp.ORG_LABEL[o].split(" + "))
+    return {
+        "id": "tableau-screenshots-box",
+        "name": "Tableau Country Trackers — Box (late)",
+        "creator": "Megan",
+        "emoji": "📦",
+        "color": "#1F4E79",
+        "category": "📊 Metrics",
+        "description": (
+            f"Adds the {late_names} image to the morning's "
+            "'Tableau Country Trackers M/D/YYYY' thread in every sales channel "
+            f"({channels}) — but only once Box's Tableau data has actually "
+            "refreshed. Box's numbers don't settle until ~7am, so it used to "
+            "post yesterday's figures with the 4:31 batch."),
+        "breakdown": (
+            "WHAT IT DOES\n"
+            f"Captures {late_names} and adds it to the tracker thread that "
+            "already went out at 4:31 — same thread, every channel below. The "
+            "thread's header lists Box from 4:31, marked as still coming; this "
+            "run posts the image and clears that note.\n\n"
+            "WHEN IT RUNS\n"
+            "Not on a clock. It waits for Box's Tableau data to actually land "
+            "and posts within ~12 minutes of that — usually before 7am, and by "
+            "8am at the latest even if the check can't confirm (it posts "
+            "anyway rather than skip). It's the same readiness check the Org "
+            "Sales Board already waits on.\n\n"
+            f"CHANNELS\n{channel_bullets}\n\n"
+            "IF A CHANNEL MISSES\n"
+            "Per-channel checklist, same as the main tracker card. Re-running "
+            "is safe — a channel that already has today's Box image is left "
+            "alone."),
+        "assignees": ["Lucy 1"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "estimated_minutes": 3,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": (
+                f"✅ {late_names} posted into today's tracker thread in every "
+                "channel."),
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+            "channel_status_file": "output/tableau_screenshots/_posted_today_box.json",
+        },
+        "actions": [
+            {
+                "label": "Post Box Now (all channels)",
+                "icon": "▶",
+                "primary": True,
+                "help": ("Captures Box and adds it to today's tracker thread in "
+                         "every channel. Only do this if Box's data is in — "
+                         "before ~7am it's still yesterday's numbers. Safe to "
+                         "re-run; channels that already have it are skipped."),
+                "module": "automations.tableau_screenshots.run",
+                "args_fn": lambda: ["--late-only"],
+            },
+        ] + [
+            {
+                "label": f"Re-post Box to {_sp.ORG_LABEL[o]}",
+                "icon": "🔁",
+                "module": "automations.tableau_screenshots.run",
+                # default-bind o — a bare closure would capture the loop variable
+                # and every button would post to the LAST org.
+                "args_fn": (lambda org=o: ["--late-only", "--orgs", org,
+                                           "--replace"]),
             }
             for o in _sp.ORGS
         ],
@@ -2608,6 +2715,7 @@ AUTOMATED_REPORTS = [
         ],
     },
     _tableau_trackers_card(),
+    _tableau_box_card(),
     {
         "id": "lucy-weather-forecast",
         "name": "Lucy Weather Forecast",

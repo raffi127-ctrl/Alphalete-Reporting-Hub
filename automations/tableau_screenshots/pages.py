@@ -15,6 +15,12 @@ Fields
                 needs are already in the URL (these pager views auto-scope to
                 "This Week"); no separate filter handling.
   crop          "canvas" = just the viz (default) | "full" = whole page.
+  late          True = this board's data is NOT current at 4:31am, so it is left
+                OUT of the morning batch and posted by the LATE catch-up run
+                (--late-only) once a readiness probe says its extract is in.
+                Everything else about it is normal: it still gets its header
+                line, in its normal order, and its image still lands in every
+                channel -- just later in the thread. Omit the field = normal.
 
 All 8 URLs desk-verified 2026-07-04: site sci, valid workbooks (6 of 8 are
 workbooks our other reports already read daily).
@@ -117,6 +123,13 @@ PAGES = [
         "react": "package",
         "url": _BASE + "B2BBOXEnergyTracker/BoxDailyTracker?:iid=1",
         "crop": "canvas",
+        # Box's extract refreshes ~7-8am with the prior day's FINAL numbers, so at
+        # 4:31 this board posts yesterday's stale figures -- Carlos flagged it two
+        # mornings running (2026-07-16). It's the same lateness the ORG Sales Board
+        # already knows about: day_orchestrator.readiness._probe_box_daily gates
+        # that report on this exact extract. So Box sits out the morning batch and
+        # rides the late catch-up, which shares that probe's verdict.
+        "late": True,
     },
     {
         "id": "quantum_fiber",
@@ -131,3 +144,12 @@ PAGES = [
 
 def by_id(page_id: str) -> dict | None:
     return next((p for p in PAGES if p["id"] == page_id), None)
+
+
+def is_late(spec: dict) -> bool:
+    """True for a board whose data isn't current at 4:31am (see `late` above)."""
+    return bool(spec.get("late"))
+
+
+def late_ids() -> list:
+    return [p["id"] for p in PAGES if is_late(p)]

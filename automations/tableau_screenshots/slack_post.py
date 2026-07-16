@@ -112,10 +112,22 @@ def _legacy_title(today: dt.date) -> str:
     return f"{_LEGACY_TITLE_PREFIX} {today.month}/{today.day}/{today.year}"
 
 
-def header_text(pages: list, today: dt.date) -> str:
-    """Bold dated title + one ':react: Title' line per tracker (parent message)."""
+LATE_NOTE = "_(data lands ~7am — image posts then)_"
+
+
+def header_text(pages: list, today: dt.date, pending_late=()) -> str:
+    """Bold dated title + one ':react: Title' line per tracker (parent message).
+
+    A tracker id in `pending_late` gets a note after its name: it IS listed, in
+    its normal order, but its image isn't in the thread yet (see pages.py `late`).
+    Without the note a reader just sees a tracker with no image and assumes the
+    automation broke — which is exactly the report we got. The catch-up run drops
+    the note when it posts the image."""
+    pending = set(pending_late or ())
     lines = [f"*{header_title(today)}*", ""]
-    lines += [f":{p['react']}: {p['title']}" for p in pages]
+    lines += [f":{p['react']}: {p['title']}"
+              + (f"  {LATE_NOTE}" if p["id"] in pending else "")
+              for p in pages]
     return "\n".join(lines)
 
 
@@ -144,7 +156,8 @@ def find_thread_ts(client, channel: str, today: dt.date):
     return None, False
 
 
-def ensure_thread(client, channel: str, pages: list, today: dt.date) -> dict:
+def ensure_thread(client, channel: str, pages: list, today: dt.date,
+                  pending_late=()) -> dict:
     """Find today's tracker parent in `channel` or create it (bold header, Lucy).
     A parent still carrying the legacy title is RETITLED in place, so today's
     thread ends up reading the same as every other channel's."""
@@ -153,25 +166,83 @@ def ensure_thread(client, channel: str, pages: list, today: dt.date) -> dict:
         if is_legacy:
             try:
                 client.chat_update(channel=channel, ts=ts,
-                                   text=header_text(pages, today))
+                                   text=header_text(pages, today, pending_late))
                 print(f"  {channel}: retitled today's parent → {header_title(today)}",
                       flush=True)
             except Exception as e:
                 print(f"  {channel}: retitle skipped ({type(e).__name__})", flush=True)
         return {"thread_ts": ts, "created": False}
-    resp = client.chat_postMessage(channel=channel, text=header_text(pages, today))
+    resp = client.chat_postMessage(channel=channel,
+                                   text=header_text(pages, today, pending_late))
     return {"thread_ts": resp.get("ts"), "created": True}
 
 
-def delete_image_replies(client, channel: str, thread_ts: str) -> int:
-    """Delete every IMAGE reply under today's parent (the parent itself is never
+def _unescape(text: str) -> str:
+    """Slack stores message text HTML-escaped, so the caption we sent as
+    'AT&T Internet Country Sales Tracker' reads back as 'AT&amp;T ...'. Verified
+    against the live 2026-07-16 thread: 4 of the 8 titles contain '&', and a raw
+    comparison missed every one of them. Slack escapes only these three."""
+    return (text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">"))
+
+
+def _reply_matches(msg: dict, spec: dict, today: dt.date) -> bool:
+    """Is this thread reply the image for `spec`? Matched on the caption text OR
+    the attached filename -- both are derived from the tracker's title, and either
+    alone is enough. Two signals because Slack does not guarantee `initial_comment`
+    survives as the file-share message's `text` in every upload path; a false
+    negative here would re-post a duplicate image."""
+    needle = f"{spec['title']} - {today.strftime('%b')} {today.day}"
+    if needle in _unescape(msg.get("text") or ""):
+        return True
+    want = f"{_sanitize_title(spec['title'])}.png"
+    return any((f.get("name") or "") == want for f in (msg.get("files") or []))
+
+
+def _sanitize_title(name: str) -> str:
+    """Mirror of capture._sanitize (the PNG filename), imported lazily to keep
+    this module free of the capture/browser stack."""
+    from automations.tableau_screenshots.capture import _sanitize
+    return _sanitize(name)
+
+
+def _image_replies(client, channel: str, thread_ts: str) -> list:
+    resp = client.conversations_replies(channel=channel, ts=thread_ts, limit=200)
+    return [m for m in resp.get("messages", [])
+            if m.get("ts") != thread_ts and m.get("files")]
+
+
+def posted_ids(client, channel: str, thread_ts: str, pages: list,
+               today: dt.date) -> set:
+    """Tracker ids that ALREADY have an image reply under today's parent.
+
+    Identity, not arithmetic. The old check compared a COUNT of replies to the
+    number of images being posted, which silently skipped any run that posts a
+    subset: the Box catch-up posts 1 image into a thread that already holds 7, and
+    `7 >= 1` read as "already done" -- Box would never have posted."""
+    msgs = _image_replies(client, channel, thread_ts)
+    return {p["id"] for p in pages
+            if any(_reply_matches(m, p, today) for m in msgs)}
+
+
+def delete_image_replies(client, channel: str, thread_ts: str, pages: list,
+                         today: dt.date, only_ids=None) -> int:
+    """Delete the IMAGE replies under today's parent (the parent itself is never
     touched, so the thread link + its reactions survive). Used by --replace to
     re-post a corrected set of images IN ORDER: Slack appends replies, so a single
-    re-upload would land at the bottom instead of in its header position."""
-    resp = client.conversations_replies(channel=channel, ts=thread_ts, limit=200)
+    re-upload would land at the bottom instead of in its header position.
+
+    SCOPED by `only_ids` (default: only what this run is re-posting). A blanket
+    wipe would delete a LATE tracker's image too -- the morning report's retry
+    runs `--orgs X --replace` with only its own 7 boards, so after Box has landed
+    an unscoped delete would take Box out and never put it back. An unrecognised
+    reply (hand-posted, or a tracker since removed from pages.py) is left alone."""
+    want = set(only_ids) if only_ids is not None else {p["id"] for p in pages}
+    by_id_ = {p["id"]: p for p in pages}
     deleted = 0
-    for msg in resp.get("messages", []):
-        if msg.get("ts") == thread_ts or not msg.get("files"):
+    for msg in _image_replies(client, channel, thread_ts):
+        spec = next((by_id_[i] for i in want
+                     if i in by_id_ and _reply_matches(msg, by_id_[i], today)), None)
+        if spec is None:
             continue
         for f in msg.get("files") or []:
             try:
@@ -186,41 +257,47 @@ def delete_image_replies(client, channel: str, thread_ts: str) -> int:
     return deleted
 
 
-def count_image_replies(client, channel: str, thread_ts: str) -> int:
-    """How many image replies today's parent already has."""
-    resp = client.conversations_replies(channel=channel, ts=thread_ts, limit=200)
-    return sum(1 for m in resp.get("messages", [])
-               if m.get("ts") != thread_ts and m.get("files"))
-
-
 def _post_to_channel(client, channel: str, captures: list, pages: list,
-                     today: dt.date, replace: bool = False) -> dict:
+                     today: dt.date, replace: bool = False,
+                     late_all=()) -> dict:
     """Ensure the parent + post every image reply (with parent reaction) in one
     channel. A failure in one channel is caught by the caller so the others still
     post.
 
     IDEMPOTENT — posting the same day twice must not duplicate. This matters
     because a partial run exits non-zero and the ORCHESTRATOR RETRIES IT (up to
-    MAX_RUN_RETRIES): without this, every retry would append another 8 images to
-    the channels that already succeeded, so healing one broken channel would
-    trash the healthy ones. Per channel:
-      already has the full set -> SKIP (ok, nothing posted)
-      has a partial set        -> clear + re-post (heal a half-finished upload)
-      has none                 -> post
-      replace=True             -> always clear + re-post, in header order
+    MAX_RUN_RETRIES): without this, every retry would append another set of images
+    to the channels that already succeeded, so healing one broken channel would
+    trash the healthy ones. Scoped to THIS RUN'S trackers (`captures`) — a run
+    never reads or touches a reply for a tracker it isn't posting:
+      this run's trackers all present -> SKIP (ok, nothing posted)
+      some present, some missing      -> clear THIS RUN'S + re-post them in order
+      none present                    -> post
+      replace=True                    -> always clear THIS RUN'S + re-post in order
+
+    "Clear + re-post" rather than "append the missing" is deliberate: Slack appends
+    replies, so topping up a half-finished set would leave the images out of header
+    order. The clear is scoped by tracker id, so a LATE tracker already sitting in
+    the thread survives a morning-batch retry.
     """
-    thread = ensure_thread(client, channel, pages, today)
+    mine = [spec["id"] for spec, _ in captures]
+    # Late trackers this run ISN'T posting are the ones still owed — that's both
+    # the note a fresh header carries AND, after a late run posts, what's left.
+    pending_late = [i for i in (late_all or []) if i not in set(mine)]
+    thread = ensure_thread(client, channel, pages, today, pending_late)
     thread_ts = thread["thread_ts"]
     removed = 0
-    existing = 0 if thread["created"] else count_image_replies(client, channel,
-                                                               thread_ts)
-    if not replace and existing >= len(captures) > 0:
-        print(f"  {channel}: already has {existing} image(s) today — skipping "
-              f"(nothing re-posted)", flush=True)
+    already = (set() if thread["created"]
+               else posted_ids(client, channel, thread_ts, pages, today))
+    have = already & set(mine)
+    if not replace and captures and len(have) == len(mine):
+        print(f"  {channel}: already has today's {len(have)} image(s) for this "
+              f"run — skipping (nothing re-posted)", flush=True)
         return {"channel": channel, "thread_ts": thread_ts, "created": False,
                 "posted": [], "removed": 0, "skipped": True, "ok": True}
-    if (replace or existing) and not thread["created"]:
-        removed = delete_image_replies(client, channel, thread_ts)
+    if (replace or have) and not thread["created"]:
+        removed = delete_image_replies(client, channel, thread_ts, pages, today,
+                                       only_ids=mine)
         if removed:
             why = "replacing" if replace else "healing a partial set"
             print(f"  {channel}: cleared {removed} old image reply(ies) ({why})",
@@ -243,6 +320,16 @@ def _post_to_channel(client, channel: str, captures: list, pages: list,
         # after it, so images land out of header order. Pause so each image's
         # message posts before the next upload starts (keeps them in order).
         time.sleep(3)
+    # A late tracker just landed -> drop its "(data lands ~7am)" note from the
+    # header, so the thread stops advertising something it's already delivered.
+    # Best-effort: the image is what matters, and a stale note beats a failed run.
+    if not thread["created"] and (set(mine) & set(late_all or ())):
+        try:
+            client.chat_update(channel=channel, ts=thread_ts,
+                               text=header_text(pages, today, pending_late))
+        except Exception as e:  # noqa: BLE001
+            print(f"  {channel}: header note not cleared ({type(e).__name__}) — "
+                  f"image posted fine", flush=True)
     return {"channel": channel, "thread_ts": thread_ts,
             "created": thread["created"], "posted": results, "removed": removed,
             "skipped": False,
@@ -321,8 +408,13 @@ def retitle_today(pages: list, today: dt.date | None = None,
             out.append({"channel": channel, "status": "already current"})
             continue
         try:
+            # Keep the "still coming" note on any late tracker whose image isn't
+            # in the thread yet — a retitle must not quietly promise it landed.
+            from automations.tableau_screenshots import pages as _pages_mod
+            done = posted_ids(client, channel, ts, pages, today)
+            pending_late = [i for i in _pages_mod.late_ids() if i not in done]
             client.chat_update(channel=channel, ts=ts,
-                               text=header_text(pages, today))
+                               text=header_text(pages, today, pending_late))
             out.append({"channel": channel, "status": "retitled", "ts": ts})
         except Exception as e:
             out.append({"channel": channel,
@@ -338,9 +430,18 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
     the full ordered list used to build the header (so the header lists every
     tracker even if one failed to capture). replace=True re-posts today's thread:
     clear the old image replies, then post this set in order (for a same-day crop
-    fix). An org in ORG_ORDER gets its own tracker order (header + replies)."""
+    fix). An org in ORG_ORDER gets its own tracker order (header + replies).
+
+    A LATE tracker (pages.py `late`) that this run isn't posting is annotated in
+    the header as still coming. Note the header keeps its normal ORDER either way
+    (Megan 2026-07-16) — Box stays where it belongs in the list even though its
+    image lands last in the thread, because Slack only ever appends replies."""
     today = today or dt.date.today()
     channels = channels_for(org)
+    from automations.tableau_screenshots import pages as _pages_mod
+    late_all = _pages_mod.late_ids()
+    pending_late = [i for i in late_all
+                    if i not in {spec["id"] for spec, _ in captures}]
 
     # Per-org custom order (Carlos): reorder BOTH the header (pages) and the image
     # replies (captures) so they match. Other orgs use the default pages.py order.
@@ -355,7 +456,8 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
             "replace": replace,
             "org": org,
             "channels": list(channels),
-            "header": header_text(pages, today),
+            "pending_late": pending_late,
+            "header": header_text(pages, today, pending_late),
             "replies": [
                 {"file": Path(p).name, "caption": reply_caption(spec, today),
                  "react": spec["react"]}
@@ -369,7 +471,7 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
         try:
             channel_results.append(
                 _post_to_channel(client, channel, captures, pages, today,
-                                 replace=replace))
+                                 replace=replace, late_all=late_all))
         except Exception as e:
             channel_results.append(
                 {"channel": channel, "ok": False,

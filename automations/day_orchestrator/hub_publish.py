@@ -59,6 +59,10 @@ _HUB_CARD = {
     "social_inbox": "social-media-posting",
     "alphalete_production": "alphalete-production",
     "tableau_screenshots": "tableau-screenshots",
+    # The ~7am Box catch-up is its own card: it runs hours after the morning
+    # trackers, so folding it into that card would leave one pill standing for two
+    # runs that succeed or fail independently.
+    "tableau_screenshots_box": "tableau-screenshots-box",
     "weather_alert": "lucy-weather-forecast",
     # Library reports run on their own LaunchAgent/rerun (not the 4am batch) and
     # mark themselves via run_library_report / their wrapper. Their Hub card id IS
