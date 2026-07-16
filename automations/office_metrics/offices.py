@@ -93,10 +93,14 @@ class Office:
     channel_name: str   # "#elevate-sales" — display + the guard's messages.
     sheet_id: str       # this office's metrics workbook (churn + ABP fills).
     knocks_office: str  # ownerville office name for the knocks scrape.
-    view_ongoing_cancel: str    # cancel-rates view (RashadExpanded-style).
-    view_churn_ni: str          # New-Internet churn view (INTRashad-style).
-    view_churn_wl: str          # Wireless churn view (WirelessRashad-style).
-    view_abp: str               # New-Internet ABP view (RashadNLABP-style).
+    # Per-office view URLs — LEGACY. Every metric now slices a SHARED all-office
+    # view (ABP/CHURN/CANCEL flags all True), so a new office leaves these EMPTY.
+    # They stay only for rashad/aya history + as a fallback if a shared flag is
+    # ever turned back off. validate() checks uniqueness of the non-empty ones.
+    view_ongoing_cancel: str = ""
+    view_churn_ni: str = ""
+    view_churn_wl: str = ""
+    view_abp: str = ""
     # Set ONLY when two offices share a channel (Salik + Hammad → #elite-prime-
     # sales): the owner name is added to the Metrics header so each gets its own
     # distinguishable thread. Empty = single-office channel, no label (default).
@@ -150,6 +154,36 @@ OFFICES: dict[str, Office] = {
         view_abp=_T + "ATTTRACKER2_1-D2D/Metrics/"
                  "c51fa7b7-f75d-4ca0-bb6a-f63c9a83eb32/AyaINTABP?:iid=1",
     ),
+    # --- Offices added 2026-07-15 — PURE CONFIG (all metrics slice shared views,
+    # no per-office Tableau views). owner = canonical name (alias sheet); the
+    # churn/ABP/cancel slices match it case-insensitively. knocks_office = the
+    # ownerville name (may differ from canonical — verified from OV).
+    "cyrus": Office(
+        key="cyrus", report_id="cyrus_metrics", label="Cyrus's Local Office",
+        owner="Cyrus Wade", knocks_office="Cyrus Wade",
+        channel_id="C0B1DHEFVLH", channel_name="#ambient-sales-1",
+        sheet_id="1PVWJq4v1Ju3o5R3W3ugigxCaB1c3ZobRLsswx1tjdcc",
+    ),
+    "hammad": Office(
+        key="hammad", report_id="hammad_metrics", label="Hammad's Local Office",
+        owner="Hammad Haque", knocks_office="Muhammad UI Haque",
+        channel_id="C06A6A8ED34", channel_name="#elite-prime-sales",
+        sheet_id="1oJrhHAUA3k36VXiiN7yPGKYQmQ9gK7L4TSIYsklNoSA",
+        header_label="Hammad Haque",       # shares #elite-prime-sales with Salik
+    ),
+    "kash": Office(
+        key="kash", report_id="kash_metrics", label="Kash's Local Office",
+        owner="Kash Rai", knocks_office="Akashdeep Rai",
+        channel_id="C09AVM17PAR", channel_name="#palace-sales",
+        sheet_id="1Nj7r35zyFNpupcN_2-KcEAI5JH8uPwqRnzJODDcWC5g",
+    ),
+    "salik": Office(
+        key="salik", report_id="salik_metrics", label="Salik's Local Office",
+        owner="Salik Mallick", knocks_office="Muhammad Waqar",
+        channel_id="C06A6A8ED34", channel_name="#elite-prime-sales",
+        sheet_id="1iJ4R99A6ul7jNYEEVEGlXT32pNf-He-oE0-N-EI_-78",
+        header_label="Salik Mallick",      # shares #elite-prime-sales with Hammad
+    ),
 }
 
 ORDER = list(OFFICES)          # stable order for listing
@@ -176,8 +210,7 @@ def validate() -> list[str]:
     The runner calls this at startup and aborts before any pull or post."""
     problems: list[str] = []
     required = ("report_id", "label", "owner", "channel_id", "channel_name",
-                "sheet_id", "knocks_office", "view_ongoing_cancel",
-                "view_churn_ni", "view_churn_wl", "view_abp")
+                "sheet_id", "knocks_office")   # view_* are legacy/optional now
 
     seen_channel: dict[str, str] = {}
     seen_view: dict[str, str] = {}
@@ -188,24 +221,31 @@ def validate() -> list[str]:
         for f in required:
             if not (getattr(o, f) or "").strip():
                 problems.append(f"{key}: empty {f}")
-        # channel uniqueness — two offices → same channel would double-post +
-        # merge two offices' numbers into one thread.
+        # channel sharing — two offices MAY share a channel, but ONLY if BOTH set
+        # a header_label so they post to distinct, distinguishable threads
+        # (Salik + Hammad → #elite-prime-sales). Without labels their numbers
+        # would merge into one thread.
         if o.channel_id in seen_channel:
-            problems.append(f"{key}: channel {o.channel_id} ({o.channel_name}) "
-                            f"already used by {seen_channel[o.channel_id]!r} — "
-                            f"two offices must not share a channel")
+            other_key, other_labeled = seen_channel[o.channel_id]
+            if not (o.header_label and other_labeled):
+                problems.append(
+                    f"{key}: channel {o.channel_id} ({o.channel_name}) already "
+                    f"used by {other_key!r} — two offices sharing a channel BOTH "
+                    f"need a header_label (distinct threads)")
         else:
-            seen_channel[o.channel_id] = key
+            seen_channel[o.channel_id] = (key, bool(o.header_label))
         # report_id uniqueness — shared id => clobbered manifest / wrong pill.
         if o.report_id in seen_report:
             problems.append(f"{key}: report_id {o.report_id!r} already used by "
                             f"{seen_report[o.report_id]!r}")
         else:
             seen_report[o.report_id] = key
-        # view uniqueness — THE big one. A shared view URL means one office is
-        # pointed at another's data → wrong numbers in that channel.
+        # view uniqueness — only for POPULATED legacy views (rashad/aya). A new
+        # office slices the shared views and leaves these empty, so skip empties.
         for vname, url in o.views.items():
-            if not re.match(r"^https://[\w.-]+/#/site/sci/views/\S+", url or ""):
+            if not (url or "").strip():
+                continue
+            if not re.match(r"^https://[\w.-]+/#/site/sci/views/\S+", url):
                 problems.append(f"{key}: {vname} is not a sci Tableau view URL: "
                                 f"{url!r}")
             if url in seen_view:
