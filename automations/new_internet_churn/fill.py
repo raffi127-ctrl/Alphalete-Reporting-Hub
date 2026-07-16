@@ -1009,6 +1009,13 @@ def sort_sections_via_sortrange(
             last_row = sorted_periods[idx + 1][1]["header_row"] - 1
         else:
             last_row = max(rep_rows.values())
+        # Clamp to the grid: a freshly cleared tab whose template headers
+        # outrun a smaller inserted roster can make next_header-1 exceed the
+        # grid, and sortRange would reject the whole batch (same fresh-office
+        # class as the unhide / color / clear-backgrounds guards).
+        last_row = min(last_row, ws.row_count)
+        if last_row < first_row:
+            continue
         requests.append({
             "sortRange": {
                 "range": {
@@ -1465,6 +1472,16 @@ def clear_empty_cell_backgrounds(
             continue
         first_row = min(rep_rows.values())
         last_row  = section_end_rows[period]
+        # Clamp to the live grid. A middle section's end is the NEXT
+        # section's header-1, computed from find_sections; on a freshly
+        # cleared tab whose template headers outrun a smaller inserted
+        # roster, that can land past the grid edge, and the pad-to-
+        # expected-rows loop below would then emit a white-bg repeatCell
+        # for a nonexistent row — Sheets rejects the WHOLE batch, killing
+        # the cleanup (Wireless, Hammad 7/15: D88:AD88 in an 87-row grid).
+        last_row = min(last_row, ws.row_count)
+        if last_row < first_row:
+            continue
         # Read cols B..min(ws.col_count, 30) — past col 30 we're well into
         # historical weekly cols which are usually fine; capping keeps
         # the read fast.
