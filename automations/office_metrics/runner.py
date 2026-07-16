@@ -393,11 +393,13 @@ def _inspect_churn(view_url: str) -> int:
                 total_owners.add(own)
     real = [o for o in owners if o not in ("Grand Total",)]
     print(f"\n  distinct ICD owners: {len(owners)}", flush=True)
-    for who in ("Rashad Reed", "Aya Al-Khafaji"):
+    for who in ("Rashad Reed", "Aya Al-Khafaji", "Cyrus Wade", "Hammad Haque",
+                "Muhammad UI Haque", "Kash Rai", "Akashdeep Rai",
+                "Salik Mallick", "Muhammad Waqar"):
         present = any(o.upper() == who.upper() for o in owners)
-        has_total = any(o.upper() == who.upper() for o in total_owners)
-        print(f"  {who}: {'PRESENT ✅' if present else 'MISSING ❌'} | "
-              f"per-office Total row: {'YES ✅' if has_total else 'NO'}", flush=True)
+        print(f"  {who}: {'PRESENT ✅' if present else 'absent'}", flush=True)
+    # show the tail of the owner list — if truncated, later-alphabet names drop
+    print(f"  owner sample (last 6): {sorted(owners)[-6:]}", flush=True)
     print(f"\n  owners with a per-office Total row: {len(total_owners)} "
           f"(of {len(real)} offices)", flush=True)
     print(f"  VERDICT: {'ALL-OFFICE' if len(real) > 1 else 'SINGLE-OFFICE'} "
