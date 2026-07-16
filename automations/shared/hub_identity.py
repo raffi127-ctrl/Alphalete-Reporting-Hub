@@ -37,6 +37,10 @@ _GIT_AUTHOR_ALIASES = {
     # Hub roster). Keyed on the GitHub identity, not the shared gmail address.
     "alphaletereporting-ej": "Eve",
     "alphaletereporting-ej@users.noreply.github.com": "Eve",
+    # Maud — hasn't committed yet; pre-mapped so her first push is named right,
+    # matched on either her git name or her email (maudmiller4@gmail.com).
+    "maud miller": "Maud",
+    "maudmiller4@gmail.com": "Maud",
 }
 
 
