@@ -133,12 +133,15 @@ def _run_fill_phase(label: str, pull_mod, fill_mod, parsed: dict,
     # Blanks land at the top (DESCENDING quirk), then hide_blanks_today
     # below hides them — visual end state is non-blank reps in % desc
     # order, blanks invisible.
-    # NOTE (Megan 2026-07-15): do NOT stamp borders/font here. Megan cleaned
-    # up the sheet formatting by hand and wants it left EXACTLY as-is going
-    # forward — the earlier apply_rep_row_format pass added too many borders.
-    # The fill's only formatting job now is the red/yellow/green pct coloring
-    # below (background only); inserts/sorts already carry each row's own
-    # format with it, so her formatting persists untouched.
+    # Give every rep row (incl. newly-inserted + sort-moved ones) the canonical
+    # borders/centering/font so a new rep matches the existing rows — Megan
+    # 2026-07-15: "if a new rep is added, they should get borders and that
+    # formatting." Borders span col A..last-DATA-col only (NOT the full grid
+    # width), so a wide template's empty history columns stay clean — the fix
+    # for the earlier "way too many borders". Background is left untouched; the
+    # pct-color pass below owns the fills.
+    fill_mod.apply_rep_row_format(ws, sections,
+                                  dry_run=args.dry_run, logfn=print)
 
     # Paint direct background on each pct cell (col B) per period
     # threshold — required because Eve's existing conditional rules

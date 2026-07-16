@@ -1776,44 +1776,59 @@ def apply_rep_row_format(
     dry_run: bool = False,
     logfn=print,
 ) -> None:
-    """Stamp the CANONICAL rep-row cell format on every rep row in every
-    section, cols B..col_count: Georgia 12, horizontal CENTER, vertical
-    MIDDLE, and SOLID_MEDIUM borders on all four sides of every cell.
+    """Stamp the canonical rep-row format on the office-avg row + every rep
+    row: Georgia 12, horizontal CENTER, vertical MIDDLE, SOLID_MEDIUM borders
+    on all four sides — but ONLY across the DATA columns (B through the last
+    column that actually holds a value), never the full grid width.
 
-    This is the format-ENFORCEMENT pass. The churn fill does heavy row
-    surgery every run — insert_missing_reps (new rows inherit format from
-    whatever sits above them) and sortRange (physically moves rows). On a
-    stable established office rows barely move so the template format
-    survives, but a fresh office's big first insert + sort scrambles it and
-    NOTHING put it back — Megan 2026-07-15: 'we keep losing formatting, I
-    want the borders/centering/size/font all of it to stay correct.'
+    So new / sort-moved reps pick up the borders + formatting to match the
+    existing rows (Megan 2026-07-15: "if a new rep is added, they should get
+    borders and that formatting … copy exactly that formatting going
+    forward"), WITHOUT painting borders onto the empty history columns of a
+    wide template — the mistake that made the earlier version add "way too
+    many borders" (Hammad's tab is 37 cols wide but only B:C hold data, and
+    Megan cleaned the borders to stop at C).
 
-    Canonical captured cell-for-cell from Rashad's (known-good) churn tab:
-    every rep cell B..K is Georgia/12/CENTER/MIDDLE with SOLID_MEDIUM on
-    all sides. Idempotent — re-affirming an already-correct tab is a no-op,
-    so this is safe on Rashad/Aya too.
-
-    Deliberately does NOT set backgroundColor (fields mask excludes it) so
-    the pct-color / white-override / clear-empty passes keep full control
-    of cell fills. Runs AFTER sort so moved/inserted rows get reformatted.
+    Data width is measured live from the section rows each run, so as weekly
+    columns accumulate the borders extend with them. Idempotent — a no-op on
+    an already-correct tab (Rashad/Aya). Deliberately does NOT touch
+    backgroundColor (fields mask + updateBorders leave fills alone) so the
+    pct-color passes keep control. Runs AFTER sort.
     """
     if not sections:
         return
     MED = {"style": "SOLID_MEDIUM", "color": {"red": 0, "green": 0, "blue": 0}}
-    last_col = ws.col_count            # data width == grid width on churn tabs
-    if last_col < 2:
-        return
+    grid = _retry(ws.get_all_values)
+
+    # Last DATA column (1-indexed) = rightmost col holding a value across the
+    # section header + avg + rep rows. All sections share the same weekly
+    # columns, so measure once tab-wide. Floor at col C (3) so a single-pull
+    # fresh office still borders the current %/units pair.
+    struct_rows: set[int] = set()
+    for sect in sections.values():
+        struct_rows.update(sect.get("rep_rows", {}).values())
+        if sect.get("office_avg_row"):
+            struct_rows.add(sect["office_avg_row"])
+        struct_rows.add(sect["header_row"])
+    last_data_col = 3
+    for r in struct_rows:
+        if 1 <= r <= len(grid):
+            row = grid[r - 1]
+            for ci in range(len(row) - 1, 0, -1):
+                if str(row[ci]).strip():
+                    last_data_col = max(last_data_col, ci + 1)  # 1-indexed
+                    break
+    last_data_col = min(last_data_col, ws.col_count)
+
     requests: list[dict] = []
     for period, sect in sections.items():
         rep_rows = sect.get("rep_rows") or {}
         if not rep_rows:
             continue
         # Cover the whole non-title block: office-avg row + 'Rep' header +
-        # every rep row. All three share the SAME canonical (Georgia 12 /
-        # center / not-bold) — Rashad's avg + rep-header both match the rep
-        # cells; only the section TITLE row is bold, so start BELOW it at
-        # the avg row and never touch the title. (Hammad 7/15: the avg rows
-        # had drifted to Arial/default while reps were fine.)
+        # every rep row — all share the canonical (Georgia 12 / center /
+        # not-bold). Only the bold section TITLE is excluded, so start at the
+        # avg row.
         rep_min = min(rep_rows.values())
         avg = sect.get("office_avg_row")
         first_row = min(avg, rep_min) if avg else rep_min
@@ -1824,8 +1839,8 @@ def apply_rep_row_format(
             "sheetId": ws.id,
             "startRowIndex": first_row - 1,
             "endRowIndex":   last_row,
-            "startColumnIndex": 1,          # col B
-            "endColumnIndex":   last_col,   # through the last grid col
+            "startColumnIndex": 0,               # col A (name) through
+            "endColumnIndex":   last_data_col,   # last DATA col only
         }
         # Alignment + font — fields mask keeps backgroundColor untouched.
         requests.append({
