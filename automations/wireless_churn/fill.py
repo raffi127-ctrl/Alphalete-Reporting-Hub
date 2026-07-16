@@ -31,6 +31,7 @@ apply_filters               = _shared.apply_filters
 sort_sections_via_sortrange = _shared.sort_sections_via_sortrange
 unhide_all_rep_rows         = _shared.unhide_all_rep_rows
 apply_pct_direct_colors     = _shared.apply_pct_direct_colors
+apply_rep_row_format        = _shared.apply_rep_row_format
 clear_empty_cell_backgrounds = _shared.clear_empty_cell_backgrounds
 hide_after_5_zero_pulls     = _shared.hide_after_5_zero_pulls
 ungroup_all_rep_rows        = _shared.ungroup_all_rep_rows
