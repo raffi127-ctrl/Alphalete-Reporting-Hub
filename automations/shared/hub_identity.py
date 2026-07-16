@@ -18,11 +18,23 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # git author name OR email (lower-cased) → friendly team name. Extend as more
-# people's git identities are learned.
+# people's git identities are learned. Matched against both the commit author
+# name and email, so keying on the stable name is usually enough.
 _GIT_AUTHOR_ALIASES = {
+    # Megan
     "raffi127-ctrl": "Megan",
     "raffi127@gmail.com": "Megan",
     "raffi127": "Megan",
+    # Carlos
+    "carlos hidalgo": "Carlos",
+    # Dylan
+    "dylan twaddle": "Dylan",
+    "dylanjtwaddle@gmail.com": "Dylan",
+    # JD
+    "jd mascorro": "JD",
+    # NOTE: git author "alphaletereporting-ej" (the reporting account, ~100
+    # Claude-assisted report commits) is intentionally NOT mapped yet — pending
+    # confirmation of who it is, so it isn't mislabeled.
 }
 
 
