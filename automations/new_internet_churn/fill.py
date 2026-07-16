@@ -1808,7 +1808,15 @@ def apply_rep_row_format(
         rep_rows = sect.get("rep_rows") or {}
         if not rep_rows:
             continue
-        first_row = min(rep_rows.values())
+        # Cover the whole non-title block: office-avg row + 'Rep' header +
+        # every rep row. All three share the SAME canonical (Georgia 12 /
+        # center / not-bold) — Rashad's avg + rep-header both match the rep
+        # cells; only the section TITLE row is bold, so start BELOW it at
+        # the avg row and never touch the title. (Hammad 7/15: the avg rows
+        # had drifted to Arial/default while reps were fine.)
+        rep_min = min(rep_rows.values())
+        avg = sect.get("office_avg_row")
+        first_row = min(avg, rep_min) if avg else rep_min
         last_row  = min(max(rep_rows.values()), ws.row_count)
         if last_row < first_row:
             continue
