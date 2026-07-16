@@ -32,9 +32,11 @@ _GIT_AUTHOR_ALIASES = {
     "dylanjtwaddle@gmail.com": "Dylan",
     # JD
     "jd mascorro": "JD",
-    # NOTE: git author "alphaletereporting-ej" (the reporting account, ~100
-    # Claude-assisted report commits) is intentionally NOT mapped yet — pending
-    # confirmation of who it is, so it isn't mislabeled.
+    # Eve — the VA who commits report work under the alphaletereporting account
+    # (Megan confirmed 2026-07-15; alphaletereporting@gmail.com is Eve's in the
+    # Hub roster). Keyed on the GitHub identity, not the shared gmail address.
+    "alphaletereporting-ej": "Eve",
+    "alphaletereporting-ej@users.noreply.github.com": "Eve",
 }
 
 
