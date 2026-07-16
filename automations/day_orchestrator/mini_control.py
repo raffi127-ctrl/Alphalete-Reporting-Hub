@@ -330,9 +330,8 @@ def _action_install_hub_watch(args: str) -> tuple[bool, str]:
 
     # 2) live confirmation email — end-to-end SMTP proof from this machine.
     try:
-        import socket as _sock
-        from automations.shared import hub_notify_email
-        host = _sock.gethostname()
+        from automations.shared import hub_notify_email, hub_identity
+        host = hub_identity.machine_name()   # friendly runner name, e.g. "Lucy 1"
         hub_notify_email.send_html(
             "✅ Hub change-watcher installed",
             f'<p>The Hub change-watcher is now installed on <b>{host}</b>. '

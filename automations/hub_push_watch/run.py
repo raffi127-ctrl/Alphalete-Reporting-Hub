@@ -29,7 +29,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from automations.shared import hub_notify_email
+from automations.shared import hub_notify_email, hub_identity
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BRANCH = "main"
@@ -66,7 +66,7 @@ def _write_marker(sha: str) -> None:
 def _commits(rng: str) -> list[dict]:
     """Parse `git log rng` into dicts. Uses a unit-separator format so subjects
     with any punctuation survive."""
-    fmt = "%H%x1f%h%x1f%an%x1f%ad%x1f%s"
+    fmt = "%H%x1f%h%x1f%an%x1f%ae%x1f%ad%x1f%s"
     out = _git("log", "--date=format:%b %d %-I:%M %p", f"--pretty={fmt}", rng)
     # NB: %-I above runs on the mini/macOS (Unix) only — this watcher is a mini
     # LaunchAgent, never Windows, so it's safe here (unlike Hub-side code).
@@ -74,9 +74,11 @@ def _commits(rng: str) -> list[dict]:
     for line in out.splitlines():
         if not line.strip():
             continue
-        full, short, author, date, subject = line.split("\x1f")
+        full, short, an, ae, date, subject = line.split("\x1f")
         files = _git("show", "--pretty=format:", "--name-only", full).strip()
-        commits.append({"full": full, "short": short, "author": author,
+        # Map the git identity to a team name (raffi127-ctrl → Megan).
+        commits.append({"full": full, "short": short,
+                        "author": hub_identity.git_author(an, ae),
                         "date": date, "subject": subject,
                         "files": [f for f in files.splitlines() if f]})
     return commits
