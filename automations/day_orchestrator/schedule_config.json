@@ -2015,6 +2015,45 @@
         "report_id": "salik_metrics"
       },
       "_note": "Office metrics for salik → #elite-prime-sales. Pure-config office (all metrics slice shared views). Runs office_metrics.runner directly. Added 2026-07-15."
+    },
+    "cody_metrics": {
+      "order": 8.0,
+      "on_scheduler": true,
+      "display_name": "Cody's Daily Metrics (#aeon-sales)",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:order_log"
+      ],
+      "_sources_note": "Single-office cut of the daily metrics for owner 'Cody Cannon' (office 'Aeon Specialized Consulting, Inc'), posted to his PRIVATE #aeon-sales (C0849EPM4LD) as the Lucy reporting bot. Pure-config office — every metric slices a shared view: order_log/sales_6plus/cancels/disconnects via --owner, churn NI+WL from INTAllTeams/WirelessAllTeams, ABP from AllOfficeINTABP, ongoing_cancel from AllExpanded. knocks impersonates his OV office (KNOCKS_OFFICE='Cody Cannon'). Added 2026-07-15.",
+      "command": [
+        "automations.office_metrics.runner"
+      ],
+      "base_args": [
+        "--office",
+        "cody",
+        "--live"
+      ],
+      "_base_args_note": "LIVE: pulls all metric slugs for Cody + POSTS to #aeon-sales. Continue-on-failure. Verify with `lucy rerun cody_metrics --dry-run` before trusting the first live run.",
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P1",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 60,
+      "verify": {
+        "type": "manifest",
+        "report_id": "cody_metrics"
+      },
+      "_note": "Office metrics for cody → #aeon-sales. Pure-config office (all metrics slice shared views). Runs office_metrics.runner directly. Added 2026-07-15."
     }
   },
   "read_only_standalone": {

@@ -184,6 +184,12 @@ OFFICES: dict[str, Office] = {
         sheet_id="1iJ4R99A6ul7jNYEEVEGlXT32pNf-He-oE0-N-EI_-78",
         header_label="Salik Mallick",      # shares #elite-prime-sales with Hammad
     ),
+    "cody": Office(
+        key="cody", report_id="cody_metrics", label="Cody's Local Office",
+        owner="Cody Cannon", knocks_office="Cody Cannon",
+        channel_id="C0849EPM4LD", channel_name="#aeon-sales",
+        sheet_id="1YMBUk-q4Jqx_TVFJB0vbtwK_7sIEDbEAMgsIZc-gmXc",
+    ),
 }
 
 ORDER = list(OFFICES)          # stable order for listing
