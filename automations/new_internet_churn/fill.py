@@ -841,13 +841,27 @@ def apply_pct_direct_colors(
     reps = parsed.get("reps", {})
     office_total = parsed.get("office_total", {})
     requests: list[dict] = []
+    # A pct cell's row must fall inside the live grid. A reset / freshly
+    # reconciling tab can momentarily hand find_sections a phantom rep row
+    # past the grid edge (Wireless, Cyrus 7/15: a rep mapped to row 143 in a
+    # 124-row grid). Sheets rejects the ENTIRE repeatCell batch on one
+    # out-of-bounds range — voiding every color in it and leaving the whole
+    # tab uncolored. Drop the out-of-range cell instead so the real reps
+    # still get painted.
+    max_row = ws.row_count
+
+    def _in_grid(row: int) -> bool:
+        if 1 <= row <= max_row:
+            return True
+        logfn(f"  color: skipping out-of-grid row {row} (grid {max_row})")
+        return False
 
     for period, sect in sections.items():
         rep_rows = sect["rep_rows"]
         # Office Avg row.
         odata = office_total.get(period, {})
         bg = _pct_color_for(period, odata.get("pct", ""))
-        if bg is not None:
+        if bg is not None and _in_grid(sect["office_avg_row"]):
             requests.append({"repeatCell": {
                 "range": {
                     "sheetId": ws.id,
@@ -869,6 +883,8 @@ def apply_pct_direct_colors(
                 continue
             bg = _pct_color_for(period, pdata.get("pct", ""))
             if bg is None:
+                continue
+            if not _in_grid(row):
                 continue
             requests.append({"repeatCell": {
                 "range": {
