@@ -923,6 +923,21 @@ def unhide_all_rep_rows(
             last_row = sorted_periods[idx + 1][1]["header_row"] - 1
         else:
             last_row = ws.row_count
+        # A reset / freshly-set-up tab can leave a section's detected rep
+        # rows BELOW the next section's header (stray blank rows read as
+        # reps), making first_row-1 >= last_row. Sheets rejects an
+        # inverted/empty ROWS range and the WHOLE batch fails — which
+        # kills the tier-coloring step that runs right after, leaving the
+        # tab stuck all-orange (Megan 2026-07-15, Cyrus fresh-office run;
+        # same all-orange symptom the 2026-07-11 re-find guarded against,
+        # but a mis-detected stray row slips past re-find). Skip the bad
+        # range rather than crash — there is nothing to unhide on a fresh
+        # tab anyway, and the colors then apply cleanly.
+        if first_row - 1 >= last_row:
+            logfn(f"  unhide: skipping inverted/empty row range "
+                  f"[{first_row - 1}..{last_row}) (reset/fresh tab); "
+                  f"colors still apply")
+            continue
         requests.append({
             "updateDimensionProperties": {
                 "range": {
