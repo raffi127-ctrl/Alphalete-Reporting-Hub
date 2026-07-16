@@ -80,7 +80,7 @@
     "vantura_payroll": {
       "on_scheduler": false,
       "machine": "Lucy 2",
-      "_note": "Vantura Weekly Payroll PREP (Carlos). on_scheduler:false = the 4am orchestrator NEVER runs it — its real schedule is the Wednesday 11:00am CT launchd job (com.alphalete.vantura-payroll-wed, wrapper deploy/vantura_payroll_wed.sh) on Lucy 2. SCAFFOLD/DRY-RUN: automations.vantura_payroll.run defaults to --dry-run (no board writes, no Slack); the board-write internals (RAW load, Commission!B1, per-campaign P&L formulas, Refresh trigger) are stubbed until verified against a SANDBOX copy of the Vantura Master Sales Board. Reuses vantura_churn's CDP Tableau pull + recruiting_report.fill board auth + shared.slack_metrics_post (as Lucy). Automates the deterministic prep only; bonuses/no-pay/rates + verify + print stay with Carlos, and the week auto-locks Thursday ~11am via the board's own Apps Script trigger. This handle exists so `lucy rerun vantura_payroll --dry-run` works.",
+      "_note": "Vantura Weekly Payroll PREP (Carlos). on_scheduler:false = the 4am orchestrator NEVER runs it — its real schedule is the Wednesday 11:00am CT launchd job (com.alphalete.vantura-payroll-wed, wrapper deploy/vantura_payroll_wed.sh) on Lucy 2. DRY-RUN GATED: automations.vantura_payroll.run defaults to --dry-run (no board writes, no Slack); the board-write internals (RAW load incl. self-pulled Tableau crosstab, Commission!B1, per-campaign P&L formulas, headless Refresh via the Payroll.gs web app, read-only checks, kickoff DM) are implemented but stay dry-run until verified against a SANDBOX copy of the Vantura Master Sales Board (see automations/vantura_payroll/PAYROLL_RUNBOOK.md). Reuses vantura_churn's CDP Tableau pull + recruiting_report.fill board auth + shared.slack_metrics_post (as Lucy). Automates the deterministic prep only; bonuses/no-pay/rates + verify + print stay with Carlos, and the week auto-locks Thursday ~11am via the board's own Apps Script trigger. This handle exists so `lucy rerun vantura_payroll --dry-run` works.",
       "display_name": "Vantura Weekly Payroll (prep)",
       "source_type": "tableau",
       "data_sources": [],
@@ -97,6 +97,36 @@
       "depends_on": [],
       "timeout_minutes": 30,
       "verify": null
+    },
+    "install_vantura_payroll_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_vantura_payroll_agent` can install/refresh the STANDALONE com.alphalete.vantura-payroll-wed LaunchAgent on Lucy 2, which runs the Vantura payroll PREP (automations.vantura_payroll.run) Wednesday 11:00am machine-local time via deploy/vantura_payroll_wed.sh. The wrapper passes no mode flag, so the module's --dry-run default applies until sandbox sign-off flips it to --live in the wrapper. install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
+      "display_name": "Install Vantura Payroll agent (Wed 11am)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "vantura-payroll-wed"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
     },
     "car_rides": {
       "on_scheduler": false,

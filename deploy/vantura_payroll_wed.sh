@@ -15,9 +15,10 @@
 # session the other Lucy 2 reports use.
 #
 # SAFETY: DRY-RUN by default (this wrapper passes NO mode flag, and the module
-# defaults to --dry-run — no board writes, no Slack). It is a scaffold: the
-# board-write internals are stubbed until verified against a sandbox copy. Flip
-# to live only after sandbox sign-off, by appending --live here.
+# defaults to --dry-run — no board writes, no Slack). The board-write internals
+# are implemented (RAW load, B1, P&L formulas, refresh, checks, DM) but stay
+# gated until verified against a sandbox board copy. Flip to live only after
+# sandbox sign-off, by appending --live here.
 #
 # Manual test:   bash deploy/vantura_payroll_wed.sh              # dry-run
 #                bash deploy/vantura_payroll_wed.sh --sandbox     # test board

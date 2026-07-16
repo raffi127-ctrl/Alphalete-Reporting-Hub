@@ -3503,6 +3503,69 @@ AUTOMATED_REPORTS = [
             },
         ],
     },
+    {
+        "id": "vantura-payroll",
+        "name": "Vantura Weekly Payroll (prep)",
+        "creator": "Carlos",
+        "emoji": "🧾",
+        "color": "#2E86AB",
+        "category": "📊 Metrics",
+        "description": "Preps the week on the Vantura Master Sales Board so Carlos only enters judgement inputs: downloads the ICD dd Detail crosstab itself from Tableau (Direct Deposit ICD VIEW → DD DETAIL), loads it into RAW with the week stamp, sets Commission!B1, re-points the per-campaign P&L, refreshes, and DMs Carlos as Lucy.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Downloads the **ICD dd Detail** crosstab straight from "
+            "Tableau — no manual export needed (real-Chrome CDP pull, same "
+            "route as the churn report).\n"
+            "**•** Appends the week's rows to **RAW** (cols A–H; the "
+            "Commission ARRAYFORMULA in col I computes itself) and stamps "
+            "the week number in col A.\n"
+            "**•** Sets **Commission!B1** to the new week.\n"
+            "**•** Re-points the per-campaign **P&L** formulas, triggers "
+            "**Refresh commission sheets**, and runs the read-only checks.\n"
+            "**•** DMs **Carlos** as Lucy: week loaded, RAW row range, sync "
+            "summary, what's left to do by hand.\n\n"
+            "WHAT STAYS HUMAN\n"
+            "Bonuses / no-pay / rate changes, final verify, and printing the "
+            "commission pack. The week auto-locks Thursday ~11am via the "
+            "board's own Apps Script trigger.\n\n"
+            "WHEN IT RUNS\n"
+            "**Wednesdays 11:00 AM** on Lucy 2. Currently DRY-RUN gated: it "
+            "pulls and previews everything but writes nothing until the run "
+            "is sandbox-verified and the wrapper is flipped to --live."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"),
+        "assignees": ["Lucy 2"],
+        # Runs on Lucy 2 — its warm Tableau session + the Wednesday 11am launchd
+        # job (com.alphalete.vantura-payroll-wed) live there. A Hub "play" from
+        # ANY machine routes the run to Lucy 2 via the mini-control queue.
+        "run_machine": "Lucy 2",
+        "run_rerun_id": "vantura_payroll",
+        # Self-running weekly launchd job: it doesn't report a per-day completion
+        # to the Hub, so keep it out of the "due today / not completed" tallies.
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [2],  # Wednesday
+            "time": "11:00 AM",
+            "estimated_minutes": 10,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Payroll prep done — crosstab pulled, week loaded into RAW, Commission!B1 set, P&L refreshed. Check the log for the RAW row range and the checks, then enter bonuses/no-pay/rates, verify, and print.",
+            "message_failed": "❌ Run failed. Check the log above (usually the Tableau pull or a RAW column-map mismatch), fix, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run Prep",
+                "icon": "▶",
+                "primary": True,
+                "help": "Pulls the DD Detail crosstab from Tableau and preps the week (DRY-RUN while the scaffold is unverified — previews everything, writes nothing).",
+                "module": "automations.vantura_payroll.run",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
 ]
 
 # Merge in user-uploaded reports (saved by the Wire-Up dialog)

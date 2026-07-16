@@ -4,6 +4,7 @@ service-account.json
 oauth-token.json
 ownerville-creds.json
 brand-audit-keys.json
+vantura-payroll-webapp.json
 .venv/
 __pycache__/
 *.pyc
