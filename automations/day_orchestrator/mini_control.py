@@ -641,11 +641,22 @@ def _action_pip_install(args: str) -> tuple[bool, str]:
 
 
 def _action_update(args: str) -> tuple[bool, str]:
-    """git pull the repo on the mini — deploy new code WITHOUT being physically
-    at it. --ff-only so it never creates a merge commit (fails cleanly if the
-    mini's checkout has diverged, rather than tangling it). The next scheduled
-    run / report picks up the new code; a poller-code change needs a
-    restart_holder after. Read the result with `lucy status`."""
+    """Deploy new code onto a runner AND keep it locked to `main`.
+
+    Production runners must always be on main — a stray dev-branch checkout is
+    how Lucy 2 got stranded on resume-pushing-v2 (2026-07-15), silently missing
+    every deploy. So `update` now switches to main FIRST, then pulls. This
+    re-locks the runner to main on every update, so drift self-heals.
+
+    Both steps are safe: `git checkout main` refuses if there are uncommitted
+    changes (never discards them), and the pull is --ff-only (never a merge, no
+    force). A poller-code change still needs a restart_poller after. Read the
+    result with `lucy status`."""
+    co = subprocess.run(["git", "-C", str(REPO_ROOT), "checkout", "main"],
+                        capture_output=True, text=True)
+    if co.returncode != 0:
+        return False, ("couldn't switch to main (uncommitted changes on the "
+                       f"current branch?): {(co.stderr or co.stdout).strip()[:150]}")
     return _run_cmd(["git", "-C", str(REPO_ROOT), "pull", "--ff-only"],
                     timeout_s=120)
 
