@@ -1,21 +1,24 @@
-"""Daily 'what ran on this machine' summary email — Lucy 2's version of Lucy 1's
+"""Daily 'what ran on a machine' summary email — Lucy 2's version of Lucy 1's
 daily report summary.
 
 Lucy 1's day_orchestrator emails a daily FINAL of its batch reports. Lucy 2's
 headline work is STANDALONE launchd agents (Carlos's captainship reports, resume
 pushing), which the orchestrator never sees — so it would stay silent on those
 days. This reads the shared "Hub Activity" tab (where every run, batch AND
-standalone, is logged via publish_done) filtered to THIS machine, and emails a
-summary. Run it on Lucy 2 and it reports Lucy 2's day.
+standalone, is logged via publish_done) and emails a summary.
 
-Machine match is by the runner's own hostname (socket.gethostname()) — the same
-value the run rows are stamped with — so there's no hardcoded hostname to drift.
-Quiet by design: if nothing ran on this machine today, it sends nothing (mirrors
-Lucy 1 staying quiet on empty days). Recipients + sender are the orchestrator's,
-so it lands exactly like Lucy 1's summary.
+It can summarize EITHER the machine it runs on (default: match its own hostname)
+OR another machine by hostname (`--host`). That second mode is how Lucy 2's
+summary is produced FROM Lucy 1 — the activity log is shared, so Lucy 1 can
+report Lucy 2's day without touching Lucy 2 at all (robust even if Lucy 2 is
+down or on a different branch). `--label` sets the name in the subject.
+
+Quiet by design: nothing ran → no email (mirrors Lucy 1 on empty days).
+Recipients + sender are the orchestrator's, so it lands exactly like Lucy 1's.
 
 Usage:
   python -m automations.machine_digest.run [--dry-run] [--date YYYY-MM-DD]
+      [--host <hostname substring>] [--label "Lucy 2"]
 """
 from __future__ import annotations
 
@@ -63,14 +66,22 @@ def _time_only(iso: str) -> str:
         return ""
 
 
-def _collect(rows: list[dict], host: str, day: str) -> list[dict]:
-    """One entry per REPORT for THIS machine + day (latest status + run count),
-    newest-run first. Mirrors Lucy 1's summary: a report that retried 8× is one
-    line showing its final outcome, not eight."""
+def _machine_matches(row_machine: str, host: str, exact: bool) -> bool:
+    m = (row_machine or "").strip()
+    if exact:
+        return m == host
+    return host.lower() in m.lower()  # substring, tolerant of .local/.attlocal
+
+
+def _collect(rows: list[dict], host: str, day: str, exact: bool = True) -> list[dict]:
+    """One entry per REPORT for the target machine + day (latest status + run
+    count), newest-run first. Mirrors Lucy 1's summary: a report that retried 8×
+    is one line showing its final outcome, not eight. `exact=False` matches the
+    hostname as a substring (for --host, tolerant of .local vs .attlocal.net)."""
     # 1) Reduce each run's start+end pair (same RunID) to the end row.
     by_run = {}
     for r in rows:
-        if str(r.get("Machine") or "").strip() != host:
+        if not _machine_matches(str(r.get("Machine") or ""), host, exact):
             continue
         started = str(r.get("Started At") or "").strip()
         if started[:10] != day:
@@ -137,11 +148,18 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--date", default=None, help="YYYY-MM-DD (default: today)")
+    ap.add_argument("--host", default=None,
+                    help="summarize ANOTHER machine by hostname substring "
+                         "(default: this machine's own hostname)")
+    ap.add_argument("--label", default=None,
+                    help="name for the subject, e.g. 'Lucy 2' (default: this "
+                         "machine's orchestrator prefix)")
     args = ap.parse_args(argv)
 
     day = args.date or dt.date.today().isoformat()
     day_human = dt.date.fromisoformat(day).strftime("%a %b %d")
-    host = socket.gethostname()
+    target = args.host or socket.gethostname()
+    exact = args.host is None   # own hostname → exact; --host → substring
     ts = dt.datetime.now().isoformat(timespec="seconds")
 
     try:
@@ -151,22 +169,21 @@ def main(argv=None) -> int:
               f"{type(e).__name__}: {e}", flush=True)
         return 1
 
-    reports = _collect(rows, host, day)
+    reports = _collect(rows, target, day, exact=exact)
 
     # Machine label ("[Lucy 2] ") + recipients from the orchestrator config, so
-    # this lands exactly like Lucy 1's daily summary.
+    # this lands exactly like Lucy 1's daily summary. --label wins (used when
+    # reporting another machine from Lucy 1).
     try:
         from automations.day_orchestrator import notify, registry
-        machine_label = notify._machine_prefix()
         recipients = registry.load_config().settings.get("recipients", [])
+        machine_label = f"[{args.label}] " if args.label else notify._machine_prefix()
     except Exception:
-        from automations.shared import hub_identity
-        m = hub_identity.machine_name()
-        machine_label = f"[{m}] " if m != "Lucy 1" else ""
+        machine_label = f"[{args.label}] " if args.label else ""
         recipients = ["Alphaletereporting@gmail.com"]
 
     if not reports:
-        print(f"[{ts}] machine-digest: nothing ran on {host} for {day} "
+        print(f"[{ts}] machine-digest: nothing ran for '{target}' on {day} "
               "— staying quiet (no email).", flush=True)
         return 0
 
@@ -179,8 +196,8 @@ def main(argv=None) -> int:
         print(f"[{ts}] machine-digest: send failed: {type(e).__name__}: {e}",
               flush=True)
         return 1
-    print(f"[{ts}] machine-digest: reported {len(reports)} report(s) on {host} "
-          f"for {day}{' (dry-run)' if args.dry_run else ''}.", flush=True)
+    print(f"[{ts}] machine-digest: reported {len(reports)} report(s) for "
+          f"'{target}' on {day}{' (dry-run)' if args.dry_run else ''}.", flush=True)
     return 0
 
 

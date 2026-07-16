@@ -372,17 +372,18 @@ def _action_install_hub_watch(args: str) -> tuple[bool, str]:
                   f"lib={'ok' if l_ok else 'FAIL'}")
 
 
-def _action_install_machine_digest(args: str) -> tuple[bool, str]:
-    """Install (or reinstall) the daily 'what ran on this machine' summary
-    LaunchAgent (com.alphalete.machine-digest) on THIS machine — intended for
-    Lucy 2, which otherwise gets no daily summary. Regenerates the plist for the
-    mini's path, runs a --dry-run smoke test (proves the Hub Activity read +
-    render work here, no email), then bootstraps it (noon daily). Run `update` +
-    `restart_poller` first so this action exists in the running poller."""
+def _action_install_lucy2_digest(args: str) -> tuple[bool, str]:
+    """Install (or reinstall) the Lucy 2 daily summary LaunchAgent
+    (com.alphalete.lucy2-digest) on THIS machine — meant for LUCY 1, which
+    generates Lucy 2's 'what ran' summary from the shared Hub Activity log (so
+    Lucy 2 is never touched). Regenerates the plist for the mini's path, runs a
+    --dry-run smoke test (proves the read + render work, no email), then
+    bootstraps it (noon daily). Run `update` + `restart_poller` first so this
+    action exists in the running poller."""
     uid = os.getuid()
-    label = "com.alphalete.machine-digest"
+    label = "com.alphalete.lucy2-digest"
     src_plist = REPO_ROOT / "deploy" / f"{label}.plist"
-    wrapper = REPO_ROOT / "deploy" / "machine_digest_daily.sh"
+    wrapper = REPO_ROOT / "deploy" / "lucy2_digest_daily.sh"
     dst_plist = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
     if not src_plist.exists() or not wrapper.exists():
         return False, (f"missing {src_plist.name} or {wrapper.name} — run "
@@ -404,10 +405,11 @@ def _action_install_machine_digest(args: str) -> tuple[bool, str]:
         pass
 
     # Smoke test — build the email to an .eml without sending, proving the Hub
-    # Activity read + render work on THIS machine.
+    # Activity read + render + Lucy 2 hostname filter work here.
     smoke_ok, smoke = _run_cmd(
-        [sys.executable, "-m", "automations.machine_digest.run", "--dry-run"],
-        timeout_s=120, log_name="machine-digest-install-smoke.log")
+        [sys.executable, "-m", "automations.machine_digest.run", "--dry-run",
+         "--host", "Carloss-Mac-mini-2", "--label", "Lucy 2"],
+        timeout_s=120, log_name="lucy2-digest-install-smoke.log")
     if not smoke_ok:
         return False, f"smoke test failed — NOT going live: {smoke[:150]}"
 
@@ -419,8 +421,8 @@ def _action_install_machine_digest(args: str) -> tuple[bool, str]:
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     if boot.returncode != 0:
         return False, f"smoke ok; bootstrap FAILED: {(boot.stdout or '').strip()[:150]}"
-    return True, (f"installed {label} (noon daily) · smoke test ok · "
-                  f"{smoke[:90]}")
+    return True, (f"installed {label} (noon daily, reports Lucy 2 from here) · "
+                  f"smoke test ok · {smoke[:80]}")
 
 
 def _action_watch_test(args: str) -> tuple[bool, str]:
@@ -819,7 +821,7 @@ ACTIONS = {
     "restart_holder": _action_restart_holder,
     "restart_poller": _action_restart_poller,
     "install_hub_watch": _action_install_hub_watch,
-    "install_machine_digest": _action_install_machine_digest,
+    "install_lucy2_digest": _action_install_lucy2_digest,
     "reseed_appstream": _action_reseed_appstream,
     "watch_test": _action_watch_test,
     "diag": _action_diag,
