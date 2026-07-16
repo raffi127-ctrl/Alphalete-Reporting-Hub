@@ -13,7 +13,6 @@ from __future__ import annotations
 import datetime as dt
 import difflib
 import html
-import socket
 
 from automations.shared import hub_notify_email
 
@@ -23,7 +22,10 @@ _MAX_PREVIEW_LINES = 150
 _MAX_DIFF_LINES = 400
 
 # Metadata keys worth calling out when they change on an edit (in display order).
+# `creator` first: each upload re-stamps it with the editor, so a change here is
+# "who had it before → who just edited it" — the clearest who-touched-this signal.
 _TRACKED_META = [
+    ("creator", "Uploaded by"),
     ("name", "Name"), ("emoji", "Emoji"), ("description", "Description"),
     ("module", "Module"), ("schedule", "Schedule"), ("assignees", "Assignees"),
     ("sheet_url", "Sheet URL"), ("needs_login", "Needs login"),
@@ -113,16 +115,23 @@ def build_and_send(metadata: dict, script_text: str,
     _now = dt.datetime.now()
     when = (_now.strftime("%b %d, %Y at ")
             + f"{_now.hour % 12 or 12}:{_now.minute:02d} " + _now.strftime("%p"))
-    machine = socket.gethostname()
 
     verb = "updated" if is_update else "published"
     icon = "✏️" if is_update else "🆕"
+    # "who" is the Hub's attribution (the card's creator field = HUB_USER / the
+    # uploader's computer login matched to a team name / an automation's stamp
+    # like "Claude (mini)"). NOT a verified sign-in — the Hub uses one shared
+    # team password — so label it by what it actually is.
+    who_label = "Edited by" if is_update else "Uploaded by"
     subject = (f"{icon} Hub card {verb}: {name}"
                + (f" (by {who})" if who != "—" else ""))
 
+    # NB: no "Machine" row — this email is sent by the mini watcher, so
+    # socket.gethostname() would always read the mini, not where the edit was
+    # actually made (the Sheet doesn't record the uploader's machine).
     facts = [
-        ("Card", name), ("ID", rid), ("Uploaded by", who), ("When", when),
-        ("Machine", machine), ("Module", _fmt(metadata.get("module"))),
+        ("Card", name), ("ID", rid), (who_label, who), ("When", when),
+        ("Module", _fmt(metadata.get("module"))),
         ("Schedule", _fmt(metadata.get("schedule"))),
         ("Assignees", _fmt(metadata.get("assignees"))),
         ("Description", _fmt(metadata.get("description"))),
