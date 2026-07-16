@@ -169,17 +169,39 @@ def _pull_icd_dd_detail(week: dt.date, log=_log) -> Path:
     return out
 
 
-def _read_export(xlsx: Path, log=_log) -> tuple[list[str], list[list]]:
-    """Read the crosstab .xlsx -> (headers, data_rows). Header row is the first
-    non-empty row; blank trailing rows dropped."""
-    from openpyxl import load_workbook
-    wb = load_workbook(xlsx, read_only=True, data_only=True)
-    ws = wb.active
-    rows = [[("" if c is None else c) for c in r]
-            for r in ws.iter_rows(values_only=True)]
+def _read_export(path: Path, log=_log) -> tuple[list[str], list[list]]:
+    """Read the crosstab export -> (headers, data_rows). Handles BOTH formats
+    (same as vantura_churn f2e21c3): a MANUAL download is a real .xlsx, but the
+    AUTOMATED crosstab download saves UTF-16 tab-delimited CSV regardless of
+    the file's extension — detect by zip magic bytes, never by name."""
+    with open(path, "rb") as f:
+        is_xlsx = f.read(4)[:2] == b"PK"
+    if is_xlsx:
+        from openpyxl import load_workbook
+        wb = load_workbook(path, read_only=True, data_only=True)
+        ws = wb.active
+        rows = [[("" if c is None else c) for c in r]
+                for r in ws.iter_rows(values_only=True)]
+        wb.close()
+    else:
+        import csv as _csv
+        rows = None
+        for enc in ("utf-16", "utf-8-sig", "utf-8"):
+            try:
+                with open(path, encoding=enc, newline="") as fh:
+                    rows = list(_csv.reader(fh, delimiter="\t"))
+                if rows and len(rows[0]) > 1:
+                    break
+            except Exception:
+                continue
+        if not rows or len(rows[0]) < 2:
+            raise ValueError(
+                f"could not parse {path.name} as .xlsx OR tab-delimited "
+                "crosstab CSV — inspect the downloaded file.")
+        log(f"parsed {path.name} as crosstab CSV ({len(rows)} raw rows)")
     rows = [r for r in rows if any(str(c).strip() for c in r)]
     if not rows:
-        raise ValueError(f"{xlsx.name} has no rows")
+        raise ValueError(f"{path.name} has no rows")
     return [str(h).strip() for h in rows[0]], rows[1:]
 
 
