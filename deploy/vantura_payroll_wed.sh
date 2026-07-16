@@ -14,11 +14,12 @@
 # board auth + shared.slack_metrics_post ("as Lucy"). Same warm Chrome/Tableau
 # session the other Lucy 2 reports use.
 #
-# SAFETY: DRY-RUN by default (this wrapper passes NO mode flag, and the module
-# defaults to --dry-run — no board writes, no Slack). The board-write internals
-# are implemented (RAW load, B1, P&L formulas, refresh, checks, DM) but stay
-# gated until verified against a sandbox board copy. Flip to live only after
-# sandbox sign-off, by appending --live here.
+# LIVE since 2026-07-15 (Carlos: "make it live", after the Lucy 2 dry-run was
+# log-verified end-to-end — pull, parse, mapping, RAW range, P&L block). The
+# module still guards itself: double-load refuses re-runs of an already-loaded
+# week, P&L anchors are located by label and fail loud, refresh skips loudly
+# until the Payroll.gs web app is deployed. Revert to dry-run by removing
+# --live below.
 #
 # Manual test:   bash deploy/vantura_payroll_wed.sh              # dry-run
 #                bash deploy/vantura_payroll_wed.sh --sandbox     # test board
@@ -42,9 +43,10 @@ export PYTHONPATH="$(pwd)"
 LOG_FILE="$LOG_DIR/vantura-payroll-wed-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] Vantura payroll prep starting (extra args: ${*:-none})" > "$LOG_FILE"
 
-# DRY-RUN by default (no mode flag). Append --live here (or pass args) only after
-# sandbox sign-off. Extra args pass straight through to the module.
-"$VENV_PY" -u -m automations.vantura_payroll.run "$@" >> "$LOG_FILE" 2>&1
+# LIVE (see header). Extra args still pass through; note argparse's mutually
+# exclusive group means passing --dry-run here would conflict with --live —
+# remove --live to revert instead.
+"$VENV_PY" -u -m automations.vantura_payroll.run --live "$@" >> "$LOG_FILE" 2>&1
 ST=$?
 
 echo "[$(date)] Vantura payroll prep finished exit=$ST" >> "$LOG_FILE"

@@ -3,14 +3,15 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.alphalete.machine-digest</string>
+    <string>com.alphalete.lucy2-digest</string>
 
-    <!-- Path is the laptop's; on the mini, regenerate with the install path via
-         `lucy install_machine_digest`. -->
+    <!-- Runs on LUCY 1 (not Lucy 2) — it summarizes Lucy 2's runs from the
+         shared Hub Activity log. Path is the laptop's; on the mini, regenerate
+         via `lucy install_lucy2_digest`. -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/megan/1st Claude Folder/deploy/machine_digest_daily.sh</string>
+        <string>/Users/megan/1st Claude Folder/deploy/lucy2_digest_daily.sh</string>
     </array>
 
     <key>WorkingDirectory</key>
@@ -22,8 +23,8 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Noon CST daily — matches Lucy 1's summary timing (the orchestrator's
-         backstop_time is 12:00). The mini is Central, so Hour 12 = 12pm CST. -->
+    <!-- Noon CST daily — matches Lucy 1's summary timing. The mini is Central,
+         so Hour 12 = 12pm CST. -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key><integer>12</integer>
@@ -31,8 +32,8 @@
     </dict>
 
     <key>StandardOutPath</key>
-    <string>/Users/megan/1st Claude Folder/output/logs/machine-digest.launchd.out.log</string>
+    <string>/Users/megan/1st Claude Folder/output/logs/lucy2-digest.launchd.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/megan/1st Claude Folder/output/logs/machine-digest.launchd.err.log</string>
+    <string>/Users/megan/1st Claude Folder/output/logs/lucy2-digest.launchd.err.log</string>
 </dict>
 </plist>

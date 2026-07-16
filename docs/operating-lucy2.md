@@ -89,14 +89,28 @@ open("/tmp/shot.png","wb").write(base64.b64decode("".join(chunks)))   # then Rea
 ## GitHub access
 
 Both machines have clones with origin = the repo. From the mini you can commit +
-push. `main` is canonical; do WIP on a branch and promote when verified. Lucy 2 gets
-code via the `update` action (or a 4am orchestrator pull of `origin main`).
+push. `main` is canonical; do WIP on a branch and promote when verified.
+
+⚠️ **Lucy 2's checkout tracks `resume-pushing-v2`, NOT main** (discovered
+2026-07-15 after a full day of silent "Already up to date" no-op updates —
+mine AND another session's). Pushing main alone never reaches Lucy 2. To
+deploy: push main, then MERGE main into `resume-pushing-v2` and push that
+(the branch has unique commits — screendrive, the extension loader — so a
+plain `push main:resume-pushing-v2` is non-ff and must NOT be forced), then
+queue `update` (+ `restart_poller` if poller code changed). Symptom check: an
+`update` result showing a fetch delta followed by "Already up to date" means
+the tracking branch didn't move. Long-term fix: check Lucy 2 out on main at
+the laptop, then delete this warning.
 
 ```bash
 cd /Users/carloshidalgo/recruiting-report
 git add -A && git commit -m "..."
 git pull --rebase origin main      # teammates push too — rebase first
 git push origin main
+# deliver to Lucy 2 (see warning above):
+git fetch origin && git branch -f lucy2-merge origin/resume-pushing-v2
+git checkout lucy2-merge && git merge origin/main   # resolve, keep BOTH sides
+git push origin lucy2-merge:resume-pushing-v2 && git checkout main
 # promote just one file from a branch without dumping the whole branch:
 git checkout <branch> -- path/to/file
 ```

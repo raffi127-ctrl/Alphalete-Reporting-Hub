@@ -841,13 +841,27 @@ def apply_pct_direct_colors(
     reps = parsed.get("reps", {})
     office_total = parsed.get("office_total", {})
     requests: list[dict] = []
+    # A pct cell's row must fall inside the live grid. A reset / freshly
+    # reconciling tab can momentarily hand find_sections a phantom rep row
+    # past the grid edge (Wireless, Cyrus 7/15: a rep mapped to row 143 in a
+    # 124-row grid). Sheets rejects the ENTIRE repeatCell batch on one
+    # out-of-bounds range — voiding every color in it and leaving the whole
+    # tab uncolored. Drop the out-of-range cell instead so the real reps
+    # still get painted.
+    max_row = ws.row_count
+
+    def _in_grid(row: int) -> bool:
+        if 1 <= row <= max_row:
+            return True
+        logfn(f"  color: skipping out-of-grid row {row} (grid {max_row})")
+        return False
 
     for period, sect in sections.items():
         rep_rows = sect["rep_rows"]
         # Office Avg row.
         odata = office_total.get(period, {})
         bg = _pct_color_for(period, odata.get("pct", ""))
-        if bg is not None:
+        if bg is not None and _in_grid(sect["office_avg_row"]):
             requests.append({"repeatCell": {
                 "range": {
                     "sheetId": ws.id,
@@ -869,6 +883,8 @@ def apply_pct_direct_colors(
                 continue
             bg = _pct_color_for(period, pdata.get("pct", ""))
             if bg is None:
+                continue
+            if not _in_grid(row):
                 continue
             requests.append({"repeatCell": {
                 "range": {
@@ -923,6 +939,21 @@ def unhide_all_rep_rows(
             last_row = sorted_periods[idx + 1][1]["header_row"] - 1
         else:
             last_row = ws.row_count
+        # A reset / freshly-set-up tab can leave a section's detected rep
+        # rows BELOW the next section's header (stray blank rows read as
+        # reps), making first_row-1 >= last_row. Sheets rejects an
+        # inverted/empty ROWS range and the WHOLE batch fails — which
+        # kills the tier-coloring step that runs right after, leaving the
+        # tab stuck all-orange (Megan 2026-07-15, Cyrus fresh-office run;
+        # same all-orange symptom the 2026-07-11 re-find guarded against,
+        # but a mis-detected stray row slips past re-find). Skip the bad
+        # range rather than crash — there is nothing to unhide on a fresh
+        # tab anyway, and the colors then apply cleanly.
+        if first_row - 1 >= last_row:
+            logfn(f"  unhide: skipping inverted/empty row range "
+                  f"[{first_row - 1}..{last_row}) (reset/fresh tab); "
+                  f"colors still apply")
+            continue
         requests.append({
             "updateDimensionProperties": {
                 "range": {
@@ -978,6 +1009,13 @@ def sort_sections_via_sortrange(
             last_row = sorted_periods[idx + 1][1]["header_row"] - 1
         else:
             last_row = max(rep_rows.values())
+        # Clamp to the grid: a freshly cleared tab whose template headers
+        # outrun a smaller inserted roster can make next_header-1 exceed the
+        # grid, and sortRange would reject the whole batch (same fresh-office
+        # class as the unhide / color / clear-backgrounds guards).
+        last_row = min(last_row, ws.row_count)
+        if last_row < first_row:
+            continue
         requests.append({
             "sortRange": {
                 "range": {
@@ -1434,6 +1472,16 @@ def clear_empty_cell_backgrounds(
             continue
         first_row = min(rep_rows.values())
         last_row  = section_end_rows[period]
+        # Clamp to the live grid. A middle section's end is the NEXT
+        # section's header-1, computed from find_sections; on a freshly
+        # cleared tab whose template headers outrun a smaller inserted
+        # roster, that can land past the grid edge, and the pad-to-
+        # expected-rows loop below would then emit a white-bg repeatCell
+        # for a nonexistent row — Sheets rejects the WHOLE batch, killing
+        # the cleanup (Wireless, Hammad 7/15: D88:AD88 in an 87-row grid).
+        last_row = min(last_row, ws.row_count)
+        if last_row < first_row:
+            continue
         # Read cols B..min(ws.col_count, 30) — past col 30 we're well into
         # historical weekly cols which are usually fine; capping keeps
         # the read fast.

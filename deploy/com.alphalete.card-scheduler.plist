@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.card-scheduler</string>
+
+    <!-- Path is the laptop's; on the mini, regenerate via
+         `lucy install_card_scheduler`. Runs OBSERVE-mode unless
+         CARD_SCHEDULER_LIVE=1 is set in EnvironmentVariables below. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/card_scheduler_10min.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+        <!-- Flip to "1" (and reload) to actually run due cards. Absent/0 = observe. -->
+        <key>CARD_SCHEDULER_LIVE</key>
+        <string>0</string>
+    </dict>
+
+    <!-- Every 10 min, 24/7. GRACE_MIN (20) >= this interval so a card can't slip
+         between passes. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Minute</key><integer>10</integer></dict>
+        <dict><key>Minute</key><integer>20</integer></dict>
+        <dict><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Minute</key><integer>40</integer></dict>
+        <dict><key>Minute</key><integer>50</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/card-scheduler.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/card-scheduler.launchd.err.log</string>
+</dict>
+</plist>
