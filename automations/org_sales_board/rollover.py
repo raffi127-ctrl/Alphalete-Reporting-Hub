@@ -233,6 +233,62 @@ def needs_rollover(cS, today=None, vS=None) -> tuple:
     return (bool(cp and tgt and cp != tgt), tgt, cp, va)
 
 
+BACKUP_TAB = "backup_pre_rollover"
+
+
+def _snapshot_pre_rollover(ws, grid, dry_run: bool = False, logfn=print) -> None:
+    """Freeze the tab's CURRENT state into a fixed backup tab BEFORE the rollover
+    mutates anything — a static, values-only safety net so a bad roll is always
+    recoverable.
+
+      • ONE fixed tab (BACKUP_TAB), OVERWRITTEN every week — never a new tab per
+        run. Created if it doesn't exist.
+      • STATIC VALUES, never formulas: `grid` is get_all_values() (FORMATTED —
+        formulas already resolved to their shown value), written with
+        value_input_option='RAW' so a cell that displayed '-58%' (or even a
+        literal '=…') is stored as text, never re-evaluated into a live formula.
+      • FIRST + MUST SUCCEED: any failure raises, so run_rollover aborts BEFORE
+        its first write. An un-rolled board with no backup beats a rolled board
+        with no backup.
+      • OUT of the bot's radar: the tab name matches neither SANDBOX_TAB nor
+        PROD_TAB, and nothing in the module enumerates worksheets (every access
+        is by explicit name), so discover_captainships / the daily fill /
+        compare.py / the 3d product-summary step never read or write it.
+
+    dry_run: log what WOULD be snapshotted, write nothing."""
+    import datetime as _dt
+    stamp = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    rows = len(grid)
+    cols = max((len(r) for r in grid), default=1)
+    if dry_run:
+        logfn(f"  0/5 snapshot: WOULD freeze {rows}x{cols} of {ws.title!r} into "
+              f"{BACKUP_TAB!r} (static values, RAW) @ {stamp} — dry-run, skipped")
+        return
+    try:
+        sh = ws.spreadsheet
+        try:
+            bws = sh.worksheet(BACKUP_TAB)
+        except Exception:                         # tab doesn't exist yet — create
+            bws = sh.add_worksheet(title=BACKUP_TAB, rows=max(rows, 1),
+                                   cols=max(cols, 1))
+            logfn(f"  0/5 snapshot: created backup tab {BACKUP_TAB!r}")
+        # Exact-size the tab so a board that SHRANK leaves no stale trailing
+        # rows/cols from a previous, wider snapshot.
+        bws.resize(rows=max(rows, 1), cols=max(cols, 1))
+        rect = [row + [""] * (cols - len(row)) for row in grid]   # rectangular
+        # Named args: gspread 6 swapped update()'s positional order to
+        # (values, range_name); be explicit so the call is unambiguous + warning-
+        # free. RAW so nothing is re-parsed into a live formula.
+        bws.update(range_name="A1", values=rect, value_input_option="RAW")
+    except Exception as e:  # noqa: BLE001 — abort the roll; never swallow
+        raise RuntimeError(
+            f"pre-rollover snapshot to {BACKUP_TAB!r} FAILED "
+            f"({type(e).__name__}: {e}) — NOT rolling (an un-rolled board beats a "
+            f"rolled board with no backup)") from e
+    logfn(f"  0/5 snapshot: froze {rows}x{cols} of {ws.title!r} into "
+          f"{BACKUP_TAB!r} (static values) @ {stamp}")
+
+
 def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     """The whole TUESDAY rollover in order — run BEFORE the new week's daily
     fill, AFTER a fresh pull has finalized the just-finished week:
@@ -276,6 +332,14 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
         logfn(f"  rollover already done this week (col C = {new_label!r}) — skip")
         summary["skipped"] = True
         return summary
+    # SNAPSHOT FIRST — freeze the pre-rollover state into the fixed backup tab
+    # before ANY write. Placed AFTER the idempotency skip so a no-op re-run never
+    # clobbers a good backup with post-rollover state; still before the first
+    # mutation below. Raises on failure (aborting the roll), so `grid` (the
+    # pre-rollover values already read for the idempotency check) is the exact
+    # snapshotted state.
+    _snapshot_pre_rollover(ws, grid, dry_run=dry_run, logfn=logfn)
+    summary["backup_tab"] = BACKUP_TAB
     upd, _ = plan_leaderboard_rollover(ws, org, new_label)
     if not dry_run:
         ws.batch_update(upd, value_input_option="USER_ENTERED")
@@ -346,17 +410,29 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
     logfn(f"  3c/5 {len(camp_tables)} per-campaign history block(s) shifted down "
           f"(Totals → Last Week → Prior → 2 Weeks → 3 Weeks)")
 
-    # 3d. Per-captainship Product-Summary WE-stack week-logs are archived
-    # MANUALLY by a person on Monday night (advances the week + archives the
-    # closing one); the Tuesday report only populates Monday's sales and must
-    # NOT auto-archive (Megan 2026-06-30, vacation plan). So the archiver
-    # (apply_product_summary_rollover / find_captainship_product_summaries /
-    # _roll_one_product_summary) is deliberately NOT called here — it stays as a
-    # standalone, tested function for a manual or future run. To re-enable
-    # automatic archiving, call apply_product_summary_rollover(ws, today=today,
-    # dry_run=dry_run, logfn=logfn) HERE, BEFORE the daily clear (each block's
-    # 'Totals' is a live =SUM that must be frozen first), then re-read `grid`
-    # (its real row inserts shift every row below them).
+    # 3d. Per-captainship Product-Summary WE-stack week-logs: insert the just-
+    # closed week at the TOP of each stack (static values) + re-anchor the two
+    # summary formulas ('Sales (Last Week)' → new top row, 'Sales (4 Week AVG)'
+    # → new top 4 rows). MUST run BEFORE the daily clear — each block's 'Totals'
+    # is a live =SUM whose value has to be frozen first. Idempotent by label: a
+    # block whose top already reads this week's 'WE m.d' row is skipped, so a
+    # re-run never double-shifts (the same self-heal guard the leaderboards use).
+    #
+    # Re-automated 2026-07-16 (Eve): this was made MANUAL 2026-06-30 to avoid an
+    # unattended double-shift, but the hand-maintained block drifts — it is how
+    # the KHALIL / ATT-NDS 'Sales (Last Week)' Grand-Total formula picked up a
+    # stray +J1346 (found 2026-07-16). The double-shift fear is moot now that
+    # run_rollover is idempotent AND apply_product_summary_rollover skips any
+    # block already carrying this week's WE row.
+    ps = apply_product_summary_rollover(ws, today=today, dry_run=dry_run,
+                                        logfn=logfn)
+    summary["product_summaries"] = len(ps)
+    logfn(f"  3d/5 {len(ps)} captainship product-summary WE-stack(s) processed "
+          f"(new WE row at top + summary formulas re-anchored)")
+    # The real row inserts above shift every row BELOW the first insert, so the
+    # row numbers in `grid` are now stale — re-read before the daily clear and
+    # the date-anchor step, both of which locate their rows by this grid.
+    grid = ws.get_all_values()
 
     ranges = plan_daily_clear(ws, grid)
     if not dry_run:
