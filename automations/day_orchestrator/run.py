@@ -47,6 +47,16 @@ REPORT_TIMEOUT_S = 45 * 60
 # the day and needed a manual rerun (2026-07-08). Capped so a genuinely broken
 # report still gives up instead of hammering Tableau every pass all morning.
 MAX_RUN_RETRIES = 3
+# Max auto-retries of just the FAILED PARTS of an INCOMPLETE run (via the
+# manifest's retry_args). A report that posts most of its parts but drops one to
+# a transient (ownerville session expiry, network timeout, a Downloads write
+# EPERM) used to stay that way ALL DAY: INCOMPLETE is terminal, so the loop never
+# returned, and a human had to read the summary email and re-run by hand
+# (Megan 2026-07-16). Two is deliberate — the first retry lands ~immediately
+# (catches a one-shot flake), the second on the 25-min circle-back (gives a stale
+# session time to recover). Capped so a genuinely-broken part can't loop all
+# morning; after that it stays INCOMPLETE and the email names it, as before.
+MAX_AUTO_RETRIES = 2
 # When a Tableau report FLAKES (errors), retry it fast at END OF PASS after this
 # backoff — run the other ready reports first, then come back to the flaked one
 # (Megan 2026-07-09) — so a transient flake recovers in ~90s instead of waiting a
@@ -186,6 +196,14 @@ def main(argv: Optional[List[str]] = None) -> int:
             # expiry; the 7:32 email still said "failed"). Manifest-verified only.
             _reverify_terminal(ds, todays, target, dry_run)
 
+            # Self-heal an INCOMPLETE run by re-running ONLY its failed parts
+            # (the manifest's retry_args) — a transient miss shouldn't wait for a
+            # human to read the email and rerun by hand (Megan 2026-07-16).
+            _retry_incomplete_parts(ds, todays, target,
+                                    dry_run=dry_run, simulate=args.simulate)
+            _sync_hub_pills(ds, dry_run=dry_run, simulate=args.simulate)
+            state.save(ds)
+
             # 7:30 checkpoint email (once) — but NOT if everything's already
             # terminal: the final fires immediately below, so a checkpoint here
             # is just a duplicate a minute earlier (Megan 2026-06-26 got two
@@ -198,8 +216,11 @@ def main(argv: Optional[List[str]] = None) -> int:
                 ds.checkpoint_sent = True
                 state.save(ds)
 
-            # All done early → final + stop.
-            if ds.all_terminal():
+            # All done early → final + stop. But DON'T finalize while an
+            # INCOMPLETE report still has a part-retry left: INCOMPLETE is
+            # terminal, so all_terminal() would end the day the instant a report
+            # dropped a part — before the circle-back ever retried it.
+            if ds.all_terminal() and not _any_retryable_incomplete(ds, todays):
                 _log("all reports terminal — sending final summary.")
                 _finalize(cfg, ds, channel, email_dry, target, stale_after)
                 break
@@ -511,14 +532,19 @@ def _kill_tree(proc) -> bool:
     return False
 
 
-def _run_report(r, target, *, dry_run, simulate):
-    """Run a report as a subprocess. Returns (ok, detail)."""
+def _run_report(r, target, *, dry_run, simulate, args_override=None):
+    """Run a report as a subprocess. Returns (ok, detail).
+
+    `args_override` replaces the registry's base_args — used by the INCOMPLETE
+    auto-retry to run the manifest's retry_args (i.e. ONLY the failed parts)
+    instead of the whole report."""
     if simulate:
         time.sleep(0.05)
         return True, "simulated ok"
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    cmd = [sys.executable, "-m", r.command[0]] + r.command[1:] + list(r.base_args)
+    args = list(args_override) if args_override is not None else list(r.base_args)
+    cmd = [sys.executable, "-m", r.command[0]] + r.command[1:] + args
     if dry_run:
         cmd.append("--dry-run")
     logf = LOG_DIR / f"orch-{target.isoformat()}-{r.report_id}.log"
@@ -590,6 +616,99 @@ def _send_checkpoint(cfg, ds, channel, dry_run):
         notify.send_checkpoint(cfg, ds, channel=channel, dry_run=dry_run)
     except Exception as e:
         _log(f"checkpoint send failed: {e}")
+
+
+def _retryable_incomplete(rs, r) -> bool:
+    """True when this INCOMPLETE report can have JUST its failed parts re-run:
+    manifest-verified, the manifest offers retry_args, and we're under the cap."""
+    if rs.status != state.INCOMPLETE:
+        return False
+    if not r or (getattr(r, "verify", None) or {}).get("type") != "manifest":
+        return False
+    if rs.auto_retries >= MAX_AUTO_RETRIES:
+        return False
+    try:
+        from automations.shared import run_manifest as _rm
+        return bool(_rm.retry_spec(rs.report_id))
+    except Exception:  # noqa: BLE001 — never let this gate crash the loop
+        return False
+
+
+def _any_retryable_incomplete(ds, todays) -> bool:
+    """Keep the loop alive while any INCOMPLETE report still has a part-retry
+    left — otherwise all_terminal() would finalize the day the moment a report
+    went INCOMPLETE (INCOMPLETE is terminal) and the retry would never happen."""
+    by_id = {r.report_id: r for r in todays}
+    return any(_retryable_incomplete(rs, by_id.get(rs.report_id))
+               for rs in ds.reports.values())
+
+
+def _retry_incomplete_parts(ds, todays, target, *, dry_run, simulate):
+    """Auto-retry ONLY the failed parts of an INCOMPLETE report, using the
+    manifest's own retry_args, then re-verify.
+
+    WHY: a metric that misses on a transient (ownerville session expiry, a
+    network timeout, a Downloads write EPERM) used to stay missed all day —
+    INCOMPLETE is terminal, so the loop never came back to it, and a human had
+    to notice the summary email and re-run by hand (Megan 2026-07-16: Aya lost
+    knocks+ABP at 04:52 to a session expiry that had cleared by 04:59; Cody lost
+    Rep Activations to a file-write EPERM that worked on the very next try).
+    The manifest already carries retry_args for the Hub's 'Retry failed only'
+    button — this just lets the orchestrator press it.
+
+    Runs each pass: the first retry lands ~immediately (catches a one-shot flake
+    like the EPERM), the next on the 25-min circle-back (gives a stale session
+    time to recover). Capped at MAX_AUTO_RETRIES so a genuinely-broken report
+    can't loop; after that it stays INCOMPLETE and the email names it as before.
+    Best-effort — never crashes the loop."""
+    if dry_run or simulate:
+        return
+    from automations.day_orchestrator import reconcile
+    from automations.shared import run_manifest as _rm
+    by_id = {r.report_id: r for r in todays}
+    for rs in list(ds.reports.values()):
+        r = by_id.get(rs.report_id)
+        if not _retryable_incomplete(rs, r):
+            continue
+        spec = _rm.retry_spec(rs.report_id)
+        if not spec:
+            continue
+        failed_before = list(spec.get("failed") or [])
+        rs.auto_retries += 1
+        _log(f"  {rs.report_id}: auto-retry {rs.auto_retries}/{MAX_AUTO_RETRIES} "
+             f"of failed part(s) {failed_before} → args {spec['retry_args']}")
+        try:
+            ok, detail = _run_report(r, target, dry_run=dry_run, simulate=simulate,
+                                     args_override=spec["retry_args"])
+        except Exception as e:  # noqa: BLE001
+            _log(f"  {rs.report_id}: auto-retry errored — {type(e).__name__}: {e}")
+            state.save(ds)
+            continue
+        # The retry rewrites the manifest; re-verify to see if it's clean now.
+        try:
+            recon = reconcile.verify(r, target, dry_run=dry_run)
+        except Exception:  # noqa: BLE001
+            state.save(ds)
+            continue
+        if recon.ok and not recon.unknown:
+            ds.set(rs.report_id, state.DONE,
+                   reason=(f"auto-retry recovered {', '.join(failed_before)}"
+                           if failed_before else "auto-retry recovered"))
+            _log(f"  {rs.report_id}: INCOMPLETE→DONE — auto-retry recovered "
+                 f"{failed_before} ({recon.note})")
+            try:
+                from automations.day_orchestrator import hub_publish
+                hub_publish.publish_done(rs.report_id,
+                                         getattr(r, "display_name", rs.report_id))
+            except Exception:  # noqa: BLE001
+                pass
+        else:
+            # Still missing parts — re-stamp INCOMPLETE (keeps the miss named in
+            # the email) and let the next pass retry if any budget is left.
+            ds.set(rs.report_id, state.INCOMPLETE, reason=recon.note)
+            _log(f"  {rs.report_id}: still INCOMPLETE after auto-retry "
+                 f"{rs.auto_retries}/{MAX_AUTO_RETRIES} — {recon.note}")
+        state.save(ds)
 
 
 def _reverify_terminal(ds, todays, target, dry_run):

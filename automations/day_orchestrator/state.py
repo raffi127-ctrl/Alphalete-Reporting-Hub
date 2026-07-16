@@ -52,6 +52,10 @@ class ReportState:
     report_id: str
     status: str = PENDING
     attempts: int = 0
+    # Auto-retries of just the FAILED PARTS of an INCOMPLETE run (via the
+    # manifest's retry_args). Separate from `attempts` (whole-report runs) so a
+    # part-retry can't consume the report's run budget. Capped in run.py.
+    auto_retries: int = 0
     last_reason: str = ""
     last_attempt_ts: Optional[str] = None
     waiting_on: Optional[str] = None          # which source it's blocked on (for the email)
