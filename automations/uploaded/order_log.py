@@ -1533,12 +1533,19 @@ def _post_order_log(xlsx_path: Path, rep_png: "Optional[Path]", *,
 
 
 async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True,
-               allow_form_login: bool = False) -> None:
+               allow_form_login: bool = False) -> int:
+    """Returns an exit code: 0 = everything posted, 1 = the Order Log posted
+    but the Rep Activations companion was skipped by an error (see rep_error).
+    Non-zero so the caller/manifest/summary email name the miss instead of
+    reporting a clean run."""
     # Intermediate CSV goes to a tempdir that auto-cleans on exit.
     # Final .xlsx is the only artifact left on disk (in Downloads).
     xlsx_path: Optional[Path] = None
     # Companion Rep Activations summary PNG (built from the same crosstab).
     rep_png: Optional[Path] = None
+    # Set only when the Rep Activations build/render RAISED (a real failure).
+    # A legitimately empty day leaves this None and still exits 0.
+    rep_error: Optional[str] = None
     # Whether the cleaned export is empty (no orders) — drives a 'No data'
     # note in place of an empty .xlsx. Defaults False (post the .xlsx).
     is_empty: bool = False
@@ -1601,6 +1608,15 @@ async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True,
             print(f"✓ Saved Rep Activations image: {rep_png.name}")
         except Exception as e:
             rep_png = None
+            # Record it. The Order Log still posts (below) — a summary hiccup
+            # must not take that down — but the run must NOT report clean, or
+            # the miss is invisible: the caller marks the metric ok, the
+            # manifest says succeeded, and it never reaches the summary email.
+            # Megan 2026-07-16: Cody's Rep Activations silently vanished
+            # (Downloads write EPERM) while the metric still reported ✅; she
+            # only caught it by eye. An EXCEPTION here is a real failure — a
+            # legitimately empty day raises nothing and still exits clean.
+            rep_error = f"{type(e).__name__}: {e}"
             print(f"  ⚠ Rep Activations summary skipped: {e}")
 
     # Slack post happens AFTER the browser context is torn down so a failing
@@ -1608,10 +1624,21 @@ async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True,
     # owner/channel gate, empty-day 'No data' note, Rep Activations image, and
     # dry-run describe all live in _post_order_log.
     if xlsx_path is None:
-        return
+        return 1 if rep_error else 0
     _post_order_log(xlsx_path, rep_png, is_empty=is_empty,
                     owner_name=owner_name, today=date.today(),
                     post_to_slack=post_to_slack)
+
+    # Order Log posted. If the Rep Activations companion errored out, say so
+    # LOUDLY and exit non-zero — the caller records the metric as missed, so it
+    # lands in the manifest + the orchestrator's summary email (and the orange
+    # partial pill) instead of vanishing behind a green ✅.
+    if rep_error:
+        print(f"\n✗ INCOMPLETE — Order Log posted, but 🆕 Rep Activations was "
+              f"NOT posted: {rep_error}")
+        print("=== done ===")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
@@ -1620,6 +1647,7 @@ if __name__ == "__main__":
     # Defaults to OWNER_NAME (Rafael Hidalgo) so the existing Raf card
     # keeps working with no args.
     import argparse
+    import sys
     _ap = argparse.ArgumentParser(description="Download a filtered Order Log")
     _ap.add_argument("--owner", default=OWNER_NAME,
                      help=f"Tableau 'Owner Name' filter value (default: {OWNER_NAME!r})")
@@ -1631,5 +1659,8 @@ if __name__ == "__main__":
                      help="Enable the legacy ownerville form-drive (HEADED manual "
                           "run ONLY — you clear the Cloudflare check by hand).")
     _args = _ap.parse_args()
-    asyncio.run(main(_args.owner, post_to_slack=not _args.no_slack,
-                     allow_form_login=_args.allow_form_login))
+    # Propagate main()'s exit code so a skipped Rep Activations surfaces as a
+    # failed/partial run to every caller (office runner, daily_metrics, Hub
+    # card) rather than a silent green.
+    sys.exit(asyncio.run(main(_args.owner, post_to_slack=not _args.no_slack,
+                              allow_form_login=_args.allow_form_login)))
