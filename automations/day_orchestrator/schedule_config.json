@@ -156,6 +156,29 @@
       "timeout_minutes": 30,
       "verify": null
     },
+    "install_car_rides_agent": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "_note": "One-shot: install/refresh the Mon-Sat car-rides launchd agent (com.alphalete.car-rides-cleanup, 9 morning passes) on Lucy 2 via `lucy rerun install_car_rides_agent`. Mirrors the other install_* handles.",
+      "display_name": "Install car-rides LaunchAgent",
+      "source_type": "api",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "car-rides-cleanup"
+      ],
+      "cadence": {
+        "weekdays": [],
+        "not_before": null
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 10,
+      "verify": null
+    },
     "harvest_proof": {
       "on_scheduler": false,
       "_off_scheduler_note": "SHADOW/INERT harvest-once proof (Stage c of output/harvest-architecture-design.md). on_scheduler:false = NEVER scheduled, structurally excluded from the 4am orchestrator (registry.load_config drops it; run_order never sees it) so it CANNOT affect the morning run. Run only by hand: `lucy rerun harvest_proof` (5-need structural cover) or `lucy rerun harvest_proof --full` (all 19 churn pulls). Runs automations.harvest.proof_mini: harvest the churn cluster once over one login, then diff live-pull-parse vs cache-parse cell-for-cell + a monkeypatch cutover check. Full result -> output/logs/harvest_proof-<date>.log (retrieve with `lucy logtail harvest_proof`); compact verdict lands in `lucy status`. source_type tableau only so the rerun runs chrome_guard first. Nothing production imports automations.harvest.",
