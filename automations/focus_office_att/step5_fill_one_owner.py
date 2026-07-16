@@ -728,6 +728,12 @@ def write_per_day_total_apps_formulas(ws, layout: Layout, rep_rows=None,
     the current (top) zone.
     clear_future: for a COMPLETED week (the frozen block) pass False so all
     7 days get their Total Apps roll-up — none are treated as "future".
+
+    "Future" is derived from the block's OWN row-1 dates (_future_weekdays), not
+    today.weekday(): on MONDAY the top block still holds last week's completed
+    data until the freeze, and the old weekday cutoff cleared its Tue–Sun Total
+    Apps — so the rollover froze a Monday-only block and last week stopped summing
+    (Megan 2026-07-07). Behaviour on a normal current-week run is unchanged.
     """
     if rep_rows is None:
         rep_vals = ws.col_values(layout.rep_name_col)
@@ -741,7 +747,8 @@ def write_per_day_total_apps_formulas(ws, layout: Layout, rep_rows=None,
     if not rep_rows:
         return 0
 
-    today_wd = dt.date.today().weekday()  # 0=Mon .. 6=Sun
+    # Date-derived, NOT today.weekday() — see the docstring / _future_weekdays.
+    future_wds = _future_weekdays(ws) if clear_future else set()
     SALE_METRICS = ("New INT", "Upgrades", "DTV", "New Lines")
 
     data = []
@@ -750,7 +757,7 @@ def write_per_day_total_apps_formulas(ws, layout: Layout, rep_rows=None,
         if not ta_col:
             continue
         sale_cols = [c for c in (layout.day_cols[wd].get(m) for m in SALE_METRICS) if c]
-        is_future = clear_future and wd > today_wd
+        is_future = wd in future_wds
         for r in rep_rows:
             if is_future or not sale_cols:
                 value = ""  # clear — day hasn't happened (or no sale cols)
@@ -965,9 +972,16 @@ def design_cosmetic_ops(ws, layout: Layout) -> list:
         ("format_last_week_block",        lambda: format_last_week_block(ws)),
         ("reset_conditional_formatting", lambda: reset_conditional_formatting(ws)),
         ("write_office_totals_row",      lambda: write_office_totals_row(ws, layout)),
-        # Frozen LAST WEEK OFFICE TOTALS self-heal (static frozen data → idempotent):
-        # avg times (First/Last Knock, Gap Time) + Total Apps sums. These froze
-        # blank / 0 after a backfill and used to need a hand-fix every time.
+        # Frozen LAST WEEK self-heal (static frozen data → idempotent). Order
+        # matters: per-day Total Apps roll-up → the weekly SUM that sums it →
+        # OFFICE TOTALS. clear_future=False because the frozen block is a COMPLETED
+        # week (all 7 days roll up; never treat one as "future"). Mirrors the
+        # backfill path in run_all_owners.py so a frozen block heals on the next
+        # daily run instead of needing drb_backfill_lastweek + a hand-fix.
+        ("frozen_total_apps_per_day",    lambda: write_per_day_total_apps_formulas(
+            ws, layout, rep_rows=_frozen_rep_rows(ws.col_values(2)), clear_future=False)),
+        ("frozen_weekly_formulas",       lambda: write_weekly_formulas(
+            ws, layout, rep_rows=_frozen_rep_rows(ws.col_values(2)))),
         ("refresh_frozen_office_totals_avgs", lambda: refresh_frozen_office_totals_avgs(ws, layout, _frozen_rep_rows(ws.col_values(2)))),
         ("refresh_frozen_office_totals_apps", lambda: refresh_frozen_office_totals_apps(ws, layout, _frozen_rep_rows(ws.col_values(2)))),
         ("write_office_summary_block",   lambda: write_office_summary_block(ws, layout)),
@@ -1477,6 +1491,41 @@ def _completed_weekdays(ws) -> set[int]:
     except Exception:
         pass
     return set(range(0, today.weekday()))
+
+
+def _future_weekdays(ws) -> set[int]:
+    """Weekday indices (0=Mon … 6=Sun) whose date is genuinely in the FUTURE
+    (> today), derived from the TOP block's row-1 'Mon m/d' labels — the sibling
+    of _completed_weekdays, but INCLUDING today as not-future.
+
+    WHY separate: _completed_weekdays is Mon→YESTERDAY (today excluded), which is
+    right for the 0-fill/summary rules but would wrongly blank TODAY's Total Apps
+    roll-up. Here "don't write it" must mean strictly "this day hasn't happened".
+
+    WHY date-derived instead of `wd > today.weekday()`: on MONDAY the top block
+    holds LAST week's completed data (scraped that morning) right up until the
+    freeze — so the weekday cutoff judged Tue–Sun "future" and CLEARED their Total
+    Apps, and the rollover then froze a Monday-only block ("total apps from last
+    week aren't adding", Megan 2026-07-07; same root cause as the 2026-06-27
+    blank-frozen-weekend bug). Reading the block's own dates makes it correct for
+    whichever week the top holds: a normal current-week run returns exactly the
+    same set as the old cutoff (no behaviour change), a past week returns {}.
+    Falls back to the weekday cutoff if row 1 has no parseable Monday."""
+    import re as _re
+    today = dt.date.today()
+    try:
+        for v in ws.row_values(1):
+            m = _re.match(r"^Mon\s+(\d{1,2})/(\d{1,2})\b", str(v).strip())
+            if m:
+                mo, da = int(m.group(1)), int(m.group(2))
+                monday = dt.date(today.year, mo, da)
+                if monday > today + dt.timedelta(days=30):   # a Dec label read in Jan
+                    monday = dt.date(today.year - 1, mo, da)
+                return {wd for wd in range(7)
+                        if monday + dt.timedelta(days=wd) > today}
+    except Exception:
+        pass
+    return set(range(today.weekday() + 1, 7))
 
 
 def apply_empty_cell_defaults(ws, layout: Layout, *, rep_rows=None,
