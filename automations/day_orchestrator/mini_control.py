@@ -372,6 +372,57 @@ def _action_install_hub_watch(args: str) -> tuple[bool, str]:
                   f"lib={'ok' if l_ok else 'FAIL'}")
 
 
+def _action_install_machine_digest(args: str) -> tuple[bool, str]:
+    """Install (or reinstall) the daily 'what ran on this machine' summary
+    LaunchAgent (com.alphalete.machine-digest) on THIS machine — intended for
+    Lucy 2, which otherwise gets no daily summary. Regenerates the plist for the
+    mini's path, runs a --dry-run smoke test (proves the Hub Activity read +
+    render work here, no email), then bootstraps it (noon daily). Run `update` +
+    `restart_poller` first so this action exists in the running poller."""
+    uid = os.getuid()
+    label = "com.alphalete.machine-digest"
+    src_plist = REPO_ROOT / "deploy" / f"{label}.plist"
+    wrapper = REPO_ROOT / "deploy" / "machine_digest_daily.sh"
+    dst_plist = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+    if not src_plist.exists() or not wrapper.exists():
+        return False, (f"missing {src_plist.name} or {wrapper.name} — run "
+                       "`update` first to pull them")
+    try:
+        text = src_plist.read_text().replace(
+            "/Users/megan/1st Claude Folder", str(REPO_ROOT))
+        dst_plist.parent.mkdir(parents=True, exist_ok=True)
+        dst_plist.write_text(text)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write plist: {str(e).splitlines()[0][:140]}"
+    lint = subprocess.run(["plutil", "-lint", str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if lint.returncode != 0:
+        return False, f"plist lint failed: {(lint.stdout or '')[:160]}"
+    try:
+        os.chmod(wrapper, 0o755)
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Smoke test — build the email to an .eml without sending, proving the Hub
+    # Activity read + render work on THIS machine.
+    smoke_ok, smoke = _run_cmd(
+        [sys.executable, "-m", "automations.machine_digest.run", "--dry-run"],
+        timeout_s=120, log_name="machine-digest-install-smoke.log")
+    if not smoke_ok:
+        return False, f"smoke test failed — NOT going live: {smoke[:150]}"
+
+    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["launchctl", "enable", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    boot = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if boot.returncode != 0:
+        return False, f"smoke ok; bootstrap FAILED: {(boot.stdout or '').strip()[:150]}"
+    return True, (f"installed {label} (noon daily) · smoke test ok · "
+                  f"{smoke[:90]}")
+
+
 def _action_watch_test(args: str) -> tuple[bool, str]:
     """Fire appstream_watch's one-off test ping so Megan/Eve can confirm the 6pm
     session-expiry Slack DM actually delivers — WITHOUT waiting for a real lapse
@@ -768,6 +819,7 @@ ACTIONS = {
     "restart_holder": _action_restart_holder,
     "restart_poller": _action_restart_poller,
     "install_hub_watch": _action_install_hub_watch,
+    "install_machine_digest": _action_install_machine_digest,
     "reseed_appstream": _action_reseed_appstream,
     "watch_test": _action_watch_test,
     "diag": _action_diag,
