@@ -1769,6 +1769,91 @@ def apply_rep_row_borders(
               f"({len(requests)} requests, {len(sections)} sections)")
 
 
+def apply_rep_row_format(
+    ws,
+    sections: dict,
+    *,
+    dry_run: bool = False,
+    logfn=print,
+) -> None:
+    """Stamp the CANONICAL rep-row cell format on every rep row in every
+    section, cols B..col_count: Georgia 12, horizontal CENTER, vertical
+    MIDDLE, and SOLID_MEDIUM borders on all four sides of every cell.
+
+    This is the format-ENFORCEMENT pass. The churn fill does heavy row
+    surgery every run — insert_missing_reps (new rows inherit format from
+    whatever sits above them) and sortRange (physically moves rows). On a
+    stable established office rows barely move so the template format
+    survives, but a fresh office's big first insert + sort scrambles it and
+    NOTHING put it back — Megan 2026-07-15: 'we keep losing formatting, I
+    want the borders/centering/size/font all of it to stay correct.'
+
+    Canonical captured cell-for-cell from Rashad's (known-good) churn tab:
+    every rep cell B..K is Georgia/12/CENTER/MIDDLE with SOLID_MEDIUM on
+    all sides. Idempotent — re-affirming an already-correct tab is a no-op,
+    so this is safe on Rashad/Aya too.
+
+    Deliberately does NOT set backgroundColor (fields mask excludes it) so
+    the pct-color / white-override / clear-empty passes keep full control
+    of cell fills. Runs AFTER sort so moved/inserted rows get reformatted.
+    """
+    if not sections:
+        return
+    MED = {"style": "SOLID_MEDIUM", "color": {"red": 0, "green": 0, "blue": 0}}
+    last_col = ws.col_count            # data width == grid width on churn tabs
+    if last_col < 2:
+        return
+    requests: list[dict] = []
+    for period, sect in sections.items():
+        rep_rows = sect.get("rep_rows") or {}
+        if not rep_rows:
+            continue
+        first_row = min(rep_rows.values())
+        last_row  = min(max(rep_rows.values()), ws.row_count)
+        if last_row < first_row:
+            continue
+        rng = {
+            "sheetId": ws.id,
+            "startRowIndex": first_row - 1,
+            "endRowIndex":   last_row,
+            "startColumnIndex": 1,          # col B
+            "endColumnIndex":   last_col,   # through the last grid col
+        }
+        # Alignment + font — fields mask keeps backgroundColor untouched.
+        requests.append({
+            "repeatCell": {
+                "range": rng,
+                "cell": {"userEnteredFormat": {
+                    "horizontalAlignment": "CENTER",
+                    "verticalAlignment": "MIDDLE",
+                    "textFormat": {"fontFamily": "Georgia", "fontSize": 12},
+                }},
+                "fields": ("userEnteredFormat("
+                           "horizontalAlignment,verticalAlignment,"
+                           "textFormat.fontFamily,textFormat.fontSize)"),
+            }
+        })
+        # Uniform SOLID_MEDIUM borders on every cell of the block.
+        requests.append({
+            "updateBorders": {
+                "range": rng,
+                "top": MED, "bottom": MED, "left": MED, "right": MED,
+                "innerHorizontal": MED, "innerVertical": MED,
+            }
+        })
+
+    if dry_run:
+        logfn(f"  (dry-run) would enforce canonical rep-row format "
+              f"(Georgia 12 / center / SOLID_MEDIUM borders) across "
+              f"{len(sections)} sections")
+        return
+    if requests:
+        for i in range(0, len(requests), 500):
+            ws.spreadsheet.batch_update({"requests": requests[i:i + 500]})
+        logfn(f"  enforced canonical rep-row format across "
+              f"{len(sections)} sections")
+
+
 def _col_letter(idx: int) -> str:
     """Convert a 1-indexed column number (1=A, 2=B, …, 26=Z, 27=AA) into
     its A1 letter form."""

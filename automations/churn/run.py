@@ -136,6 +136,15 @@ def _run_fill_phase(label: str, pull_mod, fill_mod, parsed: dict,
     fill_mod.sort_sections_via_sortrange(ws, sections,
                                          dry_run=args.dry_run, logfn=print)
 
+    # Enforce the canonical rep-row format (Georgia 12 / center / middle /
+    # SOLID_MEDIUM borders) on every rep row AFTER the sort + inserts, so
+    # rows that moved or were freshly inserted don't drift out of the
+    # template look (Megan 2026-07-15: "we keep losing formatting"). Runs
+    # before the color passes; its fields mask excludes backgroundColor so
+    # those passes keep full control of cell fills.
+    fill_mod.apply_rep_row_format(ws, sections,
+                                  dry_run=args.dry_run, logfn=print)
+
     # Paint direct background on each pct cell (col B) per period
     # threshold — required because Eve's existing conditional rules
     # don't cover every rep row; direct backgrounds make the colors
