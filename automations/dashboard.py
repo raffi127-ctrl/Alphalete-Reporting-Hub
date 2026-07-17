@@ -1255,14 +1255,6 @@ def _office_metrics_card() -> dict:
             "Hammad and Salik both post to #elite-prime-sales, so each gets its "
             "own labelled thread ('Metrics for: <date> — <name>') and they never "
             "collide.\n\n"
-            "IF ONE MISSES\n"
-            "A run keeps going past a metric that fails and ends with a ✅/❌ "
-            "summary; the card shows a per-office checklist after the batch. The "
-            "orchestrator now auto-retries just the failed metric on its 25-min "
-            "circle-back, so a transient (a stale ownerville session, a network "
-            "blip) usually heals itself — anything still missing is named in the "
-            "summary email. Use the per-office buttons below to re-run one "
-            "office by hand.\n\n"
             "WHEN IT RUNS\n"
             "Daily in the 4am batch, each office in turn."),
         "assignees": ["Lucy 1"],
