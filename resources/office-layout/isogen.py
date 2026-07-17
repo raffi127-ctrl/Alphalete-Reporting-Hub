@@ -218,19 +218,31 @@ schair(_mx(8.10),_my(5.60),_MG2); schair(_mx(8.10),_my(8.20),_MG2)    # two acro
 box(_mx(0.40),_my(11.20),_mx(4.40),_my(14.80),FLR_Z,FLR_Z+2.2,"#f0e4e6")  # play pen, down by the window
 schair(_mx(6.60),_my(13.00),"#8a6240",s=1.6,h=2.6)                    # rocking chair
 
-# --- 5 · TWADDLE'S (91,18,104,29): windows east, glass entry west, TV on the conference wall ---
-_TB="#8a6a45"; _TS="#5d7a5c"
-sdesk(99.0,21.0,101.4,27.0,_TB); sdesk(96.6,24.8,99.0,27.0,_TB)   # L-desk + return
-schair(102.6,24.0,_TS)                                      # Twaddle, facing the TV wall
-schair(97.4,21.6,_TS); schair(97.4,23.4,_TS)                # 2 across for interviews
-scred(93.2,18.3,94.4,21.6,"#7d8894")                        # tablet cabinet
+# --- 5 · TWADDLE'S and 6 · MEGAN'S: the two east-column rooms. Both studio frames are
+# rotated 90 deg from the building's — studio north (windows) is the plan's east wall, and
+# studio east (Twaddle's Megan-side / Megan's reception side) is the plan's south. So map
+# rather than eyeball: studio (sx,sy) -> plan (X1 - sy*13/10.67, Y0 + sx*11/10.67).
+_EK,_EJ=13.0/10.67, 11.0/10.67
+def _epx(sy): return 104.0-sy*_EK
+def _epy(sx,Y0): return Y0+sx*_EJ
+def ebox(sx0,sy0,sx1,sy1,Y0,z1,col,z0=0.0):
+    box(_epx(sy1),_epy(sx0,Y0),_epx(sy0),_epy(sx1,Y0),FLR_Z+z0,FLR_Z+z1,col)
+def echair(sx,sy,Y0,col,s=1.25,h=2.9):
+    schair(_epx(sy),_epy(sx,Y0),col,s=s,h=h)
 
-# --- 6 · MEGAN'S (91,29,104,40): windows east, half-glass to reception south ---
-_MB="#c9bfb0"
-sdesk(99.2,32.4,101.6,37.6,_MB)                             # standing desk
-schair(102.6,35.0,"#c58fa0")                                # Megan
-box(96.4,32.8,98.4,35.4,FLR_Z,FLR_Z+0.4,"#3a4150")          # walking pad
-schair(93.0,38.2,"#c58fa0",s=1.5)                           # floral chair in the corner
+# 5 · TWADDLE'S (91,18,104,29): TV wall = plan north (conference side), windows = plan east
+ebox(0.18,1.50,1.90,3.10,18,5.0,"#7d8894")                  # tablet cabinet by the TV wall
+ebox(5.0,3.0,7.2,8.2,18,2.5,"#9a7048")                      # L-desk main
+ebox(7.2,3.0,9.4,4.8,18,2.5,"#9a7048")                      # return
+echair(8.2,5.9,18,"#6b4c35")                                # Twaddle, facing the TV wall
+echair(3.5,4.8,18,"#9aa89a"); echair(3.5,7.0,18,"#9aa89a")  # two across the desk
+
+# 6 · MEGAN'S (91,29,104,40): screen wall = plan north, windows = plan east, reception south
+box(_epx(8.85),_epy(1.85,29),_epx(1.85),_epy(8.85,29),FLR_Z,FLR_Z+0.06,"#e8d5d8")   # floral rug
+ebox(3.2,3.4,5.3,7.2,29,3.5,"#c8bfb0",z0=3.2)               # standing desk, top at 3.2'
+ebox(3.5,3.75,5.0,4.05,29,3.2,"#6b7280"); ebox(3.5,6.55,5.0,6.85,29,3.2,"#6b7280")  # T-legs
+ebox(5.4,4.2,7.4,6.6,29,0.4,"#3a4150")                      # walking pad
+echair(2.9,9.05,29,"#9fae9f",s=1.8,h=3.3)                   # sage accent chair, room corner
 
 # --- 10 · JD'S (37.6,52,46.5,64): windows south, glass entry north ---
 _JN="#2b3a52"
