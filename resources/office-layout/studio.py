@@ -1004,13 +1004,13 @@ def furnish(kind, R, key=None):
 # ===========================================================================
 CATALOG=[
   ("w-comb","West · Training Room","10'6\" × 20'","long",10.5,20.0,"Training room — classroom setup","Screen · 12 chairs · posters",False),
-  ("w-3","West · Office","10'6\" × 10'5\"","interview",10.5,10.42,"Interview office","L-desk · iMac · 2 guest · TV · open shelf · glass front",False),
+  ("w-3","West · Office","10'6\" × 10'5\"","interview",10.5,10.42,"Interview office","Straight desk · iMac · 2 guest · TV · open shelf · glass front",False),
   ("w-4","Maud's Office (corner)","10'5\" × 17'5\"","maud",10.42,17.42,"Maud's corner office","L-desk · 2 guest · play pen · rocking chair · TV",False),
   ("n-large","Raf's Office","20' × 20'","raf",20.0,20.0,"Raf's office","L-desk · iMac · walking pad · 2 guest · bookcase · mini fridge · oval table",False),
   ("e-1","Twaddle's Office","10'8\" × 10'8\"","twaddle",10.67,10.67,"Twaddle's office","L-desk · 2 guest chairs · TV · glass entrance",False),
   ("e-2","Claude Room / Megan's","10'8\" × 10'8\"","megan",10.67,10.67,"Megan's office / Claude room","4 screens · standing desk · walking pad · window wall",False),
-  ("s-1","South · Office 1","12' × 10'6\"","interview",12.0,10.5,"Interview office","L-desk · iMac · 2 guest · TV · open shelf · glass front",False),
-  ("s-2","South · Office 2","12' × 10'6\"","interview",12.0,10.5,"Interview office","L-desk · iMac · 2 guest · TV · open shelf · glass front",False),
+  ("s-1","South · Office 1","12' × 10'6\"","interview",12.0,10.5,"Interview office","Straight desk · iMac · 2 guest · TV · open shelf · glass front",False),
+  ("s-2","South · Office 2","12' × 10'6\"","interview",12.0,10.5,"Interview office","Straight desk · iMac · 2 guest · TV · open shelf · glass front",False),
   ("s-3","Bas's office","12' × 10'","bas",12.0,10.0,"Bas's office","L-desk · iMac · 2 guest · TV · bookcase · credenza · glass front",False),
   ("s-4","JD's Office","12' × 13'6\"","jd",12.0,13.5,"JD's office","L-desk · 2 guest chairs · TV · credenza · window wall",False),
   ("s-comb1","South · Training Room A","24' × 9'","wide","24.0","9.0","Training room — classroom setup","Screen · 12 chairs · posters",False),
@@ -1081,13 +1081,12 @@ def interview_office(R, windows=True, style="gallery", desk_col="#59616e", shelf
     leafy(R,1.87,0.84,FLR_Z+3.91+0.26,4.4,0.55)                     # plant on top
     # WALL 3 (east) glass front + door
     glass_front(R,3)
-    # L-desk (graphite), owner backs wall 4 facing the TV. Slide the whole cluster west so
+    # Straight desk (graphite), owner backs wall 4 facing the TV. Slide the cluster west so
     # it clears the glass wall (wall 3) by ~3.3'; guard keeps it off wall 1 in the small room.
     _gx=w-12.9
     if 3.60+_gx<1.10: _gx=1.10-3.60
-    R.box(3.60+_gx,5.40,9.60+_gx,7.60,FLR_Z+2.2,FLR_Z+2.5,desk_col)  # main
-    R.box(7.60+_gx,7.60,9.60+_gx,9.60,FLR_Z+2.2,FLR_Z+2.5,desk_col)  # return
-    for _ex,_ey in ((3.9,5.7),(3.9,7.3),(9.3,5.7),(9.3,7.3),(9.3,9.3),(7.9,9.3)):
+    R.box(3.60+_gx,5.40,9.60+_gx,7.60,FLR_Z+2.2,FLR_Z+2.5,desk_col)  # straight desk
+    for _ex,_ey in ((3.9,5.7),(3.9,7.3),(9.3,5.7),(9.3,7.3)):
         R.box(_ex+_gx-0.18,_ey-0.18,_ex+_gx+0.18,_ey+0.18,FLR_Z,FLR_Z+2.2,"#8b95a3")   # legs
     def _seat(cx,cy,ang,col,bh=2.4):
         R.rbox(cx,cy,1.45,1.45,FLR_Z,FLR_Z+1.5,ang,col)
@@ -1288,7 +1287,7 @@ def build_office(entry):
 
 FURN_BY_KIND={
  'small':'Private office · shell + door','med':'Private office · shell + door',
- 'interview':'L-desk · iMac · 2 guest chairs · TV · open shelf · glass front (no credenza)',
+ 'interview':'Straight desk · iMac · 2 guest chairs · TV · open shelf · glass front (no credenza)',
  'long':'Classroom · screen · credenza · 12 chairs · posters · glass front','wide':'Classroom · screen · credenza · 12 chairs · window wall · glass front',
  'large':'Large office · shell + door','conference':'Boardroom · 14 seats · TV wall · whiteboards · built-in counter',
  'megan':'4 screens · standing desk · laptop · walking pad · florals · window wall',

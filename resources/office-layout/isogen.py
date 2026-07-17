@@ -271,6 +271,28 @@ _south_office(37.625,46.5,13.5,"#8a9099","#6f6a63","#2b3a52","#2b3a52","#2b3a52"
 _south_office(28.75,37.625,10.0,"#6f685c","#4e5766","#d21f26","#0a6cff","#00a94f","#d21f26",  # 9 · Bas (bright/Lego)
     bricks=((0.42,4.05,1.62,5.75,"#d21f26",2),(0.55,6.05,1.45,7.05,"#f6c018",2),(0.52,7.55,1.55,8.75,"#0a6cff",2)))
 
+# --- 7 · 8 · 2 · INTERVIEW OFFICES: straight desk + iMac + 2 guest chairs + open shelf, no
+# credenza; themed. 7/8 are south-row (same transpose as JD/Bas); 2 is west-column (identity).
+def _south_interview(X0,X1,sd,desk,owner,g0,g1,shelf):
+    def MX(sy): return X0+sy*(X1-X0)/sd
+    def MY(sx): return 64.0-sx
+    def RC(sx0,sy0,sx1,sy1):
+        xs=sorted((MX(sy0),MX(sy1))); ys=sorted((MY(sx0),MY(sx1)))
+        return xs[0],ys[0],xs[1],ys[1]
+    sdesk(*RC(3.60,5.40,9.60,7.60),desk)                     # straight desk
+    schair(MX(8.70),MY(6.40),owner)                          # owner, backs a party wall, faces the TV
+    schair(MX(3.90),MY(5.00),g0); schair(MX(3.90),MY(7.80),g1)   # two guests across the desk
+    box(*RC(1.30,0.18,3.90,1.18),FLR_Z,FLR_Z+5.0,shelf)      # open shelf by the TV wall
+_south_interview(11.0,19.875,10.5,"#5f5560","#7b4f6a","#9a929a","#9a929a","#6a5a66")     # 7 · plum
+_south_interview(19.875,28.75,10.5,"#5b564d","#c19a3e","#9a948a","#9a948a","#6e5f3e")    # 8 · gold
+
+# 2 · WEST OFFICE (0,37,11,47): interior interview office. Maps identity (glass entry faces
+# the open office to the east), so the owner faces the TV on the NORTH wall.
+sdesk(2.2,41.6,8.6,43.4,"#6a5847")                          # straight desk (E-W)
+schair(5.4,45.0,"#a97c53")                                 # owner, backs the south wall, faces north
+schair(3.8,40.2,"#9c948a"); schair(6.6,40.2,"#9c948a")     # two guests
+box(1.0,37.3,2.5,38.6,FLR_Z,FLR_Z+5.0,"#5c4a38")           # open shelf on the north (TV) wall
+
 # --- TRAINING ROOMS: classroom seating facing the screen wall + credenza under it.
 # The screen wall comes from the studio, mapped to the building: room 1's entry faces the
 # open office to its EAST, so it maps 1:1 (screen on the north wall). Rooms 11/12's entry
