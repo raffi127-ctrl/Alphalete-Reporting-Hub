@@ -3081,6 +3081,10 @@ AUTOMATED_REPORTS = [
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
         "assignees": ["Lucy 1"],
+        # Runs on its OWN 9 AM timer, not in the 4am orchestrator sweep — so it
+        # belongs under ⏰ TIME SET REPORTS, ordered at its 9:00 slot, not in the
+        # morning batch (Megan 2026-07-15).
+        "self_scheduled": True,
         "schedule": {
             "frequency": "daily",
             "time": "9:00 AM",
