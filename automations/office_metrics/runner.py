@@ -625,9 +625,19 @@ def main(argv=None, *, office_key: str | None = None) -> int:
 
     wired = metrics
     if args.only:
-        wired = [m for m in metrics if m["slug"] == args.only]
-        if not wired:
-            print(f"--only {args.only!r}: unknown slug "
+        # COMMA LIST, like the main report's --only. It used to take exactly one
+        # slug, which forced the manifest to fall back to a FULL --live retry
+        # whenever 2+ metrics missed — and since a re-run re-POSTS every metric
+        # it runs (there's no dedup), that retry duplicated the whole thread.
+        # Harmless while a human eyeballed it; a live landmine once the
+        # orchestrator started auto-retrying retry_args (Megan 2026-07-16 — Aya
+        # missed exactly 2 metrics that morning). Now any number of missed
+        # metrics retries as `--only a,b` and re-posts ONLY those.
+        wanted = [s.strip() for s in args.only.split(",") if s.strip()]
+        wired = [m for m in metrics if m["slug"] in wanted]
+        unknown = [s for s in wanted if s not in {m["slug"] for m in metrics}]
+        if unknown or not wired:
+            print(f"--only {args.only!r}: unknown slug(s) {unknown or wanted} "
                   f"(all: {[m['slug'] for m in metrics]})")
             return 2
 
@@ -737,8 +747,18 @@ def main(argv=None, *, office_key: str | None = None) -> int:
     # some metrics land and some miss.
     if mode == "live" and not args.only:
         from automations.shared import run_manifest as _rm
-        retry = (["--live", "--only", failed_slugs[0]]
-                 if len(failed_slugs) == 1 else ["--live"])
+        # Retry ONLY the metrics that missed — any number of them. A bare
+        # ["--live"] here would re-run the whole office and re-post every metric
+        # that already landed (no dedup on posting), which is exactly what the
+        # orchestrator's auto-retry would then execute unattended.
+        #
+        # SELF-CONTAINED: must carry --office. The orchestrator's auto-retry
+        # passes retry_args INSTEAD OF base_args (which is where --office
+        # normally lives), so omitting it here made the retry run with no office
+        # and die on "--office is required" (Megan 2026-07-16).
+        retry = ["--office", o.key, "--live"]
+        if failed_slugs:
+            retry += ["--only", ",".join(failed_slugs)]
         _rm.write_manifest(
             o.report_id, failed=failed_labels, succeeded=ok_labels,
             retry_args=retry, kind="metric",
