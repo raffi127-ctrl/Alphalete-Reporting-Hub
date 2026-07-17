@@ -35,9 +35,11 @@ from typing import Iterable, Tuple
 
 from patchright.sync_api import sync_playwright
 
+import datetime as dt
+
 from automations.captainship_drafts.sales_board import (
-    PS_END_COL, PS_ROWS, SALES_BOARD_ID, UNITS_ROWS, _open_ws,
-    ps_groups_expanded, units_day_columns,
+    PS_END_COL, SALES_BOARD_ID, _open_ws, _values,
+    discover_blocks, prior_day_columns, ps_groups_expanded,
 )
 
 SHEETS_PROFILE_DIR = (
@@ -298,40 +300,69 @@ def _hstack(paths: list[Path], out_path: Path) -> Path:
     return out_path
 
 
-def captain_shots(captain_key: str, out_dir: Path, *,
-                  scale: float = 2.0) -> dict:
-    """Product Summary + Captainship Units PNGs for one captain.
+def _units_label(raw: str) -> str:
+    """Pretty caption for a units block from its sheet sub-header."""
+    r = (raw or "").strip().upper()
+    if "NEW INTERNET" in r:
+        return "New Internet Units"
+    if "ALL UNITS" in r or r in ("", "UNITS"):
+        return "All Units"
+    return raw.title()
 
-    Product Summary: the A:K block with its vertical weekly-historical
-    row groups EXPANDED for the shot (shared view state — expanded only
-    while this captain's PS capture runs, then restored).
-    Units: names+'Total for week' (B:E) spliced next to the most recent
-    day group with data — the in-between days are not shown.
 
-    Returns {'product_summary': Path, 'units': Path, 'units_day': str}."""
-    ps_s, ps_e = PS_ROWS[captain_key]
-    u_s, u_e = UNITS_ROWS[captain_key]
-    day_name, d_first, d_last = units_day_columns(captain_key)
+def _units_blocks_for(captain_key: str, flavor: str, blocks) -> list:
+    """Which discovered units charts go in this captain's email.
+    Rafael: New Internet only (spec = one chart). Fiber: both (New Internet +
+    All Units). B2B/NDS: their single block."""
+    units = blocks.units
+    if flavor == "rafael":
+        ni = [u for u in units if "NEW INTERNET" in u.label.upper()]
+        return ni or units[:1]
+    return units
+
+
+def captain_shots(captain_key: str, flavor: str, out_dir: Path, *,
+                  today: dt.date | None = None, scale: float = 2.0) -> dict:
+    """Product Summary + Captainship Units PNGs for one captain, all ranges
+    found BY LABEL on the 'Copy of' Sales Board tab.
+
+    Product Summary: the A:K span (New-Internet + All-Units sub-blocks for
+    fiber/Rafael) with its collapsed weekly-historical row groups EXPANDED
+    for the shot (shared view state — expanded only during this capture).
+    Units: for each chart, the names+'Total for week' strip (B:E) spliced
+    next to the PRIOR DAY's 3-col group; the in-between days are hidden.
+
+    Returns {'product_summary': Path, 'units': [(caption, Path), ...]}."""
+    today = today or dt.date.today()
+    blocks = discover_blocks()[captain_key]
+    vals = _values()
     out_dir = Path(out_dir)
     ps_path = out_dir / f"captainship_{captain_key}_product_summary.png"
-    u_path = out_dir / f"captainship_{captain_key}_units.png"
-    u_left = out_dir / f"_{captain_key}_units_left.tmp.png"
-    u_day = out_dir / f"_{captain_key}_units_day.tmp.png"
-    try:
-        # PS alone inside the expanded window, so the shared sheet spends
-        # the least possible time with the groups open.
-        with ps_groups_expanded(captain_key):
-            capture_ranges([(f"A{ps_s}:{PS_END_COL}{ps_e}", ps_path)],
-                           scale=scale)
-        capture_ranges([(f"B{u_s}:E{u_e}", u_left),
-                        (f"{d_first}{u_s}:{d_last}{u_e}", u_day)],
-                       scale=scale)
-        _hstack([u_left, u_day], u_path)
-    finally:
-        for tmp in (u_left, u_day):
-            tmp.unlink(missing_ok=True)
-    return {"product_summary": ps_path, "units": u_path,
-            "units_day": day_name}
+
+    # PS alone inside the expanded window, so the shared sheet spends the
+    # least possible time with the groups open.
+    with ps_groups_expanded(blocks.ps_start, blocks.ps_end):
+        capture_ranges(
+            [(f"A{blocks.ps_start}:{PS_END_COL}{blocks.ps_end}", ps_path)],
+            scale=scale)
+
+    units_out: list = []
+    for i, ub in enumerate(_units_blocks_for(captain_key, flavor, blocks)):
+        day_name, d_first, d_last = prior_day_columns(ub, today, vals)
+        u_path = out_dir / f"captainship_{captain_key}_units{i}.png"
+        u_left = out_dir / f"_{captain_key}_units{i}_left.tmp.png"
+        u_day = out_dir / f"_{captain_key}_units{i}_day.tmp.png"
+        try:
+            capture_ranges(
+                [(f"B{ub.start_row}:E{ub.end_row}", u_left),
+                 (f"{d_first}{ub.start_row}:{d_last}{ub.end_row}", u_day)],
+                scale=scale)
+            _hstack([u_left, u_day], u_path)
+        finally:
+            for tmp in (u_left, u_day):
+                tmp.unlink(missing_ok=True)
+        units_out.append((f"{_units_label(ub.label)} — {day_name}", u_path))
+    return {"product_summary": ps_path, "units": units_out}
 
 
 if __name__ == "__main__":
@@ -342,12 +373,12 @@ if __name__ == "__main__":
         sys.exit(0 if check() else 1)
     elif cmd == "shot":
         # python -m ...sheet_shot shot <captain> [out_dir]   (default output/)
+        from automations.captainship_drafts.config import BY_KEY
         key = sys.argv[2]
         out_dir = Path(sys.argv[3]) if len(sys.argv) > 3 else Path("output")
-        shots = captain_shots(key, out_dir)
-        day = shots.pop("units_day")
-        for label, path in shots.items():
-            print(f"✓ {label}: {path}" + (f" (day: {day})"
-                                          if label == "units" else ""))
+        shots = captain_shots(key, BY_KEY[key].flavor, out_dir)
+        print(f"✓ product_summary: {shots['product_summary']}")
+        for caption, path in shots["units"]:
+            print(f"✓ units [{caption}]: {path}")
     else:
         sys.exit(0 if login() else 1)

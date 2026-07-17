@@ -731,6 +731,30 @@
       ],
       "verify": null
     },
+    "captainship_drafts": {
+      "order": 20,
+      "on_scheduler": true,
+      "_note": "Builds the 12 Captainship Report Gmail drafts (Rafael + 5 fiber + 3 B2B + 3 NDS) as alphaletereporting@gmail.com. Reads the 'Copy of Alphalete ORG Sales Board' tab for §1 (Product Summary + Captainship Units screenshots), the daily Fiber Activations PNGs (fiber §2), and the filled churn tabs (§3/§4). depends_on org_sales_board + both churn runs + captainship_activations so it only builds once its inputs are fresh — this is the 'fire after the board is complete' trigger Eve asked for. MANUAL-ONLY FOR NOW (cadence.weekdays [] -> the 4am orchestrator never auto-runs it) while (a) the Sales Board screenshot profile is logged in on the runner (`python -m automations.captainship_drafts.sheet_shot login` as alphaletereporting) and (b) the Tableau §2 shots (Cancel Rates / Team Stats Breakout) are wired. At go-live set weekdays to [1,2,3,4,5,6] to auto-fire after the board. `lucy rerun captainship_drafts --dry-run` previews to output/*.eml/.html; without --dry-run it creates Gmail drafts (nothing is sent — a human reviews + sends).",
+      "display_name": "Captainship Report Drafts (12)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.captainship_drafts.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [
+        "org_sales_board",
+        "captainship_churn",
+        "owners_metrics_churn",
+        "captainship_activations"
+      ],
+      "verify": null
+    },
     "install_retail_catchup_agent": {
       "on_scheduler": true,
       "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_retail_catchup_agent` (same pattern as install_je_agent). on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Regens + launchctl-bootstraps com.alphalete.retail-catchup on the mini — a Monday 3pm CST re-pull of Retail NL + Retail Internet + JE, so the weekend's late-posting (day-behind) retail days land before the Monday-night manual rollover. source_type 'local' skips the tableau/appstream chrome guard. Not a Hub card. Re-runnable any time.",

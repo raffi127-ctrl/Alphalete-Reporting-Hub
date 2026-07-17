@@ -5,13 +5,18 @@ filled the sheets — this module only reads the filled tabs, renders the
 churn images, assembles each draft, and creates it in Gmail.
 
   python -m automations.captainship_drafts.run --only wayne --dry-run
-  python -m automations.captainship_drafts.run --dry-run     # all 10, no send
+  python -m automations.captainship_drafts.run --dry-run     # all 12, no send
   python -m automations.captainship_drafts.run --only wayne  # live: create draft
+  python -m ...run --only wayne --dry-run --skip-sheets      # churn-only preview
 
 --dry-run writes each assembled email to output/ as a .eml you can open
 in any mail client to preview (images embedded) — nothing touches Gmail.
+--skip-sheets skips the Sales Board screenshots (no browser login / no sheet
+row-group toggling) — those sections show a 'pending' note.
 
-PHASE 1: churn section only. Sections 1-2 land in later phases.
+Sections wired: §1 Product Summary + Captainship Units (Sales Board shots),
+churn (§3/§4), fiber Activations PNG. The Tableau §2 (Cancel Rates / Team
+Stats Breakout) shows a per-section 'pending' note until the Tableau phase.
 """
 from __future__ import annotations
 
@@ -22,22 +27,59 @@ import tempfile
 from pathlib import Path
 
 from automations.captainship_drafts import (
-    config, churn_images, email_build, preview,
+    config, churn_images, email_build, fiber_png, preview,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _OUTPUT_DIR = _REPO_ROOT / "output"
 
 
+def _sales_board_shots(captain, today, render_dir, *, logfn):
+    """(product_summary, units) from the Sales Board — degrades to (None, [])
+    if the screenshot browser isn't logged in / a capture fails, so the rest
+    of the draft still builds (that section shows a 'pending' note)."""
+    try:
+        from automations.captainship_drafts import sheet_shot
+        shots = sheet_shot.captain_shots(captain.key, captain.flavor,
+                                         render_dir, today=today)
+        return shots.get("product_summary"), shots.get("units") or []
+    except Exception as e:
+        logfn(f"  ⚠ Sales Board screenshots skipped for {captain.key}: {e}")
+        return None, []
+
+
 def _build_one(captain: config.Captain, today: dt.date, render_dir: Path,
-               *, logfn=print):
+               *, skip_sheets: bool = False, logfn=print):
     logfn(f"\n--- {captain.key} ({captain.display_name}, {captain.flavor}) ---")
-    images = churn_images.render_captain(captain, today, render_dir, logfn=logfn)
-    if not images:
-        logfn(f"  ⚠ no churn images rendered for {captain.key} — skipping")
+    churn = churn_images.render_captain(captain, today, render_dir, logfn=logfn)
+    churn_wireless = [c for c in churn if c[0].lower().startswith("wireless")]
+    churn_ni = [c for c in churn if not c[0].lower().startswith("wireless")]
+
+    if skip_sheets:
+        logfn("  (‑‑skip-sheets) Sales Board screenshots skipped")
+        ps, units = None, []
+    else:
+        ps, units = _sales_board_shots(captain, today, render_dir, logfn=logfn)
+
+    bundle = {
+        "product_summary": ps,
+        "units": units,
+        "churn_ni": churn_ni,
+        "churn_wireless": churn_wireless,
+        # Tableau §2 shots land in the Tableau phase.
+        "cancel_tableau": None,
+        "teamstats_tableau": None,
+        "fiber_activation": (fiber_png.fiber_activation_png(
+            captain.key, today, logfn=logfn)
+            if captain.flavor == "fiber" else None),
+    }
+    n_imgs = sum([ps is not None, len(units), len(churn),
+                  bundle["fiber_activation"] is not None])
+    if not n_imgs:
+        logfn(f"  ⚠ no images at all for {captain.key} — skipping")
         return None
-    msg = email_build.build(captain, images, today)
-    logfn(f"  built draft: subj={msg['Subject']!r}, {len(images)} image(s)")
+    msg = email_build.build(captain, bundle, today)
+    logfn(f"  built draft: subj={msg['Subject']!r}, {n_imgs} image(s)")
     return msg
 
 
@@ -48,10 +90,13 @@ def main(argv=None) -> int:
     ap.add_argument("--only", default=None,
                     help="Comma-separated captain keys "
                          f"({', '.join(c.key for c in config.CAPTAINS)}). "
-                         "Default: all 10.")
+                         "Default: all 12.")
     ap.add_argument("--dry-run", action="store_true",
                     help="Write each draft to output/*.eml for preview; "
                          "do NOT create the Gmail draft.")
+    ap.add_argument("--skip-sheets", action="store_true",
+                    help="Skip Sales Board screenshots (no browser/sheet "
+                         "writes); those sections show a 'pending' note.")
     args = ap.parse_args(argv)
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
@@ -73,7 +118,8 @@ def main(argv=None) -> int:
 
     for captain in selected:
         try:
-            msg = _build_one(captain, today, render_dir)
+            msg = _build_one(captain, today, render_dir,
+                             skip_sheets=args.skip_sheets)
         except Exception as e:
             failures += 1
             print(f"  ✗ {captain.key}: build failed: {e}")
