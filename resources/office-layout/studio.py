@@ -590,18 +590,20 @@ def furnish(kind, R, key=None):
         def _onW(y0,y1,x1,z0,z1,col,op=1.0,nudge=0.0):
             R.box(-0.04,y0,x1,y1,FLR_Z+z0,FLR_Z+z1,col,op=op,db=(WWD+0.6+nudge)-((-0.04+y0+x1+y1)/2))
         def _brick(x0,y0,x1,y1,z0,ztop,col,nx,ny,db=0.0):
-            """A Lego brick: coloured body + nx x ny grid of round studs on top. Bas's thing."""
+            """A flat Lego brick: body + nx x ny round studs. db pushes the whole brick in
+            front of whatever it sits on — the credenza sorts by its centroid and would
+            otherwise paint over the brick's base and leave the studs floating."""
             R.box(x0,y0,x1,y1,FLR_Z+z0,FLR_Z+ztop,col,db=db)
-            _hs=0.15; _r=min((x1-x0)/nx,(y1-y0)/ny)*0.30
+            _hs=0.09; _spx=(x1-x0)/nx; _spy=(y1-y0)/ny; _r=min(_spx,_spy)*0.30
             for _si in range(nx):
-                _cx=x0+(x1-x0)*(_si+0.5)/nx
+                _cx=x0+_spx*(_si+0.5)
                 for _sj in range(ny):
-                    _cy=y0+(y1-y0)*(_sj+0.5)/ny
-                    R.box(_cx-_r,_cy-_r,_cx+_r,_cy+_r,FLR_Z+ztop,FLR_Z+ztop+_hs,shade(col,1.10),db=db)
+                    _cy=y0+_spy*(_sj+0.5)
+                    R.box(_cx-_r,_cy-_r,_cx+_r,_cy+_r,FLR_Z+ztop,FLR_Z+ztop+_hs,shade(col,1.06),db=db+0.3)
                     _px,_py=R.iso(_cx,_cy,FLR_Z+ztop+_hs)
-                    R.emit(db+(x0+y0+x1+y1)/2+0.6, ztop+_hs+0.02,
+                    R.emit(db+_cx+_cy+0.7, ztop+_hs+0.02,
                         f'<ellipse cx="{_px:.1f}" cy="{_py:.1f}" rx="{_r*R.S:.1f}" ry="{_r*R.S*0.5:.1f}" '
-                        f'fill="{shade(col,1.16)}" stroke="{shade(col,0.72)}" stroke-width="0.5"/>')
+                        f'fill="{shade(col,1.13)}" stroke="{shade(col,0.72)}" stroke-width="0.5"/>')
         # WALL 1 (back-left) = windows to outside. Banded: solid below the sill, grid of panes
         # behind blinds, solid above the head — not floor-to-ceiling glass.
         _WB0,_WB1=2.7,7.3
@@ -652,9 +654,9 @@ def furnish(kind, R, key=None):
             R.box(2.00,3.50,2.04,9.50,FLR_Z+_rz,FLR_Z+_rz+0.10,shade(_CRD,0.72))   # door rails
         for _py in (5.00,6.50,8.00):
             R.box(2.00,_py-0.10,2.06,_py+0.10,FLR_Z+1.20,FLR_Z+1.45,"#c9ccd2")     # pulls
-        _brick(0.42,4.05,1.62,5.75,2.50,3.34,"#d21f26",2,4)                        # red 2x4 build
-        _brick(0.55,6.05,1.45,7.05,2.50,3.06,"#f6c018",2,2)                        # yellow 2x2
-        _brick(0.52,7.55,1.55,8.75,2.50,3.00,"#0a6cff",2,2)                        # blue build
+        _brick(0.62,3.95,1.80,5.60,2.50,2.92,"#d21f26",2,4,db=2.5)                 # red 2x4, flat
+        _brick(0.74,6.00,1.66,6.96,2.50,2.85,"#f6c018",2,2,db=2.5)                 # yellow 2x2
+        _brick(0.66,7.35,1.78,8.75,2.50,2.95,"#0a6cff",2,3,db=2.5)                 # blue 2x3
         # WALL 3 (front-right) = all-glass office front with the door onto the open space.
         # Translucent: it sits between the camera and the room.
         R.box(w,0,w+0.38,d,FLR_Z+0.5,FLR_Z+8.0,"#9fdcf0",op=0.22)           # glazing
@@ -687,8 +689,6 @@ def furnish(kind, R, key=None):
         R.box(_ix-0.95,_iy-0.06,_ix+0.95,_iy+0.06,FLR_Z+3.05,FLR_Z+4.35,"#d8dbe0",db=_MD) # bezel
         R.box(_ix-0.86,_iy+0.02,_ix+0.86,_iy+0.09,FLR_Z+3.14,FLR_Z+4.24,"#222833",db=_MD) # screen
         R.box(_ix-0.55,_iy+0.60,_ix+0.55,_iy+1.05,FLR_Z+2.5,FLR_Z+2.58,"#e6e8ec",db=_MD)  # keyboard
-        _brick(3.95,6.05,4.85,7.00,2.50,3.02,"#00a94f",2,2,db=0.7)                  # green build on the desk
-        _brick(4.12,6.26,4.68,6.80,3.02,3.48,"#ff7a1c",1,1,db=0.7)                  # orange brick on top
     elif kind=="maud":      # Maud's corner office. Walls per Megan: 1 & 2 solid, 3 = glass entry,
                             # 4 = window / exterior. Brown / grey / navy scheme.
         import math as _m
