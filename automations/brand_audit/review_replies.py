@@ -28,6 +28,7 @@ from automations.brand_audit.social_inbox import (
 )
 from automations.brand_audit.config import (
     SOCIAL_APPROVE_EMOJI, SOCIAL_REJECT_EMOJI, SOCIAL_KILL_EMOJI,
+    SOCIAL_APPROVERS,
 )
 
 MODEL = "claude-opus-4-8"
@@ -234,6 +235,38 @@ def post_reply_to_google(review: dict, reply: str, company) -> dict:
     return gbp_api.reply_to_review(name, reply)
 
 
+def _human_note(cl, channel: str, card_ts: str) -> str:
+    """The approver's edit feedback for one drafted reply — the latest human text
+    reply in THAT draft card's own thread ("too soft", "mention the refund").
+
+    This is why each critical review is posted as its OWN top-level card rather
+    than a reply inside the daily digest thread: Slack threads are only one level
+    deep, so a draft buried as a thread-reply has nothing to reply TO, and Megan
+    had no way to give per-review feedback (2026-07-16). Skips our own emoji-led
+    bot posts and only counts approvers."""
+    try:
+        reps = cl.conversations_replies(channel=channel, ts=card_ts).get("messages", [])
+    except Exception:
+        return ""
+    # Only read a card's OWN thread. Slack returns the whole PARENT thread when
+    # given a reply's ts, so for legacy cards posted inside the daily digest
+    # thread this would hand every one of them the same stray comment as
+    # "feedback". If this card isn't the thread parent, it has no notes.
+    if not reps or reps[0].get("ts") != card_ts:
+        return ""
+    note = ""
+    for r in reps:
+        if r.get("ts") == card_ts or r.get("files"):
+            continue                       # the card itself / uploads
+        text = (r.get("text") or "").strip()
+        if not text or text.startswith(":"):
+            continue                       # blanks + our own emoji-led messages
+        if SOCIAL_APPROVERS and r.get("user") not in SOCIAL_APPROVERS:
+            continue
+        note = text                        # latest approver note wins
+    return note
+
+
 def _auto_block(review: dict, reply: str, entry: dict) -> str:
     """FYI posted to Slack when a 4-5★ review was auto-replied (no approval
     step) — so there's always a visible trail of what went public."""
@@ -260,9 +293,11 @@ def _review_block(review: dict, reply: str) -> str:
     return (f"{head}  {star_str} — *{review.get('author') or 'Anonymous'}* "
             f"({review.get('when') or ''})\n"
             f"> {(review.get('text') or '(rating only, no text)')}\n\n"
-            f":pencil2: *Drafted reply* — react :white_check_mark: to approve, "
-            f":x: + a note to redo, :skull: to scrap it and bring it back "
-            f"fresh:\n{reply}")
+            f":pencil2: *Drafted reply*\n{reply}\n\n"
+            f":white_check_mark: approve & post  ·  :x: redo it  ·  :skull: scrap "
+            f"& start over\n_To steer the redo, reply in this message's thread "
+            f"with what to change (e.g. \"too soft\", \"mention the refund\") and "
+            f"react :x: — the next run rewrites it your way._")
 
 
 def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True,
@@ -334,11 +369,12 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
                                         text=_auto_block(rv, reply, entry))
                 state["reviews"][k] = entry
             continue
-        # queue for approval (negatives + anything we can't/won't auto-post)
+        # Queue for approval (negatives + anything we can't/won't auto-post).
+        # TOP-LEVEL, not inside the digest thread: each card needs its own thread
+        # so an approver can reply with edit feedback (see _human_note).
         actions.append({"action": "draft", "rating": stars, "reply": reply})
-        if not dry_run and hdr:
-            r = cl.chat_postMessage(channel=channel, thread_ts=hdr["ts"],
-                                    text=_review_block(rv, reply))
+        if not dry_run:
+            r = cl.chat_postMessage(channel=channel, text=_review_block(rv, reply))
             state["reviews"][k] = {"reply": reply, "reply_ts": r.get("ts"),
                                    "date": today, "review": rv}
     if deferred:
@@ -367,16 +403,22 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
             continue
         rejected = st.setdefault("rejected", [])
         cur = st.get("reply")
-        if (not _reacted(rx, SOCIAL_APPROVE_EMOJI)
-                and _reacted(rx, SOCIAL_REJECT_EMOJI)
-                and cur and cur not in rejected):
+        # ❌ OVERRIDES ✅ (changed 2026-07-16). Previously a card carrying both
+        # was posted anyway and the ❌ silently did nothing — confusing, and it
+        # published something the approver had just objected to. Not posting is
+        # the reversible direction, so any ❌ wins.
+        if _reacted(rx, SOCIAL_REJECT_EMOJI) and cur and cur not in rejected:
             rejected.append(cur)
-            new = draft_reply(rv, company_name, avoid=(rejected + recent)[:15])
+            note = _human_note(cl, channel, st["reply_ts"]) if not dry_run else ""
+            new = draft_reply(rv, company_name, feedback=note,
+                              avoid=(rejected + recent)[:15])
             recent.insert(0, new)
-            actions.append({"action": "redraft", "review": k, "reply": new})
-            if not dry_run and hdr:
-                r = cl.chat_postMessage(channel=channel, thread_ts=hdr["ts"],
-                                        text=_review_block(rv, new))
+            actions.append({"action": "redraft", "review": k, "reply": new,
+                            "applied_note": note})
+            if not dry_run:
+                # a fresh top-level card, so it starts with clean reactions and
+                # its own thread for the next round of feedback
+                r = cl.chat_postMessage(channel=channel, text=_review_block(rv, new))
                 st["reply"] = new
                 st["reply_ts"] = r.get("ts")
             continue
