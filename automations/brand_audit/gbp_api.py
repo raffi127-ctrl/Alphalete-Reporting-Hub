@@ -127,14 +127,40 @@ class GBPAccessError(RuntimeError):
     allowlist hasn't been granted yet. Callers treat this as 'not ready'."""
 
 
+# Google throws transient 503s (seen mid-pagination 2026-07-16) and 429s on this
+# API. The noon run is unattended, so one blip must not fail the whole scan.
+_RETRY_STATUS = (429, 500, 502, 503, 504)
+_RETRIES = 4
+
+
+def _sleep(attempt: int) -> None:
+    import time
+    time.sleep(min(2 ** attempt, 8))     # 1s, 2s, 4s, 8s
+
+
 def _get(sess, url: str, params: dict | None = None) -> dict:
-    r = sess.get(url, params=params or {}, timeout=_TIMEOUT)
-    if r.status_code == 403:
-        raise GBPAccessError(
-            f"403 from {url} — Business Profile review API access not granted "
-            "yet (or this account can't manage the listing). See gbp_setup().")
-    r.raise_for_status()
-    return r.json() or {}
+    last = None
+    for attempt in range(_RETRIES):
+        try:
+            r = sess.get(url, params=params or {}, timeout=_TIMEOUT)
+        except Exception as e:           # connection reset / read timeout
+            last = e
+            if attempt == _RETRIES - 1:
+                raise
+            _sleep(attempt)
+            continue
+        if r.status_code == 403:
+            raise GBPAccessError(
+                f"403 from {url} — Business Profile review API access not granted "
+                "yet (or this account can't manage the listing). See gbp_setup().")
+        if r.status_code in _RETRY_STATUS and attempt < _RETRIES - 1:
+            _sleep(attempt)              # transient — back off and retry
+            continue
+        r.raise_for_status()
+        return r.json() or {}
+    if last:
+        raise last
+    raise RuntimeError(f"GET {url} failed after {_RETRIES} attempts")
 
 
 # ── discovery ────────────────────────────────────────────────────────────────
@@ -228,16 +254,26 @@ def reply_to_review(review_name: str, comment: str, sess=None) -> dict:
     if not comment:
         raise ValueError("refusing to post an empty reply")
     sess = sess or _session()
-    r = sess.put(
-        f"{_MYBUSINESS_V4}/{review_name}/reply",
-        json={"comment": comment},
-        timeout=_TIMEOUT,
-    )
-    if r.status_code == 403:
-        raise GBPAccessError(
-            "403 posting reply — review API access not granted yet.")
-    r.raise_for_status()
-    return r.json() or {}
+    url = f"{_MYBUSINESS_V4}/{review_name}/reply"
+    # Safe to retry: updateReply is an idempotent PUT (it overwrites, never
+    # appends), so a retry after a transient 503 can't double-post a reply.
+    for attempt in range(_RETRIES):
+        try:
+            r = sess.put(url, json={"comment": comment}, timeout=_TIMEOUT)
+        except Exception:
+            if attempt == _RETRIES - 1:
+                raise
+            _sleep(attempt)
+            continue
+        if r.status_code == 403:
+            raise GBPAccessError(
+                "403 posting reply — review API access not granted yet.")
+        if r.status_code in _RETRY_STATUS and attempt < _RETRIES - 1:
+            _sleep(attempt)
+            continue
+        r.raise_for_status()
+        return r.json() or {}
+    raise RuntimeError(f"PUT {url} failed after {_RETRIES} attempts")
 
 
 def gbp_setup() -> str:
