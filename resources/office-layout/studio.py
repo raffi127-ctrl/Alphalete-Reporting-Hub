@@ -1063,19 +1063,22 @@ def interview_office(R, windows=True, desk_col="#59616e", shelf_col="#7a6144", o
     leafy(R,1.87,0.84,FLR_Z+3.91+0.26,4.4,0.55)                     # plant on top
     # WALL 3 (east) glass front + door
     glass_front(R,3)
-    # L-desk (graphite), owner backs wall 4 facing the TV
-    R.box(3.60,5.40,9.60,7.60,FLR_Z+2.2,FLR_Z+2.5,desk_col)         # main
-    R.box(7.60,7.60,9.60,9.60,FLR_Z+2.2,FLR_Z+2.5,desk_col)         # return
+    # L-desk (graphite), owner backs wall 4 facing the TV. Slide the whole cluster west so
+    # it clears the glass wall (wall 3) by ~3.3'; guard keeps it off wall 1 in the small room.
+    _gx=w-12.9
+    if 3.60+_gx<1.10: _gx=1.10-3.60
+    R.box(3.60+_gx,5.40,9.60+_gx,7.60,FLR_Z+2.2,FLR_Z+2.5,desk_col)  # main
+    R.box(7.60+_gx,7.60,9.60+_gx,9.60,FLR_Z+2.2,FLR_Z+2.5,desk_col)  # return
     for _ex,_ey in ((3.9,5.7),(3.9,7.3),(9.3,5.7),(9.3,7.3),(9.3,9.3),(7.9,9.3)):
-        R.box(_ex-0.18,_ey-0.18,_ex+0.18,_ey+0.18,FLR_Z,FLR_Z+2.2,"#8b95a3")   # legs
+        R.box(_ex+_gx-0.18,_ey-0.18,_ex+_gx+0.18,_ey+0.18,FLR_Z,FLR_Z+2.2,"#8b95a3")   # legs
     def _seat(cx,cy,ang,col,bh=2.4):
         R.rbox(cx,cy,1.45,1.45,FLR_Z,FLR_Z+1.5,ang,col)
         _bx=cx-0.58*_m.cos(_m.radians(ang)); _by=cy-0.58*_m.sin(_m.radians(ang))
         R.rbox(_bx,_by,0.30,1.45,FLR_Z,FLR_Z+bh,ang,shade(col,1.12))
-    _seat(6.40,8.70,-90,owner_col,2.7)                              # owner
-    _seat(5.00,3.90,90,guest_col); _seat(7.80,3.90,90,guest_col)   # TWO across for interviews
+    _seat(6.40+_gx,8.70,-90,owner_col,2.7)                          # owner
+    _seat(5.00+_gx,3.90,90,guest_col); _seat(7.80+_gx,3.90,90,guest_col)   # TWO across for interviews
     # iMac
-    _ix,_iy=6.40,6.50; _MD=0.7
+    _ix,_iy=6.40+_gx,6.50; _MD=0.7
     R.box(_ix-0.42,_iy-0.28,_ix+0.42,_iy+0.28,FLR_Z+2.5,FLR_Z+2.58,"#c9ccd2",db=_MD)  # foot
     R.box(_ix-0.10,_iy-0.05,_ix+0.10,_iy+0.05,FLR_Z+2.58,FLR_Z+3.05,"#c9ccd2",db=_MD) # stand
     R.box(_ix-0.95,_iy-0.06,_ix+0.95,_iy+0.06,FLR_Z+3.05,FLR_Z+4.35,"#d8dbe0",db=_MD) # bezel
