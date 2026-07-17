@@ -1,0 +1,648 @@
+#!/usr/bin/env python3
+"""Per-office isometric room studio -> single interactive HTML file."""
+import math, json
+
+COS = math.cos(math.radians(30)); SIN = math.sin(math.radians(30))
+FLR_Z = 1.2
+
+# ---- palette ---------------------------------------------------------------
+C_FLOOR="#bec1c7"; C_TILE="#d3d7dd"   # gray carpet everywhere; gray tile in the break room
+C_WALL="#eceef2"; C_DESK="#b98a5e"; C_DESK2="#c9bfb0"
+C_TASK="#37506b"; C_GUEST="#8a94a3"; C_SOFA="#5b6b86"; C_WOOD="#a97c53"
+C_PLANT="#4f7a52"; C_POT="#b06a3c"; C_SCREEN="#222833"; C_RUG="#d8c6b0"
+C_TABLE="#8a5a3c"; C_ACCENT="#e8482b"; C_STEEL="#c2c7cf"; C_COUNTER="#b7bcc4"
+C_PINK_W="#f6e2e7"                          # Megan's office — pink walls (floor stays gray carpet)
+
+def shade(hexc,f):
+    h=hexc.lstrip('#'); r,g,b=int(h[0:2],16),int(h[2:4],16),int(h[4:6],16)
+    r=max(0,min(255,int(r*f)));g=max(0,min(255,int(g*f)));b=max(0,min(255,int(b*f)))
+    return f'#{r:02x}{g:02x}{b:02x}'
+
+# ---- foliage ---------------------------------------------------------------
+# Leaf blades drawn as rotated shapes in screen space. The box primitive is axis-aligned,
+# so stacked boxes only ever read as blocks, never as leaves.
+GRN=("#4f7a52","#5d8a5f","#456e48")
+_LEAF=((-0.42,-0.26,0.44,0.17,-25,0),( 0.38,-0.34,0.44,0.17, 22,1),
+       (-0.55,-0.64,0.38,0.15,-52,2),( 0.50,-0.74,0.38,0.15, 50,1),
+       (-0.12,-0.98,0.34,0.14,-84,0),( 0.08,-0.54,0.48,0.18,  5,1),
+       (-0.72,-0.10,0.34,0.14, -8,2),( 0.68,-0.14,0.34,0.14, 12,0),
+       ( 0.22,-1.06,0.30,0.12, 68,2),(-0.30,-1.12,0.30,0.12,-70,1))
+def leafy(R,cx,cy,zb,depth,sc=1.0):
+    px,py=R.iso(cx,cy,zb); S=R.S
+    for dx,dy,rx,ry,rot,ci in _LEAF:
+        X=px+dx*S*sc; Y=py+dy*S*sc; c=GRN[ci]
+        R.emit(depth,zb+1.0,
+            f'<ellipse cx="{X:.1f}" cy="{Y:.1f}" rx="{rx*S*sc:.1f}" ry="{ry*S*sc:.1f}" '
+            f'fill="{c}" stroke="{shade(c,0.72)}" stroke-width="0.6" '
+            f'transform="rotate({rot} {X:.1f} {Y:.1f})"/>')
+
+class Room:
+    def __init__(self, w, d):
+        self.w=w; self.d=d; self.items=[]
+        # scale so room fits ~ target
+        span=(w+d)
+        self.S=max(9.0,min(20.0, 620/(span*COS)))
+        self.OX=0; self.OY=0
+        self._fit()
+    def iso_raw(self,x,y,z):
+        return ((x-y)*COS*self.S,(x+y)*SIN*self.S - z*self.S)
+    def _fit(self):
+        pts=[self.iso_raw(x,y,z) for x in(-1,self.w+1) for y in(-1,self.d+1) for z in(0,10)]
+        xs=[p[0] for p in pts]; ys=[p[1] for p in pts]
+        pad=54
+        self.OX=-min(xs)+pad; self.OY=-min(ys)+pad
+        self.Wpx=(max(xs)-min(xs))+2*pad; self.Hpx=(max(ys)-min(ys))+2*pad
+    def iso(self,x,y,z):
+        px,py=self.iso_raw(x,y,z); return(px+self.OX,py+self.OY)
+    def emit(self,depth,z,s): self.items.append((depth,z,s))
+    def poly(self,coords,fill,stroke,sw,depth,z,op=1.0,dash=None):
+        p=" ".join(f'{a:.1f},{b:.1f}' for a,b in coords)
+        d=f' stroke-dasharray="{dash}"' if dash else ''
+        self.emit(depth,z,f'<polygon points="{p}" fill="{fill}" stroke="{stroke}" stroke-width="{sw}" stroke-linejoin="round"{d} opacity="{op}"/>')
+    def floor(self,x0,y0,x1,y1,color,z=FLR_Z,stroke="#ffffff",sw=1.0,op=1.0,bias=-2e6):
+        # the ground plane must paint before any vertical object, or it erases furniture
+        c=[self.iso(x0,y0,z),self.iso(x1,y0,z),self.iso(x1,y1,z),self.iso(x0,y1,z)]
+        self.poly(c,color,stroke,sw,bias+(x0+y0+x1+y1)/2,z,op)
+    def box(self,x0,y0,x1,y1,z0,z1,color,op=1.0,edge=None,db=0.0):
+        st=edge or shade(color,0.5); depth=db+(x0+y0+x1+y1)/2
+        ef=[self.iso(x1,y0,z0),self.iso(x1,y1,z0),self.iso(x1,y1,z1),self.iso(x1,y0,z1)]
+        self.poly(ef,shade(color,0.62),st,0.5,depth,z1,op)
+        sf=[self.iso(x0,y1,z0),self.iso(x1,y1,z0),self.iso(x1,y1,z1),self.iso(x0,y1,z1)]
+        self.poly(sf,shade(color,0.80),st,0.5,depth,z1,op)
+        tf=[self.iso(x0,y0,z1),self.iso(x1,y0,z1),self.iso(x1,y1,z1),self.iso(x0,y1,z1)]
+        self.poly(tf,color,st,0.5,depth+0.02,z1+0.001,op)
+    def rbox(self,cx,cy,w,dp,z0,z1,ang,color,op=1.0,edge=None,db=0.0):
+        """Box rotated `ang` degrees about the vertical axis through (cx,cy).
+        box() is axis-aligned, so anything set at an angle to the room needs this."""
+        import math as m
+        a=m.radians(ang); ca,sa=m.cos(a),m.sin(a)
+        hw,hd=w/2.0,dp/2.0
+        W=[(cx+u*ca-v*sa, cy+u*sa+v*ca) for u,v in ((-hw,-hd),(hw,-hd),(hw,hd),(-hw,hd))]
+        st=edge or shade(color,0.5); depth=db+cx+cy
+        faces=[]
+        for i in range(4):
+            x0,y0=W[i]; x1,y1=W[(i+1)%4]
+            nx,ny=(y1-y0),-(x1-x0)                  # outward normal of this edge
+            if nx+ny<=0: continue                   # faces away from the camera
+            sh=0.62 if abs(nx)>=abs(ny) else 0.80   # match box(): x-facing reads darker
+            faces.append(((x0+x1+y0+y1)/2.0,
+                          [self.iso(x0,y0,z0),self.iso(x1,y1,z0),self.iso(x1,y1,z1),self.iso(x0,y0,z1)],sh))
+        faces.sort(key=lambda f:f[0])
+        for k,(_fd,_pts,_sh) in enumerate(faces):
+            self.poly(_pts,shade(color,_sh),st,0.5,depth-0.01+k*0.001,z1,op)
+        self.poly([self.iso(x,y,z1) for x,y in W],color,st,0.5,depth+0.02,z1+0.001,op)
+
+    def text(self,x,y,z,s,size=6,color="#3a4150",w="700",anchor="middle",op=1.0):
+        px,py=self.iso(x,y,z)
+        self.emit(9e9,9e9,f'<text x="{px:.1f}" y="{py:.1f}" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="{size}" font-weight="{w}" fill="{color}" text-anchor="{anchor}" opacity="{op}" style="letter-spacing:.2px">{s}</text>')
+    def screen_text(self,px,py,s,size=13,color="#2a2f3a",w="800",anchor="start"):
+        self.emit(9e9,9e9,f'<text x="{px}" y="{py}" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="{size}" font-weight="{w}" fill="{color}" text-anchor="{anchor}">{s}</text>')
+
+    # ---- structure ----
+    def shell(self, door="S", floor_col=C_FLOOR, wall_col=C_WALL):
+        w,d=self.w,self.d
+        self.box(0,0,w,d,0,FLR_Z,shade(floor_col,0.94),db=-3e6)  # slab (under everything)
+        self.floor(0,0,w,d,floor_col)                        # floor face
+        WH=9.0
+        # Back (north) & left (west) walls tall; front/right low curb.
+        # The tall walls paint before all room contents — they sort by centroid, so anything
+        # in a far corner would otherwise be painted over by the wall behind it.
+        self.box(0,-0.5,w,0,FLR_Z,FLR_Z+WH,wall_col,db=-1e6)
+        self.box(-0.5,0,0,d,FLR_Z,FLR_Z+WH,wall_col,db=-1e6)
+        self.box(0,d,w,d+0.5,FLR_Z,FLR_Z+0.6,shade(wall_col,0.9))
+        self.box(w,0,w+0.5,d,FLR_Z,FLR_Z+0.6,shade(wall_col,0.9))
+        self.door(door)
+    def door(self, side):
+        w,d=self.w,self.d; r=3.0
+        if side=="S": cx,cy,a0=w-1.0, d-0.3, (180,270)   # swing into room from front-right
+        elif side=="E": cx,cy,a0=w-0.3, d-1.0,(90,180)
+        else: cx,cy,a0=1.0,d-0.3,(270,360)
+        pts=[]
+        import math as m
+        for i in range(0,13):
+            ang=m.radians(a0[0]+(a0[1]-a0[0])*i/12)
+            pts.append(self.iso(cx+r*m.cos(ang), cy+r*m.sin(ang), FLR_Z+0.02))
+        p=" ".join(f'{a:.1f},{b:.1f}' for a,b in pts)
+        self.emit(9e8,9e8,f'<polyline points="{p}" fill="none" stroke="#b9bcc4" stroke-width="1" stroke-dasharray="3 2"/>')
+    def swing_at(self, cx, cy, r, a0, a1):   # arbitrary door swing arc
+        import math as m
+        pts=[self.iso(cx+r*m.cos(m.radians(a0+(a1-a0)*i/12)), cy+r*m.sin(m.radians(a0+(a1-a0)*i/12)), FLR_Z+0.02) for i in range(13)]
+        p=" ".join(f'{a:.1f},{b:.1f}' for a,b in pts)
+        self.emit(9e8,9e8,f'<polyline points="{p}" fill="none" stroke="#b9bcc4" stroke-width="1.2" stroke-dasharray="3 2"/>')
+
+    # ---- furniture primitives ----
+    def desk(self,x,y,w=4.8,d=2.2,h=2.5): self.box(x,y,x+w,y+d,FLR_Z,FLR_Z+h,C_DESK)
+    def ldesk(self,x,y):  # L-shaped exec desk, main along back
+        self.box(x,y,x+5.0,y+2.2,FLR_Z,FLR_Z+2.5,C_DESK)
+        self.box(x,y+2.2,x+2.2,y+4.6,FLR_Z,FLR_Z+2.5,C_DESK)
+    def taskchair(self,x,y):
+        self.box(x-0.8,y-0.8,x+0.8,y+0.8,FLR_Z,FLR_Z+1.6,C_TASK)
+        self.box(x-0.8,y+0.5,x+0.8,y+0.9,FLR_Z,FLR_Z+2.8,shade(C_TASK,1.15))
+    def guest(self,x,y):
+        self.box(x-0.7,y-0.7,x+0.7,y+0.7,FLR_Z,FLR_Z+1.5,C_GUEST)
+        self.box(x-0.7,y-0.7,x+0.7,y-0.4,FLR_Z,FLR_Z+2.4,shade(C_GUEST,0.9))
+    def credenza(self,x,y,w=4.0,d=1.4): self.box(x,y,x+w,y+d,FLR_Z,FLR_Z+2.2,C_WOOD)
+    def bookshelf(self,x,y,w=1.2,d=3.2): self.box(x,y,x+w,y+d,FLR_Z,FLR_Z+5.5,shade(C_WOOD,0.92))
+    def sofa(self,x,y,w=5.5,d=2.2):
+        self.box(x,y,x+w,y+d,FLR_Z,FLR_Z+1.4,C_SOFA)
+        self.box(x,y,x+w,y+0.5,FLR_Z,FLR_Z+2.6,shade(C_SOFA,1.12))
+        self.box(x,y,x+0.5,y+d,FLR_Z,FLR_Z+2.2,shade(C_SOFA,1.05))
+        self.box(x+w-0.5,y,x+w,y+d,FLR_Z,FLR_Z+2.2,shade(C_SOFA,1.05))
+    def coffee(self,x,y,w=3.2,d=1.8): self.box(x,y,x+w,y+d,FLR_Z,FLR_Z+1.1,C_TABLE)
+    def rtable(self,cx,cy,r=2.2):  # round-ish meeting table (octagon)
+        pts=[];
+        import math as m
+        for i in range(8):
+            a=m.radians(45*i+22.5); pts.append((cx+r*m.cos(a),cy+r*m.sin(a)))
+        top=[self.iso(px,py,FLR_Z+2.4) for px,py in pts]
+        # simple: draw as box footprint
+        self.box(cx-r,cy-r,cx+r,cy+r,FLR_Z,FLR_Z+2.4,C_TABLE)
+    def conftable(self,x0,y0,x1,y1): self.box(x0,y0,x1,y1,FLR_Z,FLR_Z+2.4,C_TABLE)
+    def plant(self,x,y):
+        self.box(x-0.5,y-0.5,x+0.5,y+0.5,FLR_Z,FLR_Z+1.0,C_POT)
+        self.box(x-0.9,y-0.9,x+0.9,y+0.9,FLR_Z+1.0,FLR_Z+1.1,C_PLANT)
+        self.box(x-0.7,y-0.7,x+0.7,y+0.7,FLR_Z+1.1,FLR_Z+2.6,C_PLANT)
+        self.box(x-0.4,y-0.4,x+0.4,y+0.4,FLR_Z+2.6,FLR_Z+3.3,shade(C_PLANT,1.1))
+    def screen(self,x,w=4.0):  # wall TV on back wall
+        self.box(x,0.05,x+w,0.2,FLR_Z+3.0,FLR_Z+6.0,C_SCREEN)
+    def rug(self,x0,y0,x1,y1,color=C_RUG): self.floor(x0,y0,x1,y1,color,z=FLR_Z+0.01,stroke=shade(color,0.85),sw=0.8,bias=-1.9e6)  # above floor, below furniture
+    def counter(self,x0,y0,x1,y1,h=3.0): self.box(x0,y0,x1,y1,FLR_Z,FLR_Z+h,C_COUNTER)
+    def upper_cab(self,x0,y0,x1,y1): self.box(x0,y0,x1,y1,FLR_Z+5.0,FLR_Z+7.5,shade(C_WOOD,0.95))
+    def glass(self,x0,y0,x1,y1,z0,z1):  # translucent glass-upper panel
+        self.box(x0,y0,x1,y1,z0,z1,"#bfe0ea",op=0.32)
+    def builtin_desk(self,x0,y0,x1,y1,h=3.2): self.box(x0,y0,x1,y1,FLR_Z,FLR_Z+h,C_DESK)
+
+    # ---- dimension caption on floor ----
+    def dims(self, wlabel, dlabel):
+        w,d=self.w,self.d
+        self.text(w/2, d+2.2, FLR_Z, wlabel, size=6.5, color="#9a8f78", w="700")
+        self.text(w+2.4, d/2, FLR_Z, dlabel, size=6.5, color="#9a8f78", w="700")
+
+    def render(self):
+        self.items.sort(key=lambda t:(t[0],t[1]))
+        body="\n".join(s for _,_,s in self.items)
+        return (f'<svg viewBox="0 0 {self.Wpx:.0f} {self.Hpx:.0f}" xmlns="http://www.w3.org/2000/svg" '
+                f'preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%">\n{body}\n</svg>')
+
+# ===========================================================================
+#  FURNITURE LAYOUTS PER OFFICE KIND
+# ===========================================================================
+def furnish(kind, R):
+    """LAYOUT ONLY — fixed built-ins & architecture, no loose furniture."""
+    w,d=R.w,R.d
+    if kind=="reception":   # LOBBY: long built-in desk across upper third + walkway + curved entry
+        R.builtin_desk(2.3, d*0.30, w-2.3, d*0.30+2.0, 3.2)      # full-width built-in desk
+        R.text(w*0.5, d*0.30+1.0, FLR_Z+3.4, "BUILT-IN DESK", size=4.4, color="#7a5f3c", w="800")
+        R.text(w*0.5, d*0.15, FLR_Z+0.05, "(behind desk)", size=4.0, color="#9a6a6f", w="600")
+        R.text(w*0.55, d*0.82, FLR_Z+0.05, "LOBBY", size=5.4, color="#9a6a6f", w="800")
+        R.text(1.9,d*0.70,FLR_Z+0.05,"open walkway ▸",size=5.0,color="#2f7d8c",w="700",anchor="start")
+        R.text(w-7.0,d-1.8,FLR_Z+0.05,"◄ curved entry",size=4.6,color="#5b6270",w="700",anchor="start")
+    elif kind=="break":     # kitchenette counter + island + storage behind wall
+        R.counter(0.6,0.8,11.0,3.0,3.0)                          # built-in counter along back wall
+        R.upper_cab(1.0,0.5,10.0,0.9)
+        R.box(w*0.5-1.2,d*0.30,w*0.5+1.2,d*0.30+6.0,FLR_Z,FLR_Z+3.0,C_COUNTER)   # island
+        R.box(w*0.5-0.9,d*0.30+2.2,w*0.5+0.9,d*0.30+3.6,FLR_Z+3.0,FLR_Z+3.2,"#8f96a0")  # sink inset
+        R.text(w*0.5,d*0.30-0.8,FLR_Z+3.3,"ISLAND",size=4.8,color="#5b6270",w="800")
+        R.text(1.7,d*0.55,FLR_Z+0.05,"storage behind wall ◂",size=4.4,color="#8f95a0",w="700",anchor="start")
+    elif kind=="conference":   # long 18-person boardroom table (8 per side + 1 each end) + TV wall
+        tx0,ty0,tx1,ty1 = 10.0, 8.0, 39.0, 12.0
+        # The table is one long box, so it sorts by its centroid depth. Chairs past that
+        # midpoint would flip to the wrong side, so pin each row's depth either side of it.
+        TBL=(tx0+ty0+tx1+ty1)/2
+        BEHIND, INFRONT = TBL-0.5, TBL+0.5
+        def _cchair(cx,cy,back,target):
+            db=target-(cx+cy)      # force sort order relative to the table
+            # seat + a back TALLER than the table top so far-side chairs stay visible
+            R.box(cx-0.75,cy-0.75,cx+0.75,cy+0.75,FLR_Z,FLR_Z+1.5,C_TASK,db=db)
+            if   back=="N": R.box(cx-0.75,cy-0.75,cx+0.75,cy-0.40,FLR_Z,FLR_Z+3.6,shade(C_TASK,1.15),db=db)
+            elif back=="S": R.box(cx-0.75,cy+0.40,cx+0.75,cy+0.75,FLR_Z,FLR_Z+3.6,shade(C_TASK,1.15),db=db)
+            elif back=="W": R.box(cx-0.75,cy-0.75,cx-0.40,cy+0.75,FLR_Z,FLR_Z+3.6,shade(C_TASK,1.15),db=db)
+            else:           R.box(cx+0.40,cy-0.75,cx+0.75,cy+0.75,FLR_Z,FLR_Z+3.6,shade(C_TASK,1.15),db=db)
+        for k in range(8):
+            cx=11.5+k*(37.5-11.5)/7
+            _cchair(cx, ty0-1.35, "N", BEHIND)                   # far row: behind the table
+            _cchair(cx, ty1+1.35, "S", INFRONT)                  # near row: in front of it
+        _cchair(tx0-1.5,(ty0+ty1)/2,"W",BEHIND)                  # far end
+        _cchair(tx1+1.5,(ty0+ty1)/2,"E",INFRONT)                 # near end
+        R.conftable(tx0,ty0,tx1,ty1)
+        R.text((tx0+tx1)/2,(ty0+ty1)/2,FLR_Z+2.6,"SEATS 18",size=5.0,color="#ffffff",w="800")
+        R.counter(45.9,2.5,48.6,17.5,3.0)                        # built-in counter, right (east) wall
+        R.text(47.2,10.0,FLR_Z+3.3,"BUILT-IN COUNTER",size=4.0,color="#5b6270",w="800")
+        # ---- back wall: large TV, shelving either side, whiteboards outboard ----
+        # every wall item shares one depth just in front of the wall; nudge to stack them
+        NW=(0-0.5+w+0)/2
+        def _wall(x0,x1,y1,z0,z1,col,op=1.0,nudge=0.0):
+            R.box(x0,0.05,x1,y1,FLR_Z+z0,FLR_Z+z1,col,op=op,db=(NW+0.6+nudge)-((x0+0.05+x1+y1)/2))
+        _wall(20.5,28.5,0.24,2.7,7.3,C_SCREEN)                   # TV — 8' wide × 4'6" tall
+        SHELF_Z=(2.6,4.0,5.4,6.8)
+        for _z in SHELF_Z:                                       # shelving flanking the TV
+            _wall(13.0,18.8,0.85,_z,_z+0.18,C_WOOD)
+            _wall(30.2,36.0,0.85,_z,_z+0.18,C_WOOD)
+        for _bx0,_bx1 in ((4.0,11.6),(37.4,45.0)):               # whiteboards on the far side of each shelf unit
+            _wall(_bx0,_bx1,0.16,2.4,7.4,"#7f8792")                            # frame
+            _wall(_bx0+0.20,_bx1-0.20,0.22,2.58,7.22,"#fbfcfd",nudge=0.06)     # writing surface
+        # decor on the shelves — kept sparse; a few small pieces, not a full display
+        C_BOOK1="#7a5c48"; C_BOOK2="#4f6b7a"; C_TRINK="#c2a05a"
+        def _thing(x0,x1,z0,h,col):
+            R.box(x0,0.24,x1,0.68,FLR_Z+z0,FLR_Z+z0+h,col,db=(NW+0.9)-((x0+0.24+x1+0.68)/2))
+        _DECOR_L=[[(0.5,1.2,0.80,C_BOOK1),(3.6,0.7,0.85,C_PLANT)],
+                  [(2.4,0.8,0.50,C_TRINK)],
+                  [(0.6,1.4,0.70,C_BOOK2)],
+                  [(3.3,0.7,0.80,C_PLANT)]]
+        _DECOR_R=[[(3.5,1.3,0.75,C_BOOK2)],
+                  [(0.6,0.7,0.85,C_PLANT),(2.7,0.8,0.48,C_TRINK)],
+                  [(3.6,0.8,0.52,C_TRINK)],
+                  [(0.7,1.5,0.70,C_BOOK1)]]
+        for _sx0,_dec in ((13.0,_DECOR_L),(30.2,_DECOR_R)):
+            for _zi,_z in enumerate(SHELF_Z):
+                for _off,_wd,_ht,_col in _dec[_zi]:
+                    _thing(_sx0+_off,_sx0+_off+_wd,_z+0.18,_ht,_col)
+        def _award(ax,z0):                                       # dark base + gold figure
+            _thing(ax,ax+0.60,z0,0.14,"#3f444d")
+            _thing(ax+0.16,ax+0.44,z0+0.14,0.62,"#c9a227")
+        for _ax,_az in ((13.6,4.0),(13.8,6.8),(30.8,2.6),(30.8,5.4)):
+            _award(_ax,_az+0.18)
+        # on top of the built-in counter: books between bookends + a plant
+        CTR=(45.9+2.5+48.6+17.5)/2      # counter depth; items on it must sort in front
+        def _onctr(x0,y0,x1,y1,z0,z1,col):
+            R.box(x0,y0,x1,y1,FLR_Z+z0,FLR_Z+z1,col,
+                  db=(CTR+0.6+((y0+y1)/2)*0.02)-((x0+y0+x1+y1)/2))
+        _onctr(46.5,4.90,48.1,5.08,3.0,3.95,"#6b7280")           # bookend
+        for _i,(_h,_c) in enumerate(((0.85,C_BOOK1),(0.78,C_BOOK2),(0.88,"#8a5a4a"),
+                                     (0.74,C_BOOK1),(0.82,C_BOOK2),(0.80,"#6e7f5c"))):
+            _by=5.16+_i*0.33
+            _onctr(46.6,_by,48.0,_by+0.27,3.0,3.0+_h,_c)         # books
+        _onctr(46.5,7.20,48.1,7.38,3.0,3.95,"#6b7280")           # bookend
+        _onctr(46.8,12.00,47.8,13.00,3.0,3.65,C_POT)             # plant — pot
+        _onctr(46.55,11.75,48.05,13.25,3.65,4.15,C_PLANT)        # foliage
+        _onctr(46.7,11.95,47.9,13.05,4.15,4.90,C_PLANT)
+        R.text(24.5,1.9,FLR_Z+7.7,"TV",size=4.0,color="#8f95a0",w="800")
+        R.text(15.9,1.9,FLR_Z+7.4,"shelving",size=3.5,color="#8f95a0",w="700")
+        R.text(33.1,1.9,FLR_Z+7.4,"shelving",size=3.5,color="#8f95a0",w="700")
+        R.text(7.8,1.9,FLR_Z+7.0,"whiteboard",size=3.6,color="#8f95a0",w="700")
+        R.text(41.2,1.9,FLR_Z+7.0,"whiteboard",size=3.6,color="#8f95a0",w="700")
+        # ---- left (west) wall: interior glass window into Raf's office next door ----
+        # framed + mullioned + sill so it reads as a window, not a tint on the wall
+        WW=(-0.5+0+0+d)/2         # west-wall depth; window parts sort in front of it
+        def _wwin(y0,y1,x1,z0,z1,col,op=1.0,nudge=0.0):
+            R.box(-0.04,y0,x1,y1,FLR_Z+z0,FLR_Z+z1,col,op=op,db=(WW+0.6+nudge)-((-0.04+y0+x1+y1)/2))
+        _wwin(2.6,17.4,0.22,2.2,7.7,"#59616e")                      # frame
+        _wwin(2.95,17.05,0.30,2.5,7.4,"#9fdcf0",op=0.85,nudge=0.06) # glazing
+        for _my in (7.35,12.65):                                    # mullions
+            _wwin(_my-0.10,_my+0.10,0.36,2.5,7.4,"#59616e",nudge=0.12)
+        _wwin(2.6,17.4,0.62,1.95,2.2,"#aeb4bd",nudge=0.12)          # sill
+        # caption on the open floor beside it — the window is near full-height, no clear wall above
+        R.text(3.2,14.6,FLR_Z+0.05,"◄ GLASS WINDOW",size=4.4,color="#2f7d8c",w="800",anchor="start")
+        R.text(3.2,16.1,FLR_Z+0.05,"looks into Raf's office",size=3.6,color="#3f88a8",w="700",anchor="start")
+        R.text(w*0.5,d-1.6,FLR_Z+0.05,"18-person boardroom",size=4.6,color="#8f95a0",w="700")
+    elif kind=="megan":     # Megan's office — window wall, 4 screens, standing desk + walking pad
+        NWD=(0-0.5+w+0)/2                    # north-wall depth
+        WWD=(-0.5+0+0+d)/2                   # west-wall depth
+        def _onN(x0,x1,y1,z0,z1,col,op=1.0,nudge=0.0):
+            R.box(x0,0.05,x1,y1,FLR_Z+z0,FLR_Z+z1,col,op=op,db=(NWD+0.6+nudge)-((x0+0.05+x1+y1)/2))
+        def _onW(y0,y1,x1,z0,z1,col,op=1.0,nudge=0.0):
+            R.box(-0.04,y0,x1,y1,FLR_Z+z0,FLR_Z+z1,col,op=op,db=(WWD+0.6+nudge)-((-0.04+y0+x1+y1)/2))
+        # RIGHT (north) wall = windows to outside. Banded like the real wall: solid below the
+        # sill, grid of panes behind blinds, solid above the head — not floor-to-ceiling glass.
+        _WB0,_WB1=2.7,7.3
+        _onN(0.4,10.27,0.16,_WB0-0.16,_WB0,"#9aa2ad",nudge=0.04)            # sill
+        _onN(0.4,10.27,0.16,_WB1,_WB1+0.16,"#9aa2ad",nudge=0.04)            # head
+        _onN(0.4,10.27,0.22,_WB0,_WB1,"#e3ebf0",nudge=0.06)                 # panes, blinds down
+        for _k in range(1,23):
+            _bz=_WB0+0.2*_k
+            if _bz<_WB1-0.06: _onN(0.55,10.12,0.24,_bz,_bz+0.06,"#ccd8df",nudge=0.08)   # blind slats
+        for _mx in (0.4,3.69,6.98,10.27):
+            _onN(_mx-0.07,_mx+0.07,0.30,_WB0,_WB1,"#9aa2ad",nudge=0.14)     # vertical mullions
+        for _mz in (_WB0+1.53,_WB0+3.07):
+            _onN(0.4,10.27,0.30,_mz-0.05,_mz+0.05,"#9aa2ad",nudge=0.14)     # horizontal mullions
+        # LEFT (west) wall = solid: 2 × 2 screen array, generously spaced
+        for _sy in (2.35,6.10):
+            for _sz in (2.80,4.75):
+                _onW(_sy,_sy+2.25,0.16,_sz,_sz+1.35,"#59616e",nudge=0.06)             # bezel
+                _onW(_sy+0.09,_sy+2.16,0.22,_sz+0.09,_sz+1.26,"#222833",nudge=0.12)   # panel
+        # wall planters — kept outboard of the screen array; they sit proud of the screens
+        # so anything between the columns overlaps them
+        def _wplant(cy,z0):
+            _onW(cy-0.30,cy+0.30,0.44,z0,z0+0.46,C_POT,nudge=0.18)                    # pot
+            _onW(cy-0.36,cy+0.36,0.48,z0+0.46,z0+0.56,shade(C_POT,0.82),nudge=0.19)   # rim
+            leafy(R,0.22,cy,FLR_Z+z0+0.56,WWD+0.9,sc=0.85)
+        _wplant(1.15,4.2); _wplant(9.5,3.6)
+        # FRONT-RIGHT (east) wall = shared with reception: half glass over a solid knee wall.
+        # Drawn as a framed partition (posts + rails, no filled pane) — a filled sheet on the
+        # near side hazes over the whole room and you lose the interior.
+        R.box(w,0,w+0.45,d,FLR_Z,FLR_Z+3.2,shade(C_PINK_W,0.90))        # solid knee wall
+        R.box(w,0,w+0.45,d,FLR_Z+3.2,FLR_Z+3.45,"#8f96a0")              # sill rail
+        R.box(w,0,w+0.45,d,FLR_Z+7.15,FLR_Z+7.4,"#8f96a0")              # head rail
+        for _py in (0.0,d/2-0.11,d-0.22):                                # glazing posts
+            R.box(w,_py,w+0.45,_py+0.22,FLR_Z+3.45,FLR_Z+7.15,"#8f96a0")
+        # standing desk under the screens, walking pad in front of it
+        # standing desk, centred in the room; walking pad in front of it
+        R.box(3.2,3.4,5.3,7.2,FLR_Z+3.2,FLR_Z+3.5,C_DESK)                   # desk top
+        R.box(3.5,3.75,5.0,4.05,FLR_Z,FLR_Z+3.2,"#6b7280")                  # T-legs at each end
+        R.box(3.5,6.55,5.0,6.85,FLR_Z,FLR_Z+3.2,"#6b7280")
+        R.box(5.4,4.2,7.4,6.6,FLR_Z,FLR_Z+0.32,"#3a4150")                   # walking pad deck
+        R.box(5.6,4.3,7.2,6.5,FLR_Z+0.32,FLR_Z+0.40,"#22262e")              # belt
+        # floor plant in the window corner — pot + leaf blades
+        _px,_py2=8.8,2.2
+        R.box(_px-0.42,_py2-0.42,_px+0.42,_py2+0.42,FLR_Z,FLR_Z+0.95,C_POT)
+        R.box(_px-0.50,_py2-0.50,_px+0.50,_py2+0.50,FLR_Z+0.95,FLR_Z+1.10,shade(C_POT,0.82))
+        leafy(R,_px,_py2,FLR_Z+1.10,_px+_py2+0.5,sc=1.5)
+        # accent chair, set at an angle to the room
+        import math as _m
+        # Faces +u, turned in toward the room. Past about -25 deg the chair goes edge-on to
+        # the fixed SE camera and flattens into an unreadable slab, so this is the limit.
+        CHX,CHY,CHA=2.9,9.05,-18.0
+        _cca,_csa=_m.cos(_m.radians(CHA)),_m.sin(_m.radians(CHA))
+        def _L(u,v): return (CHX+u*_cca-v*_csa, CHY+u*_csa+v*_cca)
+        C_UPH="#efe4dc"
+        _qx,_qy=_L(0,0);      R.rbox(_qx,_qy,1.75,1.85,FLR_Z+0.85,FLR_Z+1.45,CHA,C_UPH)   # seat
+        _qx,_qy=_L(-0.87,0);  R.rbox(_qx,_qy,0.38,1.85,FLR_Z+1.45,FLR_Z+3.30,CHA,C_UPH)   # back
+        for _av in (-0.92,0.92):                                                          # arms
+            _qx,_qy=_L(0,_av); R.rbox(_qx,_qy,1.75,0.34,FLR_Z+1.45,FLR_Z+2.15,CHA,shade(C_UPH,0.95))
+        for _lu,_lv in ((-0.72,-0.78),(0.72,-0.78),(-0.72,0.78),(0.72,0.78)):             # legs
+            _qx,_qy=_L(_lu,_lv); R.rbox(_qx,_qy,0.18,0.18,FLR_Z,FLR_Z+0.85,CHA,"#7a5f3c")
+    elif kind=="twaddle":   # Twaddle's — back-left solid wall carries the TV
+        # Wall map, as you read the view:
+        #   upper-left (BACK)  = conference side, SOLID -> TV
+        #   upper-right        = windows to outside
+        #   lower-left (near)  = the entry wall, all glass + door
+        #   lower-right        = Megan's side, solid
+        import math as _m
+        NWD=(0-0.5+w+0)/2; WWD=(-0.5+0+0+d)/2
+        def _onN(x0,x1,y1,z0,z1,col,op=1.0,nudge=0.0):
+            R.box(x0,0.05,x1,y1,FLR_Z+z0,FLR_Z+z1,col,op=op,db=(NWD+0.6+nudge)-((x0+0.05+x1+y1)/2))
+        def _onW(y0,y1,x1,z0,z1,col,op=1.0,nudge=0.0):
+            R.box(-0.04,y0,x1,y1,FLR_Z+z0,FLR_Z+z1,col,op=op,db=(WWD+0.6+nudge)-((-0.04+y0+x1+y1)/2))
+        # BACK (upper-left / west) = conference-side SOLID wall: TV over a shelf
+        _onW(3.6,7.4,0.22,3.3,5.8,"#59616e",nudge=0.06)                     # TV bezel
+        _onW(3.8,7.2,0.28,3.45,5.65,"#222833",nudge=0.12)                   # TV panel
+        # tall skinny cabinet to the right of the TV, standing on the floor
+        R.box(0.18,1.50,1.70,3.10,FLR_Z,FLR_Z+6.40,C_WOOD)
+        R.box(0.18,1.50,1.74,3.10,FLR_Z+2.05,FLR_Z+2.17,shade(C_WOOD,0.72))     # door rails
+        R.box(0.18,1.50,1.74,3.10,FLR_Z+4.20,FLR_Z+4.32,shade(C_WOOD,0.72))
+        R.box(1.66,2.18,1.78,2.42,FLR_Z+3.05,FLR_Z+3.45,"#c9ccd2")              # pull
+        # small decor on the cabinet top
+        R.box(0.50,1.70,1.35,2.20,FLR_Z+6.40,FLR_Z+6.64,"#7a5c48")              # stacked books
+        R.box(0.53,1.74,1.31,2.16,FLR_Z+6.64,FLR_Z+6.83,"#4f6b7a")
+        R.box(0.60,2.38,0.75,2.92,FLR_Z+6.40,FLR_Z+7.12,"#5b6270")              # small framed photo
+        R.box(0.72,2.44,0.80,2.86,FLR_Z+6.48,FLR_Z+7.04,"#c2a05a")
+        R.box(1.00,2.42,1.38,2.80,FLR_Z+6.40,FLR_Z+6.80,"#9aa2ad")              # trinket
+        # two canvases stacked one above the other, left of the TV
+        for _az0,_az1,_col in ((5.30,6.70,"#8a7f6d"),(2.80,4.20,"#6f8794")):
+            _onW(8.50,9.90,0.17,_az0,_az1,shade(_col,0.68),nudge=0.06)      # wrapped edge
+            _onW(8.56,9.84,0.21,_az0+0.06,_az1-0.06,_col,nudge=0.12)        # canvas face
+        # UPPER-RIGHT (north) = windows to outside, banded like the real wall
+        _WB0,_WB1=2.7,7.3
+        _onN(0.4,10.27,0.16,_WB0-0.16,_WB0,"#9aa2ad",nudge=0.04)            # sill
+        _onN(0.4,10.27,0.16,_WB1,_WB1+0.16,"#9aa2ad",nudge=0.04)            # head
+        _onN(0.4,10.27,0.22,_WB0,_WB1,"#e3ebf0",nudge=0.06)                 # panes, blinds down
+        for _k in range(1,23):
+            _bz=_WB0+0.2*_k
+            if _bz<_WB1-0.06: _onN(0.55,10.12,0.24,_bz,_bz+0.06,"#ccd8df",nudge=0.08)   # slats
+        for _mx in (0.4,3.69,6.98,10.27):
+            _onN(_mx-0.07,_mx+0.07,0.30,_WB0,_WB1,"#9aa2ad",nudge=0.14)     # vertical mullions
+        for _mz in (_WB0+1.53,_WB0+3.07):
+            _onN(0.4,10.27,0.30,_mz-0.05,_mz+0.05,"#9aa2ad",nudge=0.14)     # horizontal mullions
+        # NEAR-LEFT (south) = the entry wall, all glass + door. Translucent because it sits
+        # between the camera and the room.
+        R.box(0,d,w,d+0.38,FLR_Z+0.5,FLR_Z+8.0,"#9fdcf0",op=0.22)           # glazing
+        R.box(0,d,w,d+0.42,FLR_Z,FLR_Z+0.5,"#59616e",op=0.8)                # base rail
+        R.box(0,d,w,d+0.42,FLR_Z+8.0,FLR_Z+8.2,"#59616e",op=0.8)            # head rail
+        for _mx2 in (0.0,3.5,6.9,10.5):
+            R.box(_mx2,d,_mx2+0.15,d+0.42,FLR_Z+0.5,FLR_Z+8.0,"#59616e",op=0.8)   # mullions/stiles
+        R.box(2.55,d,2.70,d+0.46,FLR_Z+0.5,FLR_Z+7.3,"#59616e",op=0.9)      # door stiles
+        R.box(0.20,d,0.35,d+0.46,FLR_Z+0.5,FLR_Z+7.3,"#59616e",op=0.9)
+        R.box(2.15,d,2.35,d+0.5,FLR_Z+3.05,FLR_Z+3.55,"#c9ccd2",op=0.95)    # pull
+        R.swing_at(2.6,d-0.3,2.5,262,332)
+        # L-desk — main run in front of the desk owner, return wrapping round to his side
+        R.box(5.0,3.0,7.2,8.2,FLR_Z+2.2,FLR_Z+2.5,C_DESK)                   # main
+        R.box(7.2,3.0,9.4,4.8,FLR_Z+2.2,FLR_Z+2.5,C_DESK)                   # return
+        for _ex,_ey in ((5.3,3.3),(6.9,3.3),(5.3,7.9),(6.9,7.9),(9.1,3.3),(9.1,4.5)):
+            R.box(_ex-0.18,_ey-0.18,_ex+0.18,_ey+0.18,FLR_Z,FLR_Z+2.2,"#6b7280")   # legs
+        # seating: Twaddle backing the TV wall, two chairs across for interviews / meetings
+        def _seat(cx,cy,ang,col,bh=2.4):
+            R.rbox(cx,cy,1.45,1.45,FLR_Z,FLR_Z+1.5,ang,col)
+            _bx=cx-0.58*_m.cos(_m.radians(ang)); _by=cy-0.58*_m.sin(_m.radians(ang))
+            R.rbox(_bx,_by,0.30,1.45,FLR_Z,FLR_Z+bh,ang,shade(col,1.12))
+        _seat(8.2,5.9,180,C_TASK,2.7)                                       # owner: back to the far wall, facing the TV
+        _seat(3.5,4.8,0,C_GUEST); _seat(3.5,7.0,0,C_GUEST)                  # across the desk
+        # iMac on the desk, screen turned toward the owner
+        _ix,_iy=6.0,5.9
+        R.box(_ix-0.28,_iy-0.42,_ix+0.28,_iy+0.42,FLR_Z+2.5,FLR_Z+2.58,"#c9ccd2")   # foot
+        R.box(_ix-0.05,_iy-0.10,_ix+0.05,_iy+0.10,FLR_Z+2.58,FLR_Z+3.05,"#c9ccd2")  # stand
+        R.box(_ix-0.06,_iy-0.95,_ix+0.06,_iy+0.95,FLR_Z+3.05,FLR_Z+4.35,"#d8dbe0")  # bezel
+        R.box(_ix+0.02,_iy-0.86,_ix+0.09,_iy+0.86,FLR_Z+3.14,FLR_Z+4.24,"#222833")  # screen
+        R.box(_ix+0.65,_iy-0.55,_ix+1.15,_iy+0.55,FLR_Z+2.5,FLR_Z+2.58,"#e6e8ec")   # keyboard
+    # every other room = empty architectural shell (walls + door + dimensions only)
+    elif kind=="break":
+        R.counter(0.6,0.8,0.6+10.0,0.8+2.2,3.0)  # counter along back
+        R.upper_cab(1.0,0.5,9.0,0.9)
+        R.counter(0.8,0.8,3.0,0.8,3.0)
+        # tables
+        for tx in (w*0.35, w*0.72):
+            for ty in (d*0.55,):
+                R.box(tx-1.6,ty-1.6,tx+1.6,ty+1.6,FLR_Z,FLR_Z+2.4,C_TABLE)
+                R.guest(tx-2.6,ty); R.guest(tx+2.6,ty); R.guest(tx,ty-2.6); R.guest(tx,ty+2.6)
+        R.plant(w-1.3,d-1.3)
+
+# ===========================================================================
+#  CATALOG
+# ===========================================================================
+CATALOG=[
+  ("w-comb","West · Training Room","10'6\" × 20'","long",10.5,20.0,"Training room — walls removed","Combined · walls removed",True),
+  ("w-3","West · Office","10'6\" × 10'5\"","small",10.5,10.42,"Standard private office","Shell + door",False),
+  ("w-4","Maud's Office (corner)","10'5\" × 17'5\"","long",10.42,17.42,"Maud's tall corner office","Shell + door",False),
+  ("n-large","Raf's Office","20' × 20'","large",20.0,20.0,"Raf's office","Shell + door",False),
+  ("e-1","Twaddle's Office","10'8\" × 10'8\"","twaddle",10.67,10.67,"Twaddle's office","L-desk · 2 guest chairs · TV · glass entrance",False),
+  ("e-2","Claude Room / Megan's","10'8\" × 10'8\"","megan",10.67,10.67,"Megan's office / Claude room","4 screens · standing desk · walking pad · window wall",False),
+  ("s-1","South · Office 1","12' × 10'6\"","med",12.0,10.5,"Standard private office","L-desk · 2 guest · credenza",False),
+  ("s-2","South · Office 2","12' × 10'6\"","med",12.0,10.5,"Standard private office","L-desk · 2 guest · credenza",False),
+  ("s-3","South · Office 3","12' × 10'","med",12.0,10.0,"Standard private office","L-desk · 2 guest · credenza",False),
+  ("s-4","JD's Office","12' × 13'6\"","med",12.0,13.5,"JD's office","Shell + door",False),
+  ("s-comb1","South · Training Room A","24' × 9'","wide","24.0","9.0","Training room — walls removed","Combined · walls removed",True),
+  ("s-comb2","South · Training Room B","24' × 10'6\"","wide",24.0,10.5,"Training room — walls removed","Combined · walls removed",True),
+  ("conf","Large Conference","20' × 49'","conference",49.0,20.0,"Main boardroom","Boardroom table · 18 seats · TV wall",False),
+  ("recep","Reception / Lobby","21'10\" × 13'6\"","reception",21.83,13.5,"Front-of-house lobby — built-in desk, glass upper, open walkway entry","Built-in desk · glass upper · lounge · open walkway",False),
+  ("break","Break Room","15'6\" × 20'","break",20.0,15.5,"Staff kitchen + seating","Kitchenette · 2 tables · 8 seats",False),
+]
+
+def _ft(s):
+    """'10\\'6"' -> 10.5 feet."""
+    s=s.replace('"','').strip()
+    if "'" in s:
+        a,_,b=s.partition("'")
+        return float(a)+(float(b)/12.0 if b.strip() else 0.0)
+    return float(s)
+
+def build_office(entry):
+    key,title,dim,kind,w,d,note,furn,comb=entry
+    R=Room(float(w),float(d))
+    door="W" if kind=="reception" else ("E" if kind in ("conference","break","wide","large") else "S")
+    if kind=="megan":
+        R.shell(door=door, wall_col=C_PINK_W)        # pink walls, gray carpet like the rest
+    elif kind=="break":
+        R.shell(door=door, floor_col=C_TILE)         # break room is the only tile floor
+    else:
+        R.shell(door=door)
+    furnish(kind,R)
+    if comb:  # accent outline marking merged room
+        o=[R.iso(0.3,0.3,FLR_Z+0.03),R.iso(R.w-0.3,0.3,FLR_Z+0.03),R.iso(R.w-0.3,R.d-0.3,FLR_Z+0.03),R.iso(0.3,R.d-0.3,FLR_Z+0.03)]
+        p=" ".join(f'{a:.1f},{b:.1f}' for a,b in o)
+        R.emit(9e8,9e8,f'<polygon points="{p}" fill="none" stroke="{C_ACCENT}" stroke-width="1.6" stroke-dasharray="5 3"/>')
+    # put each dim caption on the axis it actually measures (some catalog dims read d × w)
+    parts=dim.split(" × ")
+    if len(parts)==2:
+        wl,dl=parts
+        if abs(_ft(wl)-float(w)) > abs(_ft(dl)-float(w)): wl,dl=dl,wl
+    else:
+        wl=dl=parts[0]
+    R.dims(f'{wl} wide', f'{dl} deep')
+    return R.render()
+
+FURN_BY_KIND={
+ 'small':'Private office · shell + door','med':'Private office · shell + door',
+ 'long':'Private office · shell + door','wide':'Combined · walls removed',
+ 'large':'Large office · shell + door','conference':'Boardroom · shell + door',
+ 'megan':'4 screens · standing desk · walking pad · window wall',
+ 'twaddle':'L-desk · 2 guest chairs · TV · window wall · glass entrance',
+ 'reception':'Built-in desk · dog area · glass upper · open walkway',
+ 'break':'Kitchenette · island · storage wall'}
+offices=[]
+for n,e in enumerate(CATALOG,start=1):
+    key,title,dim,kind,w,d,note,furn,comb=e
+    svg=build_office(e)
+    offices.append(dict(key=key,num=n,title=f"{n} · {title}",dim=dim,note=note,
+                        furn=FURN_BY_KIND.get(kind,furn),comb=comb,svg=svg))
+
+# overview + key map
+overview_svg=open("/private/tmp/claude-501/-Users-megan-1st-Claude-Folder/de840332-a406-47e2-ab31-cb468bebf93c/scratchpad/office.svg").read()
+overview_svg=overview_svg.replace('<svg ','<svg preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%" ',1)
+keymap_svg=open("/private/tmp/claude-501/-Users-megan-1st-Claude-Folder/de840332-a406-47e2-ab31-cb468bebf93c/scratchpad/keymap.svg").read()
+
+data=[
+ dict(key="keymap",title="Key Map (numbered)",dim="Reference",note="Numbers match the walk-through order — use this to point at a room",furn="Numbered plan",comb=False,svg=keymap_svg),
+ dict(key="overview",title="Floor Overview (3D)",dim="Full plate",note="Whole office in one isometric view",furn="Master isometric",comb=False,svg=overview_svg),
+]+offices
+
+# ---- group nav ------------------------------------------------------------
+def group_of(k):
+    if k in ("overview","keymap"): return "Overview"
+    if k.startswith("w-"): return "West wing"
+    if k.startswith("n-"): return "North"
+    if k.startswith("e-"): return "East wing"
+    if k.startswith("s-"): return "South row"
+    return "Common areas"
+
+HTML_TMPL = """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Alphalete — Office Studio</title>
+<style>
+ *{box-sizing:border-box;margin:0;padding:0}
+ :root{--bg:#f4f5f7;--panel:#fff;--ink:#242832;--sub:#8b91a0;--line:#e7e9ee;--accent:#e8482b;--accent2:#2f6df0}
+ html,body{height:100%}
+ body{font-family:Inter,-apple-system,Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--ink);display:flex;height:100vh;overflow:hidden}
+ .side{width:250px;flex:0 0 250px;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column}
+ .brand{padding:16px 18px;border-bottom:1px solid var(--line)}
+ .brand h1{font-size:16px;letter-spacing:.5px;font-weight:800}
+ .brand p{font-size:10.5px;letter-spacing:2px;color:var(--sub);font-weight:600;margin-top:2px}
+ .nav{overflow-y:auto;padding:8px 0;flex:1}
+ .grp{font-size:10px;letter-spacing:1.2px;color:var(--sub);font-weight:700;padding:12px 18px 4px;text-transform:uppercase}
+ .item{display:flex;align-items:center;gap:8px;padding:8px 18px;cursor:pointer;border-left:3px solid transparent}
+ .item:hover{background:#f7f8fa}
+ .item.active{background:#f0f4ff;border-left-color:var(--accent2)}
+ .item .t{font-size:12.5px;font-weight:600;line-height:1.2}
+ .item .d{font-size:10.5px;color:var(--sub)}
+ .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:0 0 7px}
+ .main{flex:1;display:flex;flex-direction:column;min-width:0}
+ .top{padding:16px 24px;border-bottom:1px solid var(--line);background:var(--panel);display:flex;align-items:flex-end;gap:16px}
+ .top h2{font-size:20px;font-weight:800}
+ .top .dim{font-size:13px;color:var(--accent2);font-weight:700;margin-top:3px}
+ .top .note{font-size:12px;color:var(--sub);margin-top:2px}
+ .chips{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;max-width:320px;justify-content:flex-end}
+ .chip{font-size:11px;background:#f0f1f4;border:1px solid var(--line);border-radius:20px;padding:4px 10px;color:#4a505c}
+ .stage{flex:1;position:relative;min-height:0;overflow:hidden}
+ #zoomwrap{position:absolute;inset:0;overflow:hidden;cursor:grab}
+ #zoomwrap.drag{cursor:grabbing}
+ #stage{width:100%;height:100%;transform-origin:0 0;display:flex;align-items:center;justify-content:center;padding:18px;will-change:transform}
+ #stage svg{max-width:100%;max-height:100%}
+ .zoomctl{position:absolute;right:16px;bottom:16px;display:flex;gap:6px;z-index:5}
+ .zoomctl button{width:36px;height:36px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:17px;font-weight:700;cursor:pointer;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.06)}
+ .zoomctl button:hover{background:#f5f6f8}
+ .zoomctl button.fit{width:auto;padding:0 12px;font-size:12px}
+ .zlvl{position:absolute;right:16px;top:16px;font-size:11px;font-weight:700;color:var(--sub);background:#fff;border:1px solid var(--line);border-radius:20px;padding:3px 10px;z-index:5}
+ .zhint{position:absolute;left:20px;bottom:18px;font-size:11px;color:var(--sub);z-index:5}
+ .badge{position:absolute;top:16px;left:20px;font-size:11px;font-weight:700;color:var(--accent);background:#fff;border:1px solid #f3c8bf;border-radius:20px;padding:4px 11px;z-index:5}
+ .foot{display:flex;align-items:center;gap:12px;padding:12px 24px;border-top:1px solid var(--line);background:var(--panel)}
+ .btn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;color:var(--ink)}
+ .btn:hover{background:#f5f6f8}
+ .btn:disabled{opacity:.4;cursor:default}
+ .count{font-size:12px;color:var(--sub);margin-left:auto}
+ .hint{font-size:11px;color:var(--sub)}
+</style></head><body>
+ <aside class="side"><div class="brand"><h1>ALPHALETE</h1><p>OFFICE STUDIO</p></div><nav class="nav" id="nav"></nav></aside>
+ <section class="main">
+   <div class="top"><div><h2 id="ttl"></h2><div class="dim" id="dim"></div><div class="note" id="note"></div></div><div class="chips" id="chips"></div></div>
+   <div class="stage">
+     <div class="badge" id="badge" style="display:none">◧ walls removed · combined</div>
+     <div class="zlvl" id="zlvl">100%</div>
+     <div id="zoomwrap"><div id="stage"></div></div>
+     <div class="zhint">scroll to zoom · drag to pan · double-click to zoom in</div>
+     <div class="zoomctl"><button id="zout">−</button><button class="fit" id="zfit">Fit</button><button id="zin">+</button></div>
+   </div>
+   <div class="foot"><button class="btn" id="prev">← Prev</button><button class="btn" id="next">Next →</button><span class="hint">Use ← / → keys</span><span class="count" id="count"></span></div>
+ </section>
+<script>
+const DATA=__DATA__;
+let i=0;
+const nav=document.getElementById('nav');
+let groups={};DATA.forEach((o,idx)=>{const g=o.group||'Other';(groups[g]=groups[g]||[]).push(idx)});
+for(const g in groups){const h=document.createElement('div');h.className='grp';h.textContent=g;nav.appendChild(h);
+ groups[g].forEach(idx=>{const o=DATA[idx];const el=document.createElement('div');el.className='item';el.dataset.i=idx;
+  el.innerHTML=(o.comb?'<span class="dot"></span>':'')+'<div><div class="t">'+o.title+'</div><div class="d">'+o.dim+'</div></div>';
+  el.onclick=()=>go(idx);nav.appendChild(el);});}
+// ---- zoom / pan ----
+let sc=1,tx=0,ty=0;
+const wrap=document.getElementById('zoomwrap'),stg=document.getElementById('stage'),zlvl=document.getElementById('zlvl');
+function applyT(){stg.style.transform='translate('+tx+'px,'+ty+'px) scale('+sc+')';zlvl.textContent=Math.round(sc*100)+'%';}
+function resetT(){sc=1;tx=0;ty=0;applyT();}
+function zoomAt(mx,my,f){let ns=Math.min(9,Math.max(1,sc*f));const k=ns/sc;tx=mx-(mx-tx)*k;ty=my-(my-ty)*k;sc=ns;if(sc<=1.001){sc=1;tx=0;ty=0;}applyT();}
+wrap.addEventListener('wheel',e=>{e.preventDefault();const r=wrap.getBoundingClientRect();zoomAt(e.clientX-r.left,e.clientY-r.top,e.deltaY<0?1.15:1/1.15);},{passive:false});
+wrap.addEventListener('dblclick',e=>{const r=wrap.getBoundingClientRect();zoomAt(e.clientX-r.left,e.clientY-r.top,1.6);});
+let dg=false,lx=0,ly=0;
+wrap.addEventListener('mousedown',e=>{dg=true;lx=e.clientX;ly=e.clientY;wrap.classList.add('drag');});
+window.addEventListener('mousemove',e=>{if(!dg)return;tx+=e.clientX-lx;ty+=e.clientY-ly;lx=e.clientX;ly=e.clientY;applyT();});
+window.addEventListener('mouseup',()=>{dg=false;wrap.classList.remove('drag');});
+function ctr(f){const r=wrap.getBoundingClientRect();zoomAt(r.width/2,r.height/2,f);}
+document.getElementById('zin').onclick=()=>ctr(1.3);
+document.getElementById('zout').onclick=()=>ctr(1/1.3);
+document.getElementById('zfit').onclick=resetT;
+
+function go(n){i=(n+DATA.length)%DATA.length;const o=DATA[i];
+ document.getElementById('stage').innerHTML=o.svg;resetT();
+ document.getElementById('ttl').textContent=o.title;
+ document.getElementById('dim').textContent=o.dim;
+ document.getElementById('note').textContent=o.note;
+ document.getElementById('badge').style.display=o.comb?'block':'none';
+ const ch=document.getElementById('chips');ch.innerHTML='';
+ (o.furn||'').split(' · ').forEach(f=>{const c=document.createElement('span');c.className='chip';c.textContent=f;ch.appendChild(c);});
+ document.getElementById('count').textContent=(i+1)+' / '+DATA.length;
+ document.querySelectorAll('.item').forEach(e=>e.classList.toggle('active',+e.dataset.i===i));
+ const act=document.querySelector('.item.active');if(act)act.scrollIntoView({block:'nearest'});
+}
+document.getElementById('prev').onclick=()=>go(i-1);
+document.getElementById('next').onclick=()=>go(i+1);
+window.addEventListener('keydown',e=>{if(e.key==='ArrowLeft')go(i-1);if(e.key==='ArrowRight')go(i+1);});
+go(0);
+</script></body></html>"""
+
+if __name__=="__main__":
+    import sys
+    if "--one" in sys.argv:
+        open("/private/tmp/claude-501/-Users-megan-1st-Claude-Folder/de840332-a406-47e2-ab31-cb468bebf93c/scratchpad/one.svg","w").write(build_office(CATALOG[0]))
+        print("wrote one.svg")
+    else:
+        for o in data: o["group"]=group_of(o["key"])
+        html=HTML_TMPL.replace("__DATA__", json.dumps(data))
+        out="/private/tmp/claude-501/-Users-megan-1st-Claude-Folder/de840332-a406-47e2-ab31-cb468bebf93c/scratchpad/studio.html"
+        open(out,"w").write(html)
+        print("offices:",len(data),"-> studio.html", len(html),"bytes")
