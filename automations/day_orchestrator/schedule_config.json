@@ -209,6 +209,25 @@
         "type": "not_configured"
       }
     },
+    "rebuild_lastweek": {
+      "on_scheduler": true,
+      "_note": "MANUAL-ONLY recovery — registered so it can run on the MINI via lucy (the ownerville session lives there; a laptop scrape knocks out the session every other report shares). Replays the known-good Monday sequence for a target week: label top as last week -> scrape last week (ownerville) -> [Tableau, full run only] -> FREEZE (HARD-GATED: aborts before the wipe if the freeze writes 0 tabs) -> label top as this week -> wipe -> scrape this week. Use when a tab's frozen LAST WEEK block is STRUCTURALLY broken (nested/duplicate 'LAST WEEK' labels, reps stranded far below) — drb_backfill_lastweek only refills activity by rep name and CANNOT fix structure. Preview: `lucy rerun rebuild_lastweek --monday 2026-07-06 --plan`. One tab: `lucy rerun rebuild_lastweek --monday 2026-07-06 --only '\"Kiarri McBroom\"'` (note the literal quotes — lucy joins argv, shlex re-splits). WARNING: --only SKIPS Tableau (org-wide, unscopable), so the rebuilt frozen block has NO SALES — a frozen block is a static snapshot and can't be sales-patched after. Only use --only on a tab you've confirmed had zero sales that week. Registered 2026-07-07.",
+      "display_name": "Daily Rep Breakdown — rebuild frozen LAST WEEK block",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.focus_office_att.rebuild_lastweek"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 150,
+      "verify": null
+    },
     "drb_backfill_lastweek": {
       "on_scheduler": true,
       "_note": "MANUAL-ONLY recovery. `lucy rerun drb_backfill_lastweek <MONDAY>` re-pulls last week's Tue-Sun activity from ownerville and writes it into the frozen bottom LAST WEEK block (matched by rep name), touching NEITHER this week NOR the totals/Monday. For when last week's daily scrapes failed (e.g. the mini-sleep gaps) and the LAST WEEK block shows 'x' for Tue-Sun. Preview one tab first: `lucy rerun drb_backfill_lastweek 2026-06-29 --only \"Rafael Hidalgo\"`; then full: `lucy rerun drb_backfill_lastweek 2026-06-29`. Per-owner 5-min cap + 150-min report timeout. Built 2026-07-06.",
