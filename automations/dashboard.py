@@ -3045,7 +3045,9 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "org-sales-board-compare",
-        "name": "Org Sales Board — VA Compare (9 AM)",
+        # No time in the name — it's self_scheduled, so the tile appends
+        # "· 9:00 AM CST" itself (it read "(9 AM) · 9:00 AM CST" otherwise).
+        "name": "Org Sales Board — VA Compare",
         "creator": "Megan",
         "emoji": "🔍",
         "color": "#0EA5E9",
