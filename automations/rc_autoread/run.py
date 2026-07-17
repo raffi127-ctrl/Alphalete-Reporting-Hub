@@ -93,6 +93,15 @@ WRAP_UP_PHRASES = [
     "reach out with any",
     "any questions or concerns please reach out",
     "feel free to reach out",
+    # Rep install reminders + post-install check-ins (rep-outbound only — a
+    # customer never types these; if the customer replied after, stays unread).
+    "wanted to remind you that your install",
+    "reminding you that your installation",
+    "reminder today is installation day",
+    "how was your installation",
+    "went well with your install",
+    "went smoothly with your installation",
+    "just checking in to see if everything went well",
 ]
 
 
