@@ -119,7 +119,7 @@ room(91,29,104,40,C_OFFICE,"CLAUDE / MEGAN'S","10'8 × 10'8",lsize=3.8)
 room(82,40,104,64,C_RECEP,None)
 # SOUTH OFFICES (bottom row) start at the west-column edge
 sx0,sx1=11,82; ow=(sx1-sx0)/8
-south_segs=[(0,1,"OFFICE","12×10'6",0),(1,2,"OFFICE","12×10'6",0),(2,3,"OFFICE","12×10'",0),
+south_segs=[(0,1,"OFFICE","12×10'6",0),(1,2,"OFFICE","12×10'6",0),(2,3,"BAS","12×10'",0),
             (3,4,"JD'S","12×13'6",0),(4,6,"TRAINING","24' × 9'",0),(6,8,"TRAINING","24' × 10'6",0)]
 for a,b,nm,lab,comb in south_segs:
     room(sx0+a*ow,52,sx0+b*ow,64,C_OFFICE,nm,lab,combined=bool(comb),lsize=4.2)
@@ -251,6 +251,14 @@ sdesk(39.2,58.0,45.4,60.2,"#6f6a63"); sdesk(43.2,60.2,45.4,62.0,"#6f6a63")
 schair(42.2,61.0,_JN)                                       # JD, backs the windows
 schair(40.6,56.4,_JN); schair(43.4,56.4,_JN)                # guests
 box(38.3,52.3,39.6,56.0,FLR_Z,FLR_Z+5.0,"#7d8894")          # bookcase
+
+# --- 9 · BAS'S (28.75,52,37.6,64): same kit as JD, one bay west. Ochre accent, not a third navy ---
+_BSN="#8a6d3a"
+scred(29.5,62.2,36.7,63.7,"#6f685c")                        # credenza under the windows
+sdesk(30.3,58.0,36.5,60.2,"#4e5766"); sdesk(34.3,60.2,36.5,62.0,"#4e5766")
+schair(33.3,61.0,_BSN)                                      # Bas, backs the windows
+schair(31.7,56.4,"#8a94a3"); schair(34.5,56.4,"#8a94a3")    # guests
+box(29.4,52.3,30.7,56.0,FLR_Z,FLR_Z+5.0,"#7d8894")          # bookcase
 
 # --- TRAINING ROOMS: classroom rows facing the screen wall + credenza under it ---
 def classroom_rows(x0,y0,x1,y1,col,cred,face):

@@ -149,7 +149,7 @@ txt(100.3,62,"entry",size=7,color=C_SUB,w="700")
 # BOTTOM ROW (south offices) start at the west-column edge
 sx0,sx1=11,82; ow=(sx1-sx0)/8
 south=[(0,1,"OFFICE","12×10'6",7,False),(1,2,"OFFICE","12×10'6",8,False),
-       (2,3,"OFFICE","12×10'",9,False),(3,4,"JD'S OFFICE","12×13'6",10,False),
+       (2,3,"BAS","12×10'",9,False),(3,4,"JD'S OFFICE","12×13'6",10,False),
        (4,6,"TRAINING ROOM","24' × 9'",11,False),(6,8,"TRAINING ROOM","24' × 10'6",12,False)]
 for a,b,nm,lab,n,comb in south:
     room(sx0+a*ow,52,sx0+b*ow,64,C_OFFICE,nm,lab,num=n,combined=comb)
