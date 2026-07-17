@@ -29,3 +29,9 @@ google-api-python-client>=2.100
 # (no browser). PyMuPDF = PDF→image; Pillow = trim/stitch the page images.
 pymupdf>=1.24
 pillow>=10.0
+# Claude vision, used by the New-Hire Swag Texts OCR (automations/swag_welcome/
+# extract.py) and the Brand Health audit (automations/brand_audit/). Without it
+# a fresh Hub install crashes reading the roster with "No module named
+# 'anthropic'" (JD 2026-07-17). Floor = the proven-good SDK that supports the
+# structured-output `output_config` API the OCR relies on.
+anthropic>=0.109

@@ -91,7 +91,14 @@ def _image_block(image_path: str | Path) -> dict:
 def extract_rows(image_path: str | Path) -> list[dict]:
     """Return [{'name': ..., 'last_name': ..., 'phone': ...}, ...] read off the
     screenshot. Raises with a clear message if the API key isn't configured."""
-    import anthropic
+    try:
+        import anthropic
+    except ImportError as e:
+        raise RuntimeError(
+            "The 'anthropic' package isn't installed on this Mac. In the Hub's "
+            "install folder run:  .venv/bin/python -m pip install anthropic  "
+            "(or re-run install.sh), then restart the Hub."
+        ) from e
 
     content = [_image_block(image_path), {"type": "text", "text": _PROMPT}]
     client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
