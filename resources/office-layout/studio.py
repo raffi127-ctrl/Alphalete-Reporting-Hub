@@ -735,8 +735,8 @@ def furnish(kind, R):
         # WALL 1 (back-left) = solid: a large collage of art filling the run
         for _y0,_y1,_z0,_z1,_c in ((7.60,12.40,3.70,7.20,_RD),                     # anchor
                                    (4.80,7.00,5.45,7.20,"#7a5333"),(4.80,7.00,3.70,5.05,"#a9b2bd"),
-                                   (2.40,4.20,4.60,6.40,"#c0533f"),(2.40,4.20,2.60,4.05,"#7a5333"),
-                                   (7.60,9.70,2.20,3.20,"#a9b2bd"),(10.30,12.40,2.20,3.20,"#c5ccd4")):
+                                   (2.40,4.20,4.60,6.40,"#c0533f"),(2.40,4.20,3.15,4.45,"#7a5333"),
+                                   (8.60,10.60,2.20,3.20,"#a9b2bd"),(11.00,13.00,2.20,3.20,"#c5ccd4")):
             _onW(_y0,_y1,0.17,_z0,_z1,shade(_c,0.68),nudge=0.06)
             _onW(_y0+0.07,_y1-0.07,0.21,_z0+0.07,_z1-0.07,_c,nudge=0.12)
         # TV on the wall 1 end nearest the sitting table
@@ -785,14 +785,14 @@ def furnish(kind, R):
         R.box(14.75,1.42,16.25,3.58,FLR_Z+0.32,FLR_Z+0.40,"#22262e")        # belt
         # small couch on wall 1, toward the wall 2 end
         _SOF="#5a5f68"
-        R.box(0.25,7.30,2.95,12.70,FLR_Z,FLR_Z+0.55,shade(_SOF,0.75))       # plinth
-        R.box(0.25,7.30,1.05,12.70,FLR_Z,FLR_Z+2.90,_SOF)                   # back panel
-        R.box(0.25,7.30,2.95,7.98,FLR_Z,FLR_Z+1.95,shade(_SOF,0.92))        # arm, wall-2 end
-        R.box(0.25,12.02,2.95,12.70,FLR_Z,FLR_Z+1.95,shade(_SOF,0.92))      # arm, far end
-        for _cy0,_cy1 in ((8.04,9.96),(10.04,11.96)):
+        R.box(0.25,2.80,2.95,8.20,FLR_Z,FLR_Z+0.55,shade(_SOF,0.75))        # plinth
+        R.box(0.25,2.80,1.05,8.20,FLR_Z,FLR_Z+2.90,_SOF)                    # back panel
+        R.box(0.25,2.80,2.95,3.48,FLR_Z,FLR_Z+1.95,shade(_SOF,0.92))        # arm, wall-2 end
+        R.box(0.25,7.52,2.95,8.20,FLR_Z,FLR_Z+1.95,shade(_SOF,0.92))        # arm, far end
+        for _cy0,_cy1 in ((3.54,5.46),(5.54,7.46)):
             R.box(1.08,_cy0,2.88,_cy1,FLR_Z+0.55,FLR_Z+1.42,shade(_SOF,1.16),db=0.5)  # seat
             R.box(1.00,_cy0,1.62,_cy1,FLR_Z+1.42,FLR_Z+2.78,shade(_SOF,1.06),db=0.4)  # back
-        for _py in (8.60,10.70):
+        for _py in (4.10,6.20):
             R.box(1.58,_py,2.16,_py+0.92,FLR_Z+1.42,FLR_Z+2.28,_RD,db=1.1)  # red throw pillows
         # Oval meeting table, seats 6. Drawn as a pair of stacked ellipse polygons — the box
         # primitive can't do a curve; the lower one peeking out reads as the table edge.
