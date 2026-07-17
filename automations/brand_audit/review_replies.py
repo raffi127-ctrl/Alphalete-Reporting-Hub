@@ -31,6 +31,15 @@ from automations.brand_audit.config import (
 )
 
 MODEL = "claude-opus-4-8"
+# Sign-off variety (Megan 2026-07-16). The team's replies always closed "Warm
+# Regards, Alphalete Marketing"; 25 identical closings in one day reads robotic,
+# so the CLOSING PHRASE varies while the company line never does. Criticism gets
+# the formal subset only — "All the best" on a wage complaint would read flippant.
+_SIGNOFF_POSITIVE = ("Warm Regards", "Best Regards", "Kind Regards",
+                     "With appreciation", "Thank you again", "All the best",
+                     "Sincerely")
+_SIGNOFF_NEGATIVE = ("Warm Regards", "Best Regards", "Kind Regards",
+                     "Sincerely", "Respectfully")
 _STATE = Path.home() / ".config" / "brand-audit" / "review_replies.json"
 NEGATIVE_BELOW = 4          # rating < 4 is flagged as needs-attention
 # An approver reacting one of these on the DAILY HEADER = batch done, stop
@@ -128,7 +137,13 @@ def _positive_system(company_name: str) -> str:
         "they don't all read identically, but keep the structure and tone "
         "consistent — do not lean on any one word (e.g. 'thrilled') repeatedly.\n\n"
         "If the review is in another language, reply in that language.\n\n"
-        "END EVERY REPLY EXACTLY WITH:\n\nWarm Regards,\nAlphalete Marketing")
+        "END EVERY REPLY with a closing phrase, then the company name on its own "
+        "line:\n\nWarm Regards,\nAlphalete Marketing\n\n"
+        "VARY the closing phrase between replies — pick whichever fits: "
+        + ", ".join(_SIGNOFF_POSITIVE) + ". The company line is ALWAYS exactly "
+        "'Alphalete Marketing'. If you replied in another language, write the "
+        "closing in THAT language too (Spanish: 'Saludos cordiales,' / "
+        "'Un cordial saludo,') and still end with 'Alphalete Marketing'.")
 
 
 def _negative_system(company_name: str) -> str:
@@ -203,7 +218,14 @@ def _negative_system(company_name: str) -> str:
         "review, or a rating with no text, gets ONE short paragraph. Open with "
         "the reviewer's first name. Never name employees, never share private "
         "details, never be sarcastic.\n\n"
-        "END EVERY REPLY EXACTLY WITH:\n\nWarm Regards,\nAlphalete Marketing")
+        "If the review is in another language, reply in that language.\n\n"
+        "END EVERY REPLY with a closing phrase, then the company name on its own "
+        "line:\n\nWarm Regards,\nAlphalete Marketing\n\n"
+        "The closing may vary between replies — use one of: "
+        + ", ".join(_SIGNOFF_NEGATIVE) + ". Keep it formal (nothing breezy on a "
+        "complaint). The company line is ALWAYS exactly 'Alphalete Marketing'. "
+        "If you replied in another language, write the closing in that language "
+        "too and still end with 'Alphalete Marketing'.")
 
 
 def draft_reply(review: dict, company_name: str, feedback: str = "",
