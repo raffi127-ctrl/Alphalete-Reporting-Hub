@@ -155,23 +155,104 @@ label(93,42.4,FLR_Z+0.05,"ENCLOSED ROOM",size=3.6,color="#8a6a6f",weight="800")
 box(82,44.9,104,46.8,FLR_Z,FLR_Z+3.0,"#a98a63"); label(93,46.0,FLR_Z+3.2,"BUILT-IN DESK",size=3.8,color="#7a5f3c",weight="700")
 box(82,44.4,104,44.75,FLR_Z+3.0,FLR_Z+7.0,"#bfe0ea",op=0.32)
 label(94,55,FLR_Z+0.05,"LOBBY",size=6.2,color="#7a5f60",weight="800")
-# CONFERENCE — long 18-person boardroom table (8 per side + 1 at each end)
-box(74,7,100,11,FLR_Z,FLR_Z+2.5,"#9c7a52")                  # table top
-label(87,9,FLR_Z+2.7,"SEATS 18",size=3.4,color="#ffffff",weight="800")
+# CONFERENCE — long 14-person boardroom table (6 per side + 1 at each end)
+_CCH="#9e3b32"                                              # red chairs
+box(74,6.6,100,11.4,FLR_Z,FLR_Z+2.5,"#8a5a3c")              # table top
+label(87,9,FLR_Z+2.7,"SEATS 14",size=3.4,color="#ffffff",weight="800")
 # Chair backs run taller than the 2.5' table top so the far row stays visible. The table
 # is one long box sorting by its centroid, so pin each row's depth either side of it.
-_TBL=(74+7+100+11)/2
-for _i in range(8):
-    _cx = 75 + _i*(99-75)/7
-    box(_cx-0.55,5.4,_cx+0.55,6.6,FLR_Z,FLR_Z+3.4,C_CHAIR,db=_TBL-0.5-(_cx+6))   # far row: behind
-    box(_cx-0.55,11.4,_cx+0.55,12.6,FLR_Z,FLR_Z+3.4,C_CHAIR,db=_TBL+0.5-(_cx+12))# near row: in front
-box(72.0,8.4,73.1,9.6,FLR_Z,FLR_Z+3.4,C_CHAIR,db=_TBL-0.5-81.55)                 # far-end chair
-box(100.5,8.4,101.6,9.6,FLR_Z,FLR_Z+3.4,C_CHAIR,db=_TBL+0.5-110.05)              # near-end chair
+_TBL=(74+6.6+100+11.4)/2
+for _i in range(6):
+    _cx = 76 + _i*(98-76)/5
+    box(_cx-0.55,5.0,_cx+0.55,6.2,FLR_Z,FLR_Z+3.4,_CCH,db=_TBL-0.5-(_cx+5.6))   # far row: behind
+    box(_cx-0.55,11.8,_cx+0.55,13.0,FLR_Z,FLR_Z+3.4,_CCH,db=_TBL+0.5-(_cx+12.4))# near row: in front
+box(72.0,8.4,73.1,9.6,FLR_Z,FLR_Z+3.4,_CCH,db=_TBL-0.5-81.55)                   # far-end chair
+box(100.5,8.4,101.6,9.6,FLR_Z,FLR_Z+3.4,_CCH,db=_TBL+0.5-110.05)                # near-end chair
 # conference built-in counter along the right (east) wall
 box(102.1,2.5,103.6,15.5,FLR_Z,FLR_Z+3.0,"#b7bcc4")
 label(102.9,9.0,FLR_Z+3.2,"COUNTER",size=3.0,color="#5b6270",weight="700")
 # interior glass window in the conference's west wall — looks into Raf's office
 box(69.7,3.5,70.3,14.5,FLR_Z+1.6,FLR_Z+3.4,"#bfe0ea",op=0.55,db=0.3)
+
+# ================= FURNISHED ROOMS =========================================
+# Simplified furniture for the rooms built out in the studio. The studio draws each room
+# in its own local frame (wall 1 = west, 2 = north ...) which is NOT the building's frame,
+# so this is a re-draw in plan coordinates, not a port — orientation comes from each room's
+# real neighbours. Floor pieces only: the dollhouse walls are 3.4' tall, so wall-mounted
+# screens, art and posters have nothing to hang on at this scale.
+def sdesk(x0,y0,x1,y1,col="#8a5a3c"): box(x0,y0,x1,y1,FLR_Z,FLR_Z+2.5,col)
+def schair(cx,cy,col,s=1.25,h=2.9,db=0.0): box(cx-s/2,cy-s/2,cx+s/2,cy+s/2,FLR_Z,FLR_Z+h,col,db=db)
+def scred(x0,y0,x1,y1,col="#6f6a63"): box(x0,y0,x1,y1,FLR_Z,FLR_Z+2.4,col)
+
+# --- 4 · RAF'S (50,0,70,18): backs the north wall, looks out the south entry ---
+_RD="#9e3b32"; _RW="#5c4033"
+box(50.25,2.5,52.95,7.4,FLR_Z,FLR_Z+2.4,"#5a5f68")          # couch on the west wall
+scred(50.2,0.2,51.9,1.8,_RD)                                # mini fridge, NW corner
+box(66.6,0.2,68.9,1.2,FLR_Z,FLR_Z+5.0,"#9aa2ac")            # corner bookcase, NE
+box(68.9,0.2,69.8,1.7,FLR_Z,FLR_Z+5.0,"#9aa2ac")
+box(64.6,1.2,66.4,3.4,FLR_Z,FLR_Z+0.4,"#3a4150")            # walking pad
+sdesk(57.2,4.7,64.2,6.9,_RW); sdesk(62.0,2.5,64.2,4.7,_RW)  # L-desk + return
+schair(60.2,3.5,_RD)                                        # Raf
+schair(58.8,8.3,_RD); schair(62.2,8.3,_RD)                  # guests
+_ocx,_ocy,_OT=56.2,13.6,"#7a5333"                           # oval table, 6 seats
+_ov=[(_ocx+2.6*math.cos(2*math.pi*i/40.0), _ocy+1.5*math.sin(2*math.pi*i/40.0)) for i in range(40)]
+_od=_ocx+_ocy
+for _zz,_cc,_dd in ((2.2,shade(_OT,0.62),_od+0.30),(2.4,_OT,_od+0.32)):
+    emit(_dd,_zz,'<polygon points="%s" fill="%s" stroke="%s" stroke-width="0.5"/>'
+         % (pts([iso(_x,_y,FLR_Z+_zz) for _x,_y in _ov]), _cc, shade(_OT,0.5)))
+for _cx,_cy,_front in ((52.9,13.6,False),(59.5,13.6,True),(54.6,11.5,False),
+                       (57.6,11.5,False),(54.6,15.7,True),(57.6,15.7,True)):
+    schair(_cx,_cy,_RD,db=(_od+0.32+(0.5 if _front else -0.5))-(_cx+_cy))
+
+# --- 3 · MAUD'S (0,47,11,64): exterior south + west, entry east; she faces the entry ---
+_MG="#9aa0a8"; _MN="#2f3d56"
+sdesk(3.6,55.6,5.8,62.4,_MG); sdesk(5.8,60.2,8.6,62.4,_MG)  # L-desk + return
+schair(2.6,59.0,_MN)                                        # Maud, facing east
+schair(7.4,56.6,_MN); schair(7.4,58.6,_MN)                  # guests
+scred(0.3,48.2,1.9,53.0,_MG)                                # corner shelving
+box(3.0,48.4,6.4,51.2,FLR_Z,FLR_Z+2.2,"#e6c8d2")            # baby play pen
+schair(8.8,51.2,"#c58fa0",s=1.5)                            # rocking chair
+
+# --- 5 · TWADDLE'S (91,18,104,29): windows east, glass entry west, TV on the conference wall ---
+_TB="#8a6a45"; _TS="#5d7a5c"
+sdesk(99.0,21.0,101.4,27.0,_TB); sdesk(96.6,24.8,99.0,27.0,_TB)   # L-desk + return
+schair(102.6,24.0,_TS)                                      # Twaddle, facing the TV wall
+schair(97.4,21.6,_TS); schair(97.4,23.4,_TS)                # 2 across for interviews
+scred(93.2,18.3,94.4,21.6,"#7d8894")                        # tablet cabinet
+
+# --- 6 · MEGAN'S (91,29,104,40): windows east, half-glass to reception south ---
+_MB="#c9bfb0"
+sdesk(99.2,32.4,101.6,37.6,_MB)                             # standing desk
+schair(102.6,35.0,"#c58fa0")                                # Megan
+box(96.4,32.8,98.4,35.4,FLR_Z,FLR_Z+0.4,"#3a4150")          # walking pad
+schair(93.0,38.2,"#c58fa0",s=1.5)                           # floral chair in the corner
+
+# --- 10 · JD'S (37.6,52,46.5,64): windows south, glass entry north ---
+_JN="#2b3a52"
+scred(38.4,62.2,45.6,63.7,"#8a9099")                        # credenza under the windows
+sdesk(39.2,58.0,45.4,60.2,"#6f6a63"); sdesk(43.2,60.2,45.4,62.0,"#6f6a63")
+schair(42.2,61.0,_JN)                                       # JD, backs the windows
+schair(40.6,56.4,_JN); schair(43.4,56.4,_JN)                # guests
+box(38.3,52.3,39.6,56.0,FLR_Z,FLR_Z+5.0,"#7d8894")          # bookcase
+
+# --- TRAINING ROOMS: classroom rows facing the screen wall + credenza under it ---
+def classroom_rows(x0,y0,x1,y1,col,cred,face):
+    """12 seats + the credenza under the screen. `face` is the wall the screen is on,
+    in the building's frame. Seats sit low and wide here so a grid of them reads as
+    rows of chairs rather than a stand of posts."""
+    if face=="N":                                           # room 1: screen on its north wall
+        scred(x0+2.4,y0+0.25,x1-2.4,y0+1.7,cred)
+        for r in range(4):
+            for c in range(3):
+                schair(x0+2.6+c*2.9, y0+4.6+r*4.2, col, s=1.6, h=2.2)
+    else:                                                   # 11/12: screen on the west end
+        scred(x0+0.25,y0+2.6,x0+1.7,y1-2.6,cred)
+        for r in range(4):
+            for c in range(3):
+                schair(x0+4.6+r*4.2, y0+3.0+c*3.0, col, s=1.6, h=2.2)
+classroom_rows(0,18,11,37,"#c2572c","#6f6a63","N")          # 1 · burnt orange
+classroom_rows(46.5,52,64.25,64,"#2d7273","#5f7273","W")    # 11 · deep teal
+classroom_rows(64.25,52,82,64,"#4f7343","#6a7562","W")      # 12 · forest green
 
 # ---- perimeter walls -------------------------------------------------------
 box(0,-1.0,W,0,FLR_Z,FLR_Z+WALL_H,C_WALL)          # north (tall, solid demising)
