@@ -1068,7 +1068,7 @@ def interview_office(R, windows=True, desk_col="#59616e", shelf_col="#7a6144", o
             R.box(_bx,0.55,_bx+_bw,1.06,FLR_Z+z,FLR_Z+z+_bh,_pal[(_i+seed)%len(_pal)],db=0.8)
             _bx+=_bw+0.03
     _brow(1.62,0.21,5,0); _brow(1.62,1.41,4,2)                       # books on two shelves
-    R.box(2.95,0.60,3.60,1.02,FLR_Z+2.66,FLR_Z+2.66+0.46,"#4a6b96",db=0.8)   # a box file
+    _brow(2.30,2.66,3,4)                                            # a few books on the middle shelf
     R.box(1.70,0.66,2.04,1.02,FLR_Z+3.91,FLR_Z+3.91+0.26,"#7d8894",db=0.8)   # pot
     leafy(R,1.87,0.84,FLR_Z+3.91+0.26,4.4,0.55)                     # plant on top
     # WALL 3 (east) glass front + door
