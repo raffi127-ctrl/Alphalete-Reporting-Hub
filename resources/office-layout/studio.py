@@ -11,7 +11,27 @@ C_WALL="#eceef2"; C_DESK="#b98a5e"; C_DESK2="#c9bfb0"
 C_TASK="#37506b"; C_GUEST="#8a94a3"; C_SOFA="#5b6b86"; C_WOOD="#a97c53"
 C_PLANT="#4f7a52"; C_POT="#b06a3c"; C_SCREEN="#222833"; C_RUG="#d8c6b0"
 C_TABLE="#8a5a3c"; C_ACCENT="#e8482b"; C_STEEL="#c2c7cf"; C_COUNTER="#b7bcc4"
-C_PINK_W="#f6e2e7"                          # Megan's office — pink walls (floor stays gray carpet)
+C_PINK_W="#f4e2e4"                          # Megan's office — pink walls (floor stays gray carpet)
+
+# Each office gets its own wall colour. Floors stay gray carpet throughout (gray tile in the
+# break room) — only the walls change.
+WALL_COL={
+ "w-comb":"#dfe9df",   # 1  West training     — sage
+ "w-3"   :"#dde5ef",   # 2  West office       — blue
+ "w-4"   :"#e4dadc",   # 3  Maud's            — soft mauve, blush accents, navy
+ "n-large":"#d7e2ee",  # 4  Raf's             — deeper blue
+ "e-1"   :"#d5e3d6",   # 5  Twaddle's         — sage / brown scheme
+ "e-2"   :C_PINK_W,    # 6  Megan's           — pink
+ "s-1"   :"#e7e3f0",   # 7  South office 1    — lavender
+ "s-2"   :"#f3e6dc",   # 8  South office 2    — peach
+ "s-3"   :"#deecee",   # 9  South office 3    — aqua
+ "s-4"   :"#dde3ea",   # 10 JD's              — navy / grey scheme
+ "s-comb1":"#e2ecdf",  # 11 South training A  — soft green
+ "s-comb2":"#e2ecdf",  # 12 South training B  — soft green
+ "conf"  :"#dfeae7",   # 13 Large conference  — muted teal
+ "recep" :"#f3dfe0",   # 14 Reception         — blush
+ "break" :"#e2edf1",   # 15 Break room        — light blue
+}
 
 def shade(hexc,f):
     h=hexc.lstrip('#'); r,g,b=int(h[0:2],16),int(h[2:4],16),int(h[4:6],16)
@@ -296,6 +316,7 @@ def furnish(kind, R):
         R.text(3.2,16.1,FLR_Z+0.05,"looks into Raf's office",size=3.6,color="#3f88a8",w="700",anchor="start")
         R.text(w*0.5,d-1.6,FLR_Z+0.05,"18-person boardroom",size=4.6,color="#8f95a0",w="700")
     elif kind=="megan":     # Megan's office — window wall, 4 screens, standing desk + walking pad
+        import math as _m
         NWD=(0-0.5+w+0)/2                    # north-wall depth
         WWD=(-0.5+0+0+d)/2                   # west-wall depth
         def _onN(x0,x1,y1,z0,z1,col,op=1.0,nudge=0.0):
@@ -335,26 +356,53 @@ def furnish(kind, R):
         R.box(w,0,w+0.45,d,FLR_Z+7.15,FLR_Z+7.4,"#8f96a0")              # head rail
         for _py in (0.0,d/2-0.11,d-0.22):                                # glazing posts
             R.box(w,_py,w+0.45,_py+0.22,FLR_Z+3.45,FLR_Z+7.15,"#8f96a0")
-        # standing desk under the screens, walking pad in front of it
         # standing desk, centred in the room; walking pad in front of it
         R.box(3.2,3.4,5.3,7.2,FLR_Z+3.2,FLR_Z+3.5,C_DESK)                   # desk top
         R.box(3.5,3.75,5.0,4.05,FLR_Z,FLR_Z+3.2,"#6b7280")                  # T-legs at each end
         R.box(3.5,6.55,5.0,6.85,FLR_Z,FLR_Z+3.2,"#6b7280")
         R.box(5.4,4.2,7.4,6.6,FLR_Z,FLR_Z+0.32,"#3a4150")                   # walking pad deck
         R.box(5.6,4.3,7.2,6.5,FLR_Z+0.32,FLR_Z+0.40,"#22262e")              # belt
-        # floor plant in the window corner — pot + leaf blades
-        _px,_py2=8.8,2.2
-        R.box(_px-0.42,_py2-0.42,_px+0.42,_py2+0.42,FLR_Z,FLR_Z+0.95,C_POT)
-        R.box(_px-0.50,_py2-0.50,_px+0.50,_py2+0.50,FLR_Z+0.95,FLR_Z+1.10,shade(C_POT,0.82))
-        leafy(R,_px,_py2,FLR_Z+1.10,_px+_py2+0.5,sc=1.5)
+        # Laptop on the standing desk. db must clear the desk: the desk is one big box sorting
+        # by its centroid, and at db=0.7 it painted straight over the vase.
+        _LD=1.4
+        R.box(3.70,4.95,4.48,6.05,FLR_Z+3.50,FLR_Z+3.56,"#cfd3d8",db=_LD)      # base 9" x 13"
+        R.box(3.84,5.10,4.36,5.78,FLR_Z+3.56,FLR_Z+3.585,"#3a4048",db=_LD+0.1) # keyboard
+        R.box(4.02,5.84,4.22,5.98,FLR_Z+3.56,FLR_Z+3.585,"#9aa2ad",db=_LD+0.1) # trackpad
+        R.box(3.62,4.95,3.72,6.05,FLR_Z+3.56,FLR_Z+4.30,"#cfd3d8",db=_LD)      # lid
+        R.box(3.70,5.03,3.78,5.97,FLR_Z+3.62,FLR_Z+4.24,"#20252c",db=_LD+0.2)  # screen
+        # flowers in a vase — blush blooms on sage stems
+        _vx,_vy=4.98,3.66                                                   # top-right corner of the desk
+        R.box(_vx-0.20,_vy-0.20,_vx+0.20,_vy+0.20,FLR_Z+3.50,FLR_Z+4.02,"#cfd6da",db=_LD)
+        for _fdx,_fdy,_fdz,_fc in ((-0.15,-0.10,0.60,"#d4788f"),(0.13,0.08,0.72,"#e3a9b8"),
+                                   (-0.02,0.15,0.52,"#d4788f"),(0.17,-0.13,0.46,"#e3a9b8"),
+                                   (-0.17,0.06,0.40,"#c9607a")):
+            R.box(_vx+_fdx-0.04,_vy+_fdy-0.04,_vx+_fdx+0.04,_vy+_fdy+0.04,
+                  FLR_Z+4.02,FLR_Z+4.02+_fdz,"#7f9478",db=_LD+0.1)             # stems
+            R.box(_vx+_fdx-0.12,_vy+_fdy-0.12,_vx+_fdx+0.12,_vy+_fdy+0.12,
+                  FLR_Z+4.02+_fdz,FLR_Z+4.02+_fdz+0.17,_fc,db=_LD+0.2)         # blooms
+        # floral rug under the lounge end. Blooms ride just above the rug bias so the rug
+        # doesn't paint over them, but furniture still lands on top.
+        R.rug(1.85,1.85,8.85,8.85,"#e8d5d8")
+        for _fx,_fy,_fc in ((2.60,2.60,"#d4788f"),(4.60,2.30,"#9fae9f"),(6.90,2.70,"#e3a9b8"),
+                            (8.20,3.90,"#d4788f"),(2.35,4.40,"#e3a9b8"),(2.80,6.60,"#9fae9f"),
+                            (8.40,6.30,"#c9607a"),(7.90,8.10,"#e3a9b8"),(4.10,8.30,"#d4788f"),
+                            (6.20,8.40,"#9fae9f"),(2.45,8.20,"#e3a9b8"),(5.30,6.90,"#c9607a")):
+            _RX,_RY=R.iso(_fx,_fy,FLR_Z+0.02)
+            for _pk in range(5):
+                _pa=_pk*72+18
+                _ppx=_RX+0.15*R.S*_m.cos(_m.radians(_pa)); _ppy=_RY+0.15*R.S*_m.sin(_m.radians(_pa))
+                R.emit(-1.85e6+_fx+_fy, FLR_Z+0.03,
+                    f'<ellipse cx="{_ppx:.1f}" cy="{_ppy:.1f}" rx="{0.13*R.S:.1f}" ry="{0.075*R.S:.1f}" '
+                    f'fill="{_fc}" transform="rotate({_pa} {_ppx:.1f} {_ppy:.1f})"/>')
+            R.emit(-1.84e6+_fx+_fy, FLR_Z+0.04,
+                f'<circle cx="{_RX:.1f}" cy="{_RY:.1f}" r="{0.06*R.S:.1f}" fill="#f4e2b0"/>')
         # accent chair, set at an angle to the room
-        import math as _m
         # Faces +u, turned in toward the room. Past about -25 deg the chair goes edge-on to
         # the fixed SE camera and flattens into an unreadable slab, so this is the limit.
         CHX,CHY,CHA=2.9,9.05,-18.0
         _cca,_csa=_m.cos(_m.radians(CHA)),_m.sin(_m.radians(CHA))
         def _L(u,v): return (CHX+u*_cca-v*_csa, CHY+u*_csa+v*_cca)
-        C_UPH="#efe4dc"
+        C_UPH="#9fae9f"                                                     # sage
         _qx,_qy=_L(0,0);      R.rbox(_qx,_qy,1.75,1.85,FLR_Z+0.85,FLR_Z+1.45,CHA,C_UPH)   # seat
         _qx,_qy=_L(-0.87,0);  R.rbox(_qx,_qy,0.38,1.85,FLR_Z+1.45,FLR_Z+3.30,CHA,C_UPH)   # back
         for _av in (-0.92,0.92):                                                          # arms
@@ -376,19 +424,28 @@ def furnish(kind, R):
         # BACK (upper-left / west) = conference-side SOLID wall: TV over a shelf
         _onW(3.6,7.4,0.22,3.3,5.8,"#59616e",nudge=0.06)                     # TV bezel
         _onW(3.8,7.2,0.28,3.45,5.65,"#222833",nudge=0.12)                   # TV panel
-        # tall skinny cabinet to the right of the TV, standing on the floor
-        R.box(0.18,1.50,1.70,3.10,FLR_Z,FLR_Z+6.40,C_WOOD)
-        R.box(0.18,1.50,1.74,3.10,FLR_Z+2.05,FLR_Z+2.17,shade(C_WOOD,0.72))     # door rails
-        R.box(0.18,1.50,1.74,3.10,FLR_Z+4.20,FLR_Z+4.32,shade(C_WOOD,0.72))
+        # tall skinny cabinet to the right of the TV — open shelves holding TABLETS on charge
+        _WD="#8a6240"                                                      # brown millwork
+        R.box(0.18,1.50,1.90,3.10,FLR_Z,FLR_Z+6.40,_WD)                    # carcass
+        R.box(0.34,1.66,1.94,2.94,FLR_Z+0.34,FLR_Z+6.02,"#241d16")         # dark cavity
+        for _sz in (1.42,2.54,3.66,4.78):
+            R.box(0.34,1.66,1.98,2.94,FLR_Z+_sz,FLR_Z+_sz+0.10,shade(_WD,0.78))   # shelf boards
+        # tablets stood on edge in a row, screens out
+        for _si,_sz in enumerate((0.44,1.52,2.64,3.76,4.88)):
+            _ty=1.78; _k=_si*3
+            while _ty<2.84:
+                R.box(0.50,_ty,1.30,_ty+0.09,FLR_Z+_sz,FLR_Z+_sz+0.78,"#2b3038",db=0.7)   # body
+                R.box(0.56,_ty,1.24,_ty+0.10,FLR_Z+_sz+0.06,FLR_Z+_sz+0.72,"#59636f",db=0.8)  # screen
+                _ty+=0.09+0.10; _k+=1
         R.box(1.66,2.18,1.78,2.42,FLR_Z+3.05,FLR_Z+3.45,"#c9ccd2")              # pull
         # small decor on the cabinet top
-        R.box(0.50,1.70,1.35,2.20,FLR_Z+6.40,FLR_Z+6.64,"#7a5c48")              # stacked books
+        R.box(0.50,1.70,1.35,2.20,FLR_Z+6.40,FLR_Z+6.64,"#7a5c48")              # notepads
         R.box(0.53,1.74,1.31,2.16,FLR_Z+6.64,FLR_Z+6.83,"#4f6b7a")
         R.box(0.60,2.38,0.75,2.92,FLR_Z+6.40,FLR_Z+7.12,"#5b6270")              # small framed photo
         R.box(0.72,2.44,0.80,2.86,FLR_Z+6.48,FLR_Z+7.04,"#c2a05a")
         R.box(1.00,2.42,1.38,2.80,FLR_Z+6.40,FLR_Z+6.80,"#9aa2ad")              # trinket
         # two canvases stacked one above the other, left of the TV
-        for _az0,_az1,_col in ((5.30,6.70,"#8a7f6d"),(2.80,4.20,"#6f8794")):
+        for _az0,_az1,_col in ((5.30,6.70,"#7f9478"),(2.80,4.20,"#8a6a4a")):
             _onW(8.50,9.90,0.17,_az0,_az1,shade(_col,0.68),nudge=0.06)      # wrapped edge
             _onW(8.56,9.84,0.21,_az0+0.06,_az1-0.06,_col,nudge=0.12)        # canvas face
         # UPPER-RIGHT (north) = windows to outside, banded like the real wall
@@ -415,8 +472,8 @@ def furnish(kind, R):
         R.box(2.15,d,2.35,d+0.5,FLR_Z+3.05,FLR_Z+3.55,"#c9ccd2",op=0.95)    # pull
         R.swing_at(2.6,d-0.3,2.5,262,332)
         # L-desk — main run in front of the desk owner, return wrapping round to his side
-        R.box(5.0,3.0,7.2,8.2,FLR_Z+2.2,FLR_Z+2.5,C_DESK)                   # main
-        R.box(7.2,3.0,9.4,4.8,FLR_Z+2.2,FLR_Z+2.5,C_DESK)                   # return
+        R.box(5.0,3.0,7.2,8.2,FLR_Z+2.2,FLR_Z+2.5,"#9a7048")                   # main
+        R.box(7.2,3.0,9.4,4.8,FLR_Z+2.2,FLR_Z+2.5,"#9a7048")                   # return
         for _ex,_ey in ((5.3,3.3),(6.9,3.3),(5.3,7.9),(6.9,7.9),(9.1,3.3),(9.1,4.5)):
             R.box(_ex-0.18,_ey-0.18,_ex+0.18,_ey+0.18,FLR_Z,FLR_Z+2.2,"#6b7280")   # legs
         # seating: Twaddle backing the TV wall, two chairs across for interviews / meetings
@@ -424,8 +481,8 @@ def furnish(kind, R):
             R.rbox(cx,cy,1.45,1.45,FLR_Z,FLR_Z+1.5,ang,col)
             _bx=cx-0.58*_m.cos(_m.radians(ang)); _by=cy-0.58*_m.sin(_m.radians(ang))
             R.rbox(_bx,_by,0.30,1.45,FLR_Z,FLR_Z+bh,ang,shade(col,1.12))
-        _seat(8.2,5.9,180,C_TASK,2.7)                                       # owner: back to the far wall, facing the TV
-        _seat(3.5,4.8,0,C_GUEST); _seat(3.5,7.0,0,C_GUEST)                  # across the desk
+        _seat(8.2,5.9,180,"#6b4c35",2.7)                                       # owner: back to the far wall, facing the TV
+        _seat(3.5,4.8,0,"#9aa89a"); _seat(3.5,7.0,0,"#9aa89a")                  # across the desk
         # iMac on the desk, screen turned toward the owner
         _ix,_iy=6.0,5.9
         R.box(_ix-0.28,_iy-0.42,_ix+0.28,_iy+0.42,FLR_Z+2.5,FLR_Z+2.58,"#c9ccd2")   # foot
@@ -433,6 +490,216 @@ def furnish(kind, R):
         R.box(_ix-0.06,_iy-0.95,_ix+0.06,_iy+0.95,FLR_Z+3.05,FLR_Z+4.35,"#d8dbe0")  # bezel
         R.box(_ix+0.02,_iy-0.86,_ix+0.09,_iy+0.86,FLR_Z+3.14,FLR_Z+4.24,"#222833")  # screen
         R.box(_ix+0.65,_iy-0.55,_ix+1.15,_iy+0.55,FLR_Z+2.5,FLR_Z+2.58,"#e6e8ec")   # keyboard
+    elif kind=="jd":        # JD's office. Walls per Megan: 1 = exterior windows, 2 = solid
+                            # (TV wall), 3 = all-glass front w/ door to the open space, 4 = solid
+        import math as _m
+        NWD=(0-0.5+w+0)/2; WWD=(-0.5+0+0+d)/2
+        def _onN(x0,x1,y1,z0,z1,col,op=1.0,nudge=0.0):
+            R.box(x0,0.05,x1,y1,FLR_Z+z0,FLR_Z+z1,col,op=op,db=(NWD+0.6+nudge)-((x0+0.05+x1+y1)/2))
+        def _onW(y0,y1,x1,z0,z1,col,op=1.0,nudge=0.0):
+            R.box(-0.04,y0,x1,y1,FLR_Z+z0,FLR_Z+z1,col,op=op,db=(WWD+0.6+nudge)-((-0.04+y0+x1+y1)/2))
+        # WALL 1 (back-left) = windows to outside. Banded: solid below the sill, grid of panes
+        # behind blinds, solid above the head — not floor-to-ceiling glass.
+        _WB0,_WB1=2.7,7.3
+        _onW(0.4,13.10,0.16,_WB0-0.16,_WB0,"#9aa2ad",nudge=0.04)            # sill
+        _onW(0.4,13.10,0.16,_WB1,_WB1+0.16,"#9aa2ad",nudge=0.04)            # head
+        _onW(0.4,13.10,0.22,_WB0,_WB1,"#e3ebf0",nudge=0.06)                 # panes, blinds down
+        for _k in range(1,23):
+            _bz=_WB0+0.2*_k
+            if _bz<_WB1-0.06: _onW(0.55,12.95,0.24,_bz,_bz+0.06,"#ccd8df",nudge=0.08)
+        for _my in (0.4,4.63,8.87,13.10):
+            _onW(_my-0.07,_my+0.07,0.30,_WB0,_WB1,"#9aa2ad",nudge=0.14)     # vertical mullions
+        for _mz in (_WB0+1.53,_WB0+3.07):
+            _onW(0.4,13.10,0.30,_mz-0.05,_mz+0.05,"#9aa2ad",nudge=0.14)     # horizontal mullions
+        # WALL 2 (back-right) = SOLID: TV, canvases, tall cabinet
+        _onN(4.20,8.60,0.22,3.30,5.80,"#59616e",nudge=0.06)                 # TV bezel
+        _onN(4.40,8.40,0.28,3.45,5.65,"#222833",nudge=0.12)                 # TV panel
+        for _az0,_az1,_col in ((5.30,6.70,"#33486b"),(2.80,4.20,"#8b95a3")):
+            _onN(9.40,11.00,0.17,_az0,_az1,shade(_col,0.68),nudge=0.06)     # wrapped edge
+            _onN(9.46,10.94,0.21,_az0+0.06,_az1-0.06,_col,nudge=0.12)       # canvas face
+        # Tall bookcase left of the TV on wall 2. Wide-ish and SHALLOW — at 1.6' deep it was
+        # near-square in plan and you only ever saw its side. Case is LIGHTER than the cavity
+        # and the frame is thick enough to read: a thin frame just disappears at room zoom.
+        _BC="#7d8894"
+        R.box(1.30,0.18,3.90,1.18,FLR_Z,FLR_Z+6.40,_BC)                        # carcass: top, sides, base
+        R.box(1.70,0.30,3.50,1.20,FLR_Z+0.36,FLR_Z+5.96,"#20272f")             # dark cavity
+        for _sz in (1.42,2.54,3.66,4.78):
+            R.box(1.70,0.30,3.50,1.24,FLR_Z+_sz,FLR_Z+_sz+0.10,"#5c6b7d")      # shelf boards
+        _BKC=("#c5ccd4","#4a6b96","#a9b2bd","#2f4260","#7d8894","#dde3ea","#38537d","#93a0ae")
+        for _si,(_sz,_run) in enumerate(((0.46,3.44),(1.52,3.20),(2.64,3.44),(3.76,3.02),(4.88,3.32))):
+            _bx=1.78; _k=_si*4
+            while _bx<_run:
+                _bw=0.14+0.04*(_k%3)                       # varied thickness
+                _bh=0.72+0.055*((_k*3)%5)                  # varied height
+                if _bx+_bw>_run: break
+                R.box(_bx,0.40,_bx+_bw,1.26,FLR_Z+_sz,FLR_Z+_sz+_bh,_BKC[_k%len(_BKC)],db=0.7)
+                _bx+=_bw+0.03; _k+=1
+        # credenza sitting under the windows on wall 1 (tucks below the 2'8" sill)
+        _CRD="#2f4260"                                                             # navy
+        R.box(0.18,3.50,2.00,9.50,FLR_Z,FLR_Z+2.50,_CRD)
+        for _rz in (0.85,1.70):
+            R.box(2.00,3.50,2.04,9.50,FLR_Z+_rz,FLR_Z+_rz+0.10,shade(_CRD,0.72))   # door rails
+        for _py in (5.00,6.50,8.00):
+            R.box(2.00,_py-0.10,2.06,_py+0.10,FLR_Z+1.20,FLR_Z+1.45,"#c9ccd2")     # pulls
+        R.box(0.55,4.10,1.45,4.80,FLR_Z+2.50,FLR_Z+2.76,"#3d5175")                 # books on top
+        R.box(0.58,4.14,1.42,4.76,FLR_Z+2.76,FLR_Z+2.96,"#8b95a3")
+        R.box(0.60,6.10,0.75,6.80,FLR_Z+2.50,FLR_Z+3.18,"#5b6270")                 # framed photo
+        R.box(0.72,6.16,0.80,6.74,FLR_Z+2.58,FLR_Z+3.10,"#c2a05a")
+        R.box(0.75,8.10,1.20,8.60,FLR_Z+2.50,FLR_Z+2.92,"#9aa2ad")                 # trinket
+        # WALL 3 (front-right) = all-glass office front with the door onto the open space.
+        # Translucent: it sits between the camera and the room.
+        R.box(w,0,w+0.38,d,FLR_Z+0.5,FLR_Z+8.0,"#9fdcf0",op=0.22)           # glazing
+        R.box(w,0,w+0.42,d,FLR_Z,FLR_Z+0.5,"#59616e",op=0.8)                # base rail
+        R.box(w,0,w+0.42,d,FLR_Z+8.0,FLR_Z+8.2,"#59616e",op=0.8)            # head rail
+        for _py in (0.0,4.40,8.80,13.34):
+            R.box(w,_py,w+0.42,_py+0.16,FLR_Z+0.5,FLR_Z+8.0,"#59616e",op=0.8)      # mullions
+        for _py in (9.60,12.34):
+            R.box(w,_py,w+0.46,_py+0.16,FLR_Z+0.5,FLR_Z+7.3,"#59616e",op=0.9)      # door stiles
+        R.box(w,11.86,w+0.50,12.06,FLR_Z+3.05,FLR_Z+3.55,"#c9ccd2",op=0.95)        # pull
+        R.swing_at(11.90,9.80,2.70,92,168)
+        # L-desk — main run in front of the owner, return wrapping round to his side
+        _DSK="#4e5766"                                                      # graphite, to suit navy/grey
+        R.box(3.60,5.40,9.60,7.60,FLR_Z+2.2,FLR_Z+2.5,_DSK)                 # main
+        R.box(7.60,7.60,9.60,9.60,FLR_Z+2.2,FLR_Z+2.5,_DSK)                 # return
+        for _ex,_ey in ((3.9,5.7),(3.9,7.3),(9.3,5.7),(9.3,7.3),(9.3,9.3),(7.9,9.3)):
+            R.box(_ex-0.18,_ey-0.18,_ex+0.18,_ey+0.18,FLR_Z,FLR_Z+2.2,"#8b95a3")   # brushed-metal legs
+        # seating: JD backing wall 4, facing the TV on wall 2; two chairs across for interviews
+        def _seat(cx,cy,ang,col,bh=2.4):
+            R.rbox(cx,cy,1.45,1.45,FLR_Z,FLR_Z+1.5,ang,col)
+            _bx=cx-0.58*_m.cos(_m.radians(ang)); _by=cy-0.58*_m.sin(_m.radians(ang))
+            R.rbox(_bx,_by,0.30,1.45,FLR_Z,FLR_Z+bh,ang,shade(col,1.12))
+        _seat(6.40,8.70,-90,C_TASK,2.7)                                     # JD
+        _seat(5.00,3.90,90,C_GUEST); _seat(7.80,3.90,90,C_GUEST)            # across the desk
+        # iMac on the desk, screen turned toward the owner. db pushes it past the desk:
+        # the desk is one big box sorting by its centroid, which lands behind things on it.
+        _ix,_iy=6.40,6.50; _MD=0.7
+        R.box(_ix-0.42,_iy-0.28,_ix+0.42,_iy+0.28,FLR_Z+2.5,FLR_Z+2.58,"#c9ccd2",db=_MD)  # foot
+        R.box(_ix-0.10,_iy-0.05,_ix+0.10,_iy+0.05,FLR_Z+2.58,FLR_Z+3.05,"#c9ccd2",db=_MD) # stand
+        R.box(_ix-0.95,_iy-0.06,_ix+0.95,_iy+0.06,FLR_Z+3.05,FLR_Z+4.35,"#d8dbe0",db=_MD) # bezel
+        R.box(_ix-0.86,_iy+0.02,_ix+0.86,_iy+0.09,FLR_Z+3.14,FLR_Z+4.24,"#222833",db=_MD) # screen
+        R.box(_ix-0.55,_iy+0.60,_ix+0.55,_iy+1.05,FLR_Z+2.5,FLR_Z+2.58,"#e6e8ec",db=_MD)  # keyboard
+    elif kind=="maud":      # Maud's corner office. Walls per Megan: 1 & 2 solid, 3 = glass entry,
+                            # 4 = window / exterior. Brown / grey / navy scheme.
+        import math as _m
+        NWD=(0-0.5+w+0)/2; WWD=(-0.5+0+0+d)/2
+        _WD="#8a6240"; _GY="#a8b2bc"                       # brown millwork, LIGHT grey shelving
+        _DK="#4a5260"                                      # desk: darker, or it blends with the shelf
+        def _onN(x0,x1,y1,z0,z1,col,op=1.0,nudge=0.0):
+            R.box(x0,0.05,x1,y1,FLR_Z+z0,FLR_Z+z1,col,op=op,db=(NWD+0.6+nudge)-((x0+0.05+x1+y1)/2))
+        def _onW(y0,y1,x1,z0,z1,col,op=1.0,nudge=0.0):
+            R.box(-0.04,y0,x1,y1,FLR_Z+z0,FLR_Z+z1,col,op=op,db=(WWD+0.6+nudge)-((-0.04+y0+x1+y1)/2))
+        # WALL 2 (back-right) = solid: TV
+        _onN(3.20,7.60,0.22,3.30,5.80,"#59616e",nudge=0.06)                 # TV bezel
+        _onN(3.40,7.40,0.28,3.45,5.65,"#222833",nudge=0.12)                 # TV panel
+        # WALL 1 (back-left) = solid: navy credenza + two canvases
+        # skinny corner shelf in the wall 1 / wall 2 corner — keeps the floor clear
+        R.box(0.18,0.30,1.05,3.60,FLR_Z,FLR_Z+3.10,_GY)                     # carcass
+        R.box(0.30,0.42,1.09,3.48,FLR_Z+0.24,FLR_Z+2.86,shade(_GY,0.55))    # open cavity
+        for _sz in (1.02,1.94):
+            R.box(0.30,0.42,1.11,3.48,FLR_Z+_sz,FLR_Z+_sz+0.09,_GY)         # shelf boards
+        R.box(0.42,0.70,0.95,1.55,FLR_Z+0.32,FLR_Z+0.94,"#7a5c48",db=0.5)   # books
+        R.box(0.42,2.10,0.95,2.90,FLR_Z+1.24,FLR_Z+1.82,"#3d5175",db=0.5)
+        R.box(0.46,0.60,0.61,1.24,FLR_Z+3.10,FLR_Z+3.72,"#5b6270",db=0.5)   # framed photo
+        R.box(0.56,0.66,0.64,1.18,FLR_Z+3.18,FLR_Z+3.64,"#c2a05a",db=0.6)
+        for _fi,_fc in enumerate(("#2f4260","#f2f2f2","#c0392b")):          # tricolore
+            R.box(0.50,3.02+_fi*0.13,0.90,3.02+_fi*0.13+0.12,FLR_Z+3.10,FLR_Z+3.74,_fc,db=0.6)
+        _vx,_vy=0.68,1.90                                                   # flowers on the shelf
+        R.box(_vx-0.18,_vy-0.18,_vx+0.18,_vy+0.18,FLR_Z+3.10,FLR_Z+3.58,"#e8dfe0",db=0.5)
+        for _fdx,_fdy,_fdz,_fc in ((-0.12,-0.08,0.50,"#d4788f"),(0.11,0.07,0.60,"#e3a9b8"),
+                                   (-0.02,0.12,0.44,"#c9607a")):
+            R.box(_vx+_fdx-0.04,_vy+_fdy-0.04,_vx+_fdx+0.04,_vy+_fdy+0.04,
+                  FLR_Z+3.58,FLR_Z+3.58+_fdz,"#7f9478",db=0.6)              # stems
+            R.box(_vx+_fdx-0.10,_vy+_fdy-0.10,_vx+_fdx+0.10,_vy+_fdy+0.10,
+                  FLR_Z+3.58+_fdz,FLR_Z+3.58+_fdz+0.15,_fc,db=0.7)          # blooms
+        # Wall 1 is a long blank run, so the art is a collage: one large canvas with smaller
+        # ones scattered round it. The large one carries an Eiffel Tower — Maud is French.
+        _onW(7.10,10.50,0.15,3.40,7.00,"#8f8378",nudge=0.06)                # large canvas — frame
+        _onW(7.18,10.42,0.20,3.48,6.92,"#ece4d8",nudge=0.12)                # canvas ground
+        # The tower is drawn as a flat silhouette on the canvas face. Stacked boxes read as a
+        # blocky ziggurat — the flare is a curve, so it needs a polygon.
+        def _onface(pts,col,dep):
+            _pp=" ".join('%.1f,%.1f'%R.iso(0.21,_fy,FLR_Z+_fz) for _fy,_fz in pts)
+            R.emit(dep,7.0,f'<polygon points="{_pp}" fill="{col}"/>')
+        _TC,_TZ0,_TH=8.80,3.86,2.84                                         # centre, base, height
+        def _hw(t): return 0.58*(1.0-t)**2.6+0.020                          # half-width up the flare
+        _tow=[(_TC-_hw(_i/16.0),_TZ0+(_i/16.0)*_TH) for _i in range(17)]
+        _tow+=[(_TC+_hw(_i/16.0),_TZ0+(_i/16.0)*_TH) for _i in range(16,-1,-1)]
+        _onface(_tow,"#5b5348",WWD+0.78)                                    # silhouette
+        for _pz,_phw in ((4.34,0.42),(5.26,0.21)):                          # platforms
+            _onface([(_TC-_phw,_pz),(_TC+_phw,_pz),(_TC+_phw,_pz+0.10),(_TC-_phw,_pz+0.10)],
+                    "#5b5348",WWD+0.79)
+        _arch=[(_TC-0.33,_TZ0)]+[(_TC-0.33*_m.cos(_m.pi*_i/14.0),_TZ0+0.40*_m.sin(_m.pi*_i/14.0))
+                                 for _i in range(15)]+[(_TC+0.33,_TZ0)]
+        _onface(_arch,"#ece4d8",WWD+0.80)                                   # arch cut at the base
+        for _sy0,_sy1,_sz0,_sz1,_sc in ((5.20,6.35,5.55,6.70,"#c98d96"),(5.20,6.25,3.85,4.85,"#3d5175"),
+                                        (5.45,6.35,2.45,3.30,"#9fae9f"),(11.25,12.40,5.40,6.55,"#3d5175"),
+                                        (11.25,12.15,3.75,4.70,"#c98d96"),(11.40,12.45,2.40,3.30,"#e8dfd6")):
+            _onW(_sy0,_sy1,0.15,_sz0,_sz1,shade(_sc,0.62),nudge=0.06)       # small canvases
+            _onW(_sy0+0.07,_sy1-0.07,0.20,_sz0+0.06,_sz1-0.06,_sc,nudge=0.12)
+        # WALL 3 (front-right) = all-glass front with the entry door. Translucent — it sits
+        # between the camera and the room.
+        # Only the first bay is glass — it is the only stretch that meets the open office.
+        # The rest of this wall is SHARED with the neighbouring office, so it is solid.
+        _G3=5.70
+        R.box(w,_G3,w+0.42,d,FLR_Z,FLR_Z+8.60,shade(WALL_COL.get(key,C_WALL),0.92),op=0.40)  # solid
+        R.box(w,0,w+0.38,_G3,FLR_Z+0.5,FLR_Z+8.0,"#9fdcf0",op=0.20)         # glazing
+        R.box(w,0,w+0.42,_G3,FLR_Z,FLR_Z+0.5,"#59616e",op=0.8)              # base rail
+        R.box(w,0,w+0.42,_G3,FLR_Z+8.0,FLR_Z+8.2,"#59616e",op=0.8)          # head rail
+        for _py in (0.0,_G3-0.16):
+            R.box(w,_py,w+0.42,_py+0.16,FLR_Z+0.5,FLR_Z+8.0,"#59616e",op=0.8)      # jambs
+        for _py in (2.20,4.94):
+            R.box(w,_py,w+0.46,_py+0.16,FLR_Z+0.5,FLR_Z+7.3,"#59616e",op=0.9)      # door stiles
+        R.box(w,4.50,w+0.50,4.70,FLR_Z+3.05,FLR_Z+3.55,"#c9ccd2",op=0.95)          # pull
+        R.swing_at(w-0.10,2.40,2.70,95,168)
+        # WALL 4 (front-left) = window / exterior. Banded, translucent for the same reason.
+        _WB0,_WB1=2.7,7.3
+        R.box(0,d,w,d+0.42,FLR_Z,FLR_Z+_WB0,shade(WALL_COL.get(key,C_WALL),0.92),op=0.42)  # below sill
+        R.box(0,d,w,d+0.42,FLR_Z+_WB0,FLR_Z+_WB0+0.16,"#9aa2ad",op=0.85)    # sill
+        R.box(0,d,w,d+0.38,FLR_Z+_WB0+0.16,FLR_Z+_WB1,"#e3ebf0",op=0.34)    # panes, blinds down
+        for _k in range(1,21):
+            _bz=_WB0+0.16+0.2*_k
+            if _bz<_WB1-0.06: R.box(0.14,d,w-0.14,d+0.40,FLR_Z+_bz,FLR_Z+_bz+0.06,"#ccd8df",op=0.34)
+        for _mx in (0.0,3.42,6.86,10.28):
+            R.box(_mx,d,_mx+0.14,d+0.42,FLR_Z+_WB0+0.16,FLR_Z+_WB1,"#9aa2ad",op=0.85)   # mullions
+        R.box(0,d,w,d+0.42,FLR_Z+_WB1,FLR_Z+_WB1+0.16,"#9aa2ad",op=0.85)    # head
+        # L-desk in the working half, brown wood on bronze legs
+        R.box(4.50,4.00,6.70,9.20,FLR_Z+2.2,FLR_Z+2.5,_DK)            # main
+        R.box(2.50,4.00,4.50,6.00,FLR_Z+2.2,FLR_Z+2.5,_DK)            # return
+        for _ex,_ey in ((4.8,4.3),(6.4,4.3),(4.8,8.9),(6.4,8.9),(2.8,4.3),(2.8,5.7)):
+            R.box(_ex-0.18,_ey-0.18,_ex+0.18,_ey+0.18,FLR_Z,FLR_Z+2.2,"#8b95a3")   # legs
+        def _seat(cx,cy,ang,col,bh=2.4):
+            R.rbox(cx,cy,1.45,1.45,FLR_Z,FLR_Z+1.5,ang,col)
+            _bx=cx-0.58*_m.cos(_m.radians(ang)); _by=cy-0.58*_m.sin(_m.radians(ang))
+            R.rbox(_bx,_by,0.30,1.45,FLR_Z,FLR_Z+bh,ang,shade(col,1.12))
+        _seat(3.50,7.20,0,"#2f4260",2.7)                                    # Maud, facing wall 3
+        _seat(8.10,5.60,180,"#3d5175"); _seat(8.10,8.20,180,"#3d5175")      # two across the desk
+        # iMac — db pushes it past the desk, which sorts by its centroid and would cover it
+        _ix,_iy=5.60,7.20; _MD=0.7
+        R.box(_ix-0.28,_iy-0.42,_ix+0.28,_iy+0.42,FLR_Z+2.5,FLR_Z+2.58,"#c9ccd2",db=_MD)  # foot
+        R.box(_ix-0.05,_iy-0.10,_ix+0.05,_iy+0.10,FLR_Z+2.58,FLR_Z+3.05,"#c9ccd2",db=_MD) # stand
+        R.box(_ix-0.07,_iy-0.95,_ix+0.07,_iy+0.95,FLR_Z+3.05,FLR_Z+4.35,"#d8dbe0",db=_MD) # monitor back
+        R.box(_ix-0.10,_iy-0.88,_ix-0.06,_iy+0.88,FLR_Z+3.12,FLR_Z+4.28,"#20252c",db=_MD+0.1) # screen, facing her
+        R.box(_ix-0.95,_iy-0.55,_ix-0.45,_iy+0.55,FLR_Z+2.5,FLR_Z+2.58,"#e6e8ec",db=_MD)  # keyboard
+        # baby play pen down by the window
+        _PEN="#f0e4e6"; _px0,_py0,_px1,_py1=0.40,11.20,4.40,14.80    # soft white pen, toward wall 1
+        R.rug(_px0+0.14,_py0+0.14,_px1-0.14,_py1-0.14,"#f2dfe3")            # blush mat
+        for _cx,_cy in ((_px0,_py0),(_px1-0.16,_py0),(_px0,_py1-0.16),(_px1-0.16,_py1-0.16)):
+            R.box(_cx,_cy,_cx+0.16,_cy+0.16,FLR_Z,FLR_Z+2.20,_PEN)          # corner posts
+        for _s in ((_px0,_py0,_px1,_py0+0.10),(_px0,_py1-0.10,_px1,_py1),
+                   (_px0,_py0,_px0+0.10,_py1),(_px1-0.10,_py0,_px1,_py1)):
+            R.box(_s[0],_s[1],_s[2],_s[3],FLR_Z+0.18,FLR_Z+2.02,"#e2e7ea",op=0.32)  # mesh
+            R.box(_s[0],_s[1],_s[2],_s[3],FLR_Z+2.02,FLR_Z+2.20,_PEN)               # top rail
+            R.box(_s[0],_s[1],_s[2],_s[3],FLR_Z,FLR_Z+0.18,_PEN)                    # bottom rail
+        # rocking chair angled toward the window
+        _rx,_ry,_ra=6.60,13.00,-105                                         # facing the room; we see its back
+        R.rbox(_rx,_ry,1.55,1.50,FLR_Z+0.62,FLR_Z+1.42,_ra,"#8a6240")       # seat
+        R.rbox(_rx,_ry,1.38,1.32,FLR_Z+1.42,FLR_Z+1.60,_ra,"#e3a9b8")       # blush cushion
+        _bx=_rx-0.60*_m.cos(_m.radians(_ra)); _by=_ry-0.60*_m.sin(_m.radians(_ra))
+        R.rbox(_bx,_by,0.26,1.50,FLR_Z+0.62,FLR_Z+3.30,_ra,shade("#8a6240",1.12))   # tall back
+        for _off in (-0.60,0.60):
+            _sx=_rx-_off*_m.sin(_m.radians(_ra)); _sy=_ry+_off*_m.cos(_m.radians(_ra))
+            R.rbox(_sx,_sy,1.80,0.14,FLR_Z,FLR_Z+0.24,_ra,"#6b4c35")        # rockers
+            R.rbox(_sx,_sy,0.14,0.14,FLR_Z+0.24,FLR_Z+0.66,_ra,"#6b4c35")   # legs
     # every other room = empty architectural shell (walls + door + dimensions only)
     elif kind=="break":
         R.counter(0.6,0.8,0.6+10.0,0.8+2.2,3.0)  # counter along back
@@ -451,20 +718,31 @@ def furnish(kind, R):
 CATALOG=[
   ("w-comb","West · Training Room","10'6\" × 20'","long",10.5,20.0,"Training room — walls removed","Combined · walls removed",True),
   ("w-3","West · Office","10'6\" × 10'5\"","small",10.5,10.42,"Standard private office","Shell + door",False),
-  ("w-4","Maud's Office (corner)","10'5\" × 17'5\"","long",10.42,17.42,"Maud's tall corner office","Shell + door",False),
+  ("w-4","Maud's Office (corner)","10'5\" × 17'5\"","maud",10.42,17.42,"Maud's corner office","L-desk · 2 guest · play pen · rocking chair · TV",False),
   ("n-large","Raf's Office","20' × 20'","large",20.0,20.0,"Raf's office","Shell + door",False),
   ("e-1","Twaddle's Office","10'8\" × 10'8\"","twaddle",10.67,10.67,"Twaddle's office","L-desk · 2 guest chairs · TV · glass entrance",False),
   ("e-2","Claude Room / Megan's","10'8\" × 10'8\"","megan",10.67,10.67,"Megan's office / Claude room","4 screens · standing desk · walking pad · window wall",False),
   ("s-1","South · Office 1","12' × 10'6\"","med",12.0,10.5,"Standard private office","L-desk · 2 guest · credenza",False),
   ("s-2","South · Office 2","12' × 10'6\"","med",12.0,10.5,"Standard private office","L-desk · 2 guest · credenza",False),
   ("s-3","South · Office 3","12' × 10'","med",12.0,10.0,"Standard private office","L-desk · 2 guest · credenza",False),
-  ("s-4","JD's Office","12' × 13'6\"","med",12.0,13.5,"JD's office","Shell + door",False),
+  ("s-4","JD's Office","12' × 13'6\"","jd",12.0,13.5,"JD's office","L-desk · 2 guest chairs · TV · credenza · window wall",False),
   ("s-comb1","South · Training Room A","24' × 9'","wide","24.0","9.0","Training room — walls removed","Combined · walls removed",True),
   ("s-comb2","South · Training Room B","24' × 10'6\"","wide",24.0,10.5,"Training room — walls removed","Combined · walls removed",True),
   ("conf","Large Conference","20' × 49'","conference",49.0,20.0,"Main boardroom","Boardroom table · 18 seats · TV wall",False),
   ("recep","Reception / Lobby","21'10\" × 13'6\"","reception",21.83,13.5,"Front-of-house lobby — built-in desk, glass upper, open walkway entry","Built-in desk · glass upper · lounge · open walkway",False),
   ("break","Break Room","15'6\" × 20'","break",20.0,15.5,"Staff kitchen + seating","Kitchenette · 2 tables · 8 seats",False),
 ]
+
+def wall_numbers(R):
+    """Number the four walls so they can be named without ambiguity.
+    1 = back-left, 2 = back-right, 3 = front-right, 4 = front-left (clockwise)."""
+    w,d=R.w,R.d
+    for n,(x,y,z) in ((1,(-0.80,d*0.50,FLR_Z+7.4)),(2,(w*0.50,-0.80,FLR_Z+7.4)),
+                      (3,(w+0.80,d*0.50,FLR_Z+1.7)),(4,(w*0.50,d+0.80,FLR_Z+1.7))):
+        px,py=R.iso(x,y,z)
+        R.emit(9e9,9e9,   f'<circle cx="{px:.1f}" cy="{py:.1f}" r="10" fill="{C_ACCENT}" stroke="#ffffff" stroke-width="1.6"/>')
+        R.emit(9e9,9e9+1, f'<text x="{px:.1f}" y="{py+3.8:.1f}" font-family="Inter,Segoe UI,Arial,sans-serif" '
+                          f'font-size="12" font-weight="800" fill="#ffffff" text-anchor="middle">{n}</text>')
 
 def _ft(s):
     """'10\\'6"' -> 10.5 feet."""
@@ -478,12 +756,11 @@ def build_office(entry):
     key,title,dim,kind,w,d,note,furn,comb=entry
     R=Room(float(w),float(d))
     door="W" if kind=="reception" else ("E" if kind in ("conference","break","wide","large") else "S")
-    if kind=="megan":
-        R.shell(door=door, wall_col=C_PINK_W)        # pink walls, gray carpet like the rest
-    elif kind=="break":
-        R.shell(door=door, floor_col=C_TILE)         # break room is the only tile floor
+    wcol=WALL_COL.get(key,C_WALL)                    # each office its own wall colour
+    if kind=="break":
+        R.shell(door=door, floor_col=C_TILE, wall_col=wcol)   # break room is the only tile floor
     else:
-        R.shell(door=door)
+        R.shell(door=door, wall_col=wcol)
     furnish(kind,R)
     if comb:  # accent outline marking merged room
         o=[R.iso(0.3,0.3,FLR_Z+0.03),R.iso(R.w-0.3,0.3,FLR_Z+0.03),R.iso(R.w-0.3,R.d-0.3,FLR_Z+0.03),R.iso(0.3,R.d-0.3,FLR_Z+0.03)]
@@ -497,14 +774,17 @@ def build_office(entry):
     else:
         wl=dl=parts[0]
     R.dims(f'{wl} wide', f'{dl} deep')
+    wall_numbers(R)
     return R.render()
 
 FURN_BY_KIND={
  'small':'Private office · shell + door','med':'Private office · shell + door',
  'long':'Private office · shell + door','wide':'Combined · walls removed',
  'large':'Large office · shell + door','conference':'Boardroom · shell + door',
- 'megan':'4 screens · standing desk · walking pad · window wall',
- 'twaddle':'L-desk · 2 guest chairs · TV · window wall · glass entrance',
+ 'megan':'4 screens · standing desk · laptop · walking pad · florals · window wall',
+ 'twaddle':'L-desk · 2 guest · TV · tablet cabinet · window wall · glass entrance',
+ 'jd':'L-desk · 2 guest · TV · bookcase · credenza under the windows · glass front',
+ 'maud':'L-desk · 2 guest · iMac · TV · play pen · rocking chair · window wall',
  'reception':'Built-in desk · dog area · glass upper · open walkway',
  'break':'Kitchenette · island · storage wall'}
 offices=[]
