@@ -597,9 +597,19 @@ def rollover_to_last_week(sh, only=None, logfn=print) -> int:
     n = 0
     for ws in tabs:
         col_b = ws.col_values(2)
-        end_row = _find_label_row(col_b, "% ON BOARD")   # current block's last row
+        # The current block's last row — searched ONLY in the CURRENT zone (above
+        # the LAST WEEK label). Unscoped, this grabbed the FROZEN block's own
+        # '% ON BOARD' on a tab whose top zone has no summary row, so end_row
+        # became ~449 and the freeze copied rows 1..449 downward — nesting a fresh
+        # copy of the junk ~110 rows lower on EVERY run (Kiarri McBroom, 2026-07-07:
+        # 4 stacked 'LAST WEEK' labels, reps stranded at r443). A poisoned column-B
+        # label must never be able to cascade like that. Scoped: a top zone with no
+        # summary now correctly returns None → skip the tab, freeze nothing.
+        lw_row = _find_label_row(col_b, LAST_WEEK_LABEL)
+        current_zone_b = col_b[:lw_row - 1] if lw_row else col_b
+        end_row = _find_label_row(current_zone_b, "% ON BOARD")
         if not end_row:
-            logfn(f"  {ws.title}: no summary block — skipping rollover")
+            logfn(f"  {ws.title}: no summary block in the current zone — skipping rollover")
             continue
         sid = ws.id
         # Snapshot includes the date header (row 1) so the frozen block carries
