@@ -209,6 +209,27 @@
         "type": "not_configured"
       }
     },
+    "drb_tableau_pull": {
+      "on_scheduler": true,
+      "_note": "MANUAL-ONLY. Scoped Tableau crosstab pull for the Daily Rep Breakdown, so a PAST week's production can be pulled/verified without the full daily run. Runs on the MINI (Tableau is reached via ownerville SSO, which is single-session and lives there). READ-ONLY check of a past week: `lucy rerun drb_tableau_pull --week-ending 2026-07-12 --fill --dry-run` — step7 passes --dry-run through to step6 (step7:477) and step6 only writes `if cells and not dry_run` (step6:296), so it downloads + reports 'would write' per owner and touches NO cells. ⚠ NEVER pass --fill WITHOUT --dry-run for a PAST week: step6 maps the crosstab onto the CURRENT week's day columns, so that would write last week's production into this week's block on all 28 tabs. Registered 2026-07-07.",
+      "display_name": "Daily Rep Breakdown — Tableau crosstab pull (manual/verify)",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:dispo"
+      ],
+      "command": [
+        "automations.focus_office_att.step7_download_tableau"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 40,
+      "verify": null
+    },
     "drb_fill_owner": {
       "on_scheduler": true,
       "_note": "MANUAL-ONLY recovery — scoped ownerville fill for ONE owner tab, so a single tab can be refilled WITHOUT the full 130-min 28-tab daily_rep_breakdown run (automations.focus_office_att.daily takes no CLI args and can't be scoped). Runs on the MINI (ownerville is single-session and the holder lives there; a laptop scrape knocks out every other report). Full current week: `lucy rerun drb_fill_owner --week-start 2026-07-13 --only \"Kiarri McBroom\"`. Incremental (yesterday only, what the daily run uses Tue-Sun): add --daily-window instead of --week-start. NOTE this fills ownerville ACTIVITY only — Tableau production is org-wide and lands on the next 4am run. Registered 2026-07-07.",
