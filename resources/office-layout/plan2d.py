@@ -119,7 +119,7 @@ txt(47.75,13.8,"toilet",size=3.6,color="#5b6270",w="700"); txt(47.75,14.5,"ADA",
 room(50,0,70,18,C_OFFICE,"RAF'S OFFICE","20' × 20'",num=4)
 # NE CONFERENCE — drawn AFTER the open office (below) so it stays a full rectangle
 # WEST COLUMN — offices 114+113 = training room, 112 = office, 111 = Maud's tall corner
-room(0,18,11,37,C_OFFICE,"TRAINING ROOM","10'6 × 20'",num=1,combined=True)   # tallest (20')
+room(0,18,11,37,C_OFFICE,"TRAINING ROOM","10'6 × 20'",num=1)   # tallest (20')
 room(0,37,11,47,C_OFFICE,"OFFICE","10'6×10'5",num=2)
 room(0,47,11,64,C_OFFICE,"MAUD'S OFFICE","10'5 × 17'5",num=3)   # tall narrow corner (office 111)
 # EAST COLUMN
@@ -150,7 +150,7 @@ txt(100.3,62,"entry",size=7,color=C_SUB,w="700")
 sx0,sx1=11,82; ow=(sx1-sx0)/8
 south=[(0,1,"OFFICE","12×10'6",7,False),(1,2,"OFFICE","12×10'6",8,False),
        (2,3,"OFFICE","12×10'",9,False),(3,4,"JD'S OFFICE","12×13'6",10,False),
-       (4,6,"TRAINING ROOM","24' × 9'",11,True),(6,8,"TRAINING ROOM","24' × 10'6",12,True)]
+       (4,6,"TRAINING ROOM","24' × 9'",11,False),(6,8,"TRAINING ROOM","24' × 10'6",12,False)]
 for a,b,nm,lab,n,comb in south:
     room(sx0+a*ow,52,sx0+b*ow,64,C_OFFICE,nm,lab,num=n,combined=comb)
 # OPEN OFFICE — empty open floor with fixed structural pillars
@@ -197,14 +197,14 @@ el.append(f'<text x="{X(PW)-6}" y="{MY-8}" font-size="11" font-weight="700" fill
 
 # ---- legend panel ----------------------------------------------------------
 LX=MX+PW*S+30
-legend=[(1,"West · Training Room","10'6×20'  ◧"),(2,"West · Office","10'6×10'5"),
+legend=[(1,"West · Training Room","10'6×20'"),(2,"West · Office","10'6×10'5"),
         (3,"Maud's Office (tall corner)","10'5×17'5"),(4,"Raf's Office","20×20"),
         (5,"Twaddle's Office","10'8×10'8"),(6,"Claude Room / Megan's","10'8×10'8"),
         (7,"South · Office 1","12×10'6"),(8,"South · Office 2","12×10'6"),
-        (9,"South · Office 3","12×10'"),(10,"JD's Office","12×13'6"),
-        (11,"South · Training Room A","24×9'  ◧"),(12,"South · Training Room B","24×10'6  ◧"),
+        (9,"Bas's Office","12×10'"),(10,"JD's Office","12×13'6"),
+        (11,"South · Training Room A","24×9'"),(12,"South · Training Room B","24×10'6"),
         (13,"Large Conference","20×49'"),(14,"Reception / Lobby","13'6×21'10"),
-        (15,"Break Room","15'6×20'")]
+        (15,"Break Room","15'6×20'"),(16,"Open Office","34'9×96'")]
 rtext(LX,MY-4,"WALK-THROUGH ORDER",size=12,color=C_SUB,w="800")
 ly=MY+22
 for n,name,dim in legend:

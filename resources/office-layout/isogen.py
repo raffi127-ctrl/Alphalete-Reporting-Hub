@@ -109,7 +109,7 @@ room(27,11,50,18,C_SERV,"WOMEN","121",lsize=5.0)
 room(50,0,70,18,C_OFFICE,"RAF'S OFFICE","20' × 20'")
 room(70,0,104,18,C_CONF,"LARGE CONFERENCE","20' × 49'")
 # WEST COLUMN (x0-11): training (combined) · office · Maud's tall corner
-room(0,18,11,37,C_OFFICE,"TRAINING","combined · 10'6 × 20'",combined=True,lsize=4.6)
+room(0,18,11,37,C_OFFICE,"TRAINING","10'6 × 20'",lsize=4.6)
 room(0,37,11,47,C_OFFICE,"OFFICE","10'6 × 10'5",lsize=4.6)
 room(0,47,11,64,C_OFFICE,"MAUD'S","10'5 × 17'5",lsize=4.6)
 # EAST COLUMN (x91-104): Twaddle's · Claude/Megan's
@@ -120,7 +120,7 @@ room(82,40,104,64,C_RECEP,None)
 # SOUTH OFFICES (bottom row) start at the west-column edge
 sx0,sx1=11,82; ow=(sx1-sx0)/8
 south_segs=[(0,1,"OFFICE","12×10'6",0),(1,2,"OFFICE","12×10'6",0),(2,3,"OFFICE","12×10'",0),
-            (3,4,"JD'S","12×13'6",0),(4,6,"TRAINING","24' × 9'",1),(6,8,"TRAINING","24' × 10'6",1)]
+            (3,4,"JD'S","12×13'6",0),(4,6,"TRAINING","24' × 9'",0),(6,8,"TRAINING","24' × 10'6",0)]
 for a,b,nm,lab,comb in south_segs:
     room(sx0+a*ow,52,sx0+b*ow,64,C_OFFICE,nm,lab,combined=bool(comb),lsize=4.2)
 # OPEN OFFICE (kept empty) + walkway west of the east offices
@@ -200,10 +200,6 @@ for name,c in legend_items:
     lg.append(f'<text x="{lx+16}" y="{ly}" font-family="Inter,Segoe UI,Arial,sans-serif" '
               f'font-size="11" fill="#4a505c">{name}</text>')
     lx+=18+ max(70, len(name)*6.4)
-lg.append(f'<rect x="{lx}" y="{ly-9}" width="11" height="11" rx="2" fill="none" '
-          f'stroke="{C_ACCENT}" stroke-width="1.4" stroke-dasharray="3 2"/>')
-lg.append(f'<text x="{lx+16}" y="{ly}" font-family="Inter,Segoe UI,Arial,sans-serif" '
-          f'font-size="11" fill="{C_ACCENT}" font-weight="600">Combined (wall removed)</text>')
 legend="\n".join(lg)
 
 title=(f'<text x="28" y="40" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="24" '

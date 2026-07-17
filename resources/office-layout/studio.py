@@ -136,6 +136,7 @@ class Room:
         self.box(w,0,w+0.5,d,FLR_Z,FLR_Z+0.6,shade(wall_col,0.9))
         self.door(door)
     def door(self, side):
+        if side is None: return          # room draws its own entry (glass fronts)
         w,d=self.w,self.d; r=3.0
         if side=="S": cx,cy,a0=w-1.0, d-0.3, (180,270)   # swing into room from front-right
         elif side=="E": cx,cy,a0=w-0.3, d-1.0,(90,180)
@@ -817,8 +818,14 @@ def furnish(kind, R):
                             # on the centreline; everything else is open floor awaiting design.
         for _px in OPEN_PILLARS_FT:
             R.box(_px-0.8,R.d/2-0.8,_px+0.8,R.d/2+0.8,FLR_Z,FLR_Z+9.0,"#aab0b9")
-    elif kind in ("long","wide"):   # the three training rooms
-        classroom(R)
+    elif kind=="long":      # room 1: walls 1/2/4 solid, wall 3 all glass with the entry
+        classroom(R,screen_wall=2)
+        glass_front(R,3)
+    elif kind=="wide":      # rooms 11/12: wall 2 is exterior glass, so the screen moves
+                            # to wall 1; walls 1/3 solid, wall 4 the glass entry
+        classroom(R,screen_wall=1)
+        ext_windows_n(R)
+        glass_front(R,4)
     # every other room = empty architectural shell (walls + door + dimensions only)
     elif kind=="break":
         R.counter(0.6,0.8,0.6+10.0,0.8+2.2,3.0)  # counter along back
@@ -835,7 +842,7 @@ def furnish(kind, R):
 #  CATALOG
 # ===========================================================================
 CATALOG=[
-  ("w-comb","West · Training Room","10'6\" × 20'","long",10.5,20.0,"Training room — walls removed","Combined · walls removed",True),
+  ("w-comb","West · Training Room","10'6\" × 20'","long",10.5,20.0,"Training room — classroom setup","Screen + chairs",False),
   ("w-3","West · Office","10'6\" × 10'5\"","small",10.5,10.42,"Standard private office","Shell + door",False),
   ("w-4","Maud's Office (corner)","10'5\" × 17'5\"","maud",10.42,17.42,"Maud's corner office","L-desk · 2 guest · play pen · rocking chair · TV",False),
   ("n-large","Raf's Office","20' × 20'","raf",20.0,20.0,"Raf's office","L-desk · iMac · walking pad · 2 guest · bookcase · mini fridge · oval table",False),
@@ -845,36 +852,83 @@ CATALOG=[
   ("s-2","South · Office 2","12' × 10'6\"","med",12.0,10.5,"Standard private office","L-desk · 2 guest · credenza",False),
   ("s-3","Bas's office","12' × 10'","med",12.0,10.0,"Standard private office","L-desk · 2 guest · credenza",False),
   ("s-4","JD's Office","12' × 13'6\"","jd",12.0,13.5,"JD's office","L-desk · 2 guest chairs · TV · credenza · window wall",False),
-  ("s-comb1","South · Training Room A","24' × 9'","wide","24.0","9.0","Training room — walls removed","Combined · walls removed",True),
-  ("s-comb2","South · Training Room B","24' × 10'6\"","wide",24.0,10.5,"Training room — walls removed","Combined · walls removed",True),
+  ("s-comb1","South · Training Room A","24' × 9'","wide","24.0","9.0","Training room — classroom setup","Screen + chairs",False),
+  ("s-comb2","South · Training Room B","24' × 10'6\"","wide",24.0,10.5,"Training room — classroom setup","Screen + chairs",False),
   ("conf","Large Conference","20' × 49'","conference",49.0,20.0,"Main boardroom","Boardroom table · 14 seats · TV wall",False),
   ("recep","Reception / Lobby","21'10\" × 13'6\"","reception",21.83,13.5,"Front-of-house lobby — built-in desk, glass upper, open walkway entry","Built-in desk · glass upper · lounge · open walkway",False),
   ("break","Break Room","15'6\" × 20'","break",20.0,15.5,"Staff kitchen + seating","Kitchenette · 2 tables · 8 seats",False),
   ("open","Open Office","34'9\" × 96'","open",96.0,34.75,"Open floor — 3 fixed structural pillars; A2.01 calls for (28) 6' × 6' workstations","3 structural pillars · open floor",False),
 ]
 
-def classroom(R,accent=C_TASK):
-    """Training rooms are classroom setups: a screen on wall 2 and rows of chairs
-    facing it. Seating and a screen only — no desks. Rows/columns are derived from
-    the room, so all three training rooms share this."""
+def classroom(R,accent=C_TASK,screen_wall=2):
+    """Training rooms are classroom setups: a screen on a solid wall, rows of chairs
+    facing it, nothing else. `screen_wall` is 2 (north) or 1 (west) — it has to be a
+    solid wall, and it has to be a far wall, or the camera only sees the screen's back.
+    Chairs face it, so we see their backs; that is how a classroom reads anyway."""
     w,d=R.w,R.d
-    NWD=(0-0.5+w+0)/2
+    NWD=(0-0.5+w+0)/2; WWD=(-0.5+0+0+d)/2
     def _onN(x0,x1,y1,z0,z1,col,nudge=0.0):
         R.box(x0,0.05,x1,y1,FLR_Z+z0,FLR_Z+z1,col,db=(NWD+0.6+nudge)-((x0+0.05+x1+y1)/2))
-    _sw=min(w*0.60,9.0); _sh=_sw*0.5625; _x0=(w-_sw)/2.0; _z0=2.80    # 16:9, centred on wall 2
-    _onN(_x0,_x0+_sw,0.16,_z0,_z0+_sh,"#2b3038",nudge=0.06)                       # bezel
-    _onN(_x0+0.14,_x0+_sw-0.14,0.21,_z0+0.14,_z0+_sh-0.14,"#0f1319",nudge=0.12)   # screen
-    # Chairs face the screen, so the camera sees their backs — which is how a classroom
-    # reads anyway, and it keeps the screen itself unblocked.
+    def _onW(y0,y1,x1,z0,z1,col,nudge=0.0):
+        R.box(-0.04,y0,x1,y1,FLR_Z+z0,FLR_Z+z1,col,db=(WWD+0.6+nudge)-((-0.04+y0+x1+y1)/2))
+    span=w if screen_wall==2 else d
+    sw=min(span*0.60,9.0); sh=sw*0.5625; a0=(span-sw)/2.0; z0=2.80    # 16:9, centred
+    _on=_onN if screen_wall==2 else _onW
+    _on(a0,a0+sw,0.16,z0,z0+sh,"#2b3038",nudge=0.06)                       # bezel
+    _on(a0+0.14,a0+sw-0.14,0.21,z0+0.14,z0+sh-0.14,"#0f1319",nudge=0.12)   # screen
+    ang=-90 if screen_wall==2 else 180
+    bx,by=(0.0,0.58) if screen_wall==2 else (0.58,0.0)
     def _seat(cx,cy):
-        R.rbox(cx,cy,1.35,1.35,FLR_Z,FLR_Z+1.45,-90,accent)
-        R.rbox(cx,cy+0.58,0.28,1.35,FLR_Z,FLR_Z+2.30,-90,shade(accent,1.12))
-    cols=max(1,int((w-3.2)/2.6)+1); cx0=(w-(cols-1)*2.6)/2.0
-    rows=[y for y in (4.60+r*3.20 for r in range(12)) if y+0.75<=d-0.40] or [4.60]
-    for _cy in rows:
-        for _c in range(cols):
-            _seat(cx0+_c*2.6,_cy)
+        R.rbox(cx,cy,1.35,1.35,FLR_Z,FLR_Z+1.45,ang,accent)
+        R.rbox(cx+bx,cy+by,0.28,1.35,FLR_Z,FLR_Z+2.30,ang,shade(accent,1.12))
+    across=w if screen_wall==2 else d
+    back  =d if screen_wall==2 else w
+    cols=max(1,int((across-3.2)/2.6)+1); c0=(across-(cols-1)*2.6)/2.0
+    rows=[t for t in (4.60+r*3.20 for r in range(14)) if t+0.75<=back-0.40] or [4.60]
+    for t in rows:
+        for c in range(cols):
+            _seat(c0+c*2.6,t) if screen_wall==2 else _seat(t,c0+c*2.6)
     return len(rows)*cols
+
+def glass_front(R,wall):
+    """Full-height glass wall with an entry door, on wall 3 (east) or wall 4 (south).
+    Translucent — both sit between the camera and the room."""
+    w,d=R.w,R.d; GL="#9fdcf0"; FR="#59616e"
+    span=d if wall==3 else w
+    def slab(a0,a1,z0,z1,col,op,t=0.40):
+        if wall==3: R.box(w,a0,w+t,a1,FLR_Z+z0,FLR_Z+z1,col,op=op)
+        else:       R.box(a0,d,a1,d+t,FLR_Z+z0,FLR_Z+z1,col,op=op)
+    slab(0,span,0.5,8.0,GL,0.18,0.36)                                # glazing
+    slab(0,span,0.0,0.5,FR,0.75); slab(0,span,8.0,8.2,FR,0.75)       # base + head rail
+    n=max(2,int(round(span/6.6)))
+    for i in range(n+1):
+        a=min(span*i/n,span-0.16); slab(a,a+0.16,0.5,8.0,FR,0.75)    # mullions
+    dw=min(3.0,span*0.34); d0=min(max(span*0.62,0.4),span-dw-0.4); d1=d0+dw
+    for a in (d0,d1): slab(a,a+0.16,0.5,7.3,FR,0.9,0.44)             # door stiles
+    slab(d1-0.40,d1-0.20,3.05,3.55,"#c9ccd2",0.95,0.48)              # pull
+    if wall==3: R.swing_at(w-0.10,d0+0.20,2.70,98,168)
+    else:       R.swing_at(d0+0.20,d-0.10,2.70,188,258)
+
+def ext_windows_n(R):
+    """Banded exterior window run along wall 2 — solid below the sill, blinds between,
+    mullions on a regular bay. Matches the window Megan photographed."""
+    w=R.w; NWD=(0-0.5+w+0)/2
+    def _onN(x0,x1,y1,z0,z1,col,nudge=0.0):
+        R.box(x0,0.05,x1,y1,FLR_Z+z0,FLR_Z+z1,col,db=(NWD+0.6+nudge)-((x0+0.05+x1+y1)/2))
+    b0,b1=2.7,7.3; m0=0.4; m1=w-0.4
+    _onN(m0,m1,0.16,b0-0.16,b0,"#9aa2ad",nudge=0.04)                 # sill
+    _onN(m0,m1,0.16,b1,b1+0.16,"#9aa2ad",nudge=0.04)                 # head
+    _onN(m0,m1,0.22,b0,b1,"#e3ebf0",nudge=0.06)                      # panes, blinds down
+    k=b0+0.2
+    while k<b1-0.06:
+        _onN(m0+0.15,m1-0.15,0.24,k,k+0.06,"#ccd8df",nudge=0.08)     # slats
+        k+=0.2
+    n=max(2,int(round((m1-m0)/5.5)))
+    for i in range(n+1):
+        mx=m0+(m1-m0)*i/n
+        _onN(mx-0.07,mx+0.07,0.30,b0,b1,"#9aa2ad",nudge=0.14)        # vertical mullions
+    for mz in (b0+1.53,b0+3.07):
+        _onN(m0,m1,0.30,mz-0.05,mz+0.05,"#9aa2ad",nudge=0.14)        # horizontal mullions
 
 def wall_numbers(R):
     """Number the four walls so they can be named without ambiguity.
@@ -898,7 +952,8 @@ def _ft(s):
 def build_office(entry):
     key,title,dim,kind,w,d,note,furn,comb=entry
     R=Room(float(w),float(d))
-    door="W" if kind=="reception" else ("E" if kind in ("conference","break","wide","large") else "S")
+    door={"reception":"W","conference":"E","break":"E","large":"E",
+          "long":None,"wide":None}.get(kind,"S")   # None = the room draws its own entry
     wcol=WALL_COL.get(key,C_WALL)                    # each office its own wall colour
     if kind=="break":
         R.shell(door=door, floor_col=C_TILE, wall_col=wcol)   # break room is the only tile floor
@@ -922,7 +977,7 @@ def build_office(entry):
 
 FURN_BY_KIND={
  'small':'Private office · shell + door','med':'Private office · shell + door',
- 'long':'Classroom setup · screen + chairs','wide':'Classroom setup · screen + chairs · walls removed',
+ 'long':'Classroom · screen + chairs · glass front','wide':'Classroom · screen + chairs · window wall · glass front',
  'large':'Large office · shell + door','conference':'Boardroom · 14 seats · TV wall · whiteboards · built-in counter',
  'megan':'4 screens · standing desk · laptop · walking pad · florals · window wall',
  'twaddle':'L-desk · 2 guest · TV · tablet cabinet · window wall · glass entrance',

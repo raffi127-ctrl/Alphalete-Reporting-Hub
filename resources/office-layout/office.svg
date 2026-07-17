@@ -68,7 +68,6 @@
 <polygon points="755.9,272.5 646.8,335.5 646.8,306.7 755.9,243.7" fill="#797f85" stroke="#62666c" stroke-width="0.5" opacity="1.0"/>
 <polygon points="631.2,326.5 646.8,335.5 646.8,306.7 631.2,297.7" fill="#9ca4ac" stroke="#62666c" stroke-width="0.5" opacity="1.0"/>
 <polygon points="740.3,234.7 755.9,243.7 646.8,306.7 631.2,297.7" fill="#c4cdd8" stroke="#62666c" stroke-width="0.5" opacity="1.0"/>
-<polygon points="444.1,238.9 525.2,285.7 381.8,368.5 300.7,321.7" fill="none" stroke="#e8482b" stroke-width="1.4" stroke-dasharray="4 3" stroke-linejoin="round"/>
 <polygon points="632.9,343.5 629.4,345.5 629.4,314.9 632.9,312.9" fill="#909194" stroke="#747577" stroke-width="0.5" opacity="1.0"/>
 <polygon points="489.1,264.5 629.4,345.5 629.4,314.9 489.1,233.9" fill="#babcbf" stroke="#747577" stroke-width="0.5" opacity="1.0"/>
 <polygon points="773.2,264.5 632.9,345.5 632.9,314.9 773.2,233.9" fill="#909194" stroke="#747577" stroke-width="0.5" opacity="1.0"/>
@@ -327,7 +326,6 @@
 <polygon points="1396.8,624.5 1256.5,705.5 1256.5,674.9 1396.8,593.9" fill="#909194" stroke="#747577" stroke-width="0.5" opacity="1.0"/>
 <polygon points="1253.0,703.5 1256.5,705.5 1256.5,674.9 1253.0,672.9" fill="#babcbf" stroke="#747577" stroke-width="0.5" opacity="1.0"/>
 <polygon points="1393.3,591.9 1396.8,593.9 1256.5,674.9 1253.0,672.9" fill="#e9ebef" stroke="#747577" stroke-width="0.5" opacity="1.0"/>
-<polygon points="541.6,601.2 675.2,678.4 586.4,729.7 452.7,652.5" fill="none" stroke="#e8482b" stroke-width="1.4" stroke-dasharray="4 3" stroke-linejoin="round"/>
 <polygon points="1155.2,647.0 1069.4,696.5 1069.4,665.9 1155.2,616.4" fill="#909194" stroke="#747577" stroke-width="0.5" opacity="1.0"/>
 <polygon points="1065.9,694.5 1069.4,696.5 1069.4,665.9 1065.9,663.9" fill="#babcbf" stroke="#747577" stroke-width="0.5" opacity="1.0"/>
 <polygon points="1151.6,614.4 1155.2,616.4 1069.4,665.9 1065.9,663.9" fill="#e9ebef" stroke="#747577" stroke-width="0.5" opacity="1.0"/>
@@ -373,7 +371,6 @@
 <polygon points="1256.5,705.5 1170.7,755.0 1170.7,724.4 1256.5,674.9" fill="#909194" stroke="#747577" stroke-width="0.5" opacity="1.0"/>
 <polygon points="1167.2,753.0 1170.7,755.0 1170.7,724.4 1167.2,722.4" fill="#babcbf" stroke="#747577" stroke-width="0.5" opacity="1.0"/>
 <polygon points="1253.0,672.9 1256.5,674.9 1170.7,724.4 1167.2,722.4" fill="#e9ebef" stroke="#747577" stroke-width="0.5" opacity="1.0"/>
-<polygon points="679.9,681.1 813.6,758.2 724.7,809.5 591.0,732.4" fill="none" stroke="#e8482b" stroke-width="1.4" stroke-dasharray="4 3" stroke-linejoin="round"/>
 <polygon points="616.8,751.5 614.4,752.9 614.4,729.5 616.8,728.1" fill="#4e7283" stroke="#3f5c6a" stroke-width="0.5" opacity="0.6"/>
 <polygon points="612.1,751.5 614.4,752.9 614.4,729.5 612.1,728.1" fill="#6593a9" stroke="#3f5c6a" stroke-width="0.5" opacity="0.6"/>
 <polygon points="1180.3,751.5 1177.9,752.9 1177.9,729.5 1180.3,728.1" fill="#4e7283" stroke="#3f5c6a" stroke-width="0.5" opacity="0.6"/>
@@ -454,7 +451,7 @@
 <text x="1201.7" y="581.6" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="6.0" font-weight="700" fill="#2a2f3a" text-anchor="middle" opacity="1.0" style="letter-spacing:0.2px">LARGE CONFERENCE</text>
 <text x="1179.9" y="594.2" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="4.6" font-weight="600" fill="#5b6270" text-anchor="middle" opacity="1.0" style="letter-spacing:0.2px">20' × 49'</text>
 <text x="422.3" y="298.1" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="4.6" font-weight="700" fill="#2a2f3a" text-anchor="middle" opacity="1.0" style="letter-spacing:0.2px">TRAINING</text>
-<text x="400.5" y="310.8" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="3.1999999999999997" font-weight="600" fill="#e8482b" text-anchor="middle" opacity="1.0" style="letter-spacing:0.2px">combined · 10'6 × 20'</text>
+<text x="400.5" y="310.8" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="3.1999999999999997" font-weight="600" fill="#5b6270" text-anchor="middle" opacity="1.0" style="letter-spacing:0.2px">10'6 × 20'</text>
 <text x="309.3" y="363.4" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="4.6" font-weight="700" fill="#2a2f3a" text-anchor="middle" opacity="1.0" style="letter-spacing:0.2px">OFFICE</text>
 <text x="287.5" y="376.0" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="3.1999999999999997" font-weight="600" fill="#5b6270" text-anchor="middle" opacity="1.0" style="letter-spacing:0.2px">10'6 × 10'5</text>
 <text x="204.1" y="424.1" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="4.6" font-weight="700" fill="#2a2f3a" text-anchor="middle" opacity="1.0" style="letter-spacing:0.2px">MAUD'S</text>
@@ -472,9 +469,9 @@
 <text x="469.6" y="599.9" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="4.2" font-weight="700" fill="#2a2f3a" text-anchor="middle" opacity="1.0" style="letter-spacing:0.2px">JD'S</text>
 <text x="447.7" y="612.5" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="2.8000000000000003" font-weight="600" fill="#5b6270" text-anchor="middle" opacity="1.0" style="letter-spacing:0.2px">12×13'6</text>
 <text x="573.3" y="659.8" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="4.2" font-weight="700" fill="#2a2f3a" text-anchor="middle" opacity="1.0" style="letter-spacing:0.2px">TRAINING</text>
-<text x="551.5" y="672.4" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="2.8000000000000003" font-weight="600" fill="#e8482b" text-anchor="middle" opacity="1.0" style="letter-spacing:0.2px">24' × 9'</text>
+<text x="551.5" y="672.4" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="2.8000000000000003" font-weight="600" fill="#5b6270" text-anchor="middle" opacity="1.0" style="letter-spacing:0.2px">24' × 9'</text>
 <text x="711.7" y="739.7" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="4.2" font-weight="700" fill="#2a2f3a" text-anchor="middle" opacity="1.0" style="letter-spacing:0.2px">TRAINING</text>
-<text x="689.8" y="752.3" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="2.8000000000000003" font-weight="600" fill="#e8482b" text-anchor="middle" opacity="1.0" style="letter-spacing:0.2px">24' × 10'6</text>
+<text x="689.8" y="752.3" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="2.8000000000000003" font-weight="600" fill="#5b6270" text-anchor="middle" opacity="1.0" style="letter-spacing:0.2px">24' × 10'6</text>
 <text x="771.5" y="474.5" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="7.4" font-weight="700" fill="#8a7c56" text-anchor="middle" opacity="1.0" style="letter-spacing:0.2px">OPEN OFFICE</text>
 <text x="748.1" y="488.0" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="5.0" font-weight="600" fill="#a2946f" text-anchor="middle" opacity="1.0" style="letter-spacing:0.2px">34'9 × 96'  ·  open floor</text>
 <text x="631.2" y="555.5" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="4.4" font-weight="700" fill="#8a909b" text-anchor="middle" opacity="1.0" style="letter-spacing:0.2px">▲ 3 structural pillars — fixed</text>
@@ -497,6 +494,4 @@
 <text x="416.0" y="980.8999999999999" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="11" fill="#4a505c">Service / BOH</text>
 <rect x="501.2" y="971.8999999999999" width="11" height="11" rx="2" fill="#bfe0ea"/>
 <text x="517.2" y="980.8999999999999" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="11" fill="#4a505c">Exterior glass</text>
-<rect x="608.8" y="971.8999999999999" width="11" height="11" rx="2" fill="none" stroke="#e8482b" stroke-width="1.4" stroke-dasharray="3 2"/>
-<text x="624.8" y="980.8999999999999" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="11" fill="#e8482b" font-weight="600">Combined (wall removed)</text>
 </svg>
