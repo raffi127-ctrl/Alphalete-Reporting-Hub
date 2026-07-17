@@ -1261,10 +1261,6 @@ def _office_metrics_card() -> dict:
             "• 📊 Wireless Churn\n"
             "• 🆕 Rep Activations\n"
             "• 💳 New Internet ABP %\n\n"
-            "TWO OFFICES, ONE CHANNEL\n"
-            "Hammad and Salik both post to #elite-prime-sales, so each gets its "
-            "own labelled thread ('Metrics for: <date> — <name>') and they never "
-            "collide.\n\n"
             "WHEN IT RUNS\n"
             "Daily in the 4am batch, each office in turn."),
         "assignees": ["Lucy 1"],
