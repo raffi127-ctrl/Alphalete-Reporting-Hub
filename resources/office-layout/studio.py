@@ -15,10 +15,16 @@ C_PINK_W="#f4e2e4"                          # Megan's office — pink walls (flo
 
 # Each office gets its own wall colour. Floors stay gray carpet throughout (gray tile in the
 # break room) — only the walls change.
+TRAINING_VIBE={   # each training room its own modern scheme
+ "w-comb": dict(wall="#e7e8ea", chair="#3a3f47", ink="#22262b", accent="#e8622b"),  # graphite + orange
+ "s-comb1":dict(wall="#e3e7ee", chair="#2b3a52", ink="#1b2433", accent="#2fa8c9"),  # navy + cyan
+ "s-comb2":dict(wall="#ecebe7", chair="#34312c", ink="#232019", accent="#c8862f"),  # black + bronze
+}
+
 OPEN_PILLARS_FT=(16.2,48.8,77.4)   # A2.01: on the centreline, feet from the west edge
 
 WALL_COL={
- "w-comb":"#dfe9df",   # 1  West training     — sage
+ "w-comb":TRAINING_VIBE["w-comb"]["wall"],   # 1  West training     — sage
  "w-3"   :"#dde5ef",   # 2  West office       — blue
  "w-4"   :"#e4dadc",   # 3  Maud's            — soft mauve, blush accents, navy
  "n-large":"#dcd5d0",  # 4  Raf's             — warm grey, red accents
@@ -28,8 +34,8 @@ WALL_COL={
  "s-2"   :"#f3e6dc",   # 8  South office 2    — peach
  "s-3"   :"#deecee",   # 9  Bas's              — aqua
  "s-4"   :"#dde3ea",   # 10 JD's              — navy / grey scheme
- "s-comb1":"#e2ecdf",  # 11 South training A  — soft green
- "s-comb2":"#e2ecdf",  # 12 South training B  — soft green
+ "s-comb1":TRAINING_VIBE["s-comb1"]["wall"],  # 11 South training A  — soft green
+ "s-comb2":TRAINING_VIBE["s-comb2"]["wall"],  # 12 South training B  — soft green
  "conf"  :"#e3ded4",   # 13 Large conference  — warm greige, red chairs
  "recep" :"#f3dfe0",   # 14 Reception         — blush
  "break" :"#e2edf1",   # 15 Break room        — light blue
@@ -211,7 +217,7 @@ class Room:
 # ===========================================================================
 #  FURNITURE LAYOUTS PER OFFICE KIND
 # ===========================================================================
-def furnish(kind, R):
+def furnish(kind, R, key=None):
     """LAYOUT ONLY — fixed built-ins & architecture, no loose furniture."""
     w,d=R.w,R.d
     if kind=="reception":   # LOBBY: long built-in desk across upper third + walkway + curved entry
@@ -819,11 +825,11 @@ def furnish(kind, R):
         for _px in OPEN_PILLARS_FT:
             R.box(_px-0.8,R.d/2-0.8,_px+0.8,R.d/2+0.8,FLR_Z,FLR_Z+9.0,"#aab0b9")
     elif kind=="long":      # room 1: walls 1/2/4 solid, wall 3 all glass with the entry
-        classroom(R,screen_wall=2)
+        classroom(R,TRAINING_VIBE["w-comb"],screen_wall=2)
         glass_front(R,3)
     elif kind=="wide":      # rooms 11/12: wall 2 is exterior glass, so the screen moves
                             # to wall 1; walls 1/3 solid, wall 4 the glass entry
-        classroom(R,screen_wall=1)
+        classroom(R,TRAINING_VIBE.get(key,TRAINING_VIBE["s-comb1"]),screen_wall=1)
         ext_windows_n(R)
         glass_front(R,4)
     # every other room = empty architectural shell (walls + door + dimensions only)
@@ -842,7 +848,7 @@ def furnish(kind, R):
 #  CATALOG
 # ===========================================================================
 CATALOG=[
-  ("w-comb","West · Training Room","10'6\" × 20'","long",10.5,20.0,"Training room — classroom setup","Screen + chairs",False),
+  ("w-comb","West · Training Room","10'6\" × 20'","long",10.5,20.0,"Training room — classroom setup","Screen · 12 chairs · posters",False),
   ("w-3","West · Office","10'6\" × 10'5\"","small",10.5,10.42,"Standard private office","Shell + door",False),
   ("w-4","Maud's Office (corner)","10'5\" × 17'5\"","maud",10.42,17.42,"Maud's corner office","L-desk · 2 guest · play pen · rocking chair · TV",False),
   ("n-large","Raf's Office","20' × 20'","raf",20.0,20.0,"Raf's office","L-desk · iMac · walking pad · 2 guest · bookcase · mini fridge · oval table",False),
@@ -852,43 +858,85 @@ CATALOG=[
   ("s-2","South · Office 2","12' × 10'6\"","med",12.0,10.5,"Standard private office","L-desk · 2 guest · credenza",False),
   ("s-3","Bas's office","12' × 10'","med",12.0,10.0,"Standard private office","L-desk · 2 guest · credenza",False),
   ("s-4","JD's Office","12' × 13'6\"","jd",12.0,13.5,"JD's office","L-desk · 2 guest chairs · TV · credenza · window wall",False),
-  ("s-comb1","South · Training Room A","24' × 9'","wide","24.0","9.0","Training room — classroom setup","Screen + chairs",False),
-  ("s-comb2","South · Training Room B","24' × 10'6\"","wide",24.0,10.5,"Training room — classroom setup","Screen + chairs",False),
+  ("s-comb1","South · Training Room A","24' × 9'","wide","24.0","9.0","Training room — classroom setup","Screen · 12 chairs · posters",False),
+  ("s-comb2","South · Training Room B","24' × 10'6\"","wide",24.0,10.5,"Training room — classroom setup","Screen · 12 chairs · posters",False),
   ("conf","Large Conference","20' × 49'","conference",49.0,20.0,"Main boardroom","Boardroom table · 14 seats · TV wall",False),
   ("recep","Reception / Lobby","21'10\" × 13'6\"","reception",21.83,13.5,"Front-of-house lobby — built-in desk, glass upper, open walkway entry","Built-in desk · glass upper · lounge · open walkway",False),
   ("break","Break Room","15'6\" × 20'","break",20.0,15.5,"Staff kitchen + seating","Kitchenette · 2 tables · 8 seats",False),
   ("open","Open Office","34'9\" × 96'","open",96.0,34.75,"Open floor — 3 fixed structural pillars; A2.01 calls for (28) 6' × 6' workstations","3 structural pillars · open floor",False),
 ]
 
-def classroom(R,accent=C_TASK,screen_wall=2):
+def classroom(R,vibe,screen_wall=2,seats=12):
     """Training rooms are classroom setups: a screen on a solid wall, rows of chairs
-    facing it, nothing else. `screen_wall` is 2 (north) or 1 (west) — it has to be a
-    solid wall, and it has to be a far wall, or the camera only sees the screen's back.
+    facing it, 3'x2' posters on whatever solid wall is left. `screen_wall` is 2 (north)
+    or 1 (west) — it has to be solid AND a far wall, or the camera only sees its back.
     Chairs face it, so we see their backs; that is how a classroom reads anyway."""
     w,d=R.w,R.d
     NWD=(0-0.5+w+0)/2; WWD=(-0.5+0+0+d)/2
-    def _onN(x0,x1,y1,z0,z1,col,nudge=0.0):
-        R.box(x0,0.05,x1,y1,FLR_Z+z0,FLR_Z+z1,col,db=(NWD+0.6+nudge)-((x0+0.05+x1+y1)/2))
-    def _onW(y0,y1,x1,z0,z1,col,nudge=0.0):
-        R.box(-0.04,y0,x1,y1,FLR_Z+z0,FLR_Z+z1,col,db=(WWD+0.6+nudge)-((-0.04+y0+x1+y1)/2))
+    def _onN(a0,a1,t,z0,z1,col,nudge=0.0):
+        R.box(a0,0.05,a1,t,FLR_Z+z0,FLR_Z+z1,col,db=(NWD+0.6+nudge)-((a0+0.05+a1+t)/2))
+    def _onW(a0,a1,t,z0,z1,col,nudge=0.0):
+        R.box(-0.04,a0,t,a1,FLR_Z+z0,FLR_Z+z1,col,db=(WWD+0.6+nudge)-((-0.04+a0+t+a1)/2))
+    _on=_onN if screen_wall==2 else _onW
     span=w if screen_wall==2 else d
     sw=min(span*0.60,9.0); sh=sw*0.5625; a0=(span-sw)/2.0; z0=2.80    # 16:9, centred
-    _on=_onN if screen_wall==2 else _onW
     _on(a0,a0+sw,0.16,z0,z0+sh,"#2b3038",nudge=0.06)                       # bezel
     _on(a0+0.14,a0+sw-0.14,0.21,z0+0.14,z0+sh-0.14,"#0f1319",nudge=0.12)   # screen
+
+    def poster(_o,p0,pz,i):
+        """3' x 2' poster — abstract block graphic, no text. The motif rotates so a run
+        of them doesn't read as wallpaper."""
+        W,H=3.0,2.0
+        _o(p0,p0+W,0.14,pz,pz+H,"#cfd2d7",nudge=0.04)                      # frame
+        _o(p0+0.06,p0+W-0.06,0.18,pz+0.06,pz+H-0.06,vibe["ink"],nudge=0.08)   # field
+        m=i%3
+        if   m==0: _o(p0+0.06,p0+W-0.06,0.20,pz+0.06,pz+0.62,vibe["accent"],nudge=0.12)
+        elif m==1: _o(p0+0.06,p0+1.10,0.20,pz+0.06,pz+H-0.06,vibe["accent"],nudge=0.12)
+        else:      _o(p0+0.80,p0+W-0.80,0.20,pz+0.52,pz+H-0.52,vibe["accent"],nudge=0.12)
+
+    # Posters only where there is a solid wall the camera can actually see. In rooms
+    # 11/12 that is nowhere: wall 3 faces away and wall 1 carries the screen.
+    if screen_wall==2:
+        for i,py in enumerate((4.0,8.5,13.0)): poster(_onW,py,3.60,i)
+
+    # credenza under the screen, running a touch wider than it
+    c0,c1=a0-0.20,a0+sw+0.20
+    body=shade(vibe["ink"],1.80); top=shade(vibe["ink"],1.25); split=shade(vibe["ink"],1.20)
+    n=3
+    if screen_wall==2:                                   # against wall 2, front faces south
+        R.box(c0,0.15,c1,1.75,FLR_Z,FLR_Z+2.30,body)                          # body
+        R.box(c0-0.06,0.10,c1+0.06,1.82,FLR_Z+2.30,FLR_Z+2.42,top)            # top slab
+        for i in range(1,n):
+            dx=c0+(c1-c0)*i/n
+            R.box(dx-0.02,1.75,dx+0.02,1.80,FLR_Z+0.16,FLR_Z+2.20,split)      # door splits
+        for i in range(n):
+            hx=c0+(c1-c0)*(i+0.5)/n
+            R.box(hx-0.38,1.75,hx+0.38,1.82,FLR_Z+1.52,FLR_Z+1.61,vibe["accent"])   # pulls
+    else:                                                # against wall 1, front faces east
+        R.box(0.15,c0,1.75,c1,FLR_Z,FLR_Z+2.30,body)
+        R.box(0.10,c0-0.06,1.82,c1+0.06,FLR_Z+2.30,FLR_Z+2.42,top)
+        for i in range(1,n):
+            dy=c0+(c1-c0)*i/n
+            R.box(1.75,dy-0.02,1.80,dy+0.02,FLR_Z+0.16,FLR_Z+2.20,split)
+        for i in range(n):
+            hy=c0+(c1-c0)*(i+0.5)/n
+            R.box(1.75,hy-0.38,1.82,hy+0.38,FLR_Z+1.52,FLR_Z+1.61,vibe["accent"])
+
     ang=-90 if screen_wall==2 else 180
     bx,by=(0.0,0.58) if screen_wall==2 else (0.58,0.0)
     def _seat(cx,cy):
-        R.rbox(cx,cy,1.35,1.35,FLR_Z,FLR_Z+1.45,ang,accent)
-        R.rbox(cx+bx,cy+by,0.28,1.35,FLR_Z,FLR_Z+2.30,ang,shade(accent,1.12))
+        R.rbox(cx,cy,1.35,1.35,FLR_Z,FLR_Z+1.45,ang,vibe["chair"])
+        R.rbox(cx+bx,cy+by,0.28,1.35,FLR_Z,FLR_Z+2.30,ang,shade(vibe["chair"],1.22))
     across=w if screen_wall==2 else d
     back  =d if screen_wall==2 else w
-    cols=max(1,int((across-3.2)/2.6)+1); c0=(across-(cols-1)*2.6)/2.0
-    rows=[t for t in (4.60+r*3.20 for r in range(14)) if t+0.75<=back-0.40] or [4.60]
-    for t in rows:
+    cols=max(1,min(int((across-3.2)/2.9)+1,seats)); rows=max(1,round(seats/cols))
+    c0=(across-(cols-1)*2.9)/2.0
+    ry0,ry1=5.0,back-2.2
+    ys=[ry0+(ry1-ry0)*r/(rows-1) for r in range(rows)] if rows>1 else [ry0]
+    for t in ys:
         for c in range(cols):
-            _seat(c0+c*2.6,t) if screen_wall==2 else _seat(t,c0+c*2.6)
-    return len(rows)*cols
+            _seat(c0+c*2.9,t) if screen_wall==2 else _seat(t,c0+c*2.9)
+    return rows*cols
 
 def glass_front(R,wall):
     """Full-height glass wall with an entry door, on wall 3 (east) or wall 4 (south).
@@ -959,7 +1007,7 @@ def build_office(entry):
         R.shell(door=door, floor_col=C_TILE, wall_col=wcol)   # break room is the only tile floor
     else:
         R.shell(door=door, wall_col=wcol)
-    furnish(kind,R)
+    furnish(kind,R,key)
     if comb:  # accent outline marking merged room
         o=[R.iso(0.3,0.3,FLR_Z+0.03),R.iso(R.w-0.3,0.3,FLR_Z+0.03),R.iso(R.w-0.3,R.d-0.3,FLR_Z+0.03),R.iso(0.3,R.d-0.3,FLR_Z+0.03)]
         p=" ".join(f'{a:.1f},{b:.1f}' for a,b in o)
@@ -977,7 +1025,7 @@ def build_office(entry):
 
 FURN_BY_KIND={
  'small':'Private office · shell + door','med':'Private office · shell + door',
- 'long':'Classroom · screen + chairs · glass front','wide':'Classroom · screen + chairs · window wall · glass front',
+ 'long':'Classroom · screen · credenza · 12 chairs · posters · glass front','wide':'Classroom · screen · credenza · 12 chairs · window wall · glass front',
  'large':'Large office · shell + door','conference':'Boardroom · 14 seats · TV wall · whiteboards · built-in counter',
  'megan':'4 screens · standing desk · laptop · walking pad · florals · window wall',
  'twaddle':'L-desk · 2 guest · TV · tablet cabinet · window wall · glass entrance',
