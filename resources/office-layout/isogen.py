@@ -204,14 +204,19 @@ for _cx,_cy,_front in ((52.9,13.6,False),(59.5,13.6,True),(54.6,11.5,False),
                        (57.6,11.5,False),(54.6,15.7,True),(57.6,15.7,True)):
     schair(_cx,_cy,_RD,db=(_od+0.32+(0.5 if _front else -0.5))-(_cx+_cy))
 
-# --- 3 · MAUD'S (0,47,11,64): exterior south + west, entry east; she faces the entry ---
-_MG="#9aa0a8"; _MN="#2f3d56"
-sdesk(3.6,55.6,5.8,62.4,_MG); sdesk(5.8,60.2,8.6,62.4,_MG)  # L-desk + return
-schair(2.6,59.0,_MN)                                        # Maud, facing east
-schair(7.4,56.6,_MN); schair(7.4,58.6,_MN)                  # guests
-scred(0.3,48.2,1.9,53.0,_MG)                                # corner shelving
-box(3.0,48.4,6.4,51.2,FLR_Z,FLR_Z+2.2,"#e6c8d2")            # baby play pen
-schair(8.8,51.2,"#c58fa0",s=1.5)                            # rocking chair
+# --- 3 · MAUD'S (0,47,11,64): exterior glass south, entry east, walls 1/2 solid.
+# Her studio frame IS the building's frame here, so this is her actual layout mapped
+# across (studio 10.42 x 17.42 -> plan 11 x 17), not an approximation.
+def _mx(x): return x*(11.0/10.42)
+def _my(y): return 47.0+y*(17.0/17.42)
+_MG="#9aa0a8"; _MD="#4a5260"; _MN="#2f4260"; _MG2="#3d5175"
+box(_mx(0.18),_my(0.30),_mx(1.05),_my(3.60),FLR_Z,FLR_Z+3.1,_MG)      # corner shelf, walls 1/2 corner
+sdesk(_mx(4.50),_my(4.00),_mx(6.70),_my(9.20),_MD)                    # L-desk main
+sdesk(_mx(2.50),_my(4.00),_mx(4.50),_my(6.00),_MD)                    # return
+schair(_mx(3.50),_my(7.20),_MN)                                       # Maud, facing wall 3 (east)
+schair(_mx(8.10),_my(5.60),_MG2); schair(_mx(8.10),_my(8.20),_MG2)    # two across the desk
+box(_mx(0.40),_my(11.20),_mx(4.40),_my(14.80),FLR_Z,FLR_Z+2.2,"#f0e4e6")  # play pen, down by the window
+schair(_mx(6.60),_my(13.00),"#8a6240",s=1.6,h=2.6)                    # rocking chair
 
 # --- 5 · TWADDLE'S (91,18,104,29): windows east, glass entry west, TV on the conference wall ---
 _TB="#8a6a45"; _TS="#5d7a5c"
