@@ -1215,10 +1215,20 @@ def _office_metrics_card() -> dict:
 
     Same shape as _tableau_trackers_card, which consolidated the same way."""
     from automations.office_metrics import offices as _off
+    from automations.office_metrics import runner as _omr
     offs = [_off.OFFICES[k] for k in _off.ORDER]
+    # (label, channel, module, args) per office button. Raf's local office is
+    # FIRST and still runs its own older module — same 11 metrics, but it
+    # predates the generic runner (see runner.MAIN_OFFICE_*), so its button
+    # launches it exactly as its own card always did. The other 7 are generated
+    # from the registry.
+    buttons = [(_omr.MAIN_OFFICE_LABEL, _omr.MAIN_OFFICE_CHANNEL,
+                _omr.MAIN_OFFICE_MODULE, [])]
+    buttons += [(o.label, o.channel_name, "automations.office_metrics.runner",
+                 ["--office", o.key, "--live"]) for o in offs]
     # One office per line for the breakdown panel (white-space:pre-wrap).
-    office_bullets = "\n".join(f"• {o.label} → {o.channel_name}" for o in offs)
-    channels = ", ".join(o.channel_name for o in offs)
+    office_bullets = "\n".join(f"• {lb} → {ch}" for lb, ch, _m, _a in buttons)
+    channels = ", ".join(ch for _lb, ch, _m, _a in buttons)
     return {
         "id": "office-metrics",
         "name": "Office Daily Metrics",
@@ -1228,7 +1238,7 @@ def _office_metrics_card() -> dict:
         "category": "🏢 Other Offices",
         "description": (
             f"The same 11 daily metrics as the main report, run for each of the "
-            f"{len(offs)} offices and posted into that office's own Metrics "
+            f"{len(buttons)} offices and posted into that office's own Metrics "
             f"thread: {channels}. Every metric slices a shared org-wide view and "
             "filters to the office's owner, so adding an office is config only — "
             "no new Tableau views. Each office runs + posts independently; use "
@@ -1261,13 +1271,13 @@ def _office_metrics_card() -> dict:
         "schedule": {
             "frequency": "daily",
             "time": "4:50 AM",
-            "estimated_minutes": 6 * len(offs),
+            "estimated_minutes": 6 * len(buttons),
         },
         "checklist": [],
         "post_run": {
             "message_success": (
                 f"✅ Office metrics posted — all 11 metrics in each of the "
-                f"{len(offs)} offices' threads."),
+                f"{len(buttons)} offices' threads."),
             "message_failed": (
                 "❌ An office had a miss — check the per-office checklist, then "
                 "re-run that office from its button below."),
@@ -1279,7 +1289,7 @@ def _office_metrics_card() -> dict:
                 "label": "Run All Offices",
                 "icon": "▶",
                 "primary": True,
-                "help": (f"Runs all 11 metrics for each of the {len(offs)} "
+                "help": (f"Runs all 11 metrics for each of the {len(buttons)} "
                          "offices in turn and posts to each office's own "
                          "channel. Continues past an office that fails. Needs a "
                          "warm Tableau + ownerville session (best run on the "
@@ -1291,14 +1301,14 @@ def _office_metrics_card() -> dict:
             {
                 # No help text — the label says it. It's a full re-run of that
                 # one office (mirrors the trackers' per-channel buttons).
-                "label": f"Re-run {o.label} ({o.channel_name})",
+                "label": f"Re-run {lb} ({ch})",
                 "icon": "🔁",
-                "module": "automations.office_metrics.runner",
-                # default-bind the key — a bare closure would capture the loop
+                "module": mod,
+                # default-bind the args — a bare closure would capture the loop
                 # variable and every button would run the LAST office.
-                "args_fn": (lambda key=o.key: ["--office", key, "--live"]),
+                "args_fn": (lambda a=args: list(a)),
             }
-            for o in offs
+            for lb, ch, mod, args in buttons
         ],
     }
 
@@ -2385,162 +2395,6 @@ AUTOMATED_REPORTS = [
                 "help": "Monday = full wipe + scrape. Tue-Sun = "
                         "incremental update.",
                 "module": "automations.focus_office_att.daily",
-                "args_fn": lambda: [],
-            },
-        ],
-    },
-    {
-        "id": "daily-metrics",
-        "name": "Daily Metrics Report",
-        "creator": "Megan",
-        "emoji": "📊",
-        "color": "#0EA5E9",
-        "category": "📊 Metrics",
-        "description": "One run that fires all 11 daily #alphalete-sales metrics — Telemapper Knocks, Time Gaps, Order Log, Sales Scheduled 6+ Days, Canceled Orders, Ongoing Cancel, Disconnects, New Internet Churn, Wireless Churn, Rep Activations, New Internet ABP % — each posting into today's Metrics thread.",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "Runs all 11 metric reports back-to-back & posts into today's "
-            "Metrics thread in #alphalete-sales Slack. The day's header "
-            "thread is posted first if it isn't already up.\n\n"
-            "METRICS POSTED (in thread order)\n"
-            "• 🪵 Telemapper Knocks\n"
-            "• ⏰ Time Gaps\n"
-            "• 📋 Order Log\n"
-            "• 📅 Sales Scheduled 6+ Days Out\n"
-            "• 🚫 Canceled Orders\n"
-            "• 🔁 Ongoing Cancel\n"
-            "• ❎ Disconnected New Internets\n"
-            "• 🌐 New Internet Churn\n"
-            "• 📊 Wireless Churn\n"
-            "• 🆕 Rep Activations\n"
-            "• 💳 New Internet ABP %\n\n"
-            "IF ONE FAILS\n"
-            "The run keeps going and ends with a ✅/❌ summary. Re-run just "
-            "the ones that failed from 'More actions' below.\n\n"
-            "WHEN IT RUNS\n"
-            "Daily.\n\n"
-            "──────────  HOW EACH REPORT WORKS  ──────────\n\n"
-            "🪵 TELEMAPPER KNOCKS + ⏰ TIME GAPS\n"
-            "Collects Disposition by rep + time gaps from Ownerville (always "
-            "the day prior) for Raf's Local Office. Screenshots + posts both "
-            "to the Metrics thread; keeps no record. Opens Ownerville "
-            "automatically — don't type in or close the window while it runs.\n\n"
-            "📋 ORDER LOG + 🆕 REP ACTIVATIONS\n"
-            "Fills out the order log and saves it to your Downloads folder as "
-            "'Order Log MM-DD-YYYY.xlsx', then posts it to the Metrics thread. "
-            "From the same data it also posts a 🆕 Rep Activations summary "
-            "(Posted / Pending / Total / Canceled per rep, last week & this "
-            "week).\n\n"
-            "📅 SALES SCHEDULED 6+ DAYS OUT\n"
-            "All scheduled new-internet installs planned 6+ days out for Raf's "
-            "Local Office + Raf's Captainship + Starr's Captainship. Fills the "
-            "'VAs' Data' sheet tabs (Scheduled 6 days out — Raf / Starr), "
-            "overwritten clean + color-shaded by Owner. Saves a colored table "
-            "per captainship to Downloads, posts Raf's Local Office to the "
-            "Metrics thread, and emails each captainship its table from "
-            "alphaletereporting@gmail.com with Eve's signature.\n\n"
-            "🚫 CANCELED ORDERS\n"
-            "Pulls the Tableau Order Log for the previous 30 completed days. "
-            "New rows insert at the TOP of each tab, dedup'd by (Customer "
-            "Name, SPM #). Posts an image of the new Local Office cancels. "
-            "Tabs filled (AT&T Fiber Metrics Report): Local Office - Daily "
-            "Cancels, Raf's Captainship - Cancels Ongoing, Starr Capi + Sahil "
-            "- Cancels Ongoing.\n\n"
-            "🔁 ONGOING CANCEL\n"
-            "Pulls Internet Cancel Rates (Running Sum) from Tableau for Raf's "
-            "reps over the last 7 days.\n\n"
-            "❎ DISCONNECTED NEW INTERNETS\n"
-            "Pulls the Tableau Order Log for the previous 30 completed days. "
-            "New rows insert at the TOP of each tab, dedup'd by (Customer "
-            "Name, Account BAN). Posts an image of the new Local Office "
-            "disconnects. Tabs filled (AT&T Fiber Metrics Report): Local "
-            "Office / Raf's Captainship / Starr Capi + Sahil - New Internet "
-            "Disconnects.\n\n"
-            "🌐 NEW INTERNET CHURN + 📊 WIRELESS CHURN\n"
-            "Fills Raf's Local Office churn on the AT&T Fiber Metrics Report "
-            "sheet (tabs: Local Office - New Internet Churn, Local Office - "
-            "Wireless Churn) and posts both to the Metrics thread.\n\n"
-            "💳 NEW INTERNET ABP %\n"
-            "Pulls each rep's New Internet Auto Bill Pay mix (4-wk rolling) "
-            "from the ATT TRACKER 2.1 Metrics view, fills the 'Local Office - "
-            "New Internet ABP%' tab, and posts a colored per-rep image "
-            "(total sales / ABP sales / %) to the Metrics thread."
-        ),
-        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8/edit"),
-        "assignees": ["Lucy 1"],
-        "schedule": {
-            "frequency": "daily",
-            "time": "7:00 AM",
-            "estimated_minutes": 15,
-        },
-        "post_run": {
-            "message_success": "✅ Daily Metrics done — all 11 posted to the Metrics thread.",
-            "message_failed": "❌ Some metrics failed — check the summary above, then re-run those from More actions.",
-        },
-        "actions": [
-            {
-                "label": "Run All 11 Metrics",
-                "icon": "▶",
-                "primary": True,
-                "help": "Runs all 8 reports → 11 metrics posted to today's thread; continues past any that fail.",
-                "module": "automations.daily_metrics.run",
-                "args_fn": lambda: [],
-            },
-            {
-                "label": "Telemapper Knocks + Time Gaps",
-                "icon": "🪵",
-                "help": "Re-run just Knocks + Time Gaps.",
-                "module": "automations.total_knocks.run",
-                "args_fn": lambda: [],
-            },
-            {
-                "label": "Order Log",
-                "icon": "📋",
-                "help": "Re-run just the Order Log.",
-                "module": "automations.uploaded.order_log",
-                "args_fn": lambda: [],
-            },
-            {
-                "label": "Sales Scheduled 6+ Days Out",
-                "icon": "📅",
-                "help": "Re-run just Sales Scheduled 6+ Days Out.",
-                "module": "automations.scheduled_6_days_out.run",
-                "args_fn": lambda: ["--post-slack", "--send-email"],
-            },
-            {
-                "label": "Canceled Orders",
-                "icon": "🚫",
-                "help": "Re-run just Canceled Orders.",
-                "module": "automations.canceled_orders.run",
-                "args_fn": lambda: [],
-            },
-            {
-                "label": "Ongoing Cancel",
-                "icon": "🔁",
-                "help": "Re-run just Ongoing Cancel.",
-                "module": "automations.ongoing_cancel.run",
-                "args_fn": lambda: [],
-            },
-            {
-                "label": "Disconnected New Internets",
-                "icon": "❎",
-                "help": "Re-run just Disconnects.",
-                "module": "automations.disconnects.run",
-                "args_fn": lambda: [],
-            },
-            {
-                "label": "New Internet + Wireless Churn (Local Office)",
-                "icon": "🌐",
-                "help": "Re-run just Raf's Local Office churn (New Internet + Wireless).",
-                "module": "automations.churn.run",
-                "args_fn": lambda: [],
-            },
-            {
-                "label": "New Internet ABP %",
-                "icon": "💳",
-                "help": "Re-run just Raf's Local Office New Internet ABP %.",
-                "module": "automations.new_internet_abp.run",
                 "args_fn": lambda: [],
             },
         ],

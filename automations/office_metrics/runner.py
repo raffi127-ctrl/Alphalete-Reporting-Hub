@@ -46,11 +46,40 @@ PER_METRIC_TIMEOUT_S = 20 * 60
 # office missed — a single red light would hide a lone office failing.
 OFFICE_STATUS_FILE = REPO_ROOT / "output" / "office_metrics" / "_posted_today.json"
 
+# The main #alphalete-sales report is the SAME 11 metrics for Raf's LOCAL
+# OFFICE, but it predates this runner and still lives in its own module with its
+# own CLI (live by default, --only takes a comma list). Megan 2026-07-16 wants it
+# on the ONE shared card as the first office, so --all runs it too and it gets a
+# checklist row. Its internals are NOT migrated into offices.py: its knocks
+# module doesn't impersonate an office and its views differ, so folding it in
+# properly is a separate proof-gated job — not worth risking the main report to
+# save a button.
+MAIN_OFFICE_LABEL = "Raf's Local Office"
+MAIN_OFFICE_CHANNEL = "#alphalete-sales"
+MAIN_OFFICE_MODULE = "automations.daily_metrics.run"
 
-def _record_office_status(o: Office, *, ok: bool, error: str = "") -> None:
-    """Record THIS office's outcome in the shared per-office status file.
 
-    Read-modify-write keyed by office label, so each office's run (4am
+def status_label(label: str, channel_name: str) -> str:
+    """The one true checklist-row key for an office (also used by the main
+    report's module, so its row lands in the same place)."""
+    return f"{label} — {channel_name}"
+
+
+def _status_order() -> dict:
+    """Checklist order: the main office first, then the registry's order — so
+    the card reads as a stable roster, not finish order."""
+    order = {status_label(MAIN_OFFICE_LABEL, MAIN_OFFICE_CHANNEL): 0}
+    for i, k in enumerate(_off.ORDER):
+        o = _off.OFFICES[k]
+        order[status_label(o.label, o.channel_name)] = i + 1
+    return order
+
+
+def record_status(label: str, channel_name: str, *, ok: bool,
+                  error: str = "") -> None:
+    """Record ONE office's outcome in the shared per-office status file.
+
+    Read-modify-write keyed by the office's label, so each office's run (4am
     orchestrator OR a manual card button) updates only its own row and the card
     shows the whole roster. Resets when the file is from an earlier day, so a
     stale checklist can never read as today's. Best-effort — a status-file
@@ -66,18 +95,20 @@ def _record_office_status(o: Office, *, ok: bool, error: str = "") -> None:
                 data = {}
         if data.get("date") != today:
             data = {"date": today, "channels": []}
-        label = f"{o.label} — {o.channel_name}"
-        rows = [r for r in (data.get("channels") or [])
-                if r.get("label") != label]
-        rows.append({"label": label, "ok": bool(ok), "error": (error or "")[:200]})
-        # Keep the card's checklist in registry order, not finish order.
-        order = {f"{_off.OFFICES[k].label} — {_off.OFFICES[k].channel_name}": i
-                 for i, k in enumerate(_off.ORDER)}
+        key = status_label(label, channel_name)
+        rows = [r for r in (data.get("channels") or []) if r.get("label") != key]
+        rows.append({"label": key, "ok": bool(ok), "error": (error or "")[:200]})
+        order = _status_order()
         rows.sort(key=lambda r: order.get(r.get("label", ""), 99))
         data["channels"] = rows
         OFFICE_STATUS_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
     except Exception:  # noqa: BLE001 — never fail the run over the checklist
         pass
+
+
+def _record_office_status(o: Office, *, ok: bool, error: str = "") -> None:
+    """record_status for a registry Office."""
+    record_status(o.label, o.channel_name, ok=ok, error=error)
 
 
 def metrics_for(o: Office) -> list[dict]:
@@ -531,6 +562,25 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         mode_arg = ["--live"] if args.live else ["--dry-run"]
         passthru = (["--fresh"] if args.fresh else [])
         results: list[tuple[str, int]] = []
+
+        # The main #alphalete-sales report first — it's Raf's local office, just
+        # on its own older module (see MAIN_OFFICE_*). Run it exactly the way its
+        # own card always did: live by default, --dry-run to opt out.
+        print(f"\n{'=' * 62}\n=== raf — {MAIN_OFFICE_LABEL} → {MAIN_OFFICE_CHANNEL}"
+              f"\n{'=' * 62}")
+        try:
+            main_args = [] if args.live else ["--dry-run"]
+            rc = subprocess.run(
+                [sys.executable, "-u", "-m", MAIN_OFFICE_MODULE] + main_args,
+                cwd=str(REPO_ROOT), env=os.environ.copy()).returncode
+        except Exception as e:  # noqa: BLE001 — must not kill the other offices
+            print(f"✗ raf errored: {type(e).__name__}: {e}")
+            rc = 1
+        results.append(("raf", rc))
+        if args.live:
+            record_status(MAIN_OFFICE_LABEL, MAIN_OFFICE_CHANNEL, ok=(rc == 0),
+                          error="" if rc == 0 else "see the run log")
+
         for key in _off.ORDER:
             o = _off.OFFICES[key]
             print(f"\n{'=' * 62}\n=== {key} — {o.label} → {o.channel_name}\n{'=' * 62}")

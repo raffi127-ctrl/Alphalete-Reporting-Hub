@@ -37,7 +37,9 @@ _HUB_CARD = {
     "alphalete_org_focus": "recruiting-alphalete-org",
     "daily_focus": "daily-focus",
     "daily_rep_breakdown": "daily-rep-breakdown",
-    "daily_metrics": "daily-metrics",
+    # Raf's local office — folded onto the shared card with the other offices
+    # (Megan 2026-07-16); it just still runs its own older module.
+    "daily_metrics": "office-metrics",
     "fiber_activations": "fiber-activations",
     "captainship_activations": "captainship-activations",
     "captainship_churn": "captainship-new-internet-wireless-churn",

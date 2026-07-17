@@ -194,6 +194,20 @@ def main(argv=None) -> int:
         except Exception:  # noqa: BLE001 — manifest write must never fail the run
             pass
 
+        # Feed the shared Hub card's per-office ✅/❌ checklist. This report is
+        # Raf's local office — Megan 2026-07-16 folded it onto the ONE "Office
+        # Daily Metrics" card with the other offices, so it needs a row there
+        # like they do (its 4am run comes through here, not the runner's --all).
+        # Only a FULL live run speaks for the office; an --only re-run covers a
+        # single metric and must not overwrite the row. Best-effort.
+        try:
+            from automations.office_metrics import runner as _omr
+            _omr.record_status(_omr.MAIN_OFFICE_LABEL, _omr.MAIN_OFFICE_CHANNEL,
+                               ok=not failed,
+                               error=("; ".join(failed) if failed else ""))
+        except Exception:  # noqa: BLE001 — checklist must never fail the run
+            pass
+
     # PARTIAL FAILURE = "ran with a note", NOT a hard failure (Megan 2026-07-11).
     # Exit 0 so the orchestrator does NOT retry the WHOLE --live run (which
     # re-posts every metric = double-posting). The run-manifest above records the
