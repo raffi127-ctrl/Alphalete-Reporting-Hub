@@ -983,7 +983,8 @@ def furnish(kind, R, key=None):
         glass_front(R,4)
     elif kind=="interview":   # offices 2/7/8 — JD-style interview kit, no credenza; own theme each
         _iv=INTERVIEW_THEME.get(key,{})
-        interview_office(R, windows=(key!="w-3"),
+        _ivstyle={"w-3":"gallery","s-1":"canvas","s-2":"metal"}.get(key,"gallery")
+        interview_office(R, windows=(key!="w-3"), style=_ivstyle,
                          desk_col=_iv.get("desk_col","#59616e"), shelf_col=_iv.get("shelf_col","#7a6144"),
                          owner_col=_iv.get("owner_col","#3f5170"), guest_col=_iv.get("guest_col",C_GUEST))
     # every other room = empty architectural shell (walls + door + dimensions only)
@@ -1021,7 +1022,7 @@ CATALOG=[
 ]
 
 
-def interview_office(R, windows=True, desk_col="#59616e", shelf_col="#7a6144", owner_col="#3f5170", guest_col=C_GUEST):
+def interview_office(R, windows=True, style="gallery", desk_col="#59616e", shelf_col="#7a6144", owner_col="#3f5170", guest_col=C_GUEST):
     """Generic interview office: L-desk facing the TV wall, iMac, TWO guest chairs across for
     interviews, a TV and a compact open shelf. Windows on wall 1, glass front + door on wall 3,
     solid walls 2 & 4. NO credenza. Local frame, so it fits every room that shares this layout."""
@@ -1032,6 +1033,10 @@ def interview_office(R, windows=True, desk_col="#59616e", shelf_col="#7a6144", o
         R.box(x0,0.05,x1,y1,FLR_Z+z0,FLR_Z+z1,col,op=op,db=(NWD+0.6+nudge)-((x0+0.05+x1+y1)/2))
     def _onW(y0,y1,x1,z0,z1,col,op=1.0,nudge=0.0):
         R.box(-0.04,y0,x1,y1,FLR_Z+z0,FLR_Z+z1,col,op=op,db=(WWD+0.6+nudge)-((-0.04+y0+x1+y1)/2))
+    def _frameN(x0,x1,z0,z1,art):
+        _onN(x0,x1,0.16,z0,z1,shade(art,0.55),nudge=0.06); _onN(x0+0.08,x1-0.08,0.20,z0+0.08,z1-0.08,art,nudge=0.12)
+    def _frameW(y0,y1,z0,z1,art):
+        _onW(y0,y1,0.16,z0,z1,shade(art,0.55),nudge=0.06); _onW(y0+0.08,y1-0.08,0.20,z0+0.08,z1-0.08,art,nudge=0.12)
     if windows:
         # WALL 1 (west) banded windows, scaled to the room depth
         _b0,_b1=2.7,7.3; _m0,_m1=0.4,d-0.4
@@ -1049,10 +1054,13 @@ def interview_office(R, windows=True, desk_col="#59616e", shelf_col="#7a6144", o
         for _mz in (_b0+1.53,_b0+3.07):
             _onW(_m0,_m1,0.30,_mz-0.05,_mz+0.05,"#9aa2ad",nudge=0.14)     # horizontal mullions
     else:
-        # WALL 1 solid (no exterior windows) — a pair of framed prints instead
-        for _ay0,_ay1,_c in ((d*0.28,d*0.28+2.3,owner_col),(d*0.28+2.7,d*0.28+4.4,shade(shelf_col,1.25))):
-            _onW(_ay0,_ay1,0.17,3.30,5.70,shade(_c,0.66),nudge=0.06)     # frame
-            _onW(_ay0+0.08,_ay1-0.08,0.21,3.42,5.58,_c,nudge=0.12)       # print
+        # WALL 1 solid (no windows) -- a GALLERY WALL of framed art (this office decor)
+        _g=d*0.24
+        _frameW(_g+0.0,_g+2.3,3.60,6.20,owner_col)
+        _frameW(_g+2.6,_g+3.7,5.00,6.20,"#8a8f96")
+        _frameW(_g+2.6,_g+3.7,3.60,4.80,shade(shelf_col,1.25))
+        _frameW(_g+4.0,_g+5.3,4.30,5.90,"#c5ccd4")
+        _frameW(_g-1.5,_g-0.4,4.60,5.95,shade(owner_col,1.25))
     # WALL 2 (north): TV + a compact open shelf to its left
     _onN(4.20,8.60,0.22,3.30,5.80,"#59616e",nudge=0.06)              # TV bezel
     _onN(4.40,8.40,0.28,3.45,5.65,"#222833",nudge=0.12)             # TV panel
@@ -1094,6 +1102,20 @@ def interview_office(R, windows=True, desk_col="#59616e", shelf_col="#7a6144", o
     R.box(_ix-0.95,_iy-0.06,_ix+0.95,_iy+0.06,FLR_Z+3.05,FLR_Z+4.35,"#d8dbe0",db=_MD) # bezel
     R.box(_ix-0.86,_iy+0.02,_ix+0.86,_iy+0.09,FLR_Z+3.14,FLR_Z+4.24,"#222833",db=_MD) # screen
     R.box(_ix-0.55,_iy+0.60,_ix+0.55,_iy+1.05,FLR_Z+2.5,FLR_Z+2.58,"#e6e8ec",db=_MD)  # keyboard
+    # wall decor right of the TV on wall 2 (a different style per office)
+    _dx0=8.85; _dx1=min(w-0.4,_dx0+2.9)
+    if style=="canvas":
+        _onN(_dx0,_dx1,0.16,3.40,6.35,shade(owner_col,0.55),nudge=0.06)
+        _onN(_dx0+0.10,_dx1-0.10,0.20,3.52,6.23,owner_col,nudge=0.12)
+        _onN(_dx0+0.10,_dx1-0.10,0.22,4.75,5.35,shade(owner_col,1.55),nudge=0.16)
+        _onN(_dx0+0.10,(_dx0+_dx1)/2,0.22,3.52,4.30,shade(owner_col,0.72),nudge=0.16)
+        _frameN(_dx0,_dx0+1.15,2.45,3.25,"#8a8f96"); _frameN(_dx1-1.15,_dx1,2.45,3.25,shade(shelf_col,1.25))
+    elif style=="metal":
+        _brass=("#c9a03e","#b8892e","#d9b84e"); _bx=_dx0; _cz=4.95
+        for _i,_hh in enumerate((2.1,3.0,1.6,2.6,2.0,3.2,1.8,2.4)):
+            if _bx+0.14>_dx1: break
+            _onN(_bx,_bx+0.14,0.22,_cz-_hh/2,_cz+_hh/2,_brass[_i%3],nudge=0.12)
+            _bx+=0.32
 
 
 def classroom(R,vibe,screen_wall=2,seats=12):
