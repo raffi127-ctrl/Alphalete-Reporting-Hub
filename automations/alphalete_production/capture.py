@@ -14,6 +14,7 @@ For each image we:
 The live sheet the team is using is never touched. Recipes per 'kind':
   daily        -- full leaderboard, day-Apps columns, through Teams 'Alphaletes TOTALS'
   field_status -- daily leaderboard, 1st-4th-week reps only, grouped by Field Status
+  energy       -- daily leaderboard filtered to Campaign = Energy, ranked by Apps
   team         -- ONE per team (col CI): running Apps + last completed day expanded
   highrollers  -- only reps who produced yesterday, sorted by the day's Apps
   zeros        -- reps who rolled a literal 0 on BOTH of the last two completed days
@@ -167,6 +168,19 @@ def _field_status_col(grid) -> int:
     return next(c for c in range(len(grid[0])) if _cell(grid, 0, c).strip() == "Field Status")
 
 
+def _campaign_col(grid) -> int:
+    """The Campaign column (Fiber / Energy / Fiber-Wireless). Found by LABEL, never
+    position — Maud may move it (Raf 7/14). The board currently carries TWO columns
+    titled 'Campaign'; tie-break on whichever is actually filled in (most non-blank
+    rep rows), so if the duplicate is ever deleted the survivor just wins outright."""
+    tot = _totals_row(grid)
+    cands = [c for c in range(len(grid[0])) if _cell(grid, 0, c).strip().lower() == "campaign"]
+    if not cands:
+        raise RuntimeError("no 'Campaign' column on the Sales Board (renamed?)")
+    return max(cands, key=lambda c: sum(1 for r in range(3, tot - 1)
+                                        if _cell(grid, r, 2).strip() and _cell(grid, r, c).strip()))
+
+
 def _is_wk5_plus(v: str) -> bool:
     """True if a Field Status value means 5th week or beyond (a 'veteran').
     Robust to minor label drift: '5th wk+', '5th Wk +', '5+' all match; the
@@ -190,6 +204,7 @@ def _daily_show_cols(grid, team_avgs: bool = True) -> set:
     # identity columns by their row-1 header
     for lbl in ("Trainer", "Field Status", "Team", "Leadership Status", "Location"):
         show.add(next(c for c in range(len(grid[0])) if _cell(grid, 0, c).strip() == lbl))
+    show.add(_campaign_col(grid))          # Fiber / Energy / Fiber-Wireless (Raf 7/14)
     # Completed / ATTUID by their row-3 header
     for lbl in ("Completed", "ATTUID"):
         show.add(next(c for c in range(len(grid[0])) if _cell(grid, 2, c).strip() == lbl))
@@ -399,6 +414,23 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
                               if _is_wk5_plus(v) or v.strip().upper() == "RT"]
             filt_specs.append({"columnIndex": sun, "filterCriteria": {"hiddenValues": ["F", "T"]}})
             filt_specs.append({"columnIndex": fs_col, "filterCriteria": {"hiddenValues": hide_fs}})
+            el_team = next(c for c in range(len(grid[0])) if _cell(grid, 0, c).strip() == "Team")
+            sorts = [(el_team, "ASCENDING"), (3, "DESCENDING")]   # group by team, top Apps first (Raf 7/14)
+            subtotal_cols = [c for c in show if _cell(grid, 2, c).strip().lower() == "apps"]
+
+        elif kind == "energy":
+            # Raf 7/14: the daily leaderboard filtered to Campaign = Energy, ranked by
+            # running-week Apps high -> low. Campaign found by label (Maud may move it).
+            show = _daily_show_cols(grid, team_avgs=False)
+            right = col_letter(max(show))
+            export_rng = f"A1:{right}{tot_row}"
+            camp_col = _campaign_col(grid)
+            camp_vals = {_cell(grid, r, camp_col).strip() for r in range(3, tot_row - 1)
+                         if _cell(grid, r, 2).strip()}
+            # keep ONLY Energy — hide every other campaign (incl. blank / Fiber-Wireless)
+            hide_camp = sorted({v for v in camp_vals if v.strip().lower() != "energy"} | {""})
+            filt_specs.append({"columnIndex": sun, "filterCriteria": {"hiddenValues": ["F", "T"]}})
+            filt_specs.append({"columnIndex": camp_col, "filterCriteria": {"hiddenValues": hide_camp}})
             sorts = [(3, "DESCENDING")]           # rank by running-week APPS, high -> low
             subtotal_cols = [c for c in show if _cell(grid, 2, c).strip().lower() == "apps"]
 
@@ -410,8 +442,14 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
             d_recent, d_older = last_two_mandatory_days(today)
             c_recent = _day_block(grid, d_recent)[0]         # always in this week's tab
             fs_col = _field_status_col(grid)
+            camp_col = _campaign_col(grid)                   # Fiber/Energy/Fiber-Wireless (Raf 7/14)
             team_col = next(c for c in range(len(grid[0])) if _cell(grid, 0, c).strip() == "Team")
             trainer_col = next(c for c in range(len(grid[0])) if _cell(grid, 0, c).strip() == "Trainer")
+            # Trainer-only staff (e.g. Bas) carry NO Campaign — they're not on a selling
+            # campaign, so they have no data to zero out and don't belong on this callout
+            # (Megan 7/16). Working trainers who DO sell (a campaign + a trainer of
+            # record, e.g. Jordan Ruiz) still count.
+            filt_specs.append({"columnIndex": camp_col, "filterCriteria": {"hiddenValues": [""]}})
             try:
                 c_older = _day_block(grid, d_older)[0]
             except RuntimeError:
@@ -419,7 +457,7 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
 
             if c_older is not None:
                 # both mandatory days on this tab -> show both as proof, filter each == 0
-                show = {0, 1, 2, c_older, c_recent, trainer_col, fs_col, team_col}
+                show = {0, 1, 2, c_older, c_recent, trainer_col, camp_col, fs_col, team_col}
                 for c in (c_recent, c_older):
                     filt_specs.append({"columnIndex": c, "filterCriteria": {
                         "condition": {"type": "NUMBER_EQ",
@@ -446,7 +484,7 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
                     {"range": f"{cl}3", "values": [["Apps"]]},
                     {"range": f"{cl}4:{cl}{tot_row - 1}", "values": col_v},
                 ]
-                show = {0, 1, 2, c_older, c_recent, trainer_col, fs_col, team_col}
+                show = {0, 1, 2, c_older, c_recent, trainer_col, camp_col, fs_col, team_col}
                 for c in (c_recent, c_older):
                     filt_specs.append({"columnIndex": c, "filterCriteria": {
                         "condition": {"type": "NUMBER_EQ", "values": [{"userEnteredValue": "0"}]}}})
@@ -461,7 +499,7 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
 
             right = col_letter(max(show))
             export_rng = f"A1:{right}{tot_row}"
-            sorts = [(2, "ASCENDING")]            # alphabetical by rep name
+            sorts = [(team_col, "ASCENDING"), (2, "ASCENDING")]   # group by team, then name (Raf 7/14)
 
         else:
             raise ValueError(f"unknown kind {kind}")

@@ -6,7 +6,7 @@ This is the ONE edit-to-add config file. Each section is a dict:
   emoji   -- unicode emoji for the parent's section list
   react   -- Slack reaction shortcode (added onto the parent)
   kind    -- which capture recipe (see capture.py):
-             daily | field_status | team | highrollers | zeros | ranking
+             daily | field_status | energy | team | highrollers | zeros | ranking
   sort    -- for 'ranking' kind: the running-week metric header to sort by (APPS/INT/NL)
 
 Team Sales (kind='team') fans out to ONE image per team found live in column CI.
@@ -21,6 +21,8 @@ SECTIONS = [
      "emoji": "\U0001F331", "react": "seedling", "kind": "field_status"},
     {"id": "zeros_two_day", "title": "Back-to-Back Zeros",
      "emoji": "\U0001F6AB", "react": "no_entry_sign", "kind": "zeros"},
+    {"id": "energy_board", "title": "Energy Sales Board",
+     "emoji": "⚡", "react": "zap", "kind": "energy"},
     {"id": "team_sales", "title": "Team Sales",
      "emoji": "\U0001F465", "react": "busts_in_silhouette", "kind": "team"},
     {"id": "highrollers", "title": "Highrollers of the Day",

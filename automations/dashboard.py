@@ -2524,7 +2524,7 @@ AUTOMATED_REPORTS = [
         "emoji": "🐺",
         "color": "#6A4C93",
         "category": "📊 Metrics",
-        "description": "Combines Jolie's two manual morning screenshot posts into ONE dated '🐺 Alphalete Production' thread in #alphalete-sales: Daily Production, an Entry Level (Wk 1–4) board, a Back-to-Back Zeros callout, a Team Sales board per team, Highrollers of the day, and 3 rankings (Apps / New Internets / Wireless).",
+        "description": "Combines Jolie's two manual morning screenshot posts into ONE dated '🐺 Alphalete Production' thread in #alphalete-sales: Daily Production, an Entry Level (Wk 1–4) board, a Back-to-Back Zeros callout, an Energy-only sales board, a Team Sales board per team, Highrollers of the day, and 3 rankings (Apps / New Internets / Wireless).",
         "breakdown": (
             "WHAT IT DOES\n"
             "Screenshots the Sales Board tab into clean PNGs — off a hidden, "
@@ -2533,14 +2533,15 @@ AUTOMATED_REPORTS = [
             "IMAGES\n"
             "1. Daily Production\n"
             "2. Daily Production — Entry Level — 1st–4th-week reps only "
-            "(drops 5th-wk+ veterans), ranked by Apps\n"
+            "(drops 5th-wk+ veterans), grouped by team\n"
             "3. Back-to-Back Zeros — reps who rolled a 0 on both of the last two "
-            "mandatory days (Sundays don't count; Monday compares Fri + Sat)\n"
-            "4. Team Sales — one image per team (auto-counts from the sheet)\n"
-            "5. Highrollers of the Day\n"
-            "6. Total Week Production (Ranking based on Apps)\n"
-            "7. Ranking based on New Internets\n"
-            "8. Ranking based on Wireless\n\n"
+            "mandatory days (Sundays don't count; Monday compares Fri + Sat), by team\n"
+            "4. Energy Sales Board — Campaign = Energy only, ranked by Apps\n"
+            "5. Team Sales — one image per team (auto-counts from the sheet)\n"
+            "6. Highrollers of the Day\n"
+            "7. Total Week Production (Ranking based on Apps)\n"
+            "8. Ranking based on New Internets\n"
+            "9. Ranking based on Wireless\n\n"
             "WHEN IT RUNS\n"
             "Daily, ~4 AM on the mini (before the manual post), into #alphalete-sales. "
             "Monday shows the fully-completed prior Mon–Sun week."
@@ -2553,7 +2554,7 @@ AUTOMATED_REPORTS = [
         },
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Alphalete Production posted — Daily Production, Entry Level, Back-to-Back Zeros, team boards, Highrollers, and the 3 rankings in the dated thread in #alphalete-sales.",
+            "message_success": "✅ Alphalete Production posted — Daily Production, Entry Level, Back-to-Back Zeros, Energy board, team boards, Highrollers, and the 3 rankings in the dated thread in #alphalete-sales.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
         },
         "actions": [
