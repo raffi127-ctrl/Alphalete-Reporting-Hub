@@ -975,7 +975,7 @@ def furnish(kind, R, key=None):
         ext_windows_n(R)
         glass_front(R,4)
     elif kind=="interview":   # offices 2/7/8 — JD-style interview kit, no credenza
-        interview_office(R)
+        interview_office(R, windows=(key!="w-3"))   # office 2 is interior: no windows, wall 1 solid
     # every other room = empty architectural shell (walls + door + dimensions only)
     elif kind=="break":
         R.counter(0.6,0.8,0.6+10.0,0.8+2.2,3.0)  # counter along back
@@ -1011,7 +1011,7 @@ CATALOG=[
 ]
 
 
-def interview_office(R, desk_col="#59616e", shelf_col="#7a6144", owner_col="#3f5170", guest_col=C_GUEST):
+def interview_office(R, windows=True, desk_col="#59616e", shelf_col="#7a6144", owner_col="#3f5170", guest_col=C_GUEST):
     """Generic interview office: L-desk facing the TV wall, iMac, TWO guest chairs across for
     interviews, a TV and a compact open shelf. Windows on wall 1, glass front + door on wall 3,
     solid walls 2 & 4. NO credenza. Local frame, so it fits every room that shares this layout."""
@@ -1022,21 +1022,27 @@ def interview_office(R, desk_col="#59616e", shelf_col="#7a6144", owner_col="#3f5
         R.box(x0,0.05,x1,y1,FLR_Z+z0,FLR_Z+z1,col,op=op,db=(NWD+0.6+nudge)-((x0+0.05+x1+y1)/2))
     def _onW(y0,y1,x1,z0,z1,col,op=1.0,nudge=0.0):
         R.box(-0.04,y0,x1,y1,FLR_Z+z0,FLR_Z+z1,col,op=op,db=(WWD+0.6+nudge)-((-0.04+y0+x1+y1)/2))
-    # WALL 1 (west) banded windows, scaled to the room depth
-    _b0,_b1=2.7,7.3; _m0,_m1=0.4,d-0.4
-    _onW(_m0,_m1,0.16,_b0-0.16,_b0,"#9aa2ad",nudge=0.04)               # sill
-    _onW(_m0,_m1,0.16,_b1,_b1+0.16,"#9aa2ad",nudge=0.04)              # head
-    _onW(_m0,_m1,0.22,_b0,_b1,"#e3ebf0",nudge=0.06)                   # panes
-    _kk=1
-    while _b0+0.2*_kk<_b1-0.06:
-        _onW(_m0+0.15,_m1-0.15,0.24,_b0+0.2*_kk,_b0+0.2*_kk+0.06,"#ccd8df",nudge=0.08)
-        _kk+=1
-    _nb=max(2,int(round((_m1-_m0)/4.3)))
-    for _i in range(_nb+1):
-        _my=_m0+(_m1-_m0)*_i/_nb
-        _onW(_my-0.07,_my+0.07,0.30,_b0,_b1,"#9aa2ad",nudge=0.14)     # vertical mullions
-    for _mz in (_b0+1.53,_b0+3.07):
-        _onW(_m0,_m1,0.30,_mz-0.05,_mz+0.05,"#9aa2ad",nudge=0.14)     # horizontal mullions
+    if windows:
+        # WALL 1 (west) banded windows, scaled to the room depth
+        _b0,_b1=2.7,7.3; _m0,_m1=0.4,d-0.4
+        _onW(_m0,_m1,0.16,_b0-0.16,_b0,"#9aa2ad",nudge=0.04)               # sill
+        _onW(_m0,_m1,0.16,_b1,_b1+0.16,"#9aa2ad",nudge=0.04)              # head
+        _onW(_m0,_m1,0.22,_b0,_b1,"#e3ebf0",nudge=0.06)                   # panes
+        _kk=1
+        while _b0+0.2*_kk<_b1-0.06:
+            _onW(_m0+0.15,_m1-0.15,0.24,_b0+0.2*_kk,_b0+0.2*_kk+0.06,"#ccd8df",nudge=0.08)
+            _kk+=1
+        _nb=max(2,int(round((_m1-_m0)/4.3)))
+        for _i in range(_nb+1):
+            _my=_m0+(_m1-_m0)*_i/_nb
+            _onW(_my-0.07,_my+0.07,0.30,_b0,_b1,"#9aa2ad",nudge=0.14)     # vertical mullions
+        for _mz in (_b0+1.53,_b0+3.07):
+            _onW(_m0,_m1,0.30,_mz-0.05,_mz+0.05,"#9aa2ad",nudge=0.14)     # horizontal mullions
+    else:
+        # WALL 1 solid (no exterior windows) — a pair of framed prints instead
+        for _ay0,_ay1,_c in ((d*0.28,d*0.28+2.3,"#46586e"),(d*0.28+2.7,d*0.28+4.4,"#7d8894")):
+            _onW(_ay0,_ay1,0.17,3.30,5.70,shade(_c,0.66),nudge=0.06)     # frame
+            _onW(_ay0+0.08,_ay1-0.08,0.21,3.42,5.58,_c,nudge=0.12)       # print
     # WALL 2 (north): TV + a compact open shelf to its left
     _onN(4.20,8.60,0.22,3.30,5.80,"#59616e",nudge=0.06)              # TV bezel
     _onN(4.40,8.40,0.28,3.45,5.65,"#222833",nudge=0.12)             # TV panel
