@@ -138,9 +138,9 @@ for a,b,nm,lab,comb in south_segs:
     rwalls(sx0+a*ow,52,sx0+b*ow,64)
 
 # ---- structural pillars (immovable columns) down the open-office centerline -
-for _px in (20,33.5,47,60.5,74):
+for _px in (20,47,74):
     box(_px-0.8,34.2,_px+0.8,35.8,FLR_Z,FLR_Z+9.0,"#aab0b9")
-label(47.5,41.5,FLR_Z+0.05,"▲ 5 structural pillars — fixed",size=4.4,weight="700",color="#8a909b")
+label(47.5,41.5,FLR_Z+0.05,"▲ 3 structural pillars — fixed",size=4.4,weight="700",color="#8a909b")
 
 # ================= FIXED BUILT-INS ==========================================
 # break-room island + built-in sink counter (east wall)

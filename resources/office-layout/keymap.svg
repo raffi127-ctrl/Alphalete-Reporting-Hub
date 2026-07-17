@@ -170,11 +170,9 @@
 <text x="657.5" y="395.5" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="13" font-weight="800" fill="#8a7c56" text-anchor="middle">OPEN OFFICE</text>
 <text x="657.5" y="430.6" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="9" font-weight="600" fill="#a2946f" text-anchor="middle">34'9 × 96'  ·  open floor</text>
 <rect x="289.6" y="534.6" width="20.8" height="20.8" fill="#8b919c" stroke="#5b6270" stroke-width="1.2" rx="0"/>
-<rect x="465.1" y="534.6" width="20.8" height="20.8" fill="#8b919c" stroke="#5b6270" stroke-width="1.2" rx="0"/>
 <rect x="640.6" y="534.6" width="20.8" height="20.8" fill="#8b919c" stroke="#5b6270" stroke-width="1.2" rx="0"/>
-<rect x="816.1" y="534.6" width="20.8" height="20.8" fill="#8b919c" stroke="#5b6270" stroke-width="1.2" rx="0"/>
 <rect x="991.6" y="534.6" width="20.8" height="20.8" fill="#8b919c" stroke="#5b6270" stroke-width="1.2" rx="0"/>
-<text x="657.5" y="629.5" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="9" font-weight="700" fill="#5b6270" text-anchor="middle">■ 5 structural pillars — can't move</text>
+<text x="657.5" y="629.5" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="9" font-weight="700" fill="#5b6270" text-anchor="middle">■ 3 structural pillars — can't move</text>
 <rect x="1106.0" y="324.0" width="117.0" height="286.0" fill="#ece5d4" stroke="#b9c0cc" stroke-width="1.4" rx="0"/>
 <rect x="950.0" y="90.0" width="442.0" height="234.0" fill="#d3e7dd" stroke="#b9c0cc" stroke-width="1.4" rx="0"/>
 <text x="1171.0" y="202.4" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="10" font-weight="700" fill="#2a2f3a" text-anchor="middle">LARGE CONFERENCE</text>

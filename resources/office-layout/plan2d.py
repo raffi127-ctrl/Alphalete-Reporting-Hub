@@ -157,9 +157,9 @@ for a,b,nm,lab,n,comb in south:
 room(11,18,82,52,C_OPEN,None)
 txt(47.5,23.5,"OPEN OFFICE",size=13,color="#8a7c56",w="800")
 txt(47.5,26.2,"34'9 × 96'  ·  open floor",size=9,color="#a2946f",w="600")
-for px in (20,33.5,47,60.5,74):
+for px in (20,47,74):
     rect(px-0.8,35-0.8,px+0.8,35+0.8,"#8b919c",stroke="#5b6270",sw=1.2)
-txt(47.5,41.5,"■ 5 structural pillars — can't move",size=9,color="#5b6270",w="700")
+txt(47.5,41.5,"■ 3 structural pillars — can't move",size=9,color="#5b6270",w="700")
 # walkway/circulation west of the east offices — same color as the open area
 room(82,18,91,40,C_OPEN,None)
 # NE CONFERENCE (drawn here so it renders as a full rectangle over the open-office corner)
