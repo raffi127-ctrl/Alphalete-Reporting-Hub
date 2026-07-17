@@ -271,24 +271,35 @@ _south_office(37.625,46.5,13.5,"#8a9099","#6f6a63","#2b3a52","#2b3a52","#2b3a52"
 _south_office(28.75,37.625,10.0,"#6f685c","#4e5766","#d21f26","#0a6cff","#00a94f","#d21f26",  # 9 · Bas (bright/Lego)
     bricks=((0.42,4.05,1.62,5.75,"#d21f26",2),(0.55,6.05,1.45,7.05,"#f6c018",2),(0.52,7.55,1.55,8.75,"#0a6cff",2)))
 
-# --- TRAINING ROOMS: classroom rows facing the screen wall + credenza under it ---
-def classroom_rows(x0,y0,x1,y1,col,cred,face):
-    """12 seats + the credenza under the screen. `face` is the wall the screen is on,
-    in the building's frame. Seats sit low and wide here so a grid of them reads as
-    rows of chairs rather than a stand of posts."""
-    if face=="N":                                           # room 1: screen on its north wall
-        scred(x0+2.4,y0+0.25,x1-2.4,y0+1.7,cred)
-        for r in range(4):
-            for c in range(3):
-                schair(x0+2.6+c*2.9, y0+4.6+r*4.2, col, s=1.6, h=2.2)
-    else:                                                   # 11/12: screen on the west end
-        scred(x0+0.25,y0+2.6,x0+1.7,y1-2.6,cred)
-        for r in range(4):
-            for c in range(3):
-                schair(x0+4.6+r*4.2, y0+3.0+c*3.0, col, s=1.6, h=2.2)
-classroom_rows(0,18,11,37,"#c2572c","#6f6a63","N")          # 1 · burnt orange
-classroom_rows(46.5,52,64.25,64,"#2d7273","#5f7273","W")    # 11 · deep teal
-classroom_rows(64.25,52,82,64,"#4f7343","#6a7562","W")      # 12 · forest green
+# --- TRAINING ROOMS: classroom seating facing the screen wall + credenza under it.
+# The screen wall comes from the studio, mapped to the building: room 1's entry faces the
+# open office to its EAST, so it maps 1:1 (screen on the north wall). Rooms 11/12's entry
+# faces the open office to the NORTH while their windows are the south exterior — a 180-deg
+# rotation — so the studio's screen wall lands on the EAST party wall, not the west.
+def classroom(x0,y0,x1,y1,col,cred,face):
+    """12 seats facing `face` (the screen wall, building frame) + the credenza under it."""
+    def chair(cx,cy,back):
+        r=0.58
+        box(cx-r,cy-r,cx+r,cy+r,FLR_Z,FLR_Z+1.35,col)                       # seat
+        d={'N':(cx-r,cy-r-0.20,cx+r,cy-r),'S':(cx-r,cy+r,cx+r,cy+r+0.20),
+           'W':(cx-r-0.20,cy-r,cx-r,cy+r),'E':(cx+r,cy-r,cx+r+0.20,cy+r)}[back]
+        box(d[0],d[1],d[2],d[3],FLR_Z,FLR_Z+2.45,shade(col,1.12))           # seat back, opposite the screen
+    if face=="N":                                          # screen on north wall; chairs face north
+        scred(x0+2.2,y0+0.25,x1-2.2,y0+1.60,cred)
+        xs=[x0+2.6,(x0+x1)/2,x1-2.6]
+        for cy in (y0+4.0+k*3.7 for k in range(4)):
+            for cx in xs: chair(cx,cy,'S')
+    elif face=="E":                                        # screen on east wall; chairs face east
+        # The east wall is a NEAR wall to the fixed SE camera, so the room's east partition
+        # would hide a credenza against it. A depth bias makes it draw in front of that
+        # partition — same screen position, just no longer occluded.
+        box(x1-1.60,y0+2.2,x1-0.25,y1-2.2,FLR_Z,FLR_Z+2.4,cred,db=2.0)
+        ys=[y0+2.6,(y0+y1)/2,y1-2.6]
+        for cx in (x1-3.6-k*3.7 for k in range(4)):
+            for cy in ys: chair(cx,cy,'W')
+classroom(0,18,11,37,"#c2572c","#6f6a63","N")              # 1 · burnt orange
+classroom(46.5,52,64.25,64,"#2d7273","#5f7273","E")        # 11 · deep teal
+classroom(64.25,52,82,64,"#4f7343","#6a7562","E")          # 12 · forest green
 
 # ---- perimeter walls -------------------------------------------------------
 box(0,-1.0,W,0,FLR_Z,FLR_Z+WALL_H,C_WALL)          # north (tall, solid demising)
