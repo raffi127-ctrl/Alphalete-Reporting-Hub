@@ -121,6 +121,7 @@ class AppStreamBusy(Exception):
 def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
                        verbose: bool = True, window_size: tuple = (1680, 1280),
                        device_scale: float | None = None,
+                       extra_args: Optional[list] = None,
                        busy_retries: int | None = None,
                        enable_extensions: bool = False):
     """launch_persistent_context with the existing system-chrome → bundled-
@@ -149,6 +150,11 @@ def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
     if device_scale:
         _args += [f"--force-device-scale-factor={device_scale}",
                   "--high-dpi-support=1"]
+    # Opt-in extra Chrome flags (e.g. --load-extension for resume_pushing's
+    # extractor plugin). Default None = byte-identical launch for every other
+    # caller.
+    if extra_args:
+        _args += list(extra_args)
     base = dict(user_data_dir=str(user_data_dir), headless=headless,
                 no_viewport=True, args=_args)
     # Chrome EXTENSIONS: patchright's DEFAULT chromium args include
@@ -832,6 +838,28 @@ def _reuse_appstream_storage_state(ctx, page: Page, verbose: bool) -> bool:
     return False
 
 
+def _profile_extension_paths(profile) -> list:
+    """Unpacked-extension dirs installed in a persistent Chrome profile
+    (<profile>/Default/Extensions/<id>/<version>/). Playwright launches Chrome
+    with extensions DISABLED by default, so an extension a human installed into
+    the profile won't load unless we point --load-extension at it. Returns the
+    newest version dir per extension id ([] if none)."""
+    out = []
+    for root in (Path(profile) / "Default" / "Extensions",
+                 Path(profile) / "Extensions"):
+        if not root.is_dir():
+            continue
+        for ext_id in sorted(root.iterdir()):
+            if not ext_id.is_dir():
+                continue
+            versions = [v for v in ext_id.iterdir()
+                        if v.is_dir() and (v / "manifest.json").exists()]
+            if versions:
+                versions.sort(key=lambda pp: pp.name)
+                out.append(str(versions[-1]))
+    return out
+
+
 @contextmanager
 def appstream_direct_session(headless: bool = False,
                              verbose: bool = True,
@@ -840,6 +868,7 @@ def appstream_direct_session(headless: bool = False,
                              password: Optional[str] = None,
                              allow_form_login: bool = True,
                              force_form_login: bool = False,
+                             load_extensions: bool = False,
                              yield_if_busy: bool = False,
                              enable_extensions: bool = False) -> Iterator[Page]:
     """Yield a Page on the AppStream recruiting console (#searchMC office
@@ -879,10 +908,60 @@ def appstream_direct_session(headless: bool = False,
                              allow_form_login=True)."""
     profile = profile_dir or APPSTREAM_PROFILE_DIR
     profile.mkdir(exist_ok=True, parents=True)
+    # Force-load any extension a human installed into this profile (resume_pushing
+    # needs the ApplicantStream AI resume-extractor plugin). Playwright otherwise
+    # launches with extensions disabled, so the installed plugin sits unused.
+    ext_args = []
+    if load_extensions:
+        import shutil
+        _ext_paths = _profile_extension_paths(profile)
+        # patchright launches Chrome with flags (--use-mock-keychain etc.) that
+        # invalidate the profile's own extension registrations, so Chrome STRIPS a
+        # human-installed plugin on launch (6 -> 2 -> 0). Keep a copy OUTSIDE the
+        # profile and load THAT: a command-line --load-extension is unpacked/dev
+        # mode and isn't subject to that stripping, so it survives every launch.
+        cache = Path(profile).parent / ".extractor_cache"
+        if _ext_paths:                      # profile still has them → refresh cache
+            shutil.rmtree(cache, ignore_errors=True)
+            cache.mkdir(parents=True, exist_ok=True)
+            cached = []
+            for _i, _src in enumerate(_ext_paths):
+                _dst = cache / f"ext{_i}"
+                try:
+                    shutil.copytree(_src, _dst)
+                    cached.append(str(_dst))
+                except Exception as _e:
+                    if verbose:
+                        print(f"-> cache copy failed for {_src}: {_e}", flush=True)
+        else:                               # profile got wiped → reuse the cache
+            cached = ([str(d) for d in sorted(cache.glob("ext*"))
+                       if (d / "manifest.json").exists()]
+                      if cache.is_dir() else [])
+        if cached:
+            _joined = ",".join(cached)
+            # BOTH flags together (the documented Playwright combo) — required for
+            # a --load-extension'd extension to actually stay ENABLED. We include
+            # every cached extension in the allow-list, so nothing gets disabled.
+            ext_args = [f"--disable-extensions-except={_joined}",
+                        f"--load-extension={_joined}"]
+            if verbose:
+                print(f"-> loading {len(cached)} extension(s) from cache:",
+                      flush=True)
+                for _c in cached:
+                    try:
+                        _m = json.loads((Path(_c) / "manifest.json").read_text())
+                        print(f"   - {_m.get('name', '?')}  (v{_m.get('version','?')})",
+                              flush=True)
+                    except Exception:
+                        print(f"   - {_c} (no readable manifest)", flush=True)
+        elif verbose:
+            print("-> load_extensions=True but no extension in profile OR cache — "
+                  "install the plugin first, then run once to cache it", flush=True)
     with sync_playwright() as p:
         try:
             ctx = _launch_persistent(p, profile, headless=headless,
                                      label="appstream_direct", verbose=verbose,
+                                     extra_args=ext_args,
                                      busy_retries=1 if yield_if_busy else None,
                                      enable_extensions=enable_extensions)
         except Exception as e:
