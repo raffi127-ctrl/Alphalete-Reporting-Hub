@@ -27,8 +27,7 @@ from automations.brand_audit.social_inbox import (
     _client, _reacted, _thread_reactions,
 )
 from automations.brand_audit.config import (
-    SOCIAL_APPROVE_EMOJI, SOCIAL_REJECT_EMOJI, SOCIAL_KILL_EMOJI,
-    SOCIAL_APPROVERS,
+    SOCIAL_APPROVE_EMOJI, SOCIAL_REJECT_EMOJI, SOCIAL_APPROVERS,
 )
 
 MODEL = "claude-opus-4-8"
@@ -294,9 +293,9 @@ def _review_block(review: dict, reply: str) -> str:
             f"({review.get('when') or ''})\n"
             f"> {(review.get('text') or '(rating only, no text)')}\n\n"
             f":pencil2: *Drafted reply*\n{reply}\n\n"
-            f":white_check_mark: approve & post  ·  :x: redo it  ·  :skull: scrap "
-            f"& start over\n_To steer the redo, reply in this message's thread "
-            f"with what to change (e.g. \"too soft\", \"mention the refund\") and "
+            f":white_check_mark: approve & post  ·  :x: write me a new one\n"
+            f"_Want it a certain way? Reply in this message's thread with what to "
+            f"change (e.g. \"too soft\", \"mention the refund\", \"shorter\") and "
             f"react :x: — the next run rewrites it your way._")
 
 
@@ -387,20 +386,17 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
                                  ":white_check_mark: on this header to close it out.")
         hdr["noted_empty"] = True
 
-    # 3) handle reactions on every still-open review reply (any day)
-    resurface = []   # 💀'd reviews: forget them so they come back for a fresh reply
+    # 3) handle reactions on every still-open review card (any day).
+    # TWO reactions only (Megan 2026-07-16): ✅ approve & post, ❌ redo. There is
+    # deliberately no 💀 — that's a social-post concept meaning "never post", and
+    # every review must get a response, so 💀 and ❌ both just produced another
+    # draft. Two buttons for one outcome is the confusion her one-input-per-
+    # concept rule exists to prevent.
     for k, st in state["reviews"].items():
-        if st.get("posted") or st.get("skipped") or not st.get("reply_ts"):
+        if st.get("posted") or not st.get("reply_ts"):
             continue
         rv = st.get("review") or {}
         rx = _thread_reactions(cl, st["reply_ts"], channel).get(st["reply_ts"])
-        if _reacted(rx, SOCIAL_KILL_EMOJI):
-            # UNLIKE the social-post workflow, 💀 does NOT kill a review — every
-            # review still needs a response. Drop its handled-state so the next
-            # scan re-drafts it fresh and it comes back up on the list.
-            resurface.append(k)
-            actions.append({"action": "resurface", "review": k})
-            continue
         rejected = st.setdefault("rejected", [])
         cur = st.get("reply")
         # ❌ OVERRIDES ✅ (changed 2026-07-16). Previously a card carrying both
@@ -432,11 +428,6 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
                     st["approved_pending_api"] = True   # auto-posts once GBP API on
             continue
         actions.append({"action": "awaiting", "review": k})
-
-    # drop 💀'd reviews from state AFTER the loop (can't mutate mid-iteration) so
-    # the next scan sees them as new and drafts a fresh reply.
-    for k in resurface:
-        state["reviews"].pop(k, None)
 
     # 4) mark a day's header complete once an approver reacts a 'done' emoji
     for date, h in state["headers"].items():
