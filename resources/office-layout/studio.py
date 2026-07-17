@@ -24,15 +24,22 @@ TRAINING_VIBE={   # a scheme per training room. No black and no navy: navy is al
 
 OPEN_PILLARS_FT=(16.2,48.8,77.4)   # A2.01: on the centreline, feet from the west edge
 
+INTERVIEW_THEME={   # each interview office its own professional scheme. No blue/green — those
+                    # are already navy (JD/Maud), teal + forest (training), sage (Twaddle).
+ "w-3": dict(wall="#e9e2d6", desk_col="#6a5847", shelf_col="#5c4a38", owner_col="#a97c53", guest_col="#9c948a"),  # warm walnut / caramel
+ "s-1": dict(wall="#e7dee4", desk_col="#5f5560", shelf_col="#6a5a66", owner_col="#7b4f6a", guest_col="#9a929a"),  # plum / aubergine
+ "s-2": dict(wall="#efe7d3", desk_col="#5b564d", shelf_col="#6e5f3e", owner_col="#c19a3e", guest_col="#9a948a"),  # gold / mustard
+}
+
 WALL_COL={
  "w-comb":TRAINING_VIBE["w-comb"]["wall"],   # 1  West training     — sage
- "w-3"   :"#e8e7e2",   # 2  West office       — interview (neutral)
+ "w-3"   :INTERVIEW_THEME["w-3"]["wall"],   # 2  West office   — cognac
  "w-4"   :"#e4dadc",   # 3  Maud's            — soft mauve, blush accents, navy
  "n-large":"#dcd5d0",  # 4  Raf's             — warm grey, red accents
  "e-1"   :"#d5e3d6",   # 5  Twaddle's         — sage / brown scheme
  "e-2"   :C_PINK_W,    # 6  Megan's           — pink
- "s-1"   :"#e8e7e2",   # 7  South office 1    — interview (neutral)
- "s-2"   :"#e8e7e2",   # 8  South office 2    — interview (neutral)
+ "s-1"   :INTERVIEW_THEME["s-1"]["wall"],   # 7  South office 1 — slate blue
+ "s-2"   :INTERVIEW_THEME["s-2"]["wall"],   # 8  South office 2 — olive
  "s-3"   :"#e8e3db",   # 9  Bas's              — warm greige / ochre
  "s-4"   :"#dde3ea",   # 10 JD's              — navy / grey scheme
  "s-comb1":TRAINING_VIBE["s-comb1"]["wall"],  # 11 South training A  — soft green
@@ -974,8 +981,11 @@ def furnish(kind, R, key=None):
         classroom(R,TRAINING_VIBE.get(key,TRAINING_VIBE["s-comb1"]),screen_wall=1)
         ext_windows_n(R)
         glass_front(R,4)
-    elif kind=="interview":   # offices 2/7/8 — JD-style interview kit, no credenza
-        interview_office(R, windows=(key!="w-3"))   # office 2 is interior: no windows, wall 1 solid
+    elif kind=="interview":   # offices 2/7/8 — JD-style interview kit, no credenza; own theme each
+        _iv=INTERVIEW_THEME.get(key,{})
+        interview_office(R, windows=(key!="w-3"),
+                         desk_col=_iv.get("desk_col","#59616e"), shelf_col=_iv.get("shelf_col","#7a6144"),
+                         owner_col=_iv.get("owner_col","#3f5170"), guest_col=_iv.get("guest_col",C_GUEST))
     # every other room = empty architectural shell (walls + door + dimensions only)
     elif kind=="break":
         R.counter(0.6,0.8,0.6+10.0,0.8+2.2,3.0)  # counter along back
@@ -1040,7 +1050,7 @@ def interview_office(R, windows=True, desk_col="#59616e", shelf_col="#7a6144", o
             _onW(_m0,_m1,0.30,_mz-0.05,_mz+0.05,"#9aa2ad",nudge=0.14)     # horizontal mullions
     else:
         # WALL 1 solid (no exterior windows) — a pair of framed prints instead
-        for _ay0,_ay1,_c in ((d*0.28,d*0.28+2.3,"#46586e"),(d*0.28+2.7,d*0.28+4.4,"#7d8894")):
+        for _ay0,_ay1,_c in ((d*0.28,d*0.28+2.3,owner_col),(d*0.28+2.7,d*0.28+4.4,shade(shelf_col,1.25))):
             _onW(_ay0,_ay1,0.17,3.30,5.70,shade(_c,0.66),nudge=0.06)     # frame
             _onW(_ay0+0.08,_ay1-0.08,0.21,3.42,5.58,_c,nudge=0.12)       # print
     # WALL 2 (north): TV + a compact open shelf to its left
@@ -1050,7 +1060,7 @@ def interview_office(R, windows=True, desk_col="#59616e", shelf_col="#7a6144", o
     R.box(3.58,0.34,3.80,1.14,FLR_Z,FLR_Z+5.40,shelf_col)          # right post
     for _sz in (0.10,1.30,2.55,3.80,5.25):
         R.box(1.30,0.34,3.80,1.18,FLR_Z+_sz,FLR_Z+_sz+0.11,shade(shelf_col,0.92))   # boards
-    _pal=("#3f5170","#7d8894","#c5ccd4","#4a6b96","#8a95a3","#dde3ea")
+    _pal=("#7a6144","#3f5170","#7d8894","#8a6d3a","#5c6b3c","#c5ccd4")   # assorted books, works in any theme
     def _brow(x0,z,n,seed=0):
         _bx=x0
         for _i in range(n):
