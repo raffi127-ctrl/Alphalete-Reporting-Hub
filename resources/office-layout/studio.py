@@ -15,6 +15,8 @@ C_PINK_W="#f4e2e4"                          # Megan's office — pink walls (flo
 
 # Each office gets its own wall colour. Floors stay gray carpet throughout (gray tile in the
 # break room) — only the walls change.
+OPEN_PILLARS_FT=(16.2,48.8,77.4)   # A2.01: on the centreline, feet from the west edge
+
 WALL_COL={
  "w-comb":"#dfe9df",   # 1  West training     — sage
  "w-3"   :"#dde5ef",   # 2  West office       — blue
@@ -31,6 +33,7 @@ WALL_COL={
  "conf"  :"#e3ded4",   # 13 Large conference  — warm greige, red chairs
  "recep" :"#f3dfe0",   # 14 Reception         — blush
  "break" :"#e2edf1",   # 15 Break room        — light blue
+ "open"  :"#e8e4da",   # 16 Open office       — warm neutral
 }
 
 def shade(hexc,f):
@@ -810,6 +813,10 @@ def furnish(kind, R):
                                    (4.80,17.50,-90,True),(7.60,17.50,-90,True)):
             _tgt=_TBL+(0.5 if _front else -0.5)
             _seat(_cx,_cy,_ca,_RD,db=_tgt-(_cx+_cy))
+    elif kind=="open":      # Open office. Per O'Brien sheet A2.01 the 3 structural pillars sit
+                            # on the centreline; everything else is open floor awaiting design.
+        for _px in OPEN_PILLARS_FT:
+            R.box(_px-0.8,R.d/2-0.8,_px+0.8,R.d/2+0.8,FLR_Z,FLR_Z+9.0,"#aab0b9")
     # every other room = empty architectural shell (walls + door + dimensions only)
     elif kind=="break":
         R.counter(0.6,0.8,0.6+10.0,0.8+2.2,3.0)  # counter along back
@@ -841,6 +848,7 @@ CATALOG=[
   ("conf","Large Conference","20' × 49'","conference",49.0,20.0,"Main boardroom","Boardroom table · 14 seats · TV wall",False),
   ("recep","Reception / Lobby","21'10\" × 13'6\"","reception",21.83,13.5,"Front-of-house lobby — built-in desk, glass upper, open walkway entry","Built-in desk · glass upper · lounge · open walkway",False),
   ("break","Break Room","15'6\" × 20'","break",20.0,15.5,"Staff kitchen + seating","Kitchenette · 2 tables · 8 seats",False),
+  ("open","Open Office","34'9\" × 96'","open",96.0,34.75,"Open floor — 3 fixed structural pillars; A2.01 calls for (28) 6' × 6' workstations","3 structural pillars · open floor",False),
 ]
 
 def wall_numbers(R):

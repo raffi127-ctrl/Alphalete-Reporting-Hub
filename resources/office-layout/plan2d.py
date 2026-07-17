@@ -154,10 +154,10 @@ south=[(0,1,"OFFICE","12×10'6",7,False),(1,2,"OFFICE","12×10'6",8,False),
 for a,b,nm,lab,n,comb in south:
     room(sx0+a*ow,52,sx0+b*ow,64,C_OFFICE,nm,lab,num=n,combined=comb)
 # OPEN OFFICE — empty open floor with fixed structural pillars
-room(11,18,82,52,C_OPEN,None)
+room(11,18,82,52,C_OPEN,None,num=16)
 txt(47.5,23.5,"OPEN OFFICE",size=13,color="#8a7c56",w="800")
 txt(47.5,26.2,"34'9 × 96'  ·  open floor",size=9,color="#a2946f",w="600")
-for px in (20,47,74):
+for px in (23,47,68):
     rect(px-0.8,35-0.8,px+0.8,35+0.8,"#8b919c",stroke="#5b6270",sw=1.2)
 txt(47.5,41.5,"■ 3 structural pillars — can't move",size=9,color="#5b6270",w="700")
 # walkway/circulation west of the east offices — same color as the open area
