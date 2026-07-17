@@ -817,6 +817,8 @@ def furnish(kind, R):
                             # on the centreline; everything else is open floor awaiting design.
         for _px in OPEN_PILLARS_FT:
             R.box(_px-0.8,R.d/2-0.8,_px+0.8,R.d/2+0.8,FLR_Z,FLR_Z+9.0,"#aab0b9")
+    elif kind in ("long","wide"):   # the three training rooms
+        classroom(R)
     # every other room = empty architectural shell (walls + door + dimensions only)
     elif kind=="break":
         R.counter(0.6,0.8,0.6+10.0,0.8+2.2,3.0)  # counter along back
@@ -850,6 +852,29 @@ CATALOG=[
   ("break","Break Room","15'6\" × 20'","break",20.0,15.5,"Staff kitchen + seating","Kitchenette · 2 tables · 8 seats",False),
   ("open","Open Office","34'9\" × 96'","open",96.0,34.75,"Open floor — 3 fixed structural pillars; A2.01 calls for (28) 6' × 6' workstations","3 structural pillars · open floor",False),
 ]
+
+def classroom(R,accent=C_TASK):
+    """Training rooms are classroom setups: a screen on wall 2 and rows of chairs
+    facing it. Seating and a screen only — no desks. Rows/columns are derived from
+    the room, so all three training rooms share this."""
+    w,d=R.w,R.d
+    NWD=(0-0.5+w+0)/2
+    def _onN(x0,x1,y1,z0,z1,col,nudge=0.0):
+        R.box(x0,0.05,x1,y1,FLR_Z+z0,FLR_Z+z1,col,db=(NWD+0.6+nudge)-((x0+0.05+x1+y1)/2))
+    _sw=min(w*0.60,9.0); _sh=_sw*0.5625; _x0=(w-_sw)/2.0; _z0=2.80    # 16:9, centred on wall 2
+    _onN(_x0,_x0+_sw,0.16,_z0,_z0+_sh,"#2b3038",nudge=0.06)                       # bezel
+    _onN(_x0+0.14,_x0+_sw-0.14,0.21,_z0+0.14,_z0+_sh-0.14,"#0f1319",nudge=0.12)   # screen
+    # Chairs face the screen, so the camera sees their backs — which is how a classroom
+    # reads anyway, and it keeps the screen itself unblocked.
+    def _seat(cx,cy):
+        R.rbox(cx,cy,1.35,1.35,FLR_Z,FLR_Z+1.45,-90,accent)
+        R.rbox(cx,cy+0.58,0.28,1.35,FLR_Z,FLR_Z+2.30,-90,shade(accent,1.12))
+    cols=max(1,int((w-3.2)/2.6)+1); cx0=(w-(cols-1)*2.6)/2.0
+    rows=[y for y in (4.60+r*3.20 for r in range(12)) if y+0.75<=d-0.40] or [4.60]
+    for _cy in rows:
+        for _c in range(cols):
+            _seat(cx0+_c*2.6,_cy)
+    return len(rows)*cols
 
 def wall_numbers(R):
     """Number the four walls so they can be named without ambiguity.
@@ -897,7 +922,7 @@ def build_office(entry):
 
 FURN_BY_KIND={
  'small':'Private office · shell + door','med':'Private office · shell + door',
- 'long':'Private office · shell + door','wide':'Combined · walls removed',
+ 'long':'Classroom setup · screen + chairs','wide':'Classroom setup · screen + chairs · walls removed',
  'large':'Large office · shell + door','conference':'Boardroom · 14 seats · TV wall · whiteboards · built-in counter',
  'megan':'4 screens · standing desk · laptop · walking pad · florals · window wall',
  'twaddle':'L-desk · 2 guest · TV · tablet cabinet · window wall · glass entrance',
