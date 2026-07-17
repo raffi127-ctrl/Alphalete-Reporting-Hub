@@ -51,8 +51,18 @@ _HUB_CARD = {
     "board_compare": "org-sales-board-compare",
     "leaders_call": "leaders-call",
     "residential_rep_count": "residential_rep_count",
-    "rashad_metrics": "rashad-metrics",
-    "aya_metrics": "aya-metrics",
+    # Every per-office metrics feed publishes to the ONE consolidated card
+    # (dashboard._office_metrics_card) — same as the Tableau trackers. The card's
+    # per-office ✅/❌ checklist carries which office missed; the pill is the
+    # batch-level light. Adding an office = a row in office_metrics/offices.py
+    # + its orchestrator entry + one line here.
+    "rashad_metrics": "office-metrics",
+    "aya_metrics": "office-metrics",
+    "cyrus_metrics": "office-metrics",
+    "hammad_metrics": "office-metrics",
+    "kash_metrics": "office-metrics",
+    "salik_metrics": "office-metrics",
+    "cody_metrics": "office-metrics",
     "frontier_opt": "frontier-opt-data-pull",
     "financial_report": "financial-pull",
     "brand_audit": "brand-health-audit",

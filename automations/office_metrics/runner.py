@@ -21,6 +21,8 @@ orange and scopes an --only retry.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
+import json
 import os
 import subprocess
 import sys
@@ -37,6 +39,45 @@ except Exception:
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PER_METRIC_TIMEOUT_S = 20 * 60
+
+# Per-office ✅/❌ results for TODAY, read by the ONE Hub card's checklist
+# (dashboard._channel_status). Mirrors the Tableau trackers' _posted_today.json:
+# one card covering many destinations is only safe if the card shows which
+# office missed — a single red light would hide a lone office failing.
+OFFICE_STATUS_FILE = REPO_ROOT / "output" / "office_metrics" / "_posted_today.json"
+
+
+def _record_office_status(o: Office, *, ok: bool, error: str = "") -> None:
+    """Record THIS office's outcome in the shared per-office status file.
+
+    Read-modify-write keyed by office label, so each office's run (4am
+    orchestrator OR a manual card button) updates only its own row and the card
+    shows the whole roster. Resets when the file is from an earlier day, so a
+    stale checklist can never read as today's. Best-effort — a status-file
+    hiccup must never fail an otherwise-good run."""
+    try:
+        OFFICE_STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        today = dt.date.today().isoformat()
+        data = {}
+        if OFFICE_STATUS_FILE.exists():
+            try:
+                data = json.loads(OFFICE_STATUS_FILE.read_text(encoding="utf-8"))
+            except (ValueError, OSError):
+                data = {}
+        if data.get("date") != today:
+            data = {"date": today, "channels": []}
+        label = f"{o.label} — {o.channel_name}"
+        rows = [r for r in (data.get("channels") or [])
+                if r.get("label") != label]
+        rows.append({"label": label, "ok": bool(ok), "error": (error or "")[:200]})
+        # Keep the card's checklist in registry order, not finish order.
+        order = {f"{_off.OFFICES[k].label} — {_off.OFFICES[k].channel_name}": i
+                 for i, k in enumerate(_off.ORDER)}
+        rows.sort(key=lambda r: order.get(r.get("label", ""), 99))
+        data["channels"] = rows
+        OFFICE_STATUS_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except Exception:  # noqa: BLE001 — never fail the run over the checklist
+        pass
 
 
 def metrics_for(o: Office) -> list[dict]:
@@ -413,7 +454,12 @@ def main(argv=None, *, office_key: str | None = None) -> int:
     ap = argparse.ArgumentParser(prog="office_metrics")
     ap.add_argument("--office", default=office_key,
                     help="office key (see offices.py). Required unless a shim "
-                         "passed it in.")
+                         "passed it in, or --all.")
+    ap.add_argument("--all", action="store_true", dest="all_offices",
+                    help="run EVERY office in offices.ORDER, in order, "
+                         "continuing past one that fails. Powers the Hub card's "
+                         "'Run All Offices' button. Each office still posts to "
+                         "its OWN channel and writes its own manifest.")
     ap.add_argument("--live", action="store_true",
                     help="pull + POST to the office's channel as Lucy.")
     ap.add_argument("--dry-run", action="store_true",
@@ -474,8 +520,38 @@ def main(argv=None, *, office_key: str | None = None) -> int:
             print(f"   - {p}")
         return 2
 
+    # --all: run every office, in registry order, continue-on-failure. Each
+    # office is a FRESH main() call so it gets its own env/pull/manifest exactly
+    # as the orchestrator runs it — no special-cased second code path to drift.
+    if args.all_offices:
+        if args.only:
+            print("--all cannot be combined with --only (re-run one office's "
+                  "metric from its own card button instead).")
+            return 2
+        mode_arg = ["--live"] if args.live else ["--dry-run"]
+        passthru = (["--fresh"] if args.fresh else [])
+        results: list[tuple[str, int]] = []
+        for key in _off.ORDER:
+            o = _off.OFFICES[key]
+            print(f"\n{'=' * 62}\n=== {key} — {o.label} → {o.channel_name}\n{'=' * 62}")
+            try:
+                rc = main(["--office", key] + mode_arg + passthru)
+            except Exception as e:  # noqa: BLE001 — one office must not kill the rest
+                print(f"✗ {key} errored: {type(e).__name__}: {e}")
+                rc = 1
+            results.append((key, rc))
+        bad = [k for k, rc in results if rc != 0]
+        print(f"\n=== ALL OFFICES: {len(results) - len(bad)}/{len(results)} clean ===")
+        for k, rc in results:
+            print(f"  {'✅' if rc == 0 else '❌'}  {k}")
+        if bad:
+            print(f"\n{len(bad)} office(s) had a miss: {', '.join(bad)}. Re-run "
+                  f"just those from the card's per-office buttons.")
+        print("=== done ===")
+        return 1 if bad else 0
+
     if not args.office:
-        print(f"--office is required (one of: {', '.join(_off.ORDER)})")
+        print(f"--office is required (one of: {', '.join(_off.ORDER)}), or --all")
         return 2
 
     if args.prove_abp:
@@ -618,6 +694,12 @@ def main(argv=None, *, office_key: str | None = None) -> int:
             retry_args=retry, kind="metric",
             note=(f"{n_ok}/{len(results)} metrics posted to {o.channel_name}"
                   + (f"; failed: {', '.join(failed_slugs)}" if failed_slugs else "")))
+        # Feed the ONE Hub card's per-office ✅/❌ checklist. Only a FULL live run
+        # speaks for the whole office (an --only re-run covers a single metric,
+        # so it must not overwrite the office's row with a partial verdict).
+        _record_office_status(
+            o, ok=not failed_slugs,
+            error=("; ".join(failed_labels) if failed_labels else ""))
 
     if failed_slugs:
         print(f"\n{len(failed_slugs)} metric(s) didn't post — run COMPLETE with a "

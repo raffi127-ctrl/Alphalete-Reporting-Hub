@@ -1201,6 +1201,116 @@ def _last_completed_as_picker(today: dt.date | None = None) -> dt.date:
     return _last_completed_we_sunday(today) - dt.timedelta(days=7)
 
 
+def _office_metrics_card() -> dict:
+    """ONE card for every per-office daily-metrics feed (Megan 2026-07-17 — was
+    a card per office, and only Rashad + Aya ever had one, so the five offices
+    added 7/15-16 had no Hub presence at all).
+
+    The office list is read from office_metrics.offices.OFFICES and the
+    per-office "re-run" buttons are GENERATED from it — so adding an office stays
+    one row in that registry, with no card to hand-write. Per-office outcomes
+    show as a ✅/❌ checklist (post_run.channel_status_file, written by each
+    office's run). That checklist is what makes one card safe here: a single red
+    light would hide a lone office failing.
+
+    Same shape as _tableau_trackers_card, which consolidated the same way."""
+    from automations.office_metrics import offices as _off
+    offs = [_off.OFFICES[k] for k in _off.ORDER]
+    # One office per line for the breakdown panel (white-space:pre-wrap).
+    office_bullets = "\n".join(f"• {o.label} → {o.channel_name}" for o in offs)
+    channels = ", ".join(o.channel_name for o in offs)
+    return {
+        "id": "office-metrics",
+        "name": "Office Daily Metrics",
+        "creator": "Megan",
+        "emoji": "📈",
+        "color": "#8B5CF6",
+        "category": "🏢 Other Offices",
+        "description": (
+            f"The same 11 daily metrics as the main report, run for each of the "
+            f"{len(offs)} offices and posted into that office's own Metrics "
+            f"thread: {channels}. Every metric slices a shared org-wide view and "
+            "filters to the office's owner, so adding an office is config only — "
+            "no new Tableau views. Each office runs + posts independently; use "
+            "the per-office buttons to re-run just one."),
+        "breakdown": (
+            "WHAT IT DOES\n"
+            f"For each office below, runs all 11 daily metrics and posts them "
+            "into today's Metrics thread in that office's channel (one header "
+            "thread per office per day, created first if it isn't up yet).\n\n"
+            f"OFFICES\n{office_bullets}\n\n"
+            "METRICS POSTED (in thread order)\n"
+            "• 🚪 Telemapper Knocks\n"
+            "• ⏰ Time Gaps\n"
+            "• 📋 Order Log\n"
+            "• 📅 Sales Scheduled 6+ Days Out\n"
+            "• 🚫 Canceled Orders\n"
+            "• 🔁 Ongoing Cancel\n"
+            "• ❎ Disconnected New Internets\n"
+            "• 🌐 New Internet Churn\n"
+            "• 📊 Wireless Churn\n"
+            "• 🆕 Rep Activations\n"
+            "• 💳 New Internet ABP %\n\n"
+            "TWO OFFICES, ONE CHANNEL\n"
+            "Hammad and Salik both post to #elite-prime-sales, so each gets its "
+            "own labelled thread ('Metrics for: <date> — <name>') and they never "
+            "collide.\n\n"
+            "IF ONE MISSES\n"
+            "A run keeps going past a metric that fails and ends with a ✅/❌ "
+            "summary; the card shows a per-office checklist after the batch. The "
+            "orchestrator now auto-retries just the failed metric on its 25-min "
+            "circle-back, so a transient (a stale ownerville session, a network "
+            "blip) usually heals itself — anything still missing is named in the "
+            "summary email. Use the per-office buttons below to re-run one "
+            "office by hand.\n\n"
+            "WHEN IT RUNS\n"
+            "Daily in the 4am batch, each office in turn."),
+        "assignees": ["Lucy 1"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "4:50 AM",
+            "estimated_minutes": 6 * len(offs),
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": (
+                f"✅ Office metrics posted — all 11 metrics in each of the "
+                f"{len(offs)} offices' threads."),
+            "message_failed": (
+                "❌ An office had a miss — check the per-office checklist, then "
+                "re-run that office from its button below."),
+            # Drives the ✅/❌ per-office checklist on the card (_channel_status).
+            "channel_status_file": "output/office_metrics/_posted_today.json",
+        },
+        "actions": [
+            {
+                "label": "Run All Offices",
+                "icon": "▶",
+                "primary": True,
+                "help": (f"Runs all 11 metrics for each of the {len(offs)} "
+                         "offices in turn and posts to each office's own "
+                         "channel. Continues past an office that fails. Needs a "
+                         "warm Tableau + ownerville session (best run on the "
+                         "mini)."),
+                "module": "automations.office_metrics.runner",
+                "args_fn": lambda: ["--all", "--live"],
+            },
+        ] + [
+            {
+                # No help text — the label says it. It's a full re-run of that
+                # one office (mirrors the trackers' per-channel buttons).
+                "label": f"Re-run {o.label} ({o.channel_name})",
+                "icon": "🔁",
+                "module": "automations.office_metrics.runner",
+                # default-bind the key — a bare closure would capture the loop
+                # variable and every button would run the LAST office.
+                "args_fn": (lambda key=o.key: ["--office", key, "--live"]),
+            }
+            for o in offs
+        ],
+    }
+
+
 def _tableau_trackers_card() -> dict:
     """ONE card for the country-wide Tableau trackers, posted to EVERY channel
     off a single capture (Megan 2026-07-14 — was 5 cards, one per org).
@@ -2443,231 +2553,7 @@ AUTOMATED_REPORTS = [
             },
         ],
     },
-    {
-        "id": "rashad-metrics",
-        "name": "Rashad's Daily Metrics (#elevate-sales)",
-        "creator": "Megan",
-        "emoji": "📈",
-        "color": "#8B5CF6",
-        "category": "🏢 Other Offices",
-        "description": "The same 11 daily metrics as the main report, scoped to Rashad Reed's office and posted into his #elevate-sales Metrics thread — Telemapper Knocks, Time Gaps, Order Log, Sales Scheduled 6+ Days, Canceled Orders, Ongoing Cancel, Disconnects, New Internet Churn, Wireless Churn, Rep Activations, New Internet ABP %.",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "Runs all 11 daily metrics for Rashad Reed's office and posts each "
-            "into today's Metrics thread in #elevate-sales (one header thread "
-            "per day, created first if it isn't up yet).\n\n"
-            "METRICS POSTED (in thread order)\n"
-            "• 🚪 Telemapper Knocks\n"
-            "• ⏰ Time Gaps\n"
-            "• 📋 Order Log\n"
-            "• 📅 Sales Scheduled 6+ Days Out\n"
-            "• 🚫 Canceled Orders\n"
-            "• 🔁 Ongoing Cancel\n"
-            "• ❎ Disconnected New Internets\n"
-            "• 🌐 New Internet Churn\n"
-            "• 📊 Wireless Churn\n"
-            "• 🆕 Rep Activations\n"
-            "• 💳 New Internet ABP %\n\n"
-            "IF ONE FAILS\n"
-            "The run keeps going and ends with a ✅/❌ summary. Re-run just the "
-            "ones that failed from the per-metric buttons below.\n\n"
-            "WHEN IT RUNS\n"
-            "Daily, not before 6am — same metric logic as the main report, "
-            "filtered to Rashad's office and posted to #elevate-sales instead "
-            "of #alphalete-sales."
-        ),
-        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "11louWIU8IuSPrZLsMkRh8qEnO3wNqmeNwIOSKPpXzm8/edit"),
-        "assignees": ["Lucy 1"],
-        "schedule": {
-            "frequency": "daily",
-            "time": "6:00 AM",
-            "estimated_minutes": 12,
-        },
-        "post_run": {
-            "message_success": "✅ Rashad's metrics posted to the #elevate-sales thread.",
-            "message_failed": "❌ A metric failed — check the summary above, then re-run that one from the buttons below.",
-        },
-        "actions": [
-            {
-                "label": "Run All Metrics",
-                "icon": "▶",
-                "primary": True,
-                "help": "Runs all 11 metrics → posted to today's #elevate-sales thread; continues past any that fail.",
-                "module": "automations.rashad_metrics.run",
-                "args_fn": lambda: ["--live"],
-            },
-            {
-                "label": "Telemapper Knocks + Time Gaps",
-                "icon": "🚪",
-                "help": "Re-run just Knocks + Time Gaps for Rashad.",
-                "module": "automations.rashad_metrics.run",
-                "args_fn": lambda: ["--only", "knocks_gaps", "--live"],
-            },
-            {
-                "label": "Order Log + Rep Activations",
-                "icon": "📋",
-                "help": "Re-run just the Order Log + Rep Activations for Rashad.",
-                "module": "automations.rashad_metrics.run",
-                "args_fn": lambda: ["--only", "order_log", "--live"],
-            },
-            {
-                "label": "Sales Scheduled 6+ Days Out",
-                "icon": "📅",
-                "help": "Re-run just Sales Scheduled 6+ Days for Rashad.",
-                "module": "automations.rashad_metrics.run",
-                "args_fn": lambda: ["--only", "sales_6plus", "--live"],
-            },
-            {
-                "label": "Canceled Orders",
-                "icon": "🚫",
-                "help": "Re-run just Canceled Orders for Rashad.",
-                "module": "automations.rashad_metrics.run",
-                "args_fn": lambda: ["--only", "cancels", "--live"],
-            },
-            {
-                "label": "Ongoing Cancel",
-                "icon": "🔁",
-                "help": "Re-run just Ongoing Cancel for Rashad.",
-                "module": "automations.rashad_metrics.run",
-                "args_fn": lambda: ["--only", "ongoing_cancel", "--live"],
-            },
-            {
-                "label": "Disconnected New Internets",
-                "icon": "❎",
-                "help": "Re-run just Disconnects for Rashad.",
-                "module": "automations.rashad_metrics.run",
-                "args_fn": lambda: ["--only", "disconnects", "--live"],
-            },
-            {
-                "label": "New Internet + Wireless Churn",
-                "icon": "🌐",
-                "help": "Re-run just New Internet + Wireless Churn for Rashad (the recovery used 2026-06-30).",
-                "module": "automations.rashad_metrics.run",
-                "args_fn": lambda: ["--only", "churn", "--live"],
-            },
-            {
-                "label": "New Internet ABP %",
-                "icon": "💳",
-                "help": "Re-run just New Internet ABP % for Rashad.",
-                "module": "automations.rashad_metrics.run",
-                "args_fn": lambda: ["--only", "abp", "--live"],
-            },
-        ],
-    },
-    {
-        "id": "aya-metrics",
-        "name": "Aya's Daily Metrics (#indelible-sales)",
-        "creator": "Megan",
-        "emoji": "📈",
-        "color": "#8B5CF6",
-        "category": "🏢 Other Offices",
-        "description": "The same 11 daily metrics as the main report, scoped to Aya Al-Khafaji's office and posted into her #indelible-sales Metrics thread — Telemapper Knocks, Time Gaps, Order Log, Sales Scheduled 6+ Days, Canceled Orders, Ongoing Cancel, Disconnects, New Internet Churn, Wireless Churn, Rep Activations, New Internet ABP %.",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "Runs all 11 daily metrics for Aya Al-Khafaji's office and posts "
-            "each into today's Metrics thread in #indelible-sales (one header "
-            "thread per day, created first if it isn't up yet).\n\n"
-            "METRICS POSTED (in thread order)\n"
-            "• 🚪 Telemapper Knocks\n"
-            "• ⏰ Time Gaps\n"
-            "• 📋 Order Log\n"
-            "• 📅 Sales Scheduled 6+ Days Out\n"
-            "• 🚫 Canceled Orders\n"
-            "• 🔁 Ongoing Cancel\n"
-            "• ❎ Disconnected New Internets\n"
-            "• 🌐 New Internet Churn\n"
-            "• 📊 Wireless Churn\n"
-            "• 🆕 Rep Activations\n"
-            "• 💳 New Internet ABP %\n\n"
-            "IF ONE FAILS\n"
-            "The run keeps going and ends with a ✅/❌ summary. Re-run just the "
-            "ones that failed from the per-metric buttons below.\n\n"
-            "WHEN IT RUNS\n"
-            "Daily, as the next report right after Rashad's in the morning "
-            "batch (not a separate 6am start) — same metric logic as the main "
-            "report, filtered to Aya's office (her INTAYA / WirelessAYA / "
-            "AyaExpanded / AyaINTABP Tableau views) and posted to #indelible-sales."
-        ),
-        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "10t16jDAFDtQNytFWU6O6gJtoOFlg0UHLwoArTW_sRNg/edit"),
-        "assignees": ["Lucy 1"],
-        "schedule": {
-            "frequency": "daily",
-            "time": "After Rashad's",
-            "estimated_minutes": 12,
-        },
-        "post_run": {
-            "message_success": "✅ Aya's metrics posted to the #indelible-sales thread.",
-            "message_failed": "❌ A metric failed — check the summary above, then re-run that one from the buttons below.",
-        },
-        "actions": [
-            {
-                "label": "Run All Metrics",
-                "icon": "▶",
-                "primary": True,
-                "help": "Runs all 11 metrics → posted to today's #indelible-sales thread; continues past any that fail.",
-                "module": "automations.aya_metrics.run",
-                "args_fn": lambda: ["--live"],
-            },
-            {
-                "label": "Telemapper Knocks + Time Gaps",
-                "icon": "🚪",
-                "help": "Re-run just Knocks + Time Gaps for Aya.",
-                "module": "automations.aya_metrics.run",
-                "args_fn": lambda: ["--only", "knocks_gaps", "--live"],
-            },
-            {
-                "label": "Order Log + Rep Activations",
-                "icon": "📋",
-                "help": "Re-run just the Order Log + Rep Activations for Aya.",
-                "module": "automations.aya_metrics.run",
-                "args_fn": lambda: ["--only", "order_log", "--live"],
-            },
-            {
-                "label": "Sales Scheduled 6+ Days Out",
-                "icon": "📅",
-                "help": "Re-run just Sales Scheduled 6+ Days for Aya.",
-                "module": "automations.aya_metrics.run",
-                "args_fn": lambda: ["--only", "sales_6plus", "--live"],
-            },
-            {
-                "label": "Canceled Orders",
-                "icon": "🚫",
-                "help": "Re-run just Canceled Orders for Aya.",
-                "module": "automations.aya_metrics.run",
-                "args_fn": lambda: ["--only", "cancels", "--live"],
-            },
-            {
-                "label": "Ongoing Cancel",
-                "icon": "🔁",
-                "help": "Re-run just Ongoing Cancel for Aya.",
-                "module": "automations.aya_metrics.run",
-                "args_fn": lambda: ["--only", "ongoing_cancel", "--live"],
-            },
-            {
-                "label": "Disconnected New Internets",
-                "icon": "❎",
-                "help": "Re-run just Disconnects for Aya.",
-                "module": "automations.aya_metrics.run",
-                "args_fn": lambda: ["--only", "disconnects", "--live"],
-            },
-            {
-                "label": "New Internet + Wireless Churn",
-                "icon": "🌐",
-                "help": "Re-run just New Internet + Wireless Churn for Aya.",
-                "module": "automations.aya_metrics.run",
-                "args_fn": lambda: ["--only", "churn", "--live"],
-            },
-            {
-                "label": "New Internet ABP %",
-                "icon": "💳",
-                "help": "Re-run just New Internet ABP % for Aya.",
-                "module": "automations.aya_metrics.run",
-                "args_fn": lambda: ["--only", "abp", "--live"],
-            },
-        ],
-    },
+    _office_metrics_card(),
     {
         "id": "fiber-activations",
         "name": "Fiber Activations Report",
