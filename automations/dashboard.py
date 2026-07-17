@@ -1201,6 +1201,31 @@ def _last_completed_as_picker(today: dt.date | None = None) -> dt.date:
     return _last_completed_we_sunday(today) - dt.timedelta(days=7)
 
 
+def _office_run_args(base_args, report_id: str):
+    """CLICK-time args for one office's re-run button.
+
+    If TODAY's run left metrics missing, re-run ONLY those (the run-manifest's
+    scoped retry_args); otherwise run the whole office. Scoping matters because a
+    re-run RE-POSTS every metric it executes — there's no already-posted guard —
+    so a blind full re-run duplicates a thread that's already complete (Megan
+    2026-07-16: "it will only try to pull the missed metrics on a rerun?" — now
+    it does).
+
+    Date-guarded: a manifest from an earlier day must never scope the button to
+    YESTERDAY's misses. args_fn is evaluated on click, so this reads the manifest
+    as it stands at click time, not at render. Best-effort — any hiccup falls
+    back to the full run, which is always correct, just noisier."""
+    try:
+        from automations.shared import run_manifest as _rm
+        spec = _rm.retry_spec(report_id)
+        if spec and spec.get("retry_args"):
+            if str(spec.get("run_ts") or "").startswith(dt.date.today().isoformat()):
+                return list(spec["retry_args"])
+    except Exception:
+        pass
+    return list(base_args)
+
+
 def _office_metrics_card() -> dict:
     """ONE card for every per-office daily-metrics feed (Megan 2026-07-17 — was
     a card per office, and only Rashad + Aya ever had one, so the five offices
@@ -1223,12 +1248,12 @@ def _office_metrics_card() -> dict:
     # launches it exactly as its own card always did. The other 7 are generated
     # from the registry.
     buttons = [(_omr.MAIN_OFFICE_LABEL, _omr.MAIN_OFFICE_CHANNEL,
-                _omr.MAIN_OFFICE_MODULE, [])]
+                _omr.MAIN_OFFICE_MODULE, [], "daily_metrics")]
     buttons += [(o.label, o.channel_name, "automations.office_metrics.runner",
-                 ["--office", o.key, "--live"]) for o in offs]
+                 ["--office", o.key, "--live"], o.report_id) for o in offs]
     # One office per line for the breakdown panel (white-space:pre-wrap).
-    office_bullets = "\n".join(f"• {lb} → {ch}" for lb, ch, _m, _a in buttons)
-    channels = ", ".join(ch for _lb, ch, _m, _a in buttons)
+    office_bullets = "\n".join(f"• {lb} → {ch}" for lb, ch, _m, _a, _r in buttons)
+    channels = ", ".join(ch for _lb, ch, _m, _a, _r in buttons)
     return {
         "id": "office-metrics",
         "name": "Office Daily Metrics",
@@ -1295,16 +1320,16 @@ def _office_metrics_card() -> dict:
             },
         ] + [
             {
-                # No help text — the label says it. It's a full re-run of that
-                # one office (mirrors the trackers' per-channel buttons).
                 "label": f"Re-run {lb} ({ch})",
                 "icon": "🔁",
+                "help": ("Re-runs only the metrics that missed today; runs the "
+                         "whole office if nothing missed."),
                 "module": mod,
-                # default-bind the args — a bare closure would capture the loop
-                # variable and every button would run the LAST office.
-                "args_fn": (lambda a=args: list(a)),
+                # default-bind — a bare closure would capture the loop variable
+                # and every button would run the LAST office.
+                "args_fn": (lambda a=args, rid=rid_: _office_run_args(a, rid)),
             }
-            for lb, ch, mod, args in buttons
+            for lb, ch, mod, args, rid_ in buttons
         ],
     }
 
