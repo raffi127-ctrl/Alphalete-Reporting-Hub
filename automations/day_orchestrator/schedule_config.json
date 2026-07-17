@@ -289,6 +289,25 @@
       "timeout_minutes": 150,
       "verify": null
     },
+    "stf_field_check": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "STF Field Check. on_scheduler:false = NOT in the 4am batch; the nightly run is a STANDALONE 11pm LaunchAgent (com.alphalete.stf-field-check-11pm, installed via `lucy rerun install_stf_field_check_agent`). Present here so `lucy rerun stf_field_check` works. Reads the Sales Board WE tab, finds the day's reps marked STF, pulls that same day's ownerville Time Tracker (p=510, Raf's master view — no impersonation), and overwrites STF with X when worked (last knock − first knock) < 3:00 or the rep never showed. Runs on the MINI (ownerville is single-session; a laptop scrape knocks out the holder). DRY-RUN by default: `lucy rerun stf_field_check` (today) or `lucy rerun stf_field_check --date 2026-07-15` (backfill a past day). Add --write to actually flip the cells. The 11pm LaunchAgent passes --write. Registered 2026-07-17.",
+      "display_name": "STF Field Check (STF→X under 3h)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.stf_field_check.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 20,
+      "verify": null
+    },
     "install_keep_awake_agent": {
       "on_scheduler": true,
       "_note": "MANUAL-ONLY. `lucy rerun install_keep_awake_agent` installs the com.alphalete.keep-awake LaunchAgent on the mini (user-level, NO root) — runs `caffeinate -s` 24/7 so the mini never sleeps and launchd's 4am orchestrator isn't deferred to ~6am. The remote, no-sudo alternative to the pmset wake schedule (set_wake, which needs root the mini won't give). Diagnosed via morning_diag 2026-07-06.",
