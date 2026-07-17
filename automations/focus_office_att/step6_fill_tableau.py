@@ -453,11 +453,16 @@ def main() -> int:
 
     print()
     print("=== SUMMARY ===")
+    # Say "would write" on a --dry-run: `written` is only a COUNT of the cells we
+    # WOULD fill (the sole write is gated behind `not dry_run`), so the old
+    # unconditional "written" made a read-only dry-run log look like it had just
+    # written to every tab — genuinely alarming when auditing one (2026-07-07).
+    summary_verb = "cell(s) would be written" if args.dry_run else "cell(s) written"
     for owner, s in summary.items():
         if s["status"] != "ok":
             print(f"  • {owner}: {s['status']}")
             continue
-        print(f"  ✓ {owner}: {s['written']} cell(s) written" + (
+        print(f"  ✓ {owner}: {s['written']} {summary_verb}" + (
             f"; unmatched reps: {s['unmatched_reps']}" if s["unmatched_reps"] else ""))
 
     # Record which Sheet owner tabs are MISSING from the Tableau export —
