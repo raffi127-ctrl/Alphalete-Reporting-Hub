@@ -229,6 +229,12 @@ def main(argv: Optional[List[str]] = None) -> int:
             if now >= backstop_at:
                 _log(f"backstop {backstop_at.time()} reached — marking stragglers MISSED.")
                 _apply_backstop(ds, stale_after)
+                # Stragglers are terminal now, so a retry that had been deferred
+                # behind them (see _retry_incomplete_parts) gets its last shot
+                # before the day is finalized — otherwise one report that never
+                # became ready would strand the retry all morning.
+                _retry_incomplete_parts(ds, todays, target,
+                                        dry_run=dry_run, simulate=args.simulate)
                 # Close the yellow pills of the stragglers we just gave up on (red).
                 _sync_hub_pills(ds, dry_run=dry_run, simulate=args.simulate)
                 _finalize(cfg, ds, channel, email_dry, target, stale_after)
@@ -666,6 +672,21 @@ def _retry_incomplete_parts(ds, todays, target, *, dry_run, simulate):
     from automations.day_orchestrator import reconcile
     from automations.shared import run_manifest as _rm
     by_id = {r.report_id: r for r in todays}
+
+    # LAST — only once every OTHER report has finished. A retry is a second bite
+    # at an office that already posted most of its metrics; a report that hasn't
+    # had its FIRST run yet outranks it, and both want the same Tableau/
+    # ownerville session (Megan 2026-07-16: "a retry happens after EVERY other
+    # report has ran so nothing else is held up"). Waiting reports are still
+    # non-terminal, so this defers to the next 25-min pass and re-checks. At the
+    # backstop the stragglers go terminal (MISSED), which lets a deferred retry
+    # take its last shot before the day is finalized.
+    waiting = [rs.report_id for rs in ds.reports.values() if not rs.is_terminal()]
+    if waiting:
+        _log(f"  auto-retry deferred — {len(waiting)} report(s) still to run "
+             f"({', '.join(waiting[:4])}{'…' if len(waiting) > 4 else ''})")
+        return
+
     for rs in list(ds.reports.values()):
         r = by_id.get(rs.report_id)
         if not _retryable_incomplete(rs, r):
