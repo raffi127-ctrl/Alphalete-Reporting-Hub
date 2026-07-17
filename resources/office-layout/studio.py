@@ -19,16 +19,16 @@ WALL_COL={
  "w-comb":"#dfe9df",   # 1  West training     — sage
  "w-3"   :"#dde5ef",   # 2  West office       — blue
  "w-4"   :"#e4dadc",   # 3  Maud's            — soft mauve, blush accents, navy
- "n-large":"#d7e2ee",  # 4  Raf's             — deeper blue
+ "n-large":"#dcd5d0",  # 4  Raf's             — warm grey, red accents
  "e-1"   :"#d5e3d6",   # 5  Twaddle's         — sage / brown scheme
  "e-2"   :C_PINK_W,    # 6  Megan's           — pink
  "s-1"   :"#e7e3f0",   # 7  South office 1    — lavender
  "s-2"   :"#f3e6dc",   # 8  South office 2    — peach
- "s-3"   :"#deecee",   # 9  South office 3    — aqua
+ "s-3"   :"#deecee",   # 9  Bas's              — aqua
  "s-4"   :"#dde3ea",   # 10 JD's              — navy / grey scheme
  "s-comb1":"#e2ecdf",  # 11 South training A  — soft green
  "s-comb2":"#e2ecdf",  # 12 South training B  — soft green
- "conf"  :"#dfeae7",   # 13 Large conference  — muted teal
+ "conf"  :"#e3ded4",   # 13 Large conference  — warm greige, red chairs
  "recep" :"#f3dfe0",   # 14 Reception         — blush
  "break" :"#e2edf1",   # 15 Break room        — light blue
 }
@@ -225,29 +225,28 @@ def furnish(kind, R):
         R.text(w*0.5,d*0.30-0.8,FLR_Z+3.3,"ISLAND",size=4.8,color="#5b6270",w="800")
         R.text(1.7,d*0.55,FLR_Z+0.05,"storage behind wall ◂",size=4.4,color="#8f95a0",w="700",anchor="start")
     elif kind=="conference":   # long 18-person boardroom table (8 per side + 1 each end) + TV wall
-        tx0,ty0,tx1,ty1 = 10.0, 8.0, 39.0, 12.0
+        tx0,ty0,tx1,ty1 = 10.0, 7.6, 39.0, 12.4    # a touch wider
         # The table is one long box, so it sorts by its centroid depth. Chairs past that
         # midpoint would flip to the wrong side, so pin each row's depth either side of it.
+        _CH="#9e3b32"                                         # red chairs
         TBL=(tx0+ty0+tx1+ty1)/2
         BEHIND, INFRONT = TBL-0.5, TBL+0.5
         def _cchair(cx,cy,back,target):
             db=target-(cx+cy)      # force sort order relative to the table
             # seat + a back TALLER than the table top so far-side chairs stay visible
-            R.box(cx-0.75,cy-0.75,cx+0.75,cy+0.75,FLR_Z,FLR_Z+1.5,C_TASK,db=db)
-            if   back=="N": R.box(cx-0.75,cy-0.75,cx+0.75,cy-0.40,FLR_Z,FLR_Z+3.6,shade(C_TASK,1.15),db=db)
-            elif back=="S": R.box(cx-0.75,cy+0.40,cx+0.75,cy+0.75,FLR_Z,FLR_Z+3.6,shade(C_TASK,1.15),db=db)
-            elif back=="W": R.box(cx-0.75,cy-0.75,cx-0.40,cy+0.75,FLR_Z,FLR_Z+3.6,shade(C_TASK,1.15),db=db)
-            else:           R.box(cx+0.40,cy-0.75,cx+0.75,cy+0.75,FLR_Z,FLR_Z+3.6,shade(C_TASK,1.15),db=db)
-        for k in range(8):
-            cx=11.5+k*(37.5-11.5)/7
+            R.box(cx-0.75,cy-0.75,cx+0.75,cy+0.75,FLR_Z,FLR_Z+1.5,_CH,db=db)
+            if   back=="N": R.box(cx-0.75,cy-0.75,cx+0.75,cy-0.40,FLR_Z,FLR_Z+3.6,shade(_CH,1.15),db=db)
+            elif back=="S": R.box(cx-0.75,cy+0.40,cx+0.75,cy+0.75,FLR_Z,FLR_Z+3.6,shade(_CH,1.15),db=db)
+            elif back=="W": R.box(cx-0.75,cy-0.75,cx-0.40,cy+0.75,FLR_Z,FLR_Z+3.6,shade(_CH,1.15),db=db)
+            else:           R.box(cx+0.40,cy-0.75,cx+0.75,cy+0.75,FLR_Z,FLR_Z+3.6,shade(_CH,1.15),db=db)
+        for k in range(6):                                       # 6 a side + 1 each end = 14
+            cx=12.5+k*(36.5-12.5)/5
             _cchair(cx, ty0-1.35, "N", BEHIND)                   # far row: behind the table
             _cchair(cx, ty1+1.35, "S", INFRONT)                  # near row: in front of it
         _cchair(tx0-1.5,(ty0+ty1)/2,"W",BEHIND)                  # far end
         _cchair(tx1+1.5,(ty0+ty1)/2,"E",INFRONT)                 # near end
-        R.conftable(tx0,ty0,tx1,ty1)
-        R.text((tx0+tx1)/2,(ty0+ty1)/2,FLR_Z+2.6,"SEATS 18",size=5.0,color="#ffffff",w="800")
-        R.counter(45.9,2.5,48.6,17.5,3.0)                        # built-in counter, right (east) wall
-        R.text(47.2,10.0,FLR_Z+3.3,"BUILT-IN COUNTER",size=4.0,color="#5b6270",w="800")
+        R.box(tx0,ty0,tx1,ty1,FLR_Z,FLR_Z+2.4,"#5c4033")   # walnut table
+        R.box(45.9,2.5,48.6,17.5,FLR_Z,FLR_Z+3.0,"#c9c2b6")                        # built-in counter, right (east) wall
         # ---- back wall: large TV, shelving either side, whiteboards outboard ----
         # every wall item shares one depth just in front of the wall; nudge to stack them
         NW=(0-0.5+w+0)/2
@@ -256,8 +255,8 @@ def furnish(kind, R):
         _wall(20.5,28.5,0.24,2.7,7.3,C_SCREEN)                   # TV — 8' wide × 4'6" tall
         SHELF_Z=(2.6,4.0,5.4,6.8)
         for _z in SHELF_Z:                                       # shelving flanking the TV
-            _wall(13.0,18.8,0.85,_z,_z+0.18,C_WOOD)
-            _wall(30.2,36.0,0.85,_z,_z+0.18,C_WOOD)
+            _wall(13.0,18.8,0.85,_z,_z+0.18,"#7a5333")
+            _wall(30.2,36.0,0.85,_z,_z+0.18,"#7a5333")
         for _bx0,_bx1 in ((4.0,11.6),(37.4,45.0)):               # whiteboards on the far side of each shelf unit
             _wall(_bx0,_bx1,0.16,2.4,7.4,"#7f8792")                            # frame
             _wall(_bx0+0.20,_bx1-0.20,0.22,2.58,7.22,"#fbfcfd",nudge=0.06)     # writing surface
@@ -296,11 +295,6 @@ def furnish(kind, R):
         _onctr(46.8,12.00,47.8,13.00,3.0,3.65,C_POT)             # plant — pot
         _onctr(46.55,11.75,48.05,13.25,3.65,4.15,C_PLANT)        # foliage
         _onctr(46.7,11.95,47.9,13.05,4.15,4.90,C_PLANT)
-        R.text(24.5,1.9,FLR_Z+7.7,"TV",size=4.0,color="#8f95a0",w="800")
-        R.text(15.9,1.9,FLR_Z+7.4,"shelving",size=3.5,color="#8f95a0",w="700")
-        R.text(33.1,1.9,FLR_Z+7.4,"shelving",size=3.5,color="#8f95a0",w="700")
-        R.text(7.8,1.9,FLR_Z+7.0,"whiteboard",size=3.6,color="#8f95a0",w="700")
-        R.text(41.2,1.9,FLR_Z+7.0,"whiteboard",size=3.6,color="#8f95a0",w="700")
         # ---- left (west) wall: interior glass window into Raf's office next door ----
         # framed + mullioned + sill so it reads as a window, not a tint on the wall
         WW=(-0.5+0+0+d)/2         # west-wall depth; window parts sort in front of it
@@ -312,9 +306,6 @@ def furnish(kind, R):
             _wwin(_my-0.10,_my+0.10,0.36,2.5,7.4,"#59616e",nudge=0.12)
         _wwin(2.6,17.4,0.62,1.95,2.2,"#aeb4bd",nudge=0.12)          # sill
         # caption on the open floor beside it — the window is near full-height, no clear wall above
-        R.text(3.2,14.6,FLR_Z+0.05,"◄ GLASS WINDOW",size=4.4,color="#2f7d8c",w="800",anchor="start")
-        R.text(3.2,16.1,FLR_Z+0.05,"looks into Raf's office",size=3.6,color="#3f88a8",w="700",anchor="start")
-        R.text(w*0.5,d-1.6,FLR_Z+0.05,"18-person boardroom",size=4.6,color="#8f95a0",w="700")
     elif kind=="megan":     # Megan's office — window wall, 4 screens, standing desk + walking pad
         import math as _m
         NWD=(0-0.5+w+0)/2                    # north-wall depth
@@ -700,6 +691,125 @@ def furnish(kind, R):
             _sx=_rx-_off*_m.sin(_m.radians(_ra)); _sy=_ry+_off*_m.cos(_m.radians(_ra))
             R.rbox(_sx,_sy,1.80,0.14,FLR_Z,FLR_Z+0.24,_ra,"#6b4c35")        # rockers
             R.rbox(_sx,_sy,0.14,0.14,FLR_Z+0.24,FLR_Z+0.66,_ra,"#6b4c35")   # legs
+    elif kind=="raf":       # Raf's office. Walls per Megan: 1 & 2 solid, 3 = glass shared with
+                            # the conference room, 4 = glass with the entry door. Red is his colour.
+        import math as _m
+        NWD=(0-0.5+w+0)/2; WWD=(-0.5+0+0+d)/2
+        _RD="#9e3b32"; _WN="#5c4033"; _WD2="#7a5333"        # red, walnut, mid walnut
+        def _onN(x0,x1,y1,z0,z1,col,op=1.0,nudge=0.0):
+            R.box(x0,0.05,x1,y1,FLR_Z+z0,FLR_Z+z1,col,op=op,db=(NWD+0.6+nudge)-((x0+0.05+x1+y1)/2))
+        def _onW(y0,y1,x1,z0,z1,col,op=1.0,nudge=0.0):
+            R.box(-0.04,y0,x1,y1,FLR_Z+z0,FLR_Z+z1,col,op=op,db=(WWD+0.6+nudge)-((-0.04+y0+x1+y1)/2))
+        # WALL 2 (back-right) = solid: corner bookcase, mini fridge, decor collage
+        _BC="#9aa2ac"
+        def _case(x0,y0,x1,y1,seed,inset=0.40,cav=0.94):
+            """A run of bookcase, open face SOUTH at y1 (the camera can't see a west face).
+            `inset` is the carcass frame, `cav` how deep the shelves cut in — a leg running
+            along wall 3 is narrow and deep, so both differ from a leg along wall 2."""
+            R.box(x0,y0,x1,y1,FLR_Z,FLR_Z+6.40,_BC)                         # carcass
+            _cy0=y1-cav
+            R.box(x0+inset,_cy0,x1-inset,y1+0.02,FLR_Z+0.36,FLR_Z+5.96,"#20272f")    # cavity
+            for _sz in (1.42,2.54,3.66,4.78):
+                R.box(x0+inset,_cy0,x1-inset,y1+0.06,FLR_Z+_sz,FLR_Z+_sz+0.10,"#6b7580")
+            _BK=("#c5ccd4","#9e3b32","#a9b2bd","#7a5333","#dde3ea","#c0533f","#93a0ae","#5c4033")
+            for _si,_sz in enumerate((0.46,1.52,2.64,3.76,4.88)):
+                _bx=x0+inset+0.08; _k=_si*4+seed; _run=x1-inset-0.06
+                while _bx<_run:
+                    _bw=0.14+0.04*(_k%3); _bh=0.72+0.055*((_k*3)%5)
+                    if _bx+_bw>_run: break
+                    R.box(_bx,y1-0.80,_bx+_bw,y1+0.08,FLR_Z+_sz,FLR_Z+_sz+_bh,_BK[_k%len(_BK)],db=0.7)
+                    _bx+=_bw+0.03; _k+=1
+        _case(16.60,0.18,18.86,1.24,0)                                      # leg along wall 2
+        # The wall-3 return is kept shallow on purpose: it sits nearer the camera than the
+        # wall-2 leg, so a deep one would legitimately occlude most of the books beside it.
+        _case(18.86,0.18,19.84,1.70,3,inset=0.11,cav=0.95)                  # leg along wall 3
+        R.box(0.22,0.20,1.92,1.90,FLR_Z,FLR_Z+3.40,_RD)                     # mini fridge, walls 1/2 corner
+        R.box(1.92,0.32,1.96,1.80,FLR_Z+1.55,FLR_Z+1.65,shade(_RD,0.7))     # fridge door split
+        R.box(1.84,1.82,1.98,1.94,FLR_Z+2.40,FLR_Z+2.90,"#c9ccd2")          # handle
+        # decor collage behind the desk — one anchor piece with smaller ones clustered round it
+        for _x0,_x1,_z0,_z1,_c in ((8.60,11.00,3.30,6.30,_RD),(11.30,12.70,4.95,6.30,"#7a5333"),
+                                   (11.30,12.70,3.30,4.75,"#c0533f"),(13.00,14.60,5.20,6.30,"#a9b2bd"),
+                                   (13.00,13.95,3.30,4.95,"#7a5333"),(14.10,14.60,3.30,4.95,"#c5ccd4")):
+            _onN(_x0,_x1,0.15,_z0,_z1,shade(_c,0.62),nudge=0.06)
+            _onN(_x0+0.07,_x1-0.07,0.20,_z0+0.07,_z1-0.07,_c,nudge=0.12)
+        # WALL 1 (back-left) = solid: a large collage of art filling the run
+        for _y0,_y1,_z0,_z1,_c in ((7.60,12.40,3.70,7.20,_RD),                     # anchor
+                                   (4.80,7.00,5.45,7.20,"#7a5333"),(4.80,7.00,3.70,5.05,"#a9b2bd"),
+                                   (2.40,4.20,4.60,6.40,"#c0533f"),(2.40,4.20,2.60,4.05,"#7a5333"),
+                                   (7.60,9.70,2.20,3.20,"#a9b2bd"),(10.30,12.40,2.20,3.20,"#c5ccd4")):
+            _onW(_y0,_y1,0.17,_z0,_z1,shade(_c,0.68),nudge=0.06)
+            _onW(_y0+0.07,_y1-0.07,0.21,_z0+0.07,_z1-0.07,_c,nudge=0.12)
+        # TV on the wall 1 end nearest the sitting table
+        _onW(13.70,18.00,0.16,3.25,5.95,"#2b3038",nudge=0.06)               # bezel
+        _onW(13.86,17.84,0.21,3.38,5.82,"#0f1319",nudge=0.12)               # screen
+        # WALL 3 (front-right) = glass shared with the conference room. Translucent — it is
+        # between the camera and the room.
+        # Same band and mullions as the window drawn on the conference side of this wall
+        # (y2.6-17.4, z2.2-7.7, mullions at 7.35 / 12.65) so the two rooms agree.
+        R.box(w,0,w+0.42,d,FLR_Z,FLR_Z+8.60,shade(WALL_COL.get(key,C_WALL),0.92),op=0.34)  # wall
+        R.box(w,2.60,w+0.46,17.40,FLR_Z+1.95,FLR_Z+2.20,"#aeb4bd",op=0.85)  # sill
+        R.box(w,2.60,w+0.44,17.40,FLR_Z+7.70,FLR_Z+7.95,"#aeb4bd",op=0.85)  # head
+        R.box(w,2.95,w+0.40,17.05,FLR_Z+2.50,FLR_Z+7.40,"#9fdcf0",op=0.24)  # glazing
+        for _py in (2.60,7.35,12.65,17.20):
+            R.box(w,_py,w+0.44,_py+0.20,FLR_Z+2.20,FLR_Z+7.70,"#59616e",op=0.8)    # mullions
+        # WALL 4 (front-left) = glass with the entry door
+        R.box(0,d,w,d+0.36,FLR_Z+0.5,FLR_Z+8.0,"#9fdcf0",op=0.18)           # glazing
+        R.box(0,d,w,d+0.40,FLR_Z,FLR_Z+0.5,"#59616e",op=0.75)               # base rail
+        R.box(0,d,w,d+0.40,FLR_Z+8.0,FLR_Z+8.2,"#59616e",op=0.75)           # head rail
+        for _mx in (0.0,6.55,13.10,19.84):
+            R.box(_mx,d,_mx+0.16,d+0.40,FLR_Z+0.5,FLR_Z+8.0,"#59616e",op=0.75)     # mullions
+        for _mx in (14.20,16.94):
+            R.box(_mx,d,_mx+0.16,d+0.44,FLR_Z+0.5,FLR_Z+7.3,"#59616e",op=0.9)      # door stiles
+        R.box(16.50,d,16.70,d+0.48,FLR_Z+3.05,FLR_Z+3.55,"#c9ccd2",op=0.95)        # pull
+        R.swing_at(14.40,d-0.10,2.70,188,258)
+        # L-desk in walnut — main run in front of Raf, return wrapping his side
+        R.box(7.20,5.20,14.20,7.60,FLR_Z+2.2,FLR_Z+2.5,_WN)                 # main
+        R.box(12.00,2.80,14.20,5.20,FLR_Z+2.2,FLR_Z+2.5,_WN)                # return
+        for _ex,_ey in ((7.6,5.6),(7.6,7.2),(13.8,5.6),(13.8,7.2),(12.4,3.2),(13.8,3.2)):
+            R.box(_ex-0.18,_ey-0.18,_ex+0.18,_ey+0.18,FLR_Z,FLR_Z+2.2,"#6b5a49")   # legs
+        def _seat(cx,cy,ang,col,bh=2.4,db=0.0):
+            R.rbox(cx,cy,1.45,1.45,FLR_Z,FLR_Z+1.5,ang,col,db=db)
+            _bx=cx-0.58*_m.cos(_m.radians(ang)); _by=cy-0.58*_m.sin(_m.radians(ang))
+            R.rbox(_bx,_by,0.30,1.45,FLR_Z,FLR_Z+bh,ang,shade(col,1.12),db=db)
+        _seat(10.20,3.90,90,_RD,2.7)                                        # Raf, back to wall 2
+        _seat(8.80,9.20,-90,_RD); _seat(12.20,9.20,-90,_RD)                 # two across the desk
+        # iMac — db clears the desk, which sorts by its centroid and would paint over it
+        _ix,_iy=10.60,6.40; _MD=1.4
+        R.box(_ix-0.28,_iy-0.42,_ix+0.28,_iy+0.42,FLR_Z+2.5,FLR_Z+2.58,"#c9ccd2",db=_MD)  # foot
+        R.box(_ix-0.05,_iy-0.10,_ix+0.05,_iy+0.10,FLR_Z+2.58,FLR_Z+3.05,"#c9ccd2",db=_MD) # stand
+        R.box(_ix-0.95,_iy-0.07,_ix+0.95,_iy+0.07,FLR_Z+3.05,FLR_Z+4.35,"#d8dbe0",db=_MD) # back
+        R.box(_ix-0.86,_iy-0.10,_ix+0.86,_iy-0.06,FLR_Z+3.14,FLR_Z+4.24,"#222833",db=_MD+0.1) # screen
+        R.box(_ix-0.55,_iy+0.60,_ix+0.55,_iy+1.05,FLR_Z+2.5,FLR_Z+2.58,"#e6e8ec",db=_MD)  # keyboard
+        # walking pad — right-hand end of wall 2, behind the desk
+        R.box(14.60,1.30,16.40,3.70,FLR_Z,FLR_Z+0.32,"#3a4150")             # deck
+        R.box(14.75,1.42,16.25,3.58,FLR_Z+0.32,FLR_Z+0.40,"#22262e")        # belt
+        # small couch on wall 1, toward the wall 2 end
+        _SOF="#5a5f68"
+        R.box(0.25,7.30,2.95,12.70,FLR_Z,FLR_Z+0.55,shade(_SOF,0.75))       # plinth
+        R.box(0.25,7.30,1.05,12.70,FLR_Z,FLR_Z+2.90,_SOF)                   # back panel
+        R.box(0.25,7.30,2.95,7.98,FLR_Z,FLR_Z+1.95,shade(_SOF,0.92))        # arm, wall-2 end
+        R.box(0.25,12.02,2.95,12.70,FLR_Z,FLR_Z+1.95,shade(_SOF,0.92))      # arm, far end
+        for _cy0,_cy1 in ((8.04,9.96),(10.04,11.96)):
+            R.box(1.08,_cy0,2.88,_cy1,FLR_Z+0.55,FLR_Z+1.42,shade(_SOF,1.16),db=0.5)  # seat
+            R.box(1.00,_cy0,1.62,_cy1,FLR_Z+1.42,FLR_Z+2.78,shade(_SOF,1.06),db=0.4)  # back
+        for _py in (8.60,10.70):
+            R.box(1.58,_py,2.16,_py+0.92,FLR_Z+1.42,FLR_Z+2.28,_RD,db=1.1)  # red throw pillows
+        # Oval meeting table, seats 6. Drawn as a pair of stacked ellipse polygons — the box
+        # primitive can't do a curve; the lower one peeking out reads as the table edge.
+        _tcx,_tcy,_tra,_trb=6.20,15.20,2.60,1.70
+        _oval=[(_tcx+_tra*_m.cos(2*_m.pi*_i/48.0),_tcy+_trb*_m.sin(2*_m.pi*_i/48.0)) for _i in range(48)]
+        _od=_tcx+_tcy
+        for _zz,_cc,_dd in ((2.22,shade(_WD2,0.62),_od+0.30),(2.42,_WD2,_od+0.32)):
+            _pp=" ".join('%.1f,%.1f'%R.iso(_ox,_oy,FLR_Z+_zz) for _ox,_oy in _oval)
+            R.emit(_dd,_zz,f'<polygon points="{_pp}" fill="{_cc}" stroke="{shade(_WD2,0.5)}" stroke-width="0.6"/>')
+        R.box(_tcx-0.34,_tcy-0.34,_tcx+0.34,_tcy+0.34,FLR_Z,FLR_Z+2.22,"#6b5a49")   # pedestal
+        R.box(_tcx-0.90,_tcy-0.90,_tcx+0.90,_tcy+0.90,FLR_Z,FLR_Z+0.16,"#6b5a49")   # base plate
+        _TBL=_od+0.32                                                       # pin chairs either side
+        for _cx,_cy,_ca,_front in ((2.70,15.20,0,False),(9.70,15.20,180,True),
+                                   (4.80,12.80,90,False),(7.60,12.80,90,False),
+                                   (4.80,17.50,-90,True),(7.60,17.50,-90,True)):
+            _tgt=_TBL+(0.5 if _front else -0.5)
+            _seat(_cx,_cy,_ca,_RD,db=_tgt-(_cx+_cy))
     # every other room = empty architectural shell (walls + door + dimensions only)
     elif kind=="break":
         R.counter(0.6,0.8,0.6+10.0,0.8+2.2,3.0)  # counter along back
@@ -719,16 +829,16 @@ CATALOG=[
   ("w-comb","West · Training Room","10'6\" × 20'","long",10.5,20.0,"Training room — walls removed","Combined · walls removed",True),
   ("w-3","West · Office","10'6\" × 10'5\"","small",10.5,10.42,"Standard private office","Shell + door",False),
   ("w-4","Maud's Office (corner)","10'5\" × 17'5\"","maud",10.42,17.42,"Maud's corner office","L-desk · 2 guest · play pen · rocking chair · TV",False),
-  ("n-large","Raf's Office","20' × 20'","large",20.0,20.0,"Raf's office","Shell + door",False),
+  ("n-large","Raf's Office","20' × 20'","raf",20.0,20.0,"Raf's office","L-desk · iMac · walking pad · 2 guest · bookcase · mini fridge · oval table",False),
   ("e-1","Twaddle's Office","10'8\" × 10'8\"","twaddle",10.67,10.67,"Twaddle's office","L-desk · 2 guest chairs · TV · glass entrance",False),
   ("e-2","Claude Room / Megan's","10'8\" × 10'8\"","megan",10.67,10.67,"Megan's office / Claude room","4 screens · standing desk · walking pad · window wall",False),
   ("s-1","South · Office 1","12' × 10'6\"","med",12.0,10.5,"Standard private office","L-desk · 2 guest · credenza",False),
   ("s-2","South · Office 2","12' × 10'6\"","med",12.0,10.5,"Standard private office","L-desk · 2 guest · credenza",False),
-  ("s-3","South · Office 3","12' × 10'","med",12.0,10.0,"Standard private office","L-desk · 2 guest · credenza",False),
+  ("s-3","Bas's office","12' × 10'","med",12.0,10.0,"Standard private office","L-desk · 2 guest · credenza",False),
   ("s-4","JD's Office","12' × 13'6\"","jd",12.0,13.5,"JD's office","L-desk · 2 guest chairs · TV · credenza · window wall",False),
   ("s-comb1","South · Training Room A","24' × 9'","wide","24.0","9.0","Training room — walls removed","Combined · walls removed",True),
   ("s-comb2","South · Training Room B","24' × 10'6\"","wide",24.0,10.5,"Training room — walls removed","Combined · walls removed",True),
-  ("conf","Large Conference","20' × 49'","conference",49.0,20.0,"Main boardroom","Boardroom table · 18 seats · TV wall",False),
+  ("conf","Large Conference","20' × 49'","conference",49.0,20.0,"Main boardroom","Boardroom table · 14 seats · TV wall",False),
   ("recep","Reception / Lobby","21'10\" × 13'6\"","reception",21.83,13.5,"Front-of-house lobby — built-in desk, glass upper, open walkway entry","Built-in desk · glass upper · lounge · open walkway",False),
   ("break","Break Room","15'6\" × 20'","break",20.0,15.5,"Staff kitchen + seating","Kitchenette · 2 tables · 8 seats",False),
 ]
@@ -780,11 +890,12 @@ def build_office(entry):
 FURN_BY_KIND={
  'small':'Private office · shell + door','med':'Private office · shell + door',
  'long':'Private office · shell + door','wide':'Combined · walls removed',
- 'large':'Large office · shell + door','conference':'Boardroom · shell + door',
+ 'large':'Large office · shell + door','conference':'Boardroom · 14 seats · TV wall · whiteboards · built-in counter',
  'megan':'4 screens · standing desk · laptop · walking pad · florals · window wall',
  'twaddle':'L-desk · 2 guest · TV · tablet cabinet · window wall · glass entrance',
  'jd':'L-desk · 2 guest · TV · bookcase · credenza under the windows · glass front',
  'maud':'L-desk · 2 guest · iMac · TV · play pen · rocking chair · window wall',
+ 'raf':'L-desk · iMac · walking pad · 2 guest · bookcase · mini fridge · 6-seat oval table',
  'reception':'Built-in desk · dog area · glass upper · open walkway',
  'break':'Kitchenette · island · storage wall'}
 offices=[]
