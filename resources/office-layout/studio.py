@@ -519,23 +519,41 @@ def furnish(kind, R, key=None):
         for _az0,_az1,_col in ((5.30,6.70,"#33486b"),(2.80,4.20,"#8b95a3")):
             _onN(9.40,11.00,0.17,_az0,_az1,shade(_col,0.68),nudge=0.06)     # wrapped edge
             _onN(9.46,10.94,0.21,_az0+0.06,_az1-0.06,_col,nudge=0.12)       # canvas face
-        # Tall bookcase left of the TV on wall 2. Wide-ish and SHALLOW — at 1.6' deep it was
-        # near-square in plan and you only ever saw its side. Case is LIGHTER than the cavity
-        # and the frame is thick enough to read: a thin frame just disappears at room zoom.
-        _BC="#7d8894"
-        R.box(1.30,0.18,3.90,1.18,FLR_Z,FLR_Z+6.40,_BC)                        # carcass: top, sides, base
-        R.box(1.70,0.30,3.50,1.20,FLR_Z+0.36,FLR_Z+5.96,"#20272f")             # dark cavity
-        for _sz in (1.42,2.54,3.66,4.78):
-            R.box(1.70,0.30,3.50,1.24,FLR_Z+_sz,FLR_Z+_sz+0.10,"#5c6b7d")      # shelf boards
-        _BKC=("#c5ccd4","#4a6b96","#a9b2bd","#2f4260","#7d8894","#dde3ea","#38537d","#93a0ae")
-        for _si,(_sz,_run) in enumerate(((0.46,3.44),(1.52,3.20),(2.64,3.44),(3.76,3.02),(4.88,3.32))):
-            _bx=1.78; _k=_si*4
-            while _bx<_run:
-                _bw=0.14+0.04*(_k%3)                       # varied thickness
-                _bh=0.72+0.055*((_k*3)%5)                  # varied height
-                if _bx+_bw>_run: break
-                R.box(_bx,0.40,_bx+_bw,1.26,FLR_Z+_sz,FLR_Z+_sz+_bh,_BKC[_k%len(_BKC)],db=0.7)
-                _bx+=_bw+0.03; _k+=1
+        # OPEN shelving left of the TV on wall 2 — executive walnut, no back panel, a
+        # restrained mix of books, an award, a framed photo and a plant. Same open build as
+        # Bas's but in JD's navy/grey palette (no Lego, no bright primaries).
+        _SHW="#6b5540"
+        R.box(1.30,0.34,1.55,1.16,FLR_Z,FLR_Z+6.30,_SHW)                   # left post
+        R.box(3.65,0.34,3.90,1.16,FLR_Z,FLR_Z+6.30,_SHW)                   # right post
+        for _sz in (0.10,1.35,2.55,3.75,4.95,6.15):
+            R.box(1.30,0.34,3.90,1.20,FLR_Z+_sz,FLR_Z+_sz+0.12,shade(_SHW,0.92))  # shelf boards
+        def _books(x0,z,n,seed=0):
+            _pal=("#2f4260","#7d8894","#c5ccd4","#3a4a5e","#dde3ea","#4a6b96","#8a95a3","#5c6b7d")
+            _bx=x0
+            for _i in range(n):
+                _bw=0.13+0.03*((_i+seed)%3); _bh=0.60+0.05*(((_i+seed)*2)%4)
+                R.box(_bx,0.55,_bx+_bw,1.08,FLR_Z+z,FLR_Z+z+_bh,_pal[(_i+seed)%len(_pal)],db=0.8)
+                _bx+=_bw+0.03
+        def _stack(x0,z):
+            R.box(x0,0.52,x0+0.80,1.10,FLR_Z+z,FLR_Z+z+0.13,"#3a4a5e",db=0.8)
+            R.box(x0+0.05,0.55,x0+0.72,1.06,FLR_Z+z+0.13,FLR_Z+z+0.25,"#8a95a3",db=0.8)
+        def _trinket(x0,z,col,w=0.34,h=0.42):
+            R.box(x0,0.62,x0+w,1.00,FLR_Z+z,FLR_Z+z+h,col,db=0.8)
+        def _photo(x0,z):
+            R.box(x0,0.92,x0+0.54,1.02,FLR_Z+z,FLR_Z+z+0.62,"#c5ccd4",db=0.8)        # frame
+            R.box(x0+0.06,0.94,x0+0.48,1.00,FLR_Z+z+0.08,FLR_Z+z+0.54,"#46586e",db=0.85)  # photo
+        def _award(cx,z):
+            R.box(cx-0.14,0.74,cx+0.14,1.00,FLR_Z+z,FLR_Z+z+0.09,"#3a3a3a",db=0.8)   # base
+            R.box(cx-0.10,0.78,cx+0.10,0.96,FLR_Z+z+0.09,FLR_Z+z+0.28,"#c9a53e",db=0.82)  # stem
+            R.box(cx-0.16,0.72,cx+0.16,1.02,FLR_Z+z+0.28,FLR_Z+z+0.46,"#d9b84e",db=0.84)  # cup bowl
+        def _pot(cx,z,sc=0.6):
+            R.box(cx-0.17,0.66,cx+0.17,1.00,FLR_Z+z,FLR_Z+z+0.28,"#7d8894",db=0.8)   # pot (grey, not terracotta)
+            leafy(R,cx,0.83,FLR_Z+z+0.28,4.6,sc)                                      # foliage
+        _books(1.66,0.22,6,0)                                                        # bottom: a full run of books
+        _stack(1.70,1.47); _award(3.10,1.47)                                         # book stack + award
+        _photo(1.70,2.67); _pot(3.15,2.67)                                           # framed photo + plant
+        _books(1.66,3.87,4,3); _trinket(3.10,3.87,"#46586e",0.32,0.46)              # books + a muted box
+        _pot(1.90,5.07,0.5); _books(2.55,5.07,3,1)                                   # small plant + a few books
         # credenza sitting under the windows on wall 1 (tucks below the 2'8" sill)
         _CRD="#2f4260"                                                             # navy
         R.box(0.18,3.50,2.00,9.50,FLR_Z,FLR_Z+2.50,_CRD)
@@ -1164,7 +1182,7 @@ FURN_BY_KIND={
  'large':'Large office · shell + door','conference':'Boardroom · 14 seats · TV wall · whiteboards · built-in counter',
  'megan':'4 screens · standing desk · laptop · walking pad · florals · window wall',
  'twaddle':'L-desk · 2 guest · TV · tablet cabinet · window wall · glass entrance',
- 'jd':'L-desk · 2 guest · TV · bookcase · credenza under the windows · glass front',
+ 'jd':'L-desk · 2 guest · TV · open shelving · credenza under the windows · glass front',
  'bas':'L-desk · iMac · 2 bright guest chairs · TV · Lego mosaic · brick builds · open shelving · glass front',
  'maud':'L-desk · 2 guest · iMac · TV · play pen · rocking chair · window wall',
  'raf':'L-desk · iMac · walking pad · 2 guest · bookcase · mini fridge · 6-seat oval table',
