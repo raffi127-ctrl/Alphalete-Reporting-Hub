@@ -337,7 +337,7 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
         if st.get("posted") or st.get("skipped") or not st.get("reply_ts"):
             continue
         rv = st.get("review") or {}
-        rx = _thread_reactions(cl, st["reply_ts"]).get(st["reply_ts"])
+        rx = _thread_reactions(cl, st["reply_ts"], channel).get(st["reply_ts"])
         if _reacted(rx, SOCIAL_KILL_EMOJI):
             # UNLIKE the social-post workflow, 💀 does NOT kill a review — every
             # review still needs a response. Drop its handled-state so the next
@@ -380,7 +380,8 @@ def process_reviews(company_name: str = DEFAULT_COMPANY, *, dry_run: bool = True
     for date, h in state["headers"].items():
         if h.get("completed") or not h.get("ts"):
             continue
-        if _reacted(_thread_reactions(cl, h["ts"]).get(h["ts"]), HEADER_DONE_EMOJI):
+        if _reacted(_thread_reactions(cl, h["ts"], channel).get(h["ts"]),
+                    HEADER_DONE_EMOJI):
             h["completed"] = True
             actions.append({"action": "header_completed", "date": date})
 

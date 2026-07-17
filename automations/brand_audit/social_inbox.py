@@ -147,13 +147,19 @@ def _reacted(reactions: list[dict] | None, emoji: tuple) -> bool:
     return False
 
 
-def _thread_reactions(cl, parent_ts: str) -> dict:
+def _thread_reactions(cl, parent_ts: str, channel: str | None = None) -> dict:
     """{message_ts: reactions} for a thread, read via conversations_replies
     (history scope; includes reactor user IDs — reactions.get needs a scope our
-    token lacks)."""
+    token lacks).
+
+    `channel` defaults to the social inbox (what this module's own flows use),
+    but MUST be passed by callers whose threads live elsewhere — review_replies
+    posts to the brand-health alert channel, and reading it against the social
+    inbox silently returned {} (so every reaction was invisible and no draft
+    ever got approved or redrafted). Fixed 2026-07-16."""
     out = {}
     try:
-        for m in cl.conversations_replies(channel=SOCIAL_INBOX_CHANNEL_ID,
+        for m in cl.conversations_replies(channel=channel or SOCIAL_INBOX_CHANNEL_ID,
                                           ts=parent_ts).get("messages", []):
             out[m["ts"]] = m.get("reactions")
     except Exception:
