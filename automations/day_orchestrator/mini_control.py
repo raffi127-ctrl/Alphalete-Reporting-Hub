@@ -425,6 +425,65 @@ def _action_install_lucy2_digest(args: str) -> tuple[bool, str]:
                   f"smoke test ok · {smoke[:80]}")
 
 
+def _action_install_card_scheduler(args: str) -> tuple[bool, str]:
+    """Install (or reinstall) the card scheduler on THIS machine — auto-runs the
+    uploaded Hub cards assigned to this runner (Lucy 1 / Lucy 2) at their
+    scheduled time.
+
+    Defaults to OBSERVE mode (logs "WOULD run X", executes nothing). Pass `live`
+    as the args to actually run due cards:  `lucy install_card_scheduler live`.
+    Re-run with/without `live` to flip modes. Run `update` + `restart_poller`
+    first so this action exists in the running poller."""
+    uid = os.getuid()
+    label = "com.alphalete.card-scheduler"
+    live = (args or "").strip().lower() == "live"
+    src_plist = REPO_ROOT / "deploy" / f"{label}.plist"
+    wrapper = REPO_ROOT / "deploy" / "card_scheduler_10min.sh"
+    dst_plist = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+    if not src_plist.exists() or not wrapper.exists():
+        return False, (f"missing {src_plist.name} or {wrapper.name} — run "
+                       "`update` first to pull them")
+    try:
+        text = src_plist.read_text().replace(
+            "/Users/megan/1st Claude Folder", str(REPO_ROOT))
+        if live:
+            # flip the committed CARD_SCHEDULER_LIVE 0 -> 1
+            text = text.replace(
+                "<key>CARD_SCHEDULER_LIVE</key>\n        <string>0</string>",
+                "<key>CARD_SCHEDULER_LIVE</key>\n        <string>1</string>")
+        dst_plist.parent.mkdir(parents=True, exist_ok=True)
+        dst_plist.write_text(text)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write plist: {str(e).splitlines()[0][:140]}"
+    lint = subprocess.run(["plutil", "-lint", str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if lint.returncode != 0:
+        return False, f"plist lint failed: {(lint.stdout or '')[:160]}"
+    try:
+        os.chmod(wrapper, 0o755)
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Smoke test in OBSERVE mode regardless of live — proves the library read +
+    # due-logic work here and reports which cards are assigned to this machine.
+    smoke_ok, smoke = _run_cmd(
+        [sys.executable, "-m", "automations.card_scheduler.run"],
+        timeout_s=180, log_name="card-scheduler-install-smoke.log")
+    if not smoke_ok:
+        return False, f"smoke test failed — NOT going live: {smoke[:150]}"
+
+    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["launchctl", "enable", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    boot = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if boot.returncode != 0:
+        return False, f"smoke ok; bootstrap FAILED: {(boot.stdout or '').strip()[:150]}"
+    return True, (f"installed {label} · mode={'LIVE' if live else 'OBSERVE'} · "
+                  f"{smoke[:110]}")
+
+
 def _action_watch_test(args: str) -> tuple[bool, str]:
     """Fire appstream_watch's one-off test ping so Megan/Eve can confirm the 6pm
     session-expiry Slack DM actually delivers — WITHOUT waiting for a real lapse
@@ -849,6 +908,7 @@ ACTIONS = {
     "restart_poller": _action_restart_poller,
     "install_hub_watch": _action_install_hub_watch,
     "install_lucy2_digest": _action_install_lucy2_digest,
+    "install_card_scheduler": _action_install_card_scheduler,
     "reseed_appstream": _action_reseed_appstream,
     "watch_test": _action_watch_test,
     "diag": _action_diag,
