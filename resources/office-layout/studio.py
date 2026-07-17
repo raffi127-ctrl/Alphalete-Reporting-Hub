@@ -15,10 +15,11 @@ C_PINK_W="#f4e2e4"                          # Megan's office — pink walls (flo
 
 # Each office gets its own wall colour. Floors stay gray carpet throughout (gray tile in the
 # break room) — only the walls change.
-TRAINING_VIBE={   # each training room its own modern scheme
- "w-comb": dict(wall="#e7e8ea", chair="#3a3f47", ink="#22262b", accent="#e8622b"),  # graphite + orange
- "s-comb1":dict(wall="#e3e7ee", chair="#2b3a52", ink="#1b2433", accent="#2fa8c9"),  # navy + cyan
- "s-comb2":dict(wall="#ecebe7", chair="#34312c", ink="#232019", accent="#c8862f"),  # black + bronze
+TRAINING_VIBE={   # a scheme per training room. No black and no navy: navy is already
+                  # Maud's and JD's, and red is Raf's and the boardroom.
+ "w-comb": dict(wall="#eae8e4", chair="#c2572c", cred="#6f6a63", accent="#c2572c"),  # stone + burnt orange
+ "s-comb1":dict(wall="#e1eaea", chair="#2d7273", cred="#5f7273", accent="#2d7273"),  # pale stone + deep teal
+ "s-comb2":dict(wall="#e7eae2", chair="#4f7343", cred="#6a7562", accent="#4f7343"),  # sage stone + forest green
 }
 
 OPEN_PILLARS_FT=(16.2,48.8,77.4)   # A2.01: on the centreline, feet from the west edge
@@ -883,25 +884,36 @@ def classroom(R,vibe,screen_wall=2,seats=12):
     _on(a0,a0+sw,0.16,z0,z0+sh,"#2b3038",nudge=0.06)                       # bezel
     _on(a0+0.14,a0+sw-0.14,0.21,z0+0.14,z0+sh-0.14,"#0f1319",nudge=0.12)   # screen
 
-    def poster(_o,p0,pz,i):
-        """3' x 2' poster — abstract block graphic, no text. The motif rotates so a run
-        of them doesn't read as wallpaper."""
-        W,H=3.0,2.0
-        _o(p0,p0+W,0.14,pz,pz+H,"#cfd2d7",nudge=0.04)                      # frame
-        _o(p0+0.06,p0+W-0.06,0.18,pz+0.06,pz+H-0.06,vibe["ink"],nudge=0.08)   # field
+    def _plate(a0,a1,t,z0,z1,col,nudge=0.0):
+        """A thin plate on wall 1. Depth stays at 0.04: a plate that reaches back into
+        the wall shows a shaded side face and reads as a raised block, not as print."""
+        lo=t-0.04
+        R.box(lo,a0,t,a1,FLR_Z+z0,FLR_Z+z1,col,db=(WWD+0.6+nudge)-((lo+a0+t+a1)/2))
+    def poster(p0,pz,i):
+        """3' x 2' framed print — paper stock with a bold graphic, no text. The motif
+        rotates so a run of them doesn't read as wallpaper."""
+        W,H=3.0,2.0; A=vibe["accent"]; A2=shade(A,0.66)
+        _plate(p0,p0+W,0.13,pz,pz+H,"#43403c",0.04)                        # slim frame
+        _plate(p0+0.05,p0+W-0.05,0.16,pz+0.05,pz+H-0.05,"#f3f1ed",0.08)    # paper
         m=i%3
-        if   m==0: _o(p0+0.06,p0+W-0.06,0.20,pz+0.06,pz+0.62,vibe["accent"],nudge=0.12)
-        elif m==1: _o(p0+0.06,p0+1.10,0.20,pz+0.06,pz+H-0.06,vibe["accent"],nudge=0.12)
-        else:      _o(p0+0.80,p0+W-0.80,0.20,pz+0.52,pz+H-0.52,vibe["accent"],nudge=0.12)
+        if m==0:                                                           # bar over rule
+            _plate(p0+0.30,p0+W-0.30,0.18,pz+0.30,pz+0.94,A,0.12)
+            _plate(p0+0.30,p0+1.40,0.18,pz+1.12,pz+1.44,A2,0.12)
+        elif m==1:                                                         # tall block + tab
+            _plate(p0+0.30,p0+1.34,0.18,pz+0.30,pz+H-0.30,A,0.12)
+            _plate(p0+1.54,p0+W-0.30,0.18,pz+0.30,pz+0.88,A2,0.12)
+        else:                                                              # stacked bands
+            _plate(p0+0.30,p0+W-0.30,0.18,pz+0.98,pz+H-0.30,A,0.12)
+            _plate(p0+0.30,p0+W-0.30,0.18,pz+0.60,pz+0.86,A2,0.12)
 
     # Posters only where there is a solid wall the camera can actually see. In rooms
     # 11/12 that is nowhere: wall 3 faces away and wall 1 carries the screen.
     if screen_wall==2:
-        for i,py in enumerate((4.0,8.5,13.0)): poster(_onW,py,3.60,i)
+        for i,py in enumerate((4.0,8.5,13.0)): poster(py,3.60,i)
 
     # credenza under the screen, running a touch wider than it
     c0,c1=a0-0.20,a0+sw+0.20
-    body=shade(vibe["ink"],1.80); top=shade(vibe["ink"],1.25); split=shade(vibe["ink"],1.20)
+    body=vibe["cred"]; top=shade(body,0.78); split=shade(body,0.72)
     n=3
     if screen_wall==2:                                   # against wall 2, front faces south
         R.box(c0,0.15,c1,1.75,FLR_Z,FLR_Z+2.30,body)                          # body
