@@ -288,8 +288,19 @@ def _render_summary(summary: dict | None) -> None:
         st.success(f"👀 Dry run — {summary['total']} card(s) generated. "
                    "Nothing was texted. Check them below, then send.")
     else:
-        st.success(f"📲 Sent {summary['sent']}/{summary['total']} "
+        st.success(f"📲 Sent {summary['sent']}/{summary['total']} texts, "
+                   f"🖼️ {summary.get('cards_sent', 0)} cards "
                    f"(failed {summary['failed']}, skipped {summary['skipped']}).")
+        # If texts went but no cards did, say so loudly with the real reason —
+        # this used to be invisible (Shortcut missing / not permitted).
+        card_errs = [r for r in summary.get("rows", [])
+                     if r.get("sent") and not r.get("image_auto_sent")]
+        if card_errs:
+            why = next((r["image_error"] for r in card_errs if r.get("image_error")),
+                       "the 'Alphalete Swag Card' Shortcut isn't installed / permitted "
+                       "on this machine")
+            st.warning(f"⚠️ {len(card_errs)} text(s) sent but the **card didn't** — "
+                       f"reason: {why}")
 
     rows = [r for r in summary.get("rows", []) if r.get("card")]
     per_row = 3
@@ -306,11 +317,20 @@ def _render_summary(summary: dict | None) -> None:
                 if dry:
                     status = "— preview only"
                 elif row.get("sent"):
-                    status = "✅ sent"
+                    status = "✅ text sent"
                 elif row.get("error"):
                     status = f"❌ {row['error']}"
                 else:
                     status = "⏭️ skipped"
+                # Card status on its own line so a text-ok / card-failed split is
+                # obvious per person.
+                if not dry and row.get("sent"):
+                    if row.get("image_auto_sent"):
+                        status += "  \n🖼️ card sent"
+                    elif row.get("image_error"):
+                        status += f"  \n🖼️❌ card failed: {row['image_error']}"
+                    else:
+                        status += "  \n🖼️— card not sent"
                 st.markdown(f"**{row['name']}** · {row['phone']}  \n{status}")
                 if row.get("text"):
                     with st.expander("message"):

@@ -56,7 +56,8 @@ def run(roster: dict, send: bool = False, out_dir: Path | None = None,
     skip = {(p or "").strip() for p in (skip_phones or set())}
 
     summary = {"total": len(recips), "sent": 0, "skipped": 0, "failed": 0,
-               "dry_run": not send, "used_placeholder_card": False, "rows": []}
+               "cards_sent": 0, "dry_run": not send,
+               "used_placeholder_card": False, "rows": []}
 
     # Confirm Messages is ready before a real batch — fail loud, not silent.
     if send:
@@ -99,6 +100,14 @@ def run(roster: dict, send: bool = False, out_dir: Path | None = None,
         elif res["sent"]:
             row["sent"] = True
             summary["sent"] += 1
+        # Surface the CARD result too — it's separate from the text and used to
+        # fail silently (the Hub only showed text status), which hid Shortcut /
+        # permission problems. Now the per-row + header report it.
+        row["image_auto_sent"] = bool(res.get("image_auto_sent"))
+        if res.get("image_error"):
+            row["image_error"] = res["image_error"]
+        if row["image_auto_sent"]:
+            summary["cards_sent"] += 1
         summary["rows"].append(row)
 
     summary["out_dir"] = str(out_dir)
