@@ -26,13 +26,13 @@ OPEN_PILLARS_FT=(16.2,48.8,77.4)   # A2.01: on the centreline, feet from the wes
 
 WALL_COL={
  "w-comb":TRAINING_VIBE["w-comb"]["wall"],   # 1  West training     — sage
- "w-3"   :"#dde5ef",   # 2  West office       — blue
+ "w-3"   :"#e8e7e2",   # 2  West office       — interview (neutral)
  "w-4"   :"#e4dadc",   # 3  Maud's            — soft mauve, blush accents, navy
  "n-large":"#dcd5d0",  # 4  Raf's             — warm grey, red accents
  "e-1"   :"#d5e3d6",   # 5  Twaddle's         — sage / brown scheme
  "e-2"   :C_PINK_W,    # 6  Megan's           — pink
- "s-1"   :"#e7e3f0",   # 7  South office 1    — lavender
- "s-2"   :"#f3e6dc",   # 8  South office 2    — peach
+ "s-1"   :"#e8e7e2",   # 7  South office 1    — interview (neutral)
+ "s-2"   :"#e8e7e2",   # 8  South office 2    — interview (neutral)
  "s-3"   :"#e8e3db",   # 9  Bas's              — warm greige / ochre
  "s-4"   :"#dde3ea",   # 10 JD's              — navy / grey scheme
  "s-comb1":TRAINING_VIBE["s-comb1"]["wall"],  # 11 South training A  — soft green
@@ -974,6 +974,8 @@ def furnish(kind, R, key=None):
         classroom(R,TRAINING_VIBE.get(key,TRAINING_VIBE["s-comb1"]),screen_wall=1)
         ext_windows_n(R)
         glass_front(R,4)
+    elif kind=="interview":   # offices 2/7/8 — JD-style interview kit, no credenza
+        interview_office(R)
     # every other room = empty architectural shell (walls + door + dimensions only)
     elif kind=="break":
         R.counter(0.6,0.8,0.6+10.0,0.8+2.2,3.0)  # counter along back
@@ -991,13 +993,13 @@ def furnish(kind, R, key=None):
 # ===========================================================================
 CATALOG=[
   ("w-comb","West · Training Room","10'6\" × 20'","long",10.5,20.0,"Training room — classroom setup","Screen · 12 chairs · posters",False),
-  ("w-3","West · Office","10'6\" × 10'5\"","small",10.5,10.42,"Standard private office","Shell + door",False),
+  ("w-3","West · Office","10'6\" × 10'5\"","interview",10.5,10.42,"Interview office","L-desk · iMac · 2 guest · TV · open shelf · glass front",False),
   ("w-4","Maud's Office (corner)","10'5\" × 17'5\"","maud",10.42,17.42,"Maud's corner office","L-desk · 2 guest · play pen · rocking chair · TV",False),
   ("n-large","Raf's Office","20' × 20'","raf",20.0,20.0,"Raf's office","L-desk · iMac · walking pad · 2 guest · bookcase · mini fridge · oval table",False),
   ("e-1","Twaddle's Office","10'8\" × 10'8\"","twaddle",10.67,10.67,"Twaddle's office","L-desk · 2 guest chairs · TV · glass entrance",False),
   ("e-2","Claude Room / Megan's","10'8\" × 10'8\"","megan",10.67,10.67,"Megan's office / Claude room","4 screens · standing desk · walking pad · window wall",False),
-  ("s-1","South · Office 1","12' × 10'6\"","med",12.0,10.5,"Standard private office","L-desk · 2 guest · credenza",False),
-  ("s-2","South · Office 2","12' × 10'6\"","med",12.0,10.5,"Standard private office","L-desk · 2 guest · credenza",False),
+  ("s-1","South · Office 1","12' × 10'6\"","interview",12.0,10.5,"Interview office","L-desk · iMac · 2 guest · TV · open shelf · glass front",False),
+  ("s-2","South · Office 2","12' × 10'6\"","interview",12.0,10.5,"Interview office","L-desk · iMac · 2 guest · TV · open shelf · glass front",False),
   ("s-3","Bas's office","12' × 10'","bas",12.0,10.0,"Bas's office","L-desk · iMac · 2 guest · TV · bookcase · credenza · glass front",False),
   ("s-4","JD's Office","12' × 13'6\"","jd",12.0,13.5,"JD's office","L-desk · 2 guest chairs · TV · credenza · window wall",False),
   ("s-comb1","South · Training Room A","24' × 9'","wide","24.0","9.0","Training room — classroom setup","Screen · 12 chairs · posters",False),
@@ -1007,6 +1009,73 @@ CATALOG=[
   ("break","Break Room","15'6\" × 20'","break",20.0,15.5,"Staff kitchen + seating","Kitchenette · 2 tables · 8 seats",False),
   ("open","Open Office","34'9\" × 96'","open",96.0,34.75,"Open floor — 3 fixed structural pillars; A2.01 calls for (28) 6' × 6' workstations","3 structural pillars · open floor",False),
 ]
+
+
+def interview_office(R, desk_col="#59616e", shelf_col="#7a6144", owner_col="#3f5170", guest_col=C_GUEST):
+    """Generic interview office: L-desk facing the TV wall, iMac, TWO guest chairs across for
+    interviews, a TV and a compact open shelf. Windows on wall 1, glass front + door on wall 3,
+    solid walls 2 & 4. NO credenza. Local frame, so it fits every room that shares this layout."""
+    import math as _m
+    w,d=R.w,R.d
+    NWD=(0-0.5+w+0)/2; WWD=(-0.5+0+0+d)/2
+    def _onN(x0,x1,y1,z0,z1,col,op=1.0,nudge=0.0):
+        R.box(x0,0.05,x1,y1,FLR_Z+z0,FLR_Z+z1,col,op=op,db=(NWD+0.6+nudge)-((x0+0.05+x1+y1)/2))
+    def _onW(y0,y1,x1,z0,z1,col,op=1.0,nudge=0.0):
+        R.box(-0.04,y0,x1,y1,FLR_Z+z0,FLR_Z+z1,col,op=op,db=(WWD+0.6+nudge)-((-0.04+y0+x1+y1)/2))
+    # WALL 1 (west) banded windows, scaled to the room depth
+    _b0,_b1=2.7,7.3; _m0,_m1=0.4,d-0.4
+    _onW(_m0,_m1,0.16,_b0-0.16,_b0,"#9aa2ad",nudge=0.04)               # sill
+    _onW(_m0,_m1,0.16,_b1,_b1+0.16,"#9aa2ad",nudge=0.04)              # head
+    _onW(_m0,_m1,0.22,_b0,_b1,"#e3ebf0",nudge=0.06)                   # panes
+    _kk=1
+    while _b0+0.2*_kk<_b1-0.06:
+        _onW(_m0+0.15,_m1-0.15,0.24,_b0+0.2*_kk,_b0+0.2*_kk+0.06,"#ccd8df",nudge=0.08)
+        _kk+=1
+    _nb=max(2,int(round((_m1-_m0)/4.3)))
+    for _i in range(_nb+1):
+        _my=_m0+(_m1-_m0)*_i/_nb
+        _onW(_my-0.07,_my+0.07,0.30,_b0,_b1,"#9aa2ad",nudge=0.14)     # vertical mullions
+    for _mz in (_b0+1.53,_b0+3.07):
+        _onW(_m0,_m1,0.30,_mz-0.05,_mz+0.05,"#9aa2ad",nudge=0.14)     # horizontal mullions
+    # WALL 2 (north): TV + a compact open shelf to its left
+    _onN(4.20,8.60,0.22,3.30,5.80,"#59616e",nudge=0.06)              # TV bezel
+    _onN(4.40,8.40,0.28,3.45,5.65,"#222833",nudge=0.12)             # TV panel
+    R.box(1.30,0.34,1.52,1.14,FLR_Z,FLR_Z+5.40,shelf_col)           # shelf: left post
+    R.box(3.58,0.34,3.80,1.14,FLR_Z,FLR_Z+5.40,shelf_col)          # right post
+    for _sz in (0.10,1.30,2.55,3.80,5.25):
+        R.box(1.30,0.34,3.80,1.18,FLR_Z+_sz,FLR_Z+_sz+0.11,shade(shelf_col,0.92))   # boards
+    _pal=("#3f5170","#7d8894","#c5ccd4","#4a6b96","#8a95a3","#dde3ea")
+    def _brow(x0,z,n,seed=0):
+        _bx=x0
+        for _i in range(n):
+            _bw=0.13+0.03*((_i+seed)%3); _bh=0.55+0.05*(((_i+seed)*2)%4)
+            R.box(_bx,0.55,_bx+_bw,1.06,FLR_Z+z,FLR_Z+z+_bh,_pal[(_i+seed)%len(_pal)],db=0.8)
+            _bx+=_bw+0.03
+    _brow(1.62,0.21,5,0); _brow(1.62,1.41,4,2)                       # books on two shelves
+    R.box(2.95,0.60,3.60,1.02,FLR_Z+2.66,FLR_Z+2.66+0.46,"#4a6b96",db=0.8)   # a box file
+    R.box(1.70,0.66,2.04,1.02,FLR_Z+3.91,FLR_Z+3.91+0.26,"#7d8894",db=0.8)   # pot
+    leafy(R,1.87,0.84,FLR_Z+3.91+0.26,4.4,0.55)                     # plant on top
+    # WALL 3 (east) glass front + door
+    glass_front(R,3)
+    # L-desk (graphite), owner backs wall 4 facing the TV
+    R.box(3.60,5.40,9.60,7.60,FLR_Z+2.2,FLR_Z+2.5,desk_col)         # main
+    R.box(7.60,7.60,9.60,9.60,FLR_Z+2.2,FLR_Z+2.5,desk_col)         # return
+    for _ex,_ey in ((3.9,5.7),(3.9,7.3),(9.3,5.7),(9.3,7.3),(9.3,9.3),(7.9,9.3)):
+        R.box(_ex-0.18,_ey-0.18,_ex+0.18,_ey+0.18,FLR_Z,FLR_Z+2.2,"#8b95a3")   # legs
+    def _seat(cx,cy,ang,col,bh=2.4):
+        R.rbox(cx,cy,1.45,1.45,FLR_Z,FLR_Z+1.5,ang,col)
+        _bx=cx-0.58*_m.cos(_m.radians(ang)); _by=cy-0.58*_m.sin(_m.radians(ang))
+        R.rbox(_bx,_by,0.30,1.45,FLR_Z,FLR_Z+bh,ang,shade(col,1.12))
+    _seat(6.40,8.70,-90,owner_col,2.7)                              # owner
+    _seat(5.00,3.90,90,guest_col); _seat(7.80,3.90,90,guest_col)   # TWO across for interviews
+    # iMac
+    _ix,_iy=6.40,6.50; _MD=0.7
+    R.box(_ix-0.42,_iy-0.28,_ix+0.42,_iy+0.28,FLR_Z+2.5,FLR_Z+2.58,"#c9ccd2",db=_MD)  # foot
+    R.box(_ix-0.10,_iy-0.05,_ix+0.10,_iy+0.05,FLR_Z+2.58,FLR_Z+3.05,"#c9ccd2",db=_MD) # stand
+    R.box(_ix-0.95,_iy-0.06,_ix+0.95,_iy+0.06,FLR_Z+3.05,FLR_Z+4.35,"#d8dbe0",db=_MD) # bezel
+    R.box(_ix-0.86,_iy+0.02,_ix+0.86,_iy+0.09,FLR_Z+3.14,FLR_Z+4.24,"#222833",db=_MD) # screen
+    R.box(_ix-0.55,_iy+0.60,_ix+0.55,_iy+1.05,FLR_Z+2.5,FLR_Z+2.58,"#e6e8ec",db=_MD)  # keyboard
+
 
 def classroom(R,vibe,screen_wall=2,seats=12):
     """Training rooms are classroom setups: a screen on a solid wall, rows of chairs
@@ -1154,7 +1223,7 @@ def build_office(entry):
     key,title,dim,kind,w,d,note,furn,comb=entry
     R=Room(float(w),float(d))
     door={"reception":"W","conference":"E","break":"E","large":"E",
-          "long":None,"wide":None}.get(kind,"S")   # None = the room draws its own entry
+          "long":None,"wide":None,"interview":None}.get(kind,"S")   # None = the room draws its own entry
     wcol=WALL_COL.get(key,C_WALL)                    # each office its own wall colour
     if kind=="break":
         R.shell(door=door, floor_col=C_TILE, wall_col=wcol)   # break room is the only tile floor
@@ -1178,6 +1247,7 @@ def build_office(entry):
 
 FURN_BY_KIND={
  'small':'Private office · shell + door','med':'Private office · shell + door',
+ 'interview':'L-desk · iMac · 2 guest chairs · TV · open shelf · glass front (no credenza)',
  'long':'Classroom · screen · credenza · 12 chairs · posters · glass front','wide':'Classroom · screen · credenza · 12 chairs · window wall · glass front',
  'large':'Large office · shell + door','conference':'Boardroom · 14 seats · TV wall · whiteboards · built-in counter',
  'megan':'4 screens · standing desk · laptop · walking pad · florals · window wall',
