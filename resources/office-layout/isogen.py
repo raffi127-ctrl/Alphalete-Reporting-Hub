@@ -244,25 +244,32 @@ ebox(3.5,3.75,5.0,4.05,29,3.2,"#6b7280"); ebox(3.5,6.55,5.0,6.85,29,3.2,"#6b7280
 ebox(5.4,4.2,7.4,6.6,29,0.4,"#3a4150")                      # walking pad
 echair(2.9,9.05,29,"#9fae9f",s=1.8,h=3.3)                   # sage accent chair, room corner
 
-# --- 10 · JD'S (37.6,52,46.5,64): windows south, glass entry north ---
-_JN="#2b3a52"
-scred(38.4,62.2,45.6,63.7,"#8a9099")                        # credenza under the windows
-sdesk(39.2,58.0,45.4,60.2,"#6f6a63"); sdesk(43.2,60.2,45.4,62.0,"#6f6a63")
-schair(42.2,61.0,_JN)                                       # JD, backs the windows
-schair(40.6,56.4,_JN); schair(43.4,56.4,_JN)                # guests
-box(38.3,52.3,39.6,56.0,FLR_Z,FLR_Z+5.0,"#7d8894")          # bookcase
-
-# --- 9 · BAS'S (28.75,52,37.6,64): same kit as JD, one bay west. Bright + Lego (Bas's thing) ---
-scred(29.5,62.2,36.7,63.7,"#6f685c")                        # credenza under the windows
-# brick builds on the credenza — bright primaries with a stud grid to read as Lego
-for _bx,_by,_bc,_bnx,_bny in ((29.9,61.9,"#d21f26",4,2),(31.6,61.9,"#f6c018",2,2),(33.0,61.9,"#0a6cff",2,2)):
-    box(_bx,_by,_bx+0.9*_bnx*0.42,_by+0.7,FLR_Z+2.5,FLR_Z+3.2,_bc)
-    for _sx in range(_bnx):
-        box(_bx+0.10+_sx*0.36,_by+0.24,_bx+0.28+_sx*0.36,_by+0.46,FLR_Z+3.2,FLR_Z+3.35,shade(_bc,1.1))
-sdesk(30.3,58.0,36.5,60.2,"#4e5766"); sdesk(34.3,60.2,36.5,62.0,"#4e5766")
-schair(33.3,61.0,"#d21f26")                                 # Bas, red chair
-schair(31.7,56.4,"#0a6cff"); schair(34.5,56.4,"#00a94f")    # blue + green guests
-box(29.4,52.3,30.7,56.0,FLR_Z,FLR_Z+5.0,"#d21f26")          # bookcase (bright)
+# --- 10 · JD'S + 9 · BAS'S: south-row private offices. The studio draws each in a local
+# frame (wall 1 = west) that is a TRANSPOSE of the building here — studio x (windows -> glass
+# front) is the plan's south -> north depth; studio y (TV wall -> far wall) is the plan's
+# west -> east width. So map the real studio coordinates across instead of eyeballing them:
+# the owner then backs a party wall and faces the TV, not the windows / the open office.
+def _south_office(X0,X1,sd,cred,desk,chair,g0,g1,book,bricks=()):
+    def MX(sy): return X0+sy*(X1-X0)/sd
+    def MY(sx): return 64.0-sx
+    def RC(sx0,sy0,sx1,sy1):
+        xs=sorted((MX(sy0),MX(sy1))); ys=sorted((MY(sx0),MY(sx1)))
+        return xs[0],ys[0],xs[1],ys[1]
+    scred(*RC(0.18,3.50,2.00,9.50),cred)                      # credenza under the windows (south)
+    sdesk(*RC(3.60,5.40,9.60,7.60),desk); sdesk(*RC(7.60,7.60,9.60,9.60),desk)  # L-desk
+    schair(MX(8.70),MY(6.40),chair)                           # owner, backs a party wall, faces the TV
+    schair(MX(3.90),MY(5.00),g0); schair(MX(3.90),MY(7.80),g1)   # two guests across the desk
+    box(*RC(1.30,0.18,3.90,1.18),FLR_Z,FLR_Z+5.0,book)        # bookcase by the TV wall
+    for sx0,sy0,sx1,sy1,bc,bn in bricks:                      # Lego builds on the credenza (Bas)
+        bx0,by0,bx1,by1=RC(sx0,sy0,sx1,sy1)
+        box(bx0,by0,bx1,by1,FLR_Z+2.5,FLR_Z+3.2,bc)
+        _cym=(by0+by1)/2
+        for _st in range(bn):
+            _sxm=bx0+(bx1-bx0)*(_st+0.5)/bn
+            box(_sxm-0.10,_cym-0.10,_sxm+0.10,_cym+0.10,FLR_Z+3.2,FLR_Z+3.36,shade(bc,1.12))
+_south_office(37.625,46.5,13.5,"#8a9099","#6f6a63","#2b3a52","#2b3a52","#2b3a52","#7d8894")   # 10 · JD (navy/grey)
+_south_office(28.75,37.625,10.0,"#6f685c","#4e5766","#d21f26","#0a6cff","#00a94f","#d21f26",  # 9 · Bas (bright/Lego)
+    bricks=((0.42,4.05,1.62,5.75,"#d21f26",2),(0.55,6.05,1.45,7.05,"#f6c018",2),(0.52,7.55,1.55,8.75,"#0a6cff",2)))
 
 # --- TRAINING ROOMS: classroom rows facing the screen wall + credenza under it ---
 def classroom_rows(x0,y0,x1,y1,col,cred,face):
