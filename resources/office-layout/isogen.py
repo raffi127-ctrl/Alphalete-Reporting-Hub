@@ -301,11 +301,11 @@ box(1.0,37.3,2.5,38.6,FLR_Z,FLR_Z+5.0,"#5c4a38")           # open shelf on the n
 def classroom(x0,y0,x1,y1,col,cred,face):
     """12 seats facing `face` (the screen wall, building frame) + the credenza under it."""
     def chair(cx,cy,back):
-        r=0.58
-        box(cx-r,cy-r,cx+r,cy+r,FLR_Z,FLR_Z+1.35,col)                       # seat
-        d={'N':(cx-r,cy-r-0.20,cx+r,cy-r),'S':(cx-r,cy+r,cx+r,cy+r+0.20),
-           'W':(cx-r-0.20,cy-r,cx-r,cy+r),'E':(cx+r,cy-r,cx+r+0.20,cy+r)}[back]
-        box(d[0],d[1],d[2],d[3],FLR_Z,FLR_Z+2.45,shade(col,1.12))           # seat back, opposite the screen
+        r=0.66                                                              # low, wide seat reads
+        box(cx-r,cy-r,cx+r,cy+r,FLR_Z,FLR_Z+1.05,col)                       # as a chair, not a post
+        d={'N':(cx-r,cy-r-0.16,cx+r,cy-r),'S':(cx-r,cy+r,cx+r,cy+r+0.16),
+           'W':(cx-r-0.16,cy-r,cx-r,cy+r),'E':(cx+r,cy-r,cx+r+0.16,cy+r)}[back]
+        box(d[0],d[1],d[2],d[3],FLR_Z,FLR_Z+1.80,shade(col,1.12))           # short back, opposite the screen
     if face=="N":                                          # screen on north wall; chairs face north
         scred(x0+2.2,y0+0.25,x1-2.2,y0+1.60,cred)
         xs=[x0+2.6,(x0+x1)/2,x1-2.6]
