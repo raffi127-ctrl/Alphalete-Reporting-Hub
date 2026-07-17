@@ -252,13 +252,17 @@ schair(42.2,61.0,_JN)                                       # JD, backs the wind
 schair(40.6,56.4,_JN); schair(43.4,56.4,_JN)                # guests
 box(38.3,52.3,39.6,56.0,FLR_Z,FLR_Z+5.0,"#7d8894")          # bookcase
 
-# --- 9 · BAS'S (28.75,52,37.6,64): same kit as JD, one bay west. Ochre accent, not a third navy ---
-_BSN="#8a6d3a"
+# --- 9 · BAS'S (28.75,52,37.6,64): same kit as JD, one bay west. Bright + Lego (Bas's thing) ---
 scred(29.5,62.2,36.7,63.7,"#6f685c")                        # credenza under the windows
+# brick builds on the credenza — bright primaries with a stud grid to read as Lego
+for _bx,_by,_bc,_bnx,_bny in ((29.9,61.9,"#d21f26",4,2),(31.6,61.9,"#f6c018",2,2),(33.0,61.9,"#0a6cff",2,2)):
+    box(_bx,_by,_bx+0.9*_bnx*0.42,_by+0.7,FLR_Z+2.5,FLR_Z+3.2,_bc)
+    for _sx in range(_bnx):
+        box(_bx+0.10+_sx*0.36,_by+0.24,_bx+0.28+_sx*0.36,_by+0.46,FLR_Z+3.2,FLR_Z+3.35,shade(_bc,1.1))
 sdesk(30.3,58.0,36.5,60.2,"#4e5766"); sdesk(34.3,60.2,36.5,62.0,"#4e5766")
-schair(33.3,61.0,_BSN)                                      # Bas, backs the windows
-schair(31.7,56.4,"#8a94a3"); schair(34.5,56.4,"#8a94a3")    # guests
-box(29.4,52.3,30.7,56.0,FLR_Z,FLR_Z+5.0,"#7d8894")          # bookcase
+schair(33.3,61.0,"#d21f26")                                 # Bas, red chair
+schair(31.7,56.4,"#0a6cff"); schair(34.5,56.4,"#00a94f")    # blue + green guests
+box(29.4,52.3,30.7,56.0,FLR_Z,FLR_Z+5.0,"#d21f26")          # bookcase (bright)
 
 # --- TRAINING ROOMS: classroom rows facing the screen wall + credenza under it ---
 def classroom_rows(x0,y0,x1,y1,col,cred,face):

@@ -589,6 +589,19 @@ def furnish(kind, R, key=None):
             R.box(x0,0.05,x1,y1,FLR_Z+z0,FLR_Z+z1,col,op=op,db=(NWD+0.6+nudge)-((x0+0.05+x1+y1)/2))
         def _onW(y0,y1,x1,z0,z1,col,op=1.0,nudge=0.0):
             R.box(-0.04,y0,x1,y1,FLR_Z+z0,FLR_Z+z1,col,op=op,db=(WWD+0.6+nudge)-((-0.04+y0+x1+y1)/2))
+        def _brick(x0,y0,x1,y1,z0,ztop,col,nx,ny,db=0.0):
+            """A Lego brick: coloured body + nx x ny grid of round studs on top. Bas's thing."""
+            R.box(x0,y0,x1,y1,FLR_Z+z0,FLR_Z+ztop,col,db=db)
+            _hs=0.15; _r=min((x1-x0)/nx,(y1-y0)/ny)*0.30
+            for _si in range(nx):
+                _cx=x0+(x1-x0)*(_si+0.5)/nx
+                for _sj in range(ny):
+                    _cy=y0+(y1-y0)*(_sj+0.5)/ny
+                    R.box(_cx-_r,_cy-_r,_cx+_r,_cy+_r,FLR_Z+ztop,FLR_Z+ztop+_hs,shade(col,1.10),db=db)
+                    _px,_py=R.iso(_cx,_cy,FLR_Z+ztop+_hs)
+                    R.emit(db+(x0+y0+x1+y1)/2+0.6, ztop+_hs+0.02,
+                        f'<ellipse cx="{_px:.1f}" cy="{_py:.1f}" rx="{_r*R.S:.1f}" ry="{_r*R.S*0.5:.1f}" '
+                        f'fill="{shade(col,1.16)}" stroke="{shade(col,0.72)}" stroke-width="0.5"/>')
         # WALL 1 (back-left) = windows to outside. Banded: solid below the sill, grid of panes
         # behind blinds, solid above the head — not floor-to-ceiling glass.
         _WB0,_WB1=2.7,7.3
@@ -605,9 +618,16 @@ def furnish(kind, R, key=None):
         # WALL 2 (back-right) = SOLID: TV, canvases, tall cabinet
         _onN(4.20,8.60,0.22,3.30,5.80,"#59616e",nudge=0.06)                 # TV bezel
         _onN(4.40,8.40,0.28,3.45,5.65,"#222833",nudge=0.12)                 # TV panel
-        for _az0,_az1,_col in ((5.30,6.70,"#b08a3a"),(2.80,4.20,"#8b95a3")):
-            _onN(9.40,11.00,0.17,_az0,_az1,shade(_col,0.68),nudge=0.06)     # wrapped edge
-            _onN(9.46,10.94,0.21,_az0+0.06,_az1-0.06,_col,nudge=0.12)       # canvas face
+        # framed Lego mosaic instead of canvases — bright primaries, Bas's thing
+        _onN(9.28,11.02,0.16,2.66,6.44,"#2b3038",nudge=0.06)               # frame
+        _onN(9.40,10.90,0.20,2.78,6.32,"#11151b",nudge=0.10)               # backing
+        _LM=("#d21f26","#f6c018","#0a6cff","#00a94f","#ff7a1c","#e83a8c","#2ab7c4","#7b4fa3")
+        _mi=0
+        for _mr in range(4):
+            for _mc in range(3):
+                _mtx=9.46+_mc*0.50; _mtz=2.86+_mr*0.85
+                _onN(_mtx,_mtx+0.42,0.24,_mtz,_mtz+0.72,_LM[_mi%len(_LM)],nudge=0.14)
+                _mi+=1
         # Tall bookcase left of the TV on wall 2. Wide-ish and SHALLOW — at 1.6' deep it was
         # near-square in plan and you only ever saw its side. Case is LIGHTER than the cavity
         # and the frame is thick enough to read: a thin frame just disappears at room zoom.
@@ -616,7 +636,7 @@ def furnish(kind, R, key=None):
         R.box(1.70,0.30,3.50,1.20,FLR_Z+0.36,FLR_Z+5.96,"#20272f")             # dark cavity
         for _sz in (1.42,2.54,3.66,4.78):
             R.box(1.70,0.30,3.50,1.24,FLR_Z+_sz,FLR_Z+_sz+0.10,"#5c6b7d")      # shelf boards
-        _BKC=("#c5ccd4","#4a6b96","#a9b2bd","#2f4260","#7d8894","#dde3ea","#38537d","#93a0ae")
+        _BKC=("#d21f26","#f6c018","#0a6cff","#00a94f","#ff7a1c","#e83a8c","#7b4fa3","#2ab7c4")
         for _si,(_sz,_run) in enumerate(((0.46,3.44),(1.52,3.20),(2.64,3.44),(3.76,3.02),(4.88,3.32))):
             _bx=1.78; _k=_si*4
             while _bx<_run:
@@ -632,11 +652,9 @@ def furnish(kind, R, key=None):
             R.box(2.00,3.50,2.04,9.50,FLR_Z+_rz,FLR_Z+_rz+0.10,shade(_CRD,0.72))   # door rails
         for _py in (5.00,6.50,8.00):
             R.box(2.00,_py-0.10,2.06,_py+0.10,FLR_Z+1.20,FLR_Z+1.45,"#c9ccd2")     # pulls
-        R.box(0.55,4.10,1.45,4.80,FLR_Z+2.50,FLR_Z+2.76,"#9c7b3e")                 # books on top
-        R.box(0.58,4.14,1.42,4.76,FLR_Z+2.76,FLR_Z+2.96,"#8b95a3")
-        R.box(0.60,6.10,0.75,6.80,FLR_Z+2.50,FLR_Z+3.18,"#5b6270")                 # framed photo
-        R.box(0.72,6.16,0.80,6.74,FLR_Z+2.58,FLR_Z+3.10,"#c2a05a")
-        R.box(0.75,8.10,1.20,8.60,FLR_Z+2.50,FLR_Z+2.92,"#9aa2ad")                 # trinket
+        _brick(0.42,4.05,1.62,5.75,2.50,3.34,"#d21f26",2,4)                        # red 2x4 build
+        _brick(0.55,6.05,1.45,7.05,2.50,3.06,"#f6c018",2,2)                        # yellow 2x2
+        _brick(0.52,7.55,1.55,8.75,2.50,3.00,"#0a6cff",2,2)                        # blue build
         # WALL 3 (front-right) = all-glass office front with the door onto the open space.
         # Translucent: it sits between the camera and the room.
         R.box(w,0,w+0.38,d,FLR_Z+0.5,FLR_Z+8.0,"#9fdcf0",op=0.22)           # glazing
@@ -659,8 +677,8 @@ def furnish(kind, R, key=None):
             R.rbox(cx,cy,1.45,1.45,FLR_Z,FLR_Z+1.5,ang,col)
             _bx=cx-0.58*_m.cos(_m.radians(ang)); _by=cy-0.58*_m.sin(_m.radians(ang))
             R.rbox(_bx,_by,0.30,1.45,FLR_Z,FLR_Z+bh,ang,shade(col,1.12))
-        _seat(6.40,8.70,-90,"#8a6d3a",2.7)                                   # Bas
-        _seat(5.00,3.90,90,C_GUEST); _seat(7.80,3.90,90,C_GUEST)            # across the desk
+        _seat(6.40,8.70,-90,"#d21f26",2.7)                                   # Bas, bright red
+        _seat(5.00,3.90,90,"#0a6cff"); _seat(7.80,3.90,90,"#00a94f")         # blue + green guests
         # iMac on the desk, screen turned toward the owner. db pushes it past the desk:
         # the desk is one big box sorting by its centroid, which lands behind things on it.
         _ix,_iy=6.40,6.50; _MD=0.7
@@ -669,6 +687,8 @@ def furnish(kind, R, key=None):
         R.box(_ix-0.95,_iy-0.06,_ix+0.95,_iy+0.06,FLR_Z+3.05,FLR_Z+4.35,"#d8dbe0",db=_MD) # bezel
         R.box(_ix-0.86,_iy+0.02,_ix+0.86,_iy+0.09,FLR_Z+3.14,FLR_Z+4.24,"#222833",db=_MD) # screen
         R.box(_ix-0.55,_iy+0.60,_ix+0.55,_iy+1.05,FLR_Z+2.5,FLR_Z+2.58,"#e6e8ec",db=_MD)  # keyboard
+        _brick(3.95,6.05,4.85,7.00,2.50,3.02,"#00a94f",2,2,db=0.7)                  # green build on the desk
+        _brick(4.12,6.26,4.68,6.80,3.02,3.48,"#ff7a1c",1,1,db=0.7)                  # orange brick on top
     elif kind=="maud":      # Maud's corner office. Walls per Megan: 1 & 2 solid, 3 = glass entry,
                             # 4 = window / exterior. Brown / grey / navy scheme.
         import math as _m
@@ -1131,7 +1151,7 @@ FURN_BY_KIND={
  'megan':'4 screens · standing desk · laptop · walking pad · florals · window wall',
  'twaddle':'L-desk · 2 guest · TV · tablet cabinet · window wall · glass entrance',
  'jd':'L-desk · 2 guest · TV · bookcase · credenza under the windows · glass front',
- 'bas':'L-desk · iMac · 2 guest · TV · bookcase · credenza · glass front',
+ 'bas':'L-desk · iMac · 2 bright guest chairs · TV · Lego mosaic · brick builds · glass front',
  'maud':'L-desk · 2 guest · iMac · TV · play pen · rocking chair · window wall',
  'raf':'L-desk · iMac · walking pad · 2 guest · bookcase · mini fridge · 6-seat oval table',
  'reception':'Built-in desk · dog area · glass upper · open walkway',
