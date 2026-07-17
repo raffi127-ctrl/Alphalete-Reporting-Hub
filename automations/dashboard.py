@@ -1986,7 +1986,8 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "weekly",
             "weekdays": [1],  # Tuesday
-            "time": "10:00 AM CST",
+            # No "CST" here — the tile appends it (this read "10:00 AM CST CST").
+            "time": "10:00 AM",
             "estimated_minutes": 5,
         },
         "checklist": [],
@@ -3117,10 +3118,10 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "brand-health-audit",
-        # Non-breaking spaces keep "(12 CST Daily)" together so the cadence
-        # wraps as one clean unit onto line 2 of the strip pill (same trick as
-        # rc-autoread's "(Q 10 Min)").
-        "name": "Brand Health Audit (12 CST Daily)",
+        # No cadence in the name — self_scheduled, so the tile appends
+        # "· 12:00 PM CST" itself (it read "(12 CST Daily) · 12:00 PM CST").
+        # NBSPs keep the title from wrapping mid-phrase.
+        "name": "Brand Health Audit",
         "creator": "Megan",
         "emoji": "🩺",
         "color": "#6366F1",
@@ -3309,7 +3310,7 @@ AUTOMATED_REPORTS = [
         # Non-breaking spaces keep "(12 + 4 CST Daily)" together so the cadence
         # wraps as one clean unit onto line 2 of the strip pill (same trick as
         # rc-autoread's "(Q 10 Min)" and the Brand Health card).
-        "name": "Alphalete social media posting (12 + 4 CST Daily)",
+        "name": "Alphalete social media posting",
         "creator": "Megan",
         "emoji": "📸",
         "color": "#EC4899",
@@ -3352,7 +3353,10 @@ AUTOMATED_REPORTS = [
         "self_scheduled": True,
         "schedule": {
             "frequency": "daily",
+            # Runs TWICE (12 + 4). time_label carries both on the tile; `time`
+            # stays the sortable 12:00 start so it still orders at noon.
             "time": "12:00 PM",
+            "time_label": "12 PM + 4 PM CST",
             "estimated_minutes": 3,
         },
         "checklist": [],
