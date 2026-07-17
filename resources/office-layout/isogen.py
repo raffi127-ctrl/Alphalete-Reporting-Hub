@@ -308,16 +308,16 @@ def classroom(x0,y0,x1,y1,col,cred,face):
         box(d[0],d[1],d[2],d[3],FLR_Z,FLR_Z+1.80,shade(col,1.12))           # short back, opposite the screen
     if face=="N":                                          # screen on north wall; chairs face north
         scred(x0+2.2,y0+0.25,x1-2.2,y0+1.60,cred)
-        xs=[x0+2.6,(x0+x1)/2,x1-2.6]
-        for cy in (y0+4.0+k*3.7 for k in range(4)):
+        xs=[x0+2.9,(x0+x1)/2,x1-2.9]                        # ~3' margin off the side walls
+        for cy in (y0+3.6+k*3.5 for k in range(4)):
             for cx in xs: chair(cx,cy,'S')
     elif face=="E":                                        # screen on east wall; chairs face east
         # The east wall is a NEAR wall to the fixed SE camera, so the room's east partition
         # would hide a credenza against it. A depth bias makes it draw in front of that
         # partition — same screen position, just no longer occluded.
-        box(x1-1.60,y0+2.2,x1-0.25,y1-2.2,FLR_Z,FLR_Z+2.4,cred,db=2.0)
-        ys=[y0+2.6,(y0+y1)/2,y1-2.6]
-        for cx in (x1-3.6-k*3.7 for k in range(4)):
+        box(x1-1.60,y0+2.6,x1-0.25,y1-4.0,FLR_Z,FLR_Z+2.4,cred,db=2.0)   # short, well off the south wall
+        ys=[y0+3.2,(y0+3.2+y1-4.2)/2,y1-4.2]               # front row well clear of the south wall
+        for cx in (x1-4.4-k*3.5 for k in range(4)):        # first column off the credenza
             for cy in ys: chair(cx,cy,'W')
 classroom(0,18,11,37,"#c2572c","#6f6a63","N")              # 1 · burnt orange
 classroom(46.5,52,64.25,64,"#2d7273","#5f7273","E")        # 11 · deep teal
