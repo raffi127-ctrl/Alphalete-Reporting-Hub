@@ -998,7 +998,7 @@ def furnish(kind, R, key=None):
     elif kind=="wide":      # rooms 11/12: wall 2 is exterior glass, so the screen moves
                             # to wall 1; walls 1/3 solid, wall 4 the glass entry
         classroom(R,TRAINING_VIBE.get(key,TRAINING_VIBE["s-comb1"]),screen_wall=1,posters=None,
-                  layout=("u" if key=="s-comb1" else "rows"))   # 11 = U facing the window
+                  layout="u")     # 11 and 12 both: U facing the window
         ext_windows_n(R)
         glass_front(R,4)
     elif kind=="interview":   # offices 2/7/8 — JD-style interview kit, no credenza; own theme each
@@ -1034,7 +1034,7 @@ CATALOG=[
   ("s-3","Bas's office","12' × 10'","bas",12.0,10.0,"Bas's office","L-desk · iMac · 2 guest · TV · bookcase · credenza · glass front",False),
   ("s-4","JD's Office","12' × 13'6\"","jd",12.0,13.5,"JD's office","L-desk · 2 guest chairs · TV · credenza · window wall",False),
   ("s-comb1","South · Training Room A","24' × 9'","wide","24.0","9.0","Training room — U-shape facing the window, mobile whiteboard","Mobile whiteboard · 10 chairs in a U · screen",False),
-  ("s-comb2","South · Training Room B","24' × 10'6\"","wide",24.0,10.5,"Training room — classroom setup","Screen · 12 chairs · posters",False),
+  ("s-comb2","South · Training Room B","24' × 10'6\"","wide",24.0,10.5,"Training room — U-shape facing the window, mobile whiteboard","Mobile whiteboard · 10 chairs in a U · screen",False),
   ("conf","Large Conference","20' × 49'","conference",49.0,20.0,"Main boardroom","Boardroom table · 14 seats · TV wall",False),
   ("recep","Reception / Lobby","21'10\" × 13'6\"","reception",21.83,13.5,"Front-of-house lobby — built-in desk, glass upper, open walkway entry","Built-in desk · glass upper · lounge · open walkway",False),
   ("break","Break Room","15'6\" × 20'","break",20.0,15.5,"Staff kitchen + seating","Kitchenette · 2 tables · 8 seats",False),
@@ -1344,6 +1344,7 @@ def _ft(s):
 # training rooms - without this, room 11 inherits room 12's "12 chairs" chips.
 FURN_BY_KEY={
  "s-comb1":"Mobile whiteboard · 10 chairs in a U · screen · credenza · window wall · glass front",
+ "s-comb2":"Mobile whiteboard · 10 chairs in a U · screen · credenza · window wall · glass front",
 }
 
 def build_office(entry):
