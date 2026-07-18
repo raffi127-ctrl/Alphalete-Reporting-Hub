@@ -47,6 +47,7 @@ def render(week_date: str, people: list, needs_confirm: list, updated_str: str) 
     """people: list of (name, status). needs_confirm: list of names (report back,
     no PASS email). Returns the reply body."""
     lines = [f"*BG Status — New Starts (week of {week_date})*",
+             f"*{len(people)} scheduled to start*",
              f"_updated {updated_str} · auto by Lucy_"]
 
     def section(label: str, names: list, suffixes: dict | None = None) -> None:
