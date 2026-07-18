@@ -3449,10 +3449,11 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"),
-        "assignees": ["Lucy 2"],
-        # Carlos's org — #alphalete-gp-sales is his channel — so it runs on
-        # Lucy 2. A Hub "play" from any machine routes there.
-        "run_machine": "Lucy 2",
+        "assignees": ["Lucy 1"],
+        # Belongs on Lucy 2 (Carlos's channel) and renders fine there, but
+        # Lucy 2 has no Lucy Slack token — a --post died at the upload. Runs
+        # on Lucy 1 until that token is installed and re-tested.
+        "run_machine": "Lucy 1",
         "run_rerun_id": "sales_boards",
         "self_scheduled": True,
         "schedule": {
