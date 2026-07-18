@@ -332,8 +332,8 @@ for _msx in (-1.0,1.0):               # 6 · Megan — a 2x2 screen array on the
         box(91.10,34.0+_msx-0.75,91.26,34.0+_msx+0.75,FLR_Z+_msz-0.55,FLR_Z+_msz+0.55,"#20252b")
 tv(0.0,87.0,'N',w=6.0)                # 13 · conference (north wall, y0)
 tv(18.0,5.5,'N')                      # 1 · training screen (north, over the credenza)
-tv(64.25,58.0,'E',db=2.2)            # 11 · training screen (east wall, depth-biased like the credenza)
-tv(82.0,58.0,'E',db=2.2)            # 12 · training screen (east wall)
+tv(64.25,58.0,'E')                    # 11 · training screen (east wall; hidden behind the near wall)
+tv(82.0,58.0,'E')                     # 12 · training screen (east wall; hidden behind the near wall)
 
 # --- TRAINING ROOMS: classroom seating facing the screen wall + credenza under it.
 # The screen wall comes from the studio, mapped to the building: room 1's entry faces the
@@ -357,7 +357,9 @@ def classroom(x0,y0,x1,y1,col,cred,face):
         # The east wall is a NEAR wall to the fixed SE camera, so the room's east partition
         # would hide a credenza against it. A depth bias makes it draw in front of that
         # partition — same screen position, just no longer occluded.
-        box(x1-1.60,y0+2.6,x1-0.25,y1-4.0,FLR_Z,FLR_Z+2.4,cred,db=2.0)   # short, well off the south wall
+        # East is a NEAR wall to the camera, so a credenza there is correctly hidden behind it.
+        # No depth bias — better unseen than poking through the wall.
+        box(x1-1.60,y0+2.6,x1-0.25,y1-4.0,FLR_Z,FLR_Z+2.4,cred)
         ys=[y0+3.2,(y0+3.2+y1-4.2)/2,y1-4.2]               # front row well clear of the south wall
         for cx in (x1-4.4-k*3.5 for k in range(4)):        # first column off the credenza
             for cy in ys: chair(cx,cy,'W')
