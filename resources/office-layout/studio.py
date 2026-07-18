@@ -997,7 +997,8 @@ def furnish(kind, R, key=None):
         glass_front(R,3)
     elif kind=="wide":      # rooms 11/12: wall 2 is exterior glass, so the screen moves
                             # to wall 1; walls 1/3 solid, wall 4 the glass entry
-        classroom(R,TRAINING_VIBE.get(key,TRAINING_VIBE["s-comb1"]),screen_wall=1,posters=None)
+        classroom(R,TRAINING_VIBE.get(key,TRAINING_VIBE["s-comb1"]),screen_wall=1,posters=None,
+                  layout=("u" if key=="s-comb1" else "rows"))   # 11 = U facing the window
         ext_windows_n(R)
         glass_front(R,4)
     elif kind=="interview":   # offices 2/7/8 — JD-style interview kit, no credenza; own theme each
@@ -1032,7 +1033,7 @@ CATALOG=[
   ("s-2","South · Office 2","12' × 10'6\"","interview",12.0,10.5,"Interview office","Straight desk · iMac · 2 guest · TV · open shelf · glass front",False),
   ("s-3","Bas's office","12' × 10'","bas",12.0,10.0,"Bas's office","L-desk · iMac · 2 guest · TV · bookcase · credenza · glass front",False),
   ("s-4","JD's Office","12' × 13'6\"","jd",12.0,13.5,"JD's office","L-desk · 2 guest chairs · TV · credenza · window wall",False),
-  ("s-comb1","South · Training Room A","24' × 9'","wide","24.0","9.0","Training room — classroom setup","Screen · 12 chairs · posters",False),
+  ("s-comb1","South · Training Room A","24' × 9'","wide","24.0","9.0","Training room — U-shape facing the window, mobile whiteboard","Mobile whiteboard · 12 chairs in a U · screen",False),
   ("s-comb2","South · Training Room B","24' × 10'6\"","wide",24.0,10.5,"Training room — classroom setup","Screen · 12 chairs · posters",False),
   ("conf","Large Conference","20' × 49'","conference",49.0,20.0,"Main boardroom","Boardroom table · 14 seats · TV wall",False),
   ("recep","Reception / Lobby","21'10\" × 13'6\"","reception",21.83,13.5,"Front-of-house lobby — built-in desk, glass upper, open walkway entry","Built-in desk · glass upper · lounge · open walkway",False),
@@ -1136,7 +1137,7 @@ def interview_office(R, windows=True, style="gallery", desk_col="#59616e", shelf
             _bx+=0.32
 
 
-def classroom(R,vibe,screen_wall=2,seats=12,posters='w1',whiteboards=False):
+def classroom(R,vibe,screen_wall=2,seats=12,posters='w1',whiteboards=False,layout='rows'):
     """Training rooms are classroom setups: a screen on a solid wall, rows of chairs
     facing it, 3'x2' posters on whatever solid wall is left. `screen_wall` is 2 (north)
     or 1 (west) — it has to be solid AND a far wall, or the camera only sees its back.
@@ -1236,6 +1237,38 @@ def classroom(R,vibe,screen_wall=2,seats=12,posters='w1',whiteboards=False):
     def _seat(cx,cy):
         R.rbox(cx,cy,1.35,1.35,FLR_Z,FLR_Z+1.45,ang,vibe["chair"])
         R.rbox(cx+bx,cy+by,0.28,1.35,FLR_Z,FLR_Z+2.30,ang,shade(vibe["chair"],1.22))
+    if layout=='u':
+        # Raf's ask for room 11: chairs in a U facing wall 2 (the window), focused on a
+        # whiteboard on wheels rather than the fixed screen. Wall 2 is exterior glass, so
+        # a board that can be rolled in front of it is the only way to face that direction.
+        def _useat(cx,cy,ang,ox,oy):
+            R.box(cx-0.68,cy-0.68,cx+0.68,cy+0.68,FLR_Z,FLR_Z+1.45,vibe["chair"])
+            R.box(cx+ox-0.14,cy+oy-0.68,cx+ox+0.14,cy+oy+0.68,FLR_Z,FLR_Z+2.30,
+                  shade(vibe["chair"],1.22)) if ox else \
+            R.box(cx-0.68,cy+oy-0.14,cx+0.68,cy+oy+0.14,FLR_Z,FLR_Z+2.30,shade(vibe["chair"],1.22))
+        _bx0,_bx1=w/2-2.6,w/2+2.6                      # the board, centred on wall 2
+        for _c in range(6):                            # base of the U, facing wall 2
+            _useat(w/2-6.25+_c*2.5,d-1.85,-90,0,0.62)
+        for _r in range(3):                            # the two arms, turned inward
+            _useat(w/2-6.9,2.05+_r*1.95,0,-0.62,0)
+            _useat(w/2+6.9,2.05+_r*1.95,180,0.62,0)
+        # Whiteboard on wheels. The camera sees the box's SOUTH face, which box() shades to
+        # 0.80 - so a pure white surface renders mid-grey and reads as a screen. Kept very
+        # light and given a frame plus a couple of marker strokes so it reads as a board.
+        _bz0,_bz1=FLR_Z+1.62,FLR_Z+4.42
+        R.box(_bx0-0.14,1.42,_bx1+0.14,1.66,_bz0-0.14,_bz1+0.14,"#8b939c")       # frame
+        R.box(_bx0,1.44,_bx1,1.60,_bz0,_bz1,"#fdfefe")                           # writing face
+        # These sit at y>1.60, i.e. on the SOUTH side of the writing face - the side the
+        # camera sees. Behind it (y<1.44) they render but are hidden by the face itself.
+        R.box(_bx0+0.55,1.60,_bx0+2.45,1.68,_bz1-0.95,_bz1-0.78,vibe["accent"])  # marker stroke
+        R.box(_bx0+0.55,1.60,_bx0+1.70,1.68,_bz1-1.45,_bz1-1.30,shade(vibe["accent"],0.7))
+        R.box(_bx0+0.30,1.58,_bx1-0.30,1.74,_bz0+0.10,_bz0+0.26,"#c8ced5")       # marker tray
+        for _lx in (_bx0+0.10,_bx1-0.38):
+            R.box(_lx,1.46,_lx+0.28,1.62,FLR_Z+0.34,_bz0,"#6d747d")              # upright
+            R.box(_lx-0.30,1.32,_lx+0.58,1.76,FLR_Z+0.16,FLR_Z+0.34,"#6d747d")   # foot
+            for _cx in (_lx-0.18,_lx+0.42):
+                R.box(_cx-0.09,1.46,_cx+0.09,1.64,FLR_Z,FLR_Z+0.16,"#3a3f47")    # castor
+        return 12
     across=w if screen_wall==2 else d
     back  =d if screen_wall==2 else w
     cols=max(1,min(int((across-3.2)/2.9)+1,seats)); rows=max(1,round(seats/cols))

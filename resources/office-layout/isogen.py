@@ -439,7 +439,27 @@ for _px,_pc in ((0.8,"#c2572c"),(2.6,"#8a8f96"),(4.4,"#c2572c")):
     _pd=22.6-(_px+18.28+_px+_pw+18.34)/2          # per-poster bias to a common sort depth
     box(_px,18.28,_px+_pw,18.34,FLR_Z+0.85,FLR_Z+2.35,"#43403c",db=_pd)        # slim frame
     box(_px+0.11,18.30,_px+_pw-0.11,18.36,FLR_Z+0.95,FLR_Z+2.25,_pc,db=_pd+0.05)  # print
-classroom(46.5,52,64.25,64,"#2d7273","#5f7273","E")        # 11 · deep teal
+# 11 · deep teal. Raf's U-shape: chairs face the window, i.e. studio wall 2, which for
+# this room maps to the building SOUTH (11/12 are 180 deg round). The mobile whiteboard
+# therefore sits against a NEAR wall here and is largely hidden from this camera - the
+# room view is where to look at it.
+def _u_training(X0,Y0,X1,Y1,col,cred):
+    MX=lambda sx: X1-sx*((X1-X0)/24.0)          # studio ft -> building ft, 180 deg
+    MY=lambda sy: Y1-sy*((Y1-Y0)/9.0)
+    def ch(sx,sy,back):
+        cx,cy=MX(sx),MY(sy); r=0.62
+        box(cx-r,cy-r,cx+r,cy+r,FLR_Z,FLR_Z+1.05,col)
+        d={'N':(cx-r,cy-r-0.16,cx+r,cy-r),'S':(cx-r,cy+r,cx+r,cy+r+0.16),
+           'W':(cx-r-0.16,cy-r,cx-r,cy+r),'E':(cx+r,cy-r,cx+r+0.16,cy+r)}[back]
+        box(d[0],d[1],d[2],d[3],FLR_Z,FLR_Z+1.80,shade(col,1.12))
+    for c in range(6): ch(12-6.25+c*2.5,9-1.85,'N')      # base of the U
+    for r in range(3):                                   # the arms
+        ch(12-6.9,2.05+r*1.95,'E'); ch(12+6.9,2.05+r*1.95,'W')
+    bx0,bx1=sorted((MX(12-2.6),MX(12+2.6))); by=MY(1.5)
+    box(bx0,by-0.10,bx1,by+0.10,FLR_Z+1.6,FLR_Z+4.4,"#e9edf0")   # whiteboard on wheels
+    box(bx0,by-0.10,bx1,by+0.10,FLR_Z,FLR_Z+0.3,"#6d747d")       # stand
+    scred(X1-2.0,Y0+2.6,X1-0.5,Y1-2.6,cred)                      # credenza on wall 1 -> building east
+_u_training(46.5,52,64.25,64,"#2d7273","#5f7273")
 classroom(64.25,52,82,64,"#4f7343","#6a7562","E")          # 12 · forest green
 
 # ---- perimeter walls -------------------------------------------------------
