@@ -908,12 +908,12 @@ def furnish(kind, R, key=None):
             _onN(_x0,_x1,0.15,_z0,_z1,shade(_c,0.62),nudge=0.06)
             _onN(_x0+0.07,_x1-0.07,0.20,_z0+0.07,_z1-0.07,_c,nudge=0.12)
         # WALL 1 (back-left) = solid: a large collage of art filling the run
-        for _y0,_y1,_z0,_z1,_c in ((7.60,12.40,3.70,7.20,_RD),                     # anchor
-                                   (4.80,7.00,5.45,7.20,"#7a5333"),(4.80,7.00,3.70,5.05,"#a9b2bd"),
-                                   (2.40,4.20,4.60,6.40,"#c0533f"),(2.40,4.20,3.15,4.45,"#7a5333"),
-                                   # (the two low grey pieces that used to hang at z2.20-3.20 under
-                                   #  the TV are gone - they crowded it once the couch moved)
-                                   ):
+        # Five pieces in three stacks, spread evenly over the run left of the TV (which
+        # starts at y13.70): equal 1'3" gaps at the corner, between the stacks, and before
+        # the screen. Tops line up at z7.20 so the group reads level.
+        for _y0,_y1,_z0,_z1,_c in ((7.67,12.47,3.70,7.20,_RD),                     # anchor
+                                   (4.25,6.45,5.45,7.20,"#7a5333"),(4.25,6.45,3.70,5.05,"#a9b2bd"),
+                                   (1.22,3.02,5.40,7.20,"#c0533f"),(1.22,3.02,3.95,5.25,"#7a5333")):
             _onW(_y0,_y1,0.17,_z0,_z1,shade(_c,0.68),nudge=0.06)
             _onW(_y0+0.07,_y1-0.07,0.21,_z0+0.07,_z1-0.07,_c,nudge=0.12)
         # TV on the wall 1 end nearest the sitting table
