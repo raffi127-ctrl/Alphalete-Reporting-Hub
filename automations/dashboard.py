@@ -2011,8 +2011,8 @@ AUTOMATED_REPORTS = [
         "name": "STF Field Check",
         "creator": "Raf",
         "emoji": "🚫",
-        "color": "#D64550",
-        "category": "📊 Metrics",
+        "color": "#F59E0B",
+        "category": "📲 Ops",
         "description": "For the current day, finds the reps marked STF (Straight To Field) on the Sales Board and checks their ownerville Time Tracker knocks. Anyone who worked under 3 hours — or never showed — is switched from STF to X, so Raf's count of reps actually in the field stays honest.",
         "breakdown": (
             "WHAT IT DOES\n"
@@ -2034,6 +2034,13 @@ AUTOMATED_REPORTS = [
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc/edit"),
         "assignees": ["Lucy 1"],
+        # Ownerville is single-session and lives on the mini — a Time Tracker
+        # scrape from any other machine evicts the session holder. So a Hub
+        # "play" from ANY machine routes the run to Lucy 1 via the mini-control
+        # queue (run_rerun_id = the schedule_config id `rerun` resolves there),
+        # instead of spawning a laptop-local scrape.
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "stf_field_check",
         # Self-running nightly launchd job on Lucy 1 (11pm CST), not the 4am
         # batch — show the run time on the tile and keep it out of the
         # "due today / not completed" tallies.
