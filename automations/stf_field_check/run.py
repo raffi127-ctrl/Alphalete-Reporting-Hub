@@ -180,17 +180,39 @@ def find_stf_cells(ws, target: dt.date) -> list[dict]:
 
 def scrape_knocks(target: dt.date, verbose: bool = True) -> list[dict]:
     """Live Time Tracker scrape for `target`, Raf's master view (no
-    impersonation). Returns the raw rep dicts from scrape_day."""
+    impersonation). Returns the raw rep dicts from scrape_day.
+
+    Raises RuntimeError if the session has no rqst token, or if the Time
+    Tracker won't confirm `target` (so we never write off wrong-day data)."""
     # Imported lazily so the offline/dry-run+injected path never needs patchright.
     from automations.shared.tableau_patchright import ownerville_session
-    from automations.focus_office_att.step5_fill_one_owner import scrape_day
+    from automations.focus_office_att.step5_fill_one_owner import (
+        scrape_day, page_rqst, _active_datepicker_value, _same_mdy,
+    )
 
-    TT = "p=510"
+    target_mdy = target.strftime("%m/%d/%Y")
     with ownerville_session(headless=True, verbose=verbose) as page:
-        rqst = page.evaluate("typeof rqstValue !== 'undefined' ? rqstValue : null")
-        page.goto(f"https://v2.ownerville.com/index.cfm?{TT}&rqst={rqst}",
-                  wait_until="domcontentloaded", timeout=45000)
-        return scrape_day(page, target)
+        # page_rqst reads the token from the DOM/URL — NOT the site's rqstValue
+        # JS global, which is invisible to patchright's isolated evaluate world
+        # (that read returns null -> rqst=None -> lands off Time Tracker -> 0 rows).
+        rqst = page_rqst(page)
+        if not rqst:
+            raise RuntimeError("no ownerville rqst token — session not logged in")
+        tt_url = f"https://v2.ownerville.com/index.cfm?p=510&rqst={rqst}"
+        for attempt in (1, 2):
+            try:
+                page.goto(tt_url, wait_until="domcontentloaded", timeout=45000)
+                break
+            except Exception:
+                if attempt == 2:
+                    raise
+        reps = scrape_day(page, target)
+        shown = _active_datepicker_value(page)
+        if not _same_mdy(shown, target_mdy):
+            raise RuntimeError(
+                f"Time Tracker would not confirm {target_mdy} (showing {shown!r}); "
+                f"refusing to act on possibly-wrong-day knocks")
+        return reps
 
 
 # ---- main ---------------------------------------------------------------
@@ -213,6 +235,17 @@ def run(target: dt.date, write: bool, threshold_min: int,
 
     reps = injected_knocks if injected_knocks is not None else scrape_knocks(target, verbose)
     print(f"Time Tracker rows scraped: {len(reps)}")
+
+    # SAFETY: an empty Time Tracker while reps ARE marked STF is far more likely a
+    # scrape/session failure than every rep no-showing. Treating 0 rows as "nobody
+    # knocked" would flip EVERY STF rep to X — so abort and change nothing. (Only
+    # applies to a real scrape; an injected offline test may legitimately pass [].)
+    if injected_knocks is None and not reps:
+        print("\n⛔ ABORT: Time Tracker returned 0 rows — treating as a scrape/"
+              "session failure, NOT a mass no-show. No cells changed.")
+        return {"stf": len(stf), "flipped": 0, "kept": 0, "aborted": True,
+                "decisions": []}
+
     knocks = index_knocks(reps)
 
     decisions = []
@@ -291,9 +324,9 @@ def main(argv=None) -> int:
         injected = data["reps"] if isinstance(data, dict) and "reps" in data else data
 
     write = args.write and not args.dry_run
-    run(target, write=write, threshold_min=args.threshold_min,
-        injected_knocks=injected)
-    return 0
+    result = run(target, write=write, threshold_min=args.threshold_min,
+                 injected_knocks=injected)
+    return 2 if result.get("aborted") else 0
 
 
 if __name__ == "__main__":
