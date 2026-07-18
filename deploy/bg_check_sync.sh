@@ -12,7 +12,7 @@
 # Needs on the machine:
 #   ~/.config/recruiting-report/gmail-app-password-raffi127  (IMAP read)
 #   ~/.config/recruiting-report/oauth-token.json             (Sheets write)
-#   ~/.config/recruiting-report/slack-bot-token              (post as Lucy)
+#   ~/.config/recruiting-report/slack-user-token             (post as Lucy)
 
 set -u
 cd "$(dirname "$0")/.." || exit 1

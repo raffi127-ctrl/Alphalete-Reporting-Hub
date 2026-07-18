@@ -89,7 +89,10 @@ def post_or_update(week_date: str, body: str, *, dry_run: bool = True) -> dict:
         print(body)
         return entry or {"dry_run": True}
 
-    client = smp._bot_client()
+    # The USER token (_client) is 'Lucy' on the mini and is what every live
+    # channel post uses (tableau_screenshots, daily_metrics). The bot token is
+    # DM-only and isn't on the mini. Lucy must be a channel member (she is).
+    client = smp._client()
     if not entry:
         parent = client.chat_postMessage(
             channel=CHANNEL_ID,
