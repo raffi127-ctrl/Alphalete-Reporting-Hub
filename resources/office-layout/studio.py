@@ -1033,7 +1033,7 @@ CATALOG=[
   ("s-2","South · Office 2","12' × 10'6\"","interview",12.0,10.5,"Interview office","Straight desk · iMac · 2 guest · TV · open shelf · glass front",False),
   ("s-3","Bas's office","12' × 10'","bas",12.0,10.0,"Bas's office","L-desk · iMac · 2 guest · TV · bookcase · credenza · glass front",False),
   ("s-4","JD's Office","12' × 13'6\"","jd",12.0,13.5,"JD's office","L-desk · 2 guest chairs · TV · credenza · window wall",False),
-  ("s-comb1","South · Training Room A","24' × 9'","wide","24.0","9.0","Training room — U-shape facing the window, mobile whiteboard","Mobile whiteboard · 12 chairs in a U · screen",False),
+  ("s-comb1","South · Training Room A","24' × 9'","wide","24.0","9.0","Training room — U-shape facing the window, mobile whiteboard","Mobile whiteboard · 10 chairs in a U · screen",False),
   ("s-comb2","South · Training Room B","24' × 10'6\"","wide",24.0,10.5,"Training room — classroom setup","Screen · 12 chairs · posters",False),
   ("conf","Large Conference","20' × 49'","conference",49.0,20.0,"Main boardroom","Boardroom table · 14 seats · TV wall",False),
   ("recep","Reception / Lobby","21'10\" × 13'6\"","reception",21.83,13.5,"Front-of-house lobby — built-in desk, glass upper, open walkway entry","Built-in desk · glass upper · lounge · open walkway",False),
@@ -1246,29 +1246,30 @@ def classroom(R,vibe,screen_wall=2,seats=12,posters='w1',whiteboards=False,layou
             R.box(cx+ox-0.14,cy+oy-0.68,cx+ox+0.14,cy+oy+0.68,FLR_Z,FLR_Z+2.30,
                   shade(vibe["chair"],1.22)) if ox else \
             R.box(cx-0.68,cy+oy-0.14,cx+0.68,cy+oy+0.14,FLR_Z,FLR_Z+2.30,shade(vibe["chair"],1.22))
-        _bx0,_bx1=w/2-2.6,w/2+2.6                      # the board, centred on wall 2
+        # Centred on wall 3's side of the room rather than the middle, and pulled up
+        # toward wall 2, which leaves the south half of the floor clear.
+        _CX=w/2+3.0
+        _bx0,_bx1=_CX-2.6,_CX+2.6
         for _c in range(6):                            # base of the U, facing wall 2
-            _useat(w/2-6.25+_c*2.5,d-1.85,-90,0,0.62)
-        for _r in range(3):                            # the two arms, turned inward
-            _useat(w/2-6.9,2.05+_r*1.95,0,-0.62,0)
-            _useat(w/2+6.9,2.05+_r*1.95,180,0.62,0)
-        # Whiteboard on wheels. The camera sees the box's SOUTH face, which box() shades to
-        # 0.80 - so a pure white surface renders mid-grey and reads as a screen. Kept very
-        # light and given a frame plus a couple of marker strokes so it reads as a board.
+            _useat(_CX-6.25+_c*2.5,6.1,-90,0,0.62)
+        for _r in range(2):                            # the two arms, turned inward
+            _useat(_CX-6.9,2.9+_r*1.6,0,-0.62,0)
+            _useat(_CX+6.9,2.9+_r*1.6,180,0.62,0)
+        # Whiteboard on wheels, parked tight to the glass so it doesn't crowd the arms.
         _bz0,_bz1=FLR_Z+1.62,FLR_Z+4.42
-        R.box(_bx0-0.14,1.42,_bx1+0.14,1.66,_bz0-0.14,_bz1+0.14,"#8b939c")       # frame
-        R.box(_bx0,1.44,_bx1,1.60,_bz0,_bz1,"#fdfefe")                           # writing face
-        # These sit at y>1.60, i.e. on the SOUTH side of the writing face - the side the
-        # camera sees. Behind it (y<1.44) they render but are hidden by the face itself.
-        R.box(_bx0+0.55,1.60,_bx0+2.45,1.68,_bz1-0.95,_bz1-0.78,vibe["accent"])  # marker stroke
-        R.box(_bx0+0.55,1.60,_bx0+1.70,1.68,_bz1-1.45,_bz1-1.30,shade(vibe["accent"],0.7))
-        R.box(_bx0+0.30,1.58,_bx1-0.30,1.74,_bz0+0.10,_bz0+0.26,"#c8ced5")       # marker tray
+        R.box(_bx0-0.14,1.16,_bx1+0.14,1.40,_bz0-0.14,_bz1+0.14,"#8b939c")       # frame
+        R.box(_bx0,1.18,_bx1,1.34,_bz0,_bz1,"#fdfefe")                           # writing face
+        # These sit on the SOUTH side of the writing face - the side the camera sees.
+        # Behind it (y<1.18) they render but are hidden by the face itself.
+        R.box(_bx0+0.55,1.34,_bx0+2.45,1.42,_bz1-0.95,_bz1-0.78,vibe["accent"])  # marker stroke
+        R.box(_bx0+0.55,1.34,_bx0+1.70,1.42,_bz1-1.45,_bz1-1.30,shade(vibe["accent"],0.7))
+        R.box(_bx0+0.30,1.32,_bx1-0.30,1.48,_bz0+0.10,_bz0+0.26,"#c8ced5")       # marker tray
         for _lx in (_bx0+0.10,_bx1-0.38):
-            R.box(_lx,1.46,_lx+0.28,1.62,FLR_Z+0.34,_bz0,"#6d747d")              # upright
-            R.box(_lx-0.30,1.32,_lx+0.58,1.76,FLR_Z+0.16,FLR_Z+0.34,"#6d747d")   # foot
+            R.box(_lx,1.20,_lx+0.28,1.36,FLR_Z+0.34,_bz0,"#6d747d")              # upright
+            R.box(_lx-0.30,1.06,_lx+0.58,1.50,FLR_Z+0.16,FLR_Z+0.34,"#6d747d")   # foot
             for _cx in (_lx-0.18,_lx+0.42):
-                R.box(_cx-0.09,1.46,_cx+0.09,1.64,FLR_Z,FLR_Z+0.16,"#3a3f47")    # castor
-        return 12
+                R.box(_cx-0.09,1.20,_cx+0.09,1.38,FLR_Z,FLR_Z+0.16,"#3a3f47")    # castor
+        return 10
     across=w if screen_wall==2 else d
     back  =d if screen_wall==2 else w
     cols=max(1,min(int((across-3.2)/2.9)+1,seats)); rows=max(1,round(seats/cols))
@@ -1339,6 +1340,12 @@ def _ft(s):
         return float(a)+(float(b)/12.0 if b.strip() else 0.0)
     return float(s)
 
+# Per-ROOM chip override. FURN_BY_KIND is keyed by layout kind, and "wide" covers both
+# training rooms - without this, room 11 inherits room 12's "12 chairs" chips.
+FURN_BY_KEY={
+ "s-comb1":"Mobile whiteboard · 10 chairs in a U · screen · credenza · window wall · glass front",
+}
+
 def build_office(entry):
     key,title,dim,kind,w,d,note,furn,comb=entry
     R=Room(float(w),float(d))
@@ -1383,7 +1390,7 @@ for n,e in enumerate(CATALOG,start=1):
     key,title,dim,kind,w,d,note,furn,comb=e
     svg=build_office(e)
     offices.append(dict(key=key,num=n,title=f"{n} · {title}",dim=dim,note=note,
-                        furn=FURN_BY_KIND.get(kind,furn),comb=comb,svg=svg))
+                        furn=FURN_BY_KEY.get(key,FURN_BY_KIND.get(kind,furn)),comb=comb,svg=svg))
 
 # overview + key map
 overview_svg=open("/private/tmp/claude-501/-Users-megan-1st-Claude-Folder/de840332-a406-47e2-ab31-cb468bebf93c/scratchpad/office.svg").read()

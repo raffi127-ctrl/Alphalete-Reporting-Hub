@@ -452,10 +452,11 @@ def _u_training(X0,Y0,X1,Y1,col,cred):
         d={'N':(cx-r,cy-r-0.16,cx+r,cy-r),'S':(cx-r,cy+r,cx+r,cy+r+0.16),
            'W':(cx-r-0.16,cy-r,cx-r,cy+r),'E':(cx+r,cy-r,cx+r+0.16,cy+r)}[back]
         box(d[0],d[1],d[2],d[3],FLR_Z,FLR_Z+1.80,shade(col,1.12))
-    for c in range(6): ch(12-6.25+c*2.5,9-1.85,'N')      # base of the U
-    for r in range(3):                                   # the arms
-        ch(12-6.9,2.05+r*1.95,'E'); ch(12+6.9,2.05+r*1.95,'W')
-    bx0,bx1=sorted((MX(12-2.6),MX(12+2.6))); by=MY(1.5)
+    CX=12+3.0                                            # nudged toward wall 3
+    for c in range(6): ch(CX-6.25+c*2.5,6.1,'N')         # base of the U
+    for r in range(2):                                   # the arms
+        ch(CX-6.9,2.9+r*1.6,'E'); ch(CX+6.9,2.9+r*1.6,'W')
+    bx0,bx1=sorted((MX(CX-2.6),MX(CX+2.6))); by=MY(1.26)
     box(bx0,by-0.10,bx1,by+0.10,FLR_Z+1.6,FLR_Z+4.4,"#e9edf0")   # whiteboard on wheels
     box(bx0,by-0.10,bx1,by+0.10,FLR_Z,FLR_Z+0.3,"#6d747d")       # stand
     scred(X1-2.0,Y0+2.6,X1-0.5,Y1-2.6,cred)                      # credenza on wall 1 -> building east
