@@ -338,10 +338,10 @@ tv(19.875,58.0,'W')                   # 8 · interview (west wall)
 tv(47.0,5.7,'N')                      # 3 · Maud (TV on wall 2 -> north wall)
 tv(18.0,97.0,'N',db=2.6)              # 5 · Twaddle (north wall; extra bias to clear the desk)
 tv(50.0,11.5,'W')                      # 4 · Raf (TV on the west wall toward the sitting table)
-for _mgx in (95.6,98.4):              # 6 · Megan — a 2x2 screen array on the north wall (y29)
-    for _mgz in (1.75,2.85):
-        box(_mgx-0.68,29.26,_mgx+0.68,29.42,FLR_Z+_mgz-0.5,FLR_Z+_mgz+0.5,"#454b54",db=4.7)   # bezel
-        box(_mgx-0.60,29.28,_mgx+0.60,29.44,FLR_Z+_mgz-0.42,FLR_Z+_mgz+0.42,"#20252b",db=4.71) # screen
+for _mgx in (95.7,98.3):              # 6 · Megan — a 2x2 array of FOUR distinct screens (north wall y29)
+    for _mgz in (1.55,2.75):
+        box(_mgx-0.55,29.26,_mgx+0.55,29.42,FLR_Z+_mgz-0.36,FLR_Z+_mgz+0.36,"#454b54",db=4.7)   # bezel
+        box(_mgx-0.48,29.28,_mgx+0.48,29.44,FLR_Z+_mgz-0.28,FLR_Z+_mgz+0.28,"#20252b",db=4.71) # screen
 tv(0.0,87.0,'N',w=6.0)                # 13 · conference (north wall, y0)
 tv(18.0,5.5,'N',w=3.0,z0=2.48,z1=3.12)  # 1 · training screen, above the credenza
 tv(64.25,58.0,'E')                    # 11 · training screen (east wall; hidden behind the near wall)
