@@ -3449,10 +3449,10 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"),
-        "assignees": ["Lucy 1"],
-        # Must run on the mini — that's where Lucy's Slack token lives (a laptop
-        # run would post as Megan).
-        "run_machine": "Lucy 1",
+        "assignees": ["Lucy 2"],
+        # Carlos's org: #alphalete-gp-sales is his channel, so this runs on
+        # Lucy 2. A Hub "play" from any machine routes there.
+        "run_machine": "Lucy 2",
         "run_rerun_id": "sales_boards",
         "self_scheduled": True,
         "schedule": {
@@ -3508,7 +3508,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1zoRQRhvkpu7Vvw4TsC60ufja9XwpUR8hHvV7FyzezMY/edit"),
-        "assignees": ["Lucy 1"],
+        "assignees": ["Lucy 2"],
         # Self-running background job (noon launchd) — keep it out of the "due
         # today / not completed" tallies; it doesn't report completion to the Hub.
         "self_scheduled": True,
