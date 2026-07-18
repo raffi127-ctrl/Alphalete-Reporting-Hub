@@ -156,6 +156,43 @@ def export(sheet_id, gid, rng, token) -> Image.Image:
                     min(im.width, bb[2] + 4), min(im.height, bb[3] + 4)))
 
 
+# Row 2's descriptor can't be rendered from the sheet: it's WHITE text that
+# overflows into cells with WHITE backgrounds, so it disappears (even a 9-char
+# test string vanished), and the VA's own posts show it clipped. We draw the
+# title ourselves instead — always legible, always complete.
+TITLE_BG = (46, 84, 150)        # matches the sheet's header blue
+TITLE_FG = (255, 255, 255)
+_FONT_CANDIDATES = [
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Helvetica.ttc",
+    "/Library/Fonts/Arial Bold.ttf",
+]
+
+
+def _title_font(size: int):
+    from PIL import ImageFont
+    for path in _FONT_CANDIDATES:
+        try:
+            return ImageFont.truetype(path, size)
+        except Exception:  # noqa: BLE001
+            continue
+    return ImageFont.load_default()
+
+
+def title_bar(width: int, text: str, height: int = 46) -> Image.Image:
+    from PIL import ImageDraw
+    bar = Image.new("RGB", (width, height), TITLE_BG)
+    d = ImageDraw.Draw(bar)
+    font = _title_font(24)
+    try:
+        l, t, r, b = d.textbbox((0, 0), text, font=font)
+        tw, th = r - l, b - t
+    except Exception:  # noqa: BLE001
+        tw, th = d.textlength(text, font=font), 20
+    d.text(((width - tw) / 2, (height - th) / 2 - 2), text, fill=TITLE_FG, font=font)
+    return bar
+
+
 def stitch(parts, gap=8):
     w = max(p.width for p in parts)
     h = sum(p.height for p in parts) + gap * (len(parts) - 1)
@@ -177,6 +214,7 @@ def render_all(sh, tmp, sheet_id, token, yday, out_dir: Path, programs=None):
     first, last = rep_region(g, ts)
     result = {p: {} for p in programs}
     all_rows = list(range(first, last + 1))
+    we_label = cell(g, 2, 2).strip()
 
     # ---------- (a) WEEKLY ----------
     # Current Week desc, then REP asc. Verified on her JE 7.17 (a): Joelle /
@@ -185,7 +223,8 @@ def render_all(sh, tmp, sheet_id, token, yday, out_dir: Path, programs=None):
     sort_region(sh, gid, first, last,
                 [(CURRENT_WEEK_COL, False), (NAME_COL, True)], width)
     g = _retry(tmp.get_all_values)
-    header_a = export(sheet_id, gid, f"A2:{WEEKLY_LAST_COL}{DAY_HEADER_ROW}", token)
+    header_a = export(sheet_id, gid,
+                      f"A{DAY_HEADER_ROW}:{WEEKLY_LAST_COL}{DAY_HEADER_ROW}", token)
     for p in programs:
         keep = {r for r in all_rows if cell(g, r, CAMPAIGN_COL).strip() == p
                 and cell(g, r, NAME_COL).strip() and not is_terminated(g, r)}
@@ -198,10 +237,11 @@ def render_all(sh, tmp, sheet_id, token, yday, out_dir: Path, programs=None):
         # Bound the range to VISIBLE rows: if the last row of a range is hidden,
         # the export slides to the next visible one (it bled the totals block's
         # "AT&T (B2B)" row into the rep table).
-        img = stitch([header_a,
-                      export(sheet_id, gid,
-                             f"A{min(keep)}:{WEEKLY_LAST_COL}{max(keep)}", token),
-                      export(sheet_id, gid, f"A{ts}:{WEEKLY_LAST_COL}{te}", token)])
+        body = export(sheet_id, gid,
+                      f"A{min(keep)}:{WEEKLY_LAST_COL}{max(keep)}", token)
+        tot = export(sheet_id, gid, f"A{ts}:{WEEKLY_LAST_COL}{te}", token)
+        w = max(header_a.width, body.width, tot.width)
+        img = stitch([title_bar(w, f"Week Ending {we_label}"), header_a, body, tot])
         path = out_dir / f"{p} Sales Board (a).png"
         img.save(path)
         result[p]["a"] = path
@@ -225,18 +265,8 @@ def render_all(sh, tmp, sheet_id, token, yday, out_dir: Path, programs=None):
     # End on the DAY column (visible). Ending on LAST_DAY_COL — hidden whenever
     # the day isn't Sunday — made the export slide right into "Campaign".
     last_letter = rowcol_to_a1(1, dcol)[:-1]
-    # Row 2's descriptor is a ~130-char formula in col C. C is hidden here, but
-    # the text OVERFLOWS across the hidden columns and gets chopped at the first
-    # visible one — that's the "eek Ending 7.19" fragment in the corner. A short
-    # label fits inside C, so nothing bleeds through and the header reads clean.
-    # (The sentence itself can't be shown: this view is 3 narrow columns wide,
-    # and its content — week + day — is already in the gold cell and the column
-    # header.)
-    we_shown = cell(g, 2, 2).strip()
-    tmp.batch_update([{"range": "C2",
-                       "values": [[f"Week Ending {we_shown}  —  {dayname}"]]}],
-                     value_input_option="USER_ENTERED")
-    header_b = export(sheet_id, gid, f"A2:{last_letter}{DAY_HEADER_ROW}", token)
+    header_b = export(sheet_id, gid,
+                      f"A{DAY_HEADER_ROW}:{last_letter}{DAY_HEADER_ROW}", token)
     for p in programs:
         keep = {r for r in all_rows if cell(g, r, CAMPAIGN_COL).strip() == p
                 and not is_terminated(g, r)
@@ -247,10 +277,12 @@ def render_all(sh, tmp, sheet_id, token, yday, out_dir: Path, programs=None):
         hide = [r for r in all_rows if r not in keep]
         set_rows_hidden(sh, gid, hide, True)
         renumber(tmp, first, last, keep)
-        img = stitch([header_b,
-                      export(sheet_id, gid,
-                             f"A{min(keep)}:{last_letter}{max(keep)}", token),
-                      export(sheet_id, gid, f"A{ts}:{last_letter}{te}", token)])
+        body = export(sheet_id, gid,
+                      f"A{min(keep)}:{last_letter}{max(keep)}", token)
+        tot = export(sheet_id, gid, f"A{ts}:{last_letter}{te}", token)
+        w = max(header_b.width, body.width, tot.width)
+        img = stitch([title_bar(w, f"Week Ending {we_label}  —  {dayname} "
+                                   f"{yday.month}/{yday.day}"), header_b, body, tot])
         path = out_dir / f"{p} Sales Board (b).png"
         img.save(path)
         result[p]["b"] = path
