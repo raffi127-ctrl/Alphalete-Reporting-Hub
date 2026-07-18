@@ -219,15 +219,15 @@ box(68.9,0.2,69.8,1.7,FLR_Z,FLR_Z+5.0,"#9aa2ac")
 box(64.6,1.2,66.4,3.4,FLR_Z,FLR_Z+0.4,"#3a4150")            # walking pad
 sdesk(57.2,4.7,64.2,6.9,_RW); sdesk(62.0,2.5,64.2,4.7,_RW)  # L-desk + return
 schair(60.2,3.5,_RD,s=1.35,h=2.2)                          # Raf (exec chair)
-schair(58.8,8.3,_RD,s=1.15,h=1.6,face='N'); schair(62.2,8.3,_RD,s=1.15,h=1.6,face='N')  # guests, facing the desk
-_ocx,_ocy,_OT=56.2,13.6,"#7a5333"                           # oval table, 6 seats
+schair(58.8,7.5,_RD,s=1.15,h=1.6,face='N'); schair(62.2,7.5,_RD,s=1.15,h=1.6,face='N')  # guests, facing the desk
+_ocx,_ocy,_OT=56.2,11.7,"#7a5333"                           # oval table, 6 seats (north of the near wall)
 _ov=[(_ocx+2.6*math.cos(2*math.pi*i/40.0), _ocy+1.5*math.sin(2*math.pi*i/40.0)) for i in range(40)]
 _od=_ocx+_ocy
 for _zz,_cc,_dd in ((2.2,shade(_OT,0.62),_od+0.30),(2.4,_OT,_od+0.32)):
     emit(_dd,_zz,'<polygon points="%s" fill="%s" stroke="%s" stroke-width="0.5"/>'
          % (pts([iso(_x,_y,FLR_Z+_zz) for _x,_y in _ov]), _cc, shade(_OT,0.5)))
-for _cx,_cy,_cf in ((52.0,13.6,'E'),(60.4,13.6,'W'),(54.6,10.8,'S'),
-                   (57.8,10.8,'S'),(54.6,16.4,'N'),(57.8,16.4,'N')):
+for _cx,_cy,_cf in ((52.0,11.7,'E'),(60.4,11.7,'W'),(54.6,8.9,'S'),
+                   (57.8,8.9,'S'),(54.6,14.5,'N'),(57.8,14.5,'N')):
     _bh=(_cx+_cy)<_od                                        # north/far side sits behind the table
     schair(_cx,_cy,_RD,s=1.35,h=1.9,face=_cf,db=(_od+0.32+(-0.6 if _bh else 0.6))-(_cx+_cy))
 # wall art on the north wall behind Raf (canvases), biased to draw in front of the wall
