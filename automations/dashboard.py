@@ -3341,7 +3341,14 @@ AUTOMATED_REPORTS = [
         "creator": "Raf",
         "emoji": "🪪",
         "color": "#F59E0B",
-        "category": "📲 Ops",
+        # 🎯 Recruiting (not Ops): Ops cards are routed to the OPS section, which
+        # kept this out of ⏰ TIME SET REPORTS. It syncs new-hire background
+        # checks, so Recruiting is the right home and it sorts at its 8am start.
+        "category": "🎯 Recruiting",
+        # Fires 3× a day (8am / 11:30am / 4pm). The tile stays amber showing
+        # "N/3" until the 4pm pass lands, then turns green — instead of going
+        # green at 8am with two passes still due.
+        "daily_runs": 3,
         "description": "Reads the Sterling/First Advantage background-check emails and updates the BG Status column on both D2D OBCL tabs, then posts a weekly new-starts status thread to #rafs-office-recruiting.",
         "breakdown": (
             "WHAT IT DOES\n"
@@ -4325,6 +4332,26 @@ def _week_run_statuses(week_days: list[dt.date]) -> dict:
     return {k: v[1] for k, v in latest.items()}
 
 
+def _week_run_counts(week_days: list[dt.date]) -> dict:
+    """{(report_id, date): successful_run_count} for the given days.
+
+    Cards that fire SEVERAL times a day (BG Check Sync: 8am/11:30am/4pm) can't
+    use "latest status wins" — that flips them green after the FIRST pass, which
+    reads as "done for the day" when two runs are still pending. Counting the
+    day's successful runs lets the tile stay amber until the last one lands."""
+    wanted = set(week_days)
+    counts: dict = {}
+    for r in _all_runs_merged(days=8):
+        when = r.get("_dt")
+        if when is None or when.date() not in wanted:
+            continue
+        rid = r.get("report_id")
+        if not rid or (r.get("status") or "").lower() != "success":
+            continue
+        counts[(rid, when.date())] = counts.get((rid, when.date()), 0) + 1
+    return counts
+
+
 def _latest_run_summary(report_id: str) -> str | None:
     """Return compact text like 'Today · Megan · 1:06 AM', or None.
     Considers runs by any teammate, not just this machine.
@@ -5038,6 +5065,7 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
     _week_start = today - dt.timedelta(days=today.weekday())    # Monday
     _week_days = [_week_start + dt.timedelta(days=_k) for _k in range(7)]
     _cal_statuses = _week_run_statuses(_week_days)
+    _cal_counts = _week_run_counts(_week_days)
     # Live "running now": actual subprocesses (active_runs.json + a ps match),
     # so the card shows a pulsing 🔄 for whatever is executing right now.
     try:
@@ -5045,11 +5073,28 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
     except Exception:
         _running_ids = set()
 
-    def _cal_status(_rid: str, _day: dt.date) -> str:
-        """Per-card outcome for a day: ok / partial / fail / miss / up(coming)."""
+    def _cal_status(_rid: str, _day: dt.date, _daily_runs: int = 1) -> str:
+        """Per-card outcome for a day: ok / partial / progress / fail / miss / up.
+
+        `_daily_runs` > 1 marks a card that fires several times a day. Those
+        stay "progress" (amber) until the LAST pass of the day succeeds, so a
+        card like BG Check Sync doesn't read done-and-green at 8am with the
+        11:30am and 4pm passes still to come."""
         if _day > today:
             return "up"                       # future — hasn't run
         _s = _cal_statuses.get((_rid, _day))
+        if _daily_runs > 1:
+            _done = _cal_counts.get((_rid, _day), 0)
+            if _done >= _daily_runs:
+                return "ok"                   # every pass landed → green
+            if _done > 0:
+                # Some passes in. Amber today (more still due); on a past day it
+                # never completed, so surface it as partial rather than green.
+                return "progress" if _day == today else "partial"
+            if _s in (None, "success"):
+                return "up" if _day == today else "miss"
+            # nothing succeeded and the latest attempt was not a success → fall
+            # through to the normal failure handling below.
         if _s == "success":
             return "ok"
         if _s == "partial":                   # some parts landed, some missed
@@ -5153,12 +5198,19 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                     # coral ⚠️ failed/incomplete, gray – scheduled-didn't-run,
                     # plain = upcoming). Status is encoded in the button key
                     # (__calstat_<status>) which the injected CSS colors.
-                    _stat = _cal_status(_r["id"], _day)
+                    _stat = _cal_status(_r["id"], _day,
+                                        int(_r.get("daily_runs") or 1))
                     if _day == today and _r["id"] in _running_ids:
                         _stat = "running"          # live subprocess right now
                     _icon = {"ok": "✅ ", "partial": "🟠 ", "fail": "⚠️ ",
-                             "miss": "– ", "running": "🔄 "}.get(_stat, "")
+                             "miss": "– ", "running": "🔄 ",
+                             "progress": "🟡 "}.get(_stat, "")
                     _label = f"{_icon}{_r.get('emoji', '📄')} {_r['name']}"
+                    # Multi-run card mid-day: show how many passes have landed
+                    # (e.g. "1/3") so the amber pill says WHY it isn't green yet.
+                    if _stat == "progress":
+                        _label += (f" {_cal_counts.get((_r['id'], _day), 0)}"
+                                   f"/{int(_r.get('daily_runs') or 1)}")
                     # Self-scheduled reports fire on their OWN fixed timer (not the
                     # 4am batch), so show the run time on the tile — otherwise there
                     # is no way to see WHEN it runs. Batch reports omit it (they run
@@ -5179,6 +5231,7 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                     _help = {
                         "ok": "Ran OK — open to view",
                         "partial": "Ran, but some parts missed — open to see which",
+                        "progress": "Running on schedule — some of today's passes are done, more still due",
                         "fail": "Failed / incomplete — open to see why",
                         "miss": "Was scheduled but didn't run — open to run",
                         "up": "Open this report to run it",
@@ -9776,6 +9829,10 @@ else:  # st.session_state.view == "user"
             # the red 'fail' — a red pill on a report that mostly worked trains
             # people to ignore red. Distinct hue from the yellow 'running' pill.
             "[class*='__calstat_partial'] button{background:#FFEDD5!important;color:#7C2D12!important;border-color:#FB923C!important}"
+            # PROGRESS = a multi-run card mid-day (e.g. BG Check Sync after the
+            # 8am pass, with 11:30am + 4pm still due). Amber = on track but not
+            # finished; it turns green only once the LAST pass lands.
+            "[class*='__calstat_progress'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important}"
             "[class*='__calstat_fail'] button{background:#FAECE7!important;color:#712B13!important;border-color:#F0997B!important}"
             "[class*='__calstat_miss'] button{background:transparent!important;color:#888780!important;border-color:var(--border)!important;opacity:.75}"
             "[class*='__calstat_running'] button{background:#FBF3DE!important;color:#6B5210!important;border-color:#C9A85C!important;animation:calpulse 1.4s ease-in-out infinite}"
@@ -9787,10 +9844,6 @@ else:  # st.session_state.view == "user"
             # launchd, no status reported back) — orange OPS pill regardless of
             # run-status, so it doesn't read gray.
             "[class*='resume-pushing__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
-            # BG Check Sync is the same kind of background OPS automation (3 launchd
-            # passes a day, no status reported back) — orange OPS pill regardless of
-            # run-status, so it matches rc-autoread / resume-pushing.
-            "[class*='bg-check-sync__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
             # Sara+ Issue Escalation is the same kind of background OPS automation
             # (24/7 every 5 min, no status reported back) — orange OPS pill regardless
             # of run-status, matching the other always-on cards.
