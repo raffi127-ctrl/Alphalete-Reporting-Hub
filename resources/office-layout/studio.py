@@ -911,10 +911,9 @@ def furnish(kind, R, key=None):
         for _y0,_y1,_z0,_z1,_c in ((7.60,12.40,3.70,7.20,_RD),                     # anchor
                                    (4.80,7.00,5.45,7.20,"#7a5333"),(4.80,7.00,3.70,5.05,"#a9b2bd"),
                                    (2.40,4.20,4.60,6.40,"#c0533f"),(2.40,4.20,3.15,4.45,"#7a5333"),
-                                   # These two hang low (z2.20-3.20). The couch back reaches z2.90,
-                                   # so the first one used to sit inside it - moved south of the couch
-                                   # (which now ends at y10.50) to pair up with its neighbour instead.
-                                   (11.00,13.00,2.20,3.20,"#a9b2bd"),(13.40,15.40,2.20,3.20,"#c5ccd4")):
+                                   # (the two low grey pieces that used to hang at z2.20-3.20 under
+                                   #  the TV are gone - they crowded it once the couch moved)
+                                   ):
             _onW(_y0,_y1,0.17,_z0,_z1,shade(_c,0.68),nudge=0.06)
             _onW(_y0+0.07,_y1-0.07,0.21,_z0+0.07,_z1-0.07,_c,nudge=0.12)
         # TV on the wall 1 end nearest the sitting table
