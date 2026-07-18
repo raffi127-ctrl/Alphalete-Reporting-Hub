@@ -207,32 +207,33 @@ box(69.7,3.5,70.3,14.5,FLR_Z+1.6,FLR_Z+3.4,"#bfe0ea",op=0.55,db=0.3)
 
 # --- 4 · RAF'S (50,0,70,18): backs the north wall, looks out the south entry ---
 _RD="#9e3b32"; _RW="#5c4033"
-_CO="#5a5f68"                                               # couch on the west wall
-box(50.20,2.5,51.10,7.6,FLR_Z,FLR_Z+2.7,_CO)                # back
-box(51.10,2.5,53.10,3.05,FLR_Z,FLR_Z+1.8,shade(_CO,0.9))    # arm (north)
-box(51.10,7.05,53.10,7.6,FLR_Z,FLR_Z+1.8,shade(_CO,0.9))    # arm (south)
-box(51.10,3.05,53.10,7.05,FLR_Z,FLR_Z+1.25,shade(_CO,1.18)) # seat cushions
+_CO="#5a5f68"                                               # couch on the west wall, facing east
+box(50.20,2.40,53.10,7.70,FLR_Z,FLR_Z+0.50,shade(_CO,0.80))      # base plinth (ties it together)
+box(50.20,2.40,51.20,7.70,FLR_Z+0.50,FLR_Z+2.45,_CO)            # back panel
+box(50.20,2.40,53.10,3.05,FLR_Z+0.50,FLR_Z+1.65,shade(_CO,0.96)) # arm (north)
+box(50.20,7.05,53.10,7.70,FLR_Z+0.50,FLR_Z+1.65,shade(_CO,0.96)) # arm (south)
+box(51.20,3.05,53.10,7.05,FLR_Z+0.50,FLR_Z+1.10,shade(_CO,1.22)) # seat cushions
 scred(50.2,0.2,51.9,1.8,_RD)                                # mini fridge, NW corner
 box(66.6,0.2,68.9,1.2,FLR_Z,FLR_Z+5.0,"#9aa2ac")            # corner bookcase, NE
 box(68.9,0.2,69.8,1.7,FLR_Z,FLR_Z+5.0,"#9aa2ac")
 box(64.6,1.2,66.4,3.4,FLR_Z,FLR_Z+0.4,"#3a4150")            # walking pad
 sdesk(57.2,4.7,64.2,6.9,_RW); sdesk(62.0,2.5,64.2,4.7,_RW)  # L-desk + return
-schair(60.2,3.5,_RD)                                        # Raf
-schair(58.8,8.3,_RD,face='N'); schair(62.2,8.3,_RD,face='N')  # guests, facing the desk
+schair(60.2,3.5,_RD,s=1.35,h=2.2)                          # Raf (exec chair)
+schair(58.8,8.3,_RD,s=1.15,h=1.6,face='N'); schair(62.2,8.3,_RD,s=1.15,h=1.6,face='N')  # guests, facing the desk
 _ocx,_ocy,_OT=56.2,13.6,"#7a5333"                           # oval table, 6 seats
 _ov=[(_ocx+2.6*math.cos(2*math.pi*i/40.0), _ocy+1.5*math.sin(2*math.pi*i/40.0)) for i in range(40)]
 _od=_ocx+_ocy
 for _zz,_cc,_dd in ((2.2,shade(_OT,0.62),_od+0.30),(2.4,_OT,_od+0.32)):
     emit(_dd,_zz,'<polygon points="%s" fill="%s" stroke="%s" stroke-width="0.5"/>'
          % (pts([iso(_x,_y,FLR_Z+_zz) for _x,_y in _ov]), _cc, shade(_OT,0.5)))
-for _cx,_cy,_cf in ((52.6,13.6,'E'),(59.8,13.6,'W'),(54.9,11.2,'S'),
-                   (57.5,11.2,'S'),(54.9,16.0,'N'),(57.5,16.0,'N')):
+for _cx,_cy,_cf in ((52.4,13.6,'E'),(60.0,13.6,'W'),(54.8,11.3,'S'),
+                   (57.6,11.3,'S'),(54.8,15.9,'N'),(57.6,15.9,'N')):
     _bh=(_cx+_cy)<_od                                        # north/far side sits behind the table
-    schair(_cx,_cy,_RD,s=1.15,face=_cf,db=(_od+0.32+(-0.6 if _bh else 0.6))-(_cx+_cy))
+    schair(_cx,_cy,_RD,s=1.0,h=1.5,face=_cf,db=(_od+0.32+(-0.6 if _bh else 0.6))-(_cx+_cy))
 # wall art on the north wall behind Raf (canvases), biased to draw in front of the wall
-for _ax,_ac in ((52.9,_RD),(54.9,"#7a5333")):
-    box(_ax,0.10,_ax+1.7,0.26,FLR_Z+1.7,FLR_Z+3.25,shade(_ac,0.55),db=3.0)   # frame
-    box(_ax+0.1,0.12,_ax+1.6,0.28,FLR_Z+1.8,FLR_Z+3.15,_ac,db=3.02)          # canvas
+for _ax,_ac in ((52.7,_RD),(54.5,"#7a5333"),(56.3,"#8a9099")):
+    box(_ax,0.10,_ax+1.4,0.24,FLR_Z+1.9,FLR_Z+3.25,"#3a3a3a",db=3.0)         # frame
+    box(_ax+0.09,0.12,_ax+1.31,0.28,FLR_Z+2.0,FLR_Z+3.15,_ac,db=3.02)        # canvas
 
 # --- 3 · MAUD'S (0,47,11,64): exterior glass south, entry east, walls 1/2 solid.
 # Her studio frame IS the building's frame here, so this is her actual layout mapped
