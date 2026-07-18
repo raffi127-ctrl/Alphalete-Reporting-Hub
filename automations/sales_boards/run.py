@@ -128,13 +128,27 @@ def find_thread_ts(client, channel: str, day):
     return None
 
 
-def _already_replied(client, channel: str, thread_ts: str, caption: str) -> bool:
+def _already_replied(client, channel: str, thread_ts: str, plain: str) -> bool:
+    """Is this board's reply already in the thread?
+
+    TWO signals, because either alone can miss:
+      * the caption text — but Slack does NOT guarantee `initial_comment`
+        survives as the file-share message's `text` in every upload path, and a
+        false negative here re-posts duplicate images on the next pass;
+      * the attached FILENAME — which we control ("<plain> (a).png").
+    Both derive from `plain` (no emoji), since Slack may store the shortcode or
+    the rendered character and a verbatim caption match would be unreliable.
+    Also unescapes &/</> — Slack stores message text HTML-escaped.
+    """
     try:
         rs = client.conversations_replies(channel=channel, ts=thread_ts, limit=200)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — a lookup failure must not block posting
         return False
     for m in rs.get("messages", []):
-        if caption in (m.get("text") or ""):
+        text = (m.get("text") or "").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+        if plain in text:
+            return True
+        if any((f.get("name") or "").startswith(plain) for f in (m.get("files") or [])):
             return True
     return False
 
