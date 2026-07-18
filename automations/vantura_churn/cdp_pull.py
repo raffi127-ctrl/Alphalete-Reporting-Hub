@@ -183,6 +183,29 @@ def _probe_exports(page, today, log) -> None:
         log(f"[export] CARLOS rows {carlos}; order-date range "
             f"{min(odates) if odates else '?'} .. "
             f"{max(odates) if odates else '?'}")
+        # v2 found EXACTLY 4x the crosstab's rows (232,224 vs 58,056) — some
+        # column quadruplicates each logical line. Group by the COLS
+        # projection and show which of the 47 columns actually varies inside
+        # one duplicated group, so the swap dedups on evidence, not a guess.
+        proj = [hdr.index(c) for c in compute.COLS.values()]
+        groups = {}
+        for row in rows[1:]:
+            if len(row) < len(hdr):
+                row = row + [""] * (len(hdr) - len(row))
+            groups.setdefault(tuple(row[i] for i in proj), []).append(row)
+        sizes = {}
+        for g in groups.values():
+            sizes[len(g)] = sizes.get(len(g), 0) + 1
+        log(f"[dedup] group sizes histogram: {sorted(sizes.items())[:8]}")
+        sample = next((g for g in groups.values() if len(g) == 4), None)
+        if sample:
+            for ci, cap in enumerate(hdr):
+                vals = [r[ci] for r in sample]
+                if len(set(vals)) > 1:
+                    log(f"[dedup] varies: {cap!r} -> "
+                        f"{[v[:40] for v in vals]}")
+        else:
+            log("[dedup] no 4-row group found (sizes above)")
     except Exception as ex:  # noqa: BLE001
         log(f"[export dash+dates] ERR {str(ex)[:150]}")
 
