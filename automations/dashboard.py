@@ -3886,6 +3886,75 @@ AUTOMATED_REPORTS = [
             },
         ],
     },
+    {
+        "id": "vantura-churn",
+        "name": "Vantura Churn & Activations (daily board refresh)",
+        "creator": "Carlos",
+        "emoji": "📉",
+        "color": "#2E86AB",
+        "category": "📊 Metrics",
+        "description": "Refreshes the Vantura Master Sales Board every morning: pulls each owner's 60-day Order Log and the Churn Rates dashboard from Tableau, computes the 0-30 bases/disconnects, reconciles against the dashboard's own 0-30 cell, and only then writes Carlos's Churn + Activations tabs and Atef's Churn tab.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Pulls the **Order Log** via the direct authenticated "
+            "export (no browser UI; the old render-and-dialog path stays as "
+            "automatic fallback) plus the **Churn Rates** crosstab.\n"
+            "**•** Computes per-product activation bases and 0-30 "
+            "disconnects (posted-date window; col 19, never Max Posted).\n"
+            "**•** **Reconciles** the computed numbers against the CHURN "
+            "RATES dashboard — on ANY mismatch it writes NOTHING and fails "
+            "loudly.\n"
+            "**•** Writes Churn!B5:B7 + the R2:AE helper block (Carlos and "
+            "Atef) and rebuilds the Activations dump, preserving the notes "
+            "that follow customers and SPMs.\n\n"
+            "WHAT STAYS HUMAN\n"
+            "Nothing day-to-day — check the board over coffee. If a run "
+            "fails it's usually a stale Tableau load; a re-run normally "
+            "clears it.\n\n"
+            "WHEN IT RUNS\n"
+            "**Daily 7:00 AM** on Lucy 2 (launchd "
+            "com.alphalete.vantura-churn-daily, live since 2026-07-18)."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"),
+        "assignees": ["Lucy 2"],
+        # Runs on Lucy 2 — its warm Tableau session + the daily 7am launchd
+        # job (com.alphalete.vantura-churn-daily) live there. A Hub "play"
+        # from ANY machine routes the run to Lucy 2 via the mini-control queue.
+        "run_machine": "Lucy 2",
+        "run_rerun_id": "vantura_churn",
+        # Self-running daily launchd job: it doesn't report a per-day
+        # completion to the Hub, so keep it out of "due today" tallies.
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "estimated_minutes": 15,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Board refreshed — bases, disconnect rolloff, and activations written; numbers reconciled against the Churn Rates dashboard before any write.",
+            "message_failed": "❌ Run failed. Reconcile mismatches usually mean a stale Tableau load — re-run once; if it persists, check the Order Log pull (owner filter / 60-day window) before touching the sheet by hand.",
+        },
+        "actions": [
+            {
+                "label": "Refresh Now",
+                "icon": "▶",
+                "primary": True,
+                "help": "Full refresh: pull, compute, reconcile, write. The reconcile gate means a bad pull can never write the board.",
+                "module": "automations.vantura_churn.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Dry Run",
+                "icon": "🧪",
+                "primary": False,
+                "help": "Pull + compute + reconcile and print everything, but write nothing.",
+                "module": "automations.vantura_churn.run",
+                "args_fn": lambda: ["--dry-run"],
+            },
+        ],
+    },
 ]
 
 # Merge in user-uploaded reports (saved by the Wire-Up dialog)
