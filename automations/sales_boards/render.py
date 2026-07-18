@@ -225,6 +225,17 @@ def render_all(sh, tmp, sheet_id, token, yday, out_dir: Path, programs=None):
     # End on the DAY column (visible). Ending on LAST_DAY_COL — hidden whenever
     # the day isn't Sunday — made the export slide right into "Campaign".
     last_letter = rowcol_to_a1(1, dcol)[:-1]
+    # Row 2's descriptor is a ~130-char formula in col C. C is hidden here, but
+    # the text OVERFLOWS across the hidden columns and gets chopped at the first
+    # visible one — that's the "eek Ending 7.19" fragment in the corner. A short
+    # label fits inside C, so nothing bleeds through and the header reads clean.
+    # (The sentence itself can't be shown: this view is 3 narrow columns wide,
+    # and its content — week + day — is already in the gold cell and the column
+    # header.)
+    we_shown = cell(g, 2, 2).strip()
+    tmp.batch_update([{"range": "C2",
+                       "values": [[f"Week Ending {we_shown}  —  {dayname}"]]}],
+                     value_input_option="USER_ENTERED")
     header_b = export(sheet_id, gid, f"A2:{last_letter}{DAY_HEADER_ROW}", token)
     for p in programs:
         keep = {r for r in all_rows if cell(g, r, CAMPAIGN_COL).strip() == p
