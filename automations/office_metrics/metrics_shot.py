@@ -47,19 +47,19 @@ BASE_VIEW_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
 DEFAULT_FILTER_FIELD = os.environ.get("METRICS_SHOT_FILTER_FIELD", "Owner Name")
 
 
-def build_view_url(owner: str, *, filter_field: str) -> str:
-    """All-teams Metrics view scoped to one owner via a Tableau URL filter.
+def build_view_url(owner: str | None, *, filter_field: str,
+                   no_filter: bool = False) -> str:
+    """The Metrics view — ALL TEAMS if no_filter, else scoped to one owner via a
+    Tableau URL filter.
 
     Tableau reads the filter's caption + a URL-encoded value; a space in the
     caption or value must be %20. `:embed=y` + `:showVizHome=no` give a clean
     canvas (no site chrome) for the screenshot."""
     base = BASE_VIEW_URL.split("?", 1)[0]
-    params = [
-        f"{quote(filter_field)}={quote(owner)}",
-        ":iid=1",
-        ":embed=y",
-        ":showVizHome=no",
-    ]
+    params = []
+    if not no_filter:
+        params.append(f"{quote(filter_field)}={quote(owner or '')}")
+    params += [":iid=1", ":embed=y", ":showVizHome=no"]
     return f"{base}?{'&'.join(params)}"
 
 
@@ -75,19 +75,21 @@ def _spec(owner: str, url: str) -> dict:
     }
 
 
-def capture(owner: str, *, out_dir: Path, filter_field: str,
-            headless: bool = False, verbose: bool = True) -> Path:
-    """Log in to Tableau once, navigate to the owner-filtered Metrics view, and
-    save the board as a PNG. Returns the image path."""
+def capture(owner: str | None, *, out_dir: Path, filter_field: str,
+            no_filter: bool = False, headless: bool = False,
+            verbose: bool = True) -> Path:
+    """Log in to Tableau once, navigate to the Metrics view (owner-filtered, or
+    all-teams if no_filter), and save the board as a PNG. Returns the image path."""
     from automations.shared.tableau_patchright import tableau_session
     from automations.tableau_screenshots import capture as _cap
-    url = build_view_url(owner, filter_field=filter_field)
+    url = build_view_url(owner, filter_field=filter_field, no_filter=no_filter)
     if verbose:
         print(f"  view: {url}", flush=True)
     out_dir.mkdir(parents=True, exist_ok=True)
+    tag = owner or "all_teams"
     with tableau_session(headless=headless, allow_form_login=False,
                          verbose=verbose) as page:
-        return _cap.capture_page(page, _spec(owner, url), out_dir, verbose=verbose)
+        return _cap.capture_page(page, _spec(tag, url), out_dir, verbose=verbose)
 
 
 def main(argv=None) -> int:
@@ -103,24 +105,51 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-run", action="store_true",
                     help="capture + save the PNG to Downloads, DO NOT post "
                          "(preview the screenshot before wiring it live).")
+    ap.add_argument("--no-filter", action="store_true",
+                    help="capture the ALL-TEAMS view (no per-office filter) — "
+                         "for Raf's #alphalete-sales / previewing the raw board.")
+    ap.add_argument("--dm", default=None, metavar="USER",
+                    help="preview: DM the captured PNG to this Slack user (id / "
+                         "email / name) instead of posting to the office thread. "
+                         "Overrides --live/--dry-run — nothing hits a channel.")
     ap.add_argument("--headless", action="store_true")
     args = ap.parse_args(argv)
 
-    if not args.owner:
-        print("--owner (or METRICS_SHOT_OWNER) is required.")
+    # --no-filter needs no owner; a filtered shot does.
+    if not args.no_filter and not args.owner:
+        print("--owner (or METRICS_SHOT_OWNER) is required (or use --no-filter "
+              "for the all-teams view).")
         return 2
-    live = args.live and not args.dry_run
+    live = args.live and not args.dry_run and not args.dm
 
+    scope = "ALL TEAMS" if args.no_filter else args.owner
+    mode = f"DM→{args.dm}" if args.dm else ("LIVE" if live else "DRY-RUN")
     out_dir = (Path.home() / "Downloads") if live else Path(tempfile.gettempdir())
-    print(f"=== 📸 Tableau Metrics — owner={args.owner!r} — "
-          f"{'LIVE' if live else 'DRY-RUN'} ===", flush=True)
+    label = "Tableau Metrics — All Teams" if args.no_filter else \
+            f"Tableau Metrics — {args.owner}"
+    print(f"=== 📸 {label} — {mode} ===", flush=True)
     try:
         png = capture(args.owner, out_dir=out_dir, filter_field=args.filter_field,
-                      headless=args.headless, verbose=True)
+                      no_filter=args.no_filter, headless=args.headless, verbose=True)
     except Exception as e:  # noqa: BLE001
         print(f"✗ capture failed: {type(e).__name__}: {e}")
         return 1
     print(f"✓ captured: {png}  ({png.stat().st_size // 1024} KB)", flush=True)
+
+    # Preview DM — image goes to one person, never a channel.
+    if args.dm:
+        from automations.shared.slack_metrics_post import (
+            dm_user_with_file, SlackPostError)
+        try:
+            dm_user_with_file(png, user=args.dm,
+                              comment=f"📸 Preview — {label} (scope: {scope})",
+                              file_name=f"{label}.png")
+            print(f"  ✓ Slack: DM'd preview to {args.dm}")
+        except SlackPostError as e:
+            print(f"✗ preview DM failed: {e}")
+            return 1
+        print("=== done ===")
+        return 0
 
     if not live:
         print("  (dry-run — image saved, NOT posted. Open it to check the crop "
@@ -133,8 +162,7 @@ def main(argv=None) -> int:
     try:
         post_reply_with_image(
             png, comment="📸 Tableau Metrics",
-            react_emoji="camera_with_flash",
-            file_name=f"Tableau Metrics — {args.owner}.png")
+            react_emoji="camera_with_flash", file_name=f"{label}.png")
         print("  ✓ Slack: posted Tableau Metrics screenshot")
     except SlackPostError as e:
         print(f"✗ Slack post failed: {e}")

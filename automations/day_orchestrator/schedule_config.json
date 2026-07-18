@@ -2317,6 +2317,25 @@
         "report_id": "cody_metrics"
       },
       "_note": "Office metrics for cody → #aeon-sales. Pure-config office (all metrics slice shared views). Runs office_metrics.runner directly. Added 2026-07-15."
+    },
+    "metrics_shot_preview": {
+      "order": 99,
+      "on_scheduler": false,
+      "display_name": "Tableau Metrics Screenshot (preview handle)",
+      "source_type": "tableau",
+      "command": [
+        "automations.office_metrics.metrics_shot"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 15,
+      "verify": null,
+      "_off_scheduler_note": "on_scheduler:false → NEVER in the 4am batch. Manual handle only, so `lucy rerun metrics_shot_preview <args>` can capture the ATT TRACKER 2.1 Metrics view (Raf's loom 2026-07-16) and PREVIEW it via DM before it's wired into the office metrics. source_type tableau so chrome_guard runs first. base_args empty — pass everything through lucy rerun, e.g. `--owner \"Rashad Reed\" --dm U04G5HJBGFN` (filtered preview to Megan) or `--no-filter --dm U04G5HJBGFN` (all-teams). Only DMs/dry-runs until the filter caption + crop are approved; then it becomes the 12th metric in office_metrics.runner.metrics_for + daily_metrics."
     }
   },
   "read_only_standalone": {
