@@ -46,6 +46,15 @@ BASE_VIEW_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
 # Metrics view during preview and override here (or via env) if it differs.
 DEFAULT_FILTER_FIELD = os.environ.get("METRICS_SHOT_FILTER_FIELD", "Owner Name")
 
+# Raf's local office — the main #alphalete-sales report's owner (its module is
+# separate, but its shot is captured in the same shared session as the rest).
+MAIN_OWNER = "Rafael Hidalgo"
+
+# Per-DAY shot cache. The first office to run captures EVERY office's shot in one
+# logged-in session; the others just post their PNG from here (seconds, no
+# browser). Keyed by date so a stale shot can never be posted as today's.
+SHOT_CACHE = Path(__file__).resolve().parents[2] / "output" / "office_metrics" / "shots"
+
 
 def build_view_url(owner: str | None, *, filter_field: str,
                    no_filter: bool = False) -> str:
@@ -63,6 +72,76 @@ def build_view_url(owner: str | None, *, filter_field: str,
         params.append(f"{quote(filter_field)}={quote(owner or '')}")
     params.append(":iid=1")
     return f"{base}?{'&'.join(params)}"
+
+
+def all_owners() -> list[str]:
+    """Every owner that gets a shot: Raf's local office + the registry offices."""
+    from automations.office_metrics import offices as _off
+    owners = [MAIN_OWNER]
+    owners += [_off.OFFICES[k].owner for k in _off.ORDER]
+    # de-dupe, keep order
+    seen, out = set(), []
+    for o in owners:
+        if o.lower() not in seen:
+            seen.add(o.lower()); out.append(o)
+    return out
+
+
+def _cache_dir(today: "dt.date | None" = None) -> Path:
+    import datetime as _dt
+    today = today or _dt.date.today()
+    return SHOT_CACHE / today.isoformat()
+
+
+def cached_shot(owner: str) -> Path | None:
+    """Today's already-captured PNG for this owner, or None."""
+    p = _cache_dir() / f"{_slug(owner)}.png"
+    return p if p.exists() and p.stat().st_size > 0 else None
+
+
+def _slug(owner: str) -> str:
+    return owner.lower().replace(" ", "_").replace("/", "-")
+
+
+def capture_all(owners: list[str], *, filter_field: str, headless: bool = False,
+                verbose: bool = True) -> dict:
+    """Capture EVERY owner's filtered Metrics view inside ONE Tableau session.
+
+    Why: the per-office capture used to open its own browser and do a full
+    ownerville→Tableau SSO handshake for each office — eight logins for eight
+    pictures of the same board (Megan 2026-07-16: "why is it so long if there's
+    an all teams view?"). Logging in once and only re-filtering per office drops
+    7 of the 8 logins; each office then costs just a re-render + export.
+
+    Writes into a per-DAY cache so whichever office runs first pays the capture
+    and the rest just post the PNG (same idea as METRICS_XTAB_CACHE)."""
+    from automations.shared.tableau_patchright import tableau_session
+    from automations.tableau_screenshots import capture as _cap
+    out_dir = _cache_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    got: dict = {}
+    with tableau_session(headless=headless, allow_form_login=False,
+                         verbose=verbose) as page:
+        for owner in owners:
+            dest = out_dir / f"{_slug(owner)}.png"
+            if dest.exists() and dest.stat().st_size > 0:
+                got[owner] = dest
+                if verbose:
+                    print(f"  ↺ cached: {owner}", flush=True)
+                continue
+            url = build_view_url(owner, filter_field=filter_field)
+            try:
+                png = _cap.capture_page(page, _spec(owner, url), out_dir,
+                                        verbose=verbose)
+                Path(png).replace(dest)
+                got[owner] = dest
+                if verbose:
+                    print(f"  ✓ {owner}: {dest.name} "
+                          f"({dest.stat().st_size // 1024} KB)", flush=True)
+            except Exception as e:  # noqa: BLE001 — one office must not kill the rest
+                print(f"  ⚠ {owner}: capture failed — {type(e).__name__}: {e}",
+                      flush=True)
+    return got
 
 
 def _spec(owner: str, url: str) -> dict:
@@ -114,6 +193,9 @@ def main(argv=None) -> int:
                     help="preview: DM the captured PNG to this Slack user (id / "
                          "email / name) instead of posting to the office thread. "
                          "Overrides --live/--dry-run — nothing hits a channel.")
+    ap.add_argument("--fresh", action="store_true",
+                    help="ignore today's cached shot and re-capture this office "
+                         "on its own (use if a cached capture went bad).")
     ap.add_argument("--headless", action="store_true")
     args = ap.parse_args(argv)
 
@@ -131,10 +213,30 @@ def main(argv=None) -> int:
             f"Tableau Metrics — {args.owner}"
     print(f"=== 📸 {label} — {mode} ===", flush=True)
     try:
-        png = capture(args.owner, out_dir=out_dir, filter_field=args.filter_field,
-                      no_filter=args.no_filter, headless=args.headless, verbose=True)
+        png = None
+        # Shared-session path (the normal per-office run): reuse today's cached
+        # shot if another office already captured it, else capture EVERY office
+        # in ONE login and take mine from that. Turns 8 logins into 1.
+        if not args.no_filter and not args.fresh:
+            png = cached_shot(args.owner)
+            if png:
+                print(f"  ↺ using today's cached shot: {png.name}", flush=True)
+            else:
+                print("  no cached shot — capturing ALL offices in one session "
+                      "(subsequent offices reuse these)", flush=True)
+                got = capture_all(all_owners(), filter_field=args.filter_field,
+                                  headless=args.headless, verbose=True)
+                png = got.get(args.owner) or cached_shot(args.owner)
+        if png is None:
+            png = capture(args.owner, out_dir=out_dir,
+                          filter_field=args.filter_field,
+                          no_filter=args.no_filter, headless=args.headless,
+                          verbose=True)
     except Exception as e:  # noqa: BLE001
         print(f"✗ capture failed: {type(e).__name__}: {e}")
+        return 1
+    if png is None:
+        print(f"✗ no shot produced for {args.owner!r}")
         return 1
     print(f"✓ captured: {png}  ({png.stat().st_size // 1024} KB)", flush=True)
 
