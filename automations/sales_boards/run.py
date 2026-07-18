@@ -153,6 +153,18 @@ def _already_replied(client, channel: str, thread_ts: str, plain: str) -> bool:
     return False
 
 
+def _publish_hub(status: str) -> None:
+    """Flip the Hub card's pill. Best-effort — never fails the run. Called only
+    on a real post (this fires 8x/day; publishing every pass would bury the
+    activity log)."""
+    try:
+        from automations.day_orchestrator import hub_publish
+        hub_publish.publish_done("sales_boards",
+                                 "Sales Boards → #alphalete-gp-sales", status)
+    except Exception:  # noqa: BLE001 — Hub publish must never break the post
+        pass
+
+
 def post_thread(imgs: dict, day, yday, dry_run: bool, dm_user: str = "") -> list:
     """Find-or-create today's parent, then post each board's images as a reply.
     dm_user routes the whole thread into a DM instead — same code path, used to
@@ -248,8 +260,15 @@ def main(argv=None) -> int:
             print(f"    ↳ {cap}  ({len(keys)} image(s): {', '.join(keys)})")
         return 0
     print("POSTING thread to Slack as Lucy:")
-    for r in post_thread(imgs, today, yday, dry_run=False, dm_user=args.dm or ""):
+    try:
+        results = post_thread(imgs, today, yday, dry_run=False, dm_user=args.dm or "")
+    except Exception:
+        _publish_hub("failed")
+        raise
+    for r in results:
         print(f"    {r}")
+    if not args.dm:                  # a DM test shouldn't touch the Hub card
+        _publish_hub("success")
     return 0
 
 

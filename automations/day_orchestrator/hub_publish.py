@@ -55,6 +55,7 @@ _HUB_CARD = {
     # posts, not on every 25-min pass.
     "org_board_slack": "org-sales-board-slack",
     "pnl_office": "pnl-office",
+    "sales_boards": "sales-boards",
     "board_compare": "org-sales-board-compare",
     "leaders_call": "leaders-call",
     "bg_check_sync": "bg-check-sync",

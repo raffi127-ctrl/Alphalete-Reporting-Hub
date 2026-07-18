@@ -3416,6 +3416,75 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "sales-boards",
+        # Channel in the name; the tile appends "· 6:00 AM CST" from `schedule`.
+        "name": "Sales Boards → #alphalete-gp-sales",
+        "creator": "Megan",
+        "emoji": "📸",
+        "color": "#7C3AED",
+        # 📊 Metrics (not Ops) so it lands in ⏰ TIME SET REPORTS.
+        "category": "📊 Metrics",
+        "description": "Posts the daily Vantura Production thread to #alphalete-gp-sales as Lucy — the four program Sales Boards (B2B, Base, JE, BOX) the VA used to post by hand each morning, two images each.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Posts one dated thread — **Vantura Production MM/DD/YYYY** — "
+            "then each program's images as a threaded reply:\n"
+            "**•** **(a) weekly** — the rep leaderboard (Current Week / Last Wk), "
+            "ranked, numbered 1..N.\n"
+            "**•** **(b) highrollers** — just the reps who sold **yesterday**, "
+            "ranked by that day's count, with that day's totals.\n"
+            "**•** Terminated reps are excluded, matching the VA's own filter.\n"
+            "**•** Titled with **yesterday's** date, e.g. `📦 *BOX Sales Board 7.17*`.\n\n"
+            "WHEN IT RUNS\n"
+            "**Every day at 6:00am CST**, including weekends, retrying every "
+            "25 min as a safety net.\n\n"
+            "SAFETY GATES\n"
+            "**•** Holds if the board's gold **week-ending** cell isn't the week "
+            "containing yesterday — on Mondays that's last week's completed "
+            "week, so it never posts the wrong week.\n"
+            "**•** Skips any board already in today's thread, so a retry can't "
+            "double-post.\n"
+            "**•** Works on a temp copy of the tab; the live Sales Board is "
+            "never modified."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"),
+        "assignees": ["Lucy 1"],
+        # Must run on the mini — that's where Lucy's Slack token lives (a laptop
+        # run would post as Megan).
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "sales_boards",
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "6:00 AM",
+            "estimated_minutes": 5,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Sales Boards posted to #alphalete-gp-sales.",
+            "message_failed": "❌ Run failed. Check the log above, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Post Now",
+                "icon": "▶",
+                "primary": True,
+                "help": "Builds all 8 images and POSTS today's thread to #alphalete-gp-sales as Lucy.",
+                "module": "automations.sales_boards.run",
+                "args_fn": lambda: ["--post"],
+            },
+            {
+                "label": "Preview (no post)",
+                "icon": "👁",
+                "primary": False,
+                "help": "Builds the 8 images and shows the thread it would post. Posts nothing.",
+                "module": "automations.sales_boards.run",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
         "id": "brand-health-audit",
         # No cadence in the name — self_scheduled, so the tile appends
         # "· 12:00 PM CST" itself (it read "(12 CST Daily) · 12:00 PM CST").
