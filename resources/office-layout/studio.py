@@ -920,10 +920,14 @@ def furnish(kind, R, key=None):
                  _ATT if _i%2==0 else "#eaf4fb",nudge=0.10)
         # wordmark. R.text() emits at depth 9e9 so it would float over the desk in front;
         # emit it at the wall-plate depth instead so it sorts as part of the wall.
+        # Sheared into the wall plane so it reads as painted on, not floating in front of it.
+        # On wall 2 a step in +x moves the screen point by (COS,SIN) and +z moves straight
+        # up, so matrix(COS,SIN,0,1,..) maps upright glyphs onto that plane.
         _WD=(0-0.5+w+0)/2+0.6+0.14
         _tx,_ty=R.iso(_gcx,0.19,FLR_Z+3.72)
         R.emit(_WD,FLR_Z+3.72,
-               f'<text x="{_tx:.1f}" y="{_ty:.1f}" font-family="Inter,Segoe UI,Arial,sans-serif" '
+               f'<text transform="matrix({COS:.4f},{SIN:.4f},0,1,{_tx:.1f},{_ty:.1f})" '
+               f'x="0" y="0" font-family="Inter,Segoe UI,Arial,sans-serif" '
                f'font-size="15" font-weight="700" fill="#2b3038" text-anchor="middle" '
                f'style="letter-spacing:.4px">AT&amp;T</text>')
         # WALL 1 (back-left) = solid: a large collage of art filling the run
