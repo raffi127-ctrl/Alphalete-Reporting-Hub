@@ -349,6 +349,47 @@
         "type": "not_configured"
       }
     },
+    "pnl_office": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "PNL for the Office weekly Slack post (VA-replacement Item 3). on_scheduler:false = NOT in the 4am batch; the real schedule is a STANDALONE LaunchAgent (com.alphalete.pnl-office-fri, installed via `lucy rerun install_pnl_office_agent`) firing FRIDAYS 10:00-12:55 CST q25m. Present here so `lucy rerun pnl_office` works. Screenshots the 4-row office P&L (Total Loss Reps/Other, Total Profit, Gross Profit) for the PREVIOUS fully completed week from the Raf PNL 2026 tab as an exact PNG, and posts to #top-leaders-alphalete-org + #alphalete-lvl1-chat AS LUCY. Fill-gate holds (exit 75, retry) until the target week's column is non-zero; per-week state file. DRY-RUN by default (`lucy rerun pnl_office` = no post); the LaunchAgent wrapper passes --post. Runs on the MINI. Registered 2026-07-17.",
+      "display_name": "PNL for the Office → Slack (Fri 10am)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.pnl_office.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 15,
+      "verify": null
+    },
+    "install_pnl_office_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_pnl_office_agent` can install/refresh the STANDALONE com.alphalete.pnl-office-fri LaunchAgent on the mini, which posts PNL for the Office to #top-leaders-alphalete-org + #alphalete-lvl1-chat Fridays 10:00-12:55 CST (q25m, gated) via deploy/pnl_office_fri.sh (--post = LIVE). install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
+      "display_name": "Install PNL for the Office agent (Fri 10am)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "pnl-office-fri"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "install_stf_field_check_agent": {
       "on_scheduler": false,
       "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_stf_field_check_agent` can install/refresh the STANDALONE com.alphalete.stf-field-check-11pm LaunchAgent on the mini, which runs STF Field Check (automations.stf_field_check.run --write) daily at 11:00pm CT via deploy/stf_field_check_11pm.sh. install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
