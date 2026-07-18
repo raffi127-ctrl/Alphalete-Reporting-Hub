@@ -94,13 +94,28 @@ def set_cols_hidden(sh, sheet_id, cols, hidden: bool):
         sh.batch_update({"requests": [_dim(sheet_id, "COLUMNS", c, hidden) for c in cols]})
 
 
-def sort_region(sh, sheet_id, first, last, by_col, width):
-    """Rank the whole rep region by one column, descending. Sorts the full row
-    width so REP and every other column travel with the number."""
+# A terminated rep gets "T" backfilled across their remaining days, so the LAST
+# day of the week catches anyone terminated at any point. The VA's own basic
+# filter does exactly this (col K hiddenValues ["T"]) — without it we showed 3
+# terminated BOX reps she doesn't.
+TERM_MARK = "T"
+TERM_COL = LAST_DAY_COL          # Sunday
+
+
+def is_terminated(g, r) -> bool:
+    return cell(g, r, TERM_COL).strip().upper() == TERM_MARK
+
+
+def sort_region(sh, sheet_id, first, last, specs, width):
+    """Rank the rep region by an ordered list of (col, ascending?) specs — the VA
+    sorts on more than one key, and ties land in a different order without them.
+    Sorts the full row width so every column travels with its rep."""
     sh.batch_update({"requests": [{"sortRange": {
         "range": {"sheetId": sheet_id, "startRowIndex": first - 1, "endRowIndex": last,
                   "startColumnIndex": 0, "endColumnIndex": width},
-        "sortSpecs": [{"dimensionIndex": by_col - 1, "sortOrder": "DESCENDING"}]}}]})
+        "sortSpecs": [{"dimensionIndex": c - 1,
+                       "sortOrder": "ASCENDING" if asc else "DESCENDING"}
+                      for c, asc in specs]}}]})
 
 
 def renumber(tmp, first, last, keep):
@@ -163,13 +178,17 @@ def render_all(sh, tmp, sheet_id, token, yday, out_dir: Path, programs=None):
     result = {p: {} for p in programs}
     all_rows = list(range(first, last + 1))
 
-    # ---------- (a) WEEKLY: rank the region by Current Week ----------
-    sort_region(sh, gid, first, last, CURRENT_WEEK_COL, width)
+    # ---------- (a) WEEKLY ----------
+    # Current Week desc, then REP asc. Verified on her JE 7.17 (a): Joelle /
+    # Juliett / Monica all sit on 9 and run alphabetically — Juliett would lead
+    # if the day column were the tiebreak (she has 3 on Friday), so it isn't.
+    sort_region(sh, gid, first, last,
+                [(CURRENT_WEEK_COL, False), (NAME_COL, True)], width)
     g = _retry(tmp.get_all_values)
     header_a = export(sheet_id, gid, f"A2:{WEEKLY_LAST_COL}{DAY_HEADER_ROW}", token)
     for p in programs:
         keep = {r for r in all_rows if cell(g, r, CAMPAIGN_COL).strip() == p
-                and cell(g, r, NAME_COL).strip()}
+                and cell(g, r, NAME_COL).strip() and not is_terminated(g, r)}
         if not keep:
             print(f"  ! {p}: no reps — skipped")
             continue
@@ -196,7 +215,10 @@ def render_all(sh, tmp, sheet_id, token, yday, out_dir: Path, programs=None):
     if dcol is None:
         print(f"  ! no '{dayname}' column — skipping highrollers")
         return result
-    sort_region(sh, gid, first, last, dcol, width)
+    # Her (b) ties break by Current Week desc (verified on JE 7.17: Joelle 9,
+    # Monica 9, Dayanara 4 — all with 1 on Friday).
+    sort_region(sh, gid, first, last,
+                [(dcol, False), (CURRENT_WEEK_COL, False), (NAME_COL, True)], width)
     g = _retry(tmp.get_all_values)
     hide_cols = [c for c in range(CURRENT_WEEK_COL, LAST_DAY_COL + 1) if c != dcol]
     set_cols_hidden(sh, gid, hide_cols, True)
@@ -206,6 +228,7 @@ def render_all(sh, tmp, sheet_id, token, yday, out_dir: Path, programs=None):
     header_b = export(sheet_id, gid, f"A2:{last_letter}{DAY_HEADER_ROW}", token)
     for p in programs:
         keep = {r for r in all_rows if cell(g, r, CAMPAIGN_COL).strip() == p
+                and not is_terminated(g, r)
                 and (as_int(cell(g, r, dcol)) or 0) > 0}
         if not keep:
             print(f"  ! {p}: nobody sold on {dayname} — no highrollers image")
