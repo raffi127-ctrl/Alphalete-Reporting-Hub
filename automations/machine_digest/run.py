@@ -67,10 +67,15 @@ def _time_only(iso: str) -> str:
 
 
 def _machine_matches(row_machine: str, host: str, exact: bool) -> bool:
+    """`host` may be a COMMA-SEPARATED list of hostname substrings — a runner can
+    answer to more than one name over its life (Lucy 2 has logged runs as both
+    Carloss-Mac-mini-2.attlocal.net and Mac.attlocal.net), and a summary that
+    silently matches neither is worse than one that matches both."""
     m = (row_machine or "").strip()
     if exact:
         return m == host
-    return host.lower() in m.lower()  # substring, tolerant of .local/.attlocal
+    return any(h.strip().lower() in m.lower()
+               for h in host.split(",") if h.strip())
 
 
 def _collect(rows: list[dict], host: str, day: str, exact: bool = True) -> list[dict]:

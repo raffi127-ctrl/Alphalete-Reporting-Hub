@@ -25,7 +25,7 @@ export NO_COLOR=1
 export PYTHONPATH="$(pwd)"
 
 "$VENV_PY" -m automations.machine_digest.run \
-  --host "Carloss-Mac-mini-2" --label "Lucy 2" "$@" >> "$LOG_FILE" 2>&1
+  --host "Mac.attlocal.net,Carloss-Mac-mini-2" --label "Lucy 2" "$@" >> "$LOG_FILE" 2>&1
 ST=$?
 if [ "$ST" -ne 0 ]; then
   echo "[$(date)] lucy2-digest exit=$ST" >> "$LOG_FILE"
