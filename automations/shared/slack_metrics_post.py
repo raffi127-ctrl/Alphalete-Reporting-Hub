@@ -286,6 +286,8 @@ def ensure_metrics_thread(today: dt.date | None = None,
         ":bar_chart: Wireless Churn",
         ":new: Rep Activations",
         ":credit_card: New Internet ABP %",
+        # Screenshot of the office's Tableau Metrics board (Raf 2026-07-16).
+        ":camera_with_flash: Tableau Metrics",
     ])
     if dry_run:
         return {"dry_run": True, "header_text": header_text,
