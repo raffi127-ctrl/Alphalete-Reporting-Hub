@@ -386,7 +386,7 @@ def classroom(x0,y0,x1,y1,col,cred,face):
         ys=[y0+3.2,(y0+3.2+y1-4.2)/2,y1-4.2]               # front row well clear of the south wall
         for cx in (x1-4.4-k*3.5 for k in range(4)):        # first column off the credenza
             for cy in ys: chair(cx,cy,'W')
-classroom(0,18,11,37,"#c2572c","#6f6a63","N")              # 1 · burnt orange
+classroom(0,18,11,37,"#c2572c","#6f6a63","W")              # 1 · burnt orange (screen on wall 1 = west)
 classroom(46.5,52,64.25,64,"#2d7273","#5f7273","E")        # 11 · deep teal
 classroom(64.25,52,82,64,"#4f7343","#6a7562","E")          # 12 · forest green
 
