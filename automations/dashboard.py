@@ -3293,7 +3293,7 @@ AUTOMATED_REPORTS = [
         #   "Org Sales Board → #top-leaders-alphalete-org · 8:30 AM CST"
         "name": "Org Sales Board → #top-leaders-alphalete-org",
         "creator": "Megan",
-        "emoji": "📋",
+        "emoji": "📸",
         "color": "#0EA5E9",
         # 📊 Metrics (not Ops) so it lands in ⏰ TIME SET REPORTS with the other
         # self-scheduled runs rather than the OPS divider.
@@ -3684,7 +3684,7 @@ AUTOMATED_REPORTS = [
         # rc-autoread's "(Q 10 Min)" and the Brand Health card).
         "name": "Alphalete social media posting",
         "creator": "Megan",
-        "emoji": "📸",
+        "emoji": "📣",
         "color": "#EC4899",
         "category": "📸 Social",
         "description": "Turns photos reps drop in #alphaletesocialmedia into brand-safe, captioned social posts — screens the photo, auto-edits it, drafts a caption, collects ✅/❌ approvals, then schedules the approved post.",
