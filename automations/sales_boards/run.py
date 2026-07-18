@@ -3,11 +3,11 @@
 Replaces the VA's per-program Sales Board posts in #alphalete-gp-sales with ONE
 dated thread (Megan 2026-07-17):
 
-    Vantura Production 07/18/2026
-    B2B Sales Board
-    Base Sales Board
-    JE Sales Board
-    BOX Sales Board
+    *Vantura Production 07/18/2026*
+    :briefcase: B2B Sales Board
+    :zap: Base Sales Board
+    :bulb: JE Sales Board
+    :package: BOX Sales Board
 
 …then each board's TWO images as a threaded reply — (a) the weekly ranking and
 (b) the Highrollers cut for yesterday. Titled with YESTERDAY's date, matching the
@@ -47,6 +47,10 @@ TAB = "Sales Board"
 TEMP_TAB = "_sb_render_tmp"          # ephemeral copy we create + delete
 
 PROGRAMS = R.PROGRAMS
+# The VA's per-program emoji, kept so the thread reads the way the channel is
+# used to: ":briefcase: *B2B Sales Board 7.17*".
+PROGRAM_EMOJI = {"B2B": ":briefcase:", "Base": ":zap:",
+                 "JE": ":bulb:", "BOX": ":package:"}
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "sales_boards"
 CHANNEL = ("#alphalete-gp-sales", "C07J46MQNUX")
 
@@ -89,7 +93,9 @@ def header_title(day) -> str:
 
 
 def header_text(day) -> str:
-    return "\n".join([f"*{header_title(day)}*"] + [f"{p} Sales Board" for p in PROGRAMS])
+    return "\n".join([f"*{header_title(day)}*"]
+                     + [f"{PROGRAM_EMOJI.get(p, '')} {p} Sales Board".strip()
+                        for p in PROGRAMS])
 
 
 def quality_header_text(day) -> str:
@@ -142,7 +148,7 @@ def post_thread(imgs: dict, day, yday, dry_run: bool, dm_user: str = "") -> list
     if dry_run:
         return [{"dry_run": True, "channel": name, "id": cid,
                  "header": header_text(day),
-                 "replies": [(f"{p} Sales Board {tag}",
+                 "replies": [(f"{PROGRAM_EMOJI.get(p, '')} *{p} Sales Board {tag}*".strip(),
                               sorted(v)) for p, v in imgs.items() if v]}]
     from automations.shared import slack_metrics_post as smp
     client = smp._client()
@@ -159,11 +165,14 @@ def post_thread(imgs: dict, day, yday, dry_run: bool, dm_user: str = "") -> list
         parts = imgs.get(p) or {}
         if not parts:
             continue
-        caption = f"{p} Sales Board {tag}"
-        if _already_replied(client, cid, ts, caption):
+        plain = f"{p} Sales Board {tag}"
+        caption = f"{PROGRAM_EMOJI.get(p, '')} *{plain}*".strip()
+        # dedupe on the PLAIN text — Slack may store the emoji as a shortcode or
+        # the rendered character, so matching the caption verbatim is unreliable
+        if _already_replied(client, cid, ts, plain):
             out.append({"board": p, "skipped": "already in thread"})
             continue
-        uploads = [{"file": str(parts[k]), "filename": f"{caption} ({k}).png"}
+        uploads = [{"file": str(parts[k]), "filename": f"{plain} ({k}).png"}
                    for k in ("a", "b") if k in parts]
         r = client.files_upload_v2(channel=cid, thread_ts=ts,
                                    file_uploads=uploads, initial_comment=caption)
