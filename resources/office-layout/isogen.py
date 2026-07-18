@@ -375,6 +375,19 @@ _south_office(37.625,46.5,13.5,"#8a9099","#6f6a63","#2b3a52","#2b3a52","#2b3a52"
 _south_office(28.75,37.625,10.0,"#6f685c","#4e5766","#d21f26","#0a6cff","#00a94f","#d21f26",  # 9 · Bas (bright/Lego)
     bricks=((2.04,4.05,3.24,5.75,"#d21f26",2),(2.17,6.05,3.07,7.05,"#f6c018",2),(2.14,7.55,3.17,8.75,"#0a6cff",2)))
 
+# 9 · Bas's framed Lego mosaic. Studio wall 2 -> building west (x28.75); studio sx9.28-11.02
+# maps to building y 52.98-54.72 through MY(sx)=64-sx. Bas's own west partition sorts at
+# 86.75, so the tiles are biased to a common target past it.
+_mo=lambda b: 88.0-((b[0]+b[1]+b[2]+b[3])/2)
+_mf=(28.80,52.90,29.00,54.80)
+box(*_mf,FLR_Z+1.35,FLR_Z+3.05,"#3a3a3a",db=_mo(_mf))                          # frame
+_TIL=("#d21f26","#0a6cff","#ffd71a","#00a94f")
+for _r in range(3):
+    for _c in range(4):
+        _t=(28.86,53.02+_c*0.42,29.06,53.02+_c*0.42+0.34)
+        box(*_t,FLR_Z+1.48+_r*0.48,FLR_Z+1.48+_r*0.48+0.38,
+            _TIL[(_r*4+_c)%4],db=_mo(_t)+0.06)                                  # mosaic tiles
+
 # --- 7 · 8 · 2 · INTERVIEW OFFICES: straight desk + iMac + 2 guest chairs + open shelf, no
 # credenza; themed. 7/8 are south-row (same transpose as JD/Bas); 2 is west-column (identity).
 def _south_interview(X0,X1,sd,desk,owner,g0,g1,shelf):
@@ -412,6 +425,13 @@ for _mgx in (95.7,98.3):              # 6 · Megan — a 2x2 array of FOUR disti
         box(_mgx-0.48,29.28,_mgx+0.48,29.44,FLR_Z+_mgz-0.28,FLR_Z+_mgz+0.28,"#20252b",db=15.01) # screen
 tv(0.0,87.0,'N',w=6.0)                # 13 · conference (north wall, y0)
 tv(0.0,27.5,'W',w=5.0,db=2.2)           # 1 · training screen on wall 1 (db clears the perimeter wall)
+# 1 · the whiteboards either side of that screen. Studio y0.80-5.00 and 15.00-19.20 map
+# through (building y = 18 + studio y * 19/20). Biased past the 64ft west perimeter wall
+# (31.5), which otherwise paints over anything sitting against it.
+for _wy0,_wy1 in ((18.76,22.75),(32.25,36.24)):
+    _wbd=33.0-((0.05+_wy0+0.25+_wy1)/2)
+    box(0.05,_wy0,0.25,_wy1,FLR_Z+1.50,FLR_Z+3.00,"#7f8792",db=_wbd)          # frame
+    box(0.12,_wy0+0.16,0.30,_wy1-0.16,FLR_Z+1.62,FLR_Z+2.88,"#fbfcfd",db=_wbd+0.05)
 tv(64.25,58.0,'E')                    # 11 · training screen (east wall; hidden behind the near wall)
 tv(82.0,58.0,'E')                     # 12 · training screen (east wall; hidden behind the near wall)
 
