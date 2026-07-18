@@ -178,14 +178,51 @@ def decide(person: Person, events: list[BGEvent]) -> Decision:
                     needs_adjudication=ev.needs_adjudication)
 
 
-def match_events_to_people(people: list[Person],
-                           events: list[BGEvent]) -> dict[str, list[BGEvent]]:
-    """Group events by person key. Events whose name matches nobody on the roster
-    are dropped (they belong to other weeks/offices)."""
+def _surname_tokens(last: str) -> set:
+    """Normalized surname tokens, split on spaces/hyphens/punctuation.
+    'Gomez-Valadez' -> {'gomez','valadez'}; 'Gomez' -> {'gomez'}."""
+    return {t for t in re.split(r"[^a-z0-9]+", norm(last)) if t}
+
+
+def _fuzzy_person(event: BGEvent, by_first: dict) -> Optional["Person"]:
+    """Match an email to a roster person when surnames differ only by a dropped
+    part of a compound name (common with double surnames): require the FIRST name
+    to match exactly AND one surname's token set to be a subset of the other's
+    (with overlap). Returns the person only if EXACTLY ONE roster person qualifies
+    -- ambiguous matches are refused (compliance: never guess on a BG status)."""
+    cands = by_first.get(norm(event.first), [])
+    etoks = _surname_tokens(event.last)
+    if not etoks:
+        return None
+    hits = []
+    for p in cands:
+        ptoks = _surname_tokens(p.last)
+        if ptoks and (ptoks <= etoks or etoks <= ptoks):
+            hits.append(p)
+    uniq = {p.key for p in hits}
+    return hits[0] if len(uniq) == 1 else None
+
+
+def match_events_to_people(people: list[Person], events: list[BGEvent],
+                           fuzzy_log: Optional[list] = None) -> dict[str, list[BGEvent]]:
+    """Group events by person. Exact (last|first) match first; if none, a
+    conservative fuzzy match handles compound-surname mismatches (e.g. sheet
+    'Gomez, Baruc' vs email 'Gomez-Valadez, Baruc'). Any fuzzy match is appended
+    to fuzzy_log (if given) so it can be surfaced for a human to eyeball. Events
+    matching nobody are dropped (other weeks/offices)."""
     keys = {p.key for p in people}
+    by_first: dict[str, list] = {}
+    for p in people:
+        by_first.setdefault(norm(p.first), []).append(p)
     out: dict[str, list[BGEvent]] = {p.key: [] for p in people}
     for e in events:
         k = _norm_key(e.first, e.last)
         if k in keys:
             out[k].append(e)
+            continue
+        p = _fuzzy_person(e, by_first)
+        if p is not None:
+            out[p.key].append(e)
+            if fuzzy_log is not None:
+                fuzzy_log.append((e, p))
     return out

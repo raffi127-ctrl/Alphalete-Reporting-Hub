@@ -107,7 +107,8 @@ def main(argv=None) -> int:
     else:
         events = email_source.fetch_events(since_days=args.since_days)
 
-    matched = match.match_events_to_people(roster, events)
+    fuzzy_log: list = []
+    matched = match.match_events_to_people(roster, events, fuzzy_log=fuzzy_log)
 
     # --- decisions -----------------------------------------------------------
     decisions, slack_people, needs_confirm, flags = [], [], [], []
@@ -146,6 +147,12 @@ def main(argv=None) -> int:
     updated_str = f"{now:%b} {now.day}, {hour12}:{now.minute:02d} {now:%p}"
     body = slack_post.render(week, slack_people, needs_confirm, updated_str)
     slack_post.post_or_update(week, body, dry_run=not args.post)
+
+    if fuzzy_log:
+        uniq = {(p.key, f"{p.first} {p.last}", f"{e.first} {e.last}") for e, p in fuzzy_log}
+        print(f"\n[fuzzy-match] {len(uniq)} matched by compound-surname (eyeball these):")
+        for _, sheet_name, email_name in sorted(uniq):
+            print(f"  sheet '{sheet_name}' <- email '{email_name}'")
 
     if flags:
         print(f"\n[flags] {len(flags)} sheet-vs-email mismatches (no write):")
