@@ -3287,6 +3287,131 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "org-sales-board-slack",
+        "name": "Org Sales Board → Slack",
+        "creator": "Megan",
+        "emoji": "📋",
+        "color": "#0EA5E9",
+        # 📊 Metrics (not Ops) so it lands in ⏰ TIME SET REPORTS with the other
+        # self-scheduled runs rather than the OPS divider.
+        "category": "📊 Metrics",
+        "description": "Posts the daily Org Sales Board image to #top-leaders-alphalete-org as Lucy — the post Jolie used to make by hand every morning. Screenshots the live board (all 8 sections) exactly as it looks on the sheet and titles it with yesterday's date.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Reads the **live** `Alphalete ORG Sales Board` tab and finds "
+            "the 8 daily sections (Retail NL → Retail Internet) automatically.\n"
+            "**•** Renders them as **one image**, exactly as the sheet looks "
+            "(same colors, Running/Last/Previous week columns).\n"
+            "**•** Posts to **#top-leaders-alphalete-org** as Lucy, titled with "
+            "**yesterday's** date — e.g. `• *Org Sales Board 7/17*`.\n"
+            "**•** Posts **once per day**; the later passes do nothing.\n\n"
+            "WHEN IT RUNS\n"
+            "**Every day at 8:30am CST**, including weekends, retrying every "
+            "25 min as a safety net.\n\n"
+            "SAFETY GATE\n"
+            "Holds only if yesterday is **entirely empty** across every section "
+            "(board never updated). It does NOT wait for 100% — Retail JE and "
+            "Frontier legitimately lag a day and the board still posts."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"),
+        "assignees": ["Lucy 1"],
+        # Runs on the mini — that's where Lucy's Slack token lives. A play from
+        # any machine routes there (a laptop run would post as Megan, not Lucy).
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "org_board_slack",
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "8:30 AM",
+            "estimated_minutes": 2,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Org Sales Board posted to #top-leaders-alphalete-org.",
+            "message_failed": "❌ Run failed. Check the log above, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Post Now",
+                "icon": "▶",
+                "primary": True,
+                "help": "Renders today's board and POSTS it to #top-leaders-alphalete-org as Lucy.",
+                "module": "automations.org_sales_board.slack_post",
+                "args_fn": lambda: ["--post"],
+            },
+            {
+                "label": "Preview (no post)",
+                "icon": "👁",
+                "primary": False,
+                "help": "Builds the image and shows which channel it would go to. Posts nothing.",
+                "module": "automations.org_sales_board.slack_post",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
+        "id": "pnl-office",
+        "name": "PNL for the Office → Slack",
+        "creator": "Megan",
+        "emoji": "💰",
+        "color": "#16A34A",
+        "category": "📊 Metrics",
+        "description": "Posts the weekly office P&L summary (Total Loss – Reps, Total Loss – Other, Total Profit, Gross Profit) to #top-leaders-alphalete-org and #alphalete-lvl1-chat as Lucy, for the previous fully completed week.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Opens the **Raf PNL 2026** tab and finds the **previous "
+            "fully completed week** by its WE date header.\n"
+            "**•** Crops the 4 summary rows — **Total Loss – Reps**, **Total "
+            "Loss – Other**, **Total Profit**, **Gross Profit** — found by "
+            "row label, so a template change can't shift it.\n"
+            "**•** Posts that exact-sheet image to **#top-leaders-alphalete-org** "
+            "and **#alphalete-lvl1-chat** as Lucy.\n"
+            "**•** Posts **once per week**; later passes do nothing.\n\n"
+            "WHEN IT RUNS\n"
+            "**Fridays at 10:00am CST**, retrying every 25 min until the week's "
+            "numbers are in.\n\n"
+            "SAFETY GATE\n"
+            "Holds while the target week's column is still all $0.00 (not yet "
+            "filled in), so it never posts an empty P&L."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "pnl_office",
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "weekly",
+            "day": "Friday",
+            "time": "10:00 AM",
+            "estimated_minutes": 2,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ PNL for the Office posted to #top-leaders-alphalete-org + #alphalete-lvl1-chat.",
+            "message_failed": "❌ Run failed. Check the log above, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Post Now",
+                "icon": "▶",
+                "primary": True,
+                "help": "Builds the previous completed week's P&L image and POSTS it to both channels as Lucy.",
+                "module": "automations.pnl_office.run",
+                "args_fn": lambda: ["--post"],
+            },
+            {
+                "label": "Preview (no post)",
+                "icon": "👁",
+                "primary": False,
+                "help": "Builds the image and lists the channels it would go to. Posts nothing.",
+                "module": "automations.pnl_office.run",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
         "id": "brand-health-audit",
         # No cadence in the name — self_scheduled, so the tile appends
         # "· 12:00 PM CST" itself (it read "(12 CST Daily) · 12:00 PM CST").

@@ -137,6 +137,15 @@ def fill_gate(g, heads, yday: dt.date):
     return True, f"{filled}/{total} rep cells filled for {yday.month}/{yday.day}"
 
 
+def _publish_hub(status: str) -> None:
+    """Flip the Hub card's pill. Best-effort — never fails the run."""
+    try:
+        from automations.day_orchestrator import hub_publish
+        hub_publish.publish_done("org_board_slack", "Org Sales Board → Slack", status)
+    except Exception:  # noqa: BLE001 — Hub publish must never break the post
+        pass
+
+
 def _channel():
     scratch = os.environ.get("ORG_BOARD_CHANNEL_ID")
     return (f"scratch ({scratch})", scratch) if scratch else CHANNEL
@@ -198,9 +207,16 @@ def main(argv=None) -> int:
         r = post_to_slack(out, caption, filename, dry_run=True)
         print(f"dry-run (default): not posting. WOULD post to {r['channel']} ({r['id']}).")
         return 0
-    r = post_to_slack(out, caption, filename, dry_run=False)
+    try:
+        r = post_to_slack(out, caption, filename, dry_run=False)
+    except Exception:
+        _publish_hub("failed")
+        raise
     print(f"POSTED to {r['channel']}: ok={r.get('ok')} file={r.get('file')}")
     _mark_posted(day_key)
+    # Report to the Hub ONLY on a real post — this runs 8x/day and publishing
+    # every pass would bury the activity log. [[feedback_launchd_reports_must_publish]]
+    _publish_hub("success")
     return 0
 
 

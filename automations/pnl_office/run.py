@@ -170,6 +170,15 @@ def _channels():
     return CHANNELS
 
 
+def _publish_hub(status: str) -> None:
+    """Flip the Hub card's pill. Best-effort — never fails the run."""
+    try:
+        from automations.day_orchestrator import hub_publish
+        hub_publish.publish_done("pnl_office", "PNL for the Office → Slack", status)
+    except Exception:  # noqa: BLE001 — Hub publish must never break the post
+        pass
+
+
 def _already_posted(we_label: str) -> bool:
     return STATE_PATH.exists() and STATE_PATH.read_text().strip() == we_label
 
@@ -246,9 +255,16 @@ def main(argv=None) -> int:
         return 0
 
     print("POSTING to Slack as Lucy:")
-    for r in post_to_slack(out, caption, f"{caption}.png", dry_run=False):
+    try:
+        results = post_to_slack(out, caption, f"{caption}.png", dry_run=False)
+    except Exception:
+        _publish_hub("failed")
+        raise
+    for r in results:
         print(f"    -> {r['channel']}: ok={r.get('ok')} file={r.get('file')}")
     _mark_posted(info["we_label"])
+    # Publish ONLY on a real post (this runs 8x on Fridays).
+    _publish_hub("success")
     return 0
 
 
