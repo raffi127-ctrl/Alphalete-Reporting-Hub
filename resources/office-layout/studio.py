@@ -938,26 +938,26 @@ def furnish(kind, R, key=None):
         R.box(16.50,d,16.70,d+0.48,FLR_Z+3.05,FLR_Z+3.55,"#c9ccd2",op=0.95)        # pull
         R.swing_at(14.40,d-0.10,2.70,188,258)
         # L-desk in walnut — main run in front of Raf, return wrapping his side
-        R.box(7.20,5.20,14.20,7.60,FLR_Z+2.2,FLR_Z+2.5,_WN)                 # main
-        R.box(12.00,2.80,14.20,5.20,FLR_Z+2.2,FLR_Z+2.5,_WN)                # return
-        for _ex,_ey in ((7.6,5.6),(7.6,7.2),(13.8,5.6),(13.8,7.2),(12.4,3.2),(13.8,3.2)):
+        R.box(9.80,5.20,16.80,7.60,FLR_Z+2.2,FLR_Z+2.5,_WN)                 # main
+        R.box(14.60,2.80,16.80,5.20,FLR_Z+2.2,FLR_Z+2.5,_WN)                # return
+        for _ex,_ey in ((10.2,5.6),(10.2,7.2),(16.4,5.6),(16.4,7.2),(15.0,3.2),(16.4,3.2)):
             R.box(_ex-0.18,_ey-0.18,_ex+0.18,_ey+0.18,FLR_Z,FLR_Z+2.2,"#6b5a49")   # legs
         def _seat(cx,cy,ang,col,bh=2.4,db=0.0):
             R.rbox(cx,cy,1.45,1.45,FLR_Z,FLR_Z+1.5,ang,col,db=db)
             _bx=cx-0.58*_m.cos(_m.radians(ang)); _by=cy-0.58*_m.sin(_m.radians(ang))
             R.rbox(_bx,_by,0.30,1.45,FLR_Z,FLR_Z+bh,ang,shade(col,1.12),db=db)
-        _seat(10.20,3.90,90,_RD,2.7)                                        # Raf, back to wall 2
-        _seat(8.80,9.20,-90,_RD); _seat(12.20,9.20,-90,_RD)                 # two across the desk
+        _seat(12.80,3.90,90,_RD,2.7)                                        # Raf, back to wall 2
+        _seat(11.40,9.20,-90,_RD); _seat(14.80,9.20,-90,_RD)                # two across the desk
         # iMac — db clears the desk, which sorts by its centroid and would paint over it
-        _ix,_iy=10.60,6.40; _MD=1.4
+        _ix,_iy=13.20,6.40; _MD=1.4
         R.box(_ix-0.28,_iy-0.42,_ix+0.28,_iy+0.42,FLR_Z+2.5,FLR_Z+2.58,"#c9ccd2",db=_MD)  # foot
         R.box(_ix-0.05,_iy-0.10,_ix+0.05,_iy+0.10,FLR_Z+2.58,FLR_Z+3.05,"#c9ccd2",db=_MD) # stand
         R.box(_ix-0.95,_iy-0.07,_ix+0.95,_iy+0.07,FLR_Z+3.05,FLR_Z+4.35,"#d8dbe0",db=_MD) # back
         R.box(_ix-0.86,_iy-0.10,_ix+0.86,_iy-0.06,FLR_Z+3.14,FLR_Z+4.24,"#222833",db=_MD+0.1) # screen
         R.box(_ix-0.55,_iy+0.60,_ix+0.55,_iy+1.05,FLR_Z+2.5,FLR_Z+2.58,"#e6e8ec",db=_MD)  # keyboard
-        # walking pad — right-hand end of wall 2, behind the desk
-        R.box(14.60,1.30,16.40,3.70,FLR_Z,FLR_Z+0.32,"#3a4150")             # deck
-        R.box(14.75,1.42,16.25,3.58,FLR_Z+0.32,FLR_Z+0.40,"#22262e")        # belt
+        # walking pad — beside the mini fridge, set out a little from it and from wall 2
+        R.box(5.55,0.60,7.35,3.00,FLR_Z,FLR_Z+0.32,"#3a4150")               # deck
+        R.box(5.70,0.72,7.20,2.88,FLR_Z+0.32,FLR_Z+0.40,"#22262e")          # belt
         # small couch on wall 1, sat down toward the wall 4 end
         _SOF="#5a5f68"
         R.box(0.25,6.60,2.95,12.00,FLR_Z,FLR_Z+0.55,shade(_SOF,0.75))       # plinth

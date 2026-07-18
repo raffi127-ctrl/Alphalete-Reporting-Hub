@@ -254,10 +254,11 @@ box(*_mw_,FLR_Z+2.60,FLR_Z+3.35,"#8e959d",db=_tgt(_mw_))     # microwave on top 
 box(53.62,1.78,54.42,1.82,FLR_Z+2.72,FLR_Z+3.22,"#2b3038",db=_tgt(_mw_)+0.1)   # door glass
 box(66.6,0.2,68.9,1.2,FLR_Z,FLR_Z+5.0,"#9aa2ac")            # corner bookcase, NE
 box(68.9,0.2,69.8,1.7,FLR_Z,FLR_Z+5.0,"#9aa2ac")
-box(64.6,1.2,66.4,3.4,FLR_Z,FLR_Z+0.4,"#3a4150")            # walking pad
-sdesk(57.2,4.7,64.2,6.9,_RW); sdesk(62.0,2.5,64.2,4.7,_RW)  # L-desk + return
-schair(60.2,3.5,_RD,s=1.35,h=2.2)                          # Raf (exec chair)
-schair(58.8,7.5,_RD,s=1.15,h=1.6,face='N'); schair(62.2,7.5,_RD,s=1.15,h=1.6,face='N')  # guests, facing the desk
+_wp_=(55.55,0.60,57.35,3.00)                                 # walking pad, beside the fridge
+box(*_wp_,FLR_Z,FLR_Z+0.4,"#3a4150",db=_tgt(_wp_))          # low + against a far wall, so it needs the bias too
+sdesk(59.8,4.7,66.8,6.9,_RW); sdesk(64.6,2.5,66.8,4.7,_RW)  # L-desk + return, slid toward wall 3
+schair(62.8,3.5,_RD,s=1.35,h=2.2)                          # Raf (exec chair)
+schair(61.4,7.5,_RD,s=1.15,h=1.6,face='N'); schair(64.8,7.5,_RD,s=1.15,h=1.6,face='N')  # guests, facing the desk
 _ocx,_ocy,_OT=56.2,11.7,"#7a5333"                           # oval table, 6 seats (north of the near wall)
 _ov=[(_ocx+2.6*math.cos(2*math.pi*i/40.0), _ocy+1.5*math.sin(2*math.pi*i/40.0)) for i in range(40)]
 _od=_ocx+_ocy
