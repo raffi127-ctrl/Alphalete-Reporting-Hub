@@ -971,6 +971,25 @@ def furnish(kind, R, key=None):
             _seat(_cx,_cy,_ca,_RD,db=_tgt-(_cx+_cy))
     elif kind=="open":      # Open office. Per O'Brien sheet A2.01 the 3 structural pillars sit
                             # on the centreline; everything else is open floor awaiting design.
+        # (28) 6' x 6' workstations in 5 pods, per A2.01. 28 doesn't divide into 5, so four
+        # pods carry 6 and one carries 4; the short pod is the south-east one, nearest the
+        # reception walkway where the floor plate runs out. Pods sit in a north and a south
+        # band with a walkway between, which keeps every pod clear of the centreline pillars.
+        _ST=6.0                                   # workstation module
+        def _pod(px,py,cols,rows):
+            for _c in range(cols):
+                for _r in range(rows):
+                    _x,_y=px+_c*_ST,py+_r*_ST
+                    R.box(_x+0.25,_y+0.25,_x+_ST-0.25,_y+2.55,FLR_Z,FLR_Z+2.45,C_DESK)      # worksurface
+                    R.box(_x+_ST-1.15,_y+0.25,_x+_ST-0.25,_y+2.55,FLR_Z,FLR_Z+3.9,"#c9c3b6") # low screen
+                    R.box(_x+2.35,_y+3.15,_x+3.65,_y+4.45,FLR_Z,FLR_Z+1.55,C_TASK)           # task chair
+            return cols*rows
+        _NB,_SB=4.5,19.5                          # north / south band, 12' deep each
+        _seats=0
+        for _px in (6.0,39.0,72.0): _seats+=_pod(_px,_NB,3,2)   # 3 pods of 6
+        _seats+=_pod(6.0,_SB,3,2)                               # 1 pod of 6
+        _seats+=_pod(39.0,_SB,2,2)                              # the short pod - 4
+        assert _seats==28, _seats
         for _px in OPEN_PILLARS_FT:
             R.box(_px-0.8,R.d/2-0.8,_px+0.8,R.d/2+0.8,FLR_Z,FLR_Z+9.0,"#aab0b9")
     elif kind=="long":      # room 1: walls 1/2/4 solid, wall 3 all glass with the entry
@@ -1018,7 +1037,7 @@ CATALOG=[
   ("conf","Large Conference","20' × 49'","conference",49.0,20.0,"Main boardroom","Boardroom table · 14 seats · TV wall",False),
   ("recep","Reception / Lobby","21'10\" × 13'6\"","reception",21.83,13.5,"Front-of-house lobby — built-in desk, glass upper, open walkway entry","Built-in desk · glass upper · lounge · open walkway",False),
   ("break","Break Room","15'6\" × 20'","break",20.0,15.5,"Staff kitchen + seating","Kitchenette · 2 tables · 8 seats",False),
-  ("open","Open Office","34'9\" × 96'","open",96.0,34.75,"Open floor — 3 fixed structural pillars; A2.01 calls for (28) 6' × 6' workstations","3 structural pillars · open floor",False),
+  ("open","Open Office","34'9\" × 96'","open",96.0,34.75,"(28) 6' × 6' workstations in 5 pods (4×6 + 1×4) · 3 fixed structural pillars","28 workstations · 5 pods · 3 structural pillars",False),
 ]
 
 

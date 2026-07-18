@@ -127,7 +127,7 @@ for a,b,nm,lab,comb in south_segs:
 room(11,18,82,52,C_OPEN,None)
 room(82,18,91,40,C_OPEN,None)
 label(47.5,23.5,FLR_Z+0.05,"OPEN OFFICE",size=7.4,color="#8a7c56")
-label(47.5,26.5,FLR_Z+0.05,"34'9 × 96'  ·  open floor",size=5.0,weight="600",color="#a2946f")
+label(47.5,26.5,FLR_Z+0.05,"34'9 × 96'  ·  (28) workstations",size=5.0,weight="600",color="#a2946f")
 
 # ---- interior partition walls (all enclosed rooms; open office stays open) --
 for _r in [(0,0,6,18),(6,0,24,18),(24,0,27,18),(27,0,50,7),(27,7,33,11),(27,11,50,18),
@@ -142,6 +142,28 @@ wall(0,37,11,37,3.4); wall(0,18,0,37,3.4); wall(11,18,11,37,3.4)
 
 for a,b,nm,lab,comb in south_segs:
     rwalls(sx0+a*ow,52,sx0+b*ow,64)
+
+# ---- (28) 6' x 6' workstations, 5 pods (4 of 6 + 1 of 4), per A2.01 ----------
+# The traced plan draws the open office 71ft where the sheet says 96ft, so the studio
+# room view is the accurate one and these are mapped through the compression. Pods sit
+# in a north and a south band; the pillars are on the centreline walkway between them.
+def _ws_pod(sx,sy,cols,rows):
+    """sx/sy are in true sheet feet from the open office's NW corner."""
+    MX=lambda v: 11.0+v*(71.0/96.0); MY=lambda v: 18.0+v*(34.0/34.75)
+    n=0
+    for c in range(cols):
+        for r in range(rows):
+            x,y=sx+c*6.0,sy+r*6.0
+            box(MX(x+0.25),MY(y+0.25),MX(x+5.75),MY(y+2.55),FLR_Z,FLR_Z+2.45,"#b08a63")   # worksurface
+            box(MX(x+4.85),MY(y+0.25),MX(x+5.75),MY(y+2.55),FLR_Z,FLR_Z+3.5,"#c9c3b6")    # low screen
+            box(MX(x+2.35),MY(y+3.15),MX(x+3.65),MY(y+4.45),FLR_Z,FLR_Z+1.6,"#414a5c")    # task chair
+            n+=1
+    return n
+_wsn=0
+for _sx in (6.0,39.0,72.0): _wsn+=_ws_pod(_sx,4.5,3,2)
+_wsn+=_ws_pod(6.0,19.5,3,2)
+_wsn+=_ws_pod(39.0,19.5,2,2)          # the short pod, nearest reception
+assert _wsn==28, _wsn
 
 # ---- structural pillars (immovable columns) down the open-office centerline -
 for _px in (23,47,68):
