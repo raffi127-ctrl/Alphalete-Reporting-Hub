@@ -138,10 +138,83 @@ def _select_worksheet(page, log) -> bool:
     return False
 
 
+def _probe_exports(page, today, log) -> None:
+    """Direct URL exports with the page's authenticated cookies — if any of
+    these return data, the whole render-then-crosstab-dialog dance is
+    unnecessary. The CHURNRATES custom view is included as a KNOWN-GOOD
+    control (that URL pattern already downloads fine via the dialog), so a
+    failure there means the technique is wrong, not the view."""
+    from urllib.parse import quote
+    host = "https://us-east-1.online.tableau.com"
+    start = today - dt.timedelta(days=60)
+    dates = (f"Start%20Date={start.isoformat()}"
+             f"&End%20Date={today.isoformat()}")
+    tests = [
+        ("dash",       f"{host}/t/sci/views/ATTTRACKER-B2B/ORDERLOG.csv"
+                       "?:refresh=yes"),
+        ("dash+dates", f"{host}/t/sci/views/ATTTRACKER-B2B/ORDERLOG.csv"
+                       f"?:refresh=yes&{dates}"),
+        ("sheet",      f"{host}/t/sci/views/ATTTRACKER-B2B/"
+                       f"{quote('Order Log')}.csv?:refresh=yes"),
+        ("cv-control", f"{host}/t/sci/views/ATTTRACKER-B2B/CHURNRATES/"
+                       "429cb06d-a32e-4d0e-bf06-9acb77587afd/ALLTEAMCHURN.csv"
+                       "?:refresh=yes"),
+    ]
+    for label, u in tests:
+        try:
+            r = page.context.request.get(u, timeout=90_000)
+            body = r.body() or b""
+            head = body[:180].decode("utf-8", "replace").replace("\n", " ⏎ ")
+            log(f"[export {label}] status={r.status} bytes={len(body)}"
+                f" head={head!r}")
+        except Exception as ex:  # noqa: BLE001 — each test independent
+            log(f"[export {label}] ERR {str(ex)[:120]}")
+
+
+def _probe_custom_views(page, viz, log) -> None:
+    """Open the toolbar's 'View: …' flyout and record the saved custom views.
+    CHURNRATES already downloads via a custom-view URL, and the bare ORDERLOG
+    Original view renders empty (several quick filters sit at '(None)'), so
+    the daily manual flow very likely lives in a custom view whose URL slug
+    this reveals. Text via the flyout DOM; screenshot as backup."""
+    try:
+        btn = viz.locator('[data-tb-test-id*="custom-view"], '
+                          'button:has-text("View:")').first
+        btn.click()
+        page.wait_for_timeout(2500)
+        texts = []
+        for sel in ('[data-tb-test-id*="custom-view"]', '[role="dialog"]',
+                    '[class*="flyout"]', '[class*="CustomView"]'):
+            try:
+                for el in viz.locator(sel).all()[:6]:
+                    t = (el.inner_text(timeout=3000) or "").strip()
+                    if t and t not in texts:
+                        texts.append(t)
+            except Exception:
+                continue
+        if texts:
+            for t in texts:
+                for ln in t.splitlines()[:25]:
+                    if ln.strip():
+                        log(f"[views] {ln.strip()[:120]}")
+        else:
+            log("[views] flyout text not found via DOM (see screenshot)")
+        try:
+            _upload_png(page.screenshot(full_page=False), tab="Vantura Shot")
+            log("[views] flyout screenshot -> 'Vantura Shot'")
+        except Exception:
+            pass
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(500)
+    except Exception as ex:  # noqa: BLE001
+        log(f"[views] ERR {str(ex)[:120]}")
+
+
 def probe(url, sheet, out, today, log=print) -> dict:
-    """Load the BARE ORDER LOG (no filter changes at all), screenshot + download
-    the DEFAULT rendered worksheet, and report its row count + date range — to
-    see what the untouched view yields (it renders where changed filters don't)."""
+    """Diagnostics: load the BARE ORDER LOG, then (1) list its saved custom
+    views, (2) try direct authenticated .csv exports (dashboard / sheet /
+    known-good custom-view control), (3) attempt the default crosstab
+    download. Findings → 'Vantura Diag' + 'Vantura Shot'."""
     from patchright.sync_api import sync_playwright
     from automations.shared import tableau_patchright as tp
     from automations.recruiting_report.opt_phase import drive_crosstab_dialog
@@ -167,12 +240,9 @@ def probe(url, sheet, out, today, log=print) -> dict:
                             'download"]').wait_for(state="visible", timeout=150_000)
             except Exception:
                 pass
-            page.wait_for_timeout(30_000)
-            try:
-                _upload_png(page.screenshot(full_page=False))
-                log("[cdp] default screenshot -> 'Vantura Shot'")
-            except Exception:
-                pass
+            page.wait_for_timeout(15_000)
+            _probe_exports(page, today, log)
+            _probe_custom_views(page, viz, log)
             dst = Path("/tmp/vantura_default.csv")
             try:
                 drive_crosstab_dialog(page, bare, sheet, dst, verbose=False,
