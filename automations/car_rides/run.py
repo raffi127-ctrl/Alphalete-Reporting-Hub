@@ -275,21 +275,49 @@ def goto_territory_assignment(page, log=_log) -> None:
     page.wait_for_timeout(10_000)
 
 
+# Campaign -> the invD2DClientId the page reloads with when that campaign is
+# picked (observed live 2026-07-15: default/no param = B2B AT&T SBS, BOX = 16).
+# URL-param navigation is deterministic — no dropdown driving, which timed out
+# under headless patchright on Lucy 2 (2026-07-16 run).
+CAMPAIGN_URL_IDS = {"B2B AT&T SBS": None, "B2B-BOX-Energy": 16}
+
+
 def _select_campaign(page, campaign: str, log=_log) -> bool:
-    """Switch the top-right campaign dropdown (plain <a> links). True when the
-    toolbar shows `campaign` (or already did)."""
+    """Show `campaign` in Territory Assignment by URL parameter (primary),
+    falling back to a JS click on the dropdown <a>. True when switched."""
+    m = re.search(r"rqst=([A-Za-z0-9_]+)", page.url or "")
+    cid = CAMPAIGN_URL_IDS.get(campaign)
+    if m and campaign in CAMPAIGN_URL_IDS:
+        url = f"https://v2.ownerville.com/index.cfm?p=158&rqst={m.group(1)}"
+        if cid is not None:
+            url += f"&invD2DClientId={cid}"
+        try:
+            page.goto(url, wait_until="domcontentloaded")
+            page.wait_for_timeout(10_000)
+            cur = page.evaluate(_CURRENT_CAMPAIGN_JS)
+            if cur == campaign or cur == "":
+                # '' = toolbar text not found headless; the URL param is the
+                # source of truth, so proceed (rows are verified downstream).
+                return True
+            log(f"campaign via URL: toolbar shows {cur!r}, wanted {campaign!r}")
+        except Exception as e:
+            log(f"campaign via URL failed: {e!r}")
+    # Fallback: JS-click the dropdown control, then the campaign <a>.
     try:
-        cur = page.evaluate(_CURRENT_CAMPAIGN_JS)
-        if cur == campaign:
-            return True
-        page.get_by_text(re.compile(_CAMPAIGN_RX)).first.click()
+        opened = page.evaluate(
+            "() => { const e=[...document.querySelectorAll('span,a,button')]"
+            ".find(x=>/^(B2B AT&T SBS|B2B-BOX-Energy|BASE Energy)$/"
+            ".test((x.innerText||'').trim())); if(!e) return false; "
+            "e.click(); return true; }")
         page.wait_for_timeout(1_500)
-        page.get_by_role("link", name=campaign, exact=True).first.click()
+        clicked = opened and page.evaluate(
+            "(c) => { const a=[...document.querySelectorAll('a')]"
+            ".find(x=>(x.innerText||'').trim()===c); if(!a) return false; "
+            "a.click(); return true; }", campaign)
         page.wait_for_timeout(8_000)
-        cur = page.evaluate(_CURRENT_CAMPAIGN_JS)
-        if cur == campaign:
+        if clicked and page.evaluate(_CURRENT_CAMPAIGN_JS) in (campaign, ""):
             return True
-        log(f"campaign switch: toolbar shows {cur!r}, wanted {campaign!r}")
+        log(f"campaign switch fallback failed (opened={opened}, clicked={clicked})")
     except Exception as e:
         log(f"campaign switch to {campaign!r} failed: {e!r}")
     return False
@@ -417,6 +445,31 @@ def apply_edit(page, edit: dict, log=_log) -> bool:
 
 
 # --- state + report -----------------------------------------------------------
+# Full report also goes to a tab on the control workbook — the queue's Result
+# cell truncates (~470 chars), and this is the established rich-output channel
+# (same pattern as RP Diag). Best-effort: a sheet hiccup never fails the run.
+CONTROL_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
+REPORT_TAB = "Car Rides Report"
+
+
+def _publish_report_tab(report: str, log=_log) -> None:
+    try:
+        import gspread as _gs
+        from automations.recruiting_report import fill as _fill
+        sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
+        try:
+            ws = sh.worksheet(REPORT_TAB)
+            ws.clear()
+        except _gs.WorksheetNotFound:
+            ws = sh.add_worksheet(title=REPORT_TAB, rows=200, cols=2)
+        lines = report.splitlines() or [""]
+        ws.update([[l] for l in lines], f"A1:A{len(lines)}",
+                  value_input_option="RAW")
+        log(f"report published to sheet tab {REPORT_TAB!r} ({len(lines)} lines)")
+    except Exception as e:  # noqa: BLE001 — reporting must never fail the run
+        log(f"report tab publish skipped: {e!r}")
+
+
 def _load_prev_flags() -> list[str]:
     f = STATE_DIR / "open-flags.json"
     try:
@@ -477,6 +530,7 @@ def main(argv: list[str] | None = None) -> int:
                              f"— no unattended re-auth (by design). {e}")
                 report = _report(expected, {}, flags, changes, live)
                 _persist(report, changes, flags)
+                _publish_report_tab(report)
                 _log(report)
                 return 3
             try:
@@ -535,6 +589,7 @@ def main(argv: list[str] | None = None) -> int:
 
     report = _report(expected, lines, flags, changes, live)
     _persist(report, changes, flags)
+    _publish_report_tab(report)
     _log(report)
     _log("done.")
     return 0 if not flags else 3
