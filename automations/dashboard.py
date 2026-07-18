@@ -1253,7 +1253,12 @@ def _office_metrics_card() -> dict:
                  ["--office", o.key, "--live"], o.report_id) for o in offs]
     # One office per line for the breakdown panel (white-space:pre-wrap).
     office_bullets = "\n".join(f"• {lb} → {ch}" for lb, ch, _m, _a, _r in buttons)
-    channels = ", ".join(ch for _lb, ch, _m, _a, _r in buttons)
+    # De-duped: Hammad + Salik share #elite-prime-sales, so the raw list repeats
+    # it. Keep first-seen order.
+    _seen: set = set()
+    channels = ", ".join(
+        ch for _lb, ch, _m, _a, _r in buttons
+        if not (ch in _seen or _seen.add(ch)))
     return {
         "id": "office-metrics",
         "name": "Office Daily Metrics",
@@ -1288,12 +1293,19 @@ def _office_metrics_card() -> dict:
             "• 💳 New Internet ABP %\n"
             "• 📸 Tableau Metrics (screenshot of the ATT TRACKER Metrics view, scoped to the office)\n\n"
             "WHEN IT RUNS\n"
-            "Daily in the 4am batch, each office in turn."),
+            "Daily in the 4am batch, each office in turn.\n\n"
+            "ABOUT THE TABLEAU SCREENSHOT\n"
+            "The first office to run captures EVERY office's shot in one Tableau "
+            "login and caches them for the day; the rest just post their image "
+            "from that cache. So the shot costs one login for the whole batch, "
+            "not one per office."),
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
             "time": "4:50 AM",
-            "estimated_minutes": 6 * len(buttons),
+            # ~6 min of metrics per office, plus the one-login Tableau capture
+            # pass the first office pays for everyone (12th metric, 2026-07-16).
+            "estimated_minutes": 6 * len(buttons) + 12,
         },
         "checklist": [],
         "post_run": {
