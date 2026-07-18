@@ -275,9 +275,18 @@ for _cx,_cy,_cf in ((52.9,11.7,'E'),(59.5,11.7,'W'),(54.9,9.7,'S'),
 # wall art on the north wall behind Raf (canvases), biased to draw in front of the wall
 # Moved east to clear the new wardrobe/fridge run - and to match the room view, where
 # the wall-2 collage sits at studio x8.6-14.6, not hard against the corner.
-for _ax,_ac in ((58.6,_RD),(60.4,"#7a5333"),(62.2,"#8a9099")):
+for _ax,_ac in ((58.6,_RD),):                                # one canvas left on wall 2
     box(_ax,0.10,_ax+1.4,0.24,FLR_Z+1.9,FLR_Z+3.25,"#3a3a3a",db=8.0)         # frame
     box(_ax+0.09,0.12,_ax+1.31,0.28,FLR_Z+2.0,FLR_Z+3.15,_ac,db=8.02)        # canvas
+# AT&T mark behind Raf's chair, matching the room view. Banded disc - the renderer only
+# draws boxes - scaled down to the dollhouse walls rather than the room view's height.
+_agx,_agz,_agr=62.90,2.55,0.58
+for _i in range(7):
+    _t0=-_agr+2*_agr*_i/7.0; _t1=-_agr+2*_agr*(_i+1)/7.0
+    _zm=(_t0+_t1)/2.0; _hw=(_agr*_agr-_zm*_zm)**0.5
+    if _hw<0.05: continue
+    box(_agx-_hw,0.12,_agx+_hw,0.26,FLR_Z+_agz+_t0,FLR_Z+_agz+_t1,
+        "#009fdb" if _i%2==0 else "#eaf4fb",db=8.04)
 
 # --- 3 · MAUD'S (0,47,11,64): exterior glass south, entry east, walls 1/2 solid.
 # Her studio frame IS the building's frame here, so this is her actual layout mapped

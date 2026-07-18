@@ -901,12 +901,31 @@ def furnish(kind, R, key=None):
         R.box(3.62,1.78,4.42,1.82,FLR_Z+3.55,FLR_Z+4.16,"#2b3038")          # door glass
         R.box(4.48,1.78,4.78,1.82,FLR_Z+3.55,FLR_Z+4.16,shade(_MW,1.12))    # control panel
         R.box(3.62,1.82,3.70,1.88,FLR_Z+3.62,FLR_Z+4.09,"#c9ccd2")          # door handle
-        # decor collage behind the desk — one anchor piece with smaller ones clustered round it
-        for _x0,_x1,_z0,_z1,_c in ((8.60,11.00,3.30,6.30,_RD),(11.30,12.70,4.95,6.30,"#7a5333"),
-                                   (11.30,12.70,3.30,4.75,"#c0533f"),(13.00,14.60,5.20,6.30,"#a9b2bd"),
-                                   (13.00,13.95,3.30,4.95,"#7a5333"),(14.10,14.60,3.30,4.95,"#c5ccd4")):
+        # decor collage behind the desk — the pieces that used to fill x11.30-14.60 gave way
+        # to the AT&T mark below, since that stretch is what sits behind Raf on camera
+        for _x0,_x1,_z0,_z1,_c in ((8.60,11.00,3.30,6.30,_RD),):
             _onN(_x0,_x1,0.15,_z0,_z1,shade(_c,0.62),nudge=0.06)
             _onN(_x0+0.07,_x1-0.07,0.20,_z0+0.07,_z1-0.07,_c,nudge=0.12)
+        # AT&T mark on wall 2, centred on Raf's chair (x12.80) — this is the stretch of wall
+        # his iMac camera frames, so it is what shows up behind him on Zoom. The globe is
+        # built from horizontal bands: the renderer only draws boxes, so a disc is banded.
+        _ATT="#009fdb"; _gcx,_gcz,_gr=12.90,5.30,0.88
+        _NB=9
+        for _i in range(_NB):
+            _t0=-_gr+2*_gr*_i/_NB; _t1=-_gr+2*_gr*(_i+1)/_NB
+            _zm=(_t0+_t1)/2.0
+            _hw=(_gr*_gr-_zm*_zm)**0.5
+            if _hw<0.06: continue
+            _onN(_gcx-_hw,_gcx+_hw,0.19,_gcz+_t0,_gcz+_t1,
+                 _ATT if _i%2==0 else "#eaf4fb",nudge=0.10)
+        # wordmark. R.text() emits at depth 9e9 so it would float over the desk in front;
+        # emit it at the wall-plate depth instead so it sorts as part of the wall.
+        _WD=(0-0.5+w+0)/2+0.6+0.14
+        _tx,_ty=R.iso(_gcx,0.19,FLR_Z+3.72)
+        R.emit(_WD,FLR_Z+3.72,
+               f'<text x="{_tx:.1f}" y="{_ty:.1f}" font-family="Inter,Segoe UI,Arial,sans-serif" '
+               f'font-size="15" font-weight="700" fill="#2b3038" text-anchor="middle" '
+               f'style="letter-spacing:.4px">AT&amp;T</text>')
         # WALL 1 (back-left) = solid: a large collage of art filling the run
         # Five pieces in three stacks, spread evenly over the run left of the TV (which
         # starts at y13.70): equal 1'3" gaps at the corner, between the stacks, and before
@@ -1404,7 +1423,7 @@ FURN_BY_KIND={
  'jd':'L-desk · 2 guest · TV · open shelving · credenza under the windows · glass front',
  'bas':'L-desk · iMac · 2 bright guest chairs · TV · Lego mosaic · brick builds · open shelving · glass front',
  'maud':'L-desk · 2 guest · iMac · TV · play pen · rocking chair · window wall',
- 'raf':'L-desk · iMac · walking pad · 2 guest · bookcase · wardrobe · mini fridge + microwave · 6-seat oval table',
+ 'raf':'L-desk · iMac · AT&T wall mark · walking pad · 2 guest · bookcase · wardrobe · mini fridge + microwave · 6-seat oval table',
  'reception':'Built-in desk · dog area · glass upper · open walkway',
  'break':'Kitchenette · island · storage wall'}
 offices=[]
