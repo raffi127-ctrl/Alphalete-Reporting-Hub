@@ -349,7 +349,7 @@ for _mgx in (95.7,98.3):              # 6 · Megan — a 2x2 array of FOUR disti
         box(_mgx-0.55,29.26,_mgx+0.55,29.42,FLR_Z+_mgz-0.36,FLR_Z+_mgz+0.36,"#454b54",db=4.7)   # bezel
         box(_mgx-0.48,29.28,_mgx+0.48,29.44,FLR_Z+_mgz-0.28,FLR_Z+_mgz+0.28,"#20252b",db=4.71) # screen
 tv(0.0,87.0,'N',w=6.0)                # 13 · conference (north wall, y0)
-tv(18.0,5.5,'N',w=3.0,z0=2.48,z1=3.12)  # 1 · training screen, above the credenza
+tv(0.0,27.5,'W',w=5.0)                 # 1 · training screen on the west wall (wall 1)
 tv(64.25,58.0,'E')                    # 11 · training screen (east wall; hidden behind the near wall)
 tv(82.0,58.0,'E')                     # 12 · training screen (east wall; hidden behind the near wall)
 
@@ -371,6 +371,11 @@ def classroom(x0,y0,x1,y1,col,cred,face):
         xs=[x0+3.1,(x0+x1)/2,x1-3.1]                        # more margin off the side walls
         for cy in (y0+4.4+k*3.3 for k in range(4)):        # first row well off the credenza
             for cx in xs: chair(cx,cy,'S')
+    elif face=="W":                                        # screen on west wall; chairs face west
+        scred(x0+0.25,y0+2.6,x0+1.60,y1-2.6,cred)
+        ys=[y0+3.5+k*(y1-y0-7.0)/5 for k in range(6)]      # 6 across the long wall
+        for cx in (x0+3.8,x0+7.2):                         # 2 rows deep
+            for cy in ys: chair(cx,cy,'E')
     elif face=="E":                                        # screen on east wall; chairs face east
         # The east wall is a NEAR wall to the fixed SE camera, so the room's east partition
         # would hide a credenza against it. A depth bias makes it draw in front of that

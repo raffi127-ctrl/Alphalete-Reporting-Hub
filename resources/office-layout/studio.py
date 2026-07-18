@@ -974,11 +974,11 @@ def furnish(kind, R, key=None):
         for _px in OPEN_PILLARS_FT:
             R.box(_px-0.8,R.d/2-0.8,_px+0.8,R.d/2+0.8,FLR_Z,FLR_Z+9.0,"#aab0b9")
     elif kind=="long":      # room 1: walls 1/2/4 solid, wall 3 all glass with the entry
-        classroom(R,TRAINING_VIBE["w-comb"],screen_wall=2)
+        classroom(R,TRAINING_VIBE["w-comb"],screen_wall=1,posters='w2',whiteboards=True)
         glass_front(R,3)
     elif kind=="wide":      # rooms 11/12: wall 2 is exterior glass, so the screen moves
                             # to wall 1; walls 1/3 solid, wall 4 the glass entry
-        classroom(R,TRAINING_VIBE.get(key,TRAINING_VIBE["s-comb1"]),screen_wall=1)
+        classroom(R,TRAINING_VIBE.get(key,TRAINING_VIBE["s-comb1"]),screen_wall=1,posters=None)
         ext_windows_n(R)
         glass_front(R,4)
     elif kind=="interview":   # offices 2/7/8 — JD-style interview kit, no credenza; own theme each
@@ -1117,7 +1117,7 @@ def interview_office(R, windows=True, style="gallery", desk_col="#59616e", shelf
             _bx+=0.32
 
 
-def classroom(R,vibe,screen_wall=2,seats=12):
+def classroom(R,vibe,screen_wall=2,seats=12,posters='w1',whiteboards=False):
     """Training rooms are classroom setups: a screen on a solid wall, rows of chairs
     facing it, 3'x2' posters on whatever solid wall is left. `screen_wall` is 2 (north)
     or 1 (west) — it has to be solid AND a far wall, or the camera only sees its back.
@@ -1139,6 +1139,25 @@ def classroom(R,vibe,screen_wall=2,seats=12):
         the wall shows a shaded side face and reads as a raised block, not as print."""
         lo=t-0.04
         R.box(lo,a0,t,a1,FLR_Z+z0,FLR_Z+z1,col,db=(WWD+0.6+nudge)-((lo+a0+t+a1)/2))
+    def _plateN(a0,a1,t,z0,z1,col,nudge=0.0):
+        """Same thin-plate trick as _plate, but on wall 2 (north)."""
+        lo=t-0.04
+        R.box(a0,lo,a1,t,FLR_Z+z0,FLR_Z+z1,col,db=(NWD+0.6+nudge)-((a0+lo+a1+t)/2))
+    def posterN(p0,pz,i):
+        """The same framed print, hung on wall 2."""
+        W,H=3.0,2.0; A=vibe["accent"]; A2=shade(A,0.66)
+        _plateN(p0,p0+W,0.13,pz,pz+H,"#43403c",0.04)                        # slim frame
+        _plateN(p0+0.05,p0+W-0.05,0.16,pz+0.05,pz+H-0.05,"#f3f1ed",0.08)    # paper
+        m=i%3
+        if m==0:
+            _plateN(p0+0.30,p0+W-0.30,0.18,pz+0.30,pz+0.94,A,0.12)
+            _plateN(p0+0.30,p0+1.40,0.18,pz+1.12,pz+1.44,A2,0.12)
+        elif m==1:
+            _plateN(p0+0.30,p0+1.34,0.18,pz+0.30,pz+H-0.30,A,0.12)
+            _plateN(p0+1.54,p0+W-0.30,0.18,pz+0.30,pz+0.88,A2,0.12)
+        else:
+            _plateN(p0+0.30,p0+W-0.30,0.18,pz+0.98,pz+H-0.30,A,0.12)
+            _plateN(p0+0.30,p0+W-0.30,0.18,pz+0.60,pz+0.86,A2,0.12)
     def poster(p0,pz,i):
         """3' x 2' framed print — paper stock with a bold graphic, no text. The motif
         rotates so a run of them doesn't read as wallpaper."""
@@ -1156,10 +1175,19 @@ def classroom(R,vibe,screen_wall=2,seats=12):
             _plate(p0+0.30,p0+W-0.30,0.18,pz+0.98,pz+H-0.30,A,0.12)
             _plate(p0+0.30,p0+W-0.30,0.18,pz+0.60,pz+0.86,A2,0.12)
 
-    # Posters only where there is a solid wall the camera can actually see. In rooms
-    # 11/12 that is nowhere: wall 3 faces away and wall 1 carries the screen.
-    if screen_wall==2:
+    # Posters go on whichever solid wall the camera can see and the screen isn't using.
+    if posters=='w1':
         for i,py in enumerate((4.0,8.5,13.0)): poster(py,3.60,i)
+    elif posters=='w2':
+        _pn,_pw=3,3.0; _pg=(w-_pn*_pw)/(_pn+1)
+        for i in range(_pn): posterN(_pg+i*(_pw+_pg),3.60,i)
+
+    # whiteboards flanking the screen on the screen wall
+    if whiteboards:
+        for _b0,_b1 in ((max(0.80,a0-4.70),a0-0.50),(a0+sw+0.50,min(span-0.80,a0+sw+4.70))):
+            if _b1-_b0<1.5: continue
+            _on(_b0,_b1,0.16,3.10,6.60,"#7f8792",nudge=0.04)                      # frame
+            _on(_b0+0.18,_b1-0.18,0.22,3.28,6.42,"#fbfcfd",nudge=0.08)            # writing surface
 
     # credenza under the screen, running a touch wider than it
     c0,c1=a0-0.20,a0+sw+0.20
@@ -1288,7 +1316,7 @@ def build_office(entry):
 FURN_BY_KIND={
  'small':'Private office · shell + door','med':'Private office · shell + door',
  'interview':'Straight desk · iMac · 2 guest chairs · TV · open shelf · glass front (no credenza)',
- 'long':'Classroom · screen · credenza · 12 chairs · posters · glass front','wide':'Classroom · screen · credenza · 12 chairs · window wall · glass front',
+ 'long':'Classroom · screen + whiteboards (wall 1) · credenza · 12 chairs · posters (wall 2) · glass front','wide':'Classroom · screen · credenza · 12 chairs · window wall · glass front',
  'large':'Large office · shell + door','conference':'Boardroom · 14 seats · TV wall · whiteboards · built-in counter',
  'megan':'4 screens · standing desk · laptop · walking pad · florals · window wall',
  'twaddle':'L-desk · 2 guest · TV · tablet cabinet · window wall · glass entrance',
