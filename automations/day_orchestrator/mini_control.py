@@ -291,6 +291,28 @@ def _action_restart_poller(args: str) -> tuple[bool, str]:
     return True, f"restart scheduled for {label} (~3s) — poller reloads its code"
 
 
+def _action_restart_hub(args: str) -> tuple[bool, str]:
+    """Bounce the Streamlit Hub so freshly-pulled card/code changes actually
+    load — the Hub caches code in memory with the file watcher OFF, and the
+    post-merge hook that normally bounces it is a LOCAL git hook not every
+    clone has (bit us 2026-07-18: new card pulled, Hub kept serving the old
+    code). Runs deploy/restart_hub_if_running.sh, which is a no-op when no
+    Hub holds :8501 and never starts one that wasn't already running."""
+    script = REPO_ROOT / "deploy" / "restart_hub_if_running.sh"
+    if not script.exists():
+        return False, f"missing {script.name}"
+    try:
+        proc = subprocess.run(["/bin/bash", str(script)], timeout=120,
+                              cwd=str(REPO_ROOT), stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, text=True)
+    except Exception as e:  # noqa: BLE001
+        return False, f"restart_hub error: {str(e)[:140]}"
+    out = (proc.stdout or "").strip()[-200:]
+    return proc.returncode == 0, (f"exit {proc.returncode}"
+                                  + (f": {out}" if out else " — hub bounced"
+                                     " (or no hub was running)"))
+
+
 def _action_install_hub_watch(args: str) -> tuple[bool, str]:
     """Install (or reinstall) the Hub change-watcher LaunchAgent on THIS machine
     — deploy the on-every-Hub-change email notifier remotely, no human at the
@@ -1058,6 +1080,7 @@ ACTIONS = {
     "set_gbp_token": _action_set_gbp_token,
     "restart_holder": _action_restart_holder,
     "restart_poller": _action_restart_poller,
+    "restart_hub": _action_restart_hub,
     "install_hub_watch": _action_install_hub_watch,
     "install_lucy2_digest": _action_install_lucy2_digest,
     "install_card_scheduler": _action_install_card_scheduler,
