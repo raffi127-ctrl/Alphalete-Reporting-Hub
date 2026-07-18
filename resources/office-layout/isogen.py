@@ -155,6 +155,19 @@ label(93,42.4,FLR_Z+0.05,"ENCLOSED ROOM",size=3.6,color="#8a6a6f",weight="800")
 box(82,44.9,104,46.8,FLR_Z,FLR_Z+3.0,"#a98a63"); label(93,46.0,FLR_Z+3.2,"BUILT-IN DESK",size=3.8,color="#7a5f3c",weight="700")
 box(82,44.4,104,44.75,FLR_Z+3.0,FLR_Z+7.0,"#bfe0ea",op=0.32)
 label(94,55,FLR_Z+0.05,"LOBBY",size=6.2,color="#7a5f60",weight="800")
+# furniture helpers (defined before first use — conference uses schair)
+def sdesk(x0,y0,x1,y1,col="#8a5a3c"): box(x0,y0,x1,y1,FLR_Z,FLR_Z+2.5,col)
+def schair(cx,cy,col,s=1.3,h=1.9,db=0.0,face='S'):
+    # low seat + a clearly taller back on the side away from `face`, so it reads as a chair
+    r=s/2; bk=0.26
+    box(cx-r,cy-r,cx+r,cy+r,FLR_Z,FLR_Z+0.75,col,db=db)                 # seat (low)
+    if   face=='S': d=(cx-r,cy-r,cx+r,cy-r+bk)          # faces camera, back to the north
+    elif face=='N': d=(cx-r,cy+r-bk,cx+r,cy+r)          # back to the south
+    elif face=='W': d=(cx+r-bk,cy-r,cx+r,cy+r)          # back to the east
+    else:           d=(cx-r,cy-r,cx-r+bk,cy+r)          # face E, back to the west
+    box(d[0],d[1],d[2],d[3],FLR_Z,FLR_Z+h,shade(col,1.14),db=db+0.02)   # back, drawn just in front
+def scred(x0,y0,x1,y1,col="#6f6a63"): box(x0,y0,x1,y1,FLR_Z,FLR_Z+2.4,col)
+
 # CONFERENCE — long 14-person boardroom table (6 per side + 1 at each end)
 _CCH="#9e3b32"                                              # red chairs
 box(74,6.6,100,11.4,FLR_Z,FLR_Z+2.5,"#8a5a3c")              # table top
@@ -164,10 +177,10 @@ label(87,9,FLR_Z+2.7,"SEATS 14",size=3.4,color="#ffffff",weight="800")
 _TBL=(74+6.6+100+11.4)/2
 for _i in range(6):
     _cx = 76 + _i*(98-76)/5
-    box(_cx-0.55,5.0,_cx+0.55,6.2,FLR_Z,FLR_Z+3.4,_CCH,db=_TBL-0.5-(_cx+5.6))   # far row: behind
-    box(_cx-0.55,11.8,_cx+0.55,13.0,FLR_Z,FLR_Z+3.4,_CCH,db=_TBL+0.5-(_cx+12.4))# near row: in front
-box(72.0,8.4,73.1,9.6,FLR_Z,FLR_Z+3.4,_CCH,db=_TBL-0.5-81.55)                   # far-end chair
-box(100.5,8.4,101.6,9.6,FLR_Z,FLR_Z+3.4,_CCH,db=_TBL+0.5-110.05)                # near-end chair
+    schair(_cx,5.6,_CCH,s=1.15,h=2.9,face='S',db=_TBL-0.5-(_cx+5.6))    # far row faces the table
+    schair(_cx,12.4,_CCH,s=1.15,h=2.9,face='N',db=_TBL+0.5-(_cx+12.4))  # near row faces the table
+schair(72.55,9.0,_CCH,s=1.15,h=2.9,face='E',db=_TBL-0.5-81.55)         # far-end chair
+schair(101.05,9.0,_CCH,s=1.15,h=2.9,face='W',db=_TBL+0.5-110.05)       # near-end chair
 # conference built-in counter along the right (east) wall
 box(102.1,2.5,103.6,15.5,FLR_Z,FLR_Z+3.0,"#b7bcc4")
 label(102.9,9.0,FLR_Z+3.2,"COUNTER",size=3.0,color="#5b6270",weight="700")
@@ -180,9 +193,6 @@ box(69.7,3.5,70.3,14.5,FLR_Z+1.6,FLR_Z+3.4,"#bfe0ea",op=0.55,db=0.3)
 # so this is a re-draw in plan coordinates, not a port — orientation comes from each room's
 # real neighbours. Floor pieces only: the dollhouse walls are 3.4' tall, so wall-mounted
 # screens, art and posters have nothing to hang on at this scale.
-def sdesk(x0,y0,x1,y1,col="#8a5a3c"): box(x0,y0,x1,y1,FLR_Z,FLR_Z+2.5,col)
-def schair(cx,cy,col,s=1.25,h=2.9,db=0.0): box(cx-s/2,cy-s/2,cx+s/2,cy+s/2,FLR_Z,FLR_Z+h,col,db=db)
-def scred(x0,y0,x1,y1,col="#6f6a63"): box(x0,y0,x1,y1,FLR_Z,FLR_Z+2.4,col)
 
 # --- 4 · RAF'S (50,0,70,18): backs the north wall, looks out the south entry ---
 _RD="#9e3b32"; _RW="#5c4033"
@@ -308,8 +318,8 @@ def classroom(x0,y0,x1,y1,col,cred,face):
         box(d[0],d[1],d[2],d[3],FLR_Z,FLR_Z+1.80,shade(col,1.12))           # short back, opposite the screen
     if face=="N":                                          # screen on north wall; chairs face north
         scred(x0+2.2,y0+0.25,x1-2.2,y0+1.60,cred)
-        xs=[x0+2.9,(x0+x1)/2,x1-2.9]                        # ~3' margin off the side walls
-        for cy in (y0+3.6+k*3.5 for k in range(4)):
+        xs=[x0+3.1,(x0+x1)/2,x1-3.1]                        # more margin off the side walls
+        for cy in (y0+4.4+k*3.3 for k in range(4)):        # first row well off the credenza
             for cx in xs: chair(cx,cy,'S')
     elif face=="E":                                        # screen on east wall; chairs face east
         # The east wall is a NEAR wall to the fixed SE camera, so the room's east partition
