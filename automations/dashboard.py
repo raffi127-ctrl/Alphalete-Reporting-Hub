@@ -3449,10 +3449,11 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"),
-        "assignees": ["Lucy 2"],
-        # Carlos's org: #alphalete-gp-sales is his channel, so this runs on
-        # Lucy 2. A Hub "play" from any machine routes there.
-        "run_machine": "Lucy 2",
+        "assignees": ["Lucy 1"],
+        # Logically Carlos/Lucy 2 (#alphalete-gp-sales is his channel), but
+        # Lucy 2 is stranded on an old commit and cannot receive deploys, so
+        # this runs on Lucy 1 for now. Move it when that machine is cleared.
+        "run_machine": "Lucy 1",
         "run_rerun_id": "sales_boards",
         "self_scheduled": True,
         "schedule": {
@@ -3508,7 +3509,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1zoRQRhvkpu7Vvw4TsC60ufja9XwpUR8hHvV7FyzezMY/edit"),
-        "assignees": ["Lucy 2"],
+        "assignees": ["Lucy 1"],
         # Self-running background job (noon launchd) — keep it out of the "due
         # today / not completed" tallies; it doesn't report completion to the Hub.
         "self_scheduled": True,
