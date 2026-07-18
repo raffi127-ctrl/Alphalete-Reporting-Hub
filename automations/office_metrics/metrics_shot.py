@@ -143,7 +143,10 @@ def main(argv=None) -> int:
         from automations.shared.slack_metrics_post import (
             dm_user_with_file, SlackPostError)
         try:
-            dm_user_with_file(png, user=args.dm,
+            # as_bot=False → the per-user metrics token (SLACK_USER_TOKEN, the
+            # xoxp Lucy token every metric already posts with). The bot token
+            # isn't configured on the mini, so the default as_bot=True failed.
+            dm_user_with_file(png, user=args.dm, as_bot=False,
                               comment=f"📸 Preview — {label} (scope: {scope})",
                               file_name=f"{label}.png")
             print(f"  ✓ Slack: DM'd preview to {args.dm}")
