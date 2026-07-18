@@ -19,7 +19,9 @@ Actions:
   rerun <report_id>     re-run one orchestrator report (today's common fix)
   update                git pull the latest code onto the mini (remote deploy)
   set_meta_token <tok>  install/refresh the brand-audit Meta page token in keys.json
-  set_slack_token <tok> install/refresh the 'Lucy' Slack bot token (xoxb-…) on this machine
+  set_slack_token <tok> install/refresh the 'Lucy' Slack BOT token (xoxb-…) on this machine
+  set_slack_user_token <tok>  install the 'Lucy' USER token (xoxp-…) — the one
+                        channel/thread posts actually use
   set_gbp_token <json>  install the Google Business Profile OAuth token (gbp-token.json contents)
   restart_holder        relaunch the ownerville session-holder LaunchAgent
   reseed_appstream      open the AppStream login (a human clears Cloudflare)
@@ -820,6 +822,56 @@ def _action_set_slack_token(args: str) -> tuple[bool, str]:
                   f"{who.get('user')} ({who.get('user_id')}) in team {who.get('team')}")
 
 
+def _action_set_slack_user_token(args: str) -> tuple[bool, str]:
+    """Install/refresh the 'Lucy' Slack USER token (xoxp-) on THIS machine.
+
+    Distinct from set_slack_token, which installs the BOT token (xoxb-) at
+    slack-bot-token. Channel/thread posts made AS Lucy go through
+    slack_metrics_post._client(), which reads the USER token from
+    ~/.config/recruiting-report/slack-user-token — so a runner without this file
+    renders fine and then dies the moment it uploads (that's exactly how the
+    sales-boards --dm test failed on Lucy 2, 2026-07-18).
+
+    Being signed into the Slack desktop app as Lucy does NOT create this file;
+    it's an API token, not an app session.
+
+    Backs up any existing token, verifies by reading the file back through the
+    same client the reports use, and NEVER echoes the token into the result.
+
+    Note: the token transits the control Sheet's Args cell to get here — clear
+    that cell once this shows 'done'."""
+    import shutil
+    token = (args or "").strip()
+    if not token.startswith("xoxp-"):
+        return False, ("set_slack_user_token needs a Slack USER token (starts with "
+                       "'xoxp-') as the Args — use set_slack_token for a bot token")
+    path = Path.home() / ".config" / "recruiting-report" / "slack-user-token"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't create {path.parent}: {str(e).splitlines()[0][:120]}"
+    if path.exists():
+        stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+        try:
+            shutil.copy2(path, path.parent / f"slack-user-token.bak.{stamp}")
+        except Exception:  # noqa: BLE001 — a failed backup shouldn't block the fix
+            pass
+    try:
+        path.write_text(token, encoding="utf-8")
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path}: {str(e).splitlines()[0][:120]}"
+    try:
+        from automations.shared import slack_metrics_post as smp
+        who = smp._client().auth_test()
+    except Exception as e:  # noqa: BLE001
+        return True, (f"token written to {path} but auth_test errored "
+                      f"({type(e).__name__}: {str(e).splitlines()[0][:110]})")
+    if not who.get("ok"):
+        return False, f"token written but auth_test not ok: {str(who)[:120]}"
+    return True, (f"Lucy Slack USER token installed + verified: authed as "
+                  f"{who.get('user')} ({who.get('user_id')}) in team {who.get('team')}")
+
+
 def _action_screendrive(args: str) -> tuple[bool, str]:
     """Drive the on-screen ApplicantStream extractor via real clicks/screenshots
     (resume_pushing.run --snap / --click / --extract-smart). Unlike `rerun`, it
@@ -1002,6 +1054,7 @@ ACTIONS = {
     "update": _action_update,
     "set_meta_token": _action_set_meta_token,
     "set_slack_token": _action_set_slack_token,
+    "set_slack_user_token": _action_set_slack_user_token,
     "set_gbp_token": _action_set_gbp_token,
     "restart_holder": _action_restart_holder,
     "restart_poller": _action_restart_poller,
