@@ -175,8 +175,9 @@ def tv(pos,along,wall,w=4.2,z0=1.45,z1=3.32,col="#20252b",db=0.0):
     elif wall=='S': r=(along-w/2,pos-0.26-t,along+w/2,pos-0.26)
     elif wall=='W': r=(pos+0.26,along-w/2,pos+0.26+t,along+w/2)
     else:           r=(pos-0.26-t,along-w/2,pos-0.26,along+w/2)   # E
-    box(r[0],r[1],r[2],r[3],FLR_Z+z0-0.12,FLR_Z+z1+0.12,"#454b54",db=db)   # bezel
-    box(r[0],r[1],r[2],r[3],FLR_Z+z0,FLR_Z+z1,col,db=db+0.01)              # screen
+    _wb=db+(2.2 if wall in ('N','W') else 0.0)                            # far walls: draw in front of the wall
+    box(r[0],r[1],r[2],r[3],FLR_Z+z0-0.12,FLR_Z+z1+0.12,"#454b54",db=_wb)  # bezel
+    box(r[0],r[1],r[2],r[3],FLR_Z+z0,FLR_Z+z1,col,db=_wb+0.01)             # screen
 
 # CONFERENCE — long 14-person boardroom table (6 per side + 1 at each end)
 _CCH="#9e3b32"                                              # red chairs
@@ -330,8 +331,8 @@ tv(18.0,97.0,'N')                     # 5 · Twaddle (north / conference-side wa
 tv(50.0,9.5,'W')                       # 4 · Raf (TV on wall 1 -> west wall, clear of couch + oval table)
 for _mgx in (95.6,98.4):              # 6 · Megan — a 2x2 screen array on the north wall (y29)
     for _mgz in (1.75,2.85):
-        box(_mgx-0.68,29.10,_mgx+0.68,29.26,FLR_Z+_mgz-0.5,FLR_Z+_mgz+0.5,"#454b54")   # bezel
-        box(_mgx-0.60,29.12,_mgx+0.60,29.28,FLR_Z+_mgz-0.42,FLR_Z+_mgz+0.42,"#20252b") # screen
+        box(_mgx-0.68,29.26,_mgx+0.68,29.42,FLR_Z+_mgz-0.5,FLR_Z+_mgz+0.5,"#454b54",db=2.2)   # bezel
+        box(_mgx-0.60,29.28,_mgx+0.60,29.44,FLR_Z+_mgz-0.42,FLR_Z+_mgz+0.42,"#20252b",db=2.21) # screen
 tv(0.0,87.0,'N',w=6.0)                # 13 · conference (north wall, y0)
 tv(18.0,5.5,'N',w=3.0,z0=2.48,z1=3.12)  # 1 · training screen, above the credenza
 tv(64.25,58.0,'E')                    # 11 · training screen (east wall; hidden behind the near wall)
