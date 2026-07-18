@@ -57,20 +57,24 @@ def _active_monday(today: dt.date | None = None) -> dt.date:
     return monday
 
 
-def _dated_tabs_in_window(sh, start: dt.date, end: dt.date) -> list[str]:
-    """Every 'D2D OBCL <M>.<D>' tab whose date falls in the week window."""
-    out = []
+def _dated_tabs_in_window(sh, start: dt.date, end: dt.date):
+    """Every 'D2D OBCL <M>.<D>' tab whose date falls in the week window.
+    Returns (matched, all_dated) so the caller can SAY when dated tabs exist but
+    none landed in the window — a naming/date drift that would otherwise silently
+    drop a whole tab's worth of names."""
+    matched, all_dated = [], []
     for ws in sh.worksheets():
         title = ws.title.strip()
         if not title.startswith(f"{ROLLING_TAB} "):
             continue
+        all_dated.append(title)
         stamp = title[len(ROLLING_TAB):].strip().replace(".", "/")
         for year in (start.year, end.year):
             d = match.parse_header_date(f"{stamp}/{year}")
             if d and start <= d <= end:
-                out.append(title)
+                matched.append(title)
                 break
-    return out
+    return matched, all_dated
 
 
 def build_roster(sh, monday: dt.date):
@@ -79,11 +83,19 @@ def build_roster(sh, monday: dt.date):
     end = monday + dt.timedelta(days=6)
     rolling_vals = fill._retry(sh.worksheet(ROLLING_TAB).get_all_values)
     people = match.roster_blocks_in_window(rolling_vals, monday, end, ROLLING_TAB)
-    dated = _dated_tabs_in_window(sh, monday, end)
+    dated, all_dated = _dated_tabs_in_window(sh, monday, end)
     for title in dated:
         vals = fill._retry(sh.worksheet(title).get_all_values)
         people += match.roster_from_dated_tab(vals, title)
-    note = ", ".join(dated) if dated else "no dated tab yet"
+    if dated:
+        note = ", ".join(dated)
+    elif all_dated:
+        # Dated tabs exist but none fall in this week. Usually just "not built
+        # yet" (the team builds it ~Thursday) — but naming which tabs DO exist
+        # makes a name/date drift visible instead of silently dropping a tab.
+        note = f"no dated tab for this week yet (existing: {', '.join(all_dated)})"
+    else:
+        note = "no dated tab yet"
     return match.consolidate(people), note
 
 
