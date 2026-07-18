@@ -1588,7 +1588,9 @@ AUTOMATED_REPORTS = [
         "name": "Sara+ Issue Escalation (Q 5 Min)",
         "creator": "Raf & Claude",
         "emoji": "🚨",
-        "color": "#E74C3C",
+        # Amber = an ONGOING self-running job, matching the other continuous Ops
+        # cards (rc-autoread, stf-field-check, bg-check-sync, resume-pushing).
+        "color": "#F59E0B",
         # 📲 Ops category → renders under the "OPS" divider.
         "category": "📲 Ops",
         "assignees": ["Lucy 1"],
