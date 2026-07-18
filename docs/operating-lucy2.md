@@ -62,6 +62,7 @@ Do the waiting in a background task; read the output when it completes.
 | `screendrive` | `--cdp-run --extract-only` | runs `python -m automations.resume_pushing.run <args>` |
 | `diag` | — | host/sleep/power/disk (⚠️ "agents" line only lists 4 hardcoded names) |
 | `restart_holder` / `restart_poller` | — | kick the session-holder / poller |
+| `restart_hub` | — | bounce the cached Streamlit Hub (deploy/restart_hub_if_running.sh; no-op if no Hub on :8501) |
 | `set_sleep` | `1` | prevent sleep |
 | `pip_install` | `reportlab` | reportlab only |
 
@@ -93,24 +94,25 @@ push. `main` is canonical; do WIP on a branch and promote when verified.
 
 ⚠️ **Lucy 2's checkout tracks `resume-pushing-v2`, NOT main** (discovered
 2026-07-15 after a full day of silent "Already up to date" no-op updates —
-mine AND another session's). Pushing main alone never reaches Lucy 2. To
-deploy: push main, then MERGE main into `resume-pushing-v2` and push that
-(the branch has unique commits — screendrive, the extension loader — so a
-plain `push main:resume-pushing-v2` is non-ff and must NOT be forced), then
-queue `update` (+ `restart_poller` if poller code changed). Symptom check: an
-`update` result showing a fetch delta followed by "Already up to date" means
-the tracking branch didn't move. Long-term fix: check Lucy 2 out on main at
-the laptop, then delete this warning.
+mine AND another session's). Pushing main alone never reaches Lucy 2.
+**Since 2026-07-18 the branches CONVERGED** (main contains every
+resume-pushing-v2 commit — screendrive, the extension loader), so delivery
+is now a plain fast-forward push; the old merge-worktree dance is only
+needed again if the branches ever diverge (the push below would then be
+rejected non-ff — do NOT force; merge instead). Symptom check: an `update`
+result showing a fetch delta followed by "Already up to date" means the
+tracking branch didn't move. Long-term fix: check Lucy 2 out on main at the
+laptop, then delete this warning.
 
 ```bash
 cd /Users/carloshidalgo/recruiting-report
-git add -A && git commit -m "..."
+git add path/to/file.py            # never `git add .` blindly
+git commit -m "..."
 git pull --rebase origin main      # teammates push too — rebase first
 git push origin main
-# deliver to Lucy 2 (see warning above):
-git fetch origin && git branch -f lucy2-merge origin/resume-pushing-v2
-git checkout lucy2-merge && git merge origin/main   # resolve, keep BOTH sides
-git push origin lucy2-merge:resume-pushing-v2 && git checkout main
+git push origin main:resume-pushing-v2   # deliver to Lucy 2 (ff since 7/18)
+# then queue `update`; plus `restart_poller` if mini_control.py changed,
+# `restart_hub` if dashboard.py changed (see The Hub below).
 # promote just one file from a branch without dumping the whole branch:
 git checkout <branch> -- path/to/file
 ```
@@ -143,10 +145,13 @@ session.**
 ## The Hub (Streamlit dashboard)
 
 `automations/dashboard.py`, served on :8501 on Lucy 2. Caches code in memory with the
-file watcher OFF, so after new code lands it must be bounced: `deploy/restart_hub_if_running.sh`
-(wired into the git post-merge hook, so a pull bounces it). The "This week" calendar reads
-each report's `schedule` dict (`frequency: "weekly"` + `weekdays` filters days; `"daily"`
-shows all 7). dashboard.py is Megan's — minimal, targeted edits only.
+file watcher OFF, so after new code lands it must be bounced: queue **`restart_hub`**
+(wraps `deploy/restart_hub_if_running.sh`; no-op when no Hub holds :8501). Do NOT count
+on the git post-merge hook — hooks are local artifacts and Lucy 2's clone doesn't have
+it (bit us 2026-07-18: card pulled, Hub kept serving stale code). The "This week"
+calendar reads each report's `schedule` dict (`frequency: "weekly"` + `weekdays`
+filters days; `"daily"` shows all 7; past days without a recorded run show as missed
+and never backfill). dashboard.py is Megan's — minimal, targeted edits only.
 
 ## New-automation checklist
 
@@ -156,9 +161,22 @@ shows all 7). dashboard.py is Megan's — minimal, targeted edits only.
 3. If it runs on its own timer: `deploy/<name>.sh` (window/day gate, e.g. `date +%u -eq 6`
    skips Saturday) + `deploy/com.alphalete.<name>.plist` + an `install_<name>_agent` path.
 4. Optional Hub card: a report dict in `dashboard.py` (`schedule` = weekly + weekdays).
-5. Ship: commit/push → queue `update` → queue `rerun <id>` (or `install_<name>_agent`).
+5. Ship: commit/push (BOTH branches, see GitHub access) → queue `update` → queue
+   `rerun <id> --dry-run` → then `rerun install_<name>_agent` to arm the timer →
+   `restart_hub` if you added a card.
 6. **Verify by log** (`logtail <name> finished 30`), not by success messages. Gate
    irreversible sends behind `--dry-run`/`--limit 1` until log-verified.
+
+**Worked example — vantura_churn daily 7am (shipped 2026-07-18):** module
+`automations/vantura_churn/` (direct authenticated Tableau export with the UI
+dance as fallback; reconcile-or-fail gate) + `deploy/vantura_churn_daily.sh`
+(755, pgrep guard) + `deploy/com.alphalete.vantura-churn-daily.plist` (daily
+7:00, no Weekday key = all 7 days) + `install_vantura_churn_agent` entry in
+schedule_config + a card in dashboard.py. Shipped exactly per steps 5-6:
+push both branches → `update` → `rerun vantura_churn --dry-run` (log-verified
+incl. reconciliation) → `rerun install_vantura_churn_agent` (launchctl-verified)
+→ `restart_hub`. Diagnostics channel: probe output → "Vantura Diag" tab,
+screenshots → "Vantura Shot" (base64), decoded on the mini.
 
 ## Gotchas & safety (learned the hard way)
 
@@ -173,6 +191,16 @@ shows all 7). dashboard.py is Megan's — minimal, targeted edits only.
   before enabling a full schedule.
 - macOS TCC: the launchd poller is NOT Accessibility-trusted, so OS-level synthetic clicks
   are silent no-ops from it — that's why browser-level CDP clicks are the way.
+- **A dirty tree on Lucy 2 blocks EVERY `update`** ("Please commit your changes or
+  stash them… Aborting"). Usual cause: `install_agent` chmod +x'ing a wrapper whose
+  exec bit differs from git. There is deliberately NO remote heal — someone at the
+  laptop runs `git -C /Users/lucy2/recruiting-report checkout -- deploy/` once
+  (broad on purpose: any one dirty wrapper blocks, and the heal only restores
+  tracked files to their committed state). Prevented going forward by d988af5
+  (all deploy/*.sh committed 755).
+- **A NEW poller action doesn't exist until the poller restarts** — the poller is a
+  long-lived process. Ship order: push → `update` → `restart_poller` → then the
+  new action works.
 
 ## Orient on a fresh device (do this first)
 
