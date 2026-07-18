@@ -28,6 +28,13 @@ HOW TO USE
 # hardcoded here — the repo was public, so the password must never live in
 # source. See _validate_credentials().
 
+# The mini runs Python 3.9, this laptop runs 3.14 — so `str | None` in an
+# annotation imports fine here and dies on the mini with
+# "TypeError: unsupported operand type(s) for |". That took Order Log off
+# every metrics channel on 2026-07-18. This defers annotation evaluation so
+# 3.10+ syntax stays legal on 3.9.
+from __future__ import annotations
+
 # Tableau coordinates.
 WORKBOOK_NAME = "ATT Tracker 2.1 - D2D"
 TAB_NAME = "ORDER LOG"
