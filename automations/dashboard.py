@@ -3288,7 +3288,10 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "org-sales-board-slack",
-        "name": "Org Sales Board → Slack",
+        # Name carries the DESTINATION CHANNEL; the tile appends "· 8:30 AM CST"
+        # from `schedule`, so the card reads:
+        #   "Org Sales Board → #top-leaders-alphalete-org · 8:30 AM CST"
+        "name": "Org Sales Board → #top-leaders-alphalete-org",
         "creator": "Megan",
         "emoji": "📋",
         "color": "#0EA5E9",
@@ -3352,7 +3355,8 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "pnl-office",
-        "name": "PNL for the Office → Slack",
+        # Two destination channels; tile appends "· 10:00 AM CST".
+        "name": "PNL for the Office → #top-leaders + #alphalete-lvl1-chat",
         "creator": "Megan",
         "emoji": "💰",
         "color": "#16A34A",

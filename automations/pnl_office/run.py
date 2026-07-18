@@ -2,7 +2,7 @@
 
 Screenshots the 4-row office P&L summary (Total Loss - Reps / Total Loss - Other
 / Total Profit / Gross Profit) for a given week-ending from the `Raf PNL 2026`
-tab, as an exact-sheet PNG, and (once wired) posts it to Slack.
+tab, as an exact-sheet PNG, and posts it to Slack as Lucy.
 
 Source: 'All in One Local Office - Raf' workbook -> tab 'Raf PNL 2026'.
   - Row 1 has WE headers every 3 cols: "WE 7/12" at the group's first column;
@@ -11,12 +11,14 @@ Source: 'All in One Local Office - Raf' workbook -> tab 'Raf PNL 2026'.
     e.g. WE 7/12 header CJ1 -> labels CK317:CK320, values CL317:CL320.
   Columns/rows are found by DATE header + row LABEL, never hardcoded.
 
-Schedule (once wired): 10am; if the target week isn't filled yet, retry q25m.
+Schedule: LIVE — Fridays 10:00am CST on the mini, retrying q25m until
+the target week's column is filled.
 Channels: #top-leaders-alphalete-org + #alphalete-lvl1-chat. Slack only (no email).
 
 Usage:
-  python -m automations.pnl_office.run --dry-run          # pick target WE, make PNG
-  python -m automations.pnl_office.run --we 7/12 --dry-run # force a week
+  python -m automations.pnl_office.run              # dry-run (default): PNG only
+  python -m automations.pnl_office.run --post      # actually post to Slack
+  python -m automations.pnl_office.run --we 7/12   # force a week
 """
 from __future__ import annotations
 
@@ -174,7 +176,7 @@ def _publish_hub(status: str) -> None:
     """Flip the Hub card's pill. Best-effort — never fails the run."""
     try:
         from automations.day_orchestrator import hub_publish
-        hub_publish.publish_done("pnl_office", "PNL for the Office → Slack", status)
+        hub_publish.publish_done("pnl_office", "PNL for the Office → #top-leaders + #alphalete-lvl1-chat", status)
     except Exception:  # noqa: BLE001 — Hub publish must never break the post
         pass
 

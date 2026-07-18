@@ -1,4 +1,4 @@
-"""Org Sales Board — daily 9am Slack post (Item 1 of the VA-Slack replacements).
+"""Org Sales Board — daily 8:30am Slack post (Item 1 of the VA-Slack replacements).
 
 Replaces Jolie's manual daily post of the full board. Screenshots the daily
 detailed board off the LIVE tab (`Alphalete ORG Sales Board` — the VA tab today;
@@ -11,9 +11,11 @@ Board layout on the live tab (found dynamically, never hardcoded):
   - Rep rows follow (rank in col A, name in col B) until a "Totals" row.
   - Columns A..L are shown (col M "Org Head" is cropped off, matching Jolie).
 
-Gate: run 9am; only post once the PREVIOUS day's column is 100% filled across
-every rep in every section (a real 0 is typed, so a blank = not entered yet).
-If not filled, hold and retry every 25 min. Post once per day.
+Gate (LIGHT, Megan 2026-07-18): runs 8:30am CST daily, retrying q25m. Posts
+unless YESTERDAY is entirely empty across every section (board never updated).
+It deliberately does NOT require 100% — Retail JE and Frontier lag a day and the
+VA posts with those blanks anyway. Posts once per day; later passes no-op.
+Caption/filename use YESTERDAY's date, matching the VA ("Org Sales Board 7.16").
 
 Usage:
   python -m automations.org_sales_board.slack_post            # dry-run, make PNG
@@ -141,7 +143,7 @@ def _publish_hub(status: str) -> None:
     """Flip the Hub card's pill. Best-effort — never fails the run."""
     try:
         from automations.day_orchestrator import hub_publish
-        hub_publish.publish_done("org_board_slack", "Org Sales Board → Slack", status)
+        hub_publish.publish_done("org_board_slack", "Org Sales Board → #top-leaders-alphalete-org", status)
     except Exception:  # noqa: BLE001 — Hub publish must never break the post
         pass
 
