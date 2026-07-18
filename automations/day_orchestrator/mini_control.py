@@ -976,6 +976,23 @@ def _action_install_bg_check_sync(args: str) -> tuple[bool, str]:
     return True, (f"installed {label} (8:00/11:30/16:00 daily) · smoke ok · {smoke[:80]}")
 
 
+def _action_run_bg_check_sync(args: str) -> tuple[bool, str]:
+    """Run bg_check_sync NOW on THIS machine. Default = LIVE (writes col K + posts
+    the weekly #rafs-office-recruiting thread as Lucy). Pass extra args to override,
+    e.g. `--dry-run` (no writes/post) or `--week 7/27/2026`."""
+    import shlex
+    extra = shlex.split(args) if (args or "").strip() else []
+    if not extra:
+        extra = ["--post", "--since-days", "30"]
+    ok, out = _run_cmd([sys.executable, "-m", "automations.bg_check_sync.run", *extra],
+                       timeout_s=300, log_name="bg-check-sync-run.log")
+    lines = [ln for ln in (out or "").splitlines()
+             if ("| roster" in ln or "[writes]" in ln or "[slack" in ln
+                 or "POST new" in ln or "EDIT existing" in ln or "fuzzy-match" in ln
+                 or ln.strip() == "=== done ===")]
+    return ok, (" · ".join(lines)[:400] or (out or "")[-300:])
+
+
 ACTIONS = {
     "ping": _action_ping,
     "screendrive": _action_screendrive,
@@ -993,6 +1010,7 @@ ACTIONS = {
     "install_card_scheduler": _action_install_card_scheduler,
     "set_raffi_app_password": _action_set_raffi_app_password,
     "install_bg_check_sync": _action_install_bg_check_sync,
+    "run_bg_check_sync": _action_run_bg_check_sync,
     "reseed_appstream": _action_reseed_appstream,
     "watch_test": _action_watch_test,
     "diag": _action_diag,
