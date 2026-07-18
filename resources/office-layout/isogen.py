@@ -167,6 +167,16 @@ def schair(cx,cy,col,s=1.3,h=1.9,db=0.0,face='S'):
     else:           d=(cx-r,cy-r,cx-r+bk,cy+r)          # face E, back to the west
     box(d[0],d[1],d[2],d[3],FLR_Z,FLR_Z+h,shade(col,1.14),db=db+0.02)   # back, drawn just in front
 def scred(x0,y0,x1,y1,col="#6f6a63"): box(x0,y0,x1,y1,FLR_Z,FLR_Z+2.4,col)
+def tv(pos,along,wall,w=4.2,z0=1.45,z1=3.32,col="#20252b",db=0.0):
+    # wall-mounted screen: `pos` is the wall coordinate (y for N/S, x for E/W), `along` the
+    # centre along the wall. A thin dark panel + light bezel, on the wall's inner face.
+    t=0.16
+    if   wall=='N': r=(along-w/2,pos+0.10,along+w/2,pos+0.10+t)
+    elif wall=='S': r=(along-w/2,pos-0.10-t,along+w/2,pos-0.10)
+    elif wall=='W': r=(pos+0.10,along-w/2,pos+0.10+t,along+w/2)
+    else:           r=(pos-0.10-t,along-w/2,pos-0.10,along+w/2)   # E
+    box(r[0],r[1],r[2],r[3],FLR_Z+z0-0.12,FLR_Z+z1+0.12,"#454b54",db=db)   # bezel
+    box(r[0],r[1],r[2],r[3],FLR_Z+z0,FLR_Z+z1,col,db=db+0.01)              # screen
 
 # CONFERENCE — long 14-person boardroom table (6 per side + 1 at each end)
 _CCH="#9e3b32"                                              # red chairs
@@ -232,7 +242,7 @@ for _rr in ((_pp0x,_pp0y,_pp1x,_pp0y+0.20),(_pp0x,_pp1y-0.20,_pp1x,_pp1y),
             (_pp0x,_pp0y,_pp0x+0.20,_pp1y),(_pp1x-0.20,_pp0y,_pp1x,_pp1y)):
     box(_rr[0],_rr[1],_rr[2],_rr[3],FLR_Z,FLR_Z+1.10,_PP)                        # rails
 box(_pp0x+0.8,_pp0y+0.9,_pp0x+1.5,_pp0y+1.6,FLR_Z+0.12,FLR_Z+0.95,"#f2c14e")     # a toy peeking over
-schair(_mx(6.60),_my(13.00),"#8a6240",s=1.6,h=2.6)                    # rocking chair
+schair(_mx(6.60),_my(13.00),"#8a6240",s=1.6,h=2.6,face='N')          # rocking chair, faces the room
 
 # --- 5 · TWADDLE'S and 6 · MEGAN'S: the two east-column rooms. Both studio frames are
 # rotated 90 deg from the building's — studio north (windows) is the plan's east wall, and
@@ -308,6 +318,22 @@ sdesk(2.2,41.6,8.6,43.4,"#6a5847")                          # straight desk (E-W
 schair(5.4,45.0,"#a97c53")                                 # owner, backs the south wall, faces north
 schair(3.8,40.2,"#9c948a"); schair(6.6,40.2,"#9c948a")     # two guests
 box(1.0,37.3,2.5,38.6,FLR_Z,FLR_Z+5.0,"#5c4a38")           # open shelf on the north (TV) wall
+
+# ---- wall-mounted TV / screens (where each room's screen sits) ----
+tv(37.0,5.5,'N')                      # 2 · office 2 (north wall)
+tv(37.625,58.0,'W')                   # 10 · JD (west wall)
+tv(28.75,58.0,'W')                    # 9 · Bas (west wall)
+tv(11.0,58.0,'W')                     # 7 · interview (west wall)
+tv(19.875,58.0,'W')                   # 8 · interview (west wall)
+tv(0.0,51.5,'W')                      # 3 · Maud (west wall)
+tv(18.0,97.0,'N')                     # 5 · Twaddle (north / conference-side wall)
+for _msx in (-1.0,1.0):               # 6 · Megan — a 2x2 screen array on the west wall
+    for _msz in (1.55,2.75):
+        box(91.10,34.0+_msx-0.75,91.26,34.0+_msx+0.75,FLR_Z+_msz-0.55,FLR_Z+_msz+0.55,"#20252b")
+tv(0.0,87.0,'N',w=6.0)                # 13 · conference (north wall, y0)
+tv(18.0,5.5,'N')                      # 1 · training screen (north, over the credenza)
+tv(64.25,58.0,'E',db=2.2)            # 11 · training screen (east wall, depth-biased like the credenza)
+tv(82.0,58.0,'E',db=2.2)            # 12 · training screen (east wall)
 
 # --- TRAINING ROOMS: classroom seating facing the screen wall + credenza under it.
 # The screen wall comes from the studio, mapped to the building: room 1's entry faces the
