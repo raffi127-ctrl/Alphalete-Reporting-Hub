@@ -28,6 +28,10 @@ automations/shared/.ownerville_storage_state.json
 build/
 .claude/
 Install-Recruiting-Report.command.zip
+# Leader podium headshots — photos of real employees. The repo is PUBLIC, so
+# these stay local and are synced to the mini through a private path, never
+# committed. (Used by the Override/DD bulletin render.)
+resources/leader-headshots/
 # Per-run debug screenshots from uploaded automations - regenerated on
 # every run; never useful to commit. Keep the directory itself tracked
 # so the script can write into it on a fresh clone.
