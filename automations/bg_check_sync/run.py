@@ -30,36 +30,61 @@ ROLLING_TAB = "D2D OBCL"
 _DATE_RE = re.compile(r"^\s*\d{1,2}/\d{1,2}/\d{2,4}\s*$")
 
 
-def _dated_tab_name(week_date: str) -> str:
-    m, d, *_ = week_date.strip().split("/")
-    return f"D2D OBCL {int(m)}.{int(d)}"
+def _fmt_week(d: dt.date) -> str:
+    """Thread key / label. Explicit ints — %-m is not portable to Windows."""
+    return f"{d.month}/{d.day}/{d.year}"
 
 
-def _week_headers(rolling_vals) -> list[str]:
-    return [(r[0] or "").strip() for r in rolling_vals
-            if r and _DATE_RE.match((r[0] or "").strip())]
+def _monday_of(d: dt.date) -> dt.date:
+    return d - dt.timedelta(days=d.weekday())   # Monday=0
 
 
-def _default_week(rolling_vals) -> str:
-    """Active cohort = the top-most date-header block (team keeps the current
-    start-week at the top). Overridable via --week."""
-    headers = _week_headers(rolling_vals)
-    if not headers:
-        raise SystemExit("No date-header blocks found in rolling tab.")
-    return headers[0]
+def _active_monday(today: dt.date | None = None) -> dt.date:
+    """The Monday of the current Mon–Sun week. A new Monday => a new thread.
 
-
-def build_roster(sh, week: str):
-    rolling_vals = fill._retry(sh.worksheet(ROLLING_TAB).get_all_values)
-    people = match.roster_block_from_rolling(rolling_vals, week, ROLLING_TAB)
-    dated_name = _dated_tab_name(week)
+    Guard: never go BACKWARDS to a week we've already threaded. Without this, a
+    run on Sat/Sun would resolve to the week that is technically current and
+    spawn a thread for a cohort that already started."""
+    monday = _monday_of(today or dt.date.today())
     try:
-        dated_vals = fill._retry(sh.worksheet(dated_name).get_all_values)
-        people += match.roster_from_dated_tab(dated_vals, dated_name)
-        dated_note = f"{dated_name} (found)"
-    except Exception:
-        dated_note = f"{dated_name} (not built yet)"
-    return match.consolidate(people), dated_note
+        state = slack_post._load_state()
+        seen = [match.parse_header_date(k) for k in state]
+        latest = max([d for d in seen if d], default=None)
+        if latest and latest > monday:
+            monday = latest
+    except Exception:  # noqa: BLE001 — state is a convenience, never fatal
+        pass
+    return monday
+
+
+def _dated_tabs_in_window(sh, start: dt.date, end: dt.date) -> list[str]:
+    """Every 'D2D OBCL <M>.<D>' tab whose date falls in the week window."""
+    out = []
+    for ws in sh.worksheets():
+        title = ws.title.strip()
+        if not title.startswith(f"{ROLLING_TAB} "):
+            continue
+        stamp = title[len(ROLLING_TAB):].strip().replace(".", "/")
+        for year in (start.year, end.year):
+            d = match.parse_header_date(f"{stamp}/{year}")
+            if d and start <= d <= end:
+                out.append(title)
+                break
+    return out
+
+
+def build_roster(sh, monday: dt.date):
+    """Roster = every block (rolling tab) + every dated tab whose date falls in
+    this Mon–Sun week, consolidated and deduped by name."""
+    end = monday + dt.timedelta(days=6)
+    rolling_vals = fill._retry(sh.worksheet(ROLLING_TAB).get_all_values)
+    people = match.roster_blocks_in_window(rolling_vals, monday, end, ROLLING_TAB)
+    dated = _dated_tabs_in_window(sh, monday, end)
+    for title in dated:
+        vals = fill._retry(sh.worksheet(title).get_all_values)
+        people += match.roster_from_dated_tab(vals, title)
+    note = ", ".join(dated) if dated else "no dated tab yet"
+    return match.consolidate(people), note
 
 
 def apply_writes(sh, decisions, dry_run: bool) -> int:
@@ -102,10 +127,15 @@ def main(argv=None) -> int:
             print(f"[hub] publish_running skipped: {e}")
 
     sh = fill.open_by_key(SPREADSHEET_ID)
-    rolling_vals = fill._retry(sh.worksheet(ROLLING_TAB).get_all_values)
-    week = args.week or _default_week(rolling_vals)
+    if args.week:
+        monday = match.parse_header_date(args.week)
+        if monday is None:
+            raise SystemExit(f"--week {args.week!r} isn't a M/D/YYYY date")
+    else:
+        monday = _active_monday()
+    week = _fmt_week(monday)
 
-    roster, dated_note = build_roster(sh, week)
+    roster, dated_note = build_roster(sh, monday)
 
     # --- events --------------------------------------------------------------
     if args.events:
@@ -133,7 +163,8 @@ def main(argv=None) -> int:
             flags.append((f"{p.first} {p.last}".strip(), d.flag))
 
     changes = [d for d in decisions if d.new_status]
-    print(f"\nWeek {week} | roster {len(roster)} (rolling block + {dated_note}) | "
+    print(f"\nWeek of {week} (Mon–Sun) | roster {len(roster)} "
+          f"(rolling blocks + {dated_note}) | "
           f"{len(changes)} changes | {len(needs_confirm)} need confirmation | "
           f"{len(flags)} flags")
     for d in changes:

@@ -78,23 +78,36 @@ def roster_from_dated_tab(values: list[list[str]], tab_name: str) -> list[Person
     return out
 
 
-def roster_block_from_rolling(values: list[list[str]], week_date: str,
-                              tab_name: str) -> list[Person]:
-    """People under the `week_date` date-header block of the rolling tab.
-    The rolling tab is stacked weekly blocks: a date row in col A, then a header
-    row, then people, until the next date row."""
-    target = week_date.strip()
+def parse_header_date(cell: str):
+    """'7/20/2026' or '12/8/25' -> datetime.date, else None."""
+    import datetime as _dt
+    s = (cell or "").strip()
+    if not _DATE_RE.match(s):
+        return None
+    for fmt in ("%m/%d/%Y", "%m/%d/%y"):
+        try:
+            return _dt.datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def roster_blocks_in_window(values: list[list[str]], start, end,
+                            tab_name: str) -> list[Person]:
+    """People under EVERY date-header block whose date falls in [start, end]
+    (a Mon–Sun calendar week). The rolling tab is stacked weekly blocks: a date
+    row in col A, then a header row, then people, until the next date row.
+    Window-based (not exact-match) because block dates aren't always the Monday."""
     out = []
     i = 0
     n = len(values)
     while i < n:
-        a = (values[i][0] if values[i] else "").strip()
-        if _parse_date_cell(a) == target:
+        d = parse_header_date(values[i][0] if values[i] else "")
+        if d is not None and start <= d <= end:
             # walk forward until the next date-header row
             j = i + 1
             while j < n:
-                aj = (values[j][0] if values[j] else "").strip()
-                if _parse_date_cell(aj):
+                if parse_header_date(values[j][0] if values[j] else "") is not None:
                     break
                 row = values[j]
                 first = (row[FIRST_COL - 1] if len(row) >= FIRST_COL else "").strip()
