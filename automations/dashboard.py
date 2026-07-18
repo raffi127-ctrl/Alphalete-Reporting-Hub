@@ -2110,7 +2110,11 @@ AUTOMATED_REPORTS = [
         "creator": "Raf",
         "emoji": "🚫",
         "color": "#F59E0B",
-        "category": "📲 Ops",
+        # 📊 Metrics (not Ops): Ops-category cards are routed to the OPS
+        # section regardless of self_scheduled, which kept this out of
+        # ⏰ TIME SET REPORTS. It's a Sales Board data report, so Metrics
+        # is both the right home and puts it in the 11 PM timed lineup.
+        "category": "📊 Metrics",
         "description": "For the current day, finds the reps marked STF (Straight To Field) on the Sales Board and checks their ownerville Time Tracker knocks. Anyone who worked under 3 hours — or never showed — is switched from STF to X, so Raf's count of reps actually in the field stays honest.",
         "breakdown": (
             "WHAT IT DOES\n"
@@ -3378,7 +3382,7 @@ AUTOMATED_REPORTS = [
             "frequency": "daily",
             # Sortable START time; time_label shows the real cadence at a glance.
             "time": "8:00 AM",
-            "time_label": "8am / 11:30am / 4pm CST",
+            "time_label": "8am / 11:30am / 4pm CST",
             "estimated_minutes": 1,
         },
         "checklist": [],
