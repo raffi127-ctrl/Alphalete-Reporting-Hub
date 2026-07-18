@@ -9791,6 +9791,10 @@ else:  # st.session_state.view == "user"
             # passes a day, no status reported back) — orange OPS pill regardless of
             # run-status, so it matches rc-autoread / resume-pushing.
             "[class*='bg-check-sync__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
+            # Sara+ Issue Escalation is the same kind of background OPS automation
+            # (24/7 every 5 min, no status reported back) — orange OPS pill regardless
+            # of run-status, matching the other always-on cards.
+            "[class*='sara-plus-issues__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
             "</style>",
             unsafe_allow_html=True,
         )
