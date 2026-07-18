@@ -236,11 +236,11 @@ box(69.7,3.5,70.3,14.5,FLR_Z+1.6,FLR_Z+3.4,"#bfe0ea",op=0.55,db=0.3)
 # --- 4 · RAF'S (50,0,70,18): backs the north wall, looks out the south entry ---
 _RD="#9e3b32"; _RW="#5c4033"
 _CO="#5a5f68"                                               # couch on the west wall, facing east
-box(50.20,2.40,53.10,7.70,FLR_Z,FLR_Z+0.50,shade(_CO,0.80))      # base plinth (ties it together)
-box(50.20,2.40,51.20,7.70,FLR_Z+0.50,FLR_Z+2.45,_CO)            # back panel
-box(50.20,2.40,53.10,3.05,FLR_Z+0.50,FLR_Z+1.65,shade(_CO,0.96)) # arm (north)
-box(50.20,7.05,53.10,7.70,FLR_Z+0.50,FLR_Z+1.65,shade(_CO,0.96)) # arm (south)
-box(51.20,3.05,53.10,7.05,FLR_Z+0.50,FLR_Z+1.10,shade(_CO,1.22)) # seat cushions
+box(50.20,6.20,53.10,11.50,FLR_Z,FLR_Z+0.50,shade(_CO,0.80))     # base plinth (ties it together)
+box(50.20,6.20,51.20,11.50,FLR_Z+0.50,FLR_Z+2.45,_CO)           # back panel
+box(50.20,6.20,53.10,6.85,FLR_Z+0.50,FLR_Z+1.65,shade(_CO,0.96)) # arm (north)
+box(50.20,10.85,53.10,11.50,FLR_Z+0.50,FLR_Z+1.65,shade(_CO,0.96)) # arm (south)
+box(51.20,6.85,53.10,10.85,FLR_Z+0.50,FLR_Z+1.10,shade(_CO,1.22)) # seat cushions
 # Wardrobe + fridge, both backed on wall 2 (building north) facing wall 4. Raf's own
 # north partition sorts at 60.0, so each is biased to a common target depth past it -
 # a flat db under-biases the wardrobe, which sits further west and so sorts lower.
@@ -249,6 +249,9 @@ _wb_=(50.22,0.20,53.10,2.10); _fb_=(53.35,0.20,55.05,1.90)
 box(*_wb_,FLR_Z,FLR_Z+3.20,"#6b5645",db=_tgt(_wb_))          # wardrobe (scaled to the dollhouse walls)
 box(53.35,2.10,55.05,2.14,FLR_Z+1.20,FLR_Z+1.28,shade(_RD,0.7),db=_tgt(_fb_)+0.1)
 box(*_fb_,FLR_Z,FLR_Z+2.60,_RD,db=_tgt(_fb_))                # mini fridge, door facing wall 4
+_mw_=(53.55,0.45,54.85,1.78)
+box(*_mw_,FLR_Z+2.60,FLR_Z+3.35,"#8e959d",db=_tgt(_mw_))     # microwave on top of the fridge
+box(53.62,1.78,54.42,1.82,FLR_Z+2.72,FLR_Z+3.22,"#2b3038",db=_tgt(_mw_)+0.1)   # door glass
 box(66.6,0.2,68.9,1.2,FLR_Z,FLR_Z+5.0,"#9aa2ac")            # corner bookcase, NE
 box(68.9,0.2,69.8,1.7,FLR_Z,FLR_Z+5.0,"#9aa2ac")
 box(64.6,1.2,66.4,3.4,FLR_Z,FLR_Z+0.4,"#3a4150")            # walking pad

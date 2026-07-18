@@ -896,6 +896,11 @@ def furnish(kind, R, key=None):
         R.box(3.35,1.90,5.05,1.94,FLR_Z+1.55,FLR_Z+1.65,shade(_RD,0.7))     # door split, across the front
         for _z0,_z1 in ((0.55,1.40),(1.85,2.95)):                           # handles on the front face
             R.box(4.78,1.94,4.88,2.02,FLR_Z+_z0,FLR_Z+_z1,"#c9ccd2")
+        _MW="#8e959d"
+        R.box(3.55,0.45,4.85,1.78,FLR_Z+3.40,FLR_Z+4.35,_MW)                # microwave on the fridge
+        R.box(3.62,1.78,4.42,1.82,FLR_Z+3.55,FLR_Z+4.16,"#2b3038")          # door glass
+        R.box(4.48,1.78,4.78,1.82,FLR_Z+3.55,FLR_Z+4.16,shade(_MW,1.12))    # control panel
+        R.box(3.62,1.82,3.70,1.88,FLR_Z+3.62,FLR_Z+4.09,"#c9ccd2")          # door handle
         # decor collage behind the desk — one anchor piece with smaller ones clustered round it
         for _x0,_x1,_z0,_z1,_c in ((8.60,11.00,3.30,6.30,_RD),(11.30,12.70,4.95,6.30,"#7a5333"),
                                    (11.30,12.70,3.30,4.75,"#c0533f"),(13.00,14.60,5.20,6.30,"#a9b2bd"),
@@ -953,16 +958,16 @@ def furnish(kind, R, key=None):
         # walking pad — right-hand end of wall 2, behind the desk
         R.box(14.60,1.30,16.40,3.70,FLR_Z,FLR_Z+0.32,"#3a4150")             # deck
         R.box(14.75,1.42,16.25,3.58,FLR_Z+0.32,FLR_Z+0.40,"#22262e")        # belt
-        # small couch on wall 1, toward the wall 2 end
+        # small couch on wall 1, sat down toward the wall 4 end
         _SOF="#5a5f68"
-        R.box(0.25,2.80,2.95,8.20,FLR_Z,FLR_Z+0.55,shade(_SOF,0.75))        # plinth
-        R.box(0.25,2.80,1.05,8.20,FLR_Z,FLR_Z+2.90,_SOF)                    # back panel
-        R.box(0.25,2.80,2.95,3.48,FLR_Z,FLR_Z+1.95,shade(_SOF,0.92))        # arm, wall-2 end
-        R.box(0.25,7.52,2.95,8.20,FLR_Z,FLR_Z+1.95,shade(_SOF,0.92))        # arm, far end
-        for _cy0,_cy1 in ((3.54,5.46),(5.54,7.46)):
+        R.box(0.25,6.60,2.95,12.00,FLR_Z,FLR_Z+0.55,shade(_SOF,0.75))       # plinth
+        R.box(0.25,6.60,1.05,12.00,FLR_Z,FLR_Z+2.90,_SOF)                   # back panel
+        R.box(0.25,6.60,2.95,7.28,FLR_Z,FLR_Z+1.95,shade(_SOF,0.92))        # arm, wall-2 end
+        R.box(0.25,11.32,2.95,12.00,FLR_Z,FLR_Z+1.95,shade(_SOF,0.92))      # arm, far end
+        for _cy0,_cy1 in ((7.34,9.26),(9.34,11.26)):
             R.box(1.08,_cy0,2.88,_cy1,FLR_Z+0.55,FLR_Z+1.42,shade(_SOF,1.16),db=0.5)  # seat
             R.box(1.00,_cy0,1.62,_cy1,FLR_Z+1.42,FLR_Z+2.78,shade(_SOF,1.06),db=0.4)  # back
-        for _py in (4.10,6.20):
+        for _py in (7.90,10.00):
             R.box(1.58,_py,2.16,_py+0.92,FLR_Z+1.42,FLR_Z+2.28,_RD,db=1.1)  # red throw pillows
         # Oval meeting table, seats 6. Drawn as a pair of stacked ellipse polygons — the box
         # primitive can't do a curve; the lower one peeking out reads as the table edge.
@@ -1394,7 +1399,7 @@ FURN_BY_KIND={
  'jd':'L-desk · 2 guest · TV · open shelving · credenza under the windows · glass front',
  'bas':'L-desk · iMac · 2 bright guest chairs · TV · Lego mosaic · brick builds · open shelving · glass front',
  'maud':'L-desk · 2 guest · iMac · TV · play pen · rocking chair · window wall',
- 'raf':'L-desk · iMac · walking pad · 2 guest · bookcase · wardrobe · mini fridge · 6-seat oval table',
+ 'raf':'L-desk · iMac · walking pad · 2 guest · bookcase · wardrobe · mini fridge + microwave · 6-seat oval table',
  'reception':'Built-in desk · dog area · glass upper · open walkway',
  'break':'Kitchenette · island · storage wall'}
 offices=[]
