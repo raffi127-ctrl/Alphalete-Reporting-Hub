@@ -3333,7 +3333,7 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "bg-check-sync",
-        "name": "BG Check Sync (3× Daily)",
+        "name": "BG Check Sync",
         "creator": "Raf",
         "emoji": "🪪",
         "color": "#F59E0B",
@@ -9783,6 +9783,10 @@ else:  # st.session_state.view == "user"
             # launchd, no status reported back) — orange OPS pill regardless of
             # run-status, so it doesn't read gray.
             "[class*='resume-pushing__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
+            # BG Check Sync is the same kind of background OPS automation (3 launchd
+            # passes a day, no status reported back) — orange OPS pill regardless of
+            # run-status, so it matches rc-autoread / resume-pushing.
+            "[class*='bg-check-sync__calstat'] button{background:#FDECC8!important;color:#7A4E06!important;border-color:#F59E0B!important;opacity:1!important;animation:none!important}"
             "</style>",
             unsafe_allow_html=True,
         )
