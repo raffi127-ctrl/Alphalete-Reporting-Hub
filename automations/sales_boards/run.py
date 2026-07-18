@@ -54,6 +54,32 @@ QUALITY_THREAD_TITLE = "B2B Quality & Bonus"
 QUALITY_THREAD_ITEMS = ["Tiered Bonus", "Activation Rate", "Churn Rate"]
 
 
+WE_CELL = (2, 2)        # B2 — the gold week-ending selector
+
+
+def expected_we(yday):
+    """(sunday_date, "M.D") the board's WE selector MUST show: the SUNDAY of
+    YESTERDAY's week.
+
+    Matters most on Monday — yesterday is Sunday, so we need the week that just
+    COMPLETED, not the new one. Verified against her Monday 7/6 post, whose gold
+    cell reads 7.5 (the completed week)."""
+    sunday = yday + dt.timedelta(days=(6 - yday.weekday()) % 7)
+    return sunday, f"{sunday.month}.{sunday.day}"
+
+
+def check_we(grid, yday):
+    """(ok, shown, want). We deliberately do NOT rewrite B2 ourselves: only some
+    day cells are formulas keyed on it (=INDEX(WeekData…MATCH(REP|$B$2))) — the
+    rest are hand-typed, so flipping the selector would repopulate a few cells
+    and leave stale typed numbers behind, producing a mixed-week board. If the
+    selector is on the wrong week we HOLD and say so."""
+    r, c = WE_CELL
+    shown = (grid[r - 1][c - 1] if len(grid) >= r and len(grid[r - 1]) >= c else "").strip()
+    _, want = expected_we(yday)
+    return shown == want, shown, want
+
+
 def header_title(day) -> str:
     """Parent's first line — also the needle used to find today's thread."""
     return f"Vantura Production {day.month:02d}/{day.day:02d}/{day.year}"
@@ -144,6 +170,19 @@ def main(argv=None) -> int:
     src = _retry(lambda: sh.worksheet(TAB))
     print(f"sheet: {SHEET_ID[:12]}… "
           f"({'SANDBOX' if SHEET_ID == SANDBOX_SHEET_ID else 'PROD'})  tab={TAB}")
+
+    # GATE: the board must be showing the week that contains YESTERDAY before we
+    # render anything (on Monday that's last week's completed week).
+    ok, shown, want = check_we(_retry(src.get_all_values), yday)
+    sunday, _ = expected_we(yday)
+    print(f"week check: board WE={shown!r}, need {want!r} "
+          f"(week ending {sunday:%a %m/%d} — covers {yday:%a %m/%d})")
+    if not ok:
+        print(f"WRONG WEEK — holding. The gold WE cell reads {shown!r} but "
+              f"{yday:%a %m/%d}'s data lives in week {want!r}. Set B2 to {want} "
+              "(or wait for the roll) and re-run; posting now would ship the "
+              "wrong week.")
+        return 75          # EX_TEMPFAIL — the scheduler retries
 
     for w in sh.worksheets():                 # clear any orphan from a crashed run
         if w.title == TEMP_TAB:
