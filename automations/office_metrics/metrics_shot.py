@@ -53,13 +53,15 @@ def build_view_url(owner: str | None, *, filter_field: str,
     Tableau URL filter.
 
     Tableau reads the filter's caption + a URL-encoded value; a space in the
-    caption or value must be %20. `:embed=y` + `:showVizHome=no` give a clean
-    canvas (no site chrome) for the screenshot."""
+    caption or value must be %20. NO :embed / :showVizHome — capture_page drives
+    Tableau's own Download→Image TOOLBAR, and embed mode hides that toolbar (the
+    capture hung until it timed out). Match the working trackers: bare `?:iid=1`
+    plus the filter."""
     base = BASE_VIEW_URL.split("?", 1)[0]
     params = []
     if not no_filter:
         params.append(f"{quote(filter_field)}={quote(owner or '')}")
-    params += [":iid=1", ":embed=y", ":showVizHome=no"]
+    params.append(":iid=1")
     return f"{base}?{'&'.join(params)}"
 
 
