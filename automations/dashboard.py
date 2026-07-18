@@ -3594,6 +3594,10 @@ AUTOMATED_REPORTS = [
         # Self-running background job: never reports a per-day completion to the
         # Hub, so keep it out of the "due today / not completed" tallies.
         "self_scheduled": True,
+        # Fires 2× a day (12 PM + 4 PM). The tile stays amber showing "N/2"
+        # until the 4 PM pass lands, then turns green — instead of reading
+        # done at noon with the 4 PM post still due.
+        "daily_runs": 2,
         "schedule": {
             "frequency": "daily",
             # Runs TWICE (12 + 4). time_label carries both on the tile; `time`
