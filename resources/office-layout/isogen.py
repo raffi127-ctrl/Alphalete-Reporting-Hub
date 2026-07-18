@@ -295,7 +295,9 @@ def _south_office(X0,X1,sd,cred,desk,chair,g0,g1,book,bricks=()):
     def RC(sx0,sy0,sx1,sy1):
         xs=sorted((MX(sy0),MX(sy1))); ys=sorted((MY(sx0),MY(sx1)))
         return xs[0],ys[0],xs[1],ys[1]
-    scred(*RC(0.18,3.50,2.00,9.50),cred)                      # credenza under the windows (south)
+    # Pulled just off the south wall: flush against it, the credenza's centroid edged out
+    # the wall's in the painter's sort and it drew straight through the wall.
+    scred(*RC(1.80,3.50,3.60,9.50),cred)                      # credenza near the south windows
     sdesk(*RC(3.60,5.40,9.60,7.60),desk); sdesk(*RC(7.60,7.60,9.60,9.60),desk)  # L-desk
     schair(MX(8.70),MY(6.40),chair)                           # owner, backs a party wall, faces the TV
     schair(MX(3.90),MY(5.00),g0); schair(MX(3.90),MY(7.80),g1)   # two guests across the desk
@@ -309,7 +311,7 @@ def _south_office(X0,X1,sd,cred,desk,chair,g0,g1,book,bricks=()):
             box(_sxm-0.10,_cym-0.10,_sxm+0.10,_cym+0.10,FLR_Z+3.2,FLR_Z+3.36,shade(bc,1.12))
 _south_office(37.625,46.5,13.5,"#8a9099","#6f6a63","#2b3a52","#2b3a52","#2b3a52","#7d8894")   # 10 · JD (navy/grey)
 _south_office(28.75,37.625,10.0,"#6f685c","#4e5766","#d21f26","#0a6cff","#00a94f","#d21f26",  # 9 · Bas (bright/Lego)
-    bricks=((0.42,4.05,1.62,5.75,"#d21f26",2),(0.55,6.05,1.45,7.05,"#f6c018",2),(0.52,7.55,1.55,8.75,"#0a6cff",2)))
+    bricks=((2.04,4.05,3.24,5.75,"#d21f26",2),(2.17,6.05,3.07,7.05,"#f6c018",2),(2.14,7.55,3.17,8.75,"#0a6cff",2)))
 
 # --- 7 · 8 · 2 · INTERVIEW OFFICES: straight desk + iMac + 2 guest chairs + open shelf, no
 # credenza; themed. 7/8 are south-row (same transpose as JD/Bas); 2 is west-column (identity).
