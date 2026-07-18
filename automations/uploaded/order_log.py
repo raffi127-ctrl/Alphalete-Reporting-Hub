@@ -1197,6 +1197,7 @@ COLUMNS_TO_KEEP = [
     "sp.SPM Number",
     "Product Type (Broken Out)",
     "Package",
+    "spe.Phone",                    # the DEVICE sold on the line (wireless)
     "spe.Status",
     "spe.Install Date",
     "Activatoin Date (order log)",  # typo matches source data
@@ -1211,11 +1212,18 @@ FRIENDLY_HEADERS = [
     "SPM Number",
     "Product Type",
     "Package",
+    "Device",
     "Status",
     "Install Date",
     "Activation Date",
     "Tech Install",
 ]
+
+# Columns we KEEP if present but never REQUIRE — a view export that lacks one is
+# backfilled blank rather than treated as an empty/caption-only export. Device
+# (spe.Phone) is here so adding it can never blank a channel whose crosstab view
+# doesn't carry it (e.g. if Raf's custom view differs from ALLREPS).
+OPTIONAL_RAW_COLUMNS = {"spe.Phone"}
 
 STATUS_ORDER = [
     "Active",
@@ -1291,11 +1299,17 @@ def _load_and_clean(csv_path: Path) -> pd.DataFrame:
 
     # Belt-and-suspenders: if the export has a "Rep" header but is missing some
     # expected columns (another sparse-export shape), don't KeyError on the
-    # select — treat it as empty, same as the caption-only case above.
-    missing = [c for c in COLUMNS_TO_KEEP if c not in df.columns]
+    # select — treat it as empty, same as the caption-only case above. OPTIONAL
+    # columns (Device) don't count as missing: backfill them blank so a view
+    # that lacks one still produces a full order log instead of an empty frame.
+    missing = [c for c in COLUMNS_TO_KEEP
+               if c not in df.columns and c not in OPTIONAL_RAW_COLUMNS]
     if missing:
         print(f"  (export missing column(s) {missing} — treating as empty)")
         return pd.DataFrame(columns=FRIENDLY_HEADERS)
+    for opt in OPTIONAL_RAW_COLUMNS:
+        if opt not in df.columns:
+            df[opt] = ""
     df = df[COLUMNS_TO_KEEP].copy()
 
     for src_col in ("sp.Order Date (copy)", "spe.Install Date",
@@ -1344,6 +1358,214 @@ def _owner_file_suffix(owner_name: str) -> str:
         return ""
     safe = "".join(c for c in owner_name if c.isalnum() or c in " -_").strip()
     return f" ({safe})" if safe else ""
+
+
+# --------------------------------------------------------------------
+#  Per-rep weekly breakdown tabs (Raf's "new order log")
+#  For every rep in the (already owner-scoped) cleaned data, append:
+#    - one "<Rep> <wk>-<wk> Paid <Fri>" tab per Sun-Sat week (ACTIVE sales)
+#    - one "<Rep> P, D, C" tab (Pending / Disconnect / Cancel line items)
+#  Pay date = the Friday AFTER the Saturday week-end (work week Sun-Sat).
+#  Scopes itself automatically per channel because the frame is already
+#  filtered to one owner upstream.
+# --------------------------------------------------------------------
+# Columns shown on each per-rep tab (drop Rep — it's in the tab name — and the
+# noisier Customer Phone / Tech Install; keep it to the sale line detail).
+_REP_TAB_COLUMNS = [
+    "Order Date", "Customer Name", "SPM Number", "Product Type",
+    "Package", "Device", "Status", "Install Date", "Activation Date",
+]
+# A leading Code column (A/P/D/C) prefixes every section so the columns line up
+# top-to-bottom in the single rep tab and the legend applies throughout.
+_REP_FULL_HEADER = ["Code"] + _REP_TAB_COLUMNS
+_REP_NCOL = len(_REP_FULL_HEADER)
+_REP_TAB_DATE_COLS = {"Order Date", "Install Date", "Activation Date"}
+_INVALID_SHEET_CHARS = str.maketrans({c: " " for c in r":\/?*[]"})
+
+
+def _pdc_code(status) -> str | None:
+    """Active -> None (belongs in a week tab); else P/D/C for the pendings tab."""
+    s = str(status or "").strip()
+    if s == "Active":
+        return None
+    if s == "Cancelled":
+        return "C"
+    if s == "Disconnected":
+        return "D"
+    return "P"
+
+
+def _week_bounds(d: date):
+    """Sun-Sat week containing d -> (sunday, saturday, paid_friday)."""
+    start = d - timedelta(days=(d.weekday() + 1) % 7)
+    end = start + timedelta(days=6)
+    return start, end, end + timedelta(days=6)
+
+
+def _md(d: date) -> str:
+    return f"{d.month}.{d.day:02d}"
+
+
+def _rep_short(rep: str) -> str:
+    """First name + last initial, e.g. 'Ronnie Dufour' -> 'Ronnie D.'."""
+    parts = str(rep).split()
+    if not parts:
+        return "Rep"
+    return parts[0] if len(parts) == 1 else f"{parts[0]} {parts[-1][0]}."
+
+
+def _unique_sheet_title(base: str, used: set) -> str:
+    """Excel sheet titles: <=31 chars, no : \\ / ? * [ ], and unique."""
+    title = base.translate(_INVALID_SHEET_CHARS)[:31].rstrip()
+    if title not in used:
+        used.add(title)
+        return title
+    for n in range(2, 100):
+        tag = f" {n}"
+        title = (base.translate(_INVALID_SHEET_CHARS)[:31 - len(tag)].rstrip() + tag)
+        if title not in used:
+            used.add(title)
+            return title
+    used.add(base[:31])
+    return base[:31]
+
+
+def _eff_date(order, install, activ):
+    """Date that decides the pay week: activation, else install, else order."""
+    for v in (activ, install, order):
+        if v is None:
+            continue
+        try:
+            if pd.isna(v):          # covers NaT (pandas) and NaN, not plain dates
+                continue
+        except (TypeError, ValueError):
+            pass
+        return v.date() if hasattr(v, "date") else v
+    return None
+
+
+def _write_rep_row(ws, row_idx: int, values: list, border, center_v,
+                   bg: str, fc: str) -> None:
+    fill = PatternFill("solid", fgColor=bg)
+    base_font = Font(color=fc)
+    date_font = Font(color=fc, bold=True, size=13)   # dates stand out — reps read these
+    for col_idx, (header, value) in enumerate(values, start=1):
+        is_date = header in _REP_TAB_DATE_COLS
+        if not isinstance(value, str) and pd.isna(value):
+            value = None
+        elif is_date and hasattr(value, "to_pydatetime"):
+            value = value.to_pydatetime()
+        cell = ws.cell(row=row_idx, column=col_idx, value=value)
+        cell.fill, cell.alignment, cell.border = fill, center_v, border
+        cell.font = date_font if is_date else base_font
+        if is_date:
+            cell.number_format = "m/d/yyyy"
+
+
+def _append_rep_breakdown_tabs(wb, df: pd.DataFrame) -> int:
+    """Append ONE tab per rep: weeks stacked as sections (Active), then a
+    Pending/Disconnect/Cancel section. Returns the number of tabs added.
+
+    One tab per rep (not per rep-week) keeps the count sane for a big office
+    (~150 reps) and lets a rep open their single tab and see everything.
+    """
+    if df.empty or "Rep" not in df.columns:
+        return 0
+
+    border = _thin_border()
+    header_fill = PatternFill("solid", fgColor="434343")
+    header_font = Font(bold=True, color="FFFFFF")
+    week_fill = PatternFill("solid", fgColor="2563EB")
+    pend_fill = PatternFill("solid", fgColor="C55A11")
+    banner_font = Font(bold=True, color="FFFFFF", size=14)   # week/pay-date banner
+    legend_font = Font(bold=True, italic=True)
+    center_v = Alignment(vertical="center")
+    used = {ws.title for ws in wb.worksheets}
+    added = 0
+
+    def _banner(sh, r, text, fill, font):
+        cell = sh.cell(row=r, column=1, value=text)
+        cell.fill, cell.font, cell.alignment, cell.border = fill, font, center_v, border
+        sh.merge_cells(start_row=r, start_column=1, end_row=r, end_column=_REP_NCOL)
+
+    def _header(sh, r):
+        for c, h in enumerate(_REP_FULL_HEADER, start=1):
+            cell = sh.cell(row=r, column=c, value=h)
+            cell.font, cell.fill = header_font, header_fill
+            cell.alignment, cell.border = center_v, border
+
+    def _week_key(rec):
+        return _eff_date(rec["Order Date"], rec["Install Date"], rec["Activation Date"]) or date.min
+
+    for rep in df["Rep"].dropna().unique():
+        rep = str(rep).strip()
+        if not rep:
+            continue
+        sub = df[df["Rep"].astype(str).str.strip() == rep]
+
+        weeks: dict = {}
+        pdc: list = []
+        for row in sub.itertuples(index=False, name=None):
+            rec = dict(zip(FRIENDLY_HEADERS, row))
+            code = _pdc_code(rec["Status"])
+            if code is None:
+                eff = _eff_date(rec["Order Date"], rec["Install Date"], rec["Activation Date"])
+                if eff is None:
+                    continue
+                weeks.setdefault(_week_bounds(eff), []).append(rec)
+            else:
+                pdc.append((code, rec))
+        if not weeks and not pdc:
+            continue
+
+        sh = wb.create_sheet(_unique_sheet_title(rep, used))   # full name; tab per rep
+        banner_rows: set = set()
+        r = 1
+
+        # Week sections (Active), earliest first. A blank row between sections.
+        for (ws_, we_, paid) in sorted(weeks):
+            _banner(sh, r, f"Week {_md(ws_)} to {_md(we_)}  •  Paid Friday {_md(paid)}",
+                    week_fill, banner_font)
+            banner_rows.add(r); r += 1
+            _header(sh, r); r += 1
+            for rec in sorted(weeks[(ws_, we_, paid)], key=_week_key):
+                _write_rep_row(sh, r, [("Code", "A")] + [(h, rec[h]) for h in _REP_TAB_COLUMNS],
+                               border, center_v, "57BB8A", "000000")
+                r += 1
+            r += 2   # spacer between sections
+
+        # Pending / Disconnect / Cancel section — legend lives here, where the
+        # P/D/C codes actually apply (week sections are all Active).
+        if pdc:
+            _banner(sh, r, "Pending / Disconnect / Cancel", pend_fill, banner_font)
+            banner_rows.add(r); r += 1
+            _banner(sh, r, "Legend:  A = Active   P = Pending   D = Disconnect   C = Cancel",
+                    PatternFill("solid", fgColor="FFF2CC"), legend_font)
+            banner_rows.add(r); r += 1
+            _header(sh, r); r += 1
+            for code, rec in sorted(pdc, key=lambda x: (x[0], _week_key(x[1]))):
+                bg = STATUS_COLORS.get(str(rec["Status"]).strip(), "FFD666")
+                _write_rep_row(sh, r, [("Code", code)] + [(h, rec[h]) for h in _REP_TAB_COLUMNS],
+                               border, center_v, bg, "000000")
+                r += 1
+
+        _autosize_rep_tab(sh, banner_rows)
+        added += 1
+
+    return added
+
+
+def _autosize_rep_tab(ws, banner_rows: set) -> None:
+    widths: dict = {}
+    for row in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=_REP_NCOL):
+        for cell in row:
+            if cell.row in banner_rows or cell.value in (None, ""):
+                continue
+            length = 10 if isinstance(cell.value, (date, datetime)) else len(str(cell.value))
+            col = cell.column_letter
+            widths[col] = max(widths.get(col, 0), length)
+    for col, L in widths.items():
+        ws.column_dimensions[col].width = min(L + 4, 60)
 
 
 def csv_to_xlsx(csv_path: Path, output_dir: Path, name_suffix: str = "") -> Path:
@@ -1395,6 +1617,12 @@ def csv_to_xlsx(csv_path: Path, output_dir: Path, name_suffix: str = "") -> Path
 
     _autosize_columns(ws, df)
     ws.freeze_panes = "A2"
+
+    # Raf's "new order log": append per-rep weekly + P/D/C breakdown tabs. Scoped
+    # automatically per channel — df is already filtered to one owner upstream.
+    n_tabs = _append_rep_breakdown_tabs(wb, df)
+    if n_tabs:
+        print(f"  (added {n_tabs} per-rep breakdown tab(s))")
 
     # Resilient save: if today's file is still open in Excel, Windows locks it
     # and wb.save() raises PermissionError. Fall back to a timestamped name so
