@@ -563,6 +563,26 @@ def main() -> int:
                            + (f' --only "{_opt_missing[0]}"'
                               if len(_opt_missing) == 1 else ""))
                 _notes.append(_n)
+            # A Tableau source that fails to download leaves its metrics blank on
+            # EVERY tab — and the fill deliberately skips those cells rather than
+            # overwriting good data with blanks, so the hole is otherwise SILENT
+            # (that's how week-ending 07-12 lost every Metrics-sourced row until
+            # someone noticed by eye). Put it in the email with the refill command
+            # so the data can be chased same-day (Megan 2026-07-18).
+            _gaps = (opt_result or {}).get("gaps", [])
+            for _g in [g for g in _gaps if g.startswith("[download]")]:
+                _notes.append("⚠ " + _g
+                              + "  ·  FIX (refill OPT only): lucy rerun opt_phase")
+            # ICDs the fill couldn't find in a Tableau view — usually a name
+            # mismatch to fix on the ICD Aliases sheet, not a missing pull.
+            _nomatch = [g.split(" — ")[0].replace("[gap] ", "").strip()
+                        for g in _gaps
+                        if g.startswith("[gap] ") and "not in Tableau view" in g]
+            if _nomatch:
+                _notes.append(f"⚠ {len(_nomatch)} ICD(s) not found in a Tableau "
+                              "view (check spelling on the ICD Aliases sheet): "
+                              + ", ".join(_nomatch[:8])
+                              + (" …" if len(_nomatch) > 8 else ""))
             if _term_note:
                 _notes.append("⚠ " + _term_note)
             if _notes:
