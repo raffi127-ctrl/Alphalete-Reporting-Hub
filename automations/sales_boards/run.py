@@ -16,13 +16,14 @@ VA (posted Sat 7/18 -> "BOX Sales Board 7.17").
 Rendering lives in render.py — see its header for why we duplicate the tab and
 hide rows per campaign instead of cropping ranges (campaigns are NOT contiguous).
 
-SANDBOX-FIRST: defaults to the sandbox sheet; set SALES_BOARD_SHEET_ID to the
-real sheet only after sign-off. DRY-RUN by default — real posting needs --post.
+Reads the PROD sheet as of go-live (2026-07-18); set SALES_BOARD_SHEET_ID to the
+sandbox id to build against a copy. DRY-RUN by default — posting needs --post.
 
 Usage:
   python -m automations.sales_boards.run                  # dry-run, all 4
   python -m automations.sales_boards.run --program JE     # one program
-  python -m automations.sales_boards.run --post           # actually post
+  python -m automations.sales_boards.run --post           # post to the channel
+  python -m automations.sales_boards.run --post --dm U…   # post to a DM (test)
 """
 from __future__ import annotations
 
@@ -39,7 +40,9 @@ from automations.sales_boards import render as R
 
 SANDBOX_SHEET_ID = "15QzcyFqTzX9RYNJ2SvT_HOiyQsMU1v90wHjSUHA_cNc"   # re-copied 7/18
 PROD_SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"
-SHEET_ID = os.environ.get("SALES_BOARD_SHEET_ID", SANDBOX_SHEET_ID)
+# PROD by default as of go-live (Megan 2026-07-18). Set SALES_BOARD_SHEET_ID to
+# the sandbox id to build against a copy again.
+SHEET_ID = os.environ.get("SALES_BOARD_SHEET_ID", PROD_SHEET_ID)
 TAB = "Sales Board"
 TEMP_TAB = "_sb_render_tmp"          # ephemeral copy we create + delete
 
@@ -121,8 +124,10 @@ def _already_replied(client, channel: str, thread_ts: str, caption: str) -> bool
     return False
 
 
-def post_thread(imgs: dict, day, yday, dry_run: bool) -> list:
-    """Find-or-create today's parent, then post each board's images as a reply."""
+def post_thread(imgs: dict, day, yday, dry_run: bool, dm_user: str = "") -> list:
+    """Find-or-create today's parent, then post each board's images as a reply.
+    dm_user routes the whole thread into a DM instead — same code path, used to
+    prove the multi-image threaded upload before pointing it at the channel."""
     name, cid = _channel()
     tag = f"{yday.month}.{yday.day}"
     if dry_run:
@@ -132,6 +137,9 @@ def post_thread(imgs: dict, day, yday, dry_run: bool) -> list:
                               sorted(v)) for p, v in imgs.items() if v]}]
     from automations.shared import slack_metrics_post as smp
     client = smp._client()
+    if dm_user:
+        cid = client.conversations_open(users=dm_user)["channel"]["id"]
+        name = f"DM to {dm_user}"
     ts = find_thread_ts(client, cid, day)
     created = False
     if not ts:
@@ -160,6 +168,8 @@ def main(argv=None) -> int:
     ap.add_argument("--program", choices=PROGRAMS, help="just one program")
     ap.add_argument("--post", action="store_true",
                     help="ACTUALLY post to Slack (default dry-run)")
+    ap.add_argument("--dm", metavar="USER_ID",
+                    help="post the thread to a DM instead of the channel (test run)")
     args = ap.parse_args(argv)
 
     today = dt.date.today()
@@ -206,7 +216,7 @@ def main(argv=None) -> int:
             print(f"    ↳ {cap}  ({len(keys)} image(s): {', '.join(keys)})")
         return 0
     print("POSTING thread to Slack as Lucy:")
-    for r in post_thread(imgs, today, yday, dry_run=False):
+    for r in post_thread(imgs, today, yday, dry_run=False, dm_user=args.dm or ""):
         print(f"    {r}")
     return 0
 

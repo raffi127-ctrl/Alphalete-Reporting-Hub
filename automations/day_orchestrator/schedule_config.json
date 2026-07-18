@@ -140,7 +140,14 @@
       ],
       "base_args": [],
       "cadence": {
-        "weekdays": [0, 1, 2, 3, 4, 5],
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
         "not_before": "08:30"
       },
       "priority": "P3",
@@ -2356,6 +2363,47 @@
       "timeout_minutes": 15,
       "verify": null,
       "_off_scheduler_note": "on_scheduler:false → NEVER in the 4am batch. Manual handle only, so `lucy rerun metrics_shot_preview <args>` can capture the ATT TRACKER 2.1 Metrics view (Raf's loom 2026-07-16) and PREVIEW it via DM before it's wired into the office metrics. source_type tableau so chrome_guard runs first. base_args empty — pass everything through lucy rerun, e.g. `--owner \"Rashad Reed\" --dm U04G5HJBGFN` (filtered preview to Megan) or `--no-filter --dm U04G5HJBGFN` (all-teams). Only DMs/dry-runs until the filter caption + crop are approved; then it becomes the 12th metric in office_metrics.runner.metrics_for + daily_metrics."
+    },
+    "sales_boards": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Program Sales Boards -> #alphalete-gp-sales (VA-replacement Items 5-8). on_scheduler:false = NOT in the 4am batch; the real schedule is a STANDALONE LaunchAgent (com.alphalete.sales-boards, installed via `lucy rerun install_sales_boards_agent`) at 6:00am CST daily incl. weekends. Present here so `lucy rerun sales_boards` works. Duplicates the Sales Board tab, clears the VA's basic filter on the COPY, then per program hides non-campaign + terminated rows and renders (a) the weekly ranking and (b) the Highrollers cut for yesterday, posting all 8 images as one dated thread 'Vantura Production MM/DD/YYYY' AS LUCY. HOLDS (exit 75) if the gold WE cell isn't the week containing yesterday (matters on Mondays). DRY-RUN by default; add --post. `--post --dm <USER_ID>` routes the thread to a DM for testing. Runs on the MINI. Registered 2026-07-18.",
+      "display_name": "Sales Boards -> Slack (6:00am)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.sales_boards.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 20,
+      "verify": null
+    },
+    "install_sales_boards_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_sales_boards_agent` can install/refresh the STANDALONE com.alphalete.sales-boards LaunchAgent on the mini (6:00am CST daily, deploy/sales_boards.sh, --post). install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
+      "display_name": "Install Sales Boards agent (6:00am)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "sales-boards"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
     }
   },
   "read_only_standalone": {
