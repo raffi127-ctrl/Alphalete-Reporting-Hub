@@ -277,6 +277,13 @@ def scan(*, dry_run: bool = True, channel: str | None = None,
             "(or pass --channel / SARA_DOWN_CHANNEL_ID).")
     limit = limit or config.SCAN_LIMIT
 
+    # First real run on a fresh machine (no state file yet): BASELINE instead of
+    # sending. We mark every screenshot already in the channel as handled and
+    # email nothing — otherwise installing on the mini would blast Sara+ support
+    # for every pre-existing post (test posts included). Only posts made AFTER
+    # this baseline escalate. (dry-run / --test-to never baseline.)
+    baseline = (not _STATE.exists()) and (not dry_run) and (not test_to)
+
     cl = _client()
     msgs = cl.conversations_history(channel=channel, limit=limit).get("messages", [])
     state = _load_state()
@@ -298,6 +305,13 @@ def scan(*, dry_run: bool = True, channel: str | None = None,
         if config.APPROVED_POSTERS and poster not in config.APPROVED_POSTERS:
             actions.append({"ts": ts, "action": "ignored_unapproved",
                             "poster": poster})
+            continue
+
+        if baseline:
+            st = state.setdefault(ts, {})
+            st["sent"] = True
+            st["baselined"] = True     # pre-existing at go-live; not a real send
+            actions.append({"ts": ts, "action": "baselined"})
             continue
 
         when = _fmt_when(ts)
@@ -366,6 +380,12 @@ def scan(*, dry_run: bool = True, channel: str | None = None,
         act["sent"] = True
         actions.append(act)
 
+    # Persist the baseline even if the channel had zero screenshots, so this
+    # machine's NEXT run isn't treated as a first run (and start escalating).
+    if baseline:
+        state["_baselined"] = True
+        _save_state(state)
+
     return actions
 
 
@@ -407,9 +427,15 @@ def main(argv: list[str] | None = None) -> int:
     if not actions:
         print("No new Sara+ issue screenshots to escalate.")
         return 0
+    baselined = [a for a in actions if a["action"] == "baselined"]
+    if baselined:
+        print(f"BASELINE (first run on this machine): marked {len(baselined)} "
+              "existing screenshot(s) as seen — sent nothing. New posts from here "
+              "on will escalate.")
     for a in actions:
-        if a["action"] == "ignored_unapproved":
-            print(f"  ignored (not an approved poster): {a['poster']}  ts={a['ts']}")
+        if a["action"] in ("ignored_unapproved", "baselined"):
+            if a["action"] == "ignored_unapproved":
+                print(f"  ignored (not an approved poster): {a['poster']}  ts={a['ts']}")
         elif a.get("dry_run"):
             print(f"  WOULD escalate: @ {a['when']} -> "
                   f"To={a['to']} Cc={a['cc']}  [eml: {a['eml']}]")

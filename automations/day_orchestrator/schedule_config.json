@@ -330,6 +330,28 @@
         "type": "not_configured"
       }
     },
+    "install_sara_down_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_sara_down_agent` can install/refresh the STANDALONE com.alphalete.sara-down LaunchAgent on the mini, which polls #saraplus-issues every 5 min (StartInterval 300, 24/7) and emails support@saraplus.com the screenshot(s) any channel member posts (automations.sara_down.run) via deploy/sara_down_5min.sh. FIRST run on a fresh machine BASELINES existing posts (emails nothing); only NEW posts escalate. install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
+      "display_name": "Install Sara+ Issue agent (5-min)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "sara-down"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "install_keep_awake_agent": {
       "on_scheduler": true,
       "_note": "MANUAL-ONLY. `lucy rerun install_keep_awake_agent` installs the com.alphalete.keep-awake LaunchAgent on the mini (user-level, NO root) — runs `caffeinate -s` 24/7 so the mini never sleeps and launchd's 4am orchestrator isn't deferred to ~6am. The remote, no-sudo alternative to the pmset wake schedule (set_wake, which needs root the mini won't give). Diagnosed via morning_diag 2026-07-06.",
