@@ -52,6 +52,7 @@ _HUB_CARD = {
     "org_sales_board_email": "sales-board-screenshot-email",
     "board_compare": "org-sales-board-compare",
     "leaders_call": "leaders-call",
+    "bg_check_sync": "bg-check-sync",
     "residential_rep_count": "residential_rep_count",
     # Sara+ issue escalation. This one runs every 5 min around the clock, so it
     # publishes ONLY when it actually escalates an issue (not on every tick) —

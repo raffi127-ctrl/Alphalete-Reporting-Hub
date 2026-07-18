@@ -3321,6 +3321,72 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "bg-check-sync",
+        "name": "BG Check Sync (3× Daily)",
+        "creator": "Raf",
+        "emoji": "🪪",
+        "color": "#F59E0B",
+        "category": "📲 Ops",
+        "description": "Reads the Sterling/First Advantage background-check emails and updates the BG Status column on both D2D OBCL tabs, then posts a weekly new-starts status thread to #rafs-office-recruiting.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Reads the **First Advantage / Sterling** background-check emails "
+            "(raffi127 inbox, over IMAP) and updates **column K “BG Status”** "
+            "for that week's new starts on **both** `D2D OBCL` tabs — the "
+            "rolling weekly block and the dated tab — so a person is updated "
+            "everywhere they appear.\n\n"
+            "Then it posts/edits a weekly thread in **#rafs-office-recruiting**: "
+            "one parent per start-week and a **single reply that gets edited in "
+            "place** each run (so the thread never grows), grouping everyone into "
+            "Passed / Taken-Pending / Failed / Unperformable / Invited-not-taken.\n\n"
+            "WHEN IT RUNS\n"
+            "**8:00 AM, 11:30 AM and 4:00 PM Central** on the Mac mini (LUCY). "
+            "The **Monday 11:30** run is the important one — that's when the new "
+            "week's thread starts. It re-reads the sheet every run, so people "
+            "added the same day they start are picked up automatically.\n\n"
+            "SAFETY RULES\n"
+            "**“Passed” is only ever set by an explicit “Score PASS” email.** A "
+            "plain “background check is complete” (view-link only, no score) is "
+            "NOT treated as a pass — it stays Taken-Pending. Updates are "
+            "**forward-only**: it never downgrades a status or overwrites one a "
+            "human set by hand.\n\n"
+            "IF SOMEONE ISN'T UPDATING\n"
+            "The run flags **“sheet says Passed but no matching email”** — that's "
+            "almost always a name-spelling mismatch between the sheet and "
+            "Sterling. Compound surnames (sheet “Gomez” vs Sterling "
+            "“Gomez-Valadez”) are matched automatically and listed under "
+            "`[fuzzy-match]` in the log."
+        ),
+        "assignees": ["Lucy 1"],
+        # Own launchd timer, 3x a day — hide the DUE-TODAY + schedule pills and
+        # keep it out of the "due today / not completed" tallies (same as
+        # rc-autoread). Cadence lives in the breakdown.
+        "hide_schedule": True,
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "daily",
+            # Sortable START time; time_label shows the real cadence at a glance.
+            "time": "8:00 AM",
+            "time_label": "8am / 11:30am / 4pm CST",
+            "estimated_minutes": 1,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ BG statuses synced to both D2D OBCL tabs and the weekly Slack thread updated.",
+            "message_failed": "❌ Run failed. Check the log above — usually the Gmail app password (IMAP) or Lucy not being in #rafs-office-recruiting.",
+        },
+        "actions": [
+            {
+                "label": "Run Now",
+                "icon": "▶",
+                "primary": True,
+                "help": "Re-read the BG emails, update both tabs, and refresh the Slack thread.",
+                "module": "automations.bg_check_sync.run",
+                "args_fn": lambda: ["--post", "--since-days", "30"],
+            },
+        ],
+    },
+    {
         "id": "rc-autoread",
         # The name uses non-breaking spaces ( ) inside "RingCentral Auto-Read"
         # and "(Q 10 Min)" so the cadence wraps as one clean unit onto line 2 of

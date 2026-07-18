@@ -91,6 +91,16 @@ def main(argv=None) -> int:
     ap.add_argument("--post", action="store_true", help="actually post/edit Slack")
     args = ap.parse_args(argv)
 
+    # Tell the Hub we're running (yellow pill -> green on success). Never let a
+    # Hub-publish hiccup break the actual report.
+    hub_run_id = None
+    if not args.dry_run:
+        try:
+            from automations.day_orchestrator import hub_publish
+            hub_run_id = hub_publish.publish_running("bg_check_sync", "BG Check Sync")
+        except Exception as e:  # noqa: BLE001
+            print(f"[hub] publish_running skipped: {e}")
+
     sh = fill.open_by_key(SPREADSHEET_ID)
     rolling_vals = fill._retry(sh.worksheet(ROLLING_TAB).get_all_values)
     week = args.week or _default_week(rolling_vals)
@@ -158,6 +168,14 @@ def main(argv=None) -> int:
         print(f"\n[flags] {len(flags)} sheet-vs-email mismatches (no write):")
         for name, why in flags:
             print(f"  {name}: {why}")
+
+    if hub_run_id is not None:
+        try:
+            from automations.day_orchestrator import hub_publish
+            hub_publish.publish_done("bg_check_sync", "BG Check Sync",
+                                     status="success", run_id=hub_run_id)
+        except Exception as e:  # noqa: BLE001
+            print(f"[hub] publish_done skipped: {e}")
 
     print("\n=== done ===")
     return 0
