@@ -72,6 +72,28 @@ echo "[$(date)] Resume Pushing starting (extra args: ${*:-none})" >> "$LOG_FILE"
 ST=$?
 
 echo "[$(date)] Resume Pushing finished exit=$ST" >> "$LOG_FILE"
+
+# Report this standalone run to the Hub so the card + the Lucy 2 daily digest
+# reflect a REAL success/failure (a launchd report that never publishes leaves
+# the card grey, so a clean run looks identical to a silent miss).
+# VOLUME: this fires ~84x on a weekday. Publishing every pass would add ~2.5k
+# rows/month to Hub Activity and slow every read, so publish FAILURES always
+# (they need to surface immediately) but SUCCESS only on the day's first clean
+# pass — enough to prove "it ran and was healthy today". Skips never reach here
+# (the day/window gates exit above). Best-effort: never fail the run.
+_PUB_STAMP="$LOG_DIR/.resume-pushing-published-$(date +%Y-%m-%d)"
+case " $* " in
+  *" --dry-run "*) : ;;
+  *)
+    if [ "$ST" -ne 0 ]; then
+      "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('resume_pushing','Resume Pushing','failed')" >> "$LOG_FILE" 2>&1 || true
+    elif [ ! -f "$_PUB_STAMP" ]; then
+      "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('resume_pushing','Resume Pushing','success')" >> "$LOG_FILE" 2>&1 \
+        && touch "$_PUB_STAMP" || true
+    fi
+    ;;
+esac
+
 if [ "$ST" -ne 0 ]; then
   osascript -e "display notification \"Resume Pushing failed (exit $ST) — check the log; AppStream login may have expired or office 11580 wasn't reachable\" with title \"Resume Pushing\" sound name \"Sosumi\"" 2>/dev/null || true
 fi

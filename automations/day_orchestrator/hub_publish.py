@@ -103,6 +103,13 @@ _HUB_CARD = {
     # publish_done from deploy/stf_field_check_11pm.sh — map so the card pill
     # reflects the real run (else it stays grey like the captainship bonuses did).
     "stf_field_check": "stf-field-check",
+    # Resume Pushing: standalone Lucy 2 LaunchAgent firing every 10 min,
+    # 8am-10pm Mon-Fri. It was missing here, so ~84 clean runs a day looked
+    # identical to a silent miss (same bug as the captainship bonuses above).
+    # Its wrapper publishes FAILURES every time but SUCCESS only once a day —
+    # publishing all 84 would add ~2.5k rows/month to Hub Activity and slow
+    # every dashboard/digest read for one report's heartbeat.
+    "resume_pushing": "resume-pushing",
     # weather_alert: Slack-only, no Hub card → not published.
 }
 
