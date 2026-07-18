@@ -93,9 +93,22 @@ function go(n){i=(n+DATA.length)%DATA.length;const o=DATA[i];
  document.getElementById('count').textContent=(i+1)+' / '+DATA.length;
  document.querySelectorAll('.item').forEach(e=>e.classList.toggle('active',+e.dataset.i===i));
  const act=document.querySelector('.item.active');if(act)act.scrollIntoView({block:'nearest'});
+ // Remember where we are, so a reload after a rebuild comes back to this page
+ // instead of dumping you on the key map. Slug not index, so the memory survives
+ // rooms being added or reordered.
+ const sl=slug(o.title);
+ try{localStorage.setItem(MEMKEY,sl);}catch(e){}
+ if(location.hash.slice(1)!==sl){try{history.replaceState(null,'','#'+sl);}catch(e){}}
 }
+const MEMKEY='alphalete-studio-page';
+function slug(t){return (t||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');}
+function findPage(sl){return sl?DATA.findIndex(o=>slug(o.title)===sl):-1;}
 document.getElementById('prev').onclick=()=>go(i-1);
 document.getElementById('next').onclick=()=>go(i+1);
 window.addEventListener('keydown',e=>{if(e.key==='ArrowLeft')go(i-1);if(e.key==='ArrowRight')go(i+1);});
-go(0);
+// hash wins (shareable deep link), then the remembered page, then the key map
+window.addEventListener('hashchange',()=>{const j=findPage(location.hash.slice(1));if(j>=0&&j!==i)go(j);});
+let _start=findPage(location.hash.slice(1));
+if(_start<0){try{_start=findPage(localStorage.getItem(MEMKEY));}catch(e){_start=-1;}}
+go(_start>=0?_start:0);
 </script></body></html>
