@@ -41,6 +41,7 @@ import gspread
 from patchright.sync_api import sync_playwright
 
 from . import fetch_office, fill
+from . import metric_thresholds as _metric_thresholds
 from automations.shared import sheet_flags as _sheet_flags
 
 WORKSPACE = Path(__file__).resolve().parent.parent.parent
@@ -360,6 +361,14 @@ METRICS_SCRAPED: Dict[str, str] = {
     "Jep Orders":              "Jep New Internet Count (4 wk)",
     "0-30 Day Cancel Rate":    "0-30 day New Internet cancel rate",
     "30-60 activation rate %": "30-60 day New Internet activation rate",
+    # Raf 2026-07-17 (one-on-ones): AT&T is pressing on Auto-Bill-Pay and the
+    # 5-Gig tier, so both go on the report. Pulled from the METRICS crosstab —
+    # the tab Raf pointed at, and the only worksheet carrying '5 gig%'. Keeping
+    # the pair on one source keeps them consistent with each other. (Note the
+    # Metrics ABP reads a little different from the ATT crosstab's 'New Internet
+    # ABP Mix %' — same metric, different worksheet.)
+    "ABP%":                    "New Internet ABP Mix % (Metrics)",
+    "5 GIG %":                 "5 gig%",
 }
 # Metrics rows that get the '-%' no-data marker (like churn) when the Metrics
 # source LOADED but the cell is blank — a real "reported, no qualifying sales"
@@ -424,6 +433,9 @@ ALT_LABELS: Dict[str, List[str]] = {
     # Hammad Haque). Alias the '%' variant — surgical, no global %-strip (which
     # could collide with 'X' vs 'X %' wireless label pairs).
     "6+ days out scheduled": ["6+ days out scheduled %"],
+    # Raf's new Auto-Bill-Pay row may be labelled a few ways across tabs.
+    "ABP%": ["Auto Bill Pay %", "AutoBillPay %", "Auto Bill Pay", "ABP %",
+             "AutoBillPay%", "New Internet ABP Mix %"],
 }
 
 # Rows legitimately absent on specific tabs — never flagged as data gaps.
@@ -1569,6 +1581,13 @@ def parse_icd_summary(path: Path) -> Tuple[Dict[str, dict], dict]:
     # later — find it by header instead of assuming.
     owner_col = next((i for i, h in enumerate(headers)
                       if "icd owner name" in h), 0)
+    # REP-LEVEL crosstabs (the Metrics view) break the office down by rep and
+    # repeat the ICD's name on EVERY rep row, with the office's own subtotal on a
+    # 'Total' row. Plain last-row-wins would hand back whichever rep sorts last
+    # (Marcellus -> Tevin Mangum: 5 gig 0%, ABP blank) instead of the office
+    # number. When a Rep Name column exists, the 'Total' row is the office and a
+    # rep row must never overwrite it.
+    rep_col = next((i for i, h in enumerate(headers) if h == "rep name"), None)
 
     by_owner: Dict[str, dict] = {}
     national: dict = {}
@@ -1580,7 +1599,15 @@ def parse_icd_summary(path: Path) -> Tuple[Dict[str, dict], dict]:
         if owner.lower() in ("grand total", "total"):
             national = rec
         else:
-            by_owner[_norm(owner)] = {"owner": owner, "values": rec}
+            rep = (r[rep_col] if rep_col is not None and len(r) > rep_col
+                   else "").strip()
+            is_total = rep.lower() == "total"
+            key = _norm(owner)
+            prev = by_owner.get(key)
+            if prev is not None and prev.get("is_total") and not is_total:
+                continue   # already hold this office's Total row — keep it
+            by_owner[key] = {"owner": owner, "values": rec,
+                             "is_total": is_total}
     return by_owner, national
 
 
@@ -2060,6 +2087,26 @@ def fill_opt_for_tab(
         if red_cells:
             _sheet_flags.apply_red_font(ws, red_cells, retry=fill._retry)
             log.append(f"    [flag] {len(red_cells)} weird cell(s) marked red")
+        # Mix-rate thresholds (1 GIG % / ABP% / 5 GIG %) — re-read the tab and
+        # colour those rows from the values now in the cells. Deliberately after
+        # the write and off a FRESH read, and anchored on the column-B label, so
+        # it stays right no matter where the rows moved to (Megan 2026-07-17).
+        # Best-effort: a colouring failure never fails a good data write.
+        try:
+            # Replay this run's writes onto the grid we already hold rather than
+            # re-reading the tab — saves a full read per ICD on the weekly run.
+            post = [list(r) for r in grid]
+            for _a1, _v in updates:
+                _r, _c = gspread.utils.a1_to_rowcol(_a1)
+                while len(post) < _r:
+                    post.append([])
+                if len(post[_r - 1]) < _c:
+                    post[_r - 1].extend([""] * (_c - len(post[_r - 1])))
+                post[_r - 1][_c - 1] = str(_v)
+            log.extend(_metric_thresholds.recolor_for_tab(
+                sh, tab_name, ws=ws, grid=post))
+        except Exception as e:
+            log.append(f"    [warn] threshold recolour skipped: {e}")
     if missing:
         log.append(f"    [note] labels not found on tab: {', '.join(missing)}")
     # Data-gap line — which Tableau views this ICD wasn't found in, and which
