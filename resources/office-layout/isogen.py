@@ -236,11 +236,11 @@ box(69.7,3.5,70.3,14.5,FLR_Z+1.6,FLR_Z+3.4,"#bfe0ea",op=0.55,db=0.3)
 # --- 4 · RAF'S (50,0,70,18): backs the north wall, looks out the south entry ---
 _RD="#9e3b32"; _RW="#5c4033"
 _CO="#5a5f68"                                               # couch on the west wall, facing east
-box(50.20,6.20,53.10,11.50,FLR_Z,FLR_Z+0.50,shade(_CO,0.80))     # base plinth (ties it together)
-box(50.20,6.20,51.20,11.50,FLR_Z+0.50,FLR_Z+2.45,_CO)           # back panel
-box(50.20,6.20,53.10,6.85,FLR_Z+0.50,FLR_Z+1.65,shade(_CO,0.96)) # arm (north)
-box(50.20,10.85,53.10,11.50,FLR_Z+0.50,FLR_Z+1.65,shade(_CO,0.96)) # arm (south)
-box(51.20,6.85,53.10,10.85,FLR_Z+0.50,FLR_Z+1.10,shade(_CO,1.22)) # seat cushions
+box(50.20,4.70,53.10,10.00,FLR_Z,FLR_Z+0.50,shade(_CO,0.80))     # base plinth (ties it together)
+box(50.20,4.70,51.20,10.00,FLR_Z+0.50,FLR_Z+2.45,_CO)           # back panel
+box(50.20,4.70,53.10,5.35,FLR_Z+0.50,FLR_Z+1.65,shade(_CO,0.96)) # arm (north)
+box(50.20,9.35,53.10,10.00,FLR_Z+0.50,FLR_Z+1.65,shade(_CO,0.96)) # arm (south)
+box(51.20,5.35,53.10,9.35,FLR_Z+0.50,FLR_Z+1.10,shade(_CO,1.22)) # seat cushions
 # Wardrobe + fridge, both backed on wall 2 (building north) facing wall 4. Raf's own
 # north partition sorts at 60.0, so each is biased to a common target depth past it -
 # a flat db under-biases the wardrobe, which sits further west and so sorts lower.

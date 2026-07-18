@@ -960,14 +960,14 @@ def furnish(kind, R, key=None):
         R.box(5.70,0.72,7.20,2.88,FLR_Z+0.32,FLR_Z+0.40,"#22262e")          # belt
         # small couch on wall 1, sat down toward the wall 4 end
         _SOF="#5a5f68"
-        R.box(0.25,6.60,2.95,12.00,FLR_Z,FLR_Z+0.55,shade(_SOF,0.75))       # plinth
-        R.box(0.25,6.60,1.05,12.00,FLR_Z,FLR_Z+2.90,_SOF)                   # back panel
-        R.box(0.25,6.60,2.95,7.28,FLR_Z,FLR_Z+1.95,shade(_SOF,0.92))        # arm, wall-2 end
-        R.box(0.25,11.32,2.95,12.00,FLR_Z,FLR_Z+1.95,shade(_SOF,0.92))      # arm, far end
-        for _cy0,_cy1 in ((7.34,9.26),(9.34,11.26)):
+        R.box(0.25,5.10,2.95,10.50,FLR_Z,FLR_Z+0.55,shade(_SOF,0.75))       # plinth
+        R.box(0.25,5.10,1.05,10.50,FLR_Z,FLR_Z+2.90,_SOF)                   # back panel
+        R.box(0.25,5.10,2.95,5.78,FLR_Z,FLR_Z+1.95,shade(_SOF,0.92))        # arm, wall-2 end
+        R.box(0.25,9.82,2.95,10.50,FLR_Z,FLR_Z+1.95,shade(_SOF,0.92))       # arm, far end
+        for _cy0,_cy1 in ((5.84,7.76),(7.84,9.76)):
             R.box(1.08,_cy0,2.88,_cy1,FLR_Z+0.55,FLR_Z+1.42,shade(_SOF,1.16),db=0.5)  # seat
             R.box(1.00,_cy0,1.62,_cy1,FLR_Z+1.42,FLR_Z+2.78,shade(_SOF,1.06),db=0.4)  # back
-        for _py in (7.90,10.00):
+        for _py in (6.40,8.50):
             R.box(1.58,_py,2.16,_py+0.92,FLR_Z+1.42,FLR_Z+2.28,_RD,db=1.1)  # red throw pillows
         # Oval meeting table, seats 6. Drawn as a pair of stacked ellipse polygons — the box
         # primitive can't do a curve; the lower one peeking out reads as the table edge.
