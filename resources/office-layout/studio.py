@@ -911,9 +911,12 @@ def furnish(kind, R, key=None):
         # Five pieces in three stacks, spread evenly over the run left of the TV (which
         # starts at y13.70): equal 1'3" gaps at the corner, between the stacks, and before
         # the screen. Tops line up at z7.20 so the group reads level.
-        for _y0,_y1,_z0,_z1,_c in ((7.67,12.47,3.70,7.20,_RD),                     # anchor
-                                   (4.25,6.45,5.45,7.20,"#7a5333"),(4.25,6.45,3.70,5.05,"#a9b2bd"),
-                                   (1.22,3.02,5.40,7.20,"#c0533f"),(1.22,3.02,3.95,5.25,"#7a5333")):
+        # The wardrobe on wall 2 is 6'4" tall and runs to y2.10; in this projection it covers
+        # wall 1 up to about y2.40, so the collage starts past that. Three stacks, equal gaps
+        # from there to the TV at y13.70, tops aligned at z7.20.
+        for _y0,_y1,_z0,_z1,_c in ((8.29,13.09,3.70,7.20,_RD),                     # anchor
+                                   (5.46,7.66,5.45,7.20,"#7a5333"),(5.46,7.66,3.70,5.05,"#a9b2bd"),
+                                   (3.03,4.83,5.40,7.20,"#c0533f"),(3.03,4.83,3.95,5.25,"#7a5333")):
             _onW(_y0,_y1,0.17,_z0,_z1,shade(_c,0.68),nudge=0.06)
             _onW(_y0+0.07,_y1-0.07,0.21,_z0+0.07,_z1-0.07,_c,nudge=0.12)
         # TV on the wall 1 end nearest the sitting table
