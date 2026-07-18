@@ -882,9 +882,20 @@ def furnish(kind, R, key=None):
         # The wall-3 return is kept shallow on purpose: it sits nearer the camera than the
         # wall-2 leg, so a deep one would legitimately occlude most of the books beside it.
         _case(18.86,0.18,19.84,1.70,3,inset=0.11,cav=0.95)                  # leg along wall 3
-        R.box(0.22,0.20,1.92,1.90,FLR_Z,FLR_Z+3.40,_RD)                     # mini fridge, walls 1/2 corner
-        R.box(1.92,0.32,1.96,1.80,FLR_Z+1.55,FLR_Z+1.65,shade(_RD,0.7))     # fridge door split
-        R.box(1.84,1.82,1.98,1.94,FLR_Z+2.40,FLR_Z+2.90,"#c9ccd2")          # handle
+        # Wardrobe + fridge both back on to wall 2 at the left end, fronts facing wall 4,
+        # so they read as a pair rather than the fridge turning its door into the corner.
+        _WR="#6b5645"
+        R.box(0.22,0.20,3.10,2.10,FLR_Z,FLR_Z+6.40,_WR)                     # wardrobe carcass
+        R.box(0.16,0.14,3.16,2.16,FLR_Z+6.40,FLR_Z+6.58,shade(_WR,0.86))    # cornice
+        R.box(0.22,0.20,3.10,2.10,FLR_Z,FLR_Z+0.22,shade(_WR,0.62))         # plinth
+        for _d0,_d1 in ((0.32,1.62),(1.70,3.00)):                           # two doors, facing wall 4
+            R.box(_d0,2.10,_d1,2.14,FLR_Z+0.30,FLR_Z+6.20,shade(_WR,1.10))
+        for _hx in (1.50,1.74):                                             # handles either side of the split
+            R.box(_hx,2.14,_hx+0.08,2.22,FLR_Z+2.60,FLR_Z+3.60,"#c9ccd2")
+        R.box(3.35,0.20,5.05,1.90,FLR_Z,FLR_Z+3.40,_RD)                     # mini fridge, back on wall 2
+        R.box(3.35,1.90,5.05,1.94,FLR_Z+1.55,FLR_Z+1.65,shade(_RD,0.7))     # door split, across the front
+        for _z0,_z1 in ((0.55,1.40),(1.85,2.95)):                           # handles on the front face
+            R.box(4.78,1.94,4.88,2.02,FLR_Z+_z0,FLR_Z+_z1,"#c9ccd2")
         # decor collage behind the desk — one anchor piece with smaller ones clustered round it
         for _x0,_x1,_z0,_z1,_c in ((8.60,11.00,3.30,6.30,_RD),(11.30,12.70,4.95,6.30,"#7a5333"),
                                    (11.30,12.70,3.30,4.75,"#c0533f"),(13.00,14.60,5.20,6.30,"#a9b2bd"),
@@ -1383,7 +1394,7 @@ FURN_BY_KIND={
  'jd':'L-desk · 2 guest · TV · open shelving · credenza under the windows · glass front',
  'bas':'L-desk · iMac · 2 bright guest chairs · TV · Lego mosaic · brick builds · open shelving · glass front',
  'maud':'L-desk · 2 guest · iMac · TV · play pen · rocking chair · window wall',
- 'raf':'L-desk · iMac · walking pad · 2 guest · bookcase · mini fridge · 6-seat oval table',
+ 'raf':'L-desk · iMac · walking pad · 2 guest · bookcase · wardrobe · mini fridge · 6-seat oval table',
  'reception':'Built-in desk · dog area · glass upper · open walkway',
  'break':'Kitchenette · island · storage wall'}
 offices=[]

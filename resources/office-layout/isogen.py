@@ -241,7 +241,14 @@ box(50.20,2.40,51.20,7.70,FLR_Z+0.50,FLR_Z+2.45,_CO)            # back panel
 box(50.20,2.40,53.10,3.05,FLR_Z+0.50,FLR_Z+1.65,shade(_CO,0.96)) # arm (north)
 box(50.20,7.05,53.10,7.70,FLR_Z+0.50,FLR_Z+1.65,shade(_CO,0.96)) # arm (south)
 box(51.20,3.05,53.10,7.05,FLR_Z+0.50,FLR_Z+1.10,shade(_CO,1.22)) # seat cushions
-scred(50.2,0.2,51.9,1.8,_RD)                                # mini fridge, NW corner
+# Wardrobe + fridge, both backed on wall 2 (building north) facing wall 4. Raf's own
+# north partition sorts at 60.0, so each is biased to a common target depth past it -
+# a flat db under-biases the wardrobe, which sits further west and so sorts lower.
+_tgt=lambda b: 62.0-((b[0]+b[1]+b[2]+b[3])/2)
+_wb_=(50.22,0.20,53.10,2.10); _fb_=(53.35,0.20,55.05,1.90)
+box(*_wb_,FLR_Z,FLR_Z+3.20,"#6b5645",db=_tgt(_wb_))          # wardrobe (scaled to the dollhouse walls)
+box(53.35,2.10,55.05,2.14,FLR_Z+1.20,FLR_Z+1.28,shade(_RD,0.7),db=_tgt(_fb_)+0.1)
+box(*_fb_,FLR_Z,FLR_Z+2.60,_RD,db=_tgt(_fb_))                # mini fridge, door facing wall 4
 box(66.6,0.2,68.9,1.2,FLR_Z,FLR_Z+5.0,"#9aa2ac")            # corner bookcase, NE
 box(68.9,0.2,69.8,1.7,FLR_Z,FLR_Z+5.0,"#9aa2ac")
 box(64.6,1.2,66.4,3.4,FLR_Z,FLR_Z+0.4,"#3a4150")            # walking pad
@@ -262,7 +269,9 @@ for _cx,_cy,_cf in ((52.9,11.7,'E'),(59.5,11.7,'W'),(54.9,9.7,'S'),
     _bh=(_cx+_cy)<_od                                        # north/far side sits behind the table
     schair(_cx,_cy,_RD,s=1.15,h=1.7,face=_cf,db=(_od+0.32+(-0.6 if _bh else 0.6))-(_cx+_cy))
 # wall art on the north wall behind Raf (canvases), biased to draw in front of the wall
-for _ax,_ac in ((52.7,_RD),(54.5,"#7a5333"),(56.3,"#8a9099")):
+# Moved east to clear the new wardrobe/fridge run - and to match the room view, where
+# the wall-2 collage sits at studio x8.6-14.6, not hard against the corner.
+for _ax,_ac in ((58.6,_RD),(60.4,"#7a5333"),(62.2,"#8a9099")):
     box(_ax,0.10,_ax+1.4,0.24,FLR_Z+1.9,FLR_Z+3.25,"#3a3a3a",db=8.0)         # frame
     box(_ax+0.09,0.12,_ax+1.31,0.28,FLR_Z+2.0,FLR_Z+3.15,_ac,db=8.02)        # canvas
 
