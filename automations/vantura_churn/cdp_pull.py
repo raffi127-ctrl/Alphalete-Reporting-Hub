@@ -505,8 +505,11 @@ def _download_orderlog_direct(page, today, out, log) -> bool:
                 f"{max(odates) if odates else '?'} — fallback")
             return False
         out = Path(out)
+        # TAB-delimited on purpose: compute._load_grid's CSV branch parses
+        # with delimiter="\t" only (the dialog's native format) — a comma
+        # CSV collapses to one column and every caption goes "missing".
         with open(out, "w", newline="", encoding="utf-8") as f:
-            csv.writer(f).writerows(rows)
+            csv.writer(f, delimiter="\t").writerows(rows)
         log(f"[direct] saved {len(rows)-1} rows → {out} "
             f"({out.stat().st_size:,} bytes)")
         return True
