@@ -223,6 +223,9 @@ schair(58.8,7.5,_RD,s=1.15,h=1.6,face='N'); schair(62.2,7.5,_RD,s=1.15,h=1.6,fac
 _ocx,_ocy,_OT=56.2,11.7,"#7a5333"                           # oval table, 6 seats (north of the near wall)
 _ov=[(_ocx+2.6*math.cos(2*math.pi*i/40.0), _ocy+1.5*math.sin(2*math.pi*i/40.0)) for i in range(40)]
 _od=_ocx+_ocy
+# pedestal + base plate — the top is drawn as floating ellipses, so it needs a stand
+box(_ocx-0.85,_ocy-0.85,_ocx+0.85,_ocy+0.85,FLR_Z,FLR_Z+0.16,"#6b5a49")   # base plate
+box(_ocx-0.34,_ocy-0.34,_ocx+0.34,_ocy+0.34,FLR_Z,FLR_Z+2.20,"#6b5a49")   # pedestal column
 for _zz,_cc,_dd in ((2.2,shade(_OT,0.62),_od+0.30),(2.4,_OT,_od+0.32)):
     emit(_dd,_zz,'<polygon points="%s" fill="%s" stroke="%s" stroke-width="0.5"/>'
          % (pts([iso(_x,_y,FLR_Z+_zz) for _x,_y in _ov]), _cc, shade(_OT,0.5)))
