@@ -456,6 +456,65 @@ def _prime_orderlog(page, url, today, log):
     page.wait_for_timeout(4_000)
 
 
+def _download_orderlog_direct(page, today, out, log) -> bool:
+    """ORDER LOG via the direct authenticated export URL — no rendering, no
+    crosstab dialog, no date-widget UI. Proven 2026-07-18 (probe v2/v3):
+    GET .csv?:refresh=yes&Start%20Date=…&End%20Date=… returns the full
+    60-day window with every compute.COLS caption; the export un-pivots
+    measures ('Measure Names'), so keeping ONE measure yields exactly one
+    row per crosstab line (232,224/4 = 58,056, matched to the row).
+    Returns True when a validated CSV landed at `out`; False → caller falls
+    back to the legacy render-and-dialog path."""
+    import csv
+    import io
+    from automations.vantura_churn import compute
+    host = "https://us-east-1.online.tableau.com"
+    start = today - dt.timedelta(days=60)
+    url = (f"{host}/t/sci/views/ATTTRACKER-B2B/ORDERLOG.csv?:refresh=yes"
+           f"&Start%20Date={start.isoformat()}&End%20Date={today.isoformat()}")
+    try:
+        r = page.context.request.get(url, timeout=300_000)
+        body = r.body() or b""
+        if r.status != 200 or len(body) < 100_000:
+            log(f"[direct] status={r.status} bytes={len(body)} — fallback")
+            return False
+        rows = list(csv.reader(io.StringIO(body.decode("utf-8-sig",
+                                                       "replace"))))
+        hdr = [h.strip() for h in rows[0]]
+        missing = [c for c in compute.COLS.values() if c not in hdr]
+        if missing:
+            log(f"[direct] missing captions {missing} — fallback")
+            return False
+        if "Measure Names" in hdr:
+            mi = hdr.index("Measure Names")
+            data = [r for r in rows[1:] if len(r) > mi
+                    and r[mi] == "Unit Count"]
+            if not data:  # measure renamed upstream — keep the first one seen
+                first = next((r[mi] for r in rows[1:] if len(r) > mi), None)
+                data = [r for r in rows[1:] if len(r) > mi and r[mi] == first]
+                log(f"[direct] 'Unit Count' gone; deduped on {first!r}")
+            rows = rows[0:1] + data
+        odi = hdr.index(compute.COLS["order_date"])
+        odates = [d for r in rows[1:] if len(r) > odi
+                  for d in [compute._parse_date(r[odi])] if d]
+        if (len(rows) - 1 < 1000 or not odates
+                or max(odates) < today - dt.timedelta(days=3)
+                or min(odates) > start + dt.timedelta(days=5)):
+            log(f"[direct] validation failed: rows={len(rows)-1} span="
+                f"{min(odates) if odates else '?'}.."
+                f"{max(odates) if odates else '?'} — fallback")
+            return False
+        out = Path(out)
+        with open(out, "w", newline="", encoding="utf-8") as f:
+            csv.writer(f).writerows(rows)
+        log(f"[direct] saved {len(rows)-1} rows → {out} "
+            f"({out.stat().st_size:,} bytes)")
+        return True
+    except Exception as ex:  # noqa: BLE001 — any failure just falls back
+        log(f"[direct] ERR {str(ex)[:120]} — fallback")
+        return False
+
+
 def download_views(specs, today=None, verbose=True, log=print):
     """Download each (view_url, crosstab_sheet, out_path) via one real-Chrome
     CDP session. Auth seeded once (ownerville storage_state → Tableau SSO).
@@ -501,10 +560,14 @@ def download_views(specs, today=None, verbose=True, log=print):
             for url, sheet, out in specs:
                 out = Path(out)
                 if "ATTTRACKER-B2B/ORDERLOG" in url:
-                    # Prime the empty worksheet, then export from the CURRENT
-                    # primed state — skip_nav=True so we DON'T re-navigate
-                    # (which would reset the query back to empty). Re-prime
-                    # once on failure since the trigger is timing-sensitive.
+                    # FIRST: the direct authenticated export (no rendering —
+                    # see _download_orderlog_direct). Only when that fails,
+                    # fall back to priming the worksheet + crosstab dialog,
+                    # which depends on fragile remembered view state (it
+                    # rendered EMPTY on 7/15, 7 days on 7/18).
+                    if _download_orderlog_direct(page, today, out, log):
+                        results[str(out)] = out
+                        continue
                     last = None
                     for attempt in (1, 2):
                         log(f"[cdp] priming ORDER LOG {out.name} (try {attempt})…")
