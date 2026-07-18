@@ -134,17 +134,6 @@ def _download(url: str) -> bytes:
     return r.content
 
 
-def _poster_name(cl, user_id: str) -> str:
-    """A human name for the person who posted, for the 'Reported by' line."""
-    try:
-        p = cl.users_info(user=user_id)["user"]
-        prof = p.get("profile", {})
-        return (prof.get("real_name") or p.get("real_name")
-                or prof.get("display_name") or user_id)
-    except Exception:
-        return user_id
-
-
 def _fmt_when(ts: str) -> str:
     """Slack ts (epoch seconds) -> 'Jul 17, 2:04 PM'. Cross-platform: no %-I /
     %-d (both break on Windows); we strip a leading zero from the hour by hand.
@@ -208,15 +197,21 @@ def _polish(text: str) -> str:
 
 
 # ---- the email --------------------------------------------------------------
-def build_email(image_bytes: bytes, filename: str, *, reporter: str,
-                when: str, note: str, date: str) -> EmailMessage:
-    """Escalation email: plain, unmistakable, screenshot attached, leaders CC'd.
+def build_email(images: list[tuple[str, bytes]], *, note: str, date: str,
+                to_addrs: list[str] | None = None,
+                cc_addrs: list[str] | None = None) -> EmailMessage:
+    """Escalation email: plain, unmistakable, screenshot(s) attached, leaders CC'd.
+
+    images: list of (filename, bytes) — EVERY image is attached, so a post with
+    several photos comes through as one email with all of them.
+    to_addrs/cc_addrs default to config; pass explicit lists to override (the
+    --test-to path sends to one address with no CC).
 
     Note the CC header — nothing else in this repo CCs anyone, so this is the one
     bit of new email plumbing. smtplib.send_message picks recipients up from the
     To + Cc headers automatically, so setting Cc here puts them on the envelope."""
-    to_addrs = list(config.TO_ADDRS)
-    cc_addrs = list(config.CC_ADDRS)
+    to_addrs = list(to_addrs if to_addrs is not None else config.TO_ADDRS)
+    cc_addrs = list(cc_addrs if cc_addrs is not None else config.CC_ADDRS)
     if not to_addrs:
         raise SaraDownError(
             "No escalation recipients set. Fill config.TO_ADDRS with the Sara+ "
@@ -230,8 +225,6 @@ def build_email(image_bytes: bytes, filename: str, *, reporter: str,
     body = (
         "Hey team,\n\n"
         f"{issue}\n\n"
-        f"Screenshot attached. Reported by {reporter} at {when} CST — please "
-        "take a look and reply-all with status.\n\n"
         "Thanks,\n"
         "Alphalete Marketing"
     )
@@ -244,16 +237,20 @@ def build_email(image_bytes: bytes, filename: str, *, reporter: str,
         msg["Cc"] = ", ".join(cc_addrs)
     msg.set_content(body)
 
-    subtype = (filename.rsplit(".", 1)[-1].lower() if "." in filename else "png")
-    if subtype == "jpg":
-        subtype = "jpeg"
-    msg.add_attachment(image_bytes, maintype="image", subtype=subtype,
-                       filename=filename)
+    for filename, data in images:
+        subtype = (filename.rsplit(".", 1)[-1].lower() if "." in filename else "png")
+        if subtype == "jpg":
+            subtype = "jpeg"
+        msg.add_attachment(data, maintype="image", subtype=subtype,
+                           filename=filename)
     return msg
 
 
 def _send(msg: EmailMessage) -> None:
-    ctx = ssl.create_default_context()
+    # Use the certifi CA bundle (the stock context can't find a local issuer on
+    # the mini / python.org builds — same fix as shared/hub_notify_email.py).
+    import certifi
+    ctx = ssl.create_default_context(cafile=certifi.where())
     try:
         with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ctx) as s:
             s.login(FROM_ADDR, app_password())
@@ -266,14 +263,18 @@ def _send(msg: EmailMessage) -> None:
 
 # ---- the polled processor ---------------------------------------------------
 def scan(*, dry_run: bool = True, channel: str | None = None,
-         limit: int | None = None) -> list[dict]:
-    """Walk recent #sara-down messages; escalate the new, approved ones.
-    Returns a list of actions taken/proposed (one dict per screenshot)."""
+         limit: int | None = None, test_to: str | None = None) -> list[dict]:
+    """Walk recent #saraplus-issues messages; escalate the new ones.
+    Returns a list of actions taken/proposed (one dict per screenshot).
+
+    test_to: send the email to THIS address only (no CC, never support@saraplus),
+    and post a clearly-labelled TEST reply in the thread — the safe live dry-run
+    before pointing it at Sara+ support."""
     channel = channel or config.CHANNEL_ID
     if not channel:
         raise SaraDownError(
-            "No channel to watch. Create #sara-down, add the Lucy bot, and set "
-            "config.CHANNEL_ID (or pass --channel / SARA_DOWN_CHANNEL_ID).")
+            "No channel to watch. Set config.CHANNEL_ID to #saraplus-issues "
+            "(or pass --channel / SARA_DOWN_CHANNEL_ID).")
     limit = limit or config.SCAN_LIMIT
 
     cl = _client()
@@ -299,22 +300,33 @@ def scan(*, dry_run: bool = True, channel: str | None = None,
                             "poster": poster})
             continue
 
-        reporter = _poster_name(cl, poster)
         when = _fmt_when(ts)
         date = _fmt_date(ts)
         # The Slack caption IS the context for support. Clean up its spelling/
         # grammar before it goes out (falls back to the raw text if the pass fails).
         note = _polish(m.get("text", ""))
-        img = imgs[0]                    # first image on the post
-        filename = img.get("name") or "sara-plus-issue.png"
+        # Download EVERY image on the post so a multi-photo upload comes through
+        # as one email with all of them attached.
+        images: list[tuple[str, bytes]] = []
+        for i, f in enumerate(imgs):
+            fn = f.get("name") or (
+                f"sara-plus-issue-{i + 1}.png" if len(imgs) > 1
+                else "sara-plus-issue.png")
+            images.append((fn, _download(f["url_private"])))
 
-        act = {"ts": ts, "action": "escalate", "reporter": reporter,
-               "when": when, "to": list(config.TO_ADDRS),
-               "cc": list(config.CC_ADDRS), "file": filename}
+        # Effective recipients: a test run emails only test_to (no CC, never the
+        # vendor); a real run uses the configured To + CC.
+        if test_to:
+            eff_to, eff_cc = [test_to], []
+        else:
+            eff_to, eff_cc = list(config.TO_ADDRS), list(config.CC_ADDRS)
 
-        image_bytes = _download(img["url_private"])
-        msg = build_email(image_bytes, filename, reporter=reporter,
-                          when=when, note=note, date=date)
+        act = {"ts": ts, "action": "escalate", "when": when,
+               "to": eff_to, "cc": eff_cc, "test": bool(test_to),
+               "files": [fn for fn, _ in images]}
+
+        msg = build_email(images, note=note, date=date,
+                          to_addrs=eff_to, cc_addrs=eff_cc)
 
         if dry_run:
             eml = Path(tempfile.gettempdir()) / f"sara_down_{ts.replace('.', '_')}.eml"
@@ -328,19 +340,27 @@ def scan(*, dry_run: bool = True, channel: str | None = None,
         # Mark handled BEFORE the (best-effort) Slack ack, so a failed reaction
         # or thread reply can never cause a re-send on the next tick.
         state.setdefault(ts, {})["sent"] = True
-        state[ts]["to"] = list(config.TO_ADDRS)
+        state[ts]["to"] = eff_to
+        if test_to:
+            state[ts]["test"] = True
         _save_state(state)
         # Reply IN THE THREAD of the posted screenshot so whoever reported it
         # sees it's been handled — the email is out, no need to do anything else.
-        cc_note = (f" (CC: {', '.join(config.CC_ADDRS)})" if config.CC_ADDRS else "")
+        if test_to:
+            react, reply = "test_tube", (
+                ":test_tube: *TEST — Sara+ escalation bot dry run.*\n"
+                f"A test email was sent to {test_to} only (NOT Sara+ support, no "
+                "CC). Verifying the flow works; nothing went to the vendor.")
+        else:
+            cc_note = (f" (CC: {', '.join(eff_cc)})" if eff_cc else "")
+            react, reply = "white_check_mark", (
+                ":white_check_mark: *Done — escalation email sent.*\n"
+                f"Emailed Sara+ support ({', '.join(eff_to)}){cc_note} at {when} "
+                "CST with your screenshot attached. Reply-all on that email to "
+                "add more detail.")
         try:
-            cl.reactions_add(channel=channel, timestamp=ts, name="white_check_mark")
-            cl.chat_postMessage(
-                channel=channel, thread_ts=ts,
-                text=(":white_check_mark: *Done — escalation email sent.*\n"
-                      f"Emailed Sara+ support ({', '.join(config.TO_ADDRS)})"
-                      f"{cc_note} at {when} CST with your screenshot attached. "
-                      "Reply-all on that email to add more detail."))
+            cl.reactions_add(channel=channel, timestamp=ts, name=react)
+            cl.chat_postMessage(channel=channel, thread_ts=ts, text=reply)
         except Exception:
             pass
         act["sent"] = True
@@ -366,6 +386,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="how many recent messages to scan")
     ap.add_argument("--whois", metavar="EMAIL_OR_NAME", default=None,
                     help="print a Slack user id and exit (to fill APPROVED_POSTERS)")
+    ap.add_argument("--test-to", metavar="EMAIL", default=None,
+                    help="LIVE test: email only this address (no CC, not the "
+                         "vendor) and post a TEST reply in the thread")
     args = ap.parse_args(argv)
 
     if args.whois:
@@ -376,7 +399,8 @@ def main(argv: list[str] | None = None) -> int:
         print("Another sara_down run is active — skipping this tick.")
         return 0
     try:
-        actions = scan(dry_run=args.dry_run, channel=args.channel, limit=args.limit)
+        actions = scan(dry_run=args.dry_run, channel=args.channel,
+                       limit=args.limit, test_to=args.test_to)
     finally:
         release_lock()
 
@@ -387,10 +411,13 @@ def main(argv: list[str] | None = None) -> int:
         if a["action"] == "ignored_unapproved":
             print(f"  ignored (not an approved poster): {a['poster']}  ts={a['ts']}")
         elif a.get("dry_run"):
-            print(f"  WOULD escalate: {a['reporter']} @ {a['when']} -> "
+            print(f"  WOULD escalate: @ {a['when']} -> "
                   f"To={a['to']} Cc={a['cc']}  [eml: {a['eml']}]")
+        elif a.get("test"):
+            print(f"  TEST SENT: @ {a['when']} -> To={a['to']} "
+                  "(test only, no CC, not the vendor)")
         else:
-            print(f"  ESCALATED: {a['reporter']} @ {a['when']} -> To={a['to']}")
+            print(f"  ESCALATED: @ {a['when']} -> To={a['to']}")
     return 0
 
 

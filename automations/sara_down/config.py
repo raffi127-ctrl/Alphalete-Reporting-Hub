@@ -47,8 +47,8 @@ CC_ADDRS: tuple[str, ...] = (
 # {reporter}/{when} fill in the body per-message.
 SUBJECT = "Sara+ Issue"
 # Used when the reporter posts a bare screenshot with no note.
-DEFAULT_NOTE = ("We're seeing an issue with Sara+ in the field (screenshot "
-                "below). Can we look into it?")
+DEFAULT_NOTE = ("We're seeing an issue with Sara+ in the field (see attached). "
+                "Can we look into it?")
 
 # How many recent channel messages to scan each run. 20 is plenty at a 5-min
 # cadence; a burst of reports during a real outage still fits.
