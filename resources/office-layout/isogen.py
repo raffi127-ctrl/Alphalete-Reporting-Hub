@@ -241,8 +241,8 @@ for _cx,_cy,_cf in ((52.9,11.7,'E'),(59.5,11.7,'W'),(54.9,9.7,'S'),
     schair(_cx,_cy,_RD,s=1.15,h=1.7,face=_cf,db=(_od+0.32+(-0.6 if _bh else 0.6))-(_cx+_cy))
 # wall art on the north wall behind Raf (canvases), biased to draw in front of the wall
 for _ax,_ac in ((52.7,_RD),(54.5,"#7a5333"),(56.3,"#8a9099")):
-    box(_ax,0.10,_ax+1.4,0.24,FLR_Z+1.9,FLR_Z+3.25,"#3a3a3a",db=3.0)         # frame
-    box(_ax+0.09,0.12,_ax+1.31,0.28,FLR_Z+2.0,FLR_Z+3.15,_ac,db=3.02)        # canvas
+    box(_ax,0.10,_ax+1.4,0.24,FLR_Z+1.9,FLR_Z+3.25,"#3a3a3a",db=8.0)         # frame
+    box(_ax+0.09,0.12,_ax+1.31,0.28,FLR_Z+2.0,FLR_Z+3.15,_ac,db=8.02)        # canvas
 
 # --- 3 · MAUD'S (0,47,11,64): exterior glass south, entry east, walls 1/2 solid.
 # Her studio frame IS the building's frame here, so this is her actual layout mapped
@@ -259,7 +259,10 @@ box(_bk0x,_bk0y,_bk1x,_bk1y,FLR_Z,FLR_Z+3.1,"#6b5a49",db=_BKD)                  
 for _sz in (0.75,1.50,2.25,3.00):                                                # shelf boards
     box(_bk0x,_bk0y+0.06,_bk1x+0.05,_bk1y-0.06,FLR_Z+_sz-0.09,FLR_Z+_sz,"#a98d66",db=_BKD+0.05)
 for _bz,_bc in ((0.10,"#8d5b4c"),(0.85,"#4a6b7c"),(1.60,"#7c6a92"),(2.35,"#c08a3e")):
-    box(_bk0x+0.10,_bk0y+0.35,_bk1x-0.06,_bk0y+1.35,FLR_Z+_bz,FLR_Z+_bz+0.62,_bc,db=_BKD+0.10)  # books
+    # Target an absolute depth rather than +db: the books are shorter in y than the shelf
+    # boards, so a shared offset leaves the boards sorting higher and covering them.
+    _bd=58.0-((_bk0x+0.10)+(_bk0y+0.35)+(_bk1x+0.10)+(_bk0y+1.35))/2
+    box(_bk0x+0.10,_bk0y+0.35,_bk1x+0.10,_bk0y+1.35,FLR_Z+_bz,FLR_Z+_bz+0.62,_bc,db=_bd)  # books
 sdesk(_mx(4.50),_my(4.00),_mx(6.70),_my(9.20),_MD)                    # L-desk main
 sdesk(_mx(2.50),_my(4.00),_mx(4.50),_my(6.00),_MD)                    # return
 schair(_mx(3.50),_my(7.20),_MN)                                       # Maud, facing wall 3 (east)
@@ -270,7 +273,7 @@ box(_pp0x,_pp0y,_pp1x,_pp1y,FLR_Z,FLR_Z+0.12,shade(_PP,1.05))                   
 for _rr in ((_pp0x,_pp0y,_pp1x,_pp0y+0.20),(_pp0x,_pp1y-0.20,_pp1x,_pp1y),
             (_pp0x,_pp0y,_pp0x+0.20,_pp1y),(_pp1x-0.20,_pp0y,_pp1x,_pp1y)):
     box(_rr[0],_rr[1],_rr[2],_rr[3],FLR_Z,FLR_Z+1.10,_PP)                        # rails
-box(_pp0x+0.8,_pp0y+0.9,_pp0x+1.5,_pp0y+1.6,FLR_Z+0.12,FLR_Z+0.95,"#f2c14e")     # a toy peeking over
+box(_pp0x+0.8,_pp0y+0.9,_pp0x+1.5,_pp0y+1.6,FLR_Z+0.12,FLR_Z+1.55,"#f2c14e",db=2.0)  # a toy peeking over
 schair(_mx(6.60),_my(13.00),"#8a6240",s=1.6,h=2.6,face='N')          # rocking chair, faces the room
 
 # --- 5 · TWADDLE'S and 6 · MEGAN'S: the two east-column rooms. Both studio frames are
@@ -323,7 +326,7 @@ def _south_office(X0,X1,sd,cred,desk,chair,g0,g1,book,bricks=()):
         _cym=(by0+by1)/2
         for _st in range(bn):
             _sxm=bx0+(bx1-bx0)*(_st+0.5)/bn
-            box(_sxm-0.10,_cym-0.10,_sxm+0.10,_cym+0.10,FLR_Z+3.2,FLR_Z+3.36,shade(bc,1.12))
+            box(_sxm-0.10,_cym-0.10,_sxm+0.10,_cym+0.10,FLR_Z+3.2,FLR_Z+3.36,shade(bc,1.12),db=4.0)
 _south_office(37.625,46.5,13.5,"#8a9099","#6f6a63","#2b3a52","#2b3a52","#2b3a52","#7d8894")   # 10 · JD (navy/grey)
 _south_office(28.75,37.625,10.0,"#6f685c","#4e5766","#d21f26","#0a6cff","#00a94f","#d21f26",  # 9 · Bas (bright/Lego)
     bricks=((2.04,4.05,3.24,5.75,"#d21f26",2),(2.17,6.05,3.07,7.05,"#f6c018",2),(2.14,7.55,3.17,8.75,"#0a6cff",2)))
@@ -361,8 +364,8 @@ tv(18.0,97.0,'N',db=2.6)              # 5 · Twaddle (north wall; extra bias to 
 tv(50.0,11.5,'W')                      # 4 · Raf (TV on the west wall toward the sitting table)
 for _mgx in (95.7,98.3):              # 6 · Megan — a 2x2 array of FOUR distinct screens (north wall y29)
     for _mgz in (1.55,2.75):
-        box(_mgx-0.55,29.26,_mgx+0.55,29.42,FLR_Z+_mgz-0.36,FLR_Z+_mgz+0.36,"#454b54",db=4.7)   # bezel
-        box(_mgx-0.48,29.28,_mgx+0.48,29.44,FLR_Z+_mgz-0.28,FLR_Z+_mgz+0.28,"#20252b",db=4.71) # screen
+        box(_mgx-0.55,29.26,_mgx+0.55,29.42,FLR_Z+_mgz-0.36,FLR_Z+_mgz+0.36,"#454b54",db=15.0)  # bezel
+        box(_mgx-0.48,29.28,_mgx+0.48,29.44,FLR_Z+_mgz-0.28,FLR_Z+_mgz+0.28,"#20252b",db=15.01) # screen
 tv(0.0,87.0,'N',w=6.0)                # 13 · conference (north wall, y0)
 tv(0.0,27.5,'W',w=5.0,db=2.2)           # 1 · training screen on wall 1 (db clears the perimeter wall)
 tv(64.25,58.0,'E')                    # 11 · training screen (east wall; hidden behind the near wall)
