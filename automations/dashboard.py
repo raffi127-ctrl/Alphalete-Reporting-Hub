@@ -3387,7 +3387,7 @@ AUTOMATED_REPORTS = [
         "self_scheduled": True,
         "schedule": {
             "frequency": "weekly",
-            "day": "Friday",
+            "weekdays": [4],   # Friday (Mon=0 … Fri=4) — surfaces on Friday's tile
             "time": "10:00 AM",
             "estimated_minutes": 2,
         },
