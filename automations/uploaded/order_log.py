@@ -1737,7 +1737,7 @@ def _post_order_log(xlsx_path: Path, rep_png: "Optional[Path]", *,
         else:
             try:
                 result = post_reply_with_file(
-                    xlsx_path, comment="📋 Order Log",
+                    xlsx_path, comment="📋 Order Log (*NEW* - Track your paycheck)",
                     react_emoji="clipboard", file_name=slack_filename)
                 print(f"  ✓ Slack: posted Order Log (file={result.get('file')})")
             except SlackPostError as e:
