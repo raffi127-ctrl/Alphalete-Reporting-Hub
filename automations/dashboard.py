@@ -2021,8 +2021,8 @@ AUTOMATED_REPORTS = [
             "**•** Pulls that same day's **Time Tracker** (ownerville, Raf's "
             "view) and reads each rep's **First Knock** and **Last Knock**.\n"
             "**•** Worked time = Last Knock − First Knock. If it's **under "
-            "3:00** (or the rep has **no knocks** — never showed), the cell is "
-            "changed from **STF** to **X**.\n"
+            "3 hours** (or the rep has **no knocks** — never showed), the cell "
+            "is changed from **STF** to **X**.\n"
             "**•** Only ever overwrites a cell that still says STF, and if a "
             "rep can't be found in Time Tracker it flags the closest name so a "
             "spelling miss can't wrongly mark someone X.\n\n"
@@ -2052,7 +2052,7 @@ AUTOMATED_REPORTS = [
         },
         "checklist": [],
         "post_run": {
-            "message_success": "✅ STF Field Check done — any STF rep who worked under 3h (or never showed) was switched to X on the board.",
+            "message_success": "✅ STF Field Check done — any STF rep who worked under 3 hours (or never showed) was switched to X on the board.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
         },
         "actions": [
@@ -2060,7 +2060,7 @@ AUTOMATED_REPORTS = [
                 "label": "Run Now",
                 "icon": "▶",
                 "primary": True,
-                "help": "For today: flips STF→X on the Sales Board for any rep who worked under 3h or never showed. Writes to the board.",
+                "help": "For today: flips STF→X on the Sales Board for any rep who worked under 3 hours or never showed. Writes to the board.",
                 "module": "automations.stf_field_check.run",
                 "args_fn": lambda: ["--write"],
             },
