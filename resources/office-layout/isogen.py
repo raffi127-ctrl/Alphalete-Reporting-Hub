@@ -203,7 +203,7 @@ box(68.9,0.2,69.8,1.7,FLR_Z,FLR_Z+5.0,"#9aa2ac")
 box(64.6,1.2,66.4,3.4,FLR_Z,FLR_Z+0.4,"#3a4150")            # walking pad
 sdesk(57.2,4.7,64.2,6.9,_RW); sdesk(62.0,2.5,64.2,4.7,_RW)  # L-desk + return
 schair(60.2,3.5,_RD)                                        # Raf
-schair(58.8,8.3,_RD); schair(62.2,8.3,_RD)                  # guests
+schair(58.8,8.3,_RD,face='N'); schair(62.2,8.3,_RD,face='N')  # guests, facing the desk
 _ocx,_ocy,_OT=56.2,13.6,"#7a5333"                           # oval table, 6 seats
 _ov=[(_ocx+2.6*math.cos(2*math.pi*i/40.0), _ocy+1.5*math.sin(2*math.pi*i/40.0)) for i in range(40)]
 _od=_ocx+_ocy
@@ -225,7 +225,13 @@ sdesk(_mx(4.50),_my(4.00),_mx(6.70),_my(9.20),_MD)                    # L-desk m
 sdesk(_mx(2.50),_my(4.00),_mx(4.50),_my(6.00),_MD)                    # return
 schair(_mx(3.50),_my(7.20),_MN)                                       # Maud, facing wall 3 (east)
 schair(_mx(8.10),_my(5.60),_MG2); schair(_mx(8.10),_my(8.20),_MG2)    # two across the desk
-box(_mx(0.40),_my(11.20),_mx(4.40),_my(14.80),FLR_Z,FLR_Z+2.2,"#f0e4e6")  # play pen, down by the window
+# baby play pen — low open rail enclosure (soft mat + a toy), not a solid box
+_pp0x,_pp0y=_mx(0.40),_my(11.20); _pp1x,_pp1y=_mx(4.40),_my(14.80); _PP="#f0e4e6"
+box(_pp0x,_pp0y,_pp1x,_pp1y,FLR_Z,FLR_Z+0.12,shade(_PP,1.05))                   # soft mat
+for _rr in ((_pp0x,_pp0y,_pp1x,_pp0y+0.20),(_pp0x,_pp1y-0.20,_pp1x,_pp1y),
+            (_pp0x,_pp0y,_pp0x+0.20,_pp1y),(_pp1x-0.20,_pp0y,_pp1x,_pp1y)):
+    box(_rr[0],_rr[1],_rr[2],_rr[3],FLR_Z,FLR_Z+1.10,_PP)                        # rails
+box(_pp0x+0.8,_pp0y+0.9,_pp0x+1.5,_pp0y+1.6,FLR_Z+0.12,FLR_Z+0.95,"#f2c14e")     # a toy peeking over
 schair(_mx(6.60),_my(13.00),"#8a6240",s=1.6,h=2.6)                    # rocking chair
 
 # --- 5 · TWADDLE'S and 6 · MEGAN'S: the two east-column rooms. Both studio frames are
