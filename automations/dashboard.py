@@ -3358,7 +3358,7 @@ AUTOMATED_REPORTS = [
         # Two destination channels; tile appends "· 10:00 AM CST".
         "name": "PNL for the Office → #top-leaders + #alphalete-lvl1-chat",
         "creator": "Megan",
-        "emoji": "💰",
+        "emoji": "📸",
         "color": "#16A34A",
         "category": "📊 Metrics",
         "description": "Posts the weekly office P&L summary (Total Loss – Reps, Total Loss – Other, Total Profit, Gross Profit) to #top-leaders-alphalete-org and #alphalete-lvl1-chat as Lucy, for the previous fully completed week.",
