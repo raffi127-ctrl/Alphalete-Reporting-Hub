@@ -42,9 +42,16 @@ export PYTHONPATH="$(pwd)"
 LOG_FILE="$LOG_DIR/car-rides-cleanup-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] car-rides cleanup starting (extra args: ${*:-none})" > "$LOG_FILE"
 
-# DRY-RUN by default (no mode flag). Append --live here only after the dry-run
-# plan is log-verified on Lucy 2. Extra args pass straight through.
-"$VENV_PY" -u -m automations.car_rides.run "$@" >> "$LOG_FILE" 2>&1
+# LIVE on the schedule (Carlos 2026-07-18: the cleanup should be applying, not
+# just planning). --live is added ONLY when no mode flag was passed, because
+# --live/--dry-run/--probe are mutually exclusive in the CLI — so a manual
+#   bash deploy/car_rides_cleanup.sh --dry-run
+# still previews without editing, and --probe still works.
+MODE="--live"
+for a in "$@"; do
+  case "$a" in --live|--dry-run|--probe) MODE=""; break;; esac
+done
+"$VENV_PY" -u -m automations.car_rides.run $MODE "$@" >> "$LOG_FILE" 2>&1
 ST=$?
 
 echo "[$(date)] car-rides cleanup finished exit=$ST" >> "$LOG_FILE"
