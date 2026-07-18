@@ -1592,8 +1592,19 @@ def _autosize_rep_tab(ws, banner_rows: set) -> None:
         ws.column_dimensions[col].width = _ol_width(L)
 
 
+# Set by csv_to_xlsx when the per-rep breakdown tabs failed to build. The .xlsx
+# still posts (base tab only); main() reads this to exit non-zero. Module-level
+# rather than a return value so csv_to_xlsx's signature stays Path-returning for
+# the Hub card and the standalone callers.
+_TAB_ERROR: Optional[str] = None
+
+
 def csv_to_xlsx(csv_path: Path, output_dir: Path, name_suffix: str = "") -> Path:
-    """Build the cleaned, color-coded .xlsx ready for Slack."""
+    """Build the cleaned, color-coded .xlsx ready for Slack.
+
+    Sets the module-level _TAB_ERROR when the per-rep breakdown tabs failed to
+    build: the .xlsx still ships (base tab only), but main() must exit non-zero
+    so the miss reaches the manifest + summary email."""
     output_dir.mkdir(parents=True, exist_ok=True)
     df = _load_and_clean(csv_path)
 
@@ -1642,9 +1653,23 @@ def csv_to_xlsx(csv_path: Path, output_dir: Path, name_suffix: str = "") -> Path
 
     # Raf's "new order log": append per-rep weekly + P/D/C breakdown tabs. Scoped
     # automatically per channel — df is already filtered to one owner upstream.
-    n_tabs = _append_rep_breakdown_tabs(wb, df)
-    if n_tabs:
-        print(f"  (added {n_tabs} per-rep breakdown tab(s))")
+    #
+    # Guarded like the Rep Activations image is: a crash while building the
+    # per-rep tabs must NOT take down the Order Log itself. Before this, the
+    # whole tab-building path sat outside any try/except, so one bad cell would
+    # kill csv_to_xlsx and the metric posted NOTHING — the opposite of the
+    # intended "one failure doesn't take the other down". The base Cleaned Order
+    # Log tab is already complete at this point, so we save and post it, and the
+    # error rides out via _TAB_ERROR so the run exits non-zero instead of green.
+    global _TAB_ERROR
+    _TAB_ERROR = None
+    try:
+        n_tabs = _append_rep_breakdown_tabs(wb, df)
+        if n_tabs:
+            print(f"  (added {n_tabs} per-rep breakdown tab(s))")
+    except Exception as e:  # noqa: BLE001 — see above; base tab still ships
+        _TAB_ERROR = f"{type(e).__name__}: {e}"
+        print(f"  ⚠ per-rep breakdown tabs skipped: {e}")
 
     # Resilient save: if today's file is still open in Excel, Windows locks it
     # and wb.save() raises PermissionError. Fall back to a timestamped name so
@@ -1717,8 +1742,15 @@ async def _legacy_filter_download(owner_name: str, tmp_dir: Path,
 
 def _post_order_log(xlsx_path: Path, rep_png: "Optional[Path]", *,
                     is_empty: bool, owner_name: str, today,
-                    post_to_slack: bool) -> None:
+                    post_to_slack: bool) -> "list[str]":
     """Post Order Log + Rep Activations into today's Metrics thread.
+
+    Returns the list of Slack posts that FAILED (empty = everything landed).
+    Each SlackPostError is still caught so one failed upload doesn't skip the
+    rest, but it is now REPORTED: main() exits non-zero on a non-empty list.
+    Before this the errors were only printed, so a Slack outage produced a
+    clean exit 0 — the runner showed ✅, the manifest said succeeded, and the
+    metric silently never appeared. [[feedback_flag_unfilled_cells]]
 
     - Empty/no-orders day: post a 'No data available' note in place of the empty
       .xlsx (mirrors Total Knocks) so the metric still appears in the thread.
@@ -1726,16 +1758,17 @@ def _post_order_log(xlsx_path: Path, rep_png: "Optional[Path]", *,
     - Owner/channel gate: skip ONLY when a non-default owner would post into the
       SHARED #alphalete-sales thread. A scoped channel override (e.g. Rashad ->
       #elevate-sales via METRICS_CHANNEL_ID) is an intentional per-owner report,
-      so we DO post there.
+      so we DO post there. A deliberate skip is NOT a failure — returns [].
     - post_to_slack=False (dry-run): DESCRIBE the planned posts, post nothing.
     """
+    failures: "list[str]" = []
     import os as _os
     DEFAULT_METRICS_CHANNEL = "C068PH3RFSM"   # #alphalete-sales
     metrics_channel = _os.environ.get("METRICS_CHANNEL_ID", DEFAULT_METRICS_CHANNEL)
     if owner_name != OWNER_NAME and metrics_channel == DEFAULT_METRICS_CHANNEL:
         print(f"  (Skipping Slack post — non-default owner {owner_name!r} into the "
               f"shared thread; that thread is {OWNER_NAME!r}-only.)")
-        return
+        return failures
     dry = not post_to_slack
     from automations.shared.slack_metrics_post import (
         post_reply_with_file, post_reply_with_image, post_reply_text_only,
@@ -1752,6 +1785,7 @@ def _post_order_log(xlsx_path: Path, rep_png: "Optional[Path]", *,
                 print("  ✓ Slack: posted Order Log 'No data' note")
             except SlackPostError as e:
                 print(f"  ⚠ Slack post failed (Order Log note): {e}")
+                failures.append(f"Order Log 'No data' note ({e})")
     else:
         slack_filename = f"Order Log {today:%m-%d-%Y}.xlsx"
         if dry:
@@ -1765,6 +1799,7 @@ def _post_order_log(xlsx_path: Path, rep_png: "Optional[Path]", *,
             except SlackPostError as e:
                 print(f"  ⚠ Slack post failed: {e}")
                 print("    .xlsx is in Downloads — drag it into Slack manually.")
+                failures.append(f"📋 Order Log .xlsx ({e})")
     # Rep Activations image (rendered even on empty days).
     if rep_png is not None:
         if dry:
@@ -1778,8 +1813,10 @@ def _post_order_log(xlsx_path: Path, rep_png: "Optional[Path]", *,
                 print("  ✓ Slack: posted Rep Activations summary")
             except SlackPostError as e:
                 print(f"  ⚠ Slack post failed (Rep Activations): {e}")
+                failures.append(f"🆕 Rep Activations image ({e})")
     else:
         print("  (Rep Activations image not rendered — nothing to post.)")
+    return failures
 
 
 async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True,
@@ -1875,17 +1912,26 @@ async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True,
     # dry-run describe all live in _post_order_log.
     if xlsx_path is None:
         return 1 if rep_error else 0
-    _post_order_log(xlsx_path, rep_png, is_empty=is_empty,
-                    owner_name=owner_name, today=date.today(),
-                    post_to_slack=post_to_slack)
+    slack_failures = _post_order_log(xlsx_path, rep_png, is_empty=is_empty,
+                                     owner_name=owner_name, today=date.today(),
+                                     post_to_slack=post_to_slack)
 
-    # Order Log posted. If the Rep Activations companion errored out, say so
-    # LOUDLY and exit non-zero — the caller records the metric as missed, so it
-    # lands in the manifest + the orchestrator's summary email (and the orange
-    # partial pill) instead of vanishing behind a green ✅.
+    # Anything that didn't make it into the thread is reported LOUDLY and exits
+    # non-zero — the caller records the metric as missed, so it lands in the
+    # manifest + the orchestrator's summary email (and the orange partial pill)
+    # instead of vanishing behind a green ✅. Three ways to be incomplete:
+    #   * a Slack upload failed        (slack_failures — was silently swallowed)
+    #   * the Rep Activations image errored while rendering (rep_error)
+    #   * the per-rep breakdown tabs failed to build        (_TAB_ERROR)
+    misses = list(slack_failures)
     if rep_error:
-        print(f"\n✗ INCOMPLETE — Order Log posted, but 🆕 Rep Activations was "
-              f"NOT posted: {rep_error}")
+        misses.append(f"🆕 Rep Activations not rendered: {rep_error}")
+    if _TAB_ERROR:
+        misses.append(f"per-rep breakdown tabs missing from the .xlsx: {_TAB_ERROR}")
+    if misses:
+        print(f"\n✗ INCOMPLETE — {len(misses)} problem(s) in this Order Log run:")
+        for m in misses:
+            print(f"    • {m}")
         print("=== done ===")
         return 1
     return 0
