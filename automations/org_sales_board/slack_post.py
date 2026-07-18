@@ -109,21 +109,32 @@ def _yesterday_col(g, date_row, yday_day):
 
 
 def fill_gate(g, heads, yday: dt.date):
-    """(ok, reason). ok only when every rep in every section has a value in
-    yesterday's column."""
-    missing = []
+    """LIGHT sanity gate (Megan 2026-07-18): post unless yesterday's column is
+    ENTIRELY empty across every section — which would mean the board never got
+    touched or the week didn't roll.
+
+    NOT "every cell filled": Retail JE and Frontier legitimately lag a day, and
+    the VA posts with those blanks anyway (verified against her own 7/16 post).
+    Requiring 100% held the report every morning and it never posted."""
+    filled = total = sections_with_col = 0
     for h in heads:
         col = _yesterday_col(g, h + 1, yday.day)
         if col is None:
-            return False, (f"section at row {h}: no column for {yday.month}/{yday.day} "
-                           "(week not rolled / date header missing)")
+            continue
+        sections_with_col += 1
         for rr in _rep_rows(g, h):
-            if not _cell(g, rr, col).strip():
-                missing.append(f"{_cell(g, rr, 2).strip()} (row {rr})")
-    if missing:
-        return False, f"{len(missing)} rep cell(s) blank for {yday.month}/{yday.day}: " \
-                      + ", ".join(missing[:6]) + (" …" if len(missing) > 6 else "")
-    return True, ""
+            total += 1
+            if _cell(g, rr, col).strip():
+                filled += 1
+    if sections_with_col == 0:
+        return False, (f"no section has a column for {yday.month}/{yday.day} "
+                       "(week not rolled / date headers missing)")
+    if total == 0:
+        return False, "no rep rows found in any section"
+    if filled == 0:
+        return False, (f"board is empty for {yday.month}/{yday.day} — 0 of {total} "
+                       "rep cells have data (board not updated?)")
+    return True, f"{filled}/{total} rep cells filled for {yday.month}/{yday.day}"
 
 
 def _channel():
@@ -166,11 +177,12 @@ def main(argv=None) -> int:
     print(f"board: {PROD_TAB} {rng}  ({len(heads)} sections)  gid={ws.id}")
 
     ok, reason = fill_gate(g, heads, yday)
-    print(f"gate (yesterday {yday.month}/{yday.day} filled): {ok}"
-          + (f" — {reason}" if not ok else ""))
+    print(f"gate: {ok} — {reason}")
 
-    caption = f"Org Sales Board ({today.month}/{today.day})"
-    filename = f"Org Sales Board {today.month}.{today.day}.png"
+    # The VA titles the post with YESTERDAY's date (the data date): a post made
+    # on 7/17 reads "• *Org Sales Board 7/16*" / "Org Sales Board 7.16.png".
+    caption = f"• *Org Sales Board {yday.month}/{yday.day}*"
+    filename = f"Org Sales Board {yday.month}.{yday.day}.png"
     out = args.out or (OUT_DIR / filename)
     _export_png(ws.id, rng, out, _access_token())
     print(f"wrote {out}")
