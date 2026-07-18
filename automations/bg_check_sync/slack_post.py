@@ -47,33 +47,34 @@ def render(week_date: str, people: list, needs_confirm: list, updated_str: str) 
     """people: list of (name, status). needs_confirm: list of names (report back,
     no PASS email). Returns the reply body."""
     lines = [f"*BG Status — New Starts (week of {week_date})*",
-             f"_updated {updated_str} · auto by Lucy_", ""]
+             f"_updated {updated_str} · auto by Lucy_"]
+
+    def section(label: str, names: list, suffixes: dict | None = None) -> None:
+        """Blank line + bold header + bullets, so sections read as distinct blocks."""
+        if not names:
+            return
+        lines.append("")            # breathing room between sections
+        lines.append(f"*{label} ({len(names)})*")
+        for n in sorted(names):
+            tail = f" — {suffixes[n]}" if suffixes and n in suffixes else ""
+            lines.append(f"   •  {n}{tail}")
+
     awaiting_vals = {"", "Sent", "Not Taken"}
-    by_status = {}
-    awaiting = []
-    other = []
+    by_status: dict = {}
+    awaiting: list = []
+    other: dict = {}
     for name, status in people:
         if status in dict(BUCKETS):
             by_status.setdefault(status, []).append(name)
         elif status in awaiting_vals:
             awaiting.append(name)
         else:
-            other.append((name, status))
+            other[name] = status
     for status, label in BUCKETS:
-        names = sorted(by_status.get(status, []))
-        if names:
-            lines.append(f"{label} ({len(names)})")
-            lines += [f"   • {n}" for n in names]
-    if awaiting:
-        lines.append(f"🔲 Invited — not taken yet ({len(awaiting)})")
-        lines += [f"   • {n}" for n in sorted(awaiting)]
-    if other:
-        lines.append(f"• Other ({len(other)})")
-        lines += [f"   • {n} — {s}" for n, s in sorted(other)]
-    if needs_confirm:
-        lines.append("")
-        lines.append(f"📝 *Report back — needs PASS/FAIL confirmation* ({len(needs_confirm)})")
-        lines += [f"   • {n}" for n in sorted(needs_confirm)]
+        section(label, by_status.get(status, []))
+    section("🔲 Invited — not taken yet", awaiting)
+    section("• Other", list(other), suffixes=other)
+    section("📝 Report back — needs PASS/FAIL confirmation", needs_confirm)
     return "\n".join(lines)
 
 
