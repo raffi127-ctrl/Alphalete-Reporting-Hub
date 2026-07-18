@@ -139,36 +139,52 @@ def _select_worksheet(page, log) -> bool:
 
 
 def _probe_exports(page, today, log) -> None:
-    """Direct URL exports with the page's authenticated cookies — if any of
-    these return data, the whole render-then-crosstab-dialog dance is
-    unnecessary. The CHURNRATES custom view is included as a KNOWN-GOOD
-    control (that URL pattern already downloads fine via the dialog), so a
-    failure there means the technique is wrong, not the view."""
-    from urllib.parse import quote
+    """Validate the direct-export path end-to-end (proven 2026-07-18: the
+    plain dashboard .csv export returns 200 + 9.6MB with session cookies —
+    only the date-window variant timed out at 90s, so this run gives it
+    300s). Parses the CSV and checks the full compute contract: every
+    compute.COLS caption present, row count, order-date span, Carlos rows.
+    A PASS here means pull.py can swap to this and drop the UI dance."""
+    import csv
+    import io
+    from automations.vantura_churn import compute
     host = "https://us-east-1.online.tableau.com"
     start = today - dt.timedelta(days=60)
-    dates = (f"Start%20Date={start.isoformat()}"
-             f"&End%20Date={today.isoformat()}")
-    tests = [
-        ("dash",       f"{host}/t/sci/views/ATTTRACKER-B2B/ORDERLOG.csv"
-                       "?:refresh=yes"),
-        ("dash+dates", f"{host}/t/sci/views/ATTTRACKER-B2B/ORDERLOG.csv"
-                       f"?:refresh=yes&{dates}"),
-        ("sheet",      f"{host}/t/sci/views/ATTTRACKER-B2B/"
-                       f"{quote('Order Log')}.csv?:refresh=yes"),
-        ("cv-control", f"{host}/t/sci/views/ATTTRACKER-B2B/CHURNRATES/"
-                       "429cb06d-a32e-4d0e-bf06-9acb77587afd/ALLTEAMCHURN.csv"
-                       "?:refresh=yes"),
-    ]
-    for label, u in tests:
-        try:
-            r = page.context.request.get(u, timeout=90_000)
-            body = r.body() or b""
-            head = body[:180].decode("utf-8", "replace").replace("\n", " ⏎ ")
-            log(f"[export {label}] status={r.status} bytes={len(body)}"
-                f" head={head!r}")
-        except Exception as ex:  # noqa: BLE001 — each test independent
-            log(f"[export {label}] ERR {str(ex)[:120]}")
+    url = (f"{host}/t/sci/views/ATTTRACKER-B2B/ORDERLOG.csv?:refresh=yes"
+           f"&Start%20Date={start.isoformat()}&End%20Date={today.isoformat()}")
+    try:
+        r = page.context.request.get(url, timeout=300_000)
+        body = r.body() or b""
+        log(f"[export dash+dates] status={r.status} bytes={len(body)}")
+        if r.status != 200 or len(body) < 1000:
+            log(f"[export] head={body[:180].decode('utf-8','replace')!r}")
+            return
+        rows = list(csv.reader(io.StringIO(body.decode("utf-8-sig",
+                                                       "replace"))))
+        hdr = [h.strip() for h in rows[0]]
+        log(f"[export] {len(rows)-1} data rows, {len(hdr)} columns")
+        missing = [c for c in compute.COLS.values() if c not in hdr]
+        log(f"[export] missing captions: {missing or 'NONE — contract OK'}")
+        if missing:
+            log(f"[export] header={hdr}")
+            return
+        oi = hdr.index(compute.COLS["owner"])
+        odi = hdr.index(compute.COLS["order_date"])
+        carlos = 0
+        odates = []
+        for row in rows[1:]:
+            if len(row) <= max(oi, odi):
+                continue
+            if row[oi].strip().upper().startswith("CARLOS HIDALGO"):
+                carlos += 1
+            d = compute._parse_date(row[odi])
+            if d:
+                odates.append(d)
+        log(f"[export] CARLOS rows {carlos}; order-date range "
+            f"{min(odates) if odates else '?'} .. "
+            f"{max(odates) if odates else '?'}")
+    except Exception as ex:  # noqa: BLE001
+        log(f"[export dash+dates] ERR {str(ex)[:150]}")
 
 
 def _probe_custom_views(page, viz, log) -> None:
