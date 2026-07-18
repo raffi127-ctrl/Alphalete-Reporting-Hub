@@ -131,9 +131,15 @@ label(47.5,26.5,FLR_Z+0.05,"34'9 × 96'  ·  open floor",size=5.0,weight="600",c
 
 # ---- interior partition walls (all enclosed rooms; open office stays open) --
 for _r in [(0,0,6,18),(6,0,24,18),(24,0,27,18),(27,0,50,7),(27,7,33,11),(27,11,50,18),
-           (50,0,70,18),(70,0,104,18),(0,18,11,37),(0,37,11,47),(0,47,11,64),
+           (50,0,70,18),(70,0,104,18),(0,37,11,47),(0,47,11,64),
            (91,18,104,29),(91,29,104,40),(82,40,104,64)]:
     rwalls(*_r)
+# Room 1 gets its walls one edge at a time: the y=18 line is ALREADY walled by STOR
+# (x0-6) and the break room (x6-24). Drawing room 1's own full-width north slab on top
+# of those put three boxes at three depths on one line, and the break room's (33.0) won
+# over room 1's (23.5) from x=6 east - a visible step mid-wall.
+wall(0,37,11,37,3.4); wall(0,18,0,37,3.4); wall(11,18,11,37,3.4)
+
 for a,b,nm,lab,comb in south_segs:
     rwalls(sx0+a*ow,52,sx0+b*ow,64)
 
@@ -244,7 +250,16 @@ for _ax,_ac in ((52.7,_RD),(54.5,"#7a5333"),(56.3,"#8a9099")):
 def _mx(x): return x*(11.0/10.42)
 def _my(y): return 47.0+y*(17.0/17.42)
 _MG="#9aa0a8"; _MD="#4a5260"; _MN="#2f4260"; _MG2="#3d5175"
-box(_mx(0.18),_my(0.30),_mx(1.05),_my(3.60),FLR_Z,FLR_Z+3.1,_MG)      # corner shelf, walls 1/2 corner
+# Corner bookcase (walls 1/2 corner). Two reasons it was invisible: it sorted behind her
+# own west partition (55.5), and it was #9aa0a8 - near enough to the wall grey to vanish
+# into it even once biased forward. Now a wood carcass with shelf boards that read.
+_bk0x,_bk0y,_bk1x,_bk1y=_mx(0.18),_my(0.30),_mx(1.05),_my(3.60)
+_BKD=57.0-((_bk0x+_bk0y+_bk1x+_bk1y)/2)          # clear her west partition
+box(_bk0x,_bk0y,_bk1x,_bk1y,FLR_Z,FLR_Z+3.1,"#6b5a49",db=_BKD)                  # carcass
+for _sz in (0.75,1.50,2.25,3.00):                                                # shelf boards
+    box(_bk0x,_bk0y+0.06,_bk1x+0.05,_bk1y-0.06,FLR_Z+_sz-0.09,FLR_Z+_sz,"#a98d66",db=_BKD+0.05)
+for _bz,_bc in ((0.10,"#8d5b4c"),(0.85,"#4a6b7c"),(1.60,"#7c6a92"),(2.35,"#c08a3e")):
+    box(_bk0x+0.10,_bk0y+0.35,_bk1x-0.06,_bk0y+1.35,FLR_Z+_bz,FLR_Z+_bz+0.62,_bc,db=_BKD+0.10)  # books
 sdesk(_mx(4.50),_my(4.00),_mx(6.70),_my(9.20),_MD)                    # L-desk main
 sdesk(_mx(2.50),_my(4.00),_mx(4.50),_my(6.00),_MD)                    # return
 schair(_mx(3.50),_my(7.20),_MN)                                       # Maud, facing wall 3 (east)
@@ -392,13 +407,13 @@ classroom(0,18,11,37,"#c2572c","#6f6a63","W")              # 1 · burnt orange (
 # 1 · the three framed prints on wall 2 (north). Two sorting traps, both hit once:
 #  - a box's depth includes its own x, so a FLAT db under-biases the westmost poster and
 #    room 1's north wall (23.5) paints over it. Bias each one to a common target instead.
-#  - the east partition sorts at 38.5 and swallows anything past about x=6, so all three
-#    stay in the west half of the wall rather than spreading across it.
+#  - the y=18 line is walled by STOR (x0-6) and the break room (x6-24); the break room's
+#    slab sorts at 33.0 and eats anything east of x=6, so all three stay west of it.
 for _px,_pc in ((0.8,"#c2572c"),(2.6,"#8a8f96"),(4.4,"#c2572c")):
     _pw=1.6
-    _pd=27.0-(_px+18.28+_px+_pw+18.34)/2          # per-poster bias to a common sort depth
-    box(_px,18.28,_px+_pw,18.34,FLR_Z+1.30,FLR_Z+3.05,"#43403c",db=_pd)        # slim frame
-    box(_px+0.11,18.30,_px+_pw-0.11,18.36,FLR_Z+1.41,FLR_Z+2.94,_pc,db=_pd+0.05)  # print
+    _pd=22.6-(_px+18.28+_px+_pw+18.34)/2          # per-poster bias to a common sort depth
+    box(_px,18.28,_px+_pw,18.34,FLR_Z+0.85,FLR_Z+2.35,"#43403c",db=_pd)        # slim frame
+    box(_px+0.11,18.30,_px+_pw-0.11,18.36,FLR_Z+0.95,FLR_Z+2.25,_pc,db=_pd+0.05)  # print
 classroom(46.5,52,64.25,64,"#2d7273","#5f7273","E")        # 11 · deep teal
 classroom(64.25,52,82,64,"#4f7343","#6a7562","E")          # 12 · forest green
 
