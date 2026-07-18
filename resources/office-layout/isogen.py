@@ -349,7 +349,7 @@ for _mgx in (95.7,98.3):              # 6 · Megan — a 2x2 array of FOUR disti
         box(_mgx-0.55,29.26,_mgx+0.55,29.42,FLR_Z+_mgz-0.36,FLR_Z+_mgz+0.36,"#454b54",db=4.7)   # bezel
         box(_mgx-0.48,29.28,_mgx+0.48,29.44,FLR_Z+_mgz-0.28,FLR_Z+_mgz+0.28,"#20252b",db=4.71) # screen
 tv(0.0,87.0,'N',w=6.0)                # 13 · conference (north wall, y0)
-tv(0.0,27.5,'W',w=5.0)                 # 1 · training screen on the west wall (wall 1)
+tv(0.0,27.5,'W',w=5.0,db=2.2)           # 1 · training screen on wall 1 (db clears the perimeter wall)
 tv(64.25,58.0,'E')                    # 11 · training screen (east wall; hidden behind the near wall)
 tv(82.0,58.0,'E')                     # 12 · training screen (east wall; hidden behind the near wall)
 
@@ -372,7 +372,9 @@ def classroom(x0,y0,x1,y1,col,cred,face):
         for cy in (y0+4.4+k*3.3 for k in range(4)):        # first row well off the credenza
             for cx in xs: chair(cx,cy,'S')
     elif face=="W":                                        # screen on west wall; chairs face west
-        scred(x0+0.25,y0+2.6,x0+1.60,y1-2.6,cred)
+        # The building's west perimeter wall is one 64ft box, so its centroid-depth (31.5)
+        # beats anything sitting against it. Bias past it or the credenza is painted over.
+        box(x0+0.25,y0+2.6,x0+1.60,y1-2.6,FLR_Z,FLR_Z+2.4,cred,db=3.6)
         ys=[y0+3.5+k*(y1-y0-7.0)/5 for k in range(6)]      # 6 across the long wall
         for cx in (x0+3.8,x0+7.2):                         # 2 rows deep
             for cy in ys: chair(cx,cy,'E')
@@ -387,6 +389,16 @@ def classroom(x0,y0,x1,y1,col,cred,face):
         for cx in (x1-4.4-k*3.5 for k in range(4)):        # first column off the credenza
             for cy in ys: chair(cx,cy,'W')
 classroom(0,18,11,37,"#c2572c","#6f6a63","W")              # 1 · burnt orange (screen on wall 1 = west)
+# 1 · the three framed prints on wall 2 (north). Two sorting traps, both hit once:
+#  - a box's depth includes its own x, so a FLAT db under-biases the westmost poster and
+#    room 1's north wall (23.5) paints over it. Bias each one to a common target instead.
+#  - the east partition sorts at 38.5 and swallows anything past about x=6, so all three
+#    stay in the west half of the wall rather than spreading across it.
+for _px,_pc in ((0.8,"#c2572c"),(2.6,"#8a8f96"),(4.4,"#c2572c")):
+    _pw=1.6
+    _pd=27.0-(_px+18.28+_px+_pw+18.34)/2          # per-poster bias to a common sort depth
+    box(_px,18.28,_px+_pw,18.34,FLR_Z+1.30,FLR_Z+3.05,"#43403c",db=_pd)        # slim frame
+    box(_px+0.11,18.30,_px+_pw-0.11,18.36,FLR_Z+1.41,FLR_Z+2.94,_pc,db=_pd+0.05)  # print
 classroom(46.5,52,64.25,64,"#2d7273","#5f7273","E")        # 11 · deep teal
 classroom(64.25,52,82,64,"#4f7343","#6a7562","E")          # 12 · forest green
 
