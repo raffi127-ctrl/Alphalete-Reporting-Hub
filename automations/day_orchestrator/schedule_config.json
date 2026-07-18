@@ -2479,6 +2479,47 @@
       "verify": {
         "type": "not_configured"
       }
+    },
+    "box_order_log": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Carlos's BOX (B2B) Order Log -> the 'Lucy Box Order Log' tab on the Vantura Master Sales Board. on_scheduler:false = NOT in the 4am batch; the real schedule is a STANDALONE LaunchAgent (com.alphalete.box-order-log) at 7:00am CST daily incl. weekends, with retries at 7:45/8:30/9:15. Present here so `lucy rerun box_order_log` works. Pulls the BoxOrderLog view, collapses the status-transition rows into one row per sale (sale key = Contract ID + Account Id; Contract ID alone is NOT unique), and MERGES into a rolling 6-week log: new sales appended, status changes updated in place, oldest week aged out. Merge is idempotent — a second pass on unchanged data reports '0 new, 0 status changes'. The Tableau view is a rolling ~44-day window with only ~3 days of slack over 6 weeks, which is WHY it merges instead of overwriting: rows age out of the source before they age out of the report. TWO deliverables per run, different scopes on purpose: --sheet merges the rolling 6-week log into the board; --xlsx writes the day's FULL pull to output/ as one tab per rep (Fiber-style, mirrors order_log._append_rep_breakdown_tabs). DRY by default. Does NOT post to Slack. Belongs on LUCY 2 (Carlos's machine). Registered 2026-07-18.",
+      "display_name": "BOX Order Log -> Sheet + rep tabs (7:00am)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.box_order_log.run"
+      ],
+      "base_args": [
+        "--sheet",
+        "--xlsx"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 20,
+      "verify": null
+    },
+    "b2b_quality": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "B2B Quality & Bonus -> #alphalete-gp-sales (VA-replacement Item 5). on_scheduler:false = NOT in the 4am batch; it will get a STANDALONE LaunchAgent once the capture is signed off. Present so `lucy rerun b2b_quality` works. Captures the 3 ATTTRACKER-B2B Tableau views (Tiered Bonus / Activation Rate / Churn Rate, Carlos saved views) via Tableau's Download->Image on the shared tableau_patchright session, then posts them as one dated thread 'B2B Quality & Bonus MM/DD/YYYY' AS LUCY, each titled with YESTERDAY's date. MUST run on Lucy 1 — ownerville is single-session and a laptop scrape evicts the session holder. DRY-RUN by default; add --post. `--post --dm <USER_ID>` routes to a DM for testing. Registered 2026-07-18.",
+      "display_name": "B2B Quality & Bonus -> Slack",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.b2b_quality.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 25,
+      "verify": null
     }
   },
   "read_only_standalone": {
