@@ -1582,7 +1582,10 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "sara-plus-issues",
-        "name": "Sara+ Issue Escalation",
+        # Cadence in the name, same as the RingCentral Auto-Read card. The
+        #   are non-breaking spaces so "(Q 5 Min)" wraps as ONE clean unit
+        # onto line 2 of the This Week strip pill instead of breaking mid-phrase.
+        "name": "Sara+ Issue Escalation (Q 5 Min)",
         "creator": "Raf & Claude",
         "emoji": "🚨",
         "color": "#E74C3C",
@@ -1623,6 +1626,12 @@ AUTOMATED_REPORTS = [
         "hide_schedule": True,
         "schedule": {
             "frequency": "daily",
+            # Runs every 5 min around the clock, so a bare time would read as if
+            # it fires once. time_label shows the real window at a glance (same
+            # pattern as rc-autoread); schedule.time stays the sortable start
+            # (midnight, since there's no start/stop window) for card ordering.
+            "time": "12:00 AM",
+            "time_label": "24/7",
             "estimated_minutes": 1,
         },
         # The dedupe state file is PER-MACHINE, so a laptop run could re-send an
