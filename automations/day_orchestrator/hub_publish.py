@@ -87,6 +87,10 @@ _HUB_CARD = {
     "carlos_captainship_bonus": "carlos-captainship-bonus",
     "carlos_captainship_headcount": "carlos-captainship-headcount",
     "raf_captainship_bonus": "raf-captainship-bonus",
+    # STF Field Check: standalone 11pm LaunchAgent on the mini that calls
+    # publish_done from deploy/stf_field_check_11pm.sh — map so the card pill
+    # reflects the real run (else it stays grey like the captainship bonuses did).
+    "stf_field_check": "stf-field-check",
     # weather_alert: Slack-only, no Hub card → not published.
 }
 

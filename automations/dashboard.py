@@ -2007,6 +2007,67 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "stf-field-check",
+        "name": "STF Field Check",
+        "creator": "Raf",
+        "emoji": "🚫",
+        "color": "#D64550",
+        "category": "📊 Metrics",
+        "description": "For the current day, finds the reps marked STF (Straight To Field) on the Sales Board and checks their ownerville Time Tracker knocks. Anyone who worked under 3 hours — or never showed — is switched from STF to X, so Raf's count of reps actually in the field stays honest.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Opens the current week's **Sales Board WE** tab and finds "
+            "every rep whose day status reads **STF**.\n"
+            "**•** Pulls that same day's **Time Tracker** (ownerville, Raf's "
+            "view) and reads each rep's **First Knock** and **Last Knock**.\n"
+            "**•** Worked time = Last Knock − First Knock. If it's **under "
+            "3:00** (or the rep has **no knocks** — never showed), the cell is "
+            "changed from **STF** to **X**.\n"
+            "**•** Only ever overwrites a cell that still says STF, and if a "
+            "rep can't be found in Time Tracker it flags the closest name so a "
+            "spelling miss can't wrongly mark someone X.\n\n"
+            "WHEN IT RUNS\n"
+            "**Every night at 11:00pm CST** for that day — late enough that "
+            "reps are out of the field and the knocks are final, but before "
+            "the 4am board post."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc/edit"),
+        "assignees": ["Lucy 1"],
+        # Self-running nightly launchd job on Lucy 1 (11pm CST), not the 4am
+        # batch — show the run time on the tile and keep it out of the
+        # "due today / not completed" tallies.
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "11:00 PM",
+            "estimated_minutes": 3,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ STF Field Check done — any STF rep who worked under 3h (or never showed) was switched to X on the board.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run Now",
+                "icon": "▶",
+                "primary": True,
+                "help": "For today: flips STF→X on the Sales Board for any rep who worked under 3h or never showed. Writes to the board.",
+                "module": "automations.stf_field_check.run",
+                "args_fn": lambda: ["--write"],
+            },
+            {
+                "label": "Preview (no writes)",
+                "icon": "👁",
+                "primary": False,
+                "help": "Shows who would be flipped STF→X for today, without changing the board.",
+                "module": "automations.stf_field_check.run",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
+    {
         "id": "carlos-captainship-bonus",
         "name": "Carlos B2B Captainship Bonus",
         "creator": "Maud",

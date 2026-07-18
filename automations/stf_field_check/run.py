@@ -274,6 +274,9 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Flip STF→X for reps who worked <3h.")
     ap.add_argument("--date", default=None, help="YYYY-MM-DD or MM/DD/YYYY; default today")
     ap.add_argument("--write", action="store_true", help="actually write X (default: dry-run)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="force dry-run even if --write is present (wins; lets the "
+                         "nightly wrapper default to --write yet still be testable)")
     ap.add_argument("--threshold-min", type=int, default=DEFAULT_THRESHOLD_MIN,
                     help="minutes below which STF→X (default 180 = 3h)")
     ap.add_argument("--knocks-json", default=None,
@@ -287,7 +290,8 @@ def main(argv=None) -> int:
         data = json.loads(Path(args.knocks_json).read_text())
         injected = data["reps"] if isinstance(data, dict) and "reps" in data else data
 
-    run(target, write=args.write, threshold_min=args.threshold_min,
+    write = args.write and not args.dry_run
+    run(target, write=write, threshold_min=args.threshold_min,
         injected_knocks=injected)
     return 0
 

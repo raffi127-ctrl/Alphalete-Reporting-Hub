@@ -308,6 +308,28 @@
       "timeout_minutes": 20,
       "verify": null
     },
+    "install_stf_field_check_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_stf_field_check_agent` can install/refresh the STANDALONE com.alphalete.stf-field-check-11pm LaunchAgent on the mini, which runs STF Field Check (automations.stf_field_check.run --write) daily at 11:00pm CT via deploy/stf_field_check_11pm.sh. install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
+      "display_name": "Install STF Field Check agent (11pm)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "stf-field-check-11pm"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "install_keep_awake_agent": {
       "on_scheduler": true,
       "_note": "MANUAL-ONLY. `lucy rerun install_keep_awake_agent` installs the com.alphalete.keep-awake LaunchAgent on the mini (user-level, NO root) — runs `caffeinate -s` 24/7 so the mini never sleeps and launchd's 4am orchestrator isn't deferred to ~6am. The remote, no-sudo alternative to the pmset wake schedule (set_wake, which needs root the mini won't give). Diagnosed via morning_diag 2026-07-06.",
