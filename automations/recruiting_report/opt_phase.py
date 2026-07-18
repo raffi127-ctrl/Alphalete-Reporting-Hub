@@ -2253,11 +2253,21 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
             _ptot = _crosstab_grand_total(PRODUCT_SALES_PATH)
             if _ptot:
                 logfn(f"OPT: Product Sales grand total = {_ptot}")
-            _metrics_url = (METRICS_VIEW_URL if _is_monday
-                            else _week_url(METRICS_VIEW_URL, we_sunday))
-            logfn("OPT: Metrics source -- "
-                  + ("THIS WEEK (bare view, Monday)" if _is_monday
-                     else f"pinned week-ending {we_sunday.isoformat()}"))
+            # NEVER week-filter the Metrics view. Half its measures are
+            # multi-week windows (4-wk rolling, 0-30 day, 30-60 day), and pinning
+            # the view to one week truncates that window so the number is computed
+            # over 7 days instead of 28. Measured 2026-07-18 on week-ending
+            # 07-12: filtered vs bare disagreed on 5 gig% (71/74 offices — Chan
+            # Park 43% vs 8%), '6+ days out scheduled' (71/74), '0-30 cancel
+            # rate' (72/74) and '30-60 activation' (74/74), while the point-in-
+            # time measures (ABP mix, 1Gig+ mix, New Internet count) matched
+            # exactly. The bare view is what the dashboard shows and is correct.
+            # Nothing is lost: the view's 'Week's Metrics' parameter only offers
+            # Last Week / This Week, so a date filter could never reach an older
+            # week anyway.
+            _metrics_url = METRICS_VIEW_URL
+            logfn("OPT: Metrics source -- bare view (never week-filtered; "
+                  "rolling-window measures break under a week filter)")
             _dl("metrics", "Metrics", lambda: download_crosstab(
                 _metrics_url, METRICS_SHEET, METRICS_PATH, verbose=False, page=_pg))
             _dl("churn", "Churn", lambda: download_crosstab(
