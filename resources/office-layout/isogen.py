@@ -207,7 +207,11 @@ box(69.7,3.5,70.3,14.5,FLR_Z+1.6,FLR_Z+3.4,"#bfe0ea",op=0.55,db=0.3)
 
 # --- 4 · RAF'S (50,0,70,18): backs the north wall, looks out the south entry ---
 _RD="#9e3b32"; _RW="#5c4033"
-box(50.25,2.5,52.95,7.4,FLR_Z,FLR_Z+2.4,"#5a5f68")          # couch on the west wall
+_CO="#5a5f68"                                               # couch on the west wall
+box(50.20,2.5,51.10,7.6,FLR_Z,FLR_Z+2.7,_CO)                # back
+box(51.10,2.5,53.10,3.05,FLR_Z,FLR_Z+1.8,shade(_CO,0.9))    # arm (north)
+box(51.10,7.05,53.10,7.6,FLR_Z,FLR_Z+1.8,shade(_CO,0.9))    # arm (south)
+box(51.10,3.05,53.10,7.05,FLR_Z,FLR_Z+1.25,shade(_CO,1.18)) # seat cushions
 scred(50.2,0.2,51.9,1.8,_RD)                                # mini fridge, NW corner
 box(66.6,0.2,68.9,1.2,FLR_Z,FLR_Z+5.0,"#9aa2ac")            # corner bookcase, NE
 box(68.9,0.2,69.8,1.7,FLR_Z,FLR_Z+5.0,"#9aa2ac")
@@ -221,9 +225,14 @@ _od=_ocx+_ocy
 for _zz,_cc,_dd in ((2.2,shade(_OT,0.62),_od+0.30),(2.4,_OT,_od+0.32)):
     emit(_dd,_zz,'<polygon points="%s" fill="%s" stroke="%s" stroke-width="0.5"/>'
          % (pts([iso(_x,_y,FLR_Z+_zz) for _x,_y in _ov]), _cc, shade(_OT,0.5)))
-for _cx,_cy,_cf,_front in ((52.9,13.6,'E',False),(59.5,13.6,'W',True),(54.6,11.5,'S',False),
-                          (57.6,11.5,'S',False),(54.6,15.7,'N',True),(57.6,15.7,'N',True)):
-    schair(_cx,_cy,_RD,face=_cf,db=(_od+0.32+(0.5 if _front else -0.5))-(_cx+_cy))
+for _cx,_cy,_cf in ((52.6,13.6,'E'),(59.8,13.6,'W'),(54.9,11.2,'S'),
+                   (57.5,11.2,'S'),(54.9,16.0,'N'),(57.5,16.0,'N')):
+    _bh=(_cx+_cy)<_od                                        # north/far side sits behind the table
+    schair(_cx,_cy,_RD,s=1.15,face=_cf,db=(_od+0.32+(-0.6 if _bh else 0.6))-(_cx+_cy))
+# wall art on the north wall behind Raf (canvases), biased to draw in front of the wall
+for _ax,_ac in ((52.9,_RD),(54.9,"#7a5333")):
+    box(_ax,0.10,_ax+1.7,0.26,FLR_Z+1.7,FLR_Z+3.25,shade(_ac,0.55),db=3.0)   # frame
+    box(_ax+0.1,0.12,_ax+1.6,0.28,FLR_Z+1.8,FLR_Z+3.15,_ac,db=3.02)          # canvas
 
 # --- 3 · MAUD'S (0,47,11,64): exterior glass south, entry east, walls 1/2 solid.
 # Her studio frame IS the building's frame here, so this is her actual layout mapped
@@ -327,12 +336,12 @@ tv(28.75,58.0,'W')                    # 9 · Bas (west wall)
 tv(11.0,58.0,'W')                     # 7 · interview (west wall)
 tv(19.875,58.0,'W')                   # 8 · interview (west wall)
 tv(47.0,5.7,'N')                      # 3 · Maud (TV on wall 2 -> north wall)
-tv(18.0,97.0,'N')                     # 5 · Twaddle (north / conference-side wall)
-tv(50.0,9.5,'W')                       # 4 · Raf (TV on wall 1 -> west wall, clear of couch + oval table)
+tv(18.0,97.0,'N',db=2.6)              # 5 · Twaddle (north wall; extra bias to clear the desk)
+tv(50.0,11.5,'W')                      # 4 · Raf (TV on the west wall toward the sitting table)
 for _mgx in (95.6,98.4):              # 6 · Megan — a 2x2 screen array on the north wall (y29)
     for _mgz in (1.75,2.85):
-        box(_mgx-0.68,29.26,_mgx+0.68,29.42,FLR_Z+_mgz-0.5,FLR_Z+_mgz+0.5,"#454b54",db=2.2)   # bezel
-        box(_mgx-0.60,29.28,_mgx+0.60,29.44,FLR_Z+_mgz-0.42,FLR_Z+_mgz+0.42,"#20252b",db=2.21) # screen
+        box(_mgx-0.68,29.26,_mgx+0.68,29.42,FLR_Z+_mgz-0.5,FLR_Z+_mgz+0.5,"#454b54",db=4.7)   # bezel
+        box(_mgx-0.60,29.28,_mgx+0.60,29.44,FLR_Z+_mgz-0.42,FLR_Z+_mgz+0.42,"#20252b",db=4.71) # screen
 tv(0.0,87.0,'N',w=6.0)                # 13 · conference (north wall, y0)
 tv(18.0,5.5,'N',w=3.0,z0=2.48,z1=3.12)  # 1 · training screen, above the credenza
 tv(64.25,58.0,'E')                    # 11 · training screen (east wall; hidden behind the near wall)
