@@ -226,10 +226,10 @@ _od=_ocx+_ocy
 for _zz,_cc,_dd in ((2.2,shade(_OT,0.62),_od+0.30),(2.4,_OT,_od+0.32)):
     emit(_dd,_zz,'<polygon points="%s" fill="%s" stroke="%s" stroke-width="0.5"/>'
          % (pts([iso(_x,_y,FLR_Z+_zz) for _x,_y in _ov]), _cc, shade(_OT,0.5)))
-for _cx,_cy,_cf in ((52.0,11.7,'E'),(60.4,11.7,'W'),(54.6,8.9,'S'),
-                   (57.8,8.9,'S'),(54.6,14.5,'N'),(57.8,14.5,'N')):
+for _cx,_cy,_cf in ((52.9,11.7,'E'),(59.5,11.7,'W'),(54.9,9.7,'S'),
+                   (57.5,9.7,'S'),(54.9,13.7,'N'),(57.5,13.7,'N')):
     _bh=(_cx+_cy)<_od                                        # north/far side sits behind the table
-    schair(_cx,_cy,_RD,s=1.35,h=1.9,face=_cf,db=(_od+0.32+(-0.6 if _bh else 0.6))-(_cx+_cy))
+    schair(_cx,_cy,_RD,s=1.15,h=1.7,face=_cf,db=(_od+0.32+(-0.6 if _bh else 0.6))-(_cx+_cy))
 # wall art on the north wall behind Raf (canvases), biased to draw in front of the wall
 for _ax,_ac in ((52.7,_RD),(54.5,"#7a5333"),(56.3,"#8a9099")):
     box(_ax,0.10,_ax+1.4,0.24,FLR_Z+1.9,FLR_Z+3.25,"#3a3a3a",db=3.0)         # frame
