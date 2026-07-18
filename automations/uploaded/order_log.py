@@ -1344,7 +1344,7 @@ def _autosize_columns(ws, df: pd.DataFrame) -> None:
             + tuple(len(str(v)) for v in col_series if v is not None
                     and not (isinstance(v, float) and pd.isna(v)))
         )
-        ws.column_dimensions[get_column_letter(col_idx)].width = max_len + 4
+        ws.column_dimensions[get_column_letter(col_idx)].width = _ol_width(max_len)
 
 
 def _owner_file_suffix(owner_name: str) -> str:
@@ -1381,6 +1381,24 @@ _REP_FULL_HEADER = ["Code"] + _REP_TAB_COLUMNS
 _REP_NCOL = len(_REP_FULL_HEADER)
 _REP_TAB_DATE_COLS = {"Order Date", "Install Date", "Activation Date"}
 _INVALID_SHEET_CHARS = str.maketrans({c: " " for c in r":\/?*[]"})
+
+# House formatting for the whole order-log workbook (Megan 2026-07-17):
+# Georgia 12pt bold, centered horizontally + vertically, borders on every
+# filled cell, columns auto-fit. Georgia 12 renders ~1.3x wider than the
+# width unit (Calibri 11), so autofit scales char count by _OL_WIDTH_FACTOR.
+_OL_FONT_NAME = "Georgia"
+_OL_FONT_SIZE = 12
+_OL_WIDTH_FACTOR = 1.3
+_OL_CENTER = Alignment(horizontal="center", vertical="center", wrap_text=False)
+
+
+def _ol_font(color: str = "000000", italic: bool = False) -> Font:
+    return Font(name=_OL_FONT_NAME, size=_OL_FONT_SIZE, bold=True,
+                color=color, italic=italic)
+
+
+def _ol_width(char_len: int) -> float:
+    return min(char_len * _OL_WIDTH_FACTOR + 3, 80)
 
 
 def _pdc_code(status) -> str | None:
@@ -1447,8 +1465,7 @@ def _eff_date(order, install, activ):
 def _write_rep_row(ws, row_idx: int, values: list, border, center_v,
                    bg: str, fc: str) -> None:
     fill = PatternFill("solid", fgColor=bg)
-    base_font = Font(color=fc)
-    date_font = Font(color=fc, bold=True, size=13)   # dates stand out — reps read these
+    font = _ol_font(fc)
     for col_idx, (header, value) in enumerate(values, start=1):
         is_date = header in _REP_TAB_DATE_COLS
         if not isinstance(value, str) and pd.isna(value):
@@ -1456,8 +1473,8 @@ def _write_rep_row(ws, row_idx: int, values: list, border, center_v,
         elif is_date and hasattr(value, "to_pydatetime"):
             value = value.to_pydatetime()
         cell = ws.cell(row=row_idx, column=col_idx, value=value)
-        cell.fill, cell.alignment, cell.border = fill, center_v, border
-        cell.font = date_font if is_date else base_font
+        cell.fill, cell.alignment, cell.border = fill, _OL_CENTER, border
+        cell.font = font
         if is_date:
             cell.number_format = "m/d/yyyy"
 
@@ -1474,25 +1491,25 @@ def _append_rep_breakdown_tabs(wb, df: pd.DataFrame) -> int:
 
     border = _thin_border()
     header_fill = PatternFill("solid", fgColor="434343")
-    header_font = Font(bold=True, color="FFFFFF")
+    header_font = _ol_font("FFFFFF")
     week_fill = PatternFill("solid", fgColor="2563EB")
     pend_fill = PatternFill("solid", fgColor="C55A11")
-    banner_font = Font(bold=True, color="FFFFFF", size=14)   # week/pay-date banner
-    legend_font = Font(bold=True, italic=True)
-    center_v = Alignment(vertical="center")
+    banner_font = _ol_font("FFFFFF")                 # week/pay-date banner
+    legend_font = _ol_font(italic=True)
+    center_v = _OL_CENTER
     used = {ws.title for ws in wb.worksheets}
     added = 0
 
     def _banner(sh, r, text, fill, font):
         cell = sh.cell(row=r, column=1, value=text)
-        cell.fill, cell.font, cell.alignment, cell.border = fill, font, center_v, border
+        cell.fill, cell.font, cell.alignment, cell.border = fill, font, _OL_CENTER, border
         sh.merge_cells(start_row=r, start_column=1, end_row=r, end_column=_REP_NCOL)
 
     def _header(sh, r):
         for c, h in enumerate(_REP_FULL_HEADER, start=1):
             cell = sh.cell(row=r, column=c, value=h)
             cell.font, cell.fill = header_font, header_fill
-            cell.alignment, cell.border = center_v, border
+            cell.alignment, cell.border = _OL_CENTER, border
 
     def _week_key(rec):
         return _eff_date(rec["Order Date"], rec["Install Date"], rec["Activation Date"]) or date.min
@@ -1565,7 +1582,7 @@ def _autosize_rep_tab(ws, banner_rows: set) -> None:
             col = cell.column_letter
             widths[col] = max(widths.get(col, 0), length)
     for col, L in widths.items():
-        ws.column_dimensions[col].width = min(L + 4, 60)
+        ws.column_dimensions[col].width = _ol_width(L)
 
 
 def csv_to_xlsx(csv_path: Path, output_dir: Path, name_suffix: str = "") -> Path:
@@ -1582,14 +1599,13 @@ def csv_to_xlsx(csv_path: Path, output_dir: Path, name_suffix: str = "") -> Path
 
     border = _thin_border()
     header_fill = PatternFill("solid", fgColor="434343")
-    header_font = Font(bold=True, color="FFFFFF")
-    center_v = Alignment(vertical="center")
+    header_font = _ol_font("FFFFFF")
 
     for col_idx, header in enumerate(FRIENDLY_HEADERS, start=1):
         cell = ws.cell(row=1, column=col_idx, value=header)
         cell.font = header_font
         cell.fill = header_fill
-        cell.alignment = center_v
+        cell.alignment = _OL_CENTER
         cell.border = border
 
     status_col_position = FRIENDLY_HEADERS.index("Status")
@@ -1597,9 +1613,8 @@ def csv_to_xlsx(csv_path: Path, output_dir: Path, name_suffix: str = "") -> Path
     for row_offset, row in enumerate(df.itertuples(index=False), start=2):
         status = str(row[status_col_position] or "").strip()
         bg = STATUS_COLORS.get(status, "FFFFFF")
-        fc = STATUS_TEXT_COLORS.get(status, "000000")
         fill = PatternFill("solid", fgColor=bg)
-        font = Font(color=fc)
+        font = _ol_font("000000")   # font always black; status shown by fill color
 
         for col_idx, value in enumerate(row, start=1):
             if pd.isna(value):
@@ -1610,7 +1625,7 @@ def csv_to_xlsx(csv_path: Path, output_dir: Path, name_suffix: str = "") -> Path
             cell = ws.cell(row=row_offset, column=col_idx, value=value)
             cell.fill = fill
             cell.font = font
-            cell.alignment = center_v
+            cell.alignment = _OL_CENTER
             cell.border = border
             if col_idx in DATE_COLUMN_INDEXES:
                 cell.number_format = "m/d/yyyy"
