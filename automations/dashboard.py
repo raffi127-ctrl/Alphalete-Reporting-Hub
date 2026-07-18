@@ -3508,7 +3508,9 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1zoRQRhvkpu7Vvw4TsC60ufja9XwpUR8hHvV7FyzezMY/edit"),
-        "assignees": ["Lucy 2"],
+        # Runs on Lucy 1 / the Hub. (Was swept to Lucy 2 by e3f1893 "sales boards:
+        # move to Lucy 2", which flipped this neighbouring card too.)
+        "assignees": ["Lucy 1"],
         # Self-running background job (noon launchd) — keep it out of the "due
         # today / not completed" tallies; it doesn't report completion to the Hub.
         "self_scheduled": True,
