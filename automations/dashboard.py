@@ -1581,6 +1581,80 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "sara-plus-issues",
+        "name": "Sara+ Issue Escalation",
+        "creator": "Raf & Claude",
+        "emoji": "🚨",
+        "color": "#E74C3C",
+        # 📲 Ops category → renders under the "OPS" divider.
+        "category": "📲 Ops",
+        "assignees": ["Lucy 1"],
+        "description": "Watches #saraplus-issues on Slack — when anyone posts a screenshot of a Sara+ problem, it emails Sara+ support automatically with the screenshots attached, then replies ✅ in the thread.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Checks the **#saraplus-issues** Slack channel **every 5 "
+            "minutes, 24/7** (nights included — that's when an outage hurts "
+            "most).\n"
+            "**•** When anyone in that channel posts screenshot(s) of a Sara+ "
+            "problem, it emails **support@saraplus.com** — subject "
+            "**Sara+ Issue — <date>**, CC'ing Raf, Alphalete Marketing, and "
+            "Twaddle.\n"
+            "**•** The email body is **exactly what the person typed** "
+            "(spelling/grammar tidied, wording never changed), and **every** "
+            "screenshot on that post is attached.\n"
+            "**•** Replies in the thread with a ✅ confirming the email went "
+            "out, so the reporter knows it's handled.\n"
+            "**•** Remembers what it already sent, so an issue is never "
+            "emailed twice.\n\n"
+            "HOW TO POST AN ISSUE\n"
+            "Put the note **and** the screenshots in **ONE message** — a "
+            "message with the pictures added as a thread reply underneath "
+            "won't be read correctly.\n\n"
+            "WHEN IT RUNS\n"
+            "**Continuously, every 5 minutes.** A quiet card is the *normal, "
+            "healthy* state — it only records activity when an issue was "
+            "actually escalated."
+        ),
+        "assignee_note": "Runs unattended on Lucy 1 (the mini) as a LaunchAgent.",
+        # Continuous 5-min poller: self_scheduled + hide_schedule keep it out of
+        # the 4am batch, the due-today counter, and any time/DUE pills (there's
+        # no single run time to show).
+        "self_scheduled": True,
+        "hide_schedule": True,
+        "schedule": {
+            "frequency": "daily",
+            "estimated_minutes": 1,
+        },
+        # The dedupe state file is PER-MACHINE, so a laptop run could re-send an
+        # escalation the mini already sent. Route any Hub "play" to Lucy 1 via
+        # the mini-control queue so it always uses the mini's state.
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "sara_down",
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Checked #saraplus-issues. Any new screenshot posted there has been emailed to Sara+ support.",
+            "message_failed": "❌ Check failed. See the log above — the 5-minute job keeps running regardless.",
+        },
+        "actions": [
+            {
+                "label": "Check Now",
+                "icon": "▶",
+                "primary": True,
+                "help": "Checks the channel right now instead of waiting for the next 5-minute run. Emails Sara+ support if a new screenshot is waiting.",
+                "module": "automations.sara_down.run",
+                "args_fn": (lambda: []),
+            },
+            {
+                "label": "Preview (no emails)",
+                "icon": "👁",
+                "primary": False,
+                "help": "Shows what it would send, without emailing anyone.",
+                "module": "automations.sara_down.run",
+                "args_fn": (lambda: ["--dry-run"]),
+            },
+        ],
+    },
+    {
         "id": "recruiting",
         "name": "ATT Program - Focus Report (Raf)",
         "creator": "Megan",

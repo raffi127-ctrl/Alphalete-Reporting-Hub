@@ -53,6 +53,11 @@ _HUB_CARD = {
     "board_compare": "org-sales-board-compare",
     "leaders_call": "leaders-call",
     "residential_rep_count": "residential_rep_count",
+    # Sara+ issue escalation. This one runs every 5 min around the clock, so it
+    # publishes ONLY when it actually escalates an issue (not on every tick) —
+    # 288 heartbeat rows/day would bury the activity log. A quiet card here means
+    # "no Sara+ issues reported", which is the normal, healthy state.
+    "sara_down": "sara-plus-issues",
     # Every per-office metrics feed publishes to the ONE consolidated card
     # (dashboard._office_metrics_card) — same as the Tableau trackers. The card's
     # per-office ✅/❌ checklist carries which office missed; the pill is the

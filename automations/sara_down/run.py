@@ -377,6 +377,16 @@ def scan(*, dry_run: bool = True, channel: str | None = None,
             cl.chat_postMessage(channel=channel, thread_ts=ts, text=reply)
         except Exception:
             pass
+        # Light up the Hub card — ONLY on a real escalation (never on a test /
+        # baseline / quiet tick), so the activity log records issues escalated
+        # rather than 288 heartbeats a day. Best-effort; never blocks the send.
+        if not test_to:
+            try:
+                from automations.day_orchestrator.hub_publish import publish_done
+                publish_done("sara_down", "Sara+ Issue Escalation", "success")
+            except Exception:
+                pass
+
         act["sent"] = True
         actions.append(act)
 

@@ -412,6 +412,26 @@
         "type": "not_configured"
       }
     },
+    "sara_down": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false = NOT in the 4am batch. Sara+ Issue Escalation runs ITSELF every 5 min, 24/7, via the STANDALONE com.alphalete.sara-down LaunchAgent (StartInterval 300) on the mini. Present here so `lucy rerun sara_down` works and so a Hub 'play' from ANY machine routes the run to Lucy 1 (run_machine + run_rerun_id on the card). That routing is REQUIRED: the dedupe state file is PER-MACHINE, so running this on a laptop could re-send an escalation the mini already sent. Polls #saraplus-issues and emails support@saraplus.com the posted screenshot(s) + caption. Add --dry-run to preview with no send.",
+      "display_name": "Sara+ Issue Escalation",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.sara_down.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "install_sara_down_agent": {
       "on_scheduler": false,
       "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_sara_down_agent` can install/refresh the STANDALONE com.alphalete.sara-down LaunchAgent on the mini, which polls #saraplus-issues every 5 min (StartInterval 300, 24/7) and emails support@saraplus.com the screenshot(s) any channel member posts (automations.sara_down.run) via deploy/sara_down_5min.sh. FIRST run on a fresh machine BASELINES existing posts (emails nothing); only NEW posts escalate. install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
