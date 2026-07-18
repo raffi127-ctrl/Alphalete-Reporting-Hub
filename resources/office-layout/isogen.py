@@ -171,10 +171,10 @@ def tv(pos,along,wall,w=4.2,z0=1.45,z1=3.32,col="#20252b",db=0.0):
     # wall-mounted screen: `pos` is the wall coordinate (y for N/S, x for E/W), `along` the
     # centre along the wall. A thin dark panel + light bezel, on the wall's inner face.
     t=0.16
-    if   wall=='N': r=(along-w/2,pos+0.10,along+w/2,pos+0.10+t)
-    elif wall=='S': r=(along-w/2,pos-0.10-t,along+w/2,pos-0.10)
-    elif wall=='W': r=(pos+0.10,along-w/2,pos+0.10+t,along+w/2)
-    else:           r=(pos-0.10-t,along-w/2,pos-0.10,along+w/2)   # E
+    if   wall=='N': r=(along-w/2,pos+0.26,along+w/2,pos+0.26+t)
+    elif wall=='S': r=(along-w/2,pos-0.26-t,along+w/2,pos-0.26)
+    elif wall=='W': r=(pos+0.26,along-w/2,pos+0.26+t,along+w/2)
+    else:           r=(pos-0.26-t,along-w/2,pos-0.26,along+w/2)   # E
     box(r[0],r[1],r[2],r[3],FLR_Z+z0-0.12,FLR_Z+z1+0.12,"#454b54",db=db)   # bezel
     box(r[0],r[1],r[2],r[3],FLR_Z+z0,FLR_Z+z1,col,db=db+0.01)              # screen
 
@@ -220,9 +220,9 @@ _od=_ocx+_ocy
 for _zz,_cc,_dd in ((2.2,shade(_OT,0.62),_od+0.30),(2.4,_OT,_od+0.32)):
     emit(_dd,_zz,'<polygon points="%s" fill="%s" stroke="%s" stroke-width="0.5"/>'
          % (pts([iso(_x,_y,FLR_Z+_zz) for _x,_y in _ov]), _cc, shade(_OT,0.5)))
-for _cx,_cy,_front in ((52.9,13.6,False),(59.5,13.6,True),(54.6,11.5,False),
-                       (57.6,11.5,False),(54.6,15.7,True),(57.6,15.7,True)):
-    schair(_cx,_cy,_RD,db=(_od+0.32+(0.5 if _front else -0.5))-(_cx+_cy))
+for _cx,_cy,_cf,_front in ((52.9,13.6,'E',False),(59.5,13.6,'W',True),(54.6,11.5,'S',False),
+                          (57.6,11.5,'S',False),(54.6,15.7,'N',True),(57.6,15.7,'N',True)):
+    schair(_cx,_cy,_RD,face=_cf,db=(_od+0.32+(0.5 if _front else -0.5))-(_cx+_cy))
 
 # --- 3 · MAUD'S (0,47,11,64): exterior glass south, entry east, walls 1/2 solid.
 # Her studio frame IS the building's frame here, so this is her actual layout mapped
@@ -253,7 +253,7 @@ def _epx(sy): return 104.0-sy*_EK
 def _epy(sx,Y0): return Y0+sx*_EJ
 def ebox(sx0,sy0,sx1,sy1,Y0,z1,col,z0=0.0):
     box(_epx(sy1),_epy(sx0,Y0),_epx(sy0),_epy(sx1,Y0),FLR_Z+z0,FLR_Z+z1,col)
-def echair(sx,sy,Y0,col,s=1.25,h=2.9):
+def echair(sx,sy,Y0,col,s=1.3,h=1.9):
     schair(_epx(sy),_epy(sx,Y0),col,s=s,h=h)
 
 # 5 · TWADDLE'S (91,18,104,29): TV wall = plan north (conference side), windows = plan east
@@ -327,13 +327,13 @@ tv(11.0,58.0,'W')                     # 7 · interview (west wall)
 tv(19.875,58.0,'W')                   # 8 · interview (west wall)
 tv(47.0,5.7,'N')                      # 3 · Maud (TV on wall 2 -> north wall)
 tv(18.0,97.0,'N')                     # 5 · Twaddle (north / conference-side wall)
-tv(50.0,14.0,'W')                      # 4 · Raf (TV on wall 1 near the sitting table -> west wall)
+tv(50.0,9.5,'W')                       # 4 · Raf (TV on wall 1 -> west wall, clear of couch + oval table)
 for _mgx in (95.6,98.4):              # 6 · Megan — a 2x2 screen array on the north wall (y29)
     for _mgz in (1.75,2.85):
         box(_mgx-0.68,29.10,_mgx+0.68,29.26,FLR_Z+_mgz-0.5,FLR_Z+_mgz+0.5,"#454b54")   # bezel
         box(_mgx-0.60,29.12,_mgx+0.60,29.28,FLR_Z+_mgz-0.42,FLR_Z+_mgz+0.42,"#20252b") # screen
 tv(0.0,87.0,'N',w=6.0)                # 13 · conference (north wall, y0)
-tv(18.0,5.5,'N')                      # 1 · training screen (north, over the credenza)
+tv(18.0,5.5,'N',w=3.0,z0=2.48,z1=3.12)  # 1 · training screen, above the credenza
 tv(64.25,58.0,'E')                    # 11 · training screen (east wall; hidden behind the near wall)
 tv(82.0,58.0,'E')                     # 12 · training screen (east wall; hidden behind the near wall)
 
