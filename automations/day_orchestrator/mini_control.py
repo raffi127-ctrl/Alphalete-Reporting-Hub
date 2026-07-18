@@ -894,6 +894,88 @@ def _action_set_gbp_token(args: str) -> tuple[bool, str]:
                   f"(fetched {len(sample)} review as a check)")
 
 
+def _action_set_raffi_app_password(args: str) -> tuple[bool, str]:
+    """Install the raffi127 Gmail APP PASSWORD on THIS machine so bg_check_sync
+    can read the First Advantage / Sterling emails over IMAP unattended. Args is
+    the 16-char app password (spaces ok). Writes it to
+    ~/.config/recruiting-report/gmail-app-password-raffi127 (chmod 600), then
+    verifies by logging into IMAP. NEVER echoes the password.
+
+    Note: the password transits the control Sheet's Args cell to get here —
+    redact that cell after this shows 'done' (the queuer does this from the
+    laptop)."""
+    import shlex
+    raw = (args or "").strip()
+    try:
+        parts = shlex.split(raw)
+        pw = parts[0].strip() if parts else raw
+    except Exception:  # noqa: BLE001
+        pw = raw
+    if len(pw.replace(" ", "")) < 12:
+        return False, "set_raffi_app_password needs the 16-char app password as Args"
+    path = Path.home() / ".config" / "recruiting-report" / "gmail-app-password-raffi127"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(pw + "\n", encoding="utf-8")
+        os.chmod(path, 0o600)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path}: {str(e).splitlines()[0][:120]}"
+    # Verify: log into IMAP with the SAME code path the report uses. No echo.
+    try:
+        from automations.bg_check_sync import email_source
+        M = email_source._connect()
+        M.logout()
+    except Exception as e:  # noqa: BLE001
+        return True, (f"password written to {path} but IMAP login FAILED "
+                      f"({type(e).__name__}: {str(e).splitlines()[0][:100]}) — check the code")
+    return True, f"raffi127 app password installed + IMAP login verified ({path.name})"
+
+
+def _action_install_bg_check_sync(args: str) -> tuple[bool, str]:
+    """Install (or reinstall) the BG-check sync LaunchAgent
+    (com.alphalete.bg-check-sync) on THIS machine — 3x/day (8:00/11:30/16:00),
+    Monday 11:30 the must-run. Regenerates the plist for the mini's path, runs a
+    --dry-run smoke test (reads IMAP + the sheet, NO writes, NO Slack — proves the
+    app password + sheet access work), then bootstraps it. Run `update` +
+    `restart_poller` + `set_raffi_app_password` first."""
+    uid = os.getuid()
+    label = "com.alphalete.bg-check-sync"
+    src_plist = REPO_ROOT / "deploy" / f"{label}.plist"
+    wrapper = REPO_ROOT / "deploy" / "bg_check_sync.sh"
+    dst_plist = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+    if not src_plist.exists() or not wrapper.exists():
+        return False, (f"missing {src_plist.name} or {wrapper.name} — run "
+                       "`update` first to pull them")
+    try:
+        text = src_plist.read_text().replace(
+            "/Users/megan/1st Claude Folder", str(REPO_ROOT))
+        dst_plist.parent.mkdir(parents=True, exist_ok=True)
+        dst_plist.write_text(text)
+        os.chmod(wrapper, 0o755)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write plist/wrapper: {str(e).splitlines()[0][:140]}"
+    lint = subprocess.run(["plutil", "-lint", str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if lint.returncode != 0:
+        return False, f"plist lint failed: {(lint.stdout or '')[:160]}"
+    # Smoke test — real IMAP + sheet read, NO writes, NO Slack post.
+    smoke_ok, smoke = _run_cmd(
+        [sys.executable, "-m", "automations.bg_check_sync.run", "--dry-run",
+         "--since-days", "5"],
+        timeout_s=180, log_name="bg-check-sync-install-smoke.log")
+    if not smoke_ok:
+        return False, f"smoke test failed — NOT going live: {smoke[:150]}"
+    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["launchctl", "enable", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    boot = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if boot.returncode != 0:
+        return False, f"smoke ok; bootstrap FAILED: {(boot.stdout or '').strip()[:150]}"
+    return True, (f"installed {label} (8:00/11:30/16:00 daily) · smoke ok · {smoke[:80]}")
+
+
 ACTIONS = {
     "ping": _action_ping,
     "screendrive": _action_screendrive,
@@ -909,6 +991,8 @@ ACTIONS = {
     "install_hub_watch": _action_install_hub_watch,
     "install_lucy2_digest": _action_install_lucy2_digest,
     "install_card_scheduler": _action_install_card_scheduler,
+    "set_raffi_app_password": _action_set_raffi_app_password,
+    "install_bg_check_sync": _action_install_bg_check_sync,
     "reseed_appstream": _action_reseed_appstream,
     "watch_test": _action_watch_test,
     "diag": _action_diag,
