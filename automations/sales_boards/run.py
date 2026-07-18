@@ -103,9 +103,18 @@ def _channel():
 
 
 def find_thread_ts(client, channel: str, day):
-    """ts of today's parent, so a re-run never starts a second thread."""
+    """ts of today's parent, so a re-run never starts a second thread.
+
+    Degrades to None (= start a fresh thread) if the history read fails. Lucy's
+    token has channels:history + groups:history — enough for the real channel —
+    but NOT im:history, so this raises in a --dm test run. A test shouldn't be
+    able to crash the post path."""
     oldest = dt.datetime.combine(dt.date.today(), dt.time.min).timestamp()
-    resp = client.conversations_history(channel=channel, oldest=str(oldest), limit=200)
+    try:
+        resp = client.conversations_history(channel=channel, oldest=str(oldest), limit=200)
+    except Exception as e:  # noqa: BLE001
+        print(f"    (thread lookup unavailable — {type(e).__name__}; starting a new thread)")
+        return None
     needle = header_title(day)
     for msg in resp.get("messages", []):
         if needle in (msg.get("text") or ""):
