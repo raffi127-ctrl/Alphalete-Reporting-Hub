@@ -68,6 +68,13 @@ METRICS = [
      "automations.churn.run", []),
     ("abp", "💳 New Internet ABP %",
      "automations.new_internet_abp.run", []),
+    ("tableau_shot", "📸 Tableau Metrics",
+     # Screenshot of the ATT TRACKER 2.1 Metrics view scoped to Raf's LOCAL
+     # OFFICE team (Megan 2026-07-16: everyone is scoped to their owner, Raf
+     # included — no all-teams). Posts into #alphalete-sales' thread (the
+     # default METRICS_CHANNEL_ID). Live by default, like the others.
+     "automations.office_metrics.metrics_shot",
+     ["--owner", "Rafael Hidalgo", "--live"]),
 ]
 
 

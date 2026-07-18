@@ -1262,7 +1262,7 @@ def _office_metrics_card() -> dict:
         "color": "#8B5CF6",
         "category": "🏢 Other Offices",
         "description": (
-            f"The same 11 daily metrics as the main report, run for each of the "
+            f"The same 12 daily metrics as the main report, run for each of the "
             f"{len(buttons)} offices and posted into that office's own Metrics "
             f"thread: {channels}. Every metric slices a shared org-wide view and "
             "filters to the office's owner, so adding an office is config only — "
@@ -1270,7 +1270,7 @@ def _office_metrics_card() -> dict:
             "the per-office buttons to re-run just one."),
         "breakdown": (
             "WHAT IT DOES\n"
-            f"For each office below, runs all 11 daily metrics and posts them "
+            f"For each office below, runs all 12 daily metrics and posts them "
             "into today's Metrics thread in that office's channel (one header "
             "thread per office per day, created first if it isn't up yet).\n\n"
             f"OFFICES\n{office_bullets}\n\n"
@@ -1285,7 +1285,8 @@ def _office_metrics_card() -> dict:
             "• 🌐 New Internet Churn\n"
             "• 📊 Wireless Churn\n"
             "• 🆕 Rep Activations\n"
-            "• 💳 New Internet ABP %\n\n"
+            "• 💳 New Internet ABP %\n"
+            "• 📸 Tableau Metrics (screenshot of the ATT TRACKER Metrics view, scoped to the office)\n\n"
             "WHEN IT RUNS\n"
             "Daily in the 4am batch, each office in turn."),
         "assignees": ["Lucy 1"],
@@ -1297,7 +1298,7 @@ def _office_metrics_card() -> dict:
         "checklist": [],
         "post_run": {
             "message_success": (
-                f"✅ Office metrics posted — all 11 metrics in each of the "
+                f"✅ Office metrics posted — all 12 metrics in each of the "
                 f"{len(buttons)} offices' threads."),
             "message_failed": (
                 "❌ An office had a miss — check the per-office checklist, then "
@@ -1310,7 +1311,7 @@ def _office_metrics_card() -> dict:
                 "label": "Run All Offices",
                 "icon": "▶",
                 "primary": True,
-                "help": (f"Runs all 11 metrics for each of the {len(buttons)} "
+                "help": (f"Runs all 12 metrics for each of the {len(buttons)} "
                          "offices in turn and posts to each office's own "
                          "channel. Continues past an office that fails. Needs a "
                          "warm Tableau + ownerville session (best run on the "

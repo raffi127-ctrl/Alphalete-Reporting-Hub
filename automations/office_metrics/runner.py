@@ -170,6 +170,14 @@ def metrics_for(o: Office) -> list[dict]:
                   "ABP_SHEET_ID": o.sheet_id,
                   "ABP_OWNER": o.owner.upper(), "ABP_SUBTITLE": o.label},
              dry_flag="--dry-run", post_flag=None),
+        dict(slug="tableau_shot", label="📸 Tableau Metrics",
+             module="automations.office_metrics.metrics_shot",
+             # Screenshot of the ATT TRACKER 2.1 Metrics view SCOPED to this
+             # office's owner (Raf 2026-07-16; filter proven on Rashad). Posts
+             # into the office thread via the same METRICS_CHANNEL_ID/HEADER_LABEL
+             # env every metric inherits, so no per-office wiring.
+             owner_args=["--owner", o.owner], env={},
+             dry_flag="--dry-run", post_flag="--live"),
     ]
 
 
