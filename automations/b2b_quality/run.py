@@ -5,9 +5,9 @@ their own dated thread in #alphalete-gp-sales (Megan 2026-07-17 — she picked t
 title over "B2B Performance" / "Alphalete B2B Metrics" / "B2B Scorecard"):
 
     *B2B Quality & Bonus 07/18/2026*
-    • Tiered Bonus
-    • Activation Rate
-    • Churn Rate
+    🎯 Tiered Bonus
+    ⚡ Activation Rate
+    📉 Churn Rate
 
 …then each view's image as a threaded reply, titled with YESTERDAY's date to
 match her convention ("Tiered Bonus 7.17.png").
@@ -54,6 +54,17 @@ Usage:
   (always with `--machine "Lucy 2"` — see above)
   lucy rerun b2b_quality --post              # capture + post the thread
   lucy rerun b2b_quality --post --dm U…      # post to a DM (test)
+  lucy rerun b2b_quality --post --thread-ts 1784459700.561209   # into THAT thread
+
+THREADING: a day's posts belong in ONE thread. The dedup guards that read Slack
+(find_thread_ts / _already_replied) are unreliable here — Lucy's token cannot
+read this channel's history at all, so they silently report "no thread yet" and
+every retry pass opens its own (four identical threads, 2026-07-19). The
+authority is output/b2b_quality/thread_state.json (day|channel -> thread_ts +
+which views posted); it needs no Slack scope. That state is PER MACHINE, so if a
+thread was opened elsewhere, pass --thread-ts rather than trusting the lookup.
+ROOT FIX still open: give Lucy's token channels:history on #alphalete-gp-sales
+and find_thread_ts becomes a real backstop.
 """
 from __future__ import annotations
 
@@ -443,7 +454,8 @@ def _already_replied(client, channel: str, thread_ts: str, plain: str) -> bool:
     return False
 
 
-def post_thread(imgs: dict, day, yday, dry_run: bool, dm_user: str = "") -> list:
+def post_thread(imgs: dict, day, yday, dry_run: bool, dm_user: str = "",
+                thread_ts: str = "") -> list:
     name, cid = _channel()
     tag = f"{yday.month}.{yday.day}"
     if dry_run:
@@ -458,7 +470,13 @@ def post_thread(imgs: dict, day, yday, dry_run: bool, dm_user: str = "") -> list
     # Local state FIRST — it is the only guard that works without a history read.
     state = _load_state(day, cid)
     posted = list(state.get("posted") or [])
-    ts = state.get("thread_ts") or find_thread_ts(client, cid, day)
+    # --thread-ts wins: the state file is per-machine, so a thread opened by a
+    # different runner (or one whose state was lost) is otherwise invisible and
+    # we would open a SECOND thread. find_thread_ts can't be relied on to catch
+    # that — Lucy's token can't read this channel's history at all.
+    ts = thread_ts or state.get("thread_ts") or find_thread_ts(client, cid, day)
+    if thread_ts:
+        print(f"    (using --thread-ts {thread_ts})")
     created = False
     if not ts:
         ts = client.chat_postMessage(channel=cid, text=header_text(day)).get("ts")
@@ -497,6 +515,8 @@ def main(argv=None) -> int:
     ap.add_argument("--only", help="comma-separated view ids")
     ap.add_argument("--post", action="store_true", help="ACTUALLY post (default dry-run)")
     ap.add_argument("--dm", metavar="USER_ID", help="post the thread to a DM (test)")
+    ap.add_argument("--thread-ts", default="", metavar="TS",
+                    help="post into THIS existing thread instead of finding/creating one")
     ap.add_argument("--show", action="store_true", help="run the browser headed")
     args = ap.parse_args(argv)
 
@@ -522,7 +542,8 @@ def main(argv=None) -> int:
 
     print("POSTING thread to Slack as Lucy:")
     try:
-        results = post_thread(imgs, today, yday, dry_run=False, dm_user=args.dm or "")
+        results = post_thread(imgs, today, yday, dry_run=False, dm_user=args.dm or "",
+                              thread_ts=args.thread_ts)
     except Exception:
         _publish_hub("failed")
         raise
