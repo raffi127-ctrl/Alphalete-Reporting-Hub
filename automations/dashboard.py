@@ -3984,24 +3984,18 @@ AUTOMATED_REPORTS = [
         "description": "Refreshes the Vantura Master Sales Board every morning: pulls each owner's 60-day Order Log and the Churn Rates dashboard from Tableau, computes the 0-30 bases/disconnects, reconciles against the dashboard's own 0-30 cell, and only then writes Carlos's Churn + Activations tabs and Atef's Churn tab.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "**•** Pulls the **Order Log** via the direct authenticated "
-            "export (no browser UI; the old render-and-dialog path stays as "
-            "automatic fallback) plus the **Churn Rates** crosstab.\n"
+            "**•** Pulls the **Order Log** plus the **Churn Rates** "
+            "crosstab.\n"
             "**•** Computes per-product activation bases and 0-30 "
-            "disconnects (posted-date window; col 19, never Max Posted).\n"
+            "disconnects.\n"
             "**•** **Reconciles** the computed numbers against the CHURN "
             "RATES dashboard — on ANY mismatch it writes NOTHING and fails "
             "loudly.\n"
             "**•** Writes Churn!B5:B7 + the R2:AE helper block (Carlos and "
             "Atef) and rebuilds the Activations dump, preserving the notes "
             "that follow customers and SPMs.\n\n"
-            "WHAT STAYS HUMAN\n"
-            "Nothing day-to-day — check the board over coffee. If a run "
-            "fails it's usually a stale Tableau load; a re-run normally "
-            "clears it.\n\n"
             "WHEN IT RUNS\n"
-            "**Daily 7:00 AM** on Lucy 2 (launchd "
-            "com.alphalete.vantura-churn-daily, live since 2026-07-18)."
+            "**Daily 7:00 AM** on Lucy 2."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"),
