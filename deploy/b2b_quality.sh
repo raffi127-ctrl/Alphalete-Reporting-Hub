@@ -37,6 +37,14 @@ export PYTHONPATH="$(pwd)"
 MODE="--post"
 [ "${1:-}" = "--dry" ] && MODE=""
 
+# Earlier passes HOLD unless all three views captured, so the thread reads in
+# order (a straggler posted later lands at the bottom). The LAST pass of the
+# morning stops holding — by then a short thread beats no thread at all.
+# 05:50+ covers the final 05:54 entry with margin for a slow start.
+if [ "${MODE}" = "--post" ] && [ "$(date +%H%M)" -ge 0550 ]; then
+    MODE="--post --allow-partial"
+fi
+
 LOG_FILE="$LOG_DIR/b2b-quality-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] b2b-quality starting (mode: ${MODE:-dry-run})" > "$LOG_FILE"
 

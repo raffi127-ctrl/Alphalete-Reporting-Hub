@@ -518,6 +518,9 @@ def main(argv=None) -> int:
     ap.add_argument("--thread-ts", default="", metavar="TS",
                     help="post into THIS existing thread instead of finding/creating one")
     ap.add_argument("--show", action="store_true", help="run the browser headed")
+    ap.add_argument("--allow-partial", action="store_true",
+                    help="post the views we DID get even if one is missing "
+                         "(last pass of the morning; order may then be off)")
     args = ap.parse_args(argv)
 
     today = dt.date.today()
@@ -529,6 +532,22 @@ def main(argv=None) -> int:
         print("no views captured — nothing to post.")
         _publish_hub("failed")
         return 75           # EX_TEMPFAIL: let the scheduler retry
+
+    # ORDER: a thread is chronological, so the replies can only read in SPECS
+    # order if we post them together. If a view is missing (a guard blocked it,
+    # a capture failed), posting the rest now means the straggler lands at the
+    # BOTTOM when a later pass picks it up — which is how 2026-07-19 ended up
+    # Tiered / Churn / Activation. So HOLD the whole pass and let the next retry
+    # do it cleanly. --allow-partial (the morning's LAST pass) overrides, because
+    # by then a short thread beats no thread.
+    wanted = [s["id"] for s in SPECS if not only or s["id"] in only]
+    missing = [i for i in wanted if i not in imgs]
+    if missing and not args.allow_partial:
+        print(f"HOLDING — {len(imgs)}/{len(wanted)} views captured, missing: "
+              f"{', '.join(missing)}. Posting now would put them out of order; "
+              f"the next pass retries (use --allow-partial to force).")
+        _publish_hub("failed")
+        return 75           # EX_TEMPFAIL: the scheduler retries
 
     if not args.post:
         r = post_thread(imgs, today, yday, dry_run=True)[0]
