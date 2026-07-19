@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.box-order-log</string>
+
+    <!-- Path is the laptop placeholder; on the mini, install_agent.py rewrites it
+         to that machine's repo path (python -m automations.day_orchestrator.install_agent
+         box-order-log). -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/box_order_log.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- DAILY incl. weekends (no Weekday key). First pass 7:00 CST — after the
+         6:00 Sales Boards run so the two don't contend for the ownerville
+         session, and late enough that the Box extract has refreshed. Retries
+         through the morning: the merge is idempotent, so a pass that finds
+         nothing new is a no-op. TIME KNOB: edit these entries (Hour/Minute are
+         machine LOCAL time; the mini is Central). -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>15</integer></dict>
+    </array>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/com.alphalete.box-order-log.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/com.alphalete.box-order-log.err</string>
+</dict>
+</plist>
