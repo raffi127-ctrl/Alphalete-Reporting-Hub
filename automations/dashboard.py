@@ -4027,14 +4027,10 @@ AUTOMATED_REPORTS = [
                 "module": "automations.vantura_churn.run",
                 "args_fn": lambda: [],
             },
-            {
-                "label": "Dry Run",
-                "icon": "🧪",
-                "primary": False,
-                "help": "Pull + compute + reconcile and print everything, but write nothing.",
-                "module": "automations.vantura_churn.run",
-                "args_fn": lambda: ["--dry-run"],
-            },
+            # No secondary actions on purpose — the "⚙️ More actions" expander
+            # only renders when one exists, so the card stays a single button
+            # (Megan 2026-07-18). Dry runs are still available via
+            # `lucy rerun vantura_churn --dry-run`.
         ],
     },
 ]
