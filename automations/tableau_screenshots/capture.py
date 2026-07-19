@@ -322,15 +322,18 @@ def _download_once(page, spec: dict, out_path: Path, *, hydrate_ms: int,
     page.wait_for_timeout(hydrate_ms)          # let the data hydrate behind the viz
 
     _clear_error_toast(viz, page, verbose)
-    # Hook for view state that must be re-applied AFTER this navigation — e.g. a
-    # column sort the custom view doesn't persist (b2b_quality). Doing it before
-    # capture_page is useless: the goto above throws it away. Never fatal.
+    # Hook for view state that must be verified/applied AFTER this navigation —
+    # doing it before capture_page is useless, the goto above throws it away.
+    #
+    # Exceptions PROPAGATE on purpose. The hook's job is to assert the viz is in
+    # the state we intend to photograph (b2b_quality waits for Tableau to confirm
+    # the custom view is applied). If that assertion fails we must NOT fall
+    # through and download whatever is on screen — that is how b2b_quality posted
+    # an unsorted Activation board on 2026-07-19. Raising lets the retry loop try
+    # again, and a hard failure means the caller skips + flags the view, which
+    # beats posting a wrong-looking image.
     if after_load:
-        try:
-            after_load(page)
-        except Exception as e:  # noqa: BLE001 — a failed tweak must not lose the image
-            if verbose:
-                print(f"   ⚠ after_load hook failed: {type(e).__name__}", flush=True)
+        after_load(page)
     # Measure the Page-1 crop BEFORE opening the download flyout (the flyout can
     # shift the DOM). None for single-page dashboards.
     crop_frac = _page1_crop_fraction(page, spec, verbose)

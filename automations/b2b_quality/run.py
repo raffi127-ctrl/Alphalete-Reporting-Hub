@@ -53,6 +53,7 @@ import time
 from pathlib import Path
 
 _BASE = "https://us-east-1.online.tableau.com/#/site/sci/views/"
+_IFRAME = 'iframe[title="Data Visualization"]'   # matches tableau_screenshots.capture
 
 # Saved views carry the filters the VA uses (Carlos's office). The GUID + saved
 # view name in each URL is what pins those filters — don't trim them.
@@ -64,6 +65,7 @@ SPECS = [
         "url": _BASE + ("ATTTRACKER-B2B/OrderTieredBonus-RepRanking/"
                         "d8e25f41-e23b-4d82-bb9d-4c52dde38b9e/CarlosLocalOffice?:iid=1"),
         "crop": "canvas",
+        "view_label": "Carlos Local Office",
     },
     {
         "id": "activation_rate",
@@ -73,6 +75,7 @@ SPECS = [
                         "4c53fb7e-5a1b-4e8f-990e-0b2c8cf42309/"
                         "CarlosLocalOfficeEXPANDED?:iid=2"),
         "crop": "canvas",
+        "view_label": "Carlos Local Office EXPANDED",
         "data_cols": 4,          # 0-7 / 8-14 / 15-30 / 31-60
     },
     {
@@ -83,6 +86,7 @@ SPECS = [
                         "7419b960-0fb1-41d5-a11e-76f0e81c0547/"
                         "CarlosLocalOfficeEXPANDEDCHURN?:iid=1"),
         "crop": "canvas",
+        "view_label": "Carlos Local Office EXPANDED CHURN",
         # Sorted by the 0-30 Day DISCONNECT COUNT desc (3, 2, 1, 1, ..., 0, 0) —
         # NOT by the percentage. Reading the % column makes it look unsorted; it
         # isn't. The view carries this itself under Carlos's login, so there is
@@ -108,6 +112,11 @@ def header_text(day) -> str:
 def _channel():
     scratch = os.environ.get("B2B_QUALITY_CHANNEL_ID")
     return (f"scratch ({scratch})", scratch) if scratch else CHANNEL
+
+
+class UnsortedViewError(RuntimeError):
+    """The captured table is not sorted on its leading column, so the image would
+    be wrong. Raised instead of posting — see crop_to_last_data_row."""
 
 
 def crop_to_last_data_row(png: Path, data_cols: int, verbose: bool = False) -> bool:
@@ -174,12 +183,24 @@ def crop_to_last_data_row(png: Path, data_cols: int, verbose: bool = False) -> b
         if not with_data:
             return False
         cut = min(H, with_data[-1][1] + 4)                    # +4 keeps the border
+        # SORT CHECK, independent of anything Tableau tells us. When the leading
+        # column is sorted, every row above the cut has a value in it (blanks sort
+        # last). If rows up there are EMPTY in that column, the table came back
+        # unsorted — the 2026-07-19 failure — and the image must not be posted.
+        above = [b for b in bands if b[1] <= cut]
+        blanks = len(above) - len([b for b in above if b in with_data])
+        if blanks > 0:
+            raise UnsortedViewError(
+                f"{blanks} of {len(above)} rows above the cut are empty in the "
+                f"leading column — the view came back UNSORTED")
         if cut >= H - 4:
             return False                                      # nothing to trim
         im.crop((0, 0, W, cut)).save(png)
         if verbose:
             print(f"   ✂ cropped to last row with data ({H} -> {cut}px)", flush=True)
         return True
+    except UnsortedViewError:
+        raise                          # never swallowed — skip+flag beats posting wrong
     except Exception as e:  # noqa: BLE001 — a bad crop must not lose the image
         if verbose:
             print(f"   ⚠ crop failed ({type(e).__name__}) — full length kept",
@@ -198,7 +219,10 @@ def capture_all(out_dir: Path, only=None, headless: bool = True) -> dict:
     with tableau_session(headless=headless, allow_form_login=False, verbose=True) as page:
         for spec in specs:
             try:
-                png = cap.capture_page(page, spec, out_dir, verbose=True)
+                hook = None
+                if spec.get("view_label"):
+                    hook = (lambda p, lb=spec["view_label"]: wait_for_custom_view(p, lb))
+                png = cap.capture_page(page, spec, out_dir, after_load=hook, verbose=True)
                 if spec.get("data_cols"):
                     crop_to_last_data_row(png, spec["data_cols"], verbose=True)
                 out[spec["id"]] = png
@@ -210,6 +234,42 @@ def capture_all(out_dir: Path, only=None, headless: bool = True) -> dict:
     if failed:
         print(f"captured {len(out)}/{len(specs)} — failed: {', '.join(failed)}", flush=True)
     return out
+
+
+def wait_for_custom_view(page, label: str, timeout_ms: int = 90_000) -> None:
+    """Block until Tableau reports the CUSTOM VIEW is the one on screen.
+
+    The viewer renders the workbook's DEFAULT view first and swaps in the custom
+    view a moment later. On a warm session that gap is invisible; on the first
+    cold load of the morning it is not, and a fixed hydrate wait captures the
+    default — which is unsorted, so Activation posts in alphabetical order.
+    That is the 2026-07-19 5:30am failure: identical code posted correctly at
+    21:55 the night before, when the session was warm.
+
+    Tableau puts "View: <name>" in the viz toolbar; that string IS the proof the
+    swap has happened. Poll for it instead of trusting a timer.
+
+    RAISES on timeout — deliberately. capture_page lets this propagate so the
+    view is SKIPPED AND FLAGGED rather than posted wrong, which is this module's
+    standing rule.
+    """
+    import time as _t
+    needle = f"View: {label}"
+    fr = page.frame_locator(_IFRAME)
+    deadline = _t.time() + timeout_ms / 1000
+    last = ""
+    while _t.time() < deadline:
+        try:
+            last = fr.locator("body").inner_text(timeout=10_000)
+            if needle in last:
+                return
+        except Exception:  # noqa: BLE001 — viz still painting; keep polling
+            pass
+        page.wait_for_timeout(2_000)
+    shown = next((ln.strip() for ln in last.splitlines() if ln.strip().startswith("View:")),
+                 "(no View: line)")
+    raise RuntimeError(
+        f"custom view never applied: wanted {needle!r}, toolbar showed {shown!r}")
 
 
 STATE_FILE = OUT_DIR / "thread_state.json"
