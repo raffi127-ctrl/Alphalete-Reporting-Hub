@@ -309,7 +309,7 @@ def _trim_bottom(path: Path, verbose: bool, margin_px: int = 14,
 
 
 def _download_once(page, spec: dict, out_path: Path, *, hydrate_ms: int,
-                   verbose: bool) -> Path:
+                   verbose: bool, after_load=None) -> Path:
     try:
         page.goto("about:blank", timeout=10_000)
     except Exception:
@@ -322,6 +322,15 @@ def _download_once(page, spec: dict, out_path: Path, *, hydrate_ms: int,
     page.wait_for_timeout(hydrate_ms)          # let the data hydrate behind the viz
 
     _clear_error_toast(viz, page, verbose)
+    # Hook for view state that must be re-applied AFTER this navigation — e.g. a
+    # column sort the custom view doesn't persist (b2b_quality). Doing it before
+    # capture_page is useless: the goto above throws it away. Never fatal.
+    if after_load:
+        try:
+            after_load(page)
+        except Exception as e:  # noqa: BLE001 — a failed tweak must not lose the image
+            if verbose:
+                print(f"   ⚠ after_load hook failed: {type(e).__name__}", flush=True)
     # Measure the Page-1 crop BEFORE opening the download flyout (the flyout can
     # shift the DOM). None for single-page dashboards.
     crop_frac = _page1_crop_fraction(page, spec, verbose)
@@ -445,6 +454,7 @@ def inspect_view(page, spec: dict, *, verbose: bool = True) -> dict:
 def capture_page(page, spec: dict, out_dir: Path, *,
                  hydrate_ms: int = 20_000,
                  force_crop: str | None = None,   # accepted for CLI compat; unused
+                 after_load=None,
                  verbose: bool = True) -> Path:
     """Navigate to spec['url'] and save the full board via Download → Image.
     Retries on transient Tableau flakes. Raises after MAX_ATTEMPTS — NO screenshot
@@ -458,7 +468,7 @@ def capture_page(page, spec: dict, out_dir: Path, *,
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             _download_once(page, spec, out_path, hydrate_ms=hydrate_ms,
-                           verbose=verbose)
+                           verbose=verbose, after_load=after_load)
             kb = out_path.stat().st_size // 1024
             if verbose:
                 print(f"   ✓ Download→Image  {out_path.name}  "
