@@ -3534,7 +3534,8 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "daily",
             "time": "7:00 AM",
-            "estimated_minutes": 4,
+            # Measured on Lucy 2: 83s and 89s end to end, pull included.
+            "estimated_minutes": 2,
         },
         "checklist": [],
         "post_run": {
