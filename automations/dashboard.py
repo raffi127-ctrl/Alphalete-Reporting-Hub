@@ -3529,9 +3529,18 @@ AUTOMATED_REPORTS = [
         "run_machine": "Lucy 2",
         "run_rerun_id": "box_order_log",
         "self_scheduled": True,
+        # Fires 2x a day (7:00 + 8:30). The tile stays amber after the 7:00
+        # pass and only turns green once 8:30 lands — otherwise it would read
+        # "done for the day" at 7am with a pass still to come. Both runs
+        # report themselves via automations.shared.hub_activity; without that
+        # a launchd run is invisible to the Hub and nothing would count.
+        "daily_runs": 2,
         "schedule": {
             "frequency": "daily",
+            # Runs TWICE (7:00 + 8:30). time_label carries both on the tile;
+            # `time` stays the sortable 7:00 start so it still orders first.
             "time": "7:00 AM",
+            "time_label": "7 AM + 8:30 AM CST",
             # Measured on Lucy 2: 83s and 89s end to end, pull included.
             "estimated_minutes": 2,
         },

@@ -110,6 +110,23 @@ def main(argv: Optional[list] = None) -> int:
 
     verbose = not args.quiet
     today = dt.date.today()
+    started_at = dt.datetime.now()
+
+    def _report_to_hub(started, loud):
+        """Tell the Hub this pass finished.
+
+        Only for runs the Hub didn't start itself — a Hub-launched run is
+        already logged by dashboard.py, and double-logging would let the
+        card's daily_runs counter hit its target early and go green before
+        the second pass. HUB_RUN=1 is set by the dashboard's launcher.
+        """
+        if os.environ.get("HUB_RUN"):
+            return
+        from automations.shared import hub_activity
+        ok = hub_activity.log_completed("box-order-log", "BOX Order Log")
+        if loud and not ok:
+            print("  (couldn't record this run on the Hub — tile may not "
+                  "turn green; the report itself is fine)")
 
     from . import clean, render
 
@@ -224,6 +241,7 @@ def main(argv: Optional[list] = None) -> int:
     # ---- 7. optional Slack post -----------------------------------------
     header = "*BOX Order Log — {}*".format(today.strftime("%B %d, %Y"))
     if not args.post:
+        _report_to_hub(started_at, verbose)
         if verbose:
             print("\n  Not posted to Slack. To post the PDF to {}:".format(
                 CHANNEL[0]))
@@ -275,6 +293,7 @@ def main(argv: Optional[list] = None) -> int:
         return 1
 
     print("\n✅ Posted to {}".format(where))
+    _report_to_hub(started_at, verbose)
     return 0
 
 
