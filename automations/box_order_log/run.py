@@ -92,6 +92,9 @@ def main(argv: Optional[list] = None) -> int:
                     help="also build the PDF")
     ap.add_argument("--post", action="store_true",
                     help="actually post to Slack (default: build only)")
+    ap.add_argument("--note", metavar="TEXT",
+                    help="extra line under the header — e.g. what changed "
+                         "since the last preview")
     ap.add_argument("--dm", metavar="USER_IDS",
                     help="route the post to a DM instead of the channel, for "
                          "review. Comma-separate for a group DM. Same code "
@@ -196,8 +199,8 @@ def main(argv: Optional[list] = None) -> int:
         from . import payout, png
         tables = payout.build_week_tables(sales, today)
         png.render(tables, out_png,
-                   subtitle="BOX Order Log · paid = accepted by supplier "
-                            "that week")
+                   subtitle="Paid & Cancelled are for that week. "
+                            "Still Open = deals not yet accepted, any week.")
         if verbose:
             print("  Payout image: {}".format(out_png))
             for key in ("last", "this"):
@@ -248,6 +251,8 @@ def main(argv: Optional[list] = None) -> int:
             text = (header + "\n_Preview — this is what would post to "
                     "{} every morning. Nothing has been posted to the "
                     "channel._".format(CHANNEL[0]))
+        if args.note:
+            text = text + "\n" + args.note
         resp = client.chat_postMessage(channel=target, text=text)
         ts = resp["ts"]
         # Workbook first — the overall log plus a tab per rep plus the payout

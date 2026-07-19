@@ -67,9 +67,13 @@ def build_week_tables(sales: Sequence, today: Optional[dt.date] = None) -> Dict:
     row is {"rep", "posted", "pending", "total", "canceled"}, sorted by total
     descending with the rep name as tiebreak.
 
-    Pending is a single pool shown identically in both tables — a deal that
-    hasn't been accepted has no payout week yet, so pinning it to one would be
-    inventing information. Fiber does the same.
+    NOTE ON SCOPE — this bit confused Carlos on 2026-07-18 and the labels now
+    say it outright. `posted` and `canceled` are WEEK figures. `pending` is
+    NOT: it's every deal of that rep's still waiting on acceptance, whatever
+    week it was sold, and it is identical in both tables. A deal that hasn't
+    been accepted has no payout week yet, so pinning it to one would invent
+    information. That's why there is no longer a "Total" column — summing a
+    week figure with an all-time one produced a number that meant nothing.
     """
     today = today or dt.date.today()
     last_start, last_end, this_start, this_end = week_bounds(today)
@@ -109,7 +113,9 @@ def build_week_tables(sales: Sequence, today: Optional[dt.date] = None) -> Dict:
             rows.append({"rep": rep, "posted": posted, "pending": pending,
                          "total": posted + pending,
                          "canceled": a[canceled_key]})
-        rows.sort(key=lambda r: (-r["total"], r["rep"].lower()))
+        # Rank by what actually pays that week. The old key was posted+pending,
+        # which mixed a week figure with an all-time one.
+        rows.sort(key=lambda r: (-r["posted"], -r["pending"], r["rep"].lower()))
         return rows
 
     return {

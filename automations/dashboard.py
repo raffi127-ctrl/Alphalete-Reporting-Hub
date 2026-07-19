@@ -3486,6 +3486,90 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "box-order-log",
+        # Channel in the name; the tile appends "· 7:00 AM CST" from `schedule`.
+        "name": "BOX Order Log → #alphalete-gp-sales",
+        "creator": "Megan",
+        "emoji": "📦",
+        "color": "#0EA5E9",
+        "category": "📊 Metrics",
+        "description": "Carlos's B2B counterpart to Raf's Fiber order log — keeps a rolling 6-week log on the Vantura Master Sales Board and posts the daily workbook + payout image to #alphalete-gp-sales.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Pulls Carlos's **Box Order Log** Tableau view and collapses "
+            "it — the export gives one row per *status change*, not one per "
+            "sale, so a single deal shows up 3-4 times as it moves.\n"
+            "**•** Updates the **Lucy Box Order Log** tab on the Vantura "
+            "Master Sales Board: pick a week at the top, see it broken down "
+            "per rep busiest-first, then the log with each rep in their own "
+            "section.\n"
+            "**•** Posts one dated thread to **#alphalete-gp-sales** with the "
+            "workbook (overall log + Payout by Week + a tab per rep) and a "
+            "payout image showing last week and this week.\n\n"
+            "WHEN IT RUNS\n"
+            "**Twice a day, 7:00am and 8:30am CST**, including weekends. "
+            "**Only the 7:00 run posts** — 8:30 just refreshes the sheet. If "
+            "the 7:00 run fails before posting, 8:30 posts instead, so there "
+            "is always exactly one post a day.\n\n"
+            "TWO DATES, ON PURPOSE\n"
+            "**•** The **log** is grouped by the week a deal was **sold**.\n"
+            "**•** The **payout** is grouped by the week the supplier "
+            "**accepted** it — that's the week it pays. The two will not "
+            "match, and that's correct.\n\n"
+            "SAFETY GATES\n"
+            "**•** The sheet is **merged, never overwritten** — the Tableau "
+            "view only reaches back ~44 days, so a straight rewrite would "
+            "silently drop the oldest week.\n"
+            "**•** Refuses to run if the pull comes back empty, rather than "
+            "blanking the tab.\n"
+            "**•** Only ever touches its own two tabs; Carlos's hand-built "
+            "**Box Order Log** tab is on a protected list."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"),
+        "assignees": ["Lucy 2"],
+        "run_machine": "Lucy 2",
+        "run_rerun_id": "box_order_log",
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "estimated_minutes": 4,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ BOX Order Log updated.",
+            "message_failed": "❌ Run failed. Check the log above, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Update Sheet",
+                "icon": "▶",
+                "primary": True,
+                "help": "Pulls Tableau and refreshes the rolling 6-week log on "
+                        "the Vantura board. Does NOT post to Slack.",
+                "module": "automations.box_order_log.run",
+                "args_fn": lambda: ["--sheet", "--xlsx"],
+            },
+            {
+                "label": "Update + Post",
+                "icon": "📣",
+                "help": "Refreshes the sheet AND posts today's thread to "
+                        "#alphalete-gp-sales.",
+                "module": "automations.box_order_log.run",
+                "args_fn": lambda: ["--sheet", "--xlsx", "--post"],
+            },
+            {
+                "label": "Preview (no writes)",
+                "icon": "👁",
+                "help": "Builds the workbook and payout image into output/ "
+                        "without touching the sheet or Slack.",
+                "module": "automations.box_order_log.run",
+                "args_fn": lambda: ["--xlsx"],
+            },
+        ],
+    },
+    {
         "id": "brand-health-audit",
         # No cadence in the name — self_scheduled, so the tile appends
         # "· 12:00 PM CST" itself (it read "(12 CST Daily) · 12:00 PM CST").

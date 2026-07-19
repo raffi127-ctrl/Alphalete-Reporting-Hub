@@ -2482,8 +2482,8 @@
     },
     "box_order_log": {
       "on_scheduler": false,
-      "_off_scheduler_note": "Carlos's BOX (B2B) Order Log -> the 'Lucy Box Order Log' tab on the Vantura Master Sales Board. on_scheduler:false = NOT in the 4am batch; the real schedule is a STANDALONE LaunchAgent (com.alphalete.box-order-log) at 7:00am CST daily incl. weekends, with retries at 7:45/8:30/9:15. Present here so `lucy rerun box_order_log` works. Pulls the BoxOrderLog view, collapses the status-transition rows into one row per sale (sale key = Contract ID + Account Id; Contract ID alone is NOT unique), and MERGES into a rolling 6-week log: new sales appended, status changes updated in place, oldest week aged out. Merge is idempotent — a second pass on unchanged data reports '0 new, 0 status changes'. The Tableau view is a rolling ~44-day window with only ~3 days of slack over 6 weeks, which is WHY it merges instead of overwriting: rows age out of the source before they age out of the report. TWO deliverables per run, different scopes on purpose: --sheet merges the rolling 6-week log into the board; --xlsx writes the day's FULL pull to output/ as one tab per rep (Fiber-style, mirrors order_log._append_rep_breakdown_tabs). DRY by default. Does NOT post to Slack. Belongs on LUCY 2 (Carlos's machine). Registered 2026-07-18.",
-      "display_name": "BOX Order Log -> Sheet + rep tabs (7:00am)",
+      "_off_scheduler_note": "Carlos's BOX (B2B) Order Log -> the 'Lucy Box Order Log' tab on the Vantura Master Sales Board. on_scheduler:false = NOT in the 4am batch; the real schedule is a STANDALONE LaunchAgent (com.alphalete.box-order-log) TWICE daily incl. weekends at 7:00am and 8:30am CST (Carlos asked for those two exactly, 2026-07-18). EXACTLY ONE Slack post per day: box_order_log.sh writes a dated marker after a successful post, so the 8:30 pass sees it and refreshes the sheet ONLY. If 7:00 dies before posting, no marker is written and 8:30 posts instead — never two. Present here so `lucy rerun box_order_log` works. Pulls the BoxOrderLog view, collapses the status-transition rows into one row per sale (sale key = Contract ID + Account Id; Contract ID alone is NOT unique), and MERGES into a rolling 6-week log: new sales appended, status changes updated in place, oldest week aged out. Merge is idempotent — a second pass on unchanged data reports '0 new, 0 status changes'. The Tableau view is a rolling ~44-day window with only ~3 days of slack over 6 weeks, which is WHY it merges instead of overwriting: rows age out of the source before they age out of the report. TWO deliverables per run, different scopes on purpose: --sheet merges the rolling 6-week log into the board; --xlsx writes the day's FULL pull to output/ as one tab per rep (Fiber-style, mirrors order_log._append_rep_breakdown_tabs). DRY by default. Does NOT post to Slack. Belongs on LUCY 2 (Carlos's machine). Registered 2026-07-18.",
+      "display_name": "BOX Order Log -> Sheet 7:00 + 8:30 (posts once)",
       "source_type": "tableau",
       "data_sources": [],
       "command": [
@@ -2520,6 +2520,28 @@
       "depends_on": [],
       "timeout_minutes": 25,
       "verify": null
+    },
+    "install_box_order_log_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_box_order_log_agent` can install/refresh the STANDALONE com.alphalete.box-order-log LaunchAgent on LUCY 2 (7:00am + 8:30am CST, deploy/box_order_log.sh). install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
+      "display_name": "Install BOX Order Log agent (7:00 + 8:30am)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "box-order-log"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
     }
   },
   "read_only_standalone": {

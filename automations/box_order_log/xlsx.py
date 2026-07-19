@@ -203,10 +203,12 @@ def build(sales: Sequence, out_path: Path, *,
                    + ["Paid Total", "Pending"])
         psh.cell(row=1, column=1, value="Paid sales by week ending").font = _font(bold=True)
         psh.cell(row=2, column=1,
-                 value="A sale counts in the week the supplier ACCEPTED it "
-                       "— which is NOT the week it was sold, so these columns "
-                       "will not match the log's week totals. Pending = still "
-                       "live, not yet accepted.").font = _font(italic=True)
+                 value="Paid columns = the week the supplier ACCEPTED the "
+                       "sale, which is NOT the week it was sold, so they "
+                       "won't match the log's week totals. PENDING is not a "
+                       "week figure — it's every deal of theirs still waiting "
+                       "on acceptance, whenever it was sold."
+                 ).font = _font(italic=True)
         _write_header(psh, 4, headers)
         r = 5
         for rep in reps_ranked:
@@ -223,13 +225,19 @@ def build(sales: Sequence, out_path: Path, *,
                 cell.alignment = LEFT if c == 1 else CENTER
                 cell.border = _border()
             r += 1
-        # TOTAL strip
+        # TOTAL strip — COMPUTED VALUES, not formulas. openpyxl writes a
+        # formula with no cached result, so anything that doesn't recalculate
+        # (Slack's file preview, Quick Look, a Google Sheets import) renders
+        # the row blank. Carlos saw exactly that: "the totals aren't showing".
+        col_totals = [0] * (len(headers) - 1)
+        for rep in reps_ranked:
+            vals = [posted.get((rep, w), 0) for w in weeks_desc]
+            vals.append(sum(vals))                 # Paid Total
+            vals.append(pending.get(rep, 0))       # Pending
+            for i, v in enumerate(vals):
+                col_totals[i] += v
         for c in range(1, len(headers) + 1):
-            if c == 1:
-                v = "TOTAL"
-            else:
-                col = get_column_letter(c)
-                v = "=SUM({c}5:{c}{last})".format(c=col, last=r - 1)
+            v = "TOTAL" if c == 1 else col_totals[c - 2]
             cell = psh.cell(row=r, column=c, value=v)
             cell.font = _font(bold=True)
             cell.alignment = LEFT if c == 1 else CENTER

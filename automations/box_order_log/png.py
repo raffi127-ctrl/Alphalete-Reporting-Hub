@@ -21,24 +21,27 @@ PAD = 14 * SCALE
 GAP = 30 * SCALE
 CELL_PAD = 7 * SCALE
 MIN_REP_W = 170 * SCALE
-NUM_W = 62 * SCALE
+NUM_W = 74 * SCALE
 
+# "Paid" and "Cancelled" are THIS WEEK. "Still Open" is not a week figure —
+# it's every deal not yet accepted, and it reads the same in both tables. No
+# Total column: adding a week number to an all-time one meant nothing, and it
+# was the source of a real misreading (Carlos, 2026-07-18).
 COLS: List[Tuple[str, str, str]] = [
     ("Rep Name", "rep", "left"),
     ("Paid", "posted", "center"),
-    ("Pending", "pending", "center"),
-    ("Total", "total", "center"),
     ("Cancelled", "canceled", "center"),
+    ("Still Open", "pending", "center"),
 ]
 
-# (min Total inclusive, RGB) — first match wins, high to low. Same bands as
-# the Fiber image so the colors mean the same thing across both reports.
+# (min PAID inclusive, RGB) — first match wins, high to low. Keyed on what
+# pays that week, which is what the row is ranked by.
 BANDS = [
-    (11, (169, 208, 142)),
-    (7,  (159, 227, 240)),
-    (4,  (255, 229, 153)),
-    (1,  (217, 217, 217)),
-    (0,  (234, 153, 153)),
+    (8, (169, 208, 142)),
+    (5, (159, 227, 240)),
+    (3, (255, 229, 153)),
+    (1, (217, 217, 217)),
+    (0, (234, 153, 153)),
 ]
 HEADER_BG = (242, 242, 242)
 GRID = (0, 0, 0)
@@ -100,7 +103,7 @@ def _draw_table(draw, x: int, y: int, title: str, rows: Sequence[Dict],
     y += HEADER_H
 
     for r in rows:
-        fill = _band(r["total"])
+        fill = _band(r["posted"])
         cx = x
         for (_head, key, align), w in zip(COLS, widths):
             draw.rectangle([cx, y, cx + w, y + ROW_H], fill=fill, outline=GRID)
