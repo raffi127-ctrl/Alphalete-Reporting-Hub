@@ -3503,9 +3503,7 @@ AUTOMATED_REPORTS = [
             "**•** A view that fails to capture is **skipped and flagged** "
             "rather than posted wrong.\n"
             "**•** Skips any view already in today's thread, so a retry "
-            "can't double-post.\n"
-            "**•** Images are cropped to end on the last row with data in "
-            "the leading column, matching the VA's clip."
+            "can't double-post."
         ),
         "assignees": ["Lucy 2"],
         "run_machine": "Lucy 2",
