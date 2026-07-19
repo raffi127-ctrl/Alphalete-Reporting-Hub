@@ -347,9 +347,26 @@ def plan_campaign(expected: dict[str, list[str]], territories: list[dict],
                  or any(names_match(leader, r) for r in t["reps"])]
         return cands[0] if len(cands) == 1 else (cands or None)
 
+    # Resolve every leader FIRST. A territory that 2+ leaders resolve to means
+    # the board's leadership moved (e.g. yesterday's leader is today's rider —
+    # Diego/Sebastian/Luis, 2026-07-18): editing it from each leader's
+    # perspective would thrash the same territory with conflicting add/removes.
+    # Contested territories are FLAGGED for Carlos and never auto-edited.
+    resolved = {leader: find_territory(leader) for leader in expected}
+    territory_claims: dict[str, list[str]] = {}
+    for leader, t in resolved.items():
+        if isinstance(t, dict):
+            territory_claims.setdefault(t["name"], []).append(leader)
+    contested = {n for n, ls in territory_claims.items() if len(ls) > 1}
+    for n in contested:
+        plan["flags"].append(
+            f"territory {n!r} matches multiple board leaders "
+            f"({', '.join(territory_claims[n])}) — leadership changed; "
+            "needs Carlos, no auto-edit")
+
     claimed: dict[str, str] = {}   # normalized rep -> leader who owns them
     for leader, riders in expected.items():
-        t = find_territory(leader)
+        t = resolved[leader]
         if t is None:
             plan["flags"].append(f"{leader}: no territory found — needs new "
                                  "team (Carlos to create)")
@@ -362,6 +379,8 @@ def plan_campaign(expected: dict[str, list[str]], territories: list[dict],
         want = [leader] + riders
         for w in want:
             claimed[_norm(w)] = leader
+        if t["name"] in contested:
+            continue                       # flagged above; never auto-edit
         adds = [w for w in want if not any(names_match(w, r) for r in t["reps"])]
         removes = [r for r in t["reps"]
                    if not any(names_match(w, r) for w in want)]
@@ -371,6 +390,8 @@ def plan_campaign(expected: dict[str, list[str]], territories: list[dict],
 
     # One rep, one car ride + stale-leader territories.
     for t in active:
+        if t["name"] in contested:
+            continue                       # flagged above; never auto-edit
         owner = next((l for l in expected if names_match(l, t["name"])
                       or any(names_match(l, r) for r in t["reps"])), None)
         if owner:
@@ -385,13 +406,23 @@ def plan_campaign(expected: dict[str, list[str]], territories: list[dict],
                                       "why": "one-rep-one-car-ride"})
             continue
         # Leader not in either box -> stale: empty riders, flag (Remove is
-        # flag-only in this port, even under the old 2-run rule).
+        # flag-only in this port, even under the old 2-run rule). A rep the
+        # board DOES want elsewhere is not removed here — they move via their
+        # new leader's edit; removing first would strand them in no car ride
+        # if that edit is contested/skipped (Eddy under giovanni, 2026-07-18).
         if t["reps"]:
-            plan["edits"].append({"territory": t["name"], "leader": None,
-                                  "add": [], "remove": list(t["reps"]),
-                                  "why": "stale leader — empty the territory"})
-            plan["flags"].append(f"stale territory {t['name']!r}: leader not on "
-                                 "the board; emptying riders")
+            unwanted = [r for r in t["reps"]
+                        if not any(names_match(w, r) for w in claimed)]
+            kept = [r for r in t["reps"] if r not in unwanted]
+            if unwanted:
+                plan["edits"].append({"territory": t["name"], "leader": None,
+                                      "add": [], "remove": unwanted,
+                                      "why": "stale leader — empty the territory"})
+            plan["flags"].append(
+                f"stale territory {t['name']!r}: leader not on the board; "
+                f"removing {unwanted or 'nothing'}"
+                + (f"; leaving {kept} (wanted elsewhere on the board)"
+                   if kept else ""))
         else:
             prior = any(t["name"] in f for f in prev_flags)
             plan["flags"].append(
