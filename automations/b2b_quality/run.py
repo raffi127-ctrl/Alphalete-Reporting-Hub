@@ -212,6 +212,47 @@ def capture_all(out_dir: Path, only=None, headless: bool = True) -> dict:
     return out
 
 
+STATE_FILE = OUT_DIR / "thread_state.json"
+
+
+def _load_state(day, channel: str) -> dict:
+    """Today's {thread_ts, posted:[view_id]} for this channel, or empty.
+
+    The Slack-read guards below (find_thread_ts / _already_replied) BOTH degrade
+    to "no match" when the token can't read history — and on a retry schedule
+    that means every pass starts a brand-new thread. That is exactly what
+    happened on the first live morning (2026-07-19: four identical threads at
+    5:32 / 5:40 / 5:48 / 5:56). This file is the authoritative guard because it
+    needs no Slack scope at all; the API checks are now just a backstop.
+    """
+    try:
+        import json
+        blob = json.loads(STATE_FILE.read_text())
+    except Exception:  # noqa: BLE001 — missing/corrupt state must not block a post
+        return {}
+    entry = blob.get(f"{day.isoformat()}|{channel}")
+    return entry if isinstance(entry, dict) else {}
+
+
+def _save_state(day, channel: str, thread_ts: str, posted: list) -> None:
+    """Best-effort persist — never let a state write failure lose the post."""
+    try:
+        import json
+        try:
+            blob = json.loads(STATE_FILE.read_text())
+        except Exception:  # noqa: BLE001
+            blob = {}
+        blob[f"{day.isoformat()}|{channel}"] = {"thread_ts": thread_ts,
+                                                "posted": sorted(set(posted))}
+        # keep only the last ~10 day|channel keys so this never grows unbounded
+        for k in sorted(blob)[:-10]:
+            blob.pop(k, None)
+        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        STATE_FILE.write_text(json.dumps(blob, indent=2))
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def find_thread_ts(client, channel: str, day):
     """ts of today's parent so a re-run never starts a second thread. Degrades to
     None (start fresh) if the history read fails — Lucy's token lacks im:history,
@@ -258,11 +299,15 @@ def post_thread(imgs: dict, day, yday, dry_run: bool, dm_user: str = "") -> list
     if dm_user:
         cid = client.conversations_open(users=dm_user)["channel"]["id"]
         name = f"DM to {dm_user}"
-    ts = find_thread_ts(client, cid, day)
+    # Local state FIRST — it is the only guard that works without a history read.
+    state = _load_state(day, cid)
+    posted = list(state.get("posted") or [])
+    ts = state.get("thread_ts") or find_thread_ts(client, cid, day)
     created = False
     if not ts:
         ts = client.chat_postMessage(channel=cid, text=header_text(day)).get("ts")
         created = True
+        _save_state(day, cid, ts, posted)
     out = [{"channel": name, "thread_ts": ts, "created_parent": created}]
     for spec in SPECS:
         png = imgs.get(spec["id"])
@@ -270,13 +315,15 @@ def post_thread(imgs: dict, day, yday, dry_run: bool, dm_user: str = "") -> list
             continue
         plain = f"{spec['title']} {tag}"
         caption = f"{spec['emoji']} *{plain}*"
-        if _already_replied(client, cid, ts, plain):
+        if spec["id"] in posted or _already_replied(client, cid, ts, plain):
             out.append({"view": spec["id"], "skipped": "already in thread"})
             continue
         r = client.files_upload_v2(channel=cid, thread_ts=ts, file=str(png),
                                    filename=f"{plain}.png", initial_comment=caption)
         out.append({"view": spec["id"], "ok": r.get("ok")})
-        time.sleep(1)
+        posted.append(spec["id"])
+        _save_state(day, cid, ts, posted)      # after EACH upload, so a crash
+        time.sleep(1)                          # mid-thread can't re-post the rest
     return out
 
 
