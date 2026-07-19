@@ -368,6 +368,15 @@ BOX_DESCS = ("BF 1", "BF 2", "Term Length Bonus", "kWH Bonus")
 BASE_DESCS = ("Energy Enrollment", "RES Pilot Program - Weekly Guarantee",
               "Lead Disposition Bonus", "")
 
+# "Revenue by Campaign" summary (Carlos, 2026-07-15): per-campaign revenue /
+# paid-out / payroll-tax / profit in rows 215-233 of each week's block —
+# labels in the paid column, values in the profit column, mirroring the
+# summary blocks above. Backfilled by hand for 6/21-7/12; the weekly run
+# writes it for each new week. Anchored at fixed rows per Carlos's spec.
+REV_TITLE_ROW = 215
+REV_CAMPAIGNS = (("B2B", 217), ("BOX", 223), ("Base", 229))
+REV_METRICS = ("Revenue Brought In", "Paid Out", "Payroll Tax", "Profit")
+
 
 def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
                  sheet_id: str, log=_log) -> dict:
@@ -402,15 +411,32 @@ def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
             f'=SUMIF({rep_c},"B2B",{brought_rng})'
             f'+SUMIF({E},"B2B Roadtrip Bonus",{H})+SUMIF({E},"MCOE Bonus",{H})',
     }
+
+    # Revenue-by-Campaign block (rows 215-233): labels in the paid column,
+    # revenue / paid-out / tax / profit values in the profit column.
+    labels = {f"{blk['paid']}{REV_TITLE_ROW}": "Revenue by Campaign"}
+    camp_mask = {"B2B": non_b2b, "BOX": f"({box})", "Base": f"({base})"}
+    for name, hdr_row in REV_CAMPAIGNS:
+        labels[f"{blk['paid']}{hdr_row}"] = name
+        for i, metric in enumerate(REV_METRICS, start=1):
+            labels[f"{blk['paid']}{hdr_row + i}"] = metric
+        P, r0 = blk["profit"], hdr_row + 1
+        formulas[f"{P}{r0}"] = f"=SUMPRODUCT({camp_mask[name]}*{H})"
+        formulas[f"{P}{r0+1}"] = f"=SUMPRODUCT({camp_mask[name]}*{I})"
+        formulas[f"{P}{r0+2}"] = f"={P}{r0+1}*0.12"
+        formulas[f"{P}{r0+3}"] = f"={P}{r0}-{P}{r0+1}-{P}{r0+2}"
+
     for cell, f in formulas.items():
         log(f"P&L {cell} <- {f[:110]}…")
     if not write:
-        log("  (dry-run: formulas not written)")
+        log("  (dry-run: formulas + revenue-block labels not written)")
         return blk
-    pnl.batch_update([{"range": c, "values": [[f]]}
-                      for c, f in formulas.items()],
-                     value_input_option="USER_ENTERED")
-    log(f"  WROTE 4 formulas into block {blk['header']}")
+    pnl.batch_update(
+        [{"range": c, "values": [[v]]} for c, v in labels.items()]
+        + [{"range": c, "values": [[f]]} for c, f in formulas.items()],
+        value_input_option="USER_ENTERED")
+    log(f"  WROTE {len(formulas)} formulas + revenue-block labels into "
+        f"block {blk['header']}")
     return blk
 
 
