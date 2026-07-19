@@ -3545,6 +3545,10 @@ AUTOMATED_REPORTS = [
             "message_success": "✅ BOX Order Log updated.",
             "message_failed": "❌ Run failed. Check the log above, then run again.",
         },
+        # The primary button is the SAFE one on purpose — a mis-click on a
+        # card whose other action posts into Carlos's channel shouldn't be
+        # able to post. Both full-run and sheet-only also sit under More
+        # actions so either can be picked deliberately.
         "actions": [
             {
                 "label": "Update Sheet",
@@ -3556,12 +3560,21 @@ AUTOMATED_REPORTS = [
                 "args_fn": lambda: ["--sheet", "--xlsx"],
             },
             {
-                "label": "Update + Post",
+                "label": "Full run — update sheet + post to Slack",
                 "icon": "📣",
-                "help": "Refreshes the sheet AND posts today's thread to "
-                        "#alphalete-gp-sales.",
+                "help": "Everything the 7:00am run does: refreshes the "
+                        "6-week log on the sheet, then posts today's thread "
+                        "(workbook + payout image) to #alphalete-gp-sales.",
                 "module": "automations.box_order_log.run",
                 "args_fn": lambda: ["--sheet", "--xlsx", "--post"],
+            },
+            {
+                "label": "Update the Google Sheet only — no Slack",
+                "icon": "📄",
+                "help": "Same as the 8:30am pass: refreshes the rolling "
+                        "6-week log on the Vantura board and posts nothing.",
+                "module": "automations.box_order_log.run",
+                "args_fn": lambda: ["--sheet", "--xlsx"],
             },
             {
                 "label": "Preview (no writes)",
