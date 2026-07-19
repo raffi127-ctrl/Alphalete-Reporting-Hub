@@ -3449,7 +3449,10 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"),
-        "assignees": ["Lucy 1"],
+        # Lucy 2 (Carlos's machine — #alphalete-gp-sales is his channel). Moved
+        # back to Lucy 1 on 7/18 only because Lucy 2 lacked the Slack token;
+        # that token is installed + verified there now, so it runs on Lucy 2.
+        "assignees": ["Lucy 2"],
         # Belongs on Lucy 2 (Carlos's channel) and renders fine there, but
         # Lucy 2 has no Lucy Slack token — a --post died at the upload. Runs
         # on Lucy 1 until that token is installed and re-tested.

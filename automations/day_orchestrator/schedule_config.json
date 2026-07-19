@@ -2419,7 +2419,7 @@
     },
     "sales_boards": {
       "on_scheduler": false,
-      "_off_scheduler_note": "Program Sales Boards -> #alphalete-gp-sales (VA-replacement Items 5-8). on_scheduler:false = NOT in the 4am batch; the real schedule is a STANDALONE LaunchAgent (com.alphalete.sales-boards, installed via `lucy rerun install_sales_boards_agent`) at 6:00am CST daily incl. weekends. Present here so `lucy rerun sales_boards` works. Duplicates the Sales Board tab, clears the VA's basic filter on the COPY, then per program hides non-campaign + terminated rows and renders (a) the weekly ranking and (b) the Highrollers cut for yesterday, posting all 8 images as one dated thread 'Vantura Production MM/DD/YYYY' AS LUCY. HOLDS (exit 75) if the gold WE cell isn't the week containing yesterday (matters on Mondays). DRY-RUN by default; add --post. `--post --dm <USER_ID>` routes the thread to a DM for testing. Runs on LUCY 1. It BELONGS on Lucy 2 (Carlos's channel) and RENDERS fine there (dry-run exit 0, py3.9 + fitz/PIL), but Lucy 2 has no Lucy Slack token: a --post there rendered all 8 images then died at the upload. Install the xoxp user token on Lucy 2 (`lucy --machine \"Lucy 2\" set_slack_token …`) and re-test with --dm BEFORE moving it back. Registered 2026-07-18.",
+      "_off_scheduler_note": "Program Sales Boards -> #alphalete-gp-sales (VA-replacement Items 5-8). on_scheduler:false = NOT in the 4am batch; the real schedule is a STANDALONE LaunchAgent (com.alphalete.sales-boards, installed via `lucy rerun install_sales_boards_agent`) at 6:00am CST daily incl. weekends. Present here so `lucy rerun sales_boards` works. Duplicates the Sales Board tab, clears the VA's basic filter on the COPY, then per program hides non-campaign + terminated rows and renders (a) the weekly ranking and (b) the Highrollers cut for yesterday, posting all 8 images as one dated thread 'Vantura Production MM/DD/YYYY' AS LUCY. HOLDS (exit 75) if the gold WE cell isn't the week containing yesterday (matters on Mondays). DRY-RUN by default; add --post. `--post --dm <USER_ID>` routes the thread to a DM for testing. Runs on LUCY 1. It BELONGS on Lucy 2 (Carlos's channel) and RENDERS fine there (dry-run exit 0, py3.9 + fitz/PIL), Runs on LUCY 2 (Carlos's machine — #alphalete-gp-sales is his channel). The Slack user token was installed on Lucy 2 2026-07-18 and a bare (no --post) rerun there rendered all 8 boards clean exit 0, so the earlier 'no Slack token' move back to Lucy 1 is resolved. Timer: com.alphalete.sales-boards on Lucy 2. Registered 2026-07-18.",
       "display_name": "Sales Boards -> Slack (6:00am)",
       "source_type": "local",
       "data_sources": [],
@@ -2434,7 +2434,8 @@
       "freshness_target": null,
       "depends_on": [],
       "timeout_minutes": 20,
-      "verify": null
+      "verify": null,
+      "machine": "Lucy 2"
     },
     "install_sales_boards_agent": {
       "on_scheduler": false,
@@ -2456,7 +2457,8 @@
       "depends_on": [],
       "verify": {
         "type": "not_configured"
-      }
+      },
+      "machine": "Lucy 2"
     },
     "uninstall_sales_boards_agent": {
       "on_scheduler": false,
