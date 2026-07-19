@@ -572,7 +572,7 @@ def _action_diag(args: str) -> tuple[bool, str]:
     out.append("power: " + " ".join(_sh(["/usr/bin/pmset", "-g", "batt"]).split())[:70])
     ll = _sh(["/bin/launchctl", "list"])
     have = [a for a in ("keep-awake", "session-holder", "mini-control",
-                        "day-orchestrator")
+                        "day-orchestrator", "box-order-log")
             if f"com.alphalete.{a}" in ll]
     out.append("agents: " + (", ".join(have) if have else "NONE loaded"))
     ov = REPO_ROOT / "automations" / "shared" / ".ownerville_storage_state.json"
