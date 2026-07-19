@@ -92,6 +92,10 @@ _HUB_CARD = {
     # mark themselves via run_library_report / their wrapper. Their Hub card id IS
     # the library id, so map it to itself so _cal_status matches (card goes green).
     "june_texas_de_brazil_monthly_competition": "june_texas_de_brazil_monthly_competition",
+    # Car-Rides Cleanup: library card, 9 launchd passes a morning on Lucy 2.
+    # Card id IS the library id, so map it to itself. Its wrapper publishes
+    # each pass so the pill can climb 1/9 -> 9/9 (amber -> green).
+    "car_rides": "car_rides",
     # Weekly captainship reports: standalone LaunchAgents (Lucy 2 Mon/Tue, mini Tue)
     # that call publish_done from their wrapper. They ran fine for weeks but their
     # cards never went green — they were simply missing from this map, so Megan had

@@ -55,4 +55,18 @@ done
 ST=$?
 
 echo "[$(date)] car-rides cleanup finished exit=$ST" >> "$LOG_FILE"
+
+# Report each pass to the Hub so the card pill reflects real progress through
+# the morning (1/9 -> 9/9). Skipped ticks exit before this, so they never count.
+# EXIT CODES: 0 = clean, 3 = ran fine but raised FLAGS for Carlos (stale
+# territory / ambiguous name) — both mean the pass RAN, so both publish
+# 'success'. Anything else (e.g. 4 = Stations read failed) is a real failure.
+# Best-effort: never fail the run over reporting.
+case " $* " in
+  *" --probe "*) : ;;
+  *)
+    if [ "$ST" -eq 0 ] || [ "$ST" -eq 3 ]; then _PUB=success; else _PUB=failed; fi
+    "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('car_rides','Car-Rides Cleanup (OwnerVille territories)','$_PUB')" >> "$LOG_FILE" 2>&1 || true
+    ;;
+esac
 exit 0
