@@ -3576,14 +3576,6 @@ AUTOMATED_REPORTS = [
                 "module": "automations.box_order_log.run",
                 "args_fn": lambda: ["--sheet", "--xlsx"],
             },
-            {
-                "label": "Preview (no writes)",
-                "icon": "👁",
-                "help": "Builds the workbook and payout image into output/ "
-                        "without touching the sheet or Slack.",
-                "module": "automations.box_order_log.run",
-                "args_fn": lambda: ["--xlsx"],
-            },
         ],
     },
     {
