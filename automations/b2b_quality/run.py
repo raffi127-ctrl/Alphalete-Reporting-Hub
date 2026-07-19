@@ -18,13 +18,28 @@ three as the quality/payout half.
 
 CAPTURE: rides the same machinery as the tracker screenshots — Tableau's own
 Download → Image on a logged-in session (NOT a page screenshot, which drags in
-browser chrome). So it MUST run on Lucy 1: ownerville is single-session and a
-laptop scrape evicts the session holder.
+browser chrome).
+
+**RUNS ON LUCY 2 — this is a correctness requirement, not a preference.**
+Lucy 2 is signed in as CARLOS; Lucy 1 is Raf. These are Carlos's custom views
+(CarlosLocalOffice*), and a custom view only carries its owner's SORT when
+opened by that owner. Under Raf's login the Activation table comes back in
+default alphabetical order and the posted image is wrong. Under Carlos's it
+arrives correctly sorted with no intervention (verified 2026-07-18: identical
+run, Lucy 1 alphabetical / Lucy 2 sorted 0-7 Days desc).
+
+An earlier version tried to recreate the sort by clicking Tableau's sort glyph.
+That was solving the wrong problem — it is gone. If this ever looks unsorted
+again, check WHICH MACHINE ran it before touching the capture code.
+
+Also don't capture from the laptop: ownerville is single-session there and a
+laptop scrape evicts the session holder out from under Lucy 1's other reports.
 
 DRY-RUN by default — posting needs --post.
 
 Usage:
   lucy rerun b2b_quality                     # capture only, no post
+  (always with `--machine "Lucy 2"` — see above)
   lucy rerun b2b_quality --post              # capture + post the thread
   lucy rerun b2b_quality --post --dm U…      # post to a DM (test)
 """
@@ -38,8 +53,6 @@ import time
 from pathlib import Path
 
 _BASE = "https://us-east-1.online.tableau.com/#/site/sci/views/"
-_IFRAME = 'iframe[title="Data Visualization"]'      # matches tableau_screenshots.capture
-SORT_ICON_DX = 8        # px right of the header text where the sort glyph draws
 
 # Saved views carry the filters the VA uses (Carlos's office). The GUID + saved
 # view name in each URL is what pins those filters — don't trim them.
@@ -60,7 +73,6 @@ SPECS = [
                         "4c53fb7e-5a1b-4e8f-990e-0b2c8cf42309/"
                         "CarlosLocalOfficeEXPANDED?:iid=2"),
         "crop": "canvas",
-        "sort_header": "0-7 Days",
         "data_cols": 4,          # 0-7 / 8-14 / 15-30 / 31-60
     },
     {
@@ -71,12 +83,10 @@ SPECS = [
                         "7419b960-0fb1-41d5-a11e-76f0e81c0547/"
                         "CarlosLocalOfficeEXPANDEDCHURN?:iid=1"),
         "crop": "canvas",
-        # NO sort_header on purpose. Megan wants this sorted 0-30 Day high->low,
-        # but Tableau's glyph on THIS view only cycles ascending <-> cleared —
-        # descending is not reachable by clicking, so a sort here would post
-        # blanks-first, which is worse than the default. The unsorted default is
-        # byte-for-byte what Jolie posts today (verified against her 7/17 image),
-        # so we match her until the sort is saved into the custom view itself.
+        # Sorted by the 0-30 Day DISCONNECT COUNT desc (3, 2, 1, 1, ..., 0, 0) —
+        # NOT by the percentage. Reading the % column makes it look unsorted; it
+        # isn't. The view carries this itself under Carlos's login, so there is
+        # nothing to apply here. Matches Jolie's post row-for-row.
         "data_cols": 5,          # 0-30 / 30 / 60 / 90 / 120
     },
 ]
@@ -98,80 +108,6 @@ def header_text(day) -> str:
 def _channel():
     scratch = os.environ.get("B2B_QUALITY_CHANNEL_ID")
     return (f"scratch ({scratch})", scratch) if scratch else CHANNEL
-
-
-def _rep_table_header(fr, header: str):
-    """Bounding box of the REP TABLE's `header` column label, or None.
-
-    The label repeats per dashboard (Churn has four: the National Average band,
-    the rep table, and another table far below), and neither DOM order nor
-    "lowest on page" picks the right one on both dashboards. Anchor on the
-    section title instead — the rep table's header is the first match below
-    "<name> Owner (+/-) Rep".
-    """
-    # EXACT text — has_text= also matches every wrapper div up the tree, and
-    # hovering one of those times out instead of surfacing the sort control.
-    hdrs = fr.locator(f'div.tab-vizHeader >> text="{header}"')
-    n = hdrs.count()
-    if not n:
-        return None
-    tbox = fr.locator('text=/Owner \\(\\+/-\\) Rep/').first.bounding_box()
-    if not tbox:
-        return None
-    below = [b for b in (hdrs.nth(i).bounding_box() for i in range(n))
-             if b and b["y"] > tbox["y"]]
-    return min(below, key=lambda b: b["y"]) if below else None
-
-
-def apply_sort(page, header: str, clicks: int = 1, verbose: bool = False) -> bool:
-    """Click a measure column's sort button, high→low — the manual step Jolie does
-    before she downloads (Megan 2026-07-18: "you just hit the sorter button on
-    tableau then take a screenshot and clip it").
-
-    The custom views carry Carlos's FILTERS but not his SORT, so without this the
-    image comes back in the table's default alphabetical-by-rep order. That's the
-    bug behind both Activation Rate and Churn Rate posting wrong.
-
-    Session-local: a header sort is not written back to the shared custom view, so
-    Carlos's and Jolie's own Tableau are untouched. Returns False (and leaves the
-    view alone) if the header or its control can't be found — the caller still
-    captures, because an unsorted image beats no image.
-    """
-    fr = page.frame_locator(_IFRAME)
-    try:
-        # Drive the real mouse: locator.hover() times out here (the viz repaints
-        # constantly so actionability never settles), and bounding_box() on a frame
-        # locator is ALREADY page-relative — adding the iframe offset lands the
-        # pointer on a data mark instead. The sort glyph itself is DRAWN, not a DOM
-        # node, so no selector can reach it: hover the header text to arm it, then
-        # click SORT_ICON_DX px to its right.
-        for i in range(max(1, clicks)):
-            # RE-RESOLVE from scratch each pass. Sorting re-renders the table, which
-            # both shifts the header AND reshuffles the match order — so a cached
-            # index or a cached box makes clicks 2+ land somewhere else entirely.
-            box = _rep_table_header(fr, header)
-            if not box:
-                if verbose:
-                    print(f"   ⚠ sort: {header!r} header not found "
-                          f"(pass {i + 1})", flush=True)
-                return i > 0
-            page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-            page.wait_for_timeout(1_500)
-            page.mouse.move(box["x"] + box["width"] + SORT_ICON_DX,
-                            box["y"] + box["height"] / 2)
-            page.wait_for_timeout(1_200)
-            page.mouse.down()
-            page.wait_for_timeout(120)
-            page.mouse.up()
-            page.wait_for_timeout(6_000)
-        if verbose:
-            print(f"   ↕ sorted {header!r} ({clicks} click(s))", flush=True)
-        return True
-
-    except Exception as e:  # noqa: BLE001 — never lose the capture over the sort
-        if verbose:
-            print(f"   ⚠ sort on {header!r} failed: {type(e).__name__}", flush=True)
-        return False
 
 
 def crop_to_last_data_row(png: Path, data_cols: int, verbose: bool = False) -> bool:
@@ -262,14 +198,7 @@ def capture_all(out_dir: Path, only=None, headless: bool = True) -> dict:
     with tableau_session(headless=headless, allow_form_login=False, verbose=True) as page:
         for spec in specs:
             try:
-                # The sort must run INSIDE capture_page: it navigates to the URL
-                # itself, so sorting beforehand is silently undone.
-                hook = None
-                if spec.get("sort_header"):
-                    hook = (lambda p, h=spec["sort_header"],
-                            c=spec.get("sort_clicks", 1):
-                            apply_sort(p, h, clicks=c, verbose=True))
-                png = cap.capture_page(page, spec, out_dir, after_load=hook, verbose=True)
+                png = cap.capture_page(page, spec, out_dir, verbose=True)
                 if spec.get("data_cols"):
                     crop_to_last_data_row(png, spec["data_cols"], verbose=True)
                 out[spec["id"]] = png

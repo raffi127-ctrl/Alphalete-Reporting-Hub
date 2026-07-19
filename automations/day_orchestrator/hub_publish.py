@@ -56,6 +56,7 @@ _HUB_CARD = {
     "org_board_slack": "org-sales-board-slack",
     "pnl_office": "pnl-office",
     "sales_boards": "sales-boards",
+    "b2b_quality": "b2b-quality",
     "board_compare": "org-sales-board-compare",
     "leaders_call": "leaders-call",
     "bg_check_sync": "bg-check-sync",

@@ -3478,6 +3478,65 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "b2b-quality",
+        # Channel in the name; the tile appends "· 5:30 AM CST" from `schedule`.
+        "name": "B2B Quality & Bonus → #alphalete-gp-sales",
+        "creator": "Megan",
+        "emoji": "📸",
+        "color": "#0F766E",
+        # 📊 Metrics (not Ops) so it lands in ⏰ TIME SET REPORTS.
+        "category": "📊 Metrics",
+        "description": "Posts the daily B2B Quality & Bonus thread to #alphalete-gp-sales as Lucy — the three ATTTRACKER-B2B Tableau views (Tiered Bonus, Activation Rate, Churn Rate) the VA used to post by hand each morning.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Posts one dated thread — **B2B Quality & Bonus MM/DD/YYYY** — "
+            "then each view's image as a threaded reply:\n"
+            "**•** **Tiered Bonus**\n"
+            "**•** **Activation Rate**\n"
+            "**•** **Churn Rate**\n\n"
+            "WHEN IT RUNS\n"
+            "**Every day at 5:30am CST.**\n\n"
+            "SAFETY GATES\n"
+            "**•** Each image is captured with Tableau's own **Download → "
+            "Image**, so it matches what the VA posts — never a browser "
+            "screenshot.\n"
+            "**•** A view that fails to capture is **skipped and flagged** "
+            "rather than posted wrong.\n"
+            "**•** Skips any view already in today's thread, so a retry "
+            "can't double-post.\n"
+            "**•** Images are cropped to end on the last row with data in "
+            "the leading column, matching the VA's clip."
+        ),
+        "assignees": ["Lucy 2"],
+        "run_machine": "Lucy 2",
+        "run_rerun_id": "b2b_quality",
+        # 5:30am start, ~3 min run — must be FINISHED by 6:00am (Megan
+        # 2026-07-18). So the LaunchAgent's retry window has to stop at ~5:55,
+        # NOT the usual run-till-noon q25m pattern: 6:00 is when Sales Boards
+        # starts, and it also has to beat the VA's ~5:57 manual post.
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "5:30 AM",
+            "estimated_minutes": 3,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ B2B Quality & Bonus posted to #alphalete-gp-sales.",
+            "message_failed": "❌ Run failed. Check the log above, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Post Now",
+                "icon": "▶",
+                "primary": True,
+                "help": "Captures all 3 views and POSTS today's thread to #alphalete-gp-sales as Lucy.",
+                "module": "automations.b2b_quality.run",
+                "args_fn": lambda: ["--post"],
+            },
+        ],
+    },
+    {
         "id": "box-order-log",
         # Channel in the name; the tile appends "· 7:00 AM CST" from `schedule`.
         "name": "BOX Order Log → #alphalete-gp-sales",

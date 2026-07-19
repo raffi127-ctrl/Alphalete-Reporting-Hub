@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.b2b-quality</string>
+
+    <!-- Path is the laptop placeholder; on the machine, install_agent.py rewrites
+         it to that repo path (python -m automations.day_orchestrator.install_agent
+         b2b-quality). INSTALL ON LUCY 2 ONLY — Carlos's login is what makes the
+         Activation view come down sorted. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/b2b_quality.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- DAILY incl. weekends (no Weekday key). First pass 5:30 CST, then q8m
+         retries through 5:54 — SHORT ON PURPOSE: this must be FINISHED by 6:00
+         (Megan 2026-07-18), because Sales Boards starts at 6:00 and the VA
+         posts by hand ~5:57. The module skips views already in today's thread,
+         so later passes are no-ops. TIME KNOB: edit these entries (Hour/Minute
+         are machine LOCAL time; Lucy 2 is Central). -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>38</integer></dict>
+        <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>46</integer></dict>
+        <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>54</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/b2b-quality.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/b2b-quality.launchd.err.log</string>
+</dict>
+</plist>

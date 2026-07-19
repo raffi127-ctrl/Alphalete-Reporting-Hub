@@ -2506,8 +2506,8 @@
     },
     "b2b_quality": {
       "on_scheduler": false,
-      "_off_scheduler_note": "B2B Quality & Bonus -> #alphalete-gp-sales (VA-replacement Item 5). on_scheduler:false = NOT in the 4am batch; it will get a STANDALONE LaunchAgent once the capture is signed off. Present so `lucy rerun b2b_quality` works. Captures the 3 ATTTRACKER-B2B Tableau views (Tiered Bonus / Activation Rate / Churn Rate, Carlos saved views) via Tableau's Download->Image on the shared tableau_patchright session, then posts them as one dated thread 'B2B Quality & Bonus MM/DD/YYYY' AS LUCY, each titled with YESTERDAY's date. MUST run on Lucy 1 — ownerville is single-session and a laptop scrape evicts the session holder. DRY-RUN by default; add --post. `--post --dm <USER_ID>` routes to a DM for testing. Registered 2026-07-18.",
-      "display_name": "B2B Quality & Bonus -> Slack",
+      "_off_scheduler_note": "B2B Quality & Bonus -> #alphalete-gp-sales (VA-replacement Item 5). on_scheduler:false = NOT in the 4am batch; the real schedule is a STANDALONE LaunchAgent (com.alphalete.b2b-quality, installed via `lucy rerun install_b2b_quality_agent`) at 5:30am CST daily incl. weekends, retrying q8m to 5:54 — the window is SHORT on purpose because it must be FINISHED by 6:00 (Megan 2026-07-18): Sales Boards starts at 6:00 and the VA posts by hand ~5:57. Present so `lucy rerun b2b_quality` works. Captures the 3 ATTTRACKER-B2B Tableau views (Tiered Bonus / Activation Rate / Churn Rate, Carlos saved views) via Tableau's Download->Image, crops each to the last row with data in its leading column, then posts them as one dated thread 'B2B Quality & Bonus MM/DD/YYYY' AS LUCY, each titled with YESTERDAY's date. MUST RUN ON LUCY 2 (Carlos's login) — these are Carlos's custom views and a custom view only carries its owner's SORT for that owner; under Raf's login (Lucy 1) Activation comes back alphabetical and the image is WRONG (verified 2026-07-18: same code, Lucy 1 alphabetical / Lucy 2 sorted). Don't capture from the laptop either — it evicts Lucy 1's ownerville session holder. DRY-RUN by default; add --post. `--post --dm <USER_ID>` routes to a DM. LIVE 2026-07-19.",
+      "display_name": "B2B Quality & Bonus -> Slack (5:30am)",
       "source_type": "tableau",
       "data_sources": [],
       "command": [
@@ -2521,7 +2521,31 @@
       "freshness_target": null,
       "depends_on": [],
       "timeout_minutes": 25,
-      "verify": null
+      "verify": null,
+      "machine": "Lucy 2"
+    },
+    "install_b2b_quality_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_b2b_quality_agent` can install/refresh the STANDALONE com.alphalete.b2b-quality LaunchAgent on LUCY 2 (5:30am CST daily, deploy/b2b_quality.sh, --post). install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run after the plist changes.",
+      "display_name": "Install B2B Quality agent (5:30am)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "b2b-quality"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 2"
     },
     "install_box_order_log_agent": {
       "on_scheduler": false,
