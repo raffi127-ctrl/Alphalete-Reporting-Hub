@@ -20,17 +20,29 @@ CAPTURE: rides the same machinery as the tracker screenshots — Tableau's own
 Download → Image on a logged-in session (NOT a page screenshot, which drags in
 browser chrome).
 
-**RUNS ON LUCY 2 — this is a correctness requirement, not a preference.**
-Lucy 2 is signed in as CARLOS; Lucy 1 is Raf. These are Carlos's custom views
-(CarlosLocalOffice*), and a custom view only carries its owner's SORT when
-opened by that owner. Under Raf's login the Activation table comes back in
-default alphabetical order and the posted image is wrong. Under Carlos's it
-arrives correctly sorted with no intervention (verified 2026-07-18: identical
-run, Lucy 1 alphabetical / Lucy 2 sorted 0-7 Days desc).
+**RUNS ON LUCY 2 — correctness requirement, not a preference.** Lucy 2 is
+signed in as CARLOS, Lucy 1 as Raf. These are Carlos's custom views
+(CarlosLocalOffice*).
 
-An earlier version tried to recreate the sort by clicking Tableau's sort glyph.
-That was solving the wrong problem — it is gone. If this ever looks unsorted
-again, check WHICH MACHINE ran it before touching the capture code.
+ACTIVATION'S SORT IS NOT SAVED IN ITS VIEW — we apply it (apply_sort clicks the
+0-7 Days sort glyph). The click lands on Lucy 2's rendering and MISSES on
+Lucy 1's, which is the whole reason this is pinned to Lucy 2. Churn needs no
+click: its view really does carry its own sort (by 0-30 Day disconnect COUNT).
+
+History, so nobody re-derives it wrong twice (I did): on 2026-07-18 a Lucy 2 run
+came back correctly sorted and I concluded Carlos's login supplied the sort, so
+I deleted the clicker. It hadn't — that run was on the PRE-deletion commit and
+the click did the work. Removing it put an alphabetical Activation board in the
+channel the next morning. If this looks unsorted again, the click missed; do NOT
+conclude the login fixed it.
+
+Two independent guards now stop a wrong image reaching Slack:
+  * wait_for_custom_view — the viz must report "View: <custom view>" before we
+    photograph it (capture.py lets this raise rather than shoot the default).
+  * crop_to_last_data_row raises UnsortedViewError if rows above the crop are
+    empty in the leading column — impossible when that column is sorted.
+A blocked view is SKIPPED + FLAGGED; the later retry passes post it into the
+same thread once it comes back right.
 
 Also don't capture from the laptop: ownerville is single-session there and a
 laptop scrape evicts the session holder out from under Lucy 1's other reports.
@@ -54,6 +66,7 @@ from pathlib import Path
 
 _BASE = "https://us-east-1.online.tableau.com/#/site/sci/views/"
 _IFRAME = 'iframe[title="Data Visualization"]'   # matches tableau_screenshots.capture
+SORT_ICON_DX = 8        # px right of the header text where the sort glyph draws
 
 # Saved views carry the filters the VA uses (Carlos's office). The GUID + saved
 # view name in each URL is what pins those filters — don't trim them.
@@ -76,6 +89,7 @@ SPECS = [
                         "CarlosLocalOfficeEXPANDED?:iid=2"),
         "crop": "canvas",
         "view_label": "Carlos Local Office EXPANDED",
+        "sort_header": "0-7 Days",
         "data_cols": 4,          # 0-7 / 8-14 / 15-30 / 31-60
     },
     {
@@ -219,9 +233,12 @@ def capture_all(out_dir: Path, only=None, headless: bool = True) -> dict:
     with tableau_session(headless=headless, allow_form_login=False, verbose=True) as page:
         for spec in specs:
             try:
-                hook = None
-                if spec.get("view_label"):
-                    hook = (lambda p, lb=spec["view_label"]: wait_for_custom_view(p, lb))
+                def hook(p, sp=spec):
+                    if sp.get("view_label"):
+                        wait_for_custom_view(p, sp["view_label"])
+                    if sp.get("sort_header"):
+                        apply_sort(p, sp["sort_header"],
+                                   clicks=sp.get("sort_clicks", 1), verbose=True)
                 png = cap.capture_page(page, spec, out_dir, after_load=hook, verbose=True)
                 if spec.get("data_cols"):
                     crop_to_last_data_row(png, spec["data_cols"], verbose=True)
@@ -234,6 +251,81 @@ def capture_all(out_dir: Path, only=None, headless: bool = True) -> dict:
     if failed:
         print(f"captured {len(out)}/{len(specs)} — failed: {', '.join(failed)}", flush=True)
     return out
+
+
+def _rep_table_header(fr, header: str):
+    """Bounding box of the REP TABLE's `header` column label, or None.
+
+    The label repeats per dashboard (Churn has four: the National Average band,
+    the rep table, and another table far below), and neither DOM order nor
+    "lowest on page" picks the right one on both dashboards. Anchor on the
+    section title instead — the rep table's header is the first match below
+    "<name> Owner (+/-) Rep".
+    """
+    # EXACT text — has_text= also matches every wrapper div up the tree, and
+    # hovering one of those times out instead of surfacing the sort control.
+    hdrs = fr.locator(f'div.tab-vizHeader >> text="{header}"')
+    n = hdrs.count()
+    if not n:
+        return None
+    tbox = fr.locator('text=/Owner \\(\\+/-\\) Rep/').first.bounding_box()
+    if not tbox:
+        return None
+    below = [b for b in (hdrs.nth(i).bounding_box() for i in range(n))
+             if b and b["y"] > tbox["y"]]
+    return min(below, key=lambda b: b["y"]) if below else None
+
+
+def apply_sort(page, header: str, clicks: int = 1, verbose: bool = False) -> bool:
+    """Click a measure column's sort button, high→low — the manual step Jolie does
+    before she downloads (Megan 2026-07-18: "you just hit the sorter button on
+    tableau then take a screenshot and clip it").
+
+    The custom views carry Carlos's FILTERS but not his SORT, so without this the
+    image comes back in the table's default alphabetical-by-rep order. That's the
+    bug behind both Activation Rate and Churn Rate posting wrong.
+
+    Session-local: a header sort is not written back to the shared custom view, so
+    Carlos's and Jolie's own Tableau are untouched. Returns False (and leaves the
+    view alone) if the header or its control can't be found — the caller still
+    captures, because an unsorted image beats no image.
+    """
+    fr = page.frame_locator(_IFRAME)
+    try:
+        # Drive the real mouse: locator.hover() times out here (the viz repaints
+        # constantly so actionability never settles), and bounding_box() on a frame
+        # locator is ALREADY page-relative — adding the iframe offset lands the
+        # pointer on a data mark instead. The sort glyph itself is DRAWN, not a DOM
+        # node, so no selector can reach it: hover the header text to arm it, then
+        # click SORT_ICON_DX px to its right.
+        for i in range(max(1, clicks)):
+            # RE-RESOLVE from scratch each pass. Sorting re-renders the table, which
+            # both shifts the header AND reshuffles the match order — so a cached
+            # index or a cached box makes clicks 2+ land somewhere else entirely.
+            box = _rep_table_header(fr, header)
+            if not box:
+                if verbose:
+                    print(f"   ⚠ sort: {header!r} header not found "
+                          f"(pass {i + 1})", flush=True)
+                return i > 0
+            page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+            page.wait_for_timeout(1_500)
+            page.mouse.move(box["x"] + box["width"] + SORT_ICON_DX,
+                            box["y"] + box["height"] / 2)
+            page.wait_for_timeout(1_200)
+            page.mouse.down()
+            page.wait_for_timeout(120)
+            page.mouse.up()
+            page.wait_for_timeout(6_000)
+        if verbose:
+            print(f"   ↕ sorted {header!r} ({clicks} click(s))", flush=True)
+        return True
+
+    except Exception as e:  # noqa: BLE001 — never lose the capture over the sort
+        if verbose:
+            print(f"   ⚠ sort on {header!r} failed: {type(e).__name__}", flush=True)
+        return False
+
 
 
 def wait_for_custom_view(page, label: str, timeout_ms: int = 90_000) -> None:
