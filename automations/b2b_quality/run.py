@@ -61,6 +61,7 @@ SPECS = [
                         "CarlosLocalOfficeEXPANDED?:iid=2"),
         "crop": "canvas",
         "sort_header": "0-7 Days",
+        "data_cols": 4,          # 0-7 / 8-14 / 15-30 / 31-60
     },
     {
         "id": "churn_rate",
@@ -76,6 +77,7 @@ SPECS = [
         # blanks-first, which is worse than the default. The unsorted default is
         # byte-for-byte what Jolie posts today (verified against her 7/17 image),
         # so we match her until the sort is saved into the custom view itself.
+        "data_cols": 5,          # 0-30 / 30 / 60 / 90 / 120
     },
 ]
 
@@ -172,6 +174,83 @@ def apply_sort(page, header: str, clicks: int = 1, verbose: bool = False) -> boo
         return False
 
 
+def crop_to_last_data_row(png: Path, data_cols: int, verbose: bool = False) -> bool:
+    """Trim the image so it ENDS on the last row with a value in the FIRST data
+    column (Megan 2026-07-18: "it needs to end with the last row that has data in
+    the 0-30 day section"). Same rule she gave for Activation's 0-7 Days column.
+
+    This is the crop the VA does by hand — it is NOT a filter. Reps below the cut
+    still exist in the view; they just have nothing in the leading column, so the
+    posted image stops before them. It also drops the second table further down
+    the Churn dashboard (the Disconnect Reason breakdown), which she never posts.
+
+    Works off the colour fills: every populated cell is a red/green/yellow block,
+    every empty one is white. Order-independent — it finds the last row that has
+    data, wherever that row sits. Best-effort: on any doubt the image is left at
+    full length rather than cut wrong. Returns True if it trimmed.
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        return False
+
+    def saturated(p):
+        return max(p) - min(p) > 45 and max(p) > 90
+
+    try:
+        im = Image.open(png).convert("RGB")
+        W, H = im.size
+        px = im.load()
+        # Column geometry from a band safely inside the rep table: below the
+        # National Average strip, above anything that follows the table.
+        probe_lo, probe_hi = 400, min(H, 1200)
+        if probe_hi - probe_lo < 100:
+            return False
+        counts = [sum(1 for y in range(probe_lo, probe_hi) if saturated(px[x, y]))
+                  for x in range(W)]
+        xs = [x for x in range(W) if counts[x] > 60]
+        if not xs:
+            return False
+        # The data cells butt up against each other (no white gutter survives the
+        # export), so the whole block reads as ONE run — split it evenly instead.
+        left, right = xs[0], xs[-1]
+        width = (right - left) // max(1, data_cols)
+        if width < 10:
+            return False
+        c0, c1 = left, left + width
+
+        def has_colour(y, a, b):
+            return any(saturated(px[x, y]) for x in range(a, b))
+
+        ys = [y for y in range(probe_lo, H) if has_colour(y, left, right)]
+        if not ys:
+            return False
+        bands, start, prev = [], ys[0], ys[0]
+        for y in ys[1:]:
+            if y - prev > 3:
+                bands.append((start, prev))
+                start = y
+            prev = y
+        bands.append((start, prev))
+        bands = [b for b in bands if b[1] - b[0] >= 8]        # drop specks
+        with_data = [b for b in bands
+                     if any(has_colour(y, c0, c1) for y in range(b[0], b[1] + 1))]
+        if not with_data:
+            return False
+        cut = min(H, with_data[-1][1] + 4)                    # +4 keeps the border
+        if cut >= H - 4:
+            return False                                      # nothing to trim
+        im.crop((0, 0, W, cut)).save(png)
+        if verbose:
+            print(f"   ✂ cropped to last row with data ({H} -> {cut}px)", flush=True)
+        return True
+    except Exception as e:  # noqa: BLE001 — a bad crop must not lose the image
+        if verbose:
+            print(f"   ⚠ crop failed ({type(e).__name__}) — full length kept",
+                  flush=True)
+        return False
+
+
 def capture_all(out_dir: Path, only=None, headless: bool = True) -> dict:
     """{spec_id: png_path} via Tableau's Download → Image. A view that fails is
     SKIPPED and flagged rather than posted wrong — same rule as the trackers."""
@@ -191,6 +270,8 @@ def capture_all(out_dir: Path, only=None, headless: bool = True) -> dict:
                             c=spec.get("sort_clicks", 1):
                             apply_sort(p, h, clicks=c, verbose=True))
                 png = cap.capture_page(page, spec, out_dir, after_load=hook, verbose=True)
+                if spec.get("data_cols"):
+                    crop_to_last_data_row(png, spec["data_cols"], verbose=True)
                 out[spec["id"]] = png
                 print(f"   ✓ {spec['title']} -> {png.name}", flush=True)
             except Exception as e:  # noqa: BLE001 — one bad view must not kill the rest
