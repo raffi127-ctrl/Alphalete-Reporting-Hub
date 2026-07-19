@@ -98,6 +98,33 @@
       "timeout_minutes": 30,
       "verify": null
     },
+    "vantura_board_audit": {
+      "on_scheduler": true,
+      "_note": "Vantura Sales Board daily data-quality audit (Carlos, 2026-07-19). Runs in the mini's 4am batch: (1) flags board reps with NO Roll Call row (off-menu adds -> frozen tenure tags; name cols are hard-protected but protection editors can bypass), (2) flags stats-range drift (summary formulas not ending at the true last rep row). Appends NEW findings to the board's 'Report an Issue' tab, deduped. Read-only except that tab. Pure API — no browser, no sessions.",
+      "display_name": "Vantura Board Audit (daily data quality)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.vantura_board_audit.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 10,
+      "verify": null
+    },
     "install_vantura_payroll_agent": {
       "on_scheduler": false,
       "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_vantura_payroll_agent` can install/refresh the STANDALONE com.alphalete.vantura-payroll-wed LaunchAgent on Lucy 2, which runs the Vantura payroll PREP (automations.vantura_payroll.run) Wednesday 11:00am machine-local time via deploy/vantura_payroll_wed.sh. The wrapper passes no mode flag, so the module's --dry-run default applies until sandbox sign-off flips it to --live in the wrapper. install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
