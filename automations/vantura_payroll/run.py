@@ -377,6 +377,77 @@ REV_TITLE_ROW = 215
 REV_CAMPAIGNS = (("B2B", 217), ("BOX", 223), ("Base", 229))
 REV_METRICS = ("Revenue Brought In", "Paid Out", "Payroll Tax", "Profit")
 
+# House style (read off the hand-built summary blocks 2026-07-19): dark
+# red-brown header bands w/ white bold, gray labels, semantic value colors
+# (blue=revenue in, red=money out, green=profit), Calibri 12 centered,
+# currency format, solid grid borders.
+_HDR_BG = {"red": 0.52156866, "green": 0.1254902, "blue": 0.047058824}
+_WHITE = {"red": 1, "green": 1, "blue": 1}
+_GRAY = {"red": 0.84705883, "green": 0.84705883, "blue": 0.84705883}
+_VALUE_BGS = ({"red": 0.62352943, "green": 0.77254903, "blue": 0.9098039},   # revenue
+              {"red": 0.95686275, "green": 0.78039217, "blue": 0.7647059},   # paid
+              {"red": 0.95686275, "green": 0.78039217, "blue": 0.7647059},   # tax
+              {"red": 0.7176471, "green": 0.88235295, "blue": 0.8039216})    # profit
+
+
+def _col_index(a1: str) -> int:
+    """'CJ' -> 0-based column index."""
+    n = 0
+    for ch in a1:
+        n = n * 26 + (ord(ch) - 64)
+    return n - 1
+
+
+def _format_rev_block(sh, sheet_id: int, blk: dict, log=_log) -> None:
+    """Apply the house style to the week's Revenue-by-Campaign block so a new
+    week looks like the hand-formatted 6/21-7/12 ones."""
+    p, f = _col_index(blk["paid"]), _col_index(blk["profit"])
+
+    def cell_fmt(bg, bold=False, white=False, money=False):
+        fmt = {"backgroundColor": bg, "horizontalAlignment": "CENTER",
+               "textFormat": {"fontFamily": "Calibri", "fontSize": 12,
+                              "bold": bold}}
+        if white:
+            fmt["textFormat"]["foregroundColor"] = _WHITE
+        if money:
+            fmt["numberFormat"] = {"type": "CURRENCY", "pattern": "$#,##0.00"}
+        return fmt
+
+    def repeat(r1, r2, c1, c2, fmt):
+        fields = ("userEnteredFormat(backgroundColor,horizontalAlignment,"
+                  "textFormat" + (",numberFormat)" if "numberFormat" in fmt
+                                  else ")"))
+        return {"repeatCell": {
+            "range": {"sheetId": sheet_id, "startRowIndex": r1 - 1,
+                      "endRowIndex": r2, "startColumnIndex": c1,
+                      "endColumnIndex": c2 + 1},
+            "cell": {"userEnteredFormat": fmt}, "fields": fields}}
+
+    solid = {"style": "SOLID", "width": 1}
+
+    def borders(r1, r2):
+        return {"updateBorders": {
+            "range": {"sheetId": sheet_id, "startRowIndex": r1 - 1,
+                      "endRowIndex": r2, "startColumnIndex": p,
+                      "endColumnIndex": f + 1},
+            "top": solid, "bottom": solid, "left": solid, "right": solid,
+            "innerHorizontal": solid, "innerVertical": solid}}
+
+    reqs = [repeat(REV_TITLE_ROW, REV_TITLE_ROW, p, f,
+                   cell_fmt(_HDR_BG, True, True)),
+            borders(REV_TITLE_ROW, REV_TITLE_ROW)]
+    for _name, hdr in REV_CAMPAIGNS:
+        reqs.append(repeat(hdr, hdr, p, f, cell_fmt(_HDR_BG, True, True)))
+        for i, bg in enumerate(_VALUE_BGS, start=1):
+            bold = i == 4  # Profit row bold, like the TOTAL rows above
+            reqs.append(repeat(hdr + i, hdr + i, p, p, cell_fmt(_GRAY, bold)))
+            reqs.append(repeat(hdr + i, hdr + i, f, f,
+                               cell_fmt(bg, bold, money=True)))
+        reqs.append(borders(hdr, hdr + 4))
+    sh.batch_update({"requests": reqs})
+    log(f"  formatted revenue block ({blk['paid']}/{blk['profit']} "
+        f"rows {REV_TITLE_ROW}-{REV_CAMPAIGNS[-1][1] + 4})")
+
 
 def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
                  sheet_id: str, log=_log) -> dict:
@@ -437,6 +508,11 @@ def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
         value_input_option="USER_ENTERED")
     log(f"  WROTE {len(formulas)} formulas + revenue-block labels into "
         f"block {blk['header']}")
+    try:  # cosmetics must never fail the payroll run
+        _format_rev_block(sh, pnl.id, blk, log=log)
+    except Exception as e:  # noqa: BLE001
+        log(f"  (revenue-block formatting skipped: {type(e).__name__}: "
+            f"{str(e)[:100]})")
     return blk
 
 
