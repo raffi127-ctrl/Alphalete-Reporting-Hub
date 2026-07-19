@@ -36,6 +36,13 @@ CROSSTAB_SHEET = "Order Log"
 
 CHANNEL = ("#alphalete-gp-sales", "C07J46MQNUX")
 
+# The parent message lists what's in the thread, one emoji-led line per
+# attachment, matching the other Lucy threads in this channel (Megan
+# 2026-07-19). Defined once and reused as the reply captions so the header and
+# the attachments can never drift apart.
+WORKBOOK_LINE = "\U0001F4E6 Overall log + a tab per rep"
+PAYOUT_LINE = "\U0001F4B5 Accepted by supplier — last week & this week"
+
 OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
 
 
@@ -239,7 +246,8 @@ def main(argv: Optional[list] = None) -> int:
             print("  PDF: {}".format(out_pdf))
 
     # ---- 7. optional Slack post -----------------------------------------
-    header = "*BOX Order Log — {}*".format(today.strftime("%B %d, %Y"))
+    header = "*BOX Order Log — {}*\n{}\n{}".format(
+        today.strftime("%B %d, %Y"), WORKBOOK_LINE, PAYOUT_LINE)
     if not args.post:
         _report_to_hub(started_at, verbose)
         if verbose:
@@ -280,12 +288,12 @@ def main(argv: Optional[list] = None) -> int:
         client.files_upload_v2(
             channel=target, thread_ts=ts, file=str(out_xlsx),
             filename=out_xlsx.name, title=out_xlsx.stem,
-            initial_comment="📦 BOX Order Log — overall log + a tab per rep",
+            initial_comment=WORKBOOK_LINE,
         )
         client.files_upload_v2(
             channel=target, thread_ts=ts, file=str(out_png),
             filename=out_png.name, title=out_png.stem,
-            initial_comment="💵 Accepted by supplier — last week & this week",
+            initial_comment=PAYOUT_LINE,
         )
     except Exception as exc:
         print("✗ Slack post failed: {}".format(exc), file=sys.stderr)
