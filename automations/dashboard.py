@@ -3427,17 +3427,14 @@ AUTOMATED_REPORTS = [
         "description": "Posts the daily Vantura Production thread to #alphalete-gp-sales as Lucy — the four program Sales Boards (B2B, Base, JE, BOX) the VA used to post by hand each morning, two images each.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "**•** Posts one dated thread — **Vantura Production MM/DD/YYYY** — "
+            "Posts one dated thread — **Vantura Production MM/DD/YYYY** — "
             "then each program's images as a threaded reply:\n"
-            "**•** **(a) weekly** — the rep leaderboard (Current Week / Last Wk), "
-            "ranked, numbered 1..N.\n"
-            "**•** **(b) highrollers** — just the reps who sold **yesterday**, "
-            "ranked by that day's count, with that day's totals.\n"
-            "**•** Terminated reps are excluded, matching the VA's own filter.\n"
-            "**•** Titled with **yesterday's** date, e.g. `📦 *BOX Sales Board 7.17*`.\n\n"
+            "**•** **B2B Sales Board**\n"
+            "**•** **Base Sales Board**\n"
+            "**•** **JE Sales Board**\n"
+            "**•** **BOX Sales Board**\n\n"
             "WHEN IT RUNS\n"
-            "**Every day at 6:00am CST**, including weekends, retrying every "
-            "25 min as a safety net.\n\n"
+            "**Every day at 6:00am CST.**\n\n"
             "SAFETY GATES\n"
             "**•** Holds if the board's gold **week-ending** cell isn't the week "
             "containing yesterday — on Mondays that's last week's completed "
@@ -3477,14 +3474,6 @@ AUTOMATED_REPORTS = [
                 "help": "Builds all 8 images and POSTS today's thread to #alphalete-gp-sales as Lucy.",
                 "module": "automations.sales_boards.run",
                 "args_fn": lambda: ["--post"],
-            },
-            {
-                "label": "Preview (no post)",
-                "icon": "👁",
-                "primary": False,
-                "help": "Builds the 8 images and shows the thread it would post. Posts nothing.",
-                "module": "automations.sales_boards.run",
-                "args_fn": lambda: [],
             },
         ],
     },
