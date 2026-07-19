@@ -120,7 +120,11 @@ def header_title(day) -> str:
 
 
 def header_text(day) -> str:
-    return "\n".join([f"*{header_title(day)}*"] + [f"• {s['title']}" for s in SPECS])
+    """Parent message: title, then one line per view led by that view's emoji
+    (Megan 2026-07-19 — the emoji REPLACES the bullet, it isn't added to it), so
+    the header reads the same as the threaded replies underneath it."""
+    return "\n".join([f"*{header_title(day)}*"]
+                     + [f"{s['emoji']} {s['title']}" for s in SPECS])
 
 
 def _channel():
