@@ -200,14 +200,17 @@ def build(sales: Sequence, out_path: Path, *,
     if reps_ranked:
         psh = wb.create_sheet(_safe_title("Payout by Week", used))
         headers = (["Rep"] + [w.strftime("%m/%d") for w in weeks_desc]
-                   + ["Paid Total", "Pending"])
-        psh.cell(row=1, column=1, value="Paid sales by week ending").font = _font(bold=True)
+                   + ["Accepted Total", "Still Open"])
+        psh.cell(row=1, column=1,
+                 value="Sales accepted by the supplier, by week ending"
+                 ).font = _font(bold=True)
         psh.cell(row=2, column=1,
-                 value="Paid columns = the week the supplier ACCEPTED the "
-                       "sale, which is NOT the week it was sold, so they "
-                       "won't match the log's week totals. PENDING is not a "
-                       "week figure — it's every deal of theirs still waiting "
-                       "on acceptance, whenever it was sold."
+                 value="Each column is the week the supplier ACCEPTED the "
+                       "sale — not the week it was sold, so these won't match "
+                       "the log's week totals. Acceptance is what next week's "
+                       "pay is based on. STILL OPEN is not a week figure — "
+                       "it's every deal still waiting on acceptance, whenever "
+                       "it was sold."
                  ).font = _font(italic=True)
         _write_header(psh, 4, headers)
         r = 5

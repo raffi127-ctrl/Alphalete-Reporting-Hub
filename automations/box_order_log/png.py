@@ -27,9 +27,12 @@ NUM_W = 74 * SCALE
 # it's every deal not yet accepted, and it reads the same in both tables. No
 # Total column: adding a week number to an all-time one meant nothing, and it
 # was the source of a real misreading (Carlos, 2026-07-18).
+# NOT "Paid" — Carlos, 2026-07-18: "I read 'paid' and I would think I've
+# already gotten paid on it, but I'm not getting paid on it until next week."
+# Acceptance is the event; the money follows later.
 COLS: List[Tuple[str, str, str]] = [
     ("Rep Name", "rep", "left"),
-    ("Paid", "posted", "center"),
+    ("Accepted by Supplier", "posted", "center"),
     ("Cancelled", "canceled", "center"),
     ("Still Open", "pending", "center"),
 ]
@@ -78,22 +81,38 @@ def _text_w(draw, text, font) -> int:
     return int(draw.textlength(str(text), font=font))
 
 
-def _table_width(draw, rows, font) -> int:
-    rep_w = MIN_REP_W
-    for r in rows:
-        rep_w = max(rep_w, _text_w(draw, r["rep"], font) + 2 * CELL_PAD)
-    return rep_w + NUM_W * (len(COLS) - 1), rep_w
+def _col_widths(draw, rows, font, head_font) -> List[int]:
+    """Width per column, sized to its own header and values.
+
+    Was a flat NUM_W for every numeric column, which clipped a long header
+    the moment "Paid" became "Accepted by Supplier".
+    """
+    widths = []
+    for i, (head, key, _align) in enumerate(COLS):
+        w = _text_w(draw, head, head_font) + 2 * CELL_PAD
+        for r in rows:
+            w = max(w, _text_w(draw, r[key], font) + 2 * CELL_PAD)
+        if i == 0:
+            w = max(w, MIN_REP_W)
+        else:
+            w = max(w, NUM_W)
+        widths.append(int(w))
+    return widths
+
+
+def _table_width(draw, rows, font, head_font) -> int:
+    widths = _col_widths(draw, rows, font, head_font)
+    return sum(widths), widths
 
 
 def _draw_table(draw, x: int, y: int, title: str, rows: Sequence[Dict],
                 fonts) -> int:
     f_title, f_head, f_cell = fonts
-    total_w, rep_w = _table_width(draw, rows, f_cell)
+    total_w, widths = _table_width(draw, rows, f_cell, f_head)
 
     draw.text((x, y), title, font=f_title, fill=TEXT)
     y += TITLE_H
 
-    widths = [rep_w] + [NUM_W] * (len(COLS) - 1)
     cx = x
     for (head, _key, _align), w in zip(COLS, widths):
         draw.rectangle([cx, y, cx + w, y + HEADER_H], fill=HEADER_BG, outline=GRID)
@@ -144,8 +163,8 @@ def render(tables: Dict, out_path: Path, *, subtitle: str = "") -> Path:
     # Measure on a scratch canvas first.
     probe = ImageDraw.Draw(Image.new("RGB", (10, 10)))
     last, this = tables["last"], tables["this"]
-    w_last, _ = _table_width(probe, last["rows"], fonts[2])
-    w_this, _ = _table_width(probe, this["rows"], fonts[2])
+    w_last, _ = _table_width(probe, last["rows"], fonts[2], fonts[1])
+    w_this, _ = _table_width(probe, this["rows"], fonts[2], fonts[1])
     rows_h = max(len(last["rows"]), len(this["rows"])) + 1     # +1 TOTAL strip
 
     sub_h = 26 * SCALE if subtitle else 0

@@ -199,8 +199,9 @@ def main(argv: Optional[list] = None) -> int:
         from . import payout, png
         tables = payout.build_week_tables(sales, today)
         png.render(tables, out_png,
-                   subtitle="Paid & Cancelled are for that week. "
-                            "Still Open = deals not yet accepted, any week.")
+                   subtitle="Accepted & Cancelled are for that week — pay "
+                            "follows the week after. Still Open = deals not "
+                            "yet accepted, any week.")
         if verbose:
             print("  Payout image: {}".format(out_png))
             for key in ("last", "this"):
@@ -266,7 +267,7 @@ def main(argv: Optional[list] = None) -> int:
         client.files_upload_v2(
             channel=target, thread_ts=ts, file=str(out_png),
             filename=out_png.name, title=out_png.stem,
-            initial_comment="💵 Payout — last week & this week",
+            initial_comment="💵 Accepted by supplier — last week & this week",
         )
     except Exception as exc:
         print("✗ Slack post failed: {}".format(exc), file=sys.stderr)
