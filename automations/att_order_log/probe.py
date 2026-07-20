@@ -107,20 +107,37 @@ SEARCH_TERMS = ("churn", "wireless churn", "b2b churn")
 # CUSTOM VIEW => LUCY 2 ONLY, same trap as b2b_quality: a custom view carries
 # its owner's filters/sort for its owner. Under Raf's login this is a different
 # slice, silently.
-CHURN_WIRELESS_URL = (
-    "https://us-east-1.online.tableau.com/#/site/sci/views/"
-    "ATTTRACKER-B2B/CHURNRATES/1767636f-875a-40ac-ad39-a42cb894e428/"
-    "CarloWireless?:iid=1"
-)
-# vantura_churn already pulls this workbook via its ALLTEAMCHURN view with
-# crosstab sheet "ICD Churn" — per-ICD rows. The 'Lucy Wireless Churn' tab Carlos
-# set up needs PER-REP rows, so the open question is whether CarloWireless
-# exports a Rep breakout or flattens to Owner & Office like the ALLTEAMCHURN
-# dashboard export does. vantura_churn hit exactly this on activation rates (the
-# dashboard .csv flattened; a worksheet-level probe was needed to get Rep), so
-# we check rather than assume. Leaving it unset makes the probe enumerate the
-# crosstab dialog's worksheet list instead of guessing a name.
-CHURN_CROSSTAB_SHEET = None
+# Both of Carlos's churn views, Megan-supplied 2026-07-19. ONE table rather than
+# two constants: these two are structurally identical (same CHURNRATES workbook,
+# same custom-view mechanics, same destination shape) and differ only in which
+# product they measure. The repo's own lesson — office_metrics/offices.py, and
+# wireless_churn/fill.py being a 40-line re-point of new_internet_churn — is that
+# near-identical feeds handled as separate copies drift. Each entry maps to the
+# scaffold tab Carlos already built in the Vantura Master Sales Board.
+CHURN_VIEWS = {
+    "wireless": {
+        "label": "Wireless Churn",
+        "tab": "Lucy Wireless Churn",          # gid 2062141872
+        "url": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+                "ATTTRACKER-B2B/CHURNRATES/"
+                "1767636f-875a-40ac-ad39-a42cb894e428/CarloWireless?:iid=1"),
+    },
+    "new_int": {
+        "label": "New Internet Churn",
+        "tab": "Lucy New INT Churn",           # gid 916425770
+        "url": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+                "ATTTRACKER-B2B/CHURNRATES/"
+                "ae1e808c-0fa1-4385-8657-9d59c3c02813/CarlosNewINT?:iid=1"),
+    },
+}
+# Note the view names are NOT spelled consistently upstream —  "CarloWireless"
+# (no 's') vs "CarlosNewINT". Keep them verbatim; they are URL path segments,
+# not labels, and "fixing" the typo would 404.
+# For reference while reading the probe's output: vantura_churn already pulls
+# this same CHURNRATES workbook, via its ALLTEAMCHURN view with crosstab sheet
+# "ICD Churn", and gets per-ICD rows. Carlos's scaffold tabs need per-REP rows.
+# _probe_churn's REP BREAKOUT line is what settles whether these custom views
+# give us that.
 
 
 def _describe(grid, rec) -> None:
@@ -295,26 +312,28 @@ def main(argv=None) -> int:
     return rc
 
 
-def _probe_churn(page, rec) -> None:
-    """Describe Carlos's wireless-churn view (Megan-supplied, authoritative).
+def _probe_churn(page, rec, key, spec) -> None:
+    """Describe one of Carlos's churn views (Megan-supplied, authoritative).
 
-    THE question this answers: does it carry a per-REP breakout? The
-    'Lucy Wireless Churn' tab Carlos set up has a 'Rep' column and one row per
-    rep, but vantura_churn learned the hard way that a CHURNRATES dashboard
-    export can flatten to Owner & Office only. If it flattens, the churn fill
-    needs a worksheet-level pull instead, and finding that out now is the
-    difference between a re-point and a rewrite.
+    THE question this answers: does it carry a per-REP breakout? The scaffold
+    tabs Carlos set up have a 'Rep' column and one row per rep, but
+    vantura_churn learned the hard way that a CHURNRATES dashboard export can
+    flatten to Owner & Office only. If it flattens, the churn fill needs a
+    worksheet-level pull instead, and finding that out now is the difference
+    between a re-point and a rewrite.
     """
     import csv
     import io
 
     rec("")
-    rec("=== Carlos wireless churn — {} ===".format(CHURN_WIRELESS_URL))
+    rec("=== {} ({}) ===".format(spec["label"], key))
+    rec("  view: {}".format(spec["url"]))
+    rec("  dest: {!r}".format(spec["tab"]))
     # Load the custom view first so it is materialised before we ask for its
     # data (an export of a never-rendered custom view can come back as the
     # Original — the trap vantura_churn.cdp_pull documents for activations).
     try:
-        page.goto(CHURN_WIRELESS_URL, wait_until="domcontentloaded")
+        page.goto(spec["url"], wait_until="domcontentloaded")
         page.wait_for_timeout(20_000)
         rec("  custom view rendered")
     except Exception as e:  # noqa: BLE001
@@ -384,7 +403,8 @@ def _run_list_views(rec) -> None:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             tp._ensure_tableau_authenticated(page, verbose=False,
                                              allow_form_login=True)
-            _probe_churn(page, rec)
+            for key, spec in CHURN_VIEWS.items():
+                _probe_churn(page, rec, key, spec)
             _list_views(page, rec)
     finally:
         try:
