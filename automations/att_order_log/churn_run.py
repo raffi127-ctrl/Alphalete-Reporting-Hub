@@ -164,14 +164,20 @@ def _fill(key: str, spec: dict, parsed: dict, today: dt.date, log=print) -> None
             "no churn sections found in {!r} — the scaffold's column-A labels "
             "do not match (expected '... 0-30 DAYS' etc.)".format(spec["tab"]))
 
-    if fill_mod.today_already_filled(ws, sections, today):
-        log("  [{}] today's column is already present — skipping".format(key))
-        return
-    fill_mod.insert_two_cols_at_b(ws, sections)
-    sections = fill_mod.find_sections(ws)
-    fill_mod.insert_missing_reps(ws, sections, parsed)
-    sections = fill_mod.find_sections(ws)
-    fill_mod.write_today(ws, sections, parsed, today)
+    # SEQUENCE + ARG ORDER mirror the proven D2D caller (automations/churn/run.py)
+    # exactly. My first version reordered these and passed write_today(ws,
+    # sections, PARSED, TODAY) — the args swapped — which crashed with
+    # "'datetime.date' object has no attribute 'get'" and left all three tabs
+    # empty. The D2D order is load-bearing: insert_missing_reps runs BEFORE the
+    # column insert, and sections are RE-FOUND after the row inserts (they shift
+    # lower sections down and leave the in-memory header rows stale).
+    already = fill_mod.today_already_filled(ws, sections, today)
+    fill_mod.insert_missing_reps(ws, sections, parsed, logfn=log)
+    if not already:
+        fill_mod.insert_two_cols_at_b(ws, sections)
+        fill_mod._merge_section_headers(ws, sections)
+    sections = fill_mod.find_sections(ws)          # re-resolve after inserts
+    fill_mod.write_today(ws, sections, today, parsed, logfn=log)
     log("  [{}] wrote {}".format(key, fill_mod._date_label(today)))
 
 
