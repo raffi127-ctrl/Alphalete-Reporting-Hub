@@ -38,7 +38,13 @@ from automations.new_internet_churn import pull
 from automations.recruiting_report.fill import open_by_key, _retry
 
 SHEET_ID = os.environ.get("CHURN_SHEET_ID", "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8")
-TAB_LOCAL_OFFICE = "Local Office - New Internet Churn"
+# Tab override completes the env-driven set (CHURN_SHEET_ID / _VIEW_URL /
+# _SLICE_OWNER). Without it a different workbook could be targeted but the tab
+# name could not, which is the one thing that differs for Carlos's B2B board:
+# "Lucy New INT Churn" rather than the D2D "Local Office - ..." convention.
+# Unset = the original name, so every existing office is byte-identical.
+TAB_LOCAL_OFFICE = (os.environ.get("CHURN_NI_TAB", "").strip()
+                    or "Local Office - New Internet Churn")
 
 PERIOD_SECTION_LABELS = (
     # canonical period → marker substring (uppercase, whitespace-normalized)

@@ -8,8 +8,13 @@ from __future__ import annotations
 
 from automations.new_internet_churn import fill as _shared
 
+import os
+
 SHEET_ID = _shared.SHEET_ID
-TAB_LOCAL_OFFICE = "Local Office - Wireless Churn"
+# See the CHURN_NI_TAB note in new_internet_churn.fill — same override, wireless
+# side. Carlos's B2B board uses "Lucy Wireless Churn".
+TAB_LOCAL_OFFICE = (os.environ.get("CHURN_WL_TAB", "").strip()
+                    or "Local Office - Wireless Churn")
 
 
 def open_ws():
