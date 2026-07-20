@@ -14,16 +14,22 @@ from __future__ import annotations
 import datetime as dt
 from typing import Dict, List, Optional
 
-from automations.new_start_followup import obcl, roster as roster_mod, thread as thread_mod
+from automations.new_start_followup import (
+    membership, obcl, roster as roster_mod, thread as thread_mod)
+
+
+DEPARTED_NOTE = "No longer a channel member"
 
 
 class LeaderStatus:
-    def __init__(self, leader, owed: int, tagged: bool, confirmation=None, covered_by=None):
+    def __init__(self, leader, owed: int, tagged: bool, confirmation=None,
+                 covered_by=None, departed: bool = False):
         self.leader = leader
         self.owed = owed                  # new starts assigned in OBCL
         self.tagged = tagged              # in Aisha's Saturday roll call
         self.confirmation = confirmation  # thread_mod.Confirmation | None
         self.covered_by = covered_by      # another Leader who sent on their behalf
+        self.departed = departed          # left #rafs-office-recruiting
 
     @property
     def sent(self) -> bool:
@@ -62,7 +68,21 @@ class Reconciliation:
 
     @property
     def pending(self) -> List[LeaderStatus]:
-        return sorted([s for s in self.statuses if not s.sent], key=LeaderStatus.sort_key)
+        """Still owes a text AND is still reachable.
+
+        Departed leaders are excluded everywhere `pending` is used -- nudge
+        tags, the "still need to send" line, and the texts -- so a former
+        employee is never pinged. They're surfaced under `departed` instead.
+        """
+        return sorted([s for s in self.statuses if not s.sent and not s.departed],
+                      key=LeaderStatus.sort_key)
+
+    @property
+    def departed(self) -> List[LeaderStatus]:
+        """Gone from the channel but still had new starts assigned in OBCL —
+        somebody else has to cover those."""
+        return sorted([s for s in self.statuses if s.departed and s.owed],
+                      key=LeaderStatus.sort_key)
 
     @property
     def short(self) -> List[LeaderStatus]:
@@ -81,13 +101,17 @@ class Reconciliation:
         """
         if not self.has_roll_call:
             return []
-        return sorted([s for s in self.statuses if s.owed and not s.tagged],
-                      key=LeaderStatus.sort_key)
+        # Departed leaders are untagged BY DESIGN -- reporting them here would
+        # read as an oversight to fix. They're listed under `departed` instead.
+        return sorted(
+            [s for s in self.statuses if s.owed and not s.tagged and not s.departed],
+            key=LeaderStatus.sort_key)
 
     @property
     def owing(self) -> List[LeaderStatus]:
-        """Everyone the roll call should tag: has at least one new start."""
-        return sorted([s for s in self.statuses if s.owed], key=LeaderStatus.sort_key)
+        """Everyone the roll call should tag: has a new start and is still here."""
+        return sorted([s for s in self.statuses if s.owed and not s.departed],
+                      key=LeaderStatus.sort_key)
 
 
 def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
@@ -115,6 +139,16 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
 
     covered = _covers(th["confirmations"], ros)
 
+    # Former employees: never tag them, never text them.
+    try:
+        gone = membership.departed_ids(client=client)
+    except Exception as exc:  # noqa: BLE001
+        # A membership read failing must not take the whole report down --
+        # worst case we tag someone who left, which is what we do today.
+        print("WARNING: couldn't read channel membership ({}). "
+              "Treating everyone as active.".format(exc))
+        gone = set()
+
     # Every leader who either owes a text or was tagged gets a row.
     ids = set(owed_by_id) | set(th["tagged"])
     for sid in ids:
@@ -129,6 +163,7 @@ def build(monday: Optional[dt.date] = None, friday: Optional[dt.date] = None,
                 tagged=sid in th["tagged"],
                 confirmation=th["confirmations"].get(sid),
                 covered_by=covered.get(sid),
+                departed=sid in gone,
             )
         )
     return rec
@@ -190,6 +225,8 @@ def render_rollcall(rec: Reconciliation) -> str:
 
     # No follow-through flags at 8am -- nobody has sent yet. But anyone we
     # couldn't tag goes in, so their new start doesn't fall through.
+    for line in _departed_lines(rec):
+        lines.append(line)
     for line in _untaggable_lines(rec):
         lines.append(line)
     return "\n".join(lines)
@@ -222,14 +259,15 @@ def render_nudge(rec: Reconciliation, when: str) -> str:
 def render_checklist(rec: Reconciliation) -> str:
     """Sunday roll-up — Raf's numbered ✅ list, rebuilt automatically."""
     statuses = sorted(rec.statuses, key=LeaderStatus.sort_key)
-    total = len(statuses)
+    # Former employees don't count against the score -- they can't send.
+    active = [s for s in statuses if not s.departed]
     done = len(rec.sent)
 
     lines = [
         # Built by hand, not strftime -- %-m/%-d is glibc-only and this has to
         # run on Windows too.
         "📋 *New-Start Texts — week of {}/{}*".format(rec.monday.month, rec.monday.day),
-        "*{} of {} leaders have sent*".format(done, total),
+        "*{} of {} leaders have sent*".format(done, len(active)),
         "",
     ]
     for i, s in enumerate(statuses, 1):
@@ -237,6 +275,8 @@ def render_checklist(rec: Reconciliation) -> str:
         detail = []
         if s.owed:
             detail.append("{} new start{}".format(s.owed, "" if s.owed == 1 else "s"))
+        if s.departed:
+            detail.append(DEPARTED_NOTE)
         if s.covered_by is not None:
             detail.append("sent by {}".format(s.covered_by.short or s.covered_by.name))
         if s.short:
@@ -252,13 +292,30 @@ def render_checklist(rec: Reconciliation) -> str:
 
     for line in _team_flags(rec):
         lines.append(line)
-    # Still unaccounted for on Sunday, so it carries through to the roll-up.
+    # Still unaccounted for on Sunday, so these carry through to the roll-up.
+    for line in _departed_lines(rec):
+        lines.append(line)
     for line in _untaggable_lines(rec):
         lines.append(line)
 
     lines.append("")
     lines.append("_auto by Lucy · source: OBCL tab '{}'_".format(rec.tab))
     return "\n".join(lines)
+
+
+def _departed_lines(rec: Reconciliation) -> List[str]:
+    """Leaders who left the channel but still have new starts on the sheet.
+
+    Named, not tagged -- the @-mention is the whole thing we're avoiding. Their
+    new starts still need somebody, so this has to be visible in the post.
+    """
+    if not rec.departed:
+        return []
+    out = ["", "⚠️ *{}* — someone else needs to cover these".format(DEPARTED_NOTE)]
+    for s in rec.departed:
+        out.append("   •  {} — {} new start{}".format(
+            s.leader.name, s.owed, "" if s.owed == 1 else "s"))
+    return out
 
 
 def _untaggable_lines(rec: Reconciliation) -> List[str]:

@@ -61,6 +61,13 @@ there, so a re-fire can't tag 21 people twice. `--force` overrides.
   call is still recognised if she posts one, so a transition week parses either
   way; with no roll call at all, everything under the anchor counts.
 - **Name mapping** — `automations/new_start_followup/leaders.json`.
+- **Who's left the company** — replayed from `channel_join` / `channel_leave`
+  events in the channel history. Lucy's token has no `channels:read`, so
+  `conversations.members` isn't available; history is. State accumulates in
+  `output/new_start_membership.json` so an old leave isn't forgotten once it
+  scrolls out of the scan window. **Silence means present** — only an observed
+  leave marks someone gone, because wrongly writing off an active leader would
+  mean their new starts never get chased.
 
 ## Commands
 
@@ -102,6 +109,10 @@ them.
 
 Posted into Slack (the team should see these):
 
+- **No longer a channel member** — the interviewer has left
+  `#rafs-office-recruiting`. They are **never @-tagged, nudged, or texted**, and
+  they don't count against the "N of M have sent" score. Their new starts are
+  listed by name so somebody else picks them up.
 - **Unable to tag — needs a manual reach-out** — an interviewer in OBCL column B
   with no Slack account to @-mention. Goes in **both** the Saturday roll call and
   the Sunday checklist: if nobody can tag them, their new start silently goes
