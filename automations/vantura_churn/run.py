@@ -128,6 +128,12 @@ def main(argv=None) -> int:
     ap.add_argument("--skip-activations", action="store_true")
     ap.add_argument("--skip-rates", action="store_true",
                     help="skip the activation-rate cells + per-rep list")
+    ap.add_argument("--shot", action="store_true",
+                    help="render the churn block to a PNG in output/ after "
+                         "the write")
+    ap.add_argument("--post", action="store_true",
+                    help="with --shot, POST the PNG to the Activations "
+                         "order-log channel. Off by default.")
     ap.add_argument("--preview", action="store_true",
                     help="write Carlos's churn numbers to the '"
                          + fill.TAB_CHURN_PREVIEW + "' tab instead of the "
@@ -286,6 +292,21 @@ def main(argv=None) -> int:
             act = compute.activations_rows(results[key]["lines"], today)
             fill.update_activations(sh.worksheet(fill.TAB_ACTIVATIONS), act,
                                     log=log)
+
+    # ------------------------------------------------------------ screenshot
+    if args.shot:
+        from pathlib import Path as _P
+        from automations.vantura_churn import shot as _shot
+        carlos_tab = next((t for k, _p, t, _a in owners if k == "carlos"),
+                          None)
+        if carlos_tab:
+            ws = sh.worksheet(carlos_tab)
+            out = _P("output/vantura_churn") / f"churn-{today.isoformat()}.png"
+            png = _shot.render(ws, out)
+            log(f"  ✓ screenshot → {png}")
+            # dry_run unless --post: posting outward is opt-in, never a
+            # side effect of the daily refresh.
+            _shot.post(png, day=today, dry_run=not args.post, log=log)
 
     _ok_manifest()
     log("✓ Vantura churn & activations update complete.")
