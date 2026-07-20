@@ -609,7 +609,7 @@ def download_views(specs, today=None, verbose=True, log=print):
     return results
 
 
-def probe_activation_rates(log=print) -> dict:
+def probe_activation_rates(log=print, view_url: str = None) -> dict:
     """Run activation_rates.probe() inside a real-Chrome session (Carlos's
     Tableau identity — the ownerville service identity can't see his rows).
     Findings → the 'Vantura Diag' tab, same channel as the Order Log probe.
@@ -645,9 +645,15 @@ def probe_activation_rates(log=print) -> dict:
             # Load the view once so the custom view is materialised before we
             # ask for its .csv (the export of a never-rendered custom view can
             # come back as the Original).
-            page.goto(activation_rates.VIEW_URL, wait_until="domcontentloaded")
+            url = view_url or activation_rates.VIEW_URL
+            rec(f"[cdp] view: {url}")
+            page.goto(url, wait_until="domcontentloaded")
             page.wait_for_timeout(20_000)
-            info = activation_rates.probe(page, log=rec)
+            # Worksheet-level probe first: it is the one that reveals whether
+            # this view breaks out by Rep (the .csv dashboard export flattens
+            # to Owner & Office only).
+            info = {"sheets": activation_rates.probe_view(page, url, log=rec)}
+            info["dashboard_csv"] = activation_rates.probe(page, log=rec)
     except Exception:  # noqa: BLE001
         import traceback
         buf.append("TRACEBACK:")

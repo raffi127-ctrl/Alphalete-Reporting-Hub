@@ -108,6 +108,9 @@ def main(argv=None) -> int:
     ap.add_argument("--probe", action="store_true",
                     help="diagnostics only: load the filtered Order Log view "
                          "and dump what it shows to the control sheet")
+    ap.add_argument("--probe-activations-url", default=None, metavar="URL",
+                    help="probe THIS activation-rates view instead of the "
+                         "default (use to compare custom views).")
     ap.add_argument("--probe-activations", action="store_true",
                     help="diagnostics only: dump what the ACTIVATION RATES "
                          "view exports (columns, bucket captions, Carlos's "
@@ -137,7 +140,8 @@ def main(argv=None) -> int:
         return _probe(today, log)
     if args.probe_activations:
         from automations.vantura_churn import cdp_pull
-        cdp_pull.probe_activation_rates(log=log)
+        cdp_pull.probe_activation_rates(log=log,
+                                        view_url=args.probe_activations_url)
         return 0
     owners = [o for o in OWNER_CFG
               if args.owner in ("both", o[0])]
