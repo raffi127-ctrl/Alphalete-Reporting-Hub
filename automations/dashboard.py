@@ -4135,19 +4135,32 @@ AUTOMATED_REPORTS = [
         "emoji": "📉",
         "color": "#2E86AB",
         "category": "📊 Metrics",
-        "description": "Refreshes the Vantura Master Sales Board every morning: pulls each owner's 60-day Order Log and the Churn Rates dashboard from Tableau, computes the 0-30 bases/disconnects, reconciles against the dashboard's own 0-30 cell, and only then writes Carlos's Churn + Activations tabs and Atef's Churn tab.",
+        "description": "Refreshes the Vantura Master Sales Board every morning: pulls each owner's 60-day Order Log, the Churn Rates dashboard and the Activation Rates view from Tableau, computes the 0-30 bases/disconnects and the 0-30 / 31-60 activation rates, reconciles both against their dashboards, and only then writes Carlos's LUCY CHURN + Activations tabs and Atef's Churn tab.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "**•** Pulls the **Order Log** plus the **Churn Rates** "
-            "crosstab.\n"
+            "**•** Pulls the **Order Log**, the **Churn Rates** crosstab "
+            "and the **Activation Rates** view.\n"
             "**•** Computes per-product activation bases and 0-30 "
             "disconnects.\n"
-            "**•** **Reconciles** the computed numbers against the CHURN "
-            "RATES dashboard — on ANY mismatch it writes NOTHING and fails "
-            "loudly.\n"
-            "**•** Writes Churn!B5:B7 + the R2:AE helper block (Carlos and "
-            "Atef) and rebuilds the Activations dump, preserving the notes "
-            "that follow customers and SPMs.\n\n"
+            "**•** Builds the **0-30 and 31-60 day activation rates** plus "
+            "a per-rep breakdown. The 0-30 bucket doesn't exist in Tableau "
+            "— it's rebuilt by summing the 0-7 / 8-14 / 15-30 buckets.\n"
+            "**•** **Reconciles** both sets of numbers against their "
+            "dashboards — the churn base/rate against CHURN RATES, and the "
+            "per-rep rates against the office totals. On ANY mismatch it "
+            "writes NOTHING and fails loudly.\n"
+            "**•** Writes the churn bases, the hidden helper block and the "
+            "activation-rate cells + rep list to **LUCY CHURN** (Carlos) "
+            "and the helper block to Churn - Atef, then rebuilds the "
+            "Activations dump — preserving the notes that follow customers "
+            "and SPMs.\n\n"
+            "GOOD TO KNOW\n"
+            "**•** Carlos's tab moved from *Churn* to **LUCY CHURN** on "
+            "2026-07-19. The old tab is kept for history but is no longer "
+            "written.\n"
+            "**•** Rate colours use Megan's bands (0-30: red <65, yellow "
+            "65-75, green 75+; 31-60: red <70, yellow 70-80, green 80+), "
+            "NOT Tableau's own colour column — the two disagree.\n\n"
             "WHEN IT RUNS\n"
             "**Daily 7:00 AM** on Lucy 2."
         ),
