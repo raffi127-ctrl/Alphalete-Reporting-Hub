@@ -91,6 +91,17 @@ def main(argv=None) -> int:
         len(rec.statuses), len(rec.sent), len(rec.pending)))
     print()
 
+    # Standing house rule: cross-check the people we're about to contact against
+    # the Terminated tab. Doubly relevant here — it's the one departure signal
+    # that catches someone whose Slack account was deactivated WITHOUT being
+    # removed from the channel, which the membership replay can't see.
+    try:
+        from automations.shared import terminated_icds as ti
+        ti.alert_terminated([s.leader.name for s in rec.statuses],
+                            report_label="New-Start Follow-Up")
+    except Exception as exc:  # noqa: BLE001 — advisory only, never fails a run
+        print("⚠ terminated check skipped ({})".format(exc))
+
     # Plumbing problems go to the log, never into the Slack post.
     ops = report_mod.ops_flags(rec)
     if ops:

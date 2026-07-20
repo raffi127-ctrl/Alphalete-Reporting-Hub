@@ -86,7 +86,14 @@ def resolve_phones(rec) -> int:
     need = [s.leader for s in rec.pending if not s.leader.phone]
     if not need:
         return 0
-    book = obcl.phone_book()
+    try:
+        book = obcl.phone_book()
+    except Exception as exc:  # noqa: BLE001
+        # A phone-book read failing shouldn't kill the run: everyone just gets
+        # reported as "no number" instead, which is already a handled path.
+        print("WARNING: couldn't read the OBCL phone book ({}). "
+              "Falling back to numbers on file only.".format(exc))
+        return 0
     filled = 0
     for leader in need:
         for key in leader.keys():
