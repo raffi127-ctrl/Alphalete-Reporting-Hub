@@ -82,6 +82,31 @@ def audit(write: bool, log=_log) -> int:
                 "tenure tag is frozen and stats may miss them. Re-add via "
                 "Alphalete menu > Add (or add their Roll Call row).")
 
+    # 1b. reverse direction (added 2026-07-20 after Edgar's board row vanished
+    #     mid-morning with no alert): every roll person whose status shows
+    #     "Active" must have a board row. "New Start" status is exempt (they
+    #     join the board at the week roll); Terminated/blank are irrelevant.
+    board_names = {_norm(n) for _, n in reps}
+    # managers sell occasionally but aren't board reps (Carlos, 2026-07-20)
+    EXEMPT = {"carlos hidalgo", "nico murrugarra"}
+    def _on_board(n):
+        return n in board_names or any(
+            k.startswith(n + " ") or n.startswith(k + " ") for k in board_names)
+    for ri, r in enumerate(roll, start=1):
+        if len(r) < 4 or not str(r[3]).strip():
+            continue
+        if str(r[1]).strip() != "Active":
+            continue
+        n = _norm(r[3])
+        if n in EXEMPT:
+            continue
+        if not _on_board(n):
+            findings.append(
+                f"MISSING FROM BOARD: '{str(r[3]).strip()}' (roll r{ri}) is "
+                "Active on Roll Call but has no Sales Board row — deleted by "
+                "accident? Re-add via Alphalete menu (their WeekData history "
+                "re-links by name).")
+
     # 2. stats-range drift: summary formulas whose rep-block range ends off
     for i, row in enumerate(board_form, start=1):
         for c in row:
