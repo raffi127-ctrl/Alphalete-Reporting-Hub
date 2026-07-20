@@ -54,6 +54,11 @@ _HUB_CARD = {
     # separate card from the board FILL above. Publishes only when it actually
     # posts, not on every 25-min pass.
     "org_board_slack": "org-sales-board-slack",
+    # Standalone launchd job on Lucy 2 (com.alphalete.vantura-churn-daily) —
+    # never in the 4am batch, so without this entry its card stays grey and a
+    # blocked run looks exactly like a clean one. It ran unreported until
+    # 2026-07-19, when a reconciliation failure went unnoticed for a day.
+    "vantura_churn": "vantura-churn",
     "pnl_office": "pnl-office",
     "sales_boards": "sales-boards",
     "b2b_quality": "b2b-quality",

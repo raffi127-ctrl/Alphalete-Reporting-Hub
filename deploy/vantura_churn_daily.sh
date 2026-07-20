@@ -45,4 +45,17 @@ echo "[$(date)] Vantura churn+activations refresh starting (extra args: ${*:-non
 ST=$?
 
 echo "[$(date)] Vantura churn+activations refresh finished exit=$ST" >> "$LOG_FILE"
+
+# Publish to the Hub card so a run is VISIBLE either way. Without this the card
+# stays grey and a blocked run is indistinguishable from a clean one — which is
+# how 2026-07-19's reconciliation failure went unnoticed for a day.
+# [[feedback_launchd_reports_must_publish]]
+case " $* " in
+  *" --dry-run "*) : ;;
+  *)
+    if [ "$ST" -eq 0 ]; then _PUB=success; else _PUB=failed; fi
+    "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('vantura_churn','Vantura Churn & Activations','$_PUB')" >> "$LOG_FILE" 2>&1 || true
+    ;;
+esac
+
 exit 0

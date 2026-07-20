@@ -38,26 +38,69 @@ OWNER_CFG = [
 ]
 
 
+# Reconciliation tolerances (Megan 2026-07-19).
+#
+# The gate used to demand EXACT equality on the base. It can't: the Order Log
+# is live while CHURN RATES refreshes on its own cycle, so the two disagree by
+# a few records at any given moment. On 2026-07-19 the 7am run was blocked by a
+# ONE-record race (base 390 vs 391, disconnects 14 vs 15) and wrote nothing —
+# the board silently kept the previous day's numbers.
+#
+# So: keep the CHURN RATE tight (that's the number people read) and let the
+# base drift within a band that still catches every structural failure.
+#   wrong owner            base off ~70%   -> caught
+#   a product type dropped base off ~14%   -> caught
+#   truncated/empty pull   base off >30%   -> caught
+#   refresh race           base off <5%    -> tolerated, and LOGGED
+BASE_TOL_PCT = 0.10        # relative band on the dashboard's own base
+BASE_TOL_MIN = 10          # absolute floor, so small bases aren't hair-trigger
+RATE_TOL_PP = 0.005        # 0.5 percentage points on the churn rate
+
+
 def _reconcile(who: str, summary: dict, dash: dict, log) -> list[str]:
     """Compare computed 0-30 numbers to the Churn Rates dashboard.
-    Returns a list of mismatch descriptions (empty = reconciled)."""
+    Returns a list of mismatch descriptions (empty = reconciled).
+
+    Drift inside tolerance is REPORTED, not hidden — a run that passes with a
+    visible gap should still look different in the log from an exact match.
+    """
     problems = []
     rate = (summary["disc_total"] / summary["base_total"]
             if summary["base_total"] else 0.0)
-    log(f"  {who}: computed {summary['disc_total']}/{summary['base_total']}"
-        f" = {rate:.1%}   dashboard says base={dash['base']}"
-        f" rate={dash['rate']:.1%}" if dash["rate"] is not None else
-        f"  {who}: computed {summary['disc_total']}/{summary['base_total']}"
-        f" — dashboard cell unreadable: {dash['raw']}")
-    if dash["base"] is not None and dash["base"] != summary["base_total"]:
-        problems.append(f"{who}: base {summary['base_total']} != dashboard "
-                        f"{dash['base']}")
-    if dash["rate"] is not None and abs(rate - dash["rate"]) > 0.0015:
-        problems.append(f"{who}: churn {rate:.2%} != dashboard "
-                        f"{dash['rate']:.2%}")
-    if dash["base"] is None and dash["rate"] is None:
+    if dash["rate"] is None and dash["base"] is None:
+        log(f"  {who}: computed {summary['disc_total']}/"
+            f"{summary['base_total']} — dashboard cell unreadable: "
+            f"{dash['raw']}")
         problems.append(f"{who}: could not read the dashboard 0-30 cell "
                         f"(raw: {dash['raw']})")
+        return problems
+
+    dash_rate = "?" if dash["rate"] is None else f"{dash['rate']:.1%}"
+    log(f"  {who}: computed {summary['disc_total']}/{summary['base_total']}"
+        f" = {rate:.1%}   dashboard says base={dash['base']} "
+        f"rate={dash_rate}")
+
+    if dash["base"] is not None:
+        gap = abs(summary["base_total"] - dash["base"])
+        tol = max(BASE_TOL_MIN, dash["base"] * BASE_TOL_PCT)
+        if gap > tol:
+            problems.append(
+                f"{who}: base {summary['base_total']} vs dashboard "
+                f"{dash['base']} — off by {gap} (tolerance {tol:.0f})")
+        elif gap:
+            log(f"    ↳ base drift {gap} record(s) within tolerance "
+                f"{tol:.0f} — the Order Log and the dashboard refresh "
+                "independently")
+    if dash["rate"] is not None:
+        gap = abs(rate - dash["rate"])
+        if gap > RATE_TOL_PP:
+            problems.append(
+                f"{who}: churn {rate:.2%} vs dashboard {dash['rate']:.2%} "
+                f"— off by {gap * 100:.2f}pp (tolerance "
+                f"{RATE_TOL_PP * 100:.2f}pp)")
+        elif gap:
+            log(f"    ↳ churn drift {gap * 100:.2f}pp within tolerance "
+                f"{RATE_TOL_PP * 100:.2f}pp")
     return problems
 
 
@@ -256,8 +299,11 @@ def main(argv=None) -> int:
         log("\n✗ RECONCILIATION FAILED — NOTHING WRITTEN:")
         for p in problems:
             log(f"   {p}")
-        _fail_manifest("Computed churn numbers do not match the Churn Rates "
-                       "dashboard: " + "; ".join(problems))
+        detail = ("Computed churn numbers do not match the Churn Rates "
+                  "dashboard: " + "; ".join(problems))
+        _fail_manifest(detail)
+        if not args.dry_run:
+            _email_failure(detail, log=log)
         return 2
 
     if args.dry_run:
@@ -316,6 +362,50 @@ def main(argv=None) -> int:
     _ok_manifest()
     log("✓ Vantura churn & activations update complete.")
     return 0
+
+
+FAILURE_TO = ["Meganhidalgo1191@gmail.com", "raffi127@gmail.com"]
+
+
+def _email_failure(msg: str, log=print) -> None:
+    """Email on a blocked/failed run — ALWAYS on (Megan 2026-07-19).
+
+    This job runs on its own LaunchAgent, outside the 4am batch, and its
+    wrapper exits 0 so launchd never flags it. Before this, a reconciliation
+    failure wrote nothing and said nothing: the board just kept yesterday's
+    numbers and looked fine. That is exactly how 2026-07-19 went unnoticed.
+
+    Best-effort — a mail problem must never mask the underlying failure.
+    """
+    try:
+        import socket
+        from email.message import EmailMessage
+        from automations.day_orchestrator.notify import _send_email
+        host = socket.gethostname()
+        when = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+        subject = f"❌ Vantura Churn & Activations did NOT write ({when})"
+        text = (
+            f"The Vantura churn refresh ran on {host} at {when} and wrote "
+            f"NOTHING.\n\n{msg}\n\n"
+            "The board still shows the PREVIOUS successful run's numbers — "
+            "it is stale, not wrong.\n\n"
+            "Most likely a Tableau refresh race; a re-run usually clears it:\n"
+            "  lucy rerun vantura_churn --machine \"Lucy 2\"\n\n"
+            "If it persists, the Order Log and the CHURN RATES dashboard "
+            "genuinely disagree — check the Order Log pull (owner filter "
+            "applied? 60-day window?) before touching the sheet by hand.\n"
+        )
+        html = ("<p><b>The Vantura churn refresh wrote NOTHING.</b></p>"
+                f"<p>{host} &middot; {when}</p>"
+                f"<pre style='background:#f6f6f6;padding:10px'>{msg}</pre>"
+                "<p>The board still shows the previous successful run's "
+                "numbers &mdash; <b>stale, not wrong</b>.</p>"
+                "<p>Usually a Tableau refresh race; a re-run normally clears "
+                "it:<br><code>lucy rerun vantura_churn --machine \"Lucy 2\""
+                "</code></p>")
+        _send_email(subject, html, text, FAILURE_TO, False, "vantura-churn-fail")
+    except Exception as e:  # noqa: BLE001 — never mask the real failure
+        log(f"  ⚠ failure email not sent: {e}")
 
 
 def _fail_manifest(msg: str) -> None:
