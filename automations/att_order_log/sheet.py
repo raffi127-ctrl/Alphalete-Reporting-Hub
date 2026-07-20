@@ -93,7 +93,7 @@ ALL_PERIODS = "All"
 LAST_30 = "Last 30 Days"          # Carlos's Slack ask, 2026-07-19
 
 CELL_REP = "B2"
-CELL_PERIOD = "B3"
+CELL_PERIOD = "D2"       # both dropdowns share row 2 — see build_view_values
 
 _COL_REP = DISPLAY_HEADERS.index("Rep")
 _COL_ORDER_DATE = DISPLAY_HEADERS.index("sp.Order Date (copy)")
@@ -212,14 +212,22 @@ def build_view_values(rows: Sequence[Sequence[str]], reps: Sequence[str],
                    '"— no orders match —")').format(
         body=body_rng, rep=rep_cond, per=per_cond)
 
+    ncol = len(DISPLAY_HEADERS)
+    # Live row count for the CURRENT selection. Carlos's first question of this
+    # tab is "how much am I looking at" — making him read it off the scrollbar
+    # is a large part of why it feels like a wall.
+    showing = '=COUNTA(FILTER({b},{rep},{per}))'.format(
+        b="{}!$A$2:$A".format(data), rep=rep_cond, per=per_cond)
+
     grid: List[List[str]] = []
-    grid.append(["AT&T B2B Order Log"] + [""] * (len(DISPLAY_HEADERS) - 1))
-    grid.append(["Rep:", selected_rep or ALL_PERIODS]
-                + [""] * (len(DISPLAY_HEADERS) - 2))
-    grid.append(["Period:", selected_period or ALL_PERIODS]
-                + [""] * (len(DISPLAY_HEADERS) - 2))
-    grid.append(["Updated " + generated] + [""] * (len(DISPLAY_HEADERS) - 1))
-    grid.append([""] * len(DISPLAY_HEADERS))
+    grid.append(["AT&T B2B Order Log"] + [""] * (ncol - 1))
+    # Both dropdowns on ONE row, with the count beside them — three separate
+    # header lines pushed the actual data further down for no benefit.
+    grid.append(["Rep:", selected_rep or ALL_PERIODS,
+                 "Period:", selected_period or LAST_30,
+                 "Showing:", showing, "orders"] + [""] * (ncol - 7))
+    grid.append(["Updated " + generated] + [""] * (ncol - 1))
+    grid.append([""] * ncol)
 
     # Status summary — counts for the CURRENT dropdown selection, so the
     # numbers always describe what is on screen.
@@ -245,8 +253,8 @@ def build_view_values(rows: Sequence[Sequence[str]], reps: Sequence[str],
     return grid
 
 
-HEADER_ROW = 9          # 1-based row of DISPLAY_LABELS in build_view_values
-FIRST_LOG_ROW = 10      # where the FILTER spills
+HEADER_ROW = 8          # 1-based row of DISPLAY_LABELS in build_view_values
+FIRST_LOG_ROW = 9       # where the FILTER spills
 
 
 def _format_requests(view_id: int) -> List[dict]:
@@ -285,7 +293,67 @@ def _format_requests(view_id: int) -> List[dict]:
         {"autoResizeDimensions": {"dimensions": {
             "sheetId": view_id, "dimension": "COLUMNS",
             "startIndex": 0, "endIndex": ncol}}},
-    ] + _date_format_requests(view_id)
+    ] + _date_format_requests(view_id) + _density_requests(view_id)
+
+
+# Columns that are reference data rather than things Carlos scans. autoResize
+# lets these sprawl (Package strings run 40+ chars), which is most of why the
+# tab reads as a wall. Capped, not hidden — he asked to KEEP the columns
+# ("this tab is everything that should stay on here"), so narrowing is the
+# right lever, and he can widen any of them by hand.
+_NARROW_COLUMNS = {
+    "spe.TN": 90, "spe.TN Type": 60, "spe.Account BAN": 100,
+    "spe.Phone": 100, "Wireless Installment Plan": 110, "IF/OOF": 55,
+    "Package": 150, "Order date to Install Date Days": 70,
+    "sp.SPM Number": 100, "Customer Name": 130, "Rep": 120,
+}
+BAND_HEX = "#F3F6FA"      # very light blue; readable behind the status fills
+
+
+def _density_requests(view_id: int) -> List[dict]:
+    """Make 500+ rows scannable: smaller type, row banding, hairline borders,
+    capped widths. Megan 2026-07-19: "It's a lot to look at.\""""
+    ncol = len(DISPLAY_HEADERS)
+    reqs: List[dict] = [
+        # 10pt across the log — 11pt default plus 17 columns is what forces
+        # horizontal scrolling before you have read a single row.
+        {"repeatCell": {
+            "range": {"sheetId": view_id, "startRowIndex": FIRST_LOG_ROW - 1,
+                      "startColumnIndex": 0, "endColumnIndex": ncol},
+            "cell": {"userEnteredFormat": {
+                "textFormat": {"fontSize": 10},
+                "verticalAlignment": "MIDDLE"}},
+            "fields": ("userEnteredFormat.textFormat.fontSize,"
+                       "userEnteredFormat.verticalAlignment")}},
+        # Hairline grid so the eye can track across 17 columns.
+        {"updateBorders": {
+            "range": {"sheetId": view_id, "startRowIndex": HEADER_ROW - 1,
+                      "startColumnIndex": 0, "endColumnIndex": ncol},
+            "innerHorizontal": {"style": "SOLID", "width": 1,
+                                "color": _rgb("#D9D9D9")},
+            "innerVertical": {"style": "SOLID", "width": 1,
+                              "color": _rgb("#D9D9D9")}}},
+    ]
+    # Banding via conditional format on EVEN rows rather than addBanding: the
+    # log is a spilling FILTER of unknown length, and a fixed banding range
+    # would either stop short or paint empty rows below the data.
+    reqs.append({"addConditionalFormatRule": {"index": 0, "rule": {
+        "ranges": [{"sheetId": view_id, "startRowIndex": FIRST_LOG_ROW - 1,
+                    "startColumnIndex": 0, "endColumnIndex": ncol}],
+        "booleanRule": {
+            "condition": {"type": "CUSTOM_FORMULA", "values": [
+                {"userEnteredValue":
+                 '=AND($A{r}<>"",ISEVEN(ROW()))'.format(r=FIRST_LOG_ROW)}]},
+            "format": {"backgroundColor": _rgb(BAND_HEX)}}}}})
+    for label, px in _NARROW_COLUMNS.items():
+        if label not in DISPLAY_HEADERS:
+            continue
+        c = DISPLAY_HEADERS.index(label)
+        reqs.append({"updateDimensionProperties": {
+            "range": {"sheetId": view_id, "dimension": "COLUMNS",
+                      "startIndex": c, "endIndex": c + 1},
+            "properties": {"pixelSize": px}, "fields": "pixelSize"}})
+    return reqs
 
 
 # Columns that hold dates, resolved BY LABEL so a column reorder can't turn
@@ -320,17 +388,18 @@ def _date_format_requests(view_id: int) -> List[dict]:
 
 def _validation(view_id: int, reps: Sequence[str],
                 periods: Sequence[str]) -> List[dict]:
-    def rule(row0: int, values: Sequence[str]) -> dict:
+    """Dropdowns at B2 (rep) and D2 (period) — both on the header row."""
+    def rule(col0: int, values: Sequence[str]) -> dict:
         return {"setDataValidation": {
-            "range": {"sheetId": view_id, "startRowIndex": row0,
-                      "endRowIndex": row0 + 1, "startColumnIndex": 1,
-                      "endColumnIndex": 2},
+            "range": {"sheetId": view_id, "startRowIndex": 1,
+                      "endRowIndex": 2, "startColumnIndex": col0,
+                      "endColumnIndex": col0 + 1},
             "rule": {"condition": {
                 "type": "ONE_OF_LIST",
                 "values": [{"userEnteredValue": v} for v in values]},
                 "showCustomUi": True, "strict": False}}}
-    return [rule(1, [ALL_PERIODS] + list(reps)),
-            rule(2, [ALL_PERIODS] + list(periods))]
+    return [rule(1, [ALL_PERIODS] + list(reps)),        # B2
+            rule(3, [ALL_PERIODS] + list(periods))]     # D2
 
 
 def _status_color_rules(view_id: int) -> List[dict]:
@@ -424,7 +493,11 @@ def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
             return ""
     cur_rep, cur_per = _current(CELL_REP), _current(CELL_PERIOD)
     sel_rep = cur_rep if cur_rep in [ALL_PERIODS] + reps else ALL_PERIODS
-    sel_per = cur_per if cur_per in [ALL_PERIODS] + periods else ALL_PERIODS
+    # Default to LAST 30 DAYS, not All. The pull is a 60-day window and 846 of
+    # 1,354 orders are older than 30 days — opening on "All" means the tab
+    # greets Carlos with ~1,350 rows, most of them stale. His own selection is
+    # still preserved across runs; this only changes the cold-start default.
+    sel_per = cur_per if cur_per in [ALL_PERIODS] + periods else LAST_30
 
     grid = build_view_values(rows, reps, generated,
                              selected_rep=sel_rep, selected_period=sel_per)
