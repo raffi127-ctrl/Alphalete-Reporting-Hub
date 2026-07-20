@@ -132,12 +132,46 @@ def normalize_owner_column(rows: List[list]) -> List[list]:
     return out
 
 
+# The metric-type value the D2D parser keys the churn % off. B2B labels it
+# plainly "Churn Rate"; D2D's parse matches the EXACT string
+# "Churn Rate (Unit vs Order)" and sets slot["pct"] only on that match. Unmapped
+# => no pct => _has_pct False => insert_missing_reps adds nobody => write_today
+# writes nothing => exit 0 with an empty tab. That is exactly what happened
+# (2026-07-20): "parsed 70 reps, wrote", 12 rows. The other two metric labels
+# ("Activated SPE/SP", "Disconnect count (SPE/SP)") already match, so only this
+# one is remapped.
+METRIC_RENAME = {"Churn Rate": "Churn Rate (Unit vs Order)"}
+
+
+def normalize_metric_column(rows: List[list]) -> List[list]:
+    """Remap metric-type labels in the unnamed column just left of the first
+    '<period> Day Churn' column — the same column the parser reads as metric_i.
+    Located positionally (not by header) because that column has no header."""
+    if not rows:
+        return rows
+    hdr = [_norm(h) for h in rows[0]]
+    period_idx = [i for i, h in enumerate(hdr) if h.endswith("Day Churn")]
+    if not period_idx:
+        return rows
+    mi = min(period_idx) - 1
+    if mi < 0:
+        return rows
+    out = [rows[0]]
+    for r in rows[1:]:
+        r = list(r)
+        if mi < len(r):
+            r[mi] = METRIC_RENAME.get(_norm(r[mi]), r[mi])
+        out.append(r)
+    return out
+
+
 def adapt(src: Path, dest: Path) -> Dict[str, object]:
-    """Read the B2B crosstab, rename its header, normalize the owner column,
-    and write a D2D-shaped file."""
+    """Read the B2B crosstab, rename its header, normalize the owner + metric
+    columns, and write a D2D-shaped file."""
     rows = read_crosstab(src)
     renamed = rename_header(rows)
     renamed = normalize_owner_column(renamed)
+    renamed = normalize_metric_column(renamed)
     write_crosstab(renamed, dest)
     hdr = renamed[0]
     owners = []
