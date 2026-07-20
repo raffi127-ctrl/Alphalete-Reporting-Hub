@@ -518,7 +518,8 @@ def _download_orderlog_direct(page, today, out, log) -> bool:
         return False
 
 
-def download_views(specs, today=None, verbose=True, log=print):
+def download_views(specs, today=None, verbose=True, log=print,
+                   csv_fetches=None):
     """Download each (view_url, crosstab_sheet, out_path) via one real-Chrome
     CDP session. Auth seeded once (ownerville storage_state → Tableau SSO).
     ORDER LOG views are primed first (see _prime_orderlog) so their worksheet
@@ -591,6 +592,22 @@ def download_views(specs, today=None, verbose=True, log=print):
                 results[str(out)] = out
                 log(f"[cdp] saved {sheet} → {out} "
                     f"({out.stat().st_size:,} bytes)")
+
+            # Direct authenticated .csv fetches in the SAME session — used for
+            # the activation-rates office totals, whose numbers only exist on
+            # the dashboard export (the worksheet download gives per-rep).
+            for url, out in (csv_fetches or []):
+                out = Path(out)
+                r = page.context.request.get(url, timeout=300_000)
+                body = r.body() or b""
+                if r.status != 200 or len(body) < 200:
+                    raise RuntimeError(
+                        f"csv fetch {url[:80]} → status {r.status}, "
+                        f"{len(body)} bytes")
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_bytes(body)
+                results[str(out)] = out
+                log(f"[cdp] saved csv → {out} ({len(body):,} bytes)")
     except Exception:
         import traceback
         _buf.append("TRACEBACK:")

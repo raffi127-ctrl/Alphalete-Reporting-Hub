@@ -126,6 +126,8 @@ def main(argv=None) -> int:
                     help="skip the dashboard check (only sensible with "
                          "--from-files; a live run should never skip it)")
     ap.add_argument("--skip-activations", action="store_true")
+    ap.add_argument("--skip-rates", action="store_true",
+                    help="skip the activation-rate cells + per-rep list")
     ap.add_argument("--preview", action="store_true",
                     help="write Carlos's churn numbers to the '"
                          + fill.TAB_CHURN_PREVIEW + "' tab instead of the "
@@ -160,6 +162,10 @@ def main(argv=None) -> int:
     # ---------------------------------------------------------- downloads
     files: dict[str, Path] = {}
     churnrates_path = None
+    ar_reps_path = ar_office_path = None
+    # Activation rates are Carlos's ask and live on his tab only.
+    want_rates = (not args.skip_rates
+                  and any(k == "carlos" for k, *_ in owners))
     if args.from_files:
         for spec in args.from_files:
             k, _, p = spec.partition("=")
@@ -191,7 +197,16 @@ def main(argv=None) -> int:
             specs.append((pull.CHURNRATES_URL, pull.CHURNRATES_SHEET,
                           churnrates_path))
             log("▶ Churn Rates dashboard…")
-        cdp_pull.download_views(specs, today=today, verbose=False, log=log)
+        csv_fetches = []
+        if want_rates:
+            from automations.vantura_churn import activation_rates as _ar
+            ar_reps_path = out_dir / "activation_office.csv"
+            ar_office_path = out_dir / "activation_office_totals.csv"
+            specs.append((_ar.VIEW_URL, _ar.REP_SHEET, ar_reps_path))
+            csv_fetches.append((_ar.CSV_URL, ar_office_path))
+            log("▶ Activation Rates (per-rep + office totals)…")
+        cdp_pull.download_views(specs, today=today, verbose=False, log=log,
+                                csv_fetches=csv_fetches)
 
     # ------------------------------------------------- compute + reconcile
     results = {}
@@ -211,6 +226,26 @@ def main(argv=None) -> int:
         if not args.skip_reconcile:
             dash = pull.parse_churnrates(churnrates_path, prefix)
             problems += _reconcile(key.upper(), summary, dash, log)
+
+    # ------------------------------------------- activation rates (Carlos)
+    rates = None
+    if want_rates and ar_reps_path and ar_office_path:
+        import csv as _csv
+        from automations.vantura_churn import activation_rates as _ar
+        with open(ar_office_path, encoding="utf-8-sig", errors="replace") as fh:
+            office = _ar.parse_rates(list(_csv.reader(fh)))
+        reps = _ar.parse_rep_rates(compute._load_grid(ar_reps_path))
+        # The per-rep split is only trustworthy if it adds back up to the
+        # office numbers — same contract as the churn reconciliation above.
+        rate_problems = _ar.reconcile_reps(reps, office)
+        o30, o60 = office["0-30"], office["31-60"]
+        log(f"RATES: 0-30 {o30['activated']}/{o30['sold']} = "
+            f"{o30['rate']:.1%}   31-60 {o60['activated']}/{o60['sold']} = "
+            f"{o60['rate']:.1%}   ({len(reps)} reps)")
+        if rate_problems:
+            problems += [f"activation rates — {p}" for p in rate_problems]
+        else:
+            rates = (office, reps)
 
     if problems:
         log("\n✗ RECONCILIATION FAILED — NOTHING WRITTEN:")
@@ -243,6 +278,9 @@ def main(argv=None) -> int:
             log(f"  ⚠ dropdown check skipped: {e}")
         fill.update_churn_tab(sh.worksheet(tab), results[key]["summary"]["base"],
                               results[key]["helper"], log=log)
+        if key == "carlos" and rates is not None:
+            fill.update_activation_rates(sh.worksheet(tab), rates[0],
+                                         rates[1], log=log)
         if has_act and not args.skip_activations:
             log(f"▶ updating '{fill.TAB_ACTIVATIONS}'…")
             act = compute.activations_rows(results[key]["lines"], today)
