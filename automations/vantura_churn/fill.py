@@ -32,9 +32,12 @@ TAB_ACTIVATIONS = "Activations"
 # of the live tab, so the daily job keeps updating 'Churn' untouched.
 TAB_CHURN_PREVIEW = "LUCY CHURN"
 
-U_FORMULA = ('=IFERROR($AE{r}/IF($AD{r}="Wireless",$B$5,'
-             'IF($AD{r}="Air",$B$6,$B$7)),"")')
-AC_FORMULA = '=IFERROR(VLOOKUP($V{r},$R$100:$S$500,2,FALSE),"")'
+# Formula templates. Column letters are filled in from helper_bounds() at
+# write time — they are NOT fixed: the block moves when a column left of it
+# is added or removed.
+U_FORMULA = ('=IFERROR(${rem}{r}/IF(${key}{r}="Wireless",$B$5,'
+             'IF(${key}{r}="Air",$B$6,$B$7)),"")')
+AC_FORMULA = ('=IFERROR(VLOOKUP(${cust}{r},${n0}$100:${n1}$500,2,FALSE),"")')
 
 CENTER = {"horizontalAlignment": "CENTER"}
 # The tab's header navy (sampled from the 'Days Left' header row).
@@ -45,17 +48,54 @@ def open_sheet():
     return open_by_key(SHEET_ID)
 
 
-def helper_capacity(ws: gspread.Worksheet) -> int:
-    """Last helper row this tab's own formulas can see, read from C5's
-    SUMIF range (e.g. $AD$2:$AD$25 → 25). The A16 FILTER uses the same
-    bound, so writing past it would show wrong counts AND a truncated list."""
-    c5 = _retry(lambda: ws.get("C5", value_render_option="FORMULA"))[0][0]
-    m = re.search(r"\$AD\$2:\$AD\$(\d+)", str(c5))
+# Helper-block column offsets from its FIRST column (the block is 14 wide).
+H_LINES, H_CHURN_F, H_CUSTOMER = 2, 3, 4
+H_NOTES_F, H_KEY, H_REMAINING = 11, 12, 13
+H_WIDTH = 14
+# Gap between the helper block and the per-rep list.
+REP_GAP = 2
+
+
+def _col_idx(letter: str) -> int:
+    """Column letter → 0-based index."""
+    n = 0
+    for ch in letter:
+        n = n * 26 + (ord(ch) - 64)
+    return n - 1
+
+
+def helper_bounds(ws: gspread.Worksheet) -> dict:
+    """Where the helper block ACTUALLY is, derived from the tab's own
+    formulas — never hardcoded.
+
+    Deleting a column left of the block shifts it and Google silently
+    rewrites A16/C5 to match, so a constant like 'R:AE' goes stale without
+    anything looking broken. (Happened 2026-07-19 on LUCY CHURN: two empty
+    stub columns were removed and the block moved R:AE → P:AC.)
+
+    Returns {'f0': 0-based first column, 'cap': last helper row}.
+    """
+    a16 = _retry(lambda: ws.get("A16", value_render_option="FORMULA"))
+    f = str(a16[0][0]) if a16 and a16[0] else ""
+    m = re.search(r"FILTER\(\s*\$([A-Z]{1,2})\$(\d+):\$([A-Z]{1,2})\$(\d+)\s*,"
+                  r"\s*\$([A-Z]{1,2})\$\d+:\$([A-Z]{1,2})\$(\d+)", f)
     if not m:
-        raise RuntimeError(f"{ws.title}!C5 is not the expected SUMIF "
-                           f"formula (got: {c5!r}) — refusing to guess the "
-                           "helper range.")
-    return int(m.group(1))
+        raise RuntimeError(
+            f"{ws.title}!A16 is not the expected FILTER formula (got: {f!r}) "
+            "— refusing to guess where the helper block lives.")
+    f0, key_col, cap = _col_idx(m.group(1)), _col_idx(m.group(5)), int(m.group(7))
+    if key_col - f0 != H_KEY:
+        raise RuntimeError(
+            f"{ws.title}: helper block looks reshaped — FILTER starts at "
+            f"{m.group(1)} but its key column is {m.group(5)} "
+            f"(expected offset {H_KEY}, got {key_col - f0}).")
+    return {"f0": f0, "cap": cap}
+
+
+def helper_capacity(ws: gspread.Worksheet) -> int:
+    """Last helper row this tab's formulas can see. Writing past it would
+    show wrong counts AND a truncated list."""
+    return helper_bounds(ws)["cap"]
 
 
 # Activation-rate colour bands (Megan 2026-07-19). Carlos's Loom misspoke on
@@ -71,11 +111,14 @@ BAND_BG = {"green": {"red": 0.576, "green": 0.769, "blue": 0.490},
            "yellow": {"red": 1.0, "green": 0.851, "blue": 0.400},
            "red": {"red": 0.878, "green": 0.400, "blue": 0.400}}
 
-# The per-rep list lives clear of the hidden helper block (R:AE) — Carlos's
-# stub headers at P1:R1 put the 31-60 caption INSIDE the hidden range, so it
-# was invisible on the tab.
-REP_LIST_COL = "AG"
-REP_STUB_RANGE = "P1:R1"
+def rep_list_col(ws: gspread.Worksheet) -> int:
+    """0-based column for the per-rep list: just right of the helper block.
+
+    Derived, not a constant — a hardcoded 'AG' silently writes into the
+    wrong place once a column left of it is inserted or deleted.
+    """
+    b = helper_bounds(ws)
+    return b["f0"] + H_WIDTH + REP_GAP - 1
 
 
 def band_for(rate, which: str) -> str:
@@ -201,12 +244,12 @@ def hide_helper_columns(ws: gspread.Worksheet, log=print) -> bool:
     """Hide the helper block, matching the live tabs.
 
     Duplicating a churn tab does NOT carry the hidden state over, so a fresh
-    copy shows R:AE — 14 columns of raw per-account scratch sitting right of
+    copy shows all 14 columns of raw per-account scratch sitting right of
     the report. Idempotent; returns True when it actually changed something.
     """
-    first = gspread.utils.a1_to_rowcol("R1")[1] - 1
-    cap = helper_capacity(ws)          # AE is the last helper column
-    last = gspread.utils.a1_to_rowcol("AE1")[1]
+    b = helper_bounds(ws)
+    first = b["f0"]
+    last = first + H_WIDTH
     meta = _retry(lambda: ws.spreadsheet.fetch_sheet_metadata(
         {"fields": "sheets(properties(sheetId),data(columnMetadata("
                    "hiddenByUser)))"}))
@@ -223,7 +266,8 @@ def hide_helper_columns(ws: gspread.Worksheet, log=print) -> bool:
                       "startIndex": first, "endIndex": last},
             "properties": {"hiddenByUser": True},
             "fields": "hiddenByUser"}}]}))
-    log(f"  ✓ {ws.title}: hid helper columns R:AE (cap {cap})")
+    log(f"  ✓ {ws.title}: hid helper columns "
+        f"{_colletter(first)}:{_colletter(last - 1)}")
     return True
 
 
@@ -253,27 +297,13 @@ def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
              "31-60 Day Activation Rate"]]
     for rep, v in ordered:
         rows.append([rep, _pct(v["0-30"]), _pct(v["31-60"])])
-    last_col = _colletter(gspread.utils.a1_to_rowcol(f"{REP_LIST_COL}1")[1] + 1)
+    rep_c0 = rep_list_col(ws)
+    rep_first = _colletter(rep_c0)
+    last_col = _colletter(rep_c0 + 2)
     end = len(rows)
-    updates.append({"range": f"{REP_LIST_COL}1:{last_col}{end}",
+    updates.append({"range": f"{rep_first}1:{last_col}{end}",
                     "values": rows})
     _retry(lambda: ws.batch_update(updates, value_input_option="USER_ENTERED"))
-
-    # Clear Carlos's stub headers now that the real list has a home — VALUES
-    # AND FORMAT. Clearing values alone leaves the dark header fill behind as
-    # a floating bar to the right of the tiers chart.
-    try:
-        _retry(lambda: ws.batch_clear([REP_STUB_RANGE]))
-        p0 = gspread.utils.a1_to_rowcol("P1")[1] - 1
-        _retry(lambda: ws.spreadsheet.batch_update({"requests": [
-            {"repeatCell": {
-                "range": {"sheetId": ws.id, "startRowIndex": 0,
-                          "endRowIndex": 1, "startColumnIndex": p0,
-                          "endColumnIndex": p0 + 3},
-                "cell": {"userEnteredFormat": {}},
-                "fields": "userEnteredFormat"}}]}))
-    except Exception:  # noqa: BLE001
-        pass
 
     # Percent format + banding.
     fmt_reqs = [{"repeatCell": {
@@ -284,7 +314,6 @@ def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
             "horizontalAlignment": "CENTER"}},
         "fields": "userEnteredFormat.numberFormat,"
                   "userEnteredFormat.horizontalAlignment"}}]
-    rep_c0 = gspread.utils.a1_to_rowcol(f"{REP_LIST_COL}1")[1] - 1
     fmt_reqs.append({"repeatCell": {
         "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": end,
                   "startColumnIndex": rep_c0 + 1, "endColumnIndex": rep_c0 + 3},
@@ -312,9 +341,11 @@ def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
             c = band_for(v[key]["rate"], key)
             if c:
                 fmt_reqs.append(_bg(1 + i, rep_c0 + off, c))
-    # Widen the rep columns — full names run to ~30 chars and the default
-    # width truncates both them and the two rate headers.
-    for off, px in ((0, 210), (1, 120), (2, 120)):
+    # Rep-name column auto-fits its content (names run past 30 chars and were
+    # clipping). The two rate columns stay at a fixed width: auto-fit would
+    # size them to "100.0%" and squeeze the wrapped headers into a tall
+    # narrow stack.
+    for off, px in ((1, 120), (2, 120)):
         fmt_reqs.append({"updateDimensionProperties": {
             "range": {"sheetId": ws.id, "dimension": "COLUMNS",
                       "startIndex": rep_c0 + off,
@@ -347,6 +378,11 @@ def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
             "horizontalAlignment": "LEFT"}},
         "fields": "userEnteredFormat.backgroundColor,"
                   "userEnteredFormat.horizontalAlignment"}})
+    # Auto-fit LAST, so it measures the finished cells (font, wrap, alignment)
+    # rather than whatever was in the column beforehand.
+    fmt_reqs.append({"autoResizeDimensions": {"dimensions": {
+        "sheetId": ws.id, "dimension": "COLUMNS",
+        "startIndex": rep_c0, "endIndex": rep_c0 + 1}}})
     _retry(lambda: ws.spreadsheet.batch_update({"requests": fmt_reqs}))
 
     o30, o60 = office["0-30"], office["31-60"]
@@ -358,30 +394,35 @@ def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
 
 def update_churn_tab(ws: gspread.Worksheet, bases: dict,
                      helper_rows: list[list], log=print) -> None:
-    cap = helper_capacity(ws)
+    b = helper_bounds(ws)
+    f0, cap = b["f0"], b["cap"]
+    first, last = _colletter(f0), _colletter(f0 + H_WIDTH - 1)
     n = len(helper_rows)
     if n > cap - 1:
         raise RuntimeError(
             f"{ws.title}: {n} disconnect rows but the tab's formulas only "
-            f"cover R2:AE{cap} ({cap - 1} rows). Extend the C5:C7 SUMIF and "
-            "A16 FILTER ranges on the sheet, then re-run.")
+            f"cover {first}2:{last}{cap} ({cap - 1} rows). Extend the C5:C7 "
+            "SUMIF and A16 FILTER ranges on the sheet, then re-run.")
 
+    cols = {"rem": _colletter(f0 + H_REMAINING), "key": _colletter(f0 + H_KEY),
+            "cust": _colletter(f0 + H_CUSTOMER),
+            "n0": _colletter(f0), "n1": _colletter(f0 + 1)}
     block = []
     for i, row in enumerate(helper_rows):
         r = i + 2
         vals = list(row)
-        vals[3] = U_FORMULA.format(r=r)
-        vals[11] = AC_FORMULA.format(r=r)
+        vals[H_CHURN_F] = U_FORMULA.format(r=r, **cols)
+        vals[H_NOTES_F] = AC_FORMULA.format(r=r, **cols)
         block.append(vals)
     # Pad to full capacity — one write both fills and clears yesterday's tail.
-    block += [[""] * 14 for _ in range(cap - 1 - n)]
+    block += [[""] * H_WIDTH for _ in range(cap - 1 - n)]
 
     _retry(lambda: ws.batch_update([
         {"range": "B5:B7",
          "values": [[bases["Wireless"]], [bases["Air"]], [bases["Internet"]]]},
-        {"range": f"R2:AE{cap}", "values": block},
+        {"range": f"{first}2:{last}{cap}", "values": block},
     ], value_input_option="USER_ENTERED"))
-    _retry(lambda: ws.format(f"R2:AE{cap}", CENTER))
+    _retry(lambda: ws.format(f"{first}2:{last}{cap}", CENTER))
     log(f"  ✓ {ws.title}: B5:B7 = {bases['Wireless']}/{bases['Air']}/"
         f"{bases['Internet']}, helper rows = {n} (capacity {cap - 1})")
 
