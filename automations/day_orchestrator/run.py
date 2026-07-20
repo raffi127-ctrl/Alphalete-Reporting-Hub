@@ -63,6 +63,13 @@ MAX_AUTO_RETRIES = 2
 # full inter-pass gap. One quick retry per flaked report per pass; anything still
 # flaking defers to the next pass, bounded overall by MAX_RUN_RETRIES.
 FLAKE_RETRY_BACKOFF_S = 90
+# A full pass runs every ready report sequentially and can take HOURS (heavy
+# daily_rep_breakdown alone budgets ~130m). A source that wasn't ready when its
+# report was checked early in the pass often LANDS during that long pass, so we
+# re-check the still-gated reports at END OF PASS and run any now ready. Bounded
+# rounds so a freed dependency can cascade to its dependent (org_sales_board →
+# org_sales_board_email) within the one sweep. (2026-07-20 board-stale fix.)
+RECHECK_ROUNDS = 3
 
 
 def _parse_hhmm(s: str, on: dt.date) -> dt.datetime:
@@ -435,83 +442,156 @@ def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
         rs = ds.reports[r.report_id]
         if rs.is_terminal():
             continue
-
-        # Upload-gated reports are never auto-run.
-        if r.source_type == "upload":
-            ds.set(r.report_id, state.MANUAL_PENDING_UPLOAD,
-                   reason="upload-gated — run manually after the file arrives")
-            continue
-
-        # not_before time gate.
-        if r.not_before:
-            nb = _parse_hhmm(r.not_before, target)
-            if now < nb:
-                ds.set(r.report_id, state.PENDING, reason=f"before {r.not_before}",
-                       waiting_on=f"clock < {r.not_before}")
-                continue
-
-        # Dependencies must have RAN — DONE or INCOMPLETE both count (INCOMPLETE =
-        # it filled but with a note, e.g. the Sales Board's VA-compare differences;
-        # the data is there). A dep that FAILED / never ran still blocks the
-        # dependent — so e.g. a failed board fill blocks the board email. (Only
-        # org_sales_board_email uses depends_on today.)
-        unmet = [d for d in r.depends_on
-                 if d in ds.reports
-                 and ds.reports[d].status not in (state.DONE, state.INCOMPLETE)]
-        if unmet:
-            ds.set(r.report_id, state.PENDING, reason=f"waiting on {', '.join(unmet)}",
-                   waiting_on=", ".join(unmet))
-            continue
-
-        # SOFT ordering (`after`): wait until these reports FINISH (any terminal
-        # state — DONE / INCOMPLETE / FAILED / MISSED), but — unlike depends_on — a
-        # FAILED `after` dep does NOT strand us. Lets a heavy report run strictly
-        # after a lighter one without being skipped if that one glitches
-        # (daily_rep_breakdown after org_sales_board: board runs first, but a board
-        # glitch must never skip the breakdown; the noon backstop makes every dep
-        # terminal, so this can't wait forever). Megan 2026-07-13.
-        pending_after = [d for d in r.after
-                         if d in ds.reports
-                         and ds.reports[d].status not in state.TERMINAL]
-        if pending_after:
-            ds.set(r.report_id, state.PENDING, reason=f"after {', '.join(pending_after)}",
-                   waiting_on=", ".join(pending_after))
-            continue
-
-        # A human Chrome opened AFTER batch start single-instances with our
-        # automation Chrome and hangs every browser report — and can break the
-        # holder session so this report never even reaches readiness. The
-        # batch-start guard only ran once; re-close a stray window before each
-        # browser report so one opened mid-run can't silently stall the batch
-        # (2026-07-04: an open Chrome window stalled the whole 4am run).
-        # [[reference_chrome_collision_guard]]
-        if not dry_run and not simulate and r.source_type in ("tableau", "appstream"):
-            try:
-                from automations.day_orchestrator import chrome_guard
-                chrome_guard.close_stray_chrome(verbose=False)
-            except Exception:  # noqa: BLE001 — a guard must never crash the batch
-                pass
-
-        # Readiness (Tableau-gated; AppStream/API immediately ready).
-        # --simulate bypasses the gate to exercise the loop offline.
-        rd = readiness.Readiness(True, "simulated ready") if simulate else cache.report_ready(r)
-        if not rd.ready:
-            # Distinguish a stale session (alert!) from data-not-ready.
-            if "session" in rd.reason.lower():
-                _maybe_session_alert(cfg, ds, rd.reason, channel, email_dry)
-            ds.set(r.report_id, state.STILL_TRYING, reason=rd.reason, waiting_on=rd.reason)
-            _log(f"  {r.report_id}: still trying — {rd.reason}")
-            continue
-
-        # ---- run it ---- (a flaked TABLEAU report is retried fast END-OF-PASS,
-        # after the other ready reports, rather than waiting a full inter-pass gap.)
-        outcome = _attempt_report(ds, r, rs, target, dry_run=dry_run, simulate=simulate)
+        outcome = _process_one(cfg, ds, r, rs, cache, target, now,
+                               dry_run=dry_run, simulate=simulate,
+                               channel=channel, email_dry=email_dry)
         if outcome == "flaked":
             flaked.append((r, rs))
 
     # End-of-pass: come back and retry any flaked report fast, now that the ready
     # reports have all run — instead of making it wait a full inter-pass gap.
     _retry_flaked(ds, flaked, target, dry_run=dry_run, simulate=simulate)
+
+    # End-of-pass: a source a report was WAITING on may have landed while this
+    # (often multi-hour) pass ground through the other reports. Re-check the
+    # still-gated reports now and run any that are ready, so the board fills the
+    # moment Box lands rather than waiting for the next full pass.
+    _recheck_gated(cfg, ds, todays, cache, target,
+                   dry_run=dry_run, simulate=simulate,
+                   channel=channel, email_dry=email_dry)
+
+
+def _process_one(cfg, ds, r, rs, cache, target, now, *, dry_run, simulate,
+                 channel, email_dry, recheck=False):
+    """Evaluate ONE non-terminal report's gates (upload / not_before / depends_on
+    / after / readiness) and, if it clears them all, run it. Returns the
+    _attempt_report outcome ('done' / 'flaked' / 'failed') when it ran, else None.
+
+    `recheck=True` (the end-of-pass sweep): a report that is STILL gated is a
+    silent no-op — its waiting state was already stamped + logged by the main
+    pass this cycle, so we neither re-stamp nor re-log it; we only act on one that
+    has since become ready. Keeps the sweep quiet except when it actually fills a
+    report whose data just landed."""
+    # Upload-gated reports are never auto-run.
+    if r.source_type == "upload":
+        if not recheck:
+            ds.set(r.report_id, state.MANUAL_PENDING_UPLOAD,
+                   reason="upload-gated — run manually after the file arrives")
+        return None
+
+    # not_before time gate.
+    if r.not_before:
+        nb = _parse_hhmm(r.not_before, target)
+        if now < nb:
+            if not recheck:
+                ds.set(r.report_id, state.PENDING, reason=f"before {r.not_before}",
+                       waiting_on=f"clock < {r.not_before}")
+            return None
+
+    # Dependencies must have RAN — DONE or INCOMPLETE both count (INCOMPLETE =
+    # it filled but with a note, e.g. the Sales Board's VA-compare differences;
+    # the data is there). A dep that FAILED / never ran still blocks the
+    # dependent — so e.g. a failed board fill blocks the board email. (Only
+    # org_sales_board_email uses depends_on today.)
+    unmet = [d for d in r.depends_on
+             if d in ds.reports
+             and ds.reports[d].status not in (state.DONE, state.INCOMPLETE)]
+    if unmet:
+        if not recheck:
+            ds.set(r.report_id, state.PENDING, reason=f"waiting on {', '.join(unmet)}",
+                   waiting_on=", ".join(unmet))
+        return None
+
+    # SOFT ordering (`after`): wait until these reports FINISH (any terminal
+    # state — DONE / INCOMPLETE / FAILED / MISSED), but — unlike depends_on — a
+    # FAILED `after` dep does NOT strand us. Lets a heavy report run strictly
+    # after a lighter one without being skipped if that one glitches
+    # (daily_rep_breakdown after org_sales_board: board runs first, but a board
+    # glitch must never skip the breakdown; the noon backstop makes every dep
+    # terminal, so this can't wait forever). Megan 2026-07-13.
+    pending_after = [d for d in r.after
+                     if d in ds.reports
+                     and ds.reports[d].status not in state.TERMINAL]
+    if pending_after:
+        if not recheck:
+            ds.set(r.report_id, state.PENDING, reason=f"after {', '.join(pending_after)}",
+                   waiting_on=", ".join(pending_after))
+        return None
+
+    # A human Chrome opened AFTER batch start single-instances with our
+    # automation Chrome and hangs every browser report — and can break the
+    # holder session so this report never even reaches readiness. The
+    # batch-start guard only ran once; re-close a stray window before each
+    # browser report so one opened mid-run can't silently stall the batch
+    # (2026-07-04: an open Chrome window stalled the whole 4am run).
+    # [[reference_chrome_collision_guard]]
+    if not dry_run and not simulate and r.source_type in ("tableau", "appstream"):
+        try:
+            from automations.day_orchestrator import chrome_guard
+            chrome_guard.close_stray_chrome(verbose=False)
+        except Exception:  # noqa: BLE001 — a guard must never crash the batch
+            pass
+
+    # Readiness (Tableau-gated; AppStream/API immediately ready).
+    # --simulate bypasses the gate to exercise the loop offline.
+    rd = readiness.Readiness(True, "simulated ready") if simulate else cache.report_ready(r)
+    if not rd.ready:
+        if not recheck:
+            # Distinguish a stale session (alert!) from data-not-ready.
+            if "session" in rd.reason.lower():
+                _maybe_session_alert(cfg, ds, rd.reason, channel, email_dry)
+            ds.set(r.report_id, state.STILL_TRYING, reason=rd.reason, waiting_on=rd.reason)
+            _log(f"  {r.report_id}: still trying — {rd.reason}")
+        return None
+
+    # ---- run it ---- (a flaked TABLEAU report is retried fast END-OF-PASS,
+    # after the other ready reports, rather than waiting a full inter-pass gap.)
+    return _attempt_report(ds, r, rs, target, dry_run=dry_run, simulate=simulate)
+
+
+def _recheck_gated(cfg, ds, todays, cache, target, *, dry_run, simulate,
+                   channel, email_dry):
+    """End-of-pass sweep for data that landed DURING the pass.
+
+    A full pass runs every ready report in sequence and can take hours; a source
+    a report was gated on (e.g. the ORG Sales Board's Box extract, in ~7-8am)
+    frequently lands mid-pass. Without this the newly-ready report isn't even
+    re-checked until the NEXT pass — 2026-07-20: Box refreshed 07:42 but the
+    board, checked at 05:33 in pass 1, didn't fill until pass 2 at 08:02 (~4h
+    stale; on a longer day it slips to the 2:30pm catch-up). Here we re-evaluate
+    the still-non-terminal reports and run any ready NOW.
+
+    RECHECK_ROUNDS rounds let a freed dependency cascade to its dependent within
+    the one sweep (org_sales_board → org_sales_board_email). Best-effort: a report
+    still gated is a silent no-op; anything that flakes defers to the next pass."""
+    announced = False
+    for _round in range(RECHECK_ROUNDS):
+        ran_any = False
+        flaked = []
+        for r in registry.run_order(todays, target):
+            rs = ds.reports[r.report_id]
+            if rs.is_terminal():
+                continue
+            outcome = _process_one(cfg, ds, r, rs, cache, target, _now(),
+                                   dry_run=dry_run, simulate=simulate,
+                                   channel=channel, email_dry=email_dry,
+                                   recheck=True)
+            if outcome is None:
+                continue
+            if not announced:
+                _log("  end-of-pass re-check: data landed mid-pass — running "
+                     "now-ready report(s)")
+                announced = True
+            if outcome == "flaked":
+                flaked.append((r, rs))
+            else:
+                ran_any = True
+        if flaked:
+            _retry_flaked(ds, flaked, target, dry_run=dry_run, simulate=simulate)
+            ran_any = True
+        state.save(ds)
+        if not ran_any:
+            break
 
 
 def _kill_tree(proc) -> bool:
