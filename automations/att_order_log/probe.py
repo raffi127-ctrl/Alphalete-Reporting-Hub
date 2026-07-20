@@ -272,36 +272,73 @@ def main(argv=None) -> int:
         dt.datetime.now().isoformat(timespec="seconds")))
     rec("view: {}".format(VIEW_URL))
 
+    # STAGE ISOLATION. The 21:44 run proved why this matters: the order-log
+    # load raised, and because every stage sat inside ONE try, the churn probes
+    # and the view listing never ran at all — one avoidable failure cost us the
+    # whole run's other answers. Each stage now reports its own traceback and
+    # the rest continue.
     rc = 0
+
+    def stage(name, fn, *a):
+        nonlocal rc
+        try:
+            fn(*a)
+        except Exception:  # noqa: BLE001 — a probe must report, not crash
+            rec("")
+            rec("!! STAGE FAILED: {}".format(name))
+            for ln in traceback.format_exc().splitlines()[-12:]:
+                rec("   " + ln[:200])
+            rc = 1
+
+    if args.from_file:
+        stage("order log (local file)", _describe_file, Path(args.from_file), rec)
+        return _finish(buf, rec, args, rc)
+
+    # ONE CDP session for every stage. Chrome launch + Tableau auth costs ~40s,
+    # so paying it once and reusing the page beats a session per probe.
+    import time as _time
+
+    from patchright.sync_api import sync_playwright
+
+    from automations.shared import tableau_patchright as tp
+    from automations.vantura_churn import cdp_pull
+
+    cdp_pull._kill_ours()
+    proc = cdp_pull._launch()
+    rec("[cdp] real Chrome pid={}; waiting 20s".format(proc.pid))
+    _time.sleep(20)
     try:
-        from automations.vantura_churn import compute
+        with sync_playwright() as p:
+            browser = p.chromium.connect_over_cdp(
+                "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
+            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            tp._ensure_tableau_authenticated(page, verbose=False,
+                                             allow_form_login=True)
+            rec("[cdp] auth OK")
 
-        if args.from_file:
-            path = Path(args.from_file)
-            rec("reading local export: {}".format(path))
-        else:
-            from automations.vantura_churn import cdp_pull
-            path = Path("/tmp/att_order_log_probe.xlsx")
-            rec("pulling via real-Chrome CDP (Carlos's Tableau identity)")
-            cdp_pull.probe(VIEW_URL, CROSSTAB_SHEET, path,
-                           dt.date.today(), log=rec)
-
-        # _load_grid does the merged-cell / blanked-continuation back-fill for
-        # BOTH export formats. Describing the grid AFTER that fill would hide
-        # the blanks we want to measure, so read the raw file for blank rates
-        # and note that the fill is applied downstream.
-        grid = compute._load_grid(path)
-        _describe(grid, rec)
-
-        if args.list_views:
-            _run_list_views(rec)
-    except Exception:  # noqa: BLE001 — a probe must report, not crash silently
+            stage("order log", _probe_orderlog, page, rec)
+            for key, spec in CHURN_VIEWS.items():
+                stage("churn:{}".format(key), _probe_churn, page, rec, key, spec)
+            if args.list_views:
+                stage("view listing", _list_views, page, rec)
+    except Exception:  # noqa: BLE001
         rec("")
-        rec("TRACEBACK:")
-        for ln in traceback.format_exc().splitlines()[-15:]:
-            rec("  " + ln[:200])
+        rec("SESSION FAILED:")
+        for ln in traceback.format_exc().splitlines()[-12:]:
+            rec("   " + ln[:200])
         rc = 1
+    finally:
+        try:
+            proc.terminate()
+        except Exception:  # noqa: BLE001
+            pass
+        cdp_pull._kill_ours()
 
+    return _finish(buf, rec, args, rc)
+
+
+def _finish(buf, rec, args, rc) -> int:
     if not args.no_upload:
         try:
             _upload(buf)
@@ -310,6 +347,74 @@ def main(argv=None) -> int:
         except Exception as e:  # noqa: BLE001 — never fail the probe on upload
             print("diag upload failed: {}".format(e), flush=True)
     return rc
+
+
+def _describe_file(path, rec) -> None:
+    """Offline path: describe an export already on disk."""
+    from automations.vantura_churn import compute
+    rec("reading local export: {}".format(path))
+    _describe(compute._load_grid(path), rec)
+
+
+def _probe_orderlog(page, rec) -> None:
+    """Pull the order log via the DIRECT authenticated .csv export.
+
+    Not cdp_pull.probe(): that helper ignores its url/out arguments entirely —
+    it hardcodes the bare ORDERLOG view and writes /tmp/vantura_default.csv —
+    so passing Carlos's custom-view URL to it silently probed the wrong thing
+    and then failed on a file it never wrote (21:44 run). The direct .csv is
+    also what actually succeeded there: status=200, 47 columns, every
+    compute.COLS caption present.
+    """
+    import csv
+    import io
+
+    today = dt.date.today()
+    start = today - dt.timedelta(days=60)      # match vantura_churn's window
+    host = "https://us-east-1.online.tableau.com"
+    url = ("{}/t/sci/views/ATTTRACKER-B2B/ORDERLOG.csv?:refresh=yes"
+           "&Start%20Date={}&End%20Date={}").format(
+               host, start.isoformat(), today.isoformat())
+    rec("")
+    rec("=== ORDER LOG (direct .csv, {} .. {}) ===".format(start, today))
+    r = page.context.request.get(url, timeout=300_000)
+    body = r.body() or b""
+    rec("  status={} bytes={}".format(r.status, len(body)))
+    if r.status != 200 or len(body) < 1000:
+        rec("  head={!r}".format(body[:200].decode("utf-8", "replace")))
+        return
+    rows = list(csv.reader(io.StringIO(body.decode("utf-8-sig", "replace"))))
+    _describe(rows, rec)
+    _describe_measure_pivot(rows, rec)
+
+
+def _describe_measure_pivot(rows, rec) -> None:
+    """Quantify the measure pivot.
+
+    The 21:44 run found group sizes of 4 and 8 with only 'Measure Names' /
+    'Measure Values' varying — i.e. each real order line is emitted ONCE PER
+    MEASURE (Unit Count / Total Volume / Total Activations / Sales (All)...).
+    That is not the merged-cell problem Carlos described on the Loom and it is
+    not what _GROUP_COLS forward-fill addresses; it needs an un-pivot, or the
+    log renders every sale four times. This measures it so the renderer can be
+    written against the real multiplicity rather than an assumed one.
+    """
+    if not rows:
+        return
+    hdr = [str(h or "").strip().lstrip("﻿") for h in rows[0]]
+    rec("")
+    rec("=== measure pivot ===")
+    if "Measure Names" not in hdr:
+        rec("  no 'Measure Names' column — export is NOT measure-pivoted")
+        return
+    mi = hdr.index("Measure Names")
+    names = collections.Counter(
+        str(r[mi]).strip() for r in rows[1:] if mi < len(r))
+    rec("  rows per measure:")
+    for n, c in names.most_common():
+        rec("    {:>8}  {}".format(c, n or "(blank)"))
+    rec("  => divide raw row count by {} for real order lines".format(
+        len(names) or 1))
 
 
 def _probe_churn(page, rec, key, spec) -> None:
