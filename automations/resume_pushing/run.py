@@ -394,21 +394,37 @@ def _select_all(page, limit: int = 0) -> int:
     return 0
 
 
-def _read_status_dialog(page):
+def _read_status_dialog(page, wait_s: int = 120):
     """Read the "Batch Process Emails Status" dialog. Returns (sent, done):
     sent = 'Sent to Call List' number (or None), done = True when the dialog says
-    there is nothing left to send."""
+    there is nothing left to send.
+
+    POLLS for the dialog up to wait_s seconds: the server validates every selected
+    row (phone/dup checks) BEFORE popping the dialog, so a big backlog takes far
+    longer than a small one (2026-07-19: a 175-row weekend backlog never rendered
+    it inside the old fixed 2s wait — every pass misread that as 'nothing left to
+    send' and the backlog was never drained). Small batches still return fast:
+    we stop polling the moment the dialog is visible."""
     sent, done = None, False
     dlg = page.locator(".modal:visible, .swal2-popup:visible, [role='dialog']:visible")
     try:
-        if dlg.count() > 0:
-            text = " ".join(dlg.first.inner_text().split())
-            _log(f"[send] status: {text[:220]}")
-            m = re.search(r"Sent to Call List[^0-9]*([0-9,]+)", text, re.I)
-            if m:
-                sent = int(m.group(1).replace(",", ""))
-            if re.search(r"no applicants to send", text, re.I) or sent == 0:
-                done = True
+        waited = 0
+        while dlg.count() == 0 and waited < wait_s:
+            page.wait_for_timeout(1000)
+            waited += 1
+        if dlg.count() == 0:
+            _log(f"[send] WARNING: status dialog never appeared within {wait_s}s — "
+                 "send outcome unknown (NOT 'nothing left to send')")
+            return None, False
+        if waited:
+            _log(f"[send] status dialog appeared after {waited}s")
+        text = " ".join(dlg.first.inner_text().split())
+        _log(f"[send] status: {text[:220]}")
+        m = re.search(r"Sent to Call List[^0-9]*([0-9,]+)", text, re.I)
+        if m:
+            sent = int(m.group(1).replace(",", ""))
+        if re.search(r"no applicants to send", text, re.I) or sent == 0:
+            done = True
     except Exception as e:
         _log(f"[send] status read err: {e}")
     return sent, done
@@ -435,9 +451,11 @@ def send_once(page, dry_run: bool, limit: int = 0):
     if not _click_if_present(page, ["Send To AI", "Send to AI"], timeout=10000):
         _log("[send] 'Send To AI' button not found — aborting")
         return 0, True, before
-    page.wait_for_timeout(2000)
 
-    sent, done = _read_status_dialog(page)         # dialog asks "Do you want to continue?"
+    sent, done = _read_status_dialog(page)         # polls until the dialog renders
+    if sent is None and not done:
+        # Dialog never appeared — outcome unknown; don't blind-click a confirm.
+        return 0, True, before
     _click_if_present(page, ["Yes", "Continue", "OK"])   # confirm the send
     try:
         page.wait_for_load_state("domcontentloaded", timeout=15000)
@@ -465,7 +483,8 @@ def send_loop(page, dry_run: bool, limit: int = 0) -> int:
         total += sent
         _log(f"[send] pass {p}: sent {sent} (rows before pass: {before}; total {total})")
         if done or sent == 0:
-            _log("[send] status reports nothing left to send — stopping")
+            _log("[send] no sends reported this pass — stopping "
+                 "(see the status/WARNING line above for why)")
             break
         if prev_before is not None and before >= prev_before:
             _log("[send] record count stopped dropping — remaining are duplicates / "
