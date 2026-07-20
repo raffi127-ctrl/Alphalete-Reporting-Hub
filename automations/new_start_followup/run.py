@@ -113,6 +113,12 @@ def main(argv=None) -> int:
     if args.mode == "status":
         print(report_mod.render_checklist(rec))
         print()
+        # Resolve numbers here too, so the phone column is TRUE. Without this
+        # status prints "NO NUMBER ON FILE" for people we can actually reach,
+        # and whoever reads it concludes the texts won't work. Status is a
+        # human-run command, so the extra tab read is worth it; the scheduled
+        # modes still skip it.
+        texts.resolve_phones(rec)
         print(report_mod.render_text_list(rec))
         return 0
 

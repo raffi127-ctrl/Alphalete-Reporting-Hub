@@ -376,8 +376,10 @@ def ops_flags(rec: Reconciliation) -> List[str]:
 
 def render_text_list(rec: Reconciliation) -> str:
     """Plain-text console block: who to text, and their number if we have one."""
+    from automations.swag_welcome.roster import pretty_phone
+
     lines = ["Leaders who have NOT sent ({}):".format(len(rec.pending))]
     for s in rec.pending:
-        phone = s.leader.phone or "NO NUMBER ON FILE"
+        phone = pretty_phone(s.leader.phone) or "NO NUMBER — can't text"
         lines.append("   {:<20} {}".format(s.label, phone))
     return "\n".join(lines)
