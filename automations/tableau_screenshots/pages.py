@@ -21,6 +21,12 @@ Fields
                 Everything else about it is normal: it still gets its header
                 line, in its normal order, and its image still lands in every
                 channel -- just later in the thread. Omit the field = normal.
+  source        "email" = this tracker is NOT a live Tableau view. Instead of a
+                `url`, it carries email fields and is rendered from a daily .xlsx
+                that lands in the reporting inbox (see email_tracker.py). run.py
+                dispatches source=="email" to email_tracker.capture; everything
+                downstream (header line, reply, channels) is identical. Omit the
+                field = a normal Tableau view (the default).
 
 All 8 URLs desk-verified 2026-07-04: site sci, valid workbooks (6 of 8 are
 workbooks our other reports already read daily).
@@ -138,6 +144,18 @@ PAGES = [
         "react": "large_blue_diamond",
         "url": _BASE + "RES-LumenSalesTrackervMZ/LumenSalesTracker?:iid=2",
         "crop": "canvas",
+    },
+    {
+        # EMAIL-SOURCED (not Tableau): a daily Credico .xlsx that lands in the
+        # reporting inbox is rendered to a leaderboard PNG by email_tracker.py.
+        # It arrives ~1:25pm, so the 4:31am morning post shows the newest one on
+        # hand = the PRIOR day's report (current-week-to-date) — which is why it's
+        # NOT marked `late` (its data doesn't get fresher at ~7am like Box does).
+        "id": "vzftr",
+        "title": "VZ+FTR Dual-Campaign Wireless (SCI)",
+        "emoji": "\U0001F4F6",                     # signal_strength
+        "react": "signal_strength",
+        "source": "email",
     },
 ]
 

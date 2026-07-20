@@ -191,6 +191,33 @@ def _select(only: str | None, *, late_only: bool = False,
     return out
 
 
+def _capture_one(spec: dict, page, out_dir: Path, force_crop):
+    """Capture ONE tracker to a PNG. Dispatches on the spec's source: an
+    email-sourced tracker (pages.py `source: "email"`) renders from its daily
+    .xlsx via email_tracker; everything else is a live Tableau Download→Image.
+    Same return (a PNG path) either way, so the post pipeline is source-agnostic."""
+    if spec.get("source") == "email":
+        from automations.tableau_screenshots import email_tracker as et
+        return et.capture(page, spec, out_dir, force_crop=force_crop, verbose=True)
+    return cap.capture_page(page, spec, out_dir, force_crop=force_crop, verbose=True)
+
+
+def _capture_all(selected: list, page, out_dir: Path, force_crop):
+    """Capture every selected tracker; a per-tracker failure is flagged (its id in
+    `failed`) but never stops the others — a short thread is better than none, and
+    the failed ids drive the manifest's retry list. `page` may be None when the
+    selection is email-only (no Tableau session opened)."""
+    captures, failed = [], []
+    for spec in selected:
+        try:
+            captures.append((spec, _capture_one(spec, page, out_dir, force_crop)))
+        except Exception as e:                        # noqa: BLE001
+            failed.append(spec["id"])
+            print(f"   ⚠ {spec['id']} FAILED: "
+                  f"{type(e).__name__}: {str(e).splitlines()[0][:120]}", flush=True)
+    return captures, failed
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--dry-run", action="store_true",
@@ -345,18 +372,17 @@ def main(argv=None) -> int:
         # setup failed before any capture) — reverted to native res, which captured all
         # 8 cleanly in testing. Re-add the zoom only after debugging why it fails at
         # scale (the single-tracker dry-run worked, the full run didn't).
-        with tableau_session(headless=args.headless, allow_form_login=False,
-                             verbose=True) as page:
-            for spec in selected:
-                try:
-                    png = cap.capture_page(page, spec, out_dir,
-                                           force_crop=force_crop, verbose=True)
-                    captures.append((spec, png))
-                except Exception as e:
-                    failed.append(spec["id"])
-                    print(f"   ⚠ {spec['id']} FAILED: "
-                          f"{type(e).__name__}: {str(e).splitlines()[0][:120]}",
-                          flush=True)
+        #
+        # Email-sourced trackers (pages.py `source: "email"`) render from an .xlsx,
+        # not Tableau — so open a Tableau session ONLY if at least one selected
+        # tracker actually needs it. An email-only selection (e.g. --only vzftr)
+        # renders standalone, so a cold Tableau session can't block it.
+        if any(s.get("source") != "email" for s in selected):
+            with tableau_session(headless=args.headless, allow_form_login=False,
+                                 verbose=True) as page:
+                captures, failed = _capture_all(selected, page, out_dir, force_crop)
+        else:
+            captures, failed = _capture_all(selected, None, out_dir, force_crop)
         # Only a COMPLETE capture is worth reusing — stamp it so the next org can.
         if captures and not failed:
             _write_stamp(out_dir, captures, today)
