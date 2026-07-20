@@ -3,7 +3,7 @@
 Flow (runbook 2026-07-13): pull each owner's 60-day Order Log + the Churn
 Rates dashboard from Tableau → compute 0-30 bases/disconnects → RECONCILE
 against the dashboard's 0-30 cell → only then write the live sheet
-(Carlos: Churn + Activations tabs; Atef: Churn - Atef). If the derived
+(Carlos: 'LUCY CHURN' + Activations tabs; Atef: Churn - Atef). If the derived
 numbers don't match the dashboard, nothing is written and the run fails
 loudly — that reconciliation is the whole safety story.
 
@@ -12,6 +12,12 @@ loudly — that reconciliation is the whole safety story.
   python -m automations.vantura_churn.run --owner carlos
   python -m automations.vantura_churn.run --from-files carlos=/path/a.xlsx atef=/path/b.xlsx
   python -m automations.vantura_churn.run --skip-reconcile   # only with --from-files
+  python -m automations.vantura_churn.run --carlos-only --shot
+
+Carlos's churn tab was PROMOTED 2026-07-19 from "Churn" to "LUCY CHURN" —
+the rebuild carrying the activation-rate cells and the per-rep list. The old
+"Churn" tab is no longer written; it stays in place for history and as a
+back-out path.
 """
 from __future__ import annotations
 
@@ -134,11 +140,8 @@ def main(argv=None) -> int:
     ap.add_argument("--post", action="store_true",
                     help="with --shot, POST the PNG to the Activations "
                          "order-log channel. Off by default.")
-    ap.add_argument("--preview", action="store_true",
-                    help="write Carlos's churn numbers to the '"
-                         + fill.TAB_CHURN_PREVIEW + "' tab instead of the "
-                         "live one, and skip Atef + Activations. Use while "
-                         "building the 2026-07-19 rebuild.")
+    ap.add_argument("--carlos-only", action="store_true",
+                    help="Carlos's churn tab only — skip Atef + Activations.")
     args = ap.parse_args(argv)
 
     log = lambda *a: print(*a, flush=True)  # noqa: E731
@@ -153,17 +156,13 @@ def main(argv=None) -> int:
         return 0
     owners = [o for o in OWNER_CFG
               if args.owner in ("both", o[0])]
-    if args.preview:
-        # Preview run: Carlos only, onto his duplicate tab, no Activations.
-        # The live 'Churn' tab and the daily job are left completely alone.
-        owners = [(k, prefix, fill.TAB_CHURN_PREVIEW, False)
-                  for k, prefix, _tab, _act in owners if k == "carlos"]
+    if args.carlos_only:
+        owners = [(k, prefix, tab, False)
+                  for k, prefix, tab, _act in owners if k == "carlos"]
         if not owners:
-            log("--preview is Carlos-only; nothing to do for "
-                f"--owner {args.owner}.")
+            log("--carlos-only conflicts with "
+                f"--owner {args.owner}; nothing to do.")
             return 1
-        log(f"PREVIEW MODE → writing '{fill.TAB_CHURN_PREVIEW}' "
-            "(live 'Churn' untouched)")
 
     # ---------------------------------------------------------- downloads
     files: dict[str, Path] = {}

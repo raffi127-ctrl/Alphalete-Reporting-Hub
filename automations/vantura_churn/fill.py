@@ -23,14 +23,16 @@ import gspread
 from automations.recruiting_report.fill import open_by_key, _retry
 
 SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"
-TAB_CHURN_CARLOS = "Churn"
+# Carlos's churn tab. PROMOTED 2026-07-19 (Megan) from the old "Churn" tab to
+# "LUCY CHURN" — the rebuild carrying the activation-rate cells and the
+# per-rep list. The daily run writes THIS tab now.
+TAB_CHURN_CARLOS = "LUCY CHURN"
+# The tab it replaced. No longer written; left in place on purpose so the
+# team keeps its history (and as a fallback if the rebuild has to be backed
+# out). Never delete it.
+TAB_CHURN_RETIRED = "Churn"
 TAB_CHURN_ATEF = "Churn - Atef"
 TAB_ACTIVATIONS = "Activations"
-
-# Carlos's duplicate of the Churn tab, where the 2026-07-19 rebuild (activation
-# rates + per-rep list) is being built. Run with --preview to fill THIS instead
-# of the live tab, so the daily job keeps updating 'Churn' untouched.
-TAB_CHURN_PREVIEW = "LUCY CHURN"
 
 # Formula templates. Column letters are filled in from helper_bounds() at
 # write time — they are NOT fixed: the block moves when a column left of it
