@@ -133,6 +133,11 @@ CHURN_VIEWS = {
 # Note the view names are NOT spelled consistently upstream —  "CarloWireless"
 # (no 's') vs "CarlosNewINT". Keep them verbatim; they are URL path segments,
 # not labels, and "fixing" the typo would 404.
+# The worksheet to pick in Download -> Crosstab. vantura_churn pulls this same
+# CHURNRATES workbook with "ICD Churn", so that is the informed first guess; if
+# the dialog rejects it, its error lists the real worksheet names.
+CHURN_CROSSTAB_SHEET = "ICD Churn"
+
 # For reference while reading the probe's output: vantura_churn already pulls
 # this same CHURNRATES workbook, via its ALLTEAMCHURN view with crosstab sheet
 # "ICD Churn", and gets per-ICD rows. Carlos's scaffold tabs need per-REP rows.
@@ -260,6 +265,9 @@ def main(argv=None) -> int:
     ap.add_argument("--list-views", action="store_true",
                     help="also enumerate every ATTTRACKER-B2B view + URL "
                          "(settles which wireless-churn views exist)")
+    ap.add_argument("--churn-only", action="store_true",
+                    help="skip the order log + direct-csv stages; pull just "
+                         "the two churn crosstabs (fast: no 120MB export)")
     args = ap.parse_args(argv)
 
     buf = []
@@ -317,9 +325,18 @@ def main(argv=None) -> int:
                                              allow_form_login=True)
             rec("[cdp] auth OK")
 
-            stage("order log", _probe_orderlog, page, rec)
+            if not args.churn_only:
+                stage("order log", _probe_orderlog, page, rec)
             for key, spec in CHURN_VIEWS.items():
-                stage("churn:{}".format(key), _probe_churn, page, rec, key, spec)
+                # Crosstab FIRST — it is the one that decides whether the churn
+                # fills are buildable at all. The direct-.csv probe stays as
+                # the contrast case (it is what proved the custom view is
+                # ignored there), but it must not gate the crosstab result.
+                stage("crosstab:{}".format(key), _probe_churn_crosstab,
+                      page, rec, key, spec)
+                if not args.churn_only:
+                    stage("csv:{}".format(key), _probe_churn,
+                          page, rec, key, spec)
             if args.list_views:
                 stage("view listing", _list_views, page, rec)
     except Exception:  # noqa: BLE001
@@ -483,6 +500,86 @@ def _probe_churn(page, rec, key, spec) -> None:
     rec("  first 8 rows:")
     for r_ in rows[1:9]:
         rec("    " + " | ".join(str(c or "")[:20] for c in r_[:10]))
+
+
+def _probe_churn_crosstab(page, rec, key, spec) -> None:
+    """Pull a churn custom view through the CROSSTAB DIALOG and describe it.
+
+    THE question: does the custom view's product filter survive the download?
+    The direct .csv does NOT respect custom views — CarloWireless and
+    CarlosNewINT both returned byte-identical all-teams data (2026-07-19), and
+    the export carries no product column, so the wireless/new-internet split
+    exists ONLY inside the view's filter. If the crosstab dialog preserves it,
+    each view yields its own product and the churn fills are viable; if not,
+    there is no way to tell the two products apart and the whole approach needs
+    rethinking.
+
+    ALSO records the SHAPE. The D2D crosstab is WIDE (one column per period:
+    "0-30 Day Churn", "30 Day Churn", ...) and new_internet_churn.pull looks
+    those up by name. The B2B dashboard export was LONG (a "Churn Buckets"
+    column holding those values). Against a long export the D2D parser finds no
+    period columns and returns EMPTY rather than raising — a silent wrong
+    answer. This prints the header so we know which transform to write.
+    """
+    from pathlib import Path as _P
+
+    from automations.recruiting_report.opt_phase import drive_crosstab_dialog
+
+    rec("")
+    rec("=== CROSSTAB {} ({}) ===".format(spec["label"], key))
+    out = _P("/tmp/att_churn_{}.csv".format(key))
+    try:
+        drive_crosstab_dialog(page, spec["url"], CHURN_CROSSTAB_SHEET, out,
+                              verbose=False)
+    except Exception as e:  # noqa: BLE001
+        rec("  crosstab download FAILED: {}".format(str(e)[:200]))
+        rec("  (worksheet name may be wrong — the dialog lists the real ones)")
+        return
+
+    from automations.att_order_log import clean
+    grid = clean.load_grid(out)
+    if not grid:
+        rec("  empty export")
+        return
+    hdr = [str(h or "").strip().lstrip("﻿") for h in grid[0]]
+    rows = grid[1:]
+    rec("  {} rows, {} columns".format(len(rows), len(hdr)))
+    for i, h in enumerate(hdr):
+        rec("    [{:>2}] {}".format(i, h))
+
+    # WIDE or LONG?
+    wide = [h for h in hdr if h.lower().endswith("day churn")]
+    rec("")
+    rec("  SHAPE: {}".format(
+        "WIDE — period columns {} (D2D parser works as-is)".format(wide)
+        if wide else
+        "LONG — periods are row values; needs a long->wide transform"))
+    for label in ("Churn Buckets", "OWNER & OFFICE", "ICD Owner Name (rep)",
+                  "Rep", "rep.Full Name"):
+        if label in hdr:
+            vals = {str(r[hdr.index(label)]).strip() for r in rows[:400]
+                    if hdr.index(label) < len(r)}
+            rec("  {:<22} {} distinct, e.g. {}".format(
+                label, len(vals), sorted(v for v in vals if v)[:4]))
+
+    # Did the OWNER filter survive? If this is Carlos-only the custom view's
+    # filters came through; if it spans many owners they did not.
+    for ocol in ("OWNER & OFFICE", "ICD Owner Name (rep)"):
+        if ocol in hdr:
+            oi = hdr.index(ocol)
+            owners = {str(r[oi]).split("\n")[0].strip() for r in rows
+                      if oi < len(r) and str(r[oi]).strip()}
+            rec("")
+            rec("  OWNER FILTER: {} distinct owner(s)".format(len(owners)))
+            rec("    -> {}".format(
+                "SURVIVED (Carlos only)" if len(owners) <= 1
+                else "NOT applied — all-teams export, product split lost"))
+            rec("    {}".format(sorted(owners)[:5]))
+            break
+    rec("")
+    rec("  first 6 rows:")
+    for r in rows[:6]:
+        rec("    " + " | ".join(str(c or "")[:18] for c in r[:9]))
 
 
 def _run_list_views(rec) -> None:
