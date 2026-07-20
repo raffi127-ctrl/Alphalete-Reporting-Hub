@@ -1,0 +1,403 @@
+"""Write Carlos's ATT B2B Order Log into the Vantura Master Sales Board.
+
+Two tabs, mirroring the BOX Order Log Carlos already reads every morning, so
+his two logs behave identically:
+
+  * "Lucy At&t Data"      — hidden. One row per real sale (post un-pivot),
+                            rewritten in full on every run.
+  * "Lucy At&t Order Log" — what Carlos looks at. Rep + period dropdowns, a
+                            status summary, and the log itself. Everything
+                            below the dropdowns is FORMULAS reading the hidden
+                            tab, so changing the rep repaints instantly with no
+                            re-run.
+
+GOLDEN RULE, inherited from box_order_log.sheet and vantura_churn.fill: this is
+the LIVE board. We touch ONLY our own two tabs. Megan 2026-07-19 confirmed both
+targets were blank when she made them, but the guard stays — the risk was never
+our own empty tabs, it is a bug reaching Carlos's hand-built "Box Order Log" or
+the live "Sales Board" / "Commission" tabs sitting beside them.
+
+FULL REWRITE, NOT A MERGE — deliberately different from box_order_log. That
+module merges because its Tableau view is a rolling ~44-day window with only
+~3 days of slack over the 6 weeks it reports, so rows age out of the source
+before they age out of the report. The ORDERLOG view takes explicit Start/End
+Date URL params, so we pull exactly the window we intend to show and can
+rewrite it wholesale. Rewriting is simpler and cannot drift; merging exists to
+work around a source limitation this feed does not have.
+"""
+from __future__ import annotations
+
+import collections
+import datetime as dt
+from typing import Dict, List, Optional, Sequence
+
+from automations.recruiting_report.fill import _retry, open_by_key
+
+from . import colors
+
+SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"   # Vantura Master Sales Board
+TAB_VIEW = "Lucy At&t Order Log"      # gid 1491859853, created blank by Megan
+TAB_DATA = "Lucy At&t Data"           # hidden; created on first run
+
+# Never write here, whatever else changes. "Box Order Log" is Carlos's own
+# hand-built sheet; the rest are live report or finance tabs.
+PROTECTED_TABS = (
+    "Box Order Log", "Lucy Box Order Log", "Lucy Box Data",
+    "Churn", "Churn - Atef", "LUCY CHURN", "Activations",
+    "Sales Board", "WeekData", "Roll Call", "RollCallData", "Stations",
+    "Commission", "Commission Calculator", "Rates", "Adjustments", "RAW",
+    "Copy of Carlos PNL 2026", "Name Aliases", "NoRevPay", "New DU",
+    "JE Sales by Store", "Report an Issue",
+    "Lucy Wireless Churn", "Lucy New INT Churn",   # ours, but a DIFFERENT module's
+)
+
+# The visible log, in Carlos's own column order — read off the tab he showed on
+# the Loom (his screenshot, columns A..Q). He said "mine's will have more
+# columns than his [Raf's]"; this is the set he actually keeps. Every one of
+# these is present in the 47-column export (verified by the 2026-07-19 probe),
+# and they are looked up BY LABEL at write time, never by index.
+DISPLAY_HEADERS = (
+    "Rep",
+    "sp.Order Date (copy)",
+    "Customer Name",
+    "Product Type (Broken Out)",
+    "CRU/IRU",
+    "DTR Status (enriched)",
+    "DTR Status Date",
+    "spe.TN",
+    "spe.TN Type",
+    "sp.SPM Number",
+    "spe.Account BAN",
+    "spe.Phone",
+    "Wireless Installment Plan",
+    "IF/OOF",
+    "Package",
+    "spe.Install Date",
+    "Order date to Install Date Days",
+)
+
+# Friendlier headers for the view tab. Carlos reads this daily; "sp.Order Date
+# (copy)" is a Tableau artefact, not a column name a human should have to parse.
+# The hidden tab keeps the raw names so the mapping stays debuggable.
+DISPLAY_LABELS = (
+    "Rep", "Order Date", "Customer Name", "Product Type", "CRU/IRU",
+    "Status", "Status Date", "TN", "TN Type", "SPM #", "Account BAN",
+    "Phone", "Wireless Installment Plan", "IF/OOF", "Package",
+    "Install Date", "Order->Install Days",
+)
+
+# The hidden tab adds a sort/filter key past the display slice.
+DATA_HEADERS = DISPLAY_HEADERS + ("Filter Period",)
+
+ALL_PERIODS = "All"
+LAST_30 = "Last 30 Days"          # Carlos's Slack ask, 2026-07-19
+
+CELL_REP = "B2"
+CELL_PERIOD = "B3"
+
+_COL_REP = DISPLAY_HEADERS.index("Rep")
+_COL_ORDER_DATE = DISPLAY_HEADERS.index("sp.Order Date (copy)")
+_COL_STATUS = DISPLAY_HEADERS.index("DTR Status (enriched)")
+_COL_PERIOD = len(DISPLAY_HEADERS)          # "Filter Period"
+
+
+def _col_letter(index0: int) -> str:
+    s, n = "", index0 + 1
+    while n:
+        n, r = divmod(n - 1, 26)
+        s = chr(65 + r) + s
+    return s
+
+
+def _rgb(hex_str: str) -> Dict[str, float]:
+    h = hex_str.lstrip("#")
+    return {"red": int(h[0:2], 16) / 255.0,
+            "green": int(h[2:4], 16) / 255.0,
+            "blue": int(h[4:6], 16) / 255.0}
+
+
+def _parse_date(v) -> Optional[dt.date]:
+    if not v:
+        return None
+    if isinstance(v, dt.datetime):
+        return v.date()
+    if isinstance(v, dt.date):
+        return v
+    s = str(v).strip()
+    for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y"):
+        try:
+            return dt.datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _fmt_date(d: Optional[dt.date]) -> str:
+    return "{}/{}/{}".format(d.month, d.day, d.year) if d else ""
+
+
+def _open():
+    return open_by_key(SHEET_ID)
+
+
+def _ensure_tab(sh, title: str, *, hidden: bool = False, rows: int = 1000,
+                cols: int = 26):
+    try:
+        ws = sh.worksheet(title)
+    except Exception:  # noqa: BLE001 — gspread raises WorksheetNotFound
+        ws = _retry(lambda: sh.add_worksheet(title=title, rows=rows, cols=cols))
+    if hidden:
+        try:
+            _retry(lambda: sh.batch_update({"requests": [
+                {"updateSheetProperties": {
+                    "properties": {"sheetId": ws.id, "hidden": True},
+                    "fields": "hidden"}}]}))
+        except Exception:  # noqa: BLE001 — hiding is cosmetic, never fail on it
+            pass
+    return ws
+
+
+def build_data_rows(lines: Sequence[dict], today: dt.date) -> List[List[str]]:
+    """One row per sale, in DISPLAY_HEADERS order, plus the period key.
+
+    Columns are pulled BY LABEL from each line dict — the export's column order
+    is not a contract and has already changed shape once (17 visible in the
+    screenshot vs 47 in the real download).
+    """
+    cutoff = today - dt.timedelta(days=30)
+    out: List[List[str]] = []
+    for ln in lines:
+        row = [str(ln.get(h, "") or "").strip() for h in DISPLAY_HEADERS]
+        od = _parse_date(ln.get("sp.Order Date (copy)"))
+        # Period key drives the dropdown. Kept as its own column so the view's
+        # FILTER can match a single cell instead of re-deriving dates in-sheet.
+        row.append(LAST_30 if (od and od >= cutoff) else "")
+        out.append(row)
+    # Newest first, then by rep, so the log reads the way Carlos scrolls it.
+    out.sort(key=lambda r: (_parse_date(r[_COL_ORDER_DATE]) or dt.date.min,
+                            r[_COL_REP]), reverse=True)
+    return out
+
+
+def build_view_values(rows: Sequence[Sequence[str]], reps: Sequence[str],
+                      generated: str, *, selected_rep: str = "",
+                      selected_period: str = "") -> List[List[str]]:
+    """The visible tab: title, dropdowns, status summary, then the log."""
+    data = "'{}'".format(TAB_DATA)
+    rep_cell = "${}${}".format(CELL_REP[0], CELL_REP[1:])
+    per_cell = "${}${}".format(CELL_PERIOD[0], CELL_PERIOD[1:])
+
+    rep_col = "{}!${}:${}".format(data, _col_letter(_COL_REP),
+                                 _col_letter(_COL_REP))
+    per_col = "{}!${}:${}".format(data, _col_letter(_COL_PERIOD),
+                                 _col_letter(_COL_PERIOD))
+    stat_col = "{}!${}:${}".format(data, _col_letter(_COL_STATUS),
+                                   _col_letter(_COL_STATUS))
+    last_col = _col_letter(len(DISPLAY_HEADERS) - 1)
+    body_rng = "{}!$A$2:${}".format(data, last_col)
+
+    # One spilling FILTER. Conditions are built so "All" short-circuits to TRUE
+    # rather than needing a separate formula per combination.
+    rep_cond = '(({r}="{all}")+({rc}={r}))'.format(
+        r=rep_cell, rc=rep_col, all=ALL_PERIODS)
+    per_cond = '(({p}="{all}")+({pc}={p}))'.format(
+        p=per_cell, pc=per_col, all=ALL_PERIODS)
+    log_formula = ('=IFERROR(FILTER({body},{rep},{per}),'
+                   '"— no orders match —")').format(
+        body=body_rng, rep=rep_cond, per=per_cond)
+
+    grid: List[List[str]] = []
+    grid.append(["AT&T B2B Order Log"] + [""] * (len(DISPLAY_HEADERS) - 1))
+    grid.append(["Rep:", selected_rep or ALL_PERIODS]
+                + [""] * (len(DISPLAY_HEADERS) - 2))
+    grid.append(["Period:", selected_period or ALL_PERIODS]
+                + [""] * (len(DISPLAY_HEADERS) - 2))
+    grid.append(["Updated " + generated] + [""] * (len(DISPLAY_HEADERS) - 1))
+    grid.append([""] * len(DISPLAY_HEADERS))
+
+    # Status summary — counts for the CURRENT dropdown selection, so the
+    # numbers always describe what is on screen.
+    statuses = sorted({r[_COL_STATUS] for r in rows if r[_COL_STATUS]})
+    grid.append(["Status"] + list(statuses[:len(DISPLAY_HEADERS) - 1]))
+    counts = []
+    for s in statuses[:len(DISPLAY_HEADERS) - 1]:
+        counts.append(
+            '=COUNTIFS({sc},"{s}",{rc},IF({r}="{all}","*",{r}),'
+            '{pc},IF({p}="{all}","*",{p}))'.format(
+                sc=stat_col, s=s, rc=rep_col, r=rep_cell,
+                pc=per_col, p=per_cell, all=ALL_PERIODS))
+    grid.append(["Count"] + counts)
+    grid.append([""] * len(DISPLAY_HEADERS))
+
+    grid.append(list(DISPLAY_LABELS))
+    grid.append([log_formula] + [""] * (len(DISPLAY_HEADERS) - 1))
+    return grid
+
+
+HEADER_ROW = 9          # 1-based row of DISPLAY_LABELS in build_view_values
+FIRST_LOG_ROW = 10      # where the FILTER spills
+
+
+def _format_requests(view_id: int) -> List[dict]:
+    ncol = len(DISPLAY_HEADERS)
+    return [
+        # Title
+        {"repeatCell": {
+            "range": {"sheetId": view_id, "startRowIndex": 0, "endRowIndex": 1},
+            "cell": {"userEnteredFormat": {
+                "textFormat": {"bold": True, "fontSize": 14}}},
+            "fields": "userEnteredFormat.textFormat"}},
+        # Column header row
+        {"repeatCell": {
+            "range": {"sheetId": view_id, "startRowIndex": HEADER_ROW - 1,
+                      "endRowIndex": HEADER_ROW, "startColumnIndex": 0,
+                      "endColumnIndex": ncol},
+            "cell": {"userEnteredFormat": {
+                "textFormat": {"bold": True},
+                "backgroundColor": _rgb("#000000"),
+                "horizontalAlignment": "CENTER"}},
+            "fields": ("userEnteredFormat.textFormat,"
+                       "userEnteredFormat.backgroundColor,"
+                       "userEnteredFormat.horizontalAlignment")}},
+        {"repeatCell": {
+            "range": {"sheetId": view_id, "startRowIndex": HEADER_ROW - 1,
+                      "endRowIndex": HEADER_ROW, "startColumnIndex": 0,
+                      "endColumnIndex": ncol},
+            "cell": {"userEnteredFormat": {"textFormat": {
+                "bold": True, "foregroundColor": _rgb("#FFFFFF")}}},
+            "fields": "userEnteredFormat.textFormat"}},
+        # Freeze the header + dropdowns so the log scrolls under them.
+        {"updateSheetProperties": {
+            "properties": {"sheetId": view_id, "gridProperties": {
+                "frozenRowCount": HEADER_ROW}},
+            "fields": "gridProperties.frozenRowCount"}},
+        {"autoResizeDimensions": {"dimensions": {
+            "sheetId": view_id, "dimension": "COLUMNS",
+            "startIndex": 0, "endIndex": ncol}}},
+    ]
+
+
+def _validation(view_id: int, reps: Sequence[str],
+                periods: Sequence[str]) -> List[dict]:
+    def rule(row0: int, values: Sequence[str]) -> dict:
+        return {"setDataValidation": {
+            "range": {"sheetId": view_id, "startRowIndex": row0,
+                      "endRowIndex": row0 + 1, "startColumnIndex": 1,
+                      "endColumnIndex": 2},
+            "rule": {"condition": {
+                "type": "ONE_OF_LIST",
+                "values": [{"userEnteredValue": v} for v in values]},
+                "showCustomUi": True, "strict": False}}}
+    return [rule(1, [ALL_PERIODS] + list(reps)),
+            rule(2, [ALL_PERIODS] + list(periods))]
+
+
+def _status_color_rules(view_id: int) -> List[dict]:
+    """Colour the Status column by Carlos's rule.
+
+    One rule per colour rather than per status, matched with a REGEX over the
+    statuses that share it — 15 statuses would otherwise be 15 rules, and
+    Sheets applies conditional formats in order, so fewer rules is both faster
+    and easier to reason about.
+    """
+    ncol = len(DISPLAY_HEADERS)
+    by_color: Dict[str, List[str]] = collections.defaultdict(list)
+    for status, color in colors.STATUS_COLORS.items():
+        by_color[color].append(status)
+
+    reqs, idx = [], 0
+    scol = _COL_STATUS
+    for color, statuses in by_color.items():
+        pattern = "(?i)^(" + "|".join(sorted(statuses)) + ")$"
+        reqs.append({"addConditionalFormatRule": {"index": idx, "rule": {
+            "ranges": [{"sheetId": view_id, "startRowIndex": FIRST_LOG_ROW - 1,
+                        "startColumnIndex": scol, "endColumnIndex": scol + 1}],
+            "booleanRule": {
+                "condition": {"type": "CUSTOM_FORMULA",
+                              "values": [{"userEnteredValue":
+                                          '=REGEXMATCH(${c}{r},"{p}")'.format(
+                                              c=_col_letter(scol),
+                                              r=FIRST_LOG_ROW, p=pattern)}]},
+                "format": {"backgroundColor": _rgb(colors.FILL_HEX[color])}}}}})
+        idx += 1
+    return reqs
+
+
+def _clear_color_rules(sh, view_id: int) -> List[dict]:
+    """Delete existing conditional formats so repeated runs don't stack them."""
+    try:
+        meta = _retry(lambda: sh.fetch_sheet_metadata())
+    except Exception:  # noqa: BLE001
+        return []
+    n = 0
+    for s in meta.get("sheets", []):
+        if s.get("properties", {}).get("sheetId") == view_id:
+            n = len(s.get("conditionalFormats", []) or [])
+            break
+    return [{"deleteConditionalFormatRule": {"sheetId": view_id, "index": 0}}
+            for _ in range(n)]
+
+
+def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
+         generated: Optional[str] = None, log=print) -> Dict[str, object]:
+    """Write the hidden data tab and repaint the view tab."""
+    if TAB_VIEW in PROTECTED_TABS or TAB_DATA in PROTECTED_TABS:
+        raise RuntimeError("refusing to write: target tab is protected")
+
+    today = today or dt.date.today()
+    generated = generated or dt.datetime.now().strftime("%m/%d/%Y %I:%M %p").lstrip("0")
+    sh = _open()
+
+    rows = build_data_rows(lines, today)
+    if not rows:
+        raise RuntimeError("no rows to write — refusing to blank the tab")
+
+    # Surface any status we have no colour for, rather than rendering it white.
+    unknown = colors.unmapped(r[_COL_STATUS] for r in rows)
+    if unknown:
+        log("  !! UNMAPPED statuses (rendering uncoloured): {}".format(
+            ", ".join(sorted(unknown))))
+
+    # ---- hidden data tab -------------------------------------------------
+    data_ws = _ensure_tab(sh, TAB_DATA, hidden=True, cols=len(DATA_HEADERS))
+    _retry(lambda: data_ws.resize(rows=max(1000, len(rows) + 50),
+                                  cols=len(DATA_HEADERS)))
+    _retry(lambda: data_ws.clear())
+    body = [list(DATA_HEADERS)] + [list(r) for r in rows]
+    _retry(lambda: data_ws.update(
+        body, "A1:{}{}".format(_col_letter(len(DATA_HEADERS) - 1), len(body)),
+        value_input_option="USER_ENTERED"))
+    log("  hidden data tab: {} sales".format(len(rows)))
+
+    # ---- view tab --------------------------------------------------------
+    view_ws = _ensure_tab(sh, TAB_VIEW, cols=len(DISPLAY_HEADERS))
+    reps = sorted({r[_COL_REP] for r in rows if r[_COL_REP]})
+    periods = [LAST_30]
+
+    # Keep whatever Carlos currently has selected so a morning refresh doesn't
+    # yank the view out from under him.
+    def _current(cell):
+        try:
+            return (_retry(lambda: view_ws.acell(cell).value) or "").strip()
+        except Exception:  # noqa: BLE001
+            return ""
+    cur_rep, cur_per = _current(CELL_REP), _current(CELL_PERIOD)
+    sel_rep = cur_rep if cur_rep in [ALL_PERIODS] + reps else ALL_PERIODS
+    sel_per = cur_per if cur_per in [ALL_PERIODS] + periods else ALL_PERIODS
+
+    grid = build_view_values(rows, reps, generated,
+                             selected_rep=sel_rep, selected_period=sel_per)
+    _retry(lambda: view_ws.clear())
+    _retry(lambda: view_ws.update(
+        grid, "A1:{}{}".format(_col_letter(len(DISPLAY_HEADERS) - 1), len(grid)),
+        value_input_option="USER_ENTERED"))
+
+    reqs: List[dict] = []
+    reqs += _clear_color_rules(sh, view_ws.id)
+    reqs += _format_requests(view_ws.id)
+    reqs += _validation(view_ws.id, reps, periods)
+    reqs += _status_color_rules(view_ws.id)
+    _retry(lambda: sh.batch_update({"requests": reqs}))
+
+    log("  view tab: {} reps in the dropdown".format(len(reps)))
+    return {"sales": len(rows), "reps": len(reps), "unmapped": sorted(unknown)}
