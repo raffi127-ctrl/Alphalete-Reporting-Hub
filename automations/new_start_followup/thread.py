@@ -75,6 +75,40 @@ def find_anchor(client, channel: str, friday: dt.date, lookback: int = 200) -> O
     return None
 
 
+# Aisha's intro line above the copy/paste script.
+_SCRIPT_INTRO = re.compile(r"copy and paste", re.I)
+
+
+def find_script(replies: List[dict], anchor_ts: str) -> Optional[str]:
+    """The copy/paste message Aisha posts for leaders to send their new starts.
+
+    Structure she uses every week: an intro reply ("here is the message you want
+    to send... copy and paste and make edits on the X markings") immediately
+    followed by the script itself. So: find the intro, take the next reply from
+    the same person.
+
+    Worth pulling out because it lets the straggler texts CARRY the script.
+    Otherwise the text has to offer to send it on request -- and nothing reads
+    replies to Lucy's number, so that promise would never be kept.
+    """
+    ordered = sorted(replies, key=lambda m: float(m["ts"]))
+    for i, msg in enumerate(ordered):
+        if msg["ts"] == anchor_ts:
+            continue
+        if not _SCRIPT_INTRO.search(_strip(msg.get("text", ""))):
+            continue
+        author = msg.get("user")
+        for nxt in ordered[i + 1:]:
+            if nxt.get("user") != author or nxt.get("subtype"):
+                continue
+            body = _strip(nxt.get("text", "")).strip()
+            if len(body) < 40 or MENTION_PATTERN.search(body):
+                continue  # a stray one-liner or a tag list, not the script
+            return body
+        return None
+    return None
+
+
 def find_our_rollcall(replies: List[dict]) -> Optional[dict]:
     """Lucy's own roll call, if it's already been posted this week."""
     for msg in replies:
@@ -164,4 +198,5 @@ def read_thread(friday: Optional[dt.date] = None, channel: str = CHANNEL_ID, cli
         "tagged": tagged,
         "confirmations": confirmations,
         "replies": replies,
+        "script": find_script(replies, anchor["ts"]),
     }

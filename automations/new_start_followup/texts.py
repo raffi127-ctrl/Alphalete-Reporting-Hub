@@ -23,19 +23,41 @@ from automations.swag_welcome.roster import pretty_phone
 CHANNEL_NAME = "#rafs-office-recruiting"
 
 
-def compose(status, monday) -> str:
-    """The nudge text. Kept short and specific -- it names the count so the
-    leader knows how many they owe without opening Slack."""
+def compose(status, monday, script: Optional[str] = None) -> str:
+    """The nudge text.
+
+    Two things it must do:
+      1. SAY IT'S LUCY. An unexpected text about new starts from an unknown
+         number reads like spam otherwise.
+      2. CARRY the copy/paste script rather than offering to send it. Nothing
+         reads replies to Lucy's number, so "let me know if you need it" would
+         be a promise nobody keeps -- the leader would sit waiting on an answer
+         that never comes. Including it up front removes the round trip.
+
+    Falls back to pointing at the Slack thread when the script can't be found,
+    which is still self-serve.
+    """
     name = (status.leader.name or "").split()[0] if status.leader.name else "there"
     owed = status.owed
     what = ("your new start" if owed == 1
             else "your {} new starts".format(owed) if owed else "your new starts")
-    return (
-        "Hey {name}! Quick reminder to text {what} starting Monday {m}/{d} — "
-        "then reply “Sent” in the new-starts thread in {ch} so we know "
-        "it's done. Let me know if you need the message to copy.".format(
-            name=name, what=what, m=monday.month, d=monday.day, ch=CHANNEL_NAME)
-    )
+
+    lines = [
+        "Hey {name}, it's Lucy! Quick reminder to text {what} starting "
+        "Monday {m}/{d} — then reply “Sent” in the new-starts thread in {ch} "
+        "so we know it's done.".format(
+            name=name, what=what, m=monday.month, d=monday.day, ch=CHANNEL_NAME),
+    ]
+    if script:
+        lines.append("")
+        lines.append("Here's the message to copy — just swap out the X's:")
+        lines.append("")
+        lines.append(script)
+    else:
+        lines.append("")
+        lines.append("The message to copy is in that same thread in {}.".format(
+            CHANNEL_NAME))
+    return "\n".join(lines)
 
 
 class Outcome:
@@ -88,8 +110,9 @@ def run(rec, send: bool = False) -> List[Outcome]:
                 "Messages isn't ready on this machine ({}). These texts have to "
                 "go from Lucy 1.".format(why))
 
+    script = (rec.thread or {}).get("script")
     for status in pending:
-        text = compose(status, rec.monday)
+        text = compose(status, rec.monday, script=script)
         phone = status.leader.phone
         if not phone:
             # No number is a REPORTED gap, not a silent skip -- otherwise a
