@@ -589,9 +589,21 @@ def _probe_churn_crosstab(page, rec, key, spec) -> None:
         rec("    " + " | ".join(str(c or "")[:18] for c in r[:9]))
 
 
+# Megan-supplied 2026-07-20. "CarlosLOExpCancels" = Carlos Local Office EXPanded
+# Cancels — the same naming family as the D2D per-owner cancel views
+# (RafExpanded / RashadExpanded / AyaExpanded), which is a good sign it is the
+# structural twin the ongoing_cancel parser already understands.
+#
+# I had guessed the BARE B2BCancelRates view instead, off the carlos source map,
+# and reasoned there was no per-owner cancel view because none appeared in the
+# probe's custom-view list. That list was scoped to the ORDERLOG sheet, so it
+# could never have shown a cancel view — the absence proved nothing. Worth
+# remembering: "I did not see it" is not "it does not exist" when the place you
+# looked could not have contained it.
 CANCEL_VIEW_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
-    "ATTTRACKER-B2B/B2BCancelRates?:iid=1"
+    "ATTTRACKER-B2B/B2BCancelRates/3e58bc13-abea-4563-9481-360d0b9759ed/"
+    "CarlosLOExpCancels?:iid=1"
 )
 # The D2D module's worksheet name, tried first. If B2B names it differently the
 # dialog's error lists the real options.
