@@ -22,8 +22,21 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Monday 7:00am, machine LOCAL time (Lucy 2 is Central). launchd
-         Weekday: 0/7=Sun, 1=Mon … 6=Sat. -->
+    <!-- Monday 7:20am, machine LOCAL time (Lucy 2 is Central). launchd
+         Weekday: 0/7=Sun, 1=Mon … 6=Sat.
+
+         WHY 7:20 AND NOT 7:00: three browser reports on Lucy 2 fired at 7:00
+         and they all share one Chrome profile (automations/uploaded/
+         .browser_profile) — BOX Order Log, Vantura Churn, and this. Only one
+         can hold it; the losers get "Opening in existing browser session" and
+         die after a 4x8s retry budget. That killed this report on 2026-07-20:
+         BOX took the profile 07:00:00-07:05:50, this started 07:00:05, waited
+         32s and gave up. chrome_guard does NOT help — it protects automation
+         Chrome by design and only closes a human's browser.
+         7:20 clears BOX (~07:06) and Vantura (~07:12). Sales Boards runs 7:16
+         but uses no browser, so it does not contend.
+         If BOX or Vantura ever get slower, move this later — don't shorten
+         theirs. -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Weekday</key>
@@ -31,7 +44,7 @@
         <key>Hour</key>
         <integer>7</integer>
         <key>Minute</key>
-        <integer>0</integer>
+        <integer>20</integer>
     </dict>
 
     <key>StandardOutPath</key>

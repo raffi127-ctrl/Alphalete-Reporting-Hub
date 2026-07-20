@@ -1,5 +1,5 @@
 #!/bin/bash
-# Monday 7:00am CST — Carlos Captainship Headcount, on Lucy 2 (Carlos's laptop)
+# Monday 7:20am CST — Carlos Captainship Headcount, on Lucy 2 (Carlos's laptop)
 # via launchd (com.alphalete.carlos-captainship-headcount-mon).
 #
 # Inserts a fresh leftmost week column on the "Captainship Head count" tab of the
@@ -12,15 +12,19 @@
 # Tableau reports use. Lucy 2 must have a seeded + holder-warmed Tableau session —
 # one-time seed: python -m automations.shared.tableau_patchright --login.
 #
-# 7:00am CST is before the Fiber/NDS/B2B "This Week" filter rolls to the new week
-# (the module defaults to _current_we_sunday = last completed week, so Monday's
-# run fills yesterday's Sunday column).
+# The morning slot is before the Fiber/NDS/B2B "This Week" filter rolls to the
+# new week (the module defaults to _current_we_sunday = last completed week, so
+# Monday's run fills yesterday's Sunday column). Moving 7:00 -> 7:20 on
+# 2026-07-20 does not affect that — the week is pinned explicitly, not read off
+# the live filter.
 #
 # Manual test without writing:  bash deploy/carlos_captainship_headcount_mon.sh --dry-run
 # (--dry-run passes through to the module — pulls + shows the plan, writes nothing.)
 #
-# CADENCE: the plist fires once, Monday 7:00am, machine LOCAL time (Lucy 2 is
+# CADENCE: the plist fires once, Monday 7:20am, machine LOCAL time (Lucy 2 is
 # Central). TIME KNOB: edit StartCalendarInterval in the plist, not this wrapper.
+# Do NOT move this back to 7:00 — BOX Order Log and Vantura Churn both fire then
+# and all three share one Chrome profile. See the plist comment for the full why.
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
@@ -38,7 +42,7 @@ export PYTHONPATH="$(pwd)"
 LOG_FILE="$LOG_DIR/carlos-captainship-headcount-mon-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] Carlos Captainship Headcount weekly run starting (extra args: ${*:-none})" > "$LOG_FILE"
 
-# 7:00am is OUTSIDE the 4am chrome_guard window, so close any stray human Chrome
+# 7:20am is OUTSIDE the 4am chrome_guard window, so close any stray human Chrome
 # here before the Tableau pull. Without this the run dies instantly with
 # "Opening in existing browser session" whenever anything else holds the Chrome
 # profile — it retried 4x/8s then failed on 2026-07-20. The orchestrator and the
