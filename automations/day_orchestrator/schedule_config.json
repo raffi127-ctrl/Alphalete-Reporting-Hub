@@ -2633,8 +2633,8 @@
       }
     },
     "att_order_log": {
-      "on_scheduler": false,
-      "_off_scheduler_note": "Carlos's ATT B2B Order Log -> the 'Lucy At&t Order Log' tab on the Vantura Master Sales Board (requested 2026-07-19 via Loom + Slack; the ATT counterpart to box_order_log). PREPARED 2026-07-20 for Lucy 2's 4am orchestrator flow but NOT YET ACTIVE — on_scheduler stays false until the standalone com.alphalete.att-order-log agent can be disabled (no remote uninstall exists yet; activating both = a double-run). The flow fields are staged and validated: source_type tableau (runs appstream-first-then-tableau via run_order), cadence.not_before 05:00 (fires on the clock like the standalone — NO real tableau:order_log freshness probe yet; that's Layer 2), base_args --sheet so the batch WRITES (the module dry-runs by default). TO CUT OVER: (1) disable the standalone agent on Lucy 2, (2) flip on_scheduler true, (3) deploy + confirm at next 4am. Megan asked for 5:30am CST, but 5:30/5:38/5:46/5:54 is b2b_quality's retry ladder and that job MUST finish by 6:00 (Sales Boards starts 6:00, VA posts ~5:57) — this pull is ~7min on a 120MB export plus a full Chrome-profile copy, so 5:00am is recommended instead; the LaunchAgent is NOT installed until she picks. Present so `lucy rerun att_order_log` (dry) and `lucy rerun att_order_log --sheet` (writes) work. Pulls ATTTRACKER-B2B/ORDERLOG via the DIRECT authenticated .csv — NOT cdp_pull.probe(), which ignores its url/out arguments, hardcodes the bare view and cost a run on 2026-07-19. Un-pivots the per-measure fan-out (every sale is emitted once per measure, 4x; compute.load_orderlog does NOT collapse this) and filters to Carlos. DRY-RUN by default; --sheet writes. MUST RUN ON LUCY 2 (Carlos's Tableau identity); a laptop pull evicts the mini's ownerville session holder. Writes only its own two tabs (PROTECTED_TABS guard). Does NOT post to Slack.",
+      "on_scheduler": true,
+      "_off_scheduler_note": "Carlos's ATT B2B Order Log -> the 'Lucy At&t Order Log' tab on the Vantura Master Sales Board (requested 2026-07-19 via Loom + Slack; the ATT counterpart to box_order_log). CUT OVER 2026-07-20 to Lucy 2's 4am orchestrator flow (first report migrated). on_scheduler:true; runs appstream-first-then-tableau via run_order; source_type tableau. cadence.not_before 05:00 gates it to the 05:00 clock like the standalone did — NO real tableau:order_log freshness probe yet (that's Layer 2; it does NOT run when the extract refreshes). base_args --sheet so the batch WRITES (the module dry-runs by default — the silent-no-op trap). The standalone com.alphalete.att-order-log agent was RETIRED on Lucy 2 (disable_att_order_log_agent) so it does not double-run; ROLL BACK with `lucy rerun install_att_order_log_agent --machine \"Lucy 2\"` (+ flip this on_scheduler false). Megan asked for 5:30am CST, but 5:30/5:38/5:46/5:54 is b2b_quality's retry ladder and that job MUST finish by 6:00 (Sales Boards starts 6:00, VA posts ~5:57) — this pull is ~7min on a 120MB export plus a full Chrome-profile copy, so 5:00am is recommended instead; the LaunchAgent is NOT installed until she picks. Present so `lucy rerun att_order_log` (dry) and `lucy rerun att_order_log --sheet` (writes) work. Pulls ATTTRACKER-B2B/ORDERLOG via the DIRECT authenticated .csv — NOT cdp_pull.probe(), which ignores its url/out arguments, hardcodes the bare view and cost a run on 2026-07-19. Un-pivots the per-measure fan-out (every sale is emitted once per measure, 4x; compute.load_orderlog does NOT collapse this) and filters to Carlos. DRY-RUN by default; --sheet writes. MUST RUN ON LUCY 2 (Carlos's Tableau identity); a laptop pull evicts the mini's ownerville session holder. Writes only its own two tabs (PROTECTED_TABS guard). Does NOT post to Slack.",
       "display_name": "ATT B2B Order Log -> Sheet",
       "source_type": "tableau",
       "data_sources": [
@@ -2665,6 +2665,29 @@
       "data_sources": [],
       "command": [
         "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "att-order-log"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 2"
+    },
+    "disable_att_order_log_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun disable_att_order_log_agent --machine \"Lucy 2\"` can RETIRE the standalone com.alphalete.att-order-log LaunchAgent on Lucy 2 — the inverse of install_att_order_log_agent. Needed to cut att_order_log over to the 4am orchestrator flow without a double-run (flow at 05:00 + standalone at 05:00). Race-free bootout + stashes the plist as .plist.disabled; reversible via `lucy rerun install_att_order_log_agent`. Read-only w.r.t. any Sheet/report data.",
+      "display_name": "Disable ATT Order Log standalone agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.disable_agent"
       ],
       "base_args": [
         "att-order-log"
