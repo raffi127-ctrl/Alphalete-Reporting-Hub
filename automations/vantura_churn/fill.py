@@ -42,8 +42,38 @@ U_FORMULA = ('=IFERROR(${rem}{r}/IF(${key}{r}="Wireless",$B$5,'
 AC_FORMULA = ('=IFERROR(VLOOKUP(${cust}{r},${n0}$100:${n1}$500,2,FALSE),"")')
 
 CENTER = {"horizontalAlignment": "CENTER"}
-# The tab's header navy (sampled from the 'Days Left' header row).
-HEADER_BG = {"red": 0.09803922, "green": 0.23529412, "blue": 0.39607844}
+
+
+def _rgb(hexstr: str) -> dict:
+    h = hexstr.lstrip("#")
+    return {"red": int(h[0:2], 16) / 255, "green": int(h[2:4], 16) / 255,
+            "blue": int(h[4:6], 16) / 255}
+
+
+# ---------------------------------------------------------------- palette
+# One cohesive scheme for the churn tab (Megan 2026-07-19: "more aesthetic and
+# better to look at"). Three deliberate levels of hierarchy, all in the navy
+# family so the status colours are the only thing that shouts:
+#   NAVY      page + column headers   (the tab's existing identity colour)
+#   NAVY_MID  section headers         (was a loud #B6D7A8 green that fought it)
+#   SLATE     sub-headers             (pale, lets the tier ramp read)
+# The status ramp is the same hues as before, desaturated — a scale people
+# scan every morning shouldn't be neon.
+NAVY = "#193C65"
+NAVY_MID = "#3E6491"
+SLATE = "#E3EAF2"
+GREEN = "#A9D18E"
+GREEN_PALE = "#CBE3B7"
+AMBER = "#FFE08A"
+PEACH = "#F8CB9B"
+ROSE = "#F2A9A9"
+RED_DEEP = "#CC6A70"
+
+HEADER_BG = _rgb(NAVY)
+WHITE_TEXT = {"foregroundColor": {"red": 1, "green": 1, "blue": 1}}
+# Best → worst. The Wireless chart has 6 tiers, AIR/AWB has 5.
+TIER_RAMP_6 = [GREEN, GREEN_PALE, AMBER, PEACH, ROSE, RED_DEEP]
+TIER_RAMP_5 = [GREEN, GREEN_PALE, AMBER, ROSE, RED_DEEP]
 
 
 def open_sheet():
@@ -108,10 +138,8 @@ BANDS = {
     "0-30": [(0.75, "green"), (0.65, "yellow"), (0.0, "red")],
     "31-60": [(0.80, "green"), (0.70, "yellow"), (0.0, "red")],
 }
-# Match the tiers chart already on the tab.
-BAND_BG = {"green": {"red": 0.576, "green": 0.769, "blue": 0.490},
-           "yellow": {"red": 1.0, "green": 0.851, "blue": 0.400},
-           "red": {"red": 0.878, "green": 0.400, "blue": 0.400}}
+# Same hues as the tiers chart so the whole tab reads as one scale.
+BAND_BG = {"green": _rgb(GREEN), "yellow": _rgb(AMBER), "red": _rgb(ROSE)}
 
 def rep_list_col(ws: gspread.Worksheet) -> int:
     """0-based column for the per-rep list: just right of the helper block.
@@ -240,6 +268,171 @@ def _colletter(ci: int) -> str:
         ci, r = divmod(ci - 1, 26)
         s = chr(65 + r) + s
     return s
+
+
+def apply_theme(ws: gspread.Worksheet, log=print) -> None:
+    """Restyle the churn tab's header + tiers chart to the palette above.
+
+    Scope is deliberately limited: the ROLLOFF LIST (the "orders part") and
+    its conditional 7-day red flag are NOT touched — that colour carries
+    meaning and Megan asked for it left alone. Neither are the tier NUMBER
+    and impact columns, which carry manual highlighting.
+
+    Everything is located by LABEL, not fixed cells — the tiers chart has
+    already moved once when columns were inserted.
+    """
+    grid = _retry(lambda: ws.get("A1:R14"))
+    hdr_row = None
+    tier_cols = []          # (col_idx, n_tiers) for each "Churn Tiers …" block
+    for ri, row in enumerate(grid, start=1):
+        for ci, val in enumerate(row):
+            s = str(val or "").strip()
+            if s.startswith("Churn Tiers"):
+                tier_cols.append((ci, ri))
+            if s == "Tier":
+                hdr_row = ri
+    if not tier_cols or hdr_row is None:
+        log("  ⚠ theme skipped: couldn't find the 'Churn Tiers' chart by label")
+        return
+
+    reqs = []
+
+    def bg(r0, r1, c0, c1, colour, text=None):
+        cell = {"backgroundColor": _rgb(colour)}
+        fields = "userEnteredFormat.backgroundColor"
+        if text:
+            cell["textFormat"] = text
+            fields += ",userEnteredFormat.textFormat"
+        reqs.append({"repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": r0, "endRowIndex": r1,
+                      "startColumnIndex": c0, "endColumnIndex": c1},
+            "cell": {"userEnteredFormat": cell}, "fields": fields}})
+
+    # Section headers ("Churn Tiers Wireless" / "… AIR & AWB") — mid navy,
+    # white text, so they sit UNDER the page header rather than competing.
+    for ci, ri in tier_cols:
+        bg(ri - 1, ri + 1, ci, ci + 4, NAVY_MID, dict(WHITE_TEXT, bold=True))
+    # Sub-header row ("Tier | 0-30 Day | … Impact") — pale slate, dark text.
+    first_c = min(c for c, _ in tier_cols)
+    last_c = max(c for c, _ in tier_cols) + 4
+    bg(hdr_row - 1, hdr_row, first_c, last_c, SLATE,
+       {"bold": True, "foregroundColor": _rgb(NAVY)})
+
+    # The percentage bands themselves, best → worst. Column of each block is
+    # its "0-30 Day" column = the tier column + 1.
+    for ci, _ri in tier_cols:
+        pct_col = ci + 1
+        n = sum(1 for r in grid[hdr_row:hdr_row + 8]
+                if len(r) > pct_col and str(r[pct_col] or "").strip())
+        ramp = TIER_RAMP_6 if n >= 6 else TIER_RAMP_5
+        for k in range(min(n, len(ramp))):
+            bg(hdr_row + k, hdr_row + k + 1, pct_col, pct_col + 1, ramp[k])
+
+    # ------------------------------------------------ the filter control
+    # Megan 2026-07-19: "it's very hard to see where you can choose what to
+    # filter by — needs to be very clear." It was plain white text in a plain
+    # white cell, indistinguishable from its own label. Give it an obvious
+    # input-box affordance: slate fill, thick navy border, and a spelled-out
+    # label + hint either side. Cell derived, never assumed.
+    target = viewing_cell(ws)                       # e.g. "B3"
+    tcol = _col_idx(re.match(r"([A-Z]{1,2})", target).group(1))
+    trow = int(re.search(r"(\d+)", target).group(1))
+    navy_border = {"style": "SOLID_THICK", "color": _rgb(NAVY)}
+
+    reqs.append({"repeatCell": {
+        "range": {"sheetId": ws.id, "startRowIndex": trow - 1,
+                  "endRowIndex": trow, "startColumnIndex": tcol,
+                  "endColumnIndex": tcol + 1},
+        "cell": {"userEnteredFormat": {
+            "backgroundColor": _rgb(SLATE),
+            "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE",
+            "textFormat": {"bold": True, "fontSize": 12,
+                           "foregroundColor": _rgb(NAVY)},
+            "borders": {"top": navy_border, "bottom": navy_border,
+                        "left": navy_border, "right": navy_border}}},
+        "fields": "userEnteredFormat.backgroundColor,"
+                  "userEnteredFormat.horizontalAlignment,"
+                  "userEnteredFormat.verticalAlignment,"
+                  "userEnteredFormat.textFormat,userEnteredFormat.borders"}})
+    # Label to its left, hint to its right — both plain so the control is the
+    # only thing that looks clickable.
+    if tcol > 0:
+        reqs.append({"repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": trow - 1,
+                      "endRowIndex": trow, "startColumnIndex": tcol - 1,
+                      "endColumnIndex": tcol},
+            "cell": {"userEnteredFormat": {
+                "horizontalAlignment": "RIGHT",
+                "textFormat": {"bold": True, "fontSize": 11,
+                               "foregroundColor": _rgb(NAVY)}}},
+            "fields": "userEnteredFormat.horizontalAlignment,"
+                      "userEnteredFormat.textFormat"}})
+    reqs.append({"repeatCell": {
+        "range": {"sheetId": ws.id, "startRowIndex": trow - 1,
+                  "endRowIndex": trow, "startColumnIndex": tcol + 1,
+                  "endColumnIndex": tcol + 2},
+        "cell": {"userEnteredFormat": {
+            "horizontalAlignment": "LEFT",
+            "textFormat": {"italic": True, "fontSize": 10,
+                           "foregroundColor": _rgb("#6B7C93")}}},
+        "fields": "userEnteredFormat.horizontalAlignment,"
+                  "userEnteredFormat.textFormat"}})
+
+    # The tier-NUMBER columns carry a stray pale-peach fill on one cell
+    # (present on the live tab too, and it marks tier 6 while Carlos sits at
+    # tier 4 — decorative, not a marker). Flatten them so the ramp beside
+    # them is the only colour in the chart.
+    for ci, _ri in tier_cols:
+        bg(hdr_row, hdr_row + 6, ci, ci + 1, "#FFFFFF")
+
+    _retry(lambda: ws.spreadsheet.batch_update({"requests": reqs}))
+
+    # Spell out what the control does. The dropdown VALUE has to stay an exact
+    # member of the validation list (strict), so the wording goes in the cells
+    # either side of it, never in the control itself.
+    label_cell = f"{_colletter(tcol - 1)}{trow}" if tcol > 0 else None
+    hint_cell = f"{_colletter(tcol + 1)}{trow}"
+    # Label kept SHORT — column A is sized for "Days Left" and anything
+    # longer gets clipped at the sheet edge. The hint carries the detail.
+    text_updates = [{"range": hint_cell,
+                     "values": [["◀ pick a product to filter "
+                                 "the rolloff list below"]]}]
+    if label_cell:
+        text_updates.append({"range": label_cell, "values": [["Filter:"]]})
+    _retry(lambda: ws.batch_update(text_updates,
+                                   value_input_option="USER_ENTERED"))
+
+    # Churn % gradient rules still ran the old neon ramp
+    # (#6AA84F -> #FFD966 -> #990000). Re-point them at the palette, keeping
+    # each rule's own thresholds — those are per-product and load-bearing.
+    meta = _retry(lambda: ws.spreadsheet.fetch_sheet_metadata(
+        {"fields": "sheets(properties(sheetId),conditionalFormats)"}))
+    grad_reqs = []
+    for s in meta["sheets"]:
+        if s["properties"]["sheetId"] != ws.id:
+            continue
+        for idx, rule in enumerate(s.get("conditionalFormats", [])):
+            g = rule.get("gradientRule")
+            if not g:
+                continue
+            new = {k: dict(g[k]) for k in ("minpoint", "midpoint", "maxpoint")
+                   if k in g}
+            for k, colour in (("minpoint", GREEN), ("midpoint", AMBER),
+                              ("maxpoint", RED_DEEP)):
+                if k in new:
+                    # Set BOTH: the API returns the legacy `color` and the
+                    # newer `colorStyle`, and colorStyle WINS. Writing only
+                    # `color` leaves the old ramp in place with no error.
+                    new[k]["color"] = _rgb(colour)
+                    new[k]["colorStyle"] = {"rgbColor": _rgb(colour)}
+            grad_reqs.append({"updateConditionalFormatRule": {
+                "sheetId": ws.id, "index": idx,
+                "rule": {"ranges": rule["ranges"], "gradientRule": new}}})
+    if grad_reqs:
+        _retry(lambda: ws.spreadsheet.batch_update({"requests": grad_reqs}))
+
+    log(f"  ✓ {ws.title}: theme applied ({len(tier_cols)} tier block(s), "
+        f"{len(grad_reqs)} gradient rule(s), rolloff list untouched)")
 
 
 def hide_helper_columns(ws: gspread.Worksheet, log=print) -> bool:
@@ -442,6 +635,52 @@ def _reset_basic_filter(ws: gspread.Worksheet, n_rows: int) -> None:
     _retry(lambda: ws.spreadsheet.batch_update(body))
 
 
+# Row-relative references in the summary formulas: $R2, $S2, $T2 … $Y2.
+# Absolute ranges ($A$2:$A$500, $C$2:$C$500) must NOT be rewritten, so match
+# only "$<col><digits>" for the summary's own columns — a bare number regex
+# would happily corrupt "$A$2" and "$C$500".
+_SUMMARY_REF = re.compile(r"\$([R-Y])(\d+)")
+
+
+def dedupe_activation_summary(ws: gspread.Worksheet, log=print) -> int:
+    """Compact the per-rep summary (R:Y), keeping each rep's FIRST row.
+
+    The old R2:R40 lookup couldn't see past row 40, so reps below it were
+    re-appended on every run — the list reached 49 rows with duplicates and
+    gaps. update_activations() no longer creates them; this clears the ones
+    already there. Returns how many rows were removed.
+    """
+    last = ws.row_count
+    grid = _retry(lambda: ws.get(f"R2:Y{last}", value_render_option="FORMULA"))
+    seen, keep = set(), []
+    for row in grid:
+        name = str(row[0]).strip() if row else ""
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        keep.append(list(row) + [""] * (8 - len(row)))
+    if not keep:
+        log("  ⚠ summary is empty — nothing to dedupe")
+        return 0
+
+    old_last = 1 + len(grid)
+    block = []
+    for i, row in enumerate(keep):
+        rr = i + 2
+        block.append([row[0]] + [
+            _SUMMARY_REF.sub(lambda m: f"${m.group(1)}{rr}", str(c))
+            for c in row[1:8]])
+    _retry(lambda: ws.batch_update(
+        [{"range": f"R2:Y{len(block) + 1}", "values": block}],
+        value_input_option="USER_ENTERED"))
+    removed = old_last - (len(block) + 1)
+    if removed > 0:
+        _retry(lambda: ws.batch_clear([f"R{len(block) + 2}:Y{old_last}"]))
+    log(f"  ✓ {ws.title}: summary compacted to {len(block)} unique rep(s) "
+        f"({removed} duplicate/blank row(s) removed)")
+    return removed
+
+
 def update_activations(ws: gspread.Worksheet, rows: list[list],
                        log=print) -> None:
     # 1. Preserve notes keyed by SPM (col O → P).
@@ -479,13 +718,24 @@ def update_activations(ws: gspread.Worksheet, rows: list[list],
 
     # 5. Per-rep summary: a rep new to the data must exist in the R-column
     #    list or the summary total silently under-counts (runbook 6.5).
-    summary = _retry(lambda: ws.get("R2:R40"))
+    # Read the WHOLE column, not a fixed R2:R40 window. The list outgrew 40
+    # rows on 2026-07-19 and everything past it became invisible to this
+    # check: those reps looked "missing" and were re-appended on EVERY run,
+    # so the summary silently accumulated duplicates (Veimar Perez Rodriguez
+    # reached 3 copies) and the new rows landed on top of existing ones.
+    summary = _retry(lambda: ws.get(f"R2:R{ws.row_count}"))
     listed = {r[0].strip() for r in summary if r and r[0].strip()}
     data_reps = {str(r[0]).strip() for r in out if str(r[0]).strip()}
     missing = sorted(data_reps - listed)
     if missing:
-        first_empty = 2 + len([r for r in summary if r and r[0].strip()])
-        tmpl_row = first_empty - 1
+        # Position from the LAST populated row, not a count — a count is wrong
+        # the moment the column has a gap in it.
+        last_used = 1
+        for i, r in enumerate(summary, start=2):
+            if r and r[0].strip():
+                last_used = i
+        first_empty = last_used + 1
+        tmpl_row = last_used
         tmpl = _retry(lambda: ws.get(
             f"S{tmpl_row}:Y{tmpl_row}", value_render_option="FORMULA"))[0]
         updates = []

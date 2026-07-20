@@ -183,6 +183,10 @@ def main(argv=None) -> int:
     ap.add_argument("--post", action="store_true",
                     help="with --shot, POST the PNG to the Activations "
                          "order-log channel. Off by default.")
+    ap.add_argument("--theme", action="store_true",
+                    help="restyle Carlos's churn tab (header, tiers chart, "
+                         "filter control) and exit. Aesthetic only — NOT part "
+                         "of the daily run, so manual highlights survive.")
     ap.add_argument("--carlos-only", action="store_true",
                     help="Carlos's churn tab only — skip Atef + Activations.")
     args = ap.parse_args(argv)
@@ -196,6 +200,10 @@ def main(argv=None) -> int:
         from automations.vantura_churn import cdp_pull
         cdp_pull.probe_activation_rates(log=log,
                                         view_url=args.probe_activations_url)
+        return 0
+    if args.theme:
+        ws = fill.open_sheet().worksheet(fill.TAB_CHURN_CARLOS)
+        fill.apply_theme(ws, log=log)
         return 0
     owners = [o for o in OWNER_CFG
               if args.owner in ("both", o[0])]

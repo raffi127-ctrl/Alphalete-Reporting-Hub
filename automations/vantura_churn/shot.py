@@ -39,17 +39,20 @@ def _access_token() -> str:
     return creds.token
 
 
-def visible_range(ws, helper_first_col: str = "R") -> str:
-    """A1 range covering the visible block: columns A..(col before the hidden
-    helper block), rows 1..(last row of the rolloff list + a small margin).
+def visible_range(ws, helper_first_col: str = None) -> str:
+    """A1 range covering the report block: columns A..(col before the helper
+    block), rows 1..last populated.
 
-    Derived, not hardcoded — the helper block's start and the list's extent
-    both move as the layout changes.
+    The helper column is DERIVED from the tab's own formulas by default — it
+    moves when a column is inserted or removed, and a stale constant here
+    silently reframes the shot. Bounded by the widest visible column, not
+    column A: A holds a FILTER whose spill is one row (or #N/A) when there
+    are no disconnects, which would crop the whole table out.
     """
-    last_col = chr(ord(helper_first_col) - 1)
-    # Bound by the widest visible column, not column A: A holds a FILTER whose
-    # spill is one row (or #N/A) when there are no disconnects, which would
-    # crop the tiers chart and the whole rolloff table out of the shot.
+    from automations.vantura_churn import fill
+    if helper_first_col is None:
+        helper_first_col = fill._colletter(fill.helper_bounds(ws)["f0"])
+    last_col = fill._colletter(fill._col_idx(helper_first_col) - 1)
     grid = ws.get(f"{FIRST_COL}1:{last_col}{ws.row_count}")
     last_row = 0
     for i, row in enumerate(grid, start=1):
@@ -118,15 +121,16 @@ def render(ws, out_path: Path, rng: str | None = None) -> Path:
     return out_path
 
 
-def render_report(ws, out_path: Path, helper_first_col: str = "R",
-                  rep_col: str = "AG", log=print) -> Path:
+def render_report(ws, out_path: Path, helper_first_col: str = None,
+                  rep_col: str = None, log=print) -> Path:
     """The whole report as ONE image: churn block + the per-rep list.
 
     ONE range covers both: the PDF export omits columns hidden on the tab, so
-    the helper block (R:AE) drops out of the middle by itself and the rep
-    list lands right next to the churn block. That only holds while R:AE are
+    the helper block drops out of the middle by itself and the rep list lands
+    right next to the churn block. That only holds while those columns are
     actually hidden — a freshly duplicated tab does NOT inherit the hidden
-    state, so fill.hide_helper_columns() runs before this.
+    state, so fill.hide_helper_columns() runs before this. Both the helper
+    and rep-list columns are derived, never assumed.
     """
     reps_rng = _rep_range(ws, rep_col)
     main_rng = visible_range(ws, helper_first_col)
@@ -146,9 +150,16 @@ def _range_rows(rng: str):
     return (int(m.group(2)) - int(m.group(1)) + 1) if m else None
 
 
-def _rep_range(ws, rep_col: str):
-    """A1 range of the per-rep list, or None when it hasn't been written."""
+def _rep_range(ws, rep_col: str = None):
+    """A1 range of the per-rep list, or None when it hasn't been written.
+
+    Column derived from the helper block by default — a constant goes stale
+    the moment a column is inserted or removed.
+    """
     import gspread.utils as _u
+    from automations.vantura_churn import fill
+    if rep_col is None:
+        rep_col = fill._colletter(fill.rep_list_col(ws))
     c0 = _u.a1_to_rowcol(f"{rep_col}1")[1]
     last_col = _u.rowcol_to_a1(1, c0 + 2).rstrip("1")
     vals = ws.get(f"{rep_col}1:{last_col}{ws.row_count}")
