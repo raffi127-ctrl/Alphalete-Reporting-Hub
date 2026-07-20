@@ -180,6 +180,22 @@ def _fill(key: str, spec: dict, parsed: dict, today: dt.date, log=print) -> None
     fill_mod.write_today(ws, sections, today, parsed, logfn=log)
     log("  [{}] wrote {}".format(key, fill_mod._date_label(today)))
 
+    # POST-WRITE PASS — the reason the first fill landed data but no
+    # red/yellow/green (Megan 2026-07-20, wireless tab all-purple). write_today
+    # only puts the numbers down; the D2D runner (automations/churn/run.py) then
+    # runs this whole sequence to sort, format, and COLOUR the pct cells. Same
+    # order, all re-exported by the fill module. Skipping it is why the churn
+    # % cells had no threshold colour.
+    fill_mod.unhide_all_rep_rows(ws, sections, logfn=log)
+    sections = fill_mod.find_sections(ws)          # unhide can shift nothing,
+    fill_mod.apply_rep_row_format(ws, sections, logfn=log)   # but be safe
+    fill_mod.apply_pct_direct_colors(ws, sections, parsed, logfn=log)
+    fill_mod.apply_units_white_override(ws, sections, logfn=log)
+    fill_mod.clear_empty_cell_backgrounds(ws, sections, logfn=log)
+    fill_mod.hide_blanks_today(ws, sections, logfn=log)
+    fill_mod.hide_after_5_zero_pulls(ws, sections, logfn=log)
+    log("  [{}] formatted (sort + threshold colours + hide)".format(key))
+
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="att_order_log.churn_run")
