@@ -90,11 +90,15 @@ def audit(write: bool, log=_log) -> int:
                 continue
             for m in RANGE_TOK.finditer(c):
                 a, b = int(m.group(1)), int(m.group(2))
-                if a in (5, 6) and 40 <= b <= 100 and b != last_rep:
+                # start-drift (top-inserted rows push 5 -> 6/7/...) is just as
+                # real as end-drift — 2026-07-20 the whole % box read 7:68
+                if 5 <= a <= 20 and 40 <= b <= 100 and (a != 5
+                                                        or b != last_rep):
                     findings.append(
                         f"STATS-RANGE DRIFT: formula on board r{i} covers rows "
-                        f"{a}:{b} but the rep block ends at r{last_rep} — "
-                        "summary counts are excluding reps again.")
+                        f"{a}:{b} but the rep block is 5:{last_rep} — "
+                        "summary counts are excluding reps again. Run "
+                        "Alphalete > Realign / Health Check.")
                     break
             else:
                 continue
