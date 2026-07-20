@@ -658,6 +658,66 @@
       "depends_on": [],
       "verify": null
     },
+    "install_new_start_rollcall_agent": {
+      "on_scheduler": true,
+      "_note": "MANUAL: `lucy rerun install_new_start_rollcall_agent` installs com.alphalete.new-start-followup-rollcall (Sat 8:00am CST). Lucy posts the roll call tagging every 2nd-round interviewer who has a Monday new start — this replaced Aisha's hand-typed 8am tag list on 7/19/2026 because hers was missing people. Idempotent: no-ops if a roll call is already in the thread. weekdays [] = manual only.",
+      "display_name": "Install New-Start roll call agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "new-start-followup-rollcall"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
+    "install_new_start_nudge_agent": {
+      "on_scheduler": true,
+      "_note": "MANUAL: `lucy rerun install_new_start_nudge_agent` installs com.alphalete.new-start-followup-sat (Sat 10:00 / 13:00 / 17:00 CST). Reminds only the leaders who still haven't replied 'Sent'. weekdays [] = manual only.",
+      "display_name": "Install New-Start Saturday nudge agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "new-start-followup-sat"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
+    "install_new_start_checklist_agent": {
+      "on_scheduler": true,
+      "_note": "MANUAL: `lucy rerun install_new_start_checklist_agent` installs com.alphalete.new-start-followup-sun (Sun 13:00 CST). Posts the numbered checklist Raf used to build by hand. weekdays [] = manual only.",
+      "display_name": "Install New-Start Sunday checklist agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "new-start-followup-sun"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
     "morning_diag": {
       "on_scheduler": true,
       "_note": "MANUAL-ONLY diagnostic (weekdays [] -> never auto-runs). `lucy rerun morning_diag` prints, from the mini, when the 4am launchd orchestrator ACTUALLY started (from its per-run log filename: ~04:00 = mini awake, so the ~6am report delay is the AppStream session; ~06:00 = mini was asleep and launchd deferred the job) + pmset wake schedule/sleep timer + daily_focus attempt/fail count. Built 2026-07-06 to diagnose why AppStream/recruiting reports land ~6am not 4am.",
