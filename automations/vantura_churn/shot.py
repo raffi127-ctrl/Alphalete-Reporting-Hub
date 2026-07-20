@@ -170,15 +170,20 @@ def _rep_range(ws, rep_col: str = None):
     # 3 columns to 2 (0-30 only) on 2026-07-20, so scan a small window and
     # stop at the last column/row that holds anything.
     vals = ws.get(f"{rep_col}1:{fill._colletter(c0 + 3)}{ws.row_count}")
-    last_row = last_col_i = 0
+    first_row = last_row = last_col_i = 0
     for i, row in enumerate(vals, start=1):
         for j, c in enumerate(row):
             if str(c).strip():
+                if not first_row:
+                    first_row = i
                 last_row = i
                 last_col_i = max(last_col_i, c0 + j)
-    if last_row <= 1:
+    # Start at the first populated row, not row 1 — the list is anchored well
+    # below the top of the sheet, and starting at 1 would frame ~14 blank rows.
+    if not first_row or last_row <= first_row:
         return None
-    return f"{rep_col}1:{fill._colletter(last_col_i)}{last_row}"
+    return (f"{rep_col}{first_row}:"
+            f"{fill._colletter(last_col_i)}{last_row}")
 
 
 def post(png: Path, day: dt.date | None = None, thread_ts: str | None = None,

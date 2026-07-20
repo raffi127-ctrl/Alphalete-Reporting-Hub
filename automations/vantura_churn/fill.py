@@ -151,6 +151,22 @@ def rep_list_col(ws: gspread.Worksheet) -> int:
     return b["f0"] + H_WIDTH + REP_GAP - 1
 
 
+def rep_list_row(ws: gspread.Worksheet) -> int:
+    """1-based row where the per-rep list starts, aligned with the rolloff
+    table's header so it sits BELOW the churn overview.
+
+    Starting at row 1 made the top rep rows share the overview's tall,
+    wrapped header row (row 4 = 'Activation Rate' on two lines), which read
+    as blank gaps in the list. Anchored to the 'Days Left' header instead —
+    found by label, not hardcoded — so it clears every tall row above it.
+    """
+    col_a = _retry(lambda: ws.col_values(1))
+    for i, v in enumerate(col_a, start=1):
+        if str(v).strip() == "Days Left":
+            return i
+    return 15  # layout fallback
+
+
 def band_for(rate, which: str) -> str:
     """Colour name for a rate under `which` band set, or None when blank."""
     if rate is None:
@@ -496,11 +512,14 @@ def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
         rows.append([rep, _pct(v["0-30"])])
     rep_c0 = rep_list_col(ws)
     rep_first = _colletter(rep_c0)
-    end = len(rows)
+    r0 = rep_list_row(ws)            # 1-based header row
+    hdr_i = r0 - 1                   # 0-based header row
+    end = r0 - 1 + len(rows)         # 1-based last data row
 
-    # Wipe the OLD block first — it was 3 columns wide (0-30 + 31-60) and
-    # could be longer than the new list, so both the dropped 31-60 column and
-    # any surplus rows must clear (values AND their band fills).
+    # Wipe the OLD block first — it was 3 columns wide (0-30 + 31-60), started
+    # at row 1, and could be longer than the new list. Clear the whole column
+    # region (values AND band fills) so the dropped 31-60 column, the old
+    # top-anchored rows, and any surplus rows all go.
     old_end = _colletter(rep_c0 + 2)
     _retry(lambda: ws.batch_clear(
         [f"{rep_first}1:{old_end}{ws.row_count}"]))
@@ -511,7 +530,7 @@ def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
         "cell": {"userEnteredFormat": {}}, "fields": "userEnteredFormat"}}]}))
 
     _retry(lambda: ws.batch_update(
-        [{"range": f"{rep_first}1:{_colletter(rep_c0 + 1)}{end}",
+        [{"range": f"{rep_first}{r0}:{_colletter(rep_c0 + 1)}{end}",
           "values": rows}], value_input_option="USER_ENTERED"))
 
     def _bg(row0, col0, colour):
@@ -539,7 +558,7 @@ def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
 
     # Rep 0-30 column: percent, centred, banded.
     fmt_reqs.append({"repeatCell": {
-        "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": end,
+        "range": {"sheetId": ws.id, "startRowIndex": r0, "endRowIndex": end,
                   "startColumnIndex": rep_c0 + 1, "endColumnIndex": rep_c0 + 2},
         "cell": {"userEnteredFormat": {
             "numberFormat": {"type": "PERCENT", "pattern": "0.0%"},
@@ -549,7 +568,7 @@ def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
     for i, (_rep, v) in enumerate(ranked):
         c = band_for(v["0-30"]["rate"], "0-30")
         if c:
-            fmt_reqs.append(_bg(1 + i, rep_c0 + 1, c))
+            fmt_reqs.append(_bg(r0 + i, rep_c0 + 1, c))
     # Rate column fixed width; name column auto-fits (names run past 30 chars).
     fmt_reqs.append({"updateDimensionProperties": {
         "range": {"sheetId": ws.id, "dimension": "COLUMNS",
@@ -557,7 +576,8 @@ def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
         "properties": {"pixelSize": 120}, "fields": "pixelSize"}})
     # Header (navy / white / Arial 12), matching the tab's other headers.
     fmt_reqs.append({"repeatCell": {
-        "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1,
+        "range": {"sheetId": ws.id, "startRowIndex": hdr_i,
+                  "endRowIndex": hdr_i + 1,
                   "startColumnIndex": rep_c0, "endColumnIndex": rep_c0 + 2},
         "cell": {"userEnteredFormat": {
             "wrapStrategy": "WRAP", "horizontalAlignment": "CENTER",
@@ -574,7 +594,7 @@ def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
     # Rep-name cells: white fill (only the rate cells carry band colours),
     # left-aligned.
     fmt_reqs.append({"repeatCell": {
-        "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": end,
+        "range": {"sheetId": ws.id, "startRowIndex": r0, "endRowIndex": end,
                   "startColumnIndex": rep_c0, "endColumnIndex": rep_c0 + 1},
         "cell": {"userEnteredFormat": {
             "backgroundColor": {"red": 1, "green": 1, "blue": 1},
