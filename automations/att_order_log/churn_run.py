@@ -72,6 +72,19 @@ FEEDS = {
                 "ATTTRACKER-B2B/CHURNRATES/"
                 "1767636f-875a-40ac-ad39-a42cb894e428/CarloWireless?:iid=1"),
     },
+    # AIR added 2026-07-20. Carlos: "INT and AIR are looked at as separate
+    # products on B2B" and "yes" to a dedicated AIR churn tab. He saved the
+    # CarlosAIREXP view (Megan supplied the URL); scaffold tab "Lucy AIR Churn"
+    # already exists with AIR CHURN section labels, which find_sections matches
+    # the same as the other two (it keys off "CHURN" + "DAY", not the product).
+    "air": {
+        "label": "AIR Churn",
+        "tab": "Lucy AIR Churn",
+        "tab_env": "CHURN_AIR_TAB",
+        "url": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+                "ATTTRACKER-B2B/CHURNRATES/"
+                "ff3a70e2-872e-47cc-847b-6222f87bba26/CarlosAIREXP?:iid=1"),
+    },
 }
 
 
@@ -125,29 +138,22 @@ def _parse(adapted: Path, log=print) -> dict:
 
 
 def _fill(key: str, spec: dict, parsed: dict, today: dt.date, log=print) -> None:
-    """Write one tab through the D2D fill, pointed at Carlos's board."""
-    os.environ["CHURN_SHEET_ID"] = SHEET_ID
-    os.environ[spec["tab_env"]] = spec["tab"]
+    """Write one tab through the D2D fill, pointed at Carlos's board.
 
-    # Import AFTER the env is set: both modules read CHURN_SHEET_ID and the tab
-    # override at import time.
-    import importlib
+    Targets the board by SETTING THE MODULE'S CONSTANTS DIRECTLY rather than via
+    env-then-reload. The old path set os.environ + importlib.reload and trusted
+    the module to re-read at reload time; that is exactly the kind of implicit
+    coupling that fails silently, and all three feeds sat unfilled through
+    several runs. Setting the two attributes the fill actually reads
+    (SHEET_ID, TAB_LOCAL_OFFICE) leaves no room for a reload to be skipped or
+    for import order to matter. One shared fill module serves all three feeds —
+    wireless_churn.fill only re-exports new_internet_churn.fill, so there is no
+    per-product code to pick.
+    """
+    from automations.new_internet_churn import fill as fill_mod
 
-    from automations.new_internet_churn import fill as ni_fill
-    importlib.reload(ni_fill)
-    if key == "wireless":
-        from automations.wireless_churn import fill as wl_fill
-        importlib.reload(wl_fill)
-        fill_mod = wl_fill
-    else:
-        fill_mod = ni_fill
-
-    if fill_mod.SHEET_ID != SHEET_ID:
-        raise RuntimeError("fill module did not pick up CHURN_SHEET_ID")
-    if fill_mod.TAB_LOCAL_OFFICE != spec["tab"]:
-        raise RuntimeError(
-            "fill module targeting {!r}, expected {!r}".format(
-                fill_mod.TAB_LOCAL_OFFICE, spec["tab"]))
+    fill_mod.SHEET_ID = SHEET_ID
+    fill_mod.TAB_LOCAL_OFFICE = spec["tab"]
 
     ws = fill_mod.open_ws()
     sections = fill_mod.find_sections(ws)
