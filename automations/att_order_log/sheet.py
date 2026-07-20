@@ -257,34 +257,94 @@ HEADER_ROW = 8          # 1-based row of DISPLAY_LABELS in build_view_values
 FIRST_LOG_ROW = 9       # where the FILTER spills
 
 
+# --- header palette -------------------------------------------------------
+# Megan 2026-07-19: "change the colors of the sheet (not the orders part) to be
+# more aesthetic". Her hand-styled version had a blue title, a yellow Updated
+# bar, a pink Status block and a light-blue spacer — four unrelated hues
+# competing above the data. This is one family instead: a deep navy anchor, two
+# tints of the same blue-grey stepping down, and white gutters. It reads as a
+# single frame around the log rather than a stack of coloured bars, and it stays
+# out of the way of the green/yellow/red that carry meaning in the rows.
+NAVY = "#1C3A5E"        # title + column headers — the anchor
+SLATE = "#E4EAF1"       # control row (dropdowns)
+MIST = "#F2F5F9"        # status/count block — one step lighter than SLATE
+INK = "#2E4057"         # body text on the light tints
+MUTED = "#7A8A9A"       # the "Updated" timestamp — present, not shouting
+
+
 def _format_requests(view_id: int) -> List[dict]:
     ncol = len(DISPLAY_HEADERS)
     return [
-        # Title
+        # Title — merged across A:H (Megan's merge, preserved below).
         {"repeatCell": {
-            "range": {"sheetId": view_id, "startRowIndex": 0, "endRowIndex": 1},
+            "range": {"sheetId": view_id, "startRowIndex": 0, "endRowIndex": 1,
+                      "startColumnIndex": 0, "endColumnIndex": ncol},
             "cell": {"userEnteredFormat": {
-                "textFormat": {"bold": True, "fontSize": 14}}},
-            "fields": "userEnteredFormat.textFormat"}},
-        # Column header row
+                "backgroundColor": _rgb(NAVY),
+                "verticalAlignment": "MIDDLE",
+                "textFormat": {"bold": True, "fontSize": 14,
+                               "foregroundColor": _rgb("#FFFFFF")}}},
+            "fields": ("userEnteredFormat.backgroundColor,"
+                       "userEnteredFormat.verticalAlignment,"
+                       "userEnteredFormat.textFormat")}},
+        # Control row — dropdowns + live count.
+        {"repeatCell": {
+            "range": {"sheetId": view_id, "startRowIndex": 1, "endRowIndex": 2,
+                      "startColumnIndex": 0, "endColumnIndex": ncol},
+            "cell": {"userEnteredFormat": {
+                "backgroundColor": _rgb(SLATE),
+                "verticalAlignment": "MIDDLE",
+                "textFormat": {"bold": True, "fontSize": 11,
+                               "foregroundColor": _rgb(INK)}}},
+            "fields": ("userEnteredFormat.backgroundColor,"
+                       "userEnteredFormat.verticalAlignment,"
+                       "userEnteredFormat.textFormat")}},
+        # "Updated …" — muted, italic. It is provenance, not a headline; the
+        # yellow bar made it the loudest thing on the tab.
+        {"repeatCell": {
+            "range": {"sheetId": view_id, "startRowIndex": 2, "endRowIndex": 3,
+                      "startColumnIndex": 0, "endColumnIndex": ncol},
+            "cell": {"userEnteredFormat": {
+                "backgroundColor": _rgb("#FFFFFF"),
+                "textFormat": {"bold": False, "italic": True, "fontSize": 9,
+                               "foregroundColor": _rgb(MUTED)}}},
+            "fields": ("userEnteredFormat.backgroundColor,"
+                       "userEnteredFormat.textFormat")}},
+        # Status + Count block.
+        {"repeatCell": {
+            "range": {"sheetId": view_id, "startRowIndex": 4, "endRowIndex": 6,
+                      "startColumnIndex": 0, "endColumnIndex": ncol},
+            "cell": {"userEnteredFormat": {
+                "backgroundColor": _rgb(MIST),
+                "horizontalAlignment": "CENTER",
+                "textFormat": {"bold": True, "fontSize": 10,
+                               "foregroundColor": _rgb(INK)}}},
+            "fields": ("userEnteredFormat.backgroundColor,"
+                       "userEnteredFormat.horizontalAlignment,"
+                       "userEnteredFormat.textFormat")}},
+        # Left-align the two row labels in that block.
+        {"repeatCell": {
+            "range": {"sheetId": view_id, "startRowIndex": 4, "endRowIndex": 6,
+                      "startColumnIndex": 0, "endColumnIndex": 1},
+            "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
+            "fields": "userEnteredFormat.horizontalAlignment"}},
+        # Column header row — same navy as the title, so the frame closes.
         {"repeatCell": {
             "range": {"sheetId": view_id, "startRowIndex": HEADER_ROW - 1,
                       "endRowIndex": HEADER_ROW, "startColumnIndex": 0,
                       "endColumnIndex": ncol},
             "cell": {"userEnteredFormat": {
-                "textFormat": {"bold": True},
-                "backgroundColor": _rgb("#000000"),
-                "horizontalAlignment": "CENTER"}},
-            "fields": ("userEnteredFormat.textFormat,"
-                       "userEnteredFormat.backgroundColor,"
-                       "userEnteredFormat.horizontalAlignment")}},
-        {"repeatCell": {
-            "range": {"sheetId": view_id, "startRowIndex": HEADER_ROW - 1,
-                      "endRowIndex": HEADER_ROW, "startColumnIndex": 0,
-                      "endColumnIndex": ncol},
-            "cell": {"userEnteredFormat": {"textFormat": {
-                "bold": True, "foregroundColor": _rgb("#FFFFFF")}}},
-            "fields": "userEnteredFormat.textFormat"}},
+                "backgroundColor": _rgb(NAVY),
+                "horizontalAlignment": "CENTER",
+                "verticalAlignment": "MIDDLE",
+                "wrapStrategy": "WRAP",
+                "textFormat": {"bold": True, "fontSize": 10,
+                               "foregroundColor": _rgb("#FFFFFF")}}},
+            "fields": ("userEnteredFormat.backgroundColor,"
+                       "userEnteredFormat.horizontalAlignment,"
+                       "userEnteredFormat.verticalAlignment,"
+                       "userEnteredFormat.wrapStrategy,"
+                       "userEnteredFormat.textFormat")}},
         # Freeze the header + dropdowns so the log scrolls under them.
         {"updateSheetProperties": {
             "properties": {"sheetId": view_id, "gridProperties": {
@@ -293,7 +353,29 @@ def _format_requests(view_id: int) -> List[dict]:
         {"autoResizeDimensions": {"dimensions": {
             "sheetId": view_id, "dimension": "COLUMNS",
             "startIndex": 0, "endIndex": ncol}}},
-    ] + _date_format_requests(view_id) + _density_requests(view_id)
+    ] + _merge_requests(view_id) + _date_format_requests(view_id) \
+      + _density_requests(view_id)
+
+
+# Megan merged the title and the "Updated" line across A:H by hand
+# (2026-07-19). Re-created here so a rebuild restores them instead of quietly
+# dropping her layout — clear() leaves merges alone, but a tab rebuilt from
+# scratch would lose them. mergeType MERGE_ALL matches what she applied.
+_MERGE_ROWS = ((0, 1), (2, 3))     # title row, updated row (0-based, end-excl)
+_MERGE_COLS = (0, 8)               # A:H, her width
+
+
+def _merge_requests(view_id: int) -> List[dict]:
+    reqs: List[dict] = []
+    for r0, r1 in _MERGE_ROWS:
+        rng = {"sheetId": view_id, "startRowIndex": r0, "endRowIndex": r1,
+               "startColumnIndex": _MERGE_COLS[0],
+               "endColumnIndex": _MERGE_COLS[1]}
+        # Unmerge first: merging an already-merged range errors, and the run
+        # must be idempotent.
+        reqs.append({"unmergeCells": {"range": rng}})
+        reqs.append({"mergeCells": {"range": rng, "mergeType": "MERGE_ALL"}})
+    return reqs
 
 
 # Columns that are reference data rather than things Carlos scans. autoResize

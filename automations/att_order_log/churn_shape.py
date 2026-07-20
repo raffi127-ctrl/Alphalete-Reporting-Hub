@@ -49,6 +49,8 @@ RENAME: Dict[str, str] = {
 # Must survive the rename or the parse silently yields nothing.
 REQUIRED_AFTER = ("Rep Name", "0-30 Day Churn")
 
+OWNER_WIDE = "ICD Owner Name (rep)"     # post-rename name of the owner column
+
 
 def _norm(v) -> str:
     return "" if v is None else str(v).strip()
@@ -93,16 +95,61 @@ def write_crosstab(rows: Sequence[Sequence[str]], path: Path) -> Path:
     return path
 
 
+def normalize_owner(value: str) -> str:
+    """'CARLOS HIDALGO [alphalete specialized marketing inc(tx]' -> 'CARLOS HIDALGO'.
+
+    The D2D parser matches its owner slice by EXACT equality:
+
+        if (r[owner_i] or "").strip().upper() != slice_owner.upper(): continue
+
+    D2D's 'ICD Owner Name (rep)' is a bare name, so that works there. B2B's
+    'Owner & Office' is a composite 'NAME [company]' (and the member can carry
+    an embedded newline before the office suffix). Left as-is, every row fails
+    the comparison and the parse yields zero reps — which is exactly what the
+    first live run hit (2026-07-19). Strip to the person name so the existing
+    exact-match logic works untouched.
+    """
+    s = _norm(value).split("\n")[0]
+    if "[" in s:
+        s = s.split("[", 1)[0]
+    return s.strip()
+
+
+def normalize_owner_column(rows: List[list]) -> List[list]:
+    """Apply normalize_owner to every value in the owner column."""
+    if not rows:
+        return rows
+    hdr = [_norm(h) for h in rows[0]]
+    if OWNER_WIDE not in hdr:
+        return rows
+    oi = hdr.index(OWNER_WIDE)
+    out = [rows[0]]
+    for r in rows[1:]:
+        r = list(r)
+        if oi < len(r):
+            r[oi] = normalize_owner(r[oi])
+        out.append(r)
+    return out
+
+
 def adapt(src: Path, dest: Path) -> Dict[str, object]:
-    """Read the B2B crosstab, rename its header, write a D2D-shaped file."""
+    """Read the B2B crosstab, rename its header, normalize the owner column,
+    and write a D2D-shaped file."""
     rows = read_crosstab(src)
     renamed = rename_header(rows)
+    renamed = normalize_owner_column(renamed)
     write_crosstab(renamed, dest)
     hdr = renamed[0]
+    owners = []
+    if OWNER_WIDE in hdr:
+        oi = hdr.index(OWNER_WIDE)
+        owners = sorted({_norm(r[oi]) for r in renamed[1:]
+                         if oi < len(r) and _norm(r[oi])})
     return {
         "rows": len(renamed) - 1,
         "renamed": [h for h in RENAME if h in
                     [_norm(x).lstrip("﻿") for x in rows[0]]],
         "periods": [h for h in hdr if h.endswith("Day Churn")],
+        "owners": owners[:8],
         "dest": str(dest),
     }
