@@ -2509,6 +2509,28 @@
         "type": "not_configured"
       }
     },
+    "att_order_log_probe": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "SCHEMA PROBE for Carlos's new ATT B2B Order Log (requested 2026-07-19 via Loom + Slack). on_scheduler:false = never in the 4am batch; it exists only so `lucy --machine \"Lucy 2\" rerun att_order_log_probe` can pull the ATTTRACKER-B2B/ORDERLOG crosstab ONCE and dump its real schema (header by index+label, distinct 'DTR Status (enriched)' values vs Carlos's 6-colour rule, per-column blank rates) to the 'ATT Order Log Diag' tab. READ-ONLY: it downloads a crosstab and writes one diag tab; it touches no report data and posts nothing. MUST RUN ON LUCY 2 — the view is Carlos's custom view (CarlosLocalOfficeEXPANDEDCHURN) and under Raf's login (Lucy 1) the export is a different slice; the laptop is also barred because a laptop scrape evicts the mini's ownerville session holder. Purpose: build the renderer against the ACTUAL column set rather than the Loom screenshot, since Carlos said 'this tab is everything that should stay on here' and an unmapped status would render colourless (reads as 'no status', not 'unmapped'). Delete this entry once att_order_log ships.",
+      "display_name": "ATT Order Log - schema probe (one-off)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.att_order_log.probe"
+      ],
+      "base_args": [
+        "--list-views"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 15,
+      "verify": null,
+      "machine": "Lucy 2"
+    },
     "box_order_log": {
       "on_scheduler": false,
       "_off_scheduler_note": "Carlos's BOX (B2B) Order Log -> the 'Lucy Box Order Log' tab on the Vantura Master Sales Board. on_scheduler:false = NOT in the 4am batch; the real schedule is a STANDALONE LaunchAgent (com.alphalete.box-order-log) TWICE daily incl. weekends at 7:00am and 8:30am CST (Carlos asked for those two exactly, 2026-07-18). EXACTLY ONE Slack post per day: box_order_log.sh writes a dated marker after a successful post, so the 8:30 pass sees it and refreshes the sheet ONLY. If 7:00 dies before posting, no marker is written and 8:30 posts instead — never two. Present here so `lucy rerun box_order_log` works. Pulls the BoxOrderLog view, collapses the status-transition rows into one row per sale (sale key = Contract ID + Account Id; Contract ID alone is NOT unique), and MERGES into a rolling 6-week log: new sales appended, status changes updated in place, oldest week aged out. Merge is idempotent — a second pass on unchanged data reports '0 new, 0 status changes'. The Tableau view is a rolling ~44-day window with only ~3 days of slack over 6 weeks, which is WHY it merges instead of overwriting: rows age out of the source before they age out of the report. TWO deliverables per run, different scopes on purpose: --sheet merges the rolling 6-week log into the board; --xlsx writes the day's FULL pull to output/ as one tab per rep (Fiber-style, mirrors order_log._append_rep_breakdown_tabs). DRY by default. Does NOT post to Slack. Belongs on LUCY 2 (Carlos's machine). Registered 2026-07-18.",
