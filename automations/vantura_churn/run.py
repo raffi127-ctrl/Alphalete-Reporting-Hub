@@ -397,20 +397,31 @@ def _email_failure(msg: str, log=print) -> None:
             f"NOTHING.\n\n{msg}\n\n"
             "The board still shows the PREVIOUS successful run's numbers — "
             "it is stale, not wrong.\n\n"
-            "Most likely a Tableau refresh race; a re-run usually clears it:\n"
-            "  lucy rerun vantura_churn --machine \"Lucy 2\"\n\n"
-            "If it persists, the Order Log and the CHURN RATES dashboard "
-            "genuinely disagree — check the Order Log pull (owner filter "
-            "applied? 60-day window?) before touching the sheet by hand.\n"
+            "DON'T just re-run and expect it to clear. The gate already "
+            f"tolerates normal refresh drift (base +/-{BASE_TOL_PCT:.0%}, "
+            f"churn +/-{RATE_TOL_PP * 100:.1f}pp), so getting here means the "
+            "Order Log and the CHURN RATES dashboard genuinely disagree by "
+            "more than that.\n\n"
+            "Check, in order:\n"
+            "  1. Did the Order Log pull apply the owner filter and the "
+            "60-day window? A short or wrong-owner pull is the usual cause.\n"
+            "  2. Has CHURNRATES finished refreshing? Compare its 0-30 "
+            "'Activated SPE/SP' against the numbers above.\n"
+            "  3. Only then re-run:  lucy rerun vantura_churn "
+            "--machine \"Lucy 2\"\n"
         )
         html = ("<p><b>The Vantura churn refresh wrote NOTHING.</b></p>"
                 f"<p>{host} &middot; {when}</p>"
                 f"<pre style='background:#f6f6f6;padding:10px'>{msg}</pre>"
                 "<p>The board still shows the previous successful run's "
                 "numbers &mdash; <b>stale, not wrong</b>.</p>"
-                "<p>Usually a Tableau refresh race; a re-run normally clears "
-                "it:<br><code>lucy rerun vantura_churn --machine \"Lucy 2\""
-                "</code></p>")
+                "<p><b>Don't just re-run.</b> The gate already tolerates "
+                f"normal refresh drift (base &plusmn;{BASE_TOL_PCT:.0%}, "
+                f"churn &plusmn;{RATE_TOL_PP * 100:.1f}pp), so this is a real "
+                "divergence. Check the Order Log pull (owner filter? 60-day "
+                "window?) and whether CHURNRATES has finished refreshing, "
+                "then:<br><code>lucy rerun vantura_churn --machine "
+                "\"Lucy 2\"</code></p>")
         _send_email(subject, html, text, FAILURE_TO, False, "vantura-churn-fail")
     except Exception as e:  # noqa: BLE001 — never mask the real failure
         log(f"  ⚠ failure email not sent: {e}")
@@ -423,12 +434,16 @@ def _fail_manifest(msg: str) -> None:
             REPORT_ID, failed=["vantura_churn"], kind="report", note=msg,
             remediation=_rm.make_remediation(
                 reason=msg,
-                fix="Usually a stale Tableau load or the Order Log and the "
-                    "dashboard refreshing seconds apart — a re-run normally "
-                    "clears it. If it persists, the runbook's math and the "
-                    "dashboard genuinely disagree: check the Order Log pull "
-                    "(owner filter applied? 60-day window?) before touching "
-                    "the sheet by hand.",
+                fix=f"A re-run probably will NOT clear this. The gate already "
+                    f"tolerates normal refresh drift (base ±{BASE_TOL_PCT:.0%},"
+                    f" churn ±{RATE_TOL_PP * 100:.1f}pp), so reaching here "
+                    "means the Order Log and the CHURN RATES dashboard "
+                    "genuinely disagree by more than that. Check the Order Log "
+                    "pull first (owner filter applied? 60-day window?), then "
+                    "whether CHURNRATES has finished refreshing — compare its "
+                    "0-30 'Activated SPE/SP' with the computed base. Re-run "
+                    "only after one of those explains the gap. The board is "
+                    "stale, not wrong, meanwhile.",
                 link="https://us-east-1.online.tableau.com/#/site/sci/views/"
                      "ATTTRACKER-B2B/CHURNRATES",
                 message="Vantura churn update stopped before writing — "

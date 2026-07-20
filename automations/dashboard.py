@@ -4202,7 +4202,7 @@ AUTOMATED_REPORTS = [
         "checklist": [],
         "post_run": {
             "message_success": "✅ Board refreshed — bases, disconnect rolloff, and activations written; numbers reconciled against the Churn Rates dashboard before any write.",
-            "message_failed": "❌ Run failed. Reconcile mismatches usually mean a stale Tableau load — re-run once; if it persists, check the Order Log pull (owner filter / 60-day window) before touching the sheet by hand.",
+            "message_failed": "❌ Run failed — the board was NOT written, so it's showing the previous run's numbers (stale, not wrong). Don't just re-run: the reconcile gate already tolerates normal Tableau refresh drift (base ±10%, churn ±0.5pp), so a mismatch means the Order Log and the CHURN RATES dashboard genuinely disagree by more than that. Check the Order Log pull (owner filter / 60-day window), then whether CHURNRATES has finished refreshing, before re-running or touching the sheet by hand. Megan + Raf are emailed automatically on any failure.",
         },
         "actions": [
             {
