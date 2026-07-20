@@ -34,6 +34,12 @@ export PYTHONPATH="$(pwd)"
 LOG_FILE="$LOG_DIR/stf-field-check-11pm-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] STF Field Check nightly run starting (extra args: ${*:-none})" > "$LOG_FILE"
 
+# The live path drives ownerville through patchright (imported lazily in run.py),
+# so a stray human Chrome collides the same way it does for the Tableau reports.
+# 11pm is outside the 4am chrome_guard window — guard here. Same gap that killed
+# the Monday headcount job on 2026-07-20.
+"$VENV_PY" -u -m automations.day_orchestrator.chrome_guard --close >> "$LOG_FILE" 2>&1 || true
+
 # --write by default (flips STF→X on the board). Any extra arg (e.g. --dry-run)
 # is appended and wins.
 "$VENV_PY" -u -m automations.stf_field_check.run --write "$@" >> "$LOG_FILE" 2>&1

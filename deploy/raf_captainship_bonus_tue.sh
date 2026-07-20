@@ -44,6 +44,12 @@ export PYTHONPATH="$(pwd)"
 LOG_FILE="$LOG_DIR/raf-captainship-bonus-tue-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] Raf Captainship Bonus weekly run starting (extra args: ${*:-none})" > "$LOG_FILE"
 
+# Close any stray human Chrome before the Tableau pull — this fires outside the
+# 4am chrome_guard window, so without it the run dies instantly with "Opening in
+# existing browser session". Same gap that killed the Monday headcount job on
+# 2026-07-20; the orchestrator and `lucy rerun` already guard, LaunchAgents didn't.
+"$VENV_PY" -u -m automations.day_orchestrator.chrome_guard --close >> "$LOG_FILE" 2>&1 || true
+
 # LIVE by default (fills the sheet). Any extra arg (e.g. --dry-run) is appended.
 "$VENV_PY" -u -m automations.raf_captainship_bonus.run "$@" >> "$LOG_FILE" 2>&1
 ST=$?

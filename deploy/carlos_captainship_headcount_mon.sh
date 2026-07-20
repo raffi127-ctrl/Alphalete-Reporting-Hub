@@ -38,6 +38,13 @@ export PYTHONPATH="$(pwd)"
 LOG_FILE="$LOG_DIR/carlos-captainship-headcount-mon-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] Carlos Captainship Headcount weekly run starting (extra args: ${*:-none})" > "$LOG_FILE"
 
+# 7:00am is OUTSIDE the 4am chrome_guard window, so close any stray human Chrome
+# here before the Tableau pull. Without this the run dies instantly with
+# "Opening in existing browser session" whenever anything else holds the Chrome
+# profile — it retried 4x/8s then failed on 2026-07-20. The orchestrator and the
+# `lucy rerun` path already guard; this standalone LaunchAgent was the gap.
+"$VENV_PY" -u -m automations.day_orchestrator.chrome_guard --close >> "$LOG_FILE" 2>&1 || true
+
 # LIVE by default (fills the sheet). Any extra arg (e.g. --dry-run) is appended.
 "$VENV_PY" -u -m automations.carlos_captainship_headcount.run "$@" >> "$LOG_FILE" 2>&1
 ST=$?
