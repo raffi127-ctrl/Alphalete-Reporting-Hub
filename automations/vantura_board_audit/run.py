@@ -4,7 +4,7 @@ Grew out of the 2026-07-19 deep audit (see memory/vantura-board-data-quality
 notes and automations/vantura_payroll/PAYROLL_RUNBOOK.md for the board map).
 Two invariants, both broken silently in the past:
 
-1. OFF-MENU ADDS: every Sales Board rep must have a New Starts & Roll Call
+1. OFF-MENU ADDS: every Sales Board rep must have a Roll Call
    row (the roll cohort week is the tenure anchor; a rep without one gets a
    FROZEN week tag and dodges the stats). People are supposed to add reps
    ONLY via the Alphalete menu — name columns are hard-protected since
@@ -47,7 +47,7 @@ def audit(write: bool, log=_log) -> int:
     board = sh.worksheet("Sales Board").get("A1:AQ110")
     board_form = sh.worksheet("Sales Board").get(
         "A1:AQ110", value_render_option="FORMULA")
-    roll = sh.worksheet("New Starts & Roll Call").get_all_values()
+    roll = sh.worksheet("Roll Call").get_all_values()
 
     # rep block = rows >=5 with a name and a week tag, or (for tag-less manual
     # strays like the old 'Nico M' row) a campaign — but never the campaign
