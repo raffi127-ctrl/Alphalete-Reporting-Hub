@@ -86,8 +86,18 @@ DISPLAY_LABELS = (
     "Install Date", "Order->Install Days",
 )
 
-# The hidden tab adds a sort/filter key past the display slice.
-DATA_HEADERS = DISPLAY_HEADERS + ("Filter Period",)
+# Per-line measures from the un-pivot. NOT in the visible log — Carlos's 17
+# columns are what he asked to see — but carried on the hidden tab so the rep
+# box can compute activation % without a second Tableau pull. Each is an
+# indicator on a line (probe 2026-07-19: values 1/1/0/0), so summing them per
+# rep is the whole calculation.
+MEASURE_UNITS = "Unit Count"
+MEASURE_ACTIVATIONS = "Total Activations"
+MEASURES = (MEASURE_UNITS, "Total Volume", MEASURE_ACTIVATIONS,
+            "Sales (All)  (non pmts) (60-120)")
+
+# The hidden tab adds the measures + a sort/filter key past the display slice.
+DATA_HEADERS = DISPLAY_HEADERS + MEASURES + ("Filter Period",)
 
 ALL_PERIODS = "All"
 LAST_30 = "Last 30 Days"          # Carlos's Slack ask, 2026-07-19
@@ -98,7 +108,9 @@ CELL_PERIOD = "D2"       # both dropdowns share row 2 — see build_view_values
 _COL_REP = DISPLAY_HEADERS.index("Rep")
 _COL_ORDER_DATE = DISPLAY_HEADERS.index("sp.Order Date (copy)")
 _COL_STATUS = DISPLAY_HEADERS.index("DTR Status (enriched)")
-_COL_PERIOD = len(DISPLAY_HEADERS)          # "Filter Period"
+_COL_UNITS = DATA_HEADERS.index(MEASURE_UNITS)
+_COL_ACTIVATIONS = DATA_HEADERS.index(MEASURE_ACTIVATIONS)
+_COL_PERIOD = DATA_HEADERS.index("Filter Period")
 
 
 def _col_letter(index0: int) -> str:
@@ -168,6 +180,7 @@ def build_data_rows(lines: Sequence[dict], today: dt.date) -> List[List[str]]:
     out: List[List[str]] = []
     for ln in lines:
         row = [str(ln.get(h, "") or "").strip() for h in DISPLAY_HEADERS]
+        row += [str(ln.get(m, "") or "").strip() for m in MEASURES]
         od = _parse_date(ln.get("sp.Order Date (copy)"))
         # Period key drives the dropdown. Kept as its own column so the view's
         # FILTER can match a single cell instead of re-deriving dates in-sheet.
@@ -246,15 +259,72 @@ def build_view_values(rows: Sequence[Sequence[str]], reps: Sequence[str],
                 sc=stat_col, s=s.replace('"', '""'),
                 rep=rep_cond, per=per_cond))
     grid.append(["Count"] + counts)
-    grid.append([""] * len(DISPLAY_HEADERS))
+    grid.append([""] * ncol)
+
+    # --- rep box -----------------------------------------------------------
+    # Carlos (Slack 2026-07-19): "On the rep box, would you be able to add rows
+    # that show the activation percentage and make it so that when you're
+    # looking at the last 30 days' sales, it gets colored?" — under 70% red,
+    # 70-75% yellow, above 75% green, and "the color coding can work the same
+    # way when you're looking at it week by week".
+    #
+    # The ATT log had no rep box at all — the BOX log does, and that is what he
+    # is referring to — so this adds one. It respects BOTH dropdowns, so
+    # switching to Last 30 Days recolours it exactly as he describes, and
+    # picking one rep narrows it to that rep.
+    unit_col = _col(_COL_UNITS)
+    act_col = _col(_COL_ACTIVATIONS)
+    grid.append(["Rep", "Orders", "Activations", "Activation %"]
+                + [""] * (ncol - 4))
+    for rep in reps:
+        r = rep.replace('"', '""')
+        m = '({rc}="{r}")'.format(rc=rep_col, r=r)
+        common = '{m}*({rep}>0)*({per}>0)'.format(m=m, rep=rep_cond, per=per_cond)
+        orders = '=SUMPRODUCT({c})'.format(c=common)
+        acts = '=SUMPRODUCT({c}*N({ac}))'.format(c=common, ac=act_col)
+        # IFERROR guards the zero-orders case: a rep with nothing in the
+        # selected window would otherwise show #DIV/0! instead of blank.
+        pct = ('=IFERROR(SUMPRODUCT({c}*N({ac}))/SUMPRODUCT({c}*N({uc})),"")'
+               ).format(c=common, ac=act_col, uc=unit_col)
+        grid.append([rep, orders, acts, pct] + [""] * (ncol - 4))
+    grid.append([""] * ncol)
 
     grid.append(list(DISPLAY_LABELS))
-    grid.append([log_formula] + [""] * (len(DISPLAY_HEADERS) - 1))
+    grid.append([log_formula] + [""] * (ncol - 1))
     return grid
 
 
-HEADER_ROW = 8          # 1-based row of DISPLAY_LABELS in build_view_values
-FIRST_LOG_ROW = 9       # where the FILTER spills
+# Rows 1-7 are fixed (title, controls, updated, blank, status, count, blank);
+# the rep box is one header row + one row per rep, then a blank. Derived rather
+# than hardcoded because the rep count changes daily — a fixed HEADER_ROW is
+# exactly how the log and its formatting would drift apart.
+_FIXED_ROWS_BEFORE_REPBOX = 7
+
+
+def header_row_for(n_reps: int) -> int:
+    """1-based row of DISPLAY_LABELS, given how many reps the box lists."""
+    return _FIXED_ROWS_BEFORE_REPBOX + 1 + n_reps + 1 + 1
+
+
+def first_log_row_for(n_reps: int) -> int:
+    return header_row_for(n_reps) + 1
+
+
+# LIVE row positions, recomputed by push() before any formatting request is
+# built. They are module state rather than parameters only because the request
+# builders are numerous and all need the same two numbers; push() sets them
+# once, from the same header_row_for()/first_log_row_for() the grid itself uses,
+# so the formatting and the data can never disagree about where the log starts.
+# Defaults match a zero-rep box and exist only so imports do not blow up.
+HEADER_ROW = 8
+FIRST_LOG_ROW = 9
+
+
+def _set_row_anchors(n_reps: int) -> None:
+    """Point every formatting request at the rows this grid actually used."""
+    global HEADER_ROW, FIRST_LOG_ROW
+    HEADER_ROW = header_row_for(n_reps)
+    FIRST_LOG_ROW = first_log_row_for(n_reps)
 
 
 # --- header palette -------------------------------------------------------
@@ -535,6 +605,76 @@ def _status_color_rules(view_id: int) -> List[dict]:
     return reqs
 
 
+def _repbox_color_rules(view_id: int, n_reps: int) -> List[dict]:
+    """Carlos's activation thresholds on the rep box.
+
+    Slack 2026-07-19, verbatim: "Anything under 70% is red / 70% to 75% is
+    yellow / Anything above 75% is green."
+
+    Boundaries follow his wording literally: 70 and 75 are INSIDE the yellow
+    band ("70% to 75% is yellow"), so red is strictly < 0.70 and green strictly
+    > 0.75. Yellow is the BETWEEN rule and needs no explicit bounds check — it
+    is registered last, so anything the other two did not claim lands there.
+
+    Values are fractions (0.72), not 72 — the cell holds activations/units, and
+    a percent NUMBER FORMAT is applied separately.
+    """
+    if n_reps <= 0:
+        return []
+    col = 3                                   # "Activation %" — 4th column
+    first = _FIXED_ROWS_BEFORE_REPBOX + 1     # 0-based: the row after its header
+    rng = {"sheetId": view_id, "startRowIndex": first,
+           "endRowIndex": first + n_reps,
+           "startColumnIndex": col, "endColumnIndex": col + 1}
+
+    def rule(idx, cond_type, values, hexcolor):
+        return {"addConditionalFormatRule": {"index": idx, "rule": {
+            "ranges": [dict(rng)],
+            "booleanRule": {
+                "condition": {"type": cond_type,
+                              "values": [{"userEnteredValue": v}
+                                         for v in values]},
+                "format": {"backgroundColor": _rgb(hexcolor),
+                           "textFormat": {"bold": True}}}}}}
+
+    return [
+        rule(0, "NUMBER_LESS", ["0.7"], colors.FILL_HEX[colors.RED]),
+        rule(1, "NUMBER_GREATER", ["0.75"], colors.FILL_HEX[colors.GREEN]),
+        rule(2, "NUMBER_BETWEEN", ["0.7", "0.75"],
+             colors.FILL_HEX[colors.YELLOW]),
+    ]
+
+
+def _repbox_format_requests(view_id: int, n_reps: int) -> List[dict]:
+    """Percent format + a header style for the rep box."""
+    if n_reps <= 0:
+        return []
+    first = _FIXED_ROWS_BEFORE_REPBOX          # 0-based row of its header
+    return [
+        {"repeatCell": {
+            "range": {"sheetId": view_id, "startRowIndex": first,
+                      "endRowIndex": first + 1, "startColumnIndex": 0,
+                      "endColumnIndex": 4},
+            "cell": {"userEnteredFormat": {
+                "backgroundColor": _rgb(SLATE),
+                "horizontalAlignment": "CENTER",
+                "textFormat": {"bold": True, "fontSize": 10,
+                               "foregroundColor": _rgb(INK)}}},
+            "fields": ("userEnteredFormat.backgroundColor,"
+                       "userEnteredFormat.horizontalAlignment,"
+                       "userEnteredFormat.textFormat")}},
+        {"repeatCell": {
+            "range": {"sheetId": view_id, "startRowIndex": first + 1,
+                      "endRowIndex": first + 1 + n_reps,
+                      "startColumnIndex": 3, "endColumnIndex": 4},
+            "cell": {"userEnteredFormat": {
+                "numberFormat": {"type": "PERCENT", "pattern": "0.0%"},
+                "horizontalAlignment": "CENTER"}},
+            "fields": ("userEnteredFormat.numberFormat,"
+                       "userEnteredFormat.horizontalAlignment")}},
+    ]
+
+
 def _clear_color_rules(sh, view_id: int) -> List[dict]:
     """Delete existing conditional formats so repeated runs don't stack them."""
     try:
@@ -601,8 +741,16 @@ def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
     # still preserved across runs; this only changes the cold-start default.
     sel_per = cur_per if cur_per in [ALL_PERIODS] + periods else LAST_30
 
+    # Point the formatting at the rows THIS grid uses. The rep box grows and
+    # shrinks daily, so a fixed header row would silently format the wrong rows
+    # the first time a rep joins or leaves.
+    _set_row_anchors(len(reps))
     grid = build_view_values(rows, reps, generated,
                              selected_rep=sel_rep, selected_period=sel_per)
+    if grid[HEADER_ROW - 1][0] != DISPLAY_LABELS[0]:
+        raise RuntimeError(
+            "row anchor mismatch: expected {!r} at row {}, found {!r}".format(
+                DISPLAY_LABELS[0], HEADER_ROW, grid[HEADER_ROW - 1][0]))
     _retry(lambda: view_ws.clear())
     _retry(lambda: view_ws.update(
         grid, "A1:{}{}".format(_col_letter(len(DISPLAY_HEADERS) - 1), len(grid)),
@@ -611,8 +759,14 @@ def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
     reqs: List[dict] = []
     reqs += _clear_color_rules(sh, view_ws.id)
     reqs += _format_requests(view_ws.id)
+    reqs += _repbox_format_requests(view_ws.id, len(reps))
     reqs += _validation(view_ws.id, reps, periods)
+    # Rep-box thresholds BEFORE the row-status rules: both are registered at
+    # index 0, so the last one added ends up first and wins. The activation
+    # colour must own its own cell rather than be painted over by the row's
+    # status fill.
     reqs += _status_color_rules(view_ws.id)
+    reqs += _repbox_color_rules(view_ws.id, len(reps))
     _retry(lambda: sh.batch_update({"requests": reqs}))
 
     log("  view tab: {} reps in the dropdown".format(len(reps)))
