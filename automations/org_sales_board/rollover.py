@@ -537,16 +537,32 @@ def plan_daily_clear(ws, grid) -> List[str]:
 
 def find_delta_tables(grid: List[List[str]]) -> List[dict]:
     """Locate every per-captainship DELTA table (the 'this wk / last wk / Delta'
-    blocks). A header row has 'Total this week' in col C; the per-day 'This week'
-    columns are paired with the 'Last week' column to their immediate right.
-    Data rows run until col B blanks out or hits the 'Captainship' total row."""
+    blocks). A header row has 'Total this week' in col C; the per-day columns run
+    as strict THIS WEEK / LAST WEEK / DELTA triplets.
+    Data rows run until col B blanks out or hits the 'Captainship' total row.
+
+    A 'This week' header only counts as a real this-week column when 'Delta'
+    sits two columns to its right — the triplet signature. The label alone is
+    NOT enough: the Sunday 'Last week' header is typed as 'This week' on the
+    JAIRO / RAF SPECIAL / LUIS tables (both tabs), so a label-only scan picked
+    up col Y — the FROZEN Sunday last-week value — as a live this-week column.
+    That did two bad things (2026-07-20):
+      • the compare gated col Y as a current-week cell. The copy and the VA
+        freeze their history at different moments, so it always differs there —
+        the 9am VA-compare failed with 8 phantom 'va_ahead's on data that is
+        report-only by design.
+      • plan_delta_rollover writes each this-col into col+1, so it would have
+        written Y into Z — clobbering the live '=Iferror((X-Y)/Y,0)' Delta
+        formula with a static number on the next Tuesday rollover.
+    The triplet check keys on structure, so a mistyped header can't move it."""
     out = []
     n = len(grid)
     for i in range(n):
         if _cell(grid, i, 2) != "Total this week":
             continue
         this_cols = [c + 1 for c in range(len(grid[i]))
-                     if _cell(grid, i, c) == "This week"]   # per-day only
+                     if _cell(grid, i, c) == "This week"
+                     and _cell(grid, i, c + 2) == "Delta"]   # per-day triplets
         rows = []
         j = i + 1
         while j < n:
