@@ -361,9 +361,61 @@ def extract_loop(page, dry_run: bool) -> int:
 # --------------------------------------------------------------------------- #
 # Send loop
 # --------------------------------------------------------------------------- #
+def _dismiss_modals(page, wait_s: int = 15) -> bool:
+    """Dismiss / wait out any visible modal so it can't intercept table clicks.
+    The 'Batch Process Emails Status' dialog (#window_dialog, bootstrap
+    'modal fade in') sometimes lingers after the Yes-confirm of a send pass and
+    swallows the next pass's select-all click (2026-07-19: pass 2 timed out on
+    the header checkbox, JS fallback then picked 9 of 175 rows). Tries a close
+    affordance, then Escape, then force-hides via JS as a last resort. Only
+    dismissal controls are clicked — never Yes/OK/Continue, which could confirm
+    an action. Returns True when no modal is visible."""
+    dlg = page.locator(".modal:visible, .swal2-popup:visible, [role='dialog']:visible")
+    for waited in range(wait_s):
+        if dlg.count() == 0:
+            if waited:
+                _log(f"[send] lingering modal cleared after {waited}s")
+            return True
+        try:
+            btn = dlg.last.locator(
+                "button.close, [data-dismiss='modal'], [aria-label='Close']")
+            if btn.count() > 0:
+                btn.first.click(timeout=2000)
+            else:
+                page.keyboard.press("Escape")
+        except Exception:
+            try:
+                page.keyboard.press("Escape")
+            except Exception:
+                pass
+        page.wait_for_timeout(1000)
+    if dlg.count() == 0:
+        return True
+    # Last resort: force-hide so it can't sit over the table.
+    try:
+        page.evaluate(
+            "() => {"
+            "  document.querySelectorAll('.modal').forEach(m => {"
+            "    m.style.display = 'none'; m.classList.remove('in', 'show'); });"
+            "  document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());"
+            "  document.body.classList.remove('modal-open');"
+            "}")
+        page.wait_for_timeout(500)
+    except Exception as e:
+        _log(f"[send] modal force-hide failed: {e}")
+    left = dlg.count()
+    if left:
+        _log(f"[send] WARNING: {left} modal(s) still visible after {wait_s}s — "
+             "row selection may be intercepted")
+    else:
+        _log(f"[send] lingering modal force-hidden after {wait_s}s")
+    return left == 0
+
+
 def _select_all(page, limit: int = 0) -> int:
     """Tick the header checkbox to select every rendered row. With --limit, tick
     only the first N row checkboxes instead."""
+    _dismiss_modals(page)                # a leftover status dialog eats the click
     if limit and limit > 0:
         rows = page.locator(f"{TABLE} tbody tr")
         n = min(limit, rows.count())
@@ -462,6 +514,7 @@ def send_once(page, dry_run: bool, limit: int = 0):
     except Exception:
         pass
     page.wait_for_timeout(2500)
+    _dismiss_modals(page)          # don't leave the status dialog over the table
     return (sent if sent is not None else 0), done, before
 
 
