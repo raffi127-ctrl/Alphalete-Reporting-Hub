@@ -56,6 +56,36 @@ def helper_capacity(ws: gspread.Worksheet) -> int:
     return int(m.group(1))
 
 
+# Activation-rate colour bands (Megan 2026-07-19). Carlos's Loom misspoke on
+# the 31-60 floor ("anything below is green"); these are the agreed bands.
+# NB: deliberately NOT the view's own 'Activation Color' column — Tableau
+# bands 31-60 differently and would call 74.6% red where these call it yellow.
+BANDS = {
+    "0-30": [(0.75, "green"), (0.65, "yellow"), (0.0, "red")],
+    "31-60": [(0.80, "green"), (0.70, "yellow"), (0.0, "red")],
+}
+# Match the tiers chart already on the tab.
+BAND_BG = {"green": {"red": 0.576, "green": 0.769, "blue": 0.490},
+           "yellow": {"red": 1.0, "green": 0.851, "blue": 0.400},
+           "red": {"red": 0.878, "green": 0.400, "blue": 0.400}}
+
+# The per-rep list lives clear of the hidden helper block (R:AE) — Carlos's
+# stub headers at P1:R1 put the 31-60 caption INSIDE the hidden range, so it
+# was invisible on the tab.
+REP_LIST_COL = "AG"
+REP_STUB_RANGE = "P1:R1"
+
+
+def band_for(rate, which: str) -> str:
+    """Colour name for a rate under `which` band set, or None when blank."""
+    if rate is None:
+        return None
+    for floor, name in BANDS[which]:
+        if rate >= floor:
+            return name
+    return "red"
+
+
 def viewing_cell(ws: gspread.Worksheet) -> str:
     """Which cell the rolloff FILTER actually watches, read from A16.
 
@@ -163,6 +193,118 @@ def _colletter(ci: int) -> str:
         ci, r = divmod(ci - 1, 26)
         s = chr(65 + r) + s
     return s
+
+
+def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
+                            log=print) -> None:
+    """Write the two office activation rates + the per-rep list.
+
+    The office rates are OFFICE-WIDE, not per product, so they go in E5/F5
+    only — repeating them down the Wireless/Air/Internet rows would read as
+    a per-product breakdown the source doesn't support.
+    """
+    def _pct(d):
+        return "" if d["rate"] is None else round(d["rate"], 4)
+
+    updates = [
+        {"range": "E5", "values": [[_pct(office["0-30"])]]},
+        {"range": "F5", "values": [[_pct(office["31-60"])]]},
+    ]
+
+    # Per-rep list. Reps with NO activity in a bucket get a blank, not a 0% —
+    # zero sales is undefined mix, not a zero rate. [[feedback_one_gig_blank_is_na]]
+    ordered = sorted(reps.items(),
+                     key=lambda kv: (kv[1]["0-30"]["rate"] is None,
+                                     -(kv[1]["0-30"]["rate"] or 0),
+                                     kv[0]))
+    rows = [["Rep Name", "0-30 Day Activation Rate",
+             "31-60 Day Activation Rate"]]
+    for rep, v in ordered:
+        rows.append([rep, _pct(v["0-30"]), _pct(v["31-60"])])
+    last_col = _colletter(gspread.utils.a1_to_rowcol(f"{REP_LIST_COL}1")[1] + 1)
+    end = len(rows)
+    updates.append({"range": f"{REP_LIST_COL}1:{last_col}{end}",
+                    "values": rows})
+    _retry(lambda: ws.batch_update(updates, value_input_option="USER_ENTERED"))
+
+    # Clear Carlos's stub headers now that the real list has a home — VALUES
+    # AND FORMAT. Clearing values alone leaves the dark header fill behind as
+    # a floating bar to the right of the tiers chart.
+    try:
+        _retry(lambda: ws.batch_clear([REP_STUB_RANGE]))
+        p0 = gspread.utils.a1_to_rowcol("P1")[1] - 1
+        _retry(lambda: ws.spreadsheet.batch_update({"requests": [
+            {"repeatCell": {
+                "range": {"sheetId": ws.id, "startRowIndex": 0,
+                          "endRowIndex": 1, "startColumnIndex": p0,
+                          "endColumnIndex": p0 + 3},
+                "cell": {"userEnteredFormat": {}},
+                "fields": "userEnteredFormat"}}]}))
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Percent format + banding.
+    fmt_reqs = [{"repeatCell": {
+        "range": {"sheetId": ws.id, "startRowIndex": 4, "endRowIndex": 5,
+                  "startColumnIndex": 4, "endColumnIndex": 6},
+        "cell": {"userEnteredFormat": {
+            "numberFormat": {"type": "PERCENT", "pattern": "0.0%"},
+            "horizontalAlignment": "CENTER"}},
+        "fields": "userEnteredFormat.numberFormat,"
+                  "userEnteredFormat.horizontalAlignment"}}]
+    rep_c0 = gspread.utils.a1_to_rowcol(f"{REP_LIST_COL}1")[1] - 1
+    fmt_reqs.append({"repeatCell": {
+        "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": end,
+                  "startColumnIndex": rep_c0 + 1, "endColumnIndex": rep_c0 + 3},
+        "cell": {"userEnteredFormat": {
+            "numberFormat": {"type": "PERCENT", "pattern": "0.0%"},
+            "horizontalAlignment": "CENTER"}},
+        "fields": "userEnteredFormat.numberFormat,"
+                  "userEnteredFormat.horizontalAlignment"}})
+
+    def _bg(row0, col0, colour):
+        return {"repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": row0,
+                      "endRowIndex": row0 + 1, "startColumnIndex": col0,
+                      "endColumnIndex": col0 + 1},
+            "cell": {"userEnteredFormat": {
+                "backgroundColor": BAND_BG[colour]}},
+            "fields": "userEnteredFormat.backgroundColor"}}
+
+    for ci, key in ((4, "0-30"), (5, "31-60")):
+        c = band_for(office[key]["rate"], key)
+        if c:
+            fmt_reqs.append(_bg(4, ci, c))
+    for i, (_rep, v) in enumerate(ordered):
+        for off, key in ((1, "0-30"), (2, "31-60")):
+            c = band_for(v[key]["rate"], key)
+            if c:
+                fmt_reqs.append(_bg(1 + i, rep_c0 + off, c))
+    # Widen the rep columns — full names run to ~30 chars and the default
+    # width truncates both them and the two rate headers.
+    for off, px in ((0, 210), (1, 120), (2, 120)):
+        fmt_reqs.append({"updateDimensionProperties": {
+            "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                      "startIndex": rep_c0 + off,
+                      "endIndex": rep_c0 + off + 1},
+            "properties": {"pixelSize": px}, "fields": "pixelSize"}})
+    # Wrap the two rate headers so they show in full.
+    fmt_reqs.append({"repeatCell": {
+        "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1,
+                  "startColumnIndex": rep_c0, "endColumnIndex": rep_c0 + 3},
+        "cell": {"userEnteredFormat": {
+            "wrapStrategy": "WRAP", "horizontalAlignment": "CENTER",
+            "textFormat": {"bold": True}}},
+        "fields": "userEnteredFormat.wrapStrategy,"
+                  "userEnteredFormat.horizontalAlignment,"
+                  "userEnteredFormat.textFormat"}})
+    _retry(lambda: ws.spreadsheet.batch_update({"requests": fmt_reqs}))
+
+    o30, o60 = office["0-30"], office["31-60"]
+    log(f"  ✓ {ws.title}: 0-30 {o30['activated']}/{o30['sold']} "
+        f"= {o30['rate']:.1%} ({band_for(o30['rate'], '0-30')}), "
+        f"31-60 {o60['activated']}/{o60['sold']} = {o60['rate']:.1%} "
+        f"({band_for(o60['rate'], '31-60')}), {len(reps)} reps listed")
 
 
 def update_churn_tab(ws: gspread.Worksheet, bases: dict,
