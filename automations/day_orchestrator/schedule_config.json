@@ -698,6 +698,26 @@
       "depends_on": [],
       "verify": null
     },
+    "install_new_start_nudge_pm_agent": {
+      "on_scheduler": true,
+      "_note": "MANUAL: `lucy rerun install_new_start_nudge_pm_agent` installs com.alphalete.new-start-followup-sat-pm (Sat 17:00 CST). Split out of the -sat plist so neither job has more than 2 calendar intervals — schedule_guard skips >2-interval jobs as high-frequency pollers, which would drop them from the nightly anti-drift reload. weekdays [] = manual only.",
+      "display_name": "Install New-Start Saturday 5pm nudge agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "new-start-followup-sat-pm"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
     "install_new_start_checklist_agent": {
       "on_scheduler": true,
       "_note": "MANUAL: `lucy rerun install_new_start_checklist_agent` installs com.alphalete.new-start-followup-sun (Sun 13:00 CST). Posts the numbered checklist Raf used to build by hand. weekdays [] = manual only.",

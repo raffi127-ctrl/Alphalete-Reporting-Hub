@@ -29,9 +29,16 @@
 
     <!-- Saturday only (Weekday 6), machine LOCAL time (mini is Central).
          Raf's spec: ~10am when atmosphere ends, 1pm, and 5pm as the day closes.
-         --when auto picks the wording from the clock, so all three share one job.
+         The "when auto" flag picks the wording from the clock, so both runs
+         share one job.
          Each run re-reads the thread and tags ONLY whoever still hasn't replied,
-         so leaders who already sent stop getting pinged. -->
+         so leaders who already sent stop getting pinged.
+
+         The 5pm ping lives in its own -sat-pm plist ON PURPOSE: schedule_guard
+         skips any job with MORE THAN 2 intervals as a high-frequency poller
+         (schedule_guard.py `_timed_schedule`), which would leave a 3-interval
+         job outside the nightly anti-drift reload. Two here + one there keeps
+         both jobs covered. Don't merge them back. -->
     <key>StartCalendarInterval</key>
     <array>
         <dict>
@@ -42,11 +49,6 @@
         <dict>
             <key>Weekday</key><integer>6</integer>
             <key>Hour</key><integer>13</integer>
-            <key>Minute</key><integer>0</integer>
-        </dict>
-        <dict>
-            <key>Weekday</key><integer>6</integer>
-            <key>Hour</key><integer>17</integer>
             <key>Minute</key><integer>0</integer>
         </dict>
     </array>
