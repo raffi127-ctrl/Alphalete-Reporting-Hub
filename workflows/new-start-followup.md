@@ -23,12 +23,26 @@ new starts.
 | Job | When (Central) | Does |
 |---|---|---|
 | `com.alphalete.new-start-followup-rollcall` | Sat 08:00 | @-tags **every** leader with a new start, each with their count |
-| `com.alphalete.new-start-followup-sat` | Sat 10:00 / 13:00 / 17:00 | replies in the thread, tagging **only** leaders who still haven't sent |
+| `com.alphalete.new-start-followup-sat` | Sat 10:00 / 13:00 | replies in the thread, tagging **only** leaders who still haven't sent |
+| `com.alphalete.new-start-followup-sat-pm` | Sat 17:00 | same, the last call of the day |
 | `com.alphalete.new-start-followup-sun` | Sun 13:00 | posts the numbered ✅ roll-up + tags whoever is still out |
 
-All three go through `deploy/new_start_followup.sh` →
-`automations.new_start_followup.run`. Wording for the three Saturday pings is
-picked from the clock (`--when auto`), so they share one launchd job.
+All four go through `deploy/new_start_followup.sh` →
+`automations.new_start_followup.run`. Wording for the Saturday pings is picked
+from the clock (`--when auto`), so they don't need separate flags.
+
+**Why the 5pm ping is a separate plist.** `schedule_guard` treats any job with
+**more than 2 calendar intervals** as a high-frequency poller and skips it
+(`schedule_guard.py` → `_timed_schedule`) — which would leave a single
+3-interval job outside the nightly anti-drift reload that exists because timed
+jobs on the mini have silently drifted before. Two intervals here + one there
+keeps both inside it. **Don't merge them back into one plist.** Confirm coverage
+any time with `lucy rerun schedule_audit` — all four should be listed.
+
+Installed on the mini (**Lucy 1**) with `lucy update` then
+`lucy rerun install_new_start_rollcall_agent` /
+`install_new_start_nudge_agent` / `install_new_start_nudge_pm_agent` /
+`install_new_start_checklist_agent`.
 
 The roll call is **idempotent**: it looks for its own marker
 (`New-Start Texts — Roll Call`) in the thread and no-ops if one is already
