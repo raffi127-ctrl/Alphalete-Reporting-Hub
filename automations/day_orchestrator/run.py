@@ -228,6 +228,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             # human to read the email and rerun by hand (Megan 2026-07-16).
             _retry_incomplete_parts(ds, todays, target,
                                     dry_run=dry_run, simulate=args.simulate)
+            # An INCOMPLETE that just exhausted its part-retries is now stuck for
+            # good — alert on it (once) before the checkpoint / final, same as any
+            # other terminal failure.
+            _alert_new_failures(cfg, ds, {r.report_id: r for r in todays},
+                                channel, email_dry)
             _sync_hub_pills(ds, dry_run=dry_run, simulate=args.simulate)
             state.save(ds)
 
@@ -545,6 +550,7 @@ def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
         state.save(ds)
 
     now = _now()
+    todays_by_id = {r.report_id: r for r in todays}
     flaked = []   # (r, rs) that flaked this pass — retried fast at end-of-pass
     visited = []  # (r, rs) the loop has walked past — the service tick's scope
     probed_at = {}  # report_id -> last mid-pass re-probe (throttles Tableau hits)
@@ -565,6 +571,11 @@ def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
         _service_owed(ds, visited, target, cache, probed_at,
                       dry_run=dry_run, simulate=simulate)
 
+        # Email a terminally-failed report the moment it's determined — before the
+        # 7:30 checkpoint / final summary, so it can be addressed while the batch
+        # is still running (Megan 2026-07-20).
+        _alert_new_failures(cfg, ds, todays_by_id, channel, email_dry)
+
     # End-of-pass: come back and retry any flaked report fast, now that the ready
     # reports have all run — instead of making it wait a full inter-pass gap.
     _retry_flaked(ds, flaked, target, dry_run=dry_run, simulate=simulate)
@@ -576,6 +587,10 @@ def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
     _recheck_gated(cfg, ds, todays, cache, target,
                    dry_run=dry_run, simulate=simulate,
                    channel=channel, email_dry=email_dry)
+
+    # A flake that exhausted its retries at end-of-pass, or a report that just
+    # went unrecoverably INCOMPLETE, becomes terminal above — alert on it too.
+    _alert_new_failures(cfg, ds, todays_by_id, channel, email_dry)
 
 
 def _process_one(cfg, ds, r, rs, cache, target, now, *, dry_run, simulate,
@@ -796,6 +811,48 @@ def _maybe_session_alert(cfg, ds, reason, channel, dry_run):
     except Exception as e:
         _log(f"  (session alert send failed: {e})")
     ds.session_alert_sent = True
+
+
+def _maybe_failure_alert(cfg, ds, rs, channel, dry_run):
+    """Email the moment ONE report fails terminally, so it can be fixed before the
+    7:30 checkpoint / final summary rather than discovered hours later (Megan
+    2026-07-20). ONCE per report per day (deduped via failure_alerts_sent) — a
+    report re-seen failed on a later pass or after a resume must not re-email.
+    Best-effort: an alert that crashes the batch is worse than a missed alert."""
+    if rs.report_id in ds.failure_alerts_sent:
+        return
+    from automations.day_orchestrator import notify
+    _log(f"  ⚠️ {rs.report_id} {rs.status} — firing immediate failure alert")
+    try:
+        notify.send_failure_alert(cfg, ds, rs, channel=channel, dry_run=dry_run)
+    except Exception as e:  # noqa: BLE001 — never let the alert sink the batch
+        _log(f"  ({rs.report_id}: failure alert send failed: {e})")
+    ds.failure_alerts_sent.append(rs.report_id)
+    state.save(ds)
+
+
+def _alert_new_failures(cfg, ds, todays_by_id, channel, dry_run):
+    """Sweep for reports that have failed terminally and haven't been alerted yet,
+    firing one immediate per-report email each. Called right after report attempts
+    and retries so a failure is emailed within moments of being determined — before
+    the 7:30 checkpoint / final summary (Megan 2026-07-20).
+
+    A FAILED report always alerts (it's out of retries — a human is needed). An
+    INCOMPLETE one alerts ONLY when it can no longer self-heal (`_retryable_incomplete`
+    is false — no manifest retry left, or the auto-retry cap is hit); a still-
+    retryable INCOMPLETE is left alone so a transient partial that the service tick
+    or part-retry will fix doesn't cry wolf."""
+    for rs in list(ds.reports.values()):
+        if rs.report_id in ds.failure_alerts_sent:
+            continue
+        if rs.status == state.FAILED:
+            pass
+        elif rs.status == state.INCOMPLETE and not _retryable_incomplete(
+                rs, todays_by_id.get(rs.report_id)):
+            pass
+        else:
+            continue
+        _maybe_failure_alert(cfg, ds, rs, channel, dry_run)
 
 
 def _apply_backstop(ds, stale_after):

@@ -161,5 +161,79 @@ class ServiceTickTest(unittest.TestCase):
         self.assertEqual(self.launched, [])
 
 
+class FailureAlertTest(unittest.TestCase):
+    """The immediate per-report failure email (`_alert_new_failures` /
+    `_maybe_failure_alert`). Megan 2026-07-20 wanted a heads-up the MOMENT a report
+    fails — before the 7:30 checkpoint / final summary — so it can be fixed while
+    the batch is still running rather than found hours later. These pin: FAILED
+    always alerts; INCOMPLETE alerts only once it can't self-heal (so a transient
+    partial that the retry/service-tick fixes doesn't cry wolf); each report alerts
+    at most once a day."""
+
+    def setUp(self):
+        self.sent = []
+        from automations.day_orchestrator import notify
+        self._notify = notify
+        self._real_send = notify.send_failure_alert
+        self._real_retryable = R._retryable_incomplete
+        notify.send_failure_alert = lambda cfg, ds, rs, **kw: self.sent.append(rs.report_id)
+        # Retryability is controlled per-test via self.retryable (report_ids that
+        # can still self-heal) so these don't reach the manifest/registry.
+        self.retryable = set()
+        R._retryable_incomplete = lambda rs, r: rs.report_id in self.retryable
+
+    def tearDown(self):
+        self._notify.send_failure_alert = self._real_send
+        R._retryable_incomplete = self._real_retryable
+
+    def _ds(self, **statuses):
+        ds = state.DayState(date="2026-07-20")
+        for rid, st in statuses.items():
+            ds.reports[rid] = state.ReportState(report_id=rid, status=st)
+        return ds
+
+    def _sweep(self, ds):
+        R._alert_new_failures(cfg=None, ds=ds,
+                              todays_by_id={rid: _Report(rid) for rid in ds.reports},
+                              channel="email", dry_run=True)
+
+    def test_failed_report_alerts_once(self):
+        ds = self._ds(a=state.FAILED)
+        self._sweep(ds)
+        self._sweep(ds)                       # second pass must not re-email
+        self.assertEqual(self.sent, ["a"])
+        self.assertEqual(ds.failure_alerts_sent, ["a"])
+
+    def test_unrecoverable_incomplete_alerts(self):
+        ds = self._ds(a=state.INCOMPLETE)     # not in self.retryable → stuck
+        self._sweep(ds)
+        self.assertEqual(self.sent, ["a"])
+
+    def test_retryable_incomplete_stays_quiet(self):
+        ds = self._ds(a=state.INCOMPLETE)
+        self.retryable = {"a"}                # can still self-heal → no alert yet
+        self._sweep(ds)
+        self.assertEqual(self.sent, [])
+        # …and once it exhausts its retries, the next sweep DOES alert.
+        self.retryable = set()
+        self._sweep(ds)
+        self.assertEqual(self.sent, ["a"])
+
+    def test_healthy_states_never_alert(self):
+        ds = self._ds(a=state.DONE, b=state.PENDING, c=state.STILL_TRYING,
+                      d=state.SKIPPED)
+        self._sweep(ds)
+        self.assertEqual(self.sent, [])
+
+    def test_send_failure_that_raises_does_not_crash_the_batch(self):
+        def boom(cfg, ds, rs, **kw):
+            raise RuntimeError("smtp down")
+        self._notify.send_failure_alert = boom
+        ds = self._ds(a=state.FAILED)
+        self._sweep(ds)                       # must not raise
+        # still marked sent, so a flapping SMTP can't turn into an email storm
+        self.assertEqual(ds.failure_alerts_sent, ["a"])
+
+
 if __name__ == "__main__":
     unittest.main()

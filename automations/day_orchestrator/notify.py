@@ -80,6 +80,41 @@ def send_session_alert(cfg, ds, reason, *, channel="email", dry_run=False):
     _dispatch(cfg, subj, html, text, channel, dry_run, tag="session-alert")
 
 
+def send_failure_alert(cfg, ds, rs, *, channel="email", dry_run=False):
+    """Fire the moment ONE report fails terminally — before the 7:30 checkpoint or
+    the FINAL summary — so a broken report can be fixed while the batch is still
+    running rather than discovered hours later (Megan 2026-07-20: #aeon-sales was
+    short from 04:29 and nobody knew until she looked). Carries the SAME real-cause
+    diagnosis + paste-to-Claude block the summary emails use, so it's actionable on
+    its own. One per report per day (deduped by the caller via failure_alerts_sent).
+    """
+    label = rs.display_name or rs.report_id
+    kind = "INCOMPLETE" if rs.status == "INCOMPLETE" else "FAILED"
+    reason, needs_reseed, rerun = _diagnose(rs, cfg, _d(ds))
+    subj = f"⚠️ {label} {kind} — {_d(ds)} (before the summary)"
+    lines = [
+        f"The day orchestrator recorded a {kind} report — flagging it now so it "
+        "can be addressed before the 7:30 checkpoint and the final summary.",
+        "",
+        f"Report:  {label}  (report_id: {rs.report_id})",
+        f"Status:  {kind}",
+        f"Reason:  {reason}",
+        f"Re-run:  {rerun}",
+    ]
+    if kind == "INCOMPLETE" and rs.missing:
+        lines.append(f"Missing: {', '.join(rs.missing)}")
+    if needs_reseed:
+        lines += ["", "This one needs a one-time AppStream re-seed first:",
+                  f"  {APPSTREAM_RESEED}"]
+    lines += ["", _claude_block(rs, reason, cfg, _d(ds)), "",
+              "The 7:30 checkpoint and final summary still follow separately; this "
+              "is the early heads-up, not a replacement."]
+    text = "\n".join(lines)
+    html = ("<div style='font-family:Arial,sans-serif;font-size:14px'>"
+            f"{_esc(text).replace(chr(10), '<br>')}</div>")
+    _dispatch(cfg, subj, html, text, channel, dry_run, tag=f"failure-{rs.report_id}")
+
+
 # ---------------- failure diagnosis (real reason + copy-paste fix) ----------------
 # Megan 2026-06-25: a failure that only says "exit 1, see log" + a bare module
 # path is a back-and-forth, not a fix. Read the log tail for the ACTUAL cause and

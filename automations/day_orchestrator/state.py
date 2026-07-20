@@ -74,6 +74,10 @@ class DayState:
     checkpoint_sent: bool = False
     final_sent: bool = False
     session_alert_sent: bool = False
+    # report_ids we've already fired an IMMEDIATE failure alert for today, so a
+    # report re-detected as failed on a later pass (or across a resume) doesn't
+    # re-email. One alert per report per day, mirroring session_alert_sent.
+    failure_alerts_sent: List[str] = field(default_factory=list)
     reports: Dict[str, ReportState] = field(default_factory=dict)
 
     # ---- transitions ----
@@ -122,6 +126,7 @@ def load_or_create(date: str, report_ids_with_names: Dict[str, str]) -> DayState
                 checkpoint_sent=raw.get("checkpoint_sent", False),
                 final_sent=raw.get("final_sent", False),
                 session_alert_sent=raw.get("session_alert_sent", False),
+                failure_alerts_sent=list(raw.get("failure_alerts_sent", [])),
                 reports=reports,
             )
             # Add any newly-scheduled reports not in the saved file.
@@ -147,6 +152,7 @@ def save(ds: DayState) -> None:
         "checkpoint_sent": ds.checkpoint_sent,
         "final_sent": ds.final_sent,
         "session_alert_sent": ds.session_alert_sent,
+        "failure_alerts_sent": list(ds.failure_alerts_sent),
         "reports": {rid: asdict(rs) for rid, rs in ds.reports.items()},
     }
     tmp = p.with_suffix(".json.tmp")
