@@ -103,8 +103,11 @@ def audit(write: bool, log=_log) -> int:
             continue
         break  # one drift finding is enough — it's systemic
 
+    findings += audit_stations(sh, last_rep, reps, roll, log=log)
+
     if not findings:
-        log(f"audit clean: {len(reps)} reps checked, block ends r{last_rep}")
+        log(f"audit clean: {len(reps)} reps checked, block ends r{last_rep}, "
+            "stations OK")
         return 0
 
     ri = sh.worksheet("Report an Issue")
@@ -121,6 +124,93 @@ def audit(write: bool, log=_log) -> int:
                         for f in new], value_input_option="RAW")
         log(f"appended {len(new)} finding(s) to Report an Issue")
     return 1
+
+
+def audit_stations(sh, last_rep: int, reps, roll, log=_log) -> list[str]:
+    """Stations-tab invariants (added 2026-07-19 after the audit that found
+    all of these broken at once):
+      1. no formula-error cells (#REF!/#N/A/... — e.g. the deleted week-label
+         ref that silently emptied the new-start lists for months)
+      2. checklist formulas V5/X5/Z5 filter the board from $B$5 (they had
+         drifted to B10/B15, hiding the top reps) and W5/Y5/AA5 read roll
+         $D$3 and compare $R$2 (not a stale range / literal #REF!)
+      3. Rep List FILTERs (F col, all sections + Mon-Fri lineup blocks) start
+         at $B$5 — top-inserted board rows push these ranges down over time
+      4. Stations week label R2 == Sales Board B2
+      5. name hygiene: every human name in the car-ride / skill / lineup /
+         OFF-list cells must match a board rep or a roll-call person (catches
+         'aracely'-style typos and stale identities that break matching)
+    """
+    out = []
+    stn = sh.worksheet("Stations")
+    vals = stn.get("A1:CL135")
+    form = stn.get("A1:CL135", value_render_option="FORMULA")
+
+    for i, row in enumerate(vals, start=1):
+        for j, c in enumerate(row):
+            if any(e in str(c) for e in ("#REF!", "#N/A", "#VALUE!", "#NAME?")):
+                out.append(f"STATIONS: error value {c!r} at r{i}c{j+1} — a "
+                           "formula reference broke (deleted row/col?).")
+
+    def fml(a1):
+        m = re.match(r"([A-Z]+)(\d+)", a1)
+        col = 0
+        for ch in m.group(1):
+            col = col * 26 + ord(ch) - 64
+        r = int(m.group(2))
+        row = form[r-1] if len(form) >= r else []
+        return str(row[col-1]) if len(row) >= col else ""
+
+    for cell in ("V5", "X5", "Z5"):
+        f = fml(cell)
+        if f and "'Sales Board'!$B$5:" not in f:
+            out.append(f"STATIONS: checklist {cell} no longer filters the "
+                       "board from $B$5 — top reps are being dropped again.")
+    for cell in ("W5", "Y5", "AA5"):
+        f = fml(cell)
+        if f and ("$D$3:" not in f or "$R$2" not in f or "#REF" in f):
+            out.append(f"STATIONS: new-start list {cell} formula drifted "
+                       "(needs roll $D$3 range + $R$2 week; no #REF).")
+    for cell in ("F6", "F29", "F42", "F55", "F68", "F81", "F94", "F107", "F120"):
+        f = fml(cell)
+        if f and "$B$5:" not in f:
+            out.append(f"STATIONS: Rep List formula {cell} no longer starts "
+                       "at board $B$5 (top-insert drift).")
+
+    week_stn = str(vals[1][17]).strip() if len(vals) > 1 and len(vals[1]) > 17 else ""
+    week_board = str(sh.worksheet("Sales Board").acell("B2").value or "").strip()
+    if week_stn and week_board and week_stn != week_board:
+        out.append(f"STATIONS: week label R2={week_stn!r} != Sales Board "
+                   f"B2={week_board!r}.")
+
+    known = {_n(n) for _, n in reps} | {
+        _n(r[3]) for r in roll if len(r) > 3 and str(r[3]).strip()}
+    def matches(name):
+        n = _n(name)
+        return (n in known or any(k.startswith(n + " ") or n.startswith(k + " ")
+                                  for k in known))
+    LABELS = re.compile(r"^(\d|rep #|rep list|store|territory|car rides|"
+                        r"stations|legend|off|terminated|new starts|monday|"
+                        r"tuesday|wednesday|thursday|friday|in a |in both|"
+                        r"roadtrip|pitch|closing|transition|running|day 0|"
+                        r"pk$|qq|intro |saturday|sunday)", re.I)
+    name_cols = list(range(0, 7)) + list(range(8, 14)) + [89]
+    unknown = set()
+    for i, row in enumerate(vals, start=1):
+        if i < 4:
+            continue
+        for j in name_cols:
+            c = str(row[j]).strip() if len(row) > j else ""
+            if c and " " in c and not LABELS.match(c) and not matches(c):
+                unknown.add(f"{c!r} (r{i})")
+    if unknown:
+        out.append("STATIONS: name(s) matching nobody on the board/roll — "
+                   "typo or stale identity: " + ", ".join(sorted(unknown)[:8]))
+    return out
+
+
+def _n(s) -> str:
+    return " ".join(str(s).lower().split())
 
 
 def main(argv: list[str] | None = None) -> int:
