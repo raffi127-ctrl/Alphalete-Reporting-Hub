@@ -285,7 +285,37 @@ def _format_requests(view_id: int) -> List[dict]:
         {"autoResizeDimensions": {"dimensions": {
             "sheetId": view_id, "dimension": "COLUMNS",
             "startIndex": 0, "endIndex": ncol}}},
-    ]
+    ] + _date_format_requests(view_id)
+
+
+# Columns that hold dates, resolved BY LABEL so a column reorder can't turn
+# this into "format whatever is in position 1".
+_DATE_COLUMNS = ("sp.Order Date (copy)", "DTR Status Date", "spe.Install Date")
+
+
+def _date_format_requests(view_id: int) -> List[dict]:
+    """Force a date format on the date columns of the VIEW tab.
+
+    The hidden tab stores these correctly — writing with USER_ENTERED lets
+    Sheets parse "07/18/2026" into a real date, which is what we want for
+    sorting. But the view is a spilling FILTER, and FILTER output carries the
+    VALUE without the source cell's format, so those cells rendered as raw
+    serials: every Order Date showed "46221" instead of 7/18/2026 (observed
+    live 2026-07-19). Formatting the destination columns fixes it; converting
+    the dates to text would too, but would break date sorting.
+    """
+    reqs = []
+    for label in _DATE_COLUMNS:
+        if label not in DISPLAY_HEADERS:
+            continue
+        c = DISPLAY_HEADERS.index(label)
+        reqs.append({"repeatCell": {
+            "range": {"sheetId": view_id, "startRowIndex": FIRST_LOG_ROW - 1,
+                      "startColumnIndex": c, "endColumnIndex": c + 1},
+            "cell": {"userEnteredFormat": {"numberFormat": {
+                "type": "DATE", "pattern": "m/d/yyyy"}}},
+            "fields": "userEnteredFormat.numberFormat"}})
+    return reqs
 
 
 def _validation(view_id: int, reps: Sequence[str],
