@@ -482,41 +482,37 @@ def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
         {"range": "F5", "values": [[_pct(office["31-60"])]]},
     ]
 
-    # Per-rep list. Reps with NO activity in a bucket get a blank, not a 0% —
-    # zero sales is undefined mix, not a zero rate. [[feedback_one_gig_blank_is_na]]
-    ordered = sorted(reps.items(),
-                     key=lambda kv: (kv[1]["0-30"]["rate"] is None,
-                                     -(kv[1]["0-30"]["rate"] or 0),
-                                     kv[0]))
-    rows = [["Rep Name", "0-30 Day Activation Rate",
-             "31-60 Day Activation Rate"]]
-    for rep, v in ordered:
-        rows.append([rep, _pct(v["0-30"]), _pct(v["31-60"])])
-    rep_c0 = rep_list_col(ws)
-    rep_first = _colletter(rep_c0)
-    last_col = _colletter(rep_c0 + 2)
-    end = len(rows)
-    updates.append({"range": f"{rep_first}1:{last_col}{end}",
-                    "values": rows})
     _retry(lambda: ws.batch_update(updates, value_input_option="USER_ENTERED"))
 
-    # Percent format + banding.
-    fmt_reqs = [{"repeatCell": {
-        "range": {"sheetId": ws.id, "startRowIndex": 4, "endRowIndex": 5,
-                  "startColumnIndex": 4, "endColumnIndex": 6},
-        "cell": {"userEnteredFormat": {
-            "numberFormat": {"type": "PERCENT", "pattern": "0.0%"},
-            "horizontalAlignment": "CENTER"}},
-        "fields": "userEnteredFormat.numberFormat,"
-                  "userEnteredFormat.horizontalAlignment"}}]
-    fmt_reqs.append({"repeatCell": {
-        "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": end,
-                  "startColumnIndex": rep_c0 + 1, "endColumnIndex": rep_c0 + 3},
-        "cell": {"userEnteredFormat": {
-            "numberFormat": {"type": "PERCENT", "pattern": "0.0%"},
-            "horizontalAlignment": "CENTER"}},
-        "fields": "userEnteredFormat.numberFormat,"
-                  "userEnteredFormat.horizontalAlignment"}})
+    # Per-rep list: 0-30 day ONLY, greatest → least, and ONLY reps that
+    # actually have 0-30 data (Megan 2026-07-20). A rep with no 0-30 sales
+    # has an undefined rate, not 0%, so they're dropped from the list rather
+    # than shown blank. [[feedback_one_gig_blank_is_na]]
+    ranked = sorted(
+        ((rep, v) for rep, v in reps.items() if v["0-30"]["rate"] is not None),
+        key=lambda kv: (-kv[1]["0-30"]["rate"], kv[0]))
+    rows = [["Rep Name", "0-30 Day Activation Rate"]]
+    for rep, v in ranked:
+        rows.append([rep, _pct(v["0-30"])])
+    rep_c0 = rep_list_col(ws)
+    rep_first = _colletter(rep_c0)
+    end = len(rows)
+
+    # Wipe the OLD block first — it was 3 columns wide (0-30 + 31-60) and
+    # could be longer than the new list, so both the dropped 31-60 column and
+    # any surplus rows must clear (values AND their band fills).
+    old_end = _colletter(rep_c0 + 2)
+    _retry(lambda: ws.batch_clear(
+        [f"{rep_first}1:{old_end}{ws.row_count}"]))
+    _retry(lambda: ws.spreadsheet.batch_update({"requests": [{"repeatCell": {
+        "range": {"sheetId": ws.id, "startRowIndex": 0,
+                  "endRowIndex": ws.row_count, "startColumnIndex": rep_c0,
+                  "endColumnIndex": rep_c0 + 3},
+        "cell": {"userEnteredFormat": {}}, "fields": "userEnteredFormat"}}]}))
+
+    _retry(lambda: ws.batch_update(
+        [{"range": f"{rep_first}1:{_colletter(rep_c0 + 1)}{end}",
+          "values": rows}], value_input_option="USER_ENTERED"))
 
     def _bg(row0, col0, colour):
         return {"repeatCell": {
@@ -527,30 +523,42 @@ def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
                 "backgroundColor": BAND_BG[colour]}},
             "fields": "userEnteredFormat.backgroundColor"}}
 
+    # Office E5/F5 percent + band (both buckets stay at office level).
+    fmt_reqs = [{"repeatCell": {
+        "range": {"sheetId": ws.id, "startRowIndex": 4, "endRowIndex": 5,
+                  "startColumnIndex": 4, "endColumnIndex": 6},
+        "cell": {"userEnteredFormat": {
+            "numberFormat": {"type": "PERCENT", "pattern": "0.0%"},
+            "horizontalAlignment": "CENTER"}},
+        "fields": "userEnteredFormat.numberFormat,"
+                  "userEnteredFormat.horizontalAlignment"}}]
     for ci, key in ((4, "0-30"), (5, "31-60")):
         c = band_for(office[key]["rate"], key)
         if c:
             fmt_reqs.append(_bg(4, ci, c))
-    for i, (_rep, v) in enumerate(ordered):
-        for off, key in ((1, "0-30"), (2, "31-60")):
-            c = band_for(v[key]["rate"], key)
-            if c:
-                fmt_reqs.append(_bg(1 + i, rep_c0 + off, c))
-    # Rep-name column auto-fits its content (names run past 30 chars and were
-    # clipping). The two rate columns stay at a fixed width: auto-fit would
-    # size them to "100.0%" and squeeze the wrapped headers into a tall
-    # narrow stack.
-    for off, px in ((1, 120), (2, 120)):
-        fmt_reqs.append({"updateDimensionProperties": {
-            "range": {"sheetId": ws.id, "dimension": "COLUMNS",
-                      "startIndex": rep_c0 + off,
-                      "endIndex": rep_c0 + off + 1},
-            "properties": {"pixelSize": px}, "fields": "pixelSize"}})
-    # Header styled like the tab's other headers (navy / white / Arial 12) —
-    # the rep columns otherwise inherit whatever fill was sitting in them.
+
+    # Rep 0-30 column: percent, centred, banded.
+    fmt_reqs.append({"repeatCell": {
+        "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": end,
+                  "startColumnIndex": rep_c0 + 1, "endColumnIndex": rep_c0 + 2},
+        "cell": {"userEnteredFormat": {
+            "numberFormat": {"type": "PERCENT", "pattern": "0.0%"},
+            "horizontalAlignment": "CENTER"}},
+        "fields": "userEnteredFormat.numberFormat,"
+                  "userEnteredFormat.horizontalAlignment"}})
+    for i, (_rep, v) in enumerate(ranked):
+        c = band_for(v["0-30"]["rate"], "0-30")
+        if c:
+            fmt_reqs.append(_bg(1 + i, rep_c0 + 1, c))
+    # Rate column fixed width; name column auto-fits (names run past 30 chars).
+    fmt_reqs.append({"updateDimensionProperties": {
+        "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                  "startIndex": rep_c0 + 1, "endIndex": rep_c0 + 2},
+        "properties": {"pixelSize": 120}, "fields": "pixelSize"}})
+    # Header (navy / white / Arial 12), matching the tab's other headers.
     fmt_reqs.append({"repeatCell": {
         "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1,
-                  "startColumnIndex": rep_c0, "endColumnIndex": rep_c0 + 3},
+                  "startColumnIndex": rep_c0, "endColumnIndex": rep_c0 + 2},
         "cell": {"userEnteredFormat": {
             "wrapStrategy": "WRAP", "horizontalAlignment": "CENTER",
             "verticalAlignment": "MIDDLE",
@@ -563,8 +571,8 @@ def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
                   "userEnteredFormat.verticalAlignment,"
                   "userEnteredFormat.backgroundColor,"
                   "userEnteredFormat.textFormat"}})
-    # Rep-name cells: clear any inherited fill so only the rate cells carry
-    # the band colours.
+    # Rep-name cells: white fill (only the rate cells carry band colours),
+    # left-aligned.
     fmt_reqs.append({"repeatCell": {
         "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": end,
                   "startColumnIndex": rep_c0, "endColumnIndex": rep_c0 + 1},
@@ -573,8 +581,7 @@ def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
             "horizontalAlignment": "LEFT"}},
         "fields": "userEnteredFormat.backgroundColor,"
                   "userEnteredFormat.horizontalAlignment"}})
-    # Auto-fit LAST, so it measures the finished cells (font, wrap, alignment)
-    # rather than whatever was in the column beforehand.
+    # Auto-fit the name column LAST, so it measures the finished cells.
     fmt_reqs.append({"autoResizeDimensions": {"dimensions": {
         "sheetId": ws.id, "dimension": "COLUMNS",
         "startIndex": rep_c0, "endIndex": rep_c0 + 1}}})
@@ -584,7 +591,8 @@ def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
     log(f"  ✓ {ws.title}: 0-30 {o30['activated']}/{o30['sold']} "
         f"= {o30['rate']:.1%} ({band_for(o30['rate'], '0-30')}), "
         f"31-60 {o60['activated']}/{o60['sold']} = {o60['rate']:.1%} "
-        f"({band_for(o60['rate'], '31-60')}), {len(reps)} reps listed")
+        f"({band_for(o60['rate'], '31-60')}), "
+        f"{len(ranked)} reps with 0-30 data listed")
 
 
 def update_churn_tab(ws: gspread.Worksheet, bases: dict,

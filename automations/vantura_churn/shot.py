@@ -162,18 +162,23 @@ def _rep_range(ws, rep_col: str = None):
     Column derived from the helper block by default — a constant goes stale
     the moment a column is inserted or removed.
     """
-    import gspread.utils as _u
     from automations.vantura_churn import fill
     if rep_col is None:
         rep_col = fill._colletter(fill.rep_list_col(ws))
-    c0 = _u.a1_to_rowcol(f"{rep_col}1")[1]
-    last_col = _u.rowcol_to_a1(1, c0 + 2).rstrip("1")
-    vals = ws.get(f"{rep_col}1:{last_col}{ws.row_count}")
-    last = 0
+    c0 = fill._col_idx(rep_col)
+    # Bound to the actual content, not a fixed width — the list dropped from
+    # 3 columns to 2 (0-30 only) on 2026-07-20, so scan a small window and
+    # stop at the last column/row that holds anything.
+    vals = ws.get(f"{rep_col}1:{fill._colletter(c0 + 3)}{ws.row_count}")
+    last_row = last_col_i = 0
     for i, row in enumerate(vals, start=1):
-        if any(str(c).strip() for c in row):
-            last = i
-    return f"{rep_col}1:{last_col}{last}" if last > 1 else None
+        for j, c in enumerate(row):
+            if str(c).strip():
+                last_row = i
+                last_col_i = max(last_col_i, c0 + j)
+    if last_row <= 1:
+        return None
+    return f"{rep_col}1:{fill._colletter(last_col_i)}{last_row}"
 
 
 def post(png: Path, day: dt.date | None = None, thread_ts: str | None = None,
