@@ -2675,6 +2675,26 @@
       },
       "machine": "Lucy 2"
     },
+    "att_cancels": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Carlos's B2B Ongoing Cancels -> the 'Lucy Cancel Rates' tab on the Vantura Master Sales Board. Loom 2:21: 'the ongoing cancel report... if they could live on my spreadsheet, that'd be great.' WEEKLY, NOT DAILY: Carlos pointed at Raf's DAILY ongoing-cancel screenshot, but his own view (B2BCancelRates / CarlosLOExpCancels, Megan-supplied 2026-07-20) reports by WEEK ENDING and carries none of the D2D running-sum captions, so automations/ongoing_cancel cannot parse it. Megan 2026-07-20: build it weekly, she will confirm with Carlos; re-pointing to a daily view later is a URL plus a renderer, not a rebuild. Crosstab worksheet is 'Cancel Rates Sheet' (the dialog's other thumb is 'zzz Last Refresh'). DRY-RUN by default; --sheet writes. MUST RUN ON LUCY 2 (Carlos's Tableau identity). Posts nothing.",
+      "display_name": "B2B Ongoing Cancels (Carlos) -> Sheet",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.att_order_log.cancels_run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 20,
+      "verify": null,
+      "machine": "Lucy 2"
+    },
     "att_churn": {
       "on_scheduler": false,
       "_off_scheduler_note": "Carlos's B2B Churn -> 'Lucy New INT Churn' + 'Lucy Wireless Churn' on the Vantura Master Sales Board (Megan 2026-07-19: the two churn tabs 'should act like the metrics report one we do for the fiber d2d offices'). Reuses the D2D machinery wholesale — new_internet_churn.fill does the four-section dated-column fill; the only B2B-specific parts are the two ATTTRACKER-B2B/CHURNRATES custom views (CarloWireless / CarlosNewINT), a header rename (att_order_log.churn_shape: 'Rep'->'Rep Name', '0-30 Day'->'0-30 Day Churn', ...), and the CHURN_NI_TAB / CHURN_WL_TAB / CHURN_SHEET_ID / CHURN_SLICE_OWNER env. MUST use the CROSSTAB DIALOG, not the direct .csv: the .csv ignores custom views (both returned byte-identical all-teams data) and carries no product column, so the wireless/new-internet split exists ONLY inside each view's filter. Crosstab preserves it — 576 rows/66 reps vs 408/82, verified 2026-07-19. DRY-RUN by default; --fill writes. MUST RUN ON LUCY 2 (Carlos's Tableau identity). Posts nothing — the B2B thread is assembled separately and stays gated.",
