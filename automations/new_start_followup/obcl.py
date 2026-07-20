@@ -21,6 +21,10 @@ from automations.recruiting_report import fill
 
 SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
 
+# The rolling all-history tab (every new start ever), as opposed to the dated
+# weekly tabs. Used only as a phone book -- see phone_book().
+ROLLING_TAB = "D2D OBCL"
+
 HEADER_ROW = 2  # 1-indexed; row 1 is the week date banner
 INTERVIEWER_HEADER = "2ND Round Interviewer"
 FIRST_NAME_HEADER = "Name"
@@ -146,6 +150,55 @@ def read_new_starts(monday: Optional[dt.date] = None, sheet_id: str = SHEET_ID):
             )
         )
     return monday, ws.title, starts
+
+
+def phone_book(sheet_id: str = SHEET_ID) -> Dict[str, str]:
+    """Every past new start's name -> phone, off the rolling "D2D OBCL" tab.
+
+    Today's 2nd-round interviewers were new starts themselves once, so their own
+    numbers are already sitting in this tab (18 of 21 leaders, when this was
+    written). That makes it a better phone source than the Contacts app: it's a
+    Sheet the report already reads, so no macOS Automation permission, nothing
+    cached to disk, and nobody has to be sitting at the mini.
+
+    Keys are normalized names (roster._norm). A name with two DIFFERENT numbers
+    is dropped rather than guessed at -- texting a wrong number is worse than
+    texting nobody.
+    """
+    from automations.new_start_followup.roster import _norm
+    from automations.swag_welcome.roster import normalize_phone
+
+    sheet = fill.open_by_key(sheet_id)
+    ws = sheet.worksheet(ROLLING_TAB)
+    grid = ws.get_all_values()
+
+    # This tab's header row sits lower than the dated tabs' -- find it rather
+    # than assuming, since rows get inserted above it.
+    header_idx = None
+    for i, row in enumerate(grid[:8]):
+        if any(INTERVIEWER_HEADER.lower() in re.sub(r"\s+", " ", c or "").strip().lower()
+               for c in row):
+            header_idx = i
+            break
+    if header_idx is None:
+        raise RuntimeError(
+            "Couldn't find the header row on the {!r} tab.".format(ROLLING_TAB))
+
+    header = grid[header_idx]
+    i_first = _col(header, FIRST_NAME_HEADER)
+    i_last = _col(header, LAST_NAME_HEADER)
+    i_phone = _col(header, PHONE_HEADER)
+
+    seen = {}  # type: Dict[str, set]
+    for row in grid[header_idx + 1:]:
+        if len(row) <= max(i_first, i_last, i_phone):
+            continue
+        name = _norm(" ".join(p for p in (row[i_first].strip(), row[i_last].strip()) if p))
+        e164, _ = normalize_phone(row[i_phone].strip())
+        if name and e164:
+            seen.setdefault(name, set()).add(e164)
+
+    return {name: list(nums)[0] for name, nums in seen.items() if len(nums) == 1}
 
 
 def counts_by_interviewer(starts: List[NewStart]) -> Dict[str, int]:

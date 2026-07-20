@@ -143,28 +143,29 @@ number to ~20 people, so they go out when a human asks — never on a schedule.
 
 ### Phone numbers
 
-Numbers come from **Lucy 1's Contacts app** (they're not in OBCL, and Slack
-profiles don't carry a phone). Resolve them once:
+**Primary source: the OBCL sheet itself.** Today's 2nd-round interviewers were
+new starts once, so their own numbers are already on the rolling `D2D OBCL` tab
+(18 of 21 leaders when this was built). `obcl.phone_book()` reads that tab and
+matches on name, and `texts.resolve_phones()` fills in whoever's being texted.
 
-```bash
-# on Lucy 1 — dry-run first
-python -m automations.new_start_followup.contacts
-python -m automations.new_start_followup.contacts --write
-```
+That's deliberately better than the Contacts app: no macOS Automation
+permission, nothing cached to disk, nobody has to be at the mini, and the
+numbers are always current. A name with two *different* numbers in the history
+is dropped, not guessed.
 
-or remotely: `lucy rerun fill_leader_contacts`.
+**Nothing is ever stored.** Numbers are resolved in memory at send time. Do not
+put a phone number in `leaders.json` — **this repo is PUBLIC on GitHub.**
 
-They're cached to **`~/.config/recruiting-report/new-start-leader-phones.json`**,
-keyed by Slack ID — **machine-local and outside the repo on purpose, because
-this repo is PUBLIC on GitHub.** Never put a phone number in `leaders.json`.
-`roster.load()` merges the overlay, so `leader.phone` reads the same either way;
-on a machine without it every number is blank and the texting step reports
-"no number on file" rather than skipping people silently.
+**Fallback for the rest.** A leader who was never a new start (or is spelled
+differently) has no OBCL number and is reported as such. Two ways to fix:
 
-Contacts access needs macOS Automation permission. If the fill returns `-1743`,
-somebody has to approve it once at the mini — that's why it's resolved ahead of
-time instead of at send time, where a TCC prompt would hang a headless run.
+1. Add the spelling they use in OBCL to their `obcl_names` in `leaders.json`.
+2. Or put the number in the machine-local overlay
+   `~/.config/recruiting-report/new-start-leader-phones.json` (keyed by Slack
+   ID) — outside the repo, and it **wins** over OBCL since it's hand-entered.
+   `python -m automations.new_start_followup.contacts --write` on Lucy 1 fills
+   it from the Contacts app, or `lucy rerun fill_leader_contacts`.
 
-A leader is only auto-filled when the contact name matches a spelling already in
-`leaders.json` **and** exactly one distinct number comes back. Two numbers under
-one name is reported, not guessed.
+⚠️ The Contacts route needs macOS Automation permission, and on a headless mini
+the approval dialog just hangs (seen 7/19: a 120s timeout, not a `-1743`). It
+needs a human at the machine once. Prefer route 1.

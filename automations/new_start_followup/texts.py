@@ -52,8 +52,32 @@ class Outcome:
         return self.status.label
 
 
+def resolve_phones(rec) -> int:
+    """Fill in any missing leader numbers from the OBCL phone book.
+
+    A number already on the leader (the machine-local overlay) WINS -- that's
+    hand-entered and authoritative. This only fills blanks, and only for the
+    people we're about to text, so a normal status run never pays for it.
+    """
+    from automations.new_start_followup import obcl
+
+    need = [s.leader for s in rec.pending if not s.leader.phone]
+    if not need:
+        return 0
+    book = obcl.phone_book()
+    filled = 0
+    for leader in need:
+        for key in leader.keys():
+            if key in book:
+                leader.phone = book[key]
+                filled += 1
+                break
+    return filled
+
+
 def run(rec, send: bool = False) -> List[Outcome]:
     """Text every pending leader. `send=False` composes without sending."""
+    resolve_phones(rec)
     pending = rec.pending
     outcomes = []  # type: List[Outcome]
 
@@ -113,6 +137,8 @@ def render(outcomes: List[Outcome], send: bool) -> str:
     if blocked:
         lines.append("INCOMPLETE — {} leader(s) have no number: {}".format(
             len(blocked), ", ".join(o.label for o in blocked)))
+        lines.append("  They're not in the OBCL phone book (never a new start "
+                     "themselves, or a different name spelling).")
         lines.append("  Fill them in with: python -m "
                      "automations.new_start_followup.contacts --write   (on Lucy 1)")
     if failed:
