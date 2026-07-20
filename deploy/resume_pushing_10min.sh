@@ -76,25 +76,68 @@ echo "[$(date)] Resume Pushing finished exit=$ST" >> "$LOG_FILE"
 # Report this standalone run to the Hub so the card + the Lucy 2 daily digest
 # reflect a REAL success/failure (a launchd report that never publishes leaves
 # the card grey, so a clean run looks identical to a silent miss).
+#
 # VOLUME: this fires ~84x on a weekday. Publishing every pass would add ~2.5k
-# rows/month to Hub Activity and slow every read, so publish FAILURES always
-# (they need to surface immediately) but SUCCESS only on the day's first clean
-# pass — enough to prove "it ran and was healthy today". Skips never reach here
-# (the day/window gates exit above). Best-effort: never fail the run.
+# rows/month to Hub Activity and slow every read, so SUCCESS publishes only on
+# the day's first clean pass. Skips never reach here (the day/window gates exit
+# above). Best-effort: never fail the run.
+#
+# FAILURES ARE STREAK-GATED (2026-07-20). They used to publish on EVERY bad
+# pass, which made the card lie: on 7/20 the log shows 33 runs, 28 of them
+# exit=0, but the Hub showed "6 ran, 6 failed" — the one published success (the
+# 8:06 pass) against every published failure. All 5 failures were the same
+# isolated blip:
+#   [cdp][STOP] AppStream console never rendered #searchMC — login did not
+#   complete (Cloudflare re-challenge?)      -> exit 2
+# which the next 10-min pass resolves on its own. So a lone bad pass is a SKIP,
+# not a failure: we only publish once the streak reaches FAIL_STREAK (~30 min
+# with no real progress), and only ONCE per outage — a second row adds no
+# information and the card is already red. A later clean pass publishes a
+# recovery success so the card goes green again instead of staying red all day.
+FAIL_STREAK=3                       # consecutive bad passes before we call it a failure
 _PUB_STAMP="$LOG_DIR/.resume-pushing-published-$(date +%Y-%m-%d)"
+_STREAK_FILE="$LOG_DIR/.resume-pushing-failstreak"
+_OUTAGE_FILE="$LOG_DIR/.resume-pushing-outage"   # we already published this streak
+
+_publish() {   # $1 = success|failed
+  "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('resume_pushing','Resume Pushing','$1')" >> "$LOG_FILE" 2>&1
+}
+
+_NOTIFY=0
 case " $* " in
   *" --dry-run "*) : ;;
   *)
     if [ "$ST" -ne 0 ]; then
-      "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('resume_pushing','Resume Pushing','failed')" >> "$LOG_FILE" 2>&1 || true
-    elif [ ! -f "$_PUB_STAMP" ]; then
-      "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('resume_pushing','Resume Pushing','success')" >> "$LOG_FILE" 2>&1 \
-        && touch "$_PUB_STAMP" || true
+      _n=$(cat "$_STREAK_FILE" 2>/dev/null || echo 0)
+      case "$_n" in ''|*[!0-9]*) _n=0 ;; esac
+      _n=$((_n + 1))
+      echo "$_n" > "$_STREAK_FILE"
+      if [ "$_n" -ge "$FAIL_STREAK" ] && [ ! -f "$_OUTAGE_FILE" ]; then
+        echo "[$(date)] failure streak $_n/$FAIL_STREAK — publishing FAILED to the Hub" >> "$LOG_FILE"
+        _publish failed && touch "$_OUTAGE_FILE" || true
+        _NOTIFY=1
+      else
+        echo "[$(date)] transient bad pass (streak $_n/$FAIL_STREAK, exit=$ST) — treated as a SKIP, not published" >> "$LOG_FILE"
+      fi
+    else
+      if [ -f "$_OUTAGE_FILE" ]; then
+        # Recovered from a published outage — publish so the card goes green
+        # again (the day's success stamp is long since set, so the normal
+        # first-clean-pass branch below would never fire).
+        echo "[$(date)] recovered after a published outage — publishing SUCCESS" >> "$LOG_FILE"
+        _publish success && rm -f "$_OUTAGE_FILE" || true
+        touch "$_PUB_STAMP"
+      elif [ ! -f "$_PUB_STAMP" ]; then
+        _publish success && touch "$_PUB_STAMP" || true
+      fi
+      rm -f "$_STREAK_FILE"
     fi
     ;;
 esac
 
-if [ "$ST" -ne 0 ]; then
-  osascript -e "display notification \"Resume Pushing failed (exit $ST) — check the log; AppStream login may have expired or office 11580 wasn't reachable\" with title \"Resume Pushing\" sound name \"Sosumi\"" 2>/dev/null || true
+# Notify only when we actually called it a failure — a lone Cloudflare blip
+# popping a Sosumi alert every 10 minutes trained everyone to ignore it.
+if [ "$_NOTIFY" -eq 1 ]; then
+  osascript -e "display notification \"Resume Pushing failed $FAIL_STREAK passes in a row (exit $ST) — check the log; AppStream login may have expired or office 11580 wasn't reachable\" with title \"Resume Pushing\" sound name \"Sosumi\"" 2>/dev/null || true
 fi
 exit 0
