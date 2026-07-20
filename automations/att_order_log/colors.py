@@ -48,6 +48,12 @@ STATUS_COLORS = {
     "pending shipment":   YELLOW,   #   1,320
     "pending order port": YELLOW,   #     808
     "open":               YELLOW,   #     640
+    # Found by the FIRST LIVE RUN (2026-07-19 22:28), not by the probe — the
+    # probe's 60-day all-owner pull never surfaced them. Proof that a fixed
+    # status list goes stale on its own, and the reason unmapped() exists and
+    # is called on every run rather than just once at build time.
+    "backordered":          YELLOW,  # in flight, awaiting stock
+    "pending valid payment": YELLOW,  # pending, same family as "Pending"
     # --- inferred, terminal + bad = red ------------------------------------
     "returned":           RED,      #     160
 }
