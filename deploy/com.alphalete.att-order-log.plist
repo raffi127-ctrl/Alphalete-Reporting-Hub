@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.att-order-log</string>
+
+    <!-- Path is the laptop placeholder; on the mini, install_agent.py rewrites it
+         to that machine's repo path (python -m automations.day_orchestrator.install_agent
+         att-order-log). RUNS ON LUCY 2 — the pull rides Carlos's real-Chrome
+         Tableau identity; under Raf's login (Lucy 1) the export is a different
+         slice, and pulling from the laptop evicts the mini's ownerville
+         session holder. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/att_order_log.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- DAILY incl. weekends (no Weekday key), 5:00am CST — Megan 2026-07-19.
+
+         She first asked for 5:30. 5:30/5:38/5:46/5:54 is b2b_quality's retry
+         ladder, and that job has a HARD 6:00 deadline (Sales Boards starts at
+         6:00, the VA posts by hand ~5:57). This pull is ~7 minutes on a ~120MB
+         export plus a full Chrome-profile copy, so stacking it there risked
+         pushing a live report past its last retry. 5:00 clears both.
+
+         TIME KNOB: edit the entry below (Hour/Minute are machine LOCAL time;
+         the mini is Central). Keep it clear of the 5:30-6:00 window. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/com.alphalete.att-order-log.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/com.alphalete.att-order-log.err</string>
+</dict>
+</plist>
