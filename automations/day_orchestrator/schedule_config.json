@@ -2675,6 +2675,26 @@
       },
       "machine": "Lucy 2"
     },
+    "att_churn": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Carlos's B2B Churn -> 'Lucy New INT Churn' + 'Lucy Wireless Churn' on the Vantura Master Sales Board (Megan 2026-07-19: the two churn tabs 'should act like the metrics report one we do for the fiber d2d offices'). Reuses the D2D machinery wholesale — new_internet_churn.fill does the four-section dated-column fill; the only B2B-specific parts are the two ATTTRACKER-B2B/CHURNRATES custom views (CarloWireless / CarlosNewINT), a header rename (att_order_log.churn_shape: 'Rep'->'Rep Name', '0-30 Day'->'0-30 Day Churn', ...), and the CHURN_NI_TAB / CHURN_WL_TAB / CHURN_SHEET_ID / CHURN_SLICE_OWNER env. MUST use the CROSSTAB DIALOG, not the direct .csv: the .csv ignores custom views (both returned byte-identical all-teams data) and carries no product column, so the wireless/new-internet split exists ONLY inside each view's filter. Crosstab preserves it — 576 rows/66 reps vs 408/82, verified 2026-07-19. DRY-RUN by default; --fill writes. MUST RUN ON LUCY 2 (Carlos's Tableau identity). Posts nothing — the B2B thread is assembled separately and stays gated.",
+      "display_name": "B2B Churn (Carlos) -> Sheet",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.att_order_log.churn_run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 20,
+      "verify": null,
+      "machine": "Lucy 2"
+    },
     "att_order_log_probe": {
       "on_scheduler": false,
       "_off_scheduler_note": "SCHEMA PROBE for Carlos's new ATT B2B Order Log (requested 2026-07-19 via Loom + Slack). on_scheduler:false = never in the 4am batch; it exists only so `lucy --machine \"Lucy 2\" rerun att_order_log_probe` can pull the ATTTRACKER-B2B/ORDERLOG crosstab ONCE and dump its real schema (header by index+label, distinct 'DTR Status (enriched)' values vs Carlos's 6-colour rule, per-column blank rates) to the 'ATT Order Log Diag' tab. READ-ONLY: it downloads a crosstab and writes one diag tab; it touches no report data and posts nothing. MUST RUN ON LUCY 2 — the view is Carlos's custom view (CarlosLocalOfficeEXPANDEDCHURN) and under Raf's login (Lucy 1) the export is a different slice; the laptop is also barred because a laptop scrape evicts the mini's ownerville session holder. Purpose: build the renderer against the ACTUAL column set rather than the Loom screenshot, since Carlos said 'this tab is everything that should stay on here' and an unmapped status would render colourless (reads as 'no status', not 'unmapped'). Delete this entry once att_order_log ships.",
