@@ -96,6 +96,32 @@ SITE_SEARCH_URL = (
 )
 SEARCH_TERMS = ("churn", "wireless churn", "b2b churn")
 
+# SETTLED (Megan 2026-07-19): "This is Carlos' wireless churn view." So the two
+# candidates Carlos couldn't tell apart on the Loom are resolved by fiat — this
+# is the one. It IS in ATTTRACKER-B2B after all, under the CHURNRATES workbook,
+# as a custom view named CarloWireless. The site-wide sweep above stays anyway:
+# it costs one page load and it's what tells us whether a SECOND, near-identical
+# wireless-churn view exists that someone could later point a report at by
+# mistake. Knowing both is how the ambiguity stops recurring.
+#
+# CUSTOM VIEW => LUCY 2 ONLY, same trap as b2b_quality: a custom view carries
+# its owner's filters/sort for its owner. Under Raf's login this is a different
+# slice, silently.
+CHURN_WIRELESS_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER-B2B/CHURNRATES/1767636f-875a-40ac-ad39-a42cb894e428/"
+    "CarloWireless?:iid=1"
+)
+# vantura_churn already pulls this workbook via its ALLTEAMCHURN view with
+# crosstab sheet "ICD Churn" — per-ICD rows. The 'Lucy Wireless Churn' tab Carlos
+# set up needs PER-REP rows, so the open question is whether CarloWireless
+# exports a Rep breakout or flattens to Owner & Office like the ALLTEAMCHURN
+# dashboard export does. vantura_churn hit exactly this on activation rates (the
+# dashboard .csv flattened; a worksheet-level probe was needed to get Rep), so
+# we check rather than assume. Leaving it unset makes the probe enumerate the
+# crosstab dialog's worksheet list instead of guessing a name.
+CHURN_CROSSTAB_SHEET = None
+
 
 def _describe(grid, rec) -> None:
     """Print the schema of a loaded crosstab grid."""
@@ -269,6 +295,72 @@ def main(argv=None) -> int:
     return rc
 
 
+def _probe_churn(page, rec) -> None:
+    """Describe Carlos's wireless-churn view (Megan-supplied, authoritative).
+
+    THE question this answers: does it carry a per-REP breakout? The
+    'Lucy Wireless Churn' tab Carlos set up has a 'Rep' column and one row per
+    rep, but vantura_churn learned the hard way that a CHURNRATES dashboard
+    export can flatten to Owner & Office only. If it flattens, the churn fill
+    needs a worksheet-level pull instead, and finding that out now is the
+    difference between a re-point and a rewrite.
+    """
+    import csv
+    import io
+
+    rec("")
+    rec("=== Carlos wireless churn — {} ===".format(CHURN_WIRELESS_URL))
+    # Load the custom view first so it is materialised before we ask for its
+    # data (an export of a never-rendered custom view can come back as the
+    # Original — the trap vantura_churn.cdp_pull documents for activations).
+    try:
+        page.goto(CHURN_WIRELESS_URL, wait_until="domcontentloaded")
+        page.wait_for_timeout(20_000)
+        rec("  custom view rendered")
+    except Exception as e:  # noqa: BLE001
+        rec("  could not render the view: {}".format(e))
+        return
+
+    host = "https://us-east-1.online.tableau.com"
+    url = "{}/t/sci/views/ATTTRACKER-B2B/CHURNRATES.csv?:refresh=yes".format(host)
+    try:
+        r = page.context.request.get(url, timeout=300_000)
+        body = r.body() or b""
+        rec("  [csv] status={} bytes={}".format(r.status, len(body)))
+        if r.status != 200 or len(body) < 500:
+            rec("  [csv] head={!r}".format(body[:180].decode("utf-8", "replace")))
+            rec("  NOTE: direct .csv hits the DEFAULT view, not the custom one."
+                " If this looks like all-teams rather than Carlos, the fill"
+                " needs the crosstab-dialog path against CarloWireless.")
+            return
+        rows = list(csv.reader(io.StringIO(body.decode("utf-8-sig", "replace"))))
+    except Exception as e:  # noqa: BLE001
+        rec("  [csv] export failed: {}".format(e))
+        return
+
+    if not rows:
+        rec("  [csv] empty")
+        return
+    hdr = [h.strip() for h in rows[0]]
+    rec("  [csv] {} data rows, {} columns".format(len(rows) - 1, len(hdr)))
+    rec("  columns:")
+    for i, h in enumerate(hdr):
+        rec("    [{:>2}] {}".format(i, h))
+
+    # The decisive check.
+    rep_cols = [h for h in hdr if "rep" in h.lower()]
+    rec("")
+    rec("  REP BREAKOUT: {}".format(
+        "YES -> {}".format(rep_cols) if rep_cols else
+        "NO — flattens to owner/ICD level; churn fill needs a worksheet pull"))
+    bucket_cols = [h for h in hdr if "day" in h.lower() or "churn" in h.lower()]
+    rec("  bucket-looking columns: {}".format(bucket_cols or "(none found)"))
+    rec("")
+    rec("  first 8 rows:")
+    for r_ in rows[1:9]:
+        rec("    " + " | ".join(str(c or "")[:20] for c in r_[:10]))
+
+
 def _run_list_views(rec) -> None:
     """Open a real-Chrome CDP session (Carlos's identity) just to enumerate the
     workbook's views. Separate session from the crosstab pull because
@@ -292,6 +384,7 @@ def _run_list_views(rec) -> None:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             tp._ensure_tableau_authenticated(page, verbose=False,
                                              allow_form_login=True)
+            _probe_churn(page, rec)
             _list_views(page, rec)
     finally:
         try:
