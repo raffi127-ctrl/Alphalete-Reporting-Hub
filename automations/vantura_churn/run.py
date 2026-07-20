@@ -302,7 +302,7 @@ def main(argv=None) -> int:
         if carlos_tab:
             ws = sh.worksheet(carlos_tab)
             out = _P("output/vantura_churn") / f"churn-{today.isoformat()}.png"
-            png = _shot.render(ws, out)
+            png = _shot.render_report(ws, out, log=log)
             log(f"  ✓ screenshot → {png}")
             # dry_run unless --post: posting outward is opt-in, never a
             # side effect of the daily refresh.

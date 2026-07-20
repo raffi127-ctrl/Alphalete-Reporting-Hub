@@ -118,6 +118,77 @@ def render(ws, out_path: Path, rng: str | None = None) -> Path:
     return out_path
 
 
+def render_report(ws, out_path: Path, helper_first_col: str = "R",
+                  rep_col: str = "AG", log=print) -> Path:
+    """The whole report as ONE image: churn block + the per-rep list.
+
+    They can't be captured as a single range — the PDF export RENDERS hidden
+    columns, so A1:AI would splice the internal helper block (R:AE) into the
+    middle of the picture. So each visible block is exported separately and
+    composed side by side, mirroring how the tab reads.
+    """
+    from PIL import Image
+
+    main = render(ws, out_path.with_name(out_path.stem + "_main.png"),
+                  visible_range(ws, helper_first_col))
+    reps_rng = _rep_range(ws, rep_col)
+    if reps_rng is None:
+        log("  ⚠ no per-rep list found — screenshot is the churn block only")
+        main.replace(out_path)
+        return out_path
+    reps = render(ws, out_path.with_name(out_path.stem + "_reps.png"),
+                  reps_rng)
+
+    a, b = Image.open(main), Image.open(reps)
+    # The two exports come back at unrelated scales — the churn block is wide
+    # and short so it fits-to-width tiny, the rep list is narrow and tall so
+    # it comes back huge. Pasting them as-is makes the churn block
+    # unreadable. Normalise on ROW HEIGHT (image height ÷ row count) so text
+    # is the same size in both halves.
+    rows_a = _range_rows(visible_range(ws, helper_first_col))
+    rows_b = _range_rows(reps_rng)
+    if rows_a and rows_b:
+        rh_a, rh_b = a.height / rows_a, b.height / rows_b
+        if rh_b > 0 and abs(rh_a / rh_b - 1) > 0.02:
+            scale = rh_a / rh_b
+            b = b.resize((max(1, int(b.width * scale)),
+                          max(1, int(b.height * scale))), Image.LANCZOS)
+
+    gap = 28
+    h = max(a.height, b.height)
+    canvas = Image.new("RGB", (a.width + gap + b.width, h), (255, 255, 255))
+    canvas.paste(a, (0, 0))
+    canvas.paste(b, (a.width + gap, 0))
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(out_path)
+    for tmp in (main, reps):          # keep only the composed image
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+    return out_path
+
+
+def _range_rows(rng: str):
+    """Row count spanned by an A1 range like 'A1:Q24' → 24."""
+    import re
+    m = re.match(r"^[A-Z]+(\d+):[A-Z]+(\d+)$", str(rng or ""))
+    return (int(m.group(2)) - int(m.group(1)) + 1) if m else None
+
+
+def _rep_range(ws, rep_col: str):
+    """A1 range of the per-rep list, or None when it hasn't been written."""
+    import gspread.utils as _u
+    c0 = _u.a1_to_rowcol(f"{rep_col}1")[1]
+    last_col = _u.rowcol_to_a1(1, c0 + 2).rstrip("1")
+    vals = ws.get(f"{rep_col}1:{last_col}{ws.row_count}")
+    last = 0
+    for i, row in enumerate(vals, start=1):
+        if any(str(c).strip() for c in row):
+            last = i
+    return f"{rep_col}1:{last_col}{last}" if last > 1 else None
+
+
 def post(png: Path, day: dt.date | None = None, thread_ts: str | None = None,
          dry_run: bool = True, log=print) -> dict:
     """Upload the PNG to the Activations order-log channel as Lucy.
