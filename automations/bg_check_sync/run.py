@@ -212,6 +212,23 @@ def main(argv=None) -> int:
         for name, why in flags:
             print(f"  {name}: {why}")
 
+    # Cross-tab BG disagreements: same person, different status on the rolling
+    # vs dated tab. Advisory only, fully wrapped so it can never break the run.
+    try:
+        conflicts = []
+        for p in roster:
+            split = match.status_conflict(p)
+            if split:
+                conflicts.append((f"{p.first} {p.last}".strip(), split))
+        if conflicts:
+            print(f"\n[bg-conflict] {len(conflicts)} person(s) whose BG status "
+                  f"DIFFERS between tabs (a human should reconcile — not "
+                  f"auto-synced, the 'ahead' value may itself be wrong):")
+            for name, split in sorted(conflicts):
+                print(f"  {name}: {split}")
+    except Exception as e:  # noqa: BLE001 — advisory must never fail the run
+        print(f"[bg-conflict] check skipped: {e}")
+
     if hub_run_id is not None:
         try:
             from automations.day_orchestrator import hub_publish

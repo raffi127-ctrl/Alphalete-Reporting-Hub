@@ -43,6 +43,11 @@ class Person:
     key: str                       # normalized "last|first"
     current: str                   # current col-K value
     locations: list = field(default_factory=list)  # [(tab, row1)] where they appear
+    # [(tab, status)] as read from each location. Populated by consolidate() so a
+    # person who shows DIFFERENT BG statuses on the rolling vs dated tab can be
+    # surfaced -- decide() compares against a single merged `current`, so the
+    # lagging tab is otherwise never caught up and the two silently disagree.
+    tab_statuses: list = field(default_factory=list)
 
 
 def _norm_key(first: str, last: str) -> str:
@@ -133,15 +138,38 @@ def consolidate(people: list[Person]) -> list[Person]:
     location so we can update col K everywhere they appear."""
     by_key: dict[str, Person] = {}
     for p in people:
+        # Each incoming Person is a single location; record its (tab, status) so
+        # cross-tab disagreements survive the merge.
+        tab_status = [(p.locations[0][0], p.current)] if p.locations else []
         if p.key in by_key:
             m = by_key[p.key]
             m.locations.extend(p.locations)
+            m.tab_statuses.extend(tab_status)
             # prefer a non-empty current status for display
             if not m.current and p.current:
                 m.current = p.current
         else:
-            by_key[p.key] = Person(p.first, p.last, p.key, p.current, list(p.locations))
+            by_key[p.key] = Person(p.first, p.last, p.key, p.current,
+                                   list(p.locations), list(tab_status))
     return list(by_key.values())
+
+
+def status_conflict(person: "Person") -> Optional[str]:
+    """If `person` carries two or more DIFFERENT non-empty BG statuses across the
+    tabs they appear on, return a human string describing the split; else None.
+
+    Advisory only -- it never changes a write. Auto-syncing the tabs is wrong
+    here: the "ahead" status may itself be disputed (a namesake's result), so we
+    SURFACE the disagreement for a human rather than propagate it."""
+    seen = {}
+    for tab, status in person.tab_statuses:
+        s = (status or "").strip()
+        if s:
+            seen.setdefault(s, []).append(tab)
+    if len(seen) < 2:
+        return None
+    parts = ["{} on {}".format(s, "/".join(tabs)) for s, tabs in seen.items()]
+    return "; ".join(parts)
 
 
 def best_event(events: list[BGEvent]) -> Optional[BGEvent]:
