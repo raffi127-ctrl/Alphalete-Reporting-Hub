@@ -470,7 +470,22 @@ def _date_format_requests(view_id: int) -> List[dict]:
 
 def _validation(view_id: int, reps: Sequence[str],
                 periods: Sequence[str]) -> List[dict]:
-    """Dropdowns at B2 (rep) and D2 (period) — both on the header row."""
+    """Dropdowns at B2 (rep) and D2 (period) — both on the header row.
+
+    CLEARS the whole header block first. Data validation is not removed by
+    clear() or by writing new values, so a dropdown left at a cell we have
+    since moved away from just stays there: when the period control moved from
+    B3 to D2, B3 kept its "All / Last 30 Days" list and the tab showed the same
+    choice twice (Megan spotted it 2026-07-19). Wiping rows 1-8 and re-adding
+    exactly the two we want makes the run self-correcting, so any future move
+    cannot strand another orphan.
+    """
+    ncol = len(DISPLAY_HEADERS)
+    reqs: List[dict] = [{"setDataValidation": {
+        "range": {"sheetId": view_id, "startRowIndex": 0,
+                  "endRowIndex": HEADER_ROW, "startColumnIndex": 0,
+                  "endColumnIndex": ncol}}}]      # no rule = clear
+
     def rule(col0: int, values: Sequence[str]) -> dict:
         return {"setDataValidation": {
             "range": {"sheetId": view_id, "startRowIndex": 1,
@@ -480,8 +495,9 @@ def _validation(view_id: int, reps: Sequence[str],
                 "type": "ONE_OF_LIST",
                 "values": [{"userEnteredValue": v} for v in values]},
                 "showCustomUi": True, "strict": False}}}
-    return [rule(1, [ALL_PERIODS] + list(reps)),        # B2
-            rule(3, [ALL_PERIODS] + list(periods))]     # D2
+    reqs.append(rule(1, [ALL_PERIODS] + list(reps)))        # B2 — rep
+    reqs.append(rule(3, [ALL_PERIODS] + list(periods)))     # D2 — period
+    return reqs
 
 
 def _status_color_rules(view_id: int) -> List[dict]:
