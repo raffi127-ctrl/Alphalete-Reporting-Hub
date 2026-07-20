@@ -52,13 +52,19 @@ def visible_range(ws, helper_first_col: str = None) -> str:
     from automations.vantura_churn import fill
     if helper_first_col is None:
         helper_first_col = fill._colletter(fill.helper_bounds(ws)["f0"])
-    last_col = fill._colletter(fill._col_idx(helper_first_col) - 1)
-    grid = ws.get(f"{FIRST_COL}1:{last_col}{ws.row_count}")
-    last_row = 0
+    scan_last = fill._col_idx(helper_first_col) - 1
+    grid = ws.get(f"{FIRST_COL}1:{fill._colletter(scan_last)}{ws.row_count}")
+    # Bound to the last row AND last column that actually hold content — the
+    # block ends a column or two before the helper block, so stopping at
+    # helper-1 leaves a blank strip of white on the right of the shot.
+    last_row = last_col_i = 0
     for i, row in enumerate(grid, start=1):
-        if any(str(c).strip() for c in row):
-            last_row = i
-    return f"{FIRST_COL}1:{last_col}{max(last_row, 20)}"
+        for j, c in enumerate(row):
+            if str(c).strip():
+                last_row = i
+                last_col_i = max(last_col_i, j)
+    return (f"{FIRST_COL}1:{fill._colletter(last_col_i)}"
+            f"{max(last_row, 20)}")
 
 
 def render(ws, out_path: Path, rng: str | None = None) -> Path:
