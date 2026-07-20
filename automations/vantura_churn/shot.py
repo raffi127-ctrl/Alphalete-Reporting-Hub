@@ -122,51 +122,21 @@ def render_report(ws, out_path: Path, helper_first_col: str = "R",
                   rep_col: str = "AG", log=print) -> Path:
     """The whole report as ONE image: churn block + the per-rep list.
 
-    They can't be captured as a single range — the PDF export RENDERS hidden
-    columns, so A1:AI would splice the internal helper block (R:AE) into the
-    middle of the picture. So each visible block is exported separately and
-    composed side by side, mirroring how the tab reads.
+    ONE range covers both: the PDF export omits columns hidden on the tab, so
+    the helper block (R:AE) drops out of the middle by itself and the rep
+    list lands right next to the churn block. That only holds while R:AE are
+    actually hidden — a freshly duplicated tab does NOT inherit the hidden
+    state, so fill.hide_helper_columns() runs before this.
     """
-    from PIL import Image
-
-    main = render(ws, out_path.with_name(out_path.stem + "_main.png"),
-                  visible_range(ws, helper_first_col))
     reps_rng = _rep_range(ws, rep_col)
+    main_rng = visible_range(ws, helper_first_col)
     if reps_rng is None:
         log("  ⚠ no per-rep list found — screenshot is the churn block only")
-        main.replace(out_path)
-        return out_path
-    reps = render(ws, out_path.with_name(out_path.stem + "_reps.png"),
-                  reps_rng)
+        return render(ws, out_path, main_rng)
 
-    a, b = Image.open(main), Image.open(reps)
-    # The two exports come back at unrelated scales — the churn block is wide
-    # and short so it fits-to-width tiny, the rep list is narrow and tall so
-    # it comes back huge. Pasting them as-is makes the churn block
-    # unreadable. Normalise on ROW HEIGHT (image height ÷ row count) so text
-    # is the same size in both halves.
-    rows_a = _range_rows(visible_range(ws, helper_first_col))
-    rows_b = _range_rows(reps_rng)
-    if rows_a and rows_b:
-        rh_a, rh_b = a.height / rows_a, b.height / rows_b
-        if rh_b > 0 and abs(rh_a / rh_b - 1) > 0.02:
-            scale = rh_a / rh_b
-            b = b.resize((max(1, int(b.width * scale)),
-                          max(1, int(b.height * scale))), Image.LANCZOS)
-
-    gap = 28
-    h = max(a.height, b.height)
-    canvas = Image.new("RGB", (a.width + gap + b.width, h), (255, 255, 255))
-    canvas.paste(a, (0, 0))
-    canvas.paste(b, (a.width + gap, 0))
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    canvas.save(out_path)
-    for tmp in (main, reps):          # keep only the composed image
-        try:
-            tmp.unlink()
-        except OSError:
-            pass
-    return out_path
+    last_row = max(_range_rows(main_rng) or 0, _range_rows(reps_rng) or 0)
+    last_col = reps_rng.split(":")[1].rstrip("0123456789")
+    return render(ws, out_path, f"A1:{last_col}{last_row}")
 
 
 def _range_rows(rng: str):

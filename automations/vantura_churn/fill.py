@@ -37,6 +37,8 @@ U_FORMULA = ('=IFERROR($AE{r}/IF($AD{r}="Wireless",$B$5,'
 AC_FORMULA = '=IFERROR(VLOOKUP($V{r},$R$100:$S$500,2,FALSE),"")'
 
 CENTER = {"horizontalAlignment": "CENTER"}
+# The tab's header navy (sampled from the 'Days Left' header row).
+HEADER_BG = {"red": 0.09803922, "green": 0.23529412, "blue": 0.39607844}
 
 
 def open_sheet():
@@ -195,6 +197,36 @@ def _colletter(ci: int) -> str:
     return s
 
 
+def hide_helper_columns(ws: gspread.Worksheet, log=print) -> bool:
+    """Hide the helper block, matching the live tabs.
+
+    Duplicating a churn tab does NOT carry the hidden state over, so a fresh
+    copy shows R:AE — 14 columns of raw per-account scratch sitting right of
+    the report. Idempotent; returns True when it actually changed something.
+    """
+    first = gspread.utils.a1_to_rowcol("R1")[1] - 1
+    cap = helper_capacity(ws)          # AE is the last helper column
+    last = gspread.utils.a1_to_rowcol("AE1")[1]
+    meta = _retry(lambda: ws.spreadsheet.fetch_sheet_metadata(
+        {"fields": "sheets(properties(sheetId),data(columnMetadata("
+                   "hiddenByUser)))"}))
+    cm = []
+    for s in meta["sheets"]:
+        if s["properties"]["sheetId"] == ws.id:
+            cm = s.get("data", [{}])[0].get("columnMetadata", [])
+            break
+    if all(c.get("hiddenByUser") for c in cm[first:last] or [{}]):
+        return False
+    _retry(lambda: ws.spreadsheet.batch_update({"requests": [{
+        "updateDimensionProperties": {
+            "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                      "startIndex": first, "endIndex": last},
+            "properties": {"hiddenByUser": True},
+            "fields": "hiddenByUser"}}]}))
+    log(f"  ✓ {ws.title}: hid helper columns R:AE (cap {cap})")
+    return True
+
+
 def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
                             log=print) -> None:
     """Write the two office activation rates + the per-rep list.
@@ -288,16 +320,33 @@ def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
                       "startIndex": rep_c0 + off,
                       "endIndex": rep_c0 + off + 1},
             "properties": {"pixelSize": px}, "fields": "pixelSize"}})
-    # Wrap the two rate headers so they show in full.
+    # Header styled like the tab's other headers (navy / white / Arial 12) —
+    # the rep columns otherwise inherit whatever fill was sitting in them.
     fmt_reqs.append({"repeatCell": {
         "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1,
                   "startColumnIndex": rep_c0, "endColumnIndex": rep_c0 + 3},
         "cell": {"userEnteredFormat": {
             "wrapStrategy": "WRAP", "horizontalAlignment": "CENTER",
-            "textFormat": {"bold": True}}},
+            "verticalAlignment": "MIDDLE",
+            "backgroundColor": HEADER_BG,
+            "textFormat": {"bold": True, "fontFamily": "Arial", "fontSize": 12,
+                           "foregroundColor": {"red": 1, "green": 1,
+                                               "blue": 1}}}},
         "fields": "userEnteredFormat.wrapStrategy,"
                   "userEnteredFormat.horizontalAlignment,"
+                  "userEnteredFormat.verticalAlignment,"
+                  "userEnteredFormat.backgroundColor,"
                   "userEnteredFormat.textFormat"}})
+    # Rep-name cells: clear any inherited fill so only the rate cells carry
+    # the band colours.
+    fmt_reqs.append({"repeatCell": {
+        "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": end,
+                  "startColumnIndex": rep_c0, "endColumnIndex": rep_c0 + 1},
+        "cell": {"userEnteredFormat": {
+            "backgroundColor": {"red": 1, "green": 1, "blue": 1},
+            "horizontalAlignment": "LEFT"}},
+        "fields": "userEnteredFormat.backgroundColor,"
+                  "userEnteredFormat.horizontalAlignment"}})
     _retry(lambda: ws.spreadsheet.batch_update({"requests": fmt_reqs}))
 
     o30, o60 = office["0-30"], office["31-60"]

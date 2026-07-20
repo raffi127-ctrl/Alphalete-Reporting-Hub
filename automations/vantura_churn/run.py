@@ -282,6 +282,12 @@ def main(argv=None) -> int:
             fill.repair_viewing_dropdown(sh.worksheet(tab), log=log)
         except Exception as e:  # noqa: BLE001 — never block the daily write
             log(f"  ⚠ dropdown check skipped: {e}")
+        # A duplicated churn tab doesn't inherit the hidden helper columns,
+        # so R:AE sit in plain view next to the report. No-op once hidden.
+        try:
+            fill.hide_helper_columns(sh.worksheet(tab), log=log)
+        except Exception as e:  # noqa: BLE001
+            log(f"  ⚠ helper-column hide skipped: {e}")
         fill.update_churn_tab(sh.worksheet(tab), results[key]["summary"]["base"],
                               results[key]["helper"], log=log)
         if key == "carlos" and rates is not None:
