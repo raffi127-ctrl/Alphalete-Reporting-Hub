@@ -177,11 +177,63 @@ def render(p: Dict[str, object]) -> str:
     return "\n".join(out)
 
 
+def dm_preview(p: Dict[str, object], user: str, log=print) -> dict:
+    """DM the assembled thread to ONE person, for review.
+
+    Megan asked for a preview (2026-07-20). This is a DM to a named individual,
+    NOT the channel post — CHANNEL_ID stays None and nothing here can reach
+    Carlos's channel. The guard below enforces that structurally rather than by
+    convention: a channel id (C…/G…) is rejected outright, so a mistyped or
+    copy-pasted destination cannot turn a preview into a broadcast.
+    """
+    from automations.shared import slack_metrics_post as smp
+
+    u = (user or "").strip()
+    if not u.upper().startswith("U"):
+        raise ValueError(
+            "refusing to send: {!r} is not a user id. This path DMs an "
+            "individual for review; channel ids (C…/G…) are rejected so a "
+            "preview cannot become a channel post.".format(u))
+
+    body = "*{}*\n{}".format(p["header"], "\n".join(body_lines()))
+    ready = [r for r in p["items"] if r["path"]]
+    missing = [r for r in p["items"] if not r["path"]]
+    note = ["", "_Preview — not posted to any channel._",
+            "_{}/{} artifacts attached._".format(len(ready), p["total"])]
+    if missing:
+        note.append("_Missing: {}_".format(
+            ", ".join(r["label"] for r in missing)))
+    text = body + "\n" + "\n".join(note)
+
+    log("  DM -> {} ({} attachment(s))".format(u, len(ready)))
+    sent = []
+    first = True
+    for r in ready:
+        path = Path(r["path"])
+        try:
+            smp.dm_user_with_file(
+                path, user=u,
+                comment=(text if first else "{} {}".format(r["emoji"],
+                                                           r["label"])),
+                file_name=path.name)
+            sent.append(path.name)
+            first = False
+        except Exception as e:  # noqa: BLE001 — one attachment must not stop the rest
+            log("    ! {} failed: {}".format(path.name, str(e)[:140]))
+    if first:
+        # Nothing attached — still send the text so the preview is not silent.
+        smp.post_dm_text(u, text) if hasattr(smp, "post_dm_text") else None
+    return {"to": u, "sent": sent, "missing": [r["label"] for r in missing]}
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="att_order_log.thread")
     ap.add_argument("--json", action="store_true",
                     help="emit the plan as JSON")
     ap.add_argument("--today", default=None, metavar="YYYY-MM-DD")
+    ap.add_argument("--dm", default=None, metavar="USER_ID",
+                    help="DM the assembled preview to ONE user (U…). Never "
+                         "posts to a channel.")
     args = ap.parse_args(argv)
     today = (dt.date.fromisoformat(args.today) if args.today
              else dt.date.today())
@@ -191,6 +243,13 @@ def main(argv=None) -> int:
         print(json.dumps(p, indent=2))
     else:
         print(render(p))
+
+    if args.dm:
+        res = dm_preview(p, args.dm)
+        print("")
+        print("DM sent to {}: {} attachment(s){}".format(
+            res["to"], len(res["sent"]),
+            "; missing " + ", ".join(res["missing"]) if res["missing"] else ""))
     # 0 whether or not it is complete: this is a report, and a non-zero exit
     # would make the orchestrator treat "not everything has run yet" as a
     # failure of THIS module.
