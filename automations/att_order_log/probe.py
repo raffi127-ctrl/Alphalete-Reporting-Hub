@@ -595,8 +595,10 @@ CANCEL_VIEW_URL = (
 )
 # The D2D module's worksheet name, tried first. If B2B names it differently the
 # dialog's error lists the real options.
-CANCEL_WORKSHEETS = ("Internet Cancel Rates (Daily)", "B2B Cancel Rates",
-                     "Cancel Rates")
+# "Cancel Rates Sheet" is the REAL name — the 2026-07-20 probe listed the
+# dialog's thumbnails: ['Cancel Rates Sheet', 'zzz Last Refresh']. The D2D name
+# is kept as a fallback in case this ever runs against Raf's workbook.
+CANCEL_WORKSHEETS = ("Cancel Rates Sheet", "Internet Cancel Rates (Daily)")
 
 
 def _probe_cancel(page, rec) -> None:
