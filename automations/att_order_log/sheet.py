@@ -187,12 +187,18 @@ def build_view_values(rows: Sequence[Sequence[str]], reps: Sequence[str],
     rep_cell = "${}${}".format(CELL_REP[0], CELL_REP[1:])
     per_cell = "${}${}".format(CELL_PERIOD[0], CELL_PERIOD[1:])
 
-    rep_col = "{}!${}:${}".format(data, _col_letter(_COL_REP),
-                                 _col_letter(_COL_REP))
-    per_col = "{}!${}:${}".format(data, _col_letter(_COL_PERIOD),
-                                 _col_letter(_COL_PERIOD))
-    stat_col = "{}!${}:${}".format(data, _col_letter(_COL_STATUS),
-                                   _col_letter(_COL_STATUS))
+    # EVERY range starts at row 2. FILTER requires its condition ranges to be
+    # the SAME HEIGHT as the source range; mixing $A$2:$Q (from row 2) with
+    # $A:$A (from row 1) makes it error, IFERROR swallows the error, and the
+    # tab renders a tidy "no orders match" on top of 1,354 perfectly good rows
+    # — a silent failure that still exits 0 (observed live 2026-07-19 22:42).
+    def _col(idx0: int) -> str:
+        c = _col_letter(idx0)
+        return "{}!${}$2:${}".format(data, c, c)
+
+    rep_col = _col(_COL_REP)
+    per_col = _col(_COL_PERIOD)
+    stat_col = _col(_COL_STATUS)
     last_col = _col_letter(len(DISPLAY_HEADERS) - 1)
     body_rng = "{}!$A$2:${}".format(data, last_col)
 
@@ -219,13 +225,18 @@ def build_view_values(rows: Sequence[Sequence[str]], reps: Sequence[str],
     # numbers always describe what is on screen.
     statuses = sorted({r[_COL_STATUS] for r in rows if r[_COL_STATUS]})
     grid.append(["Status"] + list(statuses[:len(DISPLAY_HEADERS) - 1]))
+    # SUMPRODUCT, not COUNTIFS. COUNTIFS needs a wildcard for the "All" case,
+    # and "*" matches any TEXT cell — but Filter Period is EMPTY on anything
+    # older than 30 days, so those rows were never counted and the summary
+    # under-reported badly (Canceled showed 25 against 1,354 sales, live
+    # 2026-07-19). SUMPRODUCT mirrors the FILTER's own boolean logic exactly,
+    # so the summary and the log can never disagree.
     counts = []
     for s in statuses[:len(DISPLAY_HEADERS) - 1]:
         counts.append(
-            '=COUNTIFS({sc},"{s}",{rc},IF({r}="{all}","*",{r}),'
-            '{pc},IF({p}="{all}","*",{p}))'.format(
-                sc=stat_col, s=s, rc=rep_col, r=rep_cell,
-                pc=per_col, p=per_cell, all=ALL_PERIODS))
+            '=SUMPRODUCT(({sc}="{s}")*({rep}>0)*({per}>0))'.format(
+                sc=stat_col, s=s.replace('"', '""'),
+                rep=rep_cond, per=per_cond))
     grid.append(["Count"] + counts)
     grid.append([""] * len(DISPLAY_HEADERS))
 
