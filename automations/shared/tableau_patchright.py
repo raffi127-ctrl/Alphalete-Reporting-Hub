@@ -118,6 +118,126 @@ class AppStreamBusy(Exception):
     step aside and retry later instead of making the other run wait."""
 
 
+# ---------------------------------------------------------------------------
+# Cross-process profile lock.
+#
+# The wait+retry above only rides out a collision for ~32s (4x8s). A report
+# that runs 6-15min will starve a sibling that fires mid-run: on 2026-07-20
+# THREE browser reports fired at 7:00 on Lucy 2 (BOX Order Log, Vantura Churn,
+# Carlos Captainship Headcount) sharing ONE profile — BOX held it ~6min, the
+# headcount waited 32s and died.
+#
+# Lucy 1 never hits this: its orchestrator runs reports SEQUENTIALLY in one
+# process. This lock gives Lucy 2's independently-scheduled LaunchAgents the
+# same property — every browser launch takes an exclusive OS lock on its
+# profile dir and HOLDS it until the context closes, so a second report that
+# fires mid-run waits its turn instead of racing. Keyed on the profile PATH, so
+# reports on different profiles (.browser_profile vs .appstream_profile vs the
+# holder's .browser_profile_holder) never block each other — only same-profile
+# launches serialize.
+#
+# flock is advisory and released automatically when the fd closes OR the owning
+# process dies, so a crashed report can never leave a stuck lock. Unix-only; on
+# Windows (fcntl absent) it degrades to a no-op and the wait+retry still guards.
+try:
+    import fcntl as _fcntl
+except ImportError:            # Windows — no flock; keep the wait+retry behavior
+    _fcntl = None
+
+_PROFILE_LOCK_WAIT_S = 1800.0  # wait up to 30min for a long report ahead of us
+_PROFILE_LOCK_POLL_S = 2.0
+
+
+def _profile_lock_path(profile_dir) -> Path:
+    """Sibling lockfile for a profile dir (…/.browser_profile.launchlock). Kept
+    OUTSIDE the profile so Chrome never touches it."""
+    p = Path(profile_dir)
+    return p.parent / (p.name + ".launchlock")
+
+
+def _acquire_profile_lock(profile_dir, *, busy_retries, verbose, label):
+    """Take an exclusive lock on `profile_dir` before launching a browser on it.
+    Returns an open fd to hold (release with _release_profile_lock), or None when
+    locking is unavailable (Windows) or declined — in which case the caller just
+    proceeds and the existing wait+retry handles any collision.
+
+    Yield-fast callers (resume_pushing passes busy_retries=1) do NOT wait: if the
+    profile is busy they get None immediately and fall through to collide+yield,
+    exactly as before."""
+    if _fcntl is None:
+        return None
+    yield_fast = busy_retries is not None and busy_retries <= 1
+    wait_s = 0.0 if yield_fast else _PROFILE_LOCK_WAIT_S
+    path = _profile_lock_path(profile_dir)
+    try:
+        fd = os.open(str(path), os.O_CREAT | os.O_RDWR, 0o644)
+    except Exception:          # noqa: BLE001 — locking is best-effort
+        return None
+    start = time.monotonic()
+    announced = False
+    while True:
+        try:
+            _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+            if announced and verbose:
+                print(f"[{label}] profile free — acquired lock, launching",
+                      flush=True)
+            return fd
+        except OSError:
+            if time.monotonic() - start >= wait_s:
+                try:
+                    os.close(fd)
+                except Exception:  # noqa: BLE001
+                    pass
+                if verbose and not yield_fast:
+                    print(f"[{label}] {path.name} still held after {int(wait_s)}s "
+                          "— launching anyway (wait+retry will guard)", flush=True)
+                return None
+            if verbose and not announced and not yield_fast:
+                print(f"[{label}] another run holds {path.name} — waiting for it "
+                      "to finish before launching (avoids a profile collision)",
+                      flush=True)
+                announced = True
+            time.sleep(_PROFILE_LOCK_POLL_S)
+
+
+def _release_profile_lock(lock_fd, verbose=False):
+    """Release + close a profile lock fd. Idempotent-safe and never raises."""
+    if lock_fd is None:
+        return
+    try:
+        if _fcntl is not None:
+            _fcntl.flock(lock_fd, _fcntl.LOCK_UN)
+    except Exception:          # noqa: BLE001
+        pass
+    try:
+        os.close(lock_fd)
+    except Exception:          # noqa: BLE001
+        pass
+
+
+def _hold_profile_lock_until_close(ctx, lock_fd, verbose):
+    """Release the profile lock when the context is closed, so the lock spans the
+    whole session — not just the launch (the profile stays IN USE until close, so
+    releasing at launch time would let a sibling collide). If close can't be
+    hooked, release now: degrades to serializing only the launch, which is still
+    no worse than before."""
+    if lock_fd is None:
+        return ctx
+    try:
+        _orig_close = ctx.close
+
+        def _close_and_release(*a, **k):
+            try:
+                return _orig_close(*a, **k)
+            finally:
+                _release_profile_lock(lock_fd, verbose)
+
+        ctx.close = _close_and_release
+    except Exception:          # noqa: BLE001 — unusual object; don't leak the lock
+        _release_profile_lock(lock_fd, verbose)
+    return ctx
+
+
 def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
                        verbose: bool = True, window_size: tuple = (1680, 1280),
                        device_scale: float | None = None,
@@ -166,37 +286,53 @@ def _launch_persistent(p, user_data_dir, *, headless: bool, label: str,
     # keeps every other caller's launch byte-identical.
     if enable_extensions:
         base["ignore_default_args"] = ["--disable-extensions"]
-    prefer_chrome = True
-    last: Optional[Exception] = None
-    # Low-priority callers (resume_pushing) pass busy_retries=1 to fail fast on a
-    # profile-in-use collision (yield) instead of waiting for the other run.
-    retries = busy_retries if busy_retries is not None else _LAUNCH_RETRIES
-    for attempt in range(retries):
-        try:
-            if prefer_chrome:
-                try:
-                    return p.chromium.launch_persistent_context(
-                        channel="chrome", **base)
-                except Exception as e:
-                    if _is_profile_in_use(e):
-                        raise  # bundled won't help (same profile); wait+retry
+    # Serialize same-profile launches across processes so independently-scheduled
+    # reports (Lucy 2's LaunchAgents) don't collide on the shared Chrome profile
+    # the way three 7:00 reports did on 2026-07-20. Held until ctx.close(); None
+    # when locking is unavailable (Windows) or declined (yield-fast) — then the
+    # wait+retry below still guards. See _acquire_profile_lock.
+    lock_fd = _acquire_profile_lock(user_data_dir, busy_retries=busy_retries,
+                                    verbose=verbose, label=label)
+    try:
+        prefer_chrome = True
+        last: Optional[Exception] = None
+        # Low-priority callers (resume_pushing) pass busy_retries=1 to fail fast on
+        # a profile-in-use collision (yield) instead of waiting for the other run.
+        retries = busy_retries if busy_retries is not None else _LAUNCH_RETRIES
+        for attempt in range(retries):
+            try:
+                if prefer_chrome:
+                    try:
+                        return _hold_profile_lock_until_close(
+                            p.chromium.launch_persistent_context(
+                                channel="chrome", **base), lock_fd, verbose)
+                    except Exception as e:
+                        if _is_profile_in_use(e):
+                            raise  # bundled won't help (same profile); wait+retry
+                        if verbose:
+                            print(f"[{label}] system Chrome unavailable ({e!r}) — "
+                                  "falling back to bundled Chromium", flush=True)
+                        prefer_chrome = False
+                return _hold_profile_lock_until_close(
+                    p.chromium.launch_persistent_context(**base), lock_fd, verbose)
+            except Exception as e:
+                last = e
+                if _is_profile_in_use(e) and attempt < retries - 1:
                     if verbose:
-                        print(f"[{label}] system Chrome unavailable ({e!r}) — "
-                              "falling back to bundled Chromium", flush=True)
-                    prefer_chrome = False
-            return p.chromium.launch_persistent_context(**base)
-        except Exception as e:
-            last = e
-            if _is_profile_in_use(e) and attempt < retries - 1:
-                if verbose:
-                    print(f"[{label}] browser profile is in use by another run "
-                          f"— waiting {_LAUNCH_WAIT_S:.0f}s then retrying "
-                          f"({attempt + 1}/{retries})", flush=True)
-                time.sleep(_LAUNCH_WAIT_S)
-                continue
-            raise
-    assert last is not None
-    raise last
+                        print(f"[{label}] browser profile is in use by another run "
+                              f"— waiting {_LAUNCH_WAIT_S:.0f}s then retrying "
+                              f"({attempt + 1}/{retries})", flush=True)
+                    time.sleep(_LAUNCH_WAIT_S)
+                    continue
+                raise
+        assert last is not None
+        raise last
+    except BaseException:
+        # Any failure escaping the launch: drop the lock so we don't wedge every
+        # sibling behind a run that never opened a context. (A success returns
+        # through the try above with the lock attached to ctx, not released here.)
+        _release_profile_lock(lock_fd, verbose)
+        raise
 
 
 @contextmanager
