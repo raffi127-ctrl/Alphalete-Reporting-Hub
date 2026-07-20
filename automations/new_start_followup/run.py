@@ -21,6 +21,7 @@ import datetime as dt
 import sys
 
 from automations.new_start_followup import report as report_mod
+from automations.new_start_followup import texts
 from automations.shared import slack_metrics_post as smp
 
 
@@ -46,10 +47,14 @@ def _post(rec, body: str, live: bool) -> int:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="New-start follow-up: who texted their new starts.")
-    ap.add_argument("--mode", choices=["status", "rollcall", "nudge", "checklist"],
+    ap.add_argument("--mode",
+                    choices=["status", "rollcall", "nudge", "checklist", "text"],
                     default="status",
                     help="status = print only; rollcall = Saturday 8am tag-everyone; "
-                         "nudge = Saturday reminder; checklist = Sunday roll-up")
+                         "nudge = Saturday reminder; checklist = Sunday roll-up; "
+                         "text = iMessage the stragglers from Lucy 1")
+    ap.add_argument("--send", action="store_true",
+                    help="with --mode text: actually send the iMessages")
     ap.add_argument("--force", action="store_true",
                     help="post the roll call again even if one is already in the thread")
     ap.add_argument("--when", choices=["auto", "morning", "midday", "evening"], default="auto",
@@ -98,6 +103,15 @@ def main(argv=None) -> int:
         print(report_mod.render_checklist(rec))
         print()
         print(report_mod.render_text_list(rec))
+        return 0
+
+    if args.mode == "text":
+        try:
+            outcomes = texts.run(rec, send=args.send)
+        except RuntimeError as exc:
+            print("INCOMPLETE — {}".format(exc), file=sys.stderr)
+            return 2
+        print(texts.render(outcomes, send=args.send))
         return 0
 
     if args.mode == "rollcall":

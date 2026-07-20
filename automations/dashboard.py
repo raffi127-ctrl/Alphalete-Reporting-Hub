@@ -3803,6 +3803,11 @@ AUTOMATED_REPORTS = [
             "a new leader starts running 2nd rounds."
         ),
         "assignees": ["Lucy 1"],
+        # Must run on Lucy 1: the texting step needs that machine's Contacts and
+        # its signed-in iMessage account. The Slack-only actions would run
+        # anywhere, but pinning the card keeps one obvious home.
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "new_start_followup",
         # Own launchd timers (Sat ×3 + Sun ×1) — hide the DUE-TODAY + schedule
         # pills and keep it out of the "due today" tallies, same as bg-check-sync.
         "hide_schedule": True,
@@ -3848,6 +3853,20 @@ AUTOMATED_REPORTS = [
                 "help": "Post the numbered ✅ roll-up to the thread.",
                 "module": "automations.new_start_followup.run",
                 "args_fn": lambda: ["--mode", "checklist", "--live"],
+            },
+            {
+                "label": "Preview Texts",
+                "icon": "👁",
+                "help": "Show the exact text each straggler would get. Sends nothing.",
+                "module": "automations.new_start_followup.run",
+                "args_fn": lambda: ["--mode", "text"],
+            },
+            {
+                "label": "Text Stragglers",
+                "icon": "💬",
+                "help": "SENDS REAL iMESSAGES from Lucy 1 to every leader who hasn't replied Sent. Preview first.",
+                "module": "automations.new_start_followup.run",
+                "args_fn": lambda: ["--mode", "text", "--send"],
             },
         ],
     },

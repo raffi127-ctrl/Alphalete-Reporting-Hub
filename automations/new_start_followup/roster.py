@@ -9,17 +9,32 @@ Lucy's Slack user token has no `users:read` scope, so a scheduled run CANNOT
 look names up live -- the mapping has to be on disk. leaders.json is that file;
 add a leader there when a new one starts running 2nd rounds.
 
-`phone` is only needed for the Sunday texts. Leave it blank and that leader is
-reported as "no number on file" instead of being silently skipped.
+Phone numbers are NOT in this file and must never be committed to it -- the repo
+is public on GitHub. They live in a machine-local, gitignored overlay:
+
+    ~/.config/recruiting-report/new-start-leader-phones.json
+    { "U0B4RUR83J9": "+12145551234", ... }
+
+`load()` merges that overlay on top of the roster, so the code reads
+`leader.phone` the same either way. On a machine without the overlay every phone
+is blank and the texting step reports "no number on file" instead of silently
+skipping people.
 """
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
 ROSTER_PATH = Path(__file__).resolve().parent / "leaders.json"
+
+# Machine-local, gitignored. Personal numbers stay off GitHub.
+PHONES_PATH = Path(
+    os.environ.get("NSF_PHONES_PATH")
+    or (Path.home() / ".config" / "recruiting-report" / "new-start-leader-phones.json")
+)
 
 
 def _norm(name: str) -> str:
@@ -123,10 +138,42 @@ def load(path: Optional[Path] = None) -> Roster:
     fields = ("slack_id", "name", "short", "obcl_names", "phone")
     # Ignore any extra keys -- entries carry free-text `_note`/`_alias_note`
     # comments for whoever edits the file by hand.
-    return Roster([
+    leaders = [
         Leader(**{k: v for k, v in e.items() if k in fields})
         for e in raw.get("leaders", [])
-    ])
+    ]
+    phones = load_phones()
+    for leader in leaders:
+        if not leader.phone and leader.slack_id in phones:
+            leader.phone = phones[leader.slack_id]
+    return Roster(leaders)
+
+
+def load_phones(path: Optional[Path] = None) -> Dict[str, str]:
+    """slack_id -> E.164 from the machine-local overlay. {} if absent."""
+    path = path or PHONES_PATH
+    if not path.exists():
+        return {}
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    return {k: v for k, v in raw.items() if not k.startswith("_") and v}
+
+
+def save_phones(phones: Dict[str, str], path: Optional[Path] = None) -> Path:
+    """Write the local phone overlay. Never goes near leaders.json / git."""
+    path = path or PHONES_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    body = dict(phones)
+    body["_note"] = (
+        "Leader phone numbers for the New-Start Follow-Up texts. Machine-local "
+        "on purpose: the repo is PUBLIC, so these must never be committed. "
+        "Regenerate with: python -m automations.new_start_followup.contacts --write"
+    )
+    path.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
+    try:
+        path.chmod(0o600)  # personal numbers -- owner-only
+    except OSError:
+        pass
+    return path
 
 
 def save(leaders: List[Leader], path: Optional[Path] = None) -> None:

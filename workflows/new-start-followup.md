@@ -124,9 +124,47 @@ Exit 2 means Aisha hasn't posted Friday's anchor yet. Everything hangs off that
 post, and it refuses to post rather than guess at the wrong thread. Check the
 channel, then re-run.
 
-## Still open
+## Texting the stragglers (Lucy 1 only)
 
-Texting the stragglers from Lucy 1 is **not** wired. `--mode status` prints the
-list with a phone column, but `phone` is blank for every leader — the numbers
-live in Lucy 1's Contacts, not in any sheet. Fill them into `leaders.json` (or
-build a Contacts lookup) before that half can run.
+The Sunday half: after the checklist posts, iMessage everyone still missing.
+
+```bash
+# see the exact text each person would get — sends nothing
+python -m automations.new_start_followup.run --mode text
+
+# actually send, from Lucy 1
+python -m automations.new_start_followup.run --mode text --send
+```
+
+Or the Hub card's **Preview Texts** / **Text Stragglers** buttons.
+
+**Not on a timer, on purpose.** These are personal messages from a real phone
+number to ~20 people, so they go out when a human asks — never on a schedule.
+
+### Phone numbers
+
+Numbers come from **Lucy 1's Contacts app** (they're not in OBCL, and Slack
+profiles don't carry a phone). Resolve them once:
+
+```bash
+# on Lucy 1 — dry-run first
+python -m automations.new_start_followup.contacts
+python -m automations.new_start_followup.contacts --write
+```
+
+or remotely: `lucy rerun fill_leader_contacts`.
+
+They're cached to **`~/.config/recruiting-report/new-start-leader-phones.json`**,
+keyed by Slack ID — **machine-local and outside the repo on purpose, because
+this repo is PUBLIC on GitHub.** Never put a phone number in `leaders.json`.
+`roster.load()` merges the overlay, so `leader.phone` reads the same either way;
+on a machine without it every number is blank and the texting step reports
+"no number on file" rather than skipping people silently.
+
+Contacts access needs macOS Automation permission. If the fill returns `-1743`,
+somebody has to approve it once at the mini — that's why it's resolved ahead of
+time instead of at send time, where a TCC prompt would hang a headless run.
+
+A leader is only auto-filled when the contact name matches a spelling already in
+`leaders.json` **and** exactly one distinct number comes back. Two numbers under
+one name is reported, not guessed.
