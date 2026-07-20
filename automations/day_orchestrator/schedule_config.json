@@ -2675,6 +2675,26 @@
       },
       "machine": "Lucy 2"
     },
+    "att_thread": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "READINESS REPORT for Carlos's 'B2B Metrics MM/DD/YYYY' thread. DOES NOT POST — and that is deliberate, not unfinished: Megan has a standing rule that nothing goes to Slack without her say-so, and this targets someone else's channel. CHANNEL_ID is intentionally None so a dry run cannot quietly acquire a destination (box_order_log posts Carlos's BOX thread to #alphalete-gp-sales, which is the likely target, but 'carlos' slack channel in this thread' is not the same claim). Prints the exact parent message and checks all 7 artifacts — BOX Order Log, Accepted-by-supplier, AT&T B2B Order Log, New Internet Churn, Wireless Churn, Ongoing Cancel, Tableau Metrics — reporting present/stale/missing with the module that produces each. Built as a check rather than a poster because the failure that matters is a thread that posts 5 of 7 and looks complete. MUST RUN ON LUCY 2: every artifact is written to that machine's output/, so a laptop run truthfully reports 0/7. Enabling posting is a separate reviewable change (add a poster + a confirmed channel id), not a flag flip.",
+      "display_name": "B2B Metrics thread — readiness (no post)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.att_order_log.thread"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 5,
+      "verify": null,
+      "machine": "Lucy 2"
+    },
     "att_metrics_shot": {
       "on_scheduler": false,
       "_off_scheduler_note": "Carlos's B2B AT&T Sales Metrics screenshot (Loom 3:39-5:48: 'if that could just get screenshotted just so we could also see the activation rate and the churn rate all in one screenshot'). IMAGE metric — Download->Image via tableau_screenshots.capture, no crosstab parse. THE OWNER FILTER DOES NOT EXIST YET (Carlos, 5:00: 'at the moment there's no filter for it, or by the owner, but there should be soon'), so this captures the FULL all-teams view, which does contain his row and the Activation & Churn panel. His positional workaround ('my name would need to get lined up with the third row') is deliberately NOT implemented: the view is ordered by tracker rank, so a fixed row crop breaks silently the week his rank moves, and a wrong-rep screenshot is worse than a wide one. ATT_METRICS_FILTER_FIELD is wired and empty — set it to the real filter CAPTION the day the field exists. MUST RUN ON LUCY 2 (Carlos's Tableau identity). Posts nothing; the thread builder consumes the PNG.",
