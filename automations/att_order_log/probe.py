@@ -268,6 +268,9 @@ def main(argv=None) -> int:
     ap.add_argument("--churn-only", action="store_true",
                     help="skip the order log + direct-csv stages; pull just "
                          "the two churn crosstabs (fast: no 120MB export)")
+    ap.add_argument("--cancel-only", action="store_true",
+                    help="probe ONLY the B2B cancel-rates view (for the "
+                         "Ongoing Cancel report Carlos asked for)")
     args = ap.parse_args(argv)
 
     buf = []
@@ -325,8 +328,12 @@ def main(argv=None) -> int:
                                              allow_form_login=True)
             rec("[cdp] auth OK")
 
+            if args.cancel_only:
+                stage("cancel rates", _probe_cancel, page, rec)
+                return _finish(buf, rec, args, rc)
             if not args.churn_only:
                 stage("order log", _probe_orderlog, page, rec)
+                stage("cancel rates", _probe_cancel, page, rec)
             for key, spec in CHURN_VIEWS.items():
                 # Crosstab FIRST — it is the one that decides whether the churn
                 # fills are buildable at all. The direct-.csv probe stays as
@@ -580,6 +587,95 @@ def _probe_churn_crosstab(page, rec, key, spec) -> None:
     rec("  first 6 rows:")
     for r in rows[:6]:
         rec("    " + " | ".join(str(c or "")[:18] for c in r[:9]))
+
+
+CANCEL_VIEW_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER-B2B/B2BCancelRates?:iid=1"
+)
+# The D2D module's worksheet name, tried first. If B2B names it differently the
+# dialog's error lists the real options.
+CANCEL_WORKSHEETS = ("Internet Cancel Rates (Daily)", "B2B Cancel Rates",
+                     "Cancel Rates")
+
+
+def _probe_cancel(page, rec) -> None:
+    """Schema-probe the B2B cancel-rates view for the Ongoing Cancel report.
+
+    Carlos asked for this on the Loom (2:21-2:45): "the ongoing cancel
+    report... if they could live on my spreadsheet, that'd be great."
+
+    automations/ongoing_cancel is env-driven (ONGOING_CANCEL_VIEW_URL +
+    _SLICE_OWNER) but its parser is tied to Raf's D2D workbook — worksheet
+    "Internet Cancel Rates (Daily)", metrics "Running Sum of Canceled Internet
+    Orders along sp.Order Date" / "... Internet Sales ...". Whether the B2B
+    workbook carries the same worksheet and the same measure captions decides
+    whether this is another header-adapter job (like the churn) or a real
+    parser. Guessing either way wastes a Lucy 2 round-trip, so: look.
+
+    NOTE none of Carlos's four ATTTRACKER-B2B custom views is a cancel view
+    (they are Carlo Wireless, CARLOS LOCAL EXPANDED, Carlos metrics, Carlos New
+    INT), so unlike the churn there is no per-owner view to ride — this will
+    need slicing to him in Python, the way office_metrics slices AllExpanded.
+    """
+    from pathlib import Path as _P
+
+    from automations.recruiting_report.opt_phase import drive_crosstab_dialog
+
+    from . import clean
+
+    rec("")
+    rec("=== B2B CANCEL RATES ===")
+    rec("  view: {}".format(CANCEL_VIEW_URL))
+    out = _P("/tmp/att_cancel_probe.csv")
+    got = None
+    for ws_name in CANCEL_WORKSHEETS:
+        try:
+            drive_crosstab_dialog(page, CANCEL_VIEW_URL, ws_name, out,
+                                  verbose=False)
+            got = ws_name
+            break
+        except Exception as e:  # noqa: BLE001
+            rec("  worksheet {!r}: {}".format(ws_name, str(e)[:140]))
+    if not got:
+        rec("  NO worksheet matched — see the errors above for the real names")
+        return
+    rec("  worksheet: {!r}".format(got))
+
+    grid = clean.load_grid(out)
+    if not grid:
+        rec("  empty export")
+        return
+    hdr = [str(h or "").strip().lstrip("﻿") for h in grid[0]]
+    rows = grid[1:]
+    rec("  {} rows, {} columns".format(len(rows), len(hdr)))
+    for i, h in enumerate(hdr):
+        rec("    [{:>2}] {}".format(i, h))
+
+    # Does the D2D parser's contract hold?
+    from automations.ongoing_cancel import pull as oc_pull
+    rec("")
+    rec("  D2D metric captions present?")
+    joined = " | ".join(hdr) + " | " + " | ".join(
+        str(c) for r in rows[:200] for c in r)
+    for cap in (oc_pull.RATE_METRIC, oc_pull.CANCELS_METRIC,
+                oc_pull.SALES_METRIC):
+        rec("    {:<62} {}".format(cap[:62], "YES" if cap in joined else "no"))
+
+    for label in ("Owner & Office", "ICD Owner Name (rep)", "Rep", "Rep Name"):
+        if label in hdr:
+            i = hdr.index(label)
+            vals = {str(r[i]).split("\n")[0].strip() for r in rows
+                    if i < len(r) and str(r[i]).strip()}
+            rec("")
+            rec("  {}: {} distinct".format(label, len(vals)))
+            rec("    carlos present: {}".format(
+                any(v.upper().startswith("CARLOS HIDALGO") for v in vals)))
+            rec("    e.g. {}".format(sorted(vals)[:5]))
+    rec("")
+    rec("  first 6 rows:")
+    for r in rows[:6]:
+        rec("    " + " | ".join(str(c or "")[:20] for c in r[:8]))
 
 
 def _run_list_views(rec) -> None:
