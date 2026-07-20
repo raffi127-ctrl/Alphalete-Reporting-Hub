@@ -8,7 +8,10 @@ checkpoint, keeps retrying to a noon backstop, then emails a final summary.
 
   --date YYYY-MM-DD   target day (default: today)
   --dry-run           no real sheet writes / no real emails (writes .eml)
-  --interval N        minutes between passes (default from config: 25)
+  --interval N        minutes between passes (default from config: 12). NB this
+                      is the SLEEP BETWEEN passes, not the pass period — a pass
+                      runs its ready reports serially, so the real period is
+                      interval + the sum of their runtimes (hours, in practice).
   --checkpoint HH:MM  checkpoint-email time (default from config: 07:30)
   --backstop HH:MM    give-up time (default from config: 12:00)
   --only id,id        restrict to these report ids (testing)
@@ -70,6 +73,23 @@ FLAKE_RETRY_BACKOFF_S = 90
 # rounds so a freed dependency can cascade to its dependent (org_sales_board →
 # org_sales_board_email) within the one sweep. (2026-07-20 board-stale fix.)
 RECHECK_ROUNDS = 3
+
+# `waiting_on` sentinel marking a report that is STILL_TRYING because its last
+# RUN errored (vs because its DATA isn't ready). The two want opposite treatment
+# on a service tick — a flake wants re-running, a gated report wants re-probing —
+# and this is what tells them apart.
+FLAKE_WAITING_ON = "prior run failed — retrying"
+
+# The between-reports SERVICE TICK (see _service_owed) narrows what _recheck_gated
+# already handles at END OF PASS. RECHECK_ROUNDS is the right backstop, but a pass
+# is hours long, so "end of pass" can itself be hours after a source landed or a
+# run flaked: on 2026-07-20 pass 1 ran 04:00→~07:47 and was the ONLY pass that
+# day, so tableau_screenshots' flaked channel (04:29) and Box's landed extract
+# (~07:42) both waited on that single end-of-pass at ~07:47. Servicing between
+# reports bounds recovery to ONE report's runtime instead. This is how often a
+# tick may re-probe one gated report — a probe is a real Tableau query, so it
+# tracks the CLOCK (the pass interval), not the report boundary.
+SERVICE_REPROBE_EVERY_S = 12 * 60
 
 
 def _parse_hhmm(s: str, on: dt.date) -> dt.datetime:
@@ -334,7 +354,7 @@ def _attempt_report(ds, r, rs, target, *, dry_run, simulate) -> str:
             ds.set(r.report_id, state.STILL_TRYING,
                    reason=(f"run failed (attempt {rs.attempts}/{MAX_RUN_RETRIES}) "
                            f"— retrying: {detail}"),
-                   waiting_on="prior run failed — retrying")
+                   waiting_on=FLAKE_WAITING_ON)
             _log(f"  {r.report_id}: run failed "
                  f"(attempt {rs.attempts}/{MAX_RUN_RETRIES}) — will retry: {detail}")
             return "flaked"
@@ -395,6 +415,94 @@ def _attempt_report(ds, r, rs, target, *, dry_run, simulate) -> str:
     return "done"
 
 
+def _guard_chrome(r, *, dry_run, simulate) -> None:
+    """Close a stray HUMAN Chrome before a browser report runs — deliberately a
+    small mirror of the inline guard in _process_one, so the SERVICE TICK's own
+    launch path gets the same protection. A human Chrome window opened after batch
+    start single-instances with our automation Chrome and hangs every browser
+    report (2026-07-04). Best-effort; a guard that crashes the batch is worse than
+    the collision. [[reference_chrome_collision_guard]]"""
+    if dry_run or simulate or r.source_type not in ("tableau", "appstream"):
+        return
+    try:
+        from automations.day_orchestrator import chrome_guard
+        chrome_guard.close_stray_chrome(verbose=False)
+    except Exception:  # noqa: BLE001 — a guard must never crash the batch
+        pass
+
+
+def _age_s(ts) -> float:
+    """Seconds since an ISO state timestamp; +inf when unset/unparseable (so a
+    missing timestamp reads as 'long overdue' rather than 'just happened' — a
+    service tick that skipped on bad data would silently do nothing)."""
+    if not ts:
+        return float("inf")
+    try:
+        return (_now() - dt.datetime.fromisoformat(ts)).total_seconds()
+    except ValueError:
+        return float("inf")
+
+
+def _service_owed(ds, visited, target, cache, probed_at, *, dry_run, simulate):
+    """Between reports in a pass, give ALREADY-VISITED still-trying reports another
+    turn: retry a flaked run once its backoff elapses, and re-probe a data-gated
+    one on the clock so it launches the moment its extract lands.
+
+    This narrows the window _recheck_gated already closes at END OF PASS. A pass
+    is hours long, so 'end of pass' can itself land hours after the data did
+    (2026-07-20: Box refreshed ~07:42; end-of-pass was ~07:47; a flaked tracker
+    channel waited 04:29→~07:47). Servicing between reports bounds both to one
+    report's runtime. _recheck_gated stays as the correctness backstop — it also
+    covers dependency cascades and a report that flaked on the last iteration,
+    which this tick's per-report throttle / scope don't.
+
+    Scope is `visited` — reports the loop has ALREADY walked past — on purpose:
+    servicing one it hasn't reached yet would run it out of registry/priority
+    order, which run_order exists to enforce; the loop reaches those momentarily.
+    Only STILL_TRYING is serviced, which (by construction) means exactly a flaked
+    run or a readiness-gated one — a dependency/`after` wait is PENDING, not
+    STILL_TRYING, so it isn't (and shouldn't be) touched here. Nothing double-runs:
+    everything launched goes terminal or stays STILL_TRYING, and the loop skips
+    terminal reports."""
+    for r, rs in visited:
+        if rs.is_terminal() or rs.status != state.STILL_TRYING:
+            continue
+
+        # (a) The last RUN errored — retry it once the backoff has elapsed.
+        if rs.waiting_on == FLAKE_WAITING_ON:
+            if rs.attempts >= MAX_RUN_RETRIES:
+                continue
+            if _age_s(rs.last_attempt_ts) < FLAKE_RETRY_BACKOFF_S:
+                continue
+            _log(f"  {r.report_id}: mid-pass retry of a flaked run "
+                 f"(attempt {rs.attempts + 1}/{MAX_RUN_RETRIES})")
+            _guard_chrome(r, dry_run=dry_run, simulate=simulate)
+            _attempt_report(ds, r, rs, target, dry_run=dry_run, simulate=simulate)
+            state.save(ds)
+            continue
+
+        # (b) The DATA wasn't ready — re-probe on the clock. Throttled per report
+        # because each probe is a real Tableau query. `cache` keeps a READY verdict
+        # sticky, so this only ever re-probes something still waiting.
+        if simulate:
+            continue
+        if _age_s(probed_at.get(r.report_id)) < SERVICE_REPROBE_EVERY_S:
+            continue
+        probed_at[r.report_id] = state._now()
+        try:
+            rd = cache.report_ready(r)
+        except Exception as e:  # noqa: BLE001 — a probe must never crash the pass
+            _log(f"  {r.report_id}: mid-pass re-probe errored "
+                 f"({type(e).__name__}: {str(e)[:80]}) — leaving it for the next tick")
+            continue
+        if not rd.ready:
+            continue
+        _log(f"  {r.report_id}: data landed mid-pass — running now ({rd.reason})")
+        _guard_chrome(r, dry_run=dry_run, simulate=simulate)
+        _attempt_report(ds, r, rs, target, dry_run=dry_run, simulate=simulate)
+        state.save(ds)
+
+
 def _retry_flaked(ds, flaked, target, *, dry_run, simulate):
     """End-of-pass fast retry for reports that FLAKED this pass. The main loop runs
     every READY report first; then this comes back and retries the flaked one(s)
@@ -438,15 +546,24 @@ def _run_pass(cfg, ds, todays, cache, target, *, dry_run, simulate, stale_after,
 
     now = _now()
     flaked = []   # (r, rs) that flaked this pass — retried fast at end-of-pass
+    visited = []  # (r, rs) the loop has walked past — the service tick's scope
+    probed_at = {}  # report_id -> last mid-pass re-probe (throttles Tableau hits)
     for r in registry.run_order(todays, target):
         rs = ds.reports[r.report_id]
         if rs.is_terminal():
             continue
+        visited.append((r, rs))
         outcome = _process_one(cfg, ds, r, rs, cache, target, now,
                                dry_run=dry_run, simulate=simulate,
                                channel=channel, email_dry=email_dry)
         if outcome == "flaked":
             flaked.append((r, rs))
+
+        # Service tick: a pass is hours long, so anything owed a fast retry or a
+        # re-probe is serviced HERE, between reports, rather than only at end of
+        # pass. Bounds recovery by one report's runtime, not the whole pass.
+        _service_owed(ds, visited, target, cache, probed_at,
+                      dry_run=dry_run, simulate=simulate)
 
     # End-of-pass: come back and retry any flaked report fast, now that the ready
     # reports have all run — instead of making it wait a full inter-pass gap.

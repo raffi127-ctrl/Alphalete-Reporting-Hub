@@ -1,9 +1,16 @@
 # The single-long-pass problem (day orchestrator)
 
-**Status:** proposal — no code changed. Needs Megan's sign-off before touching
-`automations/day_orchestrator/run.py`.
+**Status:** IMPLEMENTED 2026-07-20 (Option A — service tick between reports).
+Ships in `run.py` alongside a parallel end-of-pass fix that landed the same day
+from another session (`_recheck_gated`, commit 2eebe20) — the two layer, they
+don't overlap: `_recheck_gated` re-checks gated reports at END of each pass;
+the service tick re-checks between reports so recovery is bounded by one
+report's runtime instead of the whole (multi-hour) pass. The 08:00 fail-open
+floor is intentionally left in place as the net. See `_service_owed` +
+`automations/day_orchestrator/test_run_service.py`.
 **Found:** 2026-07-20, diagnosing why the Tableau Country Trackers were short in
-one channel and why Box posted late.
+one channel and why Box posted late. The document below is kept as the diagnosis
++ evidence record; the recommendation in "Options" is the one that shipped.
 
 ---
 
