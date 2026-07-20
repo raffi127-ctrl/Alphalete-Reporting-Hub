@@ -419,9 +419,13 @@ def _status_color_rules(view_id: int) -> List[dict]:
     scol = _COL_STATUS
     for color, statuses in by_color.items():
         pattern = "(?i)^(" + "|".join(sorted(statuses)) + ")$"
+        # WHOLE ROW, not just the Status cell (Megan 2026-07-19). The range
+        # spans every column; the formula pins the COLUMN ($F) and leaves the
+        # ROW relative, so each row is tested against its own status and the
+        # fill carries across all 17 columns.
         reqs.append({"addConditionalFormatRule": {"index": idx, "rule": {
             "ranges": [{"sheetId": view_id, "startRowIndex": FIRST_LOG_ROW - 1,
-                        "startColumnIndex": scol, "endColumnIndex": scol + 1}],
+                        "startColumnIndex": 0, "endColumnIndex": ncol}],
             "booleanRule": {
                 "condition": {"type": "CUSTOM_FORMULA",
                               "values": [{"userEnteredValue":
