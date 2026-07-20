@@ -127,13 +127,21 @@ def classify(sender: str, subject: str, body: str, date: str = "",
     status: Optional[str] = None
     needs_adjudication = False
 
-    # --- Score PASS / FAIL (authoritative outcome) ---------------------------
+    # --- Score PASS / FAIL ---------------------------------------------------
     if "background check complete - score pass" in low_subj:
         status = PASSED
         m = _APPLICANT_RE.search(body_c)
         raw_name = m.group(1) if m else None
     elif "background check complete - score fail" in low_subj:
-        status = FAILED
+        # "Score FAIL" is NOT a terminal failure. Every one of these emails
+        # (178/179 verified) carries body "Score: Review/Adverse Action" and
+        # "report status: REVIEW" -- Sterling has flagged the check for
+        # adverse-action REVIEW, which a rep can still be cleared through. So we
+        # record REVIEW (pending), never terminal FAILED, and mark it for human
+        # adjudication. Marking a rep "Failed" off this email is the exact
+        # false-fail Raf ruled out (2026-07-20).
+        status = REVIEW
+        needs_adjudication = True
         m = _APPLICANT_RE.search(body_c)
         raw_name = m.group(1) if m else None
 
