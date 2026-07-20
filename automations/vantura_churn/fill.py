@@ -27,6 +27,11 @@ TAB_CHURN_CARLOS = "Churn"
 TAB_CHURN_ATEF = "Churn - Atef"
 TAB_ACTIVATIONS = "Activations"
 
+# Carlos's duplicate of the Churn tab, where the 2026-07-19 rebuild (activation
+# rates + per-rep list) is being built. Run with --preview to fill THIS instead
+# of the live tab, so the daily job keeps updating 'Churn' untouched.
+TAB_CHURN_PREVIEW = "LUCY CHURN"
+
 U_FORMULA = ('=IFERROR($AE{r}/IF($AD{r}="Wireless",$B$5,'
              'IF($AD{r}="Air",$B$6,$B$7)),"")')
 AC_FORMULA = '=IFERROR(VLOOKUP($V{r},$R$100:$S$500,2,FALSE),"")'
@@ -49,6 +54,115 @@ def helper_capacity(ws: gspread.Worksheet) -> int:
                            f"formula (got: {c5!r}) — refusing to guess the "
                            "helper range.")
     return int(m.group(1))
+
+
+def viewing_cell(ws: gspread.Worksheet) -> str:
+    """Which cell the rolloff FILTER actually watches, read from A16.
+
+    Derived rather than hardcoded because it MOVES: the live tab filters on
+    $C$3, Carlos's rebuild repointed it to $B$3 (2026-07-19). Whichever cell
+    the formula names is the one that must carry the dropdown.
+    """
+    f = _retry(lambda: ws.get("A16", value_render_option="FORMULA"))
+    formula = str(f[0][0]) if f and f[0] else ""
+    m = re.search(r"\$([A-Z]{1,2})\$(\d+)\s*\)?\s*$", formula)
+    if not m:
+        m = re.search(r"=\s*\$([A-Z]{1,2})\$(\d+)", formula)
+    if not m:
+        raise RuntimeError(
+            f"{ws.title}!A16 is not the expected FILTER formula "
+            f"(got: {formula!r}) — refusing to guess which cell the "
+            "'Viewing:' dropdown belongs on.")
+    return f"{m.group(1)}{m.group(2)}"
+
+
+def repair_viewing_dropdown(ws: gspread.Worksheet, log=print) -> dict:
+    """Put the product dropdown back on the cell the FILTER reads.
+
+    Adding the activation-rate headers left the tab with the validation on
+    one cell (C3) and the FILTER pointing at another (B3), so choosing a
+    product did nothing. This moves the ONE_OF_LIST rule onto the FILTER's
+    cell, carries the current selection across, and clears the orphan.
+
+    Idempotent: re-running when everything already lines up is a no-op.
+    """
+    target = viewing_cell(ws)
+    tcol = re.match(r"([A-Z]{1,2})(\d+)", target).group(1)
+    trow = int(re.match(r"([A-Z]{1,2})(\d+)", target).group(2))
+    tcol_i = gspread.utils.a1_to_rowcol(f"{tcol}1")[1] - 1
+
+    # Scan the row for cells carrying a ONE_OF_LIST rule, so we find the
+    # orphan wherever it drifted to rather than assuming it sits in C.
+    scan_end = max(tcol_i + 3, 6)
+    meta = _retry(lambda: ws.spreadsheet.fetch_sheet_metadata({
+        "includeGridData": True,
+        "ranges": [f"{ws.title}!A{trow}:{_colletter(scan_end)}{trow}"],
+        "fields": "sheets(data(startColumn,rowData(values("
+                  "formattedValue,dataValidation))))",
+    }))
+    vals = (meta["sheets"][0].get("data", [{}])[0]
+            .get("rowData", [{}])[0].get("values", []))
+    start_col = meta["sheets"][0].get("data", [{}])[0].get("startColumn", 0)
+
+    rule = None
+    holders, selection = [], None
+    for i, v in enumerate(vals):
+        ci = start_col + i
+        dv = v.get("dataValidation")
+        if dv and dv.get("condition", {}).get("type") == "ONE_OF_LIST":
+            holders.append(ci)
+            rule = rule or dv
+        if ci == tcol_i:
+            selection = v.get("formattedValue")
+        elif dv and not selection:
+            selection = v.get("formattedValue")
+
+    if rule is None:
+        raise RuntimeError(
+            f"{ws.title}: no product dropdown found on row {trow} — nothing "
+            "to move. Rebuild it by hand rather than letting this guess the "
+            "allowed values.")
+    if holders == [tcol_i]:
+        log(f"  ✓ {ws.title}: dropdown already on {target}; nothing to fix")
+        return {"target": target, "moved": False, "cleared": []}
+
+    def _cell_range(ci):
+        return {"sheetId": ws.id, "startRowIndex": trow - 1, "endRowIndex": trow,
+                "startColumnIndex": ci, "endColumnIndex": ci + 1}
+
+    reqs = [{"setDataValidation": {"range": _cell_range(tcol_i),
+                                   "rule": rule}}]
+    # Clear the orphan rule + its stale text so only one control remains.
+    cleared = []
+    for ci in holders:
+        if ci == tcol_i:
+            continue
+        reqs.append({"setDataValidation": {"range": _cell_range(ci)}})
+        cleared.append(_colletter(ci))
+    _retry(lambda: ws.spreadsheet.batch_update({"requests": reqs}))
+
+    allowed = [c["userEnteredValue"]
+               for c in rule["condition"].get("values", [])]
+    if selection not in allowed:
+        selection = allowed[0] if allowed else selection
+    updates = [{"range": target, "values": [[selection]]}]
+    for c in cleared:
+        updates.append({"range": f"{c}{trow}", "values": [[""]]})
+    _retry(lambda: ws.batch_update(updates, value_input_option="USER_ENTERED"))
+
+    log(f"  ✓ {ws.title}: dropdown moved to {target} (= {selection!r}), "
+        f"cleared {', '.join(c + str(trow) for c in cleared) or 'nothing'}")
+    return {"target": target, "moved": True, "cleared": cleared,
+            "selection": selection, "allowed": allowed}
+
+
+def _colletter(ci: int) -> str:
+    s = ""
+    ci += 1
+    while ci:
+        ci, r = divmod(ci - 1, 26)
+        s = chr(65 + r) + s
+    return s
 
 
 def update_churn_tab(ws: gspread.Worksheet, bases: dict,

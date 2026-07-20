@@ -108,6 +108,10 @@ def main(argv=None) -> int:
     ap.add_argument("--probe", action="store_true",
                     help="diagnostics only: load the filtered Order Log view "
                          "and dump what it shows to the control sheet")
+    ap.add_argument("--probe-activations", action="store_true",
+                    help="diagnostics only: dump what the ACTIVATION RATES "
+                         "view exports (columns, bucket captions, Carlos's "
+                         "rows) to the 'Vantura Diag' tab. LUCY 2 ONLY.")
     ap.add_argument("--owner", choices=("both", "carlos", "atef"),
                     default="both")
     ap.add_argument("--today", default=None,
@@ -119,6 +123,11 @@ def main(argv=None) -> int:
                     help="skip the dashboard check (only sensible with "
                          "--from-files; a live run should never skip it)")
     ap.add_argument("--skip-activations", action="store_true")
+    ap.add_argument("--preview", action="store_true",
+                    help="write Carlos's churn numbers to the '"
+                         + fill.TAB_CHURN_PREVIEW + "' tab instead of the "
+                         "live one, and skip Atef + Activations. Use while "
+                         "building the 2026-07-19 rebuild.")
     args = ap.parse_args(argv)
 
     log = lambda *a: print(*a, flush=True)  # noqa: E731
@@ -126,8 +135,23 @@ def main(argv=None) -> int:
              else dt.date.today())
     if args.probe:
         return _probe(today, log)
+    if args.probe_activations:
+        from automations.vantura_churn import cdp_pull
+        cdp_pull.probe_activation_rates(log=log)
+        return 0
     owners = [o for o in OWNER_CFG
               if args.owner in ("both", o[0])]
+    if args.preview:
+        # Preview run: Carlos only, onto his duplicate tab, no Activations.
+        # The live 'Churn' tab and the daily job are left completely alone.
+        owners = [(k, prefix, fill.TAB_CHURN_PREVIEW, False)
+                  for k, prefix, _tab, _act in owners if k == "carlos"]
+        if not owners:
+            log("--preview is Carlos-only; nothing to do for "
+                f"--owner {args.owner}.")
+            return 1
+        log(f"PREVIEW MODE → writing '{fill.TAB_CHURN_PREVIEW}' "
+            "(live 'Churn' untouched)")
 
     # ---------------------------------------------------------- downloads
     files: dict[str, Path] = {}
@@ -206,6 +230,13 @@ def main(argv=None) -> int:
     sh = fill.open_sheet()
     for key, prefix, tab, has_act in owners:
         log(f"▶ updating '{tab}'…")
+        # Self-heal the 'Viewing:' dropdown: editing the tab's headers can
+        # leave the validation on one cell and the FILTER reading another,
+        # which silently breaks product switching. No-op when they agree.
+        try:
+            fill.repair_viewing_dropdown(sh.worksheet(tab), log=log)
+        except Exception as e:  # noqa: BLE001 — never block the daily write
+            log(f"  ⚠ dropdown check skipped: {e}")
         fill.update_churn_tab(sh.worksheet(tab), results[key]["summary"]["base"],
                               results[key]["helper"], log=log)
         if has_act and not args.skip_activations:

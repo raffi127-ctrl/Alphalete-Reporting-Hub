@@ -609,6 +609,63 @@ def download_views(specs, today=None, verbose=True, log=print):
     return results
 
 
+def probe_activation_rates(log=print) -> dict:
+    """Run activation_rates.probe() inside a real-Chrome session (Carlos's
+    Tableau identity — the ownerville service identity can't see his rows).
+    Findings → the 'Vantura Diag' tab, same channel as the Order Log probe.
+
+    LUCY 2 ONLY: on any other machine _copy_default_profile picks up the
+    WRONG Chrome profile and the export comes back as somebody else's data.
+    """
+    from patchright.sync_api import sync_playwright
+    from automations.shared import tableau_patchright as tp
+    from automations.vantura_churn import activation_rates
+
+    buf: list[str] = []
+
+    def rec(msg):
+        log(msg)
+        buf.append(str(msg))
+
+    rec(f"activation-rates probe @ "
+        f"{dt.datetime.now().isoformat(timespec='seconds')}")
+    _kill_ours()
+    proc = _launch()
+    rec(f"[cdp] real Chrome pid={proc.pid}; waiting 20s")
+    time.sleep(20)
+    info = {}
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
+            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            tp._ensure_tableau_authenticated(page, verbose=False,
+                                             allow_form_login=True)
+            rec("[cdp] auth OK")
+            # Load the view once so the custom view is materialised before we
+            # ask for its .csv (the export of a never-rendered custom view can
+            # come back as the Original).
+            page.goto(activation_rates.VIEW_URL, wait_until="domcontentloaded")
+            page.wait_for_timeout(20_000)
+            info = activation_rates.probe(page, log=rec)
+    except Exception:  # noqa: BLE001
+        import traceback
+        buf.append("TRACEBACK:")
+        for ln in traceback.format_exc().splitlines()[-12:]:
+            rec(ln[:200])
+    finally:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+        _kill_ours()
+        try:
+            _upload_lines(buf, tab="Vantura Diag")
+        except Exception as e:  # noqa: BLE001
+            log(f"diag upload failed: {e}")
+    return info
+
+
 def _upload_lines(lines, tab="Vantura Diag"):
     from automations.recruiting_report import fill as _fill
     sh = _fill._client().open_by_key(
