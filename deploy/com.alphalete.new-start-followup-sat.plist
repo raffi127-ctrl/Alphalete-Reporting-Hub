@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.new-start-followup-sat</string>
+
+    <!-- Path is the laptop placeholder; on the mini, regenerate with the install
+         path via the python-replace step in workflows/scheduler-mini.md. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/new_start_followup.sh</string>
+        <string>--mode</string>
+        <string>nudge</string>
+        <string>--when</string>
+        <string>auto</string>
+        <string>--live</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- Saturday only (Weekday 6), machine LOCAL time (mini is Central).
+         Raf's spec: ~10am when atmosphere ends, 1pm, and 5pm as the day closes.
+         --when auto picks the wording from the clock, so all three share one job.
+         Each run re-reads the thread and tags ONLY whoever still hasn't replied,
+         so leaders who already sent stop getting pinged. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <key>Weekday</key><integer>6</integer>
+            <key>Hour</key><integer>10</integer>
+            <key>Minute</key><integer>0</integer>
+        </dict>
+        <dict>
+            <key>Weekday</key><integer>6</integer>
+            <key>Hour</key><integer>13</integer>
+            <key>Minute</key><integer>0</integer>
+        </dict>
+        <dict>
+            <key>Weekday</key><integer>6</integer>
+            <key>Hour</key><integer>17</integer>
+            <key>Minute</key><integer>0</integer>
+        </dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/new-start-followup-sat.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/new-start-followup-sat.launchd.err.log</string>
+</dict>
+</plist>

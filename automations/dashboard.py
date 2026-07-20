@@ -3753,6 +3753,105 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "new-start-followup",
+        "name": "New-Start Follow-Up",
+        "creator": "Raf",
+        "emoji": "📣",
+        "color": "#0EA5E9",
+        # 🎯 Recruiting, same as BG Check Sync — it works the same new-start
+        # cohort out of the same OBCL tab and posts to the same channel.
+        "category": "🎯 Recruiting",
+        "description": "Nudges the 2nd-round interviewers to text their Monday new starts, then posts the Sunday ✅ checklist of who sent and who didn't.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Every new start is supposed to get a text from **the person who ran "
+            "their 2nd-round interview** before they show up Monday. This report "
+            "chases that.\n\n"
+            "It reads **column B “2ND Round Interviewer”** on the week's "
+            "`D2D OBCL <M>.<D>` tab to work out who owes a text and how many, "
+            "then reads Aisha's **“D2D Alphalete New Starts Scheduled for "
+            "Monday”** thread in **#rafs-office-recruiting** to see who has "
+            "already replied *Sent*. The difference is who still needs chasing.\n\n"
+            "WHEN IT RUNS\n"
+            "**Saturday 8:00 AM Central** — the roll call: @-tags every leader "
+            "who has a new start, each with their count (“4 new starts”). This "
+            "replaced Aisha's hand-typed tag list on 7/19/2026, because hers was "
+            "missing people — on the 7/20 week it left out 4 leaders who had "
+            "someone starting Monday.\n"
+            "**Saturday 10:00 AM / 1:00 PM / 5:00 PM Central** — a reminder in "
+            "that thread tagging **only the leaders who still haven't replied**, "
+            "so anyone who already sent theirs stops getting pinged.\n"
+            "**Sunday 1:00 PM Central** — the numbered ✅ roll-up Raf used to "
+            "build by hand, plus a tag-list of whoever is still out.\n\n"
+            "Aisha still posts the Friday anchor with the copy/paste script — "
+            "everything here hangs off that post.\n\n"
+            "WHAT IT CATCHES THAT THE MANUAL LIST DOESN'T\n"
+            "• **Short counts** — a leader replies “Sent x2” but OBCL gave them "
+            "3 new starts.\n"
+            "• **Never got tagged** — someone has new starts in OBCL but wasn't "
+            "in Saturday's roll call, so nobody ever asked them.\n"
+            "• **“Sent (Sosa)” cover** — when one leader sends on another's "
+            "behalf, the covered leader is credited instead of nudged.\n"
+            "• **Unable to tag** — an interviewer in OBCL with no Slack account "
+            "is called out by name in the post (“Amberly Chum — 1 new start”) so "
+            "someone chases them by hand, instead of their new start quietly "
+            "going untexted.\n\n"
+            "NAME MAPPING\n"
+            "OBCL, Slack and Raf's checklist spell people differently (“Elijah "
+            "Rodriguez” / “Eli Rodriguez” / “Eli”). The mapping lives in "
+            "`automations/new_start_followup/leaders.json` — add a row there when "
+            "a new leader starts running 2nd rounds."
+        ),
+        "assignees": ["Lucy 1"],
+        # Own launchd timers (Sat ×3 + Sun ×1) — hide the DUE-TODAY + schedule
+        # pills and keep it out of the "due today" tallies, same as bg-check-sync.
+        "hide_schedule": True,
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [5, 6],  # Saturday, Sunday
+            "time": "8:00 AM",
+            "time_label": "Sat 8am/10am/1pm/5pm · Sun 1pm CST",
+            "estimated_minutes": 1,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Checked the new-start thread — see who's still out above.",
+            "message_failed": "❌ Run failed. Usually means Aisha hasn't posted Friday's new-starts thread yet, or the Saturday @-tag roll call isn't up.",
+        },
+        "actions": [
+            {
+                "label": "Who's Sent?",
+                "icon": "👀",
+                "primary": True,
+                "help": "Print the current checklist without posting anything to Slack.",
+                "module": "automations.new_start_followup.run",
+                "args_fn": lambda: ["--mode", "status"],
+            },
+            {
+                "label": "Post Roll Call",
+                "icon": "📣",
+                "help": "Tag every leader who has a new start, with their count. No-ops if one is already posted.",
+                "module": "automations.new_start_followup.run",
+                "args_fn": lambda: ["--mode", "rollcall", "--live"],
+            },
+            {
+                "label": "Post Reminder",
+                "icon": "⏰",
+                "help": "Reply in the thread tagging only the leaders who still haven't sent.",
+                "module": "automations.new_start_followup.run",
+                "args_fn": lambda: ["--mode", "nudge", "--when", "auto", "--live"],
+            },
+            {
+                "label": "Post Checklist",
+                "icon": "📋",
+                "help": "Post the numbered ✅ roll-up to the thread.",
+                "module": "automations.new_start_followup.run",
+                "args_fn": lambda: ["--mode", "checklist", "--live"],
+            },
+        ],
+    },
+    {
         "id": "rc-autoread",
         # The name uses non-breaking spaces ( ) inside "RingCentral Auto-Read"
         # and "(Q 10 Min)" so the cadence wraps as one clean unit onto line 2 of

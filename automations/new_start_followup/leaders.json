@@ -1,0 +1,153 @@
+{
+  "_note": "Leader roster for the New-Start Follow-Up report. Add a leader here when someone new starts running 2nd-round interviews. 'obcl_names' holds every spelling that shows up in OBCL column B. 'phone' is E.164 (+15551234567) and is only used for the Sunday texts.",
+  "leaders": [
+    {
+      "slack_id": "U08RNHP5WMD",
+      "name": "Andrew Sanborn",
+      "short": "Andrew S",
+      "obcl_names": ["Andrew Sanborn", "Andrew Sanborn Roadtrip"],
+      "phone": ""
+    },
+    {
+      "slack_id": "U07EMBLBN5A",
+      "name": "Anh Đinh",
+      "short": "Anh",
+      "obcl_names": ["Anh Dinh", "Anh Đinh"],
+      "phone": ""
+    },
+    {
+      "slack_id": "U0BBV9NTLGY",
+      "name": "Anthony Marchetti",
+      "short": "Anthony M",
+      "obcl_names": ["Anthony Marchetti"],
+      "phone": ""
+    },
+    {
+      "slack_id": "U0B1ZDNQUKX",
+      "name": "Benjamin Kushpit",
+      "short": "Benjamin K",
+      "obcl_names": ["Benjamin Kushpit"],
+      "phone": ""
+    },
+    {
+      "slack_id": "U0ACYK2MCQ6",
+      "name": "Bill Hirwa",
+      "short": "Bill H",
+      "obcl_names": ["Bill Hirwa"],
+      "phone": ""
+    },
+    {
+      "slack_id": "U0B8N2Q83PS",
+      "name": "Eli Rodriguez",
+      "short": "Eli",
+      "obcl_names": ["Eli Rodriguez", "Elijah Rodriguez"],
+      "phone": ""
+    },
+    {
+      "slack_id": "U0B98MRD29J",
+      "name": "Jose Calixto",
+      "short": "Jose C",
+      "obcl_names": ["Jose Calixto"],
+      "phone": ""
+    },
+    {
+      "slack_id": "U0AQZ7Y2B3M",
+      "name": "Jordan Castillo",
+      "short": "Jordan C",
+      "obcl_names": ["Jordan Castillo"],
+      "phone": ""
+    },
+    {
+      "slack_id": "U0B36GDTT6F",
+      "name": "Jordan Ruiz",
+      "short": "Jordan R",
+      "obcl_names": ["Jordan Ruiz"],
+      "phone": ""
+    },
+    {
+      "slack_id": "U0B4KGN441L",
+      "name": "Juan Guerrero",
+      "short": "Juan G",
+      "_alias_note": "Juan is NOT Sosa — on 7/18 he replied 'Sent (Sosa)' because he covered Sosa's texts while Sosa was in the hospital. Sosa is Samajai Hoy, U095L0FG276.",
+      "obcl_names": ["Juan Guerrero"],
+      "phone": ""
+    },
+    {
+      "slack_id": "U095L0FG276",
+      "name": "Samajai Hoy",
+      "short": "Sosa",
+      "obcl_names": ["Samajai Hoy", "Sosa", "Samajai (Sosa) Hoy"],
+      "phone": ""
+    },
+    {
+      "slack_id": "U0AME3NU5KQ",
+      "name": "Pranish Shrestha",
+      "short": "Pranish",
+      "obcl_names": ["Pranish Shrestha"],
+      "phone": ""
+    },
+    {
+      "slack_id": "U0AGKBS4TKJ",
+      "name": "Safiya Mahmoud",
+      "short": "Safiya",
+      "obcl_names": ["Safiya Mahmoud"],
+      "phone": ""
+    },
+    {
+      "slack_id": "U0B4RUR83J9",
+      "name": "Kaleb Muvunyi",
+      "short": "Kaleb M",
+      "obcl_names": ["Kaleb Muvunyi"],
+      "phone": ""
+    },
+    {
+      "slack_id": "U0B5LTC54QK",
+      "name": "Logan Roodenburg",
+      "short": "Logan R",
+      "obcl_names": ["Logan Roodenburg"],
+      "phone": ""
+    },
+    {
+      "slack_id": "U0AT0E6CPNY",
+      "name": "Marcus Watson",
+      "short": "Marcus W",
+      "obcl_names": ["Marcus Watson"],
+      "phone": ""
+    },
+    {
+      "slack_id": "U0B02SXBS5T",
+      "name": "Mustafa Alzaidy",
+      "short": "Mustafa",
+      "obcl_names": ["Mustafa Alzaidy", "Mustafa A"],
+      "phone": ""
+    },
+    {
+      "slack_id": "U0B8N3DNDJL",
+      "name": "Rhea McKee",
+      "short": "Rhea",
+      "obcl_names": ["Rhea McKee", "rhea mckee"],
+      "phone": ""
+    },
+    {
+      "slack_id": "U0BA9SL74T1",
+      "name": "Sydney Agnew",
+      "short": "Sydney",
+      "obcl_names": ["Sydney Agnew"],
+      "phone": ""
+    },
+    {
+      "slack_id": "U0AG43MB1QR",
+      "name": "Tadana Jeti",
+      "short": "Tadana",
+      "obcl_names": ["Tadana Jeti", "Tadana Manyangadze"],
+      "phone": ""
+    },
+    {
+      "slack_id": "U0B9924FHCL",
+      "name": "Tiffani Brown",
+      "short": "Tiffani",
+      "obcl_names": ["Tiffani Brown"],
+      "phone": ""
+    }
+  ]
+}

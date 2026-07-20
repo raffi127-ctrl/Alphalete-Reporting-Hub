@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.new-start-followup-rollcall</string>
+
+    <!-- Path is the laptop placeholder; on the mini, regenerate with the install
+         path via the python-replace step in workflows/scheduler-mini.md. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/new_start_followup.sh</string>
+        <string>--mode</string>
+        <string>rollcall</string>
+        <string>--live</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- Saturday 8:00am Central (Weekday 6) — the slot Aisha used to @-tag by
+         hand. Lucy builds the list from OBCL column B instead, so every leader
+         with a new start gets tagged (Aisha's 7/18 list missed 4 of them).
+         Safe to re-fire: the job finds its own roll call in the thread and
+         no-ops rather than tagging 21 people twice. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <key>Weekday</key><integer>6</integer>
+            <key>Hour</key><integer>8</integer>
+            <key>Minute</key><integer>0</integer>
+        </dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/new-start-followup-rollcall.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/new-start-followup-rollcall.launchd.err.log</string>
+</dict>
+</plist>
