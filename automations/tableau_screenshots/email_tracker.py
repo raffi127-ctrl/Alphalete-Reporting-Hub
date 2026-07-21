@@ -51,6 +51,34 @@ def fetch_xlsx(dest: str | Path, *, since_days: int = 10, verbose: bool = True) 
     return next(iter(found.values()), None)
 
 
+def source_ready(*, since_days: int = 10) -> "tuple[bool, str]":
+    """Cheap readiness probe (no attachment download) — is a VZ+FTR .xlsx already
+    in the inbox within the window? Lets the morning run GATE on the source being
+    present so it only attempts a board it can actually render, instead of a fetch
+    that raises when nothing has landed.
+
+    VZ+FTR sends business days only, ~1:25pm CDT; the morning run therefore renders
+    the PRIOR business day's report (the newest on hand), which is normally present
+    by 4am. A `False` here means a genuine gap (e.g. a multi-day Credico outage),
+    not the routine same-day-not-yet-arrived case.
+
+    FAILS OPEN (returns True) on any probe error: a flaky IMAP check must never
+    silently drop the board — capture() still self-guards if the file is truly
+    absent. Returns (ready, human detail)."""
+    try:
+        matches = email_ingest.list_matches(
+            EMAIL_FROM, [FILENAME_GLOB], subject=SUBJECT_CONTAINS,
+            since_days=since_days)
+        hit = matches.get(FILENAME_GLOB)
+        if hit:
+            fn, date = hit
+            return True, f"{fn} ({date})"
+        return False, (f"no VZ+FTR .xlsx from {EMAIL_FROM} in the last "
+                       f"{since_days} day(s)")
+    except Exception as e:  # noqa: BLE001 — fail open, capture() self-guards
+        return True, f"probe error ({type(e).__name__}) — attempting anyway"
+
+
 def _report_date(name: str) -> "dt.date | None":
     """Pull the report date from the filename ('… - SCI - 20260717.xlsx')."""
     m = re.search(r"(20\d{2})(\d{2})(\d{2})", name)
@@ -185,16 +213,31 @@ def _screenshot_html(html_str: str, out_path: Path, *, context=None) -> Path:
         return out_path
 
     from patchright.sync_api import sync_playwright
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+    # Launch the standalone chromium with ONE retry: a cold headless-chromium
+    # launch flakes intermittently on the mini (the same fork/first-launch
+    # fragility the Tableau reports see), and this render is otherwise the ONLY
+    # thing standing between a present .xlsx and a posted board — a transient
+    # launch error shouldn't cost the whole tracker for the day.
+    last_err = None
+    for attempt in (1, 2):
         try:
-            ctx = browser.new_context(viewport={"width": 1600, "height": 1000},
-                                      device_scale_factor=2)
-            pg = ctx.new_page()
-            _shot(pg)
-        finally:
-            browser.close()
-    return out_path
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                try:
+                    ctx = browser.new_context(
+                        viewport={"width": 1600, "height": 1000},
+                        device_scale_factor=2)
+                    pg = ctx.new_page()
+                    _shot(pg)
+                finally:
+                    browser.close()
+            return out_path
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+            print(f"  ⚠ VZ+FTR render attempt {attempt} failed "
+                  f"({type(e).__name__}: {str(e).splitlines()[0][:100]})"
+                  + ("; retrying" if attempt == 1 else ""), flush=True)
+    raise last_err
 
 
 def render_png(xlsx_path: str | Path, out_path: str | Path, *,

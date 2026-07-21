@@ -191,6 +191,37 @@ def _select(only: str | None, *, late_only: bool = False,
     return out
 
 
+def _gate_email_sources(selected: list) -> tuple:
+    """Drop an email-sourced board (pages.py `source: "email"`) whose source .xlsx
+    isn't in the inbox yet, so the morning run only ATTEMPTS a board it can render
+    — a genuine source gap becomes a clean omit (board simply not in today's
+    thread), not a fetch that raises into a false failure.
+
+    Returns (kept_specs, dropped_ids). Probes are cheap (headers only) and FAIL
+    OPEN: a probe that errors keeps the board (capture() still self-guards). An
+    explicit --only bypasses this entirely (the caller only gates the default
+    selection) — naming a board means you want it regardless."""
+    kept, dropped = [], []
+    for spec in selected:
+        if spec.get("source") != "email":
+            kept.append(spec)
+            continue
+        from automations.tableau_screenshots import email_tracker as et
+        try:
+            ready, detail = et.source_ready()
+        except Exception as e:                        # noqa: BLE001 — fail open
+            ready, detail = True, f"probe error ({type(e).__name__})"
+        if ready:
+            print(f"   ✓ {spec['id']}: source ready — {detail}", flush=True)
+            kept.append(spec)
+        else:
+            print(f"   ⏭ {spec['id']}: source not in yet — {detail}; omitting from "
+                  f"this run (no false failure; it returns once the .xlsx lands)",
+                  flush=True)
+            dropped.append(spec["id"])
+    return kept, dropped
+
+
 def _capture_one(spec: dict, page, out_dir: Path, force_crop):
     """Capture ONE tracker to a PNG. Dispatches on the spec's source: an
     email-sourced tracker (pages.py `source: "email"`) renders from its daily
@@ -359,6 +390,18 @@ def main(argv=None) -> int:
                   flush=True)
         return 0
 
+    # Gate email-sourced boards on their source .xlsx actually being in the inbox,
+    # so the run only attempts a board it can render. A genuine source gap → the
+    # board is omitted from BOTH the capture set AND today's header (post_pages),
+    # so the thread never shows a board with no image. An explicit --only bypasses
+    # the gate (naming a board means you want it regardless).
+    gated_out: list = []
+    if not args.only:
+        selected, gated_out = _gate_email_sources(selected)
+    # Header/thread pages for the poster: the full list minus anything gated out
+    # this run, so the omitted board isn't listed with a missing image.
+    post_pages = [p for p in pages_mod.PAGES if p["id"] not in set(gated_out)]
+
     # Reuse today's images when another org already captured them — no browser, no
     # Tableau session at all, so elevate/indelible finish in seconds. --fresh (and
     # --full, which changes how the boards are captured) always re-captures.
@@ -451,7 +494,7 @@ def main(argv=None) -> int:
     # the channels.
     if args.preview_dm:
         users = [u.strip() for u in args.preview_dm.split(",") if u.strip()]
-        pv = sp.preview_dm(captures, pages_mod.PAGES, users, today,
+        pv = sp.preview_dm(captures, post_pages, users, today,
                            dry_run=args.dry_run)
         if args.dry_run:
             print(f"\n✓ DRY-RUN: captured {len(captures)} PNG(s) to {out_dir}; "
@@ -471,7 +514,7 @@ def main(argv=None) -> int:
     # and recorded; the failures come back as the manifest's retry list.
     if args.dry_run:
         for org in orgs:
-            result = sp.post_all(captures, pages_mod.PAGES, today, dry_run=True,
+            result = sp.post_all(captures, post_pages, today, dry_run=True,
                                  replace=args.replace, org=org)
             print(f"\n  [{org}] would post to {', '.join(result['channels'])} as "
                   f"{sp.header_title(today)}", flush=True)
@@ -493,7 +536,7 @@ def main(argv=None) -> int:
     for org in orgs:
         label = sp.ORG_LABEL[org]
         try:
-            result = sp.post_all(captures, pages_mod.PAGES, today,
+            result = sp.post_all(captures, post_pages, today,
                                  replace=args.replace, org=org)
         except Exception as e:                        # noqa: BLE001
             result = {"ok": False, "channels": [],
