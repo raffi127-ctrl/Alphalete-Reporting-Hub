@@ -275,13 +275,48 @@ def build_view_values(rows: Sequence[Sequence[str]], reps: Sequence[str],
     return grid
 
 
+def reps_by_activation(rows, reps, period: str) -> List[str]:
+    """Reps ordered by activation % DESCENDING (Megan 2026-07-20: "sorted
+    Activation % great[est] to least").
+
+    % is a formula in-sheet, so the ORDER is fixed here at build time from the
+    same numbers, over the `period` the tab opens on (default Last 30 Days) so
+    the order matches what Carlos sees. Reps with no orders in the window (blank
+    %) sort last; ties break alphabetically.
+    """
+    def _num(v):
+        try:
+            return float(str(v).replace(",", ""))
+        except (TypeError, ValueError):
+            return 0.0
+
+    stat = {r: [0.0, 0.0] for r in reps}      # rep -> [units, activations]
+    for row in rows:
+        rep = row[_COL_REP]
+        if rep not in stat:
+            continue
+        if period != ALL_PERIODS and row[_COL_PERIOD] != period:
+            continue
+        stat[rep][0] += _num(row[_COL_UNITS])
+        stat[rep][1] += _num(row[_COL_ACTIVATIONS])
+
+    def _key(rep):
+        units, acts = stat[rep]
+        # None-window reps (no units) sort last: give them pct -1.
+        pct = (acts / units) if units else -1.0
+        return (-pct, rep.lower())
+
+    return sorted(reps, key=_key)
+
+
 def build_repbox_values(rows, reps, rep_col, rep_cond, per_cond) -> List[List[str]]:
     """The activation rep box — written to the RIGHT of the log, not above it.
 
     Carlos (Slack 2026-07-19): "On the rep box, would you be able to add rows
     that show the activation percentage… under 70% red, 70-75% yellow, above
     75% green." It respects both dropdowns, so switching to Last 30 Days
-    recolours it and picking one rep narrows it.
+    recolours it and picking one rep narrows it. Sorted by activation %
+    descending (Megan 2026-07-20) — `reps` arrives already ordered.
 
     ABOVE the log it was 62 rows tall and, frozen with the header, buried the
     actual log under a 72-row frozen pane (Megan 2026-07-20: "horrible… not a
@@ -818,7 +853,10 @@ def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
     rep_col, _pc, _sc, rep_cond, per_cond = _conditions()
     grid = build_view_values(rows, reps, generated,
                              selected_rep=sel_rep, selected_period=sel_per)
-    repbox = build_repbox_values(rows, reps, rep_col, rep_cond, per_cond)
+    # Rep box ordered by activation % descending, over the period the tab opens
+    # on. `reps` stays alphabetical for the dropdown.
+    reps_ranked = reps_by_activation(rows, reps, sel_per)
+    repbox = build_repbox_values(rows, reps_ranked, rep_col, rep_cond, per_cond)
 
     # Write VALUES in place. No clear() of the whole tab — updating a value
     # keeps the cell's format, so Megan's formatting is preserved. The log's
