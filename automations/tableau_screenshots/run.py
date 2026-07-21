@@ -374,15 +374,30 @@ def main(argv=None) -> int:
         # scale (the single-tracker dry-run worked, the full run didn't).
         #
         # Email-sourced trackers (pages.py `source: "email"`) render from an .xlsx,
-        # not Tableau — so open a Tableau session ONLY if at least one selected
-        # tracker actually needs it. An email-only selection (e.g. --only vzftr)
-        # renders standalone, so a cold Tableau session can't block it.
-        if any(s.get("source") != "email" for s in selected):
+        # not Tableau — so they capture OUTSIDE the Tableau session, BEFORE it
+        # opens. Not a preference: they render in their own short-lived chromium,
+        # and Playwright's sync API refuses to start while another sync session is
+        # already live ("Playwright Sync API inside the asyncio loop"). Rendering
+        # them inside the `with tableau_session(...)` block failed vzftr on every
+        # batch run — invisibly, because the standalone `--only vzftr` test opens
+        # no Tableau session and passes (2026-07-21).
+        email_specs = [s for s in selected if s.get("source") == "email"]
+        tableau_specs = [s for s in selected if s.get("source") != "email"]
+        captures, failed = _capture_all(email_specs, None, out_dir, force_crop)
+        # Open a Tableau session ONLY if a selected tracker actually needs one, so
+        # an email-only selection can't be blocked by a cold Tableau login.
+        if tableau_specs:
             with tableau_session(headless=args.headless, allow_form_login=False,
                                  verbose=True) as page:
-                captures, failed = _capture_all(selected, page, out_dir, force_crop)
-        else:
-            captures, failed = _capture_all(selected, None, out_dir, force_crop)
+                tab_caps, tab_failed = _capture_all(tableau_specs, page, out_dir,
+                                                    force_crop)
+            captures += tab_caps
+            failed += tab_failed
+        # Capture order drives the Slack reply order, so put both groups back into
+        # pages.py order (the email ones were captured first, not posted first).
+        rank = {s["id"]: i for i, s in enumerate(selected)}
+        captures.sort(key=lambda c: rank[c[0]["id"]])
+        failed.sort(key=lambda fid: rank.get(fid, len(rank)))
         # Only a COMPLETE capture is worth reusing — stamp it so the next org can.
         if captures and not failed:
             _write_stamp(out_dir, captures, today)

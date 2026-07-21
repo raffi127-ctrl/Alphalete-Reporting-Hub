@@ -164,7 +164,12 @@ def _build_html(rows: list, report_date: "dt.date | None") -> str:
 def _screenshot_html(html_str: str, out_path: Path, *, context=None) -> Path:
     """Render `html_str` and screenshot the #card element to `out_path`. Reuses a
     passed browser `context` (a tab in the Tableau session) if given, else launches
-    its own isolated headless chromium at 2x for a crisp standalone/test render."""
+    its own isolated headless chromium at 2x for a crisp standalone/test render.
+
+    With context=None this MUST NOT be called while another Playwright sync session
+    is open — the sync API refuses to start a second one ("Playwright Sync API
+    inside the asyncio loop") and the render dies. run.py therefore captures every
+    email-sourced tracker BEFORE it opens the Tableau session."""
     def _shot(pg):
         pg.set_content(html_str, wait_until="load")
         pg.wait_for_timeout(400)
