@@ -3270,8 +3270,10 @@ AUTOMATED_REPORTS = [
             "An ICD with no sales this week shows **NS** — that's correct (it "
             "matches the VAs' 0) and it fills the moment they sell."
         ),
+        # Deep-links to the Copy of Alphalete ORG Sales Board tab this run fills.
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit#gid=388012799"),
+                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"
+                      "?gid=129523613#gid=129523613"),
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
