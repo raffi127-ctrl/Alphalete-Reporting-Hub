@@ -1347,6 +1347,91 @@ def _office_metrics_card() -> dict:
     }
 
 
+def _b2b_metrics_card() -> dict:
+    """ONE card for the B2B Metrics thread, run per office (Megan 2026-07-20 —
+    mirrors _office_metrics_card, and scales the same way: the office list is
+    read from b2b_metrics.offices.OFFICES and the per-office re-run buttons are
+    GENERATED from it, so adding a B2B office stays one registry row).
+
+    This consolidates what used to be several reports racing into one thread
+    (b2b_quality + vantura_churn + …) into a single ordered run per office —
+    the same win office_metrics gave the D2D side."""
+    from automations.b2b_metrics import offices as _bo
+    from automations.b2b_metrics import runner as _bmr
+    offs = [_bo.OFFICES[k] for k in _bo.ORDER]
+    office_bullets = "\n".join(
+        "• {} → {}".format(o.label, o.channel_name) for o in offs)
+    _seen: set = set()
+    channels = ", ".join(
+        o.channel_name for o in offs
+        if not (o.channel_name in _seen or _seen.add(o.channel_name)))
+    item_lines = "\n".join(
+        "• {} {}".format(i["emoji"], i["title"]) for i in _bmr.ITEMS)
+    return {
+        "id": "b2b-metrics",
+        "name": "B2B Metrics",
+        "creator": "Megan",
+        "emoji": "📊",
+        "color": "#2563EB",
+        "category": "🏢 Other Offices",
+        "description": (
+            "The B2B Metrics thread for each B2B office, posted in order into "
+            "that office's channel ({}). Consolidates what used to be several "
+            "reports racing into one thread into a single ordered run — adding "
+            "an office is config only (one registry row).".format(channels)),
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "For each B2B office below, captures the ordered set of items and "
+            "posts them into today's 'B2B Metrics' thread in that office's "
+            "channel (one header thread per office per day, created first if it "
+            "isn't up yet).\n\n"
+            "OFFICES\n{}\n\n"
+            "POSTED (in thread order)\n{}\n\n"
+            "WHEN IT RUNS\n"
+            "Daily on Lucy 2 (Carlos's Tableau login — his custom views).\n\n"
+            "NOTE\n"
+            "Out of Bounds posts even when blank (Carlos: 'if it shows nothing "
+            "we still want the screenshot'). One item still to map with Carlos "
+            "(Activation report)."
+        ).format(office_bullets, item_lines),
+        "assignees": ["Lucy 2"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "5:30 AM",
+            "estimated_minutes": 10 * len(offs),
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": (
+                "✅ B2B Metrics posted — every item in each office's thread."),
+            "message_failed": (
+                "❌ A B2B Metrics item missed — check the log and re-run that "
+                "office from its button below."),
+        },
+        "actions": [
+            {
+                "label": "Run All Offices",
+                "icon": "▶",
+                "primary": True,
+                "help": ("Captures + posts the ordered B2B Metrics set for each "
+                         "office into its channel. Continues past a failed "
+                         "item. Needs a warm Tableau session — run on Lucy 2."),
+                "module": "automations.b2b_metrics.runner",
+                "args_fn": lambda: ["--office", _bo.ORDER[0], "--post"],
+            },
+        ] + [
+            {
+                "label": "Re-run {} ({})".format(o.label, o.channel_name),
+                "icon": "🔁",
+                "help": "Re-captures + posts this office's B2B Metrics thread.",
+                "module": "automations.b2b_metrics.runner",
+                "args_fn": (lambda k=o.key: ["--office", k, "--post"]),
+            }
+            for o in offs
+        ],
+    }
+
+
 def _tableau_trackers_card() -> dict:
     """ONE card for the country-wide Tableau trackers, posted to EVERY channel
     off a single capture (Megan 2026-07-14 — was 5 cards, one per org).
@@ -2592,6 +2677,7 @@ AUTOMATED_REPORTS = [
         ],
     },
     _office_metrics_card(),
+    _b2b_metrics_card(),
     {
         "id": "fiber-activations",
         "name": "Fiber Activations Report",
