@@ -3045,8 +3045,10 @@ AUTOMATED_REPORTS = [
             "Mondays. Each run fills the latest week and catches up any missed "
             "weeks; existing history stays as-is."
         ),
+        # Deep-links to the tab this run writes to, not the workbook root.
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
+                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"
+                      "?gid=2024676935#gid=2024676935"),
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "weekly",
