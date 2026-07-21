@@ -293,8 +293,12 @@ def _post_to_channel(client, channel: str, captures: list, pages: list,
     if not replace and captures and len(have) == len(mine):
         print(f"  {channel}: already has today's {len(have)} image(s) for this "
               f"run — skipping (nothing re-posted)", flush=True)
+        # present_ids = every tracker already in today's thread (the full posted
+        # set, not just this run's `mine`), so the caller can tell a board that's
+        # genuinely absent from one that a prior run already delivered.
         return {"channel": channel, "thread_ts": thread_ts, "created": False,
-                "posted": [], "removed": 0, "skipped": True, "ok": True}
+                "posted": [], "removed": 0, "skipped": True, "ok": True,
+                "present_ids": sorted(already)}
     if (replace or have) and not thread["created"]:
         removed = delete_image_replies(client, channel, thread_ts, pages, today,
                                        only_ids=mine)
@@ -330,10 +334,15 @@ def _post_to_channel(client, channel: str, captures: list, pages: list,
         except Exception as e:  # noqa: BLE001
             print(f"  {channel}: header note not cleared ({type(e).__name__}) — "
                   f"image posted fine", flush=True)
+    # present_ids = what's in the thread AFTER this run: the boards already there
+    # that we did NOT clear, plus the ones we just posted successfully. Lets the
+    # caller distinguish a genuinely-absent board from one already delivered.
+    present = (already - set(mine)) | {r["id"] for r in results if r.get("ok")}
     return {"channel": channel, "thread_ts": thread_ts,
             "created": thread["created"], "posted": results, "removed": removed,
             "skipped": False,
-            "ok": all(r.get("ok") for r in results) if results else False}
+            "ok": all(r.get("ok") for r in results) if results else False,
+            "present_ids": sorted(present)}
 
 
 def _preview_into(client, channel: str, captures: list, pages: list,

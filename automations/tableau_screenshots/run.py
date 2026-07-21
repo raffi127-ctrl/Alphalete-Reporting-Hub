@@ -483,6 +483,13 @@ def main(argv=None) -> int:
         return 1 if failed else 0
 
     posted_ok, posted_bad, status_rows = [], [], []
+    # Which selected boards are actually PRESENT in the channels after this run —
+    # unioned across every channel we didn't outright fail on. A tracker that
+    # failed to CAPTURE this run isn't a real gap if a prior run already delivered
+    # it (all channels then skip and report it in `present_ids`); it's only a gap
+    # if it's genuinely absent from a channel.
+    present_everywhere: set = set()
+    present_seen = False
     for org in orgs:
         label = sp.ORG_LABEL[org]
         try:
@@ -503,6 +510,13 @@ def main(argv=None) -> int:
             else:
                 print(f"⚠ [{org}] {c['channel']} post FAILED: "
                       f"{c.get('error', 'see above')}", flush=True)
+            # Only channels that DIDN'T error carry a trustworthy present set. A
+            # board must be present in EVERY such channel to count as delivered,
+            # so intersect (seed on the first one seen).
+            if c.get("ok") and c.get("present_ids") is not None:
+                p = set(c.get("present_ids") or [])
+                present_everywhere = p if not present_seen else (present_everywhere & p)
+                present_seen = True
         (posted_ok if result.get("ok") else posted_bad).append(org)
         status_rows.append({
             "org": org, "label": label, "ok": bool(result.get("ok")),
@@ -518,35 +532,62 @@ def main(argv=None) -> int:
     for org in orgs:
         print(f"  {'✅' if org in posted_ok else '❌'} {sp.ORG_LABEL[org]}", flush=True)
 
+    # A capture failure is only a REAL gap when the board is genuinely absent from
+    # the channels. A board that failed to capture NOW but is already sitting in
+    # every channel (an earlier run posted it; this run's channels all skipped) is
+    # NOT missing — re-flagging it would cry wolf on every idempotent re-run. When
+    # we couldn't read any channel's present set (e.g. every org errored), fall
+    # back to treating all capture failures as gaps (can't prove they landed).
+    missing_trackers = ([f for f in failed if f not in present_everywhere]
+                        if present_seen else list(failed))
+    if failed:
+        covered = [f for f in failed if f not in missing_trackers]
+        if covered:
+            print(f"  ℹ {len(covered)} tracker(s) failed to capture but are already "
+                  f"in every channel from an earlier run: {', '.join(covered)}", flush=True)
+
     # Manifest drives BOTH the Hub's "Retry failed only" button and its pill
-    # colour. The failed PARTS are the channels that missed (not the trackers),
-    # and retry_args re-posts exactly those. `succeeded` is what lets the Hub tell
-    # a PARTIAL run (orange — most channels landed) from a total failure (red);
-    # without it every miss would look equally fatal. A capture failure is
-    # surfaced too, since a short thread is a real failure even when every channel
-    # accepted it.
-    ok = (not failed) and not posted_bad
-    parts = [sp.ORG_LABEL[o] for o in posted_bad] + [f"tracker:{f}" for f in failed]
+    # colour. `succeeded` lets the Hub tell a PARTIAL run (orange — most channels
+    # landed) from a total failure (red). A GENUINELY-absent board is surfaced as
+    # a failed part too, since a short thread is a real gap — but one already
+    # delivered by an earlier run is not, so it's excluded.
+    ok = (not missing_trackers) and not posted_bad
+    parts = [sp.ORG_LABEL[o] for o in posted_bad] + [f"tracker:{f}" for f in missing_trackers]
+    # A channel miss re-posts exactly the missed channels; a lone capture gap
+    # re-captures just that tracker (self-heals a transient Tableau flake; a board
+    # whose SOURCE isn't in yet — e.g. an email tracker — stays flagged, softly).
+    if posted_bad:
+        retry_args = (["--late-only"] if args.late_only else []) + \
+                     ["--orgs", ",".join(posted_bad), "--replace"]
+    elif missing_trackers:
+        # --late-only and --only are mutually exclusive (a late run already selects
+        # exactly the late trackers), so re-run the late catch-up as-is; a normal
+        # run re-captures just the missing tracker(s).
+        retry_args = (["--late-only"] if args.late_only
+                      else ["--only", ",".join(missing_trackers)])
+    else:
+        retry_args = []
     run_manifest.write_manifest(
         report_id, ok=bool(ok), failed=parts, kind="channel",
         succeeded=[sp.ORG_LABEL[o] for o in posted_ok],
-        # A late run's retry must stay a LATE run — without --late-only the retry
-        # would post the morning's 7 boards instead of the tracker that missed.
-        retry_args=(((["--late-only"] if args.late_only else [])
-                     + ["--orgs", ",".join(posted_bad), "--replace"])
-                    if posted_bad else []),
+        retry_args=retry_args,
         note=("" if ok else
               "; ".join(filter(None, [
                   f"{len(posted_bad)} channel(s) missed: "
                   f"{', '.join(sp.ORG_LABEL[o] for o in posted_bad)}" if posted_bad else "",
-                  f"{len(failed)} tracker(s) failed to capture: "
-                  f"{', '.join(failed)}" if failed else "",
+                  f"{len(missing_trackers)} tracker(s) missing from the thread: "
+                  f"{', '.join(missing_trackers)}" if missing_trackers else "",
               ]))))
 
-    # Non-zero on any miss, so the orchestrator RETRIES — which is safe and
-    # useful now that posting is idempotent: the retry skips the channels that
-    # already have today's images and re-posts only the ones that missed.
-    if posted_bad or failed:
+    # EXIT CODE — hard failure ONLY when a channel genuinely failed to post (a
+    # real "some org didn't get images" error): the orchestrator treats non-zero
+    # as FAILED and fires the immediate failure email, so that path must mean a
+    # human is actually needed. A capture GAP is NOT hard-failed here: exit 0 lets
+    # the manifest flow through reconcile, which marks it soft INCOMPLETE (Hub
+    # checklist + a bounded self-heal retry), instead of a hard 4:31am page for a
+    # single board — while "everything already posted, nothing to re-post" stays a
+    # clean exit 0. (A total capture failure still returns 1 above.)
+    if posted_bad:
         return 1
     return 0
 
