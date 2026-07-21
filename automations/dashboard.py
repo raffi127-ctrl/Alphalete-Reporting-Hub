@@ -3240,7 +3240,7 @@ AUTOMATED_REPORTS = [
         "emoji": "🏆",
         "color": "#10B981",
         "category": "📊 Metrics",
-        "description": "Fills the Alphalete Org Sales Board COPY TAB — 7 daily product sections (Retail NL/Internet, Fiber, NDS, B2B, BOX, Retail JE) + all 10 captainship leaderboards from Tableau. Writes ONLY to the copy tab (validation), never the live VA tab.",
+        "description": "Fills the Alphalete Org Sales Board COPY TAB — 7 daily product sections (Retail NL/Internet, Fiber, NDS, B2B, BOX, Retail JE) + all 10 captainship leaderboards from Tableau. Writes ONLY to the copy tab, never the live VA tab. The VAs no longer key their own tab, so this copy is the working board now.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Fills the **copy tab** of the Alphalete Org Sales Board: all 7 "
@@ -3248,9 +3248,11 @@ AUTOMATED_REPORTS = [
             "ATT NDS, B2B, BOX, Retail JE) and all 10 captainship "
             "leaderboards.\n\n"
             "WHERE IT WRITES\n"
-            "**COPY TAB ONLY** — \"Copy of Alphalete ORG Sales Board\". It never "
-            "touches the live VA tab. This is the validation pass: run it daily, "
-            "compare to what the VAs key, confirm it matches before going live.\n\n"
+            "**COPY TAB ONLY** — \"Copy of Alphalete ORG Sales Board\"; it never "
+            "touches the live VA tab. The VAs no longer key their own tab, so "
+            "this copy is the working board now — the daily board email + "
+            "screenshots render from it. (No VA compare anymore — that check "
+            "was retired when the VA tab stopped being filled.)\n\n"
             "WHEN IT RUNS\n"
             "**Daily.** Only completed days fill; today + future stay blank.\n"
             "The weekly rollover fires **automatically on Tuesday** (the first "
@@ -3265,8 +3267,8 @@ AUTOMATED_REPORTS = [
             "auto-rolls to the current week (filled for the ICDs already on the "
             "board).\n\n"
             "ZERO-SALES ICDs\n"
-            "An ICD with no sales this week shows **NS** — that's correct (it "
-            "matches the VAs' 0) and it fills the moment they sell."
+            "An ICD with no sales this week shows **NS** — that's correct, and "
+            "it fills the moment they sell."
         ),
         # Deep-links to the Copy of Alphalete ORG Sales Board tab this run fills.
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
