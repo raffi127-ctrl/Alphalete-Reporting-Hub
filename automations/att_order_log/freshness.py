@@ -25,7 +25,7 @@ from pathlib import Path
 DATE_COL = "sp.Order Date (copy)"
 
 
-def _narrow_csv_url(target: dt.date, days: int = 3) -> str:
+def _narrow_csv_url(target: dt.date, days: int = 2) -> str:
     """The ORDERLOG .csv for a SHORT window ending at `target` — same endpoint as
     run._csv_url but a few days wide, so the probe fetch is small and quick."""
     start = target - dt.timedelta(days=days)
@@ -37,9 +37,17 @@ def _narrow_csv_url(target: dt.date, days: int = 3) -> str:
 
 def fetch_narrow_csv(target: dt.date, dest: Path, *, log=lambda *_: None) -> Path:
     """Download a narrow-window ORDERLOG csv to `dest` via Carlos's real-Chrome
-    CDP session (reuses run.py's exact auth path). Raises on any failure — the
-    caller (the readiness probe) fail-opens on error, so this never needs to
-    swallow. Kept parallel to run._pull but with the small window."""
+    CDP session and Tableau identity (a patchright/ownerville-SSO session is a
+    DIFFERENT identity that doesn't see his order rows). Raises on any failure —
+    the caller (the readiness probe) fail-opens, so this never needs to swallow.
+
+    NON-DISRUPTIVE by design: the probe and the real CDP reports (att_order_log,
+    vantura_churn) share ONE profile (vantura_cdp_profile) + port 9246, and
+    _kill_ours would abort a report mid-pull. So this NEVER calls _kill_ours: it
+    REUSES a CDP Chrome that's already up (on its own new page, leaving the
+    report's pages untouched), launches its OWN only when none is up, and kills
+    only a Chrome it started. If the profile is busy and no session answers, it
+    raises -> the probe returns not-ready and the fallback floor backstops it."""
     import time
 
     from patchright.sync_api import sync_playwright
@@ -47,34 +55,57 @@ def fetch_narrow_csv(target: dt.date, dest: Path, *, log=lambda *_: None) -> Pat
     from automations.shared import tableau_patchright as tp
     from automations.vantura_churn import cdp_pull
 
-    cdp_pull._kill_ours()
-    proc = cdp_pull._launch()
-    log("  [probe cdp] real Chrome pid={}; waiting 20s".format(proc.pid))
-    time.sleep(20)
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.connect_over_cdp(
-                "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
-            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            tp._ensure_tableau_authenticated(page, verbose=False,
-                                             allow_form_login=True)
-            r = page.context.request.get(_narrow_csv_url(target), timeout=120_000)
-            body = r.body() or b""
-            log("  [probe csv] status={} bytes={:,}".format(r.status, len(body)))
-            if r.status != 200 or len(body) < 200:
-                raise RuntimeError(
-                    "orderlog probe export failed: status={} bytes={}".format(
-                        r.status, len(body)))
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(body)
-            return dest
-    finally:
+    port = cdp_pull.CDP_PORT
+    with sync_playwright() as p:
+        def _connect():
+            try:
+                return p.chromium.connect_over_cdp(
+                    "http://127.0.0.1:{}".format(port), timeout=2000)
+            except Exception:  # noqa: BLE001
+                return None
+
+        browser = _connect()
+        launched = None
+        if browser is not None:
+            log("  [probe cdp] reusing live CDP session (no launch)")
+        else:
+            launched = cdp_pull._launch()          # our own; never _kill_ours
+            log("  [probe cdp] launched own Chrome pid={}".format(launched.pid))
+            for _ in range(18):                    # poll up to ~18s for CDP
+                time.sleep(1)
+                browser = _connect()
+                if browser is not None:
+                    break
+        if browser is None:
+            raise RuntimeError("CDP session not reachable (profile busy?) — defer")
         try:
-            proc.terminate()
-        except Exception:  # noqa: BLE001
-            pass
-        cdp_pull._kill_ours()
+            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+            page = ctx.new_page()                  # OUR page; report's stay untouched
+            try:
+                tp._ensure_tableau_authenticated(page, verbose=False,
+                                                 allow_form_login=True)
+                r = page.context.request.get(_narrow_csv_url(target),
+                                             timeout=120_000)
+                body = r.body() or b""
+                log("  [probe csv] status={} bytes={:,}".format(r.status, len(body)))
+                if r.status != 200 or len(body) < 200:
+                    raise RuntimeError(
+                        "orderlog probe export failed: status={} bytes={}".format(
+                            r.status, len(body)))
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(body)
+                return dest
+            finally:
+                try:
+                    page.close()                   # close only our page
+                except Exception:  # noqa: BLE001
+                    pass
+        finally:
+            if launched is not None:               # kill ONLY a Chrome WE started
+                try:
+                    launched.terminate()
+                except Exception:  # noqa: BLE001
+                    pass
 
 
 def _selftest() -> int:
