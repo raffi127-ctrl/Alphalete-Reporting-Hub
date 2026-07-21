@@ -800,6 +800,79 @@ PDF_SLACK_RECIPIENTS = [
 ]  # Maud Miller, Carlos Hidalgo, Rafael Hidalgo, Megan Hidalgo (added 2026-07-21)
 
 
+_NOTE_SYS = (
+    "You tidy short recognition notes for a sales team's weekly slide. Rewrite the note "
+    "so it is clear, concise, and grammatically correct: fix spelling, grammar, and "
+    "spacing, and drop shouting punctuation. Do NOT add any fact that isn't in the "
+    "original. Use gender-neutral phrasing (they/their) — never guess someone's gender. "
+    "Keep it to one short sentence. Reply with ONLY the cleaned note, no quotes.")
+_NOTE_MODEL = "claude-haiku-4-5-20251001"
+
+
+def _light_clean(raw: str) -> str:
+    s = re.sub(r"\s+", " ", (raw or "").strip())
+    s = re.sub(r"([!?.])\1{1,}", r"\1", s)
+    if s:
+        s = s[0].upper() + s[1:]
+        if s[-1] not in ".!?":
+            s += "."
+    return s
+
+
+def _polish_note(raw: str) -> str:
+    """AI-tidy an ICD's extra-recognition note (grammar/wording only — never invents).
+    Falls back to a light rule-based clean if the key/SDK is unavailable."""
+    raw = (raw or "").strip()
+    if not raw:
+        return ""
+    try:
+        from automations.brand_audit import credentials
+        import anthropic
+        client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
+        resp = client.messages.create(model=_NOTE_MODEL, max_tokens=120, system=_NOTE_SYS,
+                                       messages=[{"role": "user", "content": raw}])
+        out = next((b.text for b in resp.content if getattr(b, "type", "") == "text"), "").strip()
+        return out or _light_clean(raw)
+    except Exception as e:  # noqa: BLE001 — never fail the deck over note polish
+        print(f"[promotions] note polish fell back ({type(e).__name__}) for {raw[:40]!r}",
+              flush=True)
+        return _light_clean(raw)
+
+
+def _fetch_promotions() -> list:
+    """This week's promotions from Maud's recognition sheet tab: (rep, trainer, owner,
+    level, cleaned note). Best-effort — returns [] on any error so the deck still builds."""
+    try:
+        from automations.leaders_call.recognition_tab import (RECOGNITION_SHEET_ID,
+                                                              week_tab_name)
+        from automations.recruiting_report import fill as rfill
+        client = rfill._client()
+        sh = rfill.open_by_key(RECOGNITION_SHEET_ID, client)
+        name = week_tab_name()
+        titles = [w.title for w in rfill._retry(sh.worksheets)]
+        if name not in titles:
+            print(f"[promotions] tab {name!r} not found — no promotions this run", flush=True)
+            return []
+        ws = rfill._retry(sh.worksheet, name)
+        vals = rfill._retry(ws.get_values, "A3:E300")
+        promos = []
+        for r in vals[1:]:                              # skip the header row (row 3)
+            rep = (r[0] if len(r) > 0 else "").strip()
+            level = (r[3] if len(r) > 3 else "").strip()
+            if not rep or not level:
+                continue
+            trainer = (r[1] if len(r) > 1 else "").strip()
+            owner = (r[2] if len(r) > 2 else "").strip()
+            note = (r[4] if len(r) > 4 else "").strip()
+            promos.append((rep, trainer, owner, level, _polish_note(note)))
+        print(f"[promotions] {len(promos)} promotion(s) from {name!r}", flush=True)
+        return promos
+    except Exception as e:  # noqa: BLE001
+        print(f"[promotions] fetch failed ({type(e).__name__}: {str(e)[:120]}) — skipping",
+              flush=True)
+        return []
+
+
 def _build_recognition_pdf(results: dict) -> None:
     """Generate the Alphalete Leader's Call PDF from a CLEAN run's results and
     DM it to the PDF_SLACK_RECIPIENTS group on Slack (as Lucy). Only called when
@@ -809,7 +882,8 @@ def _build_recognition_pdf(results: dict) -> None:
     try:
         from automations.leaders_call import build_pdf as pdf
         out = OUTPUT_DIR / f"alphalete_leaders_call_{sun.isoformat()}.pdf"
-        pdf.build_pdf(results, out, pdf.qualifiers_from_campaigns())
+        promos = _fetch_promotions()
+        pdf.build_pdf(results, out, pdf.qualifiers_from_campaigns(), promotions=promos)
         print(f"📄 Leader's Call PDF generated: {out}", flush=True)
     except Exception as e:
         print(f"⚠ PDF generation failed ({type(e).__name__}: {str(e)[:140]}) — "
