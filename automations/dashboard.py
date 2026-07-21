@@ -4181,8 +4181,10 @@ AUTOMATED_REPORTS = [
             "**Daily 7:00 AM** on Lucy 2 (refresh only). The B2B Metrics run "
             "posts from it at **7:45 AM**."
         ),
+        # Deep-links to the LUCY CHURN tab this run refreshes.
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"),
+                      "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"
+                      "?gid=1629055677#gid=1629055677"),
         "assignees": ["Lucy 2"],
         # Runs on Lucy 2 — its warm Tableau session + the daily 7am launchd
         # job (com.alphalete.vantura-churn-daily) live there. A Hub "play"
