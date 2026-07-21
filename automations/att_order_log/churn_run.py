@@ -195,15 +195,34 @@ def _fill(key: str, spec: dict, parsed: dict, today: dt.date, log=print) -> None
     fill_mod.hide_blanks_today(ws, sections, logfn=log)
     fill_mod.hide_after_5_zero_pulls(ws, sections, logfn=log)
     log("  [{}] formatted (sort + threshold colours + hide)".format(key))
+    return ws, fill_mod.find_sections(ws)
+
+
+def _render(key: str, ws, sections: dict, today: dt.date, log=print) -> dict:
+    """Render this product's populated sections to PNGs (reuses the D2D
+    renderers). Returns {period: png_path}."""
+    from . import churn_render
+
+    pngs = churn_render.render(key, ws, sections, today, WORK_DIR)
+    for period, path in sorted(pngs.items()):
+        log("  [{}] png {} -> {}".format(key, period, path.name))
+    if not pngs:
+        log("  [{}] no populated sections to render".format(key))
+    return pngs
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="att_order_log.churn_run")
     ap.add_argument("--fill", action="store_true",
                     help="write the tabs (default: pull + report only)")
+    ap.add_argument("--png", action="store_true",
+                    help="render each product's sections to PNGs (implies "
+                         "--fill; the render reads the freshly-filled tab)")
     ap.add_argument("--only", choices=sorted(FEEDS), default=None)
     ap.add_argument("--today", default=None, metavar="YYYY-MM-DD")
     args = ap.parse_args(argv)
+    if args.png:
+        args.fill = True          # render reads the tab the fill just wrote
 
     today = (dt.date.fromisoformat(args.today) if args.today
              else dt.date.today())
@@ -240,7 +259,9 @@ def main(argv=None) -> int:
                     adapted = _pull_and_adapt(page, key, spec, log=log)
                     parsed = _parse(adapted, log=log)
                     if args.fill:
-                        _fill(key, spec, parsed, today, log=log)
+                        ws, sections = _fill(key, spec, parsed, today, log=log)
+                        if args.png:
+                            _render(key, ws, sections, today, log=log)
                     else:
                         log("  DRY RUN — not writing {!r}".format(spec["tab"]))
                 except Exception:  # noqa: BLE001 — one feed must not kill the other
