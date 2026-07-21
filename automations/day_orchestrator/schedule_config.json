@@ -718,6 +718,29 @@
       "depends_on": [],
       "verify": null
     },
+    "bg_check_sync_post": {
+      "on_scheduler": true,
+      "_note": "MANUAL trigger for the BG Check Sync (`lucy rerun bg_check_sync_post`). Same as the daily launchd run: reads Sterling emails, updates col K on both OBCL tabs, and EDITS the weekly #rafs-office-recruiting thread reply in place (uses the mini's bg_slack_state.json, so it edits rather than reposts). weekdays [] = manual only; the real schedule is the com.alphalete.bg-check-sync launchd job (8/11:30/16 CST).",
+      "display_name": "BG Check Sync — run now (post)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.bg_check_sync.run"
+      ],
+      "base_args": [
+        "--post",
+        "--since-days",
+        "30"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 15
+    },
     "install_new_start_checklist_agent": {
       "on_scheduler": true,
       "_note": "MANUAL: `lucy rerun install_new_start_checklist_agent` installs com.alphalete.new-start-followup-sun (Sun 13:00 CST). Posts the numbered checklist Raf used to build by hand. weekdays [] = manual only.",
