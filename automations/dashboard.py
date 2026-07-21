@@ -3316,13 +3316,15 @@ AUTOMATED_REPORTS = [
             "COPY tab via the Google Sheets PDF-export endpoint — no browser, runs "
             "from any machine.\n\n"
             "RECIPIENTS\n"
-            "Proving phase: Maud + Rafael + Megan. Expand to the full distribution "
+            "Proving phase: Rafael + Megan. Expand to the full distribution "
             "list once it's proven out.\n\n"
             "WHEN IT RUNS\n"
             "Daily, after the morning Sales Board fill (so the numbers are fresh)."
         ),
+        # Deep-links to the Copy of Alphalete ORG Sales Board tab this email renders.
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit#gid=25197725"),
+                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"
+                      "?gid=129523613#gid=129523613"),
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
@@ -3336,10 +3338,10 @@ AUTOMATED_REPORTS = [
         },
         "actions": [
             {
-                "label": "Send Email (Maud + Rafael + Megan)",
+                "label": "Send Email (Rafael + Megan)",
                 "icon": "▶",
                 "primary": True,
-                "help": "Renders every section of the copy tab to exact-sheet images and emails them to the proving list (Maud, Rafael, Megan). Takes a couple of minutes. Manual send — bypasses the fill-complete guard (the copy tab is kept current by the mini; that guard protects the automated scheduled run).",
+                "help": "Renders every section of the copy tab to exact-sheet images and emails them to the proving list (Rafael, Megan). Takes a couple of minutes. Manual send — bypasses the fill-complete guard (the copy tab is kept current by the mini; that guard protects the automated scheduled run).",
                 "module": "automations.org_sales_board.screenshot_email",
                 "args_fn": lambda: ["--force"],
             },

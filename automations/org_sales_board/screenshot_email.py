@@ -46,8 +46,9 @@ from automations.scheduled_6_days_out.email_send import (
 )
 
 # Rollout recipient tiers (Megan 2026-07-03).
+# Maud removed 2026-07-21 — on maternity leave (add her back on return).
 PREVIEW_TO = ["Meganhidalgo1191@gmail.com"]
-PROVING_TO = ["maudmiller4@gmail.com", "raffi127@gmail.com",
+PROVING_TO = ["raffi127@gmail.com",
               "Meganhidalgo1191@gmail.com"]
 # GO-LIVE distro — 3 Gmail contact GROUPS, expanded to live addresses at send time
 # via the People API (automations.shared.contacts_auth). Names must match the
