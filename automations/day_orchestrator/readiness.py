@@ -209,8 +209,14 @@ class ReadinessCache:
         except Exception as e:  # noqa: BLE001 — not pullable yet: re-probe (floor backstops)
             line = str(e).splitlines()[0][:120] if str(e) else repr(e)
             return Readiness(False, f"ORDERLOG not pullable yet ({line})")
-        return Readiness(*_csv_covers_date(out, _fr.DATE_COL, self.target_date,
-                                           min_rows))
+        # The extract refreshes OVERNIGHT with the prior day's finalised orders,
+        # so "ready" = it reaches the latest COMPLETED day (yesterday by default),
+        # NOT today — same-day B2B orders don't post until business hours, so
+        # gating on today would report not-ready all morning and just hit the
+        # floor. days_back tunes it; the fail-open floor covers a genuine
+        # no-orders day (max date never reaches the check).
+        check = self.target_date - dt.timedelta(days=int(probe.get("days_back", 1)))
+        return Readiness(*_csv_covers_date(out, _fr.DATE_COL, check, min_rows))
 
     def _probe_box_daily(self, source_id: str, probe: dict) -> Readiness:
         """Box (B2BBOXEnergyTracker/BoxDailyTracker) is the ORG Sales Board's
