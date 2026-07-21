@@ -29,7 +29,10 @@ SHRINK = 0.40           # >40% smaller than the backup = suspicious (don't trust
 # Reports can register substrings that MUST always be present. Losing one means a
 # semantic wipe (the code still compiles but a critical feature is gone).
 CRITICAL_MARKERS = {
-    "june_texas_de_brazil_monthly_competition": ["files_upload_v2"],
+    # files_upload_v2 = Slack layer; send_imessage = the iMessage/text layer.
+    # Both must survive an edit — guarding only Slack let the text layer vanish
+    # from the cell without the safety net catching it.
+    "june_texas_de_brazil_monthly_competition": ["files_upload_v2", "send_imessage"],
 }
 
 
