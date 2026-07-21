@@ -62,6 +62,13 @@ _HUB_CARD = {
     "pnl_office": "pnl-office",
     "sales_boards": "sales-boards",
     "b2b_quality": "b2b-quality",
+    # B2B Metrics: standalone LaunchAgent on Lucy 2 (com.alphalete.b2b-metrics,
+    # deploy/b2b_metrics.sh, 7:45am) — never in the 4am batch. Missing here since
+    # it shipped, so it posted its whole thread every morning while its card pill
+    # stayed grey — a silent miss looked identical to a clean run (same bug as
+    # vantura_churn / the captainship bonuses above). Its runner now calls
+    # publish_done; this line is what makes that call land on the card.
+    "b2b_metrics": "b2b-metrics",
     # board_compare card RETIRED 2026-07-21 (Megan) — Eve hand-verifies the
     # automation instead; module kept for manual reruns but no Hub tile to publish to.
     "leaders_call": "leaders-call",

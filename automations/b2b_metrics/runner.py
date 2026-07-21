@@ -103,6 +103,23 @@ ITEMS = [
 ]
 
 
+def _publish_hub(status: str) -> None:
+    """Record this run on the Hub so the B2B Metrics card pill reflects it.
+
+    Without this, the report posts its whole thread every morning but the card
+    stays grey — a silent miss looks identical to a clean run (the bug the
+    codebase keeps fixing for standalone LaunchAgents). Best-effort: a publish
+    failure must NEVER fail the report. Mirrors b2b_quality/run.py; the
+    report_id 'b2b_metrics' resolves to the 'b2b-metrics' card via
+    day_orchestrator.hub_publish._HUB_CARD."""
+    try:
+        from automations.day_orchestrator import hub_publish
+        hub_publish.publish_done(
+            "b2b_metrics", "B2B Metrics → office channels", status)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def header_title(o: B2BOffice, day: dt.date) -> str:
     return "{} {:02d}/{:02d}/{}".format(THREAD_TITLE, day.month, day.day, day.year)
 
@@ -210,7 +227,17 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
         bq._save_state(today, cid, ts, already)   # after EACH, crash-safe
         time.sleep(POST_SETTLE_SEC)                # let Slack finalize this
         log("  [{}] posted".format(item["id"]))    # image's message before next
-    return {"thread_ts": ts, "posted": posted}
+
+    # Completeness: `already` is every item now in today's thread (this run +
+    # any earlier pass today). An item is a MISS if it's not there — its capture
+    # failed and it never posted. Drives the card pill: all present -> green,
+    # some missed -> orange (partial), none present -> red (failed).
+    present = [i["id"] for i in items if i["id"] in set(already)]
+    missed = [i["id"] for i in items if i["id"] not in set(already)]
+    if missed:
+        log("  MISSED (not in thread): {}".format(", ".join(missed)))
+    return {"thread_ts": ts, "posted": posted, "present": present,
+            "missed": missed}
 
 
 def main(argv=None) -> int:
@@ -248,9 +275,25 @@ def main(argv=None) -> int:
 
     today = dt.date.fromisoformat(args.today) if args.today else dt.date.today()
     o = _off.get(args.office)
-    res = run(o, post=args.post, only=args.only, dm=args.dm,
-              channel_override=args.channel, today=today)
+    # Publish to the Hub only for a REAL post run of the office's own channel —
+    # not --dry-run, not a --channel verification post, and not a single-item
+    # --only run (which would flip the whole card green off one item).
+    publishable = args.post and not args.channel and not args.only
+    try:
+        res = run(o, post=args.post, only=args.only, dm=args.dm,
+                  channel_override=args.channel, today=today)
+    except Exception:
+        if publishable:
+            _publish_hub("failed")
+        raise
     print("\nresult:", res)
+    if publishable:
+        # Green only if EVERY item made it into the thread; orange (partial) if
+        # some posted and some missed; red (failed) if nothing landed at all.
+        missed = res.get("missed") or []
+        present = res.get("present") or []
+        status = "success" if not missed else ("partial" if present else "failed")
+        _publish_hub(status)
     return 0
 
 
