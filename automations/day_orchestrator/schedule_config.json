@@ -2815,6 +2815,21 @@
       },
       "machine": null
     },
+    "disable_b2b_quality_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false. Present so `lucy rerun disable_b2b_quality_agent --machine \"Lucy 2\"` RETIRES the standalone com.alphalete.b2b-quality LaunchAgent — b2b_quality is posting-only and the consolidated b2b_metrics run (7:45am) now posts Activation + Churn (Tiered Bonus was dropped). Race-free bootout + stashes the plist as .plist.disabled; reversible via `lucy rerun install_b2b_quality_agent`. Read-only w.r.t. report data. Part of the 2026-07-20 consolidation (with vantura_churn --no-post + install_b2b_metrics_agent).",
+      "display_name": "Disable B2B Quality standalone agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": ["automations.day_orchestrator.disable_agent"],
+      "base_args": ["b2b-quality"],
+      "cadence": {"weekdays": []},
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {"type": "not_configured"},
+      "machine": "Lucy 2"
+    },
     "disable_att_order_log_agent": {
       "on_scheduler": false,
       "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun disable_att_order_log_agent --machine \"Lucy 2\"` can RETIRE the standalone com.alphalete.att-order-log LaunchAgent on Lucy 2 — the inverse of install_att_order_log_agent. Needed to cut att_order_log over to the 4am orchestrator flow without a double-run (flow at 05:00 + standalone at 05:00). Race-free bootout + stashes the plist as .plist.disabled; reversible via `lucy rerun install_att_order_log_agent`. Read-only w.r.t. any Sheet/report data.",

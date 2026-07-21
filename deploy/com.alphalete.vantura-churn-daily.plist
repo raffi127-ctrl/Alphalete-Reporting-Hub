@@ -7,10 +7,15 @@
 
     <!-- Path is the laptop placeholder; on Lucy 2, install_agent.py rewrites it
          to that machine's repo path (lucy rerun install_vantura_churn_agent). -->
+    <!-- --no-post added 2026-07-20: vantura keeps REFRESHING the board (full
+         pull + write of LUCY CHURN / Activations) but no longer POSTS the churn
+         screenshots — the consolidated b2b_metrics run (7:45am) posts them now,
+         in order, with everything else. Revert this arg to restore posting. -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
         <string>/Users/megan/1st Claude Folder/deploy/vantura_churn_daily.sh</string>
+        <string>--no-post</string>
     </array>
 
     <key>WorkingDirectory</key>
