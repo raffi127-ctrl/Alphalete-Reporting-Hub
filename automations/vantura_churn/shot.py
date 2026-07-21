@@ -190,10 +190,16 @@ def _rep_range(ws, rep_col: str = None):
 # The two images, in post order. `title` is both the Slack file title and the
 # uploaded filename (Slack HTML-escapes the caption on read, so the caption
 # carries the emoji + bold; the filename stays plain ASCII-friendly).
+# Distinct emojis from the B2B Quality report's own 'Churn Rate' / 'Activation
+# Rate' lines (Megan 2026-07-20), so each thread item reads uniquely. `code`
+# is the Slack shortcode — Slack returns emoji as shortcodes on read, so the
+# header sync writes/compares that form to stay idempotent.
 POST_IMAGES = [
-    {"key": "churn", "emoji": "📉", "title": "Churn & Activations Board",
+    {"key": "churn", "emoji": "🐺", "code": "wolf",
+     "title": "Churn & Activations Board",
      "range": lambda ws: visible_range(ws)},
-    {"key": "reps", "emoji": "⚡", "title": "Activation Rate by Rep",
+    {"key": "reps", "emoji": "📈", "code": "chart_with_upwards_trend",
+     "title": "Activation Rate by Rep",
      "range": lambda ws: _rep_range(ws)},
 ]
 
@@ -281,19 +287,30 @@ def _update_parent_header(client, cid, ts, imgs, dry_run, log) -> None:
         return
     if not msgs:
         return
-    cur = html.unescape(msgs[0].get("text") or "")
-    add = [f"{spec['emoji']} {spec['title']}" for spec, _p in imgs
-           if spec["title"] not in cur]
-    if not add:
-        log("  · header already lists the churn screenshots")
+    lines = html.unescape(msgs[0].get("text") or "").split("\n")
+    changed = []
+    for spec, _p in imgs:
+        # Write the shortcode form — Slack returns emoji as shortcodes on
+        # read, so this is what a later run sees, keeping the check stable.
+        want = f":{spec['code']}: {spec['title']}"
+        ok = {want, f"{spec['emoji']} {spec['title']}"}
+        idx = next((i for i, ln in enumerate(lines)
+                    if spec["title"] in ln), None)
+        if idx is None:                       # not listed yet → append
+            lines.append(want)
+            changed.append(f"+{spec['title']}")
+        elif lines[idx] not in ok:            # listed with a different emoji
+            lines[idx] = want
+            changed.append(f"~{spec['title']}")
+    if not changed:
+        log("  · header already current")
         return
-    new_text = cur + "\n" + "\n".join(add)
     if dry_run:
-        log(f"[dry-run] would append to header: {', '.join(add)}")
+        log(f"[dry-run] would update header ({', '.join(changed)})")
         return
     try:
-        client.chat_update(channel=cid, ts=ts, text=new_text)
-        log(f"  ✓ header updated: +{', '.join(add)}")
+        client.chat_update(channel=cid, ts=ts, text="\n".join(lines))
+        log(f"  ✓ header updated ({', '.join(changed)})")
     except Exception as e:  # noqa: BLE001 — laptop token can't edit Lucy's msg
         log(f"  ⚠ header not updated ({type(e).__name__}: "
             f"{str(e)[:60]}) — only Lucy 2 can edit its own message")
