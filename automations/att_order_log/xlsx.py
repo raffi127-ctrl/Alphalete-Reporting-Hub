@@ -35,7 +35,10 @@ FONT_NAME = "Georgia"
 FONT_SIZE = 12
 HEADER_BG = "434343"
 WEEK_BG = "2563EB"
-POSTED = "posted"                       # the pay-driver status (lowercased)
+# What determines the paycheck week of an AT&T sale: its POSTED DATE (Carlos,
+# 2026-07-20 — "What determines what paycheck an at&t sale is on? Posted date").
+# So the paycheck matrix keys off this column's week, not the order date.
+POSTED_DATE_COL = "spe.dtr Posted Date (copy)"
 
 CENTER = Alignment(horizontal="center", vertical="center", wrap_text=False)
 LEFT = Alignment(horizontal="left", vertical="center", wrap_text=False)
@@ -78,7 +81,16 @@ def _safe_title(name: str, used: set) -> str:
 
 
 def _line_week(ln: dict) -> Optional[dt.date]:
+    """Order-date week — used for the LOG grouping (the week a deal was sold),
+    mirroring BOX's log-by-sale-date."""
     d = _parse_date(ln.get("sp.Order Date (copy)"))
+    return week_ending(d) if d else None
+
+
+def _line_paycheck_week(ln: dict) -> Optional[dt.date]:
+    """POSTED-date week — the paycheck week (Carlos 2026-07-20). A sale with no
+    posted date hasn't posted yet, so it is not on any paycheck."""
+    d = _parse_date(ln.get(POSTED_DATE_COL))
     return week_ending(d) if d else None
 
 
@@ -177,8 +189,8 @@ def build(lines: Sequence[dict], out_path: Path, *,
     sh.title = _safe_title("All Reps", used)
     _write_log(sh, lines, _LOG_LABELS)
 
-    # ---- 2. Posted by Week (the pay-driver matrix) ----------------------
-    _write_posted_matrix(wb, lines, used)
+    # ---- 2. Paycheck by Week (posted-date matrix) -----------------------
+    _write_paycheck_matrix(wb, lines, used)
 
     # ---- 3. one tab per rep --------------------------------------------
     by_rep: Dict[str, list] = collections.defaultdict(list)
@@ -196,32 +208,38 @@ def build(lines: Sequence[dict], out_path: Path, *,
     return out_path
 
 
-def _write_posted_matrix(wb, lines, used) -> None:
-    """Reps down, week-endings across, POSTED orders per week — AT&T's twin of
-    BOX's Accepted-by-Supplier payout. Posted is the countable status; whether
-    it is the true pay driver is a Carlos question, flagged in the subtitle."""
+def _write_paycheck_matrix(wb, lines, used) -> None:
+    """Reps down, week-endings across, orders by their POSTED-date week — the
+    paycheck matrix (Carlos 2026-07-20: pay is determined by the posted date).
+    AT&T's twin of BOX's Accepted-by-Supplier payout. A sale with no posted date
+    isn't on any paycheck yet, so it's excluded here (but still in the log)."""
     weeks = collections.Counter()
-    posted = collections.defaultdict(int)     # (rep, week) -> count
+    posted = collections.defaultdict(int)     # (rep, posted-week) -> count
     reps = set()
+    unposted = 0
     for ln in lines:
         rep = str(ln.get("Rep", "") or "").strip()
-        wk = _line_week(ln)
-        if not rep or not wk:
+        if not rep:
             continue
         reps.add(rep)
-        if str(ln.get("DTR Status (enriched)", "")).strip().lower() == POSTED:
-            posted[(rep, wk)] += 1
-            weeks[wk] += 1
+        wk = _line_paycheck_week(ln)
+        if not wk:
+            unposted += 1
+            continue
+        posted[(rep, wk)] += 1
+        weeks[wk] += 1
     if not reps:
         return
     weeks_desc = sorted(weeks, reverse=True)
-    psh = wb.create_sheet(_safe_title("Posted by Week", used))
+    psh = wb.create_sheet(_safe_title("Paycheck by Week", used))
     psh.cell(row=1, column=1,
-             value="Posted orders by week ending").font = _font(bold=True)
+             value="Orders by paycheck week (posted date)").font = _font(bold=True)
     psh.cell(row=2, column=1,
-             value=("Each column is the week's POSTED orders (AT&T's countable "
-                    "status). Confirm with Carlos whether Posted is what pay is "
-                    "based on, or another status.")).font = _font(italic=True)
+             value=("Each column is the week a sale POSTED — that's the "
+                    "paycheck it's on (Carlos). Sales not yet posted ({} of "
+                    "them) aren't on a paycheck and are excluded here, though "
+                    "they still show in the log.").format(unposted)
+             ).font = _font(italic=True)
     headers = ["Rep"] + [w.strftime("%m/%d") for w in weeks_desc] + ["Total"]
     _write_header(psh, 4, headers)
     r = 5
