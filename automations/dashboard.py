@@ -2310,8 +2310,10 @@ AUTOMATED_REPORTS = [
             "**Tuesdays.** Each run fills the just-ended week. Re-running the "
             "same week refreshes in place (no duplicate column)."
         ),
+        # Deep-links to the 'Carlos B2B Captainship' tab this run writes to.
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1xQQLzE8mU-a4lpk1IK3WolTPlFxavuMzdK3jA7NGga8/edit"),
+                      "1xQQLzE8mU-a4lpk1IK3WolTPlFxavuMzdK3jA7NGga8/edit"
+                      "?gid=310459982#gid=310459982"),
         "assignees": ["Lucy 2"],
         # Self-running weekly launchd job on Lucy 2 (Tue 10am), not the 4am
         # batch — show the run time on the tile and keep it out of the
