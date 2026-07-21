@@ -134,9 +134,13 @@ def audit(write: bool, log=_log) -> int:
 
     findings += audit_stations(sh, last_rep, reps, roll, log=log)
 
+    from automations.shared import run_manifest
+
     if not findings:
         log(f"audit clean: {len(reps)} reps checked, block ends r{last_rep}, "
             "stations OK")
+        if write:
+            run_manifest.mark_clean(REPORT_ID, kind="finding")
         return 0
 
     ri = sh.worksheet("Report an Issue")
@@ -145,14 +149,26 @@ def audit(write: bool, log=_log) -> int:
     for f in findings:
         log(("NEW: " if f in new else "already reported: ") + f)
     if not write:
-        log("(dry-run: nothing appended)")
-        return 1
+        log("(dry-run: nothing appended, no manifest written)")
+        return 0
     today = dt.date.today().strftime("%-m/%-d/%Y")
     if new:
         ri.append_rows([[today, "board-audit (mini 4am)", "Sales Board", f, ""]
                         for f in new], value_input_option="RAW")
         log(f"appended {len(new)} finding(s) to Report an Issue")
-    return 1
+
+    # FINDINGS ARE THE JOB, NOT A FAILURE. Exit 0 and record the findings in a
+    # run-manifest as ok=False so the orchestrator marks this a SOFT INCOMPLETE
+    # (with the finding text as its note) instead of a hard exit-1 FAILED that
+    # fires the immediate "needs attention" page (Megan/Carlos 2026-07-21, same
+    # class as the tableau_screenshots false-fail). No retry_args: a human fixes
+    # the board — there is nothing to auto-re-run. A GENUINE crash (scrape/auth/
+    # IO) still exits non-zero from main(); a layout break still returns 2 above.
+    note = (f"{len(findings)} board data-quality finding(s) logged to the "
+            "board's 'Report an Issue' tab: " + " | ".join(f[:140] for f in findings))
+    run_manifest.write_manifest(REPORT_ID, ok=False, kind="finding",
+                                failed=findings, note=note, retry_args=[])
+    return 0
 
 
 def audit_stations(sh, last_rep: int, reps, roll, log=_log) -> list[str]:

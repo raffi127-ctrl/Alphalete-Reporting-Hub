@@ -132,7 +132,10 @@
       "freshness_target": null,
       "depends_on": [],
       "timeout_minutes": 10,
-      "verify": null
+      "verify": {
+        "type": "manifest",
+        "report_id": "vantura-board-audit"
+      }
     },
     "install_vantura_payroll_agent": {
       "on_scheduler": false,
