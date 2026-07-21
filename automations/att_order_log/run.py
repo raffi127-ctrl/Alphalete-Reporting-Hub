@@ -123,6 +123,10 @@ def main(argv=None) -> int:
                          "formats the tab and the default preserves it.")
     ap.add_argument("--sheet", action="store_true",
                     help="write the Sheet tabs (default: dry run, no writes)")
+    ap.add_argument("--xlsx", action="store_true",
+                    help="build the daily workbook: All Reps + Posted-by-Week "
+                         "+ one tab per rep, grouped by paycheck weeks "
+                         "(box_order_log-style, for the Slack thread)")
     ap.add_argument("--from-file", default=None, metavar="CSV",
                     help="parse an existing export instead of pulling")
     ap.add_argument("--today", default=None, metavar="YYYY-MM-DD")
@@ -147,10 +151,21 @@ def main(argv=None) -> int:
         stats = clean.stats(lines)
         _report(lines, stats, log=log)
 
+        # Daily workbook (All Reps + Posted-by-Week + per-rep tabs). Separate
+        # from --sheet; --xlsx writes a file to output/, no Sheet write.
+        if args.xlsx:
+            from . import xlsx
+            out = OUTPUT_DIR / "ATT Order Log {}.xlsx".format(
+                today.strftime("%m-%d-%Y"))
+            xlsx.build(lines, out, today=today)
+            reps = len({l.get("Rep", "") for l in lines if l.get("Rep")})
+            log("  workbook: {} ({} sales, {} rep tabs)".format(
+                out.name, len(lines), reps))
+
         if not args.sheet:
             log("")
-            log("  DRY RUN — nothing written. Add --sheet to write "
-                "'{}'.".format(sheet.TAB_VIEW))
+            log("  {} — no Sheet write. Add --sheet to write '{}'.".format(
+                "WORKBOOK BUILT" if args.xlsx else "DRY RUN", sheet.TAB_VIEW))
             return 0
 
         log("")
