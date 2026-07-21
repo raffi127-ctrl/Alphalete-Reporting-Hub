@@ -4843,11 +4843,19 @@ def _was_run_successfully_today(report_id: str, today: dt.date | None = None) ->
 
 
 def _week_run_statuses(week_days: list[dt.date]) -> dict:
-    """{(report_id, date): latest_status} for the given days, from the shared
-    run feed (local + Hub Activity) — powers the This-week grid's per-card
-    outcome badges. Latest run wins for a given report+day."""
+    """{(report_id, date): status} for the given days, from the shared run feed
+    (local + Hub Activity) — powers the This-week grid's per-card outcome badges.
+
+    A same-day SUCCESS wins for a given report+day. A later FAILED run is almost
+    always a manual rerun / debug retry (e.g. an "Eve" session hand-queuing
+    `lucy rerun`, or a cold-session crash) — letting the LATEST run win flipped a
+    green card red even though the scheduled pass delivered (2026-07-21
+    vantura_churn: 7:13 success buried by a 7:37 failed rerun). So a report that
+    succeeded at least once that day reads success; otherwise the latest
+    attempt's status wins (preserving failed / partial / running semantics)."""
     wanted = set(week_days)
-    latest: dict = {}   # (report_id, date) -> (dt, status)
+    latest: dict = {}       # (report_id, date) -> (dt, status)
+    succeeded: set = set()  # (report_id, date) with >=1 success that day
     for r in _all_runs_merged(days=8):
         when = r.get("_dt")
         if when is None:
@@ -4859,9 +4867,12 @@ def _week_run_statuses(week_days: list[dt.date]) -> dict:
         if not rid:
             continue
         key = (rid, d)
+        status = (r.get("status") or "").lower()
+        if status == "success":
+            succeeded.add(key)
         if key not in latest or when > latest[key][0]:
-            latest[key] = (when, (r.get("status") or "").lower())
-    return {k: v[1] for k, v in latest.items()}
+            latest[key] = (when, status)
+    return {k: ("success" if k in succeeded else v[1]) for k, v in latest.items()}
 
 
 def _week_run_counts(week_days: list[dt.date]) -> dict:

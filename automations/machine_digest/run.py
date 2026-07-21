@@ -44,6 +44,11 @@ def _read_activity() -> list[dict]:
     return ws.get_all_records()
 
 
+def _stat(row: dict) -> str:
+    """Lower-cased Status of an activity row (for _OK / _BAD membership tests)."""
+    return str(row.get("Status") or "").strip().lower()
+
+
 def _classify(status: str) -> tuple[str, str]:
     s = (status or "").strip().lower()
     if s in _OK:
@@ -104,13 +109,25 @@ def _collect(rows: list[dict], host: str, day: str, exact: bool = True) -> list[
     for runs in by_report.values():
         runs.sort(key=lambda r: str(r.get("Started At") or ""))
         last = runs[-1]
+        # A same-day SUCCESS is the report's real outcome. A later FAILED run for
+        # the same report_id is almost always a manual rerun / debug run / cold-
+        # session retry (e.g. 2026-07-21 vantura_churn: 7:13 scheduled success +
+        # a 7:37 hand-queued rerun that crashed on a cold Tableau session). Taking
+        # only the latest run flipped the card to ❌ and buried the success. So
+        # represent the report by its latest SUCCESSFUL run when one exists, and
+        # just note how many other runs failed. Only when nothing succeeded do we
+        # surface the failure as the headline.
+        ok_runs = [r for r in runs if _stat(r) in _OK]
+        rep = last if (_stat(last) in _OK or not ok_runs) else ok_runs[-1]
+        failed_count = sum(1 for r in runs if _stat(r) in _BAD) if ok_runs else 0
         reports.append({
-            "name": str(last.get("Report Name") or last.get("Report ID") or "?"),
-            "status": str(last.get("Status") or "").strip(),
+            "name": str(rep.get("Report Name") or rep.get("Report ID") or "?"),
+            "status": str(rep.get("Status") or "").strip(),
             "count": len(runs),
-            "started": str(last.get("Started At") or ""),
-            "ended": str(last.get("Ended At") or ""),
-            "user": str(last.get("User") or "").strip(),
+            "failed_count": failed_count,
+            "started": str(rep.get("Started At") or ""),
+            "ended": str(rep.get("Ended At") or ""),
+            "user": str(rep.get("User") or "").strip(),
         })
     reports.sort(key=lambda x: x["started"], reverse=True)
     return reports
@@ -124,7 +141,10 @@ def _render(reports: list[dict], machine_label: str, day_human: str) -> tuple[st
         ok += bucket == "ok"
         bad += bucket in ("failed", "partial")
         when = _time_only(r["started"]) + (f"–{_time_only(r['ended'])}" if r["ended"] else "")
-        status = (r["status"] or "—") + (f"  (ran {r['count']}×)" if r["count"] > 1 else "")
+        status = r["status"] or "—"
+        if r["count"] > 1:
+            fc = r.get("failed_count", 0)
+            status += f"  (ran {r['count']}×, {fc} failed)" if fc else f"  (ran {r['count']}×)"
         rows.append((icon, r["name"], status, when, r["user"]))
 
     tally = f"{len(reports)} report{'s' if len(reports) != 1 else ''} · {ok} ok" + (
