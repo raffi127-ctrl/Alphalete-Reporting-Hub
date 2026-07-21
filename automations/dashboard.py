@@ -2740,8 +2740,12 @@ AUTOMATED_REPORTS = [
             "name = PNG file name; Wednesday's Fiber post tags Rafael, Maud "
             "& Dylan."
         ),
+        # Deep-links to the 'Captainship Activations' tab this run fills
+        # (SHEET_ID/TAB_NAME in fiber_activations/run.py). The old link pointed
+        # at the wrong workbook (1Ez-mbRO, the local-office sheet).
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
+                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"
+                      "?gid=1505152764#gid=1505152764"),
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
