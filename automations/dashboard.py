@@ -1794,7 +1794,10 @@ AUTOMATED_REPORTS = [
             "It most likely isn't in AppStream — check that the **rcaptain** "
             "login can see it."
         ),
-        "sheet_url": SHEET_URL,
+        # Deep-links to the Focus Report tab this run fills (same workbook as
+        # SHEET_URL; inline so the shared constant / Financial Report card
+        # keep their own link).
+        "sheet_url": SHEET_URL + "?gid=845564380#gid=845564380",
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "weekly",
