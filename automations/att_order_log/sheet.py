@@ -891,11 +891,17 @@ def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
         _retry(lambda: sh.batch_update({"requests": reqs}))
         log("  view tab: reformatted ({} reps)".format(len(reps)))
     else:
-        # Only the dropdown VALIDATION lists must track the roster (a new rep
-        # has to be pickable). Validation is not visual formatting, so this is
-        # safe to refresh without disturbing Megan's look.
-        _retry(lambda: sh.batch_update(
-            {"requests": _validation(view_ws.id, reps, periods)}))
-        log("  view tab: data refreshed, formatting preserved ({} reps)".format(
-            len(reps)))
+        # Refresh the dropdown VALIDATION (a new rep must be pickable) AND
+        # restore the title/updated MERGES. Writing grid values into the merged
+        # rows (title row 1, updated row 3) breaks those merges — the value
+        # write drops them (Megan 2026-07-20: merges gone after a value-only
+        # run). Re-applying just the merges — captured at her A:V width — puts
+        # them back WITHOUT touching borders/colours, so her look is restored,
+        # not clobbered. Validation + merges are structural, not the visual
+        # formatting she owns.
+        keep = _validation(view_ws.id, reps, periods) \
+            + _merge_requests(view_ws.id)
+        _retry(lambda: sh.batch_update({"requests": keep}))
+        log("  view tab: data refreshed; merges restored, formatting "
+            "preserved ({} reps)".format(len(reps)))
     return {"sales": len(rows), "reps": len(reps), "unmapped": sorted(unknown)}
