@@ -257,7 +257,8 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log) -> list[str]:
                         r"stations|legend|off|terminated|new starts|monday|"
                         r"tuesday|wednesday|thursday|friday|in a |in both|"
                         r"roadtrip|pitch|closing|transition|running|day 0|"
-                        r"pk$|qq|intro |saturday|sunday)", re.I)
+                        r"pk$|qq|intro |saturday|sunday|early objection|"
+                        r"je 9)", re.I)
     name_cols = list(range(0, 7)) + list(range(8, 14)) + [89]
     unknown = set()
     for i, row in enumerate(vals, start=1):
