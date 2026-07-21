@@ -129,7 +129,7 @@ def _dm_captures(captured: dict, user: str, o: B2BOffice, day: dt.date,
 
 
 def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
-        today: dt.date = None, log=print) -> dict:
+        channel_override: str = None, today: dt.date = None, log=print) -> dict:
     today = today or dt.date.today()
     out_dir = _out_dir(o)
     items = [i for i in ITEMS if not only or i["id"] == only]
@@ -167,7 +167,14 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
     from automations.shared import slack_metrics_post as smp
     import automations.b2b_quality.run as bq
     client = smp._client()
+    # channel_override lets a VERIFICATION post go to a scratch/DM instead of
+    # the office's real channel — proves the full threaded post path without
+    # touching Carlos's live thread. A DM user id (U…) is opened into a channel.
     cid = o.channel_id
+    if channel_override:
+        cid = (client.conversations_open(users=channel_override)["channel"]["id"]
+               if channel_override.upper().startswith("U") else channel_override)
+        log("  channel OVERRIDE -> {}".format(cid))
     state = bq._load_state(today, cid)
     already = list(state.get("posted") or [])
     ts = state.get("thread_ts") or bq.find_thread_ts(client, cid, today)
@@ -206,6 +213,9 @@ def main(argv=None) -> int:
     ap.add_argument("--only", default=None, help="run a single item by id")
     ap.add_argument("--dm", default=None, metavar="USER_ID",
                     help="DM the captured artifacts to ONE user for review (dry-run)")
+    ap.add_argument("--channel", default=None, metavar="ID_OR_USER",
+                    help="post to THIS channel/DM instead of the office's real "
+                         "channel (verification of the post path)")
     ap.add_argument("--check", action="store_true",
                     help="validate the office table and exit")
     ap.add_argument("--today", default=None, metavar="YYYY-MM-DD")
@@ -228,7 +238,8 @@ def main(argv=None) -> int:
 
     today = dt.date.fromisoformat(args.today) if args.today else dt.date.today()
     o = _off.get(args.office)
-    res = run(o, post=args.post, only=args.only, dm=args.dm, today=today)
+    res = run(o, post=args.post, only=args.only, dm=args.dm,
+              channel_override=args.channel, today=today)
     print("\nresult:", res)
     return 0
 
