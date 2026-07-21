@@ -3413,14 +3413,6 @@ AUTOMATED_REPORTS = [
                 "module": "automations.org_sales_board.slack_post",
                 "args_fn": lambda: ["--post"],
             },
-            {
-                "label": "Preview (no post)",
-                "icon": "👁",
-                "primary": False,
-                "help": "Builds the image and shows which channel it would go to. Posts nothing.",
-                "module": "automations.org_sales_board.slack_post",
-                "args_fn": lambda: [],
-            },
         ],
     },
     {
