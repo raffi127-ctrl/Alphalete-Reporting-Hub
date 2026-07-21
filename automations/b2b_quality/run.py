@@ -83,15 +83,9 @@ SORT_ICON_DX = 8        # px right of the header text where the sort glyph draws
 # Saved views carry the filters the VA uses (Carlos's office). The GUID + saved
 # view name in each URL is what pins those filters — don't trim them.
 SPECS = [
-    {
-        "id": "tiered_bonus",
-        "title": "Tiered Bonus",
-        "emoji": "\U0001F3AF",                 # dart
-        "url": _BASE + ("ATTTRACKER-B2B/OrderTieredBonus-RepRanking/"
-                        "d8e25f41-e23b-4d82-bb9d-4c52dde38b9e/CarlosLocalOffice?:iid=1"),
-        "crop": "canvas",
-        "view_label": "Carlos Local Office",
-    },
+    # Tiered Bonus DROPPED 2026-07-20 (Megan): not on Carlos's B2B Metrics list,
+    # and the thread is no longer "& Bonus". Kept out rather than commented as a
+    # spec so it can't accidentally re-post.
     {
         "id": "activation_rate",
         "title": "Activation Rate",
