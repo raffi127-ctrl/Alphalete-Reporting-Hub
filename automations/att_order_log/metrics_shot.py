@@ -10,19 +10,15 @@ capture the view and post the picture. Uses the same Download → Image machiner
 as tableau_screenshots / b2b_quality (NOT a page screenshot, which drags in
 browser chrome and clips).
 
-THE OWNER FILTER DOES NOT EXIST YET — and this is the honest limitation of this
-report today. Carlos, 5:00: "at the moment there's no filter for it, or by the
-owner, but there should be soon." His workaround is POSITIONAL: "it's not
-alphabetical, it's by ranking off of the tracker. So I'm like 21… my name would
-need to get lined up with the third row."
-
-We deliberately do NOT implement that. Cropping to a fixed row index would break
-silently the moment his ranking moves — which it does weekly, since the view is
-ordered by tracker rank — and a wrong-rep screenshot is worse than a wide one.
-So: capture the whole view, which genuinely contains his row and the
-Activation & Churn panel he wants in one shot, and add the URL filter the day
-the field exists (FILTER_FIELD below, already wired, same technique as
-office_metrics.metrics_shot).
+SCOPED VIA CARLOS'S OWN CUSTOM VIEW (Carlos-ExpandedMetrics), not a URL filter.
+Carlos (Loom 5:00) said the all-teams view has "no filter for it, or by the
+owner" and his workaround was POSITIONAL — "I'm like 21… my name would need to
+get lined up with the third row." We never implemented that: a fixed-row crop
+breaks the week his rank moves, since the view is ranked. Instead Megan saved a
+team-scoped custom view (2026-07-20); filtered to his team it is ~9 reps, so his
+metrics row and the Activation & Churn panel land in one frame naturally. The
+URL-FILTER path (FILTER_FIELD below) stays wired but unused — a fallback if the
+custom view is ever unavailable and a real owner filter has appeared by then.
 
 RUNS ON LUCY 2 — Carlos's Tableau identity; his custom views only carry his
 sort/filters under his login (the lesson b2b_quality records at length).
@@ -47,12 +43,20 @@ except Exception:  # noqa: BLE001
 
 _BASE = "https://us-east-1.online.tableau.com/#/site/sci/views/"
 
-# The all-teams view Carlos pointed at. When his own custom view URL is known
-# (he has one named "Carlos metrics"), set METRICS_SHOT_VIEW_URL to it — a
-# custom view carries its owner's sort under its owner's login, which is why
-# this must run on Lucy 2 either way.
+# Carlos's OWN custom view of the metrics dashboard (Megan-supplied 2026-07-20),
+# scoped to his team. This is the real fix for his Loom ask, not a workaround:
+# he wanted "activation rate and churn rate all in one screenshot" and his row
+# "lined up with the third row" because the all-teams view ranks him ~21st, far
+# from the Activation & Churn panel. Filtered to his team the dashboard drops to
+# ~9 reps, so the metrics table and the Activation & Churn panel sit together in
+# one frame — no positional crop (which would break the week his rank moves),
+# no dependence on an owner filter that doesn't exist yet.
+#
+# CUSTOM VIEW => LUCY 2 ONLY: it carries its owner's filters/sort under its
+# owner's (Carlos's) login; under Raf's it renders as a different slice.
 VIEW_URL = os.environ.get("ATT_METRICS_VIEW_URL") or (
-    _BASE + "ATTTRACKER-B2B/B2BATTSalesMetrics?:iid=1")
+    _BASE + "ATTTRACKER-B2B/B2BATTSalesMetrics/"
+    "eed37ad3-2bde-430e-9126-b1def96be8d3/Carlos-ExpandedMetrics?:iid=1")
 
 # Wired but UNUSED until the field exists. Tableau URL-filters on a filter's
 # DISPLAY CAPTION, so this is a guess at the caption the B2B view will use once
