@@ -67,6 +67,20 @@ OWNER = os.environ.get("ATT_METRICS_OWNER", "CARLOS HIDALGO")
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = REPO_ROOT / "output" / "att_metrics_shot"
 
+# Per-run URL, set by main() (default view, or a --filter-field experiment).
+_RUN_URL = None
+
+
+def view_url_with(field: str, owner: str) -> str:
+    """The view URL with an EXPLICIT owner filter appended — used to try
+    scoping the Activation & Churn panel (which the saved custom view does NOT
+    scope) via a URL filter, no Tableau edit needed. Tableau URL-filters on the
+    filter's DISPLAY CAPTION, so `field` is that caption."""
+    base = VIEW_URL.split("?")[0]
+    if not field.strip():
+        return VIEW_URL
+    return "{}?{}={}".format(base, quote(field.strip()), quote(owner))
+
 
 def view_url() -> str:
     """The view, plus an owner filter IF one has been configured.
@@ -95,7 +109,7 @@ def capture(page, out_dir: Path = OUT_DIR, verbose: bool = True) -> Path:
         "title": "B2B ATT Sales Metrics {}".format(
             dt.date.today().strftime("%-m.%-d") if os.name != "nt"
             else dt.date.today().strftime("%m.%d")),
-        "url": view_url(),
+        "url": _RUN_URL or view_url(),
     }
     return capture_page(page, spec, out_dir, verbose=verbose)
 
@@ -121,12 +135,24 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default=None, help="output directory")
     ap.add_argument("--dm", default=None, metavar="USER_ID",
                     help="DM the captured image to ONE user (U…) for review")
+    ap.add_argument("--filter-field", default=None, metavar="CAPTION",
+                    help="append ?<CAPTION>=<owner> to scope the whole "
+                         "dashboard (incl. the Activation & Churn panel) via a "
+                         "URL filter — no Tableau edit. Experimental.")
+    ap.add_argument("--owner", default=OWNER,
+                    help="owner value for --filter-field (default: {})".format(
+                        OWNER))
     args = ap.parse_args(argv)
     out_dir = Path(args.out) if args.out else OUT_DIR
 
+    # Override the module URL for this run if a filter caption is being tried.
+    global _RUN_URL
+    _RUN_URL = (view_url_with(args.filter_field, args.owner)
+                if args.filter_field else view_url())
+
     log = print
     log("B2B AT&T Sales Metrics shot — {}".format(dt.date.today()))
-    log("  view: {}".format(view_url()))
+    log("  view: {}".format(_RUN_URL))
     if not FILTER_FIELD.strip():
         log("  NOTE: scoped via Carlos's own custom view "
             "(Carlos-ExpandedMetrics), not a URL owner filter.")
