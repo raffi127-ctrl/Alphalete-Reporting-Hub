@@ -245,9 +245,26 @@ def _run_daily_inner(ws, *, page, dry_run, today, from_csv, only,
 
             for sec in sections:
                 spec = fs.SectionSpec(label=sec.label, metric=sec.metric)
-                plan = fs.plan_section_fill(grid, spec, pull,
-                                            raw_aliases=raw_aliases,
-                                            today=today)
+                # A section whose box was DELETED from the board must not take
+                # the whole run down with it. find_daily_section raises
+                # ValueError when no col-A header row carries 'RUNNING WEEK
+                # TOTALS' (fill_section.py:111-114); unguarded, that aborted the
+                # daily fill mid-way — sections already written, but
+                # captainships, sort, elapsed_totals, the VA compare and the run
+                # manifest all skipped, and the Hub reported FAILED. Treat a
+                # missing box like a failed pull instead: log it, count it as
+                # skipped so run.py reports INCOMPLETE, and keep filling.
+                try:
+                    plan = fs.plan_section_fill(grid, spec, pull,
+                                                raw_aliases=raw_aliases,
+                                                today=today)
+                except ValueError as e:
+                    logfn(f"  ⚠ section {sec.label!r} NOT ON THE BOARD — "
+                          f"skipped ({e}). Its pulled production is NOT "
+                          f"written anywhere; re-add the box or drop the "
+                          f"source from sources.py.")
+                    summary["skipped"].append(sec.label)
+                    continue
                 fs.apply_plan(ws, plan, dry_run=dry_run, logfn=logfn)
                 summary["filled"].append(sec.label)
 
