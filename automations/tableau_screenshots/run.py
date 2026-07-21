@@ -147,13 +147,17 @@ def _select_orgs(orgs: str) -> list:
 
 
 def _write_status(out_dir: Path, results: list, today: dt.date,
-                  status_file: Path = STATUS_FILE) -> None:
-    """Today's per-channel outcome, for the Hub card's checklist."""
+                  status_file: Path = STATUS_FILE, omitted: list | None = None) -> None:
+    """Today's per-channel outcome, for the Hub card's checklist. `omitted` names
+    boards this run deliberately left out because their source wasn't in yet (an
+    email tracker whose .xlsx hasn't landed) — recorded so the card can say EXACTLY
+    which boards posted vs. which are still owed, instead of implying all did."""
     import json
     try:
         (out_dir / status_file.name).write_text(json.dumps({
             "date": today.isoformat(),
             "channels": results,
+            "omitted": omitted or [],
         }, indent=2))
     except Exception:            # best-effort — the post already happened
         pass
@@ -569,7 +573,11 @@ def main(argv=None) -> int:
                          for c in result.get("channels", [])],
             "error": result.get("error"),
         })
-    _write_status(out_dir, status_rows, today, status_file)
+    # Boards deliberately omitted this run because their source wasn't in yet
+    # (an email tracker's .xlsx hasn't landed) — recorded by TITLE so the card and
+    # the run summary can name exactly what's missing, not just a count.
+    omitted_boards = [(pages_mod.by_id(i) or {}).get("title") or i for i in gated_out]
+    _write_status(out_dir, status_rows, today, status_file, omitted=omitted_boards)
 
     print(f"\n=== POSTED: {len(posted_ok)}/{len(orgs)} org(s)", flush=True)
     for org in orgs:
@@ -594,6 +602,12 @@ def main(argv=None) -> int:
     # landed) from a total failure (red). A GENUINELY-absent board is surfaced as
     # a failed part too, since a short thread is a real gap — but one already
     # delivered by an earlier run is not, so it's excluded.
+    # A board OMITTED because its source wasn't in yet is NOT a failure (the run
+    # succeeded at everything it could) — it does NOT flip `ok` or the exit code,
+    # so it never pages. But it MUST be visible: the note names it and the count,
+    # so "posted 7 of 8 — VZ+FTR source not in yet" surfaces in the run summary /
+    # Hub detail instead of a silent "all 8".
+    total_morning = len([p for p in pages_mod.PAGES if not pages_mod.is_late(p)])
     ok = (not missing_trackers) and not posted_bad
     parts = [sp.ORG_LABEL[o] for o in posted_bad] + [f"tracker:{f}" for f in missing_trackers]
     # A channel miss re-posts exactly the missed channels; a lone capture gap
@@ -610,17 +624,23 @@ def main(argv=None) -> int:
                       else ["--only", ",".join(missing_trackers)])
     else:
         retry_args = []
+    # The omitted clause renders even on an ok=True run (a clean run that simply
+    # couldn't include an email board whose source wasn't in yet) — that's the
+    # whole point: say what actually posted.
+    note = "; ".join(filter(None, [
+        f"{len(posted_bad)} channel(s) missed: "
+        f"{', '.join(sp.ORG_LABEL[o] for o in posted_bad)}" if posted_bad else "",
+        f"{len(missing_trackers)} tracker(s) missing from the thread: "
+        f"{', '.join(missing_trackers)}" if missing_trackers else "",
+        f"posted {total_morning - len(gated_out)} of {total_morning} boards — "
+        f"{', '.join(omitted_boards)} omitted (source .xlsx not in yet; reposts "
+        f"once it lands)" if gated_out else "",
+    ]))
     run_manifest.write_manifest(
         report_id, ok=bool(ok), failed=parts, kind="channel",
         succeeded=[sp.ORG_LABEL[o] for o in posted_ok],
         retry_args=retry_args,
-        note=("" if ok else
-              "; ".join(filter(None, [
-                  f"{len(posted_bad)} channel(s) missed: "
-                  f"{', '.join(sp.ORG_LABEL[o] for o in posted_bad)}" if posted_bad else "",
-                  f"{len(missing_trackers)} tracker(s) missing from the thread: "
-                  f"{', '.join(missing_trackers)}" if missing_trackers else "",
-              ]))))
+        note=note)
 
     # EXIT CODE — hard failure ONLY when a channel genuinely failed to post (a
     # real "some org didn't get images" error): the orchestrator treats non-zero

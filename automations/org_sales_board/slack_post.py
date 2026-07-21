@@ -1,9 +1,15 @@
 """Org Sales Board — daily 8:30am Slack post (Item 1 of the VA-Slack replacements).
 
 Replaces Jolie's manual daily post of the full board. Screenshots the daily
-detailed board off the LIVE tab (`Alphalete ORG Sales Board` — the VA tab today;
-same tab once our fill goes live) as ONE image and (once approved) posts it to
-#top-leaders-alphalete-org.
+detailed board off our AUTOMATION's tab (`Copy of Alphalete ORG Sales Board`)
+as ONE image and posts it to #top-leaders-alphalete-org.
+
+SOURCE TAB (Megan 2026-07-21): switched from the live VA tab (`PROD_TAB`) to our
+copy tab (`SANDBOX_TAB`). The VA tab depended on the VAs hand-keying yesterday
+before we could post — on 7/21 they hadn't entered Monday by the last pass, so the
+gate held all day even though our automation had Monday (39/45 cells). Reading the
+copy tab lets this post stand on our own numbers. Eve is validating the fill's
+correctness; flip back to PROD_TAB only if she finds the copy tab off.
 
 Board layout on the live tab (found dynamically, never hardcoded):
   - Each section header row has "RUNNING WEEK TOTALS" in col J and Monday..Sunday
@@ -32,7 +38,7 @@ from pathlib import Path
 from gspread.utils import rowcol_to_a1
 
 from automations.recruiting_report.fill import open_by_key, _retry
-from automations.org_sales_board.run import SHEET_ID, PROD_TAB
+from automations.org_sales_board.run import SHEET_ID, SANDBOX_TAB
 from automations.org_sales_board.screenshot_email import _export_png, _access_token
 
 CHANNEL = ("#top-leaders-alphalete-org", "C067TTGFEFR")   # Lucy is a member
@@ -182,10 +188,10 @@ def main(argv=None) -> int:
 
     today = dt.date.today()
     yday = today - dt.timedelta(days=1)
-    ws = _retry(lambda: open_by_key(SHEET_ID).worksheet(PROD_TAB))
+    ws = _retry(lambda: open_by_key(SHEET_ID).worksheet(SANDBOX_TAB))
     g = _retry(ws.get_all_values)
     rng, start, end, heads = board_range(g)
-    print(f"board: {PROD_TAB} {rng}  ({len(heads)} sections)  gid={ws.id}")
+    print(f"board: {SANDBOX_TAB} {rng}  ({len(heads)} sections)  gid={ws.id}")
 
     ok, reason = fill_gate(g, heads, yday)
     print(f"gate: {ok} — {reason}")
