@@ -2991,7 +2991,7 @@ AUTOMATED_REPORTS = [
             "• Churn - Colten Wright (NDS)\n"
             "• Churn - Jairo Ruiz (NDS)\n\n"
             "WHEN IT RUNS\n"
-            "Daily."
+            "Daily at 7:00 AM CST."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1uFrT0EkkGT0QqlYTxw_uevZD3ObKxaVjWsvZAUDxK6c/edit"),
