@@ -10,15 +10,16 @@ capture the view and post the picture. Uses the same Download → Image machiner
 as tableau_screenshots / b2b_quality (NOT a page screenshot, which drags in
 browser chrome and clips).
 
-SCOPED VIA CARLOS'S OWN CUSTOM VIEW (Carlos-ExpandedMetrics), not a URL filter.
-Carlos (Loom 5:00) said the all-teams view has "no filter for it, or by the
-owner" and his workaround was POSITIONAL — "I'm like 21… my name would need to
-get lined up with the third row." We never implemented that: a fixed-row crop
-breaks the week his rank moves, since the view is ranked. Instead Megan saved a
-team-scoped custom view (2026-07-20); filtered to his team it is ~9 reps, so his
-metrics row and the Activation & Churn panel land in one frame naturally. The
-URL-FILTER path (FILTER_FIELD below) stays wired but unused — a fallback if the
-custom view is ever unavailable and a real owner filter has appeared by then.
+SCOPED TWO WAYS, both needed (proven 2026-07-20, Megan: "It's perfect"):
+  1. Carlos's saved custom view (Carlos-ExpandedMetrics) scopes the LEFT metrics
+     table to his team.
+  2. A URL filter ?Owner Name=Carlos Hidalgo scopes the RIGHT Activation & Churn
+     panel, which groups by Owner Name and ignores the custom view's team
+     filter. This is NOT a Tableau edit — nothing is saved, it is only how the
+     view is requested — so it stays within Megan's "can't adjust Tableau".
+Together, both panels show only Carlos's ~9 reps in one frame — exactly his
+Loom ask ("activation rate and churn rate all in one screenshot"), with no
+positional crop (which would break the week his tracker rank moves).
 
 RUNS ON LUCY 2 — Carlos's Tableau identity; his custom views only carry his
 sort/filters under his login (the lesson b2b_quality records at length).
@@ -58,11 +59,16 @@ VIEW_URL = os.environ.get("ATT_METRICS_VIEW_URL") or (
     _BASE + "ATTTRACKER-B2B/B2BATTSalesMetrics/"
     "eed37ad3-2bde-430e-9126-b1def96be8d3/Carlos-ExpandedMetrics?:iid=1")
 
-# Wired but UNUSED until the field exists. Tableau URL-filters on a filter's
-# DISPLAY CAPTION, so this is a guess at the caption the B2B view will use once
-# the owner filter is added; confirm live before switching it on.
-FILTER_FIELD = os.environ.get("ATT_METRICS_FILTER_FIELD", "")
-OWNER = os.environ.get("ATT_METRICS_OWNER", "CARLOS HIDALGO")
+# PROVEN 2026-07-20 (Megan: "It's perfect"). The saved custom view scopes only
+# the LEFT metrics table to Carlos's team; the right Activation & Churn panel
+# groups by "Owner Name" and ignores that team filter. Appending
+# ?Owner Name=Carlos Hidalgo as a URL filter scopes the WHOLE dashboard — both
+# panels — with no Tableau edit (nothing saved; just how the view is requested).
+# So this is now the DEFAULT, not a fallback. Value is the person-name form the
+# panel's Owner Name filter uses (verified live). Override via env if the view's
+# filter caption or the owner string ever changes.
+FILTER_FIELD = os.environ.get("ATT_METRICS_FILTER_FIELD", "Owner Name")
+OWNER = os.environ.get("ATT_METRICS_OWNER", "Carlos Hidalgo")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = REPO_ROOT / "output" / "att_metrics_shot"
@@ -153,9 +159,7 @@ def main(argv=None) -> int:
     log = print
     log("B2B AT&T Sales Metrics shot — {}".format(dt.date.today()))
     log("  view: {}".format(_RUN_URL))
-    if not FILTER_FIELD.strip():
-        log("  NOTE: scoped via Carlos's own custom view "
-            "(Carlos-ExpandedMetrics), not a URL owner filter.")
+    log("  scope: custom view (left) + Owner Name URL filter (right panel)")
 
     import time
 
