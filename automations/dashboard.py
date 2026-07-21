@@ -2279,14 +2279,6 @@ AUTOMATED_REPORTS = [
                 "module": "automations.stf_field_check.run",
                 "args_fn": lambda: ["--write"],
             },
-            {
-                "label": "Preview (no writes)",
-                "icon": "👁",
-                "primary": False,
-                "help": "Shows who would be flipped STF→X for today, without changing the board.",
-                "module": "automations.stf_field_check.run",
-                "args_fn": lambda: [],
-            },
         ],
     },
     {
