@@ -117,6 +117,10 @@ def _report(lines, stats, log=print) -> None:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="att_order_log")
+    ap.add_argument("--reformat", action="store_true",
+                    help="also re-apply the code's visual formatting (borders, "
+                         "freeze, colours). OMIT for daily runs — Megan hand-"
+                         "formats the tab and the default preserves it.")
     ap.add_argument("--sheet", action="store_true",
                     help="write the Sheet tabs (default: dry run, no writes)")
     ap.add_argument("--from-file", default=None, metavar="CSV",
@@ -151,7 +155,7 @@ def main(argv=None) -> int:
 
         log("")
         log("  writing the Sheet…")
-        res = sheet.push(lines, today=today, log=log)
+        res = sheet.push(lines, today=today, reformat=args.reformat, log=log)
         log("  done: {sales:,} sales, {reps} reps".format(**res))
         if res.get("unmapped"):
             log("  NOTE: unmapped statuses present: {}".format(

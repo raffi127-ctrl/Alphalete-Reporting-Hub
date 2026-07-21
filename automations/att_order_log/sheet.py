@@ -458,7 +458,7 @@ def _repbox_border_requests(view_id: int, n_reps: int) -> List[dict]:
 # dropping her layout — clear() leaves merges alone, but a tab rebuilt from
 # scratch would lose them. mergeType MERGE_ALL matches what she applied.
 _MERGE_ROWS = ((0, 1), (2, 3))     # title row, updated row (0-based, end-excl)
-_MERGE_COLS = (0, 8)               # A:H, her width
+_MERGE_COLS = (0, 22)              # A:V — Megan widened these 2026-07-20
 
 
 def _merge_requests(view_id: int) -> List[dict]:
@@ -751,8 +751,22 @@ def _clear_color_rules(sh, view_id: int) -> List[dict]:
 
 
 def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
-         generated: Optional[str] = None, log=print) -> Dict[str, object]:
-    """Write the hidden data tab and repaint the view tab."""
+         generated: Optional[str] = None, reformat: bool = False,
+         log=print) -> Dict[str, object]:
+    """Write the hidden data tab and refresh the view tab's VALUES.
+
+    reformat=False (DEFAULT): refresh data + formulas only, and DO NOT re-apply
+    any visual formatting. Megan hand-formats this tab (borders, merges,
+    colours, 2026-07-20) and the daily run must not clobber it. Updating a
+    cell's VALUE keeps its FORMAT, so the log/rep-box formulas refresh while her
+    presentation survives. The view is almost entirely FILTER/SUMPRODUCT
+    formulas that recompute off the hidden tab, so daily there is nothing to
+    reformat anyway.
+
+    reformat=True: also apply the code's full formatting (borders, freeze,
+    merges, threshold colours). For a first build of an empty tab, or a
+    deliberate reset — NOT the daily run. It WILL overwrite manual formatting.
+    """
     if TAB_VIEW in PROTECTED_TABS or TAB_DATA in PROTECTED_TABS:
         raise RuntimeError("refusing to write: target tab is protected")
 
@@ -805,31 +819,45 @@ def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
     grid = build_view_values(rows, reps, generated,
                              selected_rep=sel_rep, selected_period=sel_per)
     repbox = build_repbox_values(rows, reps, rep_col, rep_cond, per_cond)
-    _retry(lambda: view_ws.clear())
+
+    # Write VALUES in place. No clear() of the whole tab — updating a value
+    # keeps the cell's format, so Megan's formatting is preserved. The log's
+    # FILTER (A9) governs its own spill, so we never write the log rows.
     _retry(lambda: view_ws.update(
         grid, "A1:{}{}".format(_col_letter(len(DISPLAY_HEADERS) - 1), len(grid)),
         value_input_option="USER_ENTERED"))
-    # Rep box to the RIGHT — a separate range so the log's FILTER spills freely
-    # down A:Q and nothing is frozen above the log.
     box_a1 = "{c}{r}:{c2}{r2}".format(
         c=_col_letter(REPBOX_COL0), r=REPBOX_HEADER_ROW0 + 1,
         c2=_col_letter(REPBOX_COL0 + 3), r2=REPBOX_HEADER_ROW0 + len(repbox))
     _retry(lambda: view_ws.update(repbox, box_a1,
                                   value_input_option="USER_ENTERED"))
+    # Clear any stale rep-box rows below the current roster (a shrunk roster
+    # would otherwise leave old reps behind). Values only — formatting stays.
+    stale_from = REPBOX_HEADER_ROW0 + 1 + len(repbox)
+    _retry(lambda: view_ws.batch_clear(["{c}{r}:{c2}{r2}".format(
+        c=_col_letter(REPBOX_COL0), r=stale_from + 1,
+        c2=_col_letter(REPBOX_COL0 + 3), r2=stale_from + 200)]))
 
-    reqs: List[dict] = []
-    reqs += _clear_color_rules(sh, view_ws.id)
-    reqs += _format_requests(view_ws.id)
-    reqs += _repbox_format_requests(view_ws.id, len(reps))
-    reqs += _validation(view_ws.id, reps, periods)
-    # Rep-box thresholds BEFORE the row-status rules: both are registered at
-    # index 0, so the last one added ends up first and wins. The activation
-    # colour must own its own cell rather than be painted over by the row's
-    # status fill.
-    reqs += _status_color_rules(view_ws.id)
-    reqs += _repbox_color_rules(view_ws.id, len(reps))
-    reqs += _repbox_border_requests(view_ws.id, len(reps))
-    _retry(lambda: sh.batch_update({"requests": reqs}))
-
-    log("  view tab: {} reps in the dropdown".format(len(reps)))
+    if reformat:
+        reqs: List[dict] = []
+        reqs += _clear_color_rules(sh, view_ws.id)
+        reqs += _format_requests(view_ws.id)
+        reqs += _repbox_format_requests(view_ws.id, len(reps))
+        reqs += _validation(view_ws.id, reps, periods)
+        # Rep-box thresholds BEFORE the row-status rules: both register at
+        # index 0, so the last added wins — the activation colour must own its
+        # cell rather than be painted over by the row's status fill.
+        reqs += _status_color_rules(view_ws.id)
+        reqs += _repbox_color_rules(view_ws.id, len(reps))
+        reqs += _repbox_border_requests(view_ws.id, len(reps))
+        _retry(lambda: sh.batch_update({"requests": reqs}))
+        log("  view tab: reformatted ({} reps)".format(len(reps)))
+    else:
+        # Only the dropdown VALIDATION lists must track the roster (a new rep
+        # has to be pickable). Validation is not visual formatting, so this is
+        # safe to refresh without disturbing Megan's look.
+        _retry(lambda: sh.batch_update(
+            {"requests": _validation(view_ws.id, reps, periods)}))
+        log("  view tab: data refreshed, formatting preserved ({} reps)".format(
+            len(reps)))
     return {"sales": len(rows), "reps": len(reps), "unmapped": sorted(unknown)}
