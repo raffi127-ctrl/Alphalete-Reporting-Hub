@@ -126,7 +126,15 @@ SPECS = [
 # Activation & Churn panel. A Sales Metrics spec was briefly added here by
 # mistake (wrong, all-teams view) and removed 2026-07-20 — don't re-add it.
 
-THREAD_TITLE = "B2B Quality & Bonus"
+# Renamed "B2B Quality & Bonus" -> "B2B Metrics" (Megan 2026-07-20): this thread
+# is being replaced by Carlos's consolidated "B2B Metrics" thread. The header is
+# also the needle find_thread_ts uses, so from today this report threads under
+# the NEW title; the old "B2B Quality & Bonus" thread is left as history.
+# OPEN (do not assume): Carlos's B2B Metrics list is Sales Metrics / Activate
+# Rate / Churn Rate / Customer Churn / Activation Rate by rep / Order log /
+# Activation report / Activation report overview / Out of Bounds — it does NOT
+# list Tiered Bonus, so whether the dart stays here is unconfirmed.
+THREAD_TITLE = "B2B Metrics"
 CHANNEL = ("#alphalete-gp-sales", "C07J46MQNUX")
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "b2b_quality"
 
