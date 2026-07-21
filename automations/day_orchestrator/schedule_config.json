@@ -2688,6 +2688,29 @@
         "type": "not_configured"
       }
     },
+    "b2b_metrics": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "The consolidated B2B Metrics thread — ONE ordered run per B2B office (Megan 2026-07-20), replacing the scatter of b2b_quality + vantura_churn posting into one thread. on_scheduler:false while it's being verified; `lucy rerun b2b_metrics` runs it DRY (capture only, posts nothing) and `lucy rerun b2b_metrics --office carlos --post` posts. Captures all 8 mapped items in Carlos's order (Sales Metrics, Activation Rate, Churn Rate, Churn & Activations Board, Activation Rate by Rep, Order Log, Activation Report Overview, Out of Bounds; #7 Activation report absent until Carlos maps it) and posts them into the SAME thread via b2b_quality's thread_state. MUST RUN ON LUCY 2 (Carlos's Tableau login). Activation/Churn reuse b2b_quality's crop/sort capture; churn board + activation-by-rep are Sheets-export shots of LUCY CHURN; order log + payout ride the ATTTRACKER-B2B ORDERLOG pull (once). DO NOT retire b2b_quality/vantura_churn posting until this is verified — else the thread doubles or goes dark. Hub card: b2b-metrics.",
+      "display_name": "B2B Metrics (Carlos) -> thread",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.b2b_metrics.runner"
+      ],
+      "base_args": [
+        "--office",
+        "carlos"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 30,
+      "verify": null,
+      "machine": "Lucy 2"
+    },
     "att_order_log": {
       "on_scheduler": true,
       "_off_scheduler_note": "Carlos's ATT B2B Order Log -> the 'Lucy At&t Order Log' tab on the Vantura Master Sales Board (requested 2026-07-19 via Loom + Slack; the ATT counterpart to box_order_log). CUT OVER 2026-07-20 to Lucy 2's 4am orchestrator flow (first report migrated). on_scheduler:true; runs appstream-first-then-tableau via run_order; source_type tableau. LAYER-2 FRESHNESS GATE LIVE 2026-07-20: data_sources tableau:att_orderlog wires the real _probe_att_orderlog — from 4am the pass runs it when Carlos's ORDERLOG extract actually has the day's rows and SKIPS + circles back to re-probe when it doesn't (Lucy 1's Box behaviour), instead of a fixed clock (not_before removed). Probe fail-opens past 05:30 so it can never hold the log. Live-verified 2026-07-20: correct ready(today)/not-ready(future) verdicts, non-disruptive (never _kill_ours the shared CDP session). base_args --sheet so the batch WRITES (the module dry-runs by default — the silent-no-op trap). The standalone com.alphalete.att-order-log agent was RETIRED on Lucy 2 (disable_att_order_log_agent) so it does not double-run; ROLL BACK with `lucy rerun install_att_order_log_agent --machine \"Lucy 2\"` (+ flip this on_scheduler false). Megan asked for 5:30am CST, but 5:30/5:38/5:46/5:54 is b2b_quality's retry ladder and that job MUST finish by 6:00 (Sales Boards starts 6:00, VA posts ~5:57) — this pull is ~7min on a 120MB export plus a full Chrome-profile copy, so 5:00am is recommended instead; the LaunchAgent is NOT installed until she picks. Present so `lucy rerun att_order_log` (dry) and `lucy rerun att_order_log --sheet` (writes) work. Pulls ATTTRACKER-B2B/ORDERLOG via the DIRECT authenticated .csv — NOT cdp_pull.probe(), which ignores its url/out arguments, hardcodes the bare view and cost a run on 2026-07-19. Un-pivots the per-measure fan-out (every sale is emitted once per measure, 4x; compute.load_orderlog does NOT collapse this) and filters to Carlos. DRY-RUN by default; --sheet writes. MUST RUN ON LUCY 2 (Carlos's Tableau identity); a laptop pull evicts the mini's ownerville session holder. Writes only its own two tabs (PROTECTED_TABS guard). Does NOT post to Slack.",

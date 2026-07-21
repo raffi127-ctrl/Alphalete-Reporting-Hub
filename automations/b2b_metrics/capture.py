@@ -88,9 +88,23 @@ def payout_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
             r["posted"] = r.pop("activated")
             r["pending"] = r.pop("open")
     out = out_dir / "activation_overview.png"
-    bpng.render(tables, out,
-                subtitle="Activated & Cancelled are for that posted week — pay "
-                         "follows. Still Open = not yet posted, any week.")
+    # Swap the box renderer's column HEADERS to AT&T's for this render — the
+    # count key stays "posted" but the header reads "Posted" (Carlos 2026-07-20),
+    # not BOX's "Accepted by Supplier". Restored after, so BOX's own report is
+    # untouched.
+    saved_cols = list(bpng.COLS)
+    bpng.COLS[:] = [
+        ("Rep Name", "rep", "left"),
+        ("Posted", "posted", "center"),
+        ("Cancelled", "canceled", "center"),
+        ("Still Open", "pending", "center"),
+    ]
+    try:
+        bpng.render(tables, out,
+                    subtitle="Posted & Cancelled are for that posted week — pay "
+                             "follows. Still Open = not yet posted, any week.")
+    finally:
+        bpng.COLS[:] = saved_cols
     return out
 
 
@@ -108,6 +122,20 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path,
     from automations.shared import tableau_patchright as tp
     from automations.tableau_screenshots.capture import capture_page
     from automations.vantura_churn import cdp_pull
+
+    # Activation + Churn need b2b_quality's crop-to-last-data-row (+ Activation's
+    # sort click), NOT a plain screenshot. For Carlos those views ARE
+    # b2b_quality's specs, so reuse its proven capture. (Multi-office TODO:
+    # parameterise b2b_quality.capture_all by the office's URLs + the crop/sort
+    # metadata now on B2BOffice, rather than its Carlos-hardcoded specs.)
+    if view_key in ("activation_rate", "churn_rate"):
+        import automations.b2b_quality.run as bq
+        imgs = bq.capture_all(out_dir, only=view_key, headless=True)
+        got = imgs.get(view_key)
+        if not got:
+            raise RuntimeError("b2b_quality capture returned no image for "
+                               "{}".format(view_key))
+        return Path(got)
 
     url = o.tableau_views[view_key]
     if owner_filter and o.metrics_filter_field.strip():
