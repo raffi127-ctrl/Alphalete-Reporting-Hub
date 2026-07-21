@@ -9899,8 +9899,12 @@ with st.sidebar:
             my_reports = [r for r in AUTOMATED_REPORTS if not r.get("assignees")]
         else:
             my_reports = [r for r in AUTOMATED_REPORTS if st.session_state.user in r.get("assignees", [])]
+        # Count time-set reports too (self_scheduled but NOT hide_schedule):
+        # a scheduled 9am VA Compare that never ran should surface here. Only
+        # the always-on pollers (hide_schedule) stay out — they have no single
+        # daily run to tick off.
         due_today_for_me = [r for r in my_reports
-                            if _is_due_today(r, today) and not r.get("self_scheduled")]
+                            if _is_due_today(r, today) and not r.get("hide_schedule")]
         if not due_today_for_me:
             st.caption("☕ Nothing due today.")
         else:
@@ -9989,9 +9993,11 @@ if st.session_state.view == "home":
         unsafe_allow_html=True,
     )
     # Run-count for the date header: of the reports due to run today,
-    # how many have a successful run logged.
+    # how many have a successful run logged. Time-set reports (self_scheduled
+    # but not hide_schedule) count too, so a failed 8:30 post drops the ratio
+    # instead of hiding; only always-on pollers (hide_schedule) are excluded.
     _due_today = [r for r in AUTOMATED_REPORTS
-                  if _is_due_today(r, today) and not r.get("self_scheduled")]
+                  if _is_due_today(r, today) and not r.get("hide_schedule")]
     _ran_today = sum(1 for r in _due_today if _was_run_successfully_today(r["id"], today))
     _due_n = len(_due_today)
     st.markdown(f"""
@@ -10035,11 +10041,14 @@ if st.session_state.view == "home":
                     my_reports = [r for r in AUTOMATED_REPORTS if member["name"] in r.get("assignees", [])]
                     # Only count reports still UNCOMPLETED today —
                     # successfully-run reports shouldn't show as "due"
-                    # (the strip already marks them with ✅).
+                    # (the strip already marks them with ✅). Time-set reports
+                    # (self_scheduled but not hide_schedule) DO count, so a
+                    # failed/never-ran 8:30 post keeps the card off "All clear."
+                    # Always-on pollers (hide_schedule) stay excluded.
                     due_count = sum(
                         1 for r in my_reports
                         if _is_due_today(r, today)
-                        and not r.get("self_scheduled")
+                        and not r.get("hide_schedule")
                         and not _was_run_successfully_today(r["id"], today)
                     )
                 with st.container(border=True):
