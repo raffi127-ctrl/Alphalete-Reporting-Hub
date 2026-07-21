@@ -258,8 +258,8 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log) -> list[str]:
                         r"tuesday|wednesday|thursday|friday|in a |in both|"
                         r"roadtrip|pitch|closing|transition|running|day 0|"
                         r"pk$|qq|intro |saturday|sunday|early objection|"
-                        r"je 9)", re.I)
-    name_cols = list(range(0, 7)) + list(range(8, 14)) + [89]
+                        r"je 9|station )", re.I)
+    name_cols = list(range(0, 7)) + list(range(8, 15)) + [89]  # 2026-07-21: +col O (new BOX station col)
     unknown = set()
     for i, row in enumerate(vals, start=1):
         if i < 4:
