@@ -32,6 +32,15 @@
         "_todo": "wire view_url + crosstab_sheet + date_col + min_rows before live cutover"
       }
     },
+    "tableau:att_orderlog": {
+      "label": "ATT B2B ORDERLOG (Carlos) — real freshness gate",
+      "_note": "First REAL Layer-2 freshness probe (2026-07-20). type att_orderlog dispatches to readiness._probe_att_orderlog, which fetches a narrow window of Carlos's ATTTRACKER-B2B/ORDERLOG.csv via att_order_log.freshness and checks the max sp.Order Date (copy) reaches the target day — so att_order_log runs in the flow when its data is actually in, and the pass circles back + re-probes when it isn't (Lucy 1's Box behaviour). fallback_hhmm 05:30 = fail-open floor: it NEVER holds the log past then. BUILT but NOT yet wired to att_order_log.data_sources — the CDP pull shares debug port 9246 with vantura_churn's cdp_pull, so it must be live-tested on Lucy 2 (does it detect ready/not-ready AND not collide with other CDP reports) before cutover. Until then att_order_log stays on its not_before 05:00 clock.",
+      "probe": {
+        "type": "att_orderlog",
+        "fallback_hhmm": "05:30",
+        "min_rows": 1
+      }
+    },
     "tableau:churn": {
       "label": "CHURN / RafExpanded",
       "probe": {

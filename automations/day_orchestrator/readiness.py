@@ -173,7 +173,44 @@ class ReadinessCache:
         if ptype == "box_daily":
             return self._probe_box_daily(source_id, probe)
 
+        if ptype == "att_orderlog":
+            return self._probe_att_orderlog(source_id, probe)
+
         return Readiness(False, f"unknown probe type {ptype!r}")
+
+    def _probe_att_orderlog(self, source_id: str, probe: dict) -> Readiness:
+        """Is Carlos's ATT B2B ORDERLOG extract in for the target day? Fetches a
+        NARROW window of the same .csv att_order_log pulls (via its real-Chrome
+        CDP auth — a patchright session gets the wrong Tableau identity) and
+        checks the max `sp.Order Date (copy)` reaches the target.
+
+        FAIL-OPEN like box_daily — this gate must NEVER keep Carlos's log from
+        posting: past `fallback_hhmm`, or on an import error, RUN ANYWAY. A
+        genuine not-yet-pullable extract returns not-ready so the pass circles
+        back and re-probes, with the floor as the backstop. Until it's
+        live-verified on Lucy 2 the floor carries it (= the old clock)."""
+        fallback = str(probe.get("fallback_hhmm", "05:30"))
+        try:
+            fb_h, fb_m = (int(x) for x in fallback.split(":"))
+            now = dt.datetime.now()
+            if (now.hour, now.minute) >= (fb_h, fb_m):
+                return Readiness(True, f"past {fallback} fallback — running "
+                                       "(never hold the order log)")
+        except Exception:  # noqa: BLE001 — a bad fallback string must not break the gate
+            pass
+        min_rows = int(probe.get("min_rows", 1))
+        try:
+            from automations.att_order_log import freshness as _fr
+        except Exception as e:  # noqa: BLE001 — code problem, not data: fail-open
+            return Readiness(True, f"orderlog probe import failed ({e}) — running")
+        out = Path(tempfile.gettempdir()) / f"probe_{source_id.replace(':', '_')}.csv"
+        try:
+            _fr.fetch_narrow_csv(self.target_date, out)
+        except Exception as e:  # noqa: BLE001 — not pullable yet: re-probe (floor backstops)
+            line = str(e).splitlines()[0][:120] if str(e) else repr(e)
+            return Readiness(False, f"ORDERLOG not pullable yet ({line})")
+        return Readiness(*_csv_covers_date(out, _fr.DATE_COL, self.target_date,
+                                           min_rows))
 
     def _probe_box_daily(self, source_id: str, probe: dict) -> Readiness:
         """Box (B2BBOXEnergyTracker/BoxDailyTracker) is the ORG Sales Board's
