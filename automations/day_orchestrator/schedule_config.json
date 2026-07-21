@@ -1761,7 +1761,7 @@
           5,
           6
         ],
-        "not_before": "05:00"
+        "not_before": "07:00"
       },
       "priority": "P2",
       "freshness_target": null,
@@ -1770,7 +1770,31 @@
       "verify": {
         "type": "manifest",
         "report_id": "vantura-churn"
-      }
+      },
+      "_flow_note": "STAGED for Lucy 2's 4am flow, NOT yet active (on_scheduler:false) — activate at cutover once the standalone com.alphalete.vantura-churn-daily agent is disabled (disable_vantura_churn_agent), else double-run. not_before 07:00 = when its data lands AND when it posts the churn screenshot to Slack (the standalone fires 7:00; it ran 07:12 on 2026-07-20). Was wrongly staged 05:00, which would pull-and-POST before the data is in. base_args [] is correct — the module writes+posts by default (--dry-run is the opt-in), no --sheet-style flag needed. Rollback: install_vantura_churn agent + flip on_scheduler false."
+    },
+    "disable_vantura_churn_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun disable_vantura_churn_agent --machine \"Lucy 2\"` can RETIRE the standalone com.alphalete.vantura-churn-daily LaunchAgent on Lucy 2 when vantura_churn is cut over to the 4am flow (else the flow at 07:00 + the standalone at 07:00 double-run + double-post to Slack). Race-free bootout + stashes the plist; reversible by re-installing the agent. Read-only w.r.t. any Sheet/report data.",
+      "display_name": "Disable Vantura Churn standalone agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.disable_agent"
+      ],
+      "base_args": [
+        "vantura-churn-daily"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 2"
     },
     "carlos_focus": {
       "on_scheduler": true,
