@@ -18,6 +18,9 @@ Status flows  queued -> running -> done | failed.  Only 'queued' rows run.
 Actions:
   rerun <report_id>     re-run one orchestrator report (today's common fix)
   update                git pull the latest code onto the mini (remote deploy)
+  git_status            READ-ONLY: branch, HEAD, local edits, what blocks a pull
+  git_stash [label]     park uncommitted TRACKED edits so a blocked update can
+                        run. Recoverable (git stash pop); never discards.
   set_meta_token <tok>  install/refresh the brand-audit Meta page token in keys.json
   set_slack_token <tok> install/refresh the 'Lucy' Slack BOT token (xoxb-…) on this machine
   set_slack_user_token <tok>  install the 'Lucy' USER token (xoxp-…) — the one
@@ -744,6 +747,105 @@ def _action_update(args: str) -> tuple[bool, str]:
                     timeout_s=120)
 
 
+def _action_git_status(args: str) -> tuple[bool, str]:
+    """Read-only: what is this runner's git state, and is anything blocking a
+    pull? It never touches the working tree or the index — nothing is staged,
+    reverted, or discarded. It does fetch remote-tracking refs (so "behind by
+    N" is current) and write its own log.
+
+    Exists because `update` fails with git's TAIL ("Please commit your changes
+    or stash them before you merge"), and the file list git prints ABOVE that
+    line is exactly what gets truncated out of the result cell. On 2026-07-21
+    that left a blocked deploy with no way to see the cause from the laptop:
+    there is no SSH, and every other action is fixed-purpose. Full output also
+    goes to a log so `lucy logtail git-status` can read past the cell limit.
+    """
+    def _git(*a):
+        p = subprocess.run(["git", "-C", str(REPO_ROOT), *a],
+                           capture_output=True, text=True, timeout=30)
+        return (p.stdout or p.stderr).strip()
+
+    try:
+        head = _git("log", "-1", "--format=%h %ad %s", "--date=short")
+        branch = _git("rev-parse", "--abbrev-ref", "HEAD")
+        dirty = _git("status", "--short")
+        # What a pull would bring — names only, so the cell stays readable.
+        _git("fetch", "origin", "--quiet")
+        behind = _git("rev-list", "--count", "HEAD..origin/main")
+        incoming = _git("diff", "--name-only", "HEAD", "origin/main")
+    except Exception as e:  # noqa: BLE001
+        return False, f"git_status failed: {type(e).__name__}: {str(e)[:120]}"
+
+    inc = [l for l in incoming.splitlines() if l.strip()]
+    mod = [l for l in dirty.splitlines() if l.strip()]
+    # The blockers are the intersection: locally-modified files a pull would
+    # also touch. That is precisely what makes `git pull --ff-only` abort.
+    inc_set = {l.strip() for l in inc}
+    blockers = [m for m in mod
+                if m[3:].strip() in inc_set and not m.startswith("??")]
+
+    lines = [f"branch {branch} · HEAD {head}",
+             f"behind origin/main by {behind} commit(s)",
+             f"locally modified: {len(mod)} · incoming files: {len(inc)}"]
+    if blockers:
+        lines.append("⚠ BLOCKS THE PULL (modified AND incoming):")
+        lines += [f"    {b}" for b in blockers]
+    elif mod:
+        lines.append("no pull blockers — local edits don't overlap incoming")
+    lines.append("--- git status --short ---")
+    lines += mod or ["(clean)"]
+    lines.append("--- incoming files ---")
+    lines += inc or ["(none)"]
+
+    full = "\n".join(lines)
+    try:
+        log_dir = REPO_ROOT / "output" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        (log_dir / "git-status.log").write_text(full, encoding="utf-8")
+    except Exception:  # noqa: BLE001 — logging must never fail a read-only probe
+        pass
+    # Lead with the blockers: that is the answer the caller came for, and the
+    # result cell truncates.
+    head_lines = lines[:3] + ([l for l in lines if l.startswith(("⚠", "    "))]
+                              or ["(nothing blocking a pull)"])
+    return True, "\n".join(head_lines) + "\n· full: lucy logtail git-status"
+
+
+def _action_git_stash(args: str) -> tuple[bool, str]:
+    """Park uncommitted TRACKED changes so a blocked `update` can proceed.
+
+    Recoverable by design — `git stash push`, never `checkout --` / `reset
+    --hard`. The stash stays on the machine and `git stash pop` restores it, so
+    this is safe to run remotely on someone else's work-in-progress. Untracked
+    files are deliberately NOT stashed: they don't cause the "local changes
+    would be overwritten by merge" abort, and sweeping up another session's new
+    files is exactly the kind of surprise this queue should not create.
+
+    Reports what it parked, so the audit row says whose work moved and where.
+    """
+    def _git(*a):
+        p = subprocess.run(["git", "-C", str(REPO_ROOT), *a],
+                           capture_output=True, text=True, timeout=60)
+        return p.returncode == 0, (p.stdout or p.stderr).strip()
+
+    ok, dirty = _git("status", "--short")
+    tracked = [l for l in dirty.splitlines()
+               if l.strip() and not l.startswith("??")]
+    if not tracked:
+        return True, ("nothing to stash — no modified tracked files "
+                      "(a blocked pull is NOT caused by untracked files)")
+    label = (args or "").strip() or f"lucy git_stash {_now()}"
+    ok, out = _git("stash", "push", "-m", label)
+    if not ok:
+        return False, f"stash failed: {out[:200]}"
+    _, listing = _git("stash", "list")
+    n = len([l for l in listing.splitlines() if l.strip()])
+    return True, ("parked " + str(len(tracked)) + " file(s) as "
+                  + repr(label) + f" (stash entries now: {n})\n"
+                  + "\n".join("    " + t for t in tracked[:12])
+                  + "\nrestore on the machine with: git stash pop")
+
+
 def _action_set_meta_token(args: str) -> tuple[bool, str]:
     """Install/refresh the Meta (Facebook + Instagram) page access token in the
     mini's ~/.config/brand-audit/keys.json, so the noon brand-audit Social
@@ -1074,6 +1176,8 @@ ACTIONS = {
     "pip_install": _action_pip_install,
     "rerun": _action_rerun,
     "update": _action_update,
+    "git_status": _action_git_status,
+    "git_stash": _action_git_stash,
     "set_meta_token": _action_set_meta_token,
     "set_slack_token": _action_set_slack_token,
     "set_slack_user_token": _action_set_slack_user_token,
@@ -1305,6 +1409,8 @@ def print_help() -> None:
         "  lucy rerun <report_id>    re-run a report that failed in the daily email\n"
         "  lucy logtail <name>       show the tail of a mini log in output/logs\n"
         "  lucy update               git pull the latest code onto the mini\n"
+        "  lucy git_status           branch, HEAD, and what's blocking a pull\n"
+        "  lucy git_stash            park uncommitted edits so update can run\n"
         "  lucy restart_holder       restart the session keep-alive\n"
         "  lucy diag                 machine health: sleep, agents, session, disk\n"
         "  lucy set_sleep 1|0        prevent (1) / allow (0) sleep (needs NOPASSWD pmset)\n"
