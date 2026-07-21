@@ -197,13 +197,24 @@ def _write_flat(sh, lines, labels, *, freeze=True) -> None:
 
 
 def _autosize(sh, labels: Sequence[str]) -> None:
+    """Widen every column to fit its longest value so nothing is clipped
+    (Megan 2026-07-20: "expand all cells to fit the text"). Scans ALL rows, not
+    a 400-row sample, and the cap is high enough for the longest real values
+    (Package strings ~40 chars); banners are merged so they don't force width."""
+    banner_rows = set()
+    for r in range(1, sh.max_row + 1):
+        v = sh.cell(r, 1).value
+        if isinstance(v, str) and ("Paycheck Week" in v or "Not Yet Posted" in v):
+            banner_rows.add(r)
     for c, label in enumerate(labels, start=1):
-        width = max(len(str(label)) + 2, 12)
-        for r in range(1, min(sh.max_row, 400) + 1):
+        width = len(str(label)) + 2
+        for r in range(1, sh.max_row + 1):
+            if r in banner_rows:            # merged banner text, not a column
+                continue
             v = sh.cell(row=r, column=c).value
             if v is not None:
-                width = max(width, min(len(str(v)) + 2, 40))
-        sh.column_dimensions[get_column_letter(c)].width = width * 1.05
+                width = max(width, len(str(v)) + 2)
+        sh.column_dimensions[get_column_letter(c)].width = min(width, 55) * 1.1
 
 
 def build(lines: Sequence[dict], out_path: Path, *,
@@ -267,9 +278,9 @@ def _write_paycheck_matrix(wb, lines, used) -> None:
              value="Orders by paycheck week (posted date)").font = _font(bold=True)
     psh.cell(row=2, column=1,
              value=("Each column is the week a sale POSTED — that's the "
-                    "paycheck it's on (Carlos). Sales not yet posted ({} of "
-                    "them) aren't on a paycheck and are excluded here, though "
-                    "they still show in the log.").format(unposted)
+                    "paycheck it's on. Sales not yet posted ({} of them) aren't "
+                    "on a paycheck and are excluded here, though they still "
+                    "show in the log.").format(unposted)
              ).font = _font(italic=True)
     headers = ["Rep"] + [w.strftime("%m/%d") for w in weeks_desc] + ["Total"]
     _write_header(psh, 4, headers)
