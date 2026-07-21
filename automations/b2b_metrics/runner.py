@@ -43,6 +43,16 @@ except Exception:  # noqa: BLE001
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+# Seconds to wait after each file post before the next. files_upload_v2 returns
+# once the upload completes, but Slack CREATES the in-thread message
+# asynchronously when it finishes rendering the image — a wide/heavy screenshot
+# (Sales Metrics is the widest) can finalize AFTER a lighter image uploaded
+# right after it, flipping their display order (Carlos 2026-07-21: "sales
+# metrics should be first then activations"). We can't read this channel back to
+# verify order, so a settle delay is the only lever. 1s wasn't enough; 4s gives
+# each image time to land before the next uploads. 8 items ≈ +30s, negligible.
+POST_SETTLE_SEC = 4
+
 
 # --- the ordered items ------------------------------------------------------
 # Each: id, emoji, title, kind, capture(office, out_dir) -> Path|None. #7
@@ -198,8 +208,8 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
         posted.append(item["id"])
         already.append(item["id"])
         bq._save_state(today, cid, ts, already)   # after EACH, crash-safe
-        time.sleep(1)
-        log("  [{}] posted".format(item["id"]))
+        time.sleep(POST_SETTLE_SEC)                # let Slack finalize this
+        log("  [{}] posted".format(item["id"]))    # image's message before next
     return {"thread_ts": ts, "posted": posted}
 
 

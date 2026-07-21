@@ -1388,7 +1388,11 @@ def _b2b_metrics_card() -> dict:
             "OFFICES\n{}\n\n"
             "POSTED (in thread order)\n{}\n\n"
             "WHEN IT RUNS\n"
-            "Daily on Lucy 2 (Carlos's Tableau login — his custom views).\n\n"
+            "Every day at 7:45am CST on Lucy 2 (Carlos's Tableau login — his "
+            "custom views). It runs at 7:45 — not earlier — because two of the "
+            "items (Churn & Activations Board, Activation Rate by Rep) are shots "
+            "of the churn board that the 7:00am refresh writes; 7:45 also stays "
+            "clear of the 5:00am order-log browser job on the same machine.\n\n"
             "NOTE\n"
             "Out of Bounds posts even when blank (Carlos: 'if it shows nothing "
             "we still want the screenshot'). One item still to map with Carlos "
@@ -1397,7 +1401,7 @@ def _b2b_metrics_card() -> dict:
         "assignees": ["Lucy 2"],
         "schedule": {
             "frequency": "daily",
-            "time": "5:30 AM",
+            "time": "7:45 AM",
             "estimated_minutes": 10 * len(offs),
         },
         "checklist": [],
@@ -1452,6 +1456,18 @@ def _tableau_trackers_card() -> dict:
     from automations.tableau_screenshots import pages as _pages
     morning = [p for p in _pages.PAGES if not _pages.is_late(p)]
     late = [p for p in _pages.PAGES if _pages.is_late(p)]
+    # Boards TODAY's run left out because their source wasn't in yet (an email
+    # tracker's .xlsx hadn't landed) — read from the status file so the success
+    # line reports exactly what posted, not a blanket "all N". Stale/absent → none.
+    _omitted_today: list = []
+    try:
+        _sf = WORKSPACE / "output/tableau_screenshots/_posted_today.json"
+        if _sf.exists():
+            _d = json.loads(_sf.read_text())
+            if _d.get("date") == dt.date.today().isoformat():
+                _omitted_today = list(_d.get("omitted") or [])
+    except Exception:
+        _omitted_today = []
     trackers = "\n".join(
         f"{i}. {p['title']}" for i, p in enumerate(morning, 1))
     late_names = ", ".join(p["title"] for p in late)
@@ -1505,9 +1521,16 @@ def _tableau_trackers_card() -> dict:
         "checklist": [],
         "post_run": {
             "message_success": (
-                f"✅ Tableau Country Trackers posted — all {len(morning)} tracker "
-                f"screenshots in the dated thread in every channel. "
-                f"({late_names} follows on its own card once its data lands.)"),
+                (f"✅ Tableau Country Trackers posted — all {len(morning)} tracker "
+                 f"screenshots in the dated thread in every channel. "
+                 f"({late_names} follows on its own card once its data lands.)")
+                if not _omitted_today else
+                (f"✅ Tableau Country Trackers posted — "
+                 f"{len(morning) - len(_omitted_today)} of {len(morning)} boards in "
+                 f"the dated thread in every channel. Not posted this run "
+                 f"(source not in yet): {', '.join(_omitted_today)} — reposts "
+                 f"automatically once it lands. "
+                 f"({late_names} follows on its own card once its data lands.)")),
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
             # Drives the ✅/❌ per-channel checklist on the card (_channel_status).
             "channel_status_file": "output/tableau_screenshots/_posted_today.json",
@@ -3564,63 +3587,6 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
-        "id": "b2b-quality",
-        # Channel in the name; the tile appends "· 5:30 AM CST" from `schedule`.
-        "name": "B2B Quality & Bonus → #alphalete-gp-sales",
-        "creator": "Megan",
-        "emoji": "📸",
-        "color": "#0F766E",
-        # 📊 Metrics (not Ops) so it lands in ⏰ TIME SET REPORTS.
-        "category": "📊 Metrics",
-        "description": "Posts the daily B2B Quality & Bonus thread to #alphalete-gp-sales as Lucy — the three ATTTRACKER-B2B Tableau views (Tiered Bonus, Activation Rate, Churn Rate) the VA used to post by hand each morning.",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "Posts one dated thread — **B2B Quality & Bonus MM/DD/YYYY** — "
-            "then each view's image as a threaded reply:\n"
-            "**•** **Tiered Bonus**\n"
-            "**•** **Activation Rate**\n"
-            "**•** **Churn Rate**\n\n"
-            "WHEN IT RUNS\n"
-            "**Every day at 5:30am CST.**\n\n"
-            "SAFETY GATES\n"
-            "**•** Each image is captured with Tableau's own **Download → "
-            "Image**, so it matches what the VA posts — never a browser "
-            "screenshot.\n"
-            "**•** A view that fails to capture is **skipped and flagged** "
-            "rather than posted wrong.\n"
-            "**•** Skips any view already in today's thread, so a retry "
-            "can't double-post."
-        ),
-        "assignees": ["Lucy 2"],
-        "run_machine": "Lucy 2",
-        "run_rerun_id": "b2b_quality",
-        # 5:30am start, ~3 min run — must be FINISHED by 6:00am (Megan
-        # 2026-07-18). So the LaunchAgent's retry window has to stop at ~5:55,
-        # NOT the usual run-till-noon q25m pattern: 6:00 is when Sales Boards
-        # starts, and it also has to beat the VA's ~5:57 manual post.
-        "self_scheduled": True,
-        "schedule": {
-            "frequency": "daily",
-            "time": "5:30 AM",
-            "estimated_minutes": 3,
-        },
-        "checklist": [],
-        "post_run": {
-            "message_success": "✅ B2B Quality & Bonus posted to #alphalete-gp-sales.",
-            "message_failed": "❌ Run failed. Check the log above, then run again.",
-        },
-        "actions": [
-            {
-                "label": "Post Now",
-                "icon": "▶",
-                "primary": True,
-                "help": "Captures all 3 views and POSTS today's thread to #alphalete-gp-sales as Lucy.",
-                "module": "automations.b2b_quality.run",
-                "args_fn": lambda: ["--post"],
-            },
-        ],
-    },
-    {
         "id": "box-order-log",
         # Channel in the name; the tile appends "· 7:00 AM CST" from `schedule`.
         "name": "BOX Order Log → #alphalete-gp-sales",
@@ -4240,7 +4206,7 @@ AUTOMATED_REPORTS = [
         "emoji": "📉",
         "color": "#2E86AB",
         "category": "📊 Metrics",
-        "description": "Refreshes the Vantura Master Sales Board every morning: pulls each owner's 60-day Order Log, the Churn Rates dashboard and the Activation Rates view from Tableau, computes the 0-30 bases/disconnects and the 0-30 / 31-60 activation rates, reconciles both against their dashboards, writes Carlos's LUCY CHURN + Activations tabs and Atef's Churn tab, and posts the churn screenshots to the B2B Quality / Metrics thread.",
+        "description": "Refreshes the Vantura Master Sales Board every morning: pulls each owner's 60-day Order Log, the Churn Rates dashboard and the Activation Rates view from Tableau, computes the 0-30 bases/disconnects and the 0-30 / 31-60 activation rates, reconciles both against their dashboards, writes Carlos's LUCY CHURN + Activations tabs and Atef's Churn tab. As of 2026-07-20 it only REFRESHES the board (runs --no-post); the B2B Metrics run (7:45am) takes the churn screenshots from that board and posts them.",
         "breakdown": (
             "WHAT IT DOES\n"
             "**•** Pulls the **Order Log**, the **Churn Rates** crosstab "
@@ -4258,9 +4224,11 @@ AUTOMATED_REPORTS = [
             "activation-rate cells + rep list to **LUCY CHURN** (Carlos) "
             "and the helper block to Churn - Atef, preserving the notes that "
             "follow customers and SPMs, then rebuilds the Activations dump.\n"
-            "**•** Screenshots the churn overview + rep list and **posts "
-            "them to that day's B2B Quality / Metrics thread** (as Lucy) — "
-            "only after a clean write.\n\n"
+            "**•** Leaves the fresh **LUCY CHURN** board as the source the "
+            "**B2B Metrics** run (7:45am) screenshots for its Churn & "
+            "Activations items — this job **no longer posts** (runs "
+            "`--no-post` since 2026-07-20; posting moved to B2B Metrics so the "
+            "thread has one source in one order).\n\n"
             "GOOD TO KNOW\n"
             "**•** Carlos's tab moved from *Churn* to **LUCY CHURN** on "
             "2026-07-19. The old tab is kept for history but is no longer "
@@ -4272,7 +4240,8 @@ AUTOMATED_REPORTS = [
             "not wrong) and emails the fix steps — it does not overwrite the "
             "board with a bad pull.\n\n"
             "WHEN IT RUNS\n"
-            "**Daily 7:00 AM** on Lucy 2."
+            "**Daily 7:00 AM** on Lucy 2 (refresh only). The B2B Metrics run "
+            "posts from it at **7:45 AM**."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"),
