@@ -1396,8 +1396,8 @@
       "timeout_minutes": 5
     },
     "board_compare": {
-      "on_scheduler": true,
-      "_note": "Full copy-vs-VA comparison of the Org Sales Board, run DAILY at 9am CST (not_before 09:00) — deliberately NOT straight after the 4am fill. At 4am the VAs have keyed nothing, so the automation is ahead on every cell it pulled and the compare is pure noise (it marked the fill INCOMPLETE every morning). By 9am the VAs are done, so a difference here is a REAL disagreement worth looking at. Read-only (sheet vs sheet, no Tableau). Writes every disagreeing cell to output/logs/org_sales_board_compare-*.log — read it with `lucy logtail org_sales_board_compare`. For the every-single-cell go-live gate (incl. rows past 1000) run `lucy rerun board_compare --all`.",
+      "on_scheduler": false,
+      "_note": "RETIRED 2026-07-21 (Megan): on_scheduler flipped to false — the 9am machine compare no longer runs. Eve now hand-verifies the automation is correct and isn't writing into the VA tab, so the automated compare is redundant, and it had been failing the run daily on rollover-day formula-drift (bottom leaderboard =SUMIF cells resolved to static values on the copy tab — not real sales disagreements). The module (automations.org_sales_board.compare) is kept for on-demand `lucy rerun board_compare` runs; only the scheduled trigger + the Hub tile were removed. PRIOR NOTE: Full copy-vs-VA comparison of the Org Sales Board, run DAILY at 9am CST (not_before 09:00) — deliberately NOT straight after the 4am fill. Read-only (sheet vs sheet, no Tableau). Writes every disagreeing cell to output/logs/org_sales_board_compare-*.log — read it with `lucy logtail org_sales_board_compare`. Every-single-cell go-live gate: `lucy rerun board_compare --all`.",
       "display_name": "Org Sales Board — VA compare (9am)",
       "source_type": "local",
       "data_sources": [],

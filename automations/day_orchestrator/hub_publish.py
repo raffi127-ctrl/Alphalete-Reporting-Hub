@@ -62,7 +62,8 @@ _HUB_CARD = {
     "pnl_office": "pnl-office",
     "sales_boards": "sales-boards",
     "b2b_quality": "b2b-quality",
-    "board_compare": "org-sales-board-compare",
+    # board_compare card RETIRED 2026-07-21 (Megan) — Eve hand-verifies the
+    # automation instead; module kept for manual reruns but no Hub tile to publish to.
     "leaders_call": "leaders-call",
     "bg_check_sync": "bg-check-sync",
     "residential_rep_count": "residential_rep_count",
