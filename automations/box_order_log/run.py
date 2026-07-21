@@ -99,6 +99,12 @@ def main(argv: Optional[list] = None) -> int:
                     help="also build the PDF")
     ap.add_argument("--post", action="store_true",
                     help="actually post to Slack (default: build only)")
+    ap.add_argument("--require-fresh", action="store_true",
+                    help="EARLY pass only: if the pulled extract hasn't reached "
+                         "the latest completed day, skip the post (exit 3, no "
+                         "marker) so the 8:30 fallback posts once the data's in. "
+                         "Makes the post data-timed instead of clock-timed; 8:30 "
+                         "runs WITHOUT this flag, so it stays the fail-open floor.")
     ap.add_argument("--note", metavar="TEXT",
                     help="extra line under the header — e.g. what changed "
                          "since the last preview")
@@ -168,6 +174,24 @@ def main(argv: Optional[list] = None) -> int:
     dated = [s.sale_date for s in sales if s.sale_date]
     window = ("{} – {}".format(_pretty(min(dated)), _pretty(max(dated), True))
               if dated else "")
+
+    # Freshness gate for the EARLY (7:00) pass. Box's extract lands ~7-8am, so
+    # the 7:00 clock is a guess — if it fires before the refresh, it posts a
+    # stale log and the 8:30 fallback won't re-post (marker set). Instead: if
+    # --require-fresh and the newest sale hasn't reached the latest COMPLETED
+    # day, DON'T post — exit 3 so the wrapper leaves the marker unset and the
+    # 8:30 pass (which omits --require-fresh) posts once the data is in. 8:30
+    # stays the fail-open floor: a genuinely late day or a no-prior-day-sales
+    # day (e.g. a Monday with no Sunday sales) still posts there. Data-timed,
+    # not clock-timed — and never a missed day.
+    if args.require_fresh and args.post:
+        expected = today - dt.timedelta(days=1)      # prior day's finalised sales
+        newest = max(dated) if dated else None
+        if newest is None or newest < expected:
+            print("box extract not fresh yet (newest sale {}, need >= {}) — "
+                  "deferring the post to the 8:30 fallback".format(
+                      newest, expected), flush=True)
+            return 3
 
     # ---- 3. roll to the last N weeks ------------------------------------
     window_sales = clean.last_n_weeks(sales, args.weeks, today=today)

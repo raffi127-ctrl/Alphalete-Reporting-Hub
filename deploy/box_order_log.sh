@@ -50,6 +50,14 @@ if [ -f "$MARKER" ]; then
     MODE="--sheet"                      # already posted today: sheet only
 else
     MODE="--sheet --xlsx --post"
+    # EARLY pass (before 8am): only post if the extract is actually fresh —
+    # box lands ~7-8am, so a fixed-7:00 post can be stale. --require-fresh makes
+    # the module exit 3 (no post, no marker) when the data hasn't reached the
+    # latest completed day, so the 8:30 pass (which omits the flag) posts once
+    # it's in. Data-timed, not clock-timed; 8:30 stays the fail-open floor.
+    if [ "$(date +%H)" -lt 8 ]; then
+        MODE="$MODE --require-fresh"
+    fi
 fi
 [ "${1:-}" = "--dry" ] && MODE="--xlsx"
 
@@ -69,6 +77,9 @@ case "$MODE" in
             # Keep the folder tidy — yesterday's markers are noise.
             find "$MARKER_DIR" -name ".box-order-log-posted-*" -mtime +3 \
                  -delete 2>/dev/null
+        elif [ "$ST" -eq 3 ]; then
+            echo "[$(date)] extract not fresh — post deferred to the 8:30" \
+                 "fallback (marker left unset, on purpose)" >> "$LOG_FILE"
         else
             echo "[$(date)] post FAILED (exit $ST) — leaving the marker" \
                  "unset so the later pass retries the post" >> "$LOG_FILE"
