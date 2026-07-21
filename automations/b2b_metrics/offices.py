@@ -70,6 +70,20 @@ class B2BOffice:
     metrics_filter_field: str = "Owner Name"
     metrics_filter_value: str = ""      # defaults to `owner` when empty
 
+    # Crop/sort metadata for the Activation + Churn captures — b2b_quality does
+    # NOT just screenshot these; it crops to the last data row and (for
+    # Activation) clicks the sort glyph. Carried here so the runner replicates
+    # that per office (a generic screenshot posts an un-cropped, un-sorted image).
+    # data_cols = number of period columns used to find the last data row;
+    # sort_header = the column whose sort glyph is clicked (Activation only).
+    activation_data_cols: int = 4       # 0-7 / 8-14 / 15-30 / 31-60
+    activation_sort_header: str = "0-7 Days"
+    churn_data_cols: int = 5            # 0-30 / 30 / 60 / 90 / 120
+    # The custom-view names capture must confirm are live before shooting
+    # (b2b_quality's wait_for_custom_view — else it shoots the Original).
+    activation_view_label: str = "Carlos Local Office EXPANDED"
+    churn_view_label: str = "Carlos Local Office EXPANDED CHURN"
+
     @property
     def sales_metrics_owner(self) -> str:
         return self.metrics_filter_value or self.owner
