@@ -100,9 +100,27 @@ def capture(page, out_dir: Path = OUT_DIR, verbose: bool = True) -> Path:
     return capture_page(page, spec, out_dir, verbose=verbose)
 
 
+def _dm_preview(png: Path, user: str, log=print) -> None:
+    """DM the captured image to ONE person for review. Rejects channel ids so a
+    preview can never become a channel post (same guard as thread.dm_preview)."""
+    from automations.shared import slack_metrics_post as smp
+    u = (user or "").strip()
+    if not u.upper().startswith("U"):
+        raise ValueError(
+            "refusing: {!r} is not a user id — preview DMs an individual, "
+            "channel ids (C…/G…) are rejected".format(u))
+    smp.dm_user_with_file(
+        png, user=u, file_name=png.name,
+        comment="B2B AT&T Sales Metrics — Carlos-ExpandedMetrics view. "
+                "Preview, not posted anywhere.")
+    log("  DM'd preview to {}".format(u))
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="att_order_log.metrics_shot")
     ap.add_argument("--out", default=None, help="output directory")
+    ap.add_argument("--dm", default=None, metavar="USER_ID",
+                    help="DM the captured image to ONE user (U…) for review")
     args = ap.parse_args(argv)
     out_dir = Path(args.out) if args.out else OUT_DIR
 
@@ -110,9 +128,8 @@ def main(argv=None) -> int:
     log("B2B AT&T Sales Metrics shot — {}".format(dt.date.today()))
     log("  view: {}".format(view_url()))
     if not FILTER_FIELD.strip():
-        log("  NOTE: no owner filter applied — the field does not exist yet "
-            "(Carlos, Loom 5:00). Capturing the full all-teams view, which "
-            "does contain his row and the Activation & Churn panel.")
+        log("  NOTE: scoped via Carlos's own custom view "
+            "(Carlos-ExpandedMetrics), not a URL owner filter.")
 
     import time
 
@@ -144,6 +161,8 @@ def main(argv=None) -> int:
             log("  !! image is suspiciously small — the view may not have "
                 "rendered, or a filter matched nothing")
             return 1
+        if args.dm:
+            _dm_preview(png, args.dm, log=log)
         return 0
     except Exception:  # noqa: BLE001
         log("")
