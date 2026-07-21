@@ -177,6 +177,25 @@ def _write_log(sh, lines, labels, *, freeze=True) -> None:
         sh.freeze_panes = "A3"
 
 
+def _write_flat(sh, lines, labels, *, freeze=True) -> None:
+    """A flat overall view SORTED BY REP — no week banners (Megan 2026-07-20:
+    "the all reps tab shouldn't be broken into payweeks, just an overall view
+    sorted by rep"). Within a rep, newest order first."""
+    ordered = sorted(
+        lines,
+        key=lambda ln: (str(ln.get("Rep", "") or "").lower(),
+                        -( _parse_date(ln.get("sp.Order Date (copy)"))
+                           or dt.date.min).toordinal()))
+    _write_header(sh, 1, labels)
+    row = 2
+    for ln in ordered:
+        _write_row(sh, row, ln, labels)
+        row += 1
+    _autosize(sh, labels)
+    if freeze:
+        sh.freeze_panes = "A2"
+
+
 def _autosize(sh, labels: Sequence[str]) -> None:
     for c, label in enumerate(labels, start=1):
         width = max(len(str(label)) + 2, 12)
@@ -196,10 +215,10 @@ def build(lines: Sequence[dict], out_path: Path, *,
     wb = Workbook()
     used: set = set()
 
-    # ---- 1. All Reps ----------------------------------------------------
+    # ---- 1. All Reps — flat overall view, sorted by rep -----------------
     sh = wb.active
     sh.title = _safe_title("All Reps", used)
-    _write_log(sh, lines, _LOG_LABELS)
+    _write_flat(sh, lines, _LOG_LABELS)
 
     # ---- 2. Paycheck by Week (posted-date matrix) -----------------------
     _write_paycheck_matrix(wb, lines, used)
