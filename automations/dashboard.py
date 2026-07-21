@@ -2307,8 +2307,8 @@ AUTOMATED_REPORTS = [
             "**•** DMs **Carlos Captainship WE <date>.pdf** (5 weeks + "
             "chart) to Carlos + Maud on Slack (as Lucy).\n\n"
             "WHEN IT RUNS\n"
-            "**Tuesdays.** Each run fills the just-ended week. Re-running the "
-            "same week refreshes in place (no duplicate column)."
+            "**Tuesdays at 10:00 AM CST.** Each run fills the just-ended week. "
+            "Re-running the same week refreshes in place (no duplicate column)."
         ),
         # Deep-links to the 'Carlos B2B Captainship' tab this run writes to.
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
