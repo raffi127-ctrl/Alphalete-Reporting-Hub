@@ -64,12 +64,12 @@ if [ "$(date +%u)" = "1" ]; then
   # captainships, so a late captainship Sunday is caught too) and SEND the email.
   # (Megan 2026-07-13: move Monday's board + email to the afternoon when Sunday's in.)
   echo "[$(date)] MONDAY: full board fill + email (afternoon — Sunday has landed)" >> "$LOG_FILE"
-  "$VENV_PY" -u -m automations.org_sales_board.run --step daily --with-captainships "$@" >> "$LOG_FILE" 2>&1
+  "$VENV_PY" -u -m automations.org_sales_board.run --step daily --with-captainships --skip-compare "$@" >> "$LOG_FILE" 2>&1
   ST=$?
   echo "[$(date)] MONDAY: sending board email" >> "$LOG_FILE"
   "$VENV_PY" -u -m automations.org_sales_board.screenshot_email >> "$LOG_FILE" 2>&1
 else
-  "$VENV_PY" -u -m automations.org_sales_board.run --step daily \
+  "$VENV_PY" -u -m automations.org_sales_board.run --step daily --skip-compare \
     --sections "Retail NL,Retail Internet,Retail JE,BOX,Frontier" "$@" >> "$LOG_FILE" 2>&1
   ST=$?
 fi

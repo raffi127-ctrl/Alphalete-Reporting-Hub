@@ -54,7 +54,7 @@ echo "[$(date)] Retail catch-up starting (extra args: ${*:-none})" > "$LOG_FILE"
 
 # Fill ONLY the three retail sections on the copy tab (comma-separated; run.py
 # splits on ','). No --with-captainships. Any extra arg (e.g. --dry-run) wins.
-"$VENV_PY" -u -m automations.org_sales_board.run --step daily \
+"$VENV_PY" -u -m automations.org_sales_board.run --step daily --skip-compare \
   --sections "Retail NL,Retail Internet,Retail JE" "$@" >> "$LOG_FILE" 2>&1
 ST=$?
 

@@ -55,7 +55,7 @@ echo "[$(date)] Retail JE Sunday catch-up starting (extra args: ${*:-none})" > "
 
 # Default: fill ONLY the Retail JE section on the copy tab. Any extra arg
 # (e.g. --dry-run) is appended and wins.
-"$VENV_PY" -u -m automations.org_sales_board.run --step daily --sections "Retail JE" "$@" >> "$LOG_FILE" 2>&1
+"$VENV_PY" -u -m automations.org_sales_board.run --step daily --skip-compare --sections "Retail JE" "$@" >> "$LOG_FILE" 2>&1
 ST=$?
 
 echo "[$(date)] Retail JE Sunday catch-up finished exit=$ST" >> "$LOG_FILE"
