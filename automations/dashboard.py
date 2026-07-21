@@ -1968,7 +1968,10 @@ AUTOMATED_REPORTS = [
             "Just **hide the tab** in the Sheet. Runner auto-skips "
             "hidden tabs — no mapping edit needed."
         ),
-        "sheet_url": ALPHALETE_ORG_SHEET_URL,
+        # Deep-links to this report's tab (same workbook as
+        # ALPHALETE_ORG_SHEET_URL; inline so the shared constant / other cards
+        # keep their own link).
+        "sheet_url": ALPHALETE_ORG_SHEET_URL + "?gid=700355042#gid=700355042",
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "weekly",
