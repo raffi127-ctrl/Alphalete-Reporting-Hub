@@ -132,6 +132,25 @@ def audit(write: bool, log=_log) -> int:
             continue
         break  # one drift finding is enough — it's systemic
 
+    # 2b. cross-sheet anchor drift (added 2026-07-21): board formulas that
+    #     reference BOUNDED Roll Call ranges shift when rows are inserted at
+    #     the roll top (the New-Starts box read $B$22:$B$491 and showed 0).
+    #     Everything should use full-column refs ('Roll Call'!$B:$B).
+    BOUNDED_ROLL = re.compile(r"'Roll Call'!\$[A-Z]{1,2}\$\d+:")
+    for i, row in enumerate(board_form, start=1):
+        for j, c in enumerate(row):
+            c = str(c)
+            if c.startswith("=") and "INDIRECT" not in c.upper() \
+                    and BOUNDED_ROLL.search(c):
+                findings.append(
+                    f"ROLL-REF DRIFT RISK: board r{i}c{j+1} references a "
+                    "bounded Roll Call range — top-of-roll inserts shift it "
+                    "silently. Rewrite with full-column refs ($B:$B).")
+                break
+        else:
+            continue
+        break  # one finding is enough; they come in batches
+
     findings += audit_stations(sh, last_rep, reps, roll, log=log)
 
     from automations.shared import run_manifest
