@@ -275,66 +275,49 @@ def build_view_values(rows: Sequence[Sequence[str]], reps: Sequence[str],
     return grid
 
 
-def reps_by_activation(rows, reps, period: str) -> List[str]:
-    """Reps ordered by activation % DESCENDING (Megan 2026-07-20: "sorted
-    Activation % great[est] to least").
+# The rep box is a spilling formula of unknown height, so its formatting rules
+# cover a GENEROUS fixed extent below the header rather than a rep count.
+REPBOX_ROWS = 300
 
-    % is a formula in-sheet, so the ORDER is fixed here at build time from the
-    same numbers, over the `period` the tab opens on (default Last 30 Days) so
-    the order matches what Carlos sees. Reps with no orders in the window (blank
-    %) sort last; ties break alphabetically.
+
+def repbox_formula() -> str:
+    """ONE spilling formula for the whole rep box, sorted by activation %
+    DESCENDING and re-sorting LIVE when the dropdowns change (Megan 2026-07-20:
+    the build-time sort "didn't carry" when she switched to Last 30 Days).
+
+    Per rep, over the current B2 (rep) + D2 (period) selection: orders, total
+    activations, and % = activations/units. Reps with no orders in the window
+    drop out (FILTER ord>0). SORT(..,4,FALSE) orders by % desc, so a dropdown
+    change recomputes AND re-sorts on its own.
+
+    Conditions are INLINED with direct range refs, NOT a precomputed LET array:
+    referencing a computed array variable inside MAP's LAMBDA throws #VALUE!
+    (verified live 2026-07-20); direct range refs inside the lambda work.
     """
-    def _num(v):
-        try:
-            return float(str(v).replace(",", ""))
-        except (TypeError, ValueError):
-            return 0.0
-
-    stat = {r: [0.0, 0.0] for r in reps}      # rep -> [units, activations]
-    for row in rows:
-        rep = row[_COL_REP]
-        if rep not in stat:
-            continue
-        if period != ALL_PERIODS and row[_COL_PERIOD] != period:
-            continue
-        stat[rep][0] += _num(row[_COL_UNITS])
-        stat[rep][1] += _num(row[_COL_ACTIVATIONS])
-
-    def _key(rep):
-        units, acts = stat[rep]
-        # None-window reps (no units) sort last: give them pct -1.
-        pct = (acts / units) if units else -1.0
-        return (-pct, rep.lower())
-
-    return sorted(reps, key=_key)
+    d = "'{}'".format(TAB_DATA)
+    A = "{}!$A$2:$A".format(d)                 # Rep
+    R = "{}!$R$2:$R".format(d)                 # Unit Count
+    T = "{}!$T$2:$T".format(d)                 # Total Activations
+    V = "{}!$V$2:$V".format(d)                 # Filter Period
+    cond = ('(($B$2="{all}")+({A}=$B$2))*(($D$2="{all}")+({V}=$D$2))'
+            ).format(all=ALL_PERIODS, A=A, V=V)
+    return ('=LET('
+            'ur,UNIQUE(FILTER({A},{A}<>"")),'
+            'ord,MAP(ur,LAMBDA(r,SUMPRODUCT(({A}=r)*{cond}))),'
+            'ac,MAP(ur,LAMBDA(r,SUMPRODUCT(({A}=r)*{cond}*N({T})))),'
+            'un,MAP(ur,LAMBDA(r,SUMPRODUCT(({A}=r)*{cond}*N({R})))),'
+            'pct,MAP(ac,un,LAMBDA(a,u,IF(u=0,-1,a/u))),'
+            'tbl,HSTACK(ur,ord,ac,pct),'
+            'IFERROR(SORT(FILTER(tbl,ord>0),4,FALSE),""))'
+            ).format(A=A, R=R, T=T, cond=cond)
 
 
-def build_repbox_values(rows, reps, rep_col, rep_cond, per_cond) -> List[List[str]]:
-    """The activation rep box — written to the RIGHT of the log, not above it.
-
-    Carlos (Slack 2026-07-19): "On the rep box, would you be able to add rows
-    that show the activation percentage… under 70% red, 70-75% yellow, above
-    75% green." It respects both dropdowns, so switching to Last 30 Days
-    recolours it and picking one rep narrows it. Sorted by activation %
-    descending (Megan 2026-07-20) — `reps` arrives already ordered.
-
-    ABOVE the log it was 62 rows tall and, frozen with the header, buried the
-    actual log under a 72-row frozen pane (Megan 2026-07-20: "horrible… not a
-    sheet we can easily read"). To the right it never pushes the log down.
-    """
-    unit_col = _col(_COL_UNITS)
-    act_col = _col(_COL_ACTIVATIONS)
-    box = [["Rep", "Orders", "Activations", "Activation %"]]
-    for rep in reps:
-        r = rep.replace('"', '""')
-        m = '({rc}="{r}")'.format(rc=rep_col, r=r)
-        common = '{m}*({rep}>0)*({per}>0)'.format(m=m, rep=rep_cond, per=per_cond)
-        orders = '=SUMPRODUCT({c})'.format(c=common)
-        acts = '=SUMPRODUCT({c}*N({ac}))'.format(c=common, ac=act_col)
-        pct = ('=IFERROR(SUMPRODUCT({c}*N({ac}))/SUMPRODUCT({c}*N({uc})),"")'
-               ).format(c=common, ac=act_col, uc=unit_col)
-        box.append([rep, orders, acts, pct])
-    return box
+def build_repbox_values() -> List[List[str]]:
+    """Rep box = header row + ONE spilling live-sort formula (Rep|Orders|
+    Activations|%). Formula-driven now, so it re-sorts when the dropdowns
+    change and push() writes it once instead of a row per rep."""
+    return [["Rep", "Orders", "Activations", "Activation %"],
+            [repbox_formula(), "", "", ""]]
 
 
 # The log header is a FIXED 8 rows now (title, controls, updated, blank, status
@@ -481,7 +464,7 @@ def _repbox_border_requests(view_id: int, n_reps: int) -> List[dict]:
     return [{"updateBorders": {
         "range": {"sheetId": view_id,
                   "startRowIndex": REPBOX_HEADER_ROW0,
-                  "endRowIndex": REPBOX_HEADER_ROW0 + 1 + n_reps,
+                  "endRowIndex": REPBOX_HEADER_ROW0 + 1 + REPBOX_ROWS,
                   "startColumnIndex": REPBOX_COL0,
                   "endColumnIndex": REPBOX_COL0 + 4},
         "top": solid, "bottom": solid, "left": solid, "right": solid,
@@ -686,7 +669,7 @@ def _repbox_color_rules(view_id: int, n_reps: int) -> List[dict]:
     # rows start one below the box header.
     first = REPBOX_HEADER_ROW0 + 1
     rng = {"sheetId": view_id, "startRowIndex": first,
-           "endRowIndex": first + n_reps,
+           "endRowIndex": first + REPBOX_ROWS,
            "startColumnIndex": REPBOX_PCT_COL,
            "endColumnIndex": REPBOX_PCT_COL + 1}
 
@@ -732,7 +715,7 @@ def _repbox_format_requests(view_id: int, n_reps: int) -> List[dict]:
         # Percent format on the Activation % column.
         {"repeatCell": {
             "range": {"sheetId": view_id, "startRowIndex": hdr + 1,
-                      "endRowIndex": hdr + 1 + n_reps,
+                      "endRowIndex": hdr + 1 + REPBOX_ROWS,
                       "startColumnIndex": REPBOX_PCT_COL,
                       "endColumnIndex": REPBOX_PCT_COL + 1},
             "cell": {"userEnteredFormat": {
@@ -745,7 +728,7 @@ def _repbox_format_requests(view_id: int, n_reps: int) -> List[dict]:
         # formatting is all over the place").
         {"repeatCell": {
             "range": {"sheetId": view_id, "startRowIndex": hdr + 1,
-                      "endRowIndex": hdr + 1 + n_reps,
+                      "endRowIndex": hdr + 1 + REPBOX_ROWS,
                       "startColumnIndex": c0, "endColumnIndex": c0 + 1},
             "cell": {"userEnteredFormat": {
                 "horizontalAlignment": "LEFT", "wrapStrategy": "CLIP",
@@ -756,7 +739,7 @@ def _repbox_format_requests(view_id: int, n_reps: int) -> List[dict]:
         # Orders + Activations columns: centered numbers.
         {"repeatCell": {
             "range": {"sheetId": view_id, "startRowIndex": hdr + 1,
-                      "endRowIndex": hdr + 1 + n_reps,
+                      "endRowIndex": hdr + 1 + REPBOX_ROWS,
                       "startColumnIndex": c0 + 1, "endColumnIndex": c0 + 3},
             "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER",
                                            "textFormat": {"fontSize": 10}}},
@@ -850,13 +833,11 @@ def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
     # still preserved across runs; this only changes the cold-start default.
     sel_per = cur_per if cur_per in [ALL_PERIODS] + periods else LAST_30
 
-    rep_col, _pc, _sc, rep_cond, per_cond = _conditions()
     grid = build_view_values(rows, reps, generated,
                              selected_rep=sel_rep, selected_period=sel_per)
-    # Rep box ordered by activation % descending, over the period the tab opens
-    # on. `reps` stays alphabetical for the dropdown.
-    reps_ranked = reps_by_activation(rows, reps, sel_per)
-    repbox = build_repbox_values(rows, reps_ranked, rep_col, rep_cond, per_cond)
+    # Rep box is a single live-sort formula now — re-sorts itself when the
+    # dropdowns change, so no build-time ordering needed.
+    repbox = build_repbox_values()
 
     # Write VALUES in place. No clear() of the whole tab — updating a value
     # keeps the cell's format, so Megan's formatting is preserved. The log's
@@ -864,17 +845,18 @@ def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
     _retry(lambda: view_ws.update(
         grid, "A1:{}{}".format(_col_letter(len(DISPLAY_HEADERS) - 1), len(grid)),
         value_input_option="USER_ENTERED"))
+    # Rep box: the data area (below the header) MUST be cleared before the
+    # live-sort formula is written — any leftover static rows in its spill path
+    # would make it #SPILL. Values only, so Megan's formatting on the box stays.
+    c0, c3 = _col_letter(REPBOX_COL0), _col_letter(REPBOX_COL0 + 3)
+    _retry(lambda: view_ws.batch_clear(
+        ["{c}{r}:{c2}{r2}".format(c=c0, r=REPBOX_HEADER_ROW0 + 2, c2=c3,
+                                  r2=REPBOX_HEADER_ROW0 + 400)]))
     box_a1 = "{c}{r}:{c2}{r2}".format(
-        c=_col_letter(REPBOX_COL0), r=REPBOX_HEADER_ROW0 + 1,
-        c2=_col_letter(REPBOX_COL0 + 3), r2=REPBOX_HEADER_ROW0 + len(repbox))
+        c=c0, r=REPBOX_HEADER_ROW0 + 1, c2=c3,
+        r2=REPBOX_HEADER_ROW0 + len(repbox))
     _retry(lambda: view_ws.update(repbox, box_a1,
                                   value_input_option="USER_ENTERED"))
-    # Clear any stale rep-box rows below the current roster (a shrunk roster
-    # would otherwise leave old reps behind). Values only — formatting stays.
-    stale_from = REPBOX_HEADER_ROW0 + 1 + len(repbox)
-    _retry(lambda: view_ws.batch_clear(["{c}{r}:{c2}{r2}".format(
-        c=_col_letter(REPBOX_COL0), r=stale_from + 1,
-        c2=_col_letter(REPBOX_COL0 + 3), r2=stale_from + 200)]))
 
     if reformat:
         reqs: List[dict] = []
