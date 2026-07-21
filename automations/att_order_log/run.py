@@ -115,6 +115,22 @@ def _report(lines, stats, log=print) -> None:
         log("  !! DISPLAY columns absent from the export: {}".format(missing))
 
 
+def _dm_file(path: Path, user: str, log=print) -> None:
+    """DM a built file to ONE user for review. Rejects channel ids so a preview
+    can't become a channel post (same guard as thread/metrics_shot)."""
+    from automations.shared import slack_metrics_post as smp
+    u = (user or "").strip()
+    if not u.upper().startswith("U"):
+        raise ValueError(
+            "refusing: {!r} is not a user id — preview DMs an individual, "
+            "channel ids (C…/G…) are rejected".format(u))
+    smp.dm_user_with_file(
+        path, user=u, file_name=path.name,
+        comment="ATT B2B Order Log workbook — All Reps + Posted-by-Week + a "
+                "tab per rep. Preview, not posted anywhere.")
+    log("  DM'd workbook to {}".format(u))
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="att_order_log")
     ap.add_argument("--reformat", action="store_true",
@@ -129,6 +145,9 @@ def main(argv=None) -> int:
                          "(box_order_log-style, for the Slack thread)")
     ap.add_argument("--from-file", default=None, metavar="CSV",
                     help="parse an existing export instead of pulling")
+    ap.add_argument("--dm", default=None, metavar="USER_ID",
+                    help="DM the built --xlsx workbook to ONE user (U…) for "
+                         "review. Rejects channel ids.")
     ap.add_argument("--today", default=None, metavar="YYYY-MM-DD")
     ap.add_argument("--owner", default=OWNER_PREFIX)
     args = ap.parse_args(argv)
@@ -161,6 +180,8 @@ def main(argv=None) -> int:
             reps = len({l.get("Rep", "") for l in lines if l.get("Rep")})
             log("  workbook: {} ({} sales, {} rep tabs)".format(
                 out.name, len(lines), reps))
+            if args.dm:
+                _dm_file(out, args.dm, log=log)
 
         if not args.sheet:
             log("")
