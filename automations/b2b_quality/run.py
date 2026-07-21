@@ -119,6 +119,20 @@ SPECS = [
         # nothing to apply here. Matches Jolie's post row-for-row.
         "data_cols": 5,          # 0-30 / 30 / 60 / 90 / 120
     },
+    {
+        # Item 1 in Carlos's new thread layout (2026-07-20): the full "B2B AT&T
+        # Metrics" dashboard — the Owner (+/-) Rep metrics table PLUS the
+        # "Activation & Churn" side table on the right. UNDER TEST: capturing
+        # canvas without a view_label wait (the URL loads the custom view
+        # directly); add view_label / sort once the capture is confirmed.
+        "id": "sales_metrics",
+        "title": "Sales Metrics",
+        "emoji": "\U0001F4CA",                 # bar_chart
+        "url": _BASE + ("ATTTRACKER-B2B/B2BATTSalesMetrics/"
+                        "65d88645-11de-467f-83ef-dc3d1749c17a/"
+                        "CarlosMetricsEXP?:iid=1"),
+        "crop": "canvas",
+    },
 ]
 
 THREAD_TITLE = "B2B Quality & Bonus"
