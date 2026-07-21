@@ -2354,6 +2354,16 @@ AUTOMATED_REPORTS = [
             "A day-by-day breakdown (Mon-Fri) of the recruiting numbers "
             "for **every ICD across all captainship tabs** — current "
             "week and last week, side by side. One run fills every tab.\n\n"
+            "SLACK DMs\n"
+            "After each captainship tab is filled, its screenshot is DM'd "
+            "(as Lucy) to that captainship's private group DM — one image per "
+            "3 owners, captioned *M/D/YY Daily Recruiting Focus Report*:\n"
+            "• **Carlos** → Carlos, Elena Camargo, Valeria Rodea, Evelyn "
+            "Sobrino, Maud Miller.\n"
+            "• **Colten Wright** → Colten, Eveliz Wright, Valeria Zavala.\n"
+            "• **Jairo Ruiz** → Jairo, Colten Wright, Analay Ruiz.\n"
+            "A Slack hiccup on one tab is logged but never fails the run or "
+            "blocks the other tabs' DMs.\n\n"
             "WEEKEND ROLLOVER\n"
             "Per Raf's rule, weekend numbers fold into the adjacent weekday:\n"
             "• **Sunday → Monday** (Sun + Mon counts combined into Mon's cell).\n"
@@ -3088,8 +3098,10 @@ AUTOMATED_REPORTS = [
             "WHEN IT RUNS\n"
             "Monday–Friday, 8 AM."
         ),
+        # Deep-links to the tab this run writes to, not the workbook root.
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
+                      "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"
+                      "?gid=732929068#gid=732929068"),
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
