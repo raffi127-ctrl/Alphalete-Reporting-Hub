@@ -75,3 +75,42 @@ def fetch_narrow_csv(target: dt.date, dest: Path, *, log=lambda *_: None) -> Pat
         except Exception:  # noqa: BLE001
             pass
         cdp_pull._kill_ours()
+
+
+def _selftest() -> int:
+    """Live check, RUN ON LUCY 2: pull a narrow ORDERLOG window and report the
+    freshness verdict for today (expect READY this evening) and tomorrow (expect
+    NOT-ready — no future orders). Proves the probe's pull + date logic against
+    the real extract before it's wired into att_order_log's readiness. Writes
+    nothing to any Sheet/report; only a temp CSV.
+
+        lucy rerun test_att_orderlog_freshness --machine \"Lucy 2\"
+    """
+    import tempfile
+    import time
+
+    from automations.day_orchestrator.readiness import _csv_covers_date
+
+    target = dt.date.today()
+    out = Path(tempfile.gettempdir()) / "att_orderlog_freshness_selftest.csv"
+    print(f"[selftest] fetching narrow ORDERLOG window ending {target} …", flush=True)
+    t0 = time.monotonic()
+    try:
+        fetch_narrow_csv(target, out, log=print)
+    except Exception as e:  # noqa: BLE001
+        print(f"[selftest] FETCH FAILED: {type(e).__name__}: {e}", flush=True)
+        print("=== done ===", flush=True)
+        return 1
+    took = time.monotonic() - t0
+    print(f"[selftest] fetched in {took:.0f}s -> {out.stat().st_size:,} bytes", flush=True)
+    for label, tgt in (("today", target),
+                       ("tomorrow", target + dt.timedelta(days=1))):
+        ok, why = _csv_covers_date(out, DATE_COL, tgt, 1)
+        print(f"[selftest] {label} ({tgt}): ready={ok} — {why}", flush=True)
+    print("=== done ===", flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(_selftest())

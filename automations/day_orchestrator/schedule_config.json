@@ -2736,6 +2736,27 @@
       },
       "machine": "Lucy 2"
     },
+    "test_att_orderlog_freshness": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Read-only live test of the ATT ORDERLOG freshness probe (automations/att_order_log/freshness.py::_selftest). `lucy rerun test_att_orderlog_freshness --machine \"Lucy 2\"` pulls a narrow ORDERLOG window via Carlos's CDP session and prints the ready/not-ready verdict for today vs tomorrow — proves the probe works before it's wired into att_order_log.data_sources. Writes nothing to any Sheet/report. MUST RUN ON LUCY 2 (Carlos's Tableau identity). Only run when no other CDP report (vantura_churn / att_order_log) is mid-pull — they share CDP profile vantura_cdp_profile + port 9246, so _kill_ours would kill a concurrent one.",
+      "display_name": "TEST: ATT ORDERLOG freshness probe",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.att_order_log.freshness"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 2"
+    },
     "list_agents": {
       "on_scheduler": false,
       "_off_scheduler_note": "Read-only ops inventory. `lucy rerun list_agents --machine \"Lucy 2\"` prints every com.alphalete.* LaunchAgent loaded on that runner (launchctl list) — the ground truth diag's hardcoded 5-agent check can't show. Added 2026-07-20 to verify Lucy 2's full report line-up (box_order_log runs there with no machine tag). Never loads/unloads anything.",
