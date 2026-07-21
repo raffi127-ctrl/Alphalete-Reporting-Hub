@@ -186,28 +186,76 @@ def _rep_range(ws, rep_col: str = None):
             f"{fill._colletter(last_col_i)}{last_row}")
 
 
-def post(png: Path, day: dt.date | None = None, thread_ts: str | None = None,
-         dry_run: bool = True, log=print) -> dict:
-    """Upload the PNG to the Activations order-log channel as Lucy.
+# The two images, in post order. `title` is both the Slack file title and the
+# uploaded filename (Slack HTML-escapes the caption on read, so the caption
+# carries the emoji + bold; the filename stays plain ASCII-friendly).
+POST_IMAGES = [
+    {"key": "churn", "emoji": "📉", "title": "Churn & Activations Board",
+     "range": lambda ws: visible_range(ws)},
+    {"key": "reps", "emoji": "⚡", "title": "Activation Rate by Rep",
+     "range": lambda ws: _rep_range(ws)},
+]
 
-    dry_run=True (the default) resolves the channel and reports what WOULD be
-    sent without sending it.
+
+def post_report(ws, day: dt.date | None = None, dry_run: bool = True,
+                thread_ts: str | None = None, log=print) -> dict:
+    """Render the churn overview + rep breakdown and reply them into that
+    day's 'B2B Quality & Bonus' thread — the same thread the B2B Quality
+    report posts to (#alphalete-gp-sales), as Lucy.
+
+    Runs on Lucy 2, so the post carries the Lucy identity (this machine's
+    Slack token decides who it's from — a manual run from a laptop posts as
+    that laptop's user). dry_run=True resolves + renders + reports the target
+    without sending. Skips any image already in the thread, so a re-run
+    doesn't duplicate. Does NOT create the parent — if the B2B Quality thread
+    doesn't exist yet, it logs and skips rather than opening a rival thread.
     """
-    from automations.box_order_log.run import CHANNEL
+    from automations.b2b_quality import run as bq
+    from automations.shared import slack_metrics_post as smp
 
     day = day or dt.date.today()
-    # No %-d: it's glibc-only and this has to render on Windows too.
-    title = f"Churn & Activations — {day.strftime('%b')} {day.day}, {day.year}"
-    if dry_run:
-        log(f"[dry-run] would upload {png.name} ({png.stat().st_size:,} bytes) "
-            f"to {CHANNEL[0]} ({CHANNEL[1]})"
-            + (f" in thread {thread_ts}" if thread_ts else " as a new message"))
-        return {"dry_run": True, "channel": CHANNEL[1], "title": title}
+    tag = f"{day.month}.{day.day}"
+    out_dir = Path("output/vantura_churn")
 
-    from automations.shared.slack_metrics_post import _client  # Lucy user token
-    client = _client()
-    resp = client.files_upload_v2(
-        channel=CHANNEL[1], file=str(png), title=title,
-        initial_comment=title, thread_ts=thread_ts)
-    log(f"  ✓ posted churn screenshot to {CHANNEL[0]}")
-    return resp
+    # Render both to clean, dated filenames.
+    imgs = []
+    for spec in POST_IMAGES:
+        rng = spec["range"](ws)
+        if rng is None:
+            log(f"  ⚠ {spec['key']}: nothing to render — skipping")
+            continue
+        fname = f"{spec['title']} {tag}.png"
+        path = render(ws, out_dir / fname, rng)
+        imgs.append((spec, path))
+
+    client = smp._client()
+    cid = bq.CHANNEL[1]
+    ts = thread_ts or bq.find_thread_ts(client, cid, day)
+    if not ts:
+        log(f"  ⚠ no '{bq.THREAD_TITLE}' thread for {day} yet — churn "
+            "screenshots not posted (the B2B Quality report opens that "
+            "thread; this only replies into it).")
+        return {"posted": [], "thread_ts": None, "reason": "no thread"}
+
+    if dry_run:
+        log(f"[dry-run] would reply {len(imgs)} image(s) into "
+            f"{bq.CHANNEL[0]} thread {ts}:")
+        for spec, path in imgs:
+            log(f"           {spec['emoji']} {spec['title']} {tag}  "
+                f"({path.name}, {path.stat().st_size:,} bytes)")
+        return {"dry_run": True, "thread_ts": ts,
+                "images": [p.name for _s, p in imgs]}
+
+    posted = []
+    for spec, path in imgs:
+        plain = f"{spec['title']} {tag}"
+        if bq._already_replied(client, cid, ts, plain):
+            log(f"  · {plain} already in thread — skipping")
+            continue
+        client.files_upload_v2(
+            channel=cid, thread_ts=ts, file=str(path),
+            filename=f"{plain}.png", title=plain,
+            initial_comment=f"{spec['emoji']} *{plain}*")
+        posted.append(plain)
+        log(f"  ✓ posted '{plain}' to {bq.CHANNEL[0]} thread")
+    return {"posted": posted, "thread_ts": ts}

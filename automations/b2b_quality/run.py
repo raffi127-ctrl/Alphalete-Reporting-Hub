@@ -70,6 +70,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import html
 import os
 import sys
 import time
@@ -430,9 +431,14 @@ def find_thread_ts(client, channel: str, day):
     except Exception as e:  # noqa: BLE001
         print(f"    (thread lookup unavailable — {type(e).__name__}; new thread)")
         return None
-    needle = header_title(day)
+    # Slack HTML-escapes message text on read, so the parent's "&" comes back
+    # as "&amp;" ("B2B Quality &amp; Bonus …"). Matching the raw title with a
+    # literal "&" therefore never hit and find_thread_ts always returned None —
+    # masked only because the caller falls back to the state file. Unescape
+    # both sides before comparing. (2026-07-20)
+    needle = html.unescape(header_title(day))
     for m in resp.get("messages", []):
-        if needle in (m.get("text") or ""):
+        if needle in html.unescape(m.get("text") or ""):
             return m.get("thread_ts") or m.get("ts")
     return None
 
@@ -446,7 +452,7 @@ def _already_replied(client, channel: str, thread_ts: str, plain: str) -> bool:
     except Exception:  # noqa: BLE001
         return False
     for m in rs.get("messages", []):
-        text = (m.get("text") or "").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+        text = html.unescape(m.get("text") or "")
         if plain in text:
             return True
         if any((f.get("name") or "").startswith(plain) for f in (m.get("files") or [])):

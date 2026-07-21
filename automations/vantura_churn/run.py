@@ -177,12 +177,11 @@ def main(argv=None) -> int:
     ap.add_argument("--skip-activations", action="store_true")
     ap.add_argument("--skip-rates", action="store_true",
                     help="skip the activation-rate cells + per-rep list")
-    ap.add_argument("--shot", action="store_true",
-                    help="render the churn block to a PNG in output/ after "
-                         "the write")
-    ap.add_argument("--post", action="store_true",
-                    help="with --shot, POST the PNG to the Activations "
-                         "order-log channel. Off by default.")
+    ap.add_argument("--no-post", action="store_true",
+                    help="render the screenshots but DON'T send them to Slack "
+                         "(resolve + report the target only)")
+    ap.add_argument("--skip-post", action="store_true",
+                    help="skip the screenshot step entirely")
     ap.add_argument("--theme", action="store_true",
                     help="restyle Carlos's churn tab (header, tiers chart, "
                          "filter control) and exit. Aesthetic only — NOT part "
@@ -352,20 +351,24 @@ def main(argv=None) -> int:
             fill.update_activations(sh.worksheet(fill.TAB_ACTIVATIONS), act,
                                     log=log)
 
-    # ------------------------------------------------------------ screenshot
-    if args.shot:
-        from pathlib import Path as _P
-        from automations.vantura_churn import shot as _shot
+    # ---------------------------------------------------- screenshot → Slack
+    # Runs ONLY after the write above succeeds, so a stale/half-written board
+    # is never posted. Replies the churn overview + rep breakdown into that
+    # day's 'B2B Quality & Bonus' thread (Carlos's ask, Megan approved
+    # 2026-07-20). Posting is LIVE by default in a full run; --no-post or
+    # --dry-run holds it. Best-effort: a Slack hiccup must not fail a run that
+    # already wrote the board correctly.
+    if not args.skip_post:
         carlos_tab = next((t for k, _p, t, _a in owners if k == "carlos"),
                           None)
         if carlos_tab:
-            ws = sh.worksheet(carlos_tab)
-            out = _P("output/vantura_churn") / f"churn-{today.isoformat()}.png"
-            png = _shot.render_report(ws, out, log=log)
-            log(f"  ✓ screenshot → {png}")
-            # dry_run unless --post: posting outward is opt-in, never a
-            # side effect of the daily refresh.
-            _shot.post(png, day=today, dry_run=not args.post, log=log)
+            try:
+                from automations.vantura_churn import shot as _shot
+                _shot.post_report(sh.worksheet(carlos_tab), day=today,
+                                  dry_run=args.dry_run or args.no_post,
+                                  log=log)
+            except Exception as e:  # noqa: BLE001 — never fail a good write
+                log(f"  ⚠ screenshot post skipped: {e}")
 
     _ok_manifest()
     log("✓ Vantura churn & activations update complete.")
