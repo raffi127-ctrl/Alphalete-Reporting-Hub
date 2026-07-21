@@ -2122,7 +2122,7 @@ AUTOMATED_REPORTS = [
         # run writes to), not the workbook's default first tab.
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1xQQLzE8mU-a4lpk1IK3WolTPlFxavuMzdK3jA7NGga8/edit"
-                      "?gid=1063911788#gid=1063911788"),
+                      "?gid=732054054#gid=732054054"),
         "assignees": ["Lucy 2"],
         # Runs on Lucy 2 (Carlos' Neo Laptop) — its Tableau session + the Monday
         # 7am launchd job (com.alphalete.carlos-captainship-headcount-mon) live
