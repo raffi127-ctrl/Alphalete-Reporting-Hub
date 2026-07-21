@@ -389,7 +389,9 @@ def main(argv=None) -> int:
     return 0
 
 
-FAILURE_TO = ["Meganhidalgo1191@gmail.com", "raffi127@gmail.com"]
+# Megan + the reporting inbox only — Raf is deliberately NOT on this
+# (Megan 2026-07-20). Address confirmed 1191 (not 1119).
+FAILURE_TO = ["Meganhidalgo1191@gmail.com", "alphaletereporting@gmail.com"]
 
 
 def _email_failure(msg: str, log=print) -> None:

@@ -4167,7 +4167,7 @@ AUTOMATED_REPORTS = [
             "**•** **Reconciles before writing** — churn base/rate vs CHURN "
             "RATES, and the per-rep rates vs the office totals. Normal "
             "Tableau refresh drift is tolerated (base ±10%, churn ±0.5pp) "
-            "and logged; a bigger gap writes NOTHING and emails Megan + Raf.\n"
+            "and logged; a bigger gap writes NOTHING and emails Megan.\n"
             "**•** Writes the churn bases, the hidden helper block and the "
             "activation-rate cells + rep list to **LUCY CHURN** (Carlos) "
             "and the helper block to Churn - Atef, preserving the notes that "
@@ -4207,7 +4207,7 @@ AUTOMATED_REPORTS = [
         "checklist": [],
         "post_run": {
             "message_success": "✅ Board refreshed — bases, disconnect rolloff, and activations written; numbers reconciled against the Churn Rates dashboard before any write.",
-            "message_failed": "❌ Run failed — the board was NOT written, so it's showing the previous run's numbers (stale, not wrong). Don't just re-run: the reconcile gate already tolerates normal Tableau refresh drift (base ±10%, churn ±0.5pp), so a mismatch means the Order Log and the CHURN RATES dashboard genuinely disagree by more than that. Check the Order Log pull (owner filter / 60-day window), then whether CHURNRATES has finished refreshing, before re-running or touching the sheet by hand. Megan + Raf are emailed automatically on any failure.",
+            "message_failed": "❌ Run failed — the board was NOT written, so it's showing the previous run's numbers (stale, not wrong). Don't just re-run: the reconcile gate already tolerates normal Tableau refresh drift (base ±10%, churn ±0.5pp), so a mismatch means the Order Log and the CHURN RATES dashboard genuinely disagree by more than that. Check the Order Log pull (owner filter / 60-day window), then whether CHURNRATES has finished refreshing, before re-running or touching the sheet by hand. Megan is emailed automatically on any failure.",
         },
         "actions": [
             {
