@@ -2905,14 +2905,6 @@ AUTOMATED_REPORTS = [
                 "args_fn": lambda: [],
             },
             {
-                "label": "Dry-run (no writes)",
-                "icon": "🧪",
-                "primary": False,
-                "help": "Pull + show what would be written + render PNGs locally; no Sheet writes, no Downloads/Drive.",
-                "module": "automations.fiber_activations.captain_run",
-                "args_fn": lambda: ["--dry-run"],
-            },
-            {
                 "label": "Run + upload to Drive",
                 "icon": "☁",
                 "primary": False,
@@ -2942,8 +2934,10 @@ AUTOMATED_REPORTS = [
             "WHEN IT RUNS\n"
             "Daily."
         ),
+        # Deep-links to the Captainship churn tab this run fills.
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8/edit"),
+                      "1Xddk29xvB3LYp24KndVbijgTngUVSAuQ-r5tjh7uqO8/edit"
+                      "?gid=1564052763#gid=1564052763"),
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "daily",
