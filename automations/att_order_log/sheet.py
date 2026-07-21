@@ -310,7 +310,11 @@ FIRST_LOG_ROW = 9       # where the FILTER spills
 
 # The rep box lives to the RIGHT of the log's 17 columns, after one gap column.
 REPBOX_COL0 = len(DISPLAY_HEADERS) + 1     # 0-based: column S (index 18)
-REPBOX_HEADER_ROW0 = 0                      # box header on sheet row 1
+# Header sits on the SAME row as the log's column-label row (the last frozen
+# row), so the rep-box header stays visible and the box is NOT bisected by the
+# 8-row freeze (Megan 2026-07-20: "the right side chart is frozen at a weird
+# spot"). Rep rows then begin at row 9, entirely in the scroll zone.
+REPBOX_HEADER_ROW0 = HEADER_ROW - 1        # 0-based row 7 == sheet row 8
 REPBOX_PCT_COL = REPBOX_COL0 + 3           # "Activation %" column
 
 
@@ -701,11 +705,33 @@ def _repbox_format_requests(view_id: int, n_reps: int) -> List[dict]:
                 "horizontalAlignment": "CENTER"}},
             "fields": ("userEnteredFormat.numberFormat,"
                        "userEnteredFormat.horizontalAlignment")}},
-        # Widen the box's columns so rep names + "Activation %" fit.
+        # Rep NAME column: left, no-wrap, 10pt — long names were wrapping to two
+        # lines and making the row heights ragged (Megan 2026-07-20: "text
+        # formatting is all over the place").
+        {"repeatCell": {
+            "range": {"sheetId": view_id, "startRowIndex": hdr + 1,
+                      "endRowIndex": hdr + 1 + n_reps,
+                      "startColumnIndex": c0, "endColumnIndex": c0 + 1},
+            "cell": {"userEnteredFormat": {
+                "horizontalAlignment": "LEFT", "wrapStrategy": "CLIP",
+                "textFormat": {"fontSize": 10}}},
+            "fields": ("userEnteredFormat.horizontalAlignment,"
+                       "userEnteredFormat.wrapStrategy,"
+                       "userEnteredFormat.textFormat")}},
+        # Orders + Activations columns: centered numbers.
+        {"repeatCell": {
+            "range": {"sheetId": view_id, "startRowIndex": hdr + 1,
+                      "endRowIndex": hdr + 1 + n_reps,
+                      "startColumnIndex": c0 + 1, "endColumnIndex": c0 + 3},
+            "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER",
+                                           "textFormat": {"fontSize": 10}}},
+            "fields": ("userEnteredFormat.horizontalAlignment,"
+                       "userEnteredFormat.textFormat")}},
+        # Widen the NAME column so full names fit; number cols stay tight.
         {"updateDimensionProperties": {
             "range": {"sheetId": view_id, "dimension": "COLUMNS",
                       "startIndex": c0, "endIndex": c0 + 1},
-            "properties": {"pixelSize": 150}, "fields": "pixelSize"}},
+            "properties": {"pixelSize": 185}, "fields": "pixelSize"}},
     ]
 
 
