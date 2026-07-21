@@ -8,13 +8,19 @@ week banners, status-coloured rows), so Carlos's two logs read identically.
 Built off the un-pivoted AT&T sales lines (att_order_log.clean), the same data
 the sheet + the Slack thread use — one source, no second pull.
 
+Grouped by PAYCHECK week — a sale sits in the week of its POSTED date, because
+that is the paycheck it's on (Carlos 2026-07-20). Sales with no posted date
+haven't hit a paycheck yet and get their own 'Not Yet Posted' section rather
+than being dropped (Megan 2026-07-20).
+
 Tabs, in order:
-  1. "All Reps"      — every sale, newest week first, one banner per week ending.
-  2. "Posted by Week"— reps down, week-endings across, POSTED sales per week
-                       (Posted is AT&T's countable status, the pay driver — the
-                       structural twin of BOX's "Accepted by Supplier"). Flagged
-                       for Carlos to confirm what actually drives AT&T pay.
-  3. one tab per rep — that rep's sales, same week grouping.
+  1. "All Reps"        — every sale, newest paycheck week first, plus a
+                         Not-Yet-Posted section.
+  2. "Paycheck by Week"— reps down, paycheck weeks across, sales counted in the
+                         week they posted (structural twin of BOX's Accepted-by-
+                         Supplier payout). Not-yet-posted excluded (counted in
+                         the subtitle) since they're on no paycheck.
+  3. one tab per rep   — that rep's sales, same paycheck-week grouping.
 """
 from __future__ import annotations
 
@@ -80,13 +86,6 @@ def _safe_title(name: str, used: set) -> str:
     return title
 
 
-def _line_week(ln: dict) -> Optional[dt.date]:
-    """Order-date week — used for the LOG grouping (the week a deal was sold),
-    mirroring BOX's log-by-sale-date."""
-    d = _parse_date(ln.get("sp.Order Date (copy)"))
-    return week_ending(d) if d else None
-
-
 def _line_paycheck_week(ln: dict) -> Optional[dt.date]:
     """POSTED-date week — the paycheck week (Carlos 2026-07-20). A sale with no
     posted date hasn't posted yet, so it is not on any paycheck."""
@@ -95,14 +94,22 @@ def _line_paycheck_week(ln: dict) -> Optional[dt.date]:
 
 
 def by_week(lines: Sequence[dict]) -> "collections.OrderedDict":
-    """Lines grouped by week ending, NEWEST first."""
+    """Lines grouped by PAYCHECK week (posted date), NEWEST first, with the
+    not-yet-posted sales collected under None LAST.
+
+    Grouping by posted date (not order date) is what makes this a paycheck view
+    (Carlos: pay is on the posted date). Sales with no posted date haven't hit a
+    paycheck yet; they still belong on the rep's tab (Megan 2026-07-20 — "for
+    the not posted sales we should still put them on the rep's breakdown tab in
+    its own section"), so they get their own 'Not Yet Posted' section rather
+    than being dropped or mixed into a week."""
     out: Dict[Optional[dt.date], list] = collections.defaultdict(list)
     for ln in lines:
-        out[_line_week(ln)].append(ln)
+        out[_line_paycheck_week(ln)].append(ln)
     ordered = collections.OrderedDict()
     for wk in sorted((w for w in out if w), reverse=True):
         ordered[wk] = out[wk]
-    if None in out:                     # undated last
+    if None in out:                     # not-yet-posted, last
         ordered[None] = out[None]
     return ordered
 
@@ -150,9 +157,14 @@ def _banner(sh, row: int, text: str, span: int) -> None:
 def _write_log(sh, lines, labels, *, freeze=True) -> None:
     row = 1
     for wk, group in by_week(lines).items():
-        label = wk.strftime("%m/%d/%Y") if wk else "No order date"
-        _banner(sh, row, "Week Ending {}  •  {} order{}".format(
-            label, len(group), "" if len(group) == 1 else "s"), len(labels))
+        n = len(group)
+        if wk:
+            text = "Paycheck Week Ending {}  •  {} order{}".format(
+                wk.strftime("%m/%d/%Y"), n, "" if n == 1 else "s")
+        else:
+            text = "Not Yet Posted  •  {} order{} (no paycheck yet)".format(
+                n, "" if n == 1 else "s")
+        _banner(sh, row, text, len(labels))
         row += 1
         _write_header(sh, row, labels)
         row += 1
