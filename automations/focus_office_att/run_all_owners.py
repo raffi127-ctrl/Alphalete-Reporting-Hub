@@ -287,6 +287,51 @@ def _exit_impersonation(page) -> bool:
         return False
 
 
+# The Office-Access offices table (#promotingOffices) fills its rows via a
+# DataTables AJAX call that intermittently stalls past 20s. A single stalled wait
+# used to bubble a raw patchright TimeoutError straight out of impersonation and
+# kill BOTH knocks metrics (Total Knocks + Time Gaps) for that office with no
+# auto-retry — 2026-07-21: 4 of 7 offices (Aya/Cyrus/Salik/Cody) lost both to it
+# in one morning. Retry the load, reloading the page to re-kick the AJAX between
+# tries, with a longer per-try timeout, before giving up.
+_OFFICE_TABLE_READY_JS = """() => {
+    const rows = document.querySelectorAll('table#promotingOffices tbody tr');
+    if (rows.length < 2) return false;
+    const firstCellText = rows[0].textContent || '';
+    return !firstCellText.toLowerCase().includes('loading');
+}"""
+
+
+def _wait_office_table_loaded(page, attempts: int = 3,
+                              timeout_ms: int = 30000) -> None:
+    """Wait for the Office-Access offices table to finish its AJAX load, retrying
+    (with a page reload between tries) so a transient stall self-heals instead of
+    crashing impersonation. Raises RuntimeError with an actionable message only if
+    every attempt times out — never the raw patchright TimeoutError."""
+    last_err = None
+    for attempt in range(1, attempts + 1):
+        try:
+            page.locator("table#promotingOffices").wait_for(
+                state="visible", timeout=10000)
+            page.wait_for_function(_OFFICE_TABLE_READY_JS, timeout=timeout_ms)
+            return
+        except Exception as e:  # noqa: BLE001 — patchright TimeoutError et al.
+            last_err = e
+            print(f"  ⚠ Office-Access table not loaded (attempt "
+                  f"{attempt}/{attempts}, {timeout_ms}ms): {type(e).__name__}",
+                  flush=True)
+            if attempt < attempts:
+                try:
+                    page.reload(wait_until="networkidle", timeout=25000)
+                except Exception:  # noqa: BLE001 — reload is best-effort
+                    pass
+                time.sleep(2)
+    raise RuntimeError(
+        "ownerville Office-Access offices table never finished loading after "
+        f"{attempts} attempts ({timeout_ms}ms each) — the DataTables AJAX "
+        f"stalled (last: {type(last_err).__name__ if last_err else 'unknown'})")
+
+
 def _find_owner_and_impersonate(page, sheet_tab_name: str, aliases_raw: dict) -> tuple[str | None, str]:
     """On the Office Access page, search for the owner (trying canonical name
     plus any known aliases), grab their officeId, and call confirmImpersonate.
@@ -299,17 +344,9 @@ def _find_owner_and_impersonate(page, sheet_tab_name: str, aliases_raw: dict) ->
     The reason is written verbatim to scrape_results.json so the Sheet
     banner can show an actionable hint instead of a generic 'failed'.
     """
-    # Wait for the DataTables AJAX load.
-    page.locator("table#promotingOffices").wait_for(state="visible", timeout=10000)
-    page.wait_for_function(
-        """() => {
-            const rows = document.querySelectorAll('table#promotingOffices tbody tr');
-            if (rows.length < 2) return false;
-            const firstCellText = rows[0].textContent || '';
-            return !firstCellText.toLowerCase().includes('loading');
-        }""",
-        timeout=20000,
-    )
+    # Wait for the DataTables AJAX load — retried + reloaded so a transient
+    # stall self-heals instead of killing impersonation (see helper above).
+    _wait_office_table_loaded(page)
 
     table = page.locator("table#promotingOffices")
     sb = page.locator("#promotingOffices_filter input").first

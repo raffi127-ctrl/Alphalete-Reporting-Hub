@@ -160,6 +160,15 @@ def metrics_for(o: Office) -> list[dict]:
              # knocks_pull reads KNOCKS_OFFICE first (office-agnostic), then the
              # legacy RASHAD_KNOCKS_OFFICE. Use the agnostic one for every office.
              env={"KNOCKS_OFFICE": o.knocks_office},
+             # This is the ONLY metric that scrapes ownerville (impersonate →
+             # Disposition + Time Tracker). That scrape intermittently times out
+             # and, being one subprocess, drops BOTH Knocks + Time Gaps at once
+             # with no auto-retry (2026-07-21: 4/7 offices lost both). Give it one
+             # fresh-subprocess re-attempt in-run so a first-pass flake self-heals
+             # before the thread is finalized. SAFE to retry: knocks_run exits
+             # non-zero ONLY when the pull raises — which is before any Slack post
+             # — so a re-attempt can't double-post an image that already landed.
+             retry_on_fail=1,
              dry_flag="--dry-run", post_flag="--live"),
         dict(slug="abp", label="💳 New Internet ABP %",
              module="automations.new_internet_abp.run", owner_args=[],
@@ -738,6 +747,21 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         cmd = _metric_cmd(m, live=(mode == "live"))
         m_env = dict(child_env, **m.get("env", {}))
         ok, note = _run_one(m["label"], cmd, m_env)
+        # In-run self-heal: a metric flagged retryable (knocks_gaps — its
+        # ownerville scrape intermittently times out and drops BOTH its metrics)
+        # gets one or more FRESH-subprocess re-attempts (new ownerville session)
+        # before the thread is finalized, so a first-pass flake doesn't sit until
+        # a human notices and triggers a rerun. Retry is safe because knocks_run
+        # only exits non-zero when the pull raises (pre-post) — see metrics_for.
+        retries = m.get("retry_on_fail", 0)
+        attempt = 0
+        while not ok and attempt < retries:
+            attempt += 1
+            print(f"\n↻ in-run retry {attempt}/{retries} for {m['label']} "
+                  f"(previous attempt: {note})", flush=True)
+            ok, note = _run_one(m["label"], cmd, m_env)
+            if ok:
+                note = f"{note} (recovered on retry {attempt})"
         results.append((m["slug"], m["label"], ok, note))
 
     total = time.monotonic() - overall_start
