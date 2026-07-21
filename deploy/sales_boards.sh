@@ -3,7 +3,7 @@
 # Posts one dated thread ("Vantura Production MM/DD/YYYY") with each program's
 # two images (weekly ranking + Highrollers) as threaded replies.
 #
-# CADENCE: daily incl. weekends, 6:00am CST + q25m retries as a safety net. The
+# CADENCE: daily incl. weekends, 7:00am CT + q25m retries as a safety net. The
 # module HOLDS (exit 75) when the board's gold WE cell isn't the week containing
 # yesterday (matters Mondays), and skips boards already in today's thread — so
 # the later passes are no-ops once it has posted.
