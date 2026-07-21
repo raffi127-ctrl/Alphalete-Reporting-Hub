@@ -182,6 +182,11 @@ def main(argv=None) -> int:
                          "(resolve + report the target only)")
     ap.add_argument("--skip-post", action="store_true",
                     help="skip the screenshot step entirely")
+    ap.add_argument("--post-only", action="store_true",
+                    help="skip the whole data pull/write; just render from the "
+                         "current sheet and post to the B2B Quality thread "
+                         "(also refreshes the thread header). LUCY 2 to post "
+                         "as Lucy.")
     ap.add_argument("--theme", action="store_true",
                     help="restyle Carlos's churn tab (header, tiers chart, "
                          "filter control) and exit. Aesthetic only — NOT part "
@@ -203,6 +208,15 @@ def main(argv=None) -> int:
     if args.theme:
         ws = fill.open_sheet().worksheet(fill.TAB_CHURN_CARLOS)
         fill.apply_theme(ws, log=log)
+        return 0
+    if args.post_only:
+        # Render + post from the sheet AS-IS: no Tableau pull, no reconcile,
+        # no write. For re-posting or fixing the thread header without a full
+        # data run. Reflects whatever is currently on the tab.
+        from automations.vantura_churn import shot as _shot
+        ws = fill.open_sheet().worksheet(fill.TAB_CHURN_CARLOS)
+        r = _shot.post_report(ws, day=today, dry_run=args.no_post, log=log)
+        log(f"post-only result: {r}")
         return 0
     owners = [o for o in OWNER_CFG
               if args.owner in ("both", o[0])]

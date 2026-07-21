@@ -16,6 +16,7 @@ Slack without Megan saying so.
 from __future__ import annotations
 
 import datetime as dt
+import html
 import io
 from pathlib import Path
 
@@ -243,6 +244,7 @@ def post_report(ws, day: dt.date | None = None, dry_run: bool = True,
         for spec, path in imgs:
             log(f"           {spec['emoji']} {spec['title']} {tag}  "
                 f"({path.name}, {path.stat().st_size:,} bytes)")
+        _update_parent_header(client, cid, ts, imgs, dry_run=True, log=log)
         return {"dry_run": True, "thread_ts": ts,
                 "images": [p.name for _s, p in imgs]}
 
@@ -258,4 +260,40 @@ def post_report(ws, day: dt.date | None = None, dry_run: bool = True,
             initial_comment=f"{spec['emoji']} *{plain}*")
         posted.append(plain)
         log(f"  ✓ posted '{plain}' to {bq.CHANNEL[0]} thread")
+    _update_parent_header(client, cid, ts, imgs, dry_run=False, log=log)
     return {"posted": posted, "thread_ts": ts}
+
+
+def _update_parent_header(client, cid, ts, imgs, dry_run, log) -> None:
+    """Make the thread's parent header list the churn screenshots too.
+
+    The B2B Quality report writes the parent (Tiered Bonus / Activation Rate
+    / Churn Rate); these two images are added by a different report, so the
+    header doesn't mention them unless we append. Idempotent — only adds a
+    line that isn't already there. Only the message's author (Lucy, on Lucy
+    2) can edit it, so this is best-effort and a no-op from a laptop.
+    """
+    try:
+        msgs = client.conversations_replies(
+            channel=cid, ts=ts, limit=1).get("messages", [])
+    except Exception as e:  # noqa: BLE001
+        log(f"  ⚠ header not updated (couldn't read parent): {e}")
+        return
+    if not msgs:
+        return
+    cur = html.unescape(msgs[0].get("text") or "")
+    add = [f"{spec['emoji']} {spec['title']}" for spec, _p in imgs
+           if spec["title"] not in cur]
+    if not add:
+        log("  · header already lists the churn screenshots")
+        return
+    new_text = cur + "\n" + "\n".join(add)
+    if dry_run:
+        log(f"[dry-run] would append to header: {', '.join(add)}")
+        return
+    try:
+        client.chat_update(channel=cid, ts=ts, text=new_text)
+        log(f"  ✓ header updated: +{', '.join(add)}")
+    except Exception as e:  # noqa: BLE001 — laptop token can't edit Lucy's msg
+        log(f"  ⚠ header not updated ({type(e).__name__}: "
+            f"{str(e)[:60]}) — only Lucy 2 can edit its own message")
