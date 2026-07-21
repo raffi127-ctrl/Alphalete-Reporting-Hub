@@ -2779,16 +2779,20 @@ AUTOMATED_REPORTS = [
         "category": "📊 Metrics",
         "self_scheduled": True,
         "description": "Lucy posts the daily DFW weather forecast to "
-                       "#alphalete-sales each morning — temp, conditions, and "
-                       "what to pack to change into for the field. Pulled from "
-                       "Open-Meteo (no API key), worded by Claude in Lucy's voice.",
+                       "#alphalete-sales each morning — temp, precipitation, "
+                       "recommended dressing, and what to bring for the field. "
+                       "Pulled from Open-Meteo (no API key). Plain, fixed "
+                       "layout — no AI.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Pulls today's Frisco/DFW forecast from Open-Meteo and posts a short, "
-            "fixed-layout note as Lucy 🐺 to #alphalete-sales: greeting, temp, "
-            "conditions, what to prepare / bring to change into for the field, and "
-            "a crush-it sign-off. Claude (haiku) writes the greeting + close; a "
-            "template covers it if Claude is down.\n\n"
+            "fixed-layout note as Lucy 🐺 to #alphalete-sales:\n"
+            "**•** **Temp** — high / low.\n"
+            "**•** **Precipitation** — chance + time + type, or 'none expected'.\n"
+            "**•** **Recommended dressing** — weather-driven.\n"
+            "**•** **Recommended to bring** — water / sunscreen / umbrella / "
+            "bug spray.\n"
+            "Plain and matter-of-fact — no AI, no greeting or sign-off.\n\n"
             "WHEN IT RUNS\n"
             "Daily at 6:00 AM CST on the mini, on its own job — no upload, no "
             "trigger. Run the button below to post it again any time."
