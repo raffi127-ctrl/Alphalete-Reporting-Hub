@@ -2797,6 +2797,27 @@
       },
       "machine": "Lucy 2"
     },
+    "probe_imessage_threads": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Read-only diagnostic. `lucy rerun probe_imessage_threads` (on the mini) reads ~/Library/Messages/chat.db READ-ONLY, METADATA ONLY (chat GUIDs, names, participant counts, last-message timestamps — never message text) to find the CURRENT A-Team group thread vs TdB's configured chat72256665735645227. For diagnosing why TdB iMessages report 'sent' but don't arrive (stale group GUID after a membership change). NEVER sends, NEVER changes config. Needs Full Disk Access for the poller process; prints a hand-run one-liner if the DB won't open.",
+      "display_name": "PROBE: iMessage A-Team thread GUID (read-only)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.imessage_thread_probe"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": null
+    },
     "list_agents": {
       "on_scheduler": false,
       "_off_scheduler_note": "Read-only ops inventory. `lucy rerun list_agents --machine \"Lucy 2\"` prints every com.alphalete.* LaunchAgent loaded on that runner (launchctl list) — the ground truth diag's hardcoded 5-agent check can't show. Added 2026-07-20 to verify Lucy 2's full report line-up (box_order_log runs there with no machine tag). Never loads/unloads anything.",
