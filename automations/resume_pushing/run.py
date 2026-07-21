@@ -1024,21 +1024,41 @@ CDP_PORT = "9245"
 EXT_ID = "goofbdglmeckblcbcoffnkdnmpehhhmo"
 
 
-def _copy_default_profile() -> str:
-    """Copy the user's real Chrome Default profile (which holds the Resume Helper
-    plugin AND the live ApplicantStream login) to a NON-default dir so Chrome will
-    honour --remote-debugging-port on it (Chrome 136+ disables the debug port on the
-    real default dir). Skips the big cache dirs so the copy is quick. Returns the
-    dest user-data-dir. Two Chromes on two dirs coexist fine, so the user's own
-    Chrome need not be closed."""
+_CDP_SEED_MARKER = CDP_PROFILE + "/.rp_seeded"
+
+
+def _copy_default_profile(force_fresh: bool = False) -> str:
+    """Prepare the CDP Chrome user-data-dir and return it.
+
+    PERSISTENT BY DEFAULT (2026-07-21): the previous version did `rm -rf` + a full
+    re-copy of the everyday Default profile on EVERY q10min run, which threw away
+    the Cloudflare `cf_clearance` cookie a good run had earned — so every run had to
+    face Cloudflare from scratch (that's why it failed ~1 in 3). Now, once the
+    profile is seeded, we REUSE it: the clearance + AppStream session persist across
+    runs (a stale AppStream login is still re-driven by _cdp_run's form-login
+    fallback). We only do the wipe+recopy when the profile is missing/unseeded, or
+    when force_fresh=True (the caller sets this after a login failure, so a genuinely
+    stale profile self-heals from the everyday Default on the next run).
+
+    The Default profile holds the Resume Helper plugin + the live login. A non-default
+    dir is required because Chrome 136+ disables --remote-debugging-port on the real
+    default dir. Two Chromes on two dirs coexist, so the user's Chrome need not close."""
     import os
     import subprocess
+    import time as _t
+    dst = CDP_PROFILE
+    # Always kill any leftover CDP Chrome + clear stale singleton locks so a REUSED
+    # profile can relaunch (a profile Chrome didn't close cleanly keeps a lock).
+    subprocess.run(["pkill", "-f", "rp_cdp_profile"], capture_output=True)
+    _t.sleep(2)
+    reuse = (not force_fresh) and os.path.exists(_CDP_SEED_MARKER)
+    if reuse:
+        for lock in ("SingletonLock", "SingletonSocket", "SingletonCookie"):
+            subprocess.run(["rm", "-f", f"{dst}/{lock}"], capture_output=True)
+        return dst
+    # Fresh seed: wipe + re-copy from the everyday Default profile.
     home = os.path.expanduser("~")
     src = f"{home}/Library/Application Support/Google/Chrome"
-    dst = CDP_PROFILE
-    subprocess.run(["pkill", "-f", "rp_cdp_profile"], capture_output=True)
-    import time as _t
-    _t.sleep(2)
     subprocess.run(["rm", "-rf", dst], capture_output=True)
     os.makedirs(f"{dst}/Default", exist_ok=True)
     subprocess.run(["rsync", "-a", f"{src}/Local State", f"{dst}/Local State"],
@@ -1050,7 +1070,24 @@ def _copy_default_profile() -> str:
          "--exclude", "Application Cache", "--exclude", "Service Worker/CacheStorage",
          f"{src}/Default/", f"{dst}/Default/"],
         capture_output=True)
+    # Mark it seeded so subsequent runs reuse it (keeping the Cloudflare clearance).
+    try:
+        open(_CDP_SEED_MARKER, "w").close()
+    except Exception:
+        pass
     return dst
+
+
+def _invalidate_cdp_profile() -> None:
+    """Drop the seed marker so the NEXT run does a fresh copy from the everyday
+    Default profile. Called after a login failure — if the warm profile's clearance
+    or session has genuinely gone stale, the next run re-seeds from Default (which
+    may carry a fresh cf_clearance) instead of reusing the dead one."""
+    import os
+    try:
+        os.remove(_CDP_SEED_MARKER)
+    except Exception:
+        pass
 
 
 def _launch_cdp_chrome(url: str = "https://applicantstream.com/index.cfm"):
@@ -1168,8 +1205,16 @@ def _cdp_run(dry_run: bool = False, limit: int = 0, probe: bool = False,
             mc = page.locator("#searchMC").count()
             _log(f"[cdp] logged_in check: #searchMC={mc}")
             if mc == 0:
+                # Warm profile didn't log in (stale clearance/session or a genuine
+                # Cloudflare challenge). Drop the seed marker so the NEXT q10min run
+                # re-copies a fresh profile from the everyday Default — which self-
+                # heals the common case without a human. Only a run of BACK-TO-BACK
+                # failures (fresh copy also blocked) means Cloudflare truly needs a
+                # human clear.
+                _invalidate_cdp_profile()
                 _log("[cdp][STOP] AppStream console never rendered #searchMC — login "
-                     "did not complete (Cloudflare re-challenge?).")
+                     "did not complete (Cloudflare re-challenge?). Marked profile for "
+                     "a fresh re-seed on the next run.")
                 return 2
 
             if not fetch_office._switch_office(page, OFFICE_ID, OFFICE_HINT):
@@ -1394,7 +1439,7 @@ def _probe() -> int:
             pass
         return list(dict.fromkeys(out))
 
-    with appstream_direct_session(yield_if_busy=True, load_extensions=True) as page:
+    with appstream_direct_session(yield_if_busy=True, enable_extensions=True) as page:
         ctx = page.context
         L("service_workers@start: " + str([sw.url for sw in ctx.service_workers]))
         try:
