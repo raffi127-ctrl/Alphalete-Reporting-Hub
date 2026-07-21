@@ -2794,7 +2794,7 @@ AUTOMATED_REPORTS = [
             "bug spray.\n\n"
             "WHEN IT RUNS\n"
             "Daily at 6:00 AM CST on the mini, on its own job — no upload, no "
-            "trigger. Run the button below to post it again any time."
+            "trigger."
         ),
         "assignees": ["Lucy 1"],
         "schedule": {
