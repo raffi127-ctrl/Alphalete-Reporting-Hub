@@ -3484,8 +3484,7 @@ AUTOMATED_REPORTS = [
             "week, so it never posts the wrong week.\n"
             "**•** Skips any board already in today's thread, so a retry can't "
             "double-post.\n"
-            "**•** Works on a temp copy of the tab; the live Sales Board is "
-            "never modified."
+            "**•** Runs off the **Sales Board** tab."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"),
