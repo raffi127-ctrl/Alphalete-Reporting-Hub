@@ -4,10 +4,18 @@ Resume Pushing — ApplicantStream v2 ("Explore Appstream AI" / Ownerville v2):
 Extract Resumes & Send to AI. Office 11580 (CARLOS HIDALGO — ALPHALETE
 SPECIALIZED MARKETING, INC.)
 
-Scheduled, unattended version of Carlos's Cowork skill. It runs on the machine's
-own warm AppStream session via `appstream_direct_session` (on Lucy 2 that's
-Carlos's account = his own office): dedicated Chrome profile, kept warm by the
-session holder, chrome-guard, retry-on-"already in use". No manual login.
+Scheduled, unattended version of Carlos's Cowork skill (on Lucy 2 = Carlos's
+account = his own office). `main()` defaults to the CDP real-Chrome path
+(`_cdp_run`): it copies Carlos's everyday Chrome Default profile (which carries
+the Resume Helper plug-in), launches a REAL Google Chrome, and drives it over
+CDP. A real Chrome is required for two reasons — the extractor is a Chrome
+plug-in (doesn't run in the patchright browser the other reports use), and real
+Chrome clears Cloudflare cleanly. A Cloudflare-blocked run invalidates the
+profile so the next run re-copies a fresh one and self-heals; only back-to-back
+blocks need a human to clear Cloudflare once. No manual login.
+
+(The `appstream_direct_session` patchright path still exists here but is no
+longer the default run — the plug-in doesn't activate under patchright.)
 
 WHY THIS WAS REWRITTEN (2026-07-12): the previous version went straight to the
 LEGACY batch grid at index.cfm?p=616 (an ExtJS 2.2.1 page on the classic
