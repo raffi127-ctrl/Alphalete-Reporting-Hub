@@ -3557,8 +3557,10 @@ AUTOMATED_REPORTS = [
             "**•** Refuses to run if the pull comes back empty, rather than "
             "blanking the tab."
         ),
+        # Deep-links to the 'Lucy Box Order Log' tab this run writes to.
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"),
+                      "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"
+                      "?gid=211356769#gid=211356769"),
         "assignees": ["Lucy 2"],
         "run_machine": "Lucy 2",
         "run_rerun_id": "box_order_log",
