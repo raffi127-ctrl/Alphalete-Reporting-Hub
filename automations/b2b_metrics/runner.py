@@ -109,7 +109,26 @@ def _out_dir(o: B2BOffice) -> Path:
     return d
 
 
-def run(o: B2BOffice, *, post: bool, only: str = None,
+def _dm_captures(captured: dict, user: str, o: B2BOffice, day: dt.date,
+                 log=print) -> None:
+    """DM the captured artifacts to ONE user for review (dry-run only). Rejects
+    channel ids so a preview can never become a channel post."""
+    from automations.shared import slack_metrics_post as smp
+    u = (user or "").strip()
+    if not u.upper().startswith("U"):
+        raise ValueError("refusing: {!r} is not a user id".format(u))
+    for item in ITEMS:
+        path = captured.get(item["id"])
+        if not path:
+            continue
+        smp.dm_user_with_file(
+            path, user=u, file_name=path.name,
+            comment="{} *{}* — B2B Metrics preview ({}). Not posted.".format(
+                item["emoji"], item["title"], o.label))
+        log("  DM'd {}".format(item["id"]))
+
+
+def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
         today: dt.date = None, log=print) -> dict:
     today = today or dt.date.today()
     out_dir = _out_dir(o)
@@ -139,6 +158,8 @@ def run(o: B2BOffice, *, post: bool, only: str = None,
         log("")
         log("  DRY-RUN — captured {}/{}: {}".format(
             len(ready), len(items), ", ".join(ready)))
+        if dm:
+            _dm_captures(captured, dm, o, today, log=log)
         return {"captured": ready, "posted": []}
 
     # 2) post — reuse b2b_quality's thread_state so we join the SAME thread and
@@ -183,6 +204,8 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-run", action="store_true",
                     help="capture to output/, no post (explicit form of default)")
     ap.add_argument("--only", default=None, help="run a single item by id")
+    ap.add_argument("--dm", default=None, metavar="USER_ID",
+                    help="DM the captured artifacts to ONE user for review (dry-run)")
     ap.add_argument("--check", action="store_true",
                     help="validate the office table and exit")
     ap.add_argument("--today", default=None, metavar="YYYY-MM-DD")
@@ -205,7 +228,7 @@ def main(argv=None) -> int:
 
     today = dt.date.fromisoformat(args.today) if args.today else dt.date.today()
     o = _off.get(args.office)
-    res = run(o, post=args.post, only=args.only, today=today)
+    res = run(o, post=args.post, only=args.only, dm=args.dm, today=today)
     print("\nresult:", res)
     return 0
 
