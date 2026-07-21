@@ -2688,6 +2688,21 @@
         "type": "not_configured"
       }
     },
+    "install_b2b_metrics_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so NOT in the 4am batch. Present so `lucy rerun install_b2b_metrics_agent` installs/refreshes com.alphalete.b2b-metrics on LUCY 2 (7:45am CST daily, deploy/b2b_metrics.sh, --post). 7:45 = AFTER vantura_churn's 7:00 run writes today's LUCY CHURN tab (items #4/#5 screenshot it). Install ONLY after the post path is verified AND b2b_quality is disabled + vantura_churn set to --no-post, else the thread double-posts. install_agent is read-only w.r.t. report data; it only reloads the plist.",
+      "display_name": "Install B2B Metrics agent (7:45am)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": ["automations.day_orchestrator.install_agent"],
+      "base_args": ["b2b-metrics"],
+      "cadence": {"weekdays": []},
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {"type": "not_configured"},
+      "machine": "Lucy 2"
+    },
     "b2b_metrics": {
       "on_scheduler": false,
       "_off_scheduler_note": "The consolidated B2B Metrics thread — ONE ordered run per B2B office (Megan 2026-07-20), replacing the scatter of b2b_quality + vantura_churn posting into one thread. on_scheduler:false while it's being verified; `lucy rerun b2b_metrics` runs it DRY (capture only, posts nothing) and `lucy rerun b2b_metrics --office carlos --post` posts. Captures all 8 mapped items in Carlos's order (Sales Metrics, Activation Rate, Churn Rate, Churn & Activations Board, Activation Rate by Rep, Order Log, Activation Report Overview, Out of Bounds; #7 Activation report absent until Carlos maps it) and posts them into the SAME thread via b2b_quality's thread_state. MUST RUN ON LUCY 2 (Carlos's Tableau login). Activation/Churn reuse b2b_quality's crop/sort capture; churn board + activation-by-rep are Sheets-export shots of LUCY CHURN; order log + payout ride the ATTTRACKER-B2B ORDERLOG pull (once). DO NOT retire b2b_quality/vantura_churn posting until this is verified — else the thread doubles or goes dark. Hub card: b2b-metrics.",

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.b2b-metrics</string>
+
+    <!-- Path is the laptop placeholder; on the machine, install_agent.py rewrites
+         it to that repo path (python -m automations.day_orchestrator.install_agent
+         b2b-metrics). INSTALL ON LUCY 2 ONLY — Carlos's login is what makes the
+         Activation view come down sorted. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/b2b_metrics.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- DAILY incl. weekends (no Weekday key). First pass 5:30 CST, then q8m
+         retries through 5:54 — SHORT ON PURPOSE: this must be FINISHED by 6:00
+         (Megan 2026-07-18), because Sales Boards starts at 6:00 and the VA
+         posts by hand ~5:57. The module skips views already in today's thread,
+         so later passes are no-ops. TIME KNOB: edit these entries (Hour/Minute
+         are machine LOCAL time; Lucy 2 is Central). -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>45</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/b2b-metrics.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/b2b-metrics.launchd.err.log</string>
+</dict>
+</plist>
