@@ -456,19 +456,30 @@ def _summary_border_requests(view_id: int) -> List[dict]:
 
 
 def _repbox_border_requests(view_id: int, n_reps: int) -> List[dict]:
-    """Box the rep box (drawn after its rows exist)."""
+    """Box the rep box, sized to the current roster, run EVERY day (Megan
+    2026-07-20: a new rep should be bordered automatically). Clears the generous
+    extent first so a shrunk roster leaves no stray borders, then boxes header +
+    n_reps rows. Scoped to the rep-box columns only, so nothing else Megan
+    formatted is touched."""
     if n_reps <= 0:
         return []
+    none = {"style": "NONE"}
     solid = {"style": "SOLID", "width": 1, "color": _rgb("#5A6B7B")}
     thin = {"style": "SOLID", "width": 1, "color": _rgb("#B7C2CE")}
-    return [{"updateBorders": {
-        "range": {"sheetId": view_id,
-                  "startRowIndex": REPBOX_HEADER_ROW0,
-                  "endRowIndex": REPBOX_HEADER_ROW0 + 1 + REPBOX_ROWS,
-                  "startColumnIndex": REPBOX_COL0,
-                  "endColumnIndex": REPBOX_COL0 + 4},
-        "top": solid, "bottom": solid, "left": solid, "right": solid,
-        "innerHorizontal": thin, "innerVertical": thin}}]
+    full = {"sheetId": view_id, "startRowIndex": REPBOX_HEADER_ROW0,
+            "endRowIndex": REPBOX_HEADER_ROW0 + 1 + REPBOX_ROWS,
+            "startColumnIndex": REPBOX_COL0, "endColumnIndex": REPBOX_COL0 + 4}
+    box = {"sheetId": view_id, "startRowIndex": REPBOX_HEADER_ROW0,
+           "endRowIndex": REPBOX_HEADER_ROW0 + 1 + n_reps,
+           "startColumnIndex": REPBOX_COL0, "endColumnIndex": REPBOX_COL0 + 4}
+    return [
+        {"updateBorders": {"range": full, "top": none, "bottom": none,
+                           "left": none, "right": none,
+                           "innerHorizontal": none, "innerVertical": none}},
+        {"updateBorders": {"range": box, "top": solid, "bottom": solid,
+                           "left": solid, "right": solid,
+                           "innerHorizontal": thin, "innerVertical": thin}},
+    ]
 
 
 # Megan merged the title and the "Updated" line across A:H by hand
@@ -881,9 +892,13 @@ def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
         # them back WITHOUT touching borders/colours, so her look is restored,
         # not clobbered. Validation + merges are structural, not the visual
         # formatting she owns.
+        # Validation + merges (structural, restored) + the rep-box border sized
+        # to the roster, so a NEW rep is auto-bordered (Megan 2026-07-20). All
+        # scoped so her borders/colours elsewhere are untouched.
         keep = _validation(view_ws.id, reps, periods) \
-            + _merge_requests(view_ws.id)
+            + _merge_requests(view_ws.id) \
+            + _repbox_border_requests(view_ws.id, len(reps))
         _retry(lambda: sh.batch_update({"requests": keep}))
-        log("  view tab: data refreshed; merges restored, formatting "
-            "preserved ({} reps)".format(len(reps)))
+        log("  view tab: data refreshed; merges + rep-box borders applied, "
+            "formatting preserved ({} reps)".format(len(reps)))
     return {"sales": len(rows), "reps": len(reps), "unmapped": sorted(unknown)}
