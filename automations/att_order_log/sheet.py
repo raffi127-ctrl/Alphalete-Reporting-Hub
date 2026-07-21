@@ -413,7 +413,40 @@ def _format_requests(view_id: int) -> List[dict]:
             "sheetId": view_id, "dimension": "COLUMNS",
             "startIndex": 0, "endIndex": ncol}}},
     ] + _merge_requests(view_id) + _date_format_requests(view_id) \
-      + _density_requests(view_id)
+      + _density_requests(view_id) + _summary_border_requests(view_id)
+
+
+def _summary_border_requests(view_id: int) -> List[dict]:
+    """Box the two summary tables (Megan 2026-07-20: "put in some borders to the
+    charts"). A solid outer border + light inner grid on the Status/Count block
+    (rows 5-6) and the rep box (S:V) makes each read as a distinct table rather
+    than floating cells. The log itself already has its own grid."""
+    solid = {"style": "SOLID", "width": 1, "color": _rgb("#5A6B7B")}
+    thin = {"style": "SOLID", "width": 1, "color": _rgb("#B7C2CE")}
+    reqs = []
+    # Status summary: rows 5-6 (0-based 4-6), cols A..Q.
+    reqs.append({"updateBorders": {
+        "range": {"sheetId": view_id, "startRowIndex": 4, "endRowIndex": 6,
+                  "startColumnIndex": 0, "endColumnIndex": len(DISPLAY_HEADERS)},
+        "top": solid, "bottom": solid, "left": solid, "right": solid,
+        "innerHorizontal": thin, "innerVertical": thin}})
+    return reqs
+
+
+def _repbox_border_requests(view_id: int, n_reps: int) -> List[dict]:
+    """Box the rep box (drawn after its rows exist)."""
+    if n_reps <= 0:
+        return []
+    solid = {"style": "SOLID", "width": 1, "color": _rgb("#5A6B7B")}
+    thin = {"style": "SOLID", "width": 1, "color": _rgb("#B7C2CE")}
+    return [{"updateBorders": {
+        "range": {"sheetId": view_id,
+                  "startRowIndex": REPBOX_HEADER_ROW0,
+                  "endRowIndex": REPBOX_HEADER_ROW0 + 1 + n_reps,
+                  "startColumnIndex": REPBOX_COL0,
+                  "endColumnIndex": REPBOX_COL0 + 4},
+        "top": solid, "bottom": solid, "left": solid, "right": solid,
+        "innerHorizontal": thin, "innerVertical": thin}}]
 
 
 # Megan merged the title and the "Updated" line across A:H by hand
@@ -769,6 +802,7 @@ def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
     # status fill.
     reqs += _status_color_rules(view_ws.id)
     reqs += _repbox_color_rules(view_ws.id, len(reps))
+    reqs += _repbox_border_requests(view_ws.id, len(reps))
     _retry(lambda: sh.batch_update({"requests": reqs}))
 
     log("  view tab: {} reps in the dropdown".format(len(reps)))
