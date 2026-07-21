@@ -3259,10 +3259,6 @@ AUTOMATED_REPORTS = [
             "**Tuesday's run is missed the next run rolls instead** (Wed, etc.) "
             "and still backfills every completed day. Nothing extra to do; "
             "re-running is safe (a no-op once that week is rolled).\n\n"
-            "MATCH CHECK\n"
-            "Every daily fill ends by **auto-comparing** the copy to the live VA "
-            "tab (by ICD, completed days) and flags any real mismatch — so a "
-            "glitch never slips by.\n\n"
             "STILL MANUAL (not yet automated)\n"
             "Only **Frontier** (Verizon PDF) is keyed by hand now. **Retail JE** "
             "is automated — it pulls from Just Energy (Daily Sales by ICD) and "
@@ -3284,7 +3280,7 @@ AUTOMATED_REPORTS = [
         },
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Org Sales Board (copy tab) filled — 7 daily sections + 10 captainships, by program. Compare to the VA tab to confirm the match.",
+            "message_success": "✅ Org Sales Board (copy tab) filled — 7 daily sections + 10 captainships, by program.",
             "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
         },
         "actions": [
@@ -3292,9 +3288,10 @@ AUTOMATED_REPORTS = [
                 "label": "Run Daily Fill (Copy Tab)",
                 "icon": "▶",
                 "primary": True,
-                "help": "Fills the copy tab's 7 daily sections + 10 captainships for the completed days this week, then auto-compares to the live VA tab and flags any real mismatch. On Tuesdays it rolls the week over first automatically. Copy tab only — never the live VA tab.",
+                "help": "Fills the copy tab's 7 daily sections + 10 captainships for the completed days this week. On Tuesdays it rolls the week over first automatically. Copy tab only — never the live VA tab.",
                 "module": "automations.org_sales_board.run",
-                "args_fn": lambda: ["--step", "daily", "--with-captainships"],
+                "args_fn": lambda: ["--step", "daily", "--with-captainships",
+                                    "--skip-compare"],
             },
         ],
     },
