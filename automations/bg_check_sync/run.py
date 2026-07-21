@@ -40,12 +40,19 @@ def _monday_of(d: dt.date) -> dt.date:
 
 
 def _active_monday(today: dt.date | None = None) -> dt.date:
-    """The Monday of the current Mon–Sun week. A new Monday => a new thread.
+    """The Monday whose new-start cohort we're onboarding RIGHT NOW — i.e. NEXT
+    Monday, not this one.
 
-    Guard: never go BACKWARDS to a week we've already threaded. Without this, a
-    run on Sat/Sun would resolve to the week that is technically current and
-    spawn a thread for a cohort that already started."""
-    monday = _monday_of(today or dt.date.today())
+    New starts are background-checked the week BEFORE they start, so during any
+    given week the cohort worth tracking is the one starting the following
+    Monday. That's `_monday_of(today) + 7`. The very first thread proved this:
+    "week of 7/20" was posted Fri 7/17 (the week before), tracking those reps'
+    checks in flight. Tracking the week that just STARTED instead would follow a
+    cohort whose checks are already done.
+
+    Guard: never go BACKWARDS to a week we've already threaded, so a re-run can't
+    resurrect a past cohort's thread."""
+    monday = _monday_of(today or dt.date.today()) + dt.timedelta(days=7)
     try:
         state = slack_post._load_state()
         seen = [match.parse_header_date(k) for k in state]
