@@ -796,8 +796,8 @@ import os as _os
 PDF_SLACK_RECIPIENTS = [
     u.strip() for u in _os.environ.get(
         "LEADERS_CALL_PDF_SLACK_USERS",
-        "U045USN7NCD,U046G04P5LG,U045Z8N0ZQC").split(",") if u.strip()
-]  # Maud Miller, Carlos Hidalgo, Rafael Hidalgo
+        "U045USN7NCD,U046G04P5LG,U045Z8N0ZQC,U04G5HJBGFN").split(",") if u.strip()
+]  # Maud Miller, Carlos Hidalgo, Rafael Hidalgo, Megan Hidalgo (added 2026-07-21)
 
 
 def _build_recognition_pdf(results: dict) -> None:
@@ -827,6 +827,19 @@ def _build_recognition_pdf(results: dict) -> None:
                     f"{sun.month}/{sun.day}.")
         print(f"📨 PDF delivered to {len(PDF_SLACK_RECIPIENTS)} recipient(s) on Slack "
               f"(mode={res.get('mode')}, ok={res.get('ok')})", flush=True)
+        # Mark the "Leader's Call - Weekly Recognition" Hub card GREEN once the PDF
+        # actually went out (Megan 2026-07-21). This runs on its own Mon 2pm launchd
+        # job, not the 4am batch, so nothing else marks the card — gate on the send
+        # succeeding so a failed DM never shows green. Best-effort: never fail the
+        # run over a Hub write.
+        if res.get("ok"):
+            try:
+                from automations.day_orchestrator import hub_publish
+                hub_publish.publish_done("leaders_call",
+                                         "Leader's Call - Weekly Recognition",
+                                         status="success")
+            except Exception:
+                pass
     except Exception as e:
         print(f"⚠ Slack delivery to the Leader's Call group failed "
               f"({type(e).__name__}: {str(e)[:140]}) — the PDF is saved at {out}.",

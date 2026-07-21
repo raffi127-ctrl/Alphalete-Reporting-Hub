@@ -670,6 +670,26 @@
       "depends_on": [],
       "verify": null
     },
+    "install_recognition_tab_agent": {
+      "on_scheduler": true,
+      "_note": "MANUAL: `lucy rerun install_recognition_tab_agent` (re)installs the weekly recognition-tab launchd job (com.alphalete.recognition-tab-sun, Sun 8:00am CST). It duplicates the 'LUCY TEMPLATE' tab in Maud's Alphalete Recognition sheet into the coming week's dated tab (e.g. 7.26.26) so ICDs have a fresh tab for office promotions before Maud's Monday reminder. Additive + idempotent (never edits/deletes a tab). weekdays [] = manual only.",
+      "display_name": "Install recognition tab agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "recognition-tab-sun"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
     "install_new_start_rollcall_agent": {
       "on_scheduler": true,
       "_note": "MANUAL: `lucy rerun install_new_start_rollcall_agent` installs com.alphalete.new-start-followup-rollcall (Sat 8:00am CST). Lucy posts the roll call tagging every 2nd-round interviewer who has a Monday new start — this replaced Aisha's hand-typed 8am tag list on 7/19/2026 because hers was missing people. Idempotent: no-ops if a roll call is already in the thread. weekdays [] = manual only.",
@@ -1951,6 +1971,28 @@
       "verify": {
         "type": "not_configured"
       }
+    },
+    "recognition_tab": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Run by the dedicated com.alphalete.recognition-tab-sun launchd job at Sun 8:00am CST (deploy/recognition_tab_sun.sh), NOT the morning orchestrator. Creates the coming week's tab (copy of 'LUCY TEMPLATE', named by week-ending Sunday e.g. 7.26.26) in Maud's Alphalete Recognition sheet so ICDs can log office promotions before Maud's Monday reminder. Additive + idempotent (never edits/deletes a tab). Present here so `lucy rerun recognition_tab` works. Megan 2026-07-21.",
+      "display_name": "Recognition weekly tab",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.leaders_call.recognition_tab"
+      ],
+      "base_args": [
+        "--write"
+      ],
+      "cadence": {
+        "weekdays": [
+          0
+        ]
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
     },
     "int_wow_penetration": {
       "order": 15.5,
