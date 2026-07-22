@@ -43,6 +43,23 @@ OWNER_CFG = [
 ]
 
 
+def _activation_cfg():
+    """Per-office activation-rates source for E5/F5 + the AE:AF rep list.
+    key -> (view_url, custom_view_name, owner_prefix). Each office's server-side
+    ACTIVATIONRATES saved view exposes ONLY its own reps on the 'Activation
+    Office' worksheet — Carlos's CARLOSLOCALEXPANDED excludes Atef — so the view
+    URL must be per office. The office-totals .csv is the bare dashboard export
+    filtered in code by owner_prefix (same as Carlos always did)."""
+    from automations.vantura_churn import activation_rates as _ar
+    return {
+        "carlos": (_ar.VIEW_URL, _ar.CUSTOM_VIEW, _ar.OWNER_PREFIX),
+        "atef": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+                 "ATTTRACKER-B2B/ACTIVATIONRATES/"
+                 "9cfd3e6c-b221-47a6-8699-bd8eb524fd6e/AtefEXP?:iid=1",
+                 "Atef EXP", "ATEF CHOUDHURY"),
+    }
+
+
 # Reconciliation tolerances (Megan 2026-07-19).
 #
 # The gate used to demand EXACT equality on the base. It can't: the Order Log
@@ -236,10 +253,11 @@ def main(argv=None) -> int:
     # ---------------------------------------------------------- downloads
     files: dict[str, Path] = {}
     churnrates_path = None
-    ar_reps_path = ar_office_path = None
-    # Activation rates are Carlos's ask and live on his tab only.
-    want_rates = (not args.skip_rates
-                  and any(k == "carlos" for k, *_ in owners))
+    # Activation rates now run per office (each with its own saved view).
+    _act_cfg = _activation_cfg()
+    rate_keys = ([] if args.skip_rates
+                 else [k for k, *_ in owners if k in _act_cfg])
+    ar_paths: dict = {}   # office key -> (reps_csv, office_totals_csv)
     if args.from_files:
         for spec in args.from_files:
             k, _, p = spec.partition("=")
@@ -272,13 +290,16 @@ def main(argv=None) -> int:
                           churnrates_path))
             log("▶ Churn Rates dashboard…")
         csv_fetches = []
-        if want_rates:
+        if rate_keys:
             from automations.vantura_churn import activation_rates as _ar
-            ar_reps_path = out_dir / "activation_office.csv"
-            ar_office_path = out_dir / "activation_office_totals.csv"
-            specs.append((_ar.VIEW_URL, _ar.REP_SHEET, ar_reps_path))
-            csv_fetches.append((_ar.CSV_URL, ar_office_path))
-            log("▶ Activation Rates (per-rep + office totals)…")
+            for k in rate_keys:
+                view_url, _cv, _own = _act_cfg[k]
+                rp = out_dir / f"activation_office_{k}.csv"
+                op = out_dir / f"activation_office_totals_{k}.csv"
+                specs.append((view_url, _ar.REP_SHEET, rp))
+                csv_fetches.append((_ar.CSV_URL, op))
+                ar_paths[k] = (rp, op)
+                log(f"▶ Activation Rates ({k}: per-rep + office totals)…")
         cdp_pull.download_views(specs, today=today, verbose=False, log=log,
                                 csv_fetches=csv_fetches)
 
@@ -301,25 +322,27 @@ def main(argv=None) -> int:
             dash = pull.parse_churnrates(churnrates_path, prefix)
             problems += _reconcile(key.upper(), summary, dash, log)
 
-    # ------------------------------------------- activation rates (Carlos)
-    rates = None
-    if want_rates and ar_reps_path and ar_office_path:
+    # ------------------------------------------- activation rates (per office)
+    rates_by_office: dict = {}
+    if ar_paths:
         import csv as _csv
         from automations.vantura_churn import activation_rates as _ar
-        with open(ar_office_path, encoding="utf-8-sig", errors="replace") as fh:
-            office = _ar.parse_rates(list(_csv.reader(fh)))
-        reps = _ar.parse_rep_rates(compute._load_grid(ar_reps_path))
-        # The per-rep split is only trustworthy if it adds back up to the
-        # office numbers — same contract as the churn reconciliation above.
-        rate_problems = _ar.reconcile_reps(reps, office)
-        o30, o60 = office["0-30"], office["31-60"]
-        log(f"RATES: 0-30 {o30['activated']}/{o30['sold']} = "
-            f"{o30['rate']:.1%}   31-60 {o60['activated']}/{o60['sold']} = "
-            f"{o60['rate']:.1%}   ({len(reps)} reps)")
-        if rate_problems:
-            problems += [f"activation rates — {p}" for p in rate_problems]
-        else:
-            rates = (office, reps)
+        for k, (rp, op) in ar_paths.items():
+            _vu, _cv, own = _act_cfg[k]
+            with open(op, encoding="utf-8-sig", errors="replace") as fh:
+                office = _ar.parse_rates(list(_csv.reader(fh)), owner_prefix=own)
+            reps = _ar.parse_rep_rates(compute._load_grid(rp), owner_prefix=own)
+            # The per-rep split is only trustworthy if it adds back up to the
+            # office numbers — same contract as the churn reconciliation above.
+            rate_problems = _ar.reconcile_reps(reps, office)
+            o30, o60 = office["0-30"], office["31-60"]
+            log(f"RATES ({k}): 0-30 {o30['activated']}/{o30['sold']} = "
+                f"{o30['rate']:.1%}   31-60 {o60['activated']}/{o60['sold']} = "
+                f"{o60['rate']:.1%}   ({len(reps)} reps)")
+            if rate_problems:
+                problems += [f"activation rates ({k}) — {p}" for p in rate_problems]
+            else:
+                rates_by_office[k] = (office, reps)
 
     if problems:
         log("\n✗ RECONCILIATION FAILED — NOTHING WRITTEN:")
@@ -361,9 +384,9 @@ def main(argv=None) -> int:
             log(f"  ⚠ helper-column hide skipped: {e}")
         fill.update_churn_tab(sh.worksheet(tab), results[key]["summary"]["base"],
                               results[key]["helper"], log=log)
-        if key == "carlos" and rates is not None:
-            fill.update_activation_rates(sh.worksheet(tab), rates[0],
-                                         rates[1], log=log)
+        if rates_by_office.get(key):
+            office, reps = rates_by_office[key]
+            fill.update_activation_rates(sh.worksheet(tab), office, reps, log=log)
         if has_act and not args.skip_activations:
             log(f"▶ updating '{fill.TAB_ACTIVATIONS}'…")
             act = compute.activations_rows(results[key]["lines"], today)
