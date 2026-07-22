@@ -216,6 +216,10 @@ def post_report(ws, day: dt.date | None = None, dry_run: bool = True,
     without sending. Skips any image already in the thread, so a re-run
     doesn't duplicate. Does NOT create the parent — if the B2B Quality thread
     doesn't exist yet, it logs and skips rather than opening a rival thread.
+
+    Finds the thread via B2B Quality's shared thread-state file (no Slack scope
+    needed), falling back to the history read; that read fails on Lucy's token,
+    so relying on it alone would make this skip on a cold morning.
     """
     from automations.b2b_quality import run as bq
     from automations.shared import slack_metrics_post as smp
@@ -237,7 +241,15 @@ def post_report(ws, day: dt.date | None = None, dry_run: bool = True,
 
     client = smp._client()
     cid = bq.CHANNEL[1]
-    ts = thread_ts or bq.find_thread_ts(client, cid, day)
+    # Resolve the thread the SAME way B2B Quality does: the shared thread-state
+    # file first, the Slack history read only as a backstop. find_thread_ts()
+    # alone is unreliable here — Lucy's token can't read this channel's history,
+    # so on a cold morning it returns None even though the thread exists, and we
+    # would silently skip posting. B2B Quality writes thread_state.json when it
+    # opens the parent, so that ts is authoritative and needs no Slack scope.
+    ts = (thread_ts
+          or bq._load_state(day, cid).get("thread_ts")
+          or bq.find_thread_ts(client, cid, day))
     if not ts:
         log(f"  ⚠ no '{bq.THREAD_TITLE}' thread for {day} yet — churn "
             "screenshots not posted (the B2B Quality report opens that "
