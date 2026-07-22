@@ -163,7 +163,10 @@ def _crop_to_last_colored_row(png: Path, verbose: bool = False) -> bool:
             return max(p) - min(p) > 45 and max(p) > 90
 
         # How many rows is each column coloured in? Rep data columns light up in
-        # many rows; the misaligned National-Average cells in only a couple.
+        # dozens of rows; the small misaligned National-Average marker/band cells
+        # in only a couple — so a column colored in MANY rows is a rep data
+        # column, and the 0-30 Day column is the most-populated (nearly every rep
+        # has a 0-30 value; a 0-30-sorted view puts the blanks last).
         col_rows = [0] * W
         for x in range(0, W, 2):
             c = 0
@@ -171,20 +174,18 @@ def _crop_to_last_colored_row(png: Path, verbose: bool = False) -> bool:
                 if sat(px[x, y]):
                     c += 1
             col_rows[x] = c
-        hot = [x for x in range(0, W, 2) if col_rows[x] > 12]
-        if not hot:
+        peak = max(col_rows)
+        if peak < 20:                      # no real rep table found
             return False
-        # Leftmost contiguous hot stripe = the 0-30 Day rep column.
-        c0 = c1 = hot[0]
-        for x in hot[1:]:
-            if x - c1 <= 10:
-                c1 = x
-            else:
-                break
+        # Leftmost column that is substantially populated (>= half the peak) = the
+        # 0-30 column; a NARROW window around it so we never bleed into the 30/60
+        # columns (which would re-include the blank-0-30 reps we want to drop).
+        lead = next(x for x in range(0, W, 2) if col_rows[x] >= 0.5 * peak)
+        a, b = max(0, lead - 4), lead + 22
 
         last = 0
         for y in range(H):
-            if any(sat(px[x, y]) for x in range(c0, c1 + 1, 2)):
+            if any(sat(px[x, y]) for x in range(a, b, 2)):
                 last = y
         if last <= 0:
             return False
