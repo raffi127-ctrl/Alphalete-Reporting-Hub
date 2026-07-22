@@ -71,3 +71,11 @@ automations/recruiting_report/all-offices.json
 # (the derived glyph library IS committed, so the tool still works)
 resources/swag/handwriting-raw.png
 resources/swag/glyphs/_debug/
+
+# ApplicantStream/Applicant Tracker Google service-account key (live private key,
+# repo is PUBLIC) — distributed out-of-band, NEVER commit. Also the browser session.
+applicant-tracker-service-account.json
+automations/applicant_tracker/service_account.json
+automations/applicant_tracker/.browser_profile*
+automations/applicant_tracker/downloads/
+automations/applicant_tracker/.env

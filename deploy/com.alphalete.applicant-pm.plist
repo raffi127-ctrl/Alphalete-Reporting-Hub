@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.applicant-pm</string>
+
+    <!-- Path is the laptop placeholder; on Lucy 2, install_agent.py rewrites it:
+           python -m automations.day_orchestrator.install_agent applicant-pm
+         RUNS ON LUCY 2 — holds the ApplicantStream browser login. Francia's
+         ApplicantStream → Applicant Tracker end-of-day sync. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/applicant_tracker.sh</string>
+        <string>pm</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- 8:00pm CST, Mon–Sat (Sun OFF). Reads TODAY — 8pm so the day's second
+         interviews are complete. Runs export_2r_retention. (confirm_first_day
+         is deliberately NOT in the wrapper's pm phase until it's verified on a
+         real first-day-of-training day — see the Hub card note.) launchd
+         Weekday: 1=Mon … 6=Sat. TIME KNOB: edit Hour/Minute below (machine
+         LOCAL time; the mini is Central). -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>6</integer><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/com.alphalete.applicant-pm.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/com.alphalete.applicant-pm.err</string>
+</dict>
+</plist>
