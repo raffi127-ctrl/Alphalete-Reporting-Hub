@@ -99,7 +99,9 @@ TEAM: dict = {
 VIEW_META: dict = {
     "sales_metrics":   {"filter_field": OWNER_FIELD},
     "activation_rate": {"filter_field": OWNER_OFFICE_FIELD,
-                        "sort_header": "0-7 Days", "data_cols": 4},
+                        "sort_header": "0-7 Days", "sort_clicks": 2,
+                        "data_cols": 4},   # AtefEXP starts sorted; 2 clicks ->
+                                           # descending (0-7 activity on top)
     "churn_wireless":  {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 5},
     "churn_int":       {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 5},
     "churn_air":       {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 5},

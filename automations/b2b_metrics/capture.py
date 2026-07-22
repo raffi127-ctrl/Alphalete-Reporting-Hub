@@ -231,7 +231,7 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print) -> Path
             page.wait_for_timeout(1_500)   # let it settle before the click
         except Exception:  # noqa: BLE001 — apply_sort is still best-effort below
             pass
-        apply_sort(page, hdr, verbose=True)
+        apply_sort(page, hdr, clicks=meta.get("sort_clicks", 1), verbose=True)
 
     cdp_pull._kill_ours()
     proc = cdp_pull._launch()
