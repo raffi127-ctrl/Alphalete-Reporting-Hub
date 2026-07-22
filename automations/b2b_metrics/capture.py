@@ -40,7 +40,15 @@ def churn_tab_image(o: B2BOffice, which: str, out_dir: Path, log=print) -> Path:
     elif which == "activation_by_rep":
         col = ws.get("AE1:AE200")
         last = max((i for i, r in enumerate(col, 1) if r and r[0].strip()),
-                   default=15)
+                   default=0)
+        # Rep rows sit BELOW the "Rep Name" header (row 15). If there's nothing
+        # there, the churn board hasn't been written yet — DON'T post a 2-row
+        # blank (2026-07-22: that "posted" empty and read as missing). Raise so
+        # the runner skips + flags it for a rerun instead.
+        if last <= 15:
+            raise ValueError(
+                "activation_by_rep: no rep rows on {!r} (churn board not "
+                "written yet) — skip rather than post blank".format(o.churn_tab))
         rng = "AE14:AF{}".format(last)
         out = out_dir / "activation_by_rep.png"
     else:
@@ -232,11 +240,25 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print) -> Path
 
     cdp_pull._kill_ours()
     proc = cdp_pull._launch()
-    time.sleep(20)
     try:
         with sync_playwright() as p:
-            browser = p.chromium.connect_over_cdp(
-                "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
+            # Chrome's remote-debugging port isn't up the instant _launch()
+            # returns. A single fixed sleep(20) then one connect sometimes hit
+            # ECONNREFUSED and DROPPED that item (activation_rate, 2026-07-22).
+            # Poll instead — connect as soon as the port answers, up to ~50s — so
+            # a slow start retries rather than failing the whole item.
+            browser = None
+            for attempt in range(10):
+                time.sleep(5)
+                try:
+                    browser = p.chromium.connect_over_cdp(
+                        "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
+                    break
+                except Exception as e:  # noqa: BLE001 — retry a not-yet-up port
+                    if attempt == 9:
+                        raise
+                    log("  [cdp] port not up yet (try {}/10): {}".format(
+                        attempt + 1, type(e).__name__))
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             tp._ensure_tableau_authenticated(page, verbose=False,
