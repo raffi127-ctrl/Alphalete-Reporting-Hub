@@ -386,6 +386,10 @@ def run_derived_compare(sh, cS, vS, aliases, logfn=print) -> dict:
     frozen: List[tuple] = []         # (region, label, a1, copy, va) — REPORT-ONLY
     other: List[tuple] = []          # catch-all completeness pass — REPORT-ONLY
     touched = set()                  # (copy_row, col) every targeted pass read
+    gated: set = set()               # (copy_row, col) the GATING (current-week)
+    #                                  cmp_cell pass covers — the live totals a
+    #                                  clobber check must stay scoped to (frz_*/
+    #                                  catch-all cells are NOT in here)
 
     def candidates(name):
         return set(fs._candidates_for(name, aliases))
@@ -398,6 +402,7 @@ def run_derived_compare(sh, cS, vS, aliases, logfn=print) -> dict:
 
     def cmp_cell(region, label, cr, c1, vr=None, tol=0.0):
         nonlocal benign
+        gated.add((cr, c1))              # a current-week live cell the gate covers
         if (cr, c1) in touched:          # already compared by an earlier pass -> once
             return
         vr = vr if vr is not None else cr
@@ -509,8 +514,13 @@ def run_derived_compare(sh, cS, vS, aliases, logfn=print) -> dict:
                   rollover.find_campaign_history_tables(vS))
     _camp_ok = len(_cch) == len(_vch)
     for i, h in enumerate(_cch):
+        # GATE only the live Monday..RUNNING-WEEK-TOTAL span (day_c0..day_cN). The
+        # frozen 'LAST WEEK'/'PREVIOUS WEEK' total columns that sit past it in the
+        # same Totals row roll on the two tabs at different moments and would
+        # false-flag as va_ahead (they're value-compared REPORT-ONLY below).
+        d0, dN = h.get("day_c0", h["c0"]), h.get("day_cN", h["cN"])
         pos_row("campaign this-week", h["this"],
-                list(range(h["c0"], h["cN"])), h["cN"],
+                list(range(d0, dN)), dN,
                 _vch[i]["this"] if _camp_ok else None)
     # captainship product-summary Totals — pair by finder order (count-guarded)
     _cps, _vps = (rollover.find_captainship_product_summaries(cS),
@@ -721,7 +731,7 @@ def run_derived_compare(sh, cS, vS, aliases, logfn=print) -> dict:
     _report(logfn, concerning, benign, frozen, other, clean)
     return {"concerning": concerning, "benign_count": benign,
             "frozen": frozen, "other": other, "clean": clean,
-            "touched": touched}
+            "touched": touched, "gated": gated}
 
 
 def _report(logfn, concerning, benign, frozen, other, clean):

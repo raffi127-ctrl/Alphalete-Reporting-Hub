@@ -58,7 +58,7 @@ def _classify(c, v):
     return "mismatch"                  # GLITCH: both have values, differ
 
 
-def check_formula_drift(cS, vS, aliases, logfn=print) -> list:
+def check_formula_drift(cS, vS, aliases, logfn=print, live_cells=None) -> list:
     """Flag cells the automation should keep as LIVE formulas but wrote as a
     static value — the 'clobbered formula' regression (e.g. a captainship
     leaderboard total written as a frozen number instead of =SUMIF, fixed
@@ -79,7 +79,14 @@ def check_formula_drift(cS, vS, aliases, logfn=print) -> list:
       • blank copy cells (cleared today/future days, not a clobber)
       • 'both are formulas but differ' (those are equivalent: =SUM(C:I) vs VA's
         explicit list, and delta =SUMIFs that differ only by the sorted name)
-    Read-only. Returns the flagged cell list."""
+
+    `live_cells` (optional): the set of (copy_row, 1-based_col) the derived
+    compare GATES as current-week — full_compare's `gated` set. When given, only
+    drift on THOSE cells gates; drift on frozen prior-week / history cells (where
+    the copy legitimately froze a past =SUM/=SUMIF to a static value the VA still
+    keeps live, and the two tabs roll at different moments) is logged REPORT-ONLY
+    and NOT returned. Without it, every drift cell is returned (old behavior).
+    Read-only. Returns the GATING flagged cell list."""
     from automations.org_sales_board.full_compare import content_row_map
     sh = open_by_key(SHEET_ID)
     cF = _retry(lambda: sh.worksheet(SANDBOX_TAB).get_all_values(
@@ -107,9 +114,17 @@ def check_formula_drift(cS, vS, aliases, logfn=print) -> list:
             if isf(vv) and not isf(cc) and cc.strip() and cc.strip().upper() != "NS":
                 flagged.append((cr, c + 1, fcell(vF, vi, 1) or fcell(vF, vi, 0),
                                 cc, vv))
+    # Split into GATING (current-week live cells) vs report-only (frozen/history).
+    if live_cells is not None:
+        frozen = [f for f in flagged if (f[0], f[1]) not in live_cells]
+        flagged = [f for f in flagged if (f[0], f[1]) in live_cells]
+        if frozen:
+            logfn(f"  ℹ {len(frozen)} formula-vs-static diff(s) on FROZEN prior-week/"
+                  f"history cells (report-only, not gated — the two tabs roll them "
+                  f"at different moments).")
     if flagged:
-        logfn(f"  ❌ FORMULA DRIFT — {len(flagged)} cell(s) the report wrote as a "
-              f"static value where the VA tab keeps a live formula "
+        logfn(f"  ❌ FORMULA DRIFT — {len(flagged)} current-week cell(s) the report "
+              f"wrote as a static value where the VA tab keeps a live formula "
               f"(formula clobbered — it'll freeze/drift):")
         for r, c, lbl, cc, vv in flagged[:30]:
             from gspread.utils import rowcol_to_a1
@@ -118,8 +133,8 @@ def check_formula_drift(cS, vS, aliases, logfn=print) -> list:
         if len(flagged) > 30:
             logfn(f"      …and {len(flagged) - 30} more")
     else:
-        logfn("  ✅ no formula drift — every VA formula cell is still a live "
-              "formula on the copy.")
+        logfn("  ✅ no formula drift — every current-week VA formula cell is still "
+              "a live formula on the copy.")
     return flagged
 
 
@@ -200,21 +215,26 @@ def run_compare(logfn=print) -> dict:
 
     logfn(f"  exact={tally['exact']}  NS-vs-0={tally['ns0']}  "
           f"automation-ahead={tally['auto_ahead']}")
-    # Formula-region integrity: catch any live VA formula the report clobbered
-    # with a static value (separate from the value compare above).
-    formula_drift = check_formula_drift(copy, va, aliases, logfn)
     # DERIVED / bottom auto-formula tables (leaderboards, delta tables, ORG +
     # campaign history rows, product summaries, section running totals). The value
     # compare above only reaches the raw daily cells; this reaches the totals a
     # wrong SUMIF would break (the old =F Monday-only 'Total this week'). Its own
     # SEPARATE bucket, current-week only, name-matched where sorted. Wrapped so a
-    # bug in the new check can never crash the daily run's compare.
+    # bug in the new check can never crash the daily run's compare. Runs BEFORE the
+    # formula-drift check so its `gated` set (the current-week cells the gate
+    # covers) can scope the drift check to live cells only.
     try:
         from automations.org_sales_board import full_compare as _fc
         derived = _fc.run_derived_compare(sh, copy, va, aliases, logfn)
     except Exception as e:  # noqa: BLE001
         logfn(f"  ⚠ derived-table compare skipped ({type(e).__name__}: {str(e)[:60]})")
-        derived = {"concerning": [], "benign_count": 0, "clean": True}
+        derived = {"concerning": [], "benign_count": 0, "clean": True, "gated": None}
+    # Formula-region integrity: catch any live VA formula the report clobbered
+    # with a static value (separate from the value compare above). Scoped to the
+    # derived compare's current-week `gated` cells so frozen prior-week history
+    # (static-on-copy where the VA kept a live =SUM) doesn't false-flag.
+    formula_drift = check_formula_drift(copy, va, aliases, logfn,
+                                        live_cells=derived.get("gated"))
     clean = (not glitches and not copy_missing and not formula_drift
              and derived["clean"])
     if glitches:

@@ -683,16 +683,36 @@ def find_campaign_history_tables(grid: List[List[str]]) -> List[dict]:
         if tot is None:
             continue
         # Value-column span = every column carrying a value across the Totals +
-        # the 4 history rows (robust to a 0 that displays blank in one row).
+        # the 4 history rows (robust to a 0 that displays blank in one row). This
+        # FULL span (incl. the frozen 'LAST WEEK'/'PREVIOUS WEEK' total columns)
+        # is what plan_org_history_rollover shifts, so keep c0/cN wide.
         scan = [tot, i, i + 1, i + 2, i + 3]
         maxc = max(len(grid[r]) for r in scan)
         daycols = [c + 1 for c in range(2, maxc)
                    if any(_cell(grid, r, c) for r in scan)]
         if not daycols:
             continue
+        # LIVE this-week span (Monday .. RUNNING-WEEK-TOTAL) for the go-live GATE:
+        # the frozen 'LAST WEEK'S TOTALS' / 'PREVIOUS WEEK'S TOTALS' columns of the
+        # Totals row are prior-week history — they roll on the two tabs at
+        # different moments and would false-flag if gated (mirrors how
+        # find_org_history_tables spans only Monday..Grand-Total). Found from the
+        # weekday header row above 'Totals'; running-total col = Sunday + 1.
+        dv0 = dvN = None
+        # scan up to the campaign's own weekday header (the FIRST weekday row above
+        # 'Totals' — the rep rows between carry no weekday labels); cap generously
+        # so a big roster (header sits well above Totals) is still reached.
+        for hr in range(tot - 1, max(tot - 45, -1), -1):
+            wk = [c + 1 for c in range(len(grid[hr]))
+                  if _cell(grid, hr, c).strip().lower() in _ORG_WEEKDAYS]
+            if len(wk) >= 4:
+                dv0, dvN = min(wk), max(wk) + 1        # +1 = RUNNING WEEK TOTAL
+                break
         out.append({"this": tot + 1, "lw": i + 1, "pw": i + 2,
                     "2wp": i + 3, "3wp": i + 4,
-                    "c0": min(daycols), "cN": max(daycols)})
+                    "c0": min(daycols), "cN": max(daycols),
+                    "day_c0": dv0 if dv0 is not None else min(daycols),
+                    "day_cN": dvN if dvN is not None else max(daycols)})
     return out
 
 
