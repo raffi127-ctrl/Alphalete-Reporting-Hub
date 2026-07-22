@@ -1143,32 +1143,194 @@ def _daily_manifest_fail(phase: str) -> None:
         pass
 
 
-def _daily_manifest_ok() -> None:
-    """Finalize the manifest after a pipeline that didn't crash. NOT always
-    'clean': any owner that couldn't be scraped (not in ownerville / no access)
-    is surfaced as the manifest's failed list, so the run reads INCOMPLETE and
-    the email lists exactly who was skipped — even though the pipeline itself
-    'succeeded' (Megan 2026-06-25: "give a breakdown of what wasn't accessible
-    even if the report was successful" — e.g. Melik El Jaiez isn't in OV).
+# ----------------------------------------------------------------------
+# Auto-retry sweep — self-heal TRANSIENT owner misses before completeness
+# is judged, so a flaky owner (a DataTables stall, a load timeout) doesn't
+# force a human to notice the INCOMPLETE email and trigger a rerun.
+# Scoped + non-destructive (run_all_owners --only "<Name>" merges onto the
+# already-filled tabs), same week-window as the main pass, and BOUNDED so it
+# can never blow the morning budget. [[project_focus_owner_single_rerun]]
+# ----------------------------------------------------------------------
+MAX_RETRY_OWNERS = 8            # cap how many owners we auto-retry per run
+RETRY_MAX_ATTEMPTS = 2         # attempts per owner (stop early on success)
+RETRY_ATTEMPT_TIMEOUT_S = 6 * 60   # per scoped run_all_owners attempt
+RETRY_BACKOFF_S = 15           # short pause between an owner's attempts
+RETRY_SWEEP_BUDGET_S = 20 * 60     # total wall-clock cap on the whole sweep
+
+# Reason substrings (case-insensitive) that are TERMINAL — expected or
+# won't-heal-on-retry, so we LEAVE them as-is instead of wasting a retry:
+#   - terminated ICD / alias drift (Edgar Muniz II)   → "name not found"
+#   - pending OV access approval  (Melik El Jaiez)    → "access request …"
+#   - genuine access denial / disabled office         → "no ov access" …
+#   - structural: no Sheet tab    (William Sassenberg)→ "no sheet tab"
+# Anything NOT matching here (generic "exception:", "timeout", DataTables
+# "never finished loading", "couldn't reach office access", "ov page error",
+# "no master rqst", …) is treated as TRANSIENT and retried.
+_TERMINAL_REASON_SUBSTRINGS = (
+    "name not found",
+    "access request",        # "ov access request pending (request sent …)"
+    "request sent",
+    "no ov access",
+    "impersonate denied",
+    "office disabled",
+    "no impersonate button",
+    "no sheet tab",
+    "no tab",
+)
+
+
+def _read_scrape_results() -> dict:
+    """The {owner: status} map run_all_owners writes/merges each run — the
+    single source of truth for who scraped OK. Empty dict if unreadable."""
+    if SCRAPE_RESULTS.exists():
+        try:
+            data = json.loads(SCRAPE_RESULTS.read_text())
+            return dict(data.get("results", {}) or {})
+        except Exception:
+            return {}
+    return {}
+
+
+def _reason_is_terminal(status: str) -> bool:
+    """True when a miss is EXPECTED / won't-heal (don't retry). Robust to the
+    exact phrasing — matches on stable substrings, not whole strings."""
+    s = (status or "").lower()
+    return any(sub in s for sub in _TERMINAL_REASON_SUBSTRINGS)
+
+
+def _classify_missing(results: dict) -> tuple:
+    """Split non-OK owners into ({retryable}, {terminal}) — each {owner: reason}.
+    Owners that scraped OK and non-owner tabs are excluded."""
+    retryable: dict = {}
+    terminal: dict = {}
+    for owner, status in (results or {}).items():
+        if owner in NON_OWNER_TABS or status == "ok":
+            continue
+        if _reason_is_terminal(status):
+            terminal[owner] = status
+        else:
+            retryable[owner] = status
+    return retryable, terminal
+
+
+def _retry_sweep(phase2_args: list, log, say) -> dict:
+    """After the main Phase-2 pass, auto-retry owners that missed for a
+    TRANSIENT reason, scoped + non-destructive, so they self-heal before the
+    report is marked done. Each retry re-runs run_all_owners with the SAME
+    week-window as the main pass plus `--only "<Owner>"` (merge semantics — no
+    other tab is touched, never the Monday full-wipe path, which lives in
+    daily.py not run_all_owners). Bounded by MAX_RETRY_OWNERS + a wall-clock
+    budget so it can't run away. Terminal misses are left as-is.
+
+    Because run_all_owners MERGE-writes scrape_results.json, a healed owner's
+    status flips to "ok" in that file — so downstream banners/colors/manifest
+    (which all read that file) automatically reflect the POST-sweep state.
+
+    Returns a summary dict used to phrase the completeness note."""
+    import time as _t
+    results = _read_scrape_results()
+    retryable, terminal = _classify_missing(results)
+    summary = {
+        "healed": [], "failed_after_retry": [],
+        "skipped_cap": [], "skipped_budget": [],
+        "terminal": dict(terminal), "attempted": [],
+    }
+    if not retryable:
+        say(f"  no transient owner misses to retry "
+            f"({len(terminal)} expected-missing left as-is).")
+        return summary
+
+    ordered = sorted(retryable)              # deterministic order
+    to_retry = ordered[:MAX_RETRY_OWNERS]
+    summary["skipped_cap"] = ordered[MAX_RETRY_OWNERS:]
+    say(f"  {len(retryable)} transient miss(es): {ordered}")
+    say(f"  retrying up to {len(to_retry)} (cap {MAX_RETRY_OWNERS}); "
+        f"{len(terminal)} expected-missing left as-is.")
+    if summary["skipped_cap"]:
+        say(f"  ⚠ over cap — NOT retried this run: {summary['skipped_cap']}")
+
+    start = _t.monotonic()
+    for owner in to_retry:
+        if _t.monotonic() - start > RETRY_SWEEP_BUDGET_S:
+            summary["skipped_budget"].append(owner)
+            say(f"  ⏱ sweep time budget ({RETRY_SWEEP_BUDGET_S // 60}m) hit — "
+                f"skipping remaining retry for {owner}")
+            continue
+        summary["attempted"].append(owner)
+        healed = False
+        for attempt in range(1, RETRY_MAX_ATTEMPTS + 1):
+            say(f"  ↻ retry {owner} (attempt {attempt}/{RETRY_MAX_ATTEMPTS}) "
+                f"— scoped --only + {phase2_args}")
+            scoped = list(phase2_args) + ["--only", owner]
+            rc = _run_phase("automations.focus_office_att.run_all_owners",
+                            scoped, log, timeout_s=RETRY_ATTEMPT_TIMEOUT_S)
+            # Truth = the owner's merged status, NOT rc: run_all_owners exits
+            # non-zero whenever its (single) owner didn't scrape OK.
+            new_status = _read_scrape_results().get(owner, "")
+            if new_status == "ok":
+                healed = True
+                say(f"  ✅ {owner} self-healed on attempt {attempt}.")
+                break
+            say(f"  ✗ {owner} still failing (rc={rc}, status={new_status!r}).")
+            if attempt < RETRY_MAX_ATTEMPTS:
+                _t.sleep(RETRY_BACKOFF_S)
+        (summary["healed"] if healed else summary["failed_after_retry"]).append(owner)
+
+    say(f"  sweep done: healed={summary['healed']}, "
+        f"still-failing={summary['failed_after_retry']}, "
+        f"skipped(cap)={summary['skipped_cap']}, "
+        f"skipped(budget)={summary['skipped_budget']}.")
+    return summary
+
+
+def _daily_manifest_ok(sweep_summary: dict = None) -> None:
+    """Finalize the manifest after a pipeline that didn't crash — reflecting the
+    POST-retry-sweep state. NOT always 'clean': any owner still missing after
+    the sweep is surfaced in the manifest's failed list, so the run reads
+    INCOMPLETE and the email lists exactly who's still out (Megan 2026-06-25:
+    "give a breakdown of what wasn't accessible even if the report was
+    successful"). Healed owners have flipped to "ok" in the results file, so
+    they DON'T appear. The note labels each still-missing owner as EXPECTED
+    (terminated / pending access / no tab — no action) vs FAILED-AFTER-RETRY (a
+    transient error that persisted) vs NOT-RETRIED (over the sweep cap/budget).
     Fully clean only when every owner scraped OK. Best-effort."""
     try:
         from automations.shared import run_manifest as _rm
-        bad: dict = {}
-        if SCRAPE_RESULTS.exists():
-            try:
-                data = json.loads(SCRAPE_RESULTS.read_text())
-                bad = {o: s for o, s in data.get("results", {}).items()
-                       if s != "ok" and o not in NON_OWNER_TABS}
-            except Exception:
-                bad = {}
-        if bad:
-            owners = sorted(bad)
-            detail = "; ".join(f"{o} ({bad[o]})" for o in owners)
-            _rm.write_manifest(_DAILY_RB_CARD_ID, failed=owners, retry_args=[],
-                               kind="owner",
-                               note=f"{len(owners)} owner(s) not scraped — {detail}")
-        else:
+        results = _read_scrape_results()
+        bad = {o: s for o, s in results.items()
+               if s != "ok" and o not in NON_OWNER_TABS}
+        if not bad:
             _rm.mark_clean(_DAILY_RB_CARD_ID, kind="phase")
+            return
+
+        retryable_left, terminal_left = _classify_missing(results)
+        summ = sweep_summary or {}
+        not_retried = set(summ.get("skipped_cap", []) + summ.get("skipped_budget", []))
+        failed_after = sorted(o for o in retryable_left if o not in not_retried)
+        deferred = sorted(o for o in retryable_left if o in not_retried)
+
+        segs = []
+        if failed_after:
+            segs.append("still failing after auto-retry ("
+                        + "; ".join(f"{o} ({retryable_left[o]})" for o in failed_after)
+                        + ")")
+        if deferred:
+            segs.append("transient but NOT retried — over sweep cap/budget ("
+                        + "; ".join(f"{o} ({retryable_left[o]})" for o in deferred)
+                        + ")")
+        if terminal_left:
+            segs.append("expected, no action — terminated / pending access / no tab ("
+                        + "; ".join(f"{o} ({terminal_left[o]})"
+                                    for o in sorted(terminal_left))
+                        + ")")
+        healed = sorted(summ.get("healed", []) or [])
+        heal_txt = (f" ✅ {len(healed)} self-healed on retry ({', '.join(healed)})."
+                    if healed else "")
+        owners = sorted(bad)
+        note = (f"{len(owners)} owner(s) still missing after retry sweep: "
+                + " | ".join(segs) + "." + heal_txt)
+        _rm.write_manifest(_DAILY_RB_CARD_ID, failed=owners, retry_args=[],
+                           kind="owner", note=note)
     except Exception:
         pass
 
@@ -1348,6 +1510,7 @@ def main() -> int:
             say(f"  collapse set failed (non-fatal): {e}")
 
         # 3. Phase 2 — ownerville scrape (week depends on the cadence)
+        sweep_summary: dict = {}   # populated by the Phase 2b retry sweep below
         say("Phase 2: ownerville scrape...")
         if shift_pending:                          # Monday: scrape LAST week to finish it
             phase2_args = ["--week-start", last_monday.isoformat()]
@@ -1378,6 +1541,22 @@ def main() -> int:
             _daily_manifest_fail("phase2")
             return 1
         say(f"  Phase 2 done (exit {rc2}).")
+
+        # Phase 2b — AUTO-RETRY SWEEP. Owners that missed for a TRANSIENT reason
+        # (DataTables stall, load timeout, generic scrape exception) get a
+        # scoped, non-destructive re-run each (same window as the main pass +
+        # --only "<Owner>") so they self-heal BEFORE completeness is judged.
+        # This runs before the banners/colors/manifest below — all of which read
+        # scrape_results.json, which the retries MERGE-update — so every
+        # downstream step sees the post-sweep state. Terminal misses (terminated
+        # ICD / pending access / no tab) are left as-is. Bounded so it can't blow
+        # the morning budget. [[project_focus_owner_single_rerun]]
+        say("Phase 2b: auto-retry sweep for transient owner misses...")
+        try:
+            sweep_summary = _retry_sweep(phase2_args, log, say)
+        except Exception as e:  # a sweep hiccup must never fail an otherwise-good run
+            say(f"  retry sweep errored (non-fatal): {type(e).__name__}: {e}")
+            sweep_summary = {}
 
         # Clear/stamp the OV-access banners NOW, from Phase-2 results. These
         # reflect ownerville access (Phase 2) — NOT the Tableau pull (Phase 3)
@@ -1545,7 +1724,7 @@ def main() -> int:
     _notify_success(
         f"{'Monday shift' if is_shift_day else 'Daily'} run complete — "
         f"all 30 tabs refreshed.")
-    _daily_manifest_ok()   # clear any prior failure manifest
+    _daily_manifest_ok(sweep_summary)   # post-sweep completeness (or clear if clean)
     return 0
 
 
