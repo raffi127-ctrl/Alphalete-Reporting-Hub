@@ -159,7 +159,8 @@ def main(argv=None) -> int:
         # scrape, so this can only skip a redundant pull, never change output.
         # Every other metric (incl. the other churn reports elsewhere) stays live.
         # Rollback = delete this env branch. Plan: output/harvest-cutover-plan.md.
-        env = {**os.environ, "HARVEST_MODE": "on"} if slug == "churn" else None
+        env = ({**os.environ, "HARVEST_MODE": "on", "HARVEST_VERBOSE": "1"}
+               if slug == "churn" else None)
         ok, note = _run_one(label, module, base, env=env)
         results.append((label, ok, note))
 
