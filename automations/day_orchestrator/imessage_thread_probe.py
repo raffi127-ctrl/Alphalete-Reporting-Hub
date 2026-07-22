@@ -20,6 +20,7 @@ from __future__ import annotations
 import datetime as dt
 import os
 import sqlite3
+import subprocess
 import sys
 
 DB = os.path.expanduser("~/Library/Messages/chat.db")
@@ -37,6 +38,68 @@ def _local(apple) -> str:
         return "(unparseable %r)" % apple
 
 
+_OSA = '''
+tell application "Messages"
+  set r to ""
+  try
+    set cfg to (chats whose id contains "chat72256665735645227")
+    set r to r & "CONFIGURED_chat_count: " & (count of cfg) & linefeed
+    repeat with c in cfg
+      set r to r & "  cfg_id: " & (id of c) & linefeed
+    end repeat
+  on error e
+    set r to r & "CONFIGURED lookup error: " & e & linefeed
+  end try
+  try
+    set named to (chats whose name contains "A-Team" or name contains "A Team" or name contains "Alphalete")
+    set r to r & "NAMED_match_count: " & (count of named) & linefeed
+    repeat with c in named
+      set nm to ""
+      try
+        set nm to name of c as text
+      end try
+      set pc to 0
+      try
+        set pc to count of participants of c
+      end try
+      set r to r & "  named_id: " & (id of c) & " || name=" & nm & " || participants=" & pc & linefeed
+    end repeat
+  on error e
+    set r to r & "NAMED lookup error: " & e & linefeed
+  end try
+  return r
+end tell
+'''
+
+
+def _osascript_fallback() -> int:
+    """Ask Messages.app directly (osascript / Automation permission — the same
+    grant TdB uses to SEND, NOT Full Disk Access). Returns GUIDs for the
+    configured chat + any A-Team/Alphalete-named chats. No message text, no send.
+    Limited: AppleScript can't give last-message timestamps and may not expose
+    group display names on every macOS — if it comes back empty, the group name
+    isn't queryable this way and the chat.db one-liner is the only path."""
+    print("--- osascript -> Messages fallback (Automation permission, not FDA) ---")
+    try:
+        r = subprocess.run(["osascript", "-e", _OSA],
+                           capture_output=True, text=True, timeout=90)
+    except Exception as e:  # noqa: BLE001
+        print("osascript failed to launch:", repr(e))
+        return 1
+    if r.returncode != 0:
+        print("osascript FAILED (likely no Automation permission for the poller "
+              "process, or Messages not running):")
+        print("  " + (r.stderr or "").strip()[:400])
+        return 1
+    out = (r.stdout or "").strip()
+    if not out:
+        print("osascript returned NOTHING — AppleScript can't see the group name "
+              "on this macOS. Use the chat.db one-liner below.")
+        return 1
+    print(out)
+    return 0
+
+
 def main() -> int:
     if not os.path.exists(DB):
         print("chat.db NOT found at", DB)
@@ -46,14 +109,16 @@ def main() -> int:
         con = sqlite3.connect("file:%s?mode=ro&immutable=1" % DB, uri=True, timeout=20)
         cur = con.cursor()
     except Exception as e:  # noqa: BLE001
-        print("CANNOT open chat.db — likely no Full Disk Access for this process:",
-              repr(e))
-        print("Run this on the mini instead (Terminal has FDA):")
+        print("CANNOT open chat.db — no Full Disk Access for this process:", repr(e))
+        print()
+        rc = _osascript_fallback()   # different permission (Automation, not FDA)
+        print()
+        print("If both paths failed, run this on the mini (Terminal with FDA):")
         print("  sqlite3 \"file:$HOME/Library/Messages/chat.db?mode=ro\" \\")
-        print("    \"SELECT guid, display_name FROM chat WHERE display_name LIKE "
-              "'%A-Team%' OR display_name LIKE '%Alphalete%';\"")
+        print("    \"SELECT chat_identifier, display_name FROM chat WHERE display_name "
+              "LIKE '%A-Team%' OR display_name LIKE '%Alphalete%';\"")
         print("=== done ===")
-        return 1
+        return rc
 
     def rows(where, params=()):
         cur.execute("""
