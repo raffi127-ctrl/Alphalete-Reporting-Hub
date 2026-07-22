@@ -1,5 +1,5 @@
 #!/bin/bash
-# ApplicantStream → Applicant Tracker reports (Francia, 2026-07-21). RUNS ON LUCY 2.
+# ApplicantStream → Applicant Tracker reports (Francia, 2026-07-21). RUNS ON LUCY 1.
 #
 # Four reports log into ApplicantStream (Playwright headless Chromium) and sync
 # into the "Alphalete Org Applicant Tracker" Google Sheet. They share ONE
@@ -20,7 +20,7 @@
 # Add --dry-run after it to write nothing:
 #   bash deploy/applicant_tracker.sh export_call_list --dry-run
 #
-# PRE-REQ (one time, on Lucy 2): clear Cloudflare + log in once, headed —
+# PRE-REQ (one time, on Lucy 1): clear Cloudflare + log in once, headed —
 #   HEADLESS=0 .venv/bin/python -m automations.applicant_tracker.applicantstream
 # and drop the Google key at applicant-tracker-service-account.json (repo root).
 set -u

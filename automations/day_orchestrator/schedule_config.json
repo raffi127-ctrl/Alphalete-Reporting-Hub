@@ -88,7 +88,7 @@
   "reports": {
     "applicant_call_list": {
       "on_scheduler": false,
-      "_note": "Francia's ApplicantStream → Applicant Tracker report. Runs on LUCY 2 (that machine holds the one-time ApplicantStream browser login in automations/applicant_tracker/.browser_profile). on_scheduler:false so the 4am orchestrator NEVER auto-runs it — its real schedule is a standalone launchd job (7am or 8pm CST, Mon–Sat, com.alphalete.applicant-am/pm via deploy/applicant_tracker.sh). Present so the Hub card's Preview/Run-live buttons route here: `lucy rerun applicant_call_list` = LIVE write, `lucy rerun applicant_call_list --dry-run` = no writes. The module WRITES by default (base_args []); the Preview button appends --dry-run. Reads the Google service-account key from the gitignored applicant-tracker-service-account.json. Appends YESTERDAY's 'Sent to Call List' (17 offices) to the Call List tab (owner col A, data B–H). Appends; no de-dupe.",
+      "_note": "Francia's ApplicantStream → Applicant Tracker report. Runs on LUCY 1 (that machine holds the one-time ApplicantStream browser login in automations/applicant_tracker/.browser_profile). on_scheduler:false so the 4am orchestrator NEVER auto-runs it — its real schedule is a standalone launchd job (7am or 8pm CST, Mon–Sat, com.alphalete.applicant-am/pm via deploy/applicant_tracker.sh). Present so the Hub card's Preview/Run-live buttons route here: `lucy rerun applicant_call_list` = LIVE write, `lucy rerun applicant_call_list --dry-run` = no writes. The module WRITES by default (base_args []); the Preview button appends --dry-run. Reads the Google service-account key from the gitignored applicant-tracker-service-account.json. Appends YESTERDAY's 'Sent to Call List' (17 offices) to the Call List tab (owner col A, data B–H). Appends; no de-dupe.",
       "display_name": "Applicant Tracker: Export Call List",
       "source_type": "appstream",
       "data_sources": [],
@@ -104,11 +104,11 @@
       "depends_on": [],
       "verify": null,
       "timeout_minutes": 20,
-      "machine": "Lucy 2"
+      "machine": "Lucy 1"
     },
     "applicant_2r_update": {
       "on_scheduler": false,
-      "_note": "Francia's ApplicantStream → Applicant Tracker report. Runs on LUCY 2 (that machine holds the one-time ApplicantStream browser login in automations/applicant_tracker/.browser_profile). on_scheduler:false so the 4am orchestrator NEVER auto-runs it — its real schedule is a standalone launchd job (7am or 8pm CST, Mon–Sat, com.alphalete.applicant-am/pm via deploy/applicant_tracker.sh). Present so the Hub card's Preview/Run-live buttons route here: `lucy rerun applicant_2r_update` = LIVE write, `lucy rerun applicant_2r_update --dry-run` = no writes. The module WRITES by default (base_args []); the Preview button appends --dry-run. Reads the Google service-account key from the gitignored applicant-tracker-service-account.json. Updates YESTERDAY's 2nd-round interviewees already on the 2R tab: Offered (H), Follow up (I) no-show/BOB, Notes (J) BOB date.",
+      "_note": "Francia's ApplicantStream → Applicant Tracker report. Runs on LUCY 1 (that machine holds the one-time ApplicantStream browser login in automations/applicant_tracker/.browser_profile). on_scheduler:false so the 4am orchestrator NEVER auto-runs it — its real schedule is a standalone launchd job (7am or 8pm CST, Mon–Sat, com.alphalete.applicant-am/pm via deploy/applicant_tracker.sh). Present so the Hub card's Preview/Run-live buttons route here: `lucy rerun applicant_2r_update` = LIVE write, `lucy rerun applicant_2r_update --dry-run` = no writes. The module WRITES by default (base_args []); the Preview button appends --dry-run. Reads the Google service-account key from the gitignored applicant-tracker-service-account.json. Updates YESTERDAY's 2nd-round interviewees already on the 2R tab: Offered (H), Follow up (I) no-show/BOB, Notes (J) BOB date.",
       "display_name": "Applicant Tracker: Update Second-Round Status",
       "source_type": "appstream",
       "data_sources": [],
@@ -124,11 +124,11 @@
       "depends_on": [],
       "verify": null,
       "timeout_minutes": 25,
-      "machine": "Lucy 2"
+      "machine": "Lucy 1"
     },
     "applicant_2r_retention": {
       "on_scheduler": false,
-      "_note": "Francia's ApplicantStream → Applicant Tracker report. Runs on LUCY 2 (that machine holds the one-time ApplicantStream browser login in automations/applicant_tracker/.browser_profile). on_scheduler:false so the 4am orchestrator NEVER auto-runs it — its real schedule is a standalone launchd job (7am or 8pm CST, Mon–Sat, com.alphalete.applicant-am/pm via deploy/applicant_tracker.sh). Present so the Hub card's Preview/Run-live buttons route here: `lucy rerun applicant_2r_retention` = LIVE write, `lucy rerun applicant_2r_retention --dry-run` = no writes. The module WRITES by default (base_args []); the Preview button appends --dry-run. Reads the Google service-account key from the gitignored applicant-tracker-service-account.json. Appends TODAY's 'Total Second Interviews' (17 offices) to the 2R tab (owner col AT, 9 cols AU–BC). Runs 8pm so the day is complete. Appends; no de-dupe.",
+      "_note": "Francia's ApplicantStream → Applicant Tracker report. Runs on LUCY 1 (that machine holds the one-time ApplicantStream browser login in automations/applicant_tracker/.browser_profile). on_scheduler:false so the 4am orchestrator NEVER auto-runs it — its real schedule is a standalone launchd job (7am or 8pm CST, Mon–Sat, com.alphalete.applicant-am/pm via deploy/applicant_tracker.sh). Present so the Hub card's Preview/Run-live buttons route here: `lucy rerun applicant_2r_retention` = LIVE write, `lucy rerun applicant_2r_retention --dry-run` = no writes. The module WRITES by default (base_args []); the Preview button appends --dry-run. Reads the Google service-account key from the gitignored applicant-tracker-service-account.json. Appends TODAY's 'Total Second Interviews' (17 offices) to the 2R tab (owner col AT, 9 cols AU–BC). Runs 8pm so the day is complete. Appends; no de-dupe.",
       "display_name": "Applicant Tracker: Export 2R Retention",
       "source_type": "appstream",
       "data_sources": [],
@@ -144,11 +144,11 @@
       "depends_on": [],
       "verify": null,
       "timeout_minutes": 20,
-      "machine": "Lucy 2"
+      "machine": "Lucy 1"
     },
     "applicant_first_day": {
       "on_scheduler": false,
-      "_note": "Francia's ApplicantStream → Applicant Tracker report. Runs on LUCY 2 (that machine holds the one-time ApplicantStream browser login in automations/applicant_tracker/.browser_profile). on_scheduler:false so the 4am orchestrator NEVER auto-runs it — its real schedule is a standalone launchd job (7am or 8pm CST, Mon–Sat, com.alphalete.applicant-am/pm via deploy/applicant_tracker.sh). Present so the Hub card's Preview/Run-live buttons route here: `lucy rerun applicant_first_day` = LIVE write, `lucy rerun applicant_first_day --dry-run` = no writes. The module WRITES by default (base_args []); the Preview button appends --dry-run. Reads the Google service-account key from the gitignored applicant-tracker-service-account.json. Marks 2R col R = Y/N for TODAY's first-day-training people. ⚠️ NOT YET VERIFIED on live data (build day had 0 training) — DRY-RUN ONLY until confirmed on a real training day, and confirm 'First Day of Training' maps to the 'Total Training' retention row. Its live launchd agent is NOT installed (not in the -pm plist yet).",
+      "_note": "Francia's ApplicantStream → Applicant Tracker report. Runs on LUCY 1 (that machine holds the one-time ApplicantStream browser login in automations/applicant_tracker/.browser_profile). on_scheduler:false so the 4am orchestrator NEVER auto-runs it — its real schedule is a standalone launchd job (7am or 8pm CST, Mon–Sat, com.alphalete.applicant-am/pm via deploy/applicant_tracker.sh). Present so the Hub card's Preview/Run-live buttons route here: `lucy rerun applicant_first_day` = LIVE write, `lucy rerun applicant_first_day --dry-run` = no writes. The module WRITES by default (base_args []); the Preview button appends --dry-run. Reads the Google service-account key from the gitignored applicant-tracker-service-account.json. Marks 2R col R = Y/N for TODAY's first-day-training people. ⚠️ NOT YET VERIFIED on live data (build day had 0 training) — DRY-RUN ONLY until confirmed on a real training day, and confirm 'First Day of Training' maps to the 'Total Training' retention row. Its live launchd agent is NOT installed (not in the -pm plist yet).",
       "display_name": "Applicant Tracker: Confirm First-Day Show-Up (UNVERIFIED)",
       "source_type": "appstream",
       "data_sources": [],
@@ -164,11 +164,11 @@
       "depends_on": [],
       "verify": null,
       "timeout_minutes": 20,
-      "machine": "Lucy 2"
+      "machine": "Lucy 1"
     },
     "install_applicant_am_agent": {
       "on_scheduler": false,
-      "_note": "NOT a report — a one-shot LaunchAgent installer (same pattern as install_att_order_log_agent), run via `lucy rerun install_applicant_am_agent --machine \"Lucy 2\"`. on_scheduler:false so it's never in the 4am batch. Regenerates + launchctl-bootstraps com.alphalete.applicant-am on LUCY 2 from deploy/com.alphalete.applicant-am.plist. install_agent is read-only w.r.t. any Sheet/report data — it only reloads the plist. PRE-REQ: the one-time headed ApplicantStream login must be done on Lucy 2 first (python -m automations.applicant_tracker.applicantstream with HEADLESS=0). AM job = 7:00am CST Mon–Sat, runs export_call_list then update_second_round sequentially (shared browser profile can't run two at once).",
+      "_note": "NOT a report — a one-shot LaunchAgent installer (same pattern as install_att_order_log_agent), run via `lucy rerun install_applicant_am_agent --machine \"Lucy 1\"`. on_scheduler:false so it's never in the 4am batch. Regenerates + launchctl-bootstraps com.alphalete.applicant-am on LUCY 1 from deploy/com.alphalete.applicant-am.plist. install_agent is read-only w.r.t. any Sheet/report data — it only reloads the plist. PRE-REQ: the one-time headed ApplicantStream login must be done on Lucy 1 first (python -m automations.applicant_tracker.applicantstream with HEADLESS=0). AM job = 7:00am CST Mon–Sat, runs export_call_list then update_second_round sequentially (shared browser profile can't run two at once).",
       "display_name": "Install: Applicant Tracker AM agent (7:00am)",
       "source_type": "local",
       "data_sources": [],
@@ -186,11 +186,11 @@
       "depends_on": [],
       "verify": null,
       "timeout_minutes": 5,
-      "machine": "Lucy 2"
+      "machine": "Lucy 1"
     },
     "install_applicant_pm_agent": {
       "on_scheduler": false,
-      "_note": "NOT a report — a one-shot LaunchAgent installer (same pattern as install_att_order_log_agent), run via `lucy rerun install_applicant_pm_agent --machine \"Lucy 2\"`. on_scheduler:false so it's never in the 4am batch. Regenerates + launchctl-bootstraps com.alphalete.applicant-pm on LUCY 2 from deploy/com.alphalete.applicant-pm.plist. install_agent is read-only w.r.t. any Sheet/report data — it only reloads the plist. PRE-REQ: the one-time headed ApplicantStream login must be done on Lucy 2 first (python -m automations.applicant_tracker.applicantstream with HEADLESS=0). PM job = 8:00pm CST Mon–Sat, runs export_2r_retention (confirm_first_day is intentionally NOT in the plist until it's verified).",
+      "_note": "NOT a report — a one-shot LaunchAgent installer (same pattern as install_att_order_log_agent), run via `lucy rerun install_applicant_pm_agent --machine \"Lucy 1\"`. on_scheduler:false so it's never in the 4am batch. Regenerates + launchctl-bootstraps com.alphalete.applicant-pm on LUCY 1 from deploy/com.alphalete.applicant-pm.plist. install_agent is read-only w.r.t. any Sheet/report data — it only reloads the plist. PRE-REQ: the one-time headed ApplicantStream login must be done on Lucy 1 first (python -m automations.applicant_tracker.applicantstream with HEADLESS=0). PM job = 8:00pm CST Mon–Sat, runs export_2r_retention (confirm_first_day is intentionally NOT in the plist until it's verified).",
       "display_name": "Install: Applicant Tracker PM agent (8:00pm)",
       "source_type": "local",
       "data_sources": [],
@@ -208,7 +208,7 @@
       "depends_on": [],
       "verify": null,
       "timeout_minutes": 5,
-      "machine": "Lucy 2"
+      "machine": "Lucy 1"
     },
     "vantura_payroll": {
       "on_scheduler": false,

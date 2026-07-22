@@ -4076,11 +4076,11 @@ AUTOMATED_REPORTS = [
     },
     # ── ApplicantStream → Applicant Tracker (Francia, 2026-07-21) ──────────
     # Four recruiting reports that log into ApplicantStream (Playwright) and sync
-    # into the "Alphalete Org Applicant Tracker" Sheet. They run on LUCY 2 (that
+    # into the "Alphalete Org Applicant Tracker" Sheet. They run on LUCY 1 (that
     # machine holds the one-time ApplicantStream browser login). Package:
     # automations/applicant_tracker/. Each card's PRIMARY button is the SAFE
     # dry-run during rollout — flip primary→"Run live" once a report has one
-    # clean verified live pass on Lucy 2. confirm_first_day is dry-run only
+    # clean verified live pass on Lucy 1. confirm_first_day is dry-run only
     # until it's verified on a real first-day-of-training day (see its note).
     {
         "id": "applicant-call-list",
@@ -4101,21 +4101,21 @@ AUTOMATED_REPORTS = [
             "**B–H** (First Name, Last Name, Email, Phone, Job Board, Date and "
             "Time, Ad).\n\n"
             "WHEN IT RUNS\n"
-            "**7:00 AM Central, Mon–Sat** on **Lucy 2** (reads yesterday, so "
+            "**7:00 AM Central, Mon–Sat** on **Lucy 1** (reads yesterday, so "
             "morning is fine).\n\n"
             "NOTES\n"
             "**•** **Appends** to the bottom each run — it does **not** "
             "de-duplicate.\n"
             "**•** Confirm the 17-office list is current (one office id — "
             "22151 vs 21151 — was ambiguous in the source doc).\n"
-            "**•** Needs the one-time ApplicantStream login done on Lucy 2 "
+            "**•** Needs the one-time ApplicantStream login done on Lucy 1 "
             "(saved browser session) + the Google service-account key present."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1nOuJ5kGtEf25XIgKE-_iu8-tUHA8kZ6hyDaJnaJNmVo/edit"
                       "?gid=772258988#gid=772258988"),
-        "assignees": ["Lucy 2"],
-        "run_machine": "Lucy 2",
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
         "run_rerun_id": "applicant_call_list",
         "self_scheduled": True,
         "schedule": {
@@ -4128,7 +4128,7 @@ AUTOMATED_REPORTS = [
         "checklist": [],
         "post_run": {
             "message_success": "✅ Call List updated — yesterday's applicants appended.",
-            "message_failed": "❌ Run failed. Check the log (usually an expired ApplicantStream session on Lucy 2), then run again.",
+            "message_failed": "❌ Run failed. Check the log (usually an expired ApplicantStream session on Lucy 1), then run again.",
         },
         "actions": [
             {
@@ -4169,7 +4169,7 @@ AUTOMATED_REPORTS = [
             "**•** **BOB/Notes (J)** = the brought-on-board date when "
             "applicable.\n\n"
             "WHEN IT RUNS\n"
-            "**7:00 AM Central, Mon–Sat** on **Lucy 2** (reads yesterday).\n\n"
+            "**7:00 AM Central, Mon–Sat** on **Lucy 1** (reads yesterday).\n\n"
             "NOTES\n"
             "**•** Only updates people **already present** on the 2R tab (logs "
             "anyone not found).\n"
@@ -4179,8 +4179,8 @@ AUTOMATED_REPORTS = [
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1nOuJ5kGtEf25XIgKE-_iu8-tUHA8kZ6hyDaJnaJNmVo/edit"
                       "?gid=792099299#gid=792099299"),
-        "assignees": ["Lucy 2"],
-        "run_machine": "Lucy 2",
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
         "run_rerun_id": "applicant_2r_update",
         "self_scheduled": True,
         "schedule": {
@@ -4193,7 +4193,7 @@ AUTOMATED_REPORTS = [
         "checklist": [],
         "post_run": {
             "message_success": "✅ 2R statuses updated for yesterday's second-round interviewees.",
-            "message_failed": "❌ Run failed. Check the log (usually an expired ApplicantStream session on Lucy 2), then run again.",
+            "message_failed": "❌ Run failed. Check the log (usually an expired ApplicantStream session on Lucy 1), then run again.",
         },
         "actions": [
             {
@@ -4233,7 +4233,7 @@ AUTOMATED_REPORTS = [
             "Time, Ad). Owner has any trailing 2-letter state stripped "
             "(\"Rafael Hidalgo TX\" → \"Rafael Hidalgo\").\n\n"
             "WHEN IT RUNS\n"
-            "**8:00 PM Central, Mon–Sat** on **Lucy 2** — end of day, so the "
+            "**8:00 PM Central, Mon–Sat** on **Lucy 1** — end of day, so the "
             "day's second interviews are complete before it reads them.\n\n"
             "NOTES\n"
             "**•** **Appends** to the bottom each run — it does **not** "
@@ -4242,8 +4242,8 @@ AUTOMATED_REPORTS = [
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1nOuJ5kGtEf25XIgKE-_iu8-tUHA8kZ6hyDaJnaJNmVo/edit"
                       "?gid=792099299#gid=792099299"),
-        "assignees": ["Lucy 2"],
-        "run_machine": "Lucy 2",
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
         "run_rerun_id": "applicant_2r_retention",
         "self_scheduled": True,
         "schedule": {
@@ -4256,7 +4256,7 @@ AUTOMATED_REPORTS = [
         "checklist": [],
         "post_run": {
             "message_success": "✅ 2R Retention updated — today's second interviews appended.",
-            "message_failed": "❌ Run failed. Check the log (usually an expired ApplicantStream session on Lucy 2), then run again.",
+            "message_failed": "❌ Run failed. Check the log (usually an expired ApplicantStream session on Lucy 1), then run again.",
         },
         "actions": [
             {
@@ -4293,7 +4293,7 @@ AUTOMATED_REPORTS = [
             "**2R column R** = **'Y'** if the person showed up, **'N'** if "
             "scheduled but didn't. Only updates people already on the 2R tab.\n\n"
             "WHEN IT RUNS\n"
-            "**8:00 PM Central, Mon–Sat** on **Lucy 2** — after training, since "
+            "**8:00 PM Central, Mon–Sat** on **Lucy 1** — after training, since "
             "show-up isn't known until then.\n\n"
             "⚠️ NOT YET VERIFIED — DRY-RUN ONLY\n"
             "The build day had **zero** first-day-training rows, so the \"Total "
@@ -4307,8 +4307,8 @@ AUTOMATED_REPORTS = [
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1nOuJ5kGtEf25XIgKE-_iu8-tUHA8kZ6hyDaJnaJNmVo/edit"
                       "?gid=792099299#gid=792099299"),
-        "assignees": ["Lucy 2"],
-        "run_machine": "Lucy 2",
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
         "run_rerun_id": "applicant_first_day",
         # Not scheduled live yet (unverified). Hide the due-today pills; it's a
         # manual dry-run card until a real training day confirms the mapping.

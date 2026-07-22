@@ -5,10 +5,10 @@
     <key>Label</key>
     <string>com.alphalete.applicant-am</string>
 
-    <!-- Path is the laptop placeholder; on Lucy 2, install_agent.py rewrites it
+    <!-- Path is the laptop placeholder; on Lucy 1, install_agent.py rewrites it
          to that machine's repo path:
            python -m automations.day_orchestrator.install_agent applicant-am
-         RUNS ON LUCY 2 — that machine holds the one-time ApplicantStream browser
+         RUNS ON LUCY 1 — that machine holds the one-time ApplicantStream browser
          login (automations/applicant_tracker/.browser_profile). Francia's
          ApplicantStream → Applicant Tracker morning sync. -->
     <key>ProgramArguments</key>
