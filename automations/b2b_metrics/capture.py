@@ -155,17 +155,12 @@ import os as _os
 
 
 def _crop_to_last_colored_row(png: Path, verbose: bool = False) -> bool:
-    """Trim the image to END on the last rep that has data in the LEADING (0-30
-    Day) column — matching Megan's rule "end with the last row that has data in
-    the 0-30 day section". Reps whose 0-30 cell is blank (data only in later
-    columns) sort to the bottom and are dropped, along with the empty gap and the
-    uncoloured Disconnect-Reason table below the rep list.
-
-    Robust to the National-Average band sitting at a DIFFERENT x than the rep
-    columns: the leading rep column is found by FREQUENCY — the rep data columns
-    are coloured in dozens of rows, the National Average in only one or two — so
-    the leftmost high-frequency colour stripe is the rep 0-30 column. No
-    fixed column count, no sort-check. Best-effort: any doubt -> keep full."""
+    """Trim the image to END on the last REP row that carries any coloured (data)
+    cell — keeping every rep with churn/activation in ANY period, and cutting the
+    empty gap + the uncoloured Disconnect-Reason / Churn-Buckets table below the
+    rep list. Keying on any period (not just 0-30) matters for sparse products
+    like INT where a rep's only activity is in a later column — a 0-30-only rule
+    would drop them (Megan 2026-07-21). Best-effort: any doubt -> keep full."""
     try:
         from PIL import Image
     except ImportError:
@@ -178,34 +173,17 @@ def _crop_to_last_colored_row(png: Path, verbose: bool = False) -> bool:
         def sat(p):
             return max(p) - min(p) > 45 and max(p) > 90
 
-        # How many rows is each column coloured in? Rep data columns light up in
-        # dozens of rows; the small misaligned National-Average marker/band cells
-        # in only a couple — so a column colored in MANY rows is a rep data
-        # column, and the 0-30 Day column is the most-populated (nearly every rep
-        # has a 0-30 value; a 0-30-sorted view puts the blanks last).
-        col_rows = [0] * W
-        for x in range(0, W, 2):
-            c = 0
-            for y in range(0, H, 2):
-                if sat(px[x, y]):
-                    c += 1
-            col_rows[x] = c
-        peak = max(col_rows)
-        if peak < 20:                      # no real rep table found
-            return False
-        # Leftmost column that is substantially populated (>= half the peak) = the
-        # 0-30 column; a NARROW window around it so we never bleed into the 30/60
-        # columns (which would re-include the blank-0-30 reps we want to drop).
-        lead = next(x for x in range(0, W, 2) if col_rows[x] >= 0.5 * peak)
-        a, b = max(0, lead - 4), lead + 22
-
+        # Last row with a real RUN of coloured pixels (a data cell, not a stray
+        # antialiased pixel). The rep cells + National Average band are coloured;
+        # the empty gap and the bottom Disconnect-Reason grid are not.
         last = 0
         for y in range(H):
-            if any(sat(px[x, y]) for x in range(a, b, 2)):
+            cnt = sum(1 for x in range(0, W, 3) if sat(px[x, y]))
+            if cnt > 8:
                 last = y
         if last <= 0:
             return False
-        cut = min(H, last + 8)              # +8 keeps the cell's bottom border
+        cut = min(H, last + 10)            # +10 keeps the cell's bottom border
         if cut >= H - 4:
             return False                    # nothing meaningful to trim
         im.crop((0, 0, W, cut)).save(png)
