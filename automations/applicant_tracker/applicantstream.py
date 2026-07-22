@@ -80,18 +80,50 @@ class ApplicantStream:
             self._pw.stop()
 
     # ---- auth ------------------------------------------------------------
+    # Two-step ownerville login form (ApplicantStream shares the ownerville
+    # login). Selectors mirror the proven, in-production
+    # automations.shared.tableau_patchright._drive_login_form — the original
+    # get_by_label("Username")/single-page "Log in" guesses were wrong for this
+    # username→NEXT→password→submit flow, which is why the first headless login
+    # failed with "Could not find session token".
+    _USER_SEL = ('input[type="email"], input[name="username"], '
+                 'input[name="email"], input[type="text"]')
+    _PASS_SEL = 'input[type="password"]'
+    _NEXT_NAME = re.compile(r"^\s*next\s*$", re.I)
+    _SUBMIT_NAME = re.compile(r"sign\s*in|log\s*in|submit|continue|enter", re.I)
+
     def login(self):
-        self.page.goto(config.AS_URL, wait_until="domcontentloaded")
+        # Go to the app (index.cfm). Authenticated → it serves the app with rqst
+        # links; unauthenticated → it serves the ownerville login form.
+        self.page.goto(BASE, wait_until="domcontentloaded")
         self._wait_for_cloudflare()
-        if self.page.get_by_role("link", name="Log Out").count() == 0:
-            # Credentials come from the spreadsheet's README tab (B1/B2).
-            username, password = sheets.read_as_credentials()
+
+        already = ("rqst=" in (self.page.url or "")
+                   or self.page.get_by_role(
+                       "link", name=re.compile("log ?out", re.I)).count() > 0)
+        if not already:
+            username, password = sheets.read_as_credentials()  # README B1/B2
             try:
-                self.page.get_by_label("Username").fill(username)   # >>> VERIFY field label
-                self.page.get_by_label("Password").fill(password)   # >>> VERIFY field label
-                self.page.get_by_role("button", name=re.compile("log ?in", re.I)).click()
+                self.page.wait_for_selector(self._USER_SEL, timeout=15000)
+                self.page.fill(self._USER_SEL, username)
+                self.page.get_by_role("button", name=self._NEXT_NAME).first.click()
+                self.page.wait_for_selector(self._PASS_SEL, timeout=60000)
                 self._wait_for_cloudflare()
-                self.page.wait_for_load_state("networkidle")
+                self.page.wait_for_timeout(1500)
+                self.page.fill(self._PASS_SEL, password)
+                self.page.wait_for_timeout(1500)
+                # Submit fires a Cloudflare→SSO redirect chain that can outlast
+                # Playwright's post-click nav auto-wait; no_wait_after skips it,
+                # the explicit waits below settle it.
+                try:
+                    self.page.get_by_role(
+                        "button", name=self._SUBMIT_NAME).first.click(
+                            no_wait_after=True)
+                except PWTimeout:
+                    pass
+                self.page.wait_for_load_state("domcontentloaded")
+                self.page.wait_for_timeout(5000)
+                self._wait_for_cloudflare()
             except PWTimeout:
                 pass
         self._capture_token()
