@@ -115,8 +115,11 @@ def payout_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
 
 # --- #1 / #2 / #3-5 / #8 : Tableau Download->Image, owner-sliced ------------
 def _sliced_url(o: B2BOffice, view_key: str) -> str:
-    """The shared team view with ?Owner Name=<owner> appended (drops :iid — a
-    tab index, irrelevant to the slice)."""
+    """The URL to capture. A per-office OVERRIDE view is a saved view already
+    filtered to the owner — captured as-is, no slice appended. Otherwise it's the
+    shared team view with ?Owner Name=<owner> appended (drops :iid, a tab index)."""
+    if o.is_override(view_key):
+        return o.view_url(view_key)
     from urllib.parse import quote
     base = o.view_url(view_key).split("?")[0]
     return "{}?{}={}".format(base, quote(OWNER_FIELD), quote(o.owner))

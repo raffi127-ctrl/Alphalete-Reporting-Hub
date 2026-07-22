@@ -51,7 +51,7 @@ Tableau views to clone. `python -m automations.b2b_metrics.runner --office <key>
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 _T = "https://us-east-1.online.tableau.com/#/site/sci/views/"
 
@@ -112,13 +112,25 @@ class B2BOffice:
     churn_tab: str = "LUCY CHURN"   # feeds #6 Customer Churn + #7 Activation-by-rep
     order_log_tab: str = "Lucy At&t Order Log"
 
+    # Per-office saved-view URLs that OVERRIDE the shared TEAM view for a given
+    # view_key. Use when the team view can't be URL-sliced to this office (e.g.
+    # CHURNRATES filters on "Owner & Office", not "Owner Name", so the generic
+    # ?Owner Name= slice is ignored — a saved view already filtered to the owner
+    # is the reliable path). An overridden view is captured AS-IS: no owner slice
+    # is appended (the saved view already carries the filter).
+    view_overrides: dict = field(default_factory=dict)
+
     @property
     def tableau_views(self) -> dict:
-        """view_key -> shared team-view URL (sliced to this owner at capture)."""
-        return dict(TEAM)
+        """view_key -> the URL to capture (per-office override if present, else
+        the shared team view)."""
+        return {k: self.view_overrides.get(k, TEAM[k]) for k in TEAM}
 
     def view_url(self, view_key: str) -> str:
-        return TEAM[view_key]
+        return self.view_overrides.get(view_key, TEAM[view_key])
+
+    def is_override(self, view_key: str) -> bool:
+        return view_key in self.view_overrides
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +152,15 @@ OFFICES: dict = {
         channel_id="C0B395PUUCW",   # #domin8-b2b-sales (Carlos 2026-07-21)
         channel_name="#domin8-b2b-sales",
         sheet_id="15YUHkAcG2AfiF6KRhCiOBKGDdS9nnjxdfvIXr7oRX30",
+        # CHURNRATES filters on "Owner & Office" (not "Owner Name"), so the URL
+        # slice is ignored — Carlos made an Atef-filtered saved view instead.
+        # TESTING (2026-07-21): AtefExp wired to churn_wireless to see what it
+        # contains (combined vs one product). If combined, collapse churn to 1.
+        view_overrides={
+            "churn_wireless": (_T + "ATTTRACKER-B2B/CHURNRATES/"
+                               "5b6a79de-9727-4ff2-bf4f-4b9eac449d70/"
+                               "AtefExp?:iid=1"),
+        },
     ),
 }
 
