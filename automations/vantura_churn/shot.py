@@ -207,17 +207,19 @@ POST_IMAGES = [
 def post_report(ws, day: dt.date | None = None, dry_run: bool = True,
                 thread_ts: str | None = None, log=print) -> dict:
     """Render the churn overview + rep breakdown and reply them into that
-    day's 'B2B Quality & Bonus' thread — the same thread the B2B Quality
-    report posts to (#alphalete-gp-sales), as Lucy.
+    day's 'B2B Metrics' thread — the same thread the b2b_quality report opens
+    in #alphalete-gp-sales, as Lucy. (The thread was titled "B2B Quality &
+    Bonus" until 2026-07-21; the module dir is still b2b_quality. We key off
+    bq.THREAD_TITLE, never a literal, so the rename didn't affect this.)
 
     Runs on Lucy 2, so the post carries the Lucy identity (this machine's
     Slack token decides who it's from — a manual run from a laptop posts as
     that laptop's user). dry_run=True resolves + renders + reports the target
     without sending. Skips any image already in the thread, so a re-run
-    doesn't duplicate. Does NOT create the parent — if the B2B Quality thread
+    doesn't duplicate. Does NOT create the parent — if the B2B Metrics thread
     doesn't exist yet, it logs and skips rather than opening a rival thread.
 
-    Finds the thread via B2B Quality's shared thread-state file (no Slack scope
+    Finds the thread via b2b_quality's shared thread-state file (no Slack scope
     needed), falling back to the history read; that read fails on Lucy's token,
     so relying on it alone would make this skip on a cold morning.
     """
