@@ -171,10 +171,22 @@ OFFICES: dict = {
         channel_id="C0B395PUUCW",   # #domin8-b2b-sales (Carlos 2026-07-21)
         channel_name="#domin8-b2b-sales",
         sheet_id="15YUHkAcG2AfiF6KRhCiOBKGDdS9nnjxdfvIXr7oRX30",
-        # EXACT Tableau "Owner & Office" value (pulled from the ORDERLOG export):
-        # a carriage return + space separate the name and office. The URL slice
-        # must match it verbatim or CHURNRATES/ACTIVATIONRATES return empty.
         owner_office="ATEF CHOUDHURY\r [domin8 acquisitions, inc.]",
+        # CHURNRATES can't be URL-sliced by "Owner & Office" (compound value with
+        # an embedded CR — Tableau URL returns empty). So churn rides Carlos's
+        # Atef-scoped saved view AtefExp (Owner & Office baked in) and switches
+        # PRODUCT via URL — a clean value Tableau URL filters DO match. One saved
+        # view covers all three products. Activation still needs its own.
+        view_overrides={
+            "churn_wireless": (_T + "ATTTRACKER-B2B/CHURNRATES/"
+                               "5b6a79de-9727-4ff2-bf4f-4b9eac449d70/AtefExp"),
+            "churn_int": (_T + "ATTTRACKER-B2B/CHURNRATES/"
+                          "5b6a79de-9727-4ff2-bf4f-4b9eac449d70/AtefExp"
+                          "?Product%20Type%20(Broken%20Out)=NEW%20INTERNET"),
+            "churn_air": (_T + "ATTTRACKER-B2B/CHURNRATES/"
+                          "5b6a79de-9727-4ff2-bf4f-4b9eac449d70/AtefExp"
+                          "?Product%20Type%20(Broken%20Out)=AIR/AWB"),
+        },
     ),
 }
 
