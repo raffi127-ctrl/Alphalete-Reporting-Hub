@@ -139,13 +139,17 @@ import os as _os
 
 
 def _crop_to_last_colored_row(png: Path, verbose: bool = False) -> bool:
-    """Trim the image to END on the last row that carries a coloured (red/green/
-    yellow) data cell, plus a small margin. Purpose-built for the B2B Churn /
-    Activation dashboards: it drops the empty gap and the uncoloured
-    Disconnect-Reason / Churn-Buckets table below the rep list (Carlos never
-    posts those), WITHOUT b2b_quality's column-geometry math or its strict
-    sort-check — both of which misfire on an office whose rep table has blank
-    leading-column cells (e.g. Atef's). Best-effort: any doubt -> keep full."""
+    """Trim the image to END on the last rep that has data in the LEADING (0-30
+    Day) column — matching Megan's rule "end with the last row that has data in
+    the 0-30 day section". Reps whose 0-30 cell is blank (data only in later
+    columns) sort to the bottom and are dropped, along with the empty gap and the
+    uncoloured Disconnect-Reason table below the rep list.
+
+    Robust to the National-Average band sitting at a DIFFERENT x than the rep
+    columns: the leading rep column is found by FREQUENCY — the rep data columns
+    are coloured in dozens of rows, the National Average in only one or two — so
+    the leftmost high-frequency colour stripe is the rep 0-30 column. No
+    fixed column count, no sort-check. Best-effort: any doubt -> keep full."""
     try:
         from PIL import Image
     except ImportError:
@@ -158,12 +162,29 @@ def _crop_to_last_colored_row(png: Path, verbose: bool = False) -> bool:
         def sat(p):
             return max(p) - min(p) > 45 and max(p) > 90
 
-        # Last row with a real run of coloured pixels (a data cell, not a stray
-        # antialiased pixel). Sample every 3rd column for speed.
+        # How many rows is each column coloured in? Rep data columns light up in
+        # many rows; the misaligned National-Average cells in only a couple.
+        col_rows = [0] * W
+        for x in range(0, W, 2):
+            c = 0
+            for y in range(0, H, 2):
+                if sat(px[x, y]):
+                    c += 1
+            col_rows[x] = c
+        hot = [x for x in range(0, W, 2) if col_rows[x] > 12]
+        if not hot:
+            return False
+        # Leftmost contiguous hot stripe = the 0-30 Day rep column.
+        c0 = c1 = hot[0]
+        for x in hot[1:]:
+            if x - c1 <= 10:
+                c1 = x
+            else:
+                break
+
         last = 0
         for y in range(H):
-            cnt = sum(1 for x in range(0, W, 3) if sat(px[x, y]))
-            if cnt > 8:
+            if any(sat(px[x, y]) for x in range(c0, c1 + 1, 2)):
                 last = y
         if last <= 0:
             return False
@@ -172,7 +193,7 @@ def _crop_to_last_colored_row(png: Path, verbose: bool = False) -> bool:
             return False                    # nothing meaningful to trim
         im.crop((0, 0, W, cut)).save(png)
         if verbose:
-            print("   ✂ cropped to last coloured row ({} -> {}px)".format(
+            print("   ✂ cropped to last 0-30 rep row ({} -> {}px)".format(
                 H, cut), flush=True)
         return True
     except Exception as e:  # noqa: BLE001 — a bad crop must never lose the image
