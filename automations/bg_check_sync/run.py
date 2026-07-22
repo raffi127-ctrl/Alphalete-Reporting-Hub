@@ -133,6 +133,8 @@ def main(argv=None) -> int:
     ap.add_argument("--since-days", type=int, default=30)
     ap.add_argument("--dry-run", action="store_true", help="no sheet writes")
     ap.add_argument("--post", action="store_true", help="actually post/edit Slack")
+    ap.add_argument("--repost", action="store_true",
+                    help="force a fresh repost of the thread (the Friday bump)")
     args = ap.parse_args(argv)
 
     # Tell the Hub we're running (yellow pill -> green on success). Never let a
@@ -206,7 +208,11 @@ def main(argv=None) -> int:
     hour12 = now.hour % 12 or 12
     updated_str = f"{now:%b} {now.day}, {hour12}:{now.minute:02d} {now:%p}"
     body = slack_post.render(week, slack_people, needs_confirm, updated_str)
-    slack_post.post_or_update(week, body, dry_run=not args.post)
+    # Friday afternoon: repost the thread FRESH at the bottom of the channel so
+    # it isn't buried going into the start week (Raf). Other runs edit in place.
+    repost = (now.weekday() == 4 and now.hour >= 12) or args.repost
+    slack_post.post_or_update(week, body, dry_run=not args.post,
+                              repost=repost, today=now.date().isoformat())
 
     if fuzzy_log:
         uniq = {(p.key, f"{p.first} {p.last}", f"{e.first} {e.last}") for e, p in fuzzy_log}

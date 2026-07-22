@@ -79,14 +79,38 @@ def render(week_date: str, people: list, needs_confirm: list, updated_str: str) 
     return "\n".join(lines)
 
 
-def post_or_update(week_date: str, body: str, *, dry_run: bool = True) -> dict:
+def post_or_update(week_date: str, body: str, *, dry_run: bool = True,
+                   repost: bool = False, today: str | None = None) -> dict:
     """Post the weekly parent+reply if new; otherwise edit the existing reply.
-    Returns the state entry for this week."""
+
+    `repost` (Friday afternoon): instead of editing the buried thread, post a
+    FRESH parent+reply at the bottom of the channel with the same current content
+    so it's visible going into the start week — but only once per day (guarded by
+    `reposted_on` so the 3x/day runs don't stack copies). `today` is an ISO date
+    string used for that once-a-day guard. Returns the state entry for this week."""
     state = _load_state()
     entry = state.get(week_date)
+    do_repost = bool(entry) and repost and entry.get("reposted_on") != today
+
+    def _post_fresh(client):
+        parent = client.chat_postMessage(
+            channel=CHANNEL_ID,
+            text=f"📋 BG Status — New Starts (week of {week_date})")
+        reply = client.chat_postMessage(
+            channel=CHANNEL_ID, thread_ts=parent["ts"], text=body)
+        e = {"channel": CHANNEL_ID, "parent_ts": parent["ts"],
+             "reply_ts": reply["ts"]}
+        if repost:
+            e["reposted_on"] = today
+        return e
 
     if dry_run:
-        action = "EDIT existing reply" if entry else "POST new parent + reply"
+        if not entry:
+            action = "POST new parent + reply"
+        elif do_repost:
+            action = "REPOST fresh (Friday bump)"
+        else:
+            action = "EDIT existing reply"
         print(f"[slack dry-run] channel {CHANNEL_ID} · week {week_date} · {action}\n")
         print(body)
         return entry or {"dry_run": True}
@@ -95,14 +119,8 @@ def post_or_update(week_date: str, body: str, *, dry_run: bool = True) -> dict:
     # channel post uses (tableau_screenshots, daily_metrics). The bot token is
     # DM-only and isn't on the mini. Lucy must be a channel member (she is).
     client = smp._client()
-    if not entry:
-        parent = client.chat_postMessage(
-            channel=CHANNEL_ID,
-            text=f"📋 BG Status — New Starts (week of {week_date})")
-        reply = client.chat_postMessage(
-            channel=CHANNEL_ID, thread_ts=parent["ts"], text=body)
-        entry = {"channel": CHANNEL_ID, "parent_ts": parent["ts"],
-                 "reply_ts": reply["ts"]}
+    if not entry or do_repost:
+        entry = _post_fresh(client)
         state[week_date] = entry
         _save_state(state)
     else:
