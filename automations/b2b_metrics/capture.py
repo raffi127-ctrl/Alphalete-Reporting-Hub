@@ -71,12 +71,6 @@ def _order_lines(o: B2BOffice, out_dir: Path, log=print):
     csv = out_dir / "orderlog_{}.csv".format(today.isoformat())
     al_run._pull(today, csv, log=log)
     lines = clean.load_rows(csv, owner_prefix=o.owner)
-    try:  # DEBUG(2026-07-21): surface the exact 'Owner & Office' value (has a
-        # newline) so the churn/activation URL slice can match it verbatim.
-        oo = sorted({repr(l.get("Owner & Office", "")) for l in lines})
-        log("  [OWNER&OFFICE] " + " || ".join(oo[:4]))
-    except Exception:  # noqa: BLE001
-        pass
     _LINE_CACHE[o.key] = lines
     return lines
 

@@ -171,7 +171,10 @@ OFFICES: dict = {
         channel_id="C0B395PUUCW",   # #domin8-b2b-sales (Carlos 2026-07-21)
         channel_name="#domin8-b2b-sales",
         sheet_id="15YUHkAcG2AfiF6KRhCiOBKGDdS9nnjxdfvIXr7oRX30",
-        owner_office="ATEF CHOUDHURY [domin8 acquisitions, inc.]",
+        # EXACT Tableau "Owner & Office" value (pulled from the ORDERLOG export):
+        # a carriage return + space separate the name and office. The URL slice
+        # must match it verbatim or CHURNRATES/ACTIVATIONRATES return empty.
+        owner_office="ATEF CHOUDHURY\r [domin8 acquisitions, inc.]",
     ),
 }
 
