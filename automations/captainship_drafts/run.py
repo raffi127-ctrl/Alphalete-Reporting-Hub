@@ -48,8 +48,27 @@ def _sales_board_shots(captain, today, render_dir, *, logfn):
         return None, []
 
 
+def _tableau_shots(captain, today, render_dir, *, logfn):
+    """(cancel_tableau, teamstats_tableau) for one captain — only the one its
+    flavor uses is populated; the other stays None. Degrades to None on any
+    failure OR an unconfigured source, so that §2 section shows a 'pending' note
+    and the rest of the draft still builds (a failed pull must never post a
+    wrong-looking image)."""
+    try:
+        from automations.captainship_drafts import tableau_shot
+        path = tableau_shot.captain_tableau_shot(
+            captain.key, captain.flavor, render_dir, today=today, logfn=logfn)
+    except Exception as e:
+        logfn(f"  ⚠ Tableau §2 shot skipped for {captain.key}: {e}")
+        path = None
+    if captain.flavor in ("rafael", "fiber"):
+        return path, None      # (cancel_tableau, teamstats_tableau)
+    return None, path
+
+
 def _build_one(captain: config.Captain, today: dt.date, render_dir: Path,
-               *, skip_sheets: bool = False, logfn=print):
+               *, skip_sheets: bool = False, skip_tableau: bool = False,
+               logfn=print):
     logfn(f"\n--- {captain.key} ({captain.display_name}, {captain.flavor}) ---")
     churn = churn_images.render_captain(captain, today, render_dir, logfn=logfn)
     churn_wireless = [c for c in churn if c[0].lower().startswith("wireless")]
@@ -61,19 +80,28 @@ def _build_one(captain: config.Captain, today: dt.date, render_dir: Path,
     else:
         ps, units = _sales_board_shots(captain, today, render_dir, logfn=logfn)
 
+    if skip_tableau:
+        logfn("  (‑‑skip-tableau) Tableau §2 shot skipped")
+        cancel_tableau, teamstats_tableau = None, None
+    else:
+        cancel_tableau, teamstats_tableau = _tableau_shots(
+            captain, today, render_dir, logfn=logfn)
+
     bundle = {
         "product_summary": ps,
         "units": units,
         "churn_ni": churn_ni,
         "churn_wireless": churn_wireless,
-        # Tableau §2 shots land in the Tableau phase.
-        "cancel_tableau": None,
-        "teamstats_tableau": None,
+        # §2 Tableau shots (cancel rates / team stats breakout), filtered to the
+        # captain's team. None → email_build shows a per-section 'pending' note.
+        "cancel_tableau": cancel_tableau,
+        "teamstats_tableau": teamstats_tableau,
         "fiber_activation": (fiber_png.fiber_activation_png(
             captain.key, today, logfn=logfn)
             if captain.flavor == "fiber" else None),
     }
     n_imgs = sum([ps is not None, len(units), len(churn),
+                  cancel_tableau is not None, teamstats_tableau is not None,
                   bundle["fiber_activation"] is not None])
     if not n_imgs:
         logfn(f"  ⚠ no images at all for {captain.key} — skipping")
@@ -97,6 +125,9 @@ def main(argv=None) -> int:
     ap.add_argument("--skip-sheets", action="store_true",
                     help="Skip Sales Board screenshots (no browser/sheet "
                          "writes); those sections show a 'pending' note.")
+    ap.add_argument("--skip-tableau", action="store_true",
+                    help="Skip the §2 Tableau shots (no Tableau session); those "
+                         "sections show a 'pending' note.")
     args = ap.parse_args(argv)
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
@@ -119,7 +150,8 @@ def main(argv=None) -> int:
     for captain in selected:
         try:
             msg = _build_one(captain, today, render_dir,
-                             skip_sheets=args.skip_sheets)
+                             skip_sheets=args.skip_sheets,
+                             skip_tableau=args.skip_tableau)
         except Exception as e:
             failures += 1
             print(f"  ✗ {captain.key}: build failed: {e}")
