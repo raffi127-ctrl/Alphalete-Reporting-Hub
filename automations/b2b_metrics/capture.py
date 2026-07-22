@@ -201,9 +201,6 @@ def _crop_to_last_colored_row(png: Path, leading: bool = False,
             for y, lx in row_left.items():
                 if abs(lx - x0) <= 12 and y > last:
                     last = y
-            if verbose:
-                print("   [cropdbg] W={} H={} x0={} top={} last_y={}".format(
-                    W, H, x0, buckets.most_common(4), last), flush=True)
         else:
             # Last row with a real RUN of coloured pixels (any column).
             last = 0
