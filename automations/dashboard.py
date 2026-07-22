@@ -4259,8 +4259,11 @@ AUTOMATED_REPORTS = [
             "pulls and previews everything but writes nothing until the run "
             "is sandbox-verified and the wrapper is flipped to --live."
         ),
+        # Deep-links to the RAW tab this run appends the week's rows to
+        # (sh.worksheet("RAW") in vantura_payroll/run.py).
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"),
+                      "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"
+                      "?gid=1425857248#gid=1425857248"),
         "assignees": ["Lucy 2"],
         # Runs on Lucy 2 — its warm Tableau session + the Wednesday 11am launchd
         # job (com.alphalete.vantura-payroll-wed) live there. A Hub "play" from
