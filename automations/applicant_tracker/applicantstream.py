@@ -276,6 +276,23 @@ class ApplicantStream:
         rows = self.scrape_detail_table(2)  # first two data cols = First, Last
         return {f"{r[0]} {r[1]}".strip() for r in rows if len(r) >= 2}
 
+    def scrape_at(self, href: str, n_data_cols: int) -> list[list[str]]:
+        """Navigate to an already-collected detail href and scrape its table.
+        Lets a caller gather ALL of an office's detail hrefs from ONE loaded
+        retention report (detail_href doesn't navigate), then visit each — far
+        fewer page loads than reloading the report before every metric."""
+        if not href:
+            return []
+        if not href.startswith("http"):
+            href = "https://applicantstream.com/" + href.lstrip("/")
+        self.page.goto(href, wait_until="networkidle")
+        return self.scrape_detail_table(n_data_cols)
+
+    def names_at(self, href: str) -> set[str]:
+        """Full names ('First Last') from an already-collected detail href."""
+        rows = self.scrape_at(href, 2)  # first two data cols = First, Last
+        return {f"{r[0]} {r[1]}".strip() for r in rows if len(r) >= 2}
+
     # ---- calendar helpers ------------------------------------------------
     def open_calendar_for(self, date: dt.date):
         """Open the calendar day view for a specific date (uses the page's own

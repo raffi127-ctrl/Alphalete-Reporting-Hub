@@ -86,119 +86,66 @@
     }
   },
   "reports": {
-    "applicant_call_list": {
+    "applicant_sync": {
       "on_scheduler": false,
-      "_note": "Francia's ApplicantStream → Applicant Tracker report. Runs on LUCY 1 (that machine holds the one-time ApplicantStream browser login in automations/applicant_tracker/.browser_profile). on_scheduler:false so the 4am orchestrator NEVER auto-runs it — its real schedule is a standalone launchd job (7am or 8pm CST, Mon–Sat, com.alphalete.applicant-am/pm via deploy/applicant_tracker.sh). Present so the Hub card's Preview/Run-live buttons route here: `lucy rerun applicant_call_list` = LIVE write, `lucy rerun applicant_call_list --dry-run` = no writes. The module WRITES by default (base_args []); the Preview button appends --dry-run. Reads the Google service-account key from the gitignored applicant-tracker-service-account.json. Appends YESTERDAY's 'Sent to Call List' (17 offices) to the Call List tab (owner col A, data B–H). Appends; no de-dupe.",
-      "display_name": "Applicant Tracker: Export Call List",
+      "_note": "Consolidated Applicant Tracker sync (Francia's 4 ApplicantStream reports merged into automations.applicant_tracker.run). NEUTRAL rerun handle — PASS THE PHASE: `lucy rerun applicant_sync morning` / `lucy rerun applicant_sync evening` (add --dry-run for no writes). The Hub card 'Applicant Tracker Sync' routes its morning/evening + dry buttons here. Runs on Lucy 1 as rcaptain (recruiting-captain login, access to all 17 owners' offices).",
+      "display_name": "Applicant Tracker Sync (manual)",
       "source_type": "appstream",
       "data_sources": [],
       "command": [
-        "automations.applicant_tracker.export_call_list"
+        "automations.applicant_tracker.run"
       ],
       "base_args": [],
       "cadence": {
         "weekdays": []
       },
-      "priority": "P3",
-      "freshness_target": null,
-      "depends_on": [],
-      "verify": null,
-      "timeout_minutes": 20,
-      "machine": "Lucy 1"
-    },
-    "applicant_2r_update": {
-      "on_scheduler": false,
-      "_note": "Francia's ApplicantStream → Applicant Tracker report. Runs on LUCY 1 (that machine holds the one-time ApplicantStream browser login in automations/applicant_tracker/.browser_profile). on_scheduler:false so the 4am orchestrator NEVER auto-runs it — its real schedule is a standalone launchd job (7am or 8pm CST, Mon–Sat, com.alphalete.applicant-am/pm via deploy/applicant_tracker.sh). Present so the Hub card's Preview/Run-live buttons route here: `lucy rerun applicant_2r_update` = LIVE write, `lucy rerun applicant_2r_update --dry-run` = no writes. The module WRITES by default (base_args []); the Preview button appends --dry-run. Reads the Google service-account key from the gitignored applicant-tracker-service-account.json. Updates YESTERDAY's 2nd-round interviewees already on the 2R tab: Offered (H), Follow up (I) no-show/BOB, Notes (J) BOB date.",
-      "display_name": "Applicant Tracker: Update Second-Round Status",
-      "source_type": "appstream",
-      "data_sources": [],
-      "command": [
-        "automations.applicant_tracker.update_second_round"
-      ],
-      "base_args": [],
-      "cadence": {
-        "weekdays": []
-      },
-      "priority": "P3",
+      "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
       "verify": null,
       "timeout_minutes": 25,
       "machine": "Lucy 1"
     },
-    "applicant_2r_retention": {
-      "on_scheduler": false,
-      "_note": "Francia's ApplicantStream → Applicant Tracker report. Runs on LUCY 1 (that machine holds the one-time ApplicantStream browser login in automations/applicant_tracker/.browser_profile). on_scheduler:false so the 4am orchestrator NEVER auto-runs it — its real schedule is a standalone launchd job (7am or 8pm CST, Mon–Sat, com.alphalete.applicant-am/pm via deploy/applicant_tracker.sh). Present so the Hub card's Preview/Run-live buttons route here: `lucy rerun applicant_2r_retention` = LIVE write, `lucy rerun applicant_2r_retention --dry-run` = no writes. The module WRITES by default (base_args []); the Preview button appends --dry-run. Reads the Google service-account key from the gitignored applicant-tracker-service-account.json. Appends TODAY's 'Total Second Interviews' (17 offices) to the 2R tab (owner col AT, 9 cols AU–BC). Runs 8pm so the day is complete. Appends; no de-dupe.",
-      "display_name": "Applicant Tracker: Export 2R Retention",
+    "applicant_sync_morning": {
+      "on_scheduler": true,
+      "_note": "MORNING phase (reads YESTERDAY): Export Call List + Update 2R Status. Auto-run by the 4am orchestrator, Mon–Sat (AppStream = wave 1, fills early). Reports completion to the Hub as card 'applicant-tracker-sync' so the pill turns ORANGE; the EVENING phase (8pm via com.alphalete.applicant-evening) turns it GREEN. One login, each office selected once.",
+      "display_name": "Applicant Tracker: morning phase (4am)",
       "source_type": "appstream",
       "data_sources": [],
       "command": [
-        "automations.applicant_tracker.export_2r_retention"
+        "automations.applicant_tracker.run"
       ],
-      "base_args": [],
+      "base_args": [
+        "morning"
+      ],
       "cadence": {
-        "weekdays": []
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
       },
-      "priority": "P3",
+      "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
       "verify": null,
-      "timeout_minutes": 20,
+      "timeout_minutes": 25,
       "machine": "Lucy 1"
     },
-    "applicant_first_day": {
+    "install_applicant_evening_agent": {
       "on_scheduler": false,
-      "_note": "Francia's ApplicantStream → Applicant Tracker report. Runs on LUCY 1 (that machine holds the one-time ApplicantStream browser login in automations/applicant_tracker/.browser_profile). on_scheduler:false so the 4am orchestrator NEVER auto-runs it — its real schedule is a standalone launchd job (7am or 8pm CST, Mon–Sat, com.alphalete.applicant-am/pm via deploy/applicant_tracker.sh). Present so the Hub card's Preview/Run-live buttons route here: `lucy rerun applicant_first_day` = LIVE write, `lucy rerun applicant_first_day --dry-run` = no writes. The module WRITES by default (base_args []); the Preview button appends --dry-run. Reads the Google service-account key from the gitignored applicant-tracker-service-account.json. Marks 2R col R = Y/N for TODAY's first-day-training people. ⚠️ NOT YET VERIFIED on live data (build day had 0 training) — DRY-RUN ONLY until confirmed on a real training day, and confirm 'First Day of Training' maps to the 'Total Training' retention row. Its live launchd agent is NOT installed (not in the -pm plist yet).",
-      "display_name": "Applicant Tracker: Confirm First-Day Show-Up (UNVERIFIED)",
-      "source_type": "appstream",
-      "data_sources": [],
-      "command": [
-        "automations.applicant_tracker.confirm_first_day"
-      ],
-      "base_args": [],
-      "cadence": {
-        "weekdays": []
-      },
-      "priority": "P3",
-      "freshness_target": null,
-      "depends_on": [],
-      "verify": null,
-      "timeout_minutes": 20,
-      "machine": "Lucy 1"
-    },
-    "install_applicant_am_agent": {
-      "on_scheduler": false,
-      "_note": "NOT a report — a one-shot LaunchAgent installer (same pattern as install_att_order_log_agent), run via `lucy rerun install_applicant_am_agent --machine \"Lucy 1\"`. on_scheduler:false so it's never in the 4am batch. Regenerates + launchctl-bootstraps com.alphalete.applicant-am on LUCY 1 from deploy/com.alphalete.applicant-am.plist. install_agent is read-only w.r.t. any Sheet/report data — it only reloads the plist. PRE-REQ: the one-time headed ApplicantStream login must be done on Lucy 1 first (python -m automations.applicant_tracker.applicantstream with HEADLESS=0). AM job = 7:00am CST Mon–Sat, runs export_call_list then update_second_round sequentially (shared browser profile can't run two at once).",
-      "display_name": "Install: Applicant Tracker AM agent (7:00am)",
+      "_note": "One-shot installer for com.alphalete.applicant-evening on Lucy 1 (8:00pm CST Mon–Sat; deploy/applicant_tracker.sh evening -> python -m automations.applicant_tracker.run evening). Runs the EVENING phase (reads TODAY: 2R Retention live + First-Day dry). Run via `lucy rerun install_applicant_evening_agent`. install_agent only reloads the plist.",
+      "display_name": "Install Applicant Tracker evening agent (8pm)",
       "source_type": "local",
       "data_sources": [],
       "command": [
         "automations.day_orchestrator.install_agent"
       ],
       "base_args": [
-        "applicant-am"
-      ],
-      "cadence": {
-        "weekdays": []
-      },
-      "priority": "P3",
-      "freshness_target": null,
-      "depends_on": [],
-      "verify": null,
-      "timeout_minutes": 5,
-      "machine": "Lucy 1"
-    },
-    "install_applicant_pm_agent": {
-      "on_scheduler": false,
-      "_note": "NOT a report — a one-shot LaunchAgent installer (same pattern as install_att_order_log_agent), run via `lucy rerun install_applicant_pm_agent --machine \"Lucy 1\"`. on_scheduler:false so it's never in the 4am batch. Regenerates + launchctl-bootstraps com.alphalete.applicant-pm on LUCY 1 from deploy/com.alphalete.applicant-pm.plist. install_agent is read-only w.r.t. any Sheet/report data — it only reloads the plist. PRE-REQ: the one-time headed ApplicantStream login must be done on Lucy 1 first (python -m automations.applicant_tracker.applicantstream with HEADLESS=0). PM job = 8:00pm CST Mon–Sat, runs export_2r_retention (confirm_first_day is intentionally NOT in the plist until it's verified).",
-      "display_name": "Install: Applicant Tracker PM agent (8:00pm)",
-      "source_type": "local",
-      "data_sources": [],
-      "command": [
-        "automations.day_orchestrator.install_agent"
-      ],
-      "base_args": [
-        "applicant-pm"
+        "applicant-evening"
       ],
       "cadence": {
         "weekdays": []

@@ -1,75 +1,63 @@
 # Applicant Tracker (ApplicantStream → Google Sheet)
 
-Four recruiting reports built by **Francia** (2026-07-21). Each logs into
-**ApplicantStream** (Playwright headless Chromium) and syncs into the
-**Alphalete Org Applicant Tracker** Sheet. They run on **Lucy 2** (Carlos's
-mini) and appear on the Hub as four cards under **🎯 Recruiting**.
+Francia's four ApplicantStream reports, **consolidated into one module**
+(`run.py`) with two phases that share a single login. Syncs the **Alphalete Org
+Applicant Tracker** Sheet. Runs on **Lucy 1** as `rcaptain` (the recruiting
+captain login, which sees all 17 owners' offices). One Hub card: **Applicant
+Tracker Sync** (🎯 Recruiting).
 
-| Module | Hub card | Reads | Writes | Scheduled |
+| Phase | Reads | Does | Writes | When |
 |---|---|---|---|---|
-| `export_call_list` | Export Call List → Call List tab | Retention → **yesterday** → "Sent to Call List" | Call List tab: owner **A**, data **B–H** | 7:00am CST Mon–Sat |
-| `update_second_round` | Update Second-Round Status (2R) | Retention → **yesterday** → 2nd-round lists + calendar | 2R tab: Offered **H**, Follow-up **I**, Notes **J** | 7:00am CST Mon–Sat |
-| `export_2r_retention` | Export 2R Retention → 2R tab | Retention → **today** → "Total Second Interviews" | 2R tab: owner **AT**, 9 cols **AU–BC** | 8:00pm CST Mon–Sat |
-| `confirm_first_day` | Confirm First-Day Training Show-Up | Retention → **today** → Total Training / Showed Up | 2R tab: col **R** = Y/N | ⚠️ NOT live yet (dry-run only) |
+| **morning** | yesterday | Export Call List + Update 2R Status | Call List (A, B–H); 2R (H/I/J) | 4am orchestrator, Mon–Sat |
+| **evening** | today | Export 2R Retention + Confirm First-Day | 2R (AT, AU–BC); 2R col R | 8pm launchd, Mon–Sat |
+
+The Hub pill turns **orange** after the morning pass and **green** after the
+evening pass (`daily_runs: 2`). **First-Day (col R) is dry** — computed and
+logged but not written — until `FIRST_DAY_LIVE` is flipped, after it's verified
+on a real first-day-of-training day.
 
 ## Run it
 
 ```bash
-# from the repo root, on any machine that has the login + key:
-.venv/bin/python -m automations.applicant_tracker.export_call_list            # LIVE (writes)
-.venv/bin/python -m automations.applicant_tracker.export_call_list --dry-run  # writes NOTHING
-.venv/bin/python -m automations.applicant_tracker.export_call_list --office 11280 --dry-run  # one office
+# from the repo root:
+.venv/bin/python -m automations.applicant_tracker.run morning              # LIVE
+.venv/bin/python -m automations.applicant_tracker.run evening --dry-run    # no writes
+.venv/bin/python -m automations.applicant_tracker.run morning --office 11280 --dry-run
 ```
+`--dry-run` writes nothing; `--office ID` (repeatable) limits offices; `--date
+YYYY-MM-DD` overrides the target day.
 
-`--dry-run` exercises the whole report (login + scrape) and prints what it
-*would* write. `--office ID` (repeatable) limits the run. `--date YYYY-MM-DD`
-overrides the target day.
+Hub buttons route to Lucy 1 automatically: **Run morning phase** / **Run evening
+phase** (live), plus dry-run variants under More actions.
 
-The Hub cards route "play" to Lucy 2 automatically (`run_machine: "Lucy 2"`).
-The **Preview** button = `--dry-run`; **Run live** = a real write.
+## Efficiency
 
-## One-time setup on Lucy 2
+One ApplicantStream login per phase (not four). Each office is selected **once**
+and its Retention report loaded **once** — all the detail-page links that phase
+needs are collected from that single load (`detail_href` doesn't navigate), then
+each is visited. That replaces the old reload-report-before-every-metric pattern.
 
-1. **Google service-account key** — drop it at the repo root as
-   `applicant-tracker-service-account.json` (gitignored; the repo is public so
-   it is **never** committed). The sheet is already shared with
-   `applicants@applicants-503123.iam.gserviceaccount.com`.
-2. **Playwright + Chromium** (vanilla `playwright`, not patchright):
-   ```bash
-   .venv/bin/pip install playwright gspread google-auth python-dotenv
-   .venv/bin/python -m playwright install chromium
-   ```
-3. **One-time headed ApplicantStream login** (clears Cloudflare, saves the
-   session to `.browser_profile/` in this package):
-   ```bash
-   HEADLESS=0 .venv/bin/python -m automations.applicant_tracker.applicantstream
-   ```
-   Log in if prompted (creds live in the sheet's README tab B1/B2). Close the
-   Inspector to exit. Every scheduled run reuses that session headlessly.
-4. **Install the LaunchAgents** (from the laptop, routes to Lucy 2):
-   ```bash
-   lucy rerun install_applicant_am_agent --machine "Lucy 2"   # 7:00am job
-   lucy rerun install_applicant_pm_agent --machine "Lucy 2"   # 8:00pm job
-   ```
+## One-time setup on Lucy 1
 
-## Still to verify (do NOT tick "ran clean" until done)
+1. **Google key** at repo root as `applicant-tracker-service-account.json`
+   (gitignored; the repo is public). — *done via the `set_applicant_service_account`
+   queue action.*
+2. `.venv/bin/pip install playwright gspread google-auth` + `python -m playwright
+   install chromium`. — *done.*
+3. **One-time login** — the first live/dry run signs in as `rcaptain` (from the
+   sheet's README tab B1/B2) and saves the session to `.browser_profile/`. The
+   login drives the two-step ownerville form (username → NEXT → password), the
+   same flow as `automations.shared.tableau_patchright`.
 
-- **`confirm_first_day`** — the build day had **zero** first-day-training rows,
-  so the "Total Training" / "Training Showed Up" detail pages were never seen
-  with data. Confirm on a real training day, and confirm "First Day of
-  Training" maps to the **"Total Training"** row (not "Total New Starts
-  Scheduled"). It is **dry-run only** and its live agent is **not** in the pm
-  plist until then.
-- **Login form selectors** — the `login()` field selectors were never exercised
-  (the original session was already active). Rare (saved session), but confirm
-  on the first headed login.
-- **Office list** — one id was ambiguous in the source doc (22151 vs 21151).
-  Confirm the 17-office list in `config.py` is current.
+## Scheduling
 
-Full architecture notes are at the top of `applicantstream.py`.
+- **Morning** rides the 4am orchestrator (`applicant_sync_morning`,
+  `on_scheduler: true`) — no plist.
+- **Evening** = `com.alphalete.applicant-evening` (8pm, `deploy/applicant_tracker.sh
+  evening`). Install with `lucy rerun install_applicant_evening_agent`.
 
 ## Cross-platform / Python 3.9
 
-Lucy 2 (and the mini) run **Python 3.9**. Every module starts with
-`from __future__ import annotations` so the `X | None` type hints stay lazy and
-don't crash at import — do not remove it.
+Lucy 1 (and the mini) run **Python 3.9**. Every module starts with
+`from __future__ import annotations` so the `X | None` hints don't crash at
+import — do not remove it.

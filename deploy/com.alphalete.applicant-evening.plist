@@ -3,17 +3,19 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.alphalete.applicant-pm</string>
+    <string>com.alphalete.applicant-evening</string>
 
     <!-- Path is the laptop placeholder; on Lucy 1, install_agent.py rewrites it:
-           python -m automations.day_orchestrator.install_agent applicant-pm
-         RUNS ON LUCY 1 — holds the ApplicantStream browser login. Francia's
-         ApplicantStream → Applicant Tracker end-of-day sync. -->
+           python -m automations.day_orchestrator.install_agent applicant-evening
+         RUNS ON LUCY 1 (holds the ApplicantStream login). Evening phase of the
+         consolidated Applicant Tracker sync — reads TODAY (2R Retention live +
+         First-Day dry). The MORNING phase rides the 4am orchestrator, so it has
+         no plist. -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
         <string>/Users/megan/1st Claude Folder/deploy/applicant_tracker.sh</string>
-        <string>pm</string>
+        <string>evening</string>
     </array>
 
     <key>WorkingDirectory</key>
@@ -26,11 +28,9 @@
     </dict>
 
     <!-- 8:00pm CST, Mon–Sat (Sun OFF). Reads TODAY — 8pm so the day's second
-         interviews are complete. Runs export_2r_retention. (confirm_first_day
-         is deliberately NOT in the wrapper's pm phase until it's verified on a
-         real first-day-of-training day — see the Hub card note.) launchd
-         Weekday: 1=Mon … 6=Sat. TIME KNOB: edit Hour/Minute below (machine
-         LOCAL time; the mini is Central). -->
+         interviews / training are complete. launchd Weekday: 1=Mon … 6=Sat.
+         TIME KNOB: edit Hour/Minute below (machine LOCAL time; the mini is
+         Central). -->
     <key>StartCalendarInterval</key>
     <array>
         <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
@@ -45,8 +45,8 @@
     <false/>
 
     <key>StandardOutPath</key>
-    <string>/tmp/com.alphalete.applicant-pm.out</string>
+    <string>/tmp/com.alphalete.applicant-evening.out</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/com.alphalete.applicant-pm.err</string>
+    <string>/tmp/com.alphalete.applicant-evening.err</string>
 </dict>
 </plist>

@@ -4074,273 +4074,92 @@ AUTOMATED_REPORTS = [
             },
         ],
     },
-    # ── ApplicantStream → Applicant Tracker (Francia, 2026-07-21) ──────────
-    # Four recruiting reports that log into ApplicantStream (Playwright) and sync
-    # into the "Alphalete Org Applicant Tracker" Sheet. They run on LUCY 1 (that
-    # machine holds the one-time ApplicantStream browser login). Package:
-    # automations/applicant_tracker/. Each card's PRIMARY button is the SAFE
-    # dry-run during rollout — flip primary→"Run live" once a report has one
-    # clean verified live pass on Lucy 1. confirm_first_day is dry-run only
-    # until it's verified on a real first-day-of-training day (see its note).
+    # ── ApplicantStream → Applicant Tracker (Francia; consolidated) ───────
+    # ONE module (automations.applicant_tracker.run) drives all four of
+    # Francia's ApplicantStream reports as two phases that share ONE login:
+    #   morning (reads yesterday) = Call List + 2R Status   → rides the 4am run
+    #   evening (reads today)     = 2R Retention + First-Day → 8pm launchd
+    # Pill: orange after the morning pass, green after the evening pass
+    # (daily_runs: 2). First-Day (col R) stays DRY until verified (FIRST_DAY_LIVE).
     {
-        "id": "applicant-call-list",
-        "name": "Export Call List → Call List tab",
+        "id": "applicant-tracker-sync",
+        "name": "Applicant Tracker Sync",
         "creator": "Francia",
-        "emoji": "📞",
+        "emoji": "📇",
         "color": "#0EA5E9",
         "category": "🎯 Recruiting",
-        "description": "Appends yesterday's \"Sent to Call List\" applicants across all 17 offices to the Call List tab of the Applicant Tracker.",
+        "description": "One login syncs all of ApplicantStream into the Applicant Tracker — morning appends the Call List + updates 2R status (reads yesterday), evening appends 2R Retention + marks first-day show-up (reads today), across 17 offices.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "For each of the **17 offices**, opens ApplicantStream → **Retention "
-            "Details**, finds **yesterday's** \"Sent to Call List\" number, opens "
-            "its detail page, and appends the applicants to the **Call List** "
-            "tab.\n\n"
-            "WHERE IT WRITES\n"
-            "Call List tab — **owner name in column A**, applicant data in "
-            "**B–H** (First Name, Last Name, Email, Phone, Job Board, Date and "
-            "Time, Ad).\n\n"
-            "WHEN IT RUNS\n"
-            "**7:00 AM Central, Mon–Sat** on **Lucy 1** (reads yesterday, so "
-            "morning is fine).\n\n"
-            "NOTES\n"
-            "**•** **Appends** to the bottom each run — it does **not** "
-            "de-duplicate.\n"
-            "**•** Confirm the 17-office list is current (one office id — "
-            "22151 vs 21151 — was ambiguous in the source doc).\n"
-            "**•** Needs the one-time ApplicantStream login done on Lucy 1 "
-            "(saved browser session) + the Google service-account key present."
-        ),
-        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1nOuJ5kGtEf25XIgKE-_iu8-tUHA8kZ6hyDaJnaJNmVo/edit"
-                      "?gid=772258988#gid=772258988"),
-        "assignees": ["Lucy 1"],
-        "run_machine": "Lucy 1",
-        "run_rerun_id": "applicant_call_list",
-        "self_scheduled": True,
-        "schedule": {
-            "frequency": "weekly",
-            "weekdays": [0, 1, 2, 3, 4, 5],  # Mon–Sat (Sun off)
-            "time": "7:00 AM",
-            "time_label": "7 AM CST · Mon–Sat",
-            "estimated_minutes": 5,
-        },
-        "checklist": [],
-        "post_run": {
-            "message_success": "✅ Call List updated — yesterday's applicants appended.",
-            "message_failed": "❌ Run failed. Check the log (usually an expired ApplicantStream session on Lucy 1), then run again.",
-        },
-        "actions": [
-            {
-                "label": "Preview (dry run — no writes)",
-                "icon": "▶",
-                "primary": True,
-                "help": "Logs in and scrapes all 17 offices but writes NOTHING to the Sheet — prints what it would append. Safe to run any time.",
-                "module": "automations.applicant_tracker.export_call_list",
-                "args_fn": lambda: ["--dry-run"],
-            },
-            {
-                "label": "Run live — append to the Sheet",
-                "icon": "📥",
-                "help": "The real 7am pass: appends yesterday's Call List applicants to the Call List tab. Appends to the bottom (no de-dupe).",
-                "module": "automations.applicant_tracker.export_call_list",
-                "args_fn": lambda: [],
-            },
-        ],
-    },
-    {
-        "id": "applicant-2r-update",
-        "name": "Update Second-Round Status (2R)",
-        "creator": "Francia",
-        "emoji": "🔄",
-        "color": "#8B5CF6",
-        "category": "🎯 Recruiting",
-        "description": "Updates yesterday's second-round interviewees on the 2R tab — Offered, no-show/BOB follow-up, and brought-on-board date.",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "For each of the **17 offices**, reads **yesterday's** second-round "
-            "detail lists from ApplicantStream (roster / showed up / offered / "
-            "brought-on-board) plus the calendar for the brought-on-board date, "
-            "and updates people **already on the 2R tab**.\n\n"
-            "WHERE IT WRITES (matched by Full Name, column A)\n"
-            "**•** **Offered (H)** = 'yes' if offered a job from the 2nd round.\n"
-            "**•** **Follow up (I)** = 'no show' if they didn't show, else 'BOB' "
-            "if brought on board.\n"
-            "**•** **BOB/Notes (J)** = the brought-on-board date when "
-            "applicable.\n\n"
-            "WHEN IT RUNS\n"
-            "**7:00 AM Central, Mon–Sat** on **Lucy 1** (reads yesterday).\n\n"
-            "NOTES\n"
-            "**•** Only updates people **already present** on the 2R tab (logs "
-            "anyone not found).\n"
-            "**•** Assumes 2R \"Full Name\" is **First Last** — confirmed the "
-            "column header is literally \"Full Name\"."
+            "One ApplicantStream login syncs the whole **Applicant Tracker** in "
+            "two phases (17 offices each):\n\n"
+            "🌅 **MORNING** — reads **yesterday**, rides the **4am run**:\n"
+            "**•** **Export Call List** → Call List tab (owner **A**, data "
+            "**B–H**). Appends; no de-dupe.\n"
+            "**•** **Update 2R Status** → 2R tab, on rows already there: Offered "
+            "**H**, Follow-up **I** (no-show / BOB), BOB date **J**.\n\n"
+            "🌙 **EVENING** — reads **today**, runs **~8pm**:\n"
+            "**•** **Export 2R Retention** → 2R tab (owner **AT**, 9 cols "
+            "**AU–BC**). Appends; no de-dupe.\n"
+            "**•** **Confirm First-Day** → 2R **col R** = Y/N. ⚠️ **Dry until "
+            "verified** on a real first-day-of-training day.\n\n"
+            "PILL\n"
+            "**Orange** once the morning pass runs clean, then **green** after "
+            "the evening pass (2 runs/day).\n\n"
+            "HOW IT RUNS\n"
+            "On **Lucy 1** as **rcaptain** (the recruiting-captain login with "
+            "access to all 17 owners' offices). One login for the whole run; each "
+            "office is selected once and its Retention report loaded once per phase."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1nOuJ5kGtEf25XIgKE-_iu8-tUHA8kZ6hyDaJnaJNmVo/edit"
                       "?gid=792099299#gid=792099299"),
         "assignees": ["Lucy 1"],
         "run_machine": "Lucy 1",
-        "run_rerun_id": "applicant_2r_update",
+        "run_rerun_id": "applicant_sync",
         "self_scheduled": True,
+        "daily_runs": 2,
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0, 1, 2, 3, 4, 5],
-            "time": "7:00 AM",
-            "time_label": "7 AM CST · Mon–Sat",
-            "estimated_minutes": 10,
+            "time": "4:00 AM",
+            "time_label": "4 AM + 8 PM CST · Mon–Sat",
+            "estimated_minutes": 12,
         },
         "checklist": [],
         "post_run": {
-            "message_success": "✅ 2R statuses updated for yesterday's second-round interviewees.",
-            "message_failed": "❌ Run failed. Check the log (usually an expired ApplicantStream session on Lucy 1), then run again.",
+            "message_success": "✅ Applicant Tracker synced.",
+            "message_failed": "❌ Run failed — check the log (usually an expired ApplicantStream session on Lucy 1), then run again.",
         },
         "actions": [
             {
-                "label": "Preview (dry run — no writes)",
-                "icon": "▶",
+                "label": "Run morning phase",
+                "icon": "🌅",
                 "primary": True,
-                "help": "Logs in and reads all the 2nd-round lists but writes NOTHING to the Sheet — prints the status updates it would make. Safe any time.",
-                "module": "automations.applicant_tracker.update_second_round",
-                "args_fn": lambda: ["--dry-run"],
+                "help": "Live: appends the Call List + updates 2R status for YESTERDAY (all 17 offices). Re-run if the 4am pass missed it.",
+                "module": "automations.applicant_tracker.run",
+                "args_fn": lambda: ["morning"],
             },
             {
-                "label": "Run live — update the 2R tab",
-                "icon": "🔄",
-                "help": "The real 7am pass: writes Offered / follow-up / BOB-date for yesterday's second-round interviewees on the 2R tab.",
-                "module": "automations.applicant_tracker.update_second_round",
-                "args_fn": lambda: [],
+                "label": "Run evening phase",
+                "icon": "🌙",
+                "help": "Live: appends 2R Retention for TODAY (owner AT, AU–BC). First-Day (col R) is computed but not written until verified.",
+                "module": "automations.applicant_tracker.run",
+                "args_fn": lambda: ["evening"],
             },
-        ],
-    },
-    {
-        "id": "applicant-2r-retention",
-        "name": "Export 2R Retention → 2R tab",
-        "creator": "Francia",
-        "emoji": "📥",
-        "color": "#10B981",
-        "category": "🎯 Recruiting",
-        "description": "Appends today's \"Total Second Interviews\" applicants across all 17 offices to the 2R tab (owner in AT, 9 columns AU–BC).",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "For each of the **17 offices**, opens ApplicantStream → **Retention "
-            "Details**, finds **today's** \"Total Second Interviews\" number, "
-            "opens its detail page, and appends the applicants to the **2R** "
-            "tab.\n\n"
-            "WHERE IT WRITES\n"
-            "2R tab — **owner name in column AT**, the **9 applicant columns in "
-            "AU–BC** (First, Last, Email, Phone, 1st, 2nd, Job Board, Date and "
-            "Time, Ad). Owner has any trailing 2-letter state stripped "
-            "(\"Rafael Hidalgo TX\" → \"Rafael Hidalgo\").\n\n"
-            "WHEN IT RUNS\n"
-            "**8:00 PM Central, Mon–Sat** on **Lucy 1** — end of day, so the "
-            "day's second interviews are complete before it reads them.\n\n"
-            "NOTES\n"
-            "**•** **Appends** to the bottom each run — it does **not** "
-            "de-duplicate."
-        ),
-        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1nOuJ5kGtEf25XIgKE-_iu8-tUHA8kZ6hyDaJnaJNmVo/edit"
-                      "?gid=792099299#gid=792099299"),
-        "assignees": ["Lucy 1"],
-        "run_machine": "Lucy 1",
-        "run_rerun_id": "applicant_2r_retention",
-        "self_scheduled": True,
-        "schedule": {
-            "frequency": "weekly",
-            "weekdays": [0, 1, 2, 3, 4, 5],
-            "time": "8:00 PM",
-            "time_label": "8 PM CST · Mon–Sat",
-            "estimated_minutes": 5,
-        },
-        "checklist": [],
-        "post_run": {
-            "message_success": "✅ 2R Retention updated — today's second interviews appended.",
-            "message_failed": "❌ Run failed. Check the log (usually an expired ApplicantStream session on Lucy 1), then run again.",
-        },
-        "actions": [
             {
-                "label": "Preview (dry run — no writes)",
+                "label": "Morning — dry run (no writes)",
                 "icon": "▶",
-                "primary": True,
-                "help": "Logs in and scrapes today's Total Second Interviews for all 17 offices but writes NOTHING — prints what it would append. Safe any time.",
-                "module": "automations.applicant_tracker.export_2r_retention",
-                "args_fn": lambda: ["--dry-run"],
+                "help": "Exercises the morning phase (login + scrape) and prints what it would write. Safe any time.",
+                "module": "automations.applicant_tracker.run",
+                "args_fn": lambda: ["morning", "--dry-run"],
             },
             {
-                "label": "Run live — append to the 2R tab",
-                "icon": "📥",
-                "help": "The real 8pm pass: appends today's Total Second Interviews (owner in AT, 9 cols AU–BC). Appends to the bottom (no de-dupe).",
-                "module": "automations.applicant_tracker.export_2r_retention",
-                "args_fn": lambda: [],
-            },
-        ],
-    },
-    {
-        "id": "applicant-first-day",
-        "name": "Confirm First-Day Training Show-Up (2R col R)",
-        "creator": "Francia",
-        "emoji": "✅",
-        "color": "#F59E0B",
-        "category": "🎯 Recruiting",
-        "description": "Marks 2R column R = Y/N for today's first-day-of-training people (showed up vs. scheduled-but-didn't). NOT yet verified on live data — dry-run only until confirmed.",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "For each of the **16 offices**, reads **today's** first-day-training "
-            "lists from ApplicantStream — **\"Total Training\"** (scheduled) and "
-            "**\"Training Showed Up\"** — and marks people on the **2R** tab.\n\n"
-            "WHERE IT WRITES (matched by Full Name, column A)\n"
-            "**2R column R** = **'Y'** if the person showed up, **'N'** if "
-            "scheduled but didn't. Only updates people already on the 2R tab.\n\n"
-            "WHEN IT RUNS\n"
-            "**8:00 PM Central, Mon–Sat** on **Lucy 1** — after training, since "
-            "show-up isn't known until then.\n\n"
-            "⚠️ NOT YET VERIFIED — DRY-RUN ONLY\n"
-            "The build day had **zero** first-day-training rows, so the \"Total "
-            "Training\" / \"Training Showed Up\" detail pages couldn't be seen "
-            "with live data. Before flipping this to a live schedule, confirm on "
-            "a **real training day** that (1) it reads those pages correctly and "
-            "(2) \"First Day of Training\" maps to the **\"Total Training\"** row "
-            "(not \"Total New Starts Scheduled\"). Its live LaunchAgent is "
-            "**not installed** until then."
-        ),
-        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1nOuJ5kGtEf25XIgKE-_iu8-tUHA8kZ6hyDaJnaJNmVo/edit"
-                      "?gid=792099299#gid=792099299"),
-        "assignees": ["Lucy 1"],
-        "run_machine": "Lucy 1",
-        "run_rerun_id": "applicant_first_day",
-        # Not scheduled live yet (unverified). Hide the due-today pills; it's a
-        # manual dry-run card until a real training day confirms the mapping.
-        "self_scheduled": True,
-        "hide_schedule": True,
-        "schedule": {
-            "frequency": "weekly",
-            "weekdays": [0, 1, 2, 3, 4, 5],
-            "time": "8:00 PM",
-            "time_label": "8 PM CST · Mon–Sat (not live yet)",
-            "estimated_minutes": 5,
-        },
-        "checklist": [],
-        "post_run": {
-            "message_success": "✅ First-day show-up marked (col R) for today's training people.",
-            "message_failed": "❌ Run failed. Check the log, then run again — and confirm the Total Training row mapping (see the card's note).",
-        },
-        "actions": [
-            {
-                "label": "Preview (dry run — no writes)",
+                "label": "Evening — dry run (no writes)",
                 "icon": "▶",
-                "primary": True,
-                "help": "Logs in and reads today's Total Training / Training Showed Up lists but writes NOTHING — prints the Y/N marks it would make. Use this to verify the mapping on a real training day.",
-                "module": "automations.applicant_tracker.confirm_first_day",
-                "args_fn": lambda: ["--dry-run"],
-            },
-            {
-                "label": "Run live — mark 2R col R (verify first!)",
-                "icon": "✅",
-                "help": "Writes Y/N to 2R column R for today's first-day-training people. Only run live AFTER a dry run on a real training day confirms the mapping.",
-                "module": "automations.applicant_tracker.confirm_first_day",
-                "args_fn": lambda: [],
+                "help": "Exercises the evening phase and prints what it would write. Safe any time.",
+                "module": "automations.applicant_tracker.run",
+                "args_fn": lambda: ["evening", "--dry-run"],
             },
         ],
     },
