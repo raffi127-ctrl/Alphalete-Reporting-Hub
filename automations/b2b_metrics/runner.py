@@ -159,7 +159,8 @@ def _dm_captures(captured: dict, user: str, o: B2BOffice, day: dt.date,
 
 
 def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
-        channel_override: str = None, today: dt.date = None, log=print) -> dict:
+        channel_override: str = None, today: dt.date = None, force: bool = False,
+        log=print) -> dict:
     today = today or dt.date.today()
     out_dir = _out_dir(o)
     items = [i for i in ITEMS if not only or i["id"] == only]
@@ -219,7 +220,7 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
         path = captured.get(item["id"])
         if not path:
             continue
-        if item["id"] in already:
+        if item["id"] in already and not force:
             log("  [{}] already in thread — skip".format(item["id"]))
             continue
         caption = "{} *{}*".format(item["emoji"], item["title"])
@@ -261,6 +262,10 @@ def main(argv=None) -> int:
                          "shows the full captured image)")
     ap.add_argument("--check", action="store_true",
                     help="validate the office table and exit")
+    ap.add_argument("--force", action="store_true",
+                    help="re-post even items already in today's thread state "
+                         "(backfill a fixed item over a bad one). Pair with "
+                         "--only so ONLY that item re-posts, not the whole thread.")
     ap.add_argument("--today", default=None, metavar="YYYY-MM-DD")
     args = ap.parse_args(argv)
 
@@ -291,7 +296,7 @@ def main(argv=None) -> int:
     publishable = args.post and not args.channel and not args.only
     try:
         res = run(o, post=args.post, only=args.only, dm=args.dm,
-                  channel_override=args.channel, today=today)
+                  channel_override=args.channel, today=today, force=args.force)
     except Exception:
         if publishable:
             _publish_hub("failed")
