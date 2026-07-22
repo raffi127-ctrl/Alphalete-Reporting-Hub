@@ -58,7 +58,7 @@ TOP10 = colors.HexColor("#2A1418")              # subtle red-tint highlight band
 
 styles = getSampleStyleSheet()
 
-SECTION_ORDER = ["Fiber", "NDS", "B2B", "JE", "BOX", "Costco"]
+SECTION_ORDER = ["Fiber", "NDS", "B2B", "BOX", "Costco"]   # JE removed (Carlos 2026-07-21)
 REVENUE_TITLE = "Revenue over 2K"
 
 # Body height available under the header/footer, and the smallest row that still

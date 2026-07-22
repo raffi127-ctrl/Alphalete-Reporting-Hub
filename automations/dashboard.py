@@ -2589,7 +2589,7 @@ AUTOMATED_REPORTS = [
             "WHAT IT DOES\n"
             "Fills the **Leader's Call** tab with the week's recognition "
             "names per campaign, each section sorted high-to-low:\n"
-            "- **Fiber / NDS / B2B / JE / BOX** — reps with **12+** apps\n"
+            "- **Fiber / NDS / B2B / BOX** — reps with **12+** apps\n"
             "- **Costco** — reps with **8+** (ATV+DTV+Internet+AIA+New/Port, "
             "no Up)\n"
             "- **Revenue over 2K** — reps at **$2,000+** (local-office owners)\n"
