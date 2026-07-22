@@ -138,6 +138,50 @@ _REP_TABLE_VIEWS = ("activation_rate", "churn_wireless", "churn_int", "churn_air
 import os as _os
 
 
+def _crop_to_last_colored_row(png: Path, verbose: bool = False) -> bool:
+    """Trim the image to END on the last row that carries a coloured (red/green/
+    yellow) data cell, plus a small margin. Purpose-built for the B2B Churn /
+    Activation dashboards: it drops the empty gap and the uncoloured
+    Disconnect-Reason / Churn-Buckets table below the rep list (Carlos never
+    posts those), WITHOUT b2b_quality's column-geometry math or its strict
+    sort-check — both of which misfire on an office whose rep table has blank
+    leading-column cells (e.g. Atef's). Best-effort: any doubt -> keep full."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return False
+    try:
+        im = Image.open(png).convert("RGB")
+        W, H = im.size
+        px = im.load()
+
+        def sat(p):
+            return max(p) - min(p) > 45 and max(p) > 90
+
+        # Last row with a real run of coloured pixels (a data cell, not a stray
+        # antialiased pixel). Sample every 3rd column for speed.
+        last = 0
+        for y in range(H):
+            cnt = sum(1 for x in range(0, W, 3) if sat(px[x, y]))
+            if cnt > 8:
+                last = y
+        if last <= 0:
+            return False
+        cut = min(H, last + 8)              # +8 keeps the cell's bottom border
+        if cut >= H - 4:
+            return False                    # nothing meaningful to trim
+        im.crop((0, 0, W, cut)).save(png)
+        if verbose:
+            print("   ✂ cropped to last coloured row ({} -> {}px)".format(
+                H, cut), flush=True)
+        return True
+    except Exception as e:  # noqa: BLE001 — a bad crop must never lose the image
+        if verbose:
+            print("   ⚠ crop failed ({}) — full length kept".format(
+                type(e).__name__), flush=True)
+        return False
+
+
 def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print) -> Path:
     """Capture one Tableau view for this office (owner-sliced, or a per-office
     override view captured as-is). LUCY 2 — Carlos's login carries the views."""
@@ -148,7 +192,7 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print) -> Path
     from automations.shared import tableau_patchright as tp
     from automations.tableau_screenshots.capture import capture_page
     from automations.vantura_churn import cdp_pull
-    from automations.b2b_quality.run import apply_sort, crop_to_last_data_row
+    from automations.b2b_quality.run import apply_sort
 
     meta = VIEW_META.get(view_key, {})
     url = _sliced_url(o, view_key)
@@ -175,7 +219,7 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print) -> Path
             capture_page(page, spec, out_dir, after_load=after_load, verbose=False)
         # Crop to the last populated rep row (Activation + Churn); best-effort.
         if meta.get("data_cols") and not _os.environ.get("B2B_SKIP_CROP"):
-            crop_to_last_data_row(out, meta["data_cols"], verbose=True)
+            _crop_to_last_colored_row(out, verbose=True)
         return out
     finally:
         try:
