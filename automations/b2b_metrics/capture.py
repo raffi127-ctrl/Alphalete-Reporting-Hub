@@ -69,11 +69,14 @@ def _order_lines(o: B2BOffice, out_dir: Path, log=print):
 
 # --- #6 : the order-log workbook -------------------------------------------
 def order_log_workbook(o: B2BOffice, out_dir: Path, log=print) -> Path:
-    from automations.att_order_log import xlsx
+    from automations.att_order_log import pending, xlsx
     lines = _order_lines(o, out_dir, log=log)
+    # Pending-by-Rep tab (Carlos 2026-07-22): unpaid pay-week orders from the
+    # office's RAW tab. Additive — a Sheet hiccup skips the tab, never the book.
+    pend = pending.read_for_key(o.sheet_id, log=log)
     out = out_dir / "ATT Order Log {}.xlsx".format(
         dt.date.today().strftime("%m-%d-%Y"))
-    xlsx.build(lines, out, today=dt.date.today())
+    xlsx.build(lines, out, today=dt.date.today(), pending=pend)
     return out
 
 

@@ -196,6 +196,50 @@ def _write_flat(sh, lines, labels, *, freeze=True) -> None:
         sh.freeze_panes = "A2"
 
 
+# Carlos's pending-by-rep columns (2026-07-22) + a currency format for the two
+# money columns. Sourced from the RAW tab, not the Tableau log.
+_PENDING_LABELS = ["Rep Name", "Sale Date", "Activation Date", "Description",
+                   "Description Detail", "Customer Name", "Total $ to ICD",
+                   "Commission"]
+_MONEY_FMT = '"$"#,##0.00'
+
+
+def _write_pending(sh, pending) -> None:
+    """One block per rep — a header, that rep's PENDING orders (unpaid pay-week,
+    colored by product like his RAW tab), then a bold Total row (Carlos
+    2026-07-22: "one tab that shows all pending orders separated by rep"). Data
+    is att_order_log.pending.read_pending()."""
+    b = _border()
+    row = 1
+    for rep, bucket in pending.items():
+        _write_header(sh, row, _PENDING_LABELS)
+        row += 1
+        for r in bucket["rows"]:
+            fill = PatternFill("solid", fgColor=r["bg"]) if r.get("bg") else None
+            vals = [rep, r["sale_date"], r["activation_date"], r["description"],
+                    r["description_detail"], r["customer"],
+                    r["total_icd"], r["commission"]]
+            for c, v in enumerate(vals, start=1):
+                cell = sh.cell(row=row, column=c, value=v)
+                cell.font = _font()
+                cell.alignment = LEFT if c in (1, 4, 5, 6) else CENTER
+                cell.border = b
+                if c in (7, 8):
+                    cell.number_format = _MONEY_FMT
+                if fill is not None:
+                    cell.fill = fill
+            row += 1
+        tot = sh.cell(row=row, column=6, value="Total")
+        tot.font, tot.alignment, tot.border = _font(bold=True), LEFT, b
+        for c, val in ((7, bucket["total_icd"]), (8, bucket["total_commission"])):
+            cell = sh.cell(row=row, column=c, value=val)
+            cell.font, cell.alignment, cell.border = _font(bold=True), CENTER, b
+            cell.number_format = _MONEY_FMT
+        row += 2                              # blank spacer between reps
+    _autosize(sh, _PENDING_LABELS)
+    sh.freeze_panes = "A2"
+
+
 def _autosize(sh, labels: Sequence[str]) -> None:
     """Widen every column to fit its longest value so nothing is clipped
     (Megan 2026-07-20: "expand all cells to fit the text"). Scans ALL rows, not
@@ -218,8 +262,10 @@ def _autosize(sh, labels: Sequence[str]) -> None:
 
 
 def build(lines: Sequence[dict], out_path: Path, *,
-          today: Optional[dt.date] = None) -> Path:
-    """Write the workbook: All Reps summary, Posted-by-Week, then a tab per rep."""
+          today: Optional[dt.date] = None, pending=None) -> Path:
+    """Write the workbook: All Reps summary, (Pending by Rep), Posted-by-Week,
+    then a tab per rep. `pending` is att_order_log.pending.read_pending() output;
+    when given, a 'Pending by Rep' tab is inserted right after All Reps."""
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     today = today or dt.date.today()
@@ -230,6 +276,11 @@ def build(lines: Sequence[dict], out_path: Path, *,
     sh = wb.active
     sh.title = _safe_title("All Reps", used)
     _write_flat(sh, lines, _LOG_LABELS)
+
+    # ---- 1b. Pending by Rep (unpaid pay-week orders) --------------------
+    if pending:
+        _write_pending(wb.create_sheet(_safe_title("Pending by Rep", used)),
+                       pending)
 
     # ---- 2. Paycheck by Week (posted-date matrix) -----------------------
     _write_paycheck_matrix(wb, lines, used)

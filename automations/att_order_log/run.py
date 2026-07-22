@@ -179,10 +179,11 @@ def main(argv=None) -> int:
         # Daily workbook (All Reps + Posted-by-Week + per-rep tabs). Separate
         # from --sheet; --xlsx writes a file to output/, no Sheet write.
         if args.xlsx:
-            from . import xlsx
+            from . import pending, sheet as _sheet, xlsx
             out = OUTPUT_DIR / "ATT Order Log {}.xlsx".format(
                 today.strftime("%m-%d-%Y"))
-            xlsx.build(lines, out, today=today)
+            pend = pending.read_for_key(args.sheet_id or _sheet.SHEET_ID, log=log)
+            xlsx.build(lines, out, today=today, pending=pend)
             reps = len({l.get("Rep", "") for l in lines if l.get("Rep")})
             log("  workbook: {} ({} sales, {} rep tabs)".format(
                 out.name, len(lines), reps))
