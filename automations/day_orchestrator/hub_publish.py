@@ -59,6 +59,12 @@ _HUB_CARD = {
     # blocked run looks exactly like a clean one. It ran unreported until
     # 2026-07-19, when a reconciliation failure went unnoticed for a day.
     "vantura_churn": "vantura-churn",
+    # Vantura Weekly Payroll PREP (Carlos). Standalone Wed-11am LaunchAgent on
+    # Lucy 2 (com.alphalete.vantura-payroll-wed) — LIVE since 2026-07-15 but it
+    # never published, so its card was ALWAYS grey and a missed/failed weekly run
+    # looked identical to a clean one. Wrapper now calls publish_done; this maps
+    # it to the card (2026-07-22).
+    "vantura_payroll": "vantura-payroll",
     # B2B Churn (Carlos) → Lucy Wireless / New INT / AIR Churn tabs. Standalone
     # LaunchAgent on Lucy 2 (com.alphalete.att-churn-daily, deploy/att_churn_daily.sh,
     # 7:15am), never in the 4am batch. Was a hand-run report until 2026-07-21, when

@@ -50,4 +50,12 @@ echo "[$(date)] Vantura payroll prep starting (extra args: ${*:-none})" > "$LOG_
 ST=$?
 
 echo "[$(date)] Vantura payroll prep finished exit=$ST" >> "$LOG_FILE"
+
+# Publish to the Hub card so a run is VISIBLE either way. Without this the
+# vantura-payroll card stays grey and a missed/failed run looks identical to a
+# clean one — the same gap that hid att_churn / vantura_churn misses.
+# [[feedback_launchd_reports_must_publish]]
+if [ "$ST" -eq 0 ]; then _PUB=success; else _PUB=failed; fi
+"$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('vantura_payroll','Vantura Weekly Payroll','$_PUB')" >> "$LOG_FILE" 2>&1 || true
+
 exit 0
