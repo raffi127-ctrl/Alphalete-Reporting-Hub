@@ -82,7 +82,8 @@ DAILY_AUTORUN_CAP = 100
 # the daily budget (a multi-person deploy day generates lots of these). The
 # budget is meant to bound repeated REPORT runs (rerun), not deploy plumbing.
 PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_holder",
-                    "pip_install", "watch_test", "diag", "set_sleep",
+                    "pip_install", "playwright_install", "set_applicant_service_account",
+                    "watch_test", "diag", "set_sleep",
                     "set_slack_token", "set_gbp_token"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
@@ -707,7 +708,7 @@ def _action_logtail(args: str) -> tuple[bool, str]:
 # are undeclared deps that can go missing on a venv rebuild; reportlab is the
 # Leader's Call PDF library (missing it silently blocks the recognition DM — the
 # run still exits 0 because PDF/Slack errors don't fail the pull).
-PIP_ALLOWLIST = {"reportlab"}
+PIP_ALLOWLIST = {"reportlab", "playwright", "gspread"}
 
 
 def _action_pip_install(args: str) -> tuple[bool, str]:
@@ -724,6 +725,71 @@ def _action_pip_install(args: str) -> tuple[bool, str]:
         chk, _ = _run_cmd([sys.executable, "-c", f"import {pkg}"], timeout_s=60)
         res += " · import OK" if chk else " · ⚠ installed but import still fails"
     return ok, res
+
+
+def _action_playwright_install(args: str) -> tuple[bool, str]:
+    """Download the Playwright browser binary into the report venv — the
+    non-pip step `playwright install <browser>` (default: chromium). Needed by
+    the applicant_tracker reports, which drive a real headless Chromium. Safe +
+    idempotent: re-running is a no-op once the browser is present."""
+    browser = (args or "chromium").strip() or "chromium"
+    if browser not in {"chromium", "firefox", "webkit"}:
+        return False, f"playwright_install refused {browser!r}; allowed: chromium, firefox, webkit"
+    return _run_cmd([sys.executable, "-m", "playwright", "install", browser],
+                    timeout_s=10 * 60)
+
+
+def _action_set_applicant_service_account(args: str) -> tuple[bool, str]:
+    """Install the Applicant Tracker Google service-account key on THIS runner,
+    so the applicant_tracker reports can reach the Sheet with no human at the
+    machine. The key is gitignored (the repo is public), so it can't ride a
+    git pull — it's passed here as BASE64 of the JSON key file (base64 so the
+    multi-line JSON survives the single Args cell + the CLI cleanly).
+
+    Writes to <repo>/applicant-tracker-service-account.json (backs up any
+    existing file first — never clobbers blindly), then verifies by loading the
+    creds and opening the tracker's 2R tab. NEVER echoes key material.
+
+    SECURITY: the base64 key transits the control Sheet's Args cell to get here.
+    REDACT that cell once this shows 'done' (same as set_meta_token)."""
+    import base64
+    import json
+    import shutil
+
+    blob = (args or "").strip()
+    if not blob:
+        return False, "set_applicant_service_account needs the key as BASE64 in the Args"
+    try:
+        raw = base64.b64decode(blob, validate=True)
+        data = json.loads(raw)
+    except Exception as e:  # noqa: BLE001
+        return False, f"Args isn't valid base64-of-JSON: {str(e).splitlines()[0][:100]}"
+    if data.get("type") != "service_account" or not data.get("client_email"):
+        return False, "decoded JSON isn't a Google service_account key"
+
+    dest = REPO_ROOT / "applicant-tracker-service-account.json"
+    if dest.exists():
+        stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+        try:
+            shutil.copy2(dest, dest.parent / f"{dest.name}.bak.{stamp}")
+        except Exception:  # noqa: BLE001 — a failed backup shouldn't block
+            pass
+    try:
+        dest.write_text(raw.decode("utf-8"))
+        os.chmod(dest, 0o600)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write the key: {str(e).splitlines()[0][:120]}"
+
+    # Verify it actually authenticates against the tracker (proof in `lucy status`).
+    try:
+        from automations.applicant_tracker import config as _cfg, sheets as _sh
+        ws = _sh.open_tab(_cfg.TAB_2R)
+        _ = ws.acell("A1").value
+    except Exception as e:  # noqa: BLE001
+        return True, (f"key written for {data.get('client_email')}, but the Sheet "
+                      f"check failed (share the sheet with that email?): "
+                      f"{str(e).splitlines()[0][:110]}")
+    return True, f"key installed + verified against the tracker ({data.get('client_email')})"
 
 
 def _action_update(args: str) -> tuple[bool, str]:
@@ -1174,6 +1240,8 @@ ACTIONS = {
     "screendrive": _action_screendrive,
     "logtail": _action_logtail,
     "pip_install": _action_pip_install,
+    "playwright_install": _action_playwright_install,
+    "set_applicant_service_account": _action_set_applicant_service_account,
     "rerun": _action_rerun,
     "update": _action_update,
     "git_status": _action_git_status,

@@ -75,6 +75,7 @@ resources/swag/glyphs/_debug/
 # ApplicantStream/Applicant Tracker Google service-account key (live private key,
 # repo is PUBLIC) — distributed out-of-band, NEVER commit. Also the browser session.
 applicant-tracker-service-account.json
+applicant-tracker-service-account.json.bak.*
 automations/applicant_tracker/service_account.json
 automations/applicant_tracker/.browser_profile*
 automations/applicant_tracker/downloads/
