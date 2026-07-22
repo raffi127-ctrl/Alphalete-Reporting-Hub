@@ -34,6 +34,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import time
@@ -84,15 +85,16 @@ def _parse_only(arg: str | None) -> set[str] | None:
     return {s.strip().lower() for s in arg.split(",") if s.strip()}
 
 
-def _run_one(label: str, module: str, base_args: list[str]) -> tuple[bool, str]:
+def _run_one(label: str, module: str, base_args: list[str],
+             env: dict | None = None) -> tuple[bool, str]:
     """Launch one metric module as a subprocess, streaming its output.
-    Returns (ok, note)."""
+    Returns (ok, note). `env` overrides the subprocess environment."""
     cmd = [sys.executable, "-u", "-m", module] + base_args
     print(f"\n{'='*70}\n▶  {label}\n   {' '.join(cmd)}\n{'='*70}", flush=True)
     started = time.monotonic()
     try:
         result = subprocess.run(cmd, cwd=str(REPO_ROOT),
-                                timeout=PER_METRIC_TIMEOUT_S)
+                                timeout=PER_METRIC_TIMEOUT_S, env=env)
         elapsed = time.monotonic() - started
         if result.returncode == 0:
             return True, f"{elapsed:5.0f}s"
@@ -151,7 +153,14 @@ def main(argv=None) -> int:
     results: list[tuple[str, bool, str]] = []
     overall_start = time.monotonic()
     for slug, label, module, base in selected:
-        ok, note = _run_one(label, module, base)
+        # HARVEST CANARY (2026-07-22): the churn subprocess — and ONLY it —
+        # reads the harvest-once cache warmed by the batch's harvest_prime step.
+        # On cache miss/stale/any error the adapter falls straight back to a live
+        # scrape, so this can only skip a redundant pull, never change output.
+        # Every other metric (incl. the other churn reports elsewhere) stays live.
+        # Rollback = delete this env branch. Plan: output/harvest-cutover-plan.md.
+        env = {**os.environ, "HARVEST_MODE": "on"} if slug == "churn" else None
+        ok, note = _run_one(label, module, base, env=env)
         results.append((label, ok, note))
 
     # --- Summary ---

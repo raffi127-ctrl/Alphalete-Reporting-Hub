@@ -1045,6 +1045,34 @@
         "report_id": "alphalete-production"
       }
     },
+    "harvest_prime": {
+      "order": 5.9,
+      "on_scheduler": true,
+      "_note": "Harvest cutover CANARY prime step (2026-07-22, after a clean ~week of the 1pm shadow proof). Pulls today's churn Tableau views ONCE into the dated cache (automations.harvest.run) so the daily_metrics churn subprocess — the ONLY report flipped to HARVEST_MODE=on — reads cache instead of re-scraping. order 5.9 = runs immediately before daily_metrics (order 6) so the cache is warm first. source_type tableau => chrome_guard runs first + wave-2 timing (Tableau has had the most time to publish). HARMLESS if it fails or is skipped: it writes NO Sheet, posts NO Slack, and daily_metrics churn falls straight back to a live scrape on any cache miss (adapter guardrail — cache can only serve byte-identical bytes or defer to live, never stale). Every OTHER churn report (captainship_churn / owners_metrics_churn) has no HARVEST_MODE set and stays 100% live. Rollback = unset HARVEST_MODE in daily_metrics/run.py; this prime can stay (writes unused cache) or be removed. Full procedure: output/harvest-cutover-plan.md.",
+      "display_name": "Harvest Prime (churn cache warm)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.harvest.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 30
+    },
     "daily_metrics": {
       "order": 6,
       "on_scheduler": true,
