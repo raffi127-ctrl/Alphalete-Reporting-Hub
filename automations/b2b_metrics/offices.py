@@ -57,9 +57,15 @@ _T = "https://us-east-1.online.tableau.com/#/site/sci/views/"
 
 THREAD_TITLE = "B2B Metrics"      # header first line + thread_state needle
 
-# The field on every ATTTRACKER-B2B worksheet that isolates one office. Appended
-# to each team view's URL as ?Owner Name=<owner> to slice the shared view.
-OWNER_FIELD = "Owner Name"
+# The URL-filter field that isolates one office differs BY WORKSHEET (proven on
+# captures): Sales Metrics + Out of Bounds slice on "Owner Name" (value = the
+# owner's plain name), while CHURNRATES + ACTIVATIONRATES slice on "Owner &
+# Office" (value = the owner's full "NAME [office]" string) — the "Owner Name"
+# filter is silently ignored there and leaves the Grand Total at the team total.
+# Each view names its field in VIEW_META["filter_field"]; the office supplies the
+# matching value via slice_value().
+OWNER_FIELD = "Owner Name"          # default when a view doesn't name one
+OWNER_OFFICE_FIELD = "Owner & Office"
 
 # ---------------------------------------------------------------------------
 # SHARED TEAM VIEWS (Carlos 2026-07-21). All offices read these SAME views and
@@ -72,15 +78,16 @@ TEAM: dict = {
     "activation_rate": (_T + "ATTTRACKER-B2B/ACTIVATIONRATES/"
                         "3c5ad8dd-5c2b-43d1-96fe-63b945de10fb/"
                         "CarlosTeamViewExpanded?:iid=1"),
+    # The all-team product churn views (Carlos 2026-07-21 — the real bases).
     "churn_wireless": (_T + "ATTTRACKER-B2B/CHURNRATES/"
-                       "3d1267a0-60c7-4227-a6c1-b560acc33c9e/"
-                       "CarlosTeamWIRELESSExp?:iid=1"),
+                       "e5d34696-30de-4db7-a27e-2654dbf9babd/"
+                       "CarlosTEAMWireless?:iid=1"),
     "churn_int": (_T + "ATTTRACKER-B2B/CHURNRATES/"
-                  "14ec4ce4-7322-4581-868e-ea1e0ec52854/"
-                  "CarlosTeamINTExp?:iid=1"),
+                  "2365c727-4967-4bfc-a3c5-01015ea98278/"
+                  "CarlosTEAMNewINTEXP?:iid=2"),
     "churn_air": (_T + "ATTTRACKER-B2B/CHURNRATES/"
-                  "e2781fae-388c-40cb-8835-ec81472d2f9f/"
-                  "CarlosTeamAIRExp?:iid=1"),
+                  "66dd0946-c47b-488e-990c-cf67f04de4c0/"
+                  "CarlosTEAMAIREXP?:iid=1"),
     # OutofBoundsReport base view already shows all offices — slice by owner.
     "out_of_bounds": _T + "ATTTRACKER-B2B/OutofBoundsReport",
 }
@@ -90,12 +97,13 @@ TEAM: dict = {
 # clicked before the shot (Activation only — Churn carries its own sort);
 # data_cols = number of period columns used to crop to the last data row.
 VIEW_META: dict = {
-    "sales_metrics":   {},
-    "activation_rate": {"sort_header": "0-7 Days", "data_cols": 4},
-    "churn_wireless":  {"data_cols": 5},   # 0-30 / 30 / 60 / 90 / 120
-    "churn_int":       {"data_cols": 5},
-    "churn_air":       {"data_cols": 5},
-    "out_of_bounds":   {},
+    "sales_metrics":   {"filter_field": OWNER_FIELD},
+    "activation_rate": {"filter_field": OWNER_OFFICE_FIELD,
+                        "sort_header": "0-7 Days", "data_cols": 4},
+    "churn_wireless":  {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 5},
+    "churn_int":       {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 5},
+    "churn_air":       {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 5},
+    "out_of_bounds":   {"filter_field": OWNER_FIELD},
 }
 
 
@@ -104,11 +112,15 @@ class B2BOffice:
     key: str                # CLI handle, unique. e.g. "carlos".
     label: str              # "Carlos's B2B Office" — logs + header suffix.
     owner: str              # canonical owner name — EXACTLY as Tableau's
-                            # "Owner Name" field spells it. Drives both the
-                            # Tableau slice and the order-log rep filter.
+                            # "Owner Name" field spells it. Drives the Sales/OOB
+                            # slice AND the order-log rep filter.
     channel_id: str         # Slack channel id.
     channel_name: str       # "#alphalete-gp-sales" — display.
     sheet_id: str           # the office's board (LUCY CHURN + order-log tabs).
+    # The "Owner & Office" dimension value — the churn/activation slice. Tableau
+    # spells it "<OWNER NAME> [office]" (e.g. "ATEF CHOUDHURY [domin8
+    # acquisitions, inc.]"). Empty -> falls back to `owner`.
+    owner_office: str = ""
     churn_tab: str = "LUCY CHURN"   # feeds #6 Customer Churn + #7 Activation-by-rep
     order_log_tab: str = "Lucy At&t Order Log"
 
@@ -132,6 +144,13 @@ class B2BOffice:
     def is_override(self, view_key: str) -> bool:
         return view_key in self.view_overrides
 
+    def slice_value(self, field: str) -> str:
+        """The value to filter `field` to for this office. 'Owner & Office' uses
+        the full NAME [office] string; everything else uses the plain owner."""
+        if field == OWNER_OFFICE_FIELD:
+            return self.owner_office or self.owner
+        return self.owner
+
 
 # ---------------------------------------------------------------------------
 # THE TABLE. One row per B2B office. Owner + channel + sheet — no views.
@@ -152,15 +171,7 @@ OFFICES: dict = {
         channel_id="C0B395PUUCW",   # #domin8-b2b-sales (Carlos 2026-07-21)
         channel_name="#domin8-b2b-sales",
         sheet_id="15YUHkAcG2AfiF6KRhCiOBKGDdS9nnjxdfvIXr7oRX30",
-        # CHURNRATES filters on "Owner & Office" (not "Owner Name"), so the URL
-        # slice is ignored — Carlos made an Atef-filtered saved view instead.
-        # TESTING (2026-07-21): AtefExp wired to churn_wireless to see what it
-        # contains (combined vs one product). If combined, collapse churn to 1.
-        view_overrides={
-            "churn_wireless": (_T + "ATTTRACKER-B2B/CHURNRATES/"
-                               "5b6a79de-9727-4ff2-bf4f-4b9eac449d70/"
-                               "AtefExp?:iid=1"),
-        },
+        owner_office="ATEF CHOUDHURY [domin8 acquisitions, inc.]",
     ),
 }
 

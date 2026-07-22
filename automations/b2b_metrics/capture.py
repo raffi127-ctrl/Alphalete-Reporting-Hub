@@ -128,12 +128,17 @@ def payout_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
 def _sliced_url(o: B2BOffice, view_key: str) -> str:
     """The URL to capture. A per-office OVERRIDE view is a saved view already
     filtered to the owner — captured as-is, no slice appended. Otherwise it's the
-    shared team view with ?Owner Name=<owner> appended (drops :iid, a tab index)."""
+    shared team view with ?<field>=<value> appended (drops :iid, a tab index),
+    where the field is the view's own filter_field ("Owner Name" for Sales/OOB,
+    "Owner & Office" for churn/activation) and the value is the office's matching
+    slice value."""
     if o.is_override(view_key):
         return o.view_url(view_key)
     from urllib.parse import quote
+    field = VIEW_META.get(view_key, {}).get("filter_field", OWNER_FIELD)
+    value = o.slice_value(field)
     base = o.view_url(view_key).split("?")[0]
-    return "{}?{}={}".format(base, quote(OWNER_FIELD), quote(o.owner))
+    return "{}?{}={}".format(base, quote(field), quote(value))
 
 
 # Which views need the sort/crop rep-table handling (Activation + the 3 Churn
