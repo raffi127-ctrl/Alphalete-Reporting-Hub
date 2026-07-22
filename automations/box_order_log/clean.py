@@ -20,10 +20,14 @@ Three things the raw export gets confusing, and what we do about them:
    groups in the 2026-07-18 pull. `Contract ID + Account Id` groups cleanly:
    250 groups, zero repeated statuses. That pair is the sale key.
 
-3. WHAT COUNTS AS A SALE is not "Complete Sales > 0" — see JUNK_STATUSES and
-   DEAD_LEVELS. Draft rows are tablet quotes and never count; a sale whose
-   final state is Verification/TPV Failed doesn't count either; everything
-   else does, including cancels and Incomplete.
+3. WHAT COUNTS AS A SALE is not "Complete Sales > 0" — see JUNK_STATUSES,
+   DEAD_LEVELS and SALE_LEVELS. Draft rows (incl. "signed contract") are
+   tablet quotes and never count; a sale whose final state is Verification/TPV
+   Failed doesn't count either. A deal only becomes a sale once it has REACHED
+   TPV or beyond (Carlos, 2026-07-22: "TPV completed and forward is a sale...
+   but it could go to cancelled at any point") — so a cancel/reject that never
+   passed TPV is dropped, while one that passed TPV and later cancelled stays.
+   Incomplete is exempt and always counts (Megan).
 """
 from __future__ import annotations
 
@@ -67,6 +71,35 @@ JUNK_STATUSES = ("Draft",)
 # a sale." So Incomplete stays (colored bright red — chase it);
 # only TPV Failed is dropped.
 DEAD_LEVELS = ("Verification – TPV Failed",)
+
+# THE TPV GATE — a deal is only a sale once it has REACHED TPV or beyond.
+#
+# Carlos, 2026-07-22, giving his own definition: "TPV completed and forward is
+# a sale. But it could go to 'cancelled by broker' at any point in time." And
+# what is NOT a sale: "signed contract" and "draft" — both of which turn out to
+# be sub-states of Draft in the data (`Draft / Signed`, `Draft / PDF
+# Generated`, ...), so they're already dropped by JUNK_STATUSES above.
+#
+# The gate is on the sale's HISTORY, not its surfaced status, precisely because
+# of his "cancel at any point" clause: a deal that reached TPV Passed and was
+# LATER cancelled is a (dead) sale and still counts; a deal cancelled or
+# rejected while it was still a signed contract — i.e. that never passed TPV —
+# was never a sale. In the 2026-07-18 pull every cancel/reject fell in the
+# second group (history was just the cancel itself), so this drops 14 of them
+# and keeps 104. It keeps every TPV-Passed / Submitted / Accepted / Ready deal,
+# including the ones reading Complete Sales = 0 because the supplier hasn't
+# accepted them yet — which is why this is the RIGHT gate and "Complete Sales =
+# 0" is the wrong one (see JUNK_STATUSES).
+SALE_LEVELS = (
+    "Ready For Booking",
+    "Accepted by Supplier",
+    "Verification – TPV Passed",
+    "Submitted to Supplier",
+)
+
+# Incomplete / Missing Contract Data reads 0 and may never have reached TPV,
+# but Megan keeps it a sale regardless (2026-07-18, reaffirmed 2026-07-22).
+SALE_EXEMPT_STATUSES = ("Incomplete",)
 
 # ---------------------------------------------------------------------------
 # Priority — DERIVED FROM CARLOS'S OWN HAND-CLEANED TAB, not from the Loom.
@@ -329,6 +362,17 @@ def _is_complete(row: Dict[str, str]) -> bool:
         return False
 
 
+def _reached_tpv(sale: "Sale") -> bool:
+    """True if the sale ever reached TPV Passed or beyond — Carlos's bar for a
+    real sale. Incomplete is exempt (Megan keeps it regardless). Checks the
+    whole history so a deal that passed TPV and was later cancelled still
+    counts, while a cancel/reject that never got past a signed contract does
+    not."""
+    if sale.status in SALE_EXEMPT_STATUSES:
+        return True
+    return any(h in SALE_LEVELS for h in sale.history)
+
+
 def _priority(lvl: str) -> int:
     """Rank of a fine-grained level. Unknown levels sort last rather than
     raising — a new Tableau status should demote itself, not break the run."""
@@ -422,6 +466,13 @@ def collapse(rows: Iterable[Dict[str, str]]) -> Tuple[List[Sale], Dict[str, int]
     before = len(sales)
     sales = [s for s in sales if s.level not in DEAD_LEVELS]
     stats["dropped_dead"] = before - len(sales)
+
+    # THE TPV GATE — drop deals that never reached TPV (Carlos, 2026-07-22).
+    # A cancel/reject that never passed TPV was never a sale; Incomplete is
+    # exempt. Post-collapse so a recovered deal's full history is available.
+    before = len(sales)
+    sales = [s for s in sales if _reached_tpv(s)]
+    stats["dropped_never_reached_tpv"] = before - len(sales)
 
     stats["sales"] = len(sales)
     sales.sort(key=lambda s: (s.week_ending or dt.date.min,
