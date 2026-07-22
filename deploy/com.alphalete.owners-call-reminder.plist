@@ -23,8 +23,9 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Monday 11:00am AND 4:00pm CST (machine LOCAL time; the mini is Central).
-         launchd Weekday: 0/7=Sun, 1=Mon … 6=Sat. -->
+    <!-- Monday 11:00am, 4:00pm, and 7:15pm CST (machine LOCAL time; the mini is
+         Central). The 7:15pm send auto-uses the FINAL CALL wording (run.py picks by
+         the clock: 7pm+ = final). launchd Weekday: 0/7=Sun, 1=Mon … 6=Sat. -->
     <key>StartCalendarInterval</key>
     <array>
         <dict>
@@ -42,6 +43,14 @@
             <integer>16</integer>
             <key>Minute</key>
             <integer>0</integer>
+        </dict>
+        <dict>
+            <key>Weekday</key>
+            <integer>1</integer>
+            <key>Hour</key>
+            <integer>19</integer>
+            <key>Minute</key>
+            <integer>15</integer>
         </dict>
     </array>
 

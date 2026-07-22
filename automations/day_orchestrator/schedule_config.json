@@ -844,6 +844,26 @@
       "depends_on": [],
       "verify": null
     },
+    "install_leaders_call_finalize_agent": {
+      "on_scheduler": true,
+      "_note": "MANUAL: `lucy rerun install_leaders_call_finalize_agent` installs com.alphalete.leaders-call-finalize (Mon 7:30pm CST) — the final pass that rebuilds the deck + posts to #top-leaders-alphalete-org + #alphalete-gp-sales as Lucy. Also re-run install_leaders_call_agent after the 2pm plist changed to --no-pdf. weekdays [] = manual only.",
+      "display_name": "Install Leader's Call finalize agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "leaders-call-finalize"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
     "install_owners_call_reminder_agent": {
       "on_scheduler": true,
       "_note": "MANUAL: `lucy rerun install_owners_call_reminder_agent` installs com.alphalete.owners-call-reminder (Mon 11:00am + 4:00pm CST). Texts the 'Alphalete Ownrs 🔥' iMessage group Maud's recognition reminder (Owner's/Leader's Call times + recognition sheet link) AS the mini's iMessage account (Lucy). REQUIRES: OWNERS_CALL_CHAT_ID set to the group's chat GUID (find via `lucy rerun probe_imessage_threads`) AND that account being a MEMBER of the group. weekdays [] = manual only.",
@@ -2162,6 +2182,27 @@
         "weekdays": []
       },
       "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
+    "leaders_call_finalize": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Run by the dedicated com.alphalete.leaders-call-finalize launchd job at Mon 7:30pm CST (deploy/leaders_call_finalize.sh). The FINAL PASS: rebuilds the recognition deck from the Leader's Call tab (the 2pm run pulled campaigns + wrote it with --no-pdf) + the now-complete promotions from the recognition sheet, then posts the PDF to #top-leaders-alphalete-org + #alphalete-gp-sales AS Lucy (files_upload_v2; Lucy must be a member of each). Finishes before the 8pm call. `lucy rerun leaders_call_finalize` here = DRY-RUN (builds + previews, posts nothing). Megan 2026-07-21.",
+      "display_name": "Leader's Call finalize (build + post)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.leaders_call.run"
+      ],
+      "base_args": [
+        "--finalize",
+        "--dry-run"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
       "freshness_target": null,
       "depends_on": [],
       "verify": null

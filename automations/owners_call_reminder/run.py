@@ -16,6 +16,7 @@ chat GUID (OWNERS_CALL_CHAT_ID) — find that once with `lucy rerun probe_imessa
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import os
 import subprocess
 import sys
@@ -29,7 +30,7 @@ CHAT_ID = os.environ.get("OWNERS_CALL_CHAT_ID", "")     # <-- set after the prob
 SHEET_URL = ("https://docs.google.com/spreadsheets/d/"
              "1lgYjfpCwYbeeGAdx7FEyI9PIqFk-W57X7HaZ4nsuoFM/edit?usp=sharing")
 
-# Maud's verbatim reminder (Megan relayed it 2026-07-21).
+# Maud's verbatim reminder (Megan relayed it 2026-07-21) — the 11am + 4pm sends.
 MESSAGE = (
     "Reminder for the Owner's Call tonight at 8:15pm CT and then Leader's Call "
     "following at 8:45pm CT!!!!!! 🔥🎉\n"
@@ -37,6 +38,20 @@ MESSAGE = (
     "Make sure to fill out the recognition sheet!\n"
     + SHEET_URL
 )
+
+# The 7:15pm "final call" send — last chance before the 8pm call (Megan 2026-07-21).
+FINAL_MESSAGE = (
+    "🚨 FINAL CALL — last chance to fill out the recognition sheet before tonight's "
+    "call!! 🔥🎉\n"
+    "\n"
+    + SHEET_URL
+)
+
+
+def _is_final_time() -> bool:
+    """The 7:15pm send uses the FINAL_CALL wording (one plist fires all 3 times, so
+    pick the message by the clock)."""
+    return dt.datetime.now().hour >= 19
 
 
 def _osascript(script: str, timeout: int = 60) -> str:
@@ -63,11 +78,14 @@ def _applescript_string(text: str) -> str:
     return '"' + esc.replace("\n", '" & linefeed & "') + '"'
 
 
-def send(dry_run: bool = True) -> int:
+def send(dry_run: bool = True, final: "bool | None" = None) -> int:
+    if final is None:
+        final = _is_final_time()
+    message = FINAL_MESSAGE if final else MESSAGE
     if dry_run:
-        print(f"[dry-run] WOULD text {GROUP_NAME!r}:\n"
+        print(f"[dry-run] WOULD text {GROUP_NAME!r} ({'FINAL CALL' if final else 'regular'}):\n"
               f"------------------------------------------------------------\n"
-              f"{MESSAGE}\n"
+              f"{message}\n"
               f"------------------------------------------------------------")
         return 0
     if sys.platform != "darwin":
@@ -84,9 +102,9 @@ def send(dry_run: bool = True) -> int:
     cid = CHAT_ID.replace('"', '\\"')
     _osascript('tell application "Messages"\n'
                f'  set theChat to a reference to chat id "{cid}"\n'
-               f'  send {_applescript_string(MESSAGE)} to theChat\n'
+               f'  send {_applescript_string(message)} to theChat\n'
                'end tell', 40)
-    print(f"✅ Reminder texted to {GROUP_NAME!r}.")
+    print(f"✅ {'Final-call' if final else 'Reminder'} texted to {GROUP_NAME!r}.")
     return 0
 
 
@@ -95,8 +113,10 @@ def main() -> int:
                                              "reminder.")
     ap.add_argument("--send", action="store_true",
                     help="Actually send (default is a dry-run that prints only).")
+    ap.add_argument("--final", action="store_true",
+                    help="Force the FINAL CALL wording (else auto-picked: 7pm+ = final).")
     args = ap.parse_args()
-    return send(dry_run=not args.send)
+    return send(dry_run=not args.send, final=True if args.final else None)
 
 
 if __name__ == "__main__":

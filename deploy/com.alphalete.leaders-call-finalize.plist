@@ -3,18 +3,14 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.alphalete.leaders-call-mon</string>
+    <string>com.alphalete.leaders-call-finalize</string>
 
     <!-- Path is the laptop placeholder; on the mini, regenerate with the install
          path via the python-replace step in workflows/scheduler-mini.md. -->
-    <!-- 2pm = pull campaigns + write the tab only (--no-pdf). The PDF build + Slack
-         post runs in the separate 7:30pm finalize job (com.alphalete.leaders-call-finalize),
-         after promotions are all filled in. -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/megan/1st Claude Folder/deploy/leaders_call_mon.sh</string>
-        <string>--no-pdf</string>
+        <string>/Users/megan/1st Claude Folder/deploy/leaders_call_finalize.sh</string>
     </array>
 
     <key>WorkingDirectory</key>
@@ -26,23 +22,22 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Monday 2:00pm CST (14:00), machine LOCAL time (the mini is Central).
-         2pm not 10am (Megan 2026-07-13): the run needs the Frontier 'Sales
-         Verification' email that lands ~2pm Monday. launchd Weekday: 0/7=Sun,
-         1=Mon … 6=Sat. -->
+    <!-- Monday 7:30pm CST (19:30), machine LOCAL time (the mini is Central) — the
+         final pass runs after the 7:15pm "final call" so the deck is done before the
+         8pm call. launchd Weekday: 0/7=Sun, 1=Mon … 6=Sat. -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Weekday</key>
         <integer>1</integer>
         <key>Hour</key>
-        <integer>14</integer>
+        <integer>19</integer>
         <key>Minute</key>
-        <integer>0</integer>
+        <integer>30</integer>
     </dict>
 
     <key>StandardOutPath</key>
-    <string>/Users/megan/1st Claude Folder/output/logs/leaders-call-mon.launchd.out.log</string>
+    <string>/Users/megan/1st Claude Folder/output/logs/leaders-call-finalize.launchd.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/megan/1st Claude Folder/output/logs/leaders-call-mon.launchd.err.log</string>
+    <string>/Users/megan/1st Claude Folder/output/logs/leaders-call-finalize.launchd.err.log</string>
 </dict>
 </plist>

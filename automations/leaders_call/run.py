@@ -920,6 +920,66 @@ def _build_recognition_pdf(results: dict) -> None:
               flush=True)
 
 
+# The 7:30pm final pass posts the finished deck to these Slack channels AS Lucy
+# (Megan 2026-07-21: top-leaders + gp-sales, replacing the old group DM). Lucy must
+# be a MEMBER of each channel to upload the file.
+FINAL_CHANNELS = [
+    ("top-leaders-alphalete-org", "C067TTGFEFR"),
+    ("alphalete-gp-sales",        "C07J46MQNUX"),
+]
+
+
+def _post_pdf_to_channels(pdf_path, week_end, dry_run: bool = False) -> list:
+    from pathlib import Path as _P
+    name = _P(pdf_path).name
+    comment = (f"📣 Alphalete Leader's Call — Weekly Recognition "
+               f"(week ending {week_end.month}/{week_end.day}).")
+    out = []
+    for chan, cid in FINAL_CHANNELS:
+        if dry_run:
+            print(f"  [dry-run] WOULD post {name} to #{chan} ({cid}) as Lucy", flush=True)
+            out.append({"channel": chan, "dry_run": True})
+            continue
+        try:
+            from automations.shared import slack_metrics_post as smp
+            resp = smp._client().files_upload_v2(channel=cid, file=str(pdf_path),
+                                                 filename=name, initial_comment=comment)
+            ok = bool(resp.get("ok"))
+            print(f"  #{chan}: {'posted ✓' if ok else 'ok=false'}", flush=True)
+            out.append({"channel": chan, "ok": ok})
+        except Exception as e:  # noqa: BLE001
+            print(f"  #{chan}: FAILED — {type(e).__name__}: {str(e)[:140]}", flush=True)
+            out.append({"channel": chan, "ok": False, "error": str(e)})
+    return out
+
+
+def _finalize(dry_run: bool = False) -> int:
+    """The 7:30pm final pass: rebuild the deck from the tab (2pm campaign data) + the
+    now-complete promotions, then post the PDF to the leadership Slack channels. No
+    Tableau pull — the 2pm --write run already filled the tab."""
+    from automations.leaders_call import build_pdf as pdf
+    results = _results_from_tab()
+    n = sum(len(v) for v in results.values())
+    sun = _target_week()[1]
+    out = OUTPUT_DIR / f"alphalete_leaders_call_{sun.isoformat()}.pdf"
+    promos = _fetch_promotions()
+    pdf.build_pdf(results, out, pdf.qualifiers_from_campaigns(), promotions=promos)
+    print(f"📄 Final deck built ({n} rows, {len(promos)} promotions): {out}", flush=True)
+    posts = _post_pdf_to_channels(out, sun, dry_run=dry_run)
+    if not dry_run and any(p.get("ok") for p in posts):
+        try:
+            from automations.day_orchestrator import hub_publish
+            hub_publish.publish_done("leaders_call", "Leader's Call - Weekly Recognition",
+                                     status="success")
+        except Exception:
+            pass
+    failed = [p["channel"] for p in posts if not p.get("ok") and not p.get("dry_run")]
+    if failed:
+        print(f"❌ Channel post failed: {', '.join(failed)} — is Lucy a member?", flush=True)
+        return 1
+    return 0
+
+
 def _results_from_tab() -> dict:
     """Read the live Leader's Call tab into {section_title: [(rep, owner, value)]} —
     the inverse of write_report. Lets --pdf-only rebuild the deck from already-written
@@ -966,8 +1026,17 @@ def main() -> int:
     ap.add_argument("--pdf-only", action="store_true",
                     help="rebuild the recognition PDF from the current tab data "
                          "(no Tableau pull, no DM) — a self-test / offline rebuild.")
+    ap.add_argument("--no-pdf", action="store_true",
+                    help="with --write: pull + write the tab only (no PDF/send); the "
+                         "PDF + channel post is deferred to the 7:30pm --finalize pass.")
+    ap.add_argument("--finalize", action="store_true",
+                    help="the 7:30pm pass — rebuild the deck from the tab + final "
+                         "promotions and POST it to the leadership Slack channels. "
+                         "Add --dry-run to build + preview without posting.")
     args = ap.parse_args()
 
+    if args.finalize:
+        return _finalize(dry_run=args.dry_run)
     if args.pdf_only:
         from automations.leaders_call import build_pdf as pdf
         results = _results_from_tab()
@@ -1009,6 +1078,10 @@ def main() -> int:
                   "section pulled cleanly.", flush=True)
             return 1
         print("\n✅ All sections pulled and written for this week.", flush=True)
+        if args.no_pdf:
+            print("   (--no-pdf: tab written; the PDF + channel post runs in the "
+                  "7:30pm finalize pass.)", flush=True)
+            return 0
         # GATE: only build the Leader's Call PDF on a fully-clean pull (Maud
         # 2026-06-29). Nothing failed here, so generate it from the same results.
         _build_recognition_pdf(results)
