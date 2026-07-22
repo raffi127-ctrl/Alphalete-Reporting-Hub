@@ -7,97 +7,122 @@ generic runner (runner.py) posts the same ordered set of items for any office �
 no per-office code to copy, which is how a stale copy sends one office's numbers
 to another's channel.
 
-THE THREAD, in Carlos's order (2026-07-20, "those are all of them in order"):
-  1. Sales Metrics          Tableau — B2BATTSalesMetrics custom view + Owner
-                            Name URL filter (both panels scoped, see
-                            att_order_log.metrics_shot).
-  2. Activate Rate          Tableau — ACTIVATIONRATES custom view.
-  3. Churn Rate             Tableau — CHURNRATES custom view.
-  4. Customer Churn         Sheet — the LUCY CHURN tab's main block (the
-                            0-30 Day Rolloff List), via vantura_churn.shot.
-  5. Activation Rate by rep Sheet — the LUCY CHURN tab's rep chart (cols AE:AF).
-  6. Order log              The att_order_log workbook (overall + per-rep
-                            paycheck tabs).
-  7. Activation report      UNMAPPED (2026-07-20) — Carlos to clarify how it
-                            differs from #6 / #8. Left out of the item list
-                            until then.
-  8. Activation report ovw. Two-week Activated/Cancelled/Still-Open per-rep
-                            image (att_order_log.payout).
-  9. Out of Bounds          Tableau — OutofBoundsReport custom view. Posted even
+ALL-TEAM SPLIT (Carlos 2026-07-21): the Tableau views are TEAM-wide custom views
+(every office under Carlos's B2B org — the "CarlosTeam…" saved views) that we
+slice to ONE office by appending `?Owner Name=<owner>` at capture. This is the
+same win the D2D side got (office_metrics all-team views sliced per owner):
+adding office #3–20 is a new B2BOffice row (owner + channel + sheet) and ZERO new
+Tableau views. The team-view URLs live once in TEAM below.
+
+THE THREAD, in Carlos's order (2026-07-20; churn expanded to 3 product views
+2026-07-21 "3 churn views of each product, for Carlos as well"):
+  1. Sales Metrics          Tableau — B2BATTSalesMetrics team view + Owner Name
+                            URL slice (both panels scoped by the slice).
+  2. Activation Rate        Tableau — ACTIVATIONRATES team view, owner-sliced.
+  3. Wireless Churn         Tableau — CHURNRATES / CarlosTeamWIRELESSExp, sliced.
+  4. INT Churn              Tableau — CHURNRATES / CarlosTeamINTExp, sliced.
+  5. AIR Churn              Tableau — CHURNRATES / CarlosTeamAIRExp, sliced.
+  6. Customer Churn         Sheet — the office board's LUCY CHURN tab main block
+                            (the 0-30 Day Rolloff List), via vantura_churn.shot.
+  7. Activation Rate by rep Sheet — the LUCY CHURN tab's rep chart (cols AE:AF).
+  8. Order Log              The att_order_log xlsx (ORDERLOG export, owner-filtered).
+  9. Activation report ovw. Two-week Activated/Cancelled/Still-Open per-rep image
+                            (att_order_log.payout), from the same export.
+ 10. Out of Bounds          Tableau — OutofBoundsReport, owner-sliced. Posted even
                             when BLANK (Carlos's Loom: "if it shows nothing, we
                             still want the screenshot").
 
-CHANNEL NOTE: #alphalete-gp-sales cannot be read by Lucy's token, so the thread
-is found/created via a thread_state.json file (day|channel -> thread_ts), NOT by
+The 3 Tableau churn views are the RATE tables (per-rep disconnect counts); the
+sheet Customer Churn is the actual 0-30 rolloff CUSTOMER list + tiers — different
+surfaces, both posted (as Carlos's thread already did). The LUCY CHURN tab is
+formula-driven off a raw block (cols P:AC) that a vantura_churn pull writes per
+office; a freshly duplicated tab still holds the source office's data until that
+pull runs against the new owner.
+
+CHANNEL NOTE: these channels cannot be read by Lucy's token, so the thread is
+found/created via a thread_state.json file (day|channel -> thread_ts), NOT by
 reading channel history — same mechanism b2b_quality already uses. The runner
 carries that; the registry only names the channel.
 
-ADD AN OFFICE: clone the office's Tableau custom views (Sales Metrics /
-Activation / Churn / OOB) filtered to that owner, save its LUCY CHURN tab on its
-board, add one B2BOffice(...) row with those URLs + its channel + owner + sheet.
-`python -m automations.b2b_metrics.runner --office <key> --check` validates the
-table (refuses to run if two offices share a channel or a view URL).
+ADD AN OFFICE: add one B2BOffice(...) row — owner (exactly as Tableau's "Owner
+Name" field spells it), its Slack channel id + name, and its board sheet id. No
+Tableau views to clone. `python -m automations.b2b_metrics.runner --office <key>
+--check` validates the table (refuses to run if two offices share a channel).
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 _T = "https://us-east-1.online.tableau.com/#/site/sci/views/"
 
 THREAD_TITLE = "B2B Metrics"      # header first line + thread_state needle
 
+# The field on every ATTTRACKER-B2B worksheet that isolates one office. Appended
+# to each team view's URL as ?Owner Name=<owner> to slice the shared view.
+OWNER_FIELD = "Owner Name"
+
+# ---------------------------------------------------------------------------
+# SHARED TEAM VIEWS (Carlos 2026-07-21). All offices read these SAME views and
+# slice by owner — no per-office clones. Order of the 6 keys matches the thread.
+# ---------------------------------------------------------------------------
+TEAM: dict = {
+    "sales_metrics": (_T + "ATTTRACKER-B2B/B2BATTSalesMetrics/"
+                      "403c5051-5762-4dfd-a9eb-8a6188a69a03/"
+                      "CarlosTeamExpandedMetrics?:iid=2"),
+    "activation_rate": (_T + "ATTTRACKER-B2B/ACTIVATIONRATES/"
+                        "3c5ad8dd-5c2b-43d1-96fe-63b945de10fb/"
+                        "CarlosTeamViewExpanded?:iid=1"),
+    "churn_wireless": (_T + "ATTTRACKER-B2B/CHURNRATES/"
+                       "3d1267a0-60c7-4227-a6c1-b560acc33c9e/"
+                       "CarlosTeamWIRELESSExp?:iid=1"),
+    "churn_int": (_T + "ATTTRACKER-B2B/CHURNRATES/"
+                  "14ec4ce4-7322-4581-868e-ea1e0ec52854/"
+                  "CarlosTeamINTExp?:iid=1"),
+    "churn_air": (_T + "ATTTRACKER-B2B/CHURNRATES/"
+                  "e2781fae-388c-40cb-8835-ec81472d2f9f/"
+                  "CarlosTeamAIRExp?:iid=1"),
+    # OutofBoundsReport base view already shows all offices — slice by owner.
+    "out_of_bounds": _T + "ATTTRACKER-B2B/OutofBoundsReport",
+}
+
+# Per-view capture metadata shared by ALL offices (the views are identical; only
+# the owner slice differs). sort_header = the measure column whose sort glyph is
+# clicked before the shot (Activation only — Churn carries its own sort);
+# data_cols = number of period columns used to crop to the last data row.
+VIEW_META: dict = {
+    "sales_metrics":   {},
+    "activation_rate": {"sort_header": "0-7 Days", "data_cols": 4},
+    "churn_wireless":  {"data_cols": 5},   # 0-30 / 30 / 60 / 90 / 120
+    "churn_int":       {"data_cols": 5},
+    "churn_air":       {"data_cols": 5},
+    "out_of_bounds":   {},
+}
+
 
 @dataclass(frozen=True)
 class B2BOffice:
     key: str                # CLI handle, unique. e.g. "carlos".
     label: str              # "Carlos's B2B Office" — logs + header suffix.
-    owner: str              # canonical owner name, e.g. "Carlos Hidalgo".
+    owner: str              # canonical owner name — EXACTLY as Tableau's
+                            # "Owner Name" field spells it. Drives both the
+                            # Tableau slice and the order-log rep filter.
     channel_id: str         # Slack channel id.
     channel_name: str       # "#alphalete-gp-sales" — display.
-    sheet_id: str           # the office's board (holds the LUCY CHURN tab).
-    churn_tab: str          # tab name for #4/#5, e.g. "LUCY CHURN".
-
-    # Tableau custom-view URLs (each scoped to this owner under their login).
-    view_sales_metrics: str
-    view_activation_rate: str
-    view_churn_rate: str
-    view_out_of_bounds: str
-
-    # #1 Sales Metrics also needs the RIGHT panel scoped via a URL filter — the
-    # custom view only scopes the left table (proven 2026-07-20). Caption +
-    # value of that filter; empty caption = no URL filter appended.
-    metrics_filter_field: str = "Owner Name"
-    metrics_filter_value: str = ""      # defaults to `owner` when empty
-
-    # Crop/sort metadata for the Activation + Churn captures — b2b_quality does
-    # NOT just screenshot these; it crops to the last data row and (for
-    # Activation) clicks the sort glyph. Carried here so the runner replicates
-    # that per office (a generic screenshot posts an un-cropped, un-sorted image).
-    # data_cols = number of period columns used to find the last data row;
-    # sort_header = the column whose sort glyph is clicked (Activation only).
-    activation_data_cols: int = 4       # 0-7 / 8-14 / 15-30 / 31-60
-    activation_sort_header: str = "0-7 Days"
-    churn_data_cols: int = 5            # 0-30 / 30 / 60 / 90 / 120
-    # The custom-view names capture must confirm are live before shooting
-    # (b2b_quality's wait_for_custom_view — else it shoots the Original).
-    activation_view_label: str = "Carlos Local Office EXPANDED"
-    churn_view_label: str = "Carlos Local Office EXPANDED CHURN"
-
-    @property
-    def sales_metrics_owner(self) -> str:
-        return self.metrics_filter_value or self.owner
+    sheet_id: str           # the office's board (LUCY CHURN + order-log tabs).
+    churn_tab: str = "LUCY CHURN"   # feeds #6 Customer Churn + #7 Activation-by-rep
+    order_log_tab: str = "Lucy At&t Order Log"
 
     @property
     def tableau_views(self) -> dict:
-        return {"sales_metrics": self.view_sales_metrics,
-                "activation_rate": self.view_activation_rate,
-                "churn_rate": self.view_churn_rate,
-                "out_of_bounds": self.view_out_of_bounds}
+        """view_key -> shared team-view URL (sliced to this owner at capture)."""
+        return dict(TEAM)
+
+    def view_url(self, view_key: str) -> str:
+        return TEAM[view_key]
 
 
 # ---------------------------------------------------------------------------
-# THE TABLE. One row per B2B office.
+# THE TABLE. One row per B2B office. Owner + channel + sheet — no views.
 # ---------------------------------------------------------------------------
 OFFICES: dict = {
     "carlos": B2BOffice(
@@ -107,20 +132,14 @@ OFFICES: dict = {
         channel_id="C07J46MQNUX",
         channel_name="#alphalete-gp-sales",
         sheet_id="1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY",
-        churn_tab="LUCY CHURN",
-        view_sales_metrics=(_T + "ATTTRACKER-B2B/B2BATTSalesMetrics/"
-                            "eed37ad3-2bde-430e-9126-b1def96be8d3/"
-                            "Carlos-ExpandedMetrics?:iid=1"),
-        view_activation_rate=(_T + "ATTTRACKER-B2B/ACTIVATIONRATES/"
-                              "4c53fb7e-5a1b-4e8f-990e-0b2c8cf42309/"
-                              "CarlosLocalOfficeEXPANDED?:iid=2"),
-        view_churn_rate=(_T + "ATTTRACKER-B2B/CHURNRATES/"
-                         "7419b960-0fb1-41d5-a11e-76f0e81c0547/"
-                         "CarlosLocalOfficeEXPANDEDCHURN?:iid=1"),
-        view_out_of_bounds=(_T + "ATTTRACKER-B2B/OutofBoundsReport/"
-                            "983b1e4d-99d4-4042-8b9d-5c3c1e33e2d4/"
-                            "CarlosOOB?:iid=1"),
-        metrics_filter_value="Carlos Hidalgo",
+    ),
+    "atef": B2BOffice(
+        key="atef",
+        label="Atef's B2B Office (Domin8)",
+        owner="Atef Choudhury",
+        channel_id="C0B395PUUCW",   # #domin8-b2b-sales (Carlos 2026-07-21)
+        channel_name="#domin8-b2b-sales",
+        sheet_id="15YUHkAcG2AfiF6KRhCiOBKGDdS9nnjxdfvIXr7oRX30",
     ),
 }
 
@@ -140,14 +159,12 @@ class ConfigError(Exception):
 
 
 def validate() -> list:
-    """Hard structural check. [] = clean. Every channel + every Tableau view URL
-    must be UNIQUE across offices (a duplicate is the copy-paste mistake that
-    posts one office's screenshot into another's channel), every field present,
-    every view a real sci Tableau URL."""
+    """Hard structural check. [] = clean. Every channel + every owner must be
+    UNIQUE across offices (a duplicate is the copy-paste mistake that posts one
+    office's screenshot into another's channel), every required field present."""
     problems = []
-    required = ("label", "owner", "channel_id", "channel_name", "sheet_id",
-                "churn_tab")
-    seen_channel, seen_view = {}, {}
+    required = ("label", "owner", "channel_id", "channel_name", "sheet_id")
+    seen_channel, seen_owner = {}, {}
     for key, o in OFFICES.items():
         if o.key != key:
             problems.append("{}: row key {!r} != dict key {!r}".format(
@@ -160,16 +177,13 @@ def validate() -> list:
                 key, o.channel_id, seen_channel[o.channel_id]))
         else:
             seen_channel[o.channel_id] = key
-        for vname, url in o.tableau_views.items():
-            if not re.match(r"^https://[\w.-]+/#/site/sci/views/\S+", url or ""):
-                problems.append("{}: {} not a sci Tableau URL: {!r}".format(
-                    key, vname, url))
-            if url in seen_view:
-                problems.append("{}: {} URL identical to {!r} — clone + "
-                                "re-filter the view".format(
-                                    key, vname, seen_view[url]))
-            else:
-                seen_view[url] = "{}.{}".format(key, vname)
+        low = (o.owner or "").strip().lower()
+        if low in seen_owner:
+            problems.append("{}: owner {!r} already used by {!r} — the slice "
+                            "would pull the same office twice".format(
+                                key, o.owner, seen_owner[low]))
+        else:
+            seen_owner[low] = key
     return problems
 
 

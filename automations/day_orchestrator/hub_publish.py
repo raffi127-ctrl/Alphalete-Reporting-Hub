@@ -59,6 +59,13 @@ _HUB_CARD = {
     # blocked run looks exactly like a clean one. It ran unreported until
     # 2026-07-19, when a reconciliation failure went unnoticed for a day.
     "vantura_churn": "vantura-churn",
+    # B2B Churn (Carlos) → Lucy Wireless / New INT / AIR Churn tabs. Standalone
+    # LaunchAgent on Lucy 2 (com.alphalete.att-churn-daily, deploy/att_churn_daily.sh,
+    # 7:15am), never in the 4am batch. Was a hand-run report until 2026-07-21, when
+    # it went stale because nobody kicked it and it had no schedule. Same lesson as
+    # vantura_churn: without this entry its card stays grey and a missed/failed run
+    # looks identical to a clean one.
+    "att_churn": "att-churn",
     "pnl_office": "pnl-office",
     "sales_boards": "sales-boards",
     "b2b_quality": "b2b-quality",

@@ -58,11 +58,10 @@ POST_SETTLE_SEC = 4
 # Each: id, emoji, title, kind, capture(office, out_dir) -> Path|None. #7
 # (Activation report) is intentionally ABSENT until Carlos maps it. Order IS
 # Carlos's order (offices.py docstring).
-def _tableau_shot(view_key: str, owner_filter: bool = False):
+def _tableau_shot(view_key: str):
     def cap(o: B2BOffice, out_dir: Path, log):
         from automations.b2b_metrics import capture
-        return capture.tableau_image(o, view_key, out_dir,
-                                     owner_filter=owner_filter, log=log)
+        return capture.tableau_image(o, view_key, out_dir, log=log)
     return cap
 
 
@@ -85,12 +84,16 @@ def _payout(o: B2BOffice, out_dir: Path, log):
 
 ITEMS = [
     dict(id="sales_metrics", emoji="\U0001F4CA", title="Sales Metrics",
-         capture=_tableau_shot("sales_metrics", owner_filter=True)),
+         capture=_tableau_shot("sales_metrics")),
     dict(id="activation_rate", emoji="\U000026A1", title="Activation Rate",
          capture=_tableau_shot("activation_rate")),
-    dict(id="churn_rate", emoji="\U0001F4C9", title="Churn Rate",
-         capture=_tableau_shot("churn_rate")),
-    dict(id="customer_churn", emoji="\U0001F43A", title="Churn & Activations Board",
+    dict(id="churn_wireless", emoji="\U0001F4C9", title="Wireless Churn",
+         capture=_tableau_shot("churn_wireless")),
+    dict(id="churn_int", emoji="\U0001F4C9", title="INT Churn",
+         capture=_tableau_shot("churn_int")),
+    dict(id="churn_air", emoji="\U0001F4C9", title="AIR Churn",
+         capture=_tableau_shot("churn_air")),
+    dict(id="customer_churn", emoji="\U0001F43A", title="Customer Churn",
          capture=_sheet_shot("customer_churn")),
     dict(id="activation_by_rep", emoji="\U0001F4C8", title="Activation Rate by Rep",
          capture=_sheet_shot("activation_by_rep")),

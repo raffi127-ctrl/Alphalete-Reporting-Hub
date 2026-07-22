@@ -197,6 +197,36 @@
         "type": "not_configured"
       }
     },
+    "install_att_churn_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_att_churn_agent` can install/refresh the STANDALONE com.alphalete.att-churn-daily LaunchAgent on Lucy 2, which fills Carlos's 'Lucy Wireless Churn' / 'Lucy New INT Churn' / 'Lucy AIR Churn' tabs on the Vantura Master Sales Board daily 7:15am machine-local via deploy/att_churn_daily.sh (automations.att_order_log.churn_run --fill). Fires AFTER vantura_churn's 7:00 refresh and the wrapper hard-waits for any vantura_churn run to finish first, because both drive cdp_pull's shared CDP Chrome (port 9246) and churn_run._kill_ours() would murder a concurrent vantura pull. install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes. NOTE: att_churn had NO schedule at all until 2026-07-21 (hand-run only); this wires it. Dry-run test on Lucy 2 first: `bash deploy/att_churn_daily.sh --dry-run` won't preview (churn_run is dry by default but the wrapper forces --fill) — instead run `lucy --machine \"Lucy 2\" rerun att_churn` (no --fill) to preview before installing the agent.",
+      "display_name": "Install B2B Churn agent (Carlos, daily 7:15am)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "att-churn-daily"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "car_rides": {
       "on_scheduler": false,
       "machine": "Lucy 2",
@@ -681,6 +711,26 @@
       ],
       "base_args": [
         "recognition-tab-sun"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
+    "install_owners_call_reminder_agent": {
+      "on_scheduler": true,
+      "_note": "MANUAL: `lucy rerun install_owners_call_reminder_agent` installs com.alphalete.owners-call-reminder (Mon 11:00am + 4:00pm CST). Texts the 'Alphalete Ownrs 🔥' iMessage group Maud's recognition reminder (Owner's/Leader's Call times + recognition sheet link) AS the mini's iMessage account (Lucy). REQUIRES: OWNERS_CALL_CHAT_ID set to the group's chat GUID (find via `lucy rerun probe_imessage_threads`) AND that account being a MEMBER of the group. weekdays [] = manual only.",
+      "display_name": "Install owners-call reminder agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "owners-call-reminder"
       ],
       "cadence": {
         "weekdays": []
@@ -1971,6 +2021,24 @@
       "verify": {
         "type": "not_configured"
       }
+    },
+    "owners_call_reminder": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Run by the dedicated com.alphalete.owners-call-reminder launchd job (Mon 11:00am + 4:00pm CST, deploy/owners_call_reminder.sh --send). Texts the 'Alphalete Ownrs 🔥' iMessage group Maud's recognition reminder AS the mini's iMessage account (Lucy). `lucy rerun owners_call_reminder` here runs a DRY-RUN (prints the message, sends nothing). GO LIVE needs OWNERS_CALL_CHAT_ID (group GUID via `lucy rerun probe_imessage_threads`) + that account in the group + Megan's ok. Megan 2026-07-21.",
+      "display_name": "Owners-call reminder (iMessage)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.owners_call_reminder.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
     },
     "recognition_tab": {
       "on_scheduler": false,

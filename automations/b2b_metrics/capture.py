@@ -4,26 +4,32 @@ Each returns a Path to the artifact (PNG, or the .xlsx for the order log), or
 raises (the runner's continue-on-failure logs + skips). These are thin adapters
 over modules that already exist, so the runner is orchestration only:
 
-  churn_tab_image   -> vantura_churn.shot  (Sheets export; runs anywhere)
+  tableau_image     -> owner-sliced Download->Image of a shared TEAM view (Lucy 2)
   order_log_workbook-> att_order_log.run pull + xlsx.build  (Tableau; Lucy 2)
   payout_image      -> att_order_log.payout + box_order_log.png  (Lucy 2 for data)
-  tableau_image     -> a Download->Image capture of a custom view  (Lucy 2)
 
 Sheet-order-log data (order_log + payout) is pulled ONCE and cached on the
 office for the run, so the 120MB ORDERLOG export isn't fetched twice.
+
+ALL Tableau items (#1/#2/#3-5/#8) go through the SAME path: load the shared team
+view with ?Owner Name=<owner> appended, then apply the per-view sort/crop from
+offices.VIEW_META. The sort click + crop-to-last-data-row are reused from
+b2b_quality (the module that proved them); this runner no longer routes through
+b2b_quality's Carlos-hardcoded SPECS, so the owner slice actually takes effect.
 """
 from __future__ import annotations
 
 import datetime as dt
 from pathlib import Path
 
-from automations.b2b_metrics.offices import B2BOffice
+from automations.b2b_metrics.offices import B2BOffice, OWNER_FIELD, VIEW_META
 
 
-# --- #4 / #5 : screenshots of the LUCY CHURN tab ---------------------------
+# --- #6 / #7 : screenshots of the LUCY CHURN tab ---------------------------
 def churn_tab_image(o: B2BOffice, which: str, out_dir: Path, log=print) -> Path:
-    """#4 customer_churn = the tab's main block; #5 activation_by_rep = the rep
-    chart at AE:AF. Both via the Sheets export endpoint (vantura_churn.shot)."""
+    """#6 customer_churn = the tab's main block (0-30 Day Rolloff List); #7
+    activation_by_rep = the rep chart at AE:AF. Both via the Sheets export
+    endpoint (vantura_churn.shot)."""
     from automations.recruiting_report.fill import open_by_key
     from automations.vantura_churn import shot
 
@@ -56,8 +62,7 @@ def _order_lines(o: B2BOffice, out_dir: Path, log=print):
     today = dt.date.today()
     csv = out_dir / "orderlog_{}.csv".format(today.isoformat())
     al_run._pull(today, csv, log=log)
-    lines = clean.load_rows(csv, owner_prefix=o.owner.split()[0].upper()
-                            if False else o.owner)
+    lines = clean.load_rows(csv, owner_prefix=o.owner)
     _LINE_CACHE[o.key] = lines
     return lines
 
@@ -72,7 +77,7 @@ def order_log_workbook(o: B2BOffice, out_dir: Path, log=print) -> Path:
     return out
 
 
-# --- #8 : the Activation-report-overview image -----------------------------
+# --- #7 : the Activation-report-overview image -----------------------------
 def payout_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
     """Two-week Activated/Cancelled/Still-Open per rep, rendered like BOX's
     payout image. Reuses box_order_log.png with the AT&T rows remapped to the
@@ -108,42 +113,39 @@ def payout_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
     return out
 
 
-# --- #1 / #2 / #3 / #9 : Tableau Download->Image ---------------------------
-def tableau_image(o: B2BOffice, view_key: str, out_dir: Path,
-                  owner_filter: bool = False, log=print) -> Path:
-    """Capture one of the office's Tableau custom views as an image. LUCY 2 —
-    Carlos's login carries the custom view's filters/sort. Reuses the same
-    real-Chrome CDP session + Download->Image the other B2B captures use."""
+# --- #1 / #2 / #3-5 / #8 : Tableau Download->Image, owner-sliced ------------
+def _sliced_url(o: B2BOffice, view_key: str) -> str:
+    """The shared team view with ?Owner Name=<owner> appended (drops :iid — a
+    tab index, irrelevant to the slice)."""
+    from urllib.parse import quote
+    base = o.view_url(view_key).split("?")[0]
+    return "{}?{}={}".format(base, quote(OWNER_FIELD), quote(o.owner))
+
+
+def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print) -> Path:
+    """Capture one shared team view, sliced to this office by Owner Name. LUCY 2
+    — Carlos's login carries the team custom view; the URL slice narrows it to
+    the office. Reuses the real-Chrome CDP session + Download->Image the other
+    B2B captures use, plus b2b_quality's sort + crop for Activation/Churn."""
     import time
 
     from patchright.sync_api import sync_playwright
-    from urllib.parse import quote
 
     from automations.shared import tableau_patchright as tp
     from automations.tableau_screenshots.capture import capture_page
     from automations.vantura_churn import cdp_pull
+    from automations.b2b_quality.run import apply_sort, crop_to_last_data_row
 
-    # Activation + Churn need b2b_quality's crop-to-last-data-row (+ Activation's
-    # sort click), NOT a plain screenshot. For Carlos those views ARE
-    # b2b_quality's specs, so reuse its proven capture. (Multi-office TODO:
-    # parameterise b2b_quality.capture_all by the office's URLs + the crop/sort
-    # metadata now on B2BOffice, rather than its Carlos-hardcoded specs.)
-    if view_key in ("activation_rate", "churn_rate"):
-        import automations.b2b_quality.run as bq
-        imgs = bq.capture_all(out_dir, only=view_key, headless=True)
-        got = imgs.get(view_key)
-        if not got:
-            raise RuntimeError("b2b_quality capture returned no image for "
-                               "{}".format(view_key))
-        return Path(got)
-
-    url = o.tableau_views[view_key]
-    if owner_filter and o.metrics_filter_field.strip():
-        base = url.split("?")[0]
-        url = "{}?{}={}".format(base, quote(o.metrics_filter_field.strip()),
-                                quote(o.sales_metrics_owner))
+    meta = VIEW_META.get(view_key, {})
+    url = _sliced_url(o, view_key)
     out = out_dir / "{}.png".format(view_key)
     spec = {"id": view_key, "title": view_key, "url": url}
+
+    def after_load(page):
+        # Activation carries no saved sort; click its measure sort glyph high->low
+        # (the manual step the VA does) before the shot. Churn's view sorts itself.
+        if meta.get("sort_header"):
+            apply_sort(page, meta["sort_header"], verbose=True)
 
     cdp_pull._kill_ours()
     proc = cdp_pull._launch()
@@ -156,7 +158,10 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path,
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             tp._ensure_tableau_authenticated(page, verbose=False,
                                              allow_form_login=True)
-            capture_page(page, spec, out_dir, verbose=False)
+            capture_page(page, spec, out_dir, after_load=after_load, verbose=False)
+        # Crop to the last populated rep row (Activation + Churn); best-effort.
+        if meta.get("data_cols"):
+            crop_to_last_data_row(out, meta["data_cols"], verbose=True)
         return out
     finally:
         try:
