@@ -180,21 +180,26 @@ def _crop_to_last_colored_row(png: Path, leading: bool = False,
             return max(p) - min(p) > 45 and max(p) > 90
 
         if leading:
-            # Find the leading rep data column by FREQUENCY (it lights up in many
-            # rows; the misaligned National-Average cells in only a couple), then
-            # trim to the last row coloured in a NARROW window around it so we
-            # don't bleed into later columns.
-            col_rows = [0] * W
-            for x in range(0, W, 2):
-                col_rows[x] = sum(1 for y in range(0, H, 2) if sat(px[x, y]))
-            peak = max(col_rows)
-            if peak < 20:
+            # For each row, the x of its LEFTMOST coloured cell. Reps WITH
+            # leading-column (0-7) data start their colour in that column; reps
+            # without it (sorted to the bottom) start further right. The leading
+            # column's x is the MODE of those leftmost-x values (most reps have
+            # data there) — robust to the misaligned National-Average band (one
+            # row, never the mode). Trim to the last row that starts at that x.
+            from collections import Counter
+            row_left = {}
+            for y in range(0, H, 2):
+                for x in range(0, W, 3):
+                    if sat(px[x, y]):
+                        row_left[y] = x
+                        break
+            if not row_left:
                 return False
-            lead = next(x for x in range(0, W, 2) if col_rows[x] >= 0.5 * peak)
-            a, b = max(0, lead - 4), lead + 22
+            buckets = Counter(round(x / 8) * 8 for x in row_left.values())
+            x0 = buckets.most_common(1)[0][0]
             last = 0
-            for y in range(H):
-                if any(sat(px[x, y]) for x in range(a, b, 2)):
+            for y, lx in row_left.items():
+                if abs(lx - x0) <= 12 and y > last:
                     last = y
         else:
             # Last row with a real RUN of coloured pixels (any column).
