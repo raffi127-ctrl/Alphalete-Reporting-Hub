@@ -35,7 +35,10 @@ try:
 except Exception:  # noqa: BLE001 — py3.9 / non-tty
     pass
 
-WINDOW_DAYS = 60          # matches vantura_churn; the log shows a rolling window
+WINDOW_DAYS = 31          # Carlos 2026-07-22: "just show the last 31 days of
+                          # sales" (by sale date). Was 60; churn keeps its own
+                          # 60-day window in vantura_churn — this scopes ONLY the
+                          # order-log pull (standalone + the b2b_metrics item).
 OWNER_PREFIX = "CARLOS HIDALGO"
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -150,6 +153,9 @@ def main(argv=None) -> int:
                          "review. Rejects channel ids.")
     ap.add_argument("--today", default=None, metavar="YYYY-MM-DD")
     ap.add_argument("--owner", default=OWNER_PREFIX)
+    ap.add_argument("--sheet-id", default=None, metavar="SHEET_ID",
+                    help="write to THIS Google Sheet instead of Carlos's board "
+                         "(e.g. another office's board). Pair with --owner.")
     args = ap.parse_args(argv)
 
     today = (dt.date.fromisoformat(args.today) if args.today
@@ -191,7 +197,8 @@ def main(argv=None) -> int:
 
         log("")
         log("  writing the Sheet…")
-        res = sheet.push(lines, today=today, reformat=args.reformat, log=log)
+        res = sheet.push(lines, today=today, reformat=args.reformat,
+                         sheet_id=args.sheet_id, log=log)
         log("  done: {sales:,} sales, {reps} reps".format(**res))
         if res.get("unmapped"):
             log("  NOTE: unmapped statuses present: {}".format(

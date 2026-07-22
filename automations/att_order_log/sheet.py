@@ -148,8 +148,8 @@ def _fmt_date(d: Optional[dt.date]) -> str:
     return "{}/{}/{}".format(d.month, d.day, d.year) if d else ""
 
 
-def _open():
-    return open_by_key(SHEET_ID)
+def _open(sheet_id: Optional[str] = None):
+    return open_by_key(sheet_id or SHEET_ID)
 
 
 def _ensure_tab(sh, title: str, *, hidden: bool = False, rows: int = 1000,
@@ -781,7 +781,7 @@ def _clear_color_rules(sh, view_id: int) -> List[dict]:
 
 def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
          generated: Optional[str] = None, reformat: bool = False,
-         log=print) -> Dict[str, object]:
+         sheet_id: Optional[str] = None, log=print) -> Dict[str, object]:
     """Write the hidden data tab and refresh the view tab's VALUES.
 
     reformat=False (DEFAULT): refresh data + formulas only, and DO NOT re-apply
@@ -801,7 +801,7 @@ def push(lines: Sequence[dict], *, today: Optional[dt.date] = None,
 
     today = today or dt.date.today()
     generated = generated or dt.datetime.now().strftime("%m/%d/%Y %I:%M %p").lstrip("0")
-    sh = _open()
+    sh = _open(sheet_id)
 
     rows = build_data_rows(lines, today)
     if not rows:
