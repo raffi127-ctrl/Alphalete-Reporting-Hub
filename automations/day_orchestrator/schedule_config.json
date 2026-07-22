@@ -2146,6 +2146,26 @@
         "type": "not_configured"
       }
     },
+    "leaders_call_pdf_test": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "SELF-TEST: `lucy rerun leaders_call_pdf_test` rebuilds the Leader's Call recognition PDF from the CURRENT tab data + this week's promotions (no Tableau pull, no DM) so we can verify the widescreen deck renders on the mini BEFORE Monday. The Mon 2pm run swallows PDF errors and still exits 0, so this is the way to catch a mini-side build break early. Writes output/leaders_call/*.pdf only. Megan 2026-07-21.",
+      "display_name": "Leader's Call PDF self-test",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.leaders_call.run"
+      ],
+      "base_args": [
+        "--pdf-only"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
     "owners_call_reminder": {
       "on_scheduler": false,
       "_off_scheduler_note": "Run by the dedicated com.alphalete.owners-call-reminder launchd job (Mon 11:00am + 4:00pm CST, deploy/owners_call_reminder.sh --send). Texts the 'Alphalete Ownrs 🔥' iMessage group Maud's recognition reminder AS the mini's iMessage account (Lucy). `lucy rerun owners_call_reminder` here runs a DRY-RUN (prints the message, sends nothing). GO LIVE needs OWNERS_CALL_CHAT_ID (group GUID via `lucy rerun probe_imessage_threads`) + that account in the group + Megan's ok. Megan 2026-07-21.",

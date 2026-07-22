@@ -920,6 +920,40 @@ def _build_recognition_pdf(results: dict) -> None:
               flush=True)
 
 
+def _results_from_tab() -> dict:
+    """Read the live Leader's Call tab into {section_title: [(rep, owner, value)]} —
+    the inverse of write_report. Lets --pdf-only rebuild the deck from already-written
+    data (no Tableau pull, no DM), e.g. to self-test the PDF build on the mini."""
+    from automations.recruiting_report import fill as rfill
+    _, ws = _open_tab()
+    grid = rfill._retry(ws.get_all_values)
+    colA = [(r[0] if r else "") for r in grid]
+    found = []
+    for i, a in enumerate(colA):
+        for title, rx in SECTION_MATCH.items():
+            if rx.search(a or ""):
+                found.append((title, i))
+                break
+    found.sort(key=lambda t: t[1])
+    results = {}
+    for k, (title, r) in enumerate(found):
+        nxt = found[k + 1][1] if k + 1 < len(found) else len(grid)
+        rows = []
+        for row in grid[r + 2:nxt]:
+            rep = (row[0] if row else "").strip()
+            if not rep:
+                continue
+            owner = (row[1] if len(row) > 1 else "").strip()
+            raw = (row[2] if len(row) > 2 else "").replace("$", "").replace(",", "").strip()
+            try:
+                val = float(raw)
+            except ValueError:
+                continue
+            rows.append((rep, owner, val))
+        results[title] = rows
+    return results
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--campaign", help="one of: " + ", ".join(CAMPAIGNS))
@@ -929,7 +963,22 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--write", action="store_true",
                     help="write results into the live Leader's Call tab")
+    ap.add_argument("--pdf-only", action="store_true",
+                    help="rebuild the recognition PDF from the current tab data "
+                         "(no Tableau pull, no DM) — a self-test / offline rebuild.")
     args = ap.parse_args()
+
+    if args.pdf_only:
+        from automations.leaders_call import build_pdf as pdf
+        results = _results_from_tab()
+        n = sum(len(v) for v in results.values())
+        sun = _target_week()[1]
+        out = OUTPUT_DIR / f"alphalete_leaders_call_{sun.isoformat()}.pdf"
+        promos = _fetch_promotions()
+        pdf.build_pdf(results, out, pdf.qualifiers_from_campaigns(), promotions=promos)
+        print(f"📄 PDF rebuilt from the tab ({n} rows across {len(results)} sections, "
+              f"{len(promos)} promotions) — no Tableau pull, no DM: {out}", flush=True)
+        return 0
 
     if args.campaign and args.campaign not in CAMPAIGNS:
         print(f"unknown campaign {args.campaign!r}")
