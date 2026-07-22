@@ -208,7 +208,7 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print) -> Path
     from automations.shared import tableau_patchright as tp
     from automations.tableau_screenshots.capture import capture_page
     from automations.vantura_churn import cdp_pull
-    from automations.b2b_quality.run import apply_sort
+    from automations.b2b_quality.run import apply_sort, _IFRAME
 
     meta = VIEW_META.get(view_key, {})
     url = _sliced_url(o, view_key)
@@ -218,8 +218,20 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print) -> Path
     def after_load(page):
         # Activation carries no saved sort; click its measure sort glyph high->low
         # before the shot. Churn's saved view sorts itself.
-        if meta.get("sort_header"):
-            apply_sort(page, meta["sort_header"], verbose=True)
+        hdr = meta.get("sort_header")
+        if not hdr:
+            return
+        # Wait for the rep table's sort column to RENDER before clicking — on a
+        # cold load after_load fires before the viz hydrates, so the click misses
+        # the header and the table shoots in default (alphabetical) order.
+        try:
+            page.frame_locator(_IFRAME).locator(
+                'div.tab-vizHeader >> text="{}"'.format(hdr)).first.wait_for(
+                state="visible", timeout=45_000)
+            page.wait_for_timeout(1_500)   # let it settle before the click
+        except Exception:  # noqa: BLE001 — apply_sort is still best-effort below
+            pass
+        apply_sort(page, hdr, verbose=True)
 
     cdp_pull._kill_ours()
     proc = cdp_pull._launch()
