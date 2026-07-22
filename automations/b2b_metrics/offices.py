@@ -186,6 +186,10 @@ OFFICES: dict = {
             "churn_air": (_T + "ATTTRACKER-B2B/CHURNRATES/"
                           "5b6a79de-9727-4ff2-bf4f-4b9eac449d70/AtefExp"
                           "?Product%20Type%20(Broken%20Out)=AIR/AWB"),
+            # Activation can't be URL-sliced (Owner & Office) either — Carlos's
+            # Atef-scoped ACTIVATIONRATES saved view (named AtefEXP).
+            "activation_rate": (_T + "ATTTRACKER-B2B/ACTIVATIONRATES/"
+                                "9cfd3e6c-b221-47a6-8699-bd8eb524fd6e/AtefEXP"),
         },
     ),
 }
