@@ -294,9 +294,23 @@ def session(headless: bool | None = None):
 
 
 if __name__ == "__main__":
+    # One-time HEADED login. Open the site and let a human clear Cloudflare +
+    # sign in, THEN capture the token. We pause BEFORE capturing so a fresh
+    # profile (no saved session yet) doesn't crash on the missing token — the
+    # old code called login() -> _capture_token() up front, which raised and
+    # exited before the human ever saw the page. The session is saved to the
+    # persistent profile either way once you've logged in.
     app = ApplicantStream(headless=False).start()
-    app.login()
-    print(f"Logged in. Session token = {app.token}")
-    print("Inspector open -- close it to exit.")
+    app.page.goto(config.AS_URL, wait_until="domcontentloaded")
+    app._wait_for_cloudflare()
+    print("Log in if prompted (creds are in the tracker sheet's README tab, "
+          "B1/B2). When you're logged in, close the Playwright Inspector to save "
+          "the session.")
     app.page.pause()
+    try:
+        app._capture_token()
+        print(f"Logged in. Session token = {app.token}")
+    except Exception as e:  # noqa: BLE001
+        print(f"(couldn't read a session token: {e}. If you logged in, the "
+              "session is still saved to the profile and reports will reuse it.)")
     app.close()
