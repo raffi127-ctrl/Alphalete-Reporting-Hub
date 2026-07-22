@@ -256,10 +256,17 @@ def main(argv=None) -> int:
     ap.add_argument("--channel", default=None, metavar="ID_OR_USER",
                     help="post to THIS channel/DM instead of the office's real "
                          "channel (verification of the post path)")
+    ap.add_argument("--no-crop", action="store_true",
+                    help="skip crop-to-last-rep on Churn/Activation (diagnostic — "
+                         "shows the full captured image)")
     ap.add_argument("--check", action="store_true",
                     help="validate the office table and exit")
     ap.add_argument("--today", default=None, metavar="YYYY-MM-DD")
     args = ap.parse_args(argv)
+
+    if args.no_crop:
+        import os
+        os.environ["B2B_SKIP_CROP"] = "1"
 
     if args.check:
         problems = _off.validate()
