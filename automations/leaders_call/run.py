@@ -178,19 +178,6 @@ CAMPAIGNS: dict[str, Campaign] = {
         owners=["Atef Choudhury", "Carlos Hidalgo", "Kevin Driggs"],
         flag_if_empty=True,           # relative This Week (no date cols to check)
     ),
-    "je": Campaign(
-        key="je",
-        url=_je_url(),
-        crosstab_sheet="Weekly Metrics by Rep",
-        threshold=12,
-        section_title="JE",
-        rep_hdr=("rep name", "rep"),
-        owner_hdr=("icd name", "icd", "owner"),
-        value_hdr=("total sales",),     # loom's 'Total Cells' = this view's Total Sales
-        owners=["David Martinez", "Cinthya Reyes", "Paola Rodriguez",
-                "Brandon Stockerbs", "Gerrit Stockerbs", "Ishama Ariyano",
-                "Brandon Stallkamp"],   # added Maud 2026-06-29, effective next run
-    ),
     "box": Campaign(
         key="box",
         # Maud 2026-06-29: B2BBOXEnergyTracker workbook, 'Box Sales Metrics' tab.
@@ -554,7 +541,7 @@ def _dry_one(camp: Campaign) -> None:
         print(f"  {rep}  |  {owner}  |  {v}")
 
 
-TABLEAU_ORDER = ["fiber", "nds", "b2b", "je", "box", "costco", "revenue"]
+TABLEAU_ORDER = ["fiber", "nds", "b2b", "box", "costco", "revenue"]   # JE dropped (Carlos)
 
 # Heavy Tableau vizzes (notably Costco's SARA view and BOX) intermittently fail
 # to render in time — the Crosstab dialog shows only the 'Z_Last Refresh' thumb,

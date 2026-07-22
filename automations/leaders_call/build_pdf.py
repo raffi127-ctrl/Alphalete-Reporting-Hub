@@ -3,7 +3,7 @@
 Renders from a RUN's `results` dict ({section_title: [(rep, owner, value)]}) into a
 16:9 WIDESCREEN deck that is PROJECTED on the Monday Leader's Call to ~50-100 people
 (Megan 2026-07-21): a branded title slide, then one leaderboard slide per campaign
-(Fiber, NDS, B2B, JE, BOX, Costco — empty sections skipped), then the Revenue-over-
+(Fiber, NDS, B2B, BOX, Costco — empty sections skipped), then the Revenue-over-
 $2K slide. Big type readable from the back of the room; deep-navy ground; medals on
 the top 3; a per-rep bar scaled from the campaign's qualifying FLOOR (so 12 = empty,
 the leader = full); large gold numbers. A campaign with >20 reps splits across two
@@ -564,7 +564,7 @@ def qualifiers_from_campaigns() -> dict:
     """Sub-title text per section, from each campaign's live threshold."""
     from automations.leaders_call.run import CAMPAIGNS
     q = {}
-    for k in ("fiber", "nds", "b2b", "je", "box", "costco"):
+    for k in ("fiber", "nds", "b2b", "box", "costco"):
         c = CAMPAIGNS[k]
         q[c.section_title] = f"{int(c.threshold)}+ Apps"
     q["Costco"] = q["Costco"] + " (No Up)"
@@ -576,7 +576,7 @@ def bases_from_campaigns() -> dict:
     """Bar-scaling floor per section (the qualifying threshold); Revenue floor $2K."""
     from automations.leaders_call.run import CAMPAIGNS
     b = {}
-    for k in ("fiber", "nds", "b2b", "je", "box", "costco"):
+    for k in ("fiber", "nds", "b2b", "box", "costco"):
         c = CAMPAIGNS[k]
         b[c.section_title] = int(c.threshold)
     b[REVENUE_TITLE] = 2000
