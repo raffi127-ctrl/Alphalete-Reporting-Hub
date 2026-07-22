@@ -63,12 +63,14 @@ def _describe(sales, stats) -> str:
             stats.get("dropped_never_a_sale", 0)),
         "  {:>5} pipeline duplicates collapsed".format(
             stats.get("collapsed_rows", 0)),
-        "  {:>5} real sales".format(stats.get("sales", 0)),
     ]
-    if stats.get("kept_incomplete"):
-        lines.append("  {:>5} of those are not completed sales — TPV failed, "
-                     "incomplete, cancelled (kept on purpose)".format(
-                         stats["kept_incomplete"]))
+    if stats.get("dropped_dead"):
+        lines.append("  {:>5} dropped (final state TPV Failed — not a sale)".format(
+            stats["dropped_dead"]))
+    if stats.get("dropped_never_reached_tpv"):
+        lines.append("  {:>5} dropped (cancelled/rejected before ever reaching "
+                     "TPV — not sales)".format(stats["dropped_never_reached_tpv"]))
+    lines.append("  {:>5} real sales".format(stats.get("sales", 0)))
     if stats.get("missing_sale_date"):
         lines.append("  ⚠ {} sale(s) have no sale date".format(
             stats["missing_sale_date"]))
