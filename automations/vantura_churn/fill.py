@@ -76,8 +76,8 @@ TIER_RAMP_6 = [GREEN, GREEN_PALE, AMBER, PEACH, ROSE, RED_DEEP]
 TIER_RAMP_5 = [GREEN, GREEN_PALE, AMBER, ROSE, RED_DEEP]
 
 
-def open_sheet():
-    return open_by_key(SHEET_ID)
+def open_sheet(sheet_id: str = None):
+    return open_by_key(sheet_id or SHEET_ID)
 
 
 # Helper-block column offsets from its FIRST column (the block is 14 wide).

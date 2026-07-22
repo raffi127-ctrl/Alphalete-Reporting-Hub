@@ -31,10 +31,15 @@ from automations.vantura_churn import compute, fill, pull
 
 REPORT_ID = "vantura-churn"
 
+# Atef's own board (Domin8) — his LUCY CHURN tab lives here, NOT on Carlos's
+# sheet. Was writing to a "Churn - Atef" tab on Carlos's board (fill.SHEET_ID);
+# 2026-07-21 each office now writes its OWN sheet's LUCY CHURN tab.
+ATEF_SHEET_ID = "15YUHkAcG2AfiF6KRhCiOBKGDdS9nnjxdfvIXr7oRX30"
+
 OWNER_CFG = [
-    # (key, owner-name prefix in the crosstab, churn tab, has activations tab)
-    ("carlos", "CARLOS HIDALGO", fill.TAB_CHURN_CARLOS, True),
-    ("atef", "ATEF CHOUDHURY", fill.TAB_CHURN_ATEF, False),
+    # (key, owner-name prefix in the crosstab, sheet id, churn tab, has-activations)
+    ("carlos", "CARLOS HIDALGO", fill.SHEET_ID, fill.TAB_CHURN_CARLOS, True),
+    ("atef", "ATEF CHOUDHURY", ATEF_SHEET_ID, "LUCY CHURN", False),
 ]
 
 
@@ -221,8 +226,8 @@ def main(argv=None) -> int:
     owners = [o for o in OWNER_CFG
               if args.owner in ("both", o[0])]
     if args.carlos_only:
-        owners = [(k, prefix, tab, False)
-                  for k, prefix, tab, _act in owners if k == "carlos"]
+        owners = [(k, prefix, sid, tab, False)
+                  for k, prefix, sid, tab, _act in owners if k == "carlos"]
         if not owners:
             log("--carlos-only conflicts with "
                 f"--owner {args.owner}; nothing to do.")
@@ -280,7 +285,7 @@ def main(argv=None) -> int:
     # ------------------------------------------------- compute + reconcile
     results = {}
     problems: list[str] = []
-    for key, prefix, tab, _has_act in owners:
+    for key, prefix, _sid, tab, _has_act in owners:
         lines = compute.load_orderlog(files[key], prefix)
         summary = compute.churn_summary(lines, today)
         results[key] = {
@@ -338,9 +343,9 @@ def main(argv=None) -> int:
         return 0
 
     # ------------------------------------------------------------- writes
-    sh = fill.open_sheet()
-    for key, prefix, tab, has_act in owners:
-        log(f"▶ updating '{tab}'…")
+    for key, prefix, sid, tab, has_act in owners:
+        sh = fill.open_sheet(sid)   # each office writes its OWN board
+        log(f"▶ updating '{tab}' on sheet {sid[:8]}…")
         # Self-heal the 'Viewing:' dropdown: editing the tab's headers can
         # leave the validation on one cell and the FILTER reading another,
         # which silently breaks product switching. No-op when they agree.
@@ -373,7 +378,7 @@ def main(argv=None) -> int:
     # --dry-run holds it. Best-effort: a Slack hiccup must not fail a run that
     # already wrote the board correctly.
     if not args.skip_post:
-        carlos_tab = next((t for k, _p, t, _a in owners if k == "carlos"),
+        carlos_tab = next((t for k, _p, _s, t, _a in owners if k == "carlos"),
                           None)
         if carlos_tab:
             try:
