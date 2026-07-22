@@ -149,9 +149,28 @@ class ApplicantStream:
     def goto_page(self, page_num: int):
         self.page.goto(f"{BASE}?rqst={self.token}&p={page_num}", wait_until="networkidle")
 
-    def select_office(self, office_id: str) -> str:
-        """Type an office id into #searchMC, click the matching autocomplete item,
-        and remember the owner name shown in that item. Returns the owner name."""
+    def select_office(self, office_id: str, attempts: int = 3) -> str:
+        """Select an office in #searchMC, retrying transient timeouts. Under
+        browser-resource contention (several headless reports at once) the
+        picker's click actionability check can hit the 30s timeout — a full
+        17-office run saw many of these mid-day. Retry from a clean report page
+        so one slow click doesn't drop the whole office. Returns the owner name."""
+        last = None
+        for i in range(max(1, attempts)):
+            try:
+                return self._select_office_once(office_id)
+            except PWTimeout as e:
+                last = e
+                print(f"  ~ [{office_id}] select timeout, retry {i + 1}/{attempts}",
+                      flush=True)
+                try:
+                    self.open_retention_details()  # reset to a page with #searchMC
+                except Exception:  # noqa: BLE001
+                    pass
+                self.page.wait_for_timeout(1500)
+        raise last  # exhausted retries — the caller's per-office guard logs + skips
+
+    def _select_office_once(self, office_id: str) -> str:
         box = self.page.locator("#searchMC")
         box.click()
         box.fill("")
