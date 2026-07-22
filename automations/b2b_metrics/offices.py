@@ -100,8 +100,10 @@ VIEW_META: dict = {
     "sales_metrics":   {"filter_field": OWNER_FIELD},
     # AtefEXP already carries its 0-7 Days descending sort (like churn's saved
     # view) — do NOT click to re-sort; a click toggles/clears it back to
-    # alphabetical. Capture as-is.
-    "activation_rate": {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 4},
+    # alphabetical. Capture as-is. crop_mode="leading": end at the last rep with
+    # 0-7 data (reps with no 0-7 activity sort to the bottom and are trimmed).
+    "activation_rate": {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 4,
+                        "crop_mode": "leading"},
     "churn_wireless":  {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 5},
     "churn_int":       {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 5},
     "churn_air":       {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 5},

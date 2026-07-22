@@ -154,13 +154,19 @@ _REP_TABLE_VIEWS = ("activation_rate", "churn_wireless", "churn_int", "churn_air
 import os as _os
 
 
-def _crop_to_last_colored_row(png: Path, verbose: bool = False) -> bool:
-    """Trim the image to END on the last REP row that carries any coloured (data)
-    cell — keeping every rep with churn/activation in ANY period, and cutting the
-    empty gap + the uncoloured Disconnect-Reason / Churn-Buckets table below the
-    rep list. Keying on any period (not just 0-30) matters for sparse products
-    like INT where a rep's only activity is in a later column — a 0-30-only rule
-    would drop them (Megan 2026-07-21). Best-effort: any doubt -> keep full."""
+def _crop_to_last_colored_row(png: Path, leading: bool = False,
+                              verbose: bool = False) -> bool:
+    """Trim the image to END on the last rep row with data, cutting the empty gap
+    + the uncoloured table below the rep list. Two modes (reports differ):
+
+      leading=False (CHURN): last rep with a coloured cell in ANY period. Sparse
+        products like INT have reps whose only activity is a later column — a
+        leading-only rule would drop them (Megan 2026-07-21, Kendrick McClain).
+      leading=True (ACTIVATION): last rep with data in the LEADING (0-7 Day)
+        column only. The view is sorted 0-7 desc, so reps with no 0-7 activity
+        sort to the bottom and should be trimmed (Megan 2026-07-21, end at Aylin).
+
+    Best-effort: any doubt -> keep full."""
     try:
         from PIL import Image
     except ImportError:
@@ -173,14 +179,29 @@ def _crop_to_last_colored_row(png: Path, verbose: bool = False) -> bool:
         def sat(p):
             return max(p) - min(p) > 45 and max(p) > 90
 
-        # Last row with a real RUN of coloured pixels (a data cell, not a stray
-        # antialiased pixel). The rep cells + National Average band are coloured;
-        # the empty gap and the bottom Disconnect-Reason grid are not.
-        last = 0
-        for y in range(H):
-            cnt = sum(1 for x in range(0, W, 3) if sat(px[x, y]))
-            if cnt > 8:
-                last = y
+        if leading:
+            # Find the leading rep data column by FREQUENCY (it lights up in many
+            # rows; the misaligned National-Average cells in only a couple), then
+            # trim to the last row coloured in a NARROW window around it so we
+            # don't bleed into later columns.
+            col_rows = [0] * W
+            for x in range(0, W, 2):
+                col_rows[x] = sum(1 for y in range(0, H, 2) if sat(px[x, y]))
+            peak = max(col_rows)
+            if peak < 20:
+                return False
+            lead = next(x for x in range(0, W, 2) if col_rows[x] >= 0.5 * peak)
+            a, b = max(0, lead - 4), lead + 22
+            last = 0
+            for y in range(H):
+                if any(sat(px[x, y]) for x in range(a, b, 2)):
+                    last = y
+        else:
+            # Last row with a real RUN of coloured pixels (any column).
+            last = 0
+            for y in range(H):
+                if sum(1 for x in range(0, W, 3) if sat(px[x, y])) > 8:
+                    last = y
         if last <= 0:
             return False
         cut = min(H, last + 10)            # +10 keeps the cell's bottom border
@@ -188,8 +209,8 @@ def _crop_to_last_colored_row(png: Path, verbose: bool = False) -> bool:
             return False                    # nothing meaningful to trim
         im.crop((0, 0, W, cut)).save(png)
         if verbose:
-            print("   ✂ cropped to last 0-30 rep row ({} -> {}px)".format(
-                H, cut), flush=True)
+            print("   ✂ cropped to last {} row ({} -> {}px)".format(
+                "leading-col" if leading else "coloured", H, cut), flush=True)
         return True
     except Exception as e:  # noqa: BLE001 — a bad crop must never lose the image
         if verbose:
@@ -261,7 +282,8 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print) -> Path
             capture_page(page, spec, out_dir, after_load=after_load, verbose=False)
         # Crop to the last populated rep row (Activation + Churn); best-effort.
         if meta.get("data_cols") and not _os.environ.get("B2B_SKIP_CROP"):
-            _crop_to_last_colored_row(out, verbose=True)
+            _crop_to_last_colored_row(
+                out, leading=(meta.get("crop_mode") == "leading"), verbose=True)
         return out
     finally:
         try:
