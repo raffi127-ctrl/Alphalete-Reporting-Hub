@@ -2578,11 +2578,12 @@ AUTOMATED_REPORTS = [
         "color": "#F59E0B",
         "category": "🎯 Recruiting",
         "self_scheduled": True,
-        "description": "Pulls each campaign's qualifying reps from Tableau "
-                       "(Fiber, NDS, B2B, JE, BOX, Costco, Revenue) + the "
-                       "Frontier scorecard auto-pulled from Lucy's Monday email, "
-                       "fills the Leader's Call tab, and DMs the recognition "
-                       "PDF to the leadership group as Lucy.",
+        "description": "At 2pm pulls each campaign's qualifying reps from Tableau "
+                       "(Fiber, NDS, B2B, JE, BOX, Costco, Revenue) and fills the "
+                       "Leader's Call tab. At 7:30pm builds the widescreen "
+                       "recognition deck (campaigns + Revenue + the Leadership "
+                       "Promotions finale) and posts it to #top-leaders-alphalete-org "
+                       "+ #alphalete-gp-sales as Lucy — finished before the 8pm call.",
         # NOTE (Claude): draft 'How it works' — Megan/Maud to review/edit.
         "breakdown": (
             "WHAT IT DOES\n"
@@ -2608,17 +2609,19 @@ AUTOMATED_REPORTS = [
             "unattended via the saved ownerville session), filtered to the "
             "local-office owners + that section's threshold.\n\n"
             "DELIVERY\n"
-            "After a clean run, the recognition PDF is built and DM'd to the "
-            "leadership group (Maud, Carlos, Rafael) on Slack as Lucy — "
-            "automatically."
+            "**2pm** pulls the campaigns + writes the tab (no send). **7:30pm** "
+            "builds the widescreen deck (campaigns + Revenue + the Leadership "
+            "Promotions finale, read from the recognition sheet with notes tidied "
+            "up) and posts the PDF to **#top-leaders-alphalete-org** + "
+            "**#alphalete-gp-sales** as Lucy — finished before the 8pm call."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
         "assignees": ["Lucy 1"],
         "schedule": {
             "frequency": "weekly",
-            "weekdays": [0],   # Monday
-            "time": "2:00 PM",
+            "weekdays": [0],   # Monday — 2pm pull + 7:30pm post; pill greens at 7:30
+            "time": "7:30 PM",
             "estimated_minutes": 8,
         },
         "checklist": [
@@ -2632,27 +2635,94 @@ AUTOMATED_REPORTS = [
              }},
         ],
         "post_run": {
-            "message_success": "✅ Leader's Call tab filled + recognition PDF "
-                               "DM'd to the group (Maud, Carlos, Rafael) as "
-                               "Lucy. Spot-check before the call.",
+            "message_success": "✅ Done — check the log above. (2pm 'Pull "
+                               "campaigns' writes the tab; 7:30pm 'Build + post "
+                               "deck' posts to the channels as Lucy.)",
             "message_failed": "❌ Run failed. Check the log above, then re-run.",
         },
         "actions": [
             {
-                "label": "Run This Week",
+                "label": "Pull campaigns → tab",
                 "icon": "▶",
                 "primary": True,
-                "help": "Pulls all 7 Tableau campaigns + the Frontier upload "
-                        "and writes the Leader's Call tab.",
+                "help": "The 2pm step — pull every Tableau campaign and write the "
+                        "Leader's Call tab. No PDF, nothing sent.",
                 "module": "automations.leaders_call.run",
+                "args_fn": lambda: ["--write", "--no-pdf"],
+            },
+            {
+                "label": "Build + post deck",
+                "icon": "📣",
+                "help": "The 7:30pm step — rebuild the deck from the tab + the "
+                        "latest promotions and post it to #top-leaders-alphalete-org "
+                        "+ #alphalete-gp-sales as Lucy.",
+                "module": "automations.leaders_call.run",
+                "args_fn": lambda: ["--finalize"],
+            },
+            {
+                "label": "Preview deck (no post)",
+                "icon": "👁",
+                "help": "Build the deck and preview the channel posts without sending.",
+                "module": "automations.leaders_call.run",
+                "args_fn": lambda: ["--finalize", "--dry-run"],
+            },
+        ],
+    },
+    {
+        "id": "recognition-tab",
+        "name": "Recognition Weekly Tab",
+        "creator": "Claude",
+        "emoji": "🗓️",
+        "color": "#10B981",
+        "category": "🎯 Recruiting",
+        "self_scheduled": True,
+        "description": "Each Sunday morning, creates that week's tab (a copy of the "
+                       "LUCY TEMPLATE) in Maud's Alphalete Recognition sheet so ICDs "
+                       "have a fresh place to log office promotions before the Monday "
+                       "Leader's Call.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Duplicates the **LUCY TEMPLATE** tab into a new tab named for the "
+            "week-ending Sunday (e.g. **7.26.26**) in the Alphalete Recognition "
+            "sheet. Additive + idempotent — it only ADDS a tab; it never edits, "
+            "clears, or deletes anything, and skips if the week's tab already "
+            "exists.\n\n"
+            "WHEN IT RUNS\n"
+            "**Sundays 8:00am CST**, before Maud's Monday reminders — so ICDs can "
+            "fill in their promotions during the week. Those promotions feed the "
+            "Monday Leader's Call deck."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1lgYjfpCwYbeeGAdx7FEyI9PIqFk-W57X7HaZ4nsuoFM/edit"),
+        "assignees": ["Lucy 1"],
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [6],   # Sunday
+            "time": "8:00 AM",
+            "estimated_minutes": 1,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ This week's recognition tab is created — ICDs "
+                               "can fill in their promotions.",
+            "message_failed": "❌ Couldn't create the tab. Check the log above.",
+        },
+        "actions": [
+            {
+                "label": "Create this week's tab",
+                "icon": "▶",
+                "primary": True,
+                "help": "Duplicate the LUCY TEMPLATE into this week's dated tab "
+                        "(skips if it already exists — never overwrites).",
+                "module": "automations.leaders_call.recognition_tab",
                 "args_fn": lambda: ["--write"],
             },
             {
                 "label": "Preview (no write)",
                 "icon": "👁",
-                "help": "Pull + print every section without touching the Sheet.",
-                "module": "automations.leaders_call.run",
-                "args_fn": lambda: ["--dry-run"],
+                "help": "Show which tab it would create, without touching the sheet.",
+                "module": "automations.leaders_call.recognition_tab",
+                "args_fn": lambda: [],
             },
         ],
     },

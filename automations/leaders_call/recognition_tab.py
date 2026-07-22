@@ -106,6 +106,14 @@ def main() -> int:
     res = ensure_week_tab(args.sheet_id, when=when,
                           dry_run=args.dry_run or not args.write)
     action = res.get("action")
+    # Mark the Hub card green on a successful live run (created OR already there).
+    if args.write and not args.dry_run and action in ("created", "exists"):
+        try:
+            from automations.day_orchestrator import hub_publish
+            hub_publish.publish_done("recognition_tab", "Recognition Weekly Tab",
+                                     status="success")
+        except Exception:
+            pass
     if action == "exists":
         print(f"✓ Week tab {res['tab']!r} already exists in {res['sheet']!r} — "
               "nothing to do.")

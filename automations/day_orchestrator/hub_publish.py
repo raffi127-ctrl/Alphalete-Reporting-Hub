@@ -66,6 +66,7 @@ _HUB_CARD = {
     # vantura_churn: without this entry its card stays grey and a missed/failed run
     # looks identical to a clean one.
     "att_churn": "att-churn",
+    "recognition_tab": "recognition-tab",
     "pnl_office": "pnl-office",
     "sales_boards": "sales-boards",
     "b2b_quality": "b2b-quality",
