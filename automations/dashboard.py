@@ -4357,21 +4357,27 @@ AUTOMATED_REPORTS = [
     },
     {
         "id": "att-churn",
-        "name": "B2B Churn (Carlos) — Wireless / New INT / AIR tabs",
+        "name": "B2B Churn — Wireless / New INT / AIR tabs (all offices)",
         "creator": "Carlos",
         "emoji": "📉",
         "color": "#8E44AD",
         "category": "📊 Metrics",
-        "description": "Fills Carlos's 'Lucy Wireless Churn', 'Lucy New INT Churn' and 'Lucy AIR Churn' tabs on the Vantura Master Sales Board — the persistent, dated, per-rep churn report he wanted these three B2B products to have (built 2026-07-19 to 'act like the D2D fiber-office metrics report'). Crosstab-pulls each product's CHURNRATES custom view (CarloWireless / CarlosNewINT / CarlosAIREXP) from Tableau and runs the D2D new_internet_churn fill (dated column, missing reps, colours, dark-rep hide). Posts nothing — the B2B Metrics run (7:45am) posts its own churn SCREENSHOTS separately; these are the maintained sheet tabs.",
+        "description": "Fills the 'Lucy Wireless Churn', 'Lucy New INT Churn' and 'Lucy AIR Churn' tabs on EVERY B2B office's board — the persistent, dated, per-rep churn report Carlos wanted these three products to have (built 2026-07-19 to 'act like the D2D fiber-office metrics report'). Currently Carlos (Vantura Master Sales Board) + Atef/Domin8 (All In One - Atef); adding an office is one config row, no new Tableau view. Crosstab-pulls three ALL-TEAM CHURNRATES views (CarlosTEAMWireless / CarlosTEAMNewINTEXP / CarlosTEAMAIREXP) ONCE each, then slices every office's owner out in code and runs the D2D new_internet_churn fill (dated column, missing reps, colours, dark-rep hide). Posts nothing — the B2B Metrics run (7:45am) posts its own churn SCREENSHOTS separately; these are the maintained sheet tabs.",
         "breakdown": (
             "WHAT IT DOES\n"
-            "**•** Crosstab-pulls **Wireless / New Internet / AIR** churn from "
-            "their CHURNRATES custom views (the .csv ignores custom views, so "
-            "the product split only survives through the crosstab dialog).\n"
-            "**•** Adapts the header to D2D naming and fills each tab with the "
-            "shared **new_internet_churn** filler — a dated column per morning, "
-            "missing reps added, ranked, coloured, dark reps hidden.\n"
+            "**•** Crosstab-pulls the three **ALL-TEAM** Wireless / New Internet "
+            "/ AIR churn views ONCE each (the .csv ignores custom views, so the "
+            "product split only survives through the crosstab dialog).\n"
+            "**•** Slices every B2B office's owner out of each pull in code, then "
+            "fills that office's three tabs with the shared **new_internet_churn** "
+            "filler — a dated column per morning, missing reps added, ranked, "
+            "coloured, dark reps hidden.\n"
+            "**•** So it's **3 pulls/day for any number of offices**; adding an "
+            "office is one config row (owner + board), no new Tableau view.\n"
             "**•** Writes the tabs only; **posts nothing**.\n\n"
+            "OFFICES\n"
+            "**•** Carlos — Vantura Master Sales Board\n"
+            "**•** Atef (Domin8) — All In One - Atef\n\n"
             "WHEN IT RUNS\n"
             "**Daily 7:15 AM** on Lucy 2 — after Vantura Churn's 7:00 refresh "
             "(both share one CDP Chrome, so the wrapper waits for vantura to "
