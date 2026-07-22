@@ -238,24 +238,37 @@ def main(argv=None) -> int:
     from automations.vantura_churn import cdp_pull
 
     rc = 0
-    cdp_pull._kill_ours()
-    proc = cdp_pull._launch()
-    log("  [cdp] real Chrome pid={}; waiting 20s".format(proc.pid))
-    time.sleep(20)
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.connect_over_cdp(
-                "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
-            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            tp._ensure_tableau_authenticated(page, verbose=False,
-                                             allow_form_login=True)
-            log("  [cdp] auth OK")
+    results = {}
 
-            for key, spec in feeds.items():
-                log("")
-                log("--- {} ---".format(spec["label"]))
+    # Each feed gets its OWN fresh browser, with one retry. The CDP Chrome on
+    # Lucy 2 intermittently dies mid-run (patchright TargetClosedError); when it
+    # did, every feed AFTER the death failed while the earlier ones wrote —
+    # 2026-07-22: New INT wrote Wed 7/22, Wireless + AIR were left on Mon 7/20
+    # and had to be recovered by hand with `--only <feed> --fill`. Relaunching
+    # per feed isolates that (a death in one feed can't strand the others) and
+    # the retry rides out a transient death within a single feed — the same
+    # move that fixed it manually, now automatic.
+    with sync_playwright() as p:
+        for key, spec in feeds.items():
+            log("")
+            log("--- {} ---".format(spec["label"]))
+            ok = False
+            for attempt in (1, 2):
+                proc = None
                 try:
+                    cdp_pull._kill_ours()
+                    proc = cdp_pull._launch()
+                    log("  [cdp] {} attempt {}: real Chrome pid={}; waiting 20s"
+                        .format(key, attempt, proc.pid))
+                    time.sleep(20)
+                    browser = p.chromium.connect_over_cdp(
+                        "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
+                    ctx = (browser.contexts[0] if browser.contexts
+                           else browser.new_context())
+                    page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                    tp._ensure_tableau_authenticated(page, verbose=False,
+                                                     allow_form_login=True)
+                    log("  [cdp] auth OK")
                     adapted = _pull_and_adapt(page, key, spec, log=log)
                     parsed = _parse(adapted, log=log)
                     if args.fill:
@@ -264,17 +277,26 @@ def main(argv=None) -> int:
                             _render(key, ws, sections, today, log=log)
                     else:
                         log("  DRY RUN — not writing {!r}".format(spec["tab"]))
-                except Exception:  # noqa: BLE001 — one feed must not kill the other
-                    rc = 1
-                    log("  FAILED:")
+                    ok = True
+                    break
+                except Exception:  # noqa: BLE001 — one feed/attempt must not kill the rest
+                    log("  {} attempt {} FAILED:".format(key, attempt))
                     for ln in traceback.format_exc().splitlines()[-12:]:
                         log("    " + ln[:200])
-    finally:
-        try:
-            proc.terminate()
-        except Exception:  # noqa: BLE001
-            pass
-        cdp_pull._kill_ours()
+                finally:
+                    if proc is not None:
+                        try:
+                            proc.terminate()
+                        except Exception:  # noqa: BLE001
+                            pass
+                    cdp_pull._kill_ours()
+            results[key] = ok
+            if not ok:
+                rc = 1
+
+    log("")
+    log("feed results: " + ", ".join(
+        "{}={}".format(k, "ok" if v else "FAILED") for k, v in results.items()))
     return rc
 
 
