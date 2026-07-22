@@ -125,30 +125,61 @@ def _sliced_url(o: B2BOffice, view_key: str) -> str:
     return "{}?{}={}".format(base, quote(OWNER_FIELD), quote(o.owner))
 
 
+# Rep-table DASHBOARDS (Activation + the 3 Churn products). These need
+# b2b_quality's PROVEN flow — wait for the custom view to hydrate, then capture
+# the whole viz — else the export returns only the National-Average band and the
+# rep table is missing (the 2026-07-21 regression). The simple panels (Sales
+# Metrics, Out of Bounds) go through the lighter cdp_pull path below.
+_REP_TABLE_VIEWS = ("activation_rate", "churn_wireless", "churn_int", "churn_air")
+
+
+def _view_label(url: str) -> str:
+    """The saved-view name (last path segment before the query) — the string
+    Tableau shows as 'View: <name>' and wait_for_custom_view polls for."""
+    return url.split("?")[0].rstrip("/").rsplit("/", 1)[-1]
+
+
 def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print) -> Path:
-    """Capture one shared team view, sliced to this office by Owner Name. LUCY 2
-    — Carlos's login carries the team custom view; the URL slice narrows it to
-    the office. Reuses the real-Chrome CDP session + Download->Image the other
-    B2B captures use, plus b2b_quality's sort + crop for Activation/Churn."""
-    import time
-
-    from patchright.sync_api import sync_playwright
-
-    from automations.shared import tableau_patchright as tp
+    """Capture one Tableau view for this office (owner-sliced, or a per-office
+    override view captured as-is). LUCY 2 — Carlos's login carries the views."""
     from automations.tableau_screenshots.capture import capture_page
-    from automations.vantura_churn import cdp_pull
-    from automations.b2b_quality.run import apply_sort, crop_to_last_data_row
+    from automations.b2b_quality.run import (apply_sort, crop_to_last_data_row,
+                                             wait_for_custom_view)
 
     meta = VIEW_META.get(view_key, {})
     url = _sliced_url(o, view_key)
     out = out_dir / "{}.png".format(view_key)
     spec = {"id": view_key, "title": view_key, "url": url}
 
-    def after_load(page):
-        # Activation carries no saved sort; click its measure sort glyph high->low
-        # (the manual step the VA does) before the shot. Churn's view sorts itself.
-        if meta.get("sort_header"):
-            apply_sort(page, meta["sort_header"], verbose=True)
+    if view_key in _REP_TABLE_VIEWS:
+        # b2b_quality's path: a real Tableau session (Carlos's identity on Lucy 2)
+        # whose viewport renders the FULL dashboard, then crop to the last rep.
+        from automations.shared.tableau_patchright import tableau_session
+        label = _view_label(url)
+
+        def hook(page):
+            try:
+                wait_for_custom_view(page, label)
+            except Exception:  # noqa: BLE001 — the filter is already in the view;
+                pass           # a label-string miss must not skip the capture.
+            if meta.get("sort_header"):
+                apply_sort(page, meta["sort_header"], verbose=True)
+
+        with tableau_session(headless=True, allow_form_login=True,
+                             verbose=False) as page:
+            capture_page(page, spec, out_dir, after_load=hook, verbose=False)
+        if meta.get("data_cols"):
+            crop_to_last_data_row(out, meta["data_cols"], verbose=True)
+        return out
+
+    # Sales Metrics + Out of Bounds — the simple panels. cdp_pull + Download→Image
+    # (proven for these 2026-07-20).
+    import time
+
+    from patchright.sync_api import sync_playwright
+
+    from automations.shared import tableau_patchright as tp
+    from automations.vantura_churn import cdp_pull
 
     cdp_pull._kill_ours()
     proc = cdp_pull._launch()
@@ -161,10 +192,7 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print) -> Path
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             tp._ensure_tableau_authenticated(page, verbose=False,
                                              allow_form_login=True)
-            capture_page(page, spec, out_dir, after_load=after_load, verbose=False)
-        # Crop to the last populated rep row (Activation + Churn); best-effort.
-        if meta.get("data_cols"):
-            crop_to_last_data_row(out, meta["data_cols"], verbose=True)
+            capture_page(page, spec, out_dir, verbose=False)
         return out
     finally:
         try:
