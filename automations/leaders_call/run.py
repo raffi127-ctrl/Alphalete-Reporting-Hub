@@ -927,13 +927,16 @@ FINAL_CHANNELS = [
     ("top-leaders-alphalete-org", "C067TTGFEFR"),
     ("alphalete-gp-sales",        "C07J46MQNUX"),
 ]
+# The message posted above the deck (the "flyer") — call-to-join (Megan 2026-07-21).
+CALL_TIME = "8:45"
+ZOOM_URL = "https://us02web.zoom.us/j/7567334591"
 
 
 def _post_pdf_to_channels(pdf_path, week_end, dry_run: bool = False) -> list:
     from pathlib import Path as _P
     name = _P(pdf_path).name
-    comment = (f"📣 Alphalete Leader's Call — Weekly Recognition "
-               f"(week ending {week_end.month}/{week_end.day}).")
+    comment = (f"🐺 Alphalete Leader's Call — Weekly Recognition\n"
+               f"Join the Leader's Call at {CALL_TIME} tonight!  {ZOOM_URL}")
     out = []
     for chan, cid in FINAL_CHANNELS:
         if dry_run:
