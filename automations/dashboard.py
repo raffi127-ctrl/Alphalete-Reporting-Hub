@@ -4466,6 +4466,64 @@ AUTOMATED_REPORTS = [
             # `lucy rerun vantura_churn --dry-run`.
         ],
     },
+    {
+        "id": "att-churn",
+        "name": "B2B Churn (Carlos) — Wireless / New INT / AIR tabs",
+        "creator": "Carlos",
+        "emoji": "📉",
+        "color": "#8E44AD",
+        "category": "📊 Metrics",
+        "description": "Fills Carlos's 'Lucy Wireless Churn', 'Lucy New INT Churn' and 'Lucy AIR Churn' tabs on the Vantura Master Sales Board — the persistent, dated, per-rep churn report he wanted these three B2B products to have (built 2026-07-19 to 'act like the D2D fiber-office metrics report'). Crosstab-pulls each product's CHURNRATES custom view (CarloWireless / CarlosNewINT / CarlosAIREXP) from Tableau and runs the D2D new_internet_churn fill (dated column, missing reps, colours, dark-rep hide). Posts nothing — the B2B Metrics run (7:45am) posts its own churn SCREENSHOTS separately; these are the maintained sheet tabs.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Crosstab-pulls **Wireless / New Internet / AIR** churn from "
+            "their CHURNRATES custom views (the .csv ignores custom views, so "
+            "the product split only survives through the crosstab dialog).\n"
+            "**•** Adapts the header to D2D naming and fills each tab with the "
+            "shared **new_internet_churn** filler — a dated column per morning, "
+            "missing reps added, ranked, coloured, dark reps hidden.\n"
+            "**•** Writes the tabs only; **posts nothing**.\n\n"
+            "WHEN IT RUNS\n"
+            "**Daily 7:15 AM** on Lucy 2 — after Vantura Churn's 7:00 refresh "
+            "(both share one CDP Chrome, so the wrapper waits for vantura to "
+            "finish before pulling). No reconcile gate: a failed pull leaves "
+            "the tabs on the previous run's numbers and emails Megan."
+        ),
+        # Deep-links to the Lucy Wireless Churn tab (New INT gid 916425770,
+        # AIR gid 866551208 are the sibling tabs in the same workbook).
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"
+                      "?gid=2062141872#gid=2062141872"),
+        "assignees": ["Lucy 2"],
+        # Runs on Lucy 2 — Carlos's Tableau identity owns these custom views,
+        # and the daily 7:15am launchd job (com.alphalete.att-churn-daily) lives
+        # there. A Hub "play" from ANY machine routes to Lucy 2 via mini-control.
+        "run_machine": "Lucy 2",
+        "run_rerun_id": "att_churn",
+        # Self-running daily launchd job: it doesn't report a per-day completion
+        # to the Hub, so keep it out of "due today" tallies.
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:15 AM",
+            "estimated_minutes": 12,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Tabs filled — Wireless, New INT and AIR churn each got today's dated column (per-rep, ranked, coloured).",
+            "message_failed": "❌ Run failed — one or more of the three churn tabs did NOT update, so they're showing the previous run's numbers (stale). Usual cause on Lucy 2: the CDP Chrome/Tableau session (TargetClosedError = a human's Chrome or a crash mid-pull), or a CHURNRATES view that hasn't refreshed. Megan is emailed automatically on any failure.",
+        },
+        "actions": [
+            {
+                "label": "Fill Now",
+                "icon": "▶",
+                "primary": True,
+                "help": "Pull all three products and write the tabs. Preview (no write) via `lucy --machine \"Lucy 2\" rerun att_churn` (drop --fill).",
+                "module": "automations.att_order_log.churn_run",
+                "args_fn": lambda: ["--fill"],
+            },
+        ],
+    },
 ]
 
 # Merge in user-uploaded reports (saved by the Wire-Up dialog)
