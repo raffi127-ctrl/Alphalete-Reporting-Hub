@@ -1,34 +1,36 @@
-"""B2B Churn for Carlos — fills 'Lucy New INT Churn' + 'Lucy Wireless Churn'.
+"""B2B Churn — fills each B2B office's 'Lucy New INT / Wireless / AIR Churn' tabs.
 
-Megan 2026-07-19: the two churn tabs "should act like the metrics report one we
-do for the fiber d2d offices". So this reuses that machinery wholesale rather
-than reimplementing it — new_internet_churn.fill is a 1,890-line, label-driven,
-four-section filler that already inserts a dated column pair each morning,
-adds missing reps, sorts, colours, and hides dark reps. None of that is
-rewritten here.
+Megan 2026-07-19: the churn tabs "should act like the metrics report one we do
+for the fiber d2d offices". So this reuses that machinery wholesale rather than
+reimplementing it — new_internet_churn.fill is a 1,890-line, label-driven,
+four-section filler that already inserts a dated column pair each morning, adds
+missing reps, sorts, colours, and hides dark reps. None of that is rewritten
+here.
 
-WHAT IS ACTUALLY B2B-SPECIFIC, and all of it is config or the header adapter:
+OFFICE-DRIVEN (2026-07-22): everything office-specific lives in the OFFICES
+table below — owner, board sheet, and one CHURNRATES view per product. Adding a
+B2B office (Atef is being added now) is a new OFFICES row, the same way
+b2b_metrics.offices / office_metrics scale the rest of the B2B + D2D sides.
+main() iterates office × product, each product in its own browser.
 
-  * the views      — ATTTRACKER-B2B/CHURNRATES custom views CarloWireless and
-                     CarlosNewINT (Megan-supplied). They must be pulled through
-                     the CROSSTAB DIALOG: the direct .csv ignores custom views
-                     entirely, and since the export carries no product column,
-                     the wireless/new-internet split exists ONLY in the view's
-                     own filter.
-  * the header     — churn_shape.adapt(); see that module. A rename, not a
-                     reshape.
-  * the tabs       — CHURN_NI_TAB / CHURN_WL_TAB
-  * the workbook   — CHURN_SHEET_ID (the Vantura Master Sales Board)
-  * the owner      — CHURN_SLICE_OWNER=CARLOS HIDALGO
+WHAT IS B2B-SPECIFIC, and all of it is config or the header adapter:
+
+  * the views  — per-office ATTTRACKER-B2B/CHURNRATES custom views (Carlos:
+                 CarloWireless / CarlosNewINT / CarlosAIREXP). They MUST be
+                 pulled through the CROSSTAB DIALOG: the direct .csv ignores
+                 custom views entirely, and since the export carries no product
+                 column, the product split exists ONLY in the view's own filter.
+  * the header — churn_shape.adapt(); see that module. A rename, not a reshape.
+  * per office — owner / sheet_id / feeds{product: view url + tab} in OFFICES.
 
 RUNS ON LUCY 2 (Carlos's Tableau identity — these are his custom views).
 
 DRY-RUN BY DEFAULT. --fill writes the tabs. Slack posting is deliberately NOT
 wired here: the B2B thread is assembled separately and stays gated.
 
-    python -m automations.att_order_log.churn_run                # pull + report
-    python -m automations.att_order_log.churn_run --fill         # write tabs
-    python -m automations.att_order_log.churn_run --only wireless
+    python -m automations.att_order_log.churn_run                    # all offices, pull + report
+    python -m automations.att_order_log.churn_run --fill             # all offices, write tabs
+    python -m automations.att_order_log.churn_run --office carlos --only wireless --fill
 """
 from __future__ import annotations
 
@@ -44,78 +46,104 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"   # Vantura Master Sales Board
-OWNER = "CARLOS HIDALGO"
 CROSSTAB_SHEET = "ICD Churn"
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORK_DIR = REPO_ROOT / "output" / "att_churn"
 
-# One row per feed. Mirrors office_metrics/offices.py: everything that differs
-# between the two lives here and nowhere else.
-FEEDS = {
-    "new_int": {
-        "label": "New Internet Churn",
-        "tab": "Lucy New INT Churn",
-        "tab_env": "CHURN_NI_TAB",
-        "url": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
-                "ATTTRACKER-B2B/CHURNRATES/"
-                "ae1e808c-0fa1-4385-8657-9d59c3c02813/CarlosNewINT?:iid=1"),
+_T = "https://us-east-1.online.tableau.com/#/site/sci/views/"
+
+# ONE ROW PER B2B OFFICE, each with one entry per churn product it runs. Adding
+# an office is a new OFFICES row — the same way b2b_metrics.offices /
+# office_metrics scale the rest of the B2B + D2D sides. main() iterates
+# office × product, each product in its own browser.
+#
+#   owner    — EXACTLY as the adapted crosstab spells "Owner Name" after
+#              churn_shape.adapt() strips the "<NAME>\r [company]" composite;
+#              the D2D parser matches the owner by EXACT equality.
+#   sheet_id — the office's board (holds its Lucy Wireless/New INT/AIR Churn tabs).
+#   feeds    — product_key -> {label, tab, url}. url=None means the fillable
+#              per-product CHURNRATES view isn't wired yet: that product is
+#              SKIPPED with a loud notice (never a silent success) until a URL
+#              is added, so a half-configured office can't look complete.
+OFFICES = {
+    "carlos": {
+        "label": "Carlos",
+        "owner": "CARLOS HIDALGO",
+        "sheet_id": "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY",  # Vantura Master Sales Board
+        "feeds": {
+            "new_int": {
+                "label": "New Internet Churn", "tab": "Lucy New INT Churn",
+                "url": _T + "ATTTRACKER-B2B/CHURNRATES/"
+                       "ae1e808c-0fa1-4385-8657-9d59c3c02813/CarlosNewINT?:iid=1",
+            },
+            # NB "CarloWireless" — no 's'. Upstream spelling; it is a URL path
+            # segment, so "fixing" it 404s.
+            "wireless": {
+                "label": "Wireless Churn", "tab": "Lucy Wireless Churn",
+                "url": _T + "ATTTRACKER-B2B/CHURNRATES/"
+                       "1767636f-875a-40ac-ad39-a42cb894e428/CarloWireless?:iid=1",
+            },
+            "air": {
+                "label": "AIR Churn", "tab": "Lucy AIR Churn",
+                "url": _T + "ATTTRACKER-B2B/CHURNRATES/"
+                       "ff3a70e2-872e-47cc-847b-6222f87bba26/CarlosAIREXP?:iid=1",
+            },
+        },
     },
-    "wireless": {
-        "label": "Wireless Churn",
-        "tab": "Lucy Wireless Churn",
-        "tab_env": "CHURN_WL_TAB",
-        # NB "CarloWireless" — no 's'. Upstream spelling; it is a URL path
-        # segment, so "fixing" it 404s.
-        "url": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
-                "ATTTRACKER-B2B/CHURNRATES/"
-                "1767636f-875a-40ac-ad39-a42cb894e428/CarloWireless?:iid=1"),
-    },
-    # AIR added 2026-07-20. Carlos: "INT and AIR are looked at as separate
-    # products on B2B" and "yes" to a dedicated AIR churn tab. He saved the
-    # CarlosAIREXP view (Megan supplied the URL); scaffold tab "Lucy AIR Churn"
-    # already exists with AIR CHURN section labels, which find_sections matches
-    # the same as the other two (it keys off "CHURN" + "DAY", not the product).
-    "air": {
-        "label": "AIR Churn",
-        "tab": "Lucy AIR Churn",
-        "tab_env": "CHURN_AIR_TAB",
-        "url": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
-                "ATTTRACKER-B2B/CHURNRATES/"
-                "ff3a70e2-872e-47cc-847b-6222f87bba26/CarlosAIREXP?:iid=1"),
+    "atef": {
+        "label": "Atef (Domin8)",
+        "owner": "ATEF CHOUDHURY",
+        "sheet_id": "15YUHkAcG2AfiF6KRhCiOBKGDdS9nnjxdfvIXr7oRX30",  # All In One - Atef
+        # Board tabs already scaffolded (verified 2026-07-22 — same labels as
+        # Carlos's). PENDING: the three fillable per-product CHURNRATES views
+        # under Carlos's Tableau identity (Atef equivalents of CarloWireless /
+        # CarlosNewINT / CarlosAIREXP). Only b2b_metrics's screenshot view
+        # "AtefExp" exists so far, and whether Atef splits into 3 products or 1
+        # combined view is unconfirmed. Paste the URLs here (or collapse to the
+        # products Atef actually has) to activate him — no other code changes.
+        "feeds": {
+            "new_int": {"label": "New Internet Churn", "tab": "Lucy New INT Churn", "url": None},
+            "wireless": {"label": "Wireless Churn", "tab": "Lucy Wireless Churn", "url": None},
+            "air": {"label": "AIR Churn", "tab": "Lucy AIR Churn", "url": None},
+        },
     },
 }
 
 
-def _pull_and_adapt(page, key: str, spec: dict, log=print) -> Path:
-    """Crosstab-download one view and rename its header to D2D naming."""
+def _pull_and_adapt(page, tag: str, spec: dict, log=print) -> Path:
+    """Crosstab-download one view and rename its header to D2D naming.
+
+    `tag` is the unique office_product handle (e.g. "carlos_wireless") — it names
+    the temp files so two offices' same-product pulls never overwrite each other.
+    """
     from automations.recruiting_report.opt_phase import drive_crosstab_dialog
 
     from . import churn_shape
 
     WORK_DIR.mkdir(parents=True, exist_ok=True)
-    raw = WORK_DIR / "{}_raw.csv".format(key)
-    adapted = WORK_DIR / "{}_adapted.csv".format(key)
+    raw = WORK_DIR / "{}_raw.csv".format(tag)
+    adapted = WORK_DIR / "{}_adapted.csv".format(tag)
 
-    log("  [{}] crosstab download…".format(key))
+    log("  [{}] crosstab download…".format(tag))
     drive_crosstab_dialog(page, spec["url"], CROSSTAB_SHEET, raw, verbose=False)
     info = churn_shape.adapt(raw, adapted)
     log("  [{}] {} rows; periods {}".format(
-        key, info["rows"], info["periods"]))
+        tag, info["rows"], info["periods"]))
     return adapted
 
 
-def _parse(adapted: Path, log=print) -> dict:
-    """Parse via the D2D parser, sliced to Carlos.
+def _parse(adapted: Path, owner: str, log=print) -> dict:
+    """Parse via the D2D parser, sliced to `owner`.
 
     CHURN_SLICE_OWNER is set around the call rather than globally so this can
-    never leak into another module's environment mid-process.
+    never leak into another module's environment (or another office's owner)
+    mid-process.
     """
     from automations.new_internet_churn import pull as ni_pull
 
     prev = os.environ.get("CHURN_SLICE_OWNER")
-    os.environ["CHURN_SLICE_OWNER"] = OWNER
+    os.environ["CHURN_SLICE_OWNER"] = owner
     try:
         parsed = ni_pull.parse(adapted)
     finally:
@@ -131,14 +159,15 @@ def _parse(adapted: Path, log=print) -> dict:
         # success, so turn it into a hard failure here.
         raise RuntimeError(
             "parsed 0 reps for {!r} — the crosstab schema moved, or the owner "
-            "slice matched nothing.".format(OWNER))
+            "slice matched nothing.".format(owner))
     log("  parsed {} reps; office total periods {}".format(
         len(reps), sorted((parsed.get("office_total") or {}).keys())))
     return parsed
 
 
-def _fill(key: str, spec: dict, parsed: dict, today: dt.date, log=print) -> None:
-    """Write one tab through the D2D fill, pointed at Carlos's board.
+def _fill(tag: str, spec: dict, parsed: dict, today: dt.date, sheet_id: str,
+          log=print) -> None:
+    """Write one tab through the D2D fill, pointed at `sheet_id` (the office's board).
 
     Targets the board by SETTING THE MODULE'S CONSTANTS DIRECTLY rather than via
     env-then-reload. The old path set os.environ + importlib.reload and trusted
@@ -152,13 +181,13 @@ def _fill(key: str, spec: dict, parsed: dict, today: dt.date, log=print) -> None
     """
     from automations.new_internet_churn import fill as fill_mod
 
-    fill_mod.SHEET_ID = SHEET_ID
+    fill_mod.SHEET_ID = sheet_id
     fill_mod.TAB_LOCAL_OFFICE = spec["tab"]
 
     ws = fill_mod.open_ws()
     sections = fill_mod.find_sections(ws)
     log("  [{}] tab {!r}: {} sections {}".format(
-        key, spec["tab"], len(sections), sorted(sections)))
+        tag, spec["tab"], len(sections), sorted(sections)))
     if not sections:
         raise RuntimeError(
             "no churn sections found in {!r} — the scaffold's column-A labels "
@@ -178,7 +207,7 @@ def _fill(key: str, spec: dict, parsed: dict, today: dt.date, log=print) -> None
         fill_mod._merge_section_headers(ws, sections)
     sections = fill_mod.find_sections(ws)          # re-resolve after inserts
     fill_mod.write_today(ws, sections, today, parsed, logfn=log)
-    log("  [{}] wrote {}".format(key, fill_mod._date_label(today)))
+    log("  [{}] wrote {}".format(tag, fill_mod._date_label(today)))
 
     # POST-WRITE PASS — the reason the first fill landed data but no
     # red/yellow/green (Megan 2026-07-20, wireless tab all-purple). write_today
@@ -194,7 +223,7 @@ def _fill(key: str, spec: dict, parsed: dict, today: dt.date, log=print) -> None
     fill_mod.clear_empty_cell_backgrounds(ws, sections, logfn=log)
     fill_mod.hide_blanks_today(ws, sections, logfn=log)
     fill_mod.hide_after_5_zero_pulls(ws, sections, logfn=log)
-    log("  [{}] formatted (sort + threshold colours + hide)".format(key))
+    log("  [{}] formatted (sort + threshold colours + hide)".format(tag))
     return ws, fill_mod.find_sections(ws)
 
 
@@ -218,7 +247,11 @@ def main(argv=None) -> int:
     ap.add_argument("--png", action="store_true",
                     help="render each product's sections to PNGs (implies "
                          "--fill; the render reads the freshly-filled tab)")
-    ap.add_argument("--only", choices=sorted(FEEDS), default=None)
+    ap.add_argument("--office", choices=sorted(OFFICES), default=None,
+                    help="run one office (default: all offices)")
+    ap.add_argument("--only", default=None, metavar="PRODUCT",
+                    help="run one product (new_int/wireless/air) within the "
+                         "selected office(s)")
     ap.add_argument("--today", default=None, metavar="YYYY-MM-DD")
     args = ap.parse_args(argv)
     if args.png:
@@ -226,9 +259,9 @@ def main(argv=None) -> int:
 
     today = (dt.date.fromisoformat(args.today) if args.today
              else dt.date.today())
-    feeds = {args.only: FEEDS[args.only]} if args.only else FEEDS
+    offices = ({args.office: OFFICES[args.office]} if args.office else OFFICES)
     log = print
-    log("B2B Churn (Carlos) — {}".format(today))
+    log("B2B Churn — {} — offices: {}".format(today, ", ".join(offices)))
 
     import time
 
@@ -238,65 +271,89 @@ def main(argv=None) -> int:
     from automations.vantura_churn import cdp_pull
 
     rc = 0
-    results = {}
+    results = {}          # "office/product" -> "ok" | "FAILED" | "pending"
 
-    # Each feed gets its OWN fresh browser, with one retry. The CDP Chrome on
+    # Each product gets its OWN fresh browser, with one retry. The CDP Chrome on
     # Lucy 2 intermittently dies mid-run (patchright TargetClosedError); when it
-    # did, every feed AFTER the death failed while the earlier ones wrote —
+    # did, every product AFTER the death failed while the earlier ones wrote —
     # 2026-07-22: New INT wrote Wed 7/22, Wireless + AIR were left on Mon 7/20
-    # and had to be recovered by hand with `--only <feed> --fill`. Relaunching
-    # per feed isolates that (a death in one feed can't strand the others) and
-    # the retry rides out a transient death within a single feed — the same
-    # move that fixed it manually, now automatic.
+    # and had to be recovered by hand with `--only <product> --fill`. Relaunching
+    # per product isolates that (a death in one can't strand the others) and the
+    # retry rides out a transient death within a single product — the same move
+    # that fixed it manually, now automatic. Offices are independent for the same
+    # reason: a failure in one office never touches another.
     with sync_playwright() as p:
-        for key, spec in feeds.items():
-            log("")
-            log("--- {} ---".format(spec["label"]))
-            ok = False
-            for attempt in (1, 2):
-                proc = None
-                try:
-                    cdp_pull._kill_ours()
-                    proc = cdp_pull._launch()
-                    log("  [cdp] {} attempt {}: real Chrome pid={}; waiting 20s"
-                        .format(key, attempt, proc.pid))
-                    time.sleep(20)
-                    browser = p.chromium.connect_over_cdp(
-                        "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
-                    ctx = (browser.contexts[0] if browser.contexts
-                           else browser.new_context())
-                    page = ctx.pages[0] if ctx.pages else ctx.new_page()
-                    tp._ensure_tableau_authenticated(page, verbose=False,
-                                                     allow_form_login=True)
-                    log("  [cdp] auth OK")
-                    adapted = _pull_and_adapt(page, key, spec, log=log)
-                    parsed = _parse(adapted, log=log)
-                    if args.fill:
-                        ws, sections = _fill(key, spec, parsed, today, log=log)
-                        if args.png:
-                            _render(key, ws, sections, today, log=log)
-                    else:
-                        log("  DRY RUN — not writing {!r}".format(spec["tab"]))
-                    ok = True
-                    break
-                except Exception:  # noqa: BLE001 — one feed/attempt must not kill the rest
-                    log("  {} attempt {} FAILED:".format(key, attempt))
-                    for ln in traceback.format_exc().splitlines()[-12:]:
-                        log("    " + ln[:200])
-                finally:
-                    if proc is not None:
-                        try:
-                            proc.terminate()
-                        except Exception:  # noqa: BLE001
-                            pass
-                    cdp_pull._kill_ours()
-            results[key] = ok
-            if not ok:
-                rc = 1
+        for okey, office in offices.items():
+            owner = office["owner"]
+            sheet_id = office["sheet_id"]
+            feeds = office["feeds"]
+            if args.only:
+                if args.only not in feeds:
+                    log("\n[{}] no product {!r} — skipping".format(okey, args.only))
+                    continue
+                feeds = {args.only: feeds[args.only]}
+            for pkey, spec in feeds.items():
+                tag = "{}_{}".format(okey, pkey)
+                log("")
+                log("--- {} · {} ---".format(office["label"], spec["label"]))
+                if not spec.get("url"):
+                    # No fillable view wired yet — skip LOUDLY (never a silent
+                    # success), leave the tab as-is, don't count as a failure.
+                    log("  PENDING — no fillable CHURNRATES view URL configured "
+                        "for {}; tab left as-is.".format(tag))
+                    results[tag] = "pending"
+                    continue
+                ok = False
+                for attempt in (1, 2):
+                    proc = None
+                    try:
+                        cdp_pull._kill_ours()
+                        proc = cdp_pull._launch()
+                        log("  [cdp] {} attempt {}: real Chrome pid={}; waiting 20s"
+                            .format(tag, attempt, proc.pid))
+                        time.sleep(20)
+                        browser = p.chromium.connect_over_cdp(
+                            "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
+                        ctx = (browser.contexts[0] if browser.contexts
+                               else browser.new_context())
+                        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                        tp._ensure_tableau_authenticated(page, verbose=False,
+                                                         allow_form_login=True)
+                        log("  [cdp] auth OK")
+                        adapted = _pull_and_adapt(page, tag, spec, log=log)
+                        parsed = _parse(adapted, owner, log=log)
+                        if args.fill:
+                            ws, sections = _fill(tag, spec, parsed, today,
+                                                 sheet_id, log=log)
+                            if args.png:
+                                # renderer is keyed by PRODUCT (pkey), not the
+                                # office tag. (Multi-office --png shares WORK_DIR
+                                # png names — fine for the usual one-office-at-a-
+                                # time manual render; not used by the daily run.)
+                                _render(pkey, ws, sections, today, log=log)
+                        else:
+                            log("  DRY RUN — not writing {!r} on {}"
+                                .format(spec["tab"], okey))
+                        ok = True
+                        break
+                    except Exception:  # noqa: BLE001 — one product/attempt must not kill the rest
+                        log("  {} attempt {} FAILED:".format(tag, attempt))
+                        for ln in traceback.format_exc().splitlines()[-12:]:
+                            log("    " + ln[:200])
+                    finally:
+                        if proc is not None:
+                            try:
+                                proc.terminate()
+                            except Exception:  # noqa: BLE001
+                                pass
+                        cdp_pull._kill_ours()
+                results[tag] = "ok" if ok else "FAILED"
+                if not ok:
+                    rc = 1
 
     log("")
     log("feed results: " + ", ".join(
-        "{}={}".format(k, "ok" if v else "FAILED") for k, v in results.items()))
+        "{}={}".format(k, v) for k, v in results.items()))
     return rc
 
 
