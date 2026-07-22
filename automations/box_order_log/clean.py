@@ -90,10 +90,20 @@ DEAD_LEVELS = ("Verification – TPV Failed",)
 # including the ones reading Complete Sales = 0 because the supplier hasn't
 # accepted them yet — which is why this is the RIGHT gate and "Complete Sales =
 # 0" is the wrong one (see JUNK_STATUSES).
+# Confirmed by the Smart Circle analyst (Alice Cao, acao@thesmartcircle.com,
+# fwd 2026-07-22): "Any orders with the following statuses will show up as
+# complete: Accepted by Supplier, Ready for Booking, Submitted to Supplier,
+# Verification." So ALL non-failed Verification counts — including
+# "Requires TPV Review", not just "TPV Passed". (TPV Failed still drops via
+# DEAD_LEVELS; the supplier's Complete Sales column marks it 0 too.) Her list
+# leaves out Cancelled by Broker/DocuSign, Dropped, Rejected, Draft and
+# Reinstated — all of which we already drop. Incomplete she also leaves out,
+# but Megan keeps it (SALE_EXEMPT_STATUSES).
 SALE_LEVELS = (
     "Ready For Booking",
     "Accepted by Supplier",
     "Verification – TPV Passed",
+    "Verification – Requires TPV Review",
     "Submitted to Supplier",
 )
 
