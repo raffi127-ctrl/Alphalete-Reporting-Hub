@@ -1235,8 +1235,46 @@ def _action_run_bg_check_sync(args: str) -> tuple[bool, str]:
     return ok, (" · ".join(lines)[:400] or (out or "")[-300:])
 
 
+def _action_focus_owner(args: str) -> tuple[bool, str]:
+    """Re-scrape ONE (or a few) Focus Office ATT owner tab(s) from ownerville —
+    the surgical fix for when the full daily_rep_breakdown finished but a single
+    owner's ownerville scrape stalled (e.g. the Office-Access DataTables AJAX
+    stall). Runs `run_all_owners --only "<names>" --daily-window`, which is:
+      • --only         → MERGE semantics: ONLY the named tab(s) are touched; every
+                         other owner tab AND their scrape_results status are
+                         preserved (no checkpoint, always scrapes fresh).
+      • --daily-window → weekday-safe incremental (re-scrape yesterday + today
+                         only); NEVER a full-week wipe.
+    Does NOT run daily.py — no Tableau/freeze/cosmetic pass, none of the
+    ~90-130m job. Pass the owner tab name(s) exactly as they appear in the Sheet,
+    e.g. `focus_owner "Carissa Ng"` (space or comma-separate a few: "A" "B")."""
+    import shlex
+    try:
+        names = shlex.split(args or "")
+    except ValueError:
+        names = (args or "").split()
+    only = ",".join(n for n in names if n.strip())
+    if not only:
+        return False, 'focus_owner needs an owner tab name, e.g. focus_owner "Carissa Ng"'
+    # A stray HUMAN Chrome open on the mini single-instances with our patchright
+    # Chrome and breaks the browser scrape. Close it first, like the orchestrator
+    # (and rerun) do for browser reports. [[reference_chrome_collision_guard]]
+    try:
+        from automations.day_orchestrator import chrome_guard
+        chrome_guard.close_stray_chrome()
+    except Exception:  # noqa: BLE001 — a guard must never crash the run
+        pass
+    cmd = [sys.executable, "-m", "automations.focus_office_att.run_all_owners",
+           "--only", only, "--daily-window"]
+    stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    ok, res = _run_cmd(cmd, timeout_s=20 * 60,
+                       log_name=f"focus-owner-{stamp}.log")
+    return ok, res
+
+
 ACTIONS = {
     "ping": _action_ping,
+    "focus_owner": _action_focus_owner,
     "screendrive": _action_screendrive,
     "logtail": _action_logtail,
     "pip_install": _action_pip_install,
