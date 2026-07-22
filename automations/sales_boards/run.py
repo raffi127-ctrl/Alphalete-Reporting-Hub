@@ -6,7 +6,6 @@ dated thread (Megan 2026-07-17):
     *Vantura Production 07/18/2026*
     :briefcase: B2B Sales Board
     :zap: Base Sales Board
-    :bulb: JE Sales Board
     :package: BOX Sales Board
 
 …then each board's TWO images as a threaded reply — (a) the weekly ranking and
@@ -46,7 +45,10 @@ SHEET_ID = os.environ.get("SALES_BOARD_SHEET_ID", PROD_SHEET_ID)
 TAB = "Sales Board"
 TEMP_TAB = "_sb_render_tmp"          # ephemeral copy we create + delete
 
-PROGRAMS = R.PROGRAMS
+# Boards that post to the thread. Sourced from render.PROGRAMS but with JE
+# dropped — Megan 2026-07-22: JE Sales Board no longer publishes in the thread.
+# (render.PROGRAMS stays full: it also drives rep-row detection in render.py.)
+PROGRAMS = [p for p in R.PROGRAMS if p != "JE"]
 # The VA's per-program emoji, kept so the thread reads the way the channel is
 # used to: ":briefcase: *B2B Sales Board 7.17*".
 PROGRAM_EMOJI = {"B2B": ":briefcase:", "Base": ":zap:",
