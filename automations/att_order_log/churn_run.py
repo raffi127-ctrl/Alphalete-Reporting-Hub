@@ -241,7 +241,10 @@ def _distinct_owners(adapted: Path) -> dict:
     from collections import Counter
 
     from . import churn_shape
-    with open(adapted, encoding="utf-8", errors="replace", newline="") as fh:
+    # The adapted crosstab is UTF-16-LE (Tableau's export encoding) — must match
+    # new_internet_churn.pull.parse, or every char's high NUL byte trips the
+    # CSV reader ("line contains NUL").
+    with open(adapted, encoding="utf-16-le", newline="") as fh:
         rows = list(_csv.reader(fh, delimiter="\t"))
     if not rows:
         return {}
