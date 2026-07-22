@@ -102,6 +102,16 @@ WRAP_UP_PHRASES = [
     "went well with your install",
     "went smoothly with your installation",
     "just checking in to see if everything went well",
+    # More rep check-ins / reminders / sign-offs (rep-outbound only).
+    "reaching out to check on you and your internet installation",  # "AT&T CHECK UP" blast
+    "how's the installation going",
+    "this is your rep, just checking",
+    "your equipment gets delivered today",
+    "hope the install is going good",
+    "do not hesitate to reach out to this group chat",
+    # Spanish rep reminders
+    "recordarte que la instalación es hoy",
+    "la visita del técnico está programada",
 ]
 
 
