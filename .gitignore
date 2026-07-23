@@ -23,6 +23,11 @@ automations/shared/.appstream_storage_state.json
 # never commit. Exported by output/_scratch_ownerville_export_state.py.
 .ownerville_storage_state.json
 automations/shared/.ownerville_storage_state.json
+# Credico storage_state export — contains live SESSION cookies (auth). Sensitive;
+# the repo is PUBLIC. Never commit.
+.credico_storage_state.json
+automations/shared/.credico_storage_state.json
+output/_credico_profile/
 *.app/
 # Build artifacts + Claude Code local state
 build/

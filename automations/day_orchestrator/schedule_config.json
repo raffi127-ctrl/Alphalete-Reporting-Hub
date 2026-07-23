@@ -3544,6 +3544,52 @@
         "type": "not_configured"
       },
       "machine": "Lucy 2"
+    },
+    "credico_login": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "ONE-TIME INTERACTIVE Credico login on LUCY 1 — opens a HEADED browser at arc.credico.com so a HUMAN logs in by hand (Carlos's login); saves only the session cookies to automations/shared/.credico_storage_state.json (gitignored; the repo is PUBLIC). No password is stored in the repo, in env, or handled by the automation. Needs someone at the mini's screen (`lucy screendrive`). Re-run when a pull reports the session expired.",
+      "display_name": "Credico — one-time login (interactive)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.credico.session"
+      ],
+      "base_args": [
+        "--login"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
+    },
+    "credico_check": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Verify the saved Credico session still works. READ-ONLY — loads the dashboard and reports OK/expired. Run this before relying on a DD Bulletin pull.",
+      "display_name": "Credico — check session",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.credico.session"
+      ],
+      "base_args": [
+        "--check"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
     }
   },
   "read_only_standalone": {
