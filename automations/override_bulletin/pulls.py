@@ -272,3 +272,52 @@ def ledger_amounts(needle, out_path, *, page=None, verbose=True):
     return parse_ledger(rows, owner_col="ICD Owner Name and OFFICE NAME",
                         expl_col="NS_Explanation__c", amt_col="Transaction Amount",
                         needle=needle)
+
+
+# --------------------------------------------------------------------------
+# Period-scoped pulls (RAF special, regular override). The crosstab shows only
+# the selected Period's weeks, so we set the Period via a URL filter param
+# (avoids driving the dropdown). Field name/value format confirmed on Lucy 1.
+# --------------------------------------------------------------------------
+RAF_BONUS_VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+                  "ResATTSpecialDealOverride-Raf/RafOverrideBonus")
+RAF_BONUS_SHEET = "Payout- Raf wow"
+
+ORG_SUMMARY_VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+                    "OverridesICDView/ORGOVERRIDESUMMARY")
+# The crosstab worksheet title (the table is 'Consultant (+/-) Campaign').
+ORG_SUMMARY_SHEET = "Consultant (+/-) Campaign"
+
+
+def _with_filter(base_url, field, value):
+    """Append a Tableau URL filter param: ?<field>=<value> (or &…)."""
+    from urllib.parse import quote
+    sep = "&" if "?" in base_url else "?"
+    return f"{base_url}{sep}{quote(field)}={quote(value)}"
+
+
+def raf_special_override(week_header, out_path, *, period, page=None, verbose=True):
+    """Raf's special override ('Raf Payout Total' row) for a week. `period` is the
+    Period-filter value (e.g. 'Period 7')."""
+    from automations.shared.tableau_patchright import download_crosstab_patchright
+    url = _with_filter(RAF_BONUS_VIEW, "Period", period)
+    download_crosstab_patchright(url, RAF_BONUS_SHEET, out_path, page=page, verbose=verbose)
+    return parse_raf_payout(read_crosstab(out_path), label="Raf Payout Total",
+                            week_header=week_header)
+
+
+def regular_overrides(week_header, out_path, *, period, page=None, verbose=True):
+    """{owner: regular override} — sum each owner's campaign rows for the week
+    column. `period` is the Period-filter value (e.g. 'Period 2026-7')."""
+    from automations.shared.tableau_patchright import download_crosstab_patchright
+    url = _with_filter(ORG_SUMMARY_VIEW, "Period", period)
+    download_crosstab_patchright(url, ORG_SUMMARY_SHEET, out_path, page=page, verbose=verbose)
+    rows = read_crosstab(out_path)
+    return parse_override_summary(rows, week_header)
+
+
+def period_for(week_mdy, *, style="num"):
+    """Period-filter value for a sheet week. 'Period 2026-7' (style='year') or
+    'Period 7' (style='num') — the month drives the period number."""
+    m = int(week_mdy.split(".")[0])
+    return f"Period 2026-{m}" if style == "year" else f"Period {m}"
