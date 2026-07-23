@@ -42,6 +42,26 @@ Custom-view URLs (may not resolve under Raf's login — filter fresh if not):
 - Special: `.../NETSUITESECURITYLEDGERSFDC/0212de10-2d7f-4281-b0d5-d048361251a9/CarlosColtenSpecial`
 - Credico: `.../NETSUITESECURITYLEDGERSFDC/3e5cabd4-1c72-493f-9440-83bdc49d057e/Credico`
 
+## Discovered crosstab sheets + columns (Lucy 1 discovery, 2026-07-23)
+
+Confirmed via `discover.py` → `_discover_out` tab. Parsers match columns BY NAME.
+- **RAF_OVERRIDE_BONUS** — sheet **`Payout- Raf wow`**: r0 'Processed Week' span,
+  r1 = week dates, r5 = 'Raf Payout Total' row. (Default download shows OLD weeks
+  — needs the Period set to the highest.)
+- **DD_DETAIL_ORG** — sheet **`ORG DD Detail`** (~10.7k rows): cols include
+  `cl.ICD Owner Name`, `cl.DD Week`, `cl.Description`, `Total $ to ICD`. Owner
+  name repeats on every row (not grouped). r1 is a 'Grand Total to ICD' row.
+- **NETSUITE_SECURITY_LEDGER** — sheet **`Transaction Details`** (~6.1k rows):
+  `ICD Owner Name and OFFICE NAME` (col0, "Owner (Office)"), `NS_Explanation__c`,
+  `Transaction Amount`. r1 is a per-owner 'Total' row (skip).
+- **ORG_OVERRIDE_SUMMARY** — list_crosstab_sheets returns **0** even with longer
+  settle; the default download fails. OPEN: probably a dashboard whose crosstab
+  only exists once a Period is selected — try selecting the highest Period first,
+  or download the named worksheet ('Consultant (+/-) Campaign') directly.
+
+Tableau crosstabs are **UTF-16 tab-separated** — use pulls.read_crosstab().
+All these need the PERIOD/week driven before export (default = oldest weeks).
+
 ## Week / period conventions (gotchas)
 
 - Sheet week label is **Sunday** (7.12.26). DD Detail's `cl.DD Week` runs a day
