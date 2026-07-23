@@ -1388,16 +1388,17 @@ def _b2b_metrics_card() -> dict:
             "OFFICES\n{}\n\n"
             "POSTED (in thread order)\n{}\n\n"
             "WHEN IT RUNS\n"
-            "Every day at 7:45am CST on Lucy 2 (Carlos's Tableau login — his "
-            "custom views). It runs at 7:45 — not earlier — because two of the "
-            "items (Churn & Activations Board, Activation Rate by Rep) are shots "
-            "of the churn board that the 7:00am refresh writes; 7:45 also stays "
-            "clear of the 5:00am order-log browser job on the same machine."
+            "In the 4:00am orchestrator flow on Lucy 2 (Carlos's Tableau login — "
+            "his custom views), source-gated so it posts as soon as the data is "
+            "ready (~5am) rather than at a fixed clock time — like the D2D "
+            "metrics. vantura_churn refreshes the churn board first (this report "
+            "depends on it) because two items (Customer Churn, Activation Rate by "
+            "Rep) are shots of that board."
         ).format(office_bullets, item_lines),
         "assignees": ["Lucy 2"],
         "schedule": {
             "frequency": "daily",
-            "time": "7:45 AM",
+            "time": "4:00 AM flow (~5 AM)",
             "estimated_minutes": 10 * len(offs),
         },
         "checklist": [],
