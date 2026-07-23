@@ -1,7 +1,7 @@
 {
   "confirmed_count": 51,
   "needs_review_count": 0,
-  "skip_count": 27,
+  "skip_count": 28,
   "confirmed": [
     {
       "sheet_tab": "Raf Hidalgo",
@@ -15,13 +15,6 @@
       "office_id": "22069",
       "as_owner": "Marcellus Butler",
       "as_company": "Pantherforge, Inc.",
-      "confidence": 1.0
-    },
-    {
-      "sheet_tab": "Edgar Muniz II",
-      "office_id": "23377",
-      "as_owner": "Edgar Muniz II",
-      "as_company": "Aurelion Marketing, Inc.",
       "confidence": 1.0
     },
     {
@@ -372,10 +365,22 @@
       "as_owner": "Juan Botero-Berrio",
       "as_company": "All For One Group, Inc.",
       "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Audrey Mendoza",
+      "office_id": "23773",
+      "as_owner": "Blue Mendoza",
+      "as_company": "Imperial Marketing, Inc.",
+      "confidence": 1.0,
+      "auto_onboarded": true
     }
   ],
   "needs_review": [],
   "skip": [
+    {
+      "sheet_tab": "Edgar Muniz II",
+      "reason": "terminated 2026-07-22 (keeps filled tab; excluded from pull)"
+    },
     {
       "sheet_tab": "Sharon Stephen",
       "reason": "admin tab"
