@@ -196,11 +196,11 @@ def _write_flat(sh, lines, labels, *, freeze=True) -> None:
         sh.freeze_panes = "A2"
 
 
-# Carlos's pending-by-rep columns (2026-07-22) + a currency format for the two
-# money columns. Sourced from the RAW tab, not the Tableau log.
+# Carlos's pending-by-rep columns. SALES ONLY — no Total $ / Commission columns
+# (Carlos 2026-07-23: the money columns read as pay and got entered into pay;
+# pending sales must never look payable). Sourced from the RAW tab.
 _PENDING_LABELS = ["Rep Name", "Sale Date", "Activation Date", "Description",
-                   "Description Detail", "Customer Name", "Total $ to ICD",
-                   "Commission"]
+                   "Description Detail", "Customer Name"]
 _MONEY_FMT = '"$"#,##0.00'
 
 
@@ -217,24 +217,20 @@ def _write_pending(sh, pending) -> None:
         for r in bucket["rows"]:
             fill = PatternFill("solid", fgColor=r["bg"]) if r.get("bg") else None
             vals = [rep, r["sale_date"], r["activation_date"], r["description"],
-                    r["description_detail"], r["customer"],
-                    r["total_icd"], r["commission"]]
+                    r["description_detail"], r["customer"]]
             for c, v in enumerate(vals, start=1):
                 cell = sh.cell(row=row, column=c, value=v)
                 cell.font = _font()
                 cell.alignment = LEFT if c in (1, 4, 5, 6) else CENTER
                 cell.border = b
-                if c in (7, 8):
-                    cell.number_format = _MONEY_FMT
                 if fill is not None:
                     cell.fill = fill
             row += 1
-        tot = sh.cell(row=row, column=6, value="Total")
+        # Pending is a SALES list, not pay — the per-rep total is a COUNT of
+        # pending orders, never a dollar sum (Carlos 2026-07-23).
+        tot = sh.cell(row=row, column=1,
+                      value="Total: {} pending".format(len(bucket["rows"])))
         tot.font, tot.alignment, tot.border = _font(bold=True), LEFT, b
-        for c, val in ((7, bucket["total_icd"]), (8, bucket["total_commission"])):
-            cell = sh.cell(row=row, column=c, value=val)
-            cell.font, cell.alignment, cell.border = _font(bold=True), CENTER, b
-            cell.number_format = _MONEY_FMT
         row += 2                              # blank spacer between reps
     _autosize(sh, _PENDING_LABELS)
     sh.freeze_panes = "A2"
