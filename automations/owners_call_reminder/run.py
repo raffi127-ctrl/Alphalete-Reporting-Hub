@@ -21,9 +21,24 @@ import sys
 from email.message import EmailMessage
 from pathlib import Path
 
-# Who the reminder goes to — comma-separated in OWNERS_CALL_EMAILS, or set the default
-# below once Megan provides the owner/ICD list. Empty → refuses to send.
-RECIPIENTS = [e.strip() for e in os.environ.get("OWNERS_CALL_EMAILS", "").split(",") if e.strip()]
+# Who the reminder goes to: the "Org. Call Invite" Google Contacts distro (Megan
+# maintains it — membership changes are picked up automatically each run).
+# OWNERS_CALL_EMAILS (comma-separated) overrides it for testing.
+DISTRO_GROUP = os.environ.get("OWNERS_CALL_GROUP", "Org. Call Invite")
+
+
+def _recipients():
+    """(emails, problems). Env override wins; else expand the Contacts distro."""
+    env = [e.strip() for e in os.environ.get("OWNERS_CALL_EMAILS", "").split(",") if e.strip()]
+    if env:
+        return env, []
+    try:
+        from automations.shared.contacts_auth import expand_groups
+        emails, missing = expand_groups([DISTRO_GROUP])
+        return emails, [f"contacts group {g!r} not found" for g in missing]
+    except Exception as e:  # noqa: BLE001
+        return [], [f"couldn't read the {DISTRO_GROUP!r} distro "
+                    f"({type(e).__name__}: {str(e)[:120]})"]
 
 # The recognition sheet ICDs fill in (same link Maud sends). See recognition_tab.
 SHEET_URL = ("https://docs.google.com/spreadsheets/d/"
@@ -70,9 +85,12 @@ def send(dry_run: bool = True, final: "bool | None" = None) -> int:
     subject = FINAL_SUBJECT if final else SUBJECT
     body = FINAL_BODY if final else BODY
 
-    if not RECIPIENTS:
-        print("NO RECIPIENTS — set OWNERS_CALL_EMAILS (comma-separated owner/ICD "
-              "emails) before this can send.", flush=True)
+    recipients, problems = _recipients()
+    for p in problems:
+        print(f"  ⚠ {p}", flush=True)
+    if not recipients:
+        print(f"NO RECIPIENTS — the {DISTRO_GROUP!r} distro resolved to 0 emails "
+              "(or set OWNERS_CALL_EMAILS). Not sending.", flush=True)
         return 2
 
     from automations.scheduled_6_days_out.email_send import (
@@ -80,7 +98,7 @@ def send(dry_run: bool = True, final: "bool | None" = None) -> int:
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = FROM_ADDR
-    msg["To"] = ", ".join(RECIPIENTS)
+    msg["To"] = ", ".join(recipients)
     msg.set_content(body)
     msg.add_alternative(_to_html(body), subtype="html")
 
@@ -88,13 +106,15 @@ def send(dry_run: bool = True, final: "bool | None" = None) -> int:
         _EML_DIR.mkdir(parents=True, exist_ok=True)
         eml = _EML_DIR / f"reminder-{'final' if final else 'regular'}-{dt.date.today().isoformat()}.eml"
         eml.write_bytes(bytes(msg))
-        print(f"[dry-run] WOULD email {len(RECIPIENTS)} recipient(s) "
-              f"({'FINAL CALL' if final else 'regular'}). Preview: {eml}\n"
+        print(f"[dry-run] WOULD email {len(recipients)} recipient(s) from the "
+              f"{DISTRO_GROUP!r} distro ({'FINAL CALL' if final else 'regular'}). "
+              f"Preview: {eml}\n"
               f"Subject: {subject}\n"
               f"------------------------------------------------------------\n"
               f"{body}\n"
               f"------------------------------------------------------------\n"
-              f"To: {', '.join(RECIPIENTS)}", flush=True)
+              f"To ({len(recipients)}): {', '.join(recipients[:4])}"
+              f"{', …' if len(recipients) > 4 else ''}", flush=True)
         return 0
 
     try:
@@ -107,7 +127,7 @@ def send(dry_run: bool = True, final: "bool | None" = None) -> int:
         s.login(FROM_ADDR, app_password())
         s.send_message(msg)
     print(f"✅ {'Final-call' if final else 'Reminder'} emailed to "
-          f"{len(RECIPIENTS)} recipient(s).", flush=True)
+          f"{len(recipients)} recipient(s) from the {DISTRO_GROUP!r} distro.", flush=True)
     return 0
 
 
