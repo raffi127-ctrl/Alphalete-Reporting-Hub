@@ -49,6 +49,17 @@ echo "[$(date)] Vantura payroll prep starting (extra args: ${*:-none})" > "$LOG_
 "$VENV_PY" -u -m automations.vantura_payroll.run --live "$@" >> "$LOG_FILE" 2>&1
 ST=$?
 
+# 2026-07-23: retry once — the 7/22 run died mid-write (network blip) and left
+# a half-finished week until Thursday. run.py now RESUMES an already-loaded
+# week idempotently, so a retry completes the remaining steps instead of
+# tripping the double-load guard.
+if [ $ST -ne 0 ]; then
+  echo "[$(date)] exit=$ST — retrying once in 120s" >> "$LOG_FILE"
+  sleep 120
+  "$VENV_PY" -u -m automations.vantura_payroll.run --live "$@" >> "$LOG_FILE" 2>&1
+  ST=$?
+fi
+
 echo "[$(date)] Vantura payroll prep finished exit=$ST" >> "$LOG_FILE"
 
 # Publish to the Hub card so a run is VISIBLE either way. Without this the

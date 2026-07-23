@@ -912,6 +912,31 @@ def _action_git_stash(args: str) -> tuple[bool, str]:
                   + "\nrestore on the machine with: git stash pop")
 
 
+def _action_set_payroll_webapp(args: str) -> tuple[bool, str]:
+    """Install/refresh the payroll headless-refresh Web App URL (runbook §1)
+    into vantura-payroll-webapp.json at the repo root (gitignored), so the
+    Wednesday vantura_payroll run can trigger the board's Commission rebuild
+    itself instead of skipping it. Args = the script.google.com …/exec URL.
+    Verifies with a live no-op GET before writing. The URL transits the
+    control Sheet's Args cell — redact after 'done'."""
+    url = (args or "").strip()
+    if not (url.startswith("https://script.google.com/macros/s/")
+            and url.endswith("/exec")):
+        return False, "set_payroll_webapp needs the script.google.com …/exec URL as Args"
+    import json
+    import urllib.request
+    try:
+        with urllib.request.urlopen(url, timeout=60) as r:  # follows redirects
+            body = r.read(300).decode("utf-8", "replace")
+        if '"ok"' not in body:
+            return False, f"URL responded without the expected JSON: {body[:80]}"
+    except Exception as e:  # noqa: BLE001 — report, don't crash the poller
+        return False, f"URL check failed: {type(e).__name__}: {e}"
+    (REPO_ROOT / "vantura-payroll-webapp.json").write_text(
+        json.dumps({"webapp_url": url}) + "\n")
+    return True, "payroll web-app URL installed + verified (no-op GET ok)"
+
+
 def _action_set_meta_token(args: str) -> tuple[bool, str]:
     """Install/refresh the Meta (Facebook + Instagram) page access token in the
     mini's ~/.config/brand-audit/keys.json, so the noon brand-audit Social
@@ -1285,6 +1310,7 @@ ACTIONS = {
     "git_status": _action_git_status,
     "git_stash": _action_git_stash,
     "set_meta_token": _action_set_meta_token,
+    "set_payroll_webapp": _action_set_payroll_webapp,
     "set_slack_token": _action_set_slack_token,
     "set_slack_user_token": _action_set_slack_user_token,
     "set_gbp_token": _action_set_gbp_token,

@@ -264,11 +264,23 @@ def _load_raw(xlsx: Path, week: dt.date, *, write: bool, sheet_id: str, log=_log
                default=1)
     start = last + 1
 
-    # guard: this week must not already be loaded
+    # guard: this week must not already be loaded — but RESUME instead of
+    # refusing (2026-07-23: the Wed 7/22 run died after the RAW append and the
+    # hard refusal left Commission showing last week's block under the new
+    # label; skipping the append and re-running the remaining steps is safe
+    # and idempotent).
     existing = {str(r[0]) for r in colA if r and r[0] not in ("", None)}
     if str(wnum) in existing:
-        raise RuntimeError(f"week {wnum} already present in RAW col A — refusing "
-                           "to double-load. (Delete it first, or it already ran.)")
+        wk_rows = [i + 2 for i, r in enumerate(colA)
+                   if r and str(r[0]) == str(wnum)]
+        first_row, last_row = min(wk_rows), max(wk_rows)
+        if wk_rows != list(range(first_row, last_row + 1)):
+            raise RuntimeError(
+                f"week {wnum} rows in RAW are non-contiguous "
+                f"({first_row}..{last_row}) — inspect before resuming.")
+        log(f"RESUME: week {wnum} already in RAW (rows {first_row}-{last_row})"
+            " — skipping the load; re-running week-set/P&L/refresh/checks.")
+        return first_row, last_row
 
     out_rows = []
     for r in data:
