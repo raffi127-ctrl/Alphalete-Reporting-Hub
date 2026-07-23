@@ -78,19 +78,40 @@ def save_login(timeout_min: int = 10, verbose: bool = True) -> Path:
         while waited < deadline:
             page.wait_for_timeout(2000)
             waited += 2
-            if _looks_logged_in(page, verbose=False):
-                page.wait_for_timeout(3000)      # let the SPA settle/set cookies
-                if _looks_logged_in(page, verbose=False):
-                    break
+            if not _looks_logged_in(page, verbose=False):
+                continue
+            page.wait_for_timeout(3000)          # let the SPA settle / set its token
+            # "No password field" alone is too weak — a still-loading SPA passes it.
+            # Require the auth token to actually exist in localStorage.
+            try:
+                has_token = sum(len(o.get("localStorage", []))
+                                for o in ctx.storage_state().get("origins", [])) > 0
+            except Exception:  # noqa: BLE001
+                has_token = False
+            if _looks_logged_in(page, verbose=False) and has_token:
+                break
+            if waited % 20 == 0:
+                print("   ...waiting for the dashboard to finish loading", flush=True)
         else:
             ctx.close()
             raise RuntimeError("timed out waiting for a Credico login")
         state = ctx.storage_state()
         STATE.write_text(json.dumps(state, indent=1), encoding="utf-8")
         n = len(state.get("cookies", []))
+        n_ls = sum(len(o.get("localStorage", [])) for o in state.get("origins", []))
+        url = page.url
         ctx.close()
-    print(f"\n✓ saved {n} cookie(s) → {STATE}")
-    print("  Re-run this if a later pull reports the session expired.")
+    print(f"\n✓ saved {n} cookie(s) + {n_ls} localStorage item(s) → {STATE}")
+    print(f"  final URL: {url}")
+    if n_ls == 0 or "login" in url.lower():
+        # The SPA keeps its token in localStorage; saving none means the login
+        # never completed, and a cookies-only state silently fails later.
+        print("\n⚠ THIS LOOKS INCOMPLETE — no localStorage was captured (that's "
+              "where Credico keeps the auth token).\n  Re-run --login and wait "
+              "until the Sales Management dashboard is fully on screen before "
+              "closing anything.")
+    else:
+        print("  Verify with:  python -m automations.credico.session --check")
     return STATE
 
 
@@ -108,12 +129,22 @@ def credico_session(headless: bool = True, verbose: bool = True):
     state = json.loads(STATE.read_text())
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
-        ctx = browser.new_context(viewport={"width": 1500, "height": 950})
-        cookies = state.get("cookies", [])
-        if cookies:
-            ctx.add_cookies(cookies)
+        # Hand the state file to new_context rather than add_cookies(): Credico is
+        # a hash-router SPA and keeps its auth token in localStorage, which lives
+        # in state["origins"], NOT in cookies. Injecting cookies alone restored
+        # nothing and landed straight back on #/login.
+        ctx = browser.new_context(viewport={"width": 1500, "height": 950},
+                                  storage_state=str(STATE))
         if verbose:
-            print(f"-> credico: {len(cookies)} cookie(s) injected", flush=True)
+            n_c = len(state.get("cookies", []))
+            n_ls = sum(len(o.get("localStorage", []))
+                       for o in state.get("origins", []))
+            print(f"-> credico: {n_c} cookie(s) + {n_ls} localStorage item(s) restored",
+                  flush=True)
+            if n_ls == 0:
+                print("   ⚠ no localStorage captured — if this fails, the login "
+                      "didn't complete; re-run --login and wait for the dashboard",
+                      flush=True)
         page = ctx.new_page()
         page.goto(DASHBOARD, wait_until="domcontentloaded")
         page.wait_for_timeout(3500)
