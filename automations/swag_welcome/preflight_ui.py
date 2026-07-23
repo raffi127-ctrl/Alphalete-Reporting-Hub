@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import platform
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -55,25 +56,48 @@ def _render_setup() -> None:
                        "auto-send the **card image** it needs a one-time Shortcut. "
                        "Without it, texts still send and cards are saved to the "
                        "output folder to attach by hand.")
+        # macOS 15 physically cannot deliver an automated image send (the Shortcut
+        # runs, exits 0, sends nothing; AppleScript leaves it undelivered). Only
+        # macOS 26+ does. Surfaced here so nobody repeats the 2026-07-23 hunt.
+        _osver = platform.mac_ver()[0] or ""
+        _osmajor = int(_osver.split(".")[0]) if _osver.split(".")[0].isdigit() else 0
+        if _osmajor and _osmajor < 26:
+            st.error(
+                f"⚠️ **This Mac runs macOS {_osver} — it cannot auto-send the card.** "
+                "macOS below 26 won't deliver an image send from an automation: the "
+                "Shortcut runs and reports success but nothing arrives. **Texts still "
+                "send normally.** To also send cards automatically, upgrade this Mac "
+                "to **macOS 26+**. (Interim: leave *Show When Run* ON in the Shortcut "
+                "and click **Send** on each card's compose sheet.)"
+            )
         st.markdown(
-            "**Why:** macOS won't let a script send an iMessage photo directly, so "
+            "**Why:** macOS won't let a script attach an iMessage photo directly, so "
             "the card goes out through a tiny Shortcut. Build it once on each Mac "
-            "that will send from its own number.\n\n"
-            "**Steps (~2 min):**\n"
+            "that will send from its own number. **Requires macOS 26+.**\n\n"
+            "**Steps (~3 min):**\n"
             "1. Make sure **Messages is signed into iMessage** on this Mac (the "
             "number these should come from).\n"
-            "2. Open the **Shortcuts** app → **＋ New Shortcut** → name it exactly "
+            "2. Run one send from the Hub first — it creates the handoff folder "
+            "`~/AlphaleteSwagCards/` with `current.png`, which step 4 needs to exist.\n"
+            "3. Open the **Shortcuts** app → **＋ New Shortcut** → name it exactly "
             "`Alphalete Swag Card`.\n"
-            "3. Add these **3 actions, in order**:\n"
+            "4. Add these **4 actions, in order**:\n"
             "   - **Get Clipboard**\n"
             "   - **Get Phone Numbers from Input** — set its input to **Clipboard**\n"
-            "   - **Send Message** — set **Message** = **Shortcut Input**, "
-            "**Recipients** = **Phone Numbers**, and **uncheck “Show Compose "
-            "Sheet.”**\n"
-            "4. Close it (auto-saves). The **first** time a card sends, macOS asks "
-            "**“Shortcuts can send messages” → click Allow**.\n\n"
-            "That's it — after that, the Hub sends the card automatically from this "
-            "Mac's iMessage."
+            "   - **Get File** — click the location box, choose **Locations → "
+            "(your username) → AlphaleteSwagCards**, and set **path** to "
+            "`current.png`. Tick **Error If Not Found**.\n"
+            "   - **Send Message** — set **Message** = the **File** from the step "
+            "above (NOT *Shortcut Input*), **Recipients** = **Phone Numbers**, and "
+            "**uncheck “Show When Run.”**\n"
+            "5. Close it (auto-saves).\n\n"
+            "**Why the File and not Shortcut Input:** on some Macs the card handed "
+            "over by `shortcuts run -i` arrives EMPTY, so the Shortcut has nothing to "
+            "send and silently sends nothing. Reading the file off disk is reliable.\n\n"
+            "**Copying this Shortcut to another Mac?** Two things never travel with "
+            "an iCloud-link import — re-do them on each machine: the **folder** in "
+            "*Get File* (re-pick it), and **Show When Run** (imports arrive with it "
+            "re-checked)."
         )
         # Reference screenshot of the finished shortcut. Once one exists, just
         # show it — the uploader only appears when there's nothing yet.

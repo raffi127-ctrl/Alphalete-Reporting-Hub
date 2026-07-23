@@ -1,11 +1,20 @@
-"""Send ONE swag card via the Shortcut from THIS plain process, printing the
-debug — to tell whether the card fails to send on a machine no matter who calls
-it, or only when the Hub (Streamlit) process calls it.
+"""Verify the swag CARD path on a machine — send one card to a number you own.
 
-Temporary debug helper. Usage (quote-free):
+Run this whenever a new Mac is set up to send swag (or after a macOS upgrade),
+BEFORE trusting a real batch. It exercises the exact Shortcut path the Hub uses
+and prints what the Shortcut saw and returned.
+
+Usage (quote-free):
     cd ~/recruiting-report
     .venv/bin/python automations/swag_welcome/test_card.py +14197697114
-Then WATCH the recipient's phone: did the card arrive?
+
+Then check that phone: did the card image actually arrive?
+  - arrives                  -> this Mac is good to send.
+  - "current.png ... no such file" -> the Shortcut's Get File folder needs
+    re-picking (Locations -> <user> -> AlphaleteSwagCards).
+  - runs clean (rc=0) but nothing arrives -> either "Show When Run" is still
+    checked, or this Mac is below macOS 26, which cannot auto-send an image at
+    all. See reference: swag card requires macOS 26+.
 """
 import sys
 from pathlib import Path
