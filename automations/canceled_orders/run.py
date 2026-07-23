@@ -36,6 +36,10 @@ RAF_OWNERS = {
     "Kimberly Rodriguez", "Marcellus Butler", "Marcial Rodriguez",
     "Melik El Jaiez", "Tony Chavez", "Trang Canavan", "Tre Mitchell",
     "Zachary Hogue",
+    # Salik Mallick's office (rep Muhammad Waqar aka Salik Malik) — added
+    # 2026-07-20 so his cancels pull into Raf's Captainship (his rows were
+    # being filtered out for not being in the roster).
+    "Salik Mallick", "Salik Malik",
 }
 STARR_OWNERS = {
     "Jason Strid", "Jc Gerard Pascual", "Milly Villagrana",
