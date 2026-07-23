@@ -832,7 +832,7 @@
     },
     "install_owners_call_reminder_agent": {
       "on_scheduler": true,
-      "_note": "MANUAL: `lucy rerun install_owners_call_reminder_agent` installs com.alphalete.owners-call-reminder (Mon 11:00am + 4:00pm CST). Texts the 'Alphalete Ownrs 🔥' iMessage group Maud's recognition reminder (Owner's/Leader's Call times + recognition sheet link) AS the mini's iMessage account (Lucy). REQUIRES: OWNERS_CALL_CHAT_ID set to the group's chat GUID (find via `lucy rerun probe_imessage_threads`) AND that account being a MEMBER of the group. weekdays [] = manual only.",
+      "_note": "MANUAL: `lucy rerun install_owners_call_reminder_agent` installs com.alphalete.owners-call-reminder (Mon 11:00am + 4:00pm + 7:15pm-final-call CST). EMAILS the owners/ICDs Maud's recognition reminder (Owner's/Leader's Call times + recognition sheet link) from the reporting Gmail. REQUIRES: OWNERS_CALL_EMAILS set to the comma-separated recipient list. weekdays [] = manual only.",
       "display_name": "Install owners-call reminder agent",
       "source_type": "local",
       "data_sources": [],
@@ -2203,7 +2203,7 @@
     },
     "owners_call_reminder": {
       "on_scheduler": false,
-      "_off_scheduler_note": "Run by the dedicated com.alphalete.owners-call-reminder launchd job (Mon 11:00am + 4:00pm CST, deploy/owners_call_reminder.sh --send). Texts the 'Alphalete Ownrs 🔥' iMessage group Maud's recognition reminder AS the mini's iMessage account (Lucy). `lucy rerun owners_call_reminder` here runs a DRY-RUN (prints the message, sends nothing). GO LIVE needs OWNERS_CALL_CHAT_ID (group GUID via `lucy rerun probe_imessage_threads`) + that account in the group + Megan's ok. Megan 2026-07-21.",
+      "_off_scheduler_note": "Run by the dedicated com.alphalete.owners-call-reminder launchd job (Mon 11:00am + 4:00pm + 7:15pm-final-call CST, deploy/owners_call_reminder.sh --send). EMAILS the owners/ICDs Maud's recognition reminder from the reporting Gmail (switched from iMessage 2026-07-21 — group send no longer available). `lucy rerun owners_call_reminder` here runs a DRY-RUN (writes an .eml, sends nothing). GO LIVE needs OWNERS_CALL_EMAILS (comma-separated recipient list) + Megan's ok. Megan 2026-07-21.",
       "display_name": "Owners-call reminder (iMessage)",
       "source_type": "local",
       "data_sources": [],

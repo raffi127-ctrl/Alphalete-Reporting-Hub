@@ -1,14 +1,13 @@
 #!/bin/bash
-# Monday recognition reminder → the 'Alphalete Ownrs 🔥' iMessage group, on the
-# always-on Mac mini via launchd (com.alphalete.owners-call-reminder), Mon 11:00am
-# and 4:00pm CT. The plist passes --send; run without it for a dry-run.
+# Monday recognition reminder → EMAIL to the owners/ICDs, on the always-on Mac mini
+# via launchd (com.alphalete.owners-call-reminder), Mon 11:00am, 4:00pm, and 7:15pm
+# (final call) CT. The plist passes --send; run without it for a dry-run.
 #
-#   bash deploy/owners_call_reminder.sh            # dry-run (prints, no send)
-#   bash deploy/owners_call_reminder.sh --send     # actually text the group
+#   bash deploy/owners_call_reminder.sh            # dry-run (writes an .eml, no send)
+#   bash deploy/owners_call_reminder.sh --send     # actually email
 #
-# Needs on the machine: Messages.app signed into an iMessage account that is a
-# MEMBER of the group, and OWNERS_CALL_CHAT_ID set to the group's chat GUID
-# (find it with `lucy rerun probe_imessage_threads`).
+# Needs on the machine: the reporting Gmail app password (already used by the other
+# report emails) and OWNERS_CALL_EMAILS set to the comma-separated recipient list.
 
 set -u
 cd "$(dirname "$0")/.." || exit 1
