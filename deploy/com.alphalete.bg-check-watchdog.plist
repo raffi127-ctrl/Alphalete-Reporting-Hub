@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.bg-check-watchdog</string>
+
+    <!-- Path is the laptop placeholder; on the mini, regenerate with the install
+         path via the python-replace step in workflows/scheduler-mini.md. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/bg_check_watchdog.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- 12:45 + 17:00 Central (mini local): ~1h after each bg-check-sync run
+         (11:30 + 16:00), so a missed run is caught the same day. TWO entries so
+         the nightly schedule_guard self-heals it (it skips 3+-entry jobs). -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <key>Hour</key><integer>12</integer>
+            <key>Minute</key><integer>45</integer>
+        </dict>
+        <dict>
+            <key>Hour</key><integer>17</integer>
+            <key>Minute</key><integer>0</integer>
+        </dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/bg-check-watchdog.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/bg-check-watchdog.launchd.err.log</string>
+</dict>
+</plist>

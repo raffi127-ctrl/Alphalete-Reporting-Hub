@@ -1243,6 +1243,47 @@ def _action_install_bg_check_sync(args: str) -> tuple[bool, str]:
     return True, (f"installed {label} (8:00/11:30/16:00 daily) · smoke ok · {smoke[:80]}")
 
 
+def _action_install_bg_check_watchdog(args: str) -> tuple[bool, str]:
+    """Install (or reinstall) the bg_check_sync WATCHDOG LaunchAgent
+    (com.alphalete.bg-check-watchdog) on THIS machine — 12:45 + 17:00 daily. It
+    DMs Raf via Lucy if bg_check_sync's heartbeat goes stale (scheduler stall).
+    Regenerates the plist for the mini path, runs a --dry-run smoke test (checks
+    the heartbeat, never DMs), then bootstraps it. Run `update`+`restart_poller` first."""
+    uid = os.getuid()
+    label = "com.alphalete.bg-check-watchdog"
+    src_plist = REPO_ROOT / "deploy" / f"{label}.plist"
+    wrapper = REPO_ROOT / "deploy" / "bg_check_watchdog.sh"
+    dst_plist = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+    if not src_plist.exists() or not wrapper.exists():
+        return False, (f"missing {src_plist.name} or {wrapper.name} — run `update` first")
+    try:
+        text = src_plist.read_text().replace(
+            "/Users/megan/1st Claude Folder", str(REPO_ROOT))
+        dst_plist.parent.mkdir(parents=True, exist_ok=True)
+        dst_plist.write_text(text)
+        os.chmod(wrapper, 0o755)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write plist/wrapper: {str(e).splitlines()[0][:140]}"
+    lint = subprocess.run(["plutil", "-lint", str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if lint.returncode != 0:
+        return False, f"plist lint failed: {(lint.stdout or '')[:160]}"
+    smoke_ok, smoke = _run_cmd(
+        [sys.executable, "-m", "automations.bg_check_sync.watchdog", "--dry-run"],
+        timeout_s=60, log_name="bg-check-watchdog-install-smoke.log")
+    if not smoke_ok:
+        return False, f"smoke test failed — NOT going live: {smoke[:150]}"
+    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["launchctl", "enable", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    boot = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if boot.returncode != 0:
+        return False, f"smoke ok; bootstrap FAILED: {(boot.stdout or '').strip()[:150]}"
+    return True, f"installed {label} (12:45 + 17:00 daily) · smoke ok"
+
+
 def _action_run_bg_check_sync(args: str) -> tuple[bool, str]:
     """Run bg_check_sync NOW on THIS machine. Default = LIVE (writes col K + posts
     the weekly #rafs-office-recruiting thread as Lucy). Pass extra args to override,
@@ -1322,6 +1363,7 @@ ACTIONS = {
     "install_card_scheduler": _action_install_card_scheduler,
     "set_raffi_app_password": _action_set_raffi_app_password,
     "install_bg_check_sync": _action_install_bg_check_sync,
+    "install_bg_check_watchdog": _action_install_bg_check_watchdog,
     "run_bg_check_sync": _action_run_bg_check_sync,
     "reseed_appstream": _action_reseed_appstream,
     "watch_test": _action_watch_test,

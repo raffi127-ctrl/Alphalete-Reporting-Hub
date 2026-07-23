@@ -290,6 +290,16 @@ def main(argv=None) -> int:
         except Exception as e:  # noqa: BLE001
             print(f"[hub] publish_done skipped: {e}")
 
+    # Heartbeat for the watchdog — a real run only (not --dry-run). If this
+    # stops updating, watchdog.py DMs Raf that the scheduler stalled.
+    if not args.dry_run:
+        try:
+            from automations.bg_check_sync.watchdog import HEARTBEAT
+            HEARTBEAT.parent.mkdir(parents=True, exist_ok=True)
+            HEARTBEAT.write_text(dt.datetime.now().isoformat())
+        except Exception as e:  # noqa: BLE001
+            print(f"[heartbeat] skipped: {e}")
+
     print("\n=== done ===")
     return 0
 
