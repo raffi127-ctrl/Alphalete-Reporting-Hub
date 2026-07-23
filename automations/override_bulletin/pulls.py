@@ -69,3 +69,74 @@ def raf_captain_override(week_mdy: str, ws=None):
     row = vals[RAF_CAPTAIN_ROW - 1] if RAF_CAPTAIN_ROW - 1 < len(vals) else []
     vcol = base + 2                                  # Profit/Loss col of the block
     return _money(row[vcol]) if vcol < len(row) else None
+
+
+# --------------------------------------------------------------------------
+# Regular override — Tableau ORG OVERRIDE SUMMARY crosstab
+# --------------------------------------------------------------------------
+OVERRIDE_SUMMARY_VIEW = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "OverridesICDView/ORGOVERRIDESUMMARY")
+
+
+def _num_locale(s: str):
+    """Parse a money string in either US ('72,253.17') or EU ('72.253,17')
+    format, tolerating '$', parens-negatives and spaces. None if not a number."""
+    if s is None:
+        return None
+    t = str(s).strip().replace("$", "").replace(" ", "")
+    if not t:
+        return None
+    neg = t.startswith("(") and t.endswith(")")
+    t = t.strip("()")
+    if "," in t and "." in t:
+        # last separator is the decimal
+        t = t.replace(".", "").replace(",", ".") if t.rfind(",") > t.rfind(".") \
+            else t.replace(",", "")
+    elif "," in t:
+        # comma-only: decimal if it looks like ",dd" at the end, else thousands
+        t = t.replace(",", ".") if re.search(r",\d{1,2}$", t) else t.replace(",", "")
+    try:
+        v = float(t)
+        return -v if neg else v
+    except ValueError:
+        return None
+
+
+def parse_override_summary(rows, week_header, *, name_col=0):
+    """Sum each ICD owner's campaign rows for one week column.
+
+    `rows` is the downloaded crosstab as a list of row-lists. The owner name sits
+    in `name_col`; continuation rows for the owner's other campaigns have a blank
+    name (Megan 2026-07-22: "add up the sum of everything listed with that ICD").
+    `week_header` is the target week's column header (e.g. '07/12/2026'); we find
+    that column in the header rows. Returns {normalized_owner: total}. Skips the
+    grand-total row ('Total general' / 'Grand Total')."""
+    # locate the week column (and the header row) by matching its header
+    wk_col = hdr_row = None
+    for ri, r in enumerate(rows[:6]):
+        for ci, cell in enumerate(r):
+            if str(cell).strip() == str(week_header).strip():
+                wk_col, hdr_row = ci, ri
+                break
+        if wk_col is not None:
+            break
+    if wk_col is None:
+        raise ValueError(f"week column {week_header!r} not found in crosstab header")
+
+    out, cur = {}, None
+    for r in rows[hdr_row + 1:]:               # skip the header rows
+        name = (r[name_col] if name_col < len(r) else "").strip()
+        low = name.lower()
+        if low in ("total general", "grand total", "total"):
+            cur = None
+            continue
+        if name:
+            cur = _norm_name(name)
+            out.setdefault(cur, 0.0)
+        if cur is None:
+            continue
+        val = _num_locale(r[wk_col]) if wk_col < len(r) else None
+        if val is not None:
+            out[cur] += val
+    return {k: round(v, 2) for k, v in out.items()}
