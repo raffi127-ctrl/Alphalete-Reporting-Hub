@@ -20,7 +20,6 @@ b2b_quality's Carlos-hardcoded SPECS, so the owner slice actually takes effect.
 from __future__ import annotations
 
 import datetime as dt
-from contextlib import contextmanager
 from pathlib import Path
 
 from automations.b2b_metrics.offices import B2BOffice, OWNER_FIELD, VIEW_META
@@ -241,81 +240,22 @@ def _crop_to_last_colored_row(png: Path, leading: bool = False,
         return False
 
 
-# --- batch CDP session ------------------------------------------------------
-# Reuse ONE real-Chrome CDP session across EVERY Tableau capture in an --all batch
-# instead of relaunching Chrome per view (the big --all cost: ~12 relaunches for
-# 2 offices). Lazy — Chrome only launches on the FIRST Tableau capture, so a
-# sheet-only run never opens it. Falls back to per-view launch when no batch is
-# active (single-item reruns keep working unchanged).
-_BATCH: dict = {"active": False, "pw": None, "proc": None, "page": None}
+def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print) -> Path:
+    """Capture one Tableau view for this office (owner-sliced, or a per-office
+    override view captured as-is). LUCY 2 — Carlos's login carries the views.
 
-
-@contextmanager
-def batch_session():
-    """Wrap the office loop so all Tableau captures share one Chrome."""
-    _BATCH["active"] = True
-    try:
-        yield
-    finally:
-        _close_cdp(_BATCH)
-        _BATCH["active"] = False
-
-
-def _open_cdp(log=print) -> dict:
-    """Launch Carlos's warm Chrome over CDP, poll-connect, auth; return
-    {pw, proc, page}. Carlos's login carries the saved views (Lucy 2 only)."""
+    Own Chrome per view (NOT a shared batch session): the ORDERLOG pull + other
+    captures each run cdp_pull._kill_ours()/_launch() and their own
+    sync_playwright, which killed a shared page and can't nest two playwrights in
+    one thread (proven 2026-07-22). Sharing one Chrome needs every Chrome user in
+    the batch to accept a passed page — a bigger refactor, deferred."""
     import time
 
     from patchright.sync_api import sync_playwright
 
     from automations.shared import tableau_patchright as tp
-    from automations.vantura_churn import cdp_pull
-
-    cdp_pull._kill_ours()
-    proc = cdp_pull._launch()
-    pw = sync_playwright().start()
-    browser = None
-    # The remote-debugging port isn't up the instant _launch() returns — poll
-    # instead of a fixed sleep (a single connect sometimes ECONNREFUSED-dropped
-    # an item, 2026-07-22).
-    for attempt in range(10):
-        time.sleep(5)
-        try:
-            browser = pw.chromium.connect_over_cdp(
-                "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
-            break
-        except Exception:  # noqa: BLE001 — retry a not-yet-up port
-            if attempt == 9:
-                pw.stop()
-                raise
-            log("  [cdp] port not up yet (try {}/10)".format(attempt + 1))
-    ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-    page = ctx.pages[0] if ctx.pages else ctx.new_page()
-    tp._ensure_tableau_authenticated(page, verbose=False, allow_form_login=True)
-    return {"pw": pw, "proc": proc, "page": page}
-
-
-def _close_cdp(sess: dict) -> None:
-    from automations.vantura_churn import cdp_pull
-    try:
-        if sess.get("pw"):
-            sess["pw"].stop()
-    except Exception:  # noqa: BLE001
-        pass
-    try:
-        if sess.get("proc"):
-            sess["proc"].terminate()
-    except Exception:  # noqa: BLE001
-        pass
-    cdp_pull._kill_ours()
-    sess["pw"] = sess["proc"] = sess["page"] = None
-
-
-def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print) -> Path:
-    """Capture one Tableau view for this office (owner-sliced, or a per-office
-    override view captured as-is). LUCY 2 — Carlos's login carries the views.
-    Reuses the batch's Chrome when one is open; else launches its own."""
     from automations.tableau_screenshots.capture import capture_page
+    from automations.vantura_churn import cdp_pull
     from automations.b2b_quality.run import apply_sort, _IFRAME
 
     meta = VIEW_META.get(view_key, {})
@@ -341,21 +281,33 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print) -> Path
             pass
         apply_sort(page, hdr, clicks=meta.get("sort_clicks", 1), verbose=True)
 
-    if _BATCH["active"]:
-        if _BATCH["page"] is None:
-            _BATCH.update(_open_cdp(log))     # lazy: one Chrome for the whole batch
-        capture_page(_BATCH["page"], spec, out_dir,
-                     after_load=after_load, verbose=False)
-    else:
-        sess = _open_cdp(log)                 # single view: own launch + teardown
+    cdp_pull._kill_ours()
+    proc = cdp_pull._launch()
+    try:
+        with sync_playwright() as p:
+            browser = None
+            for attempt in range(10):
+                time.sleep(5)
+                try:
+                    browser = p.chromium.connect_over_cdp(
+                        "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
+                    break
+                except Exception:  # noqa: BLE001 — retry a not-yet-up port
+                    if attempt == 9:
+                        raise
+                    log("  [cdp] port not up yet (try {}/10)".format(attempt + 1))
+            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            tp._ensure_tableau_authenticated(page, verbose=False,
+                                             allow_form_login=True)
+            capture_page(page, spec, out_dir, after_load=after_load, verbose=False)
+        if meta.get("data_cols") and not _os.environ.get("B2B_SKIP_CROP"):
+            _crop_to_last_colored_row(
+                out, leading=(meta.get("crop_mode") == "leading"), verbose=True)
+        return out
+    finally:
         try:
-            capture_page(sess["page"], spec, out_dir,
-                         after_load=after_load, verbose=False)
-        finally:
-            _close_cdp(sess)
-
-    # Crop to the last populated rep row (Activation + Churn); best-effort.
-    if meta.get("data_cols") and not _os.environ.get("B2B_SKIP_CROP"):
-        _crop_to_last_colored_row(
-            out, leading=(meta.get("crop_mode") == "leading"), verbose=True)
-    return out
+            proc.terminate()
+        except Exception:  # noqa: BLE001
+            pass
+        cdp_pull._kill_ours()
