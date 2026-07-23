@@ -76,7 +76,11 @@ def render(ws, out_path: Path, rng: str | None = None) -> Path:
 
     rng = rng or visible_range(ws)
     token = _access_token()
-    base = (f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?"
+    # Use the worksheet's OWN spreadsheet id, not the module SHEET_ID — otherwise
+    # a tab from another office's board (Atef) is exported against Carlos's sheet
+    # with a gid that doesn't exist there -> 400. For Carlos this is identical.
+    sheet_id = ws.spreadsheet.id
+    base = (f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?"
             f"format=pdf&gid={ws.id}&range={rng}&gridlines=false"
             f"&sheetnames=false&printtitle=false&pagenumbers=false&fzr=false"
             f"&top_margin=0.05&bottom_margin=0.05"
