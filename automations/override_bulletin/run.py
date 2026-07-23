@@ -49,8 +49,33 @@ def _dd_week_for(dd_weeks, sheet_week):
     return dd_weeks.get(f"{prev.month}.{prev.day}.{prev.year % 100}")
 
 
+def sheet_weeks(ws):
+    """Week labels on the tab, newest (leftmost) first."""
+    import re as _re
+    return [h.strip() for h in ws.row_values(1)
+            if _re.match(r"^\d{1,2}\.\d{1,2}\.\d{2,4}$", (h or "").strip())]
+
+
+def resolve_target_week(source_weeks, tab_weeks):
+    """(week, why) — which week to fill, or (None, reason) to HOLD.
+
+    Friday fills the week that ended the PRIOR Sunday (verified against the live
+    sheet: 7.12 was filled Fri 7/17, 7.5 on Fri 7/10, and so on). But the override
+    summary lags, so we target the newest week IT has rather than assuming the
+    just-closed one is published. If the sheet already carries that week there is
+    nothing new to publish — hold instead of rolling a fresh, near-empty column
+    and mailing a broken bulletin to the org."""
+    if not source_weeks:
+        return None, "the override summary returned no week columns"
+    newest = source_weeks[0]
+    if tab_weeks and newest == tab_weeks[0]:
+        return None, (f"the summary's newest week ({newest}) is already filled on the "
+                      f"sheet — this week hasn't published yet; holding")
+    return newest, f"filling {newest} — newest week the override summary has"
+
+
 def pull_all(week_mdy, week_header, period_num, period_year, *, page=None,
-             verbose=True, aliases=None):
+             verbose=True, aliases=None, org_rows=None):
     """Run every Lucy-1 pull for the week; return the flat dicts assemble() wants.
     `page` is a live tableau_session page (shared holder). Returns
     (regular, captain, special)."""
@@ -59,9 +84,12 @@ def pull_all(week_mdy, week_header, period_num, period_year, *, page=None,
     d = Path("output/override_bulletin/run")
     d.mkdir(parents=True, exist_ok=True)
 
-    regular = P.regular_overrides(week_header, d / "org.csv",
-                                  period=f"Period {period_year}-{period_num}",
-                                  page=page, verbose=verbose)
+    if org_rows is None:
+        regular = P.regular_overrides(week_header, d / "org.csv",
+                                      period=f"Period {period_year}-{period_num}",
+                                      page=page, verbose=verbose)
+    else:
+        regular = P.parse_override_summary(org_rows, week_header)
     raf_special = P.raf_special_override(week_header, d / "raf.csv",
                                          period=f"Period {period_num}",
                                          page=page, verbose=verbose)
@@ -82,7 +110,7 @@ def pull_all(week_mdy, week_header, period_num, period_year, *, page=None,
             F.rekey(special, aliases))
 
 
-def run(week_mdy, *, tab=F.SANDBOX_TAB, write=False, verbose=True):
+def run(week_mdy=None, *, tab=F.SANDBOX_TAB, write=False, verbose=True):
     from automations.recruiting_report import fill as _fill
     from automations.shared.tableau_patchright import tableau_session
     wb = _fill._client().open_by_key(F.WORKBOOK_ID)
@@ -93,13 +121,35 @@ def run(week_mdy, *, tab=F.SANDBOX_TAB, write=False, verbose=True):
     active = sum(1 for _, a, _ in roster.values() if a)
     print(f"tab={tab!r}  roster={len(roster)} ({active} active)  captains={len(captains)}")
 
-    m, d, y = week_mdy.split(".")
-    week_header = f"{int(m)}/{int(d)}/20{y[-2:]}"
+    from pathlib import Path
+    dd = Path("output/override_bulletin/run"); dd.mkdir(parents=True, exist_ok=True)
     with tableau_session(headless=True, verbose=verbose) as page:
+        # Phase 1 — the override summary decides which week can be filled.
+        from automations.shared.tableau_patchright import download_crosstab_patchright
+        today = week_mdy or "1.1.26"
+        pm = int((week_mdy or "").split(".")[0] or 0) or None
+        for cand in ([pm] if pm else []) + [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6]:
+            try:
+                url = P._with_filter(P.ORG_SUMMARY_VIEW, "Period", f"Period 2026-{cand}")
+                download_crosstab_patchright(url, P.ORG_SUMMARY_SHEET, dd / "org.csv",
+                                             page=page, verbose=verbose)
+                break
+            except Exception:  # noqa: BLE001
+                continue
+        org_rows = P.read_crosstab(dd / "org.csv")
+        src_weeks = P.summary_weeks(org_rows)
+        if week_mdy is None:
+            week_mdy, why = resolve_target_week(src_weeks, sheet_weeks(ws))
+            print(f"week: {why}")
+            if week_mdy is None:
+                print("HOLDING — nothing written, nothing published.")
+                return None, None, None
+        m, d, y = week_mdy.split(".")
+        week_header = f"{int(m)}/{int(d)}/20{y[-2:]}"
         regular, captain, special = pull_all(week_mdy, week_header,
                                              period_num=int(m), period_year=f"20{y[-2:]}",
                                              page=page, verbose=verbose,
-                                             aliases=aliases)
+                                             aliases=aliases, org_rows=org_rows)
     print(f"pulls: regular={len(regular)}  captain={len(captain)}  special={len(special)}")
 
     section1, section2, unmatched = F.assemble(
@@ -117,7 +167,9 @@ def run(week_mdy, *, tab=F.SANDBOX_TAB, write=False, verbose=True):
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--week", required=True, help="sheet week label, e.g. 7.12.26")
+    ap.add_argument("--week", help="sheet week label e.g. 7.12.26 "
+                                   "(default: auto-detect the newest week the "
+                                   "override summary has)")
     ap.add_argument("--tab", default=F.SANDBOX_TAB)
     ap.add_argument("--write", action="store_true", help="write (sandbox tab only)")
     ap.add_argument("--quiet", action="store_true")

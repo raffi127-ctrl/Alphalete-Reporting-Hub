@@ -351,3 +351,19 @@ def period_for(week_mdy, *, style="num"):
     'Period 7' (style='num') — the month drives the period number."""
     m = int(week_mdy.split(".")[0])
     return f"Period 2026-{m}" if style == "year" else f"Period {m}"
+
+
+def summary_weeks(rows):
+    """Week labels present in an ORG Override Summary crosstab, NEWEST FIRST, as
+    sheet-style 'M.D.YY'. This source lags the others (on Thu 2026-07-23 its
+    newest was 07/12 while DD was already at 7.18), so it decides which week can
+    actually be filled."""
+    out = []
+    for r in rows[:6]:
+        for c in r:
+            m = _WK_HDR.match(str(c).strip())
+            if m:
+                lbl = f"{int(m.group(1))}.{int(m.group(2))}.{m.group(3)[-2:]}"
+                if lbl not in out:
+                    out.append(lbl)
+    return out
