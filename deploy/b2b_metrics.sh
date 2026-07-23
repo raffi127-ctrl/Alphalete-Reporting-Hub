@@ -40,7 +40,7 @@ MODE="--post"
 LOG_FILE="$LOG_DIR/b2b-metrics-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] b2b-metrics starting (mode: ${MODE:-dry-run})" > "$LOG_FILE"
 
-"$VENV_PY" -u -m automations.b2b_metrics.runner --office carlos $MODE \
+"$VENV_PY" -u -m automations.b2b_metrics.runner --all $MODE \
     >> "$LOG_FILE" 2>&1
 ST=$?
 

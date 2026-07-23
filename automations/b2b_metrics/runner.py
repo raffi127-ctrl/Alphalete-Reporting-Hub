@@ -247,6 +247,10 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="b2b_metrics.runner")
     ap.add_argument("--office", default=None)
+    ap.add_argument("--all", dest="all_offices", action="store_true",
+                    help="run EVERY office in the table (the morning batch); one "
+                         "office failing doesn't stop the rest, and a single Hub "
+                         "publish reflects all of them.")
     ap.add_argument("--post", action="store_true",
                     help="capture AND post (default: capture only)")
     ap.add_argument("--dry-run", action="store_true",
@@ -281,7 +285,7 @@ def main(argv=None) -> int:
         return 1 if problems else 0
 
     _off.assert_valid()
-    if not args.office:
+    if not args.office and not args.all_offices:
         print("items (in order):")
         for i in ITEMS:
             print("  {} {}".format(i["emoji"], i["title"]))
@@ -289,25 +293,40 @@ def main(argv=None) -> int:
         return 0
 
     today = dt.date.fromisoformat(args.today) if args.today else dt.date.today()
-    o = _off.get(args.office)
+    office_keys = list(_off.ORDER) if args.all_offices else [args.office]
     # Publish to the Hub only for a REAL post run of the office's own channel —
     # not --dry-run, not a --channel verification post, and not a single-item
-    # --only run (which would flip the whole card green off one item).
+    # --only run (which would flip the whole card green off one item). One publish
+    # for the batch (the ONE 'b2b-metrics' card covers every office).
     publishable = args.post and not args.channel and not args.only
-    try:
-        res = run(o, post=args.post, only=args.only, dm=args.dm,
-                  channel_override=args.channel, today=today, force=args.force)
-    except Exception:
-        if publishable:
-            _publish_hub("failed")
-        raise
-    print("\nresult:", res)
+
+    statuses = []
+    for key in office_keys:
+        o = _off.get(key)
+        try:
+            res = run(o, post=args.post, only=args.only, dm=args.dm,
+                      channel_override=args.channel, today=today, force=args.force)
+            print("\nresult ({}):".format(key), res)
+            missed = res.get("missed") or []
+            present = res.get("present") or []
+            statuses.append("success" if not missed
+                            else ("partial" if present else "failed"))
+        except Exception:
+            statuses.append("failed")
+            if not args.all_offices:      # single-office: fail loud as before
+                if publishable:
+                    _publish_hub("failed")
+                raise
+            traceback.print_exc()         # --all: one office must not kill the rest
+
     if publishable:
-        # Green only if EVERY item made it into the thread; orange (partial) if
-        # some posted and some missed; red (failed) if nothing landed at all.
-        missed = res.get("missed") or []
-        present = res.get("present") or []
-        status = "success" if not missed else ("partial" if present else "failed")
+        # Green only if EVERY office fully posted; orange if some did; red if none.
+        if all(s == "success" for s in statuses):
+            status = "success"
+        elif any(s in ("success", "partial") for s in statuses):
+            status = "partial"
+        else:
+            status = "failed"
         _publish_hub(status)
     return 0
 
