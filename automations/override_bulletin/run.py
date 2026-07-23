@@ -49,7 +49,8 @@ def _dd_week_for(dd_weeks, sheet_week):
     return dd_weeks.get(f"{prev.month}.{prev.day}.{prev.year % 100}")
 
 
-def pull_all(week_mdy, week_header, period_num, period_year, *, page=None, verbose=True):
+def pull_all(week_mdy, week_header, period_num, period_year, *, page=None,
+             verbose=True, aliases=None):
     """Run every Lucy-1 pull for the week; return the flat dicts assemble() wants.
     `page` is a live tableau_session page (shared holder). Returns
     (regular, captain, special)."""
@@ -72,10 +73,13 @@ def pull_all(week_mdy, week_header, period_num, period_year, *, page=None, verbo
     special_led = P.ledger_amounts(f"P{period_num}-{period_year} {LEDGER_SPECIAL}",
                                    d / "led_special.csv", page=page, verbose=verbose)
     special = dict(special_led)
-    special[_norm_name("Rafael Hidalgo")] = raf_special or special.get(
-        _norm_name("Rafael Hidalgo"))
+    raf_key = _norm_name("Rafael Hidalgo")
+    special[raf_key] = raf_special or special.get(raf_key)
     # credico folds into the regular component (per FILL_SOURCES)
-    return regular, captain, special
+    # Rekey every source onto canonical names so a Tableau spelling matches the
+    # sheet roster (e.g. 'HAMMAD HAQUE' -> 'Hammad Haque').
+    return (F.rekey(regular, aliases), F.rekey(captain, aliases),
+            F.rekey(special, aliases))
 
 
 def run(week_mdy, *, tab=F.SANDBOX_TAB, write=False, verbose=True):
@@ -83,8 +87,9 @@ def run(week_mdy, *, tab=F.SANDBOX_TAB, write=False, verbose=True):
     from automations.shared.tableau_patchright import tableau_session
     wb = _fill._client().open_by_key(F.WORKBOOK_ID)
     ws = wb.worksheet(tab)
-    roster = F.read_roster(ws)
-    captains = F.read_captains(ws)
+    aliases = F.load_alias_map()
+    roster = F.read_roster(ws, aliases)
+    captains = F.read_captains(ws, aliases)
     active = sum(1 for _, a, _ in roster.values() if a)
     print(f"tab={tab!r}  roster={len(roster)} ({active} active)  captains={len(captains)}")
 
@@ -93,12 +98,14 @@ def run(week_mdy, *, tab=F.SANDBOX_TAB, write=False, verbose=True):
     with tableau_session(headless=True, verbose=verbose) as page:
         regular, captain, special = pull_all(week_mdy, week_header,
                                              period_num=int(m), period_year=f"20{y[-2:]}",
-                                             page=page, verbose=verbose)
+                                             page=page, verbose=verbose,
+                                             aliases=aliases)
     print(f"pulls: regular={len(regular)}  captain={len(captain)}  special={len(special)}")
 
     section1, section2, unmatched = F.assemble(
         week_mdy, roster, captains,
-        regular=regular, captain=captain, special=special, ws=ws)
+        regular=regular, captain=captain, special=special, ws=ws,
+        aliases=aliases)
     col = F.write_week(ws, section1, section2, dry_run=not write)
     print(f"\nwrote {len(section1)} ALL-ORG + {len(section2)} CAPTAIN cells to col {col}")
     if unmatched:

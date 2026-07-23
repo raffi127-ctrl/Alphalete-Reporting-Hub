@@ -70,6 +70,22 @@ Note the two views take **different Period formats** — don't unify them.
 4. **Sheet Sunday ↔ DD day-behind**: sheet `7.19` ↔ DD `7.18` (real date math, so
    month edges work).
 
+### Name matching goes through the ICD Aliases sheet
+
+The sheet roster and Tableau spell people differently. BOTH sides resolve through
+the shared 'ICD Aliases' tab (`fill.canon` / `fill.rekey`) and match on the
+canonical — never patch a name in this report. Confirmed 2026-07-23:
+`Muhammad Hammad Ul Haque` (roster) and `HAMMAD HAQUE` (Tableau) both resolve to
+`Hammad Haque`; before wiring this he was silently blank on the bulletin.
+Two roster spellings were missing and were ADDED to the alias tab:
+`Boaktear Chowhury`→`Boaktear Chowdhury` (roster drops the 'd') and
+`Muhammad Salik Waqar`→`Salik Mallick`.
+
+Result for week 7/12: **16 of 21 actives matched**. The other 5 (Abel Draper,
+Cinthya Reyes, Jacob Dover, Roshan Ahmad, Valeria Tristan) are genuinely absent
+from the regular-override source that week → they go on the email summary as
+unfilled, never $0.
+
 ## Discovered crosstab sheets + columns (Lucy 1 discovery, 2026-07-23)
 
 Confirmed via `discover.py` → `_discover_out` tab. Parsers match columns BY NAME.

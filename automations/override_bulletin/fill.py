@@ -26,6 +26,41 @@ WORKBOOK_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
 _SUB_LABELS = ("captain override", "special override", "special overrides")
 
 
+def load_alias_map():
+    """Load the shared 'ICD Aliases' table once. Name-spelling mismatches belong
+    there, never in a per-report patch (CLAUDE.md). Returns {} on failure — the
+    report still runs, it just matches on raw names."""
+    try:
+        from automations.focus_office_att.aliases import load_aliases
+        return load_aliases()
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠ couldn't load 'ICD Aliases' ({e}) — matching on raw names")
+        return {}
+
+
+def canon(name, aliases):
+    """Normalized CANONICAL key for a person.
+
+    Both sides of every match go through this — the sheet roster AND the Tableau
+    sources — so one person's two spellings collapse to one key. E.g. the roster's
+    'Muhammad Hammad Ul Haque' and the source's 'HAMMAD HAQUE' both resolve to
+    'Hammad Haque'; without this the report silently left him blank."""
+    if not aliases:
+        return _norm_name(name)
+    from automations.focus_office_att.aliases import alias_to_canonical
+    return _norm_name(alias_to_canonical(name, aliases))
+
+
+def rekey(d, aliases):
+    """Rekey a {source_name: amount} dict onto canonical keys (summing if two
+    spellings of the same person both appear in the source)."""
+    out = {}
+    for k, v in (d or {}).items():
+        ck = canon(k, aliases)
+        out[ck] = round(out.get(ck, 0) + v, 2) if isinstance(v, (int, float)) else v
+    return out
+
+
 def _newest_week_col(header):
     """0-based index of the newest (leftmost) dated week column."""
     for i, h in enumerate(header):
@@ -34,7 +69,7 @@ def _newest_week_col(header):
     return None
 
 
-def read_roster(ws):
+def read_roster(ws, aliases=None):
     """{normalized_name: (row_1based, active_bool, display_name)} for the ALL ORG
     section. active = Active-ICD (col B) == YES. Stops at the CAPTAIN/SPECIAL
     header. The YES names are the who-list to fill."""
@@ -48,11 +83,11 @@ def read_roster(ws):
         if not name or low == "total" or "credico" in low:
             continue
         active = (row[1].strip().upper() == "YES") if len(row) > 1 else False
-        out[_norm_name(name)] = (r, active, name)
+        out[canon(name, aliases)] = (r, active, name)
     return out
 
 
-def read_captains(ws):
+def read_captains(ws, aliases=None):
     """{normalized_name: {'total': row, 'captain': row, 'special': row|None}} for
     the CAPTAIN/SPECIAL section — derived live from the =SUM leader rows and the
     labelled sub-rows below each."""
@@ -74,12 +109,13 @@ def read_captains(ws):
             key = "captain" if "captain" in low else "special"
             out[cur][key] = r + 1
         else:                                   # a leader name row
-            cur = _norm_name(name)
+            cur = canon(name, aliases)
             out[cur] = {"total": r + 1, "captain": None, "special": None}
     return out
 
 
-def assemble(week_mdy, roster, captains, *, regular, captain, special, ws=None):
+def assemble(week_mdy, roster, captains, *, regular, captain, special, ws=None,
+             aliases=None):
     """Build the per-person write plan for the target week.
 
     regular/captain/special are {normalized_name: amount} from the pulls.
@@ -96,7 +132,7 @@ def assemble(week_mdy, roster, captains, *, regular, captain, special, ws=None):
     for key, rows in captains.items():
         cap = captain.get(key)
         # Raf's captain override comes from the Raf PNL, not the DD pull.
-        if key == _norm_name("Rafael Hidalgo"):
+        if key == canon("Rafael Hidalgo", aliases):
             cap = raf_captain_override(week_mdy, ws=None)
         spc = special.get(key)
         if rows.get("captain") and cap is not None:
