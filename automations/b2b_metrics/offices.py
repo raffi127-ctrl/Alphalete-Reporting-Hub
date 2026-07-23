@@ -167,6 +167,14 @@ OFFICES: dict = {
         channel_id="C07J46MQNUX",
         channel_name="#alphalete-gp-sales",
         sheet_id="1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY",
+        # ACTIVATIONRATES exposes "Owner & Office" as a URL filter; slicing it to
+        # the plain owner ("Carlos Hidalgo") matches no compound value -> the
+        # filter empties the rep table (National Average only). CarlosTeamView-
+        # Expanded is already scoped to Carlos's Team (baked filter), so capture
+        # it AS-IS — same pattern as Atef's AtefEXP override. (The churn CarlosTEAM*
+        # views don't expose Owner & Office to URL, so their slice is silently
+        # ignored and they render Carlos's team fine — leave those sliced.)
+        view_overrides={"activation_rate": TEAM["activation_rate"]},
     ),
     "atef": B2BOffice(
         key="atef",
