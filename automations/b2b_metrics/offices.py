@@ -197,11 +197,13 @@ OFFICES: dict = {
                           "7419b960-0fb1-41d5-a11e-76f0e81c0547/"
                           "CarlosLocalOfficeEXPANDEDCHURN"
                           "?Product%20Type%20(Broken%20Out)=AIR/AWB"),
+            # Activation = the SAME view b2b_quality posts correctly. Captured
+            # as-is (owner filter baked); VIEW_META's sort_header clicks "0-7
+            # Days" high->low, exactly as b2b_quality does.
+            "activation_rate": (_T + "ATTTRACKER-B2B/ACTIVATIONRATES/"
+                                "4c53fb7e-5a1b-4e8f-990e-0b2c8cf42309/"
+                                "CarlosLocalOfficeEXPANDED"),
         },
-        # activation_rate still skipped: CarlosLocalOfficeEXPANDED needs a per-
-        # office SORT click (its 0-7 sort is not baked, unlike churn/Atef); wired
-        # next once the deterministic-sort fix lands.
-        skip_views=frozenset({"activation_rate"}),
     ),
     "atef": B2BOffice(
         key="atef",
