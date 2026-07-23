@@ -47,7 +47,8 @@ def _dump_csv(path: Path, n: int = 18) -> None:
 
 def main(argv=None) -> int:
     from automations.shared.tableau_patchright import (
-        tableau_session, list_crosstab_sheets, download_crosstab_patchright)
+        tableau_session, download_crosstab_patchright)
+    from automations.recruiting_report.opt_phase import list_crosstab_sheets
     only = set(argv or [])
     OUT.mkdir(parents=True, exist_ok=True)
     with tableau_session(headless=True, verbose=True) as page:
