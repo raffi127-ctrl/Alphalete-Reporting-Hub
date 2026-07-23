@@ -39,7 +39,7 @@ import datetime as dt
 
 from automations.captainship_drafts.sales_board import (
     PS_END_COL, SALES_BOARD_ID, _open_ws, _values,
-    discover_blocks, prior_day_columns, ps_groups_expanded,
+    discover_blocks, prior_day_columns, ps_shot_view,
 )
 
 SHEETS_PROFILE_DIR = (
@@ -50,7 +50,12 @@ _SHEET_EDIT_URL = f"https://docs.google.com/spreadsheets/d/{SALES_BOARD_ID}/edit
 
 _HIDE_OVERLAYS_CSS = (
     ".selection, .range-border, .autofill-cover, .autofill-handle,"
-    " .touch-selection-handle { visibility: hidden !important; }")
+    " .touch-selection-handle { visibility: hidden !important; }"
+    # The sheet-tab bar (#grid-bottom-bar — tabs, the all-sheets menu, scroll
+    # arrows) is pinned to the viewport bottom and floats OVER the grid; on a
+    # tall range (e.g. Product Summary) it occludes the last rows. The grid
+    # paints behind it, so hiding the whole bar reveals them.
+    " #grid-bottom-bar { visibility: hidden !important; }")
 
 _DEFAULT_VIEWPORT = {"width": 1600, "height": 1100}
 _VIEWPORT_PAD = 80               # room for scrollbars beyond the range
@@ -229,20 +234,26 @@ def _capture_on_page(page, rng: str, out_path: Path, *,
     png = None
     for attempt in (1, 2):
         rect = _goto_range(page, rng, timeout_s, edit_url, gid)
-        # Grow the viewport so the WHOLE range is on screen (rect.x/y is
-        # the grid origin below the toolbar + headers), then re-navigate
-        # so the editor re-anchors the range and repaints at full size.
-        need_w = math.ceil(rect["x"] + rect["width"]) + _VIEWPORT_PAD
-        need_h = math.ceil(rect["y"] + rect["height"]) + _VIEWPORT_PAD
-        if need_w > _MAX_VIEWPORT[0] or need_h > _MAX_VIEWPORT[1]:
-            raise RuntimeError(
-                f"range {rng} needs a {need_w}x{need_h} viewport, over the "
-                f"{_MAX_VIEWPORT} cap — split the range or raise the cap.")
-        vp = page.viewport_size or _DEFAULT_VIEWPORT
-        if need_w > vp["width"] or need_h > vp["height"]:
+        # Grow the viewport so the WHOLE range is on screen (rect.x/y is the
+        # grid origin below the toolbar + headers), re-navigating so the editor
+        # re-anchors and repaints at full size. The selection overlay is CLIPPED
+        # to the current viewport, so growing once off a clipped first measure
+        # can still fall short on a tall range (the rect reads taller only after
+        # the viewport can show more). Re-measure and re-grow until the whole
+        # rect fits — else the bottom rows (e.g. PS last weeks) get cut off.
+        for _ in range(6):
+            need_w = math.ceil(rect["x"] + rect["width"]) + _VIEWPORT_PAD
+            need_h = math.ceil(rect["y"] + rect["height"]) + _VIEWPORT_PAD
+            if need_w > _MAX_VIEWPORT[0] or need_h > _MAX_VIEWPORT[1]:
+                raise RuntimeError(
+                    f"range {rng} needs a {need_w}x{need_h} viewport, over the "
+                    f"{_MAX_VIEWPORT} cap — split the range or raise the cap.")
+            vp = page.viewport_size or _DEFAULT_VIEWPORT
+            if need_w <= vp["width"] and need_h <= vp["height"]:
+                break              # entire range already on screen
             page.set_viewport_size({"width": max(vp["width"], need_w),
                                     "height": max(vp["height"], need_h)})
-            _goto_range(page, rng, timeout_s, edit_url, gid)
+            rect = _goto_range(page, rng, timeout_s, edit_url, gid)
         page.add_style_tag(content=_HIDE_OVERLAYS_CSS)
         png = _shoot_when_painted(page, rng, settle_ms=settle_ms,
                                   timeout_s=timeout_s)
@@ -339,11 +350,12 @@ def captain_shots(captain_key: str, flavor: str, out_dir: Path, *,
     out_dir = Path(out_dir)
     ps_path = out_dir / f"captainship_{captain_key}_product_summary.png"
 
-    # PS alone inside the expanded window, so the shared sheet spends the
-    # least possible time with the groups open.
-    with ps_groups_expanded(blocks.ps_start, blocks.ps_end):
+    # PS alone inside the shot-view window (groups expanded + old weeks hidden),
+    # so the shared sheet spends the least possible time in that state. The CM
+    # yields the row to end the capture on (last kept week of the last block).
+    with ps_shot_view(blocks.ps_start, blocks.ps_end, keep_weeks=4) as ps_end_row:
         capture_ranges(
-            [(f"A{blocks.ps_start}:{PS_END_COL}{blocks.ps_end}", ps_path)],
+            [(f"A{blocks.ps_start}:{PS_END_COL}{ps_end_row}", ps_path)],
             scale=scale)
 
     units_out: list = []

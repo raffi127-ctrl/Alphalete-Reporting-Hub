@@ -226,6 +226,104 @@ def prior_day_columns(block: UnitsBlock, today: dt.date,
     return (target, rowcol_to_a1(1, col)[:-1], rowcol_to_a1(1, col + 2)[:-1])
 
 
+# A vertical weekly-history row: col A reads "WE <date>" (e.g. "WE 7.19"). These
+# runs sit at the bottom of each PS sub-block (fiber/Rafael have two: New
+# Internet + All Units) and can stretch a full year back — we keep only the
+# newest few for the screenshot.
+_WE_HISTORY_RE = re.compile(r"(?i)^\s*WE\s")
+
+
+def week_history_runs(ps_start: int, ps_end: int,
+                      vals: Optional[List[List[str]]] = None) -> List[List[int]]:
+    """Contiguous runs of 'WE <date>' history rows (col A) inside the PS span,
+    in sheet order (newest week first within each run). One run per sub-block."""
+    vals = vals or _values()
+
+    def a(r: int) -> str:
+        row = vals[r - 1] if 0 < r <= len(vals) else []
+        return _norm(row[0]) if row else ""
+
+    runs: List[List[int]] = []
+    r = ps_start
+    while r <= ps_end:
+        if _WE_HISTORY_RE.match(a(r)):
+            run: List[int] = []
+            while r <= ps_end and _WE_HISTORY_RE.match(a(r)):
+                run.append(r)
+                r += 1
+            runs.append(run)
+        else:
+            r += 1
+    return runs
+
+
+def ps_shot_plan(ps_start: int, ps_end: int, keep: int = 4,
+                 vals=None) -> Tuple[List[Tuple[int, int]], int]:
+    """Plan a last-`keep`-weeks Product Summary screenshot. Returns
+    (hide_ranges, end_row):
+      • hide_ranges — 0-based half-open ROW ranges to hide: the weeks past the
+        newest `keep` in every sub-block EXCEPT the last one (those tails sit
+        mid-block, between two sub-blocks, so they must be collapsed out).
+      • end_row — 1-based last row to capture: the last sub-block's `keep`-th
+        newest week. Its older weeks sit BELOW this, so the shot range simply
+        stops here instead of hiding them — which also drops the trailing blanks
+        and the next captain's header that would otherwise butt up against it."""
+    runs = week_history_runs(ps_start, ps_end, vals)
+    if not runs:
+        return [], ps_end
+    rows: List[int] = []
+    for run in runs[:-1]:
+        if len(run) > keep:
+            rows.extend(run[keep:])
+    last = runs[-1]
+    end_row = last[keep - 1] if len(last) >= keep else ps_end
+    merged: List[Tuple[int, int]] = []
+    for r in sorted(set(rows)):
+        if merged and r - 1 == merged[-1][1]:      # contiguous (0-based)
+            merged[-1] = (merged[-1][0], r)
+        else:
+            merged.append((r - 1, r))
+    return merged, end_row
+
+
+@contextlib.contextmanager
+def _rows_hidden(ranges: List[Tuple[int, int]]):
+    """Temporarily set hiddenByUser on `ranges` (0-based half-open), clearing it
+    on exit. No-op for an empty list."""
+    if not ranges:
+        yield 0
+        return
+    ws = _open_ws()
+
+    def _set(hidden: bool):
+        reqs = [{"updateDimensionProperties": {
+            "range": {"sheetId": ws.id, "dimension": "ROWS",
+                      "startIndex": s, "endIndex": e},
+            "properties": {"hiddenByUser": hidden},
+            "fields": "hiddenByUser"}} for (s, e) in ranges]
+        ws.spreadsheet.batch_update({"requests": reqs})
+
+    _set(True)
+    try:
+        yield sum(e - s for s, e in ranges)
+    finally:
+        _set(False)
+
+
+@contextlib.contextmanager
+def ps_shot_view(ps_start: int, ps_end: int, keep_weeks: int = 4):
+    """Sheet view state for a Product Summary screenshot: EXPAND the collapsed
+    weekly-history groups (so weeks 2..keep_weeks are visible) AND HIDE the
+    mid-block older weeks. Yields the 1-based `end_row` the caller should use as
+    the capture range end (trims the last sub-block's older weeks + trailing
+    chrome). Both edits are restored on exit — same accepted shared-view model
+    as ps_groups_expanded."""
+    ranges, end_row = ps_shot_plan(ps_start, ps_end, keep_weeks)
+    with ps_groups_expanded(ps_start, ps_end):
+        with _rows_hidden(ranges):
+            yield end_row
+
+
 @contextlib.contextmanager
 def ps_groups_expanded(ps_start: int, ps_end: int):
     """Temporarily EXPAND every collapsed row group overlapping the Product

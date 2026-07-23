@@ -127,6 +127,9 @@ def _spec_for(captain_key: str, flavor: str) -> Optional[dict]:
 # The cancel board renders ~18 day columns; the daily email shows only the last
 # 7 days (Eve 2026-07-22). Newest day is the LEFTMOST date column.
 _CANCEL_DAYS = 7
+# Padding above the date-header row kept when cropping off the Tableau title/
+# filter chrome — enough to keep the header cell's top border, not the subtitle.
+_TOP_PAD = 8
 
 
 def _crop_cancel_last_n_days(path: Path, n_days: int = _CANCEL_DAYS,
@@ -166,61 +169,71 @@ def _crop_cancel_last_n_days(path: Path, n_days: int = _CANCEL_DAYS,
                  if rowsat[y] < 15 and 150 < darkrow[y] < w * 0.6]
         if not hrows:
             return
-        band = gray[min(hrows):max(hrows) + 1]
-        # A column is "inked" only if a MAJORITY of the header rows are dark
-        # there. The old per-row union ((band<110).any over rows) over-counts on
-        # a dense board: at ~60px column pitch the date labels nearly touch, and
-        # anti-aliasing fills the union to ~60% coverage, so gap-bridging fuses
-        # all ~25 dates into ONE block (center ~mid-image) and detection bails.
-        # The majority rule keeps only the solid digit strokes, so the thin
-        # inter-date whitespace survives and each date stays its own block —
-        # works on both the dense 25-day boards and the wide-pitch ones.
-        ink = (band < 120).mean(axis=0) >= 0.45
-        # Merge ink into blocks, bridging char gaps < 6px (keeps inter-date gaps).
-        blocks, x = [], 0
-        while x < w:
-            if ink[x]:
-                s, gap = x, 0
-                while x < w and gap < 6:
-                    gap = 0 if ink[x] else gap + 1
+        # --- TOP crop: drop the Tableau title bar + filter row (+ any centred
+        #     subtitle) above the date-header row, leaving just the data table
+        #     (Owner column + date headers + percentages). min(hrows) is the
+        #     date-header text; back off a few px to keep its cell's top border.
+        top = max(0, min(hrows) - _TOP_PAD)
+
+        # --- WIDTH crop: Owner column + the newest n_days date columns. Returns
+        #     the cut x, or None if the board already shows <= n_days columns
+        #     (or detection fails) → keep full width. ---
+        def _width_cut():
+            # A column is "inked" only if a MAJORITY of the header rows are dark
+            # there. A per-row union over-counts on a dense board: at ~60px pitch
+            # the date labels nearly touch and anti-aliasing fills the union to
+            # ~60% coverage, so gap-bridging fuses all ~25 dates into ONE block
+            # and detection bails. The majority rule keeps only the solid digit
+            # strokes, so inter-date whitespace survives and each date stays its
+            # own block — works on both the dense and the wide-pitch boards.
+            band = gray[min(hrows):max(hrows) + 1]
+            ink = (band < 120).mean(axis=0) >= 0.45
+            # Merge ink into blocks, bridging char gaps < 6px (keeps date gaps).
+            blocks, x = [], 0
+            while x < w:
+                if ink[x]:
+                    s, gap = x, 0
+                    while x < w and gap < 6:
+                        gap = 0 if ink[x] else gap + 1
+                        x += 1
+                    blocks.append((s, x - gap))
+                else:
                     x += 1
-                blocks.append((s, x - gap))
-            else:
-                x += 1
-        centers = [(s + e) / 2 for s, e in blocks if e - s >= 20]
-        if len(centers) < n_days + 2:      # owner label + > n_days date columns
-            return
-        diffs = [centers[i + 1] - centers[i] for i in range(len(centers) - 1)]
-        pit = [d for d in diffs if 45 < d < 130]
-        if not pit:
-            return
-        pitch = statistics.median(pit)
-        # start = left edge of the coloured data grid. Data rows are coloured
-        # cells; the Owner column is text-on-white (colfrac≈0), so the first
-        # sustained coloured run marks the newest date cell's left edge.
-        coloredrow = (sat > 30).sum(axis=1)
-        drows = [y for y in range(firstcolor, h) if coloredrow[y] > w * 0.4]
-        if len(drows) < 3:
-            return
-        colfrac = (sat[min(drows):max(drows) + 1] > 30).mean(axis=0)
-        start, run = None, 0
-        for xx in range(w):
-            if colfrac[xx] > 0.5:
-                run += 1
-                if run >= 8:
-                    start = xx - run + 1
-                    break
-            else:
-                run = 0
-        if start is None:
-            return
-        cut = round(start + n_days * pitch)
-        if cut >= w - 2:
-            return
-        im.crop((0, 0, cut, h)).save(path)
+            centers = [(s + e) / 2 for s, e in blocks if e - s >= 20]
+            if len(centers) < n_days + 2:   # owner label + > n_days date columns
+                return None
+            diffs = [centers[i + 1] - centers[i] for i in range(len(centers) - 1)]
+            pit = [d for d in diffs if 45 < d < 130]
+            if not pit:
+                return None
+            pitch = statistics.median(pit)
+            # start = left edge of the coloured data grid. Data rows are coloured
+            # cells; the Owner column is text-on-white (colfrac≈0), so the first
+            # sustained coloured run marks the newest date cell's left edge.
+            coloredrow = (sat > 30).sum(axis=1)
+            drows = [y for y in range(firstcolor, h) if coloredrow[y] > w * 0.4]
+            if len(drows) < 3:
+                return None
+            colfrac = (sat[min(drows):max(drows) + 1] > 30).mean(axis=0)
+            start, run = None, 0
+            for xx in range(w):
+                if colfrac[xx] > 0.5:
+                    run += 1
+                    if run >= 8:
+                        start = xx - run + 1
+                        break
+                else:
+                    run = 0
+            if start is None:
+                return None
+            c = round(start + n_days * pitch)
+            return c if c < w - 2 else None
+
+        cut = _width_cut() or w
+        im.crop((0, top, cut, h)).save(path)
         if verbose:
-            print(f"   cancel: cropped to last {n_days} days (w {w}->{cut})",
-                  flush=True)
+            print(f"   cancel: cropped Tableau chrome (top {top}) + last "
+                  f"{n_days} days (w {w}->{cut})", flush=True)
     except Exception as e:  # noqa: BLE001 — a crop failure must not lose the shot
         if verbose:
             print(f"   cancel crop skipped ({type(e).__name__}: {str(e)[:80]})",

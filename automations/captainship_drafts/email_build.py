@@ -59,8 +59,11 @@ class _Images:
         self.pairs.append((cid, Path(path)))
         cap = (f'<div style="font-size:13px;font-weight:bold;margin:12px 0 4px">'
                f'{caption}</div>' if caption else "")
+        # display:block so consecutive images STACK vertically (one per row).
+        # Without it the inline <img> boxes flow side-by-side into a grid when
+        # they're narrow enough — churn buckets must read top-to-bottom.
         return (cap + f'<img src="cid:{cid[1:-1]}" '
-                f'style="max-width:100%;border:1px solid #ddd"/>')
+                f'style="display:block;max-width:100%;border:1px solid #ddd"/>')
 
 
 def _section_html(captain: Captain, heading: str, kind: str, n: int,
