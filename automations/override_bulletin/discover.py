@@ -58,33 +58,35 @@ def main(argv=None) -> int:
                 continue
             print(f"\n===== {name} =====", flush=True)
             dump.append(_pad([f"===== {name} ====="]))
-            try:
-                sheets = list_crosstab_sheets(url, page=page, verbose=True)
-            except Exception as e:  # noqa: BLE001
-                sheets = []
-                print(f"  list_crosstab_sheets FAILED: {type(e).__name__}: "
-                      f"{str(e).splitlines()[0][:120]}", flush=True)
+            sheets = []
+            for attempt in (1, 2):                 # 2nd attempt: longer settle
+                try:
+                    sheets = list_crosstab_sheets(
+                        url, page=page, verbose=True,
+                        settle_s=8 * attempt, max_s=60 * attempt)
+                except Exception as e:  # noqa: BLE001
+                    print(f"  list_crosstab_sheets FAILED (try {attempt}): "
+                          f"{type(e).__name__}: {str(e).splitlines()[0][:120]}", flush=True)
+                if sheets:
+                    break
             print(f"  crosstab sheets ({len(sheets)}): {sheets}", flush=True)
-            dump.append(_pad(["SHEETS", str(sheets)[:200]]))
-            # Try each listed sheet; if none listed, still try a default download.
-            candidates = sheets or [""]
-            for sheet in candidates[:3]:
-                out = OUT / f"{name}_{sheet or 'default'}.csv".replace("/", "-")
+            dump.append(["SHEETS", str(sheets)] + [""] * (DUMP_W - 2))   # FULL, untruncated
+            # Dump the first few rows of EVERY sheet so we can see which holds the
+            # data (default-first grabbed a title/summary sheet last time).
+            for sheet in (sheets or [""])[:6]:
+                out = OUT / f"{name}_{(sheet or 'default')}.csv".replace("/", "-")
                 try:
                     download_crosstab_patchright(url, sheet, out, page=page, verbose=True)
                     rows = read_crosstab(out)
-                    print(f"  downloaded {sheet!r}: {len(rows)} rows x "
+                    print(f"  {sheet!r}: {len(rows)} rows x "
                           f"{max((len(r) for r in rows), default=0)} cols", flush=True)
                     dump.append(_pad([f"SHEET={sheet!r}", f"{len(rows)}rows"]))
-                    for i, r in enumerate(rows[:DUMP_ROWS]):
-                        print(f"    row{i}: {r[:9]}", flush=True)
+                    for i, r in enumerate(rows[:5]):        # 5 rows per sheet
                         dump.append(_pad([f"r{i}"] + list(r), DUMP_W))
-                    break
                 except Exception as e:  # noqa: BLE001
-                    print(f"  download {sheet!r} FAILED: {type(e).__name__}: "
+                    print(f"  {sheet!r} FAILED: {type(e).__name__}: "
                           f"{str(e).splitlines()[0][:120]}", flush=True)
-                    dump.append(_pad([f"SHEET={sheet!r} FAILED",
-                                      f"{type(e).__name__}"]))
+                    dump.append(_pad([f"SHEET={sheet!r} FAILED", f"{type(e).__name__}"]))
             dump.append(_pad([""]))
 
     # write the dump to the throwaway tab
