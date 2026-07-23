@@ -388,8 +388,9 @@ LEAD_DESCS = ("Lead Disposition Bonus",)
 # summary blocks above. Backfilled by hand for 6/21-7/12; the weekly run
 # writes it for each new week. Anchored at fixed rows per Carlos's spec.
 REV_TITLE_ROW = 215
-REV_CAMPAIGNS = (("B2B", 217), ("BOX", 223), ("Base", 229),
-                 ("Lead Disposition", 235))
+# 2026-07-23 v2 (Carlos): Lead Disposition revenue belongs under BOX (still
+# never paid — BOX's Paid Out mask excludes it). No separate section.
+REV_CAMPAIGNS = (("B2B", 217), ("BOX", 223), ("Base", 229))
 REV_METRICS = ("Revenue Brought In", "Paid Out", "Payroll Tax", "Profit")
 
 # House style (read off the hand-built summary blocks 2026-07-19): dark
@@ -491,7 +492,7 @@ def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
         f"{blk['profit']}{blk['b2b_total']}":
             f"=SUMPRODUCT({non_b2b}*{H})-SUMPRODUCT({non_b2b}*{I})*1.12",
         f"{blk['profit']}{blk['box_total']}":
-            f"=SUMPRODUCT(({box})*{H})-SUMPRODUCT(({box})*{I})*1.12",
+            f"=SUMPRODUCT(({box}+{lead})*{H})-SUMPRODUCT(({box})*{I})*1.12",
         f"{blk['profit']}{blk['third_total']}":
             f"=SUMPRODUCT(({base})*{H})-SUMPRODUCT(({base})*{I})*1.12",
         f"{blk['profit']}{blk['dd_b2b']}":
@@ -502,23 +503,29 @@ def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
     # Revenue-by-Campaign block (rows 215-233): labels in the paid column,
     # revenue / paid-out / tax / profit values in the profit column.
     labels = {f"{blk['paid']}{REV_TITLE_ROW}": "Revenue by Campaign"}
-    camp_mask = {"B2B": non_b2b, "BOX": f"({box})", "Base": f"({base})",
-                 "Lead Disposition": f"({lead})"}
+    # (revenue mask, paid mask): BOX revenue includes never-paid Lead Dispo
+    camp_mask = {"B2B": (non_b2b, non_b2b),
+                 "BOX": (f"({box}+{lead})", f"({box})"),
+                 "Base": (f"({base})", f"({base})")}
     for name, hdr_row in REV_CAMPAIGNS:
         labels[f"{blk['paid']}{hdr_row}"] = name
         for i, metric in enumerate(REV_METRICS, start=1):
             labels[f"{blk['paid']}{hdr_row + i}"] = metric
         P, r0 = blk["profit"], hdr_row + 1
-        formulas[f"{P}{r0}"] = f"=SUMPRODUCT({camp_mask[name]}*{H})"
-        if name == "Lead Disposition":
-            # never paid out (Carlos, 2026-07-23) — revenue is pure profit
-            formulas[f"{P}{r0+1}"] = "=0"
-            formulas[f"{P}{r0+2}"] = "=0"
-            formulas[f"{P}{r0+3}"] = f"={P}{r0}"
-        else:
-            formulas[f"{P}{r0+1}"] = f"=SUMPRODUCT({camp_mask[name]}*{I})"
-            formulas[f"{P}{r0+2}"] = f"={P}{r0+1}*0.12"
-            formulas[f"{P}{r0+3}"] = f"={P}{r0}-{P}{r0+1}-{P}{r0+2}"
+        rev_m, paid_m = camp_mask[name]
+        formulas[f"{P}{r0}"] = f"=SUMPRODUCT({rev_m}*{H})"
+        formulas[f"{P}{r0+1}"] = f"=SUMPRODUCT({paid_m}*{I})"
+        formulas[f"{P}{r0+2}"] = f"={P}{r0+1}*0.12"
+        formulas[f"{P}{r0+3}"] = f"={P}{r0}-{P}{r0+1}-{P}{r0+2}"
+
+    # Captainship revenue (Carlos 2026-07-23): label-driven 'Captain' slot
+    # (row shifts with the ledger — locate by label, currently CM206/CN206).
+    cap_scan = pnl.get(f"{blk['paid']}190:{blk['paid']}214")
+    for off, rowv in enumerate(cap_scan or []):
+        if rowv and str(rowv[0]).strip().lower() == "captain":
+            formulas[f"{blk['profit']}{190 + off}"] = (
+                f'=SUMPRODUCT(ISNUMBER(SEARCH("Captain",{E}))*{H})')
+            break
 
     for cell, f in formulas.items():
         log(f"P&L {cell} <- {f[:110]}…")
