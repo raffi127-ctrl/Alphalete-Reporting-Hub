@@ -34,8 +34,9 @@ VIEWS = [
 
 
 def _dump_csv(path: Path, n: int = 18) -> None:
+    from automations.override_bulletin.pulls import read_crosstab
     try:
-        rows = list(csv.reader(open(path, encoding="utf-8-sig")))
+        rows = read_crosstab(path)
     except Exception as e:  # noqa: BLE001
         print(f"    (couldn't read csv: {e})", flush=True)
         return

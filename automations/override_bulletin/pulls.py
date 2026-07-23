@@ -147,6 +147,27 @@ def parse_override_summary(rows, week_header, *, name_col=0):
 # Shared crosstab helpers + the other-source parsers (column names set once
 # discovery confirms the real headers; the parse LOGIC below is unit-tested).
 # --------------------------------------------------------------------------
+def read_crosstab(path):
+    """Read a Tableau crosstab file to a list of row-lists. Tableau exports
+    UTF-16 tab-separated; some are UTF-8/comma. Tries encodings in order and
+    auto-detects the delimiter (mirrors int_wow_penetration.pull)."""
+    import csv
+    import io
+    raw = open(path, "rb").read()
+    txt = None
+    for enc in ("utf-16", "utf-8-sig", "utf-8", "latin-1"):
+        try:
+            txt = raw.decode(enc)
+            break
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+    if txt is None:
+        txt = raw.decode("latin-1", "replace")
+    first = txt.splitlines()[0] if txt else ""
+    delim = "\t" if first.count("\t") >= first.count(",") else ","
+    return list(csv.reader(io.StringIO(txt), delimiter=delim))
+
+
 def _hdr_col(header, name):
     """Index of the header cell matching `name` (case/space-insensitive), or None."""
     want = " ".join(str(name).lower().split())
