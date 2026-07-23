@@ -147,6 +147,13 @@ class B2BOffice:
     # until fixed + validated. b2b_quality keeps posting his activation + churn.
     skip_views: frozenset = field(default_factory=frozenset)
 
+    # view_keys whose saved view is ALREADY sorted (sort baked in) — the capture
+    # must NOT click the sort glyph on these, because a click TOGGLES the baked
+    # sort back off. VIEW_META.sort_header sets which offices click by DEFAULT;
+    # this opts an office out per view. (Atef's AtefEXP activation is baked;
+    # Carlos's CarlosLocalOfficeEXPANDED is not, so Carlos clicks.)
+    baked_sort_views: frozenset = field(default_factory=frozenset)
+
     @property
     def tableau_views(self) -> dict:
         """view_key -> the URL to capture (per-office override if present, else
@@ -232,6 +239,10 @@ OFFICES: dict = {
             "activation_rate": (_T + "ATTTRACKER-B2B/ACTIVATIONRATES/"
                                 "9cfd3e6c-b221-47a6-8699-bd8eb524fd6e/AtefEXP"),
         },
+        # AtefEXP already carries its 0-7 Days descending sort (it posted
+        # correctly this morning with NO click — Megan 2026-07-23). Clicking it
+        # would toggle that off, so opt Atef's activation OUT of the sort click.
+        baked_sort_views=frozenset({"activation_rate"}),
     ),
 }
 

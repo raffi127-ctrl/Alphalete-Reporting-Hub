@@ -264,9 +264,11 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print) -> Path
 
     def after_load(page):
         # Activation carries no saved sort; click its measure sort glyph high->low
-        # before the shot. Churn's saved view sorts itself.
+        # before the shot. Churn's saved view sorts itself. Offices whose saved
+        # view is ALREADY sorted (o.baked_sort_views, e.g. Atef's AtefEXP) must
+        # NOT be clicked — a click toggles the baked sort back off.
         hdr = meta.get("sort_header")
-        if not hdr:
+        if not hdr or view_key in o.baked_sort_views:
             return
         # Wait for the rep table's sort column to RENDER before clicking — on a
         # cold load after_load fires before the viz hydrates, so the click misses
