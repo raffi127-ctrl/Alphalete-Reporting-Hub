@@ -146,9 +146,16 @@ def assemble(week_mdy, roster, captains, *, regular, captain, special, ws=None,
         if not active:
             continue
         reg = regular.get(key)
-        if reg is None and cap_special_total.get(key, 0) == 0:
-            unmatched.append(disp)               # active but nowhere in the pulls
-            continue
+        missing = reg is None and cap_special_total.get(key, 0) == 0
+        if missing:
+            # FILL-BUT-FLAG. Verified against the live tab's 7.12 column: the VA
+            # writes $0.00 for people with no row in the source (Abel Draper,
+            # Cinthya Reyes, Jacob Dover, Roshan Ahmad, Valeria Tristan), so we
+            # match her and keep the column complete. But they ALWAYS stay on the
+            # reported list: a NAME MISMATCH looks exactly like a genuine zero —
+            # that is how Hammad was silently losing $1,532.25 a week before the
+            # ICD-Aliases wiring. A $0 here is a prompt to check, not a fact.
+            unmatched.append(disp)
         total = (reg or 0) + cap_special_total.get(key, 0)
         section1[row] = round(total, 2)
     return section1, section2, unmatched

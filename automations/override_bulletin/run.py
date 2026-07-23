@@ -184,7 +184,8 @@ def run(week_mdy=None, *, tab=F.SANDBOX_TAB, write=False, verbose=True,
         return section1, section2, unmatched
     print(f"\nwrote {len(section1)} ALL-ORG + {len(section2)} CAPTAIN cells to col {col}")
     if unmatched:
-        print(f"\n⚠ UNMATCHED (active, not found — REPORT on email, do not zero):")
+        print(f"\n⚠ NO SOURCE ROW ({len(unmatched)}) — filled $0.00 to match the VA, "
+              f"but CHECK each one: a name mismatch looks identical to a real zero.")
         for n in unmatched:
             print(f"    • {n}")
     return section1, section2, unmatched
