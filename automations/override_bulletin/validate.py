@@ -14,7 +14,7 @@ from pathlib import Path
 WORKBOOK_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
 OUT = Path("output/override_bulletin/validate")
 TAB = "_validate_out"
-TARGETS = ["7.19.26", "7.12.26"]          # next-fill, then last known
+TARGETS = ["7.12.26"]        # best source coverage today (ORG latest = 07/12)
 
 
 def main(argv=None) -> int:
