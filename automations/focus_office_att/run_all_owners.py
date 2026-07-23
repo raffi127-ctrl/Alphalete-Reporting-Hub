@@ -840,6 +840,16 @@ def main() -> int:
             except Exception:
                 merged = {}
         merged.update(results)   # current run overlays previous
+        # Prune owners whose Sheet tab no longer exists. The merge above keeps
+        # prior-run statuses (so a scoped --only run doesn't wipe the others),
+        # but that also RESURRECTS a removed owner's stale status forever: once
+        # a terminated ICD's tab is pulled they drop out of `results`, yet their
+        # old "name not found" would linger here and keep tripping the daily
+        # INCOMPLETE alarm every run. Removing the tab IS the intended fix for a
+        # terminated ICD (commit 1538ea0), so honor it — drop anyone with no live
+        # tab (Megan 2026-07-23: Edgar Muniz II removed but still flagged). all_tabs
+        # is the full live tab set, so scoped --only runs still keep every present owner.
+        merged = {o: s for o, s in merged.items() if o in all_tabs}
         results_path.write_text(json.dumps({
             "run_at": dt.datetime.now().isoformat(timespec="seconds"),
             "results": merged,
