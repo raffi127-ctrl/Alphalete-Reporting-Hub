@@ -42,6 +42,34 @@ Custom-view URLs (may not resolve under Raf's login — filter fresh if not):
 - Special: `.../NETSUITESECURITYLEDGERSFDC/0212de10-2d7f-4281-b0d5-d048361251a9/CarlosColtenSpecial`
 - Credico: `.../NETSUITESECURITYLEDGERSFDC/3e5cabd4-1c72-493f-9440-83bdc49d057e/Credico`
 
+## CONFIRMED on Lucy 1 (2026-07-23) — the pull mechanics
+
+| Source | Sheet name | Period/week selection | Status |
+|---|---|---|---|
+| Regular override | **`ORG Override Summary`** | URL `?Period=Period 2026-7` (**year-prefixed**; bare `Period 7` returns NO sheets) | parse ✅ |
+| Raf special | `Payout- Raf wow` | URL `?Period=Period 7` (**bare**; `Period 2026-7` fails here) | ✅ **7/12=$39,522, 7/5=$26,950** |
+| Other captains (DD) | `ORG DD Detail` | **no filter** — default download IS the just-closed week; URL week-filters BREAK the view | parse ✅ (7.18: Carlos $9,545, Eveliz $2,500, Raf $16,740) |
+| Special / Credico | `Transaction Details` | no filter; needle carries the period/month | parse ✅ |
+
+Note the two views take **different Period formats** — don't unify them.
+
+### Gotchas that cost real debugging time
+
+1. **`ORG DD Detail` is a HIERARCHICAL crosstab.** Empty dimensions collapse per
+   row, so **columns do NOT align to the header** — the amount lands at a
+   different index on every row, and `cl.Description` isn't a header column at
+   all. Header-index parsing returns EMPTY. `parse_dd_captain` matches by
+   **content**: a `Captain('s) Bonus M.D.YY` cell + an owner in the captain set +
+   **max money cell** = Total $ to ICD. Don't "fix" it back to column lookup.
+2. **ORG summary week headers are zero-padded** (`07/12/2026`) and the real header
+   sits under **two banner rows**. `_wk_norm` compares dates, not strings.
+3. **Sources are staggered mid-week.** On 2026-07-23, DD was already at 7.18 while
+   the ORG summary's latest week was 07/12. They align on the Friday run (all hold
+   the just-closed week). A week a source doesn't have is **reported, never
+   filled from a neighbouring week** (`_dd_week_for` returns None → unmatched).
+4. **Sheet Sunday ↔ DD day-behind**: sheet `7.19` ↔ DD `7.18` (real date math, so
+   month edges work).
+
 ## Discovered crosstab sheets + columns (Lucy 1 discovery, 2026-07-23)
 
 Confirmed via `discover.py` → `_discover_out` tab. Parsers match columns BY NAME.
