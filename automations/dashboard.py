@@ -3642,8 +3642,94 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "vantura-slack-sales",
+        # The tile appends "· 5:00 AM CST" from `schedule`; the evening passes
+        # are spelled out in the breakdown.
+        "name": "Sales Board Fill ← #alphalete-gp-sales",
+        "creator": "Megan",
+        "emoji": "⚡",
+        "color": "#F59E0B",
+        # 📊 Metrics (not Ops) so it lands in ⏰ TIME SET REPORTS.
+        "category": "📊 Metrics",
+        "description": "Counts every Base, BOX and AT&T sale the reps post in #alphalete-gp-sales and fills the day column on the Vantura Sales Board — the hand-count the VA used to do each morning.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Reads every sales post in **#alphalete-gp-sales** and "
+            "counts them per rep, per campaign.\n"
+            "**•** Writes the day's column on the **Sales Board** tab — "
+            "**Base**, **BOX** and **AT&T (B2B)**. (JE is skipped; the office "
+            "stopped running that campaign.)\n"
+            "**•** Feeds the **Sales Boards → #alphalete-gp-sales** post that "
+            "goes out at 5:10am — that post just renders whatever is on the "
+            "board, so this has to fill it first.\n\n"
+            "HOW IT READS A POST\n"
+            "**•** **Base** — a D2D post: `Base #1`, `BASE1`, or `Cx2` with a "
+            "kWh reading. The number is a **running count for that rep that "
+            "day**, so Cx1 → Cx2 → Cx3 across an afternoon is 3 sales, not 6.\n"
+            "**•** **BOX** — a business energy post: `Box #2`, or `CX 1` with "
+            "`Bill Submitted` / a month term. **BF is not the count** — it's "
+            "the bill reference.\n"
+            "**•** **AT&T** — one per **NL**, **Fiber** and **Inseego**. These "
+            "restart their numbering every post, so they add up instead.\n\n"
+            "WHEN IT RUNS\n"
+            "**Every hour from 4:00pm to 9:00pm**, so the board stays live "
+            "through the selling evening — then **5:00am** to close out the "
+            "day before.\n\n"
+            "LATE POSTS ARE BACKFILLED\n"
+            "Reps forget and post the next morning. Every pass recounts the "
+            "whole day from scratch, so a late post is picked up by the next "
+            "run, and a post tagged **YESTERDAY** is credited to the right "
+            "day. The 5:00am pass is the final sweep.\n\n"
+            "SAFETY GATES\n"
+            "**•** Only writes reps who **posted**. A rep with no posts is "
+            "left alone, so a hand-entered number is never wiped.\n"
+            "**•** Never touches the campaign **TOTAL** rows — those are "
+            "formulas.\n"
+            "**•** Cross-checks itself against the office's own running tally "
+            "post (`A&T - 21/16 · Box - 6/8 · Base - 12/20`) and flags a "
+            "mismatch instead of correcting it.\n"
+            "**•** Flags any poster who isn't a rep on the board, and any rep "
+            "the board credits who posted nothing."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"),
+        # Lucy 2 — #alphalete-gp-sales is Carlos's channel and it's his board.
+        "assignees": ["Lucy 2"],
+        "run_machine": "Lucy 2",
+        "run_rerun_id": "vantura_slack_sales",
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "5:00 AM",
+            "estimated_minutes": 2,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Sales Board filled from #alphalete-gp-sales.",
+            "message_failed": "❌ Run failed. Check the log above, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Fill the Board",
+                "icon": "▶",
+                "primary": True,
+                "help": "Counts today's posts (or yesterday's, before 10am) and writes the day column on the Sales Board.",
+                "module": "automations.vantura_slack_sales.run",
+                "args_fn": lambda: ["--fill", "--yes"],
+            },
+            {
+                "label": "Preview Only",
+                "icon": "👁",
+                "primary": False,
+                "help": "Shows the count per rep and exactly which cells would change. Writes nothing.",
+                "module": "automations.vantura_slack_sales.run",
+                "args_fn": lambda: ["--fill"],
+            },
+        ],
+    },
+    {
         "id": "sales-boards",
-        # Channel in the name; the tile appends "· 6:00 AM CST" from `schedule`.
+        # Channel in the name; the tile appends "· 5:10 AM CST" from `schedule`.
         "name": "Sales Boards → #alphalete-gp-sales",
         "creator": "Megan",
         "emoji": "📸",
@@ -3660,7 +3746,8 @@ AUTOMATED_REPORTS = [
             "**•** **JE Sales Board**\n"
             "**•** **BOX Sales Board**\n\n"
             "WHEN IT RUNS\n"
-            "**Every day at 6:00am CST.**\n\n"
+            "**Every day at 5:10am CST** — ten minutes after the Sales "
+            "Board Fill writes the day cells from the channel.\n\n"
             "SAFETY GATES\n"
             "**•** Holds if the board's gold **week-ending** cell isn't the week "
             "containing yesterday — on Mondays that's last week's completed "
@@ -3671,19 +3758,16 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY/edit"),
-        # Lucy 2 (Carlos's machine — #alphalete-gp-sales is his channel). Moved
-        # back to Lucy 1 on 7/18 only because Lucy 2 lacked the Slack token;
-        # that token is installed + verified there now, so it runs on Lucy 2.
+        # Lucy 2 (Carlos's machine — #alphalete-gp-sales is his channel). The
+        # Lucy Slack token was installed + verified there 2026-07-18, so the
+        # earlier "runs on Lucy 1, no token" workaround is retired.
         "assignees": ["Lucy 2"],
-        # Belongs on Lucy 2 (Carlos's channel) and renders fine there, but
-        # Lucy 2 has no Lucy Slack token — a --post died at the upload. Runs
-        # on Lucy 1 until that token is installed and re-tested.
-        "run_machine": "Lucy 1",
+        "run_machine": "Lucy 2",
         "run_rerun_id": "sales_boards",
         "self_scheduled": True,
         "schedule": {
             "frequency": "daily",
-            "time": "6:00 AM",
+            "time": "5:10 AM",
             "estimated_minutes": 5,
         },
         "checklist": [],

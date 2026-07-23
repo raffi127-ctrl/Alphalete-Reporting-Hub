@@ -23,24 +23,27 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- DAILY incl. weekends (no Weekday key). First pass 7:00 CT (Eve 2026-07-21;
-         was 6:00 from 2026-07-18, which matched the VA's ~5:58-6:01 window but
-         fired before the day cells are hand-entered), then q25m retries. The
-         module HOLDS on a wrong-week board and skips boards already in today's
-         thread, so later passes are no-ops. The whole ladder moves together —
-         leaving an earlier pass in place would post before 7:00 and defeat the
-         change. TIME KNOB: edit these entries (Hour/Minute are machine LOCAL
-         time; Lucy 2 is Central). -->
+    <!-- DAILY incl. weekends (no Weekday key). First pass 5:10 CT (Carlos, via
+         Megan 2026-07-23) — ten minutes after com.alphalete.vantura-slack-sales'
+         05:00 pass writes the previous day's Base/BOX/AT&T cells from the
+         channel. HISTORY: 6:00 from 2026-07-18 (matched the VA's ~5:58-6:01
+         window), moved to 7:00 by Eve 2026-07-21 because it fired before the day
+         cells were HAND-entered. Automating that fill is what makes 5:10 safe —
+         so if the slack-sales agent is ever disabled, this MUST go back to 7:00
+         or the images post a blank day. Then q25m retries; the module HOLDS on a
+         wrong-week board and skips boards already in today's thread, so later
+         passes are no-ops. The whole ladder moves together. TIME KNOB: edit
+         these entries (Hour/Minute are machine LOCAL time; Lucy 2 is Central). -->
     <key>StartCalendarInterval</key>
     <array>
-        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>25</integer></dict>
-        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>50</integer></dict>
-        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>40</integer></dict>
-        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>5</integer></dict>
-        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
-        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>55</integer></dict>
+        <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>10</integer></dict>
+        <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>25</integer></dict>
+        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>50</integer></dict>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>40</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>5</integer></dict>
     </array>
 
     <key>StandardOutPath</key>

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.vantura-slack-sales</string>
+
+    <!-- Path is the laptop placeholder; on the mini, install_agent.py rewrites it
+         to that machine's repo path (python -m automations.day_orchestrator.install_agent
+         vantura-slack-sales). Runs on LUCY 2 — #alphalete-gp-sales is Carlos's
+         channel and the Sales Board is his board. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/vantura_slack_sales.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- DAILY incl. weekends (no Weekday key). Megan 2026-07-23:
+           16:00-21:00 hourly — fill the day IN PROGRESS, so the board is live
+                                through the selling evening.
+           05:00        — close out the PREVIOUS day, sweeping up anything
+                          posted after the 9pm pass (and next-morning
+                          "YESTERDAY" catch-up posts).
+         The run picks its own target day from the clock (before 10am =
+         yesterday), so every entry here runs the same command.
+         MUST STAY BEFORE com.alphalete.sales-boards' 05:10 first pass — that
+         post renders whatever is on the board, so if this slips past 05:10 the
+         images go out with the previous day unfilled. TIME KNOB: edit these
+         entries (Hour/Minute are machine LOCAL time; Lucy 2 is Central). -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/vantura-slack-sales.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/vantura-slack-sales.launchd.err.log</string>
+</dict>
+</plist>
