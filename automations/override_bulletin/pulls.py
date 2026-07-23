@@ -16,6 +16,7 @@ below is a plain Google-Sheets read and runs anywhere.
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 
 def _norm_name(s: str) -> str:
