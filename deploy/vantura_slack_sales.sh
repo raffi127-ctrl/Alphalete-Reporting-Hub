@@ -47,4 +47,21 @@ echo "[$(date)] vantura-slack-sales starting (mode: $MODE)" > "$LOG_FILE"
 ST=$?
 
 echo "[$(date)] vantura-slack-sales finished exit=$ST" >> "$LOG_FILE"
+
+# Report this standalone run to the Hub (shared Hub Activity sheet) so the card's
+# pill reflects a REAL success/failure — the orchestrator publishes the reports IT
+# runs, and a launchd job bypasses it entirely, so without this a clean run is
+# indistinguishable from a silent miss. Skipped on --dry (a preview must not mark
+# the card as ran). Best-effort — never fails the job.
+if [ "${1:-}" != "--dry" ]; then
+    if [ "$ST" -eq 0 ]; then _PUB=success; else _PUB=failed; fi
+    "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('vantura_slack_sales','Sales Board Fill','$_PUB')" >> "$LOG_FILE" 2>&1 || true
+fi
+
+# A failure here is silent otherwise — nobody watches this log, and the 5:10am
+# board post will happily render an unfilled day. Alert the same way the
+# orchestrator does for the reports it runs.
+if [ "$ST" -ne 0 ]; then
+    "$VENV_PY" -m automations.vantura_slack_sales.alert "$LOG_FILE" "$ST" >> "$LOG_FILE" 2>&1 || true
+fi
 exit 0

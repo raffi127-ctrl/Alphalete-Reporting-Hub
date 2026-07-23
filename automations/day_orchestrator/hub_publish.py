@@ -75,6 +75,7 @@ _HUB_CARD = {
     "recognition_tab": "recognition-tab",
     "pnl_office": "pnl-office",
     "sales_boards": "sales-boards",
+    "vantura_slack_sales": "vantura-slack-sales",
     "b2b_quality": "b2b-quality",
     # B2B Metrics: standalone LaunchAgent on Lucy 2 (com.alphalete.b2b-metrics,
     # deploy/b2b_metrics.sh, 7:45am) — never in the 4am batch. Missing here since
