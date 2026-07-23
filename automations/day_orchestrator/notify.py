@@ -97,8 +97,10 @@ def send_session_alert(cfg, ds, reason, *, channel="email", dry_run=False):
             "",
             "_Reply in this thread once it's re-seeded and I'll pick back up._",
         ]
-        _post_corrections(cfg, title, body, dry_run, tag="session-alert")
-        return
+        if _post_corrections(cfg, title, body, dry_run, tag="session-alert"):
+            return
+        # Slack post failed (e.g. Lucy not a member of the private channel) — fall
+        # through to email so the alert is never silently lost.
     html = f"<div style='font-family:Arial,sans-serif;font-size:14px'>{_esc(text).replace(chr(10), '<br>')}</div>"
     _dispatch(cfg, subj, html, text, channel, dry_run, tag="session-alert")
 
@@ -138,8 +140,10 @@ def send_failure_alert(cfg, ds, rs, *, channel="email", dry_run=False):
     # skipped to avoid double-notifying (Megan 2026-07-23). The daily summary is
     # unaffected — it still follows on its own channel.
     if _corrections_channel(cfg):
-        _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dry_run)
-        return
+        if _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dry_run):
+            return
+        # Slack post failed (e.g. Lucy isn't a member of the private channel) — fall
+        # through to email so a real problem is never silently lost.
     html = ("<div style='font-family:Arial,sans-serif;font-size:14px'>"
             f"{_esc(text).replace(chr(10), '<br>')}</div>")
     _dispatch(cfg, subj, html, text, channel, dry_run, tag=f"failure-{rs.report_id}")
@@ -183,6 +187,10 @@ def _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dr
                       + ", ".join(_term_label(h) for h in term_hits))
     ts = _post_corrections(cfg, title, parent, dry_run,
                            tag=f"failure-{rs.report_id}")
+    if not ts:
+        # Parent post didn't go out — don't orphan a reply; signal the caller to
+        # fall back to email so the alert isn't lost.
+        return None
 
     # REPLY — the details + the fix, threaded under the parent.
     reply = []
@@ -219,6 +227,7 @@ def _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dr
     reply.append("_Reply here and we'll correct it in this thread._")
     _post_corrections(cfg, "", reply, dry_run,
                       tag=f"failure-{rs.report_id}-details", thread_ts=ts)
+    return ts
 
 
 # ---------------- failure diagnosis (real reason + copy-paste fix) ----------------
