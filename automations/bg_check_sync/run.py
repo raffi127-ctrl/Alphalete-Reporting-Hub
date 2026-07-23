@@ -84,11 +84,35 @@ def _dated_tabs_in_window(sh, start: dt.date, end: dt.date):
     return matched, all_dated
 
 
-def build_roster(sh, monday: dt.date):
+def _future_week_mondays(sh, this_monday: dt.date, rolling_vals) -> list:
+    """Every week-Monday from this week onward that has people in EITHER tab
+    (all future new-start cohorts). Skips already-past blocks so a stale old row
+    can't collide with a new applicant of the same name. Always includes this
+    week + next week so their threads post even before a block/tab exists."""
+    mondays = {this_monday, this_monday + dt.timedelta(days=7)}
+    for row in rolling_vals:
+        d = match.parse_header_date(row[0] if row else "")
+        if d and _monday_of(d) >= this_monday:
+            mondays.add(_monday_of(d))
+    for ws in sh.worksheets():
+        title = ws.title.strip()
+        if not title.startswith(f"{ROLLING_TAB} "):
+            continue
+        stamp = title[len(ROLLING_TAB):].strip().replace(".", "/")
+        for year in (this_monday.year, this_monday.year + 1):
+            d = match.parse_header_date(f"{stamp}/{year}")
+            if d and _monday_of(d) >= this_monday:
+                mondays.add(_monday_of(d))
+                break
+    return sorted(mondays)
+
+
+def build_roster(sh, monday: dt.date, rolling_vals=None):
     """Roster = every block (rolling tab) + every dated tab whose date falls in
     this Mon–Sun week, consolidated and deduped by name."""
     end = monday + dt.timedelta(days=6)
-    rolling_vals = fill._retry(sh.worksheet(ROLLING_TAB).get_all_values)
+    if rolling_vals is None:
+        rolling_vals = fill._retry(sh.worksheet(ROLLING_TAB).get_all_values)
     people = match.roster_blocks_in_window(rolling_vals, monday, end, ROLLING_TAB)
     dated, all_dated = _dated_tabs_in_window(sh, monday, end)
     for title in dated:
@@ -126,11 +150,12 @@ def apply_writes(sh, decisions, dry_run: bool) -> int:
     return written
 
 
-def process_week(sh, monday, events, *, dry_run, do_post, repost, now):
-    """Update col K on both tabs + post/edit the Slack thread for ONE week.
-    Returns a short summary dict. Empty-roster weeks are skipped (no empty post)."""
+def process_week(sh, monday, events, *, dry_run, do_post, repost, now,
+                 do_slack=True, rolling_vals=None):
+    """Update col K on both tabs for ONE week, and (if do_slack) post/edit its
+    Slack thread. Returns a short summary dict. Empty weeks are skipped."""
     week = _fmt_week(monday)
-    roster, dated_note = build_roster(sh, monday)
+    roster, dated_note = build_roster(sh, monday, rolling_vals)
     if not roster:
         print(f"\nWeek of {week} (Mon–Sun): no roster yet — skipped")
         return {"week": week, "roster": 0, "changes": 0}
@@ -165,11 +190,12 @@ def process_week(sh, monday, events, *, dry_run, do_post, repost, now):
     except Exception as e:  # noqa: BLE001
         print(f"[terminated-check] skipped: {e}")
 
-    hour12 = now.hour % 12 or 12
-    updated_str = f"{now:%b} {now.day}, {hour12}:{now.minute:02d} {now:%p}"
-    body = slack_post.render(week, slack_people, needs_confirm, updated_str)
-    slack_post.post_or_update(week, body, dry_run=not do_post,
-                              repost=repost, today=now.date().isoformat())
+    if do_slack:
+        hour12 = now.hour % 12 or 12
+        updated_str = f"{now:%b} {now.day}, {hour12}:{now.minute:02d} {now:%p}"
+        body = slack_post.render(week, slack_people, needs_confirm, updated_str)
+        slack_post.post_or_update(week, body, dry_run=not do_post,
+                                  repost=repost, today=now.date().isoformat())
 
     if fuzzy_log:
         uniq = {(p.key, f"{p.first} {p.last}", f"{e.first} {e.last}") for e, p in fuzzy_log}
@@ -217,18 +243,22 @@ def main(argv=None) -> int:
 
     sh = fill.open_by_key(SPREADSHEET_ID)
     now = dt.datetime.now()
+    rolling_vals = fill._retry(sh.worksheet(ROLLING_TAB).get_all_values)
 
-    # Which weeks to process. Default = CURRENT week AND NEXT week, so the OBCL
-    # (rolling tab) keeps updating daily for everyone actively onboarding — not
-    # just next week's cohort (Raf 2026-07-22). --week overrides to a single week.
+    # SHEET updates cover EVERY current-and-future week on the OBCL — it's all
+    # future new starts, so update all of it as results come in (Raf 2026-07-22).
+    # SLACK threads stay focused on the near term: the current week + next week.
+    # --week overrides to a single week (manual backfill).
     if args.week:
         m = match.parse_header_date(args.week)
         if m is None:
             raise SystemExit(f"--week {args.week!r} isn't a M/D/YYYY date")
         weeks = [m]
+        slack_weeks = {m}
     else:
         this_mon = _monday_of(now.date())
-        weeks = [this_mon, this_mon + dt.timedelta(days=7)]
+        weeks = _future_week_mondays(sh, this_mon, rolling_vals)
+        slack_weeks = {this_mon, this_mon + dt.timedelta(days=7)}
 
     # --- events (fetched once, reused for every week) ------------------------
     if args.events:
@@ -240,14 +270,17 @@ def main(argv=None) -> int:
     else:
         events = email_source.fetch_events(since_days=args.since_days)
 
-    upcoming = weeks[-1]  # the next-Monday cohort — the one worth a Friday bump
+    upcoming = max(slack_weeks)  # the next-Monday cohort — the one worth a Friday bump
+    print(f"[weeks] updating {len(weeks)} week(s) on the OBCL: "
+          f"{', '.join(_fmt_week(w) for w in weeks)}")
     for monday in weeks:
-        # Friday-afternoon repost applies only to the UPCOMING week's thread (it's
-        # the one about to start); the current week's thread just edits in place.
+        do_slack = monday in slack_weeks
+        # Friday-afternoon repost applies only to the UPCOMING week's thread.
         repost = (args.repost or
                   (monday == upcoming and now.weekday() == 4 and now.hour >= 12))
-        process_week(sh, monday, events, dry_run=args.dry_run,
-                     do_post=args.post, repost=repost, now=now)
+        process_week(sh, monday, events, dry_run=args.dry_run, do_post=args.post,
+                     repost=repost, now=now, do_slack=do_slack,
+                     rolling_vals=rolling_vals)
 
     if hub_run_id is not None:
         try:
