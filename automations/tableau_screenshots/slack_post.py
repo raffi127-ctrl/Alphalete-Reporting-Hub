@@ -396,11 +396,16 @@ def _post_to_channel(client, channel: str, captures: list, pages: list,
 
 
 def _preview_into(client, channel: str, captures: list, pages: list,
-                  today: dt.date) -> dict:
-    """Post the PREVIEW thread (banner header + image replies) into one DM/MPIM."""
-    banner = ("*(PREVIEW — this is what will post to #alphalete-sales and "
-              "#top-leaders-alphalete-org; nothing has been posted to the "
-              "channels yet.)*\n\n")
+                  today: dt.date, *, label: str | None = None) -> dict:
+    """Post the PREVIEW thread (banner header + image replies) into one DM/MPIM.
+
+    `label` names the channel(s) this preview is FOR (e.g. '#domin8-b2b-sales'),
+    so the banner can't claim it's for a channel it isn't — a scoped preview must
+    say exactly which channel it mirrors, or a reader thinks another channel is
+    about to change (Megan 2026-07-23)."""
+    where = f"to {label}" if label else "to its channel(s)"
+    banner = (f"*(PREVIEW — this is what will post {where}; nothing has been "
+              "posted to the channels yet.)*\n\n")
     hdr = client.chat_postMessage(channel=channel,
                                   text=banner + header_text(pages, today))
     ts = hdr["ts"]
@@ -410,6 +415,11 @@ def _preview_into(client, channel: str, captures: list, pages: list,
             channel=channel, thread_ts=ts, file=str(png),
             filename=Path(png).name, initial_comment=reply_caption(spec, today))
         posted.append({"id": spec["id"], "ok": up.get("ok")})
+        # Same ordering guard as the live post (_post_to_channel): Slack posts a
+        # big file's message LATER than a small one uploaded after it, so without
+        # this pause the replies land out of header order — which is exactly what
+        # the first Domin8 preview showed (Megan 2026-07-23).
+        time.sleep(3)
     return {"channel": channel, "thread_ts": ts, "posted": posted,
             "ok": all(p.get("ok") for p in posted) if posted else False}
 
@@ -426,10 +436,15 @@ def preview_dm(captures: list, pages: list, users: list,
     the live post) — so previewing #domin8-b2b-sales DMs just its 3 boards, not
     all of them. Omit to preview the full captured set."""
     today = today or dt.date.today()
+    # The banner must name the channel(s) this preview is FOR — the org's label
+    # when scoped, else the default org's (which is what an unscoped preview
+    # mirrors). Never a hardcoded channel (Megan 2026-07-23: a domin8 preview that
+    # said "#alphalete-sales" read as though alphalete's post was changing).
+    label = ORG_LABEL.get(org or DEFAULT_ORG)
     if org is not None:
         captures, pages, _ = select_for_org(captures, pages, org)
     if dry_run:
-        return {"dry_run": True, "to_users": users,
+        return {"dry_run": True, "to_users": users, "label": label,
                 "header": header_text(pages, today),
                 "replies": [{"file": Path(p).name,
                              "caption": reply_caption(s, today)}
@@ -442,7 +457,7 @@ def preview_dm(captures: list, pages: list, users: list,
     try:
         channel = client.conversations_open(
             users=",".join(user_ids))["channel"]["id"]
-        res = _preview_into(client, channel, captures, pages, today)
+        res = _preview_into(client, channel, captures, pages, today, label=label)
         return {"ok": res["ok"], "mode": "group_dm", "user_ids": user_ids,
                 **res}
     except Exception as e:
@@ -451,7 +466,8 @@ def preview_dm(captures: list, pages: list, users: list,
         results = []
         for uid in user_ids:
             ch = client.conversations_open(users=uid)["channel"]["id"]
-            results.append(_preview_into(client, ch, captures, pages, today))
+            results.append(_preview_into(client, ch, captures, pages, today,
+                                         label=label))
         return {"ok": all(r["ok"] for r in results), "mode": "individual_dms",
                 "user_ids": user_ids, "results": results}
 
