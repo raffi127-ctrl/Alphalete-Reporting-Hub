@@ -498,8 +498,11 @@ def main(argv=None) -> int:
     # the channels.
     if args.preview_dm:
         users = [u.strip() for u in args.preview_dm.split(",") if u.strip()]
+        # Scope the preview to the channel's real feed when a SINGLE org is named
+        # (e.g. --orgs domin8), so it DMs exactly what that channel would get.
+        preview_org = orgs[0] if len(orgs) == 1 else None
         pv = sp.preview_dm(captures, post_pages, users, today,
-                           dry_run=args.dry_run)
+                           dry_run=args.dry_run, org=preview_org)
         if args.dry_run:
             print(f"\n✓ DRY-RUN: captured {len(captures)} PNG(s) to {out_dir}; "
                   f"would DM {', '.join(users)} (nothing to channels).", flush=True)

@@ -157,6 +157,23 @@ PAGES = [
         "react": "signal_strength",
         "source": "email",
     },
+    {
+        # OPT-IN ONLY: posts ONLY to channels that name it in
+        # slack_post.ORG_TRACKERS (today just #domin8-b2b-sales). It's still
+        # captured with the rest each morning — `opt_in_only` gates POSTING, not
+        # capture — so a channel that wants it gets today's image without adding a
+        # separate run. Cesar/Domin8 2026-07-23: their channel wants B2B AT&T,
+        # B2B AT&T (CRU), and this ranking, nothing else. The AtefExp view URL is
+        # the exact one Megan vetted for the ask.
+        "id": "order_tiered_bonus",
+        "title": "Order Tiered Bonus - Rep Ranking",
+        "emoji": "\U0001F3C6",                     # trophy
+        "react": "trophy",
+        "url": _BASE + ("ATTTRACKER-B2B/OrderTieredBonus-RepRanking/"
+                        "97e0ab43-51dd-44bf-92a3-8fe184089ad4/AtefExp?:iid=1"),
+        "crop": "canvas",
+        "opt_in_only": True,
+    },
 ]
 
 
@@ -171,3 +188,16 @@ def is_late(spec: dict) -> bool:
 
 def late_ids() -> list:
     return [p["id"] for p in PAGES if is_late(p)]
+
+
+def is_opt_in_only(spec: dict) -> bool:
+    """True for a board that posts ONLY to channels that name it in
+    slack_post.ORG_TRACKERS (never in the default org-wide set). See the
+    `opt_in_only` field above."""
+    return bool(spec.get("opt_in_only"))
+
+
+def default_ids() -> list:
+    """The tracker ids every org gets unless it has its own ORG_TRACKERS
+    selection — i.e. everything that ISN'T opt-in-only."""
+    return [p["id"] for p in PAGES if not is_opt_in_only(p)]

@@ -1450,8 +1450,19 @@ def _tableau_trackers_card() -> dict:
     hasn't landed yet."""
     from automations.tableau_screenshots import slack_post as _sp
     from automations.tableau_screenshots import pages as _pages
-    morning = [p for p in _pages.PAGES if not _pages.is_late(p)]
+    # Org-wide boards = every channel gets them. EXCLUDE opt_in_only boards: those
+    # post ONLY to the channels that name them (ORG_TRACKERS), so counting them as
+    # "posted to every channel" would overstate the card. They're covered in the
+    # CHANNEL-SPECIFIC section of the breakdown instead.
+    morning = [p for p in _pages.PAGES
+               if not _pages.is_late(p) and not _pages.is_opt_in_only(p)]
     late = [p for p in _pages.PAGES if _pages.is_late(p)]
+    # Channels that get a CUSTOM subset instead of the org-wide set (Domin8 7/23).
+    _custom_lines = []
+    for _o, _ids in _sp.ORG_TRACKERS.items():
+        _titles = [_pages.by_id(t)["title"] for t in _ids if _pages.by_id(t)]
+        _custom_lines.append(f"• {_sp.ORG_LABEL.get(_o, _o)}: {', '.join(_titles)}")
+    _custom_block = "\n".join(_custom_lines)
     # Boards TODAY's run left out because their source wasn't in yet (an email
     # tracker's .xlsx hadn't landed) — read from the status file so the success
     # line reports exactly what posted, not a blanket "all N". Stale/absent → none.
@@ -1498,7 +1509,9 @@ def _tableau_trackers_card() -> dict:
             "below.\n\n"
             f"TRACKERS\n{trackers}\n\n"
             f"CHANNELS\n{channel_bullets}\n\n"
-            "WHY BOX ISN'T HERE\n"
+            + (f"CHANNEL-SPECIFIC (a custom subset, not the org-wide set)\n"
+               f"{_custom_block}\n\n" if _custom_block else "")
+            + "WHY BOX ISN'T HERE\n"
             f"{late_names}'s numbers don't settle until its Tableau data "
             "refreshes (~7am), so posting it at 4:31 posted yesterday's "
             "figures. It's listed in the Slack thread's header from 4:31 — "

@@ -42,6 +42,9 @@ ORG_CHANNELS = {
     "carlos_gp":   ["C07J46MQNUX"],       # #alphalete-gp-sales (private, Carlos)
     "ambient_1":   ["C0B1DHEFVLH"],       # #ambient-sales-1 (private, Cy Wade)
     "aeon":        ["C0849EPM4LD"],       # #aeon-sales (private, Cody Cannon)
+    "domin8":      ["C0B395PUUCW"],       # #domin8-b2b-sales (private) — Lucy
+                                          # (U0BCFGCR5PV) must be a MEMBER or
+                                          # files_upload_v2 → not_in_channel.
 }
 ORGS = list(ORG_CHANNELS)
 DEFAULT_ORG = "alphalete"
@@ -54,7 +57,8 @@ ORG_LABEL = {"alphalete": "#alphalete-sales + #top-leaders-alphalete-org",
              "elite_prime": "#elite-prime-sales",
              "carlos_gp": "#alphalete-gp-sales",
              "ambient_1": "#ambient-sales-1",
-             "aeon": "#aeon-sales"}
+             "aeon": "#aeon-sales",
+             "domin8": "#domin8-b2b-sales"}
 
 # Per-org tracker ORDER override (Carlos wants the B2B trackers + Box first in his
 # channel, 2026-07-14). An org NOT listed here posts in the default pages.py
@@ -70,6 +74,52 @@ ORG_ORDER: dict[str, list[str]] = {
         "nds", "quantum_fiber",
     ],
 }
+
+# Per-org tracker SELECTION — a channel that wants only a SUBSET of the trackers.
+# An org listed here posts EXACTLY these ids, in this order, and NOTHING else; the
+# list doubles as its order (no ORG_ORDER entry needed). An org NOT listed posts
+# the default org-wide set (pages.default_ids() — everything not opt_in_only),
+# still subject to its ORG_ORDER override if any. This is also the ONLY way an
+# opt_in_only tracker (e.g. order_tiered_bonus) reaches a channel — so a
+# channel-specific board can't leak org-wide.
+#
+# Cesar/Domin8 2026-07-23: #domin8-b2b-sales wants just B2B AT&T ("National
+# Tracker"), B2B AT&T CRU ("National CRU"), and the Order Tiered Bonus ranking.
+ORG_TRACKERS: dict[str, list[str]] = {
+    "domin8": ["b2b_att_country", "b2b_att_country_cru", "order_tiered_bonus"],
+}
+
+
+def tracker_ids_for(org: str, pages: list) -> list:
+    """The tracker ids `org` posts, in post order. An ORG_TRACKERS selection wins
+    (that IS the channel's whole feed + order); otherwise the default org-wide set
+    = every tracker not marked opt_in_only. Unknown ids in a selection are dropped
+    defensively so a typo can't crash the run — it just posts one fewer board."""
+    have = {p["id"] for p in pages}
+    sel = ORG_TRACKERS.get(org)
+    if sel is not None:
+        return [t for t in sel if t in have]
+    from automations.tableau_screenshots import pages as _pages_mod
+    keep = set(_pages_mod.default_ids())
+    return [p["id"] for p in pages if p["id"] in keep]
+
+
+def select_for_org(captures: list, pages: list, org: str) -> tuple:
+    """Filter + order `captures` and `pages` down to what ORG actually posts.
+    Shared by post_all and preview_dm so a preview shows EXACTLY the channel's
+    real feed — same subset, same order — and the two can't drift. Returns
+    (captures, pages, wanted_ids)."""
+    wanted = tracker_ids_for(org, pages)
+    wanted_set = set(wanted)
+    caps = [c for c in captures if c[0]["id"] in wanted_set]
+    pgs = [p for p in pages if p["id"] in wanted_set]
+    # An ORG_TRACKERS selection IS its order; otherwise honor any ORG_ORDER
+    # override (Carlos's B2B-first). Reorder header (pages) + replies (captures).
+    order_ids = wanted if org in ORG_TRACKERS else ORG_ORDER.get(org)
+    if order_ids:
+        caps = _ordered(caps, lambda c: c[0]["id"], order_ids)
+        pgs = _ordered(pgs, lambda p: p["id"], order_ids)
+    return caps, pgs, wanted
 
 
 def _ordered(items: list, id_of, order_ids: list[str] | None) -> list:
@@ -365,12 +415,19 @@ def _preview_into(client, channel: str, captures: list, pages: list,
 
 
 def preview_dm(captures: list, pages: list, users: list,
-               today: dt.date | None = None, *, dry_run: bool = False) -> dict:
-    """DM the full thread (header + real image replies) to `users` for review,
-    posting NOTHING to the channels. Tries one group DM (both people in one
-    thread); falls back to an individual DM each if the workspace blocks MPIMs.
-    Sent AS Lucy (the identity that will post for real)."""
+               today: dt.date | None = None, *, dry_run: bool = False,
+               org: str | None = None) -> dict:
+    """DM the thread (header + real image replies) to `users` for review, posting
+    NOTHING to the channels. Tries one group DM (both people in one thread); falls
+    back to an individual DM each if the workspace blocks MPIMs. Sent AS Lucy (the
+    identity that will post for real).
+
+    `org` scopes the preview to that channel's real feed (same subset + order as
+    the live post) — so previewing #domin8-b2b-sales DMs just its 3 boards, not
+    all of them. Omit to preview the full captured set."""
     today = today or dt.date.today()
+    if org is not None:
+        captures, pages, _ = select_for_org(captures, pages, org)
     if dry_run:
         return {"dry_run": True, "to_users": users,
                 "header": header_text(pages, today),
@@ -448,16 +505,18 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
     today = today or dt.date.today()
     channels = channels_for(org)
     from automations.tableau_screenshots import pages as _pages_mod
-    late_all = _pages_mod.late_ids()
+
+    # Filter + order to THIS org's tracker selection FIRST (a subset channel like
+    # #domin8-b2b-sales, and the only route an opt_in_only board takes to a
+    # channel). Drops both the header line (pages) and the image reply (captures)
+    # for anything this org doesn't post, so nothing downstream re-introduces it.
+    captures, pages, wanted = select_for_org(captures, pages, org)
+    wanted_set = set(wanted)
+
+    # Only the late trackers THIS org actually posts can be "still coming".
+    late_all = [i for i in _pages_mod.late_ids() if i in wanted_set]
     pending_late = [i for i in late_all
                     if i not in {spec["id"] for spec, _ in captures}]
-
-    # Per-org custom order (Carlos): reorder BOTH the header (pages) and the image
-    # replies (captures) so they match. Other orgs use the default pages.py order.
-    order_ids = ORG_ORDER.get(org)
-    if order_ids:
-        captures = _ordered(captures, lambda c: c[0]["id"], order_ids)
-        pages = _ordered(pages, lambda p: p["id"], order_ids)
 
     if dry_run:
         return {
