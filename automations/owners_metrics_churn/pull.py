@@ -88,6 +88,17 @@ FIBER_SAHIL_URL = (
     "ATTTRACKER2_1-D2D/CHURN/"
     "e8557aee-2a5b-4c68-a6ad-a1da1394e198/SAHIL%E2%80%99S%20TEAM%20CHURN?:iid=1"
 )
+# All-teams (org-wide) Fiber churn view — the base CHURN dashboard, which already
+# defaults to 'New Internet Churn View' + Captain's Bonus Teams = All (Megan
+# confirmed 2026-07-23), so it lists every Fiber rep across all teams. Used to
+# backfill a rep on a captain's tab who's absent from that captain's own SAVED
+# view: Blue Mendoza is a new rep on Starr's team who never got added to the
+# STARSTEAMCHURN custom-view filter, so Starr's own pull dropped him. Same
+# 'ICD Churn' worksheet + parse() as the per-captain Fiber pulls.
+FIBER_ALLTEAM_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER2_1-D2D/CHURN?:iid=1"
+)
 
 WORKSHEET = "ICD Churn"
 
@@ -417,6 +428,6 @@ def parse_nds(csv_path: Path) -> dict:
 # added here.
 ALLTEAMS_CHURN_SOURCE = {
     "b2b": (B2B_ALLTEAM_URL, WORKSHEET, parse_b2b),
-    # "fiber": (FIBER_ALLTEAM_URL, WORKSHEET, parse),       # TODO: view id
+    "fiber": (FIBER_ALLTEAM_URL, WORKSHEET, parse),      # wired 2026-07-23 (Blue Mendoza absent from Starr's saved view)
     "nds": (NDS_ALLTEAM_URL, NDS_WORKSHEET, parse_nds),   # wired 2026-07-23 (Jimmy Bonilla moved teams)
 }
