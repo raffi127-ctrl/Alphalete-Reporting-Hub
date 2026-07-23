@@ -300,24 +300,29 @@ def main(argv=None) -> int:
     # for the batch (the ONE 'b2b-metrics' card covers every office).
     publishable = args.post and not args.channel and not args.only
 
+    from automations.b2b_metrics import capture as _cap
     statuses = []
-    for key in office_keys:
-        o = _off.get(key)
-        try:
-            res = run(o, post=args.post, only=args.only, dm=args.dm,
-                      channel_override=args.channel, today=today, force=args.force)
-            print("\nresult ({}):".format(key), res)
-            missed = res.get("missed") or []
-            present = res.get("present") or []
-            statuses.append("success" if not missed
-                            else ("partial" if present else "failed"))
-        except Exception:
-            statuses.append("failed")
-            if not args.all_offices:      # single-office: fail loud as before
-                if publishable:
-                    _publish_hub("failed")
-                raise
-            traceback.print_exc()         # --all: one office must not kill the rest
+    # ONE Chrome for the whole batch — every office's Tableau captures reuse it
+    # instead of relaunching per view (lazy: opens on the first capture).
+    with _cap.batch_session():
+        for key in office_keys:
+            o = _off.get(key)
+            try:
+                res = run(o, post=args.post, only=args.only, dm=args.dm,
+                          channel_override=args.channel, today=today,
+                          force=args.force)
+                print("\nresult ({}):".format(key), res)
+                missed = res.get("missed") or []
+                present = res.get("present") or []
+                statuses.append("success" if not missed
+                                else ("partial" if present else "failed"))
+            except Exception:
+                statuses.append("failed")
+                if not args.all_offices:  # single-office: fail loud as before
+                    if publishable:
+                        _publish_hub("failed")
+                    raise
+                traceback.print_exc()     # --all: one office must not kill the rest
 
     if publishable:
         # Green only if EVERY office fully posted; orange if some did; red if none.
