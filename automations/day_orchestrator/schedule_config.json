@@ -953,30 +953,9 @@
       "depends_on": [],
       "verify": null
     },
-    "fill_leader_contacts": {
-      "on_scheduler": true,
-      "_note": "MANUAL, LUCY 1 ONLY: `lucy rerun fill_leader_contacts` reads the mini's Contacts app and caches the 2nd-round interviewers' phone numbers for the New-Start Follow-Up texts. Writes to ~/.config/recruiting-report/new-start-leader-phones.json — NOT to leaders.json, because this repo is PUBLIC and those are personal numbers. Needs macOS Automation→Contacts permission on the mini; if it returns -1743 a human has to approve it once at the machine. Re-run any time a new leader is added. weekdays [] = manual only.",
-      "display_name": "Fill leader phone numbers from Contacts (Lucy 1)",
-      "source_type": "local",
-      "data_sources": [],
-      "command": [
-        "automations.new_start_followup.contacts"
-      ],
-      "base_args": [
-        "--write"
-      ],
-      "cadence": {
-        "weekdays": []
-      },
-      "priority": "P3",
-      "freshness_target": null,
-      "depends_on": [],
-      "verify": null,
-      "timeout_minutes": 5
-    },
     "new_start_followup": {
       "on_scheduler": true,
-      "_note": "MANUAL: `lucy rerun new_start_followup` prints who has/hasn't texted their new starts. READ-ONLY — posts nothing (no --live) and texts nobody (no --send); the Saturday/Sunday posts run off their own launchd agents. Also the Hub card's run_rerun_id. weekdays [] = manual only.",
+      "_note": "MANUAL: `lucy rerun new_start_followup` prints who has/hasn't texted their new starts. READ-ONLY — posts nothing (no --live); the Saturday/Sunday posts run off their own launchd agents. Also the Hub card's run_rerun_id. weekdays [] = manual only.",
       "display_name": "New-Start Follow-Up — who's sent?",
       "source_type": "local",
       "data_sources": [],

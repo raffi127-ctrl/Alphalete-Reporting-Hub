@@ -135,48 +135,21 @@ Exit 2 means Aisha hasn't posted Friday's anchor yet. Everything hangs off that
 post, and it refuses to post rather than guess at the wrong thread. Check the
 channel, then re-run.
 
-## Texting the stragglers (Lucy 1 only)
+## Texting the stragglers — PARKED (no active iMessage)
 
-The Sunday half: after the checklist posts, iMessage everyone still missing.
+Raf's Loom floated texting the leaders who still haven't sent, straight from a
+Lucy phone number. **Parked 2026-07-22: there's no active iMessage number to
+send from.** The report chases stragglers purely by **tagging them in the Slack
+thread** (the roll call + the three Saturday nudges), which is Raf's core ask.
 
-```bash
-# see the exact text each person would get — sends nothing
-python -m automations.new_start_followup.run --mode text
+The code is still in the tree but fully unwired — no CLI mode, no Hub buttons,
+not in the registry:
 
-# actually send, from Lucy 1
-python -m automations.new_start_followup.run --mode text --send
-```
+- `texts.py` — composes/sends the per-leader iMessage.
+- `contacts.py` — resolves leader numbers from the mini's Contacts app.
+- `obcl.phone_book()` + the phone plumbing in `roster.py` — the number lookup.
 
-Or the Hub card's **Preview Texts** / **Text Stragglers** buttons.
-
-**Not on a timer, on purpose.** These are personal messages from a real phone
-number to ~20 people, so they go out when a human asks — never on a schedule.
-
-### Phone numbers
-
-**Primary source: the OBCL sheet itself.** Today's 2nd-round interviewers were
-new starts once, so their own numbers are already on the rolling `D2D OBCL` tab
-(18 of 21 leaders when this was built). `obcl.phone_book()` reads that tab and
-matches on name, and `texts.resolve_phones()` fills in whoever's being texted.
-
-That's deliberately better than the Contacts app: no macOS Automation
-permission, nothing cached to disk, nobody has to be at the mini, and the
-numbers are always current. A name with two *different* numbers in the history
-is dropped, not guessed.
-
-**Nothing is ever stored.** Numbers are resolved in memory at send time. Do not
-put a phone number in `leaders.json` — **this repo is PUBLIC on GitHub.**
-
-**Fallback for the rest.** A leader who was never a new start (or is spelled
-differently) has no OBCL number and is reported as such. Two ways to fix:
-
-1. Add the spelling they use in OBCL to their `obcl_names` in `leaders.json`.
-2. Or put the number in the machine-local overlay
-   `~/.config/recruiting-report/new-start-leader-phones.json` (keyed by Slack
-   ID) — outside the repo, and it **wins** over OBCL since it's hand-entered.
-   `python -m automations.new_start_followup.contacts --write` on Lucy 1 fills
-   it from the Contacts app, or `lucy rerun fill_leader_contacts`.
-
-⚠️ The Contacts route needs macOS Automation permission, and on a headless mini
-the approval dialog just hangs (seen 7/19: a 120s timeout, not a `-1743`). It
-needs a human at the machine once. Prefer route 1.
+To revive it if a number is added later: re-add the `text`/`--send` mode to
+`run.py`, the two Hub buttons, and the `fill_leader_contacts` registry entry.
+Numbers come from the OBCL sheet (past new starts) — never stored, since the
+repo is public.

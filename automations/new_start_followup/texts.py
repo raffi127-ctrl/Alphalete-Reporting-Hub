@@ -1,4 +1,8 @@
-"""Text the leaders who still haven't sent. RUNS ON LUCY 1 (iMessage).
+"""PARKED 2026-07-22 — no active iMessage number to send from (Megan). This
+module is unwired from the CLI and the Hub; kept in the tree so the texting path
+can be restored quickly if a number is added later. Nothing imports it now.
+
+Text the leaders who still haven't sent. RUNS ON LUCY 1 (iMessage).
 
 The Sunday half of Raf's manual loop: after the checklist goes up, he opens
 Messages and texts everyone still missing. This sends those from Lucy 1.

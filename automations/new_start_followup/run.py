@@ -13,6 +13,11 @@
 
 Nothing posts without --live. --dry-run is the default and prints the exact
 message, per the standing "ask before any Slack post" rule.
+
+Slack-only by design: there's no active iMessage number to text leaders from
+(Megan, 2026-07-22), so the report chases stragglers purely by tagging them in
+the thread. The texting modules (texts.py / contacts.py) are PARKED — kept in
+the tree but unwired — in case a number is added later.
 """
 from __future__ import annotations
 
@@ -21,7 +26,6 @@ import datetime as dt
 import sys
 
 from automations.new_start_followup import report as report_mod
-from automations.new_start_followup import texts
 from automations.shared import slack_metrics_post as smp
 
 
@@ -48,13 +52,10 @@ def _post(rec, body: str, live: bool) -> int:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="New-start follow-up: who texted their new starts.")
     ap.add_argument("--mode",
-                    choices=["status", "rollcall", "nudge", "checklist", "text"],
+                    choices=["status", "rollcall", "nudge", "checklist"],
                     default="status",
                     help="status = print only; rollcall = Saturday 8am tag-everyone; "
-                         "nudge = Saturday reminder; checklist = Sunday roll-up; "
-                         "text = iMessage the stragglers from Lucy 1")
-    ap.add_argument("--send", action="store_true",
-                    help="with --mode text: actually send the iMessages")
+                         "nudge = Saturday reminder; checklist = Sunday roll-up")
     ap.add_argument("--force", action="store_true",
                     help="post the roll call again even if one is already in the thread")
     ap.add_argument("--when", choices=["auto", "morning", "midday", "evening"], default="auto",
@@ -112,23 +113,6 @@ def main(argv=None) -> int:
 
     if args.mode == "status":
         print(report_mod.render_checklist(rec))
-        print()
-        # Resolve numbers here too, so the phone column is TRUE. Without this
-        # status prints "NO NUMBER ON FILE" for people we can actually reach,
-        # and whoever reads it concludes the texts won't work. Status is a
-        # human-run command, so the extra tab read is worth it; the scheduled
-        # modes still skip it.
-        texts.resolve_phones(rec)
-        print(report_mod.render_text_list(rec))
-        return 0
-
-    if args.mode == "text":
-        try:
-            outcomes = texts.run(rec, send=args.send)
-        except RuntimeError as exc:
-            print("INCOMPLETE — {}".format(exc), file=sys.stderr)
-            return 2
-        print(texts.render(outcomes, send=args.send))
         return 0
 
     if args.mode == "rollcall":
@@ -143,11 +127,7 @@ def main(argv=None) -> int:
 
     body = (report_mod.render_nudge(rec, when) if args.mode == "nudge"
             else report_mod.render_checklist(rec))
-    rc = _post(rec, body, args.live)
-    if args.mode == "checklist":
-        print()
-        print(report_mod.render_text_list(rec))
-    return rc
+    return _post(rec, body, args.live)
 
 
 if __name__ == "__main__":

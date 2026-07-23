@@ -1,4 +1,7 @@
-"""Fill leader phone numbers from the macOS Contacts app. RUN ON LUCY 1.
+"""PARKED 2026-07-22 — texting is off (no active iMessage number). Unwired from
+the registry; kept for when/if a number is added. See texts.py.
+
+Fill leader phone numbers from the macOS Contacts app. RUN ON LUCY 1.
 
 Raf keeps the leaders' numbers in Contacts on Lucy 1 (the mini) -- they aren't
 in OBCL, and Slack profiles don't carry a phone. So this reads Contacts once and
