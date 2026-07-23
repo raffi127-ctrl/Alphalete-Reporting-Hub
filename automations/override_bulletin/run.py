@@ -56,21 +56,23 @@ def sheet_weeks(ws):
             if _re.match(r"^\d{1,2}\.\d{1,2}\.\d{2,4}$", (h or "").strip())]
 
 
-def resolve_target_week(source_weeks, tab_weeks):
+def resolve_target_week(source_weeks, ws):
     """(week, why) — which week to fill, or (None, reason) to HOLD.
 
     Friday fills the week that ended the PRIOR Sunday (verified against the live
-    sheet: 7.12 was filled Fri 7/17, 7.5 on Fri 7/10, and so on). But the override
-    summary lags, so we target the newest week IT has rather than assuming the
-    just-closed one is published. If the sheet already carries that week there is
-    nothing new to publish — hold instead of rolling a fresh, near-empty column
-    and mailing a broken bulletin to the org."""
+    sheet: 7.12 was filled Fri 7/17, 7.5 on Fri 7/10). But the override summary
+    LAGS the other sources, so we target the newest week IT actually has rather
+    than assuming the just-closed week is published.
+
+    The gate is whether that week is already FILLED — not merely present. A
+    rolled-but-empty column still has a header, so gating on presence would hold
+    forever on an empty week (mirrors pnl_office's non-zero fill-gate)."""
     if not source_weeks:
         return None, "the override summary returned no week columns"
     newest = source_weeks[0]
-    if tab_weeks and newest == tab_weeks[0]:
-        return None, (f"the summary's newest week ({newest}) is already filled on the "
-                      f"sheet — this week hasn't published yet; holding")
+    if F.week_is_filled(ws, newest):
+        return None, (f"{newest} is already filled on {ws.title!r} — "
+                      f"nothing new to fill")
     return newest, f"filling {newest} — newest week the override summary has"
 
 
@@ -110,7 +112,8 @@ def pull_all(week_mdy, week_header, period_num, period_year, *, page=None,
             F.rekey(special, aliases))
 
 
-def run(week_mdy=None, *, tab=F.SANDBOX_TAB, write=False, verbose=True):
+def run(week_mdy=None, *, tab=F.SANDBOX_TAB, write=False, verbose=True,
+        force=False):
     from automations.recruiting_report import fill as _fill
     from automations.shared.tableau_patchright import tableau_session
     wb = _fill._client().open_by_key(F.WORKBOOK_ID)
@@ -139,11 +142,17 @@ def run(week_mdy=None, *, tab=F.SANDBOX_TAB, write=False, verbose=True):
         org_rows = P.read_crosstab(dd / "org.csv")
         src_weeks = P.summary_weeks(org_rows)
         if week_mdy is None:
-            week_mdy, why = resolve_target_week(src_weeks, sheet_weeks(ws))
+            week_mdy, why = resolve_target_week(src_weeks, ws)
+            if week_mdy is None and force and src_weeks:
+                # --force: refill the summary's newest week even though the tab
+                # already has values for it (e.g. a sandbox dirty from testing).
+                # Overwrites the mapped cells only; deletes nothing.
+                week_mdy, why = src_weeks[0], (f"--force: refilling {src_weeks[0]} "
+                                               f"(overwriting existing values)")
             print(f"week: {why}")
             if week_mdy is None:
                 print("HOLDING — nothing written, nothing published.")
-                return None, None, None
+                return None, None, "HOLD"
         m, d, y = week_mdy.split(".")
         week_header = f"{int(m)}/{int(d)}/20{y[-2:]}"
         regular, captain, special = pull_all(week_mdy, week_header,
@@ -156,7 +165,23 @@ def run(week_mdy=None, *, tab=F.SANDBOX_TAB, write=False, verbose=True):
         week_mdy, roster, captains,
         regular=regular, captain=captain, special=special, ws=ws,
         aliases=aliases)
-    col = F.write_week(ws, section1, section2, dry_run=not write)
+    # Make sure the target week's column exists before writing — writing into a
+    # different week's column would corrupt a good week.
+    if F.week_col(ws, week_mdy) is None:
+        from automations.override_bulletin import scaffold
+        for _ in range(4):
+            if F.week_col(ws, week_mdy) is not None:
+                break
+            if not write:
+                print(f"[dry-run] would roll the sheet forward to create {week_mdy}")
+                break
+            scaffold.apply_plan(ws, scaffold.plan(ws))
+    col = F.write_week(ws, section1, section2, week_label=week_mdy,
+                       dry_run=not write) if (
+        F.week_col(ws, week_mdy) is not None) else None
+    if col is None:
+        print(f"no {week_mdy} column yet — nothing written")
+        return section1, section2, unmatched
     print(f"\nwrote {len(section1)} ALL-ORG + {len(section2)} CAPTAIN cells to col {col}")
     if unmatched:
         print(f"\n⚠ UNMATCHED (active, not found — REPORT on email, do not zero):")
@@ -173,9 +198,15 @@ def main(argv=None):
     ap.add_argument("--tab", default=F.SANDBOX_TAB)
     ap.add_argument("--write", action="store_true", help="write (sandbox tab only)")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--force", action="store_true",
+                    help="refill the week even if the tab already has values for "
+                         "it (overwrites mapped cells; deletes nothing)")
     a = ap.parse_args(argv)
-    run(a.week, tab=a.tab, write=a.write, verbose=not a.quiet)
-    return 0
+    _s1, _s2, un = run(a.week, tab=a.tab, write=a.write, verbose=not a.quiet,
+                       force=a.force)
+    # 75 = held (source hasn't published the week yet). The Friday LaunchAgent
+    # treats it as "retry next pass", same convention as pnl_office.
+    return 75 if un == "HOLD" else 0
 
 
 if __name__ == "__main__":

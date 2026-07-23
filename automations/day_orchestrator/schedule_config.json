@@ -589,6 +589,28 @@
       "timeout_minutes": 15,
       "verify": null
     },
+    "install_override_bulletin_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_override_bulletin_agent` can install/refresh the STANDALONE com.alphalete.override-bulletin-fri LaunchAgent on the mini, which FILLS the Override Bulletin week column Fridays 09:00-12:55 CST (q25m, gated) via deploy/override_bulletin_fri.sh. SANDBOX tab only (write_week refuses the live tab); posts nothing to Slack and sends no email. install_agent is read-only w.r.t. Sheet data; it only reloads the plist. Re-run after the plist changes.",
+      "display_name": "Install Override Bulletin agent (Fri 9am)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "override-bulletin-fri"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "install_pnl_office_agent": {
       "on_scheduler": false,
       "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_pnl_office_agent` can install/refresh the STANDALONE com.alphalete.pnl-office-fri LaunchAgent on the mini, which posts PNL for the Office to #top-leaders-alphalete-org + #alphalete-lvl1-chat Fridays 10:00-12:55 CST (q25m, gated) via deploy/pnl_office_fri.sh (--post = LIVE). install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",

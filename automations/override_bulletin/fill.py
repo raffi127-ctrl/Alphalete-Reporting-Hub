@@ -154,6 +154,38 @@ def assemble(week_mdy, roster, captains, *, regular, captain, special, ws=None,
     return section1, section2, unmatched
 
 
+def week_col(ws, label, header=None):
+    """0-based index of the column whose row-1 header is this week label, or None.
+    Weeks are found BY LABEL, never by position (a rolled column shifts indices)."""
+    header = header if header is not None else ws.row_values(1)
+    want = (label or "").strip()
+    for i, h in enumerate(header):
+        if (h or "").strip() == want:
+            return i
+    return None
+
+
+def week_is_filled(ws, label, *, min_rows=3):
+    """Has this week's column actually been filled in?
+
+    A rolled-but-empty column still HAS a header, so presence alone can't gate the
+    run (that would make it hold forever on an empty week). Mirrors pnl_office's
+    fill-gate: count data cells that aren't blank/$0."""
+    vals = ws.get_all_values()
+    if not vals:
+        return False
+    i = week_col(ws, label, header=vals[0])
+    if i is None:
+        return False
+    n = 0
+    for r in vals[1:]:
+        if i < len(r):
+            c = (r[i] or "").strip()
+            if c and c not in ("$0.00", "0", "$0", "-", "$-"):
+                n += 1
+    return n >= min_rows
+
+
 def _col_letter(idx0):
     s, n = "", idx0
     while True:
@@ -164,12 +196,22 @@ def _col_letter(idx0):
     return s
 
 
-def write_week(ws, section1, section2, *, dry_run=True):
-    """Write the assembled numbers into the newest (leftmost) week column.
-    section1/section2 are {row: value}. DRY-RUN prints; a real write is refused
-    against the live tab. Returns the target column letter."""
+def write_week(ws, section1, section2, *, week_label=None, dry_run=True):
+    """Write the assembled numbers into `week_label`'s column (falling back to the
+    newest column only when no label is given).
+
+    Targeting BY LABEL matters: the run resolves which week to fill from the
+    source, which is not necessarily the newest column on the tab — writing to
+    the newest one would silently overwrite a different week.
+    DRY-RUN prints; a real write is refused against the live tab."""
     header = ws.row_values(1)
-    idx = _newest_week_col(header)
+    idx = week_col(ws, week_label, header=header) if week_label else None
+    if idx is None:
+        if week_label:
+            raise ValueError(
+                f"no column headed {week_label!r} on {ws.title!r} — roll the week "
+                f"first (scaffold), don't write into another week's column")
+        idx = _newest_week_col(header)
     col = _col_letter(idx)
     cells = {**section1, **section2}
     if dry_run:
