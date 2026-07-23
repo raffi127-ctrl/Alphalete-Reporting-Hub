@@ -6,6 +6,12 @@ alphabetically and hand-counts yesterday (Loom 2026-07-22; Carlos confirmed
 2026-07-23 that all of it comes from the channel). This replaces that pass.
 Parsing rules, the two counting modes and the traps live in parse.py.
 
+THE FILL ONLY EVER RAISES A NUMBER (Megan 2026-07-23). Some sales reach the
+board by a route that is not this channel, and those stand — a rep is written
+only when they post a HIGHER count than the board already has. So the day
+climbs through the evening passes and can never regress, and re-running an old
+day is safe by construction.
+
 Reconciliation is built in, because the hand-count has been wrong both ways:
   * the office posts its own running tally through the day — "A&T - 21/16 /
     Box - 6/8 / Base - 12/20" — and the last one is an independent check;
@@ -302,9 +308,15 @@ def run_campaign(posts, g, day: dt.date, campaign: str, log=_log) -> dict:
         on_board = str(_cell(g, row, col)).strip() if col else ""
         same = on_board == str(rec["count"])
         agree += same
+        if same:
+            delta = ""
+        elif on_board.isdigit() and rec["count"] <= int(on_board):
+            # The board is ahead of what was posted — kept, never lowered.
+            delta = f"   <- board has {on_board}, KEPT (we only raise)"
+        else:
+            delta = f"   <- board has {on_board or '(blank)'}"
         log(f"  {_cell(g, row, NAME_COL):<28} {rec['count']:>2}"
-            f"  ({len(rec['posts'])} post(s))"
-            f"{'' if same else f'   <- board has {on_board or chr(39)*2!r}'}")
+            f"  ({len(rec['posts'])} post(s)){delta}")
         for f in dict.fromkeys(rec["flags"]):
             log(f"      ! {f}")
     for author, rec in unmatched:
@@ -317,18 +329,18 @@ def run_campaign(posts, g, day: dt.date, campaign: str, log=_log) -> dict:
     log(f"  {'TOTAL':<28} {total:>2}   ({agree}/{len(matched)} reps already "
         f"agree with the board)")
 
-    # The other direction: the board credits a rep who posted nothing. That is
-    # how Edgar's Monday 5 and Giovanni's Monday 1 showed up — sales reaching
-    # the board by some route that is not this channel. The fill never touches
-    # these rows (only reps who posted are written), but they must be visible.
+    # The other direction: the board credits a rep who posted nothing. Sales do
+    # reach the board by routes that are not this channel (Edgar Camunez,
+    # Charley Perez, Giovanni Monreal all did) — EXPECTED, and they stand
+    # (Megan 2026-07-23). Listed only so the day's numbers can be traced.
     if col:
-        for key, row in sorted(rows.items(), key=lambda kv: kv[1]):
-            if key in matched:
-                continue
-            on_board = str(_cell(g, row, col)).strip()
-            if on_board.isdigit() and int(on_board) > 0:
-                log(f"  ? board credits {_cell(g, row, NAME_COL)} with "
-                    f"{on_board}, but they posted nothing — left untouched")
+        kept = [_cell(g, row, NAME_COL) for key, row in
+                sorted(rows.items(), key=lambda kv: kv[1])
+                if key not in matched
+                and str(_cell(g, row, col)).strip().isdigit()
+                and int(str(_cell(g, row, col)).strip()) > 0]
+        if kept:
+            log(f"  kept as-is (on the board, didn't post): {', '.join(kept)}")
 
     tal = office_tally(posts, day, campaign)
     if tal:
@@ -340,7 +352,16 @@ def run_campaign(posts, g, day: dt.date, campaign: str, log=_log) -> dict:
 
 
 def fill_plan(g, result):
-    """(rep, a1, current, new) for every cell that would change."""
+    """(rep, a1, current, new, note) for every cell that would change.
+
+    THE FILL ONLY EVER RAISES A NUMBER (Megan 2026-07-23). Some sales reach
+    the board by a route that is not this channel — Edgar Camunez, Charley
+    Perez and Giovanni Monreal all carried board numbers with no matching
+    post — and those stand. A rep is overwritten only when they post a HIGHER
+    count than the board already has. So the day climbs through the evening
+    passes and can never regress: a deleted post, a rep who reposts with a
+    lower counter, or a hand-entered figure we can't see are all safe.
+    """
     from gspread.utils import rowcol_to_a1
     col = result["col"]
     if not col:
@@ -349,10 +370,18 @@ def fill_plan(g, result):
     for key, rec in result["matched"].items():
         row = result["rows"][key]
         cur = str(_cell(g, row, col)).strip()
-        new = str(rec["count"])
-        if cur != new:
-            plan.append((_cell(g, row, NAME_COL), rowcol_to_a1(row, col),
-                         cur or "(blank)", new))
+        new = rec["count"]
+        note = ""
+        if cur.isdigit():
+            if new <= int(cur):
+                continue                      # never lower what's there
+        elif cur:
+            # A non-numeric marker (X = didn't work, T = terminated). They
+            # posted a sale, so the number wins — but say so, because a
+            # terminated rep posting is worth a human look.
+            note = f"  (replaces marker {cur!r})"
+        plan.append((_cell(g, row, NAME_COL), rowcol_to_a1(row, col),
+                     cur or "(blank)", str(new), note))
     return plan
 
 
@@ -422,14 +451,14 @@ def main(argv=None) -> int:
         plan = fill_plan(g, res)
         _log(f"{res['campaign']} {_md(res['day'])} — {len(plan)} cell(s) "
              "would change:")
-        for rep, a1, cur, new in plan:
-            _log(f"  {a1}  {rep:<28} {cur} -> {new}")
+        for rep, a1, cur, new, note in plan:
+            _log(f"  {a1}  {rep:<28} {cur} -> {new}{note}")
         if not a.yes:
             continue
         if plan:
             _retry(ws.batch_update,
                    [{"range": a1, "values": [[int(new)]]}
-                    for _rep, a1, _cur, new in plan])
+                    for _rep, a1, _cur, new, _note in plan])
             _log(f"  wrote {len(plan)} cell(s)")
     if not a.yes:
         _log("DRY RUN — re-run with --yes to write")

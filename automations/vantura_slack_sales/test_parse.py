@@ -150,13 +150,46 @@ def test_day_rollover():
     return bad
 
 
+def test_fill_only_raises():
+    """The fill raises a number, never lowers one (Megan 2026-07-23): sales
+    reach the board by routes that aren't the channel, and those stand."""
+    from automations.vantura_slack_sales import run as R
+
+    # Minimal grid: row 4 day headers, row 5 a Base rep, row 6 the totals
+    # anchor so campaign_rows() stops there.
+    def grid(cell_value):
+        g = [[""] * 12 for _ in range(6)]
+        g[3][1], g[3][4] = "REP", "Monday"
+        g[4][1], g[4][4], g[4][11] = "Some Rep", cell_value, "Base"
+        g[5][1] = R.TOTALS_TOP
+        return g
+
+    bad = []
+    for on_board, count, want in [("2", 5, [("2", "5")]),   # higher -> raise
+                                  ("5", 2, []),             # lower  -> keep
+                                  ("5", 5, []),             # equal  -> no-op
+                                  ("", 3, [("(blank)", "3")]),
+                                  ("0", 3, [("0", "3")]),
+                                  ("X", 1, [("X", "1")])]:  # marker -> replace
+        g = grid(on_board)
+        res = {"col": 5, "rows": {"some rep": 5},
+               "matched": {"some rep": {"count": count, "posts": [],
+                                        "flags": []}}}
+        got = [(p[2], p[3]) for p in R.fill_plan(g, res)]
+        if got != want:
+            bad.append(f"fill_plan board={on_board!r} count={count}: "
+                       f"got {got}, want {want}")
+    return bad
+
+
 def main() -> int:
     checks = [test_cases, test_running_counter, test_units_sum,
-              test_run_on_address, test_campaigns_dont_poach, test_day_rollover]
+              test_run_on_address, test_campaigns_dont_poach, test_day_rollover,
+              test_fill_only_raises]
     bad = [b for chk in checks for b in chk()]
     for b in bad:
         print("FAIL", b)
-    total = len(CASES) + 7
+    total = len(CASES) + 13
     print(f"{total - len(bad)}/{total} passed")
     return 1 if bad else 0
 
