@@ -2965,13 +2965,21 @@
       "display_name": "Install B2B Metrics agent (7:45am)",
       "source_type": "local",
       "data_sources": [],
-      "command": ["automations.day_orchestrator.install_agent"],
-      "base_args": ["b2b-metrics"],
-      "cadence": {"weekdays": []},
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "b2b-metrics"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
       "priority": "P3",
       "freshness_target": null,
       "depends_on": [],
-      "verify": {"type": "not_configured"},
+      "verify": {
+        "type": "not_configured"
+      },
       "machine": "Lucy 2"
     },
     "b2b_metrics": {
@@ -3012,7 +3020,15 @@
         "--sheet"
       ],
       "cadence": {
-        "weekdays": [0, 1, 2, 3, 4, 5, 6]
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
       },
       "priority": "P2",
       "freshness_target": null,
@@ -3113,13 +3129,21 @@
       "display_name": "Disable B2B Quality standalone agent",
       "source_type": "local",
       "data_sources": [],
-      "command": ["automations.day_orchestrator.disable_agent"],
-      "base_args": ["b2b-quality"],
-      "cadence": {"weekdays": []},
+      "command": [
+        "automations.day_orchestrator.disable_agent"
+      ],
+      "base_args": [
+        "b2b-quality"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
       "priority": "P3",
       "freshness_target": null,
       "depends_on": [],
-      "verify": {"type": "not_configured"},
+      "verify": {
+        "type": "not_configured"
+      },
       "machine": "Lucy 2"
     },
     "disable_att_order_log_agent": {
@@ -3288,6 +3312,27 @@
       "timeout_minutes": 25,
       "verify": null,
       "machine": "Lucy 2"
+    },
+    "override_discover": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "One-shot DISCOVERY for the override-bulletin fill (automations.override_bulletin.discover): lists the crosstab sheets + dumps structure for the 4 override Tableau views so the parsers can be built. Runs on LUCY 1 (Raf's org login). READ-ONLY — no sheet writes. `lucy rerun override_discover` then `lucy logtail`.",
+      "display_name": "Override fill — Tableau discovery (one-shot)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.override_bulletin.discover"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
     },
     "install_b2b_quality_agent": {
       "on_scheduler": false,
