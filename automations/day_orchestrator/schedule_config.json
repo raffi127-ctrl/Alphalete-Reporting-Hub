@@ -1963,7 +1963,7 @@
       }
     },
     "vantura_churn": {
-      "on_scheduler": false,
+      "on_scheduler": true,
       "machine": "Lucy 2",
       "display_name": "Vantura Sales Board - Churn & Activations",
       "source_type": "tableau",
@@ -1974,7 +1974,9 @@
       "command": [
         "automations.vantura_churn.run"
       ],
-      "base_args": [],
+      "base_args": [
+        "--no-post"
+      ],
       "cadence": {
         "weekdays": [
           0,
@@ -1985,7 +1987,7 @@
           5,
           6
         ],
-        "not_before": "07:00"
+        "not_before": "04:30"
       },
       "priority": "P2",
       "freshness_target": null,
@@ -1995,7 +1997,7 @@
         "type": "manifest",
         "report_id": "vantura-churn"
       },
-      "_flow_note": "STAGED for Lucy 2's 4am flow, NOT yet active (on_scheduler:false) — activate at cutover once the standalone com.alphalete.vantura-churn-daily agent is disabled (disable_vantura_churn_agent), else double-run. not_before 07:00 = when its data lands AND when it posts the churn screenshot to Slack (the standalone fires 7:00; it ran 07:12 on 2026-07-20). Was wrongly staged 05:00, which would pull-and-POST before the data is in. base_args [] is correct — the module writes+posts by default (--dry-run is the opt-in), no --sheet-style flag needed. Rollback: install_vantura_churn agent + flip on_scheduler false."
+      "_flow_note": "ACTIVE in Lucy 2's 4am flow (2026-07-23). WRITE-ONLY (--no-post): it refreshes the LUCY CHURN / Activations board that b2b_metrics screenshots (#6/#7); b2b_metrics posts the churn now, not this. not_before 04:30 is a SAFETY FLOOR, not a post time — Carlos confirmed 2026-07-23 the ATTTRACKER data is ready when the trackers post (~04:30), so this can't pull before the data exists; data_sources readiness gates the exact start. b2b_metrics depends_on this so it always runs AFTER the churn write. The standalone com.alphalete.vantura-churn-daily (7:00, --no-post) is kept as a BACKSTOP for the first flow runs (a second write is idempotent) — retire it via disable_vantura_churn_agent once the 4am flow is verified. Rollback: flip on_scheduler false + keep the standalone."
     },
     "disable_vantura_churn_agent": {
       "on_scheduler": false,
@@ -2985,24 +2987,37 @@
       "machine": "Lucy 2"
     },
     "b2b_metrics": {
-      "on_scheduler": false,
-      "_off_scheduler_note": "The consolidated B2B Metrics thread — ONE ordered run per B2B office (Megan 2026-07-20), replacing the scatter of b2b_quality + vantura_churn posting into one thread. on_scheduler:false while it's being verified; `lucy rerun b2b_metrics` runs it DRY (capture only, posts nothing) and `lucy rerun b2b_metrics --office carlos --post` posts. Captures all 8 mapped items in Carlos's order (Sales Metrics, Activation Rate, Churn Rate, Churn & Activations Board, Activation Rate by Rep, Order Log, Activation Report Overview, Out of Bounds; #7 Activation report absent until Carlos maps it) and posts them into the SAME thread via b2b_quality's thread_state. MUST RUN ON LUCY 2 (Carlos's Tableau login). Activation/Churn reuse b2b_quality's crop/sort capture; churn board + activation-by-rep are Sheets-export shots of LUCY CHURN; order log + payout ride the ATTTRACKER-B2B ORDERLOG pull (once). DO NOT retire b2b_quality/vantura_churn posting until this is verified — else the thread doubles or goes dark. Hub card: b2b-metrics.",
-      "display_name": "B2B Metrics (Carlos) -> thread",
+      "on_scheduler": true,
+      "_flow_note": "ACTIVE in Lucy 2's 4am flow (2026-07-23) — posts all B2B offices (--all --post) into their channels, D2D-style, targeting ~5am. depends_on vantura_churn so it runs AFTER the LUCY CHURN write (#6/#7 screenshot that tab); data_sources readiness gates the start (Carlos: ATTTRACKER ready ~04:30 when the trackers post). MUST RUN ON LUCY 2 (Carlos's Tableau login). ONE 'b2b-metrics' hub card covers every office. Carlos currently posts 6 items (his 4 ATTTRACKER live captures are in offices.carlos.skip_views until the sheet-render rebuild); Atef posts 10. The standalone com.alphalete.b2b-metrics (7:45) is kept as a BACKSTOP for the first flow runs — its thread_state dedup makes a second run a no-op, so no double-post; retire it once the 4am flow is verified.",
+      "display_name": "B2B Metrics -> office channels",
       "source_type": "tableau",
-      "data_sources": [],
+      "data_sources": [
+        "tableau:order_log",
+        "tableau:churn"
+      ],
       "command": [
         "automations.b2b_metrics.runner"
       ],
       "base_args": [
-        "--office",
-        "carlos"
+        "--all",
+        "--post"
       ],
       "cadence": {
-        "weekdays": []
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
       },
       "priority": "P2",
       "freshness_target": null,
-      "depends_on": [],
+      "depends_on": [
+        "vantura_churn"
+      ],
       "timeout_minutes": 30,
       "verify": null,
       "machine": "Lucy 2"
