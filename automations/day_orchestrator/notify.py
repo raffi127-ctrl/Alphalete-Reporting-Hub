@@ -668,13 +668,11 @@ def _build_body(cfg, ds, *, checkpoint: bool):
             html.append(f"<li><b>{_esc(name)}</b> — {_esc(when)}</li>")
         html.append("</ul>")
 
-    # 5) ORG SALES BOARD — copy-vs-VA comparison breakdown chart (when it ran)
-    bd_html, bd_text = _board_compare_section(ds)
-    if bd_html:
-        html.append(bd_html)
-    if bd_text:
-        text.append("")
-        text.append(bd_text)
+    # 5) ORG SALES BOARD — copy-vs-VA comparison breakdown: RETIRED 2026-07-21
+    # (Megan). The VA tab is no longer being hand-filled and Eve now verifies the
+    # automation directly, so this section only produced false "missed pull"
+    # rows off the bottom leaderboard/history tables. _board_compare_section is
+    # left defined but no longer called.
 
     html.append("</div>")
     return "".join(html), "\n".join(text)

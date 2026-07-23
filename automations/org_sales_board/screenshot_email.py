@@ -437,24 +437,17 @@ def build_email(images: List[Tuple[str, Path]], to_addrs: List[str],
               'font-size:22px;font-weight:bold;color:#8a0000;border:1px solid #bbb;'
               'max-width:1000px;width:100%;box-sizing:border-box;margin:0 0 16px">'
               'ALPHALETE ORG</div>')
-    # Copy-vs-VA comparison breakdown chart under the board (Megan 2026-07-09:
-    # "add it to the org sales board email too so Raf/Maud see it"). Best-effort —
-    # a compare error must never block the board email.
-    chart = ""
-    try:
-        from automations.org_sales_board import compare as _cmp
-        chart = ('<div style="max-width:1000px">'
-                 + _cmp.format_breakdown_html(_cmp.breakdown()) + '</div>')
-    except Exception:  # noqa: BLE001
-        chart = ""
+    # Copy-vs-VA comparison breakdown chart: RETIRED 2026-07-21 (Megan). The VA
+    # tab is no longer hand-filled and Eve verifies the automation directly, so
+    # the chart only produced false "missed pull" rows off the bottom
+    # leaderboard/history tables. Removed from the board email.
     html = (
         '<div style="font-family:Arial,Helvetica,sans-serif;color:#000">'
         + banner
         + "".join(parts)
-        + chart
         + '<div style="font-size:11px;color:#888;margin-top:6px">'
-        'Auto-generated from the Sales Board (copy tab), cross-checked against '
-        'the VA tab. — Alphalete Reporting</div></div>')
+        'Auto-generated from the Sales Board (copy tab). '
+        '— Alphalete Reporting</div></div>')
     msg.set_content("Alphalete Org Sales Board — see the HTML version for the "
                     "screenshots.")
     msg.add_alternative(html, subtype="html")
