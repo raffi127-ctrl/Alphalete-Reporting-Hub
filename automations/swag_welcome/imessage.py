@@ -82,7 +82,12 @@ def _send_text(phone: str, text: str) -> None:
 # The Shortcut reads two files we drop next to it; see README for the 3-action
 # build. (Text still goes via AppleScript, which is rock-solid.)
 SHORTCUT_NAME = "Alphalete Swag Card"
-_SWAG_DIR = Path.home() / ".swag_cards"
+# NOT a hidden (dot) folder on purpose: Shortcuts is sandboxed and the card
+# handed over with `shortcuts run -i` came through EMPTY from `~/.swag_cards/`
+# on JD's Mac (2026-07-23) — the Shortcut then had no message content, so it
+# silently sent nothing while still exiting 0. A normal visible folder is
+# readable by the Shortcuts runtime.
+_SWAG_DIR = Path.home() / "AlphaleteSwagCards"
 _SWAG_IMG = _SWAG_DIR / "current.png"
 _SWAG_PHONE = _SWAG_DIR / "phone.txt"   # phone written here too (file is context-safe)
 # Card auto-send via the "Alphalete Swag Card" Shortcut is WORKING (verified
