@@ -30,17 +30,21 @@ LEDGER_CREDICO = "Credico"
 
 
 def _dd_week_for(dd_weeks, sheet_week):
-    """Pick the DD description-week that maps to the sheet's Sunday week.
+    """Amount for the sheet's Sunday week from a captain's DD per-week dict.
 
-    Resolved from validation (Carlos 7.12 sheet == his $10,875 DD row): the DD
-    description labels each week; we match the exact sheet label first, then the
-    day-behind neighbour (sheet Sunday m.d ↔ DD m.(d-1)). Returns the amount, or
-    None if the captain has no DD row for that week."""
+    The DD Detail default download carries only the just-closed week, labelled a
+    day behind the sheet (sheet Sunday 7.19 ↔ DD 7.18). So: exact label, then the
+    day-behind neighbour, then — since the download holds a single week — that one
+    week as the fallback. Returns the amount, or None if the captain has no row."""
     if sheet_week in dd_weeks:
         return dd_weeks[sheet_week]
     m, d, y = sheet_week.split(".")
     neighbour = f"{int(m)}.{int(d) - 1}.{y}"          # DD runs a day behind
-    return dd_weeks.get(neighbour)
+    if neighbour in dd_weeks:
+        return dd_weeks[neighbour]
+    if len(dd_weeks) == 1:                            # single-week download
+        return next(iter(dd_weeks.values()))
+    return None
 
 
 def pull_all(week_mdy, week_header, period_num, period_year, *, page=None, verbose=True):

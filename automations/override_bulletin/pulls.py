@@ -298,8 +298,9 @@ RAF_BONUS_SHEET = "Payout- Raf wow"
 
 ORG_SUMMARY_VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
                     "OverridesICDView/ORGOVERRIDESUMMARY")
-# The crosstab worksheet title (the table is 'Consultant (+/-) Campaign').
-ORG_SUMMARY_SHEET = "Consultant (+/-) Campaign"
+# Crosstab sheet name — confirmed on Lucy 1; only renders under a 'Period 2026-M'
+# filter (the bare 'Period M' form returns no sheets).
+ORG_SUMMARY_SHEET = "ORG Override Summary"
 
 
 def _with_filter(base_url, field, value):

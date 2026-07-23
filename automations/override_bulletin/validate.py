@@ -1,29 +1,28 @@
-"""Lucy-1 discovery for the two remaining unknowns (ONE run):
-  A. DD Detail — which Captain's-Bonus WEEKS are present in the default download?
-     (validation showed only 7.18.26 — need to know if a DD-week filter is required
-     and what value pulls the sheet's 7.12 week / Carlos $10,875.)
-  B. ORG OVERRIDE SUMMARY — the real downloadable crosstab sheet name under a
-     Period filter ('Consultant (+/-) Campaign' was wrong; dialog showed 1 thumb).
+"""Lucy-1 final validation (ONE run):
+  A. Regular overrides — download 'ORG Override Summary' (Period 2026-7), dump the
+     available week-header columns, parse per candidate week (# owners + sample).
+  B. Full assemble — run the whole pull→assemble for the target week on the
+     SANDBOX tab (dry-run), dump section-1 / section-2 / unmatched so the numbers
+     can be eyeballed before any write.
 Writes to `_validate_out`. RUN ON LUCY 1.
 """
 from __future__ import annotations
 
-import re
 import sys
 from pathlib import Path
 
 WORKBOOK_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
 OUT = Path("output/override_bulletin/validate")
 TAB = "_validate_out"
-
-_CAP_RE = re.compile(r"captain'?s?\s+bonus", re.I)
-_WK = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{2,4})")
+TARGETS = ["7.19.26", "7.12.26"]          # next-fill, then last known
 
 
 def main(argv=None) -> int:
-    from automations.shared.tableau_patchright import tableau_session
+    from automations.shared.tableau_patchright import (
+        tableau_session, download_crosstab_patchright)
     from automations.override_bulletin import pulls as P
-    from automations.recruiting_report import opt_phase as OP
+    from automations.override_bulletin import fill as F
+    from automations.override_bulletin import run as R
     from automations.recruiting_report import fill as _fill
     OUT.mkdir(parents=True, exist_ok=True)
     dump = []
@@ -31,67 +30,72 @@ def main(argv=None) -> int:
     def row(*c):
         dump.append([str(x) for x in c])
 
+    wb = _fill._client().open_by_key(WORKBOOK_ID)
+    ws = wb.worksheet(F.SANDBOX_TAB)
+    roster = F.read_roster(ws)
+    captains = F.read_captains(ws)
+
     with tableau_session(headless=True, verbose=True) as page:
-        # A) DD Detail — distinct captain-bonus weeks + total per week
-        row("=A: DD captain-bonus WEEKS present in default download=")
+        # A) regular override summary — structure + parse per week
+        row("=A: ORG Override Summary (Period 2026-7)=")
         try:
-            from automations.shared.tableau_patchright import download_crosstab_patchright
-            download_crosstab_patchright(P.DD_DETAIL_VIEW, P.DD_DETAIL_SHEET,
-                                         OUT / "dd.csv", page=page, verbose=True)
-            rows = P.read_crosstab(OUT / "dd.csv")
-            weeks = {}
-            for r in rows:
-                cap = next((str(c) for c in r if _CAP_RE.search(str(c))), None)
-                if not cap:
-                    continue
-                m = _WK.search(cap)
-                if not m:
-                    continue
-                wk = f"{int(m.group(1))}.{int(m.group(2))}.{m.group(3)[-2:]}"
-                amt = max((P._num_locale(c) or 0) for c in r)
-                weeks[wk] = round(weeks.get(wk, 0) + amt, 2)
-            row(f"{len(rows)} rows; captain-bonus weeks:")
-            for wk in sorted(weeks):
-                row(f"  week {wk}", f"total={weeks[wk]}")
+            url = P._with_filter(P.ORG_SUMMARY_VIEW, "Period", "Period 2026-7")
+            download_crosstab_patchright(url, P.ORG_SUMMARY_SHEET, OUT / "org.csv",
+                                         page=page, verbose=True)
+            rows = P.read_crosstab(OUT / "org.csv")
+            row(f"{len(rows)} rows; header rows 0-2:")
+            for i in range(min(3, len(rows))):
+                row(f"  r{i}", *[str(c) for c in rows[i][:14]])
+            for wk in TARGETS:
+                m, d, y = wk.split(".")
+                hdr = f"{int(m)}/{int(d)}/20{y[-2:]}"
+                reg = P.parse_override_summary(rows, hdr)
+                top = sorted(reg.items(), key=lambda kv: -kv[1])[:5]
+                row(f"  parse {hdr}", f"{len(reg)} owners",
+                    *[f"{k}={v}" for k, v in top])
         except Exception as e:  # noqa: BLE001
-            row("DD FAILED", type(e).__name__, str(e)[:200])
+            row("REGULAR FAILED", type(e).__name__, str(e)[:200])
 
-        # A2) DD Detail WITH a DD-Week URL filter — try to pull 7/11 (sheet 7.12)
-        for field, val in [("cl.DD Week", "7/11/2026"), ("cl.DD Week", "7/12/2026"),
-                           ("DD Week", "7/11/2026")]:
+        # B) full assemble for each target week (dry)
+        for wk in TARGETS:
+            row(f"=B: FULL ASSEMBLE {wk} (sandbox, dry)=")
             try:
-                url = P._with_filter(P.DD_DETAIL_VIEW, field, val)
-                download_crosstab_patchright(url, P.DD_DETAIL_SHEET,
-                                             OUT / "ddf.csv", page=page, verbose=True)
-                rows = P.read_crosstab(OUT / "ddf.csv")
-                caro = P.parse_dd_captain(rows, {P._norm_name("Carlos Hidalgo")})
-                row(f"DD filter {field}={val}", f"carlos={caro.get(P._norm_name('Carlos Hidalgo'))}")
+                m, d, y = wk.split(".")
+                week_header = f"{int(m)}/{int(d)}/20{y[-2:]}"
+                regular, captain, special = R.pull_all(
+                    wk, week_header, period_num=int(m), period_year=f"20{y[-2:]}",
+                    page=page, verbose=True)
+                s1, s2, un = F.assemble(wk, roster, captains, regular=regular,
+                                        captain=captain, special=special, ws=ws)
+                row(f"  regular={len(regular)} captain={len(captain)} special={len(special)}")
+                row(f"  section1={len(s1)} cells  section2={len(s2)} cells")
+                # show captain/special section-2 values (small, checkable)
+                for key, rws in captains.items():
+                    parts = []
+                    if rws.get("captain") and rws["captain"] in s2:
+                        parts.append(f"cap={s2[rws['captain']]}")
+                    if rws.get("special") and rws["special"] in s2:
+                        parts.append(f"spc={s2[rws['special']]}")
+                    if parts:
+                        row(f"    {key}", *parts)
+                row(f"  UNMATCHED ({len(un)})", *un)
             except Exception as e:  # noqa: BLE001
-                row(f"DD filter {field}={val} FAILED", str(e)[:120])
-
-        # B) ORG summary — real crosstab sheet name(s) under a Period filter
-        row("=B: ORG OVERRIDE SUMMARY crosstab sheet names=")
-        for period in ("Period 2026-7", "Period 7", None):
-            url = P.ORG_SUMMARY_VIEW if period is None else P._with_filter(
-                P.ORG_SUMMARY_VIEW, "Period", period)
-            try:
-                sheets = OP.list_crosstab_sheets(url, page=page, settle_s=8, max_s=45)
-                row(f"period={period!r}", f"sheets={sheets}")
-            except Exception as e:  # noqa: BLE001
-                row(f"period={period!r} FAILED", type(e).__name__, str(e)[:140])
+                import traceback
+                row(f"ASSEMBLE {wk} FAILED", type(e).__name__, str(e)[:150])
+                print(traceback.format_exc(), flush=True)
 
     try:
-        wb = _fill._client().open_by_key(WORKBOOK_ID)
         try:
-            ws = wb.worksheet(TAB)
-            ws.clear()
+            out_ws = wb.worksheet(TAB)
+            out_ws.clear()
         except Exception:  # noqa: BLE001
-            ws = wb.add_worksheet(title=TAB, rows=200, cols=40)
-        ws.update([[str(c)[:90] for c in r] for r in dump], "A1", value_input_option="RAW")
+            out_ws = wb.add_worksheet(title=TAB, rows=300, cols=40)
+        out_ws.update([[str(c)[:90] for c in r] for r in dump], "A1",
+                      value_input_option="RAW")
         print(f"wrote {len(dump)} rows to {TAB!r}", flush=True)
     except Exception as e:  # noqa: BLE001
         print(f"couldn't write {TAB}: {type(e).__name__}: {e}", flush=True)
-    print("discovery done.", flush=True)
+    print("validate done.", flush=True)
     return 0
 
 
