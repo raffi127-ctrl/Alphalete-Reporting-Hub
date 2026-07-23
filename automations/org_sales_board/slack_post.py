@@ -159,6 +159,32 @@ def _channel():
     return (f"scratch ({scratch})", scratch) if scratch else CHANNEL
 
 
+def _refresh_je() -> None:
+    """Re-pull JUST the Retail JE section right before the Slack post so a
+    day-behind JE that only posted its latest day AFTER the 4am fill isn't left
+    blank in the image (Eve 2026-07-23).
+
+    JE runs a day (sometimes two) behind and publishes at an irregular hour, so
+    the 4am scheduled fill often misses the newest completed day; this pre-post
+    pull picks it up whenever JE has since published. Called on the retry passes
+    too (q25m until posted), so it self-heals through the morning.
+
+    BEST-EFFORT BY DESIGN: JE legitimately lags and the light gate posts with a
+    blank JE column anyway, so a slow/failed/flaky pull must NEVER block or crash
+    the post — it's swallowed, and we post with whatever JE data is already on the
+    board. Fills ONLY the 'Retail JE' section (its day cells; the J total is a
+    live formula that recomputes), never the whole board — no rollover, no
+    compare, no manifest side effects."""
+    try:
+        from automations.org_sales_board import orchestrate
+        ws = _retry(lambda: open_by_key(SHEET_ID).worksheet(SANDBOX_TAB))
+        print("  [je-refresh] re-pulling Retail JE before the Slack post…")
+        orchestrate.run_daily(ws, dry_run=False, only=["Retail JE"])
+    except Exception as e:  # noqa: BLE001 — must never break the post
+        print(f"  [je-refresh] skipped ({type(e).__name__}: {e}) — posting with "
+              "whatever JE data is already on the board.")
+
+
 def _already_posted(day: str) -> bool:
     return STATE_PATH.exists() and STATE_PATH.read_text().strip() == day
 
@@ -188,6 +214,16 @@ def main(argv=None) -> int:
 
     today = dt.date.today()
     yday = today - dt.timedelta(days=1)
+    day_key = today.isoformat()
+
+    # Refresh JUST Retail JE right before we build + post the image, so a
+    # day-behind JE that published after the 4am fill isn't left blank in the
+    # Slack post (Eve 2026-07-23). Only when we're actually going to post and
+    # haven't posted today yet — skip on dry-runs (no expensive pull) and once
+    # today's post is out. Best-effort inside _refresh_je: never blocks the post.
+    if args.post and not _already_posted(day_key):
+        _refresh_je()
+
     ws = _retry(lambda: open_by_key(SHEET_ID).worksheet(SANDBOX_TAB))
     g = _retry(ws.get_all_values)
     rng, start, end, heads = board_range(g)
@@ -207,7 +243,6 @@ def main(argv=None) -> int:
     if not ok:
         print("NOT FILLED — holding. (Scheduler retries in 25 min.)")
         return 75
-    day_key = today.isoformat()
     if _already_posted(day_key):
         print(f"already posted {day_key} — nothing to do.")
         return 0
