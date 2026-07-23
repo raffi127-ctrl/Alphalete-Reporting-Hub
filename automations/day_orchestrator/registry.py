@@ -58,6 +58,14 @@ class Report:
     # INCOMPLETE / FAILED / MISSED — any outcome). Unlike depends_on, a FAILED
     # `after` dep does NOT block us — it just means "wait your turn behind it, but
     # never get stranded if it glitches" (daily_rep_breakdown after org_sales_board).
+    scoped_rerun_cmd: Optional[str] = None
+    # SURGICAL re-run prefix for a report whose INCOMPLETE misses are named UNITS
+    # (owners / ICDs) rather than the whole report — e.g. "lucy focus_owner". When
+    # set, a problem alert re-run targets JUST the missing units:
+    # `<scoped_rerun_cmd> "Unit A" "Unit B"` (built from the manifest's failed[]
+    # list). Unset = the alert falls back to manifest retry_args, then a whole
+    # `lucy rerun`. Megan 2026-07-23: don't re-run the whole report for a few
+    # missing owners.
 
 
 @dataclass
@@ -88,6 +96,7 @@ def _build_report(rid: str, r: dict) -> Report:
         idempotency=r.get("idempotency", {}),
         machine=r.get("machine", DEFAULT_MACHINE),
         order=r.get("order"),
+        scoped_rerun_cmd=r.get("scoped_rerun_cmd"),
     )
 
 

@@ -1871,6 +1871,8 @@
       "after": [
         "org_sales_board"
       ],
+      "scoped_rerun_cmd": "lucy focus_owner",
+      "_scoped_rerun_note": "Megan 2026-07-23: when this finishes INCOMPLETE with a few owners still missing, the problem alert re-runs JUST those owners — `lucy focus_owner \"A\" \"B\"` (surgical per-owner ownerville re-scrape, --daily-window, MERGE) — not the whole ~90m report. Owner names come from the manifest failed[] list.",
       "verify": {
         "type": "manifest",
         "report_id": "daily-rep-breakdown"

@@ -284,8 +284,8 @@ def _claude_block(rs, reason, cfg, date) -> str:
     if rs.attempts:
         lines.append(f"Attempts today: {rs.attempts}")
     lines += [
-        f"Re-run (queues to the mini): lucy rerun {rs.report_id}",
-        f"Run locally to reproduce: {_runnable(rs.report_id, cfg)}",
+        f"Re-run (queues to the mini): {_rerun_for(rs, cfg)}",
+        f"Run locally to reproduce the whole report: {_runnable(rs.report_id, cfg)}",
         "Diagnose the root cause from the log tail below and fix it in the repo so "
         "the missing cells populate; if it's a transient Tableau/network blip, just "
         "`lucy rerun` it. Full log tail:",
@@ -295,28 +295,57 @@ def _claude_block(rs, reason, cfg, date) -> str:
     return "\n".join(lines)
 
 
-def _diagnose(rs, cfg, date):
-    """(human reason, needs_appstream_reseed, runnable re-run) for a failure."""
-    rerun = f"lucy rerun {rs.report_id}"
-    # Scope the re-run to just the failed PART when the report handed up retry_args
-    # (e.g. daily_metrics --only churn) — no need to redo the whole report. The
-    # manifest lives under the report's verify id, which is usually the same as
-    # report_id (falls back to whole-report rerun if it can't be resolved).
+def _clean_unit(name: str) -> str:
+    """The bare unit name for a scoped re-run command — strips the verifier's
+    trailing annotation ('Marcellus Butler (blank in target column)' → 'Marcellus
+    Butler') and a leading 'ICD: ' / 'program: ' label if a manifest used one."""
+    s = str(name).strip()
+    i = s.rfind(" (")
+    if i > 0 and s.endswith(")"):
+        s = s[:i].strip()
+    for pre in ("ICD:", "program:", "owner:"):
+        if s.lower().startswith(pre.lower()):
+            s = s[len(pre):].strip()
+    return s
+
+
+def _rerun_for(rs, cfg) -> str:
+    """The re-run command for a problem report, most-surgical first:
+      1) `scoped_rerun_cmd "Unit A" "Unit B"` — when the report declares one and we
+         know exactly which named units are missing (Megan 2026-07-23: re-run only
+         the missing owners, not the whole report).
+      2) `lucy rerun <id> <retry_args>` — the report handed up manifest retry_args
+         that scope to the failed parts (e.g. daily_metrics --only churn).
+      3) `lucy rerun <id>` — whole report, when nothing narrower is known.
+    """
+    r = cfg.reports.get(rs.report_id)
+    # 1) named-unit scoped command
+    scoped = getattr(r, "scoped_rerun_cmd", None) if r is not None else None
+    if scoped and rs.missing:
+        units = [_clean_unit(m) for m in rs.missing]
+        units = [u for u in units if u]
+        if units:
+            return scoped + " " + " ".join(f'"{u}"' for u in units)
+    # 2) manifest retry_args (the failed-parts flags the report wrote)
     try:
         from automations.shared import run_manifest as _rm
-        _r = cfg.reports.get(rs.report_id)
         _vid = None
-        if _r is not None:
-            _v = getattr(_r, "verify", None)
+        if r is not None:
+            _v = getattr(r, "verify", None)
             _vid = (_v or {}).get("report_id") if isinstance(_v, dict) else None
         for _mid in filter(None, (_vid, rs.report_id)):
             _spec = _rm.retry_spec(_mid)
             if _spec and _spec.get("retry_args"):
-                rerun = (f"lucy rerun {rs.report_id} "
-                         + " ".join(_spec["retry_args"]))
-                break
+                return f"lucy rerun {rs.report_id} " + " ".join(_spec["retry_args"])
     except Exception:  # noqa: BLE001 — a scoped rerun is a nicety, never fail here
         pass
+    # 3) whole report
+    return f"lucy rerun {rs.report_id}"
+
+
+def _diagnose(rs, cfg, date):
+    """(human reason, needs_appstream_reseed, runnable re-run) for a failure."""
+    rerun = _rerun_for(rs, cfg)
     low = _log_tail(rs.report_id, date)
     if ("appstream session expired" in low or "no live token" in low
             or "0 rqst token" in low):
