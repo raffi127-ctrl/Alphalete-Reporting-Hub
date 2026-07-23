@@ -129,7 +129,16 @@ def _looks_logged_out(page) -> bool:
     if "/identity/account/login" in url or "/account/login" in url:
         return True
     try:
-        return page.locator('input[type="password"]').count() > 0
+        if page.locator('input[type="password"]').count() > 0:
+            return True
+        # 2026-07-23: the ApplicantStream SSO page is username-FIRST (no
+        # password field) — the old check called it logged-in. Match its
+        # tells too.
+        if page.locator('input[placeholder="Username" i]').count() > 0:
+            return True
+        body = (page.inner_text("body", timeout=8000) or "").lower()
+        return ("please login" in body
+                or "hire smarter and faster" in body)
     except Exception:  # noqa: BLE001
         return False
 
