@@ -152,6 +152,12 @@ def _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dr
     2026-07-23: the post itself is the name + error; the how-to-fix and the extras
     live in the thread so the channel skims clean and each fix happens in-thread."""
     label = rs.display_name or rs.report_id
+    # Split the missing units into TERMINATED (on the terminated-ICD list — should
+    # be REMOVED from the report, a re-run won't help) vs LIVE (actually failed —
+    # worth re-running). Megan 2026-07-23: tell us when a missing ICD is terminated
+    # and needs pulling from the report.
+    term_hits, live_units = _terminated_split(rs.missing) if kind == "INCOMPLETE" else ([], [])
+
     # PARENT — report name, then the error. The error NAMES the specific ICDs /
     # items that didn't fill (Megan 2026-07-23: say WHICH ICDs, not just "timeout").
     if kind == "INCOMPLETE":
@@ -159,8 +165,6 @@ def _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dr
         title = f":warning: *{label}* — ran, but {n or 'some'} didn't fill"
         if rs.missing:
             err = f"Didn't fill: {', '.join(rs.missing)}"
-            # Keep the underlying reason too, but only if it adds context beyond a
-            # bare "incomplete" (e.g. "not in ownerville" / an auth expiry).
             if reason and reason not in ("INCOMPLETE",) and not reason.lower().startswith(
                     ("completed", "ran; ", "manifest")):
                 err += f" — {reason}"
@@ -172,20 +176,40 @@ def _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dr
         if rs.missing:  # a hard fail that still knows which parts were owed
             err = f"Didn't fill: {', '.join(rs.missing)} — {reason}"
     parent = [f"*Error:* {err}"]
+    # High-visibility on the PARENT: a terminated ICD is an action Megan can take
+    # herself right now (remove it) — surface it top-level, not buried in-thread.
+    if term_hits:
+        parent.append(":no_entry: *Terminated — remove from this report:* "
+                      + ", ".join(_term_label(h) for h in term_hits))
     ts = _post_corrections(cfg, title, parent, dry_run,
                            tag=f"failure-{rs.report_id}")
 
-    # REPLY — the details + the fix. Threaded under the parent. The parent already
-    # names what didn't fill, so the reply just reassures + gives the fix.
+    # REPLY — the details + the fix, threaded under the parent.
     reply = []
-    if kind == "INCOMPLETE":
+    if term_hits:
+        reply.append("*These ICDs are on the terminated list — remove them from this "
+                     "report* (a re-run won't fill them):")
+        for h in term_hits:
+            reply.append(f"   • {_term_label(h)}"
+                         + (f" — {h['notes']}" if h.get("notes") else ""))
+        reply.append("")
+    if kind == "INCOMPLETE" and live_units:
         reply.append("*Everything else in this report ran fine* — only the item(s) "
-                     "named above are missing.")
+                     "above are missing.")
         reply.append("")
     if needs_reseed:
         reply.append("*First, a one-time re-seed* (someone at the mini clears the "
                      "login check): `lucy reseed_appstream`")
-    reply.append(f"*To re-run it:* `{rerun}`")
+    # Re-run ONLY the live (non-terminated) units. If every missing unit is
+    # terminated, there's nothing to re-run — the fix is to remove them.
+    rerun_cmd = _rerun_for(rs, cfg, units=live_units) if kind == "INCOMPLETE" else rerun
+    if rerun_cmd:
+        reply.append(f"*To re-run it:* `{rerun_cmd}`")
+    elif term_hits:
+        reply.append("*Nothing to re-run* — just remove the terminated ICD(s) above "
+                     "from this report.")
+    else:
+        reply.append(f"*To re-run it:* `{rerun}`")
     reply.append("")
     reply.append("If a re-run won't fix it, paste this to Claude and it'll diagnose "
                  "+ fix the code:")
@@ -266,6 +290,7 @@ def _claude_block(rs, reason, cfg, date) -> str:
     command, and a generous log tail."""
     status = "INCOMPLETE (ran but left cells blank)" if rs.status == "INCOMPLETE" else "FAILED (did not complete)"
     tail = _log_tail_raw(rs.report_id, date) or "(no log captured)"
+    term_hits, live_units = _terminated_split(rs.missing) if rs.status == "INCOMPLETE" else ([], [])
     lines = [
         "===== PASTE THIS TO CLAUDE TO FIX =====",
         f"Report: \"{rs.display_name or rs.report_id}\" (report_id: {rs.report_id})",
@@ -274,8 +299,13 @@ def _claude_block(rs, reason, cfg, date) -> str:
         f"Likely cause: {reason}",
     ]
     if rs.missing:
-        lines.append("Exactly what did NOT fill (fix so these populate): "
-                     + "; ".join(rs.missing))
+        lines.append("Exactly what did NOT fill: " + "; ".join(rs.missing))
+    if term_hits:
+        # Tell Claude these are TERMINATED — the fix is to remove them from the
+        # report's roster/source, NOT to make them populate.
+        lines.append("On the terminated-ICD list — REMOVE these from the report "
+                     "(do NOT try to make them fill): "
+                     + "; ".join(_term_label(h) for h in term_hits))
     src = _verify_source(cfg, rs.report_id)
     if src:
         lines.append(f"These cells live in: {src}")
@@ -283,12 +313,15 @@ def _claude_block(rs, reason, cfg, date) -> str:
         lines.append(f"Was waiting on: {rs.waiting_on}")
     if rs.attempts:
         lines.append(f"Attempts today: {rs.attempts}")
+    # Re-run only the LIVE units for an INCOMPLETE (terminated ones excluded).
+    rerun = _rerun_for(rs, cfg, units=live_units) if rs.status == "INCOMPLETE" else _rerun_for(rs, cfg)
+    if rerun:
+        lines.append(f"Re-run (queues to the mini): {rerun}")
     lines += [
-        f"Re-run (queues to the mini): {_rerun_for(rs, cfg)}",
         f"Run locally to reproduce the whole report: {_runnable(rs.report_id, cfg)}",
         "Diagnose the root cause from the log tail below and fix it in the repo so "
-        "the missing cells populate; if it's a transient Tableau/network blip, just "
-        "`lucy rerun` it. Full log tail:",
+        "the (non-terminated) missing cells populate; if it's a transient "
+        "Tableau/network blip, just `lucy rerun` it. Full log tail:",
         tail,
         "===== END =====",
     ]
@@ -309,11 +342,40 @@ def _clean_unit(name: str) -> str:
     return s
 
 
-def _rerun_for(rs, cfg) -> str:
+def _terminated_split(missing):
+    """Split a report's missing units into (terminated_hits, live_unit_names).
+    terminated_hits are the units on the terminated-ICD list — dicts with
+    report_name / date / notes — which should be REMOVED from the report (a re-run
+    won't fill them); live_unit_names are the rest, worth a scoped re-run.
+    Best-effort: on ANY error every unit is treated as live, so the terminated
+    check can never suppress a real re-run or crash the alert."""
+    units = [_clean_unit(m) for m in (missing or [])]
+    units = [u for u in units if u]
+    if not units:
+        return [], []
+    try:
+        from automations.shared import terminated_icds as ti
+        hits = ti.terminated_among(units)
+    except Exception:  # noqa: BLE001 — advisory check, never fail the alert
+        return [], units
+    term_names = {h.get("report_name") for h in hits}
+    live = [u for u in units if u not in term_names]
+    return hits, live
+
+
+def _term_label(h) -> str:
+    """'Marcellus Butler (terminated 6/12)' for a terminated-ICD hit."""
+    when = f" (terminated {h['date']})" if h.get("date") else " (terminated)"
+    return f"{h.get('report_name', '')}{when}"
+
+
+def _rerun_for(rs, cfg, units=None):
     """The re-run command for a problem report, most-surgical first:
       1) `scoped_rerun_cmd "Unit A" "Unit B"` — when the report declares one and we
          know exactly which named units are missing (Megan 2026-07-23: re-run only
-         the missing owners, not the whole report).
+         the missing owners, not the whole report). `units`, when passed, is the
+         EXACT list to scope to (already terminated-filtered by the caller) — an
+         empty list means nothing live to re-run, so this returns None.
       2) `lucy rerun <id> <retry_args>` — the report handed up manifest retry_args
          that scope to the failed parts (e.g. daily_metrics --only churn).
       3) `lucy rerun <id>` — whole report, when nothing narrower is known.
@@ -321,11 +383,13 @@ def _rerun_for(rs, cfg) -> str:
     r = cfg.reports.get(rs.report_id)
     # 1) named-unit scoped command
     scoped = getattr(r, "scoped_rerun_cmd", None) if r is not None else None
-    if scoped and rs.missing:
-        units = [_clean_unit(m) for m in rs.missing]
-        units = [u for u in units if u]
-        if units:
-            return scoped + " " + " ".join(f'"{u}"' for u in units)
+    if scoped and (units is not None or rs.missing):
+        use = units if units is not None else [_clean_unit(m) for m in rs.missing]
+        use = [u for u in use if u]
+        if use:
+            return scoped + " " + " ".join(f'"{u}"' for u in use)
+        if units is not None:
+            return None   # caller passed an explicit (empty) live-unit list
     # 2) manifest retry_args (the failed-parts flags the report wrote)
     try:
         from automations.shared import run_manifest as _rm
