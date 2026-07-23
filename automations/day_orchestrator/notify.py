@@ -54,12 +54,19 @@ def _machine_prefix() -> str:
 
 
 def send_checkpoint(cfg, ds, *, channel="email", dry_run=False):
+    # Megan 2026-07-23: the end-of-day summary is DROPPED in favour of per-report
+    # Slack posts — when the corrections channel is on, the checkpoint doesn't send.
+    if _corrections_channel(cfg):
+        return
     subj = f"{_machine_prefix()}Reports {_d(ds)} — 7:30 checkpoint · {_tally(ds)}"
     html, text = _build_body(cfg, ds, checkpoint=True)
     _dispatch(cfg, subj, html, text, channel, dry_run, tag="checkpoint")
 
 
 def send_final(cfg, ds, *, channel="email", dry_run=False):
+    # Summary dropped when the corrections channel is on (see send_checkpoint).
+    if _corrections_channel(cfg):
+        return
     subj = f"{_machine_prefix()}Reports {_d(ds)} — FINAL · {_tally(ds)}"
     html, text = _build_body(cfg, ds, checkpoint=False)
     _dispatch(cfg, subj, html, text, channel, dry_run, tag="final")
@@ -76,6 +83,22 @@ def send_session_alert(cfg, ds, reason, *, channel="email", dry_run=False):
         "This is a one-time alert; the 7:30 checkpoint and final summary follow "
         "separately."
     )
+    # When the corrections channel is configured, this per-event alert becomes its
+    # own Slack post so it can be worked in-thread — and the redundant email is
+    # skipped (Megan 2026-07-23: move problem notifications to Slack).
+    if _corrections_channel(cfg):
+        title = f":lock: *ownerville session went stale* — {_d(ds)}"
+        body = [
+            f"*What happened:* {reason}",
+            "",
+            "Today's Tableau reports are *paused* on purpose — I won't write anything "
+            "with a dead session. Someone at the mini logs back in on the "
+            "session-holder window to re-seed it, and I auto-resume within one pass.",
+            "",
+            "_Reply in this thread once it's re-seeded and I'll pick back up._",
+        ]
+        _post_corrections(cfg, title, body, dry_run, tag="session-alert")
+        return
     html = f"<div style='font-family:Arial,sans-serif;font-size:14px'>{_esc(text).replace(chr(10), '<br>')}</div>"
     _dispatch(cfg, subj, html, text, channel, dry_run, tag="session-alert")
 
@@ -110,9 +133,68 @@ def send_failure_alert(cfg, ds, rs, *, channel="email", dry_run=False):
               "The 7:30 checkpoint and final summary still follow separately; this "
               "is the early heads-up, not a replacement."]
     text = "\n".join(lines)
+    # Corrections channel configured → this becomes its OWN Slack post (one per
+    # problem report) so it can be worked in-thread, and the per-report email is
+    # skipped to avoid double-notifying (Megan 2026-07-23). The daily summary is
+    # unaffected — it still follows on its own channel.
+    if _corrections_channel(cfg):
+        _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dry_run)
+        return
     html = ("<div style='font-family:Arial,sans-serif;font-size:14px'>"
             f"{_esc(text).replace(chr(10), '<br>')}</div>")
     _dispatch(cfg, subj, html, text, channel, dry_run, tag=f"failure-{rs.report_id}")
+
+
+def _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dry_run):
+    """One problem report → a concise PARENT post (report name + the error) plus a
+    threaded REPLY that carries the details (what to re-run, which ICDs were left
+    out, that everything else ran, and the paste-to-Claude fix block). Megan
+    2026-07-23: the post itself is the name + error; the how-to-fix and the extras
+    live in the thread so the channel skims clean and each fix happens in-thread."""
+    label = rs.display_name or rs.report_id
+    # PARENT — report name, then the error. The error NAMES the specific ICDs /
+    # items that didn't fill (Megan 2026-07-23: say WHICH ICDs, not just "timeout").
+    if kind == "INCOMPLETE":
+        n = len(rs.missing)
+        title = f":warning: *{label}* — ran, but {n or 'some'} didn't fill"
+        if rs.missing:
+            err = f"Didn't fill: {', '.join(rs.missing)}"
+            # Keep the underlying reason too, but only if it adds context beyond a
+            # bare "incomplete" (e.g. "not in ownerville" / an auth expiry).
+            if reason and reason not in ("INCOMPLETE",) and not reason.lower().startswith(
+                    ("completed", "ran; ", "manifest")):
+                err += f" — {reason}"
+        else:
+            err = reason
+    else:
+        title = f":x: *{label}* — didn't finish"
+        err = reason
+        if rs.missing:  # a hard fail that still knows which parts were owed
+            err = f"Didn't fill: {', '.join(rs.missing)} — {reason}"
+    parent = [f"*Error:* {err}"]
+    ts = _post_corrections(cfg, title, parent, dry_run,
+                           tag=f"failure-{rs.report_id}")
+
+    # REPLY — the details + the fix. Threaded under the parent. The parent already
+    # names what didn't fill, so the reply just reassures + gives the fix.
+    reply = []
+    if kind == "INCOMPLETE":
+        reply.append("*Everything else in this report ran fine* — only the item(s) "
+                     "named above are missing.")
+        reply.append("")
+    if needs_reseed:
+        reply.append("*First, a one-time re-seed* (someone at the mini clears the "
+                     "login check): `lucy reseed_appstream`")
+    reply.append(f"*To re-run it:* `{rerun}`")
+    reply.append("")
+    reply.append("If a re-run won't fix it, paste this to Claude and it'll diagnose "
+                 "+ fix the code:")
+    reply.append("```")
+    reply.append(_claude_block(rs, reason, cfg, _d(ds)))
+    reply.append("```")
+    reply.append("_Reply here and we'll correct it in this thread._")
+    _post_corrections(cfg, "", reply, dry_run,
+                      tag=f"failure-{rs.report_id}-details", thread_ts=ts)
 
 
 # ---------------- failure diagnosis (real reason + copy-paste fix) ----------------
@@ -142,9 +224,11 @@ def _log_tail(report_id, date, n: int = 60) -> str:
         return ""
 
 
-def _log_tail_raw(report_id, date, n: int = 12) -> str:
+def _log_tail_raw(report_id, date, n: int = 40) -> str:
     """Last N log lines, ORIGINAL case (for the paste-to-Claude error tail —
-    _log_tail lowercases for signature matching, which mangles tracebacks)."""
+    _log_tail lowercases for signature matching, which mangles tracebacks). N is
+    generous so Claude sees the actual traceback, not just the final line (Megan
+    2026-07-23: give Claude full context so there's minimal back-and-forth)."""
     try:
         p = REPO_ROOT / "output" / "logs" / f"orch-{date}-{report_id}.log"
         return "\n".join(p.read_text(errors="replace").splitlines()[-n:]).strip()
@@ -152,22 +236,63 @@ def _log_tail_raw(report_id, date, n: int = 12) -> str:
         return ""
 
 
+def _verify_source(cfg, report_id) -> str:
+    """The Sheet/tab (or manifest unit) the verifier checks, spelled out for the
+    Claude block so it knows WHERE the blank cells are — 'sheet <key> → tab <name>
+    → anchors <labels>'. Best-effort: '' when the report has no sheet verifier."""
+    try:
+        r = cfg.reports.get(report_id)
+        v = getattr(r, "verify", None) if r is not None else None
+        if not isinstance(v, dict):
+            return ""
+        bits = []
+        if v.get("sheet"):
+            bits.append(f"sheet {v['sheet']}")
+        if v.get("tab"):
+            bits.append(f"tab {v['tab']!r}")
+        labels = v.get("anchor_labels") or ([v["anchor_label"]] if v.get("anchor_label") else [])
+        if labels:
+            bits.append(f"anchor rows: {', '.join(labels)}")
+        return " → ".join(bits)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _claude_block(rs, reason, cfg, date) -> str:
-    """Self-contained block to paste into Claude — same as the Hub glitch
-    emails, so any 4am failure is one paste to fix (no back-and-forth)."""
+    """Self-contained, FULL-CONTEXT block to paste into Claude so a 4am failure is
+    one paste to fix — no back-and-forth (Megan 2026-06-25, expanded 2026-07-23).
+    Carries the status, the EXACT cells/ICDs that didn't fill, where they live,
+    what it was waiting on, both the scoped `lucy rerun` and the local runnable
+    command, and a generous log tail."""
+    status = "INCOMPLETE (ran but left cells blank)" if rs.status == "INCOMPLETE" else "FAILED (did not complete)"
     tail = _log_tail_raw(rs.report_id, date) or "(no log captured)"
-    return (
-        "===== PASTE THIS TO CLAUDE TO FIX =====\n"
-        f"The report \"{rs.display_name or rs.report_id}\" (report_id: "
-        f"{rs.report_id}) failed on the mini's automated run.\n"
-        f"Re-run command: lucy rerun {rs.report_id}\n"
-        f"Likely cause: {reason}\n"
-        "Diagnose the root cause from the error below and fix it in the repo; "
-        "if it's a transient Tableau/network blip, just `lucy rerun` it. "
-        "Error tail:\n"
-        f"{tail}\n"
-        "===== END ====="
-    )
+    lines = [
+        "===== PASTE THIS TO CLAUDE TO FIX =====",
+        f"Report: \"{rs.display_name or rs.report_id}\" (report_id: {rs.report_id})",
+        f"Date: {date}",
+        f"Status: {status}",
+        f"Likely cause: {reason}",
+    ]
+    if rs.missing:
+        lines.append("Exactly what did NOT fill (fix so these populate): "
+                     + "; ".join(rs.missing))
+    src = _verify_source(cfg, rs.report_id)
+    if src:
+        lines.append(f"These cells live in: {src}")
+    if rs.waiting_on:
+        lines.append(f"Was waiting on: {rs.waiting_on}")
+    if rs.attempts:
+        lines.append(f"Attempts today: {rs.attempts}")
+    lines += [
+        f"Re-run (queues to the mini): lucy rerun {rs.report_id}",
+        f"Run locally to reproduce: {_runnable(rs.report_id, cfg)}",
+        "Diagnose the root cause from the log tail below and fix it in the repo so "
+        "the missing cells populate; if it's a transient Tableau/network blip, just "
+        "`lucy rerun` it. Full log tail:",
+        tail,
+        "===== END =====",
+    ]
+    return "\n".join(lines)
 
 
 def _diagnose(rs, cfg, date):
@@ -471,6 +596,71 @@ def _rerun_cmd(report_id, cfg):
         rest = "" if len(parts) == 1 else " " + " ".join(parts[1:])
         return "python -m " + parts[0] + rest
     return f"python -m automations.{report_id}.run"
+
+
+# ---------------- corrections Slack channel (per-report problem posts) ----------------
+# Megan 2026-07-23: instead of ONE end-of-day summary email, post each problem
+# report as its OWN top-level message in #claudecorrections-and-requests so the
+# team — and Megan, who is non-technical — can reply in-thread and work the fix.
+# Posts go out AS Lucy (the automated-reports identity added to the channel).
+# Gated entirely by the `corrections_slack_channel` setting: unset = behaviour is
+# exactly as before (per-report failure EMAILS), so nothing changes until it's on.
+
+# Sidecar cache for the resolved numeric channel id. Posting by "#name" works for
+# the first send (the user token is a member), and chat.postMessage returns the
+# real id — we cache it here so later posts don't depend on name resolution (a
+# private channel needs the id). Kept out of schedule_config.json to avoid racing
+# the running orchestrator on that 160KB file.
+_CHANNEL_ID_CACHE = REPO_ROOT / "output" / ".corrections_channel_id"
+
+
+def _corrections_channel(cfg):
+    """The corrections channel to post problem reports to — the cached numeric id
+    if we've resolved one, else the configured id/'#name'. None when unset, in
+    which case corrections posting is skipped and the old email path is used."""
+    try:
+        cached = _CHANNEL_ID_CACHE.read_text().strip()
+        if cached:
+            return cached
+    except Exception:  # noqa: BLE001 — no cache yet is normal
+        pass
+    return (cfg.settings.get("corrections_slack_channel") or "").strip() or None
+
+
+def _post_corrections(cfg, title, body_lines, dry_run, *, tag, thread_ts=None):
+    """Post ONE message to the corrections channel and return its ts (so a caller
+    can thread replies under it). thread_ts posts as a reply instead of a new
+    top-level message. Best-effort: a Slack failure is logged, never raised into
+    the batch; returns None on skip/failure."""
+    ch = _corrections_channel(cfg)
+    if not ch:
+        return None
+    text = "\n".join(([title] if title else []) + list(body_lines))
+    if dry_run:
+        where = f"reply→{thread_ts}" if thread_ts else "NEW POST"
+        print(f"[notify] DRY-RUN — corrections {where} ({tag}) → {ch}:\n{text}\n",
+              flush=True)
+        return "dry-run-ts"
+    try:
+        from automations.shared.slack_metrics_post import _client
+        kw = dict(channel=ch, text=text, unfurl_links=False, unfurl_media=False)
+        if thread_ts:
+            kw["thread_ts"] = thread_ts
+        resp = _client().chat_postMessage(**kw)
+        # Persist the resolved numeric id the first time we post by name.
+        cid = resp.get("channel")
+        if cid and cid != ch:
+            try:
+                _CHANNEL_ID_CACHE.parent.mkdir(parents=True, exist_ok=True)
+                _CHANNEL_ID_CACHE.write_text(cid)
+            except Exception:  # noqa: BLE001
+                pass
+        print(f"[notify] posted corrections ({tag}) to {resp.get('channel')}"
+              f"{' (reply)' if thread_ts else ''}", flush=True)
+        return resp.get("ts")
+    except Exception as e:  # noqa: BLE001 — an alert that sinks the batch is worse
+        print(f"[notify] corrections post failed ({tag}): {e}", flush=True)
+        return None
 
 
 # ---------------- dispatch ----------------

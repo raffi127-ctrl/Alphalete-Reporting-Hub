@@ -17,6 +17,8 @@
     "checkpoint_time": "07:30",
     "backstop_time": "12:00",
     "channel": "email",
+    "corrections_slack_channel": "C0BK5PRG259",
+    "_corrections_note": "Megan 2026-07-23: #claudecorrections-and-requests (id C0BK5PRG259). When set, each FAILED / non-self-healing INCOMPLETE report (and a stale-session event) posts in real time as its OWN message AS Lucy — parent = report name + error, threaded reply = re-run cmd, ICDs left out, and the paste-to-Claude fix block — so it can be worked in-thread the moment it happens. This also DROPS the end-of-day summary email (send_checkpoint/send_final no-op while set). Unset to revert to per-report failure emails + daily summary.",
     "recipients": [
       "Alphaletereporting@gmail.com"
     ],
