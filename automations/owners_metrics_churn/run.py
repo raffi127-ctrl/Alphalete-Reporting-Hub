@@ -477,26 +477,44 @@ def main(argv=None) -> int:
         except Exception:
             pass
 
+    # EXIT-CODE CONTRACT (Megan 2026-07-23 — 3rd report of this class, after
+    # tableau_screenshots 48d94af/19cce3c and vantura_board_audit 8fa4e2e).
+    # The day-orchestrator reads ANY non-zero exit as a hard FAILED page and
+    # fires the immediate failure email, short-circuiting the graceful
+    # manifest -> reconcile -> INCOMPLETE path. So reserve non-zero for a
+    # GENUINE crash: a scrape/auth/IO exception. A captainship whose Tableau
+    # pull RAISED lands in `failed` (a real scrape exception, caught so the
+    # healthy tabs still fill) -> that still exits 1. But a rep who WENT DARK on
+    # otherwise-clean pulls is a data-quality FINDING (fill-but-flag), not a
+    # crash — the fill completed, one rep is just absent from the view. That
+    # exits 0 and surfaces as a SOFT INCOMPLETE through the run-manifest
+    # (ok=False, already written above), which verify:manifest reads at the
+    # checkpoint. The MANIFEST — not the exit code — is what keeps a
+    # data-missing run from reading as a green DONE (Megan's 2026-06-08 rule).
     if failed:
-        # NEVER say "done" when data is missing (Megan 2026-06-08: a report
-        # must not read as completed on the Hub if it's missing data). Avoid
-        # the word "done" entirely on this path so the Hub's success markers
-        # don't trip; this run is INCOMPLETE.
+        # A pull that RAISED = a genuine scrape/IO exception (caught so the rest
+        # continue). NEVER say "done" when data is missing (Megan 2026-06-08: a
+        # report must not read as completed on the Hub if it's missing data).
+        # Avoid the word "done" entirely so the Hub's success markers don't trip.
         print(f"\n=== run INCOMPLETE — NOT marking complete. "
               f"{len(selected) - len(failed)}/{len(selected)} captainship(s) "
               f"filled; MISSING {len(failed)}: {failed} ===")
         print("  A skipped captainship is usually a flaky/slow Tableau load "
               "(often clears on a re-run) or a corrupted custom view (re-create "
               "it in Tableau if it keeps failing). The healthy tabs ARE filled.")
-        return 1   # non-zero so the Hub flags it as incomplete
+        return 1   # genuine scrape exception → hard FAILED page (a human needed)
     if went_dark_all and not args.only:
-        # Every pull succeeded but a rep silently went dark — do NOT read as a
-        # clean DONE (Megan 2026-07-05: this should have been caught, not green).
-        print(f"\n=== run INCOMPLETE — a rep stopped filling despite clean pulls. "
-              f"{_dark_note} ===")
+        # Every pull SUCCEEDED but a rep silently went dark — a data-quality
+        # FINDING, not a crash (Megan 2026-07-05: this should be caught, not a
+        # green DONE; 2026-07-23: but it should NOT hard-page as FAILED either —
+        # the fill ran to completion). Exit 0; the ok=False manifest written
+        # above already carries this as a SOFT INCOMPLETE note + remediation.
+        print(f"\n=== run INCOMPLETE (finding) — a rep stopped filling despite "
+              f"clean pulls. {_dark_note} ===")
         print("  Check that rep's Tableau view filter (she was likely removed) "
-              "or add an alias if she was renamed, then re-run.")
-        return 1   # non-zero so the Hub flags it as incomplete
+              "or add an alias if she was renamed, then re-run. (Recorded as a "
+              "soft INCOMPLETE via the run-manifest — not a hard failure.)")
+        return 0   # finding, not a crash → soft INCOMPLETE via manifest, no page
     print("\n=== done ===")
     return 0
 
