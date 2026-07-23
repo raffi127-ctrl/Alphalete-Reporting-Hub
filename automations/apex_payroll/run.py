@@ -60,31 +60,48 @@ def _kill_ours() -> None:
     time.sleep(2)
 
 
-def _copy_default_profile() -> None:
-    """Copy Carlos's everyday Chrome profile (read-only on the source) into
-    our dedicated dir so the debug port works and his Apex session rides
-    along. Mirrors vantura_churn.cdp_pull._copy_default_profile."""
+def _copy_default_profile() -> str:
+    """Copy Carlos's everyday Chrome data (read-only on the source) into our
+    dedicated dir so the debug port works and his Apex session rides along.
+    2026-07-23: copies ALL profiles (Default + 'Profile N') — the login may
+    live in a named profile, not Default. Returns the profile-directory name
+    Chrome last used, so _launch can select it."""
+    import json
     import os
     home = os.path.expanduser("~")
     src = f"{home}/Library/Application Support/Google/Chrome"
     _kill_ours()
     subprocess.run(["rm", "-rf", CDP_PROFILE], capture_output=True)
-    os.makedirs(f"{CDP_PROFILE}/Default", exist_ok=True)
+    os.makedirs(CDP_PROFILE, exist_ok=True)
     subprocess.run(["rsync", "-a", f"{src}/Local State",
                     f"{CDP_PROFILE}/Local State"], capture_output=True)
-    subprocess.run(
-        ["rsync", "-a",
-         "--exclude", "Cache", "--exclude", "Code Cache",
-         "--exclude", "GPUCache", "--exclude", "DawnCache",
-         "--exclude", "GraphiteDawnCache", "--exclude", "Application Cache",
-         "--exclude", "Service Worker/CacheStorage",
-         f"{src}/Default/", f"{CDP_PROFILE}/Default/"],
-        capture_output=True)
+    excludes = []
+    for pat in ("Cache", "Code Cache", "GPUCache", "DawnCache",
+                "GraphiteDawnCache", "Application Cache",
+                "Service Worker/CacheStorage"):
+        excludes += ["--exclude", pat]
+    profiles = [d for d in os.listdir(src)
+                if d == "Default" or d.startswith("Profile ")]
+    for prof in profiles:
+        subprocess.run(["rsync", "-a", *excludes,
+                        f"{src}/{prof}/", f"{CDP_PROFILE}/{prof}/"],
+                       capture_output=True)
+    last = "Default"
+    try:
+        st = json.loads(Path(f"{CDP_PROFILE}/Local State").read_text())
+        cand = st.get("profile", {}).get("last_used", "Default")
+        if cand in profiles:
+            last = cand
+    except Exception:  # noqa: BLE001
+        pass
+    print(f"[profiles] copied {profiles}; launching with {last!r}", flush=True)
+    return last
 
 
-def _launch(url: str):
+def _launch(url: str, profile_dir: str = "Default"):
     return subprocess.Popen(
         [CHROME, f"--user-data-dir={CDP_PROFILE}",
+         f"--profile-directory={profile_dir}",
          f"--remote-debugging-port={CDP_PORT}",
          "--no-first-run", "--no-default-browser-check",
          "--restore-last-session=false", "--disable-session-crashed-bubble",
@@ -128,8 +145,8 @@ def probe(log=_log) -> int:
     """Open Apex in the copied-profile Chrome and report the state. Safe:
     navigates and reads only."""
     from patchright.sync_api import sync_playwright
-    _copy_default_profile()
-    proc = _launch(APEX_URL)
+    prof = _copy_default_profile()
+    proc = _launch(APEX_URL, prof)
     time.sleep(8)
     try:
         with sync_playwright() as p:
@@ -165,8 +182,8 @@ def explore(log=_log) -> int:
     page structure (week-ending text, row names, input inventory) + a
     screenshot. Read-only — shapes the preview/live modes."""
     from patchright.sync_api import sync_playwright
-    _copy_default_profile()
-    proc = _launch(APEX_URL)
+    prof = _copy_default_profile()
+    proc = _launch(APEX_URL, prof)
     time.sleep(8)
     try:
         with sync_playwright() as p:
