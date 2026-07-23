@@ -160,11 +160,83 @@ def probe(log=_log) -> int:
         _kill_ours()
 
 
+def explore(log=_log) -> int:
+    """Session required. Navigate Payroll -> Payroll Entry, then dump the
+    page structure (week-ending text, row names, input inventory) + a
+    screenshot. Read-only — shapes the preview/live modes."""
+    from patchright.sync_api import sync_playwright
+    _copy_default_profile()
+    proc = _launch(APEX_URL)
+    time.sleep(8)
+    try:
+        with sync_playwright() as p:
+            _browser, page = _attach(p)
+            page.wait_for_load_state("domcontentloaded", timeout=30000)
+            time.sleep(3)
+            if _looks_logged_out(page):
+                log("STOP: login page — session didn't ride along.")
+                _upload_png(page.screenshot(full_page=False), log=log)
+                return 3
+            log(f"logged in at {page.url}")
+            # left-nav: Payroll, then Payroll Entry
+            for label in ("Payroll", "Payroll Entry"):
+                clicked = False
+                for sel in (f'a:has-text("{label}")',
+                            f'button:has-text("{label}")',
+                            f'[role="menuitem"]:has-text("{label}")',
+                            f'text="{label}"'):
+                    loc = page.locator(sel).first
+                    try:
+                        if loc.count():
+                            loc.click(timeout=8000)
+                            page.wait_for_load_state("domcontentloaded",
+                                                     timeout=20000)
+                            time.sleep(3)
+                            clicked = True
+                            log(f"clicked {label!r} -> {page.url}")
+                            break
+                    except Exception:  # noqa: BLE001
+                        continue
+                if not clicked:
+                    log(f"could not click {label!r} — dumping page for "
+                        "inspection instead")
+                    break
+            # structure dump
+            try:
+                body = page.inner_text("body", timeout=10000) or ""
+                log("PAGE TEXT (first 1800 chars):")
+                for ln in body[:1800].split("\n"):
+                    if ln.strip():
+                        log("  | " + ln.strip()[:120])
+            except Exception as e:  # noqa: BLE001
+                log(f"text dump failed: {e}")
+            try:
+                inputs = page.locator("input, select, textarea")
+                n = min(inputs.count(), 60)
+                log(f"INPUT INVENTORY ({inputs.count()} total, first {n}):")
+                for i in range(n):
+                    el = inputs.nth(i)
+                    log("  # " + " ".join(
+                        f"{k}={el.get_attribute(k)!r}"
+                        for k in ("name", "id", "type", "placeholder",
+                                  "aria-label", "value")
+                        if el.get_attribute(k)))
+            except Exception as e:  # noqa: BLE001
+                log(f"input dump failed: {e}")
+            _upload_png(page.screenshot(full_page=True), log=log)
+            return 0
+    finally:
+        proc.terminate()
+        _kill_ours()
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Apex payroll entry (Lucy 2).")
     mode = ap.add_mutually_exclusive_group(required=True)
     mode.add_argument("--probe", action="store_true",
                       help="read-only: report login state + screenshot")
+    mode.add_argument("--explore", action="store_true",
+                      help="read-only: open Payroll Entry + dump structure")
     mode.add_argument("--preview", action="store_true",
                       help="read roster + match vs Commission; write nothing")
     mode.add_argument("--live", action="store_true",
@@ -172,8 +244,10 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     if args.probe:
         return probe()
-    _log("preview/live not built yet — run --probe first; the Payroll Entry "
-         "DOM shapes these modes and gets captured by the probe.")
+    if args.explore:
+        return explore()
+    _log("preview/live not built yet — --explore captures the Payroll Entry "
+         "DOM that shapes them.")
     return 2
 
 
