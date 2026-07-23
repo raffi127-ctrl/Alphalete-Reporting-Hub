@@ -28,7 +28,11 @@ import re
 import sys
 
 WORKBOOK_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
-TAB = "Org Overrides Ongoing Report"
+LIVE_TAB = "Org Overrides Ongoing Report"
+# Sandbox is a COPY TAB in the SAME workbook (the org-board sandbox pattern), so
+# the write-guard keys on the TAB NAME, not the workbook id: --write is refused
+# against LIVE_TAB and allowed on any other tab (e.g. "Copy of …") until approved.
+SANDBOX_TAB = "Copy of Org Overrides Ongoing Report"
 
 _WEEK_RE = re.compile(r"^\d{1,2}\.\d{1,2}\.\d{2,4}$")
 # A cell reference like E52 / AF2 — the signal a formula is STRUCTURE (keep), not
@@ -134,29 +138,46 @@ def apply_plan(ws, p) -> None:
         ws.batch_clear([f"{p['col']}{r}" for r, _v in p["clear"]])
     # 4) stamp the new week-ending label
     ws.update_acell(f"{p['col']}1", p["new_label"])
+    # 5) fix the Total-2026 (col D) sums. Inserting at the START of =SUM(E:AF)
+    #    shifts it to =SUM(F:AG) — EXCLUDING the new week. Force the start back to
+    #    the new newest-week column so the new week counts in the total (the live
+    #    sheet keeps the newest week in the total).
+    dcol = _col_letter(idx - 1)
+    dvals = ws.get(f"{dcol}1:{dcol}{ws.row_count}", value_render_option="FORMULA")
+    fixes = []
+    for r, row in enumerate(dvals, start=1):
+        m = re.match(r"^=SUM\([A-Z]+\d+:([A-Z]+\d+)\)$", str(row[0] if row else ""))
+        if m:
+            fixes.append({"range": f"{dcol}{r}",
+                          "values": [[f"=SUM({p['col']}{r}:{m.group(1)})"]]})
+    if fixes:
+        ws.batch_update(fixes, value_input_option="USER_ENTERED")
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--sheet-id", default=WORKBOOK_ID,
-                    help="override the workbook id (use a SANDBOX copy while testing)")
+    ap.add_argument("--sheet-id", default=WORKBOOK_ID, help="workbook id")
+    ap.add_argument("--tab", default=LIVE_TAB,
+                    help=f"tab to operate on (default {LIVE_TAB!r}; --write refuses it, "
+                         f"use {SANDBOX_TAB!r} to test)")
     ap.add_argument("--write", action="store_true",
                     help="ACTUALLY insert the column (default: dry-run, no writes)")
     args = ap.parse_args(argv)
 
     from automations.recruiting_report import fill as _fill
-    ws = _fill._client().open_by_key(args.sheet_id).worksheet(TAB)
+    ws = _fill._client().open_by_key(args.sheet_id).worksheet(args.tab)
     p = plan(ws)
+    print(f"[{args.tab}]")
     print_plan(p)
     if not args.write:
-        print("\ndry-run — nothing written. Re-run with --write (SANDBOX first) to apply.")
+        print("\ndry-run — nothing written. Re-run with --write on the sandbox tab to apply.")
         return 0
-    if args.sheet_id == WORKBOOK_ID:
-        print("\nREFUSING --write against the production workbook. Pass --sheet-id "
-              "<sandbox copy> until Megan approves production.", file=sys.stderr)
+    if args.tab == LIVE_TAB:
+        print(f"\nREFUSING --write against the live tab {LIVE_TAB!r}. Pass "
+              f"--tab {SANDBOX_TAB!r} until Megan approves the live tab.", file=sys.stderr)
         return 2
     apply_plan(ws, p)
-    print(f"\nwrote: new column {p['col']} = {p['new_label']!r} on {args.sheet_id}")
+    print(f"\nwrote: new column {p['col']} = {p['new_label']!r} on tab {args.tab!r}")
     return 0
 
 
