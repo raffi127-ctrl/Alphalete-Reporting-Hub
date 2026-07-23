@@ -233,3 +233,42 @@ def parse_raf_payout(rows, *, label, week_header):
         if any(label.lower() in str(c).lower() for c in r[:2]):
             return _num_locale(r[wk]) if wk < len(r) else None
     return None
+
+
+# --------------------------------------------------------------------------
+# Fetch wrappers — download the confirmed crosstab sheets (Lucy 1) and parse.
+# DD + NETSUITE carry ALL weeks/transactions, so no period-select is needed —
+# we download the whole sheet once and filter in the parse.
+# --------------------------------------------------------------------------
+DD_DETAIL_VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+                  "DirectDepositICDVIEWVersion2_0/DDDETAILORG")
+DD_DETAIL_SHEET = "ORG DD Detail"
+
+LEDGER_VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+               "OverridesICDView/NETSUITESECURITYLEDGERSFDC")
+LEDGER_SHEET = "Transaction Details"
+
+
+def dd_captain_overrides(dd_week, out_path, *, page=None, verbose=True):
+    """{owner: captain override} for a DD week — download ORG DD Detail once,
+    sum each owner's 'Captain's Bonus' Total-$-to-ICD for that cl.DD Week."""
+    from automations.shared.tableau_patchright import download_crosstab_patchright
+    download_crosstab_patchright(DD_DETAIL_VIEW, DD_DETAIL_SHEET, out_path,
+                                 page=page, verbose=verbose)
+    rows = read_crosstab(out_path)
+    return parse_dd_captain(rows, owner_col="cl.ICD Owner Name",
+                            dd_week_col="cl.DD Week", desc_col="cl.Description",
+                            amt_col="Total $ to ICD", dd_week=dd_week)
+
+
+def ledger_amounts(needle, out_path, *, page=None, verbose=True):
+    """{owner: Transaction Amount} for ledger rows whose NS_Explanation contains
+    `needle` (e.g. 'P6-2026 Special Override' or 'January 2026 ... Credico').
+    Downloads the Transaction Details sheet once (all owners, all transactions)."""
+    from automations.shared.tableau_patchright import download_crosstab_patchright
+    download_crosstab_patchright(LEDGER_VIEW, LEDGER_SHEET, out_path,
+                                 page=page, verbose=verbose)
+    rows = read_crosstab(out_path)
+    return parse_ledger(rows, owner_col="ICD Owner Name and OFFICE NAME",
+                        expl_col="NS_Explanation__c", amt_col="Transaction Amount",
+                        needle=needle)
