@@ -112,6 +112,22 @@ WRAP_UP_PHRASES = [
     # Spanish rep reminders
     "recordarte que la instalación es hoy",
     "la visita del técnico está programada",
+    # More rep install check-ins / reminders / equipment + rewards notices
+    # (rep-outbound only; customer-reply-after skip still protects answered ones)
+    "how was your install",
+    "see how the installations went",
+    "was the technician able to set everything up",
+    "checking in to make sure everything went well",
+    "did everything get installed well with the tech",
+    "just checking in to make sure you got the internet equipment",
+    "you should be getting installed today",
+    "should be getting your install today",
+    "your installation is today",
+    "quick reminder that you have an installation",
+    "you should be receiving ur new internet box",
+    "the tech will connect the at&t and you disconnect your other provider",
+    "reward card for you, i hope you enjoy",
+    "rewards card for you, i hope you enjoy",
 ]
 
 
