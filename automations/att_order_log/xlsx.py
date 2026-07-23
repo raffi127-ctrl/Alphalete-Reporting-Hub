@@ -196,43 +196,41 @@ def _write_flat(sh, lines, labels, *, freeze=True) -> None:
         sh.freeze_panes = "A2"
 
 
-# Carlos's pending-by-rep columns. SALES ONLY — no Total $ / Commission columns
-# (Carlos 2026-07-23: the money columns read as pay and got entered into pay;
-# pending sales must never look payable). Sourced from the RAW tab.
-_PENDING_LABELS = ["Rep Name", "Sale Date", "Activation Date", "Description",
-                   "Description Detail", "Customer Name"]
-_MONEY_FMT = '"$"#,##0.00'
+# Pending-by-Rep comes from the ORDER LOG itself (Carlos 2026-07-23: "it's
+# pulling info from payroll not the order log" — the old RAW/Commission source
+# leaked commission $ into people's pay). PENDING = in-flight DTR status, i.e.
+# the yellow bucket (Pending / Delivered / Shipped / Scheduled / …) — NOT Posted
+# and NOT Canceled. No payroll, no $ — just the log's own columns.
 
 
-def _write_pending(sh, pending) -> None:
-    """One block per rep — a header, that rep's PENDING orders (unpaid pay-week,
-    colored by product like his RAW tab), then a bold Total row (Carlos
-    2026-07-22: "one tab that shows all pending orders separated by rep"). Data
-    is att_order_log.pending.read_pending()."""
+def _write_pending(sh, lines, labels) -> None:
+    """One block per rep of that rep's PENDING orders — taken straight off the
+    order-log lines (in-flight DTR status) and colored by status like the main
+    log — closed by a bold COUNT row. No $/commission: pending must come from the
+    order log, not payroll (Carlos 2026-07-23)."""
     b = _border()
+    pend = [ln for ln in lines
+            if colors.color_for(ln.get("DTR Status (enriched)", "")) == colors.YELLOW]
+    by_rep: Dict[str, list] = collections.defaultdict(list)
+    for ln in pend:
+        rep = str(ln.get("Rep", "") or "").strip()
+        if rep:
+            by_rep[rep].append(ln)
     row = 1
-    for rep, bucket in pending.items():
-        _write_header(sh, row, _PENDING_LABELS)
+    for rep in sorted(by_rep, key=str.lower):
+        group = by_rep[rep]
+        _write_header(sh, row, labels)
         row += 1
-        for r in bucket["rows"]:
-            fill = PatternFill("solid", fgColor=r["bg"]) if r.get("bg") else None
-            vals = [rep, r["sale_date"], r["activation_date"], r["description"],
-                    r["description_detail"], r["customer"]]
-            for c, v in enumerate(vals, start=1):
-                cell = sh.cell(row=row, column=c, value=v)
-                cell.font = _font()
-                cell.alignment = LEFT if c in (1, 4, 5, 6) else CENTER
-                cell.border = b
-                if fill is not None:
-                    cell.fill = fill
+        for ln in group:
+            _write_row(sh, row, ln, labels)
             row += 1
-        # Pending is a SALES list, not pay — the per-rep total is a COUNT of
-        # pending orders, never a dollar sum (Carlos 2026-07-23).
         tot = sh.cell(row=row, column=1,
-                      value="Total: {} pending".format(len(bucket["rows"])))
+                      value="Total: {} pending".format(len(group)))
         tot.font, tot.alignment, tot.border = _font(bold=True), LEFT, b
         row += 2                              # blank spacer between reps
-    _autosize(sh, _PENDING_LABELS)
+    if row == 1:                              # no in-flight orders at all
+        sh.cell(row=1, column=1, value="No pending orders.").font = _font(bold=True)
+    _autosize(sh, labels)
     sh.freeze_panes = "A2"
 
 
@@ -258,10 +256,9 @@ def _autosize(sh, labels: Sequence[str]) -> None:
 
 
 def build(lines: Sequence[dict], out_path: Path, *,
-          today: Optional[dt.date] = None, pending=None) -> Path:
-    """Write the workbook: All Reps summary, (Pending by Rep), Posted-by-Week,
-    then a tab per rep. `pending` is att_order_log.pending.read_pending() output;
-    when given, a 'Pending by Rep' tab is inserted right after All Reps."""
+          today: Optional[dt.date] = None) -> Path:
+    """Write the workbook: All Reps summary, Pending by Rep (in-flight orders
+    from the log itself), Paycheck by Week, then a tab per rep."""
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     today = today or dt.date.today()
@@ -273,10 +270,9 @@ def build(lines: Sequence[dict], out_path: Path, *,
     sh.title = _safe_title("All Reps", used)
     _write_flat(sh, lines, _LOG_LABELS)
 
-    # ---- 1b. Pending by Rep (unpaid pay-week orders) --------------------
-    if pending:
-        _write_pending(wb.create_sheet(_safe_title("Pending by Rep", used)),
-                       pending)
+    # ---- 1b. Pending by Rep — in-flight orders from the log itself ------
+    _write_pending(wb.create_sheet(_safe_title("Pending by Rep", used)),
+                   lines, _LOG_LABELS)
 
     # ---- 2. Paycheck by Week (posted-date matrix) -----------------------
     _write_paycheck_matrix(wb, lines, used)
