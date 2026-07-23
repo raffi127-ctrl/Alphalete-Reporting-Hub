@@ -177,26 +177,40 @@ def _hdr_col(header, name):
     return None
 
 
-def parse_dd_captain(rows, *, owner_col, dd_week_col, desc_col, amt_col, dd_week):
-    """Sum each owner's 'Captain's Bonus' Total-$-to-ICD for a DD week.
-    Owner name carries down over the owner's continuation rows; only rows whose
-    description contains 'captain' count (chargebacks/other bonuses excluded)."""
-    hdr = rows[0]
-    oc, wc, dc, ac = (_hdr_col(hdr, c) for c in (owner_col, dd_week_col, desc_col, amt_col))
-    out, cur = {}, None
-    for r in rows[1:]:
-        nm = (r[oc] or "").strip() if oc is not None and oc < len(r) else ""
-        if nm:
-            cur = _norm_name(nm)
-        if cur is None:
+_CAP_RE = re.compile(r"captain'?s?\s+bonus", re.I)
+_WK_IN_DESC = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{2,4})")
+
+
+def parse_dd_captain(rows, owners):
+    """{owner_norm: {week_key: amount}} of Captain's-Bonus overrides from the
+    ORG DD Detail crosstab.
+
+    The crosstab is HIERARCHICAL — empty dimensions collapse per row, so columns
+    do NOT align to the header (the amount lands wherever the row happens to end).
+    So we match by CONTENT, not column index:
+      * the row has a 'Captain('s) Bonus M.D.YY' cell (the description),
+      * its owner (any cell) is in `owners` (normalized captain names),
+      * the amount is the max money cell (Total $ to ICD == the non-zero one).
+    week_key is 'M.D.YY' parsed from the description (rows with no date — e.g. the
+    $0 NDS wireless 'Captain Bonus' — are skipped). The fill maps week_key to the
+    sheet column positionally, so the DD-vs-sheet day offset doesn't matter."""
+    out = {}
+    for r in rows:
+        cap = next((str(c) for c in r if _CAP_RE.search(str(c))), None)
+        if not cap:
             continue
-        wk = (r[wc] or "").strip() if wc is not None and wc < len(r) else ""
-        desc = (r[dc] or "").lower() if dc is not None and dc < len(r) else ""
-        if wk == dd_week and "captain" in desc:
-            v = _num_locale(r[ac]) if ac is not None and ac < len(r) else None
-            if v is not None:
-                out[cur] = out.get(cur, 0) + v
-    return {k: round(v, 2) for k, v in out.items()}
+        m = _WK_IN_DESC.search(cap)
+        if not m:
+            continue
+        wk = f"{int(m.group(1))}.{int(m.group(2))}.{m.group(3)[-2:]}"
+        owner = next((_norm_name(c) for c in r if _norm_name(c) in owners), None)
+        if not owner:
+            continue
+        amt = max((_num_locale(c) or 0) for c in r)
+        if amt:
+            d = out.setdefault(owner, {})
+            d[wk] = round(d.get(wk, 0) + amt, 2)
+    return out
 
 
 def parse_ledger(rows, *, owner_col, expl_col, amt_col, needle):
@@ -249,16 +263,15 @@ LEDGER_VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
 LEDGER_SHEET = "Transaction Details"
 
 
-def dd_captain_overrides(dd_week, out_path, *, page=None, verbose=True):
-    """{owner: captain override} for a DD week — download ORG DD Detail once,
-    sum each owner's 'Captain's Bonus' Total-$-to-ICD for that cl.DD Week."""
+def dd_captain_overrides(owners, out_path, *, page=None, verbose=True):
+    """{owner_norm: {week_key: amount}} — download ORG DD Detail once and extract
+    every Captain's-Bonus override for the captains in `owners`, keyed by the
+    description's week (M.D.YY). The caller picks the target week per captain."""
     from automations.shared.tableau_patchright import download_crosstab_patchright
     download_crosstab_patchright(DD_DETAIL_VIEW, DD_DETAIL_SHEET, out_path,
                                  page=page, verbose=verbose)
     rows = read_crosstab(out_path)
-    return parse_dd_captain(rows, owner_col="cl.ICD Owner Name",
-                            dd_week_col="cl.DD Week", desc_col="cl.Description",
-                            amt_col="Total $ to ICD", dd_week=dd_week)
+    return parse_dd_captain(rows, {_norm_name(o) for o in owners})
 
 
 def ledger_amounts(needle, out_path, *, page=None, verbose=True):
