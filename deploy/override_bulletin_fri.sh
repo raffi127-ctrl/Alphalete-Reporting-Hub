@@ -1,8 +1,8 @@
 #!/bin/bash
 # Override Bulletin — weekly Friday FILL, on the mini (Lucy 1 = Raf's org logins).
 # launchd fires passes 09:00-12:55 CST every Friday, q25m. The run resolves which
-# week to fill from the ORG Override Summary itself and holds (exit 75) until that
-# source has published the new week; once it fills, later passes no-op.
+# week to fill from the ORG Override Summary itself and holds until that source has
+# published the new week; once it fills, later passes no-op.
 #
 # SANDBOX ONLY: --tab defaults to "Copy of Org Overrides Ongoing Report", and
 # fill.write_week REFUSES the live tab outright. Nothing is posted to Slack and
@@ -43,7 +43,7 @@ echo "[$(date)] override-bulletin starting (mode: $MODE)" > "$LOG_FILE"
 "$VENV_PY" -u -m automations.override_bulletin.run $MODE >> "$LOG_FILE" 2>&1
 ST=$?
 
-# exit 75 = held (the Override Summary hasn't published the week yet) — expected;
-# the next pass retries.
+# A hold (Override Summary hasn't published the week yet) exits 0 — it's a correct
+# outcome, not a failure; the next scheduled pass simply tries again.
 echo "[$(date)] override-bulletin finished exit=$ST" >> "$LOG_FILE"
 exit 0

@@ -231,9 +231,12 @@ def main(argv=None):
     a = ap.parse_args(argv)
     _s1, _s2, un = run(a.week, tab=a.tab, write=a.write, verbose=not a.quiet,
                        force=a.force)
-    # 75 = held (source hasn't published the week yet). The Friday LaunchAgent
-    # treats it as "retry next pass", same convention as pnl_office.
-    return 75 if un == "HOLD" else 0
+    # Holding is a CORRECT outcome, not a failure, so exit 0. launchd fires the
+    # Friday passes on a fixed schedule and never needs a non-zero to retry, while
+    # a non-zero makes the Hub card and `lucy rerun` report a normal hold as
+    # "failed" (and would cry wolf via the per-report failure alert every Friday
+    # morning until the source publishes). The log line states the hold plainly.
+    return 0
 
 
 if __name__ == "__main__":
