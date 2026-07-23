@@ -3,8 +3,15 @@
 # (the mini) via launchd (com.alphalete.texas-de-brazil-745).
 #
 # Builds the flyer + standings PDF (month is AUTO-derived from the current date)
-# and, with --send, posts it AS Lucy to #alphalete-sales + #alphalete-lvl1-chat
-# and iMessages the "Alphalete A-Team Chat" group on this machine.
+# and, with --send, posts it AS Lucy to #alphalete-sales + #alphalete-lvl1-chat.
+#
+# iMessage DELIVERY DISABLED 2026-07-22: Apple disabled iMessage on the mini's
+# account, so the group text stopped arriving (osascript still reported "sent",
+# into a dead/stale thread). We turn it off cleanly via the module's OWN built-in
+# skip — export an EMPTY TDB_IMESSAGE_CHAT_ID below, and send_imessage() returns
+# "SKIPPED — no group chat id configured". Slack posting is unaffected. To turn it
+# back on: set TDB_IMESSAGE_CHAT_ID to the CURRENT A-Team group chat GUID (the old
+# hardcoded chat72256665735645227 is stale) and re-enable.
 #
 # The report itself lives in the shared Report Library (Google Sheet), not the
 # repo, so we (1) materialize the latest library code into the local cache, then
@@ -31,6 +38,11 @@ export NO_PROXY='*'
 export _PYTHON_DEFAULT_USE_POSIX_SPAWN=1
 export NO_COLOR=1
 export PYTHONPATH="$(pwd)"
+
+# Disable the iMessage step (Apple disabled iMessage on this account, 2026-07-22).
+# EMPTY overrides the module's default chat id, so send_imessage() skips cleanly;
+# Slack posting is untouched. Set to the live A-Team GUID to re-enable later.
+export TDB_IMESSAGE_CHAT_ID=""
 
 MODULE="automations.uploaded._shared.june_texas_de_brazil_monthly_competition"
 LOG_FILE="$LOG_DIR/texas-de-brazil-745-$(date +%Y-%m-%d-%H%M%S).log"
