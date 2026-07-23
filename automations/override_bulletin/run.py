@@ -19,6 +19,7 @@ import argparse
 import sys
 
 from automations.override_bulletin import fill as F
+from automations.override_bulletin import markers as M
 from automations.override_bulletin import pulls as P
 from automations.override_bulletin.pulls import _norm_name
 
@@ -183,6 +184,31 @@ def run(week_mdy=None, *, tab=F.SANDBOX_TAB, write=False, verbose=True,
         print(f"no {week_mdy} column yet — nothing written")
         return section1, section2, unmatched
     print(f"\nwrote {len(section1)} ALL-ORG + {len(section2)} CAPTAIN cells to col {col}")
+    # ---- late Special/Credico: place any PENDING period whose money has landed.
+    # Placement is never derived — the marker row says which week a period belongs
+    # in; a period with no marker is reported, not guessed. The red->black flip
+    # makes this safe to re-run (Credico ADDS to an existing cell).
+    try:
+        from pathlib import Path as _P
+        _d = _P("output/override_bulletin/run"); _d.mkdir(parents=True, exist_ok=True)
+        with tableau_session(headless=True, verbose=verbose) as _pg:
+            led = P.ledger_rows(_d / "ledger.csv", page=_pg, verbose=verbose)
+        to_place, pending, orphans = M.plan_placements(
+            ws, led, aliases=aliases, owner_col=P.LEDGER_OWNER_COL,
+            expl_col=P.LEDGER_EXPL_COL, amt_col=P.LEDGER_AMT_COL)
+        if to_place:
+            print(f"\nlate overrides landed ({len(to_place)}):")
+            M.apply_placements(ws, to_place, roster=roster, captains=captains,
+                               dry_run=not write)
+        for mk in pending:
+            print(f"  still pending: {mk['kind']} {mk['period']} "
+                  f"(marked at {mk['week']}) — left red")
+        for o in orphans:
+            print(f"  ⚠ {o['kind']} {o['period']} is in the ledger but has NO marker "
+                  f"— NOT placed; add its marker so we know which week it belongs to")
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠ marker pass skipped: {type(e).__name__}: {e}")
+
     if unmatched:
         print(f"\n⚠ NO SOURCE ROW ({len(unmatched)}) — filled $0.00 to match the VA, "
               f"but CHECK each one: a name mismatch looks identical to a real zero.")

@@ -367,3 +367,19 @@ def summary_weeks(rows):
                 if lbl not in out:
                     out.append(lbl)
     return out
+
+
+# Ledger column names (confirmed on Lucy 1) — used by the marker reconcile pass.
+LEDGER_OWNER_COL = "ICD Owner Name and OFFICE NAME"
+LEDGER_EXPL_COL = "NS_Explanation__c"
+LEDGER_AMT_COL = "Transaction Amount"
+
+
+def ledger_rows(out_path, *, page=None, verbose=True):
+    """Download the NetSuite Transaction Details sheet once and return its rows.
+    The marker pass needs the raw rows (it looks up several periods), not one
+    pre-parsed needle."""
+    from automations.shared.tableau_patchright import download_crosstab_patchright
+    download_crosstab_patchright(LEDGER_VIEW, LEDGER_SHEET, out_path,
+                                 page=page, verbose=verbose)
+    return read_crosstab(out_path)
