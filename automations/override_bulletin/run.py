@@ -38,13 +38,15 @@ def _dd_week_for(dd_weeks, sheet_week):
     week as the fallback. Returns the amount, or None if the captain has no row."""
     if sheet_week in dd_weeks:
         return dd_weeks[sheet_week]
-    m, d, y = sheet_week.split(".")
-    neighbour = f"{int(m)}.{int(d) - 1}.{y}"          # DD runs a day behind
-    if neighbour in dd_weeks:
-        return dd_weeks[neighbour]
-    if len(dd_weeks) == 1:                            # single-week download
-        return next(iter(dd_weeks.values()))
-    return None
+    from datetime import datetime, timedelta
+    m, d, y = (int(x) for x in sheet_week.split("."))
+    try:                                              # DD runs a day behind
+        prev = datetime(2000 + y, m, d) - timedelta(days=1)
+    except ValueError:
+        return None
+    # NO single-week fallback: if the download doesn't hold this week, the captain
+    # is reported as unmatched rather than filled with another week's number.
+    return dd_weeks.get(f"{prev.month}.{prev.day}.{prev.year % 100}")
 
 
 def pull_all(week_mdy, week_header, period_num, period_year, *, page=None, verbose=True):

@@ -113,17 +113,21 @@ def parse_override_summary(rows, week_header, *, name_col=0):
     `week_header` is the target week's column header (e.g. '07/12/2026'); we find
     that column in the header rows. Returns {normalized_owner: total}. Skips the
     grand-total row ('Total general' / 'Grand Total')."""
-    # locate the week column (and the header row) by matching its header
+    # locate the week column (and the header row) by matching its header. The ORG
+    # summary zero-pads ('07/12/2026') and puts the real header under two banner
+    # rows, so match dates normalized rather than as literal strings.
+    want = _wk_norm(week_header)
     wk_col = hdr_row = None
     for ri, r in enumerate(rows[:6]):
         for ci, cell in enumerate(r):
-            if str(cell).strip() == str(week_header).strip():
+            if _wk_norm(cell) == want:
                 wk_col, hdr_row = ci, ri
                 break
         if wk_col is not None:
             break
     if wk_col is None:
-        raise ValueError(f"week column {week_header!r} not found in crosstab header")
+        seen = [c for r in rows[:6] for c in r if _WK_HDR.match(str(c).strip())]
+        raise ValueError(f"week column {week_header!r} not found; weeks present: {seen}")
 
     out, cur = {}, None
     for r in rows[hdr_row + 1:]:               # skip the header rows
@@ -147,6 +151,18 @@ def parse_override_summary(rows, week_header, *, name_col=0):
 # Shared crosstab helpers + the other-source parsers (column names set once
 # discovery confirms the real headers; the parse LOGIC below is unit-tested).
 # --------------------------------------------------------------------------
+_WK_HDR = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{2,4})$")
+
+
+def _wk_norm(s):
+    """Normalize a week header so '07/12/2026' == '7/12/2026'. Non-dates fall
+    back to lowercased text (so the compare is still safe)."""
+    m = _WK_HDR.match(str(s).strip())
+    if not m:
+        return " ".join(str(s).lower().split())
+    return f"{int(m.group(1))}/{int(m.group(2))}/{m.group(3)[-2:]}"
+
+
 def read_crosstab(path):
     """Read a Tableau crosstab file to a list of row-lists. Tableau exports
     UTF-16 tab-separated; some are UTF-8/comma. Tries encodings in order and
