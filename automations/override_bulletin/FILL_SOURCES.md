@@ -35,8 +35,12 @@ captain/special piece comes from section 2 (its `=SUM()` rows feed section 1).
 | **Raf Captain Override** | Google Sheet `All in One Local Office - Raf` → tab `Raf PNL 2026`, **row 335 "Captain Override"** | value in the target week's WE block, **Profit/Loss column (WE-header col + 2)**. Verified 7/12 = $18,067, 7/5 = $20,068. |
 | **Raf Special Override** | Tableau `ResATTSpecialDealOverride-Raf/RafOverrideBonus` | select highest Period; read the **"Raf Payout Total"** summary row for the target Processed Week. Verified 7/12 = $39,522, 7/5 = $26,950. |
 | **Other Captain Overrides** (Carlos, Colten, Khalil, Jairo, Eveliz) | Tableau `DirectDepositICDVIEWVersion2_0/DDDETAILORG` | filter **Downline or Captain = Downline**, **cl.ICD Owner Name = captain**; in **cl.DD Week** take the target week; sum **Total $ to ICD** on **"Captain's Bonus"** rows only (exclude chargebacks/other B2B Bonus). Verified Carlos DD-week 7/11 = $10,875. |
-| **Carlos/Colten Special Override** | Tableau `OverridesICDView/NETSUITESECURITYLEDGERSFDC` | owner = Carlos/Colten, **NS_Explanation contains "Special Override"**; the explanation carries the **period** (P#-2026). Read **Transaction Amount** for the target period. ~every 4 weeks. |
-| **Credico override** | same NETSUITE SECURITY LEDGER, **NS_Explanation "credico"** | last week of the month; runs behind, so often pending. Added into the section-1 regular component. |
+| **Carlos/Colten Special Override** | Tableau `OverridesICDView/NETSUITESECURITYLEDGERSFDC` (Megan's custom view **CarlosColtenSpecial**) | owner = Carlos/Colten, **NS_Explanation contains "Special Override"**; the explanation carries the **period** (P#-2026). Read **Transaction Amount** for the target period. ~every 4 weeks. |
+| **Credico override** | same NETSUITE SECURITY LEDGER (Megan's custom view **Credico**), **NS_Explanation "credico"** | last week of the month; runs behind, so often pending. Added into the section-1 regular component. |
+
+Custom-view URLs (may not resolve under Raf's login — filter fresh if not):
+- Special: `.../NETSUITESECURITYLEDGERSFDC/0212de10-2d7f-4281-b0d5-d048361251a9/CarlosColtenSpecial`
+- Credico: `.../NETSUITESECURITYLEDGERSFDC/3e5cabd4-1c72-493f-9440-83bdc49d057e/Credico`
 
 ## Week / period conventions (gotchas)
 
