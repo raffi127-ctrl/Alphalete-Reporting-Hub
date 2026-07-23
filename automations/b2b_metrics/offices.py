@@ -98,12 +98,14 @@ TEAM: dict = {
 # data_cols = number of period columns used to crop to the last data row.
 VIEW_META: dict = {
     "sales_metrics":   {"filter_field": OWNER_FIELD},
-    # AtefEXP already carries its 0-7 Days descending sort (like churn's saved
-    # view) — do NOT click to re-sort; a click toggles/clears it back to
-    # alphabetical. Capture as-is and show every rep (Megan 2026-07-21: an
-    # image crop can't isolate the last rep with a 0-7 SALE — a 0/0 rep renders
-    # a red 0% cell identical to a 0/1 rep, so keep them all, like churn).
-    "activation_rate": {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 4},
+    # Activation views (CarlosLocalOfficeEXPANDED, AtefEXP) load ALPHABETICAL —
+    # verified 2026-07-23 (Atef's posted unsorted). Unlike churn (sort baked),
+    # activation needs a sort click on "0-7 Days" high->low, the way b2b_quality
+    # does it. apply_sort is best-effort, so a miss just leaves it alphabetical,
+    # never blank. Show every rep (Megan 2026-07-21: a crop can't isolate the
+    # last rep with a 0-7 SALE — a 0/0 rep renders the same red 0% as a 0/1).
+    "activation_rate": {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 4,
+                        "sort_header": "0-7 Days"},
     "churn_wireless":  {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 5},
     "churn_int":       {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 5},
     "churn_air":       {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 5},
