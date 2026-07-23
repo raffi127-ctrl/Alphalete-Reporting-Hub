@@ -335,3 +335,8 @@ def _render_summary(summary: dict | None) -> None:
                 if row.get("text"):
                     with st.expander("message"):
                         st.write(row["text"])
+                # Card-send diagnostic breadcrumb (what the Shortcut saw/returned)
+                # — only useful while chasing "sent but didn't arrive".
+                if not dry and row.get("image_debug"):
+                    with st.expander("card debug"):
+                        st.code(row["image_debug"])

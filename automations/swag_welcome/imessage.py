@@ -84,6 +84,7 @@ def _send_text(phone: str, text: str) -> None:
 SHORTCUT_NAME = "Alphalete Swag Card"
 _SWAG_DIR = Path.home() / ".swag_cards"
 _SWAG_IMG = _SWAG_DIR / "current.png"
+_SWAG_PHONE = _SWAG_DIR / "phone.txt"   # phone written here too (file is context-safe)
 # Card auto-send via the "Alphalete Swag Card" Shortcut is WORKING (verified
 # 2026-07-13): text via AppleScript, card via the Shortcut. Needs the Shortcut
 # built + its send-messages permission granted on each sending machine.
@@ -109,7 +110,7 @@ def shortcut_installed(name: str = SHORTCUT_NAME) -> bool:
 
 
 def _send_image_via_shortcut(phone: str, attachment: str,
-                             name: str = SHORTCUT_NAME) -> None:
+                             name: str = SHORTCUT_NAME) -> str:
     """Phone → clipboard (text), card → the Shortcut's input file. The Shortcut
     does Get Clipboard (phone) → Send [Shortcut Input] to [Clipboard]. `shortcuts
     run` only passes input as a FILE, and reading text from it is unreliable —
@@ -124,12 +125,27 @@ def _send_image_via_shortcut(phone: str, attachment: str,
         shutil.copy(ap, _SWAG_IMG)                   # card → Shortcut input file
     # Put the phone on the clipboard with pbcopy (clean UTF-8). Setting it via
     # AppleScript makes Shortcuts read it with a space between every character
-    # ("+ 1 4 1 9…"), which "Get Phone Numbers" can't parse.
+    # ("+ 1 4 1 9…"), which "Get Phone Numbers" can't parse. ALSO write it to a
+    # file — the clipboard hand-off can silently fail when this runs inside the
+    # Streamlit/Dock app process (vs a Terminal), so a file gives the Shortcut a
+    # context-independent source once its first action reads phone.txt.
     subprocess.run(["pbcopy"], input=phone, text=True, timeout=10)
+    try:
+        _SWAG_PHONE.write_text(phone)
+    except Exception:
+        pass
+    clip = subprocess.run(["pbpaste"], capture_output=True, text=True,
+                          timeout=10).stdout
     proc = subprocess.run(["shortcuts", "run", actual, "-i", str(_SWAG_IMG)],
                           capture_output=True, text=True, timeout=60)
+    # Diagnostic breadcrumb: what the clipboard actually held right before the
+    # run, and the Shortcut's exit/stdout/stderr. Surfaced in the Hub so a
+    # "sent but nothing arrived" is finally explainable instead of silent.
+    debug = (f"name={actual!r} clip={clip!r} rc={proc.returncode} "
+             f"out={proc.stdout.strip()[:120]!r} err={proc.stderr.strip()[:200]!r}")
     if proc.returncode != 0:
-        raise IMessageError((proc.stderr or "shortcut run failed").strip()[:200])
+        raise IMessageError("shortcut run failed | " + debug)
+    return debug
 
 
 def send(phone: str, text: str, attachment: str | None = None,
@@ -156,10 +172,13 @@ def send(phone: str, text: str, attachment: str | None = None,
         result["image_auto_sent"] = False
         if attachment and _AUTO_SEND_CARD and shortcut_installed():
             try:
-                _send_image_via_shortcut(phone, attachment)
+                result["image_debug"] = _send_image_via_shortcut(phone, attachment)
                 result["image_auto_sent"] = True
             except Exception as e:
                 result["image_error"] = str(e)
+        elif attachment and _AUTO_SEND_CARD:
+            result["image_error"] = ("Shortcut 'Alphalete Swag Card' not found by "
+                                     "`shortcuts list` in this process")
     except Exception as e:
         result["error"] = str(e)
     return result

@@ -106,6 +106,8 @@ def run(roster: dict, send: bool = False, out_dir: Path | None = None,
         row["image_auto_sent"] = bool(res.get("image_auto_sent"))
         if res.get("image_error"):
             row["image_error"] = res["image_error"]
+        if res.get("image_debug"):
+            row["image_debug"] = res["image_debug"]
         if row["image_auto_sent"]:
             summary["cards_sent"] += 1
         summary["rows"].append(row)
