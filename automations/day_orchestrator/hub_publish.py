@@ -86,6 +86,10 @@ _HUB_CARD = {
     # board_compare card RETIRED 2026-07-21 (Megan) — Eve hand-verifies the
     # automation instead; module kept for manual reruns but no Hub tile to publish to.
     "leaders_call": "leaders-call",
+    # The 3 Monday reminder emails (11am/4pm/7:15pm) share the Leader's Call card
+    # so its pill climbs 1/4 → 3/4 (amber) as they send, then 4/4 (green) when the
+    # 7:30pm deck posts. daily_runs=4 on the card counts these 4 success rows.
+    "owners_call_reminder": "leaders-call",
     "bg_check_sync": "bg-check-sync",
     "residential_rep_count": "residential_rep_count",
     # Sara+ issue escalation. This one runs every 5 min around the clock, so it

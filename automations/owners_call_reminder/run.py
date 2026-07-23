@@ -128,6 +128,15 @@ def send(dry_run: bool = True, final: "bool | None" = None) -> int:
         s.send_message(msg)
     print(f"✅ {'Final-call' if final else 'Reminder'} emailed to "
           f"{len(recipients)} recipient(s) from the {DISTRO_GROUP!r} distro.", flush=True)
+    # Each sent reminder is one step of the Monday Leader's Call flow — publish a
+    # success so that card's pill climbs (1/4 → 3/4 amber; the 7:30pm deck is 4/4
+    # green). Best-effort: a Hub write must never fail the send.
+    try:
+        from automations.day_orchestrator import hub_publish
+        hub_publish.publish_done("owners_call_reminder",
+                                 "Leader's Call — Monday reminder", status="success")
+    except Exception:
+        pass
     return 0
 
 

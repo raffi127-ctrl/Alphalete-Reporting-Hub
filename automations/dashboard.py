@@ -2578,12 +2578,14 @@ AUTOMATED_REPORTS = [
         "color": "#F59E0B",
         "category": "🎯 Recruiting",
         "self_scheduled": True,
-        "description": "At 2pm pulls each campaign's qualifying reps from Tableau "
-                       "(Fiber, NDS, B2B, JE, BOX, Costco, Revenue) and fills the "
-                       "Leader's Call tab. At 7:30pm builds the widescreen "
-                       "recognition deck (campaigns + Revenue + the Leadership "
-                       "Promotions finale) and posts it to #top-leaders-alphalete-org "
-                       "+ #alphalete-gp-sales as Lucy — finished before the 8pm call.",
+        "description": "The full Monday flow on one pill. 11am/4pm/7:15pm emails "
+                       "the owners to fill the recognition sheet. 2pm pulls each "
+                       "campaign's qualifying reps from Tableau (Fiber, NDS, B2B, "
+                       "BOX, Costco, Revenue) into the Leader's Call tab. 7:30pm "
+                       "builds the widescreen deck (campaigns + Revenue + the "
+                       "Leadership Promotions finale) and posts it to "
+                       "#top-leaders-alphalete-org + #alphalete-gp-sales as Lucy — "
+                       "finished before the 8pm call.",
         # NOTE (Claude): draft 'How it works' — Megan/Maud to review/edit.
         "breakdown": (
             "WHAT IT DOES\n"
@@ -2608,19 +2610,28 @@ AUTOMATED_REPORTS = [
             "Each section comes from its own Tableau crosstab (pulled "
             "unattended via the saved ownerville session), filtered to the "
             "local-office owners + that section's threshold.\n\n"
-            "DELIVERY\n"
-            "**2pm** pulls the campaigns + writes the tab (no send). **7:30pm** "
-            "builds the widescreen deck (campaigns + Revenue + the Leadership "
-            "Promotions finale, read from the recognition sheet with notes tidied "
-            "up) and posts the PDF to **#top-leaders-alphalete-org** + "
-            "**#alphalete-gp-sales** as Lucy — finished before the 8pm call."
+            "DELIVERY — the pill climbs through Monday (4 steps)\n"
+            "1. **11:00am** — emails the owners to fill the recognition sheet.\n"
+            "2. **4:00pm** — second reminder email.\n"
+            "3. **7:15pm** — 🚨 final-call email.\n"
+            "4. **7:30pm** — builds the widescreen deck (campaigns + Revenue + the "
+            "Leadership Promotions finale, read from the recognition sheet with "
+            "notes tidied up) and posts the PDF to **#top-leaders-alphalete-org** + "
+            "**#alphalete-gp-sales** as Lucy — finished before the 8pm call.\n\n"
+            "The 2pm campaign pull writes the tab in between (no send). The tile "
+            "stays **amber (X/4)** as each step lands and goes **green** once the "
+            "deck posts; if the day ends short it reads **orange**."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"),
         "assignees": ["Lucy 1"],
+        # Monday flow fires 4 times: 3 reminder emails (11am/4pm/7:15pm) + the
+        # 7:30pm deck post. daily_runs=4 makes the pill climb grey → amber "X/4"
+        # → green (orange if the day ends short), same as BG Check Sync / Car-Rides.
+        "daily_runs": 4,
         "schedule": {
             "frequency": "weekly",
-            "weekdays": [0],   # Monday — 2pm pull + 7:30pm post; pill greens at 7:30
+            "weekdays": [0],   # Monday — pill climbs 1/4 (11am) → 4/4 green (7:30pm)
             "time": "7:30 PM",
             "estimated_minutes": 8,
         },
