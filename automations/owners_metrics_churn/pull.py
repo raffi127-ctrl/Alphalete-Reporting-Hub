@@ -314,6 +314,17 @@ NDS_JAIRO_URL = (
     "NDS-SNRES-ATT-OOFWorkbook/CHURNRATES/"
     "e20c59fb-dd0e-4c0e-af0b-ae803ccd1fc4/JairosCaptainship?:iid=1"
 )
+# All-teams (org-wide) NDS churn view — the UNFILTERED base CHURNRATES view (no
+# per-captain custom-view suffix), so it lists every NDS rep across all teams.
+# Used to backfill a rep who MOVED captainships (still on a captain's sheet tab
+# but no longer in that captain's own pull): Jimmy Bonilla moved off Khalil's
+# team to 'obsidian opulence, inc.' but stayed on Khalil's tab (Megan 2026-07-23).
+# parse_nds strips the '[office]' suffix, so 'JIMMY BONILLA [obsidian opulence,
+# inc.]' matches his sheet row 'Jimmy Bonilla'.
+NDS_ALLTEAM_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "NDS-SNRES-ATT-OOFWorkbook/CHURNRATES?:iid=1"
+)
 NDS_WORKSHEET = "Churn Rates (ICD)"
 NDS_PERIODS = ("0-30", "30", "60", "90")
 
@@ -407,5 +418,5 @@ def parse_nds(csv_path: Path) -> dict:
 ALLTEAMS_CHURN_SOURCE = {
     "b2b": (B2B_ALLTEAM_URL, WORKSHEET, parse_b2b),
     # "fiber": (FIBER_ALLTEAM_URL, WORKSHEET, parse),       # TODO: view id
-    # "nds":   (NDS_ALLTEAM_URL, NDS_WORKSHEET, parse_nds),  # TODO: view id
+    "nds": (NDS_ALLTEAM_URL, NDS_WORKSHEET, parse_nds),   # wired 2026-07-23 (Jimmy Bonilla moved teams)
 }
