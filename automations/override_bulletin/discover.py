@@ -1,21 +1,25 @@
 """One-shot Lucy-1 discovery for the override-fill Tableau views.
 
 Lists each view's Crosstab worksheet names and dumps the downloaded structure
-(headers + first rows) to stdout — read back with `lucy logtail`. Downloads with
-DEFAULT filters; the period/owner selection is layered on in the pull modules
-once the structure is known. Nothing is written to any sheet.
+(headers + first rows) BOTH to stdout and to a Google-Sheet tab `_discover_out`
+in the override workbook — so the full structure is readable from anywhere
+without paging the log through `lucy logtail`. Downloads with DEFAULT filters;
+period/owner selection is layered on in the pull modules once the structure is
+known. Writes only to the throwaway `_discover_out` tab.
 
 RUN ON LUCY 1 (Raf's login — only Raf's org views see the whole downline):
   lucy rerun override_discover
-  lucy logtail rerun-<ts>-override_discover
 """
 from __future__ import annotations
 
-import csv
 import sys
 from pathlib import Path
 
 OUT = Path("output/override_bulletin/discover")
+WORKBOOK_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
+DUMP_TAB = "_discover_out"
+DUMP_W = 12          # columns written per row (crosstab rows truncated to this)
+DUMP_ROWS = 24       # crosstab rows dumped per view
 
 VIEWS = [
     ("ORG_OVERRIDE_SUMMARY",
@@ -33,49 +37,70 @@ VIEWS = [
 ]
 
 
-def _dump_csv(path: Path, n: int = 18) -> None:
-    from automations.override_bulletin.pulls import read_crosstab
-    try:
-        rows = read_crosstab(path)
-    except Exception as e:  # noqa: BLE001
-        print(f"    (couldn't read csv: {e})", flush=True)
-        return
-    print(f"    {len(rows)} rows x {max((len(r) for r in rows), default=0)} cols",
-          flush=True)
-    for i, r in enumerate(rows[:n]):
-        print(f"    row{i}: {r[:9]}", flush=True)
+def _pad(row, w=DUMP_W):
+    r = [str(c)[:40] for c in row[:w]]
+    return r + [""] * (w - len(r))
 
 
 def main(argv=None) -> int:
     from automations.shared.tableau_patchright import (
         tableau_session, download_crosstab_patchright)
     from automations.recruiting_report.opt_phase import list_crosstab_sheets
+    from automations.override_bulletin.pulls import read_crosstab
+    from automations.recruiting_report import fill as _fill
     only = set(argv or [])
     OUT.mkdir(parents=True, exist_ok=True)
+    dump = []                                  # rows to write to _discover_out
+
     with tableau_session(headless=True, verbose=True) as page:
         for name, url in VIEWS:
             if only and name not in only:
                 continue
             print(f"\n===== {name} =====", flush=True)
+            dump.append(_pad([f"===== {name} ====="]))
             try:
                 sheets = list_crosstab_sheets(url, page=page, verbose=True)
-                print(f"  crosstab sheets ({len(sheets)}): {sheets}", flush=True)
             except Exception as e:  # noqa: BLE001
-                print(f"  list_crosstab_sheets FAILED: "
-                      f"{type(e).__name__}: {str(e).splitlines()[0][:120]}", flush=True)
-                continue
-            if not sheets:
-                continue
-            sheet = sheets[0]
-            out = OUT / f"{name}.csv"
-            try:
-                download_crosstab_patchright(url, sheet, out, page=page, verbose=True)
-                print(f"  downloaded {sheet!r}:", flush=True)
-                _dump_csv(out)
-            except Exception as e:  # noqa: BLE001
-                print(f"  download FAILED: "
-                      f"{type(e).__name__}: {str(e).splitlines()[0][:120]}", flush=True)
-    print("\ndiscovery done.", flush=True)
+                sheets = []
+                print(f"  list_crosstab_sheets FAILED: {type(e).__name__}: "
+                      f"{str(e).splitlines()[0][:120]}", flush=True)
+            print(f"  crosstab sheets ({len(sheets)}): {sheets}", flush=True)
+            dump.append(_pad(["SHEETS", str(sheets)[:200]]))
+            # Try each listed sheet; if none listed, still try a default download.
+            candidates = sheets or [""]
+            for sheet in candidates[:3]:
+                out = OUT / f"{name}_{sheet or 'default'}.csv".replace("/", "-")
+                try:
+                    download_crosstab_patchright(url, sheet, out, page=page, verbose=True)
+                    rows = read_crosstab(out)
+                    print(f"  downloaded {sheet!r}: {len(rows)} rows x "
+                          f"{max((len(r) for r in rows), default=0)} cols", flush=True)
+                    dump.append(_pad([f"SHEET={sheet!r}", f"{len(rows)}rows"]))
+                    for i, r in enumerate(rows[:DUMP_ROWS]):
+                        print(f"    row{i}: {r[:9]}", flush=True)
+                        dump.append(_pad([f"r{i}"] + list(r), DUMP_W))
+                    break
+                except Exception as e:  # noqa: BLE001
+                    print(f"  download {sheet!r} FAILED: {type(e).__name__}: "
+                          f"{str(e).splitlines()[0][:120]}", flush=True)
+                    dump.append(_pad([f"SHEET={sheet!r} FAILED",
+                                      f"{type(e).__name__}"]))
+            dump.append(_pad([""]))
+
+    # write the dump to the throwaway tab
+    try:
+        wb = _fill._client().open_by_key(WORKBOOK_ID)
+        try:
+            ws = wb.worksheet(DUMP_TAB)
+            ws.clear()
+        except Exception:  # noqa: BLE001
+            ws = wb.add_worksheet(title=DUMP_TAB, rows=max(200, len(dump) + 10),
+                                  cols=DUMP_W)
+        ws.update(dump, "A1", value_input_option="RAW")
+        print(f"\nwrote {len(dump)} rows to {DUMP_TAB!r}", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"\ncouldn't write {DUMP_TAB}: {type(e).__name__}: {e}", flush=True)
+    print("discovery done.", flush=True)
     return 0
 
 
