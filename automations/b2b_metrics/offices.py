@@ -136,6 +136,15 @@ class B2BOffice:
     # is appended (the saved view already carries the filter).
     view_overrides: dict = field(default_factory=dict)
 
+    # ITEM ids to OMIT for this office. Use when a capture isn't correct for the
+    # office yet AND a proven external poster still covers it in the SAME thread
+    # (b2b_quality posts activation + churn) — the thread shows the working item
+    # instead of a blank. Carlos's 4 ATTTRACKER captures (activation + 3 churn)
+    # can't be URL-sliced ("Owner & Office"); his proven CarlosLocalOffice* saved
+    # views need per-office sort/product handling not wired here yet, so skip them
+    # until fixed + validated. b2b_quality keeps posting his activation + churn.
+    skip_views: frozenset = field(default_factory=frozenset)
+
     @property
     def tableau_views(self) -> dict:
         """view_key -> the URL to capture (per-office override if present, else
@@ -167,14 +176,16 @@ OFFICES: dict = {
         channel_id="C07J46MQNUX",
         channel_name="#alphalete-gp-sales",
         sheet_id="1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY",
-        # ACTIVATIONRATES exposes "Owner & Office" as a URL filter; slicing it to
-        # the plain owner ("Carlos Hidalgo") matches no compound value -> the
-        # filter empties the rep table (National Average only). CarlosTeamView-
-        # Expanded is already scoped to Carlos's Team (baked filter), so capture
-        # it AS-IS — same pattern as Atef's AtefEXP override. (The churn CarlosTEAM*
-        # views don't expose Owner & Office to URL, so their slice is silently
-        # ignored and they render Carlos's team fine — leave those sliced.)
-        view_overrides={"activation_rate": TEAM["activation_rate"]},
+        # Carlos's 4 ATTTRACKER captures render BLANK via the shared TEAM views:
+        # they filter on "Owner & Office", which can't be URL-sliced to
+        # "Carlos Hidalgo" (National Average only, no reps — verified 2026-07-22).
+        # The proven fix is his own saved views (b2b_quality's CarlosLocalOffice-
+        # EXPANDED / CarlosLocalOfficeEXPANDEDCHURN), but those need per-office
+        # sort + product handling not wired here yet. Until that's built +
+        # validated, SKIP them here — b2b_quality still posts his activation +
+        # combined churn correctly into the SAME thread, so no blanks, no loss.
+        skip_views=frozenset({"activation_rate", "churn_wireless",
+                              "churn_int", "churn_air"}),
     ),
     "atef": B2BOffice(
         key="atef",

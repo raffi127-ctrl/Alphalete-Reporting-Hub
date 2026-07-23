@@ -129,7 +129,8 @@ def header_title(o: B2BOffice, day: dt.date) -> str:
 
 def header_text(o: B2BOffice, day: dt.date) -> str:
     lines = ["*{}*".format(header_title(o, day))]
-    lines += ["{} {}".format(i["emoji"], i["title"]) for i in ITEMS]
+    lines += ["{} {}".format(i["emoji"], i["title"])
+              for i in ITEMS if i["id"] not in o.skip_views]
     return "\n".join(lines)
 
 
@@ -163,7 +164,8 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
         log=print) -> dict:
     today = today or dt.date.today()
     out_dir = _out_dir(o)
-    items = [i for i in ITEMS if not only or i["id"] == only]
+    items = [i for i in ITEMS
+             if (not only or i["id"] == only) and i["id"] not in o.skip_views]
 
     log("B2B Metrics — {} — {}  ({})".format(
         o.label, today, "POST" if post else "DRY-RUN"))
