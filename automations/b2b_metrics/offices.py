@@ -176,16 +176,30 @@ OFFICES: dict = {
         channel_id="C07J46MQNUX",
         channel_name="#alphalete-gp-sales",
         sheet_id="1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY",
-        # Carlos's 4 ATTTRACKER captures render BLANK via the shared TEAM views:
-        # they filter on "Owner & Office", which can't be URL-sliced to
-        # "Carlos Hidalgo" (National Average only, no reps — verified 2026-07-22).
-        # The proven fix is his own saved views (b2b_quality's CarlosLocalOffice-
-        # EXPANDED / CarlosLocalOfficeEXPANDEDCHURN), but those need per-office
-        # sort + product handling not wired here yet. Until that's built +
-        # validated, SKIP them here — b2b_quality still posts his activation +
-        # combined churn correctly into the SAME thread, so no blanks, no loss.
-        skip_views=frozenset({"activation_rate", "churn_wireless",
-                              "churn_int", "churn_air"}),
+        # Carlos's ATTTRACKER captures render BLANK via the shared TEAM views
+        # (they filter on "Owner & Office", which can't be URL-sliced to
+        # "Carlos Hidalgo" — verified 2026-07-22). Fix = his OWN proven saved
+        # views (the ones b2b_quality posts correctly), product-switched by URL
+        # exactly like Atef's AtefExp — captured as-is, no owner slice.
+        # CHURNRATES sort ("0-30 disconnect count" desc) is baked into the view.
+        view_overrides={
+            "churn_wireless": (_T + "ATTTRACKER-B2B/CHURNRATES/"
+                               "7419b960-0fb1-41d5-a11e-76f0e81c0547/"
+                               "CarlosLocalOfficeEXPANDEDCHURN"
+                               "?Product%20Type%20(Broken%20Out)=WIRELESS"),
+            "churn_int": (_T + "ATTTRACKER-B2B/CHURNRATES/"
+                          "7419b960-0fb1-41d5-a11e-76f0e81c0547/"
+                          "CarlosLocalOfficeEXPANDEDCHURN"
+                          "?Product%20Type%20(Broken%20Out)=NEW%20INTERNET"),
+            "churn_air": (_T + "ATTTRACKER-B2B/CHURNRATES/"
+                          "7419b960-0fb1-41d5-a11e-76f0e81c0547/"
+                          "CarlosLocalOfficeEXPANDEDCHURN"
+                          "?Product%20Type%20(Broken%20Out)=AIR/AWB"),
+        },
+        # activation_rate still skipped: CarlosLocalOfficeEXPANDED needs a per-
+        # office SORT click (its 0-7 sort is not baked, unlike churn/Atef); wired
+        # next once the deterministic-sort fix lands.
+        skip_views=frozenset({"activation_rate"}),
     ),
     "atef": B2BOffice(
         key="atef",
