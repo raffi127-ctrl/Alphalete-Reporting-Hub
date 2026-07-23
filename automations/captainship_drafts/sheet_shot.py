@@ -56,6 +56,10 @@ _HIDE_OVERLAYS_CSS = (
     # tall range (e.g. Product Summary) it occludes the last rows. The grid
     # paints behind it, so hiding the whole bar reveals them.
     " #grid-bottom-bar { visibility: hidden !important; }")
+# The frozen column-header strip (A B C …) is painted on the same canvas as the
+# cells, so it can't be hidden with CSS — instead _selection_rect clamps the clip
+# top below it. This selector reads its extent.
+_COL_HEADER_SEL = ".column-headers-background"
 
 _DEFAULT_VIEWPORT = {"width": 1600, "height": 1100}
 _VIEWPORT_PAD = 80               # room for scrollbars beyond the range
@@ -144,15 +148,25 @@ def _gid() -> int:
 
 
 def _selection_rect(page) -> dict | None:
-    """Viewport rect of the current selection overlay, or None if absent."""
-    return page.evaluate("""() => {
+    """Viewport rect of the current selection overlay, or None if absent. The top
+    is clamped to the bottom of the frozen column-header strip: for a range
+    anchored high on the sheet (e.g. Rafael's PS at row 208) the overlay starts
+    ABOVE the header, so an unclamped clip captures the A B C column letters. The
+    real cell content begins at the header bottom, so clamping loses no data."""
+    return page.evaluate("""(sel) => {
+        let hb = 0;
+        const h = document.querySelector(sel);
+        if (h) hb = h.getBoundingClientRect().bottom;
         for (const el of document.querySelectorAll('.selection')) {
             const b = el.getBoundingClientRect();
-            if (b.width > 1 && b.height > 1)
-                return {x: b.x, y: b.y, width: b.width, height: b.height};
+            if (b.width > 1 && b.height > 1) {
+                const top = Math.max(b.y, hb);
+                return {x: b.x, y: top, width: b.width,
+                        height: b.height - (top - b.y)};
+            }
         }
         return null;
-    }""")
+    }""", _COL_HEADER_SEL)
 
 
 def _goto_range(page, rng: str, timeout_s: int,
@@ -200,6 +214,13 @@ def _ink_pixels(png: bytes) -> int:
     from PIL import Image
     return sum(Image.open(io.BytesIO(png)).convert("L")
                .histogram()[:_INK_LUMA])
+
+
+def _png_height(png: bytes) -> int:
+    import io
+
+    from PIL import Image
+    return Image.open(io.BytesIO(png)).height
 
 
 def _shoot_when_painted(page, rng: str, *, settle_ms: int,
@@ -254,13 +275,24 @@ def _capture_on_page(page, rng: str, out_path: Path, *,
             page.set_viewport_size({"width": max(vp["width"], need_w),
                                     "height": max(vp["height"], need_h)})
             rect = _goto_range(page, rng, timeout_s, edit_url, gid)
+        grown_h = rect["height"]        # settled full-range height (all rows)
         page.add_style_tag(content=_HIDE_OVERLAYS_CSS)
         png = _shoot_when_painted(page, rng, settle_ms=settle_ms,
                                   timeout_s=timeout_s)
-        if _ink_pixels(png) >= _MIN_INK_PX:
-            break                  # text actually painted — good shot
-        # Backgrounds painted but no text (row data never arrived) —
-        # a fresh navigation re-requests it; retry once.
+        has_ink = _ink_pixels(png) >= _MIN_INK_PX
+        # Guard against a vertically-clipped shot. On a very tall range Sheets can
+        # paint only part of it before _shoot returns, so the selection overlay
+        # collapses to the painted region and the shot cuts the last rows (e.g.
+        # Rafael's PS 4th week). Compare the shot height to the GROWN rect height
+        # (× devicePixelRatio) — not the possibly-collapsed one — and retry.
+        dpr = page.evaluate("() => window.devicePixelRatio") or 1
+        tall_enough = _png_height(png) >= math.floor(grown_h * dpr * 0.97)
+        if has_ink and tall_enough:
+            break                  # text painted AND full height — good shot
+        if has_ink and attempt == 2:
+            break                  # best effort: text present, accept if short
+        # Text missing (row data never arrived) or shot clipped short —
+        # a fresh navigation re-requests + repaints at full size; retry once.
     else:
         raise RuntimeError(f"range {rng}: cells never painted text "
                            f"(2 attempts) — sheet slow or range empty?")
@@ -353,10 +385,14 @@ def captain_shots(captain_key: str, flavor: str, out_dir: Path, *,
     # PS alone inside the shot-view window (groups expanded + old weeks hidden),
     # so the shared sheet spends the least possible time in that state. The CM
     # yields the row to end the capture on (last kept week of the last block).
+    # The PS is a TALL range; Sheets needs a longer paint-settle before the whole
+    # thing is on the canvas (a short settle cuts the bottom weeks — proven: at
+    # 2.5s it clipped intermittently, at 8s it was full every time). timeout_s is
+    # raised to match so the frame-settle loop isn't starved.
     with ps_shot_view(blocks.ps_start, blocks.ps_end, keep_weeks=4) as ps_end_row:
         capture_ranges(
             [(f"A{blocks.ps_start}:{PS_END_COL}{ps_end_row}", ps_path)],
-            scale=scale)
+            scale=scale, settle_ms=8000, timeout_s=90)
 
     units_out: list = []
     for i, ub in enumerate(_units_blocks_for(captain_key, flavor, blocks)):
