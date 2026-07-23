@@ -3503,6 +3503,83 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "override-bulletin",
+        # Sits directly before the PNL card: the bulletin goes out first, then
+        # PNL for the Office posts right after (same Friday 10am slot, Lucy 1).
+        "name": "Override Bulletin \u2192 #alphalete-sales + #rafs-office-recruiting",
+        "creator": "Megan & Claude",
+        "emoji": "\U0001F3C6",
+        # Gold \u2014 matches the black/gold bulletin artwork.
+        "color": "#B45309",
+        "category": "\U0001F4CA Metrics",
+        "description": "Fills the weekly column on the Org Overrides Ongoing Report from the override sources, then renders the black/gold Override Bulletin (top-5 leader cards + the two override tables) that goes to the org.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**\u2022** Works out **which week to fill** by reading the Override "
+            "Summary itself, then fills that week's column on the "
+            "**Org Overrides Ongoing Report**.\n"
+            "**\u2022** Each person's weekly number = **regular override + their "
+            "captain/special override**, pulled from five places: the ORG "
+            "Override Summary, Raf's PNL (his Captain Override), Raf's Special "
+            "Override view, the DD Detail view (Carlos/Colten/Khalil/Jairo/"
+            "Eveliz captain bonuses), and the NetSuite ledger (Special + "
+            "Credico).\n"
+            "**\u2022** Fills **only** the people marked **Active ICD = YES** on "
+            "the sheet \u2014 the sheet roster is the who-list.\n"
+            "**\u2022** Matches names through the shared **ICD Aliases** tab, so "
+            "someone spelled differently in Tableau still fills (e.g. "
+            "'HAMMAD HAQUE' \u2192 'Muhammad Hammad Ul Haque').\n"
+            "**\u2022** Anyone active it **cannot find is listed for you** \u2014 "
+            "never quietly written as $0.\n\n"
+            "WHEN IT RUNS\n"
+            "**Fridays around 10:00am CST**, filling the week that ended the "
+            "**previous Sunday** (7.12 was filled Fri 7/17, 7.5 on Fri 7/10).\n\n"
+            "SAFETY GATES\n"
+            "**\u2022** If the Override Summary hasn't published the new week "
+            "yet, it **holds** \u2014 writes nothing and sends nothing, rather "
+            "than putting out a near-empty bulletin.\n"
+            "**\u2022** Writes go to the **Copy of** (sandbox) tab only; the "
+            "live tab is refused.\n"
+            "**\u2022** **Slack + email sending is NOT switched on yet** \u2014 "
+            "it's waiting on Megan's sign-off of the first real fill."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"),
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "override_bulletin",
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [4],   # Friday (Mon=0 \u2026 Fri=4)
+            "time": "10:00 AM",
+            "estimated_minutes": 6,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "\u2705 Override numbers assembled. Check the week filled + anyone listed as not found before it goes out.",
+            "message_failed": "\u274c Run failed. Check the log above, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Preview (no write)",
+                "icon": "\U0001F441",
+                "primary": True,
+                "help": "Pulls every source and shows what it WOULD write, plus anyone active it couldn't find. Changes nothing.",
+                "module": "automations.override_bulletin.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Fill Sandbox Tab",
+                "icon": "\u25B6",
+                "primary": False,
+                "help": "Writes the assembled numbers into the 'Copy of Org Overrides Ongoing Report' tab. The live tab is refused.",
+                "module": "automations.override_bulletin.run",
+                "args_fn": lambda: ["--write"],
+            },
+        ],
+    },
+    {
         "id": "pnl-office",
         # Two destination channels; tile appends "· 10:00 AM CST".
         "name": "PNL for the Office → #top-leaders + #alphalete-lvl1-chat",
@@ -4560,24 +4637,33 @@ def _check_chrome_running() -> bool:
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _git_health() -> dict:
-    """'Are you on the latest code?' status for the sidebar badge. Compares the
-    local HEAD to the cached origin/main ref (the launcher fetches it on every
-    startup), so this needs NO network call — fast, cached 5 min. Surfacing this
-    would have caught Eve running week-old code on the wrong branch for hours
-    (2026-05-25). Returns {icon,label,detail,ok}; empty label = not a git repo."""
+    """'Are you on the latest code?' status for the sidebar badge.
+
+    Does a real `git fetch` first (cached 5 min, so at most one per 5 min).
+    It used to compare against the CACHED origin/main and trust the launcher to
+    refresh it — but when the launcher's fetch doesn't run, that ref goes stale,
+    local == remote, and the badge cheerfully reports "On latest" while the
+    machine is commits behind. That's exactly what happened on JD's Mac
+    (2026-07-23: badge said "On latest" while 4 commits behind, so he was
+    running stale code). A badge that can lie is worse than no badge, hence the
+    network call. Returns {icon,label,detail,ok}; empty label = not a git repo."""
     import subprocess
 
-    def _git(*args) -> str:
+    def _git(*args, timeout: int = 5) -> str:
         try:
             return subprocess.run(["git", *args], cwd=str(WORKSPACE),
                                   capture_output=True, text=True,
-                                  timeout=5).stdout.strip()
+                                  timeout=timeout).stdout.strip()
         except Exception:
             return ""
 
     head = _git("rev-parse", "--short", "HEAD")
     if not head:
         return {"icon": "", "label": "", "detail": "", "ok": True}
+    # Refresh origin/main for real. Best-effort: offline/slow network just falls
+    # back to whatever ref is cached (same as the old behaviour), never blocks
+    # the UI for more than the timeout.
+    _git("fetch", "--quiet", "origin", "main", timeout=10)
     branch = _git("rev-parse", "--abbrev-ref", "HEAD")
     local = _git("rev-parse", "HEAD")
     remote = _git("rev-parse", "origin/main")
@@ -4824,6 +4910,10 @@ HUB_ACTIVITY_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 HUB_ACTIVITY_HEADERS = [
     "RunID", "Started At", "Report ID", "Report Name",
     "User", "Machine", "PID", "Status", "Ended At",
+    # Which commit that machine was actually RUNNING. Added 2026-07-23 after
+    # JD's Hub sat 4 commits behind while its badge claimed "On latest" — with
+    # this, stale machines are visible centrally instead of one-by-one.
+    "Code Version",
 ]
 # Rows older than this with no end_ts are treated as stale (the originating
 # machine probably crashed mid-run); they're hidden from the active list and
@@ -4835,13 +4925,33 @@ def _hub_activity_ws():
     import gspread as _gs
     sh = _fill.open_by_key(HUB_ACTIVITY_SHEET_ID)
     try:
-        return sh.worksheet(HUB_ACTIVITY_TAB)
+        ws = sh.worksheet(HUB_ACTIVITY_TAB)
     except _gs.WorksheetNotFound:
         ws = sh.add_worksheet(title=HUB_ACTIVITY_TAB, rows=2000,
                               cols=len(HUB_ACTIVITY_HEADERS))
         ws.update([HUB_ACTIVITY_HEADERS],
                   f"A1:{_col_a1(len(HUB_ACTIVITY_HEADERS))}1")
         return ws
+
+    # Self-heal the header row the same way the intake tab does: an older
+    # deployment wrote fewer columns, and get_all_records() rejects rows with
+    # values past the headered columns — so a new column (e.g. "Code Version")
+    # would silently corrupt reads. Only extend when row 1 is a strict PREFIX of
+    # HUB_ACTIVITY_HEADERS, so custom column names are never overwritten.
+    try:
+        current = ws.row_values(1)
+    except Exception:
+        current = []
+    if (
+        len(current) < len(HUB_ACTIVITY_HEADERS)
+        and HUB_ACTIVITY_HEADERS[: len(current)] == current
+    ):
+        try:
+            ws.update([HUB_ACTIVITY_HEADERS],
+                      f"A1:{_col_a1(len(HUB_ACTIVITY_HEADERS))}1")
+        except Exception:
+            pass  # read-only fallback: appends just won't carry the new column
+    return ws
 
 
 @st.cache_data(ttl=10)
@@ -4886,6 +4996,7 @@ def _hub_log_run_start(report_id: str, report_name: str, user: str, pid: int) ->
             dt.datetime.now().isoformat(timespec="seconds"),
             report_id, report_name, user, machine, str(pid or ""),
             "started", "",
+            _hub_git_sha(),   # what commit this machine is actually running
         ])
         _hub_activity_rows.clear()
     except Exception as ex:
@@ -6978,6 +7089,34 @@ def _intake_ws():
             f"A1:{_col_a1(len(INTAKE_HEADERS))}1",
         )
     return ws
+
+
+def _sheets_access_message(e: Exception) -> str | None:
+    """Plain-English message when a Sheets call failed because this Hub is signed
+    into the WRONG Google account, else None.
+
+    gspread turns Google's 403 into a bare Python `PermissionError`, which reads
+    like a file-permission problem and sent us chasing chmod/Full Disk Access for
+    hours on JD's Mac (2026-07-23) — the real cause was that his Hub was
+    authorized as a Google account with no access to the team's Sheets. Say so
+    directly so the next person fixes it in a minute instead of a day."""
+    text = f"{type(e).__name__}: {e}".lower()
+    if isinstance(e, PermissionError) or "403" in text or "does not have permission" in text:
+        return (
+            "🔑 **This Hub is signed into the wrong Google account.** Google is "
+            "refusing access to the team's Sheets (403), which Python reports as "
+            "a confusing `PermissionError` — it is **not** a file-permission "
+            "problem.\n\n"
+            "**Fix:** this machine's Sheets login must be the shared "
+            "**raffi127@gmail.com** account. Either copy a working "
+            "`~/.config/recruiting-report/oauth-token.json` from a machine where "
+            "the Hub works, or re-authorize with "
+            "`python -m automations.recruiting_report.sheets_auth` and sign in as "
+            "raffi127. Then fully quit and reopen the Hub.\n\n"
+            "Until it's fixed, every report that reads or writes a Sheet will "
+            "fail on this machine."
+        )
+    return None
 
 
 @st.cache_data(ttl=30)
@@ -10061,7 +10200,11 @@ with st.sidebar:
     try:
         _intake_rows = _read_intake()
     except Exception as e:
-        st.error(f"❌ _read_intake threw: {type(e).__name__}: {e}")
+        _msg = _sheets_access_message(e)
+        if _msg:
+            st.error(_msg)
+        else:
+            st.error(f"❌ _read_intake threw: {type(e).__name__}: {e}")
         _intake_rows = []
     _backlog_count = sum(
         1 for r in _intake_rows
@@ -10244,7 +10387,14 @@ elif st.session_state.view == "backlog":
     if st.button("➕ Submit a New Request", type="primary", key="backlog_open_intake_btn"):
         _show_intake_dialog()
 
-    intake = _read_intake()
+    # Wrapped so a wrong-Google-account 403 shows the plain fix instead of a raw
+    # traceback (which is what this page used to dump).
+    try:
+        intake = _read_intake()
+    except Exception as e:
+        _msg = _sheets_access_message(e)
+        st.error(_msg or f"❌ Couldn't read the request log: {type(e).__name__}: {e}")
+        intake = []
 
     # Focused card from email deep link
     _dl_request_id = st.query_params.get("request", "").strip()
@@ -10662,7 +10812,13 @@ else:  # st.session_state.view == "user"
         # Pulled from the Automation Request Log. "In progress" = anything
         # this user has currently claimed (Assigned To matches). "Shipped" =
         # rows marked Done with this user as the most recent claimer.
-        _all_intake = _read_intake()
+        try:
+            _all_intake = _read_intake()
+        except Exception as e:
+            _msg = _sheets_access_message(e)
+            st.error(_msg or f"❌ Couldn't read the request log: "
+                             f"{type(e).__name__}: {e}")
+            _all_intake = []
         # "In flight" for the creator = anything they've claimed that isn't
         # shipped yet — including items mid-review (In Review / Edits
         # Requested) so the creator can jump back in to revise.

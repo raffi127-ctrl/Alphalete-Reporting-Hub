@@ -3332,6 +3332,29 @@
       "verify": null,
       "machine": "Lucy 2"
     },
+    "override_bulletin": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Weekly Override Bulletin fill (automations.override_bulletin.run) on LUCY 1 (Raf's org login). Friday ~10am: fills the Org Overrides Ongoing Report week column from the Tableau/PNL sources; the bulletin renders from it. OFF the scheduler until Megan signs off on the first real fill — writes are SANDBOX-only (write_week refuses the live tab) and Slack/email posting is NOT wired yet. Run from the Hub card, or `lucy rerun override_bulletin`.",
+      "display_name": "Override Bulletin — weekly fill",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.override_bulletin.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [
+          4
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
+    },
     "override_discover": {
       "on_scheduler": false,
       "_off_scheduler_note": "One-shot DISCOVERY for the override-bulletin fill (automations.override_bulletin.discover): lists the crosstab sheets + dumps structure for the 4 override Tableau views so the parsers can be built. Runs on LUCY 1 (Raf's org login). READ-ONLY — no sheet writes. `lucy rerun override_discover` then `lucy logtail`.",
