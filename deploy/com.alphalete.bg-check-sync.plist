@@ -22,16 +22,15 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- 8:00 / 11:30 / 16:00 every day, machine LOCAL time (mini is Central).
-         The 11:30 run is the Monday must-run when the new week's thread starts.
-         Light job (email + Sheets + Slack only) so multiple daily runs are cheap
-         and just keep statuses fresh / catch same-day adds. -->
+    <!-- 11:30 / 16:00 every day, machine LOCAL time (mini is Central).
+         TWO entries (not 3) on purpose: the nightly schedule_guard only self-heals
+         timed jobs with <=2 StartCalendarInterval entries (it treats 3+ as
+         high-frequency pollers and skips them). A 3-entry version fell fully off
+         launchd 2026-07-20 and nothing brought it back, so keep it at 2 to stay
+         under the guard. 11:30 = the Monday must-run when the week's thread
+         starts; 16:00 = the afternoon run that does the Friday repost (hour>=12). -->
     <key>StartCalendarInterval</key>
     <array>
-        <dict>
-            <key>Hour</key><integer>8</integer>
-            <key>Minute</key><integer>0</integer>
-        </dict>
         <dict>
             <key>Hour</key><integer>11</integer>
             <key>Minute</key><integer>30</integer>

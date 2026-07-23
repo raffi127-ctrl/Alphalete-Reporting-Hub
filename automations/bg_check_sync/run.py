@@ -126,6 +126,74 @@ def apply_writes(sh, decisions, dry_run: bool) -> int:
     return written
 
 
+def process_week(sh, monday, events, *, dry_run, do_post, repost, now):
+    """Update col K on both tabs + post/edit the Slack thread for ONE week.
+    Returns a short summary dict. Empty-roster weeks are skipped (no empty post)."""
+    week = _fmt_week(monday)
+    roster, dated_note = build_roster(sh, monday)
+    if not roster:
+        print(f"\nWeek of {week} (Mon–Sun): no roster yet — skipped")
+        return {"week": week, "roster": 0, "changes": 0}
+
+    fuzzy_log: list = []
+    matched = match.match_events_to_people(roster, events, fuzzy_log=fuzzy_log)
+
+    decisions, slack_people, needs_confirm, flags = [], [], [], []
+    for p in sorted(roster, key=lambda x: (x.last.lower(), x.first.lower())):
+        d = match.decide(p, matched[p.key])
+        decisions.append(d)
+        slack_people.append((f"{p.first} {p.last}".strip(), d.new_status or p.current))
+        if d.needs_adjudication:
+            needs_confirm.append(f"{p.first} {p.last}".strip())
+        if d.flag:
+            flags.append((f"{p.first} {p.last}".strip(), d.flag))
+
+    changes = [d for d in decisions if d.new_status]
+    print(f"\nWeek of {week} (Mon–Sun) | roster {len(roster)} "
+          f"(rolling blocks + {dated_note}) | {len(changes)} changes | "
+          f"{len(needs_confirm)} need confirmation | {len(flags)} flags")
+    for d in changes:
+        print(f"  {d.person.last}, {d.person.first} : "
+              f"{d.person.current or '(blank)'} -> {d.new_status}")
+
+    apply_writes(sh, decisions, dry_run=dry_run)
+
+    try:
+        from automations.shared import terminated_icds as ti
+        ti.alert_terminated([f"{p.first} {p.last}".strip() for p in roster],
+                            report_label="BG Check Sync")
+    except Exception as e:  # noqa: BLE001
+        print(f"[terminated-check] skipped: {e}")
+
+    hour12 = now.hour % 12 or 12
+    updated_str = f"{now:%b} {now.day}, {hour12}:{now.minute:02d} {now:%p}"
+    body = slack_post.render(week, slack_people, needs_confirm, updated_str)
+    slack_post.post_or_update(week, body, dry_run=not do_post,
+                              repost=repost, today=now.date().isoformat())
+
+    if fuzzy_log:
+        uniq = {(p.key, f"{p.first} {p.last}", f"{e.first} {e.last}") for e, p in fuzzy_log}
+        print(f"[fuzzy-match] {len(uniq)} matched by compound-surname:")
+        for _, sheet_name, email_name in sorted(uniq):
+            print(f"  sheet '{sheet_name}' <- email '{email_name}'")
+    if flags:
+        print(f"[flags] {len(flags)} sheet-vs-email mismatches (no write):")
+        for name, why in flags:
+            print(f"  {name}: {why}")
+    try:
+        conflicts = [(f"{p.first} {p.last}".strip(), s)
+                     for p in roster if (s := match.status_conflict(p))]
+        if conflicts:
+            print(f"[bg-conflict] {len(conflicts)} person(s) whose BG status DIFFERS "
+                  f"between tabs (human should reconcile):")
+            for name, split in sorted(conflicts):
+                print(f"  {name}: {split}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[bg-conflict] check skipped: {e}")
+
+    return {"week": week, "roster": len(roster), "changes": len(changes)}
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--week", help="start-week date header (default: top block)")
@@ -148,17 +216,21 @@ def main(argv=None) -> int:
             print(f"[hub] publish_running skipped: {e}")
 
     sh = fill.open_by_key(SPREADSHEET_ID)
+    now = dt.datetime.now()
+
+    # Which weeks to process. Default = CURRENT week AND NEXT week, so the OBCL
+    # (rolling tab) keeps updating daily for everyone actively onboarding — not
+    # just next week's cohort (Raf 2026-07-22). --week overrides to a single week.
     if args.week:
-        monday = match.parse_header_date(args.week)
-        if monday is None:
+        m = match.parse_header_date(args.week)
+        if m is None:
             raise SystemExit(f"--week {args.week!r} isn't a M/D/YYYY date")
+        weeks = [m]
     else:
-        monday = _active_monday()
-    week = _fmt_week(monday)
+        this_mon = _monday_of(now.date())
+        weeks = [this_mon, this_mon + dt.timedelta(days=7)]
 
-    roster, dated_note = build_roster(sh, monday)
-
-    # --- events --------------------------------------------------------------
+    # --- events (fetched once, reused for every week) ------------------------
     if args.events:
         raw = json.load(open(args.events, encoding="utf-8"))
         events = [ev for e in raw
@@ -168,79 +240,14 @@ def main(argv=None) -> int:
     else:
         events = email_source.fetch_events(since_days=args.since_days)
 
-    fuzzy_log: list = []
-    matched = match.match_events_to_people(roster, events, fuzzy_log=fuzzy_log)
-
-    # --- decisions -----------------------------------------------------------
-    decisions, slack_people, needs_confirm, flags = [], [], [], []
-    for p in sorted(roster, key=lambda x: (x.last.lower(), x.first.lower())):
-        d = match.decide(p, matched[p.key])
-        decisions.append(d)
-        effective = d.new_status or p.current
-        slack_people.append((f"{p.first} {p.last}".strip(), effective))
-        if d.needs_adjudication:
-            needs_confirm.append(f"{p.first} {p.last}".strip())
-        if d.flag:
-            flags.append((f"{p.first} {p.last}".strip(), d.flag))
-
-    changes = [d for d in decisions if d.new_status]
-    print(f"\nWeek of {week} (Mon–Sun) | roster {len(roster)} "
-          f"(rolling blocks + {dated_note}) | "
-          f"{len(changes)} changes | {len(needs_confirm)} need confirmation | "
-          f"{len(flags)} flags")
-    for d in changes:
-        print(f"  {d.person.last}, {d.person.first} : {d.person.current or '(blank)'} "
-              f"-> {d.new_status}")
-
-    # --- writes --------------------------------------------------------------
-    apply_writes(sh, decisions, dry_run=args.dry_run)
-
-    # --- terminated-ICD safety check ----------------------------------------
-    try:
-        from automations.shared import terminated_icds as ti
-        names = [f"{p.first} {p.last}".strip() for p in roster]
-        ti.alert_terminated(names, report_label="BG Check Sync")
-    except Exception as e:
-        print(f"[terminated-check] skipped: {e}")
-
-    # --- Slack ---------------------------------------------------------------
-    now = dt.datetime.now()
-    hour12 = now.hour % 12 or 12
-    updated_str = f"{now:%b} {now.day}, {hour12}:{now.minute:02d} {now:%p}"
-    body = slack_post.render(week, slack_people, needs_confirm, updated_str)
-    # Friday afternoon: repost the thread FRESH at the bottom of the channel so
-    # it isn't buried going into the start week (Raf). Other runs edit in place.
-    repost = (now.weekday() == 4 and now.hour >= 12) or args.repost
-    slack_post.post_or_update(week, body, dry_run=not args.post,
-                              repost=repost, today=now.date().isoformat())
-
-    if fuzzy_log:
-        uniq = {(p.key, f"{p.first} {p.last}", f"{e.first} {e.last}") for e, p in fuzzy_log}
-        print(f"\n[fuzzy-match] {len(uniq)} matched by compound-surname (eyeball these):")
-        for _, sheet_name, email_name in sorted(uniq):
-            print(f"  sheet '{sheet_name}' <- email '{email_name}'")
-
-    if flags:
-        print(f"\n[flags] {len(flags)} sheet-vs-email mismatches (no write):")
-        for name, why in flags:
-            print(f"  {name}: {why}")
-
-    # Cross-tab BG disagreements: same person, different status on the rolling
-    # vs dated tab. Advisory only, fully wrapped so it can never break the run.
-    try:
-        conflicts = []
-        for p in roster:
-            split = match.status_conflict(p)
-            if split:
-                conflicts.append((f"{p.first} {p.last}".strip(), split))
-        if conflicts:
-            print(f"\n[bg-conflict] {len(conflicts)} person(s) whose BG status "
-                  f"DIFFERS between tabs (a human should reconcile — not "
-                  f"auto-synced, the 'ahead' value may itself be wrong):")
-            for name, split in sorted(conflicts):
-                print(f"  {name}: {split}")
-    except Exception as e:  # noqa: BLE001 — advisory must never fail the run
-        print(f"[bg-conflict] check skipped: {e}")
+    upcoming = weeks[-1]  # the next-Monday cohort — the one worth a Friday bump
+    for monday in weeks:
+        # Friday-afternoon repost applies only to the UPCOMING week's thread (it's
+        # the one about to start); the current week's thread just edits in place.
+        repost = (args.repost or
+                  (monday == upcoming and now.weekday() == 4 and now.hour >= 12))
+        process_week(sh, monday, events, dry_run=args.dry_run,
+                     do_post=args.post, repost=repost, now=now)
 
     if hub_run_id is not None:
         try:
