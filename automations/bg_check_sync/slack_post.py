@@ -123,6 +123,9 @@ def post_or_update(week_date: str, body: str, *, dry_run: bool = True,
         entry = _post_fresh(client)
         state[week_date] = entry
         _save_state(state)
+        print(f"[slack] {'REPOSTED' if do_repost else 'POSTED new'} week {week_date} "
+              f"parent={entry['parent_ts']} reply={entry['reply_ts']}")
     else:
         client.chat_update(channel=entry["channel"], ts=entry["reply_ts"], text=body)
+        print(f"[slack] EDITED week {week_date} reply={entry['reply_ts']}")
     return entry
