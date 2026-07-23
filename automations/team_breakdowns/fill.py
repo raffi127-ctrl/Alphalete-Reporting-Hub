@@ -33,6 +33,12 @@ from automations.recruiting_report import fill as rfill
 PRODUCT_LABELS = [("NEW INTERNET", "NI"), ("VIDEO", "DTV"),
                   ("WIRELESS", "NL"), ("UPGRADE", "UG")]
 
+# Tabs whose 'Total Units' row should show a single INTEGER (sum of all
+# product units that week) instead of the broken-out '15 NI, 1 DTV' form.
+# Megan wants this only for Starr's section (Miguel Carranza), 2026-07-23 —
+# every other tab keeps the broken-out total. [[project_miguel-carranza-starr-next-promotion]]
+INT_TOTAL_TABS = {"Starr Rodenhurst"}
+
 
 def _strip_parens(s: str) -> str:
     """'Tagiilimafaaolataga Setu Fiame (Suave)' -> 'Tagi... Fiame'."""
@@ -202,8 +208,13 @@ def fill_for_tab(ws, we_sunday: dt.date,
                     formatted = "Unmatched Name - Check Spelling"
                     unmatched.append(name)
             all_updates.append((gspread.utils.rowcol_to_a1(r, date_col), formatted))
+        if tab in INT_TOTAL_TABS:
+            _units = sum(total_products.values())
+            total_str = str(_units) if _units else ""
+        else:
+            total_str = format_production(total_products)
         all_updates.append((gspread.utils.rowcol_to_a1(sec["total_row"], date_col),
-                            format_production(total_products)))
+                            total_str))
         n_filled_sections += 1
 
     if all_updates and not dry_run:
