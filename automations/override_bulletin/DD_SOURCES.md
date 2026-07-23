@@ -53,8 +53,22 @@ Direct deposits from Credico must be ADDED to each owner's weekly number.
   `Able Acquisitions → Abel Draper`, `Phoenix Acquisitions → Jhavid Thompson`.
   These owners are often absent from the main list and must be ADDED.
 
+### The working file (Tableau crosstab, campaign-pivoted)
+
+The VA's file is the downloaded DD crosstab: `cl.ICD Owner Name` then ONE COLUMN
+PER CAMPAIGN — RES-ATT, NDS Wireless, B2B-ATT-SBS, BOX-Energy, Just Energy,
+RES-DTV, ATT Wireless, ATT Internet, PER CARTS, Clear Aligner, LeafGuard,
+Sterling — and she appends two columns by hand:
+**`credico`** (the Credico pull) and **`total`** (= sum of every campaign column
++ credico). So an owner's weekly DD = their campaign row summed ACROSS campaigns,
+plus Credico.
+
 ### Row hygiene the VA does by hand
-- A person can appear on **two lines** → merge into one (sum).
+- A person can appear on **two or three lines** → merge into one (sum). Seen in
+  her file: `Selena Powers` + `Selena Powers LEDGER`; and Amjad Malhas across
+  THREE rows — a named row, a **blank-name continuation row** beneath it, and
+  `Amjad Malhas Ledger`. So merge on: same owner, a `… LEDGER/Ledger` suffix, and
+  blank-name rows that belong to the owner above.
 - A **+150 / −150 pair cancels out** → delete both lines (it's a cancellation).
 - Name matching between sources: `Carlos` needs **TX** appended; `Roshan` needs
   his second name. (This is exactly what the shared ICD Aliases table is for.)
