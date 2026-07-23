@@ -1,9 +1,9 @@
-"""Lucy-1 validation for the confirmed pulls (DD + NETSUITE).
+"""Lucy-1 debug for the DD crosstab layout.
 
-Downloads ORG DD Detail + Transaction Details, parses, and writes the results to
-a `_validate_out` tab so the fetch + parse + column-name matching can be checked
-against real data (and cross-checked to the override sheet). Read-only w.r.t. any
-real report tab. RUN ON LUCY 1.
+The parse came back empty because ORG DD Detail's columns don't align the way the
+truncated discovery dump suggested. This downloads the sheet and writes the FULL
+header + the first Captain's-Bonus rows (every column) to `_validate_out`, so the
+real owner / DD-week / description / amount columns can be identified. RUN ON LUCY 1.
 """
 from __future__ import annotations
 
@@ -16,37 +16,42 @@ TAB = "_validate_out"
 
 
 def main(argv=None) -> int:
-    from automations.shared.tableau_patchright import tableau_session
-    from automations.override_bulletin.pulls import dd_captain_overrides, ledger_amounts
+    from automations.shared.tableau_patchright import (
+        tableau_session, download_crosstab_patchright)
+    from automations.override_bulletin.pulls import read_crosstab, DD_DETAIL_VIEW, DD_DETAIL_SHEET
     from automations.recruiting_report import fill as _fill
     OUT.mkdir(parents=True, exist_ok=True)
     dump = []
-
-    def section(title, d, n=20):
-        dump.append([title, ""])
-        for k, v in sorted(d.items(), key=lambda kv: -abs(kv[1]))[:n]:
-            dump.append([str(k)[:40], v])
-        dump.append(["", ""])
-
     with tableau_session(headless=True, verbose=True) as page:
-        # DD captain overrides — sheet week 7.12 == DD week 7/11
-        try:
-            dd = dd_captain_overrides("7/11/2026", OUT / "dd.csv", page=page, verbose=True)
-            print(f"DD captain overrides (7/11): {dd}", flush=True)
-            section("DD CAPTAIN OVERRIDES 7/11 (expect Carlos~10875, Colten~10236, "
-                    "Khalil~4865, Jairo~6534, Eveliz~3116)", dd)
-        except Exception as e:  # noqa: BLE001
-            print(f"DD FAILED: {type(e).__name__}: {e}", flush=True)
-            dump.append(["DD FAILED", f"{type(e).__name__}: {str(e)[:80]}"])
-        # Ledger — special + credico (broad needles to confirm the parse works)
-        for needle in ("Special Override", "Credico"):
-            try:
-                led = ledger_amounts(needle, OUT / f"led_{needle}.csv", page=page, verbose=True)
-                print(f"LEDGER {needle}: {len(led)} owners", flush=True)
-                section(f"LEDGER '{needle}' ({len(led)} owners)", led, 15)
-            except Exception as e:  # noqa: BLE001
-                print(f"LEDGER {needle} FAILED: {type(e).__name__}: {e}", flush=True)
-                dump.append([f"LEDGER {needle} FAILED", f"{type(e).__name__}: {str(e)[:80]}"])
+        out = OUT / "dd.csv"
+        download_crosstab_patchright(DD_DETAIL_VIEW, DD_DETAIL_SHEET, out,
+                                     page=page, verbose=True)
+        rows = read_crosstab(out)
+        hdr = rows[0] if rows else []
+        print(f"DD rows={len(rows)} cols={len(hdr)}", flush=True)
+        # header: one row = index + name (so I can see all columns even if wide)
+        dump.append(["=HEADER="] + [f"{i}:{h}" for i, h in enumerate(hdr)])
+        # first rows that mention 'captain' in ANY cell — the Captain's Bonus rows
+        found = 0
+        for r in rows[1:]:
+            if any("captain" in str(c).lower() for c in r):
+                dump.append([f"CAPROW"] + [str(c) for c in r])
+                found += 1
+                if found >= 4:
+                    break
+        # also: which columns hold date-like 7/xx values, and $ amounts
+        import re
+        if len(rows) > 2:
+            sample = rows[2]
+            for i, c in enumerate(sample):
+                tag = ""
+                if re.match(r"^\d{1,2}/\d{1,2}/\d{4}$", str(c).strip()):
+                    tag = "DATE"
+                elif "$" in str(c):
+                    tag = "MONEY"
+                if tag:
+                    dump.append(["COLTYPE", f"col{i}", tag, str(c)])
+        print(f"captain rows found: {found}", flush=True)
 
     try:
         wb = _fill._client().open_by_key(WORKBOOK_ID)
@@ -54,12 +59,13 @@ def main(argv=None) -> int:
             ws = wb.worksheet(TAB)
             ws.clear()
         except Exception:  # noqa: BLE001
-            ws = wb.add_worksheet(title=TAB, rows=max(200, len(dump) + 10), cols=4)
-        ws.update([[str(c) for c in row] for row in dump], "A1", value_input_option="RAW")
+            ws = wb.add_worksheet(title=TAB, rows=200, cols=40)
+        ws.update([[str(c)[:60] for c in row] for row in dump], "A1",
+                  value_input_option="RAW")
         print(f"wrote {len(dump)} rows to {TAB!r}", flush=True)
     except Exception as e:  # noqa: BLE001
         print(f"couldn't write {TAB}: {type(e).__name__}: {e}", flush=True)
-    print("validate done.", flush=True)
+    print("dd-debug done.", flush=True)
     return 0
 
 
