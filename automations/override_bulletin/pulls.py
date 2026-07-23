@@ -141,3 +141,74 @@ def parse_override_summary(rows, week_header, *, name_col=0):
         if val is not None:
             out[cur] += val
     return {k: round(v, 2) for k, v in out.items()}
+
+
+# --------------------------------------------------------------------------
+# Shared crosstab helpers + the other-source parsers (column names set once
+# discovery confirms the real headers; the parse LOGIC below is unit-tested).
+# --------------------------------------------------------------------------
+def _hdr_col(header, name):
+    """Index of the header cell matching `name` (case/space-insensitive), or None."""
+    want = " ".join(str(name).lower().split())
+    for i, h in enumerate(header):
+        if " ".join(str(h).lower().split()) == want:
+            return i
+    return None
+
+
+def parse_dd_captain(rows, *, owner_col, dd_week_col, desc_col, amt_col, dd_week):
+    """Sum each owner's 'Captain's Bonus' Total-$-to-ICD for a DD week.
+    Owner name carries down over the owner's continuation rows; only rows whose
+    description contains 'captain' count (chargebacks/other bonuses excluded)."""
+    hdr = rows[0]
+    oc, wc, dc, ac = (_hdr_col(hdr, c) for c in (owner_col, dd_week_col, desc_col, amt_col))
+    out, cur = {}, None
+    for r in rows[1:]:
+        nm = (r[oc] or "").strip() if oc is not None and oc < len(r) else ""
+        if nm:
+            cur = _norm_name(nm)
+        if cur is None:
+            continue
+        wk = (r[wc] or "").strip() if wc is not None and wc < len(r) else ""
+        desc = (r[dc] or "").lower() if dc is not None and dc < len(r) else ""
+        if wk == dd_week and "captain" in desc:
+            v = _num_locale(r[ac]) if ac is not None and ac < len(r) else None
+            if v is not None:
+                out[cur] = out.get(cur, 0) + v
+    return {k: round(v, 2) for k, v in out.items()}
+
+
+def parse_ledger(rows, *, owner_col, expl_col, amt_col, needle):
+    """{owner: Transaction Amount} for ledger rows whose NS_Explanation contains
+    `needle` (e.g. 'P6-2026 Special Override' or 'January 2026 ... Credico')."""
+    hdr = rows[0]
+    oc, ec, ac = (_hdr_col(hdr, c) for c in (owner_col, expl_col, amt_col))
+    out, cur = {}, None
+    for r in rows[1:]:
+        nm = (r[oc] or "").strip() if oc is not None and oc < len(r) else ""
+        if nm:
+            cur = _norm_name(nm)
+        expl = (r[ec] or "") if ec is not None and ec < len(r) else ""
+        if needle.lower() in expl.lower() and cur is not None:
+            v = _num_locale(r[ac]) if ac is not None and ac < len(r) else None
+            if v is not None:
+                out[cur] = out.get(cur, 0) + v
+    return {k: round(v, 2) for k, v in out.items()}
+
+
+def parse_raf_payout(rows, *, label, week_header):
+    """Scalar 'Raf Payout Total' for a Processed-Week column."""
+    wk = None
+    for r in rows[:8]:
+        for i, c in enumerate(r):
+            if str(c).strip() == str(week_header).strip():
+                wk = i
+                break
+        if wk is not None:
+            break
+    if wk is None:
+        return None
+    for r in rows:
+        if any(label.lower() in str(c).lower() for c in r[:2]):
+            return _num_locale(r[wk]) if wk < len(r) else None
+    return None
