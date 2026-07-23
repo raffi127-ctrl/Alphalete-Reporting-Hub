@@ -47,18 +47,18 @@ SHEET_URL = ("https://docs.google.com/spreadsheets/d/"
 SUBJECT = "Reminder: fill out the recognition sheet 🐺"
 FINAL_SUBJECT = "🚨 FINAL CALL — fill out the recognition sheet"
 
-# Maud's verbatim reminder (the 11am + 4pm sends).
+# The 11am + 4pm reminder.
 BODY = (
-    "Reminder for the Owner's Call tonight at 8:15pm CT and then Leader's Call "
-    "following at 8:45pm CT!!!!!! 🔥🎉\n"
+    "Reminder: the Owner's Call is tonight at 8:15pm CST, followed by the Leader's "
+    "Call at 8:45pm CST! 🔥🎉\n"
     "\n"
-    "Make sure to fill out the recognition sheet!\n"
+    "Please make sure to fill out the recognition sheet before the call:\n"
     + SHEET_URL
 )
 # The 7:15pm "final call" send — last chance before the call.
 FINAL_BODY = (
-    "🚨 FINAL CALL — last chance to fill out the recognition sheet before tonight's "
-    "call!! 🔥🎉\n"
+    "🚨 Final call! Last chance to fill out the recognition sheet before tonight's "
+    "call. 🔥🎉\n"
     "\n"
     + SHEET_URL
 )
