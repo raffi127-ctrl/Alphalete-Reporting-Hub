@@ -116,14 +116,59 @@ Both DD inputs arrive dirty the same way, so the rules live once in
   and `goto()` does NOT reset a hash-router SPA already on that URL — use
   `reload()`, or the second and third reports come back "no link found".
 
-**BLOCKED — needs Megan.** The next action is clicking `r.clickNode(displayFile)`,
-which either drills one more level or **downloads a file**. Downloading needs
-Megan's OK first, and we do not yet know the format (CSV/XLSX/PDF) — that decides
-whether the parser is a few lines or an OCR problem. Once the file is in hand,
-`dd_rows.normalize()` / `to_owners()` (already tested) do the rest.
+### The file, and what is in it (downloaded 2026-07-24, Megan approved)
 
+The office node drills to ONE more level — a single file node:
+
+    2026-07-25~Abyl Acquisition Grp~Commissions.xlsx      (90,012 bytes)
+
+**It is an XLSX**, six sheets: `CommissionSummary`, **`CommissionDetail`**,
+`BonusApps`, `StatusChanges`, `DetailAndStatus`, `Installments`.
+
+- `CommissionSummary` (13×5) is a pivot BY CAMPAIGN with **no names** — Frontier
+  B2B / Frontier Communications / Grand Total over Full, Payment, ISOFee,
+  Attachment Bonus, Kicker Incentive, Other, Deduction, Wire Fee. Abyl's week:
+  Grand Total **$6,058** (the $6,068 "Full" line less $10 of deductions).
+- **`CommissionDetail` (93×37) is the payload** and it IS per person:
+  `OfficeID | OfficeName | CommissionWeek | CampaignID | CampaignName |
+  CommissionGroup | CommissionItem | PayType | ActionType | TransAmt | Detail |
+  AgentName | BadgeNum | SaleWeek`
+  `AgentName` arrives **"Draper, Abel"** (Last, First) and is flipped before
+  alias resolution. Deductions are already negative, so summing `TransAmt` is
+  the net. Columns are found BY HEADER LABEL, and the header ROW is located by
+  looking for AgentName+TransAmt — Credico can add a column or a title row.
+
+### THE DIRECT DOWNLOAD API — better than the DOM walk
+The click's network trace exposed a plain REST API on `arcapi.credico.com`:
+
+    GET /api/offices              GET /api/offices/2041      GET /api/campaigns
+    GET /api/Downloads/FolderList/PayReports
+    GET /api/downloads?filename=C:\inetpub\Pay Reports\<office>\<date>\<date>~<office>~Commissions.xlsx
+
+The filename is fully predictable from office + date, so a future version should
+fetch straight from `/api/downloads` and skip the seven-step DOM walk entirely.
+The session cookies already authenticate it.
+
+### Status: END TO END, on real data
+`lucy rerun credico_fetch` → `lucy rerun credico_parse` produced per-person
+amounts (Abel $474, Yerailis Cuevas-Castillo $395, Yehonatan Bennaim $355, …).
 `pull()` raises rather than returning an empty dict — a silent `{}` would zero
 every Credico owner's week and look like a real result.
+
+### Open, and worth Megan's eye
+1. **Only 1 of the 2 offices downloaded.** Phoenix Acquisition needs the
+   back-navigation depth checked (the file level added a step).
+2. **Which figure is the DD?** The office Grand Total ($6,058 net) is the
+   obvious candidate, but the per-agent rows sum to the same pot — so is an
+   owner's Credico DD the whole office, or only their own agent rows? The VA
+   maps company→owner, which says whole office. Confirm before this feeds a
+   published number.
+3. **The period is worth a sanity check.** The file for Saturday 2026-07-25 is
+   headed "Jul 19 - Jul 25 2026" and its rows carry `SaleWeek` values from JUNE
+   (816: Jun 14-20). So the one-week-forward rule lands on a commission week
+   that PAYS sales from weeks earlier. That is the VA's documented rule and it
+   is reproduced faithfully — but it means Credico money added to sheet week
+   7.19.26 was earned well before it. Ask Carlos whether that is intended.
 
 ## THE PODIUM — ALPHALETE ORGANIZATIONAL LEADERS
 
