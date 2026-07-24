@@ -4081,12 +4081,13 @@ AUTOMATED_REPORTS = [
         "color": "#F59E0B",
         # 🎯 Recruiting (not Ops): Ops cards are routed to the OPS section, which
         # kept this out of ⏰ TIME SET REPORTS. It syncs new-hire background
-        # checks, so Recruiting is the right home and it sorts at its 8am start.
+        # checks, so Recruiting is the right home and it sorts at its 11:30am start.
         "category": "🎯 Recruiting",
-        # Fires 3× a day (8am / 11:30am / 4pm). The tile stays amber showing
-        # "N/3" until the 4pm pass lands, then turns green — instead of going
-        # green at 8am with two passes still due.
-        "daily_runs": 3,
+        # Fires 2× a day (11:30am / 4pm). The tile stays amber showing "N/2"
+        # until the 4pm pass lands, then turns green. TWO passes not three: the
+        # nightly schedule_guard only self-heals jobs with <=2 launchd entries,
+        # so a 3rd run would drop guard coverage (that caused the 7/20-22 stall).
+        "daily_runs": 2,
         "description": "Reads the Sterling/First Advantage background-check emails and updates the BG Status column on both D2D OBCL tabs, then posts a weekly new-starts status thread to #rafs-office-recruiting.",
         "breakdown": (
             "WHAT IT DOES\n"
@@ -4097,7 +4098,7 @@ AUTOMATED_REPORTS = [
             "Taken-Pending / Failed / Unperformable / Invited-not-taken (one "
             "edited-in-place reply, so the thread never grows).\n\n"
             "WHEN IT RUNS\n"
-            "**8am / 11:30am / 4pm CST** on the mini. Monday 11:30 starts the "
+            "**11:30am / 4pm CST** on the mini. Monday 11:30 starts the "
             "new week's thread.\n\n"
             "GOOD TO KNOW\n"
             "**•** **Passed** only from an explicit “Score PASS” email; "
@@ -4110,7 +4111,7 @@ AUTOMATED_REPORTS = [
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"
                       "?gid=963403896#gid=963403896"),
         "assignees": ["Lucy 1"],
-        # Own launchd timer, 3x a day — hide the DUE-TODAY + schedule pills and
+        # Own launchd timer, 2x a day — hide the DUE-TODAY + schedule pills and
         # keep it out of the "due today / not completed" tallies (same as
         # rc-autoread). Cadence lives in the breakdown.
         "hide_schedule": True,
@@ -4118,8 +4119,8 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "daily",
             # Sortable START time; time_label shows the real cadence at a glance.
-            "time": "8:00 AM",
-            "time_label": "8am / 11:30am / 4pm CST",
+            "time": "11:30 AM",
+            "time_label": "11:30am / 4pm CST",
             "estimated_minutes": 1,
         },
         "checklist": [],
