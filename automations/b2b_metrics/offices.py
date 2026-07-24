@@ -154,6 +154,13 @@ class B2BOffice:
     # Carlos's CarlosLocalOfficeEXPANDED is not, so Carlos clicks.)
     baked_sort_views: frozenset = field(default_factory=frozenset)
 
+    # EXTRA channel ids that get the SAME post as `channel_id` (Carlos 2026-07-23:
+    # his thread also goes to #a-players-b2b). Slack threads are per-channel, so
+    # each mirror gets its own daily thread with the same header + same items.
+    # The capture happens ONCE — a mirror only costs one upload per item, no extra
+    # Tableau work — so mirroring stays cheap as offices are added.
+    mirror_channels: tuple = field(default_factory=tuple)
+
     @property
     def tableau_views(self) -> dict:
         """view_key -> the URL to capture (per-office override if present, else
@@ -211,6 +218,9 @@ OFFICES: dict = {
                                 "4c53fb7e-5a1b-4e8f-990e-0b2c8cf42309/"
                                 "CarlosLocalOfficeEXPANDED"),
         },
+        # Carlos 2026-07-23: the SAME thread also posts to #a-players-b2b
+        # (private, Lucy added as a member). Its own daily thread + dedup.
+        mirror_channels=("C0AJQA8P716",),   # #a-players-b2b
     ),
     "atef": B2BOffice(
         key="atef",

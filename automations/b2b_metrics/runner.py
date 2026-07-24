@@ -208,40 +208,55 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
         cid = (client.conversations_open(users=channel_override)["channel"]["id"]
                if channel_override.upper().startswith("U") else channel_override)
         log("  channel OVERRIDE -> {}".format(cid))
-    state = bq._load_state(today, cid)
-    already = list(state.get("posted") or [])
-    ts = state.get("thread_ts") or bq.find_thread_ts(client, cid, today)
-    if not ts:
-        ts = client.chat_postMessage(
-            channel=cid, text=header_text(o, today)).get("ts")
-        bq._save_state(today, cid, ts, already)
-        log("  opened thread ts={}".format(ts))
+        targets = [cid]                 # a verification post goes ONLY there
+    else:
+        # MIRRORS get the SAME captured set. Slack threads are per-channel, so
+        # each target keeps its own daily thread + its own posted-state (dedup is
+        # per channel). Captures already happened above, so a mirror costs one
+        # upload per item — no extra Tableau work.
+        targets = [cid] + [c for c in o.mirror_channels if c != cid]
 
     posted = []
-    for item in items:
-        path = captured.get(item["id"])
-        if not path:
-            continue
-        if item["id"] in already and not force:
-            log("  [{}] already in thread — skip".format(item["id"]))
-            continue
-        caption = "{} *{}*".format(item["emoji"], item["title"])
-        client.files_upload_v2(channel=cid, thread_ts=ts, file=str(path),
-                               filename=path.name, initial_comment=caption)
-        posted.append(item["id"])
-        already.append(item["id"])
-        bq._save_state(today, cid, ts, already)   # after EACH, crash-safe
-        time.sleep(POST_SETTLE_SEC)                # let Slack finalize this
-        log("  [{}] posted".format(item["id"]))    # image's message before next
+    per_chan_posted = []      # set of item ids in each target's thread
+    first_ts = None
+    for chan in targets:
+        state = bq._load_state(today, chan)
+        already = list(state.get("posted") or [])
+        ts = state.get("thread_ts") or bq.find_thread_ts(client, chan, today)
+        if not ts:
+            ts = client.chat_postMessage(
+                channel=chan, text=header_text(o, today)).get("ts")
+            bq._save_state(today, chan, ts, already)
+            log("  [{}] opened thread ts={}".format(chan, ts))
+        if first_ts is None:
+            first_ts = ts
+        for item in items:
+            path = captured.get(item["id"])
+            if not path:
+                continue
+            if item["id"] in already and not force:
+                log("  [{}] {} already in thread — skip".format(chan, item["id"]))
+                continue
+            caption = "{} *{}*".format(item["emoji"], item["title"])
+            client.files_upload_v2(channel=chan, thread_ts=ts, file=str(path),
+                                   filename=path.name, initial_comment=caption)
+            posted.append(item["id"])
+            already.append(item["id"])
+            bq._save_state(today, chan, ts, already)  # after EACH, crash-safe
+            time.sleep(POST_SETTLE_SEC)               # let Slack finalize this
+            log("  [{}] {} posted".format(chan, item["id"]))
+        per_chan_posted.append(set(already))
+    ts = first_ts
 
-    # Completeness: `already` is every item now in today's thread (this run +
-    # any earlier pass today). An item is a MISS if it's not there — its capture
-    # failed and it never posted. Drives the card pill: all present -> green,
-    # some missed -> orange (partial), none present -> red (failed).
-    present = [i["id"] for i in items if i["id"] in set(already)]
-    missed = [i["id"] for i in items if i["id"] not in set(already)]
+    # Completeness across EVERY target (primary + mirrors): an item counts as
+    # present only if it's in ALL their threads, so a mirror that missed one still
+    # reads as partial rather than green. Drives the card pill: all present ->
+    # green, some missed -> orange (partial), none present -> red (failed).
+    all_present = (set.intersection(*per_chan_posted) if per_chan_posted else set())
+    present = [i["id"] for i in items if i["id"] in all_present]
+    missed = [i["id"] for i in items if i["id"] not in all_present]
     if missed:
-        log("  MISSED (not in thread): {}".format(", ".join(missed)))
+        log("  MISSED (not in every thread): {}".format(", ".join(missed)))
     return {"thread_ts": ts, "posted": posted, "present": present,
             "missed": missed}
 
