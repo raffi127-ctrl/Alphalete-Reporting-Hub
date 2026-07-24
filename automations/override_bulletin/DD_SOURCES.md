@@ -91,6 +91,33 @@ a **downline roll-up via the `Org Tree` tab**, minus adoptions:
 Podium totals OVERLAP by design (a larger org contains smaller ones), so they sum
 to MORE than the org total — 7.19.26: podium $1,239,788 vs org total $1,010,587.
 
+## Podium reconciliation vs the SENT 7.19.26 bulletin (2026-07-23)
+
+Computed from `Org Tree` + the DD tab, alias-resolved, adoptions excluded:
+**4 of 7 exact** — Eveliz $69,463 ✓, Khalil $63,204 ✓, Salik $48,267 ✓,
+Hammad $48,267 ✓ (the shared Salik/Hammad figure reproduces correctly).
+
+Still open:
+- **Colten** −$28,807.50. Every ORG-tagged Colten person is already in his tree,
+  so the shortfall is someone NOT tagged Colten. The `.50` says a half-split.
+- **Carlos** −$13,154.50 = EXACTLY half of Cody Cannon ($26,309). Cody is
+  currently counted x0.5 to both Carlos and Colten; Carlos's gap closes exactly
+  if he takes Cody in FULL. Megan confirmed Cody is split — needs the direction
+  pinned.
+- **Raf (outside Carlos & Colten)** +$10,757.00 — computed too high.
+
+**Jacob Dover is SPECIAL** (Megan 2026-07-23). Tree puts him under Hammad via
+Tevin Sterling, but the sent bulletin excludes him — excluding him is what makes
+Salik AND Hammad land exactly. Treat him like the adoptions: **excluded from the
+org roll-up but STILL pulled and reported** (Active YES, ATT-RES-Fiber, ORG col
+Salik, 2026 $108,004; 7.19 $21,863, 7.12 $15,191, 7.5 $10,508). His numbers must
+never silently disappear.
+
+Every failure so far has been a NAME MISMATCH, not a structural one — including
+`Salik Malick`/`Mallick`, `Max Aden`/`Maxamad`/`Maxamed`, `MJ Malhas`/`Amjad`.
+All are now rows in the shared ICD Aliases tab. `Lucy Org Tree` (gid 1263646043)
+holds the tree tied to the DD sheet's names, with a match-status column.
+
 ## Presentation
 
 The OneDrive `Org. Bulletin.xlsx` and BeeFree are **formatting only** (Megan:
