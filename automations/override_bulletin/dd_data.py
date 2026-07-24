@@ -39,6 +39,12 @@ _SPLIT_RE = re.compile(r"\(\s*(\d)\s*/\s*(\d)\s*\)")
 
 
 def money(s):
+    # Sheet cells arrive as text, but openpyxl hands back real numbers — take
+    # either rather than crashing on a float (Credico's TransAmt is numeric).
+    if isinstance(s, bool):
+        return 0.0
+    if isinstance(s, (int, float)):
+        return float(s)
     s = (s or "").replace("$", "").replace(",", "").strip()
     if s.startswith("(") and s.endswith(")"):
         s = "-" + s[1:-1]
