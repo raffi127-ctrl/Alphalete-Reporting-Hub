@@ -31,6 +31,18 @@ Run through this list before saying any new report automation is "done." Each it
 - [ ] **Access gaps surfaced in review email** ([[feedback-access-gaps-in-review]]).
 - [ ] **Run failures email Megan** via the intake-sheet Code.gs ([[project-glitch-email-pending]]).
 
+## Scheduling — the LaunchAgent actually fires
+
+Committing a plist is NOT scheduling it. A standalone LaunchAgent (anything NOT
+riding the 4am day-orchestrator batch) needs a one-shot install ON the machine,
+and then needs to be watched fire once before you believe it.
+
+- [ ] **The agent is installed on the runner**, not just committed. `deploy/com.alphalete.<name>.plist` in git does nothing until `lucy update` (pull) THEN `lucy rerun install_<name>_agent` runs on that machine. Reports that ride the 4am orchestrator need no install — they're picked up from `schedule_config.json` by the pull alone. Mixed-mode reports are the trap: a report with a morning orchestrator phase AND its own evening agent looks half-scheduled and reads as working.
+- [ ] **You watched a real scheduled fire.** The install returning `reloaded ✓` is not proof. The only honest signal is the NEXT scheduled fire landing: a Hub Activity row, or the wrapper's log file (`output/logs/<name>-<date>-<HHMMSS>.log`). Put a reminder on the first fire — don't call it done the same day you install it.
+- [ ] **The loaded schedule matches the plist.** `lucy rerun schedule_audit` lists what each timed job is actually set to fire at; `lucy rerun morning_diag --loaded` reads the LIVE launchd job. Reading the plist FILE proves nothing — the mini's launchd caches the timezone and can fire every calendar job +2h ([[project-mini-launchd-drift]]). A freshly installed agent is exactly when this bites.
+- [ ] **It reports itself to the Hub** — `hub_publish.publish_done` from the `deploy/*.sh` wrapper (guarded by a `--dry-run` skip) + the `report_id -> card_id` line in `hub_publish._HUB_CARD`; or the module self-reports via `automations.shared.hub_activity.log_completed(CARD_ID, CARD_NAME)`. Without this a clean run is indistinguishable from a silent miss ([[feedback-launchd-reports-must-publish]]).
+- [ ] **`daily_runs` on the card matches the number of passes that actually publish.** A card set to 2 with only one pass wired sits amber forever and nobody can tell "half-scheduled" from "still mid-day."
+
 ## Hub integration
 
 - [ ] **No dashboard.py structural edits** unless Megan explicitly asks ([[feedback-hub-ownership]]).
