@@ -413,15 +413,35 @@ def fetch_week(week_label="7.19.26", page=None, verbose=True):
         rows.append(["offices", want, ", ".join(
             " ".join((n.inner_text() or "").split()) for n in nodes)])
 
-        for i in range(len(nodes)):
-            # re-query: clicking re-renders the list and stales the handles
+        def _items():
+            """Current nodes, re-queried — clicking re-renders and stales handles."""
             lst = page.query_selector("div.report-list")
-            nodes2 = [el for el in (lst.query_selector_all(".col-item") if lst else [])
-                      if " ".join((el.inner_text() or "").split())]
-            if i >= len(nodes2):
+            return [(el, " ".join((el.inner_text() or "").split()))
+                    for el in (lst.query_selector_all(".col-item") if lst else [])
+                    if " ".join((el.inner_text() or "").split())]
+
+        for i in range(len(nodes)):
+            items = _items()
+            if i >= len(items):
                 break
-            node = nodes2[i]
-            name = " ".join((node.inner_text() or "").split())
+            node, name = items[i]
+            # THREE LEVELS: week → office → file. Clicking the office reveals a
+            # single file node named `<date>~<office>~Commissions.xlsx`; the
+            # download only fires on THAT. Drill to the first node whose name has
+            # a file extension before waiting for the download.
+            if not re.search(r"\.\w{2,5}$", name):
+                node.click()
+                page.wait_for_timeout(3500)
+                leaf = next(((el, t) for el, t in _items()
+                             if re.search(r"\.\w{2,5}$", t)), None)
+                if leaf is None:
+                    rows.append(["NO FILE NODE", name,
+                                 "; ".join(t for _, t in _items())[:300] or "(empty)"])
+                    page.go_back()
+                    page.wait_for_timeout(2500)
+                    continue
+                node, name = leaf
+                rows.append(["file-node", name, "drilled office → file"])
             try:
                 with page.expect_download(timeout=45000) as dl:
                     node.click()
@@ -449,8 +469,10 @@ def fetch_week(week_label="7.19.26", page=None, verbose=True):
                                          f"{t[:60]} ng-click="
                                          f"{(el.get_attribute('ng-click') or '')[:60]} "
                                          f"href={(el.get_attribute('href') or '')[:90]}"])
-            page.go_back()
-            page.wait_for_timeout(2500)
+            # back out of BOTH levels (file → office → week list)
+            for _ in range(2):
+                page.go_back()
+                page.wait_for_timeout(2000)
 
         for m, u in calls[:14]:
             rows.append(["network", m, u[:220]])
