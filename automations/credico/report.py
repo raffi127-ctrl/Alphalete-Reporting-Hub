@@ -586,20 +586,78 @@ def pull(week_label, page=None, aliases=None, verbose=True):
     return owners, notes
 
 
-def _extract(saturday, page=None, verbose=True):
-    """Rows off the Reports screen for that Saturday, as [{'name','amount'}].
+def parse_workbook(path, verbose=True):
+    """Per-agent Credico amounts out of one downloaded Commissions workbook.
 
-    NOT WRITTEN YET — deliberately. The Reports screen has never been looked at,
-    and inventing selectors for a hash-router SPA produces a scraper that returns
-    [] on a layout change and looks like a quiet zero week. Run `--discover`
-    on Lucy 1, then write this against the real markup."""
-    raise NotImplementedError(
-        "Credico report extraction is not wired yet.\n"
-        "  0. Check the session first:  lucy rerun credico_check\n"
-        "  1. On Lucy 1:  python -m automations.credico.report --discover\n"
-        "  2. Read the '_credico_discover' tab (readable from any machine)\n"
-        "  3. Implement _extract() against the real controls, using\n"
-        "     dd_rows.normalize()/to_owners() for the cleanup — already tested.")
+    Reads the `CommissionDetail` sheet — the `CommissionSummary` tab is pivoted
+    by CAMPAIGN and has no names. Columns are found BY HEADER LABEL (CLAUDE.md:
+    never hardcode a column index; Credico can add one at any time).
+
+    Returns (office_name, [{'name','amount'}], total). Names arrive
+    "Last, First" and are flipped so ICD Aliases can resolve them.
+    """
+    import openpyxl
+    wb = openpyxl.load_workbook(path, data_only=True)
+    if "CommissionDetail" not in wb.sheetnames:
+        raise RuntimeError(f"{path.name}: no 'CommissionDetail' sheet — "
+                           f"has {', '.join(wb.sheetnames)}")
+    ws = wb["CommissionDetail"]
+    hdr_row = hdr = None
+    for i, row in enumerate(ws.iter_rows(min_row=1, max_row=6, values_only=True), 1):
+        labels = [str(c).strip().lower() if c is not None else "" for c in row]
+        if "agentname" in labels and "transamt" in labels:
+            hdr_row, hdr = i, labels
+            break
+    if hdr is None:
+        raise RuntimeError(f"{path.name}: no header row with AgentName + TransAmt")
+    col = {name: hdr.index(name) for name in
+           ("agentname", "transamt", "officename", "commissionweek")
+           if name in hdr}
+
+    office, entries, total = "", [], 0.0
+    for row in ws.iter_rows(min_row=hdr_row + 1, values_only=True):
+        def g(key):
+            i = col.get(key)
+            return row[i] if i is not None and i < len(row) else None
+        raw = g("agentname")
+        amt = g("transamt")
+        if raw is None and amt is None:
+            continue
+        office = office or str(g("officename") or "").strip()
+        name = str(raw or "").strip()
+        if "," in name:                       # "Draper, Abel" -> "Abel Draper"
+            last, first = name.split(",", 1)
+            name = f"{first.strip()} {last.strip()}".strip()
+        try:
+            v = float(amt)
+        except (TypeError, ValueError):
+            v = 0.0
+        entries.append({"name": name, "amount": v})
+        total += v
+    if verbose:
+        print(f"-> {path.name}: {len(entries)} detail row(s), office {office!r}, "
+              f"total ${total:,.2f}", flush=True)
+    return office, entries, round(total, 2)
+
+
+def _extract(saturday, page=None, verbose=True):
+    """Rows for that Saturday, as [{'name','amount'}] — from the downloaded
+    workbooks. `fetch_week()` puts them in output/credico/ named `<date>_...`."""
+    files = sorted(OUT.glob(f"{saturday:%Y-%m-%d}_*.xlsx"))
+    if not files:
+        raise RuntimeError(
+            f"no Credico workbook for {saturday:%Y-%m-%d} in {OUT}. Fetch it "
+            f"first, ON LUCY 1:\n    lucy rerun credico_fetch\n"
+            f"(the download needs the saved Credico session)")
+    rows = []
+    for f in files:
+        office, entries, total = parse_workbook(f, verbose=verbose)
+        # The office IS the owner's company, so the office name rides along as a
+        # fallback row-name: if an agent is unknown, the office still maps to an
+        # owner rather than the money vanishing.
+        for e in entries:
+            rows.append({"name": e["name"] or office, "amount": e["amount"]})
+    return rows
 
 
 def main(argv=None):

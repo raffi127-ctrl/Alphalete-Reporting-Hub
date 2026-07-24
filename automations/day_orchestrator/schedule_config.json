@@ -3703,6 +3703,30 @@
         "type": "not_configured"
       },
       "machine": "Lucy 1"
+    },
+    "credico_parse": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "LOCAL ONLY: parse the already-downloaded Credico workbook(s) in output/credico/ into per-owner DD amounts (CommissionDetail -> agent rows -> row hygiene -> company/owner mapping). Never touches Credico. Run credico_fetch first.",
+      "display_name": "Credico — parse the workbook to per-owner DD",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.credico.report"
+      ],
+      "base_args": [
+        "--week",
+        "7.19.26"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
     }
   },
   "read_only_standalone": {
