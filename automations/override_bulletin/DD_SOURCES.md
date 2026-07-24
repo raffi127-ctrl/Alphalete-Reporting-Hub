@@ -504,6 +504,34 @@ layout ourselves. The VA's Slack image is a crop of just the tables, enlarged in
 Paint, because a screenshot of the whole email is unreadable — our render should
 make that crop unnecessary.
 
-Footer: **"Learn More. Dream More. Do More."** + the ALPHALETE ORGANIZATIONAL
-LEADERS blurb ("...maintain three successful promotions outside your own
-office...").
+Footer: **"Learn More. Dream More. Do More."** The org-leader blurb was REMOVED
+(Megan 2026-07-24).
+
+### Layout, as Megan reviewed it live 2026-07-24
+Reviewed page by page in a browser preview; the render changed a lot. Current shape:
+- **Page 1**: headline → top-5 photo cards (org leaders, gold `#1..#5` top-left) →
+  the per-leader **org breakdowns** directly under them (masonry, biggest org
+  first), then the `* adoption` key bottom-right. Cards carry name / location /
+  week only — the 2026 total and organic lines were dropped (organic shows on the
+  org card instead). Org card header shows `14 ICDs (10 ORG)` when adoptions are
+  present.
+- **Page 2**: **All ICDs** (every ICD we can pull, top 5 highlighted gold) →
+  **Tracked Separately** (same fixed columns so they line up, ranked by the week)
+  → **Credico** (only the pending warning; the populated table was dropped as
+  redundant with the ICD list) → the merged **Avg DD + Active Owners** rollup
+  (one row per org/campaign so the two line up; owners show the last 3 weeks and a
+  count that ROSE from the prior week is green for that week only).
+- **Adoptions**: a red `*`, never the word (Raf: "just a red *").
+- Adoption membership is a manual `Adoption?` flag on `Lucy Org Tree` — Karrington,
+  Milan, Justin are Raf's explicit calls; **Marcos is a reconciliation inference**
+  (his flag makes Colten's organic land on $389,162), unconfirmed by Raf.
+- **Salik fix (Raf confirmed a mistake, 2026-07-24)**: Salik was missing from his
+  own org because his ICD row `Salik Waqar` sits under Raf on the tab. Added to his
+  own list → $57,609 (3 ICDs incl. his own $9,342); still overlaps into Raf's org.
+
+### Open question tooling — `dd_search.py` (Lucy 1)
+Do the four bulletin-only names have weekly history in Tableau, or only the single
+manual figure? `lucy rerun dd_name_search` downloads the ORG DD Detail crosstab,
+searches it for Justin / Marcos / Karrington / Milan, and dumps the result to the
+`_dd_search` tab (read-only). If found, they can be wired as excluded-but-tracked
+rows and get full history like Jacob Dover; if not, the `—` is the honest thing.

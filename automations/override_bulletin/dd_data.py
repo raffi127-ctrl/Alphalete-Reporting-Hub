@@ -399,7 +399,7 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
     #   bulletin-only names (Justin, Marcos, the adoptions) → ON a podium list,
     #     but with no DD row, so NOT in the org total
     excluded = {_key(n, aliases) for n in ADOPTIONS + SPECIAL}
-    tracked = [{**r, "why": "In the organization total; on no leader's podium list."}
+    tracked = [{**r, "why": "In the organization total"}
                for r in icds if r["key"] in excluded]
     for p in podium:
         for item in p["items"]:
@@ -408,16 +408,14 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
             tracked.append({"name": item["icd"], "campaign": "", "org": p["name"],
                             "total": item["manual_total"] or "",
                             "weeks": [item["manual_week"]] + [""] * (len(weeks) - 1),
-                            "why": f"On {p['name'].split()[0]}'s podium list; no DD "
-                                   f"row on the tab, so not in the organization total."})
+                            "why": f"{p['name'].split()[0]}'s org · not in the total"})
     # A Credico owner with no DD row is the third way money can sit outside the
     # roll-up. DD_SOURCES: "these owners are often absent from the main list and
     # must be ADDED" — so they are SHOWN rather than dropped, and flagged above.
     for m in (credico_info or {}).get("missing", []):
         tracked.append({"name": m["owner"], "campaign": "Credico", "org": "",
                         "total": "", "weeks": [m["amount"]] + [""] * (len(weeks) - 1),
-                        "why": "Credico office DD; no row on the DD tab, so not "
-                               "in the organization total."})
+                        "why": "Credico deposits · not in the total"})
     return {"weeks": weeks, "icds": icds, "podium": podium, "headline": headline,
             "avg": avg, "active_owners": active, "tracked_separately": tracked,
             "totals": totals, "org_count": len(icds), "problems": problems,
