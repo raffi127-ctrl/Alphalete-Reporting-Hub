@@ -313,7 +313,8 @@ def main(argv=None) -> int:
     try:
         results = post_thread(imgs, zrs, today, yday, dry_run=False, dm_user=args.dm or "")
     except Exception:
-        _publish_hub("failed")
+        if not args.dm:              # a DM test shouldn't touch the Hub card either
+            _publish_hub("failed")   # way — a failed test used to mark the card red
         raise
     for r in results:
         print(f"    {r}")
