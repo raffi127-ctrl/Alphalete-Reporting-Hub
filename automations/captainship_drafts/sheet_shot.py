@@ -364,14 +364,11 @@ def _units_label(raw: str) -> str:
 
 
 def _units_blocks_for(captain_key: str, flavor: str, blocks) -> list:
-    """Which discovered units charts go in this captain's email.
-    Rafael: New Internet only (spec = one chart). Fiber: both (New Internet +
-    All Units). B2B/NDS: their single block."""
-    units = blocks.units
-    if flavor == "rafael":
-        ni = [u for u in units if "NEW INTERNET" in u.label.upper()]
-        return ni or units[:1]
-    return units
+    """Which discovered units charts go in this captain's email, in sheet order
+    (New Internet first, then All Units below it). Rafael + Fiber carry BOTH
+    (Rafael used to be New-Internet-only; Eve asked for its All Units chart too,
+    2026-07-22); B2B/NDS have a single block."""
+    return blocks.units
 
 
 def captain_shots(captain_key: str, flavor: str, out_dir: Path, *,
