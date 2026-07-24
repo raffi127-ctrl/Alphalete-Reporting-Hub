@@ -256,11 +256,31 @@ def discover_deep(week_label="7.19.26", page=None, verbose=True):
                         date_els.append((t, el))
                 rows.append(["  week-dates", label,
                              ", ".join(t for t, _ in date_els[:14])[:400]])
+                # FEE REPORTS IS A FILE BROWSER: date → office → file. The office
+                # names under a date are links to the week's file, so capture what
+                # they point AT (href / ng-click / download attr) before fetching
+                # anything. Nothing is downloaded here.
+                def _dump_office_links(tag):
+                    lst = page.query_selector("div.report-list")
+                    if lst is None:
+                        return
+                    for el in lst.query_selector_all("a, [ng-click], li, span"):
+                        t = " ".join((el.inner_text() or "").split())
+                        if not t or len(t) > 60:
+                            continue
+                        rows.append(["  office-link", tag,
+                                     f"{t} | tag={el.evaluate('e => e.tagName')} "
+                                     f"href={(el.get_attribute('href') or '')[:120]} "
+                                     f"ng-click={(el.get_attribute('ng-click') or '')[:80]} "
+                                     f"download={el.get_attribute('download')!r} "
+                                     f"cls={(el.get_attribute('class') or '')[:40]}"])
+
                 hit = next((el for t, el in date_els if t == want or t in alts), None)
                 if hit is not None:
                     hit.click()
                     page.wait_for_timeout(6000)
                     rows.append(["  opened-week", label, f"{want} — url {page.url}"])
+                    _dump_office_links(f"{label} @ {want}")
                     _dump_tables(f"{label} @ {want}")
                 elif date_els:
                     t0, el0 = date_els[0]
