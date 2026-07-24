@@ -148,24 +148,34 @@ def _gid() -> int:
 
 
 def _selection_rect(page) -> dict | None:
-    """Viewport rect of the current selection overlay, or None if absent. The top
-    is clamped to the bottom of the frozen column-header strip: for a range
-    anchored high on the sheet (e.g. Rafael's PS at row 208) the overlay starts
-    ABOVE the header, so an unclamped clip captures the A B C column letters. The
-    real cell content begins at the header bottom, so clamping loses no data."""
+    """Bounding rect of the current selection overlay(s), or None if absent.
+
+    UNION of every non-empty `.selection` div, because FROZEN PANES split the
+    selection into up to four quadrant divs (e.g. the per-captain Activations
+    tabs freeze row 1 + col A) — taking just the first div would grab one frozen
+    corner (the A1 cell), not the whole range. A non-frozen selection is a single
+    div, so the union is a no-op there.
+
+    The top is then clamped to the bottom of the frozen column-header strip: for a
+    range anchored high on the sheet (e.g. Rafael's PS at row 208) the overlay
+    starts ABOVE the header, so an unclamped clip captures the A B C column
+    letters. Cell content begins at the header bottom, so clamping loses no data."""
     return page.evaluate("""(sel) => {
         let hb = 0;
         const h = document.querySelector(sel);
         if (h) hb = h.getBoundingClientRect().bottom;
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, n = 0;
         for (const el of document.querySelectorAll('.selection')) {
             const b = el.getBoundingClientRect();
             if (b.width > 1 && b.height > 1) {
-                const top = Math.max(b.y, hb);
-                return {x: b.x, y: top, width: b.width,
-                        height: b.height - (top - b.y)};
+                n++;
+                x0 = Math.min(x0, b.x);   y0 = Math.min(y0, b.y);
+                x1 = Math.max(x1, b.right); y1 = Math.max(y1, b.bottom);
             }
         }
-        return null;
+        if (!n) return null;
+        const top = Math.max(y0, hb);
+        return {x: x0, y: top, width: x1 - x0, height: y1 - top};
     }""", _COL_HEADER_SEL)
 
 

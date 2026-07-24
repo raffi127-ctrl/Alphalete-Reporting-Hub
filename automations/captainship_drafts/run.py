@@ -97,7 +97,7 @@ def _build_one(captain: config.Captain, today: dt.date, render_dir: Path,
         "cancel_tableau": cancel_tableau,
         "teamstats_tableau": teamstats_tableau,
         "fiber_activation": (fiber_png.fiber_activation_png(
-            captain.key, today, logfn=logfn)
+            captain.key, today, render_dir, logfn=logfn)
             if captain.flavor == "fiber" else None),
     }
     n_imgs = sum([ps is not None, len(units), len(churn),
