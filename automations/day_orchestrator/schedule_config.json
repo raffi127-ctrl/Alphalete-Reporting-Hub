@@ -3611,6 +3611,29 @@
         "type": "not_configured"
       },
       "machine": "Lucy 1"
+    },
+    "credico_discover": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "One-shot: dump the Credico Sales Management → Reports screen (controls, tables, frames) so the DD pull can be written against real markup instead of guessed selectors. READ-ONLY — no writes to any report tab. Output lands on the '_credico_discover' tab of the override workbook, readable from any machine.",
+      "display_name": "Credico — discover the Reports screen",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.credico.report"
+      ],
+      "base_args": [
+        "--discover"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
     }
   },
   "read_only_standalone": {
