@@ -66,16 +66,12 @@ if [ "${1:-}" != "--dry" ]; then
 fi
 
 # A failure here is silent otherwise — nobody watches this log, and the 5:10am
-# board post will happily render an unfilled day.
-#
-# A wrong-week HOLD only alerts on the MORNING pass. An evening hold means the
-# board hasn't been rolled to the new week yet, which is normal on a Monday
-# afternoon and would otherwise fire six times; the morning one is the one that
-# matters, because the 5:10am post goes out ten minutes later.
-_ALERT=no
-[ "$ST" -ne 0 ] && [ "$ST" -ne 75 ] && _ALERT=yes
-[ "$ST" -eq 75 ] && [ "$(date +%H)" -lt 10 ] && _ALERT=yes
-if [ "$_ALERT" = "yes" ]; then
+# board post will happily render an unfilled day. A wrong-week hold is alerted
+# too: Monday's 4:00pm pass is the one that matters, since it leaves an hour to
+# get the new week's board up before the 5:00pm pass fills it.
+# alert.py decides whether to actually post (a hold is deduped to once a day, a
+# failure always posts), so the wrapper just hands it every non-zero exit.
+if [ "$ST" -ne 0 ]; then
     "$VENV_PY" -m automations.vantura_slack_sales.alert "$LOG_FILE" "$ST" >> "$LOG_FILE" 2>&1 || true
 fi
 exit 0
