@@ -1355,7 +1355,7 @@
     "captainship_drafts": {
       "order": 20,
       "on_scheduler": true,
-      "_note": "Builds the 12 Captainship Report Gmail drafts (Rafael + 5 fiber + 3 B2B + 3 NDS) as alphaletereporting@gmail.com. Reads the 'Copy of Alphalete ORG Sales Board' tab for §1 (Product Summary + Captainship Units screenshots), the daily Fiber Activations PNGs (fiber §2), and the filled churn tabs (§3/§4). depends_on org_sales_board + both churn runs + captainship_activations so it only builds once its inputs are fresh — this is the 'fire after the board is complete' trigger Eve asked for. MANUAL-ONLY FOR NOW (cadence.weekdays [] -> the 4am orchestrator never auto-runs it) while (a) the Sales Board screenshot profile is logged in on the runner (`python -m automations.captainship_drafts.sheet_shot login` as alphaletereporting) and (b) the Tableau §2 shots (Cancel Rates / Team Stats Breakout) are wired. At go-live set weekdays to [1,2,3,4,5,6] to auto-fire after the board. `lucy rerun captainship_drafts --dry-run` previews to output/*.eml/.html; without --dry-run it creates Gmail drafts (nothing is sent — a human reviews + sends).",
+      "_note": "Builds the 12 Captainship Report Gmail drafts (Rafael + 5 fiber + 3 B2B + 3 NDS) as alphaletereporting@gmail.com. Reads the 'Copy of Alphalete ORG Sales Board' tab for §1 (Product Summary + Captainship Units screenshots), the daily Fiber Activations PNGs (fiber §2), and the filled churn tabs (§3/§4). depends_on org_sales_board + both churn runs + captainship_activations so it only builds once its inputs are fresh — this is the 'fire after the board is complete' trigger Eve asked for. LIVE 2026-07-22 (cadence.weekdays [1-6]): auto-fires Tue-Sun after the board fill + churns + activations, creating the 12 drafts in alphaletereporting@gmail.com (base_args has no --dry-run). Prereqs met: Sales Board screenshot profile logged in on the runner (`python -m automations.captainship_drafts.sheet_shot login` as alphaletereporting) + the Tableau §2 shots (Cancel Rates / Team Stats Breakout) wired. `lucy rerun captainship_drafts --dry-run` previews to output/*.eml/.html; without --dry-run it creates Gmail drafts (nothing is sent — a human reviews + sends).",
       "display_name": "Captainship Report Drafts (12)",
       "source_type": "tableau",
       "data_sources": [],
@@ -1364,7 +1364,14 @@
       ],
       "base_args": [],
       "cadence": {
-        "weekdays": []
+        "weekdays": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
       },
       "priority": "P2",
       "freshness_target": null,
