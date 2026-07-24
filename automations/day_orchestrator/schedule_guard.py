@@ -17,8 +17,10 @@ launchd can never hold a stale one and nobody has to remember to reinstall.
 
 Skips (left alone): KeepAlive/always-on jobs (session-holder, keep-awake,
 mini-control — no calendar), the guard itself (would bootout itself mid-run), and
-high-frequency pollers (>2 intervals, or an interval with no Hour — e.g.
-rc-autoread / resume-pushing) where "drift" is meaningless and a reload is pointless.
+high-frequency pollers — an interval with no Hour (e.g. rc-autoread /
+resume-pushing) — where "drift" is meaningless and a reload is pointless.
+Interval COUNT is not a skip signal: launchd has no "weekdays" field, so an
+ordinary Mon-Sat daily job enumerates 6 intervals. See _timed_schedule.
 
   python -m automations.day_orchestrator.schedule_guard          # reload all timed jobs
   python -m automations.day_orchestrator.schedule_guard --audit  # just list them + schedules
@@ -26,6 +28,7 @@ rc-autoread / resume-pushing) where "drift" is meaningless and a reload is point
 from __future__ import annotations
 
 import plistlib
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -52,20 +55,49 @@ def _loaded_labels() -> list[str]:
     return labels
 
 
-def _timed_schedule(plist_path: Path):
-    """Return the StartCalendarInterval entries if this is a once-daily/weekly
-    TIMED job (each entry has an Hour, and there are at most 2 — a job with more,
-    or an Hour-less entry, is a high-frequency poller we deliberately skip). Else
-    None (KeepAlive/always-on, or a poller)."""
+# An XML comment may not contain "--", but several committed plists document
+# their flags in one (`<!-- --no-pdf … -->`). launchd's own parser accepts them
+# (`plutil -lint` says OK, and the jobs run), but Python's plistlib refuses the
+# whole file — so those jobs silently vanished from the guard AND the audit.
+# Strip comments and retry rather than drop a real job over a doc string.
+_XML_COMMENT = re.compile(rb"<!--.*?-->", re.DOTALL)
+
+
+def _load_plist(plist_path: Path):
+    raw = plist_path.read_bytes()
     try:
-        d = plistlib.loads(plist_path.read_bytes())
+        return plistlib.loads(raw)
     except Exception:  # noqa: BLE001
+        pass
+    try:
+        return plistlib.loads(_XML_COMMENT.sub(b"", raw))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _timed_schedule(plist_path: Path):
+    """Return the StartCalendarInterval entries if this is a TIMED job — every
+    entry carries an Hour. Else None (KeepAlive/always-on, or a high-frequency
+    poller whose intervals have no Hour, e.g. rc-autoread / resume-pushing).
+
+    Entry COUNT is deliberately not a filter. It used to be (">2 entries = a
+    poller"), but that is the wrong proxy: launchd has no "weekdays" field, so a
+    plain once-daily Mon-Sat job must enumerate one entry PER DAY — 6 entries,
+    all Hour 20. That heuristic silently excluded ~12 ordinary timed jobs from
+    the nightly drift reload (applicant-evening, sales-boards, b2b-quality,
+    owners-call-reminder, override-bulletin-fri, pnl-office-fri, org-board-slack,
+    vantura-slack-sales, …) — on a machine with a documented history of launchd
+    firing every calendar job +2h. Those were exactly the jobs with no self-heal.
+    An Hour-less interval is the honest poller signal, so that check stands alone.
+    """
+    d = _load_plist(plist_path)
+    if d is None:
         return None
     sci = d.get("StartCalendarInterval")
     if sci is None:
         return None
     entries = sci if isinstance(sci, list) else [sci]
-    if len(entries) > 2 or any("Hour" not in e for e in entries):
+    if any("Hour" not in e for e in entries):
         return None
     return entries
 
