@@ -158,6 +158,31 @@ weekly figure is a SUM of several DD Captain's-Bonus lines (Eveliz 7.12 = the
 VA's `=2576+540`), so a parser that grabs one line instead of the sum looks
 perfectly healthy until the dollars are compared.
 
+### Result, Lucy 1 2026-07-23 (week 7.12)
+
+**Every source that exported matched the VA to the cent. No real disagreement.**
+
+| Source | Verdict |
+|---|---|
+| ORG Override Summary (regular) | ✅ all 21 actives match exactly |
+| Raf PNL Captain Override | ✅ $18,067 (and 7.5 = $20,068) |
+| Raf Special Override | ⚠️ did not export |
+| DD captain overrides | ⚠️ did not export |
+| NetSuite ledger | no P7-2026 rows yet (still pending) |
+
+22 cells compared, 16 matched, 6 "mismatched" — and every one of those 6 is off
+by **exactly** the figure the dead source was supposed to supply: Raf −39,521.99
+(his special), Colten −10,236.00, Carlos −10,874.99, Jairo −6,534.00, Khalil
+−4,865.00, Eveliz −3,116.00 (their DD captain bonuses). Each person's regular
+component matched to the cent underneath. So the two failures cost coverage, not
+correctness.
+
+**Both failures were the same symptom** — `Couldn't find the '<sheet>' sheet in
+the Crosstab dialog — saw 0 thumb(s)` on `Payout- Raf wow` and `ORG DD Detail`,
+while the ORG summary exported fine on both attempts. Someone was working ON the
+mini at the time (see the Chrome-collision note): re-run verify when it's idle to
+close out these two sources.
+
 ## Post-fill (already built / mapped)
 
 Sort ALL ORG by Total 2026 desc, render the bulletin (`build.py`), then publish
