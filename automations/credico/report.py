@@ -493,6 +493,37 @@ def fetch_week(week_label="7.19.26", page=None, verbose=True):
     return got
 
 
+def inspect(verbose=True):
+    """Dump EVERY sheet of the downloaded file(s) — the summary sheet is a
+    per-campaign pivot, so the per-person rows (if any) are on another tab.
+    Local only: reads output/credico/*.xlsx, never touches Credico."""
+    import openpyxl
+    rows = [["FILE", "SHEET/CELL", "VALUE"]]
+    files = sorted(OUT.glob("*.xlsx"))
+    if not files:
+        rows.append(["(none)", "", f"no .xlsx in {OUT} — run --fetch first"])
+    for f in files:
+        wb = openpyxl.load_workbook(f, data_only=True)
+        rows.append([f.name, "SHEETS", ", ".join(wb.sheetnames)])
+        for sn in wb.sheetnames:
+            ws = wb[sn]
+            rows.append([f.name, f"{sn} dims", f"{ws.max_row} rows x {ws.max_column} cols"])
+            for i, row in enumerate(ws.iter_rows(min_row=1, max_row=min(ws.max_row, 40),
+                                                 values_only=True), 1):
+                cells = ["" if c is None else str(c) for c in row[:14]]
+                if any(c.strip() for c in cells):
+                    rows.append([f.name, f"{sn} r{i}", " | ".join(cells)[:420]])
+    if verbose:
+        for r in rows:
+            print(" | ".join(str(c)[:150] for c in r))
+    try:
+        _dump_to_sheet(rows)
+        print(f"\n✓ {len(rows)} row(s) → '{DUMP_TAB}' tab")
+    except Exception as e:  # noqa: BLE001
+        print(f"\n⚠ couldn't write '{DUMP_TAB}' ({e})")
+    return rows
+
+
 def _preview(path):
     """First rows of a downloaded file, whatever it turns out to be."""
     suf = path.suffix.lower()
@@ -581,8 +612,13 @@ def main(argv=None):
                          "(read-only)")
     ap.add_argument("--fetch", action="store_true",
                     help="download the Fee Report file(s) for --week")
+    ap.add_argument("--inspect", action="store_true",
+                    help="dump every sheet of the downloaded file(s) (local only)")
     ap.add_argument("--week", help="sheet week label, e.g. 7.19.26")
     a = ap.parse_args(argv)
+    if a.inspect:
+        inspect()
+        return 0
     if a.fetch:
         fetch_week(a.week or "7.19.26")
         return 0

@@ -3680,6 +3680,29 @@
         "type": "not_configured"
       },
       "machine": "Lucy 1"
+    },
+    "credico_inspect": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "LOCAL ONLY: dump every sheet of the already-downloaded Credico workbook(s) in output/credico/ to the '_credico_discover' tab. Never touches Credico. Use after credico_fetch to see where the per-person rows live.",
+      "display_name": "Credico — inspect the downloaded Fee Report workbook",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.credico.report"
+      ],
+      "base_args": [
+        "--inspect"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
     }
   },
   "read_only_standalone": {
