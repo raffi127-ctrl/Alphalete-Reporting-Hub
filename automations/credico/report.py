@@ -35,8 +35,8 @@ import sys
 from pathlib import Path
 
 from automations.credico.session import BASE, credico_session
-from automations.override_bulletin.dd_rows import (credico_saturday, normalize,
-                                                   summarize, to_owners)
+from automations.override_bulletin.dd_rows import (COMPANY_TO_OWNER, credico_saturday,
+                                                   normalize, summarize, to_owners)
 
 REPORTS_URL = f"{BASE}/#/dashboard/sales-management"
 WORKBOOK_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
@@ -381,18 +381,34 @@ def fetch_week(week_label="7.19.26", page=None, verbose=True):
                 if any(k in r.url.lower() for k in
                        ("file", "report", "download", "fee", "api")) else None)
 
-        page.goto(REPORTS_URL, wait_until="domcontentloaded")
-        page.reload(wait_until="domcontentloaded")
-        page.wait_for_timeout(5000)
-
-        link = next((el for el in page.query_selector_all("[ng-click='r.getReport(report)']")
-                     if "fee" in (el.inner_text() or "").lower()), None)
-        if link is None:
-            raise RuntimeError("no 'Fee Reports' link on the Reports list")
-        link.click()
-        page.wait_for_timeout(4500)
-
         want = f"{saturday:%Y-%m-%d}"
+
+        def _open_week():
+            """Reports → Fee Reports → the target Saturday, from a clean load."""
+            page.goto(REPORTS_URL, wait_until="domcontentloaded")
+            page.reload(wait_until="domcontentloaded")
+            page.wait_for_timeout(5000)
+            link = next((el for el in page.query_selector_all(
+                "[ng-click='r.getReport(report)']")
+                if "fee" in (el.inner_text() or "").lower()), None)
+            if link is None:
+                raise RuntimeError("no 'Fee Reports' link on the Reports list")
+            link.click()
+            page.wait_for_timeout(4500)
+            el = next((e for e in page.query_selector_all("a, [ng-click], li, td, div")
+                       if " ".join((e.inner_text() or "").split()) == want), None)
+            if el is None:
+                avail = sorted({" ".join((e.inner_text() or "").split())
+                                for e in page.query_selector_all("a, [ng-click], li, td, div")
+                                if re.fullmatch(r"\d{4}-\d{2}-\d{2}",
+                                                " ".join((e.inner_text() or "").split()))},
+                               reverse=True)[:8]
+                raise RuntimeError(f"week {want} not listed on Credico. "
+                                   f"Available: {', '.join(avail) or 'none'}")
+            el.click()
+            page.wait_for_timeout(4500)
+
+        _open_week()
         date_el = next((el for el in page.query_selector_all("a, [ng-click], li, td, div")
                         if " ".join((el.inner_text() or "").split()) == want), None)
         if date_el is None:
@@ -469,10 +485,13 @@ def fetch_week(week_label="7.19.26", page=None, verbose=True):
                                          f"{t[:60]} ng-click="
                                          f"{(el.get_attribute('ng-click') or '')[:60]} "
                                          f"href={(el.get_attribute('href') or '')[:90]}"])
-            # back out of BOTH levels (file → office → week list)
-            for _ in range(2):
-                page.go_back()
-                page.wait_for_timeout(2000)
+            # Re-navigate from scratch for the next office. go_back() is
+            # unreliable here: a download does not push a history entry, so the
+            # number of steps to unwind differs between the download and
+            # drilled-but-no-download cases — which is why only the FIRST office
+            # ever came back.
+            if i + 1 < len(nodes):
+                _open_week()
 
         for m, u in calls[:14]:
             rows.append(["network", m, u[:220]])
@@ -522,6 +541,66 @@ def inspect(verbose=True):
     except Exception as e:  # noqa: BLE001
         print(f"\n⚠ couldn't write '{DUMP_TAB}' ({e})")
     return rows
+
+
+def reconcile(week_label="7.19.26", verbose=True):
+    """Match the parsed Credico totals against the VA's tab — the answer key.
+
+    Megan 2026-07-24: "you should be matching the VA tab." The `Org DDs Ongoing
+    Report` figures already reflect however she folds Credico in, so the tab
+    settles what guesswork cannot: whether an owner's Credico DD is the WHOLE
+    OFFICE or only their own agent rows. Prints per-office totals, the owner's
+    tab cell, and the gap. Local only — reads output/credico/ and the Sheet."""
+    from automations.override_bulletin import dd_data as D
+    from automations.override_bulletin import fill as F
+    saturday = credico_saturday(week_label)
+    aliases = F.load_alias_map()
+    files = sorted(OUT.glob(f"{saturday:%Y-%m-%d}_*.xlsx"))
+    rows = [["OFFICE", "WHAT", "VALUE"]]
+    if not files:
+        rows.append(["(none)", "", f"no workbook for {saturday:%Y-%m-%d} — run credico_fetch"])
+
+    d = D.load(aliases=aliases)
+    tab = {r["key"]: r for r in d["icds"]}
+    for f in files:
+        office, entries, total = parse_workbook(f, verbose=False)
+        owner = COMPANY_TO_OWNER.get(_ckey(office))
+        rows.append([office, "credico office total", f"${total:,.2f}"])
+        rows.append([office, "maps to owner", owner or "(UNMAPPED — add to COMPANY_TO_OWNER)"])
+        per = {}
+        for e in entries:
+            per[e["name"]] = round(per.get(e["name"], 0) + e["amount"], 2)
+        for n, v in sorted(per.items(), key=lambda kv: -kv[1])[:12]:
+            rows.append([office, f"  agent {n}", f"${v:,.2f}"])
+        if owner:
+            row = tab.get(D._key(owner, aliases))
+            if row is None:
+                rows.append([office, "VA tab", f"{owner} has NO row on the DD tab"])
+            else:
+                wk = row["weeks"][0]
+                own_rows = per.get(owner, 0.0)
+                rows.append([office, f"VA tab {row['name']} {d['weeks'][0]}", f"${wk:,.2f}"])
+                rows.append([office, "  tab − credico office", f"${wk - total:,.2f}"])
+                rows.append([office, "  owner's OWN agent rows", f"${own_rows:,.2f}"])
+                rows.append([office, "  tab − owner's own rows", f"${wk - own_rows:,.2f}"])
+                rows.append([office, "  VERDICT",
+                             "tab == office total (whole office)" if abs(wk - total) < 0.5
+                             else ("tab == owner's own rows" if abs(wk - own_rows) < 0.5
+                                   else "neither matches — Credico is ADDED to a Tableau "
+                                        "figure, so the gap is the Tableau part")])
+    if verbose:
+        for r in rows:
+            print(" | ".join(str(c)[:80] for c in r))
+    try:
+        _dump_to_sheet(rows)
+        print(f"\n✓ {len(rows)} row(s) → '{DUMP_TAB}' tab")
+    except Exception as e:  # noqa: BLE001
+        print(f"\n⚠ couldn't write '{DUMP_TAB}' ({e})")
+    return rows
+
+
+def _ckey(s):
+    return re.sub(r"[^a-z0-9 ]+", "", (s or "").lower()).strip()
 
 
 def _preview(path):
@@ -670,10 +749,15 @@ def main(argv=None):
                          "(read-only)")
     ap.add_argument("--fetch", action="store_true",
                     help="download the Fee Report file(s) for --week")
+    ap.add_argument("--reconcile", action="store_true",
+                    help="match parsed Credico totals against the VA's DD tab")
     ap.add_argument("--inspect", action="store_true",
                     help="dump every sheet of the downloaded file(s) (local only)")
     ap.add_argument("--week", help="sheet week label, e.g. 7.19.26")
     a = ap.parse_args(argv)
+    if a.reconcile:
+        reconcile(a.week or "7.19.26")
+        return 0
     if a.inspect:
         inspect()
         return 0

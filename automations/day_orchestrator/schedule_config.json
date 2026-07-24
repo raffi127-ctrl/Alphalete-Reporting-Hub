@@ -3727,6 +3727,31 @@
         "type": "not_configured"
       },
       "machine": "Lucy 1"
+    },
+    "credico_reconcile": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "LOCAL ONLY: match the parsed Credico office totals against the 'Org DDs Ongoing Report' tab (the VA's own numbers) to settle whether an owner's Credico DD is the whole office or only their own agent rows. Never touches Credico. Run credico_fetch first.",
+      "display_name": "Credico — reconcile against the VA's DD tab",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.credico.report"
+      ],
+      "base_args": [
+        "--reconcile",
+        "--week",
+        "7.19.26"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
     }
   },
   "read_only_standalone": {
