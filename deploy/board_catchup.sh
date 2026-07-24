@@ -68,6 +68,13 @@ if [ "$(date +%u)" = "1" ]; then
   ST=$?
   echo "[$(date)] MONDAY: sending board email" >> "$LOG_FILE"
   "$VENV_PY" -u -m automations.org_sales_board.screenshot_email >> "$LOG_FILE" 2>&1
+  # Captainship Report drafts: the 4am orchestrator's cadence excludes Monday (its
+  # §1 reads this board, which is only complete now), so build them HERE — after
+  # the board fill — for full 7-day coverage. Live (creates the 12 Gmail drafts in
+  # alphaletereporting; nothing is sent). "$@" carries a --dry-run through for a
+  # no-write test, same as the board fill above.
+  echo "[$(date)] MONDAY: building Captainship Report drafts" >> "$LOG_FILE"
+  "$VENV_PY" -u -m automations.captainship_drafts.run "$@" >> "$LOG_FILE" 2>&1
 else
   "$VENV_PY" -u -m automations.org_sales_board.run --step daily --skip-compare \
     --sections "Retail NL,Retail Internet,Retail JE,BOX,Frontier" "$@" >> "$LOG_FILE" 2>&1
