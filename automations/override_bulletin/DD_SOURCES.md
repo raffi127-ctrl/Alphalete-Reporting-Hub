@@ -85,21 +85,45 @@ Both DD inputs arrive dirty the same way, so the rules live once in
   no owner mapping — is **REPORTED, never dropped**. An unmapped company is
   somebody's money going missing.
 
-### Pull status — `automations/credico/report.py`
-Session (`credico/session.py`), the one-week-forward date rule, parsing, merging
-and company→owner mapping are **done and tested**. The page extraction is
-**deliberately not written**: nobody has seen the Reports screen, and invented
-selectors on a hash-router SPA return `[]` on any layout change, which reads as a
-quiet $0 week. `pull()` raises rather than returning an empty dict.
+### The Reports screen — MAPPED 2026-07-24 (7 probe runs on Lucy 1)
+`lucy rerun credico_discover_deep` re-runs the probe; output lands on the
+**`_credico_discover` tab** of the override workbook, readable from any machine.
 
-Next step, ON LUCY 1 (where the saved session lives):
-```
-lucy rerun credico_check                              # session still good?
-python -m automations.credico.report --discover       # dumps the screen
-```
-Discovery writes to the **`_credico_discover` tab** of the override workbook (and
-`output/credico/discover.tsv`), so it is readable from any machine — same pattern
-as `override_bulletin/discover.py`. Then write `_extract()` against real markup.
+**Fee Reports is a FILE BROWSER, not a grid.** The path is:
+
+    Sales Management → Reports → "Fee Reports" → a week (Saturday) → an office → FILE
+
+- The **Reports list** is three `[ng-click="r.getReport(report)"]` links:
+  **Fee Reports**, **Personal**, **CDF Report**. Only Fee Reports has anything —
+  the other two say "No files found."
+- Opening Fee Reports lists **weekly Saturdays**: 2026-07-25, 07-18, 07-11, …
+  This is the one-week-forward cadence, confirmed live: `credico_saturday()`
+  returned 2026-07-25 for week 7.19.26 and that date was in the list.
+- Opening a week lists the offices inside `div.report-list` as
+  `<div class="col-item" ng-click="r.clickNode(displayFile)">` — **no href, no
+  download attribute**. So the file is fetched by a JS handler, not a plain link.
+- Office names as Credico spells them (these are the mapping keys, and they are
+  NOT what this doc used to say):
+  | Dropdown | id | Owner |
+  |---|---|---|
+  | `Abyl Acquisition Group, Inc.` (`Abyl Acquisition Grp` in the file list) | 2041 | Abel Draper |
+  | `Phoenix Acquisition Group, Inc.` (`Phoenix Acquisition`) | 2062 | Jahvid Thompson |
+- Campaigns: **Frontier B2B** (105), **Frontier Communications** (36). There is
+  also an **"All offices"** checkbox, so one fetch may cover both offices.
+- Traps found the hard way: the office/campaign `<select>`s are inside a
+  `display:none` ancestor until a report is opened (they report visible but have
+  no `offsetParent`), so set them by assigning `.value` + dispatching `change`;
+  and `goto()` does NOT reset a hash-router SPA already on that URL — use
+  `reload()`, or the second and third reports come back "no link found".
+
+**BLOCKED — needs Megan.** The next action is clicking `r.clickNode(displayFile)`,
+which either drills one more level or **downloads a file**. Downloading needs
+Megan's OK first, and we do not yet know the format (CSV/XLSX/PDF) — that decides
+whether the parser is a few lines or an OCR problem. Once the file is in hand,
+`dd_rows.normalize()` / `to_owners()` (already tested) do the rest.
+
+`pull()` raises rather than returning an empty dict — a silent `{}` would zero
+every Credico owner's week and look like a real result.
 
 ## THE PODIUM — ALPHALETE ORGANIZATIONAL LEADERS
 
