@@ -30,6 +30,7 @@ pattern override_bulletin/discover.py uses.
 """
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -198,15 +199,48 @@ def discover_deep(week_label="7.19.26", page=None, verbose=True):
 
         for label in ("Fee Reports", "Personal", "CDF Report"):
             try:
-                link = page.query_selector(f"[ng-click='r.getReport(report)']:has-text('{label}')")
+                # Re-navigate each time: opening one report replaces the list, so
+                # the other two links are gone by the second pass.
+                page.goto(REPORTS_URL, wait_until="domcontentloaded")
+                page.wait_for_timeout(4000)
+                link = next((el for el in page.query_selector_all("[ng-click='r.getReport(report)']")
+                             if label.lower() in (el.inner_text() or "").lower()), None)
                 if link is None:
                     link = page.query_selector(f"a:has-text('{label}')")
                 if link is None:
                     rows.append(["REPORT", label, "no link found"])
                     continue
                 link.click()
-                page.wait_for_timeout(4000)
+                page.wait_for_timeout(4500)
                 rows.append(["REPORT", label, f"opened — url {page.url}"])
+
+                # The opened report lists WEEK DATES (Saturdays) as links. Record
+                # them, then open the one matching our computed Saturday — that
+                # is where the actual figures live.
+                want = f"{saturday:%Y-%m-%d}"
+                # no %-m: Windows strftime rejects it (cross-platform rule)
+                alts = {f"{saturday:%m/%d/%Y}",
+                        f"{saturday.month}/{saturday.day}/{saturday.year}"}
+                date_els = []
+                for el in page.query_selector_all("a, [ng-click], li, td"):
+                    t = " ".join((el.inner_text() or "").split())
+                    if re.fullmatch(r"\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{4}", t or ""):
+                        date_els.append((t, el))
+                rows.append(["  week-dates", label,
+                             ", ".join(t for t, _ in date_els[:14])[:400]])
+                hit = next((el for t, el in date_els if t == want or t in alts), None)
+                if hit is not None:
+                    hit.click()
+                    page.wait_for_timeout(6000)
+                    rows.append(["  opened-week", label, f"{want} — url {page.url}"])
+                    _dump_tables(f"{label} @ {want}")
+                elif date_els:
+                    t0, el0 = date_els[0]
+                    el0.click()
+                    page.wait_for_timeout(6000)
+                    rows.append(["  opened-week", label,
+                                 f"{want} NOT in the list — opened {t0} to show the shape"])
+                    _dump_tables(f"{label} @ {t0}")
 
                 vis = []
                 for s in page.query_selector_all("select"):
