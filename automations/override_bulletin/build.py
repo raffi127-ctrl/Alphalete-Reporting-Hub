@@ -278,14 +278,21 @@ def _section_table(title: str, rows: list, week_labels: list, years: list,
     weeks = week_labels[:WOW_WEEKS]
     wk_head = "".join(f'<th class="wk {"cur" if i == 0 else ""}">{w}</th>'
                       for i, w in enumerate(weeks))
-    yr_head = "".join(f'<th class="yr">{y}</th>' for y in years)
+    # `sep` marks the FIRST annual column, which carries the rule dividing the
+    # weekly block from the annual one (Megan 2026-07-24: "add some lines between
+    # the weekly and annual sections"). Driven off position, so a section with a
+    # different number of year columns still gets exactly one divider.
+    yr_head = "".join(f'<th class="yr{" sep" if i == 0 else ""}">{y}</th>'
+                      for i, y in enumerate(years))
     body = ""
     for r in rows:
         wk = "".join(
             f'<td class="wk {"cur" if i == 0 else ""}">'
             f'{_fmt(r["series"][i] if i < len(r["series"]) else None)}</td>'
             for i in range(len(weeks)))
-        yr = "".join(f'<td class="yr">{_fmt(r["years"].get(y))}</td>' for y in years)
+        yr = "".join(f'<td class="yr{" sep" if i == 0 else ""}">'
+                     f'{_fmt(r["years"].get(y))}</td>'
+                     for i, y in enumerate(years))
         body += (f'<tr class="{"lead" if r["name"] in featured else ""}">'
                  f'<td class="nmcell">{r["name"]}</td>'
                  f'<td class="t26">{_fmt(r["total"])}</td>{wk}{yr}</tr>')
@@ -363,9 +370,12 @@ def build_html(week_labels: list, section1: list, section2: list) -> str:
   .delta.down {{ color:#d06a6a; }}
   .delta.flat {{ color:#8f8a7e; }}
   .spark {{ margin:9px auto 4px; height:26px; }}
-  .total {{ font-size:13px; color:#cbbf9e; font-weight:bold; margin-top:6px;
-    border-top:1px solid #251f14; padding-top:8px; }}
-  .total span {{ display:block; color:#8f8a7e; font-size:8px; letter-spacing:2px; font-weight:normal; margin-bottom:1px; }}
+  /* The card's 2026 total is an ANNUAL total too, and at 13px over an 8px label
+     it was the smallest number on the page. Same readability pass as the table's
+     year columns (Megan 2026-07-24). */
+  .total {{ font-size:18px; color:#e7dcbb; font-weight:bold; margin-top:6px;
+    border-top:1px solid #2c2418; padding-top:9px; }}
+  .total span {{ display:block; color:#a8a294; font-size:10px; letter-spacing:2px; font-weight:normal; margin-bottom:3px; }}
   /* section tables */
   .sec {{ margin-top:38px; }}
   .sec-h {{ text-align:center; color:{GOLD}; letter-spacing:4px; font-size:20px;
@@ -383,13 +393,21 @@ def build_html(week_labels: list, section1: list, section2: list) -> str:
   .sec th.nmcell, .sec td.nmcell {{ text-align:left; }}
   .sec th.wk.cur, .sec td.wk.cur {{ color:{GOLD_LT}; }}
   .sec th.t26, .sec td.t26 {{ color:{GOLD_LT}; }}
-  .sec th.yr {{ color:#8b8579; }}
+  .sec th.yr {{ color:#c4bda9; }}
   .sec td {{ padding:12px 7px; text-align:right; color:#eae5d9;
     border-bottom:1px solid #1d1913; }}
   .sec td.nmcell {{ color:#f2eee4; font-size:16.5px; }}
   .sec td.t26 {{ font-weight:bold; font-size:17px; }}
   .sec td.wk.cur {{ font-weight:bold; font-size:17px; }}
-  .sec td.yr {{ color:#a29c8f; font-size:15px; }}
+  /* Annual totals (Megan 2026-07-24, second pass: "the annual totals are still
+     hard to read"). They were deliberately dimmed to push the eye to the live
+     weeks, but a number nobody can read has no reason to be on the page. Now the
+     same size and near the same brightness as the weeks — the current week keeps
+     its priority through GOLD and bold, not by starving the rest of contrast. */
+  .sec td.yr {{ color:#e2ddd1; font-size:16px; }}
+  /* the rule dividing the weekly block from the annual one */
+  .sec th.sep, .sec td.sep {{ border-left:1px solid rgba(201,162,75,0.45);
+    padding-left:16px; }}
   .sec tr.lead td.nmcell {{ color:#f6f2e9; font-weight:bold;
     border-left:3px solid {GOLD}; padding-left:9px; }}
   .sec tr.lead td {{ background:rgba(201,162,75,0.14); }}
