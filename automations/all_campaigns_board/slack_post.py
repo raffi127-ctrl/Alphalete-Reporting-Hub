@@ -90,8 +90,16 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--post", action="store_true",
                     help="actually send the DMs (default: dry-run, no send)")
+    ap.add_argument("--only", default="",
+                    help="comma-separated Slack user id(s)/name(s) to send to "
+                         "INSTEAD of the full recipient list (for a targeted test)")
     args = ap.parse_args(argv)
     dry = not args.post
+
+    recipients = ([r.strip() for r in args.only.split(",") if r.strip()]
+                  if args.only else RECIPIENTS)
+    if args.only:
+        print(f"  --only override: sending to {recipients} (test)")
 
     png, rng = build_png()
     print(f"screenshot {rng} → {png} ({png.stat().st_size // 1024} KB)")
@@ -100,7 +108,7 @@ def main(argv=None) -> int:
     # send, and logged either way.
     client, as_bot = _pick_client()
     resolved = []
-    for name in RECIPIENTS:
+    for name in recipients:
         try:
             uid = smp._resolve_user_id(client, name)
             resolved.append((name, uid))
@@ -121,7 +129,7 @@ def main(argv=None) -> int:
         print(f"  DM {name}: {r}")
         results.append({"name": name, **r})
     ok = sum(1 for r in results if r.get("ok") or r.get("dry_run"))
-    print(f"=== {ok}/{len(RECIPIENTS)} DM(s) {'previewed' if dry else 'sent'} ===")
+    print(f"=== {ok}/{len(recipients)} DM(s) {'previewed' if dry else 'sent'} ===")
     return 0
 
 

@@ -1388,16 +1388,28 @@
     "all_campaigns_board_slack": {
       "order": 11,
       "on_scheduler": true,
-      "_note": "Screenshots the whole 'All Campaigns Org Sales Board' tab (exact-sheet PDF-export render, no browser — same path as org_board_slack) and DMs it as INDIVIDUAL Slack DMs to Rafael Hidalgo, Carlos Hidalgo, Maud Miller, Megan Hidalgo, Evelyn Sobrino under the title 'All Campaigns Org Sales Board'. Sends AS LUCY (bot token) — so it MUST run on a runner that has the Lucy slack-bot-token (chat:write + files:write + im:write + users:read); it can't send from a machine with only the per-user token (missing users:read/im:write). base_args [] = DRY-RUN (builds the PNG, resolves recipients, sends nothing); `lucy rerun all_campaigns_board_slack --post` actually delivers. MANUAL-ONLY FOR NOW (cadence.weekdays [] — 'de prueba', Eve 2026-07-25): run the --post test on the runner first; at go-live set weekdays [0..6] to DM daily right after the fill. `after` all_campaigns_board so the screenshot reflects the fresh fill.",
+      "_note": "Screenshots the whole 'All Campaigns Org Sales Board' tab (exact-sheet PDF-export render, no browser — same path as org_board_slack) and DMs it as INDIVIDUAL Slack DMs under the title 'All Campaigns Org Sales Board'. Full recipient list (in slack_post.RECIPIENTS): Rafael Hidalgo, Carlos Hidalgo, Maud Miller, Megan Hidalgo, Evelyn Sobrino. Sends AS LUCY (bot token) — runs on the runner that has the Lucy slack-bot-token (chat:write + files:write + im:write + users:read); can't send from a machine with only the per-user token. TEST PHASE (Eve 2026-07-25): AUTOMATED daily (weekdays [0..6], after all_campaigns_board) but base_args pins '--only U088E2KJEV8' so it currently DMs ONLY Evelyn Sobrino as the proving send. Once Evelyn confirms the DM looks right, DROP the '--only U088E2KJEV8' args so it goes to the full RECIPIENTS list. `--post` = LIVE send; without it the run is a dry-run. On-demand test: `lucy rerun all_campaigns_board_slack --post --only U088E2KJEV8`.",
       "display_name": "All Campaigns Board — Slack DM",
       "source_type": "tableau",
       "data_sources": [],
       "command": [
         "automations.all_campaigns_board.slack_post"
       ],
-      "base_args": [],
+      "base_args": [
+        "--post",
+        "--only",
+        "U088E2KJEV8"
+      ],
       "cadence": {
-        "weekdays": []
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
       },
       "priority": "P2",
       "freshness_target": null,
