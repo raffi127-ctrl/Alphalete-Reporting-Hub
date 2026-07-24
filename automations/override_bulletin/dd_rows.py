@@ -37,12 +37,20 @@ from automations.override_bulletin.dd_data import money
 # looser spellings are kept so either form resolves. Owner names are spelled as
 # the DD tab spells them, then resolved through ICD Aliases like every other name.
 COMPANY_TO_OWNER = {
-    "abyl acquisition group inc": "Abel Draper",
-    "phoenix acquisition": "Jahvid Thompson",
+    # exact, from Credico's "Select Office" dropdown (office id in the comment)
+    "abyl acquisition group inc": "Abel Draper",        # number:2041
+    "phoenix acquisition group inc": "Jahvid Thompson",  # number:2062
+    # looser spellings so either form resolves
     "able acquisitions": "Abel Draper",
     "abyl acquisitions": "Abel Draper",
+    "phoenix acquisition": "Jahvid Thompson",
     "phoenix acquisitions": "Jahvid Thompson",
 }
+
+# Credico's own ids, so a selector can target by value instead of visible text.
+CREDICO_OFFICES = {"2041": "Abyl Acquisition Group, Inc.",
+                   "2062": "Phoenix Acquisition Group, Inc."}
+CREDICO_CAMPAIGNS = {"105": "Frontier B2B", "36": "Frontier Communications"}
 
 _LEDGER_RE = re.compile(r"[\s,\-–—]*\bledgers?\b\s*$", re.I)
 _WEEK_RE = re.compile(r"^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$")

@@ -137,19 +137,65 @@ def discover_deep(week_label="7.19.26", page=None, verbose=True):
         rows.append(["target-date", "computed one week forward",
                      f"{saturday:%Y-%m-%d} ({saturday:%m/%d/%Y})"])
 
+        # WHY a select may be unreachable: the native <select> is hidden behind a
+        # styled widget, or its panel is collapsed. select_option() waits for
+        # visibility and times out. Record the evidence before working around it.
+        for i, s in enumerate(sels):
+            try:
+                box = s.bounding_box()
+                st = s.evaluate("""el => {
+                    const c = getComputedStyle(el);
+                    return [c.display, c.visibility, c.opacity,
+                            el.offsetParent === null ? 'no-offsetParent' : 'ok',
+                            (el.className||'').slice(0,60),
+                            (el.parentElement ? el.parentElement.className : '').slice(0,60)].join(' ~ ');
+                }""")
+                rows.append([f"select{i}-visibility", str(box), st])
+            except Exception as e:  # noqa: BLE001
+                rows.append([f"select{i}-visibility", "ERROR", str(e)[:200]])
+        for sel, what in (("a", "nav-link"), ("[ng-click]", "ng-click"),
+                          (".nav-link,.nav-item,[role=tab]", "tab")):
+            for el in page.query_selector_all(sel)[:40]:
+                t = " ".join((el.inner_text() or "").split())[:60]
+                if t:
+                    rows.append([what, t, (el.get_attribute("ng-click")
+                                           or el.get_attribute("href") or "")[:80]])
+        body = " ".join((page.inner_text("body") or "").split())
+        for i in range(0, min(len(body), 1600), 400):
+            rows.append(["body-text", f"chars {i}", body[i:i + 400]])
+
         # office x campaign, skipping each dropdown's placeholder first option
         offices = [o for o in (opts[0] if opts else []) if o[0] and "select" not in (o[1] or "").lower()]
         camps = [o for o in (opts[1] if len(opts) > 1 else []) if o[0] and "select" not in (o[1] or "").lower()]
+
+        def _set(el, value):
+            """Set a hidden <select> and tell Angular. select_option() needs the
+            element visible; ng-model listens for a native change event, which a
+            dispatched event satisfies even from an isolated world."""
+            el.evaluate("""(el, v) => {
+                el.value = v;
+                el.dispatchEvent(new Event('change', {bubbles: true}));
+                el.dispatchEvent(new Event('input', {bubbles: true}));
+            }""", value)
+
         for oi, (ov, ot) in enumerate(offices):
             for ci, (cv, ct) in enumerate(camps):
                 try:
-                    sels[0].select_option(ov)
-                    page.wait_for_timeout(700)
-                    page.query_selector_all("select")[1].select_option(cv)
-                    page.wait_for_timeout(700)
-                    cal = page.query_selector("input.calendar") or page.query_selector("input[type=text]")
+                    _set(sels[0], ov)
+                    page.wait_for_timeout(900)
+                    _set(page.query_selector_all("select")[1], cv)
+                    page.wait_for_timeout(900)
+                    cal = (page.query_selector("input.calendar")
+                           or page.query_selector("input[type=text]"))
                     if cal:
-                        cal.fill(f"{saturday:%m/%d/%Y}")
+                        try:
+                            cal.fill(f"{saturday:%m/%d/%Y}")
+                        except Exception:  # noqa: BLE001
+                            cal.evaluate("""(el, v) => {
+                                el.value = v;
+                                el.dispatchEvent(new Event('change', {bubbles: true}));
+                                el.dispatchEvent(new Event('input', {bubbles: true}));
+                            }""", f"{saturday:%m/%d/%Y}")
                         page.keyboard.press("Escape")
                     btn = page.query_selector("button:has-text('Load')")
                     if btn:
