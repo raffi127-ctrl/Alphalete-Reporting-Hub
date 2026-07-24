@@ -91,7 +91,19 @@ a **downline roll-up via the `Org Tree` tab**, minus adoptions:
 Podium totals OVERLAP by design (a larger org contains smaller ones), so they sum
 to MORE than the org total — 7.19.26: podium $1,239,788 vs org total $1,010,587.
 
-## Podium reconciliation vs the SENT 7.19.26 bulletin (2026-07-23)
+## THE LIVE SHEET IS THE SOURCE OF TRUTH — not a sample email
+
+Megan 2026-07-23: **the emailed bulletin sample was OLD.** Hours were spent
+"reconciling" the podium against it and finding phantom gaps for Colten, Carlos
+and Raf. There are no gaps — the live `Org DDs Ongoing Report` tab carries the
+current numbers and the roll-up computed from it is correct.
+
+Never treat a screenshot/sample email as the answer key. If a computed figure
+disagrees with a sent bulletin, the SHEET wins. (A stale "confirmed podium"
+block was seeded into `Lucy Org Tree` from that old email and has been removed —
+it would have published stale numbers every week.)
+
+## Superseded: reconciliation vs the OLD sample (kept for the lessons only)
 
 Computed from `Org Tree` + the DD tab, alias-resolved, adoptions excluded:
 **4 of 7 exact** — Eveliz $69,463 ✓, Khalil $63,204 ✓, Salik $48,267 ✓,
