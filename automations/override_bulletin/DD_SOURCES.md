@@ -34,13 +34,38 @@ Rodriguez, Natalia, John Richard Young, Tony, Trang, Tre Mitchell.
 New owners: Maud posts a "new owners coming up" message — that list is the
 authority for whether a new name counts. When in doubt, ask Maud/Megan.
 
-## ADOPTIONS — excluded from the org total
+## ADOPTIONS — the rule, from Raf (email, shared 2026-07-24)
 
-**Carrington Moody** and **Milan Godbolt** sit under Colten's captainship but are
-**not part of the organization** ("adoptions"). Their numbers are used later but
-the org total formula is *everyone EXCEPT Carrington and Milan*. The VA keeps a
-duplicate tab named `adoptions` holding them. Their figures are typed MANUALLY,
-not formulas.
+**Karrington Moody** and **Milan Godbolt** sit under Colten's captainship but are
+**not part of the organization** ("adoptions"). The VA keeps a duplicate tab named
+`adoptions` holding them; their figures are typed MANUALLY, not formulas.
+
+Raf's own words on what an adoption IS and how to report it — this is the
+authority, and our handling below matches it:
+
+> "2 of these deals are not organic deals, they are **'Adoptions'** or what SCI
+> calls **'Double over ride promotion'**" — SCI approved an owner to take a 1st
+> gen override off an individual who came organically from *another* owner
+> (retrains, transfers, an owner mentoring inside someone else's building).
+
+- The adopting upline gets the double override but **no regional or national
+  override**, and depth promotions underneath an adoption don't earn those
+  either — though the adoption **does** count toward regional/national
+  consultant *qualification*.
+- **SCI's own reporting excludes adoptions**: asked "how many reps are in this
+  person's org" or "how many UNITS is this org selling", SCI does **not** count
+  adoption headcount or sales.
+
+Raf's instructions for OUR reporting, and where each lands in the code:
+
+| Raf's rule | How it is implemented |
+|---|---|
+| "Include the deals in the reporting." | They render on page 2 under **Tracked Separately**, with a per-row reason. |
+| "When adding up total units for 'My org' don't count adoptions that aren't mine, **only count them for the person receiving the double over ride**." | They are OUT of the ORG. TOTAL DD headline, and IN **Colten's** podium list — Colten is the person receiving the double override. |
+| "Future depth promotions shouldn't…" | *(the pasted copy cuts off mid-sentence — get the rest before wiring depth handling)* |
+
+So the current treatment is correct on Raf's rule, not just on the VA's habit:
+excluded from the org total, counted for Colten, and never invisible.
 
 ## CREDICO — a real second source
 
