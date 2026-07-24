@@ -276,8 +276,16 @@ def _section_table(title: str, rows: list, week_labels: list, years: list,
     `years` is the subset of ('2025','2024','2023') this section carries.
     Rows whose name is in `featured` (the top-10 shown as cards) are highlighted."""
     weeks = week_labels[:WOW_WEEKS]
-    wk_head = "".join(f'<th class="wk {"cur" if i == 0 else ""}">{w}</th>'
-                      for i, w in enumerate(weeks))
+    # `lastwk` is the weekly column that BUTTS the divider. Weekly figures are
+    # right-aligned, so without extra room on this side the rule sat ~7px off the
+    # last week's digits and 16px off the annual ones — reading as crushed
+    # against the weekly numbers (Megan 2026-07-24). Padding both sides equally
+    # centres the rule in the gap.
+    _lastwk = len(weeks) - 1
+    wk_head = "".join(
+        f'<th class="wk{" cur" if i == 0 else ""}'
+        f'{" lastwk" if i == _lastwk else ""}">{w}</th>'
+        for i, w in enumerate(weeks))
     # `sep` marks the FIRST annual column, which carries the rule dividing the
     # weekly block from the annual one (Megan 2026-07-24: "add some lines between
     # the weekly and annual sections"). Driven off position, so a section with a
@@ -287,7 +295,8 @@ def _section_table(title: str, rows: list, week_labels: list, years: list,
     body = ""
     for r in rows:
         wk = "".join(
-            f'<td class="wk {"cur" if i == 0 else ""}">'
+            f'<td class="wk{" cur" if i == 0 else ""}'
+            f'{" lastwk" if i == _lastwk else ""}">'
             f'{_fmt(r["series"][i] if i < len(r["series"]) else None)}</td>'
             for i in range(len(weeks)))
         yr = "".join(f'<td class="yr{" sep" if i == 0 else ""}">'
@@ -405,9 +414,11 @@ def build_html(week_labels: list, section1: list, section2: list) -> str:
      same size and near the same brightness as the weeks — the current week keeps
      its priority through GOLD and bold, not by starving the rest of contrast. */
   .sec td.yr {{ color:#e2ddd1; font-size:16px; }}
-  /* the rule dividing the weekly block from the annual one */
+  /* The rule dividing the weekly block from the annual one, sitting CENTRED in
+     the gap: equal breathing room either side so it never crowds a number. */
   .sec th.sep, .sec td.sep {{ border-left:1px solid rgba(201,162,75,0.45);
-    padding-left:16px; }}
+    padding-left:22px; }}
+  .sec th.lastwk, .sec td.lastwk {{ padding-right:22px; }}
   .sec tr.lead td.nmcell {{ color:#f6f2e9; font-weight:bold;
     border-left:3px solid {GOLD}; padding-left:9px; }}
   .sec tr.lead td {{ background:rgba(201,162,75,0.14); }}
