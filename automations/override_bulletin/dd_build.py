@@ -82,26 +82,68 @@ def _css():
   .sect {{ font-size:14px; letter-spacing:4px; color:{GOLD}; text-transform:uppercase;
     text-align:center; margin:26px 0 16px; }}
   .grid {{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }}
-  .grid.r2 {{ grid-template-columns:repeat(3,1fr); width:75%; margin:14px auto 0; }}
+  .grid + .grid {{ margin-top:14px; }}
   .card {{ background:linear-gradient(180deg,#171512,#0f0e0c); border:1px solid #2c2721;
     border-radius:12px; padding:16px 10px; text-align:center; }}
   .card img {{ width:84px; height:84px; border-radius:50%; object-fit:cover;
     border:2px solid {GOLD}; }}
-  .card .rk {{ font-size:11px; color:{GOLD}; letter-spacing:2px; }}
+  /* Rank badge — a red disc, centred over the photo. It was 11px gold on near
+     black, which was almost invisible (Megan 2026-07-24). A DISC rather than red
+     text on purpose: red text already means "this figure is wrong" on this
+     report, and a rank is not an error. */
+  .card .rk {{ display:block; width:24px; height:24px; line-height:24px;
+    margin:0 auto 8px; border-radius:50%; background:#C8102E; color:#fff;
+    font-size:13px; font-weight:bold; letter-spacing:0; }}
   .card .nm {{ font-size:14px; margin-top:8px; font-weight:bold; letter-spacing:1px; }}
   .card .lo {{ font-size:11px; color:#9a958a; margin-top:2px; }}
   .card .wk {{ font-size:20px; color:{GOLD_LT}; font-weight:bold; margin-top:8px; }}
-  .card .tt {{ font-size:10px; color:#8d887e; margin-top:3px; }}
-  table {{ width:100%; border-collapse:collapse; font-size:13px; margin-bottom:8px; }}
+  /* Five across leaves ~222px a card, so the sub-line has to wrap inside the
+     card instead of running past its edge. */
+  .card .tt {{ font-size:9.5px; color:#8d887e; margin-top:4px; line-height:1.5;
+    padding:0 4px; }}
+  /* A real cell GRID, not just row lines. Megan 2026-07-24: the sections were
+     "running all together" — every cell is boxed and the table is framed, so a
+     14-row rollup reads as a table instead of a wall of numbers. */
+  table {{ width:100%; border-collapse:collapse; font-size:13px; margin-bottom:8px;
+    border:1px solid {GOLD}; }}
   th {{ background:#15130f; color:{GOLD}; font-size:10px; letter-spacing:2px;
     text-transform:uppercase; padding:9px 8px; text-align:right;
-    border-bottom:1px solid #2c2721; }}
+    border:1px solid #3a332a; border-bottom:1px solid {GOLD}; }}
   th:first-child {{ text-align:left; }}
-  td {{ padding:7px 8px; text-align:right; border-bottom:1px solid #1c1915; }}
+  td {{ padding:7px 8px; text-align:right; border:1px solid #2c2721; }}
   td:first-child {{ text-align:left; }}
   th.why, td.why {{ text-align:left; color:#8d887e; font-style:italic; }}
   tr:nth-child(even) td {{ background:#100f0d; }}
   tr.hi td {{ background:#17140f; color:{GOLD_LT}; }}
+  /* The org-wide line in a rollup table — it is the number the whole block is
+     about, and it used to read exactly like the campaign rows beneath it.
+     Declared AFTER the nth-child stripe so it wins on equal specificity. */
+  tr.orgrow td {{ background:#241d0f; color:{GOLD_LT}; font-weight:bold;
+    font-size:14px; border-top:1px solid {GOLD}; border-bottom:1px solid {GOLD}; }}
+  tr.orgrow td:first-child {{ letter-spacing:1px; }}
+  /* The Total-2026 column is a different KIND of number from the week columns
+     next to it — walled off with a gold rule on both sides so the eye stops. */
+  th.t26, td.t26 {{ border-left:2px solid {GOLD}; border-right:2px solid {GOLD}; }}
+  td.t26 {{ background:#141210; color:{GOLD_LT}; }}
+  /* Where a rollup block stops listing ORGS and starts listing CAMPAIGNS.
+     NOT called 'sect' — that class is already the centred gold section HEADING,
+     and reusing it painted these rows gold-on-uppercase. */
+  tr.grpline td {{ border-top:2px solid {GOLD}; }}
+  .leadtab {{ width:76%; margin:14px auto 0; }}
+  /* Fill-but-flag — a figure the source got provably wrong. */
+  td.bad {{ color:#E5484D !important; font-weight:bold; }}
+  /* Per-leader org breakdowns, laid out like the VA's working file: small
+     tables side by side, each one org, biggest first. */
+  .orggrid {{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px;
+    align-items:start; }}
+  .orgtab {{ font-size:11.5px; margin:0; }}
+  .orgtab th {{ text-align:center; font-size:11px; letter-spacing:1px;
+    padding:7px 6px; }}
+  .orgtab td {{ padding:4px 6px; }}
+  .orgtab td.rk {{ width:22px; text-align:center; color:#8d887e; }}
+  .orgtab tr.tot td {{ font-size:11.5px; }}
+  .adopt {{ color:#C8102E; font-size:9px; letter-spacing:1px;
+    text-transform:uppercase; }}
   tr.tot td {{ border-top:2px solid {GOLD}; font-weight:bold; color:{GOLD_LT}; }}
   .note {{ font-size:11px; color:#8d887e; text-align:center; margin-top:6px;
     font-style:italic; }}
@@ -150,21 +192,153 @@ def _podium(podium):
             f'<div class="lo">{p.get("loc","")}</div>'
             f'<div class="wk">{_fmt(p["week"])}</div>'
             f'<div class="tt">{sub}</div></div>')
-    out = f'<div class="grid">{"".join(cards[:4])}</div>'
-    if cards[4:]:
-        out += f'<div class="grid r2">{"".join(cards[4:])}</div>'
-    return out
+    return _rows(cards, per=max(1, len(cards)))
 
 
-def _block_table(title, rows, weeks, first_hdr):
+def _rows(cards, per=4):
+    """Lay the cards out in rows of `per`, keeping every card the SAME size.
+
+    Megan's locked rule is a UNIFORM grid — never a pyramid or a hero — so a
+    short final row is centred at its proportional width (3 cards = 75%) rather
+    than stretched to fill. The old version hard-coded 4 then 3, which was right
+    for the 7 leaders it was written for and stranded Hammad alone on his own
+    row the moment Jairo made it 8. A lone last card is the one thing that
+    always reads as a mistake, so a trailing row of 1 borrows from the row above
+    (5 cards go 3+2, not 4+1)."""
+    rows = [cards[i:i + per] for i in range(0, len(cards), per)]
+    if len(rows) > 1 and len(rows[-1]) == 1:
+        rows[-1].insert(0, rows[-2].pop())
+    out = []
+    for row in rows:
+        n = len(row)
+        # The column count is ALWAYS written out. Leaving it to the .grid class
+        # silently capped a row at the class's 4 columns, so asking for 5 across
+        # rendered 4 + 1 — the exact thing this function exists to prevent.
+        style = f'grid-template-columns:repeat({n},1fr);'
+        if n != per:
+            style += f'width:{n / per:.0%};margin-left:auto;margin-right:auto;'
+        out.append(f'<div class="grid" style="{style}">{"".join(row)}</div>')
+    return "".join(out)
+
+
+def _is_org_row(name):
+    """Is this the ORG-WIDE line of a rollup block, rather than one org or one
+    campaign inside it? Matched on the LABEL, never on position — it leads its
+    block today, but the row is found the same way every other row here is.
+    The two blocks word it differently: 'Alphalete Org AVG DD' in the averages,
+    'Total Active Owners' in the owner counts."""
+    n = (name or "").strip().lower()
+    return "alphalete org" in n or n.startswith("total ")
+
+
+def _group(name):
+    """Which section of a rollup block a row belongs to: the ORG-WIDE line, the
+    per-ORG lines, or the per-CAMPAIGN lines. Used to rule off between them, so a
+    14-row block reads as sections instead of one long list."""
+    if _is_org_row(name):
+        return "total"
+    return "org" if "org" in (name or "").lower() else "campaign"
+
+
+def _block_table(title, rows, weeks, first_hdr, rank=False):
+    if rank:
+        # Megan 2026-07-24: ranked greatest→least, and RE-RANKED every run rather
+        # than frozen in the sheet's order. Sorted on THIS week's figure, because
+        # that is the number the bulletin is about and the one that actually moves
+        # week to week. Ranking happens WITHIN each section — the org-wide line
+        # stays pinned on top and orgs never interleave with campaigns, or the
+        # dividers between them would stop meaning anything.
+        seq = {"total": 0, "org": 1, "campaign": 2}
+        rows = sorted(rows, key=lambda r: (seq[_group(r["name"])],
+                                           -D.money(r["weeks"][0] if r["weeks"] else 0)))
     ths = "".join(f"<th>{w}</th>" for w in weeks)
-    body = []
+    body, prev = [], None
     for r in rows:
         tds = "".join(f"<td>{_cell(v)}</td>" for v in r["weeks"])
-        body.append(f'<tr><td>{r["name"]}</td><td>{_cell(r["total"])}</td>{tds}</tr>')
+        cls = ["orgrow"] if _is_org_row(r["name"]) else []
+        grp = _group(r["name"])
+        if prev is not None and grp != prev:
+            cls.append("grpline")
+        prev = grp
+        c = f' class="{" ".join(cls)}"' if cls else ""
+        # Fill-but-flag: a figure we can prove is wrong is shown, in red, never
+        # silently dropped and never passed off as correct.
+        t26 = "t26 bad" if r.get("suspect_total") else "t26"
+        body.append(f'<tr{c}><td>{r["name"]}</td>'
+                    f'<td class="{t26}">{_cell(r["total"])}</td>{tds}</tr>')
     return (f'<div class="sect">{title}</div><table>'
-            f'<tr><th>{first_hdr}</th><th>Total 2026</th>{ths}</tr>'
+            f'<tr><th>{first_hdr}</th><th class="t26">Total 2026</th>{ths}</tr>'
             f'{"".join(body)}</table>')
+
+
+FEATURED = 5          # Megan 2026-07-24: "only feature the top 5 with photos"
+
+
+def _other_leaders(rest):
+    """The leaders below the featured five, as a compact table.
+
+    Only the top 5 get a photo card — but a leader who earned an org override
+    does not stop existing at rank 6, and this report's whole discipline is that
+    no number silently disappears. So they keep their figure, in a row."""
+    if not rest:
+        return ""
+    body = []
+    for i, p in enumerate(rest, FEATURED + 1):
+        tot = "—" if p.get("total") is None else _fmt(p["total"])
+        if p.get("total_partial"):
+            tot += " (partial)"
+        body.append(f'<tr><td>{i}</td><td>{p["name"].upper()}</td>'
+                    f'<td>{p.get("loc","")}</td>'
+                    f'<td class="t26">{_fmt(p["week"])}</td><td>{tot}</td></tr>')
+    return (f'<table class="leadtab"><tr><th>#</th><th>Leader</th><th>Location</th>'
+            f'<th class="t26">Week DD</th><th>Total 2026</th></tr>'
+            f'{"".join(body)}</table>')
+
+
+def _org_tables(podium):
+    """One small table per leader's org — the VA's own working-file layout.
+
+    Her file lists every ICD in each org with that week's wire, ranked greatest
+    to least, then a Total (and an Organic total where adoptions are involved).
+    Reproduced here so the breakdown stops living only in her spreadsheet. Each
+    table's Total is the same figure as that leader's podium card, so the two
+    cannot drift apart.
+    """
+    blocks = []
+    for p in podium:
+        # Only ICDs that actually EARNED this week, which is how the VA's file
+        # lists an org: she rebuilds it weekly from whoever has revenue coming in,
+        # so a $0 owner just isn't there that week. (Reconciled 2026-07-24 — with
+        # this filter our lists are name-for-name identical to hers for all six
+        # leaders she breaks out.) The $0 owners stay on the podium list itself,
+        # so nobody is dropped from the source of truth, only from this week's
+        # table — and the money is untouched either way.
+        mem = sorted((m for m in (p.get("members") or []) if m["week"]),
+                     key=lambda m: -(m["week"] or 0))
+        if not mem:
+            continue
+        rows = []
+        for i, m in enumerate(mem, 1):
+            star = ' <span class="adopt">adoption</span>' if m.get("adoption") else ""
+            rows.append(f'<tr><td class="rk">{i}</td><td>{m["name"]}{star}</td>'
+                        f'<td class="t26">{_fmt(m["week"])}</td></tr>')
+        rows.append(f'<tr class="tot"><td></td><td>TOTAL</td>'
+                    f'<td class="t26">{_fmt(p["week"])}</td></tr>')
+        if p.get("adoptions"):
+            rows.append(f'<tr class="tot"><td></td><td>ORGANIC</td>'
+                        f'<td class="t26">{_fmt(p["organic"])}</td></tr>')
+        blocks.append(
+            f'<div class="orgcard"><table class="orgtab">'
+            f'<tr><th colspan="3">{p["name"]}&rsquo;s Org &middot; '
+            f'{len(mem)} ICD{"s" if len(mem) != 1 else ""}</th></tr>'
+            f'{"".join(rows)}</table></div>')
+    if not blocks:
+        return ""
+    return (f'<div class="sect">Org Breakdowns &mdash; Every ICD, by Leader</div>'
+            f'<div class="orggrid">{"".join(blocks)}</div>'
+            f'<div class="note">Each org\'s total is the same figure as that '
+            f'leader\'s card. Orgs overlap by design — a larger org contains '
+            f'smaller ones — so these do not sum to the organization total.</div>')
 
 
 def _credico(c):
@@ -199,8 +373,10 @@ def page1(d):
 <div class="hero"><div class="k">Organization Total DD</div>
   <div class="v">{_fmt(d["headline"])}</div></div>
 <div class="sect">Alphalete Organizational Leaders</div>
-{_podium(d["podium"])}
-{_block_table("Org &amp; Campaign — Average DD", d["avg"], weeks, "Org / Campaign")}
+{_podium(d["podium"][:FEATURED])}
+{_other_leaders(d["podium"][FEATURED:])}
+{_block_table("Org &amp; Campaign — Average DD", d["avg"], weeks, "Org / Campaign",
+              rank=True)}
 {_block_table("Active Owners", d["active_owners"], weeks, "Campaign")}
 <div class="foot">{FOOTER}</div>
 <div class="blurb">{BLURB}</div>
@@ -210,16 +386,22 @@ def page1(d):
 def page2(d):
     weeks = d["weeks"]
     ths = "".join(f"<th>{w}</th>" for w in weeks)
-    rows = sorted(d["icds"], key=lambda r: -(r["weeks"][0] or 0))
+    # Ranked by TOTAL DD 2026, the way the VA's own sheet ranks it (Megan's
+    # reference 2026-07-24) — not by the current week, which reshuffles the whole
+    # table every Thursday and makes it unreadable week to week.
+    rows = sorted(d["icds"], key=lambda r: -(r["total"] or 0))
     body = []
     for r in rows:
         tds = "".join(f"<td>{_fmt(v)}</td>" for v in r["weeks"])
         body.append(f'<tr><td>{r["name"]}</td><td>{r["campaign"]}</td>'
-                    f'<td>{r["org"]}</td><td>{_fmt(r["total"])}</td>{tds}</tr>')
-    twk = [sum(r["weeks"][i] or 0 for r in rows) for i in range(len(weeks))]
-    body.append('<tr class="tot"><td>TOTAL</td><td></td><td></td>'
-                f'<td>{_fmt(sum(r["total"] or 0 for r in rows))}</td>'
-                + "".join(f"<td>{_fmt(v)}</td>" for v in twk) + "</tr>")
+                    f'<td>{r["org"]}</td><td class="t26">{_fmt(r["total"])}</td>{tds}</tr>')
+    # The tab's own 'Total - Raf' / 'Total - Carlos' rows, read as-is. Summing
+    # the rows above would print a 2026 figure about $1M short, because the tab's
+    # totals include ICDs that are no longer Active YES.
+    for t in d.get("totals") or []:
+        tds = "".join(f"<td>{_cell(v)}</td>" for v in t["weeks"])
+        body.append(f'<tr class="tot"><td>{t["name"].upper()}</td><td></td><td></td>'
+                    f'<td class="t26">{_cell(t["total"])}</td>{tds}</tr>')
     extra = ""
     if d["tracked_separately"]:
         er = []
@@ -236,9 +418,10 @@ def page2(d):
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <style>{_css()}</style></head><body>
 {_head("DD BREAKDOWN", f"Week Ending {weeks[0] if weeks else ''} — by ICD")}
-<table><tr><th>ICD</th><th>Campaign</th><th>Org</th><th>Total DD 2026</th>{ths}</tr>
+<table><tr><th>ICD</th><th>Campaign</th><th>Org</th><th class="t26">Total DD 2026</th>{ths}</tr>
 {"".join(body)}</table>
 {extra}
+{_org_tables(d["podium"])}
 {_credico(d.get("credico"))}
 <div class="foot">{FOOTER}</div>
 </body></html>"""

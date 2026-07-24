@@ -366,23 +366,41 @@ Gotchas the numbers pin down:
 Podium totals OVERLAP by design (a larger org contains smaller ones), so they sum
 to MORE than the org total.
 
-### SETTLED 2026-07-24 — Carlos's 19 names against the bulletin's 18
-**It is Benjamin Burden**, and the sent bulletins prove it without anyone being
-asked. Carlos's published figure for four weeks is on record in
-alphaletereporting@gmail.com — 7.19 $329,005.70, 7.12 $356,154.00, 7.5
-$354,791.10, 6.28 $360,328.88 — so each candidate can simply be dropped and the
-list re-summed:
+### THE VA'S WORKING FILE — SEEN 2026-07-24. The lists are no longer blind.
+Megan shared a screenshot of the file this doc kept saying we did not have: one
+small table per leader, every ICD with that week's wire, ranked, with a Total (and
+an Organic total for Colten). **Our reconstruction was right.** Reconciled name
+for name: Colten (14), Khalil (3), Eveliz (3), Salik (2), Hammad (2) are
+**identical**, and every total matches to the cent.
 
-| Carlos's list | 7.19.26 | 7.12.26 | 7.5.26 | 6.28.26 |
-|---|---|---|---|---|
-| all 19 | **$329,005.70 ✓** | $353,657.00 | $353,389.10 | $358,123.88 |
-| minus David Martinez | **$329,005.70 ✓** | $352,355.00 | $340,165.10 | $341,572.88 |
-| minus Benjamin Burden | **$329,005.70 ✓** | $353,657.00 | $353,389.10 | $358,123.88 |
+What it settled outright:
+- **The per-person adoption split**: Karrington Moody **$20,206** + Milan Godbolt
+  **$7,193** = the $27,399 we carried as one combined line. Now two real rows.
+- **Marcos Barbosa is non-organic too.** Her `Colten's Organic Total` of
+  $389,162.00 only lands if Marcos comes out alongside Justin and the two
+  adoptions — $41,962.00 in all. He is flagged `Adoption? YES` and Colten's
+  organic now matches her file exactly (it was $390,637.00, $1,475 high).
+- **Raf's org is all 38 ICDs earning that week**, totalling the headline. That is
+  why his breakdown is derived rather than transcribed.
 
-Dropping Martinez costs $1,302 / $13,224 / $16,551 in the prior weeks, so he is
-on the list. Burden is $0 in **every week of 2026**, so he changes nothing and is
-the only remaining candidate. `Expected ICDs` for Carlos is now **19** with the
-proof in his Note, and the count warning is gone.
+### CORRECTION — Carlos's 19 names against the bulletin's 18
+**An earlier session (2026-07-24, this doc) concluded "it is Benjamin Burden" by
+elimination against four weeks of published figures. That conclusion was reached
+from a false premise and is wrong.** The reasoning assumed each leader's list is
+FIXED and that dropping a member must break some week. It isn't fixed: **the VA
+rebuilds every org list weekly from whoever has revenue coming in** (Megan,
+2026-07-24: "anyone in khalil's org that has rev coming in is active and that's
+the count"). Her Carlos table for 7.19.26 omits **both** David Martinez and
+Benjamin Burden, because both earned $0 that week.
+
+Her own label reads `ICDs-18` above **17** rows — the row numbering skips 8. So
+the count we were chasing was miscounted at the source, and the money was never
+in question.
+
+Practical consequence, now implemented: the org breakdown lists only ICDs that
+EARNED this week, which is what makes our tables name-for-name identical to hers.
+The $0 owners stay on the podium list itself so nothing is lost from the source
+of truth — they simply do not appear in a week they earned nothing.
 
 **Also learned: only the CURRENT week reconciles to the published figure.** The
 three prior weeks sit $1,402–$2,497 BELOW what was sent, in the same direction

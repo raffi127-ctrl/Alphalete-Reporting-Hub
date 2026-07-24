@@ -242,6 +242,7 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
         wk, tot, missing, manual = 0.0, 0.0, [], []
         organic, adoptions = 0.0, []      # organic = the total LESS adoptions
         partial = False
+        members = []                       # the list itself, for the breakdown
         row_wk, row_keys = 0.0, set()      # the part backed by a real DD row
         for item in lists.get(name, []):
             row = by_key.get(_key(item["icd"], aliases))
@@ -250,6 +251,8 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
                 tot += row["total"]
                 row_wk += row["weeks"][0]
                 row_keys.add(row["key"])
+                members.append({"name": item["icd"], "week": row["weeks"][0],
+                                "adoption": item["adoption"]})
                 if item["adoption"]:
                     adoptions.append(item["icd"])
                 else:
@@ -258,6 +261,8 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
                 wk += item["manual_week"]
                 tot += item["manual_total"] or 0.0
                 manual.append(item["icd"])
+                members.append({"name": item["icd"], "week": item["manual_week"],
+                                "adoption": item["adoption"]})
                 if item["adoption"]:
                     adoptions.append(item["icd"])
                 else:
@@ -278,6 +283,7 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
                        "week": round(wk, 2), "total": round(tot, 2),
                        "row_week": round(row_wk, 2), "row_keys": row_keys,
                        "items": lists.get(name, []), "total_partial": partial,
+                       "members": members,
                        "organic": round(organic, 2), "adoptions": adoptions,
                        "n_icds": len(lists.get(name, [])), "expected_n": exp_n,
                        "expected_week": exp_wk, "missing": missing, "manual": manual})
@@ -300,6 +306,13 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
                                 if m in by_name), 2)
         p["total"] = None                        # no 2026 equivalent of that line
         p["organic"] = p["week"]                 # no list, so nothing to strip
+        # A 'minus orgs' leader has no transcribed list, but his org is the WHOLE
+        # organization — so for the breakdown it IS everyone earning this week,
+        # which is exactly how the VA's own working file lists Raf (38 ICDs
+        # totalling the headline). Derived, not transcribed, because a hand list
+        # of 38 names would need re-typing every week.
+        p["members"] = [{"name": r["name"], "week": r["weeks"][0], "adoption": False}
+                        for r in icds if r["weeks"][0]]
         # Independent cross-check: the same figure reached by adding up every
         # active ICD that is on none of the subtracted lists. If the two routes
         # disagree, a list is wrong — say so rather than publish either one.
@@ -341,18 +354,44 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
             problems.append(msg)
             blocking.append(msg)
     podium.sort(key=lambda d: -d["week"])
-    def _block(start):
+    def _block(start, what):
         rows = []
         for r in _labelled_block(vals, start):
             lab = (r[0] or "").strip()
             if not lab:
                 continue
-            rows.append({"name": lab,
-                         "total": r[tot_col] if tot_col < len(r) else "",
-                         "weeks": [r[i] if i < len(r) else "" for i, _ in wk_cols[:WOW_WEEKS]]})
+            wk = [r[i] if i < len(r) else "" for i, _ in wk_cols[:WOW_WEEKS]]
+            tot = r[tot_col] if tot_col < len(r) else ""
+            row = {"name": lab, "total": tot, "weeks": wk}
+            # A 2026 total of ZERO with non-zero weeks is impossible under any
+            # reading of the column, so it is a source error, not a fact. Found
+            # 2026-07-24: 'Khalil's Org Active Owners' reads 0 against 4 active
+            # owners in each of the last four weeks. We can't derive the right
+            # number (the column is inconsistent — Colten's total is 6 against 8
+            # this week), so it is shown in RED and reported rather than
+            # published as if it were true.
+            if money(tot) == 0 and any(money(w) for w in wk):
+                row["suspect_total"] = True
+                problems.append(
+                    f"{what}: '{lab}' has a 2026 total of {tot or '(blank)'!s} but "
+                    f"{', '.join(str(w) for w in wk if money(w))} in the weeks — "
+                    f"impossible, so it is printed in red. Fix the cell on "
+                    f"{DD_TAB!r}; we do not recompute this block")
+            rows.append(row)
         return rows
-    avg = _block("ORG/CAMPAIGNS")
-    active = _block("CAMPAIGNS")
+    avg = _block("ORG/CAMPAIGNS", "AVG DD")
+    active = _block("CAMPAIGNS", "Active Owners")
+
+    # The tab's OWN total rows ('Total - Raf', 'Total - Carlos'). READ, never
+    # recomputed — they cover ICDs our Active-YES list leaves out, which is why
+    # the VA's 2026 total runs about $1M above the sum of the rows we print.
+    # Summing our own visible rows instead would quietly publish a smaller
+    # number than the one everybody already knows.
+    totals = [{"name": (r[0] or "").strip(),
+               "total": r[tot_col] if tot_col < len(r) else "",
+               "weeks": [r[i] if i < len(r) else "" for i, _ in wk_cols[:WOW_WEEKS]]}
+              for r in vals
+              if r and (r[0] or "").strip().lower().startswith("total - ")]
 
     # ---- the two off-book cases, reported so no number silently disappears.
     # They point in OPPOSITE directions, so each row says which:
@@ -381,8 +420,8 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
                                "in the organization total."})
     return {"weeks": weeks, "icds": icds, "podium": podium, "headline": headline,
             "avg": avg, "active_owners": active, "tracked_separately": tracked,
-            "org_count": len(icds), "problems": problems, "blocking": blocking,
-            "credico": credico_info}
+            "totals": totals, "org_count": len(icds), "problems": problems,
+            "blocking": blocking, "credico": credico_info}
 
 
 if __name__ == "__main__":
