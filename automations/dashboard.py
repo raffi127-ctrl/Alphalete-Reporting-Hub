@@ -3720,14 +3720,10 @@ AUTOMATED_REPORTS = [
                 "module": "automations.vantura_slack_sales.run",
                 "args_fn": lambda: ["--fill", "--yes"],
             },
-            {
-                "label": "Preview Only",
-                "icon": "👁",
-                "primary": False,
-                "help": "Shows the count per rep and exactly which cells would change. Writes nothing.",
-                "module": "automations.vantura_slack_sales.run",
-                "args_fn": lambda: ["--fill"],
-            },
+            # No secondary actions on purpose — the "⚙️ More actions" expander
+            # only renders when one exists, so the card stays a single button
+            # (Megan 2026-07-18). Preview is still available via
+            # `python -m automations.vantura_slack_sales.run --fill` (no --yes).
         ],
     },
     {
