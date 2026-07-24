@@ -43,8 +43,15 @@ first-day-of-training day (FIRST_DAY_LIVE).
 """.strip()
 
 # First-Day (col R) stays computed-but-not-written until it's verified on a day
-# with real first-day-of-training people (build day had zero). Flip to True once
-# confirmed that "First Day of Training" maps to the "Total Training" row.
+# with real first-day-of-training people (build day had zero) — it still prints
+# the marks it WOULD write, so a real day can be checked without risk.
+#
+# HOW TO VERIFY (Francia, 2026-07-24): nobody runs orientation on Fridays, so the
+# first checkable day is a MONDAY. Compare the [first-day dry] Y/N counts against
+# the "CR Show" column = column AG on the "Accounts" tab of the tracker sheet
+# (that tab's HEADER IS ROW 2, not row 1; AG is near-empty on non-orientation
+# days — expected). If they agree, flip this True. If they don't, the mapping is
+# probably wrong: swap L_TRAINING to "Total New Starts Scheduled".
 FIRST_DAY_LIVE = False
 
 # --- Retention detail-page row labels ---
