@@ -99,6 +99,7 @@ def _css():
   th:first-child {{ text-align:left; }}
   td {{ padding:7px 8px; text-align:right; border-bottom:1px solid #1c1915; }}
   td:first-child {{ text-align:left; }}
+  th.why, td.why {{ text-align:left; color:#8d887e; font-style:italic; }}
   tr:nth-child(even) td {{ background:#100f0d; }}
   tr.hi td {{ background:#17140f; color:{GOLD_LT}; }}
   tr.tot td {{ border-top:2px solid {GOLD}; font-weight:bold; color:{GOLD_LT}; }}
@@ -124,12 +125,17 @@ def _podium(podium):
         pic = (f'<img src="{img}">' if img else
                f'<div style="width:84px;height:84px;border-radius:50%;margin:0 auto;'
                f'border:2px solid {GOLD}"></div>')
+        # Raf's card carries no 2026 line: his figure is a subtraction ("total
+        # outside Carlos & Colten"), which has no 2026 equivalent on the tab.
+        sub = (f'{_fmt(p["total"])} in 2026' if p.get("total") is not None
+               else "Total outside " + " &amp; ".join(
+                   m.split()[0] for m in p.get("minus", [])))
         cards.append(
             f'<div class="card"><div class="rk">{i}</div>{pic}'
             f'<div class="nm">{p["name"].upper()}</div>'
             f'<div class="lo">{p.get("loc","")}</div>'
             f'<div class="wk">{_fmt(p["week"])}</div>'
-            f'<div class="tt">{_fmt(p["total"])} in 2026</div></div>')
+            f'<div class="tt">{sub}</div></div>')
     out = f'<div class="grid">{"".join(cards[:4])}</div>'
     if cards[4:]:
         out += f'<div class="grid r2">{"".join(cards[4:])}</div>'
@@ -181,14 +187,14 @@ def page2(d):
         er = []
         for r in d["tracked_separately"]:
             tds = "".join(f"<td>{_fmt(v)}</td>" for v in r["weeks"])
-            er.append(f'<tr><td>{r["name"]}</td><td>{r["campaign"]}</td>'
-                      f'<td>{r["org"]}</td><td>{_fmt(r["total"])}</td>{tds}</tr>')
-        extra = (f'<div class="sect">Tracked Separately — outside the org total</div>'
-                 f'<table><tr><th>ICD</th><th>Campaign</th><th>Org</th>'
+            er.append(f'<tr><td>{r["name"]}</td><td class="why">{r.get("why","")}</td>'
+                      f'<td>{_fmt(r["total"])}</td>{tds}</tr>')
+        extra = (f'<div class="sect">Tracked Separately</div>'
+                 f'<table><tr><th>ICD</th><th class="why">Why it is listed here</th>'
                  f'<th>Total 2026</th>{ths}</tr>{"".join(er)}</table>'
-                 f'<div class="note">Adoptions and special cases: reported here so '
-                 f'their numbers stay visible, but excluded from the organization '
-                 f'total above.</div>')
+                 f'<div class="note">Adoptions and special cases, shown so their '
+                 f'numbers stay visible. Read the reason on each row — some are '
+                 f'inside the organization total above and some are not.</div>')
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <style>{_css()}</style></head><body>
 {_head("DD BREAKDOWN", f"Week Ending {weeks[0] if weeks else ''} — by ICD")}
@@ -208,6 +214,10 @@ def build(out_dir: Path = OUT_DIR, data=None):
     print(f"built {p1.name} + {p2.name} — week {d['weeks'][0]}, "
           f"headline {_fmt(d['headline'])}, {d['org_count']} ICDs, "
           f"{len(d['podium'])} leaders")
+    # Never publish a silent gap: anything the data layer couldn't resolve is
+    # printed here and belongs in the run email before this goes out.
+    for msg in d.get("problems") or []:
+        print(f"  ⚠ {msg}")
     return p1, p2
 
 

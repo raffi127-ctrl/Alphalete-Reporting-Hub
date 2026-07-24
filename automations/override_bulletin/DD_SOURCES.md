@@ -78,18 +78,83 @@ plus Credico.
 
 ## THE PODIUM — ALPHALETE ORGANIZATIONAL LEADERS
 
-Ranked high→low by each leader's org DD total. NOT the flat `ORG` column — it is
-a **downline roll-up via the `Org Tree` tab**, minus adoptions:
-- **Raf's figure is "total outside Carlos and Colten"** — his org EXCLUDING those
-  two subtrees.
-- **Hammad sits inside Salik's org**, and Salik takes no personal DD, so the two
-  legitimately show the SAME number. This is correct, not a duplication bug.
+Ranked high→low by each leader's org DD total.
+
+**DO NOT try to derive the podium from the `Org Tree` tab.** Two sessions have
+now burned hours on it. Each leader's figure is a **specific ICD list** that
+exists only in the VA's emailed bulletin — it is neither the flat `ORG` column
+nor any downline roll-up, and no tree walk reproduces it.
+
+The lists are transcribed onto **`Lucy Org Tree` (gid 1263646043)** in two
+label-found blocks, and `dd_data.load()` just adds them up:
+
+| Block | Columns |
+|---|---|
+| `PODIUM LEADERS` | Leader, Location, **Minus orgs**, Expected ICDs, Expected week DD, Note |
+| `PODIUM ORG LISTS` | Leader, ICD (name as on the DD tab), Manual week DD, Manual total 2026, Note |
+
+Rules the reader applies:
+- A leader's figure = the sum of their ICD rows, looked up on the DD tab by name
+  (through ICD Aliases). **Manual week DD** is only for people with NO DD row.
+- If **Minus orgs** is filled in, the figure is the **ORG. TOTAL DD headline
+  minus the ROW-BACKED part of those orgs' lists** — see the correction below.
+  That is Raf's row, the "Total outside of Carlos & Colten" line.
+- Every leader row carries the bulletin's **expected** count and total; a
+  mismatch over $0.50 is reported, never quietly published.
+
+Verified against the 7.19.26 send — six reproduce **exactly**, and Raf's is
+**deliberately corrected** (see "Raf's line" below):
+
+| Leader | ICDs | Week DD |
+|---|---|---|
+| Colten Wright | 14 (incl. adoptions) | $431,124.00 |
+| Carlos Hidalgo | 18 | $329,005.70 |
+| Rafael Hidalgo | headline − Carlos − Colten | **$292,419.00** (VA sent $250,457.00 — corrected, below) |
+| Eveliz Wright | 3 | $69,463.00 |
+| Khalil Mansour | 3 | $63,204.00 |
+| Salik Mallick | 2 | $48,267.00 |
+| Hammad Haque | 2 | $48,267.00 |
+
+Gotchas the numbers pin down:
+- **Cody Cannon counts in FULL to Carlos**, not split — that is what makes
+  $329,005.70 land to the penny.
+- **Raf's line: the VA's send was WRONG and we correct it.** Her sheet subtracts
+  Colten's FULL list total, but $41,962.00 of that (Justin $13,088, Marcos
+  $1,475, adoptions $27,399) belongs to people with no DD row, who were never in
+  the $1,010,586.70 headline. You cannot subtract money the base never contained.
+  Her $250,457.00 understates Raf by exactly that $41,962.00.
+
+  The correct figure is **$292,419.00**, and two independent routes agree:
+  1. headline − Carlos's row-backed total ($329,005.70) − Colten's row-backed
+     total ($389,162.00) = $292,419.00
+  2. adding up the 12 active ICDs on neither list (Raf, Kash Rai, Aya, Cyrus,
+     Rashad, Isaiah, Salik Waqar, Ronald, Haytham, Hammad Ul Haque, Jacob Dover,
+     Tevin Sterling) = $292,419.00
+
+  `dd_data` computes route 1 and asserts route 2 matches; a disagreement means a
+  list is wrong and is reported rather than published. **Megan approved the
+  correction 2026-07-23** — if a future send still shows $250,457, ours is right.
+- **Salik's list excludes Salik's own $9,342 DD** (he is `Salik Waqar` on the DD
+  tab). Deliberate. Hammad shows the SAME 2 ICDs — correct, not a duplicate.
+- **Justin Fermin ($13,088) and Marcos Barbosa ($1,475) have no DD row at all** —
+  not a spelling problem, they are simply absent from the tab. They live in the
+  list as Manual week DD and are re-surfaced under "Tracked Separately".
 - Eveliz is Colten's wife — location **Miami, Florida** (not Michigan).
 - Leaders seen: Colten, Carlos, Raf, Khalil, Zach, Eveliz, Salik, Hammad,
-  Benjamin Burden (the count varies by week; the email screenshot showed 7).
+  Benjamin Burden (the count varies by week; 7.19.26 showed 7). Zach Hogue is
+  Active NO with $0 this week, which is why he is off this week's podium.
 
 Podium totals OVERLAP by design (a larger org contains smaller ones), so they sum
-to MORE than the org total — 7.19.26: podium $1,239,788 vs org total $1,010,587.
+to MORE than the org total.
+
+### Still open on the podium (needs the emailed bulletin to close)
+1. Carlos's list computes right with 19 names but the bulletin says **18** — one
+   of the two $0 people (David Martinez, Benjamin Burden) is not on it. No effect
+   on the money, only the count.
+2. The **adoptions are one line worth $27,399 combined**; the per-person split is
+   unconfirmed (derived, not read).
+3. **No 2026 totals** for Justin, Marcos or the adoptions, so Colten's "in 2026"
+   card figure is understated. Flagged on every run.
 
 ## THE LIVE SHEET IS THE SOURCE OF TRUTH — not a sample email
 
@@ -103,20 +168,13 @@ disagrees with a sent bulletin, the SHEET wins. (A stale "confirmed podium"
 block was seeded into `Lucy Org Tree` from that old email and has been removed —
 it would have published stale numbers every week.)
 
-## Superseded: reconciliation vs the OLD sample (kept for the lessons only)
+## Superseded: the tree roll-up (kept for the lesson only)
 
-Computed from `Org Tree` + the DD tab, alias-resolved, adoptions excluded:
-**4 of 7 exact** — Eveliz $69,463 ✓, Khalil $63,204 ✓, Salik $48,267 ✓,
-Hammad $48,267 ✓ (the shared Salik/Hammad figure reproduces correctly).
-
-Still open:
-- **Colten** −$28,807.50. Every ORG-tagged Colten person is already in his tree,
-  so the shortfall is someone NOT tagged Colten. The `.50` says a half-split.
-- **Carlos** −$13,154.50 = EXACTLY half of Cody Cannon ($26,309). Cody is
-  currently counted x0.5 to both Carlos and Colten; Carlos's gap closes exactly
-  if he takes Cody in FULL. Megan confirmed Cody is split — needs the direction
-  pinned.
-- **Raf (outside Carlos & Colten)** +$10,757.00 — computed too high.
+The old `Org Tree` walk got 4 of 7 (Eveliz, Khalil, Salik, Hammad) and could
+never close Colten, Carlos or Raf. Every "gap" was an artefact of the tree not
+being the source: Carlos's −$13,154.50 was Cody counted at x0.5 instead of in
+full, and Colten's shortfall was the bulletin-only people who have no DD row.
+The list-driven reader above replaces it entirely. **Don't rebuild it.**
 
 **Jacob Dover is SPECIAL** (Megan 2026-07-23). Tree puts him under Hammad via
 Tevin Sterling, but the sent bulletin excludes him — excluding him is what makes
