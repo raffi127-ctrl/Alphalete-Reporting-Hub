@@ -171,7 +171,7 @@ def _css():
   .note {{ font-size:11px; color:#8d887e; text-align:center; margin-top:6px;
     font-style:italic; }}
   .foot {{ text-align:center; color:{GOLD}; letter-spacing:5px; font-size:15px;
-    margin-top:26px; text-transform:uppercase; font-weight:bold; }}
+    margin-top:60px; text-transform:uppercase; font-weight:bold; }}
   .blurb {{ text-align:center; color:#8d887e; font-size:11px; line-height:1.7;
     max-width:70%; margin:10px auto 0; }}
 """
@@ -429,7 +429,9 @@ def _rollup(d, weeks):
     2026 figure plus the last TWO weeks (Megan: "add the prev week too")."""
     w0 = weeks[0] if weeks else ""
     w1 = weeks[1] if len(weeks) > 1 else ""
-    w2 = weeks[2] if len(weeks) > 2 else ""    # 3rd owner week (Megan 2026-07-24)
+    w2 = weeks[2] if len(weeks) > 2 else ""
+    w3 = weeks[3] if len(weeks) > 3 else ""    # owners show 4 weeks, like the
+    #                                            ICD tables (Megan 2026-07-24)
     rows = {}
     for r in d["avg"]:
         k = _rollup_key(r["name"])
@@ -483,18 +485,20 @@ def _rollup(d, weeks):
         ow0 = f'<td class="owstart{" up" if owup(0) else ""}">{wk(o, 0)}</td>'
         ow1 = f'<td class="{"up" if owup(1) else ""}">{wk(o, 1)}</td>' if w1 else ""
         ow2 = f'<td class="{"up" if owup(2) else ""}">{wk(o, 2)}</td>' if w2 else ""
+        ow3 = f'<td class="{"up" if owup(3) else ""}">{wk(o, 3)}</td>' if w3 else ""
         body.append(
             f'<tr{c}><td>{v["label"]}</td>'
             f'<td class="{av26}">{_cell(a["total"]) if a else "—"}</td>'
             f'<td>{wk(a, 0)}</td>{av1}'
-            f'{ow0}{ow1}{ow2}</tr>')
+            f'{ow0}{ow1}{ow2}{ow3}</tr>')
     w1h = f"<th>Avg DD {w1}</th>" if w1 else ""
     w1o = f"<th>Active Owners {w1}</th>" if w1 else ""
     w2o = f"<th>Active Owners {w2}</th>" if w2 else ""
+    w3o = f"<th>Active Owners {w3}</th>" if w3 else ""
     return (f'<div class="sect">Org &amp; Campaign — Average DD and Active Owners</div>'
             f'<table><tr><th>Org / Campaign</th>'
             f'<th class="t26">Avg DD 2026</th><th>Avg DD {w0}</th>{w1h}'
-            f'<th class="owstart">Active Owners {w0}</th>{w1o}{w2o}</tr>'
+            f'<th class="owstart">Active Owners {w0}</th>{w1o}{w2o}{w3o}</tr>'
             f'{"".join(body)}</table>')
 
 
