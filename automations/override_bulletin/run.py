@@ -116,7 +116,8 @@ def pull_all(week_mdy, week_header, period_num, period_year, *, page=None,
         week_header, d / "raf.csv", period=f"Period {period_num}",
         page=page, verbose=verbose))
     dd = _pull("DD captain overrides", lambda: P.dd_captain_overrides(
-        DD_CAPTAINS, d / "dd.csv", page=page, verbose=verbose)) or {}
+        DD_CAPTAINS, d / "dd.csv", page=page, verbose=verbose,
+        period=f"Period {period_year}-{period_num}")) or {}
     captain = {k: _dd_week_for(v, week_mdy) for k, v in dd.items()}
     captain = {k: v for k, v in captain.items() if v is not None}
 

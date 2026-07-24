@@ -279,15 +279,26 @@ LEDGER_VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
 LEDGER_SHEET = "Transaction Details"
 
 
-def dd_captain_overrides(owners, out_path, *, page=None, verbose=True):
-    """{owner_norm: {week_key: amount}} — download ORG DD Detail once and extract
-    every Captain's-Bonus override for the captains in `owners`, keyed by the
-    description's week (M.D.YY). The caller picks the target week per captain."""
-    from automations.shared.tableau_patchright import download_crosstab_patchright
-    download_crosstab_patchright(DD_DETAIL_VIEW, DD_DETAIL_SHEET, out_path,
-                                 page=page, verbose=verbose)
-    rows = read_crosstab(out_path)
-    return parse_dd_captain(rows, {_norm_name(o) for o in owners})
+def dd_captain_overrides(owners, out_path, *, page=None, verbose=True,
+                         period=None):
+    """{owner_norm: {week_key: amount}} — every Captain's-Bonus override for the
+    captains in `owners`, keyed by the description's week (M.D.YY). The caller
+    picks the target week per captain.
+
+    This view used to need NO filter (its default WAS the just-closed week), and
+    that is still tried first. But on 2026-07-24 the unfiltered load came back
+    EMPTY — 'no sheets to select', which reads identically to a broken view — so
+    a period filter is now tried as a fallback rather than giving up."""
+    want = {_norm_name(o) for o in owners}
+
+    def _accept(rows):
+        return parse_dd_captain(rows, want) or None
+
+    periods = [None] + (period_candidates(period) if period else [])
+    val, _used = _download_first_nonempty(
+        DD_DETAIL_VIEW, DD_DETAIL_SHEET, out_path, periods,
+        page=page, verbose=verbose, accept=_accept)
+    return val or {}
 
 
 def ledger_amounts(needle, out_path, *, page=None, verbose=True):
@@ -326,14 +337,81 @@ def _with_filter(base_url, field, value):
     return f"{base_url}{sep}{quote(field)}={quote(value)}"
 
 
-def raf_special_override(week_header, out_path, *, period, page=None, verbose=True):
-    """Raf's special override ('Raf Payout Total' row) for a week. `period` is the
-    Period-filter value (e.g. 'Period 7')."""
+def period_candidates(period):
+    """Period-filter values to try, best guess first.
+
+    Tableau's Crosstab dialog reports 'No sheets to select' when the VIZ IS
+    EMPTY — a filter value that matches nothing looks EXACTLY like a broken or
+    permission-denied view (Megan spotted this 2026-07-24: the working ORG
+    summary shows the same empty dialog when opened on its default
+    'Period 2024-13' with no week chosen). So never trust a single filter
+    string: the period naming differs per view and has changed before
+    ('Period 7' vs 'Period 2026-7'), and a stale value silently yields nothing.
+    """
+    out, seen = [], set()
+    cands = [period]
+    m = re.match(r"^Period\s+(\d{4})-(\d{1,2})$", str(period or "").strip())
+    if m:                                    # year-prefixed -> also try bare
+        cands.append("Period {}".format(int(m.group(2))))
+    m2 = re.match(r"^Period\s+(\d{1,2})$", str(period or "").strip())
+    if m2:                                   # bare -> also try year-prefixed
+        n = int(m2.group(1))
+        cands += ["Period {}-{}".format(dt.date.today().year, n),
+                  "Period {}-{}".format(dt.date.today().year - 1, n)]
+    for c in cands:
+        if c and c not in seen:
+            seen.add(c)
+            out.append(c)
+    return out
+
+
+def _download_first_nonempty(view, sheet, out_path, periods, *, page=None,
+                             verbose=True, accept=None):
+    """Try each period filter until one yields a crosstab that actually PARSES.
+
+    Returns (parsed, period_used). `accept` turns the raw rows into the parsed
+    result and should return something falsey when the download came back empty
+    or without the week we need — that is the signal to try the next candidate
+    rather than to report the view as broken."""
     from automations.shared.tableau_patchright import download_crosstab_patchright
-    url = _with_filter(RAF_BONUS_VIEW, "Period", period)
-    download_crosstab_patchright(url, RAF_BONUS_SHEET, out_path, page=page, verbose=verbose)
-    return parse_raf_payout(read_crosstab(out_path), label="Raf Payout Total",
-                            week_header=week_header)
+    last_err = None
+    for period in periods:
+        url = _with_filter(view, "Period", period) if period else view
+        try:
+            download_crosstab_patchright(url, sheet, out_path, page=page,
+                                         verbose=verbose)
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+            if verbose:
+                print("  {} → no crosstab ({}); trying the next period".format(
+                    period or "(no filter)", type(e).__name__))
+            continue
+        rows = read_crosstab(out_path)
+        got = accept(rows) if accept else rows
+        if got:
+            if verbose:
+                print("  {} → OK".format(period or "(no filter)"))
+            return got, period
+        if verbose:
+            print("  {} → empty; trying the next period".format(period or "(no filter)"))
+    if last_err is not None:
+        raise last_err
+    return None, None
+
+
+def raf_special_override(week_header, out_path, *, period, page=None, verbose=True):
+    """Raf's special override ('Raf Payout Total' row) for a week.
+
+    `period` is the preferred Period-filter value; sibling formats are tried too
+    (see period_candidates) because an unmatched value renders an EMPTY viz,
+    which Tableau reports as 'no sheets' — indistinguishable from a dead view."""
+    def _accept(rows):
+        return parse_raf_payout(rows, label="Raf Payout Total",
+                                week_header=week_header)
+    val, _used = _download_first_nonempty(
+        RAF_BONUS_VIEW, RAF_BONUS_SHEET, out_path, period_candidates(period),
+        page=page, verbose=verbose, accept=_accept)
+    return val
 
 
 def regular_overrides(week_header, out_path, *, period, page=None, verbose=True):
