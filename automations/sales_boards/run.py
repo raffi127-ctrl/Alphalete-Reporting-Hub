@@ -36,6 +36,7 @@ from pathlib import Path
 from automations.recruiting_report.fill import open_by_key, _retry
 from automations.pnl_office.run import _token
 from automations.sales_boards import render as R
+from automations.sales_boards import zeros as Z
 
 SANDBOX_SHEET_ID = "15QzcyFqTzX9RYNJ2SvT_HOiyQsMU1v90wHjSUHA_cNc"   # re-copied 7/18
 PROD_SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"
@@ -55,6 +56,15 @@ PROGRAM_EMOJI = {"B2B": ":briefcase:", "Base": ":zap:",
                  "JE": ":bulb:", "BOX": ":package:"}
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "sales_boards"
 CHANNEL = ("#alphalete-gp-sales", "C07J46MQNUX")
+
+# Carlos 7/23: the same Vantura Production thread also lands in his A-Players
+# channel, and THAT copy carries the extra Zero Streak screenshots (they're a
+# callout for his A-Players room, not for the main sales channel).
+#   (name, channel_id, include_zeros?)
+TARGETS = [
+    ("#alphalete-gp-sales", "C07J46MQNUX", False),
+    ("#a-players-b2b", "C0AJQA8P716", True),
+]
 
 # The second daily thread in the same channel — the three ATTTRACKER-B2B Tableau
 # views. Those captures aren't built yet; the header lives here so both threads
@@ -94,20 +104,21 @@ def header_title(day) -> str:
     return f"Vantura Production {day.month:02d}/{day.day:02d}/{day.year}"
 
 
-def header_text(day) -> str:
-    return "\n".join([f"*{header_title(day)}*"]
-                     + [f"{PROGRAM_EMOJI.get(p, '')} {p} Sales Board".strip()
-                        for p in PROGRAMS])
+def header_text(day, zeros=None, tag: str = "") -> str:
+    """Parent message. `zeros` (the render_zeros result) adds the Zero Streak line
+    — only the A-Players copy gets it, so the two channels' parents differ by that
+    one line while sharing the same title needle."""
+    lines = [f"*{header_title(day)}*"]
+    lines += [f"{PROGRAM_EMOJI.get(p, '')} {p} Sales Board".strip() for p in PROGRAMS]
+    if zeros:
+        lines.append(f"{Z.EMOJI} Zero Streak {tag}  "
+                     f"({', '.join(Z.level_label(n) for n in sorted(zeros))})")
+    return "\n".join(lines)
 
 
 def quality_header_text(day) -> str:
     title = f"{QUALITY_THREAD_TITLE} {day.month:02d}/{day.day:02d}/{day.year}"
     return "\n".join([f"*{title}*"] + [f"• {i}" for i in QUALITY_THREAD_ITEMS])
-
-
-def _channel():
-    scratch = os.environ.get("SALES_BOARD_CHANNEL_ID")
-    return (f"scratch ({scratch})", scratch) if scratch else CHANNEL
 
 
 def find_thread_ts(client, channel: str, day):
@@ -167,45 +178,74 @@ def _publish_hub(status: str) -> None:
         pass
 
 
-def post_thread(imgs: dict, day, yday, dry_run: bool, dm_user: str = "") -> list:
-    """Find-or-create today's parent, then post each board's images as a reply.
-    dm_user routes the whole thread into a DM instead — same code path, used to
-    prove the multi-image threaded upload before pointing it at the channel."""
-    name, cid = _channel()
-    tag = f"{yday.month}.{yday.day}"
-    if dry_run:
-        return [{"dry_run": True, "channel": name, "id": cid,
-                 "header": header_text(day),
-                 "replies": [(f"{PROGRAM_EMOJI.get(p, '')} *{p} Sales Board {tag}*".strip(),
-                              sorted(v)) for p, v in imgs.items() if v]}]
-    from automations.shared import slack_metrics_post as smp
-    client = smp._client()
-    if dm_user:
-        cid = client.conversations_open(users=dm_user)["channel"]["id"]
-        name = f"DM to {dm_user}"
-    ts = find_thread_ts(client, cid, day)
-    created = False
-    if not ts:
-        ts = client.chat_postMessage(channel=cid, text=header_text(day)).get("ts")
-        created = True
-    out = [{"channel": name, "thread_ts": ts, "created_parent": created}]
+def _replies(imgs: dict, zeros: dict, tag: str, want_zeros: bool) -> list:
+    """The thread's replies in post order: the boards, then (A-Players only) one
+    reply per Zero Streak level. Each entry is
+    (plain_needle, caption, [(local_path, slack_filename), …])."""
+    out = []
     for p in PROGRAMS:
         parts = imgs.get(p) or {}
         if not parts:
             continue
         plain = f"{p} Sales Board {tag}"
-        caption = f"{PROGRAM_EMOJI.get(p, '')} *{plain}*".strip()
-        # dedupe on the PLAIN text — Slack may store the emoji as a shortcode or
-        # the rendered character, so matching the caption verbatim is unreliable
-        if _already_replied(client, cid, ts, plain):
-            out.append({"board": p, "skipped": "already in thread"})
-            continue
-        uploads = [{"file": str(parts[k]), "filename": f"{plain} ({k}).png"}
-                   for k in ("a", "b") if k in parts]
-        r = client.files_upload_v2(channel=cid, thread_ts=ts,
-                                   file_uploads=uploads, initial_comment=caption)
-        out.append({"board": p, "images": len(uploads), "ok": r.get("ok")})
-        time.sleep(1)
+        out.append((plain, f"{PROGRAM_EMOJI.get(p, '')} *{plain}*".strip(),
+                    [(parts[k], f"{plain} ({k}).png") for k in ("a", "b") if k in parts]))
+    if want_zeros:
+        for n in sorted(zeros or {}):
+            info = zeros[n]
+            plain = Z.plain_caption(n, tag)
+            caption = f"{Z.EMOJI} *{plain}*  —  {info['reps']} reps"
+            out.append((plain, caption, [(info["path"], f"{plain}.png")]))
+    return out
+
+
+def post_thread(imgs: dict, zeros: dict, day, yday, dry_run: bool,
+                dm_user: str = "") -> list:
+    """Find-or-create today's parent in EACH target channel, then post the replies.
+    dm_user routes one thread into a DM instead — same code path, used to prove the
+    multi-image threaded upload before pointing it at a channel."""
+    tag = f"{yday.month}.{yday.day}"
+    scratch = os.environ.get("SALES_BOARD_CHANNEL_ID")
+    targets = ([(f"scratch ({scratch})", scratch, True)] if scratch
+               else [t for t in TARGETS if t[1]])
+
+    if dry_run:
+        return [{"dry_run": True, "channel": name, "id": cid,
+                 "header": header_text(day, zeros if wz else None, tag),
+                 "replies": [(cap, [f for _, f in ups])
+                             for _, cap, ups in _replies(imgs, zeros, tag, wz)]}
+                for name, cid, wz in targets]
+
+    from automations.shared import slack_metrics_post as smp
+    client = smp._client()
+    if dm_user:      # a DM test gets the full set, zeros included
+        targets = [(f"DM to {dm_user}",
+                    client.conversations_open(users=dm_user)["channel"]["id"], True)]
+
+    out = []
+    for name, cid, wz in targets:
+        ts = find_thread_ts(client, cid, day)
+        created = False
+        if not ts:
+            ts = client.chat_postMessage(
+                channel=cid, text=header_text(day, zeros if wz else None, tag)).get("ts")
+            created = True
+        out.append({"channel": name, "thread_ts": ts, "created_parent": created})
+        for plain, caption, ups in _replies(imgs, zeros, tag, wz):
+            # dedupe on the PLAIN text — Slack may store the emoji as a shortcode
+            # or the rendered character, so matching the caption verbatim is
+            # unreliable. Checked per channel: a reply landing in one channel says
+            # nothing about the other.
+            if _already_replied(client, cid, ts, plain):
+                out.append({"channel": name, "reply": plain, "skipped": "already in thread"})
+                continue
+            r = client.files_upload_v2(
+                channel=cid, thread_ts=ts,
+                file_uploads=[{"file": str(p), "filename": f} for p, f in ups],
+                initial_comment=caption)
+            out.append({"channel": name, "reply": plain,
+                        "images": len(ups), "ok": r.get("ok")})
+            time.sleep(1)
     return out
 
 
@@ -216,6 +256,8 @@ def main(argv=None) -> int:
                     help="ACTUALLY post to Slack (default dry-run)")
     ap.add_argument("--dm", metavar="USER_ID",
                     help="post the thread to a DM instead of the channel (test run)")
+    ap.add_argument("--only-zeros", action="store_true",
+                    help="render just the Zero Streak images (skip the boards)")
     args = ap.parse_args(argv)
 
     today = dt.date.today()
@@ -243,27 +285,33 @@ def main(argv=None) -> int:
     for w in sh.worksheets():                 # clear any orphan from a crashed run
         if w.title == TEMP_TAB:
             sh.del_worksheet(w)
-    tmp = sh.duplicate_sheet(src.id, new_sheet_name=TEMP_TAB)
-    try:
-        sh.batch_update({"requests": [{"clearBasicFilter": {"sheetId": tmp.id}}]})
-        imgs = R.render_all(sh, tmp, SHEET_ID, _token(), yday, OUT_DIR, programs)
-    finally:
-        sh.del_worksheet(tmp)
-        print("temp tab removed")
+    # Zeros render on their OWN throwaway tab — they overwrite the day columns with
+    # a cross-week window, which would corrupt the boards if the two shared a copy.
+    zrs = Z.render_zeros(sh, src, SHEET_ID, _token(), yday, OUT_DIR)
 
-    made = sum(len(v) for v in imgs.values())
+    imgs = {p: {} for p in programs}
+    if not args.only_zeros:
+        tmp = sh.duplicate_sheet(src.id, new_sheet_name=TEMP_TAB)
+        try:
+            sh.batch_update({"requests": [{"clearBasicFilter": {"sheetId": tmp.id}}]})
+            imgs = R.render_all(sh, tmp, SHEET_ID, _token(), yday, OUT_DIR, programs)
+        finally:
+            sh.del_worksheet(tmp)
+            print("temp tab removed")
+
+    made = sum(len(v) for v in imgs.values()) + len(zrs)
     if not args.post:
         print(f"dry-run: {made} image(s) in {OUT_DIR}. Not posting.")
-        r = post_thread(imgs, today, yday, dry_run=True)[0]
-        print(f"WOULD post to {r['channel']} ({r['id']}) as a thread:")
-        for line in r["header"].split("\n"):
-            print(f"    {line}")
-        for cap, keys in r["replies"]:
-            print(f"    ↳ {cap}  ({len(keys)} image(s): {', '.join(keys)})")
+        for r in post_thread(imgs, zrs, today, yday, dry_run=True):
+            print(f"WOULD post to {r['channel']} ({r['id']}) as a thread:")
+            for line in r["header"].split("\n"):
+                print(f"    {line}")
+            for cap, names in r["replies"]:
+                print(f"    ↳ {cap}  ({len(names)} image(s): {', '.join(names)})")
         return 0
     print("POSTING thread to Slack as Lucy:")
     try:
-        results = post_thread(imgs, today, yday, dry_run=False, dm_user=args.dm or "")
+        results = post_thread(imgs, zrs, today, yday, dry_run=False, dm_user=args.dm or "")
     except Exception:
         _publish_hub("failed")
         raise

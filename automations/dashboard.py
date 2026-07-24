@@ -3775,9 +3775,13 @@ AUTOMATED_REPORTS = [
             "**•** **BOX Sales Board**\n\n"
             "The same thread goes to **#a-players-b2b**, and that copy gets "
             "extra **Zero Streak** replies — everyone who rolled a literal 0 "
-            "yesterday, then 2 days running, then 3, and so on, all campaigns "
-            "in one image grouped + colour-coded by campaign. Those never post "
-            "to #alphalete-gp-sales.\n\n"
+            "yesterday, then 2 days running, then 3, **up to 7** — all "
+            "campaigns in one image, grouped and colour-coded by campaign. "
+            "Those never post to #alphalete-gp-sales.\n\n"
+            "Streaks run past the current week by reading the **WeekData** tab, "
+            "so a run that started last week still counts. **Sunday** isn't a "
+            "work day: it never counts as a zero, but a **sale on Sunday breaks "
+            "the streak**.\n\n"
             "WHEN IT RUNS\n"
             "**Every day at 5:10am CST** — ten minutes after the Sales "
             "Board Fill writes the day cells from the channel.\n\n"
@@ -3805,7 +3809,7 @@ AUTOMATED_REPORTS = [
         },
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Sales Boards posted to #alphalete-gp-sales.",
+            "message_success": "✅ Sales Boards posted to #alphalete-gp-sales + #a-players-b2b.",
             "message_failed": "❌ Run failed. Check the log above, then run again.",
         },
         "actions": [
@@ -3813,7 +3817,7 @@ AUTOMATED_REPORTS = [
                 "label": "Post Now",
                 "icon": "▶",
                 "primary": True,
-                "help": "Builds all 8 images and POSTS today's thread to #alphalete-gp-sales as Lucy.",
+                "help": "Builds every image and POSTS today's thread to #alphalete-gp-sales and #a-players-b2b as Lucy.",
                 "module": "automations.sales_boards.run",
                 "args_fn": lambda: ["--post"],
             },
