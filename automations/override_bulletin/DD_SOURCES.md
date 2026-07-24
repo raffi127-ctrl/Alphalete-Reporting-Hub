@@ -92,6 +92,32 @@ inventing one would fake the check that protects every other leader.
 ## CREDICO — a real second source
 
 Direct deposits from Credico must be ADDED to each owner's weekly number.
+
+### WIRED IN 2026-07-24 — `dd_data._fold_credico`
+`load()` takes `credico="auto"` and pulls the week's Credico figures before the
+podium is summed, so a topped-up week reaches the leader lists that add it up.
+
+**The tab decides, per owner, whether to add or to verify.** While the VA still
+fills `Org DDs Ongoing Report` she has ALREADY folded Credico in — Abel's 7.19.26
+cell is $6,578.00 against a $6,058.00 Credico office. Adding on top of that would
+double-count her work, so:
+
+| Tab cell vs Credico | What happens |
+|---|---|
+| cell **>=** Credico | Already folded in. The split is printed on page 2 ("$6,578.00 already includes Credico $6,058.00 (Tableau part $520.00)"). Nothing changes. |
+| cell **<** Credico | The cell is the Tableau part only → **ADD**. **BLOCKING**, because the headline is read off the tab and does not contain what we just added. |
+| **no row at all** | A Credico-only owner. Rendered under **Tracked Separately**, never folded into a total that lacks them. **BLOCKING**. |
+
+Both real offices verify clean against 7.19.26, reproducing the $520.00 / $90.00
+Tableau parts this doc already recorded.
+
+`credico.report.pull()` returns **office totals keyed by owner NAME**, not the
+per-agent split — the per-agent version scattered an office's money across
+individual agents, which the VA tab disproved. It returns `(owners, notes,
+offices)`; the caller keys the names through ICD Aliases with its own key
+function, so a key built in the Credico module can never drift from the one the
+DD tab is indexed by. `--week` on every Credico command now defaults to the
+newest week on the DD tab instead of a hard-coded `7.19.26`.
 - `arc.credico.com/#/dashboard/sales-management` → **Sales Management → Reports**
   (Carlos's login).
 - **The date runs ONE WEEK FORWARD.** For week ending 3.22 she pulls **Saturday
@@ -352,6 +378,52 @@ Every failure so far has been a NAME MISMATCH, not a structural one — includin
 `Salik Malick`/`Mallick`, `Max Aden`/`Maxamad`/`Maxamed`, `MJ Malhas`/`Amjad`.
 All are now rows in the shared ICD Aliases tab. `Lucy Org Tree` (gid 1263646043)
 holds the tree tied to the DD sheet's names, with a match-status column.
+
+## SENDING IT — `send.py --dd` (built 2026-07-24, NEVER auto-sends)
+
+The DD bulletin publishes through the SAME module as the override bulletin, not
+a rival sender. `--dd` switches artwork, rooms and state file:
+
+    python -m automations.override_bulletin.send --dd              # DRY RUN
+    python -m automations.override_bulletin.send --dd --preview    # Megan only
+    python -m automations.override_bulletin.send --dd --send       # the real distro
+
+- **Slack**: `#alphalete-sales` (C068PH3RFSM), `#alphalete-lvl1-chat`
+  (C09JG28CD27), `#rafs-office-recruiting` (C06881A7WLV) — every id resolved
+  against the workspace 2026-07-24, not copied from this doc. Both pages go up as
+  ONE message per channel (`file_uploads`); two posts in a row read as two
+  bulletins.
+- **Email**: `Alphalete Org Owners` + `Bulletins` (63 addresses), subject
+  **`Alphalete Organization Bulletin WE 7.19`**, both pages as inline `cid:`
+  images. PNG over `data:` URIs because Gmail strips those.
+- **Idempotency**: its own `dd_bulletin_last_sent.txt`, so publishing one
+  bulletin never marks the other as done.
+
+**What stops a send.** `dd_data.load()` now returns `blocking` alongside
+`problems` — the subset meaning a number ON THE PAGE is wrong rather than merely
+incomplete:
+
+| Blocks a send | Prints and still publishes |
+|---|---|
+| a leader off their published figure by >$0.50 | a missing 2026 total (card says "partial") |
+| Raf's two routes disagreeing | Carlos's 19-vs-18 ICD count (money is right, count is rendered nowhere) |
+| a podium list with no ICDs, or an ICD with no amount | |
+| Credico not folded in, added, or owner-less | |
+
+`--send` refuses while any of those stand; a dry run and `--preview` still build
+and show the pages, because looking at a broken one is how it gets fixed.
+`--force` publishes anyway and says so. `--dd --no-credico` reads the tab as it
+stands, for diagnosis only.
+
+## The Hub card
+
+`dd-bulletin`, sitting directly before the Override Bulletin card (Thursday
+before Friday). Four buttons: **Build Both Pages**, **Preview the Send (no
+send)**, **Check the Numbers Only**, **Get This Week's Credico**. Rerun ids
+`dd_bulletin` / `dd_bulletin_send` in `day_orchestrator/schedule_config.json`,
+both `on_scheduler: false` and both on **Lucy 1** — that is where the Credico
+workbooks land. Run `lucy rerun credico_fetch` before the build, or Credico
+reports as not folded in and the send is refused.
 
 ## Presentation
 

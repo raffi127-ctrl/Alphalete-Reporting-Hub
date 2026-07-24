@@ -3505,6 +3505,100 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "dd-bulletin",
+        # Thursday's bulletin, so it sits directly before the Friday Override
+        # Bulletin — which in turn stays adjacent to the PNL card below it.
+        "name": "DD Bulletin → #alphalete-sales + #alphalete-lvl1-chat",
+        "creator": "Megan & Claude",
+        "emoji": "\U0001F3C6",
+        # Same gold as the Override Bulletin — they are the same artwork family.
+        "color": "#B45309",
+        "category": "\U0001F4CA Metrics",
+        "description": "Builds the weekly two-page Organization Bulletin from the Org DDs Ongoing Report — the ORG. TOTAL DD headline, the Alphalete Organizational Leaders podium, average DD, active owners, and the full by-ICD breakdown — with the week's Credico direct deposits folded in.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Reads the week straight off the **Org DDs Ongoing "
+            "Report** tab. The headline, the average-DD block and the "
+            "active-owner counts are **already worked out on that tab** — "
+            "they are read, never recalculated.\n"
+            "**•** Each leader's podium figure is the sum of **their own "
+            "ICD list**, kept on the **Lucy Org Tree** tab. Every leader's list "
+            "is checked against the figure the bulletin published — more "
+            "than 50¢ out and it is reported instead of sent.\n"
+            "**•** Adds each owner's **Credico** direct deposits (their "
+            "WHOLE office, not their own agent rows). Where the tab already "
+            "includes them, it says so and changes nothing.\n"
+            "**•** Anyone **outside** the organization total — the "
+            "adoptions, Jacob Dover, people with no DD row — is still "
+            "**shown**, each with the reason, so no number quietly disappears.\n\n"
+            "WHEN IT RUNS\n"
+            "**Thursday mornings, by 10:00am CST** — the VA's own slot. "
+            "The numbers were still moving on Wednesday, so it is built early "
+            "Thursday off the settled week.\n\n"
+            "SAFETY GATES\n"
+            "**•** **Nothing is sent automatically.** Building and sending "
+            "are separate steps; **Preview the Send** shows the subject, all "
+            "three Slack channels and every email address, and sends nothing.\n"
+            "**•** It **refuses to send** while any number on the page is "
+            "known to be wrong — a leader off their published figure, a "
+            "podium list that fails its cross-check, or Credico missing. "
+            "Things that are merely **incomplete** are labelled on the page "
+            "(e.g. a 2026 total that reads 'partial') and still go out.\n"
+            "**•** Writes to **no report tab at all** — it only reads."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"),
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "dd_bulletin",
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [3],   # Thursday (Mon=0 … Thu=3)
+            "time": "9:00 AM",
+            "estimated_minutes": 3,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Both bulletin pages built. Check anything flagged above before it goes out.",
+            "message_failed": "❌ Build failed. Check the log above, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Build Both Pages",
+                "icon": "\U0001F5BC",
+                "primary": True,
+                "help": "Reads the DD tab and the leader lists, folds in Credico, and renders both bulletin pages. Sends nothing and writes to no tab.",
+                "module": "automations.override_bulletin.dd_build",
+                "args_fn": lambda: ["--png"],
+            },
+            {
+                "label": "Preview the Send (no send)",
+                "icon": "\U0001F4E7",
+                "primary": False,
+                "help": "Builds both pages, then shows the subject line, the three Slack channels and every email address it would go to. Sends nothing.",
+                "module": "automations.override_bulletin.send",
+                "args_fn": lambda: ["--dd"],
+            },
+            {
+                "label": "Check the Numbers Only",
+                "icon": "\U0001F50E",
+                "primary": False,
+                "help": "Prints the headline, every leader's figure against the one the bulletin published, and everything tracked outside the total. No images, no sending.",
+                "module": "automations.override_bulletin.dd_data",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Get This Week's Credico",
+                "icon": "⬇",
+                "primary": False,
+                "help": "Downloads this week's Credico Fee Report files on Lucy 1 so the bulletin can include them. Read-only on Credico's side.",
+                "module": "automations.credico.report",
+                "args_fn": lambda: ["--fetch"],
+            },
+        ],
+    },
+    {
         "id": "override-bulletin",
         # Sits directly before the PNL card: the bulletin goes out first, then
         # PNL for the Office posts right after (same Friday 10am slot, Lucy 1).

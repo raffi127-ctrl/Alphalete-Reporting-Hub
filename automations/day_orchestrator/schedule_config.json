@@ -3773,6 +3773,54 @@
         "type": "not_configured"
       },
       "machine": "Lucy 1"
+    },
+    "dd_bulletin": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Weekly DD / Organization Bulletin (item 4 of the VA replacement). Builds BOTH pages from the 'Org DDs Ongoing Report' tab plus the per-leader ICD lists on 'Lucy Org Tree', folding in the week's Credico direct deposits. READ-ONLY — writes to no report tab, and sends NOTHING. Publishing is the separate dd_bulletin_send step. LUCY 1, because the Credico workbooks land there (run credico_fetch first, or the build reports Credico as not folded in and refuses to send). Thursday morning by 10am is the VA's slot; OFF the scheduler until Megan approves the first real send.",
+      "display_name": "DD Bulletin — build both pages",
+      "source_type": "sheet",
+      "data_sources": [],
+      "command": [
+        "automations.override_bulletin.dd_build"
+      ],
+      "base_args": [
+        "--png"
+      ],
+      "cadence": {
+        "weekdays": [
+          3
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
+    },
+    "dd_bulletin_send": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "DRY RUN of the DD Bulletin publish: builds both pages, resolves the three Slack channels and every email address, prints what would go where — and sends NOTHING. A real send needs --send typed on purpose, and is refused outright while any blocking problem stands (a leader off its published figure, a podium list failing its cross-check, Credico not folded in). Never put this on the scheduler with --send.",
+      "display_name": "DD Bulletin — preview the send (nothing goes out)",
+      "source_type": "sheet",
+      "data_sources": [],
+      "command": [
+        "automations.override_bulletin.send"
+      ],
+      "base_args": [
+        "--dd"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
     }
   },
   "read_only_standalone": {

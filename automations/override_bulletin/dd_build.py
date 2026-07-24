@@ -167,6 +167,30 @@ def _block_table(title, rows, weeks, first_hdr):
             f'{"".join(body)}</table>')
 
 
+def _credico(c):
+    """The second DD source, stated plainly on page 2.
+
+    Credico is 92-99% of these two owners' week, so whether it landed is not a
+    footnote — if it did not, the page says so instead of showing figures that
+    quietly lack it."""
+    if not c:
+        return ('<div class="sect">Credico</div><div class="note">Credico was '
+                'not read for this week — the two Credico owners\' figures are '
+                'whatever the DD tab holds.</div>')
+    if c.get("error"):
+        return (f'<div class="sect">Credico</div>'
+                f'<div class="note">NOT INCLUDED — {c["error"]}</div>')
+    rows = "".join(f'<tr><td>{l.split(" — ", 1)[0]}</td>'
+                   f'<td class="why">{l.split(" — ", 1)[-1]}</td></tr>'
+                   for l in c.get("lines", []))
+    notes = "".join(f'<div class="note">{n}</div>' for n in c.get("notes", []))
+    return (f'<div class="sect">Credico</div>'
+            f'<table><tr><th>Owner</th><th class="why">Credico direct deposits, '
+            f'week ending {c.get("week","")}</th></tr>{rows}</table>'
+            f'<div class="note">An owner\'s Credico figure is their WHOLE office, '
+            f'not their own agent rows.</div>{notes}')
+
+
 def page1(d):
     weeks = d["weeks"]
     return f"""<!doctype html><html><head><meta charset="utf-8">
@@ -215,6 +239,7 @@ def page2(d):
 <table><tr><th>ICD</th><th>Campaign</th><th>Org</th><th>Total DD 2026</th>{ths}</tr>
 {"".join(body)}</table>
 {extra}
+{_credico(d.get("credico"))}
 <div class="foot">{FOOTER}</div>
 </body></html>"""
 
@@ -229,13 +254,18 @@ def build(out_dir: Path = OUT_DIR, data=None):
           f"headline {_fmt(d['headline'])}, {d['org_count']} ICDs, "
           f"{len(d['podium'])} leaders")
     # Never publish a silent gap: anything the data layer couldn't resolve is
-    # printed here and belongs in the run email before this goes out.
+    # printed here and belongs in the run email before this goes out. A ✗ is one
+    # send.py will refuse on; a · is something it will publish with a label.
+    blocking = d.get("blocking") or []
     for msg in d.get("problems") or []:
-        print(f"  ⚠ {msg}")
+        print(f"  {'✗' if msg in blocking else '·'} {msg}")
     return p1, p2
 
 
-def render_png(paths=None, out_dir: Path = OUT_DIR):
+def render_png(paths=None, out_dir: Path = OUT_DIR, stem="dd-bulletin"):
+    """Render each page to a full-height PNG. `stem` names the files — send.py
+    passes a week-labelled one so what lands in Slack and in the inbox is named
+    for the week it covers rather than 'dd-bulletin-1.png'."""
     from patchright.sync_api import sync_playwright
     paths = paths or (out_dir / "dd-bulletin-1.html", out_dir / "dd-bulletin-2.html")
     outs = []
@@ -243,7 +273,7 @@ def render_png(paths=None, out_dir: Path = OUT_DIR):
         b = p.chromium.launch(headless=True)
         pg = b.new_page(viewport={"width": 1180, "height": 1200}, device_scale_factor=2)
         for i, hp in enumerate(paths, 1):
-            png = out_dir / f"dd-bulletin-{i}.png"
+            png = out_dir / f"{stem}-{i}.png"
             pg.goto(Path(hp).resolve().as_uri(), wait_until="networkidle")
             pg.wait_for_timeout(400)
             pg.screenshot(path=str(png), full_page=True)

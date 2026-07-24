@@ -5,28 +5,32 @@ weekly figure (override_bulletin/DD_SOURCES.md). Two things about it bite:
 
   * THE DATE RUNS ONE WEEK FORWARD. Week ending 3.22 is pulled as Saturday the
     28th. `dd_rows.credico_saturday()` owns that rule — never hand-pick a date.
-  * IT REPORTS BY COMPANY, not by person (`Able Acquisitions` → Abel Draper).
-    Those owners are often missing from the main DD list entirely and have to be
-    ADDED, so an unmapped company is somebody's money going missing. Nothing is
-    dropped silently — `dd_rows.to_owners()` returns what it couldn't place.
+  * IT REPORTS BY COMPANY, not by person (`Abyl Acquisition Group` → Abel
+    Draper). Those owners are often missing from the main DD list entirely and
+    have to be ADDED, so an unmapped office is somebody's money going missing.
+    Nothing is dropped silently — an office with no owner mapping is reported in
+    `pull()`'s notes and raises if NONE of them map.
+
+AN OWNER'S CREDICO DD IS THE WHOLE OFFICE, not their own agent rows. Settled
+against the VA's tab (DD_SOURCES.md, "RECONCILED AGAINST THE VA TAB"): Abel's own
+agent rows come to $484 against a tab figure of $6,578, while his office comes to
+$6,058 — the office total is what the tab was built from. `pull()` returns office
+totals for that reason; the per-agent split rides along for a human to look at.
 
 Row cleanup (LEDGER rows, blank-name continuation rows, +/- cancellation pairs)
 is shared with the Tableau crosstab and lives in `override_bulletin/dd_rows.py`.
 
-STATUS: the session + date + parse + merge path are done and tested. The page
-extraction is NOT — nobody has looked at the Reports screen yet, and guessing
-selectors for an SPA is how these break silently. Run discovery first, ON LUCY 1
-(that is where the saved Credico session lives):
+STATUS: end to end on real data, ON LUCY 1 (that is where the saved Credico
+session lives). The usual order, all read-only on Credico's side:
 
-    python -m automations.credico.report --discover
+    lucy rerun credico_fetch        # download the week's Fee Report file(s)
+    lucy rerun credico_parse        # per-owner amounts out of them
+    lucy rerun credico_reconcile    # match them against the VA's DD tab
 
-`lucy rerun credico_check` already verifies the session. There is no
-`credico_discover` lucy action yet — adding one is a copy of the `credico_check`
-block in day_orchestrator/schedule_config.json with this module and `--discover`.
-
-It dumps the screen's structure to stdout AND to the `_credico_discover` tab of
-the override workbook, so the result is readable from any machine — the same
-pattern override_bulletin/discover.py uses.
+`dd_data.load()` then folds the result into the bulletin. `--discover` /
+`--deep` remain for when the Reports screen changes: they dump the screen's
+structure to stdout AND to the `_credico_discover` tab of the override workbook,
+so the result is readable from any machine.
 """
 from __future__ import annotations
 
@@ -36,7 +40,7 @@ from pathlib import Path
 
 from automations.credico.session import BASE, credico_session
 from automations.override_bulletin.dd_rows import (COMPANY_TO_OWNER, credico_saturday,
-                                                   normalize, summarize, to_owners)
+                                                   normalize, summarize)
 
 REPORTS_URL = f"{BASE}/#/dashboard/sales-management"
 WORKBOOK_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
@@ -560,7 +564,10 @@ def reconcile(week_label="7.19.26", verbose=True):
     if not files:
         rows.append(["(none)", "", f"no workbook for {saturday:%Y-%m-%d} — run credico_fetch"])
 
-    d = D.load(aliases=aliases)
+    # credico=False: this function IS the comparison against the raw tab, so the
+    # tab must be read exactly as the VA left it — a fold-in here would compare
+    # Credico against a figure that already had Credico added to it.
+    d = D.load(aliases=aliases, credico=False)
     tab = {r["key"]: r for r in d["icds"]}
     for f in files:
         office, entries, total = parse_workbook(f, verbose=False)
@@ -638,31 +645,78 @@ def _dump_to_sheet(rows):
               range_name=f"A1:C{len(rows)}", value_input_option="RAW")
 
 
-def pull(week_label, page=None, aliases=None, verbose=True):
-    """{owner_key: credico_dd} for a sheet week, plus the lines a human must see.
+def office_totals(saturday, verbose=True):
+    """Per-OFFICE Credico figures for a report Saturday, one per downloaded file.
 
-    Returns (owners, notes). Raises rather than returning an empty dict — a
-    silent {} would zero every Credico owner's week and look like a real result.
+    Each entry is {'office','owner','total','agents','notes'}. `total` is the
+    workbook's own net of `TransAmt` — that is the figure the VA tab was
+    reconciled against (Abyl $6,058.00), so it is the number that gets added and
+    nothing in it is re-derived. Row hygiene still runs, but only to PRODUCE THE
+    NOTES: merges and +/- cancellations are net-neutral, so they cannot move the
+    office total, and running them means a human still sees what the file did.
+    """
+    out = []
+    for f in sorted(OUT.glob(f"{saturday:%Y-%m-%d}_*.xlsx")):
+        office, entries, total = parse_workbook(f, verbose=verbose)
+        clean, report = normalize([{"name": e["name"], "amount": e["amount"]}
+                                   for e in entries])
+        owner = COMPANY_TO_OWNER.get(_ckey(office))
+        notes = [f"{office}: {n}" for n in summarize(clean, report)]
+        if owner is None:
+            # An unmapped office is somebody's money going missing — say so
+            # rather than quietly returning a short total.
+            notes.append(f"⚠ '{office}' (${total:,.2f}) has no owner in "
+                         f"COMPANY_TO_OWNER — NOT added to anyone's week")
+        out.append({"office": office, "owner": owner, "total": total,
+                    "file": f.name, "notes": notes,
+                    "agents": {g["name"]: g["amount"] for g in clean}})
+    return out
+
+
+def pull(week_label, page=None, aliases=None, verbose=True):
+    """{owner name: credico_dd} for a sheet week, plus the lines a human must see.
+
+    AN OWNER'S CREDICO DD IS THE WHOLE OFFICE, not their own agent rows. Settled
+    against the VA tab (DD_SOURCES.md): Abel's own agent rows come to $484 against
+    a tab figure of $6,578, while his office comes to $6,058 — the office total is
+    what the tab was built from. So the office total is what is returned, and the
+    per-agent split rides along in `offices` for a human to look at, never as the
+    amount that gets added.
+
+    Returns (owners, notes, offices), keyed by owner NAME as the DD tab spells it
+    — the caller resolves it through ICD Aliases with its own key function, so a
+    key built here can never drift from the one the tab is indexed by.
+
+    Raises rather than returning an empty dict — a silent {} would zero every
+    Credico owner's week and look like a real result.
     """
     saturday = credico_saturday(week_label)
     if verbose:
         print(f"-> credico: week {week_label} → report date {saturday:%Y-%m-%d} "
               f"(one week forward — the FOLLOWING Saturday)", flush=True)
-    raw = _extract(saturday, page=page, verbose=verbose)
-    if not raw:
+    offices = office_totals(saturday, verbose=verbose)
+    if not offices:
         raise RuntimeError(
-            f"no Credico rows for {saturday:%Y-%m-%d}. Not treating that as $0 — "
-            f"run `python -m automations.credico.report --discover` on Lucy 1 and "
-            f"wire _extract() to what the page actually shows.")
-    entries, report = normalize(raw)
-    owners, unmapped = to_owners(entries, aliases=aliases)
-    notes = summarize(entries, report, unmapped)
+            f"no Credico workbook for {saturday:%Y-%m-%d} in {OUT}. Not treating "
+            f"that as $0 — fetch it first, ON LUCY 1:\n    lucy rerun credico_fetch")
+    owners, notes = {}, []
+    for o in offices:
+        notes.extend(o["notes"])
+        if not o["owner"]:
+            continue
+        owners[o["owner"]] = round(owners.get(o["owner"], 0.0) + o["total"], 2)
+    if not owners:
+        raise RuntimeError(
+            f"{len(offices)} Credico office file(s) for {saturday:%Y-%m-%d} but "
+            f"none maps to an owner: "
+            f"{', '.join(o['office'] or o['file'] for o in offices)}. Add the "
+            f"office to COMPANY_TO_OWNER in override_bulletin/dd_rows.py.")
     if verbose:
-        print(f"-> credico: {len(raw)} raw row(s) → {len(entries)} owner(s), "
+        print(f"-> credico: {len(offices)} office(s) → {len(owners)} owner(s), "
               f"${sum(owners.values()):,.2f}")
         for n in notes:
             print(f"   · {n}")
-    return owners, notes
+    return owners, notes, offices
 
 
 def parse_workbook(path, verbose=True):
@@ -719,24 +773,19 @@ def parse_workbook(path, verbose=True):
     return office, entries, round(total, 2)
 
 
-def _extract(saturday, page=None, verbose=True):
-    """Rows for that Saturday, as [{'name','amount'}] — from the downloaded
-    workbooks. `fetch_week()` puts them in output/credico/ named `<date>_...`."""
-    files = sorted(OUT.glob(f"{saturday:%Y-%m-%d}_*.xlsx"))
-    if not files:
-        raise RuntimeError(
-            f"no Credico workbook for {saturday:%Y-%m-%d} in {OUT}. Fetch it "
-            f"first, ON LUCY 1:\n    lucy rerun credico_fetch\n"
-            f"(the download needs the saved Credico session)")
-    rows = []
-    for f in files:
-        office, entries, total = parse_workbook(f, verbose=verbose)
-        # The office IS the owner's company, so the office name rides along as a
-        # fallback row-name: if an agent is unknown, the office still maps to an
-        # owner rather than the money vanishing.
-        for e in entries:
-            rows.append({"name": e["name"] or office, "amount": e["amount"]})
-    return rows
+def current_week():
+    """The newest week label on the DD tab, e.g. '7.19.26'.
+
+    Every --week default used to be a hard-coded '7.19.26', which is fine the
+    week it is written and fetches a stale file every week after. The sheet's
+    own header row says which week is current, so ask it."""
+    from automations.override_bulletin import dd_data as D
+    from automations.recruiting_report import fill as _fill
+    ws = _fill._client().open_by_key(WORKBOOK_ID).worksheet(D.DD_TAB)
+    for h in ws.row_values(1):
+        if D._WEEK_RE.match((h or "").strip()):
+            return h.strip()
+    raise RuntimeError(f"no week column on {D.DD_TAB!r} — cannot pick a week")
 
 
 def main(argv=None):
@@ -756,26 +805,30 @@ def main(argv=None):
     ap.add_argument("--week", help="sheet week label, e.g. 7.19.26")
     a = ap.parse_args(argv)
     if a.reconcile:
-        reconcile(a.week or "7.19.26")
+        reconcile(a.week or current_week())
         return 0
     if a.inspect:
         inspect()
         return 0
     if a.fetch:
-        fetch_week(a.week or "7.19.26")
+        fetch_week(a.week or current_week())
         return 0
     if a.deep:
-        discover_deep(a.week or "7.19.26")
+        discover_deep(a.week or current_week())
         return 0
     if a.discover:
         discover()
         return 0
     if a.week:
         try:
-            owners, _ = pull(a.week)
-        except NotImplementedError as e:
+            owners, _notes, offices = pull(a.week)
+        except RuntimeError as e:
             print(f"✗ {e}")
             return 1
+        for o in offices:
+            print(f"  {o['office'][:34]:36} ${o['total']:>12,.2f}  → "
+                  f"{o['owner'] or '(UNMAPPED)'}")
+        print()
         for k, v in sorted(owners.items(), key=lambda kv: -kv[1]):
             print(f"  {k:28} ${v:>12,.2f}")
         return 0

@@ -14,6 +14,10 @@ Rules live in DD_SOURCES.md. In short:
     those disagree by $41,962, and the published line is the subtraction)
   * headline total, AVG DD and Active Owners are ALREADY computed in the tab
     (rows 132 / 135-153 / 155-173) — read them, never recompute
+  * CREDICO is the second DD source and is ADDED to an owner's week — but only
+    where the tab does not already contain it (the VA folds it in by hand while
+    she still owns the tab). `_fold_credico` decides that per owner and reports
+    either way; an owner's Credico DD is the WHOLE OFFICE, not their agent rows
   * every name on both sides resolves through the shared ICD Aliases tab
 """
 from __future__ import annotations
@@ -87,8 +91,87 @@ def _cellf(r, i):
     return money(r[i]) if i < len(r) and (r[i] or "").strip() else None
 
 
-def load(ws=None, tree_ws=None, aliases=None):
-    """Everything the DD render needs. Returns a dict — see module docstring."""
+def _fold_credico(credico, week_label, by_key, aliases, problems, blocking):
+    """Add each owner's Credico DD to their week — or verify it is already there.
+
+    Credico is the second DD source (DD_SOURCES.md): its direct deposits are
+    ADDED to an owner's weekly figure, and an owner's Credico DD is the WHOLE
+    OFFICE. But the tab we read is the VA's, and while she is still filling it
+    she has already folded Credico in — for 7.19.26 Abel's cell is $6,578.00
+    against a $6,058.00 Credico office, the $520.00 gap being the Tableau part.
+    Adding on top of that would double-count her work.
+
+    So the tab decides, per owner, which of the two situations we are in:
+      * cell >= Credico  -> already folded in. Verify and report the split;
+        change nothing.
+      * cell <  Credico  -> the cell holds the Tableau part only, so ADD.
+        BLOCKING, because the headline is read off the tab and therefore does
+        NOT contain what we just added.
+      * no row at all    -> a Credico-only owner. Reported and rendered under
+        Tracked Separately, never folded silently into a total that lacks them.
+
+    Returns the render/report block, or None when Credico is switched off.
+    """
+    if credico is False or credico is None:
+        return None
+    info = {"week": week_label, "lines": [], "notes": [], "offices": [],
+            "owners": {}, "added": 0.0, "missing": []}
+    if credico is True or credico == "auto":
+        try:
+            from automations.credico import report as C
+            owners, notes, offices = C.pull(week_label, aliases=aliases,
+                                            verbose=False)
+        except Exception as e:  # noqa: BLE001
+            msg = (f"Credico is NOT folded in ({type(e).__name__}: "
+                   f"{str(e).splitlines()[0][:160]}) — on Lucy 1 run "
+                   f"`lucy rerun credico_fetch` first")
+            problems.append(msg)
+            blocking.append(msg)
+            info["error"] = msg
+            return info
+    else:
+        owners, notes, offices = credico, [], []
+    info["notes"], info["offices"], info["owners"] = list(notes), offices, dict(owners)
+
+    for owner, amt in sorted(owners.items(), key=lambda kv: -kv[1]):
+        row = by_key.get(_key(owner, aliases))
+        if row is None:
+            info["missing"].append({"owner": owner, "amount": amt})
+            msg = (f"{owner}: ${amt:,.2f} of Credico DD but NO row on the DD tab "
+                   f"— not in the organization total; shown under Tracked "
+                   f"Separately so the money stays visible")
+            problems.append(msg)
+            blocking.append(msg)
+            info["lines"].append(f"{owner} — ${amt:,.2f}, no row on the DD tab")
+            continue
+        cell = row["weeks"][0]
+        if cell + 0.5 >= amt:
+            row["credico"] = amt
+            info["lines"].append(
+                f"{row['name']} — ${cell:,.2f} already includes Credico "
+                f"${amt:,.2f} (Tableau part ${cell - amt:,.2f})")
+        else:
+            row["weeks"][0] = round(cell + amt, 2)
+            row["credico"] = amt
+            row["credico_added"] = amt
+            info["added"] = round(info["added"] + amt, 2)
+            info["lines"].append(
+                f"{row['name']} — ${cell:,.2f} on the tab + ${amt:,.2f} Credico "
+                f"= ${row['weeks'][0]:,.2f} (ADDED)")
+            msg = (f"{row['name']}: the tab shows ${cell:,.2f} but Credico alone "
+                   f"is ${amt:,.2f}, so Credico was ADDED (${row['weeks'][0]:,.2f}). "
+                   f"The ORG. TOTAL DD headline is read off the tab and does NOT "
+                   f"contain that ${amt:,.2f}")
+            problems.append(msg)
+            blocking.append(msg)
+    return info
+
+
+def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
+    """Everything the DD render needs. Returns a dict — see module docstring.
+
+    `credico` is "auto" (pull it, and report rather than crash if it isn't there),
+    False (skip it), or a ready-made {owner name: amount} dict for testing."""
     from automations.recruiting_report import fill as _fill
     if ws is None or tree_ws is None:
         sh = _fill._client().open_by_key(WORKBOOK_ID)
@@ -116,10 +199,19 @@ def load(ws=None, tree_ws=None, aliases=None):
         icds.append(row)
         by_key[row["key"]] = row
 
+    # `blocking` is the subset of `problems` that must stop a SEND — a figure we
+    # know is wrong, as opposed to one we know is incomplete and label as such.
+    problems, blocking = [], []
+
     # ---- the headline, read straight off the pre-computed 'Total - Raf' row
     headline = next((money(r[wk_cols[0][0]]) for r in vals
                      if r and "total - raf" in (r[0] or "").strip().lower()
                      and wk_cols[0][0] < len(r)), None)
+
+    # ---- Credico, the second DD source, BEFORE the podium: a topped-up week
+    # has to reach the leader lists that sum it.
+    credico_info = _fold_credico(credico, weeks[0] if weeks else "", by_key,
+                                 aliases, problems, blocking)
 
     # ---- the podium: per-leader ICD LISTS off `Lucy Org Tree`, summed directly.
     # Not derivable from the Org Tree or the ORG column (a previous build burned
@@ -138,7 +230,7 @@ def load(ws=None, tree_ws=None, aliases=None):
              "note": (r[4] or "").strip() if len(r) > 4 else "",
              "adoption": ((r[5] or "").strip().upper() == "YES") if len(r) > 5 else False})
 
-    podium, problems = [], []
+    podium = []
     for r in _labelled_block(tvals, LEADERS_LABEL, skip=1):
         name = (r[0] or "").strip()
         if not name:
@@ -177,8 +269,10 @@ def load(ws=None, tree_ws=None, aliases=None):
                                     f"the card says 'partial'")
             else:
                 missing.append(item["icd"])
-                problems.append(f"{name}: '{item['icd']}' has no DD row and no "
-                                f"manual amount — counted as $0")
+                msg = (f"{name}: '{item['icd']}' has no DD row and no manual "
+                       f"amount — counted as $0")
+                problems.append(msg)
+                blocking.append(msg)
         podium.append({"name": name, "loc": (r[1] or "").strip() if len(r) > 1 else "",
                        "minus": minus, "list_week": round(wk, 2),
                        "week": round(wk, 2), "total": round(tot, 2),
@@ -213,22 +307,29 @@ def load(ws=None, tree_ws=None, aliases=None):
         p["direct"] = direct
         p["direct_n"] = sum(1 for r in icds if r["key"] not in gone)
         if abs(direct - p["week"]) > 0.5:
-            problems.append(
-                f"{p['name']}: headline-minus gives ${p['week']:,.2f} but adding "
-                f"up the {p['direct_n']} ICDs on no subtracted list gives "
-                f"${direct:,.2f} — a list is wrong")
+            msg = (f"{p['name']}: headline-minus gives ${p['week']:,.2f} but "
+                   f"adding up the {p['direct_n']} ICDs on no subtracted list "
+                   f"gives ${direct:,.2f} — a list is wrong")
+            problems.append(msg)
+            blocking.append(msg)
 
     for p in podium:
         if p["expected_week"] is not None and abs(p["week"] - p["expected_week"]) > 0.5:
-            problems.append(f"{p['name']}: computed ${p['week']:,.2f} but the "
-                            f"bulletin says ${p['expected_week']:,.2f} "
-                            f"(off ${p['week'] - p['expected_week']:,.2f})")
+            msg = (f"{p['name']}: computed ${p['week']:,.2f} but the bulletin "
+                   f"says ${p['expected_week']:,.2f} "
+                   f"(off ${p['week'] - p['expected_week']:,.2f})")
+            problems.append(msg)
+            blocking.append(msg)
         if p["expected_n"] is not None and p["n_icds"] and p["n_icds"] != p["expected_n"]:
+            # Count only — Carlos's list computes to the penny with 19 names
+            # against a bulletin count of 18, and the count is rendered nowhere.
             problems.append(f"{p['name']}: {p['n_icds']} ICDs listed, bulletin "
                             f"says {int(p['expected_n'])}")
         if not p["n_icds"] and not p["minus"]:
-            problems.append(f"{p['name']}: no ICD list on {TREE_TAB!r} — "
-                            f"transcribe it from the bulletin")
+            msg = (f"{p['name']}: no ICD list on {TREE_TAB!r} — transcribe it "
+                   f"from the bulletin")
+            problems.append(msg)
+            blocking.append(msg)
     podium.sort(key=lambda d: -d["week"])
     def _block(start):
         rows = []
@@ -260,9 +361,18 @@ def load(ws=None, tree_ws=None, aliases=None):
                             "weeks": [item["manual_week"]] + [""] * (len(weeks) - 1),
                             "why": f"On {p['name'].split()[0]}'s podium list; no DD "
                                    f"row on the tab, so not in the organization total."})
+    # A Credico owner with no DD row is the third way money can sit outside the
+    # roll-up. DD_SOURCES: "these owners are often absent from the main list and
+    # must be ADDED" — so they are SHOWN rather than dropped, and flagged above.
+    for m in (credico_info or {}).get("missing", []):
+        tracked.append({"name": m["owner"], "campaign": "Credico", "org": "",
+                        "total": "", "weeks": [m["amount"]] + [""] * (len(weeks) - 1),
+                        "why": "Credico office DD; no row on the DD tab, so not "
+                               "in the organization total."})
     return {"weeks": weeks, "icds": icds, "podium": podium, "headline": headline,
             "avg": avg, "active_owners": active, "tracked_separately": tracked,
-            "org_count": len(icds), "problems": problems}
+            "org_count": len(icds), "problems": problems, "blocking": blocking,
+            "credico": credico_info}
 
 
 if __name__ == "__main__":
@@ -285,7 +395,16 @@ if __name__ == "__main__":
         tt = f"${tt:,.2f}" if isinstance(tt, (int, float)) else str(tt or "—")
         print(f"  {t['name'][:40]:42} {wk:>13}   2026 {tt:>15}   {t['why']}")
     print(f"\nAVG DD rows: {len(d['avg'])}   Active-owner rows: {len(d['active_owners'])}")
+    c = d.get("credico")
+    print("\ncredico: " + ("not folded in" if not c else
+                           (c.get("error") or f"week {c['week']}, "
+                            f"{len(c['offices'])} office(s)")))
+    for line in (c or {}).get("lines", []):
+        print(f"  · {line}")
+    for line in (c or {}).get("notes", []):
+        print(f"  · {line}")
     if d["problems"]:
-        print(f"\n⚠ {len(d['problems'])} thing(s) to look at:")
+        print(f"\n⚠ {len(d['problems'])} thing(s) to look at "
+              f"({len(d['blocking'])} would BLOCK a send):")
         for p in d["problems"]:
-            print(f"  · {p}")
+            print(f"  {'✗' if p in d['blocking'] else '·'} {p}")
