@@ -180,15 +180,28 @@ amounts (Abel $474, Yerailis Cuevas-Castillo $395, Yehonatan Bennaim $355, …).
 `pull()` raises rather than returning an empty dict — a silent `{}` would zero
 every Credico owner's week and look like a real result.
 
+### RECONCILED AGAINST THE VA TAB (Megan: "you should be matching the VA tab")
+`lucy rerun credico_reconcile` matches each office against `Org DDs Ongoing
+Report`, which already reflects however the VA folds Credico in. Week 7.19.26:
+
+| Office | Credico office total | VA tab cell | Gap |
+|---|---|---|---|
+| Abyl Acquisition Group → **Abel Draper** | $6,058.00 | $6,578.00 | **$520.00** |
+| Phoenix Acquisition Group → **Jahvid Thompson** | $11,978.00 | $12,068.00 | **$90.00** |
+
+**Settled: an owner's Credico DD is the WHOLE OFFICE**, not just their own agent
+rows. Those rows are tiny — Abel $484, Jahvid $360 — and would leave gaps of
+$6,094 / $11,708. The office total leaves $520 / $90, which is the Tableau
+portion Credico is ADDED to. Credico is 92–99% of these two owners' weekly DD,
+so getting it wrong would gut both numbers.
+
+Practical consequence: the Credico owners really are near-absent from the main
+DD source, exactly as DD_SOURCES said — their week is essentially the Credico
+file. Both offices now download (the fetch re-navigates per office rather than
+unwinding history, which is why only the first one used to come back).
+
 ### Open, and worth Megan's eye
-1. **Only 1 of the 2 offices downloaded.** Phoenix Acquisition needs the
-   back-navigation depth checked (the file level added a step).
-2. **Which figure is the DD?** The office Grand Total ($6,058 net) is the
-   obvious candidate, but the per-agent rows sum to the same pot — so is an
-   owner's Credico DD the whole office, or only their own agent rows? The VA
-   maps company→owner, which says whole office. Confirm before this feeds a
-   published number.
-3. **The period is worth a sanity check.** The file for Saturday 2026-07-25 is
+1. **The period is worth a sanity check.** The file for Saturday 2026-07-25 is
    headed "Jul 19 - Jul 25 2026" and its rows carry `SaleWeek` values from JUNE
    (816: Jun 14-20). So the one-week-forward rule lands on a commission week
    that PAYS sales from weeks earlier. That is the VA's documented rule and it
