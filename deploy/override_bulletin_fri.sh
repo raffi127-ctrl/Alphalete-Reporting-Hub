@@ -31,11 +31,18 @@ export _PYTHON_DEFAULT_USE_POSIX_SPAWN=1
 export NO_COLOR=1
 export PYTHONPATH="$(pwd)"
 
-# Writes the SANDBOX tab by default. --force because that tab is dirty from build
-# testing, so the "already filled" gate would otherwise hold on stale test values.
-# Pass "--dry" to this wrapper to preview without writing.
-MODE="--write --force"
-[ "${1:-}" = "--dry" ] && MODE="--force"
+# Writes the SANDBOX tab by default. Pass "--dry" to preview without writing.
+#
+# NO --force. It was here while the sandbox was dirty from build testing, but it
+# defeats the whole point of the fill-gate: the run targets the newest week the
+# ORG Override Summary carries, and that source LAGS — on Fri 2026-07-24 its
+# newest was still 7.12, a week already filled. With --force every pass "refills"
+# that finished week instead of holding for the one we actually want, overwriting
+# good values with a fresh pull each time. Holding is the correct outcome until
+# the summary publishes the new week. The sandbox was cleaned 2026-07-23
+# (`run.py --clear-week`), so there is nothing left for --force to work around.
+MODE="--write"
+[ "${1:-}" = "--dry" ] && MODE=""
 
 LOG_FILE="$LOG_DIR/override-bulletin-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] override-bulletin starting (mode: $MODE)" > "$LOG_FILE"
@@ -43,7 +50,11 @@ echo "[$(date)] override-bulletin starting (mode: $MODE)" > "$LOG_FILE"
 "$VENV_PY" -u -m automations.override_bulletin.run $MODE >> "$LOG_FILE" 2>&1
 ST=$?
 
-# A hold (Override Summary hasn't published the week yet) exits 0 — it's a correct
-# outcome, not a failure; the next scheduled pass simply tries again.
+# A HOLD (the Override Summary hasn't published the week yet) already exits 0
+# inside run.py — a correct outcome, not a failure, so the next pass just tries
+# again quietly. Anything else IS a failure and must surface: today (Fri
+# 2026-07-24) two Tableau views stopped exporting, the run died, and this
+# unconditional `exit 0` reported it as a clean pass, so nothing alerted and no
+# email went out. Propagate the real status — a hold stays silent, a crash pages.
 echo "[$(date)] override-bulletin finished exit=$ST" >> "$LOG_FILE"
-exit 0
+exit $ST
