@@ -22,7 +22,7 @@ import datetime as dt
 
 from . import config
 from . import sheets
-from .applicantstream import session
+from .applicantstream import OfficeNotAvailable, session
 
 # --- Hub card identity (the pill counts successful runs by this id) ---
 CARD_ID = "applicant-tracker-sync"
@@ -181,6 +181,7 @@ def run(phase: str, target: dt.date | None = None) -> None:
     ws_call = sheets.open_tab(config.TAB_CALL_LIST) if phase == "morning" else None
 
     failed: list[str] = []
+    no_access: list[str] = []
     with session() as app:
         for office_id in config.OFFICE_IDS:
             print(f"[{office_id}] selecting office...")
@@ -189,6 +190,12 @@ def run(phase: str, target: dt.date | None = None) -> None:
                     _morning_office(app, ws_call, ws_2r, office_id, header)
                 else:
                     _evening_office(app, ws_2r, office_id, header)
+            except OfficeNotAvailable as e:
+                # Kept apart from `failed`: this one will fail identically every
+                # night until somebody grants access or drops the id, so it must
+                # not read as a flaky run you can just re-kick.
+                no_access.append(str(office_id))
+                print(f"  ⛔ [{office_id}] NO ACCESS: {e}")
             except Exception as e:  # noqa: BLE001 -- one office must not sink the rest
                 failed.append(str(office_id))
                 print(f"  ! [{office_id}] error: {type(e).__name__}: {str(e)[:120]}")
@@ -197,9 +204,14 @@ def run(phase: str, target: dt.date | None = None) -> None:
     # tail actually shows it. Per-office errors are swallowed above so one bad
     # office can't sink the other 16; without this line that isolation also
     # hides them.
+    total = len(config.OFFICE_IDS)
     if failed:
-        print(f"!! {len(failed)} of {len(config.OFFICE_IDS)} office(s) did NOT "
-              f"sync: {', '.join(failed)}")
+        print(f"!! {len(failed)} of {total} office(s) did NOT sync: "
+              f"{', '.join(failed)}")
+    if no_access:
+        print(f"!! {len(no_access)} of {total} office(s) are NOT VISIBLE to this "
+              f"login ({config.__name__} OFFICE_IDS): {', '.join(no_access)} — "
+              "this repeats nightly until access is granted or the id is removed")
 
     # Report completion for the Hub pill (orange after morning, green after
     # evening). Only real (non-dry) runs count toward the daily 2.
@@ -210,12 +222,17 @@ def run(phase: str, target: dt.date | None = None) -> None:
     # only SUCCESS rows toward daily_runs, so a partial evening pass now leaves
     # the card amber 1/2 (its "ran, but some parts missed" state) instead of a
     # green tile hiding silent gaps.
+    #
+    # An unreachable office counts as partial too: an office we EXPECT to fill and
+    # don't is incomplete data, whoever's fault it is. That deliberately keeps the
+    # card amber until someone either grants the login access or removes the id —
+    # the alternative is a green card that quietly omits an office forever.
     if not sheets.DRY_RUN:
         try:
             from automations.shared import hub_activity
             hub_activity.log_completed(
                 CARD_ID, CARD_NAME,
-                status="partial" if failed else "success")
+                status="partial" if (failed or no_access) else "success")
         except Exception:
             pass
     print(f"=== {phase.upper()} phase done ===")

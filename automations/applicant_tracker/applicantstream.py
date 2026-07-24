@@ -51,6 +51,14 @@ BASE = "https://applicantstream.com/index.cfm"
 PAGES = {"calendar": 102, "call_list": 501, "retention_details": 701}
 
 
+class OfficeNotAvailable(Exception):
+    """The office picker answered, but this login has no such office.
+
+    A roster/access gap, not a flaky page — so it is never retried, and it reads
+    as "get access or drop the id" instead of a bare TimeoutError.
+    """
+
+
 class ApplicantStream:
     def __init__(self, headless: bool | None = None):
         self.headless = config.HEADLESS if headless is None else headless
@@ -154,11 +162,17 @@ class ApplicantStream:
         browser-resource contention (several headless reports at once) the
         picker's click actionability check can hit the 30s timeout — a full
         17-office run saw many of these mid-day. Retry from a clean report page
-        so one slow click doesn't drop the whole office. Returns the owner name."""
+        so one slow click doesn't drop the whole office. Returns the owner name.
+
+        An OfficeNotAvailable is NOT retried: the picker answered, this account
+        just can't see that office. Retrying an access gap only turns a clear
+        answer into a slow, misleading timeout."""
         last = None
         for i in range(max(1, attempts)):
             try:
                 return self._select_office_once(office_id)
+            except OfficeNotAvailable:
+                raise                      # permanent — don't burn the retries
             except PWTimeout as e:
                 last = e
                 print(f"  ~ [{office_id}] select timeout, retry {i + 1}/{attempts}",
@@ -176,13 +190,33 @@ class ApplicantStream:
         box.fill("")
         box.type(str(office_id), delay=60)  # real keystrokes drive jQuery UI
         item = self.page.locator("ul.ui-autocomplete li", has_text=str(office_id)).first
-        item.wait_for(timeout=10000)
+        try:
+            item.wait_for(timeout=10000)
+        except PWTimeout:
+            # Two very different failures look identical here. If the dropdown
+            # rendered but holds no row for this id, the picker DID answer and
+            # this login simply has no such office — an access/roster gap that
+            # will never resolve by waiting (e.g. an office belonging to another
+            # company). Only a picker that never responded at all is transient.
+            if self._autocomplete_responded():
+                raise OfficeNotAvailable(
+                    f"office {office_id} is not in this account's office picker "
+                    "— check the login has access, or drop it from OFFICE_IDS")
+            raise
         # item text is "<id>\n<owner>\n<company>" -- second line is the owner
         parts = [p.strip() for p in item.inner_text().split("\n") if p.strip()]
         self.current_owner = parts[1] if len(parts) >= 2 else str(office_id)
         item.click()
         self.page.wait_for_load_state("networkidle")
         return self.current_owner
+
+    def _autocomplete_responded(self) -> bool:
+        """True if the picker rendered a dropdown with at least one row — i.e.
+        it answered our keystrokes, it just had no row matching the office."""
+        try:
+            return self.page.locator("ul.ui-autocomplete li").count() > 0
+        except Exception:  # noqa: BLE001 — a probe must never mask the real error
+            return False
 
     def open_retention_details(self):
         self.goto_page(PAGES["retention_details"])
