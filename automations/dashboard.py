@@ -3731,9 +3731,18 @@ AUTOMATED_REPORTS = [
         "run_machine": "Lucy 2",
         "run_rerun_id": "vantura_slack_sales",
         "self_scheduled": True,
+        # Fires 7x a day (5:00am + hourly 4:00-9:00pm). Without this the tile
+        # would go green on the 5am pass with all six evening passes still to
+        # come — and an evening the board never got filled would look identical
+        # to a good day. Amber "N/7" until the 9pm pass lands.
+        "daily_runs": 7,
         "schedule": {
             "frequency": "daily",
+            # Sortable START of the day's passes; time_label carries the real
+            # cadence, since a bare "5:00 AM" reads as if it fires once.
             "time": "5:00 AM",
+            "time_label": "5 AM + 4–9 PM hourly CST",
+            # Measured on Lucy 2: ~3s end to end (Slack read + sheet write).
             "estimated_minutes": 2,
         },
         "checklist": [],
