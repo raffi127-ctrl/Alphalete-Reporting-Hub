@@ -7,8 +7,15 @@ Cadence: VA builds it **Wednesday**, posts **Thursday morning by 10am**. Numbers
 were still moving Thursday morning, so she moved to building it very early
 Thursday instead. Goes to Slack **#alphalete-sales + #alphalete-lvl1-chat**
 (Megan also lists #rafs-office-recruiting) AND by email to **Alphalete Org
-Owners** + a 4-person **Bulletins** distro. A separate "Up and Coming RCs and
-NCs" email follows — email only, no Slack (NOT built).
+Owners** + a 4-person **Bulletins** distro.
+
+A separate **"Alphalete Up and Coming RCs and NCs"** email follows — email only,
+no Slack (**NOT built**). Inspected 2026-07-24: WE 7.19 went out 7/23 16:20, ~48
+minutes after the bulletin, to 61 addresses (the bulletin distro less a couple).
+The body is **a single inline PNG** — `Up and Coming RCs and NCs WE 7.19.png`,
+973×1139, no HTML table and no text at all. So there is nothing to parse out of
+the sent mail: building it means finding the source it was screenshotted from,
+the same way the bulletin's own tables had to be reconstructed.
 
 ## Data tab
 
@@ -34,7 +41,7 @@ Rodriguez, Natalia, John Richard Young, Tony, Trang, Tre Mitchell.
 New owners: Maud posts a "new owners coming up" message — that list is the
 authority for whether a new name counts. When in doubt, ask Maud/Megan.
 
-## ADOPTIONS — the rule, from Raf (email, shared 2026-07-24)
+## ADOPTIONS — the rule, from Raf (email **2026-03-10**, shared with us 07-24)
 
 **Karrington Moody** and **Milan Godbolt** sit under Colten's captainship but are
 **not part of the organization** ("adoptions"). The VA keeps a duplicate tab named
@@ -62,7 +69,25 @@ Raf's instructions for OUR reporting, and where each lands in the code:
 |---|---|
 | "Include the deals in the reporting." | They render on page 2 under **Tracked Separately**, with a per-row reason. |
 | "When adding up total units for 'My org' don't count adoptions that aren't mine, **only count them for the person receiving the double over ride**." | They are OUT of the ORG. TOTAL DD headline, and IN the podium list of whoever receives the override. |
-| "Future depth promotions shouldn't…" | *(cut off in the pasted copy — depth handling stays unwired)* |
+| "Future depth promotions shouldn't…" | *(unfinished — see below; depth stays unwired)* |
+
+**STOP LOOKING FOR THE REST OF THAT LINE.** Found in the original 2026-03-10
+thread (`Re: Alphalete Org Sales Board 3/9`, raffi127@ → Colten/Maud/Eve): Raf's
+own sent email ends the bullet mid-word — *"Future depth promotions shouldn't but
+pl"* — and goes straight on to "Hopefully this makes sense". Nothing was lost in
+the paste; he never finished the sentence, so no mailbox holds it.
+
+The substance is in the paragraph above it, in his words, and is enough to wire
+depth if it ever matters: *"when the adoption promotes someone, this individual
+will still not make a regional or national override off of the DEPTH promotions.
+But the adoption will count towards the qualifications for regional or national
+consultant."* Confirm with Raf before wiring — but ask about the RULE, not about
+what the email said.
+
+Same email, worth knowing before it surprises someone: **Colten is the org's
+first adoption case, and Raf says he expects one of his own — "technically i'll
+have Andrew Sanborn here soon."** When Andrew Sanborn appears, he is likely an
+adoption under Raf, not an organic ICD.
 
 ### The `Adoption?` column and the ORGANIC figure (Raf, 2026-07-24 14:36)
 On the bulletin thread, Eve asked whether Jairo could be added. Raf:
@@ -88,6 +113,12 @@ changes what we can SHOW, not what we count.
 **Jairo Ruiz is on the podium** as of 2026-07-24. His `Expected week DD` is
 deliberately BLANK — there is no published figure to check him against yet, and
 inventing one would fake the check that protects every other leader.
+
+**His list is confirmed by Jairo himself**, which is a better source than our
+reconstruction. Asking for the column (2026-07-24 11:56, on the bulletin thread):
+*"Hey guys can we add my name on a column. with: Myself / Drew Tepper / Frank
+Matos / Justin Fermin."* That is exactly the four rows on `PODIUM ORG LISTS`, in
+that order. So while his money is unchecked, his membership is not.
 
 ## CREDICO — a real second source
 
@@ -335,14 +366,36 @@ Gotchas the numbers pin down:
 Podium totals OVERLAP by design (a larger org contains smaller ones), so they sum
 to MORE than the org total.
 
+### SETTLED 2026-07-24 — Carlos's 19 names against the bulletin's 18
+**It is Benjamin Burden**, and the sent bulletins prove it without anyone being
+asked. Carlos's published figure for four weeks is on record in
+alphaletereporting@gmail.com — 7.19 $329,005.70, 7.12 $356,154.00, 7.5
+$354,791.10, 6.28 $360,328.88 — so each candidate can simply be dropped and the
+list re-summed:
+
+| Carlos's list | 7.19.26 | 7.12.26 | 7.5.26 | 6.28.26 |
+|---|---|---|---|---|
+| all 19 | **$329,005.70 ✓** | $353,657.00 | $353,389.10 | $358,123.88 |
+| minus David Martinez | **$329,005.70 ✓** | $352,355.00 | $340,165.10 | $341,572.88 |
+| minus Benjamin Burden | **$329,005.70 ✓** | $353,657.00 | $353,389.10 | $358,123.88 |
+
+Dropping Martinez costs $1,302 / $13,224 / $16,551 in the prior weeks, so he is
+on the list. Burden is $0 in **every week of 2026**, so he changes nothing and is
+the only remaining candidate. `Expected ICDs` for Carlos is now **19** with the
+proof in his Note, and the count warning is gone.
+
+**Also learned: only the CURRENT week reconciles to the published figure.** The
+three prior weeks sit $1,402–$2,497 BELOW what was sent, in the same direction
+every time — DD keeps settling downward after the bulletin goes out (the override
+backtrack sees the same drift on the VA's own columns). So a sent bulletin is a
+snapshot, not an answer key for a week that has moved since; `expected_week` is
+only ever checked against the newest week, which is correct.
+
 ### Still open on the podium — needs the VA's WORKING FILE, not the email
-None of these affect a published weekly figure; all three are flagged every run.
-1. Carlos's list computes right with 19 names but the count says **18** — one of
-   the two $0 people (David Martinez, Benjamin Burden) is not on it. The count is
-   not rendered anywhere, and the money is confirmed correct either way.
-2. The **adoptions are one line worth $27,399 combined**; the per-person split is
-   derived, not read. Also not rendered per person.
-3. **No 2026 totals** for Justin, Marcos or the adoptions. This one DOES show:
+Neither affects a published weekly figure; both are flagged every run.
+1. The **adoptions are one line worth $27,399 combined**; the per-person split is
+   derived, not read. Not rendered per person.
+2. **No 2026 totals** for Justin, Marcos or the adoptions. This one DOES show:
    Colten's card reads "(partial)" after his 2026 figure rather than printing a
    number we know is short. Note the 2026 line is OUR addition — the VA's
    bulletin shows the week only — so this is a nicety, not a defect.

@@ -321,10 +321,20 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
             problems.append(msg)
             blocking.append(msg)
         if p["expected_n"] is not None and p["n_icds"] and p["n_icds"] != p["expected_n"]:
-            # Count only — Carlos's list computes to the penny with 19 names
-            # against a bulletin count of 18, and the count is rendered nowhere.
-            problems.append(f"{p['name']}: {p['n_icds']} ICDs listed, bulletin "
-                            f"says {int(p['expected_n'])}")
+            # Count only, and never blocking — the money is checked separately
+            # and to the penny. Name the members worth $0 this week: a count
+            # that is off by N is almost always N people the VA left off her
+            # list because they earned nothing, and a bare "19 vs 18" sends the
+            # next person hunting through the whole list to work that out.
+            # (Carlos's was settled that way: Benjamin Burden, $0 all year.)
+            zeros = [i["icd"] for i in p["items"]
+                     if (by_key.get(_key(i["icd"], aliases)) or {}).get("weeks",
+                                                                       [1])[0] == 0]
+            problems.append(
+                f"{p['name']}: {p['n_icds']} ICDs listed, bulletin says "
+                f"{int(p['expected_n'])} — the money still reconciles"
+                + (f"; worth $0 this week, so the likeliest difference: "
+                   f"{', '.join(zeros)}" if zeros else ""))
         if not p["n_icds"] and not p["minus"]:
             msg = (f"{p['name']}: no ICD list on {TREE_TAB!r} — transcribe it "
                    f"from the bulletin")
