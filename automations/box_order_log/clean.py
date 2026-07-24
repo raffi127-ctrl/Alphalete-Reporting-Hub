@@ -68,9 +68,25 @@ JUNK_STATUSES = ("Draft",)
 # Carlos, 2026-07-18: "those that say verification TPV failed — those aren't
 # actual sales." In the same breath he went the other way on the neighbouring
 # one: "this incomplete, missing contract data, that one SHOULD be considered
-# a sale." So Incomplete stays (colored bright red — chase it);
-# only TPV Failed is dropped.
-DEAD_LEVELS = ("Verification – TPV Failed",)
+# a sale." So Incomplete stays (colored bright red — chase it).
+#
+# REJECTED QC added 2026-07-22 from the Smart Circle analyst's follow-up
+# (Alice Cao, acao@thesmartcircle.com): "some orders falling under Verification
+# are NOT counted as a complete sale if their sub-status is Rejected QC or TPV
+# Failed." Her first mail listed Verification wholesale as complete; this
+# carves out the two failure sub-states. Rejected QC does not appear in the
+# 2026-07-18 pull at all — the only Verification sub-statuses present are TPV
+# Passed (48), TPV Failed (20) and Requires TPV Review (2) — so nothing changes
+# today. It is here so the first one that DOES arrive isn't silently counted.
+
+# En-dash, matching the separator already in his sheet. Defined up here because
+# DEAD_LEVELS builds level strings with it.
+_LEVEL_SEP = " – "
+
+DEAD_VERIFICATION_SUBS = ("TPV Failed", "Rejected QC")
+
+DEAD_LEVELS = tuple("Verification" + _LEVEL_SEP + sub
+                    for sub in DEAD_VERIFICATION_SUBS)
 
 # THE TPV GATE — a deal is only a sale once it has REACHED TPV or beyond.
 #
@@ -139,6 +155,7 @@ LEVEL_PRIORITY = (
     "Verification – Requires TPV Review",
     "Submitted to Supplier",
     "Verification – TPV Failed",
+    "Verification – Rejected QC",
     "Cancelled by Broker",
     "Rejected",
     "Incomplete",
@@ -159,10 +176,6 @@ STATUS_PRIORITY = (
     "Dropped",
     "Draft",
 )
-
-# En-dash, matching the separator already in his sheet.
-_LEVEL_SEP = " – "
-
 
 def level(status: str, sub_status: str) -> str:
     """The fine-grained rank key: 'Verification – TPV Passed' vs plain status.

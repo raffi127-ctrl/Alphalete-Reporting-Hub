@@ -65,8 +65,10 @@ def _describe(sales, stats) -> str:
             stats.get("collapsed_rows", 0)),
     ]
     if stats.get("dropped_dead"):
-        lines.append("  {:>5} dropped (final state TPV Failed — not a sale)".format(
-            stats["dropped_dead"]))
+        # Names the sub-statuses from the constant so the two can't drift.
+        lines.append("  {:>5} dropped (final state {} — not a sale)".format(
+            stats["dropped_dead"],
+            " or ".join(clean.DEAD_VERIFICATION_SUBS)))
     if stats.get("dropped_never_reached_tpv"):
         lines.append("  {:>5} dropped (cancelled/rejected before ever reaching "
                      "TPV — not sales)".format(stats["dropped_never_reached_tpv"]))
