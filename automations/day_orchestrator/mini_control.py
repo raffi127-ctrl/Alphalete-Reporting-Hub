@@ -26,6 +26,10 @@ Actions:
   set_slack_user_token <tok>  install the 'Lucy' USER token (xoxp-…) — the one
                         channel/thread posts actually use
   set_gbp_token <json>  install the Google Business Profile OAuth token (gbp-token.json contents)
+  applicant_key [remove]  is the Applicant Tracker service-account key on THIS
+                        machine? `remove` deletes it + every .bak copy. Never
+                        prints key material. Re-push with
+                        set_applicant_service_account.
   restart_holder        relaunch the ownerville session-holder LaunchAgent
   reseed_appstream      open the AppStream login (a human clears Cloudflare)
 
@@ -83,7 +87,7 @@ DAILY_AUTORUN_CAP = 100
 # budget is meant to bound repeated REPORT runs (rerun), not deploy plumbing.
 PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_holder",
                     "pip_install", "playwright_install", "set_applicant_service_account",
-                    "watch_test", "diag", "set_sleep",
+                    "applicant_key", "watch_test", "diag", "set_sleep",
                     "set_slack_token", "set_gbp_token"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
@@ -792,6 +796,74 @@ def _action_set_applicant_service_account(args: str) -> tuple[bool, str]:
     return True, f"key installed + verified against the tracker ({data.get('client_email')})"
 
 
+def _applicant_key_files() -> list[Path]:
+    """The service-account key and EVERY backup copy of it. `.bak.<stamp>` files
+    are made by set_applicant_service_account on each install — they hold the
+    same private key, so any 'is the key here / get it off this box' answer that
+    ignores them is wrong."""
+    out = []
+    dest = REPO_ROOT / "applicant-tracker-service-account.json"
+    if dest.exists():
+        out.append(dest)
+    out.extend(sorted(REPO_ROOT.glob("applicant-tracker-service-account.json.bak.*")))
+    return out
+
+
+def _action_applicant_key(args: str) -> tuple[bool, str]:
+    """Report or REMOVE the Applicant Tracker service-account key on THIS runner.
+
+        applicant_key            (or `status`) read-only: is the key here?
+        applicant_key remove     delete the key AND every .bak copy
+
+    Why: the reports run on Lucy 1 as rcaptain, but the key was also pushed to
+    Lucy 2 while they were first built there. A credential should not outlive the
+    machine that needs it, and there was no way to even ASK a runner whether it
+    still had one.
+
+    NEVER echoes key material — only the service-account email, size and mtime.
+    `remove` is a real delete, not a rename: leaving a backup on the same box is
+    leaving the key on the box. It is recoverable — re-push with
+    set_applicant_service_account — so this is safe to run on a machine you are
+    not sure about.
+    """
+    import json
+
+    mode = (args or "status").strip().lower() or "status"
+    if mode not in ("status", "remove"):
+        return False, "applicant_key takes 'status' (default) or 'remove'"
+
+    files = _applicant_key_files()
+    if not files:
+        return True, "no Applicant Tracker key on this machine (nothing to remove)"
+
+    # Identify the key WITHOUT revealing it: the client_email is the useful bit.
+    who = "unknown"
+    try:
+        who = json.loads(files[0].read_text()).get("client_email") or "unknown"
+    except Exception:  # noqa: BLE001 — a corrupt/unreadable key still counts as present
+        pass
+    desc = ", ".join(
+        f"{f.name} ({f.stat().st_size}b, {dt.datetime.fromtimestamp(f.stat().st_mtime):%Y-%m-%d})"
+        for f in files)
+
+    if mode == "status":
+        return True, f"key PRESENT for {who} — {len(files)} file(s): {desc}"
+
+    removed, failed = [], []
+    for f in files:
+        try:
+            f.unlink()
+            removed.append(f.name)
+        except Exception as e:  # noqa: BLE001
+            failed.append(f"{f.name}: {str(e).splitlines()[0][:60]}")
+    if failed:
+        return False, (f"removed {len(removed)}, FAILED {len(failed)}: "
+                       f"{'; '.join(failed)}")
+    return True, (f"removed {len(removed)} key file(s) for {who}: "
+                  f"{', '.join(removed)} — re-push with "
+                  "set_applicant_service_account if this machine needs it back")
+
+
 def _action_update(args: str) -> tuple[bool, str]:
     """Deploy new code onto a runner AND keep it locked to `main`.
 
@@ -1346,6 +1418,7 @@ ACTIONS = {
     "pip_install": _action_pip_install,
     "playwright_install": _action_playwright_install,
     "set_applicant_service_account": _action_set_applicant_service_account,
+    "applicant_key": _action_applicant_key,
     "rerun": _action_rerun,
     "update": _action_update,
     "git_status": _action_git_status,
