@@ -148,8 +148,11 @@ def _mk_row(r, week_cols, year_cols, led):
     }
 
 
-def read_data():
+def read_data(tab=None):
     """Return (week_labels, section1, section2).
+
+    `tab` overrides the source tab so a build can preview off the SANDBOX copy
+    without touching the live one (default: the live tab).
 
     week_labels: recent dated columns newest-first (we show WOW_WEEKS of them).
     section1 = ALL ORG OVERRIDES — everyone with 2026 activity, ranked by 2026
@@ -157,7 +160,7 @@ def read_data():
     — the captain leaders, ranked by 2026 total desc. Each row carries `led`
     (org-head config or None), total, series (weekly), and years (2025/24/23)."""
     from automations.recruiting_report import fill as _fill
-    ws = _fill._client().open_by_key(WORKBOOK_ID).worksheet(TAB)
+    ws = _fill._client().open_by_key(WORKBOOK_ID).worksheet(tab or TAB)
     vals = ws.get_all_values()
     week_cols = _week_cols(vals[0])
     year_cols = _year_cols(vals[0])
@@ -409,8 +412,8 @@ def build_html(week_labels: list, section1: list, section2: list) -> str:
 </body></html>"""
 
 
-def build(out_dir: Path = OUT_DIR) -> Path:
-    week_labels, section1, section2 = read_data()
+def build(out_dir: Path = OUT_DIR, tab=None) -> Path:
+    week_labels, section1, section2 = read_data(tab)
     out_dir.mkdir(parents=True, exist_ok=True)
     html = build_html(week_labels, section1, section2)
     path = out_dir / "override-bulletin.html"
@@ -419,10 +422,6 @@ def build(out_dir: Path = OUT_DIR) -> Path:
     print(f"built {path}  (week {wk!r}; ALL ORG {len(section1)} rows, "
           f"CAPTAIN/SPECIAL {len(section2)} rows, {WOW_WEEKS}-week)")
     return path
-
-
-if __name__ == "__main__":
-    build()
 
 
 def render_png(html_path: Path | None = None, out_png: Path | None = None) -> Path:
@@ -442,3 +441,7 @@ def render_png(html_path: Path | None = None, out_png: Path | None = None) -> Pa
         b.close()
     print(f"rendered {out_png}")
     return out_png
+
+
+if __name__ == "__main__":
+    build()

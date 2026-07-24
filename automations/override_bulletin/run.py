@@ -228,7 +228,17 @@ def main(argv=None):
     ap.add_argument("--force", action="store_true",
                     help="refill the week even if the tab already has values for "
                          "it (overwrites mapped cells; deletes nothing)")
+    ap.add_argument("--clear-week", metavar="WEEK",
+                    help="blank this week's mapped cells so it can be filled "
+                         "again (sandbox only; needs --write to actually clear)")
     a = ap.parse_args(argv)
+    if a.clear_week:
+        from automations.recruiting_report import fill as _fill
+        ws = _fill._client().open_by_key(F.WORKBOOK_ID).worksheet(a.tab)
+        aliases = F.load_alias_map()
+        F.clear_week(ws, a.clear_week, F.read_roster(ws, aliases),
+                     F.read_captains(ws, aliases), dry_run=not a.write)
+        return 0
     _s1, _s2, un = run(a.week, tab=a.tab, write=a.write, verbose=not a.quiet,
                        force=a.force)
     # Holding is a CORRECT outcome, not a failure, so exit 0. launchd fires the

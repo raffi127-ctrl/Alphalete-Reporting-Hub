@@ -126,10 +126,60 @@ it's pending → leave the red `P#-2026` marker** and check again next week.
 Exact target cells + period→week placement to be pinned during the build by
 reconciling live pulls against the sheet.
 
+### The week roll has TWO header rows, not one
+
+Section 2 ("CAPTAIN/SPECIAL OVERRIDES ONLY") repeats the week headers over its
+own block. To `scaffold.plan` that repeated label looked like a typed value, so
+the roll CLEARED it — section 1 got the new week label and section 2's newest
+column was left blank. Fixed 2026-07-23: any row repeating the newest label is
+RELABELLED, not cleared (found by matching the label, never by row number).
+
+### A bad fill must be CLEARED, not overwritten
+
+`week_is_filled` gates the run, so a column holding a bad fill makes every later
+pass hold on "already filled" and the week never gets its real numbers. Use:
+
+    python -m automations.override_bulletin.run --tab "Copy of …" \
+        --clear-week 7.19.26 --write
+
+It blanks only the mapped cells (roster rows + captain/special sub-rows), leaving
+the `=SUM` structure, the header and every other week untouched. Live tab refused.
+
+## Verifying the numbers (verify.py)
+
+Coverage ("16 of 21 actives matched") proves we found a ROW, not the right
+NUMBER. `verify.py` pulls a week the VA already filled and diffs it cell-for-cell
+against her column on the LIVE tab — read-only, writes nothing:
+
+    python -m automations.override_bulletin.verify --week 7.12.26   # on Lucy 1
+
+This is the only check that covers the CAPTAIN/SPECIAL rows, where a captain's
+weekly figure is a SUM of several DD Captain's-Bonus lines (Eveliz 7.12 = the
+VA's `=2576+540`), so a parser that grabs one line instead of the sum looks
+perfectly healthy until the dollars are compared.
+
 ## Post-fill (already built / mapped)
 
-Sort ALL ORG by Total 2026 desc, render the bulletin (`build.py`), post to
-`#alphalete-sales` + `#rafs-office-recruiting`, email inline to the "Alphalete
-Org Owners" + "Bulletins" groups from alphaletereporting@ (subject
-"Alphalete Organization Override Bulletin WE m.d"). PNL-for-the-office posts
-right after (separate — `automations/pnl_office`).
+Sort ALL ORG by Total 2026 desc, render the bulletin (`build.py`), then publish
+with `send.py`. PNL-for-the-office posts right after (separate —
+`automations/pnl_office`).
+
+    python -m automations.override_bulletin.send             # DRY RUN (default)
+    python -m automations.override_bulletin.send --preview   # email Megan only
+    python -m automations.override_bulletin.send --send      # real distro
+
+* **Slack** — the rendered PNG to `#alphalete-sales` (C068PH3RFSM) and
+  `#rafs-office-recruiting` (C06881A7WLV), as Lucy (xoxp USER token via
+  `slack_metrics_post._client()`). `OVERRIDE_BULLETIN_CHANNEL_ID` redirects BOTH
+  to a scratch channel for a safe live test.
+* **Email** — from alphaletereporting@ to the "Alphalete Org Owners" +
+  "Bulletins" contact groups (63 addresses on 2026-07-23), subject
+  "Alphalete Organization Override Bulletin WE m.d".
+* **The email carries the PNG as one inline `cid:` image, not the bulletin
+  HTML.** `build_html` embeds the logo and headshots as `data:` URIs — right for
+  a local file and for the Slack render, but **Gmail strips `data:` image URIs
+  from received mail**, so the HTML body would arrive as broken images.
+* A missing contact group ABORTS the send rather than under-sending silently,
+  and an unfilled week is refused outright.
+* Sends are recorded per week (`~/.config/recruiting-report/override_bulletin_last_sent.txt`)
+  so the 25-minute launchd retries can't double-post to the whole org.

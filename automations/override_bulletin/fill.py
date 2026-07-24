@@ -193,6 +193,39 @@ def week_is_filled(ws, label, *, min_rows=3):
     return n >= min_rows
 
 
+def clear_week(ws, label, roster, captains, *, dry_run=True):
+    """Blank the cells THIS REPORT writes in `label`'s column, so the week can be
+    filled again from scratch.
+
+    Needed because `week_is_filled` gates the run: a column left holding a bad
+    fill (or, as happened on the sandbox, a copy of the previous week carried in
+    by the roll) makes every later pass HOLD on 'already filled' and the week
+    never gets its real numbers.
+
+    Only the mapped cells are touched — the same rows `assemble` would write.
+    Structural formulas (the =SUM leader rows, the Total row, the col-D year
+    total) and the week header are left alone, and no other week's column is read
+    or changed."""
+    header = ws.row_values(1)
+    idx = week_col(ws, label, header=header)
+    if idx is None:
+        raise ValueError(f"no column headed {label!r} on {ws.title!r}")
+    col = _col_letter(idx)
+    rows = sorted(
+        [r for r, _a, _d in roster.values()]
+        + [c[k] for c in captains.values() for k in ("captain", "special") if c.get(k)])
+    ranges = [f"{col}{r}" for r in rows]
+    if dry_run:
+        print(f"[dry-run] would clear {len(ranges)} cell(s) in column {col} "
+              f"({label}) on {ws.title!r}: {ranges[0]}…{ranges[-1]}")
+        return ranges
+    if ws.title == LIVE_TAB:
+        raise RuntimeError(f"refusing to clear the live tab {LIVE_TAB!r} — sandbox only")
+    ws.batch_clear(ranges)
+    print(f"cleared {len(ranges)} cell(s) in column {col} ({label}) on {ws.title!r}")
+    return ranges
+
+
 def _col_letter(idx0):
     s, n = "", idx0
     while True:

@@ -82,18 +82,28 @@ def plan(ws):
 
     col = _col_letter(newest_idx)
     formulas = ws.get(f"{col}1:{col}{ws.row_count}", value_render_option="FORMULA")
-    keep, clear = [], []
+    keep, clear, relabel = [], [], []
     for r, row in enumerate(formulas, start=1):
         val = row[0] if row else ""
         if r == 1:
             continue                      # header handled separately
         if not str(val).strip():
             continue                      # already empty
+        if str(val).strip() == newest_label:
+            # A SECOND header row carrying the same week label — section 2
+            # ("CAPTAIN/SPECIAL OVERRIDES ONLY") repeats the week headers over its
+            # own block. It looks like a typed value, so it used to be CLEARED,
+            # leaving section 2's newest column unlabelled while section 1 was
+            # labelled — every downstream lookup that finds section-2 columns by
+            # week header then silently missed the new week. Found by row, never
+            # hardcoded: any row repeating the newest label gets the new one.
+            relabel.append((r, val))
+            continue
         (keep if _keep_formula(val) else clear).append((r, val))
     return {
         "newest_idx": newest_idx, "col": col,
         "newest_label": newest_label, "new_label": new_label,
-        "keep": keep, "clear": clear,
+        "keep": keep, "clear": clear, "relabel": relabel,
     }
 
 
@@ -112,6 +122,10 @@ def print_plan(p) -> None:
         print(f"      {p['col']}{r}: {v}")
     if len(p["clear"]) > 8:
         print(f"      … +{len(p['clear']) - 8} more")
+    print(f"  RELABEL {len(p.get('relabel') or [])} repeated week-header row(s) "
+          f"-> {p['new_label']!r}:")
+    for r, v in (p.get("relabel") or []):
+        print(f"      {p['col']}{r}: {v} -> {p['new_label']}")
 
 
 def apply_plan(ws, p) -> None:
@@ -136,8 +150,12 @@ def apply_plan(ws, p) -> None:
     # 3) clear the typed numbers in the new column (keep the structural formulas)
     if p["clear"]:
         ws.batch_clear([f"{p['col']}{r}" for r, _v in p["clear"]])
-    # 4) stamp the new week-ending label
-    ws.update_acell(f"{p['col']}1", p["new_label"])
+    # 4) stamp the new week-ending label — in row 1 AND in every other header row
+    #    that repeats it (section 2 has its own week-header row).
+    ws.batch_update([{"range": f"{p['col']}1", "values": [[p["new_label"]]]}]
+                    + [{"range": f"{p['col']}{r}", "values": [[p["new_label"]]]}
+                       for r, _v in (p.get("relabel") or [])],
+                    value_input_option="USER_ENTERED")
     # 5) fix the Total-2026 (col D) sums. Inserting at the START of =SUM(E:AF)
     #    shifts it to =SUM(F:AG) — EXCLUDING the new week. Force the start back to
     #    the new newest-week column so the new week counts in the total (the live

@@ -3419,6 +3419,27 @@
       },
       "machine": "Lucy 1"
     },
+    "override_verify": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "READ-ONLY diagnostic on Lucy 1: pulls a week exactly as the Friday fill would and diffs it CELL-FOR-CELL against the week the VA already filled by hand on the LIVE tab (the answer key). Writes nothing to any sheet. This is the check that covers the CAPTAIN/SPECIAL rows, whose weekly figure is a SUM of several DD Captain's-Bonus lines. `lucy rerun override_verify` then `lucy logtail override_verify VERIFY`.",
+      "display_name": "Override fill — verify vs the VA's filled week",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.override_bulletin.verify"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
+    },
     "install_b2b_quality_agent": {
       "on_scheduler": false,
       "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_b2b_quality_agent` can install/refresh the STANDALONE com.alphalete.b2b-quality LaunchAgent on LUCY 2 (5:30am CST daily, deploy/b2b_quality.sh, --post). install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run after the plist changes.",

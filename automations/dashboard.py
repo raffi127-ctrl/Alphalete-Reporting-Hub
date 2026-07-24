@@ -3542,8 +3542,11 @@ AUTOMATED_REPORTS = [
             "than putting out a near-empty bulletin.\n"
             "**\u2022** Writes go to the **Copy of** (sandbox) tab only; the "
             "live tab is refused.\n"
-            "**\u2022** **Slack + email sending is NOT switched on yet** \u2014 "
-            "it's waiting on Megan's sign-off of the first real fill."
+            "**\u2022** **Nothing is sent automatically.** The Slack post and "
+            "the bulletin email are built and ready, but they only go out when "
+            "someone runs the send step on purpose \u2014 use **Preview "
+            "Bulletin** to see exactly what would be posted and who would be "
+            "emailed, without sending anything."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"),
@@ -3578,6 +3581,22 @@ AUTOMATED_REPORTS = [
                 "help": "Writes the assembled numbers into the 'Copy of Org Overrides Ongoing Report' tab. The live tab is refused.",
                 "module": "automations.override_bulletin.run",
                 "args_fn": lambda: ["--write"],
+            },
+            {
+                "label": "Check Against the VA's Week",
+                "icon": "\U0001F50E",
+                "primary": False,
+                "help": "Pulls a week the VA already filled by hand and compares every number to hers, one cell at a time. Changes nothing anywhere — it just tells you whether the numbers agree.",
+                "module": "automations.override_bulletin.verify",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Preview Bulletin (no send)",
+                "icon": "\U0001F4E7",
+                "primary": False,
+                "help": "Builds the bulletin image and shows the subject line, the two Slack channels and every email address it would go to. Sends nothing.",
+                "module": "automations.override_bulletin.send",
+                "args_fn": lambda: [],
             },
         ],
     },
