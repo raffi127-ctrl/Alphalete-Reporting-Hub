@@ -78,31 +78,52 @@ def resolve_target_week(source_weeks, ws):
 
 
 def pull_all(week_mdy, week_header, period_num, period_year, *, page=None,
-             verbose=True, aliases=None, org_rows=None):
+             verbose=True, aliases=None, org_rows=None, strict=True, failures=None):
     """Run every Lucy-1 pull for the week; return the flat dicts assemble() wants.
     `page` is a live tableau_session page (shared holder). Returns
-    (regular, captain, special)."""
+    (regular, captain, special).
+
+    strict=True (the FILL) lets a source's failure abort the run — filling a week
+    from four of five sources would write numbers that are quietly too low.
+    strict=False (the read-only verify) records the failed source in `failures`
+    and carries on, because four compared sources beat a crash and a blank
+    report. The failed source's rows then show up as mismatches, not as silence."""
+    def _pull(name, fn):
+        try:
+            return fn()
+        except Exception as e:  # noqa: BLE001
+            if strict:
+                raise
+            msg = f"{name}: {type(e).__name__}: {str(e).splitlines()[0][:160]}"
+            print(f"⚠ SOURCE FAILED {msg}")
+            if failures is not None:
+                failures.append(msg)
+            return None
+
     out_dir = P.__dict__.get("_OUT")  # optional override
     from pathlib import Path
     d = Path("output/override_bulletin/run")
     d.mkdir(parents=True, exist_ok=True)
 
     if org_rows is None:
-        regular = P.regular_overrides(week_header, d / "org.csv",
-                                      period=f"Period {period_year}-{period_num}",
-                                      page=page, verbose=verbose)
+        regular = _pull("ORG override summary", lambda: P.regular_overrides(
+            week_header, d / "org.csv",
+            period=f"Period {period_year}-{period_num}",
+            page=page, verbose=verbose)) or {}
     else:
         regular = P.parse_override_summary(org_rows, week_header)
-    raf_special = P.raf_special_override(week_header, d / "raf.csv",
-                                         period=f"Period {period_num}",
-                                         page=page, verbose=verbose)
-    dd = P.dd_captain_overrides(DD_CAPTAINS, d / "dd.csv", page=page, verbose=verbose)
+    raf_special = _pull("Raf special override", lambda: P.raf_special_override(
+        week_header, d / "raf.csv", period=f"Period {period_num}",
+        page=page, verbose=verbose))
+    dd = _pull("DD captain overrides", lambda: P.dd_captain_overrides(
+        DD_CAPTAINS, d / "dd.csv", page=page, verbose=verbose)) or {}
     captain = {k: _dd_week_for(v, week_mdy) for k, v in dd.items()}
     captain = {k: v for k, v in captain.items() if v is not None}
 
     # Ledger special/credico — period-scoped needle (special) + month label (credico)
-    special_led = P.ledger_amounts(f"P{period_num}-{period_year} {LEDGER_SPECIAL}",
-                                   d / "led_special.csv", page=page, verbose=verbose)
+    special_led = _pull("NetSuite ledger (special)", lambda: P.ledger_amounts(
+        f"P{period_num}-{period_year} {LEDGER_SPECIAL}",
+        d / "led_special.csv", page=page, verbose=verbose)) or {}
     special = dict(special_led)
     raf_key = _norm_name("Rafael Hidalgo")
     special[raf_key] = raf_special or special.get(raf_key)

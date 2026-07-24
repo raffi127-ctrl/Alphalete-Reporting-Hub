@@ -101,10 +101,15 @@ def verify(week_mdy=None, *, tab=F.LIVE_TAB, verbose=True):
     print("VERIFY week {} on {!r} (answer key = the VA's own column)".format(
         week_mdy, tab))
 
+    # strict=False: this is a diagnostic, so a source that fails to export is
+    # RECORDED and the other four are still compared. Its rows then surface as
+    # mismatches below rather than as a crash with nothing to show.
+    failures = []
     with tableau_session(headless=True, verbose=verbose) as page:
         regular, captain, special = R.pull_all(
             week_mdy, week_header, period_num=int(m), period_year="20" + y[-2:],
-            page=page, verbose=verbose, aliases=aliases)
+            page=page, verbose=verbose, aliases=aliases,
+            strict=False, failures=failures)
     print("pulls: regular={} captain={} special={}".format(
         len(regular), len(captain), len(special)))
 
@@ -128,9 +133,12 @@ def verify(week_mdy=None, *, tab=F.LIVE_TAB, verbose=True):
     if unmatched:
         print("\nno source row ({}) — these are $0 by fill-but-flag, "
               "check each: {}".format(len(unmatched), ", ".join(unmatched)))
-    print("\nVERIFY RESULT: {}".format(
+    for msg in failures:
+        print("\nSOURCE FAILED — its rows below are NOT a real disagreement: {}".format(msg))
+    print("\nVERIFY RESULT: {}{}".format(
         "ALL {} CELLS MATCH".format(len(rows)) if not bad
-        else "{} of {} cells disagree".format(len(bad), len(rows))))
+        else "{} of {} cells disagree".format(len(bad), len(rows)),
+        " ({} source(s) failed to export)".format(len(failures)) if failures else ""))
     return 0 if not bad else 1
 
 
