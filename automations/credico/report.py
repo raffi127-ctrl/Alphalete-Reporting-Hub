@@ -357,6 +357,140 @@ def discover_deep(week_label="7.19.26", page=None, verbose=True):
     return rows
 
 
+def fetch_week(week_label="7.19.26", page=None, verbose=True):
+    """Download the Fee Report file(s) for a week. Megan approved 2026-07-24.
+
+    Path (mapped in DD_SOURCES.md): Reports → Fee Reports → the Saturday → the
+    office node, which is `ng-click=r.clickNode(displayFile)` — no href, so the
+    file comes from a JS handler and has to be caught as a download event.
+
+    Also records every network call the click makes: if Credico fetches the file
+    from an API URL, hitting that directly beats driving the DOM every week.
+
+    Read-only on Credico's side — downloading a report changes nothing there."""
+    saturday = credico_saturday(week_label)
+    OUT.mkdir(parents=True, exist_ok=True)
+    rows = [["WHAT", "DETAIL", "VALUE"]]
+    got = []
+    own = page is None
+    ctx = credico_session(headless=True) if own else None
+    page = ctx.__enter__() if own else page
+    try:
+        calls = []
+        page.on("request", lambda r: calls.append((r.method, r.url))
+                if any(k in r.url.lower() for k in
+                       ("file", "report", "download", "fee", "api")) else None)
+
+        page.goto(REPORTS_URL, wait_until="domcontentloaded")
+        page.reload(wait_until="domcontentloaded")
+        page.wait_for_timeout(5000)
+
+        link = next((el for el in page.query_selector_all("[ng-click='r.getReport(report)']")
+                     if "fee" in (el.inner_text() or "").lower()), None)
+        if link is None:
+            raise RuntimeError("no 'Fee Reports' link on the Reports list")
+        link.click()
+        page.wait_for_timeout(4500)
+
+        want = f"{saturday:%Y-%m-%d}"
+        date_el = next((el for el in page.query_selector_all("a, [ng-click], li, td, div")
+                        if " ".join((el.inner_text() or "").split()) == want), None)
+        if date_el is None:
+            avail = sorted({" ".join((el.inner_text() or "").split())
+                            for el in page.query_selector_all("a, [ng-click], li, td, div")
+                            if re.fullmatch(r"\d{4}-\d{2}-\d{2}",
+                                            " ".join((el.inner_text() or "").split()))},
+                           reverse=True)[:8]
+            raise RuntimeError(f"week {want} not listed on Credico. Available: "
+                               f"{', '.join(avail) or 'none'}")
+        date_el.click()
+        page.wait_for_timeout(4500)
+        rows.append(["week", want, "opened"])
+
+        lst = page.query_selector("div.report-list")
+        nodes = [el for el in (lst.query_selector_all(".col-item") if lst else [])
+                 if " ".join((el.inner_text() or "").split())]
+        rows.append(["offices", want, ", ".join(
+            " ".join((n.inner_text() or "").split()) for n in nodes)])
+
+        for i in range(len(nodes)):
+            # re-query: clicking re-renders the list and stales the handles
+            lst = page.query_selector("div.report-list")
+            nodes2 = [el for el in (lst.query_selector_all(".col-item") if lst else [])
+                      if " ".join((el.inner_text() or "").split())]
+            if i >= len(nodes2):
+                break
+            node = nodes2[i]
+            name = " ".join((node.inner_text() or "").split())
+            try:
+                with page.expect_download(timeout=45000) as dl:
+                    node.click()
+                d = dl.value
+                safe = re.sub(r"[^A-Za-z0-9._-]+", "-", d.suggested_filename or name)
+                dest = OUT / f"{want}_{safe}"
+                d.save_as(str(dest))
+                size = dest.stat().st_size
+                got.append(dest)
+                rows.append(["DOWNLOADED", name,
+                             f"{dest.name} · {size:,} bytes · suffix {dest.suffix or '(none)'}"])
+                if verbose:
+                    print(f"✓ {name}: {dest} ({size:,} bytes)", flush=True)
+            except Exception as e:  # noqa: BLE001
+                # No download — the click probably drilled one level deeper.
+                body = " ".join((page.inner_text("body") or "").split())
+                rows.append(["NO DOWNLOAD", name, f"{type(e).__name__}: {str(e)[:120]}"])
+                rows.append(["  after-click", name, body[-500:]])
+                lst2 = page.query_selector("div.report-list")
+                if lst2:
+                    for el in lst2.query_selector_all(".col-item, a, li")[:12]:
+                        t = " ".join((el.inner_text() or "").split())
+                        if t:
+                            rows.append(["  child-node", name,
+                                         f"{t[:60]} ng-click="
+                                         f"{(el.get_attribute('ng-click') or '')[:60]} "
+                                         f"href={(el.get_attribute('href') or '')[:90]}"])
+            page.go_back()
+            page.wait_for_timeout(2500)
+
+        for m, u in calls[:14]:
+            rows.append(["network", m, u[:220]])
+    finally:
+        if own:
+            ctx.__exit__(None, None, None)
+
+    for f in got:
+        rows.append(["preview", f.name, _preview(f)[:450]])
+    if verbose:
+        for r in rows:
+            print(" | ".join(str(c)[:120] for c in r))
+    try:
+        _dump_to_sheet(rows)
+        print(f"\n✓ {len(rows)} row(s) → '{DUMP_TAB}' tab; {len(got)} file(s) in {OUT}")
+    except Exception as e:  # noqa: BLE001
+        print(f"\n⚠ couldn't write '{DUMP_TAB}' ({e})")
+    return got
+
+
+def _preview(path):
+    """First rows of a downloaded file, whatever it turns out to be."""
+    suf = path.suffix.lower()
+    try:
+        if suf in (".csv", ".txt", ".tsv"):
+            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                return " ⏎ ".join(fh.readline().strip() for _ in range(8))
+        if suf in (".xlsx", ".xlsm"):
+            import openpyxl
+            ws = openpyxl.load_workbook(path, data_only=True).active
+            out = []
+            for row in ws.iter_rows(min_row=1, max_row=8, values_only=True):
+                out.append(" | ".join("" if c is None else str(c) for c in row[:12]))
+            return f"[{ws.title} {ws.max_row}x{ws.max_column}] " + " ⏎ ".join(out)
+        head = path.open("rb").read(8)
+        return f"binary, first bytes {head!r} — needs a different parser"
+    except Exception as e:  # noqa: BLE001
+        return f"preview failed: {type(e).__name__}: {e}"
+
+
 def _dump_to_sheet(rows):
     """Mirror discovery into a throwaway tab so it is readable from any machine."""
     from automations.recruiting_report import fill as _fill
@@ -423,8 +557,13 @@ def main(argv=None):
     ap.add_argument("--deep", action="store_true",
                     help="drive office/campaign/date + Load and dump the grid "
                          "(read-only)")
+    ap.add_argument("--fetch", action="store_true",
+                    help="download the Fee Report file(s) for --week")
     ap.add_argument("--week", help="sheet week label, e.g. 7.19.26")
     a = ap.parse_args(argv)
+    if a.fetch:
+        fetch_week(a.week or "7.19.26")
+        return 0
     if a.deep:
         discover_deep(a.week or "7.19.26")
         return 0

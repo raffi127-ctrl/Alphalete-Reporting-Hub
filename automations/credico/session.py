@@ -133,8 +133,12 @@ def credico_session(headless: bool = True, verbose: bool = True):
         # a hash-router SPA and keeps its auth token in localStorage, which lives
         # in state["origins"], NOT in cookies. Injecting cookies alone restored
         # nothing and landed straight back on #/login.
+        # accept_downloads: the Fee Report file arrives as a download event
+        # (the office node is an ng-click handler, not an href). Explicit rather
+        # than relying on the Playwright default.
         ctx = browser.new_context(viewport={"width": 1500, "height": 950},
-                                  storage_state=str(STATE))
+                                  storage_state=str(STATE),
+                                  accept_downloads=True)
         if verbose:
             n_c = len(state.get("cookies", []))
             n_ls = sum(len(o.get("localStorage", []))

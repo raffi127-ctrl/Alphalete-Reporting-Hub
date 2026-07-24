@@ -3657,6 +3657,29 @@
         "type": "not_configured"
       },
       "machine": "Lucy 1"
+    },
+    "credico_fetch": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Download the weekly Fee Report file(s) from Credico for the target week (Reports -> Fee Reports -> Saturday -> office). Megan approved the download 2026-07-24. Read-only on Credico's side; files land in output/credico/ and a summary on the '_credico_discover' tab. Pass --week M.D.YY to target a week; defaults to 7.19.26.",
+      "display_name": "Credico — download the Fee Report file for a week",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.credico.report"
+      ],
+      "base_args": [
+        "--fetch"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
     }
   },
   "read_only_standalone": {
