@@ -105,11 +105,24 @@ def verify(week_mdy=None, *, tab=F.LIVE_TAB, verbose=True):
     # RECORDED and the other four are still compared. Its rows then surface as
     # mismatches below rather than as a crash with nothing to show.
     failures = []
+    import datetime as _dt
+    from pathlib import Path as _Path
+    out_dir = _Path("output/override_bulletin/verify"); out_dir.mkdir(parents=True, exist_ok=True)
+    year = 2000 + int(y)
     with tableau_session(headless=True, verbose=verbose) as page:
+        # Find which RETAIL period actually carries this week — overrides run on
+        # 13 retail periods, not calendar months, so the month-derived number is
+        # wrong for any week that spilled into the next period (7.19 is Period 8,
+        # not 7). Without this the regular pull came back EMPTY and every row
+        # read as a false mismatch (2026-07-24).
+        _weeks, week_period, rows_by = R._scan_summary(
+            page, out_dir, verbose=verbose, year=year)
+        period_num = week_period.get(week_mdy, int(m))
+        org_rows = rows_by.get(period_num)
         regular, captain, special = R.pull_all(
-            week_mdy, week_header, period_num=int(m), period_year="20" + y[-2:],
+            week_mdy, week_header, period_num=period_num, period_year=str(year),
             page=page, verbose=verbose, aliases=aliases,
-            strict=False, failures=failures)
+            org_rows=org_rows, strict=False, failures=failures)
     print("pulls: regular={} captain={} special={}".format(
         len(regular), len(captain), len(special)))
 
