@@ -183,8 +183,33 @@ def discover_deep(week_label="7.19.26", page=None, verbose=True):
         def _dump_tables(tag):
             tables = page.query_selector_all("table")
             if not tables:
-                body = " ".join((page.inner_text("body") or "").split())
-                rows.append(["  NO TABLE", tag, body[-500:]])
+                # Credico renders the week's figures WITHOUT <table> — record the
+                # real container structure and the text, or the parser is a guess.
+                body = page.inner_text("body") or ""
+                after = body.split("Fee Reports", 1)[-1]
+                for i in range(0, min(len(after), 2400), 400):
+                    rows.append(["  text", tag, after[i:i + 400].replace("\n", " ⏎ ")])
+                for sel in ("[ng-repeat]", ".row", "ul li", "div[class*=grid]",
+                            "div[class*=report]", "div[class*=col]"):
+                    els = page.query_selector_all(sel)
+                    for el in els[:6]:
+                        t = " ".join((el.inner_text() or "").split())
+                        if t and len(t) > 8:
+                            rows.append([f"  {sel}", tag,
+                                         f"[{len(els)} el] "
+                                         f"cls={(el.get_attribute('class') or '')[:40]} "
+                                         f"rpt={(el.get_attribute('ng-repeat') or '')[:40]} "
+                                         f"| {t[:280]}"])
+                dl = [b for b in page.query_selector_all("a, button")
+                      if re.search(r"download|export|csv|excel|xls|pdf|print",
+                                   ((b.inner_text() or "") + " " +
+                                    (b.get_attribute("href") or "") + " " +
+                                    (b.get_attribute("class") or "")), re.I)]
+                for b in dl[:8]:
+                    rows.append(["  download?", tag,
+                                 f"{' '.join((b.inner_text() or '').split())[:40]} "
+                                 f"href={(b.get_attribute('href') or '')[:90]} "
+                                 f"ng-click={(b.get_attribute('ng-click') or '')[:60]}"])
                 return
             for t in tables[:3]:
                 hdr = [" ".join((h.inner_text() or "").split())
@@ -199,10 +224,13 @@ def discover_deep(week_label="7.19.26", page=None, verbose=True):
 
         for label in ("Fee Reports", "Personal", "CDF Report"):
             try:
-                # Re-navigate each time: opening one report replaces the list, so
-                # the other two links are gone by the second pass.
+                # Opening one report replaces the list, so the other links are
+                # gone by the next pass. goto() alone does NOT reset a hash-router
+                # SPA already sitting on that URL (no navigation event fires) —
+                # reload() does.
                 page.goto(REPORTS_URL, wait_until="domcontentloaded")
-                page.wait_for_timeout(4000)
+                page.reload(wait_until="domcontentloaded")
+                page.wait_for_timeout(5000)
                 link = next((el for el in page.query_selector_all("[ng-click='r.getReport(report)']")
                              if label.lower() in (el.inner_text() or "").lower()), None)
                 if link is None:
