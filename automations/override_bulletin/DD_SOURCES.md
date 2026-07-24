@@ -63,18 +63,43 @@ Sterling — and she appends two columns by hand:
 + credico). So an owner's weekly DD = their campaign row summed ACROSS campaigns,
 plus Credico.
 
-### Row hygiene the VA does by hand
+### Row hygiene the VA does by hand — BUILT, in `dd_rows.py`
+Both DD inputs arrive dirty the same way, so the rules live once in
+`override_bulletin/dd_rows.py` and the Tableau crosstab and Credico share them.
+`python -m automations.override_bulletin.dd_rows` runs the worked examples below.
+
 - A person can appear on **two or three lines** → merge into one (sum). Seen in
   her file: `Selena Powers` + `Selena Powers LEDGER`; and Amjad Malhas across
   THREE rows — a named row, a **blank-name continuation row** beneath it, and
   `Amjad Malhas Ledger`. So merge on: same owner, a `… LEDGER/Ledger` suffix, and
-  blank-name rows that belong to the owner above.
+  blank-name rows that belong to the owner above. **Source order is load-bearing**
+  — a continuation row is defined by what sits above it.
 - A **+150 / −150 pair cancels out** → delete both lines (it's a cancellation).
+  Pairing is greedy on absolute value, so +150, +150, −150 leaves one +150.
 - Name matching between sources: `Carlos` needs **TX** appended; `Roshan` needs
   his second name. (This is exactly what the shared ICD Aliases table is for.)
 - Format trap: pasted numbers missing the `$` format are silently skipped by the
-  SUM. She copies the format down BEFORE pasting. An automated fill avoids this
-  entirely.
+  SUM. She copies the format down BEFORE pasting. The parser reads either form,
+  so this cannot happen to us.
+- Anything unplaceable — a blank-name row with nothing above it, a company with
+  no owner mapping — is **REPORTED, never dropped**. An unmapped company is
+  somebody's money going missing.
+
+### Pull status — `automations/credico/report.py`
+Session (`credico/session.py`), the one-week-forward date rule, parsing, merging
+and company→owner mapping are **done and tested**. The page extraction is
+**deliberately not written**: nobody has seen the Reports screen, and invented
+selectors on a hash-router SPA return `[]` on any layout change, which reads as a
+quiet $0 week. `pull()` raises rather than returning an empty dict.
+
+Next step, ON LUCY 1 (where the saved session lives):
+```
+lucy rerun credico_check                              # session still good?
+python -m automations.credico.report --discover       # dumps the screen
+```
+Discovery writes to the **`_credico_discover` tab** of the override workbook (and
+`output/credico/discover.tsv`), so it is readable from any machine — same pattern
+as `override_bulletin/discover.py`. Then write `_extract()` against real markup.
 
 ## THE PODIUM — ALPHALETE ORGANIZATIONAL LEADERS
 
