@@ -560,6 +560,30 @@ def post_all(captures: list, pages: list, today: dt.date | None = None,
             ],
         }
 
+    # NOTHING OWED -> clean no-op, never a failure (Megan 2026-07-24). This org's
+    # selection excludes every board this run captured, so there is genuinely
+    # nothing to post here. Deliberately generic — keyed off "captures is empty
+    # after select_for_org", not off any org name — so ANY org that gains an
+    # ORG_TRACKERS subset later gets the same clean no-op instead of a daily false
+    # alarm. Today's case: the ~7am Box catch-up (--late-only) against
+    # #domin8-b2b-sales, whose subset has no Box.
+    #
+    # Returning here also skips _post_to_channel, which would otherwise (a) call
+    # ensure_thread with an EMPTY `pages`, creating a bare header-less thread in
+    # the channel, and (b) fall through its "already has today's images" guard
+    # (that guard requires a non-empty `captures`) to return
+    # `all(...) if results else False` -> ok=False with no `error` key. That's the
+    # phantom "post FAILED: see above" — see-above pointed at nothing because no
+    # Slack call was ever made — which sank the whole Box run every morning.
+    #
+    # An org-wide empty capture can't reach this line: run.py exits 1 on
+    # `if not captures` before post_all is called, so a real total-capture failure
+    # is still a hard failure.
+    if not captures:
+        return {"ok": True, "skipped": True, "no_op": True, "org": org,
+                "channels": [],
+                "reason": "no board in this run belongs to this org's selection"}
+
     client = smp._client()
     channel_results = []
     for channel in channels:

@@ -533,6 +533,11 @@ def main(argv=None) -> int:
         return 1 if failed else 0
 
     posted_ok, posted_bad, status_rows = [], [], []
+    # Orgs this run owed NOTHING (their ORG_TRACKERS subset excludes every board
+    # captured — e.g. #domin8-b2b-sales on the Box-only catch-up). They're `ok`,
+    # but they did NOT post, so they're tracked separately: a ✅ next to a channel
+    # that received nothing reads as a lie, and "POSTED 10/10" would be one.
+    noop_orgs: list = []
     # Which selected boards are actually PRESENT in the channels after this run —
     # unioned across every channel we didn't outright fail on. A tracker that
     # failed to CAPTURE this run isn't a real gap if a prior run already delivered
@@ -567,9 +572,14 @@ def main(argv=None) -> int:
                 p = set(c.get("present_ids") or [])
                 present_everywhere = p if not present_seen else (present_everywhere & p)
                 present_seen = True
+        if result.get("no_op"):
+            noop_orgs.append(org)
+            print(f"↷ [{org}] no board in this run belongs to {label} — nothing "
+                  f"owed, nothing posted", flush=True)
         (posted_ok if result.get("ok") else posted_bad).append(org)
         status_rows.append({
             "org": org, "label": label, "ok": bool(result.get("ok")),
+            "no_op": bool(result.get("no_op")),
             "channels": [{"channel": c.get("channel"), "ok": bool(c.get("ok")),
                           "thread_ts": c.get("thread_ts"),
                           "error": c.get("error")}
@@ -582,9 +592,16 @@ def main(argv=None) -> int:
     omitted_boards = [(pages_mod.by_id(i) or {}).get("title") or i for i in gated_out]
     _write_status(out_dir, status_rows, today, status_file, omitted=omitted_boards)
 
-    print(f"\n=== POSTED: {len(posted_ok)}/{len(orgs)} org(s)", flush=True)
+    # Count only the orgs this run actually OWED a post — a no-op org is neither a
+    # success nor a failure, so it's out of both the numerator and denominator and
+    # gets its own ↷ marker rather than a ✅ it didn't earn.
+    n_noop = len(noop_orgs)
+    print(f"\n=== POSTED: {len(posted_ok) - n_noop}/{len(orgs) - n_noop} org(s)"
+          + (f" ({n_noop} not owed this run)" if n_noop else ""), flush=True)
     for org in orgs:
-        print(f"  {'✅' if org in posted_ok else '❌'} {sp.ORG_LABEL[org]}", flush=True)
+        mark = "↷" if org in noop_orgs else ("✅" if org in posted_ok else "❌")
+        print(f"  {mark} {sp.ORG_LABEL[org]}"
+              + (" (nothing owed)" if org in noop_orgs else ""), flush=True)
 
     # A capture failure is only a REAL gap when the board is genuinely absent from
     # the channels. A board that failed to capture NOW but is already sitting in
@@ -641,7 +658,9 @@ def main(argv=None) -> int:
     ]))
     run_manifest.write_manifest(
         report_id, ok=bool(ok), failed=parts, kind="channel",
-        succeeded=[sp.ORG_LABEL[o] for o in posted_ok],
+        # No-op orgs are excluded: the Hub's checklist should say a channel
+        # RECEIVED the boards, and one that was owed nothing didn't.
+        succeeded=[sp.ORG_LABEL[o] for o in posted_ok if o not in noop_orgs],
         retry_args=retry_args,
         note=note)
 
