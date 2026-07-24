@@ -112,10 +112,39 @@ All these need the PERIOD/week driven before export (default = oldest weeks).
   behind — **7/11 ↔ sheet 7.12**. Override Summary's Processed Week matches the
   sheet (7/12). Align by matching the **last 4 weeks positionally**, not by the
   literal date string.
-- **Backtrack the last 4 weeks every run** — prior weeks shift slightly as
-  sources update. Re-read and correct them, with a sum-matches-source check.
+- **Backtrack the last 4 weeks every run** — BUILT (`backtrack.py`), runs inside
+  `run.py` including on a HOLD pass. See "Backtrack" below.
 - Near month-end a week can appear in **two periods** (period N and N-1) — pull
   both and combine.
+
+## Backtrack — prior weeks keep moving (`backtrack.py`)
+
+Weeks do NOT stay put after they're filled. Measured between 2026-07-23 and
+07-24 on the VA's own live 7.12 column:
+
+    Rafael Hidalgo   $78,595.49 -> $78,890.00
+    Carlos Hidalgo   $19,386.17 -> $19,827.94
+    Benjamin Burden     $985.35 ->  $1,465.53
+
+    python -m automations.override_bulletin.backtrack            # dry run
+    python -m automations.override_bulletin.backtrack --write    # sandbox only
+
+It corrects the **REGULAR component only**, rebuilding each cell as
+`freshly-pulled regular + the captain/special ALREADY on the sheet`. That split
+is forced by the sources: the DD download only ever carries the just-closed week,
+so a captain bonus three weeks back cannot be re-sourced — but section 2 already
+holds it. Nothing is invented; a week whose captain figure can't be re-pulled
+keeps the number it has.
+
+* Near a month edge a week can sit in **two periods**; both are pulled and
+  summed, and the contributing periods are printed. Parsed crosstabs are memoized
+  per period, so four weeks in one month cost **one** download.
+* A person absent from the source is REPORTED, never zeroed.
+* A week the source has no data for is left alone entirely.
+* Runs on a HOLD pass too — a hold is the quiet pass worth spending on drift.
+* First live run (Lucy 1, 2026-07-24): **live tab 1 cell drifted; sandbox
+  clean** — the sandbox's own section-2 values are self-consistent, which is
+  exactly why the rebuild uses each tab's own captain/special figures.
 
 ## Pending markers (P#-2026)
 
