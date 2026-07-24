@@ -22,9 +22,11 @@ Structures rolled (all found by LABEL, never row index — [[feedback_no_hardcod
      as values before the clear.
 
   3. WE-history rows (the 'WE m.d' org-daily-breakdown rows under the daily
-     Totals): seed the top row from the just-closed week's Totals row, shift the
-     rest down within the fixed window (oldest drops). Feeds 'Sales (Last Week)'
-     (=C$<top>) which stays valid because this is a VALUE shift, not a row insert.
+     Totals): INSERT the just-closed week as a new row at the TOP of the stack
+     and GROW DOWN — nothing is dropped, the full history is kept (same as the
+     Copy tab). Reuses the ORG rollover's product-summary engine, which also
+     re-anchors 'Sales (Last Week)' (=C$<top>) and the '4 Week AVG' to the fixed
+     top window after the insert.
 
   4. DELTA box ('Total this week'/'Last week'/'Delta' triplets): freeze each 'This
      week' value into its 'Last week' cell (reuses the ORG rollover's engine).
@@ -92,34 +94,30 @@ def find_leaderboard_block(grid: List[List[str]]) -> dict:
 
 
 def plan_leaderboard_rollover(ws, block: dict, new_label: str):
-    """FIXED-WINDOW shift — NO new column is added to the right (Megan
-    2026-07-24). The just-closed week's col-C VALUE moves into D, D→E, …, and the
-    OLDEST week (col `last`) falls off. Same principle as the daily J→K→L freeze.
-    Col C keeps its =SUMIF (self-zeroes on the daily clear); its header re-dates.
+    """GROW-RIGHT shift — a NEW week column IS added (Megan 2026-07-24: the
+    leaderboard keeps full weekly history, like the ORG leaderboard). The
+    just-closed week's col-C VALUE freezes into D, D→E, …, last→last+1 (grows by
+    one col); col C keeps its =SUMIF (self-zeroes on the daily clear) and its
+    header re-dates to the new week.
 
-    Destination D..last (cols first+1..last) = source C..last-1 (cols
-    first..last-1); the old `last` value is overwritten (lost)."""
-    c0, c1 = block["first_col"], block["last_col"]        # C .. G (oldest)
-    if c1 <= c0:
-        return []
+    Destination D..last+1 = source C..last; nothing is dropped."""
+    c0, c1 = block["first_col"], block["last_col"]        # C .. last
+    width = c1 - c0 + 1
     hr = block["header_row"]
-    Cl, Dl, Gl = a1col(c0), a1col(c0 + 1), a1col(c1)
-    src_last = a1col(c1 - 1)                               # F (one left of oldest)
-    wsrc = c1 - c0                                         # # source cols C..F
+    Cl, Dl, ANl = a1col(c0), a1col(c0 + 1), a1col(c1 + 1)
     updates = []
-    # header: C = new label; D..last = old C..(last-1)
-    hdr = (ws.get(f"{Cl}{hr}:{src_last}{hr}",
+    hdr = (ws.get(f"{Cl}{hr}:{a1col(c1)}{hr}",
                   value_render_option="UNFORMATTED_VALUE") or [[]])[0]
-    hdr = (list(hdr) + [""] * wsrc)[:wsrc]
-    updates.append({"range": f"{Cl}{hr}:{Gl}{hr}", "values": [[new_label] + hdr]})
-    # data rows: D..last = old C..(last-1); col C left untouched (keeps =SUMIF)
-    rng = f"{Cl}{block['data_rows'][0]}:{src_last}{block['data_rows'][-1]}"
+    hdr = (list(hdr) + [""] * width)[:width]              # old C..last
+    updates.append({"range": f"{Cl}{hr}:{ANl}{hr}", "values": [[new_label] + hdr]})
+    rng = f"{Cl}{block['data_rows'][0]}:{a1col(c1)}{block['data_rows'][-1]}"
     vals = ws.get(rng, value_render_option="UNFORMATTED_VALUE")
-    rowmap = {block["data_rows"][0] + i: (list(r) + [""] * wsrc)[:wsrc]
+    rowmap = {block["data_rows"][0] + i: (list(r) + [""] * width)[:width]
               for i, r in enumerate(vals)}
     for row in block["data_rows"]:
-        cur = rowmap.get(row, [""] * wsrc)                # old C..(last-1) VALUES
-        updates.append({"range": f"{Dl}{row}:{Gl}{row}", "values": [cur]})
+        cur = rowmap.get(row, [""] * width)               # old C..last (C = value)
+        updates.append({"range": f"{Dl}{row}:{ANl}{row}", "values": [cur]})
+        # col C left untouched — keeps its =SUMIF, self-zeroes on the daily clear
     return updates
 
 
@@ -156,53 +154,6 @@ def plan_daily_kl_freeze(ws, anchor) -> list:
         k = k_vals[i] if i < len(k_vals) else ""
         updates.append({"range": f"{a1col(l_c)}{row}", "values": [[k if k != "" else 0]]})
         updates.append({"range": f"{a1col(k_c)}{row}", "values": [[j if j != "" else 0]]})
-    return updates
-
-
-def find_we_history_rows(grid, daily_totals_row: int) -> List[int]:
-    """The 'WE m.d' org-daily-breakdown rows directly below the daily Totals row.
-    Contiguous run of col-A labels starting 'WE '."""
-    out = []
-    for r in range(daily_totals_row + 1, len(grid) + 1):
-        if _cell(grid, r - 1, 0).upper().startswith("WE "):
-            out.append(r)
-        elif out:
-            break
-    return out
-
-
-def plan_we_history_rollover(ws, anchor, we_rows: List[int], new_label_short: str):
-    """Value-shift the WE-history window down one row, seeding the top from the
-    just-closed week's daily Totals row (cols C..last-history). Oldest drops. A
-    VALUE shift (not a row insert) so the 'Sales (Last Week)' =C$<top> anchor
-    stays valid. new_label_short = the closed week's 'WE m.d' col-A label."""
-    if not we_rows:
-        return []
-    # span: from the first day col through the widest history col across the rows
-    day_c0 = min(anchor.day_col_by_daynum.values())
-    tot = anchor.totals_row
-    scan_rows = [tot] + we_rows
-    maxc = 1
-    for r in scan_rows:
-        got = ws.get(f"A{r}:AZ{r}", value_render_option="UNFORMATTED_VALUE")
-        row = got[0] if got else []
-        for c in range(len(row)):
-            if str(row[c]).strip():
-                maxc = max(maxc, c + 1)
-    c0, cN = day_c0, maxc
-    def span(r):
-        return f"{a1col(c0)}{r}:{a1col(cN)}{r}"
-    src = [tot] + we_rows[:-1]        # Totals -> top ; top -> 2nd ; ...
-    dst = we_rows
-    got = ws.batch_get([span(r) for r in src],
-                       value_render_option="UNFORMATTED_VALUE")
-    updates = []
-    for d, block in zip(dst, got):
-        vals = list(block[0]) if block and block[0] else []
-        if vals:
-            updates.append({"range": span(d), "values": [vals]})
-    # re-label the new top row's col A to the just-closed week
-    updates.append({"range": f"A{we_rows[0]}", "values": [[new_label_short]]})
     return updates
 
 
@@ -284,24 +235,15 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
           f"{new_label}; {len(upd)} write(s)")
 
     anchor = fs.find_daily_section(grid, DAILY_LABEL)
-    # 2) daily per-rep J → K → L
+    # 2) daily per-rep J → K → L (fixed window: L is dropped, no new columns)
     upd = plan_daily_kl_freeze(ws, anchor)
     if upd and not dry_run:
         ws.batch_update(upd, value_input_option="USER_ENTERED")
     logfn(f"  2/6 daily per-rep running-total frozen (J→K→L); {len(upd)} write(s)")
 
-    # 3) WE-history rows shift down (seed top from Totals)
-    from automations.org_sales_board.rollover import we_label_short, new_week_ending
-    just_closed = new_week_ending(today) - dt.timedelta(days=7)
-    we_rows = find_we_history_rows(grid, anchor.totals_row)
-    upd = plan_we_history_rollover(ws, anchor, we_rows,
-                                   we_label_short(just_closed))
-    if upd and not dry_run:
-        ws.batch_update(upd, value_input_option="USER_ENTERED")
-    logfn(f"  3/6 WE-history window shifted ({len(we_rows)} row(s), top = "
-          f"{we_label_short(just_closed)}); {len(upd)} write(s)")
-
-    # 4) delta box: this week → last week
+    # 3) delta box: this week → last week. Done BEFORE the WE-history row insert
+    # (step 4), which shifts every row below it — freezing the delta first keeps
+    # its live values intact; the insert only moves the (already-frozen) rows.
     tables = find_delta_tables(grid)
     dcount = 0
     for t in tables:
@@ -310,9 +252,19 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
             ws.batch_update(upd, value_input_option="USER_ENTERED")
         if upd:
             dcount += 1
-    logfn(f"  4/6 {dcount} delta table(s) frozen (this week → last week)")
+    logfn(f"  3/6 {dcount} delta table(s) frozen (this week → last week)")
 
-    # 5) clear daily day cells
+    # 4) WE-history: INSERT the just-closed week at the TOP of the stack and GROW
+    # DOWN — nothing dropped, same as the Copy tab (Megan 2026-07-24). Reuses the
+    # ORG rollover's product-summary engine (Totals row → new 'WE m.d' top row +
+    # re-anchor 'Sales (Last Week)' / '4 Week AVG' to the fixed top window).
+    from automations.org_sales_board.rollover import apply_product_summary_rollover
+    ps = apply_product_summary_rollover(ws, today=today, dry_run=dry_run, logfn=logfn)
+    logfn(f"  4/6 WE-history grown down ({len(ps)} stack(s) — new week at top, "
+          f"none dropped)")
+
+    # 5) clear daily day cells (the daily table sits ABOVE the WE insert, so its
+    # anchor row numbers are unchanged).
     clr = plan_daily_clear(anchor)
     if not dry_run:
         ws.batch_clear([clr])
@@ -328,7 +280,7 @@ def run_rollover(ws, today=None, dry_run: bool = False, logfn=print) -> dict:
           f"(week of {new_monday.isoformat()})")
     logfn("=== rollover done ===")
     summary.update({"leaderboard_rows": len(lb["data_rows"]),
-                    "we_history_rows": len(we_rows),
+                    "we_history_stacks": len(ps),
                     "delta_tables": dcount, "cleared": clr,
                     "anchor_cell": cell, "anchor_day": new_monday.day})
     return summary
