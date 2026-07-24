@@ -66,9 +66,12 @@ def _tableau_shots(captain, today, render_dir, *, logfn):
     return None, path
 
 
-def _build_one(captain: config.Captain, today: dt.date, render_dir: Path,
-               *, skip_sheets: bool = False, skip_tableau: bool = False,
-               logfn=print):
+def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
+                 *, skip_sheets: bool = False, skip_tableau: bool = False,
+                 logfn=print):
+    """Capture all of a captain's section images into a bundle, or None if the
+    captain yielded no images. Email assembly happens later (in main), AFTER
+    cross-captain size normalization, so same-flavor sections share one size."""
     logfn(f"\n--- {captain.key} ({captain.display_name}, {captain.flavor}) ---")
     churn = churn_images.render_captain(captain, today, render_dir, logfn=logfn)
     churn_wireless = [c for c in churn if c[0].lower().startswith("wireless")]
@@ -106,9 +109,51 @@ def _build_one(captain: config.Captain, today: dt.date, render_dir: Path,
     if not n_imgs:
         logfn(f"  ⚠ no images at all for {captain.key} — skipping")
         return None
-    msg = email_build.build(captain, bundle, today)
-    logfn(f"  built draft: subj={msg['Subject']!r}, {n_imgs} image(s)")
-    return msg
+    bundle["_n_imgs"] = n_imgs
+    return bundle
+
+
+def _pad_pngs_to_common_width(paths) -> None:
+    """Right-pad every PNG in `paths` with white to the group's MAX width, in
+    place, so same-flavor same-section shots share one width. Height is left
+    alone — it legitimately varies with row count. No-op for <2 images or when
+    all are already equal width."""
+    from PIL import Image
+    ps = [Path(p) for p in paths if p]
+    if len(ps) < 2:
+        return
+    ims = [(p, Image.open(p).convert("RGB")) for p in ps]
+    target = max(im.width for _, im in ims)
+    for p, im in ims:
+        if im.width == target:
+            continue
+        canvas = Image.new("RGB", (target, im.height), "white")
+        canvas.paste(im, (0, 0))          # content left-aligned, white on right
+        canvas.save(p)
+
+
+def _normalize_sizes(built, *, logfn=print) -> None:
+    """Pad each section's PNGs to a common width WITHIN each flavor, so every
+    fiber Product Summary is one width, every fiber cancel shot one width, etc.
+    Sheet-screenshot sections vary in pixel width (per-captain sheet column
+    widths); the rendered sections (churn, fiber activation) are already fixed-
+    width so this is a harmless no-op for them. Runs across all captains of a
+    flavor present in THIS run (a single-captain run has nothing to match)."""
+    from collections import defaultdict
+    by_flavor: dict = defaultdict(list)
+    for captain, bundle in built:
+        by_flavor[captain.flavor].append(bundle)
+    for flavor, bundles in by_flavor.items():
+        for key in ("product_summary", "cancel_tableau", "teamstats_tableau",
+                    "fiber_activation"):
+            _pad_pngs_to_common_width([b.get(key) for b in bundles])
+        # (caption, path) lists — normalize per index so fiber's New-Internet and
+        # All-Units unit charts each match their counterpart across captains.
+        for key in ("units", "churn_ni", "churn_wireless"):
+            depth = max((len(b.get(key) or []) for b in bundles), default=0)
+            for i in range(depth):
+                _pad_pngs_to_common_width(
+                    [b[key][i][1] for b in bundles if len(b.get(key) or []) > i])
 
 
 def main(argv=None) -> int:
@@ -147,18 +192,29 @@ def main(argv=None) -> int:
     render_dir = Path(tempfile.gettempdir()) / "captainship_drafts_render"
     failures = 0
 
+    # Pass 1: capture every captain's images. Pass 2 (below) assembles + emits,
+    # with a size-normalization step in between so same-flavor sections match.
+    built = []
     for captain in selected:
         try:
-            msg = _build_one(captain, today, render_dir,
-                             skip_sheets=args.skip_sheets,
-                             skip_tableau=args.skip_tableau)
+            bundle = _capture_one(captain, today, render_dir,
+                                  skip_sheets=args.skip_sheets,
+                                  skip_tableau=args.skip_tableau)
         except Exception as e:
             failures += 1
-            print(f"  ✗ {captain.key}: build failed: {e}")
+            print(f"  ✗ {captain.key}: capture failed: {e}")
             continue
-        if msg is None:
+        if bundle is None:
             failures += 1
             continue
+        built.append((captain, bundle))
+
+    _normalize_sizes(built)
+
+    for captain, bundle in built:
+        msg = email_build.build(captain, bundle, today)
+        print(f"  built draft: subj={msg['Subject']!r}, "
+              f"{bundle['_n_imgs']} image(s)")
 
         if args.dry_run:
             _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
