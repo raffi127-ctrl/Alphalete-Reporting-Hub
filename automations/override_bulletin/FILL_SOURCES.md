@@ -70,6 +70,24 @@ Note the two views take **different Period formats** — don't unify them.
 4. **Sheet Sunday ↔ DD day-behind**: sheet `7.19` ↔ DD `7.18` (real date math, so
    month edges work).
 
+### "No sheets to select" / "0 thumb(s)" — read this before debugging it
+
+That Crosstab-dialog error means **the viz is empty**, NOT that the view is gone
+or that access was revoked. Megan opened the *working* ORG summary on its default
+`Period 2024-13` with no week selected on 2026-07-24 and got the identical
+message. Two different causes produce it:
+
+1. **A filter value that matches nothing** — the period naming differs per view
+   and has changed before (`Period 7` vs `Period 2026-7`). `period_candidates()`
+   now tries both formats, and `_download_first_nonempty()` keeps going until an
+   export actually parses. The FIRST candidate is always the previously-working
+   value, so healthy behaviour is unchanged.
+2. **Tableau being down.** On 2026-07-24 `Payout- Raf wow` and `ORG DD Detail`
+   both returned 0 sheets all morning while `OverridesICDView` kept working —
+   **confirmed by Megan as a site-wide Tableau failure**, not our code and not a
+   permissions change. If two whole workbooks go dark at once, check Tableau
+   itself before touching the parsers.
+
 ### Name matching goes through the ICD Aliases sheet
 
 The sheet roster and Tableau spell people differently. BOTH sides resolve through
@@ -195,8 +213,8 @@ perfectly healthy until the dollars are compared.
 |---|---|
 | ORG Override Summary (regular) | ✅ all 21 actives match exactly |
 | Raf PNL Captain Override | ✅ $18,067 (and 7.5 = $20,068) |
-| Raf Special Override | ⚠️ did not export |
-| DD captain overrides | ⚠️ did not export |
+| Raf Special Override | ⏳ Tableau down — UNVERIFIED, re-run when healthy |
+| DD captain overrides | ⏳ Tableau down — UNVERIFIED, re-run when healthy |
 | NetSuite ledger | no P7-2026 rows yet (still pending) |
 
 22 cells compared, 16 matched, 6 "mismatched" — and every one of those 6 is off
@@ -208,9 +226,10 @@ correctness.
 
 **Both failures were the same symptom** — `Couldn't find the '<sheet>' sheet in
 the Crosstab dialog — saw 0 thumb(s)` on `Payout- Raf wow` and `ORG DD Detail`,
-while the ORG summary exported fine on both attempts. Someone was working ON the
-mini at the time (see the Chrome-collision note): re-run verify when it's idle to
-close out these two sources.
+while the ORG summary exported fine on every attempt. **Cause: a site-wide
+Tableau failure that morning (Megan, 2026-07-24)** — not our parsers, not
+permissions, and not the mini (it failed on an idle machine too). Those two
+sources are simply UNVERIFIED; re-run `override_verify` once Tableau is healthy.
 
 ## Post-fill (already built / mapped)
 
