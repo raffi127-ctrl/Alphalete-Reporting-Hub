@@ -164,59 +164,99 @@ def discover_deep(week_label="7.19.26", page=None, verbose=True):
         for i in range(0, min(len(body), 1600), 400):
             rows.append(["body-text", f"chars {i}", body[i:i + 400]])
 
-        # office x campaign, skipping each dropdown's placeholder first option
-        offices = [o for o in (opts[0] if opts else []) if o[0] and "select" not in (o[1] or "").lower()]
-        camps = [o for o in (opts[1] if len(opts) > 1 else []) if o[0] and "select" not in (o[1] or "").lower()]
-
+        # THE PANEL IS HIDDEN UNTIL A REPORT IS CHOSEN. The selects report
+        # display:block/visible but have no offsetParent and no bounding box, so
+        # an ancestor is display:none. The nav shows why: a Reports list —
+        # Fee Reports / Personal / CDF Report, each `r.getReport(report)` — and
+        # the office/campaign/date form only appears after one is picked.
         def _set(el, value):
-            """Set a hidden <select> and tell Angular. select_option() needs the
-            element visible; ng-model listens for a native change event, which a
-            dispatched event satisfies even from an isolated world."""
+            """Set a <select> and tell Angular. select_option() needs the element
+            visible; ng-model listens for a native change event, which a
+            dispatched event satisfies even from patchright's isolated world."""
             el.evaluate("""(el, v) => {
                 el.value = v;
                 el.dispatchEvent(new Event('change', {bubbles: true}));
                 el.dispatchEvent(new Event('input', {bubbles: true}));
             }""", value)
 
-        for oi, (ov, ot) in enumerate(offices):
-            for ci, (cv, ct) in enumerate(camps):
-                try:
-                    _set(sels[0], ov)
-                    page.wait_for_timeout(900)
-                    _set(page.query_selector_all("select")[1], cv)
-                    page.wait_for_timeout(900)
-                    cal = (page.query_selector("input.calendar")
-                           or page.query_selector("input[type=text]"))
-                    if cal:
-                        try:
+        def _dump_tables(tag):
+            tables = page.query_selector_all("table")
+            if not tables:
+                body = " ".join((page.inner_text("body") or "").split())
+                rows.append(["  NO TABLE", tag, body[-500:]])
+                return
+            for t in tables[:3]:
+                hdr = [" ".join((h.inner_text() or "").split())
+                       for h in t.query_selector_all("th")[:16]]
+                if hdr:
+                    rows.append(["  headers", tag, " | ".join(hdr)[:450]])
+                for tr in t.query_selector_all("tbody tr")[:10]:
+                    cells = [" ".join((td.inner_text() or "").split())
+                             for td in tr.query_selector_all("td")[:16]]
+                    if any(cells):
+                        rows.append(["  row", tag, " | ".join(cells)[:450]])
+
+        for label in ("Fee Reports", "Personal", "CDF Report"):
+            try:
+                link = page.query_selector(f"[ng-click='r.getReport(report)']:has-text('{label}')")
+                if link is None:
+                    link = page.query_selector(f"a:has-text('{label}')")
+                if link is None:
+                    rows.append(["REPORT", label, "no link found"])
+                    continue
+                link.click()
+                page.wait_for_timeout(4000)
+                rows.append(["REPORT", label, f"opened — url {page.url}"])
+
+                vis = []
+                for s in page.query_selector_all("select"):
+                    if s.bounding_box():
+                        o = [(x.get_attribute("value"),
+                              " ".join((x.inner_text() or "").split()))
+                             for x in s.query_selector_all("option")]
+                        vis.append(s)
+                        rows.append(["  select(visible)", label,
+                                     "; ".join(f"{t}={v}" for v, t in o)[:400]])
+                for i, inp in enumerate(page.query_selector_all("input")):
+                    if inp.bounding_box():
+                        rows.append([f"  input{i}(visible)", label,
+                                     f"type={inp.get_attribute('type')} "
+                                     f"class={(inp.get_attribute('class') or '')[:50]} "
+                                     f"value={inp.get_attribute('value')!r}"])
+                for b in page.query_selector_all("button"):
+                    if b.bounding_box():
+                        rows.append(["  button(visible)", label,
+                                     " ".join((b.inner_text() or "").split())[:60]])
+
+                # drive the first office x first campaign for this report
+                if len(vis) >= 2:
+                    ov = next((o.get_attribute("value")
+                               for o in vis[0].query_selector_all("option")
+                               if o.get_attribute("value")), None)
+                    cv = next((o.get_attribute("value")
+                               for o in vis[1].query_selector_all("option")
+                               if o.get_attribute("value")), None)
+                    if ov and cv:
+                        _set(vis[0], ov)
+                        page.wait_for_timeout(800)
+                        _set(vis[1], cv)
+                        page.wait_for_timeout(800)
+                        cal = next((i for i in page.query_selector_all("input[type=text]")
+                                    if i.bounding_box()), None)
+                        if cal:
                             cal.fill(f"{saturday:%m/%d/%Y}")
-                        except Exception:  # noqa: BLE001
-                            cal.evaluate("""(el, v) => {
-                                el.value = v;
-                                el.dispatchEvent(new Event('change', {bubbles: true}));
-                                el.dispatchEvent(new Event('input', {bubbles: true}));
-                            }""", f"{saturday:%m/%d/%Y}")
-                        page.keyboard.press("Escape")
-                    btn = page.query_selector("button:has-text('Load')")
-                    if btn:
-                        btn.click()
-                        page.wait_for_timeout(6000)
-                    rows.append(["LOADED", f"{ot} / {ct}", page.url])
-                    for t in page.query_selector_all("table")[:3]:
-                        hdr = [" ".join((h.inner_text() or "").split())
-                               for h in t.query_selector_all("th")[:14]]
-                        if hdr:
-                            rows.append(["  headers", f"{ot} / {ct}", " | ".join(hdr)[:400]])
-                        for tr in t.query_selector_all("tbody tr")[:8]:
-                            cells = [" ".join((td.inner_text() or "").split())
-                                     for td in tr.query_selector_all("td")[:14]]
-                            if any(cells):
-                                rows.append(["  row", f"{ot} / {ct}", " | ".join(cells)[:400]])
-                    if not page.query_selector_all("table"):
-                        body = " ".join((page.inner_text("body") or "").split())
-                        rows.append(["  NO TABLE", f"{ot} / {ct}", body[-400:]])
-                except Exception as e:  # noqa: BLE001
-                    rows.append(["  ERROR", f"{ot} / {ct}", f"{type(e).__name__}: {e}"[:300]])
+                            page.keyboard.press("Escape")
+                        btn = next((b for b in page.query_selector_all("button")
+                                    if b.bounding_box()
+                                    and "load" in (b.inner_text() or "").lower()), None)
+                        if btn:
+                            btn.click()
+                            page.wait_for_timeout(7000)
+                        rows.append(["  LOADED", label, f"office={ov} campaign={cv} "
+                                     f"date={saturday:%m/%d/%Y}"])
+                _dump_tables(label)
+            except Exception as e:  # noqa: BLE001
+                rows.append(["  ERROR", label, f"{type(e).__name__}: {e}"[:300]])
     finally:
         if own:
             ctx.__exit__(None, None, None)
