@@ -1352,6 +1352,39 @@
       ],
       "verify": null
     },
+    "all_campaigns_board": {
+      "order": 10,
+      "on_scheduler": true,
+      "_note": "Fills the 'All Campaigns Org Sales Board' tab's per-person 'All Units' daily section. It's a campaign-AGNOSTIC product-totals ranking: unlike the ORG Sales Board it does NOT split a rep by campaign — one line per person = SUM across every campaign. Reads the already-filled 'Copy of Alphalete ORG Sales Board' tab's eight daily sections (Retail NL, ATT Fiber Team, Retail JE, ATT NDS Team, B2B, BOX, Frontier, Retail Internet), sums each rep by normalized name across all of them, and writes the Mon-Sun day cells via the ORG board's fill_section engine. Everything else on the tab is formula-driven (running total =SUM, leaderboard =SUMIF, Product Summary/vs-Prior) and auto-derives. `after` org_sales_board (SOFT: runs once the board reaches ANY terminal state, so a board INCOMPLETE — which is common — never strands this) rather than depends_on. base_args '--apply' = LIVE write. Validated + ROLLED OUT LIVE 2026-07-24 (Megan): aggregated grand-total-per-day matched the Copy tab's Grand Total row exactly; 38/38 board rows matched, 0 unmatched. Auto-fires daily (weekdays [0..6]) right after the board. TUESDAY ROLLOVER (base_args '--enable-rollover', validated + approved by Megan 2026-07-24): same fixed-window system as the Copy tab — self-heals off the leaderboard week header, so it rolls on the first run of the new reporting week (Tuesday) and is a no-op otherwise. NO columns/rows grow: the weekly leaderboard shifts C(this wk value)->D->..->G with the oldest week DROPPED; the daily per-rep running total shifts J->K->L (L lost); the WE-history rows shift down (oldest dropped); the delta box freezes this-week->last-week; then day cells clear + the date anchor advances. Snapshots to backup_pre_rollover_allcampaigns first. `lucy rerun all_campaigns_board` runs it on demand. Exits 75 (INCOMPLETE) if a board rep never matched the pull, or a producing rep has no board row (flagged, never silently dropped).",
+      "display_name": "All Campaigns Org Sales Board",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.all_campaigns_board.run"
+      ],
+      "base_args": [
+        "--apply",
+        "--enable-rollover"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P1",
+      "freshness_target": null,
+      "depends_on": [],
+      "after": [
+        "org_sales_board"
+      ],
+      "verify": null
+    },
     "captainship_drafts": {
       "order": 20,
       "on_scheduler": true,
