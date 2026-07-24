@@ -1359,12 +1359,14 @@ def _b2b_metrics_card() -> dict:
     from automations.b2b_metrics import offices as _bo
     from automations.b2b_metrics import runner as _bmr
     offs = [_bo.OFFICES[k] for k in _bo.ORDER]
+    # An office can mirror its thread into extra channels, so show every channel
+    # it posts into (primary first) — otherwise a mirrored office reads as one.
     office_bullets = "\n".join(
-        "• {} → {}".format(o.label, o.channel_name) for o in offs)
+        "• {} → {}".format(o.label, ", ".join(o.channel_names)) for o in offs)
     _seen: set = set()
     channels = ", ".join(
-        o.channel_name for o in offs
-        if not (o.channel_name in _seen or _seen.add(o.channel_name)))
+        c for o in offs for c in o.channel_names
+        if not (c in _seen or _seen.add(c)))
     item_lines = "\n".join(
         "• {} {}".format(i["emoji"], i["title"]) for i in _bmr.ITEMS)
     return {
@@ -3744,15 +3746,19 @@ AUTOMATED_REPORTS = [
         "color": "#7C3AED",
         # 📊 Metrics (not Ops) so it lands in ⏰ TIME SET REPORTS.
         "category": "📊 Metrics",
-        "description": "Posts the daily Vantura Production thread to #alphalete-gp-sales as Lucy — the four program Sales Boards (B2B, Base, JE, BOX) the VA used to post by hand each morning, two images each.",
+        "description": "Posts the daily Vantura Production thread as Lucy to #alphalete-gp-sales AND #a-players-b2b — the program Sales Boards (B2B, Base, BOX) the VA used to post by hand each morning, two images each. The A-Players copy also carries the Zero Streak callout.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Posts one dated thread — **Vantura Production MM/DD/YYYY** — "
             "then each program's images as a threaded reply:\n"
             "**•** **B2B Sales Board**\n"
             "**•** **Base Sales Board**\n"
-            "**•** **JE Sales Board**\n"
             "**•** **BOX Sales Board**\n\n"
+            "The same thread goes to **#a-players-b2b**, and that copy gets "
+            "extra **Zero Streak** replies — everyone who rolled a literal 0 "
+            "yesterday, then 2 days running, then 3, and so on, all campaigns "
+            "in one image grouped + colour-coded by campaign. Those never post "
+            "to #alphalete-gp-sales.\n\n"
             "WHEN IT RUNS\n"
             "**Every day at 5:10am CST** — ten minutes after the Sales "
             "Board Fill writes the day cells from the channel.\n\n"

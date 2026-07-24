@@ -214,7 +214,7 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
         # each target keeps its own daily thread + its own posted-state (dedup is
         # per channel). Captures already happened above, so a mirror costs one
         # upload per item — no extra Tableau work.
-        targets = [cid] + [c for c in o.mirror_channels if c != cid]
+        targets = [cid] + [c for c, _name in o.mirror_channels if c != cid]
 
     posted = []
     per_chan_posted = []      # set of item ids in each target's thread
