@@ -180,6 +180,7 @@ def run(phase: str, target: dt.date | None = None) -> None:
     ws_2r = sheets.open_tab(config.TAB_2R)
     ws_call = sheets.open_tab(config.TAB_CALL_LIST) if phase == "morning" else None
 
+    failed: list[str] = []
     with session() as app:
         for office_id in config.OFFICE_IDS:
             print(f"[{office_id}] selecting office...")
@@ -189,14 +190,32 @@ def run(phase: str, target: dt.date | None = None) -> None:
                 else:
                     _evening_office(app, ws_2r, office_id, header)
             except Exception as e:  # noqa: BLE001 -- one office must not sink the rest
+                failed.append(str(office_id))
                 print(f"  ! [{office_id}] error: {type(e).__name__}: {str(e)[:120]}")
+
+    # Gap report — name the offices that did NOT sync, at the end where the log
+    # tail actually shows it. Per-office errors are swallowed above so one bad
+    # office can't sink the other 16; without this line that isolation also
+    # hides them.
+    if failed:
+        print(f"!! {len(failed)} of {len(config.OFFICE_IDS)} office(s) did NOT "
+              f"sync: {', '.join(failed)}")
 
     # Report completion for the Hub pill (orange after morning, green after
     # evening). Only real (non-dry) runs count toward the daily 2.
+    #
+    # A pass where offices threw is PARTIAL, not success. This used to publish an
+    # unconditional "success", so all 17 offices could fail and the card still
+    # went green — a clean run and a total miss looked identical. The Hub counts
+    # only SUCCESS rows toward daily_runs, so a partial evening pass now leaves
+    # the card amber 1/2 (its "ran, but some parts missed" state) instead of a
+    # green tile hiding silent gaps.
     if not sheets.DRY_RUN:
         try:
             from automations.shared import hub_activity
-            hub_activity.log_completed(CARD_ID, CARD_NAME)
+            hub_activity.log_completed(
+                CARD_ID, CARD_NAME,
+                status="partial" if failed else "success")
         except Exception:
             pass
     print(f"=== {phase.upper()} phase done ===")
