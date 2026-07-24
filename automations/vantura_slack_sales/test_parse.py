@@ -182,14 +182,44 @@ def test_fill_only_raises():
     return bad
 
 
+def test_week_guard():
+    """The board shows one week at a time. Writing while the gold WE cell is on
+    another week would land today's sales on last week's column.
+
+    Monday is the case that matters: the 5:00am pass is closing out SUNDAY and
+    the board is still correct, but by the 4:00pm pass the target is Monday
+    itself and the board must have rolled.
+    """
+    from automations.vantura_slack_sales import run as R
+
+    def board(we):
+        g = [[""] * 3 for _ in range(2)]
+        g[1][1] = we                      # B2, the gold WE cell
+        return g
+
+    bad = []
+    for we, day, want_ok, label in [
+        ("7.26", dt.date(2026, 7, 23), True,  "Thu, board on that week"),
+        ("7.26", dt.date(2026, 7, 26), True,  "Mon 5am closing Sunday 7/26"),
+        ("7.26", dt.date(2026, 7, 27), False, "Mon 4pm, board not rolled yet"),
+        ("8.2",  dt.date(2026, 7, 27), True,  "Mon 4pm after the roll"),
+        ("8.2",  dt.date(2026, 7, 26), False, "old Sunday once rolled away"),
+    ]:
+        ok = R.week_ok(board(we), day)[0]
+        if ok != want_ok:
+            bad.append(f"week guard ({label}): WE={we} day={day} "
+                       f"got ok={ok}, want {want_ok}")
+    return bad
+
+
 def main() -> int:
-    checks = [test_cases, test_running_counter, test_units_sum,
+    checks = [test_cases, test_running_counter, test_units_sum, test_week_guard,
               test_run_on_address, test_campaigns_dont_poach, test_day_rollover,
               test_fill_only_raises]
     bad = [b for chk in checks for b in chk()]
     for b in bad:
         print("FAIL", b)
-    total = len(CASES) + 13
+    total = len(CASES) + 18
     print(f"{total - len(bad)}/{total} passed")
     return 1 if bad else 0
 

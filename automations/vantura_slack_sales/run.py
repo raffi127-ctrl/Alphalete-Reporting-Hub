@@ -259,6 +259,33 @@ def campaign_rows(g, campaign: str) -> dict[str, int]:
     return out
 
 
+def week_ok(g, day: dt.date):
+    """(ok, shown, want) — is the board showing the week that CONTAINS `day`?
+
+    The board holds ONE week at a time, chosen by the gold WE cell (B2). The
+    day columns are just Monday..Sunday, so nothing in them says which week
+    they belong to: writing while the selector is on another week would land
+    today's sales on last week's Monday, on top of real numbers.
+
+    This matters every Monday. The 5:00am pass is closing out SUNDAY, so it
+    wants the week that just ended and the board is still correct; by the 4:00pm
+    pass the target is Monday itself, which needs the NEW week — so the board
+    has to have rolled in between. Same rule covers both: the WE cell must be
+    the Sunday of the target day's week.
+
+    Reuses sales_boards' expected_we so this and the 5:10am post can never
+    disagree about which week is current — they gate on the same cell.
+    We deliberately do NOT roll the board ourselves: only some day cells are
+    formulas keyed on B2, the rest are hand-typed, so flipping the selector
+    would repopulate a few and leave the others stale (see sales_boards.check_we).
+    """
+    from automations.sales_boards.run import WE_CELL, expected_we
+    r, c = WE_CELL
+    shown = str(_cell(g, r, c)).strip()
+    _, want = expected_we(day)
+    return shown == want, shown, want
+
+
 def day_column(g, day: dt.date):
     """Column for a weekday, found by its header text (Monday..Sunday)."""
     want = day.strftime("%A").lower()
@@ -443,10 +470,21 @@ def main(argv=None) -> int:
 
     from automations.recruiting_report.fill import _retry
     _log("")
+    held = False
     for res in results:
+        # GATE: never write into a week the board isn't showing.
+        ok, shown, want = week_ok(g, res["day"])
+        if not ok:
+            held = True
+            _log(f"{res['campaign']} {_md(res['day'])}: WRONG WEEK — holding. "
+                 f"The gold WE cell reads {shown!r} but {_md(res['day'])}'s "
+                 f"sales belong to week {want!r}. Roll the board (set B2 to "
+                 f"{want}) and re-run; writing now would overwrite the "
+                 f"previous week's column.")
+            continue
         if res["col"] is None:
-            _log(f"{res['campaign']} {res['day']}: the board is not on that "
-                 "week — nothing written")
+            _log(f"{res['campaign']} {res['day']}: no column for that weekday "
+                 "on the tab — nothing written")
             continue
         plan = fill_plan(g, res)
         _log(f"{res['campaign']} {_md(res['day'])} — {len(plan)} cell(s) "
@@ -462,7 +500,9 @@ def main(argv=None) -> int:
             _log(f"  wrote {len(plan)} cell(s)")
     if not a.yes:
         _log("DRY RUN — re-run with --yes to write")
-    return 0
+    # 75 = EX_TEMPFAIL, the same hold code sales_boards uses for a wrong-week
+    # board. The next pass retries; nothing was written.
+    return 75 if held else 0
 
 
 if __name__ == "__main__":

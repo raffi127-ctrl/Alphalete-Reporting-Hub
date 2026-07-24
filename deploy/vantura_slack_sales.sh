@@ -53,15 +53,29 @@ echo "[$(date)] vantura-slack-sales finished exit=$ST" >> "$LOG_FILE"
 # runs, and a launchd job bypasses it entirely, so without this a clean run is
 # indistinguishable from a silent miss. Skipped on --dry (a preview must not mark
 # the card as ran). Best-effort — never fails the job.
+# exit 75 = wrong-week HOLD (the board's gold WE cell is on another week).
+# Nothing was written and that is correct behaviour, so it isn't a failure —
+# but it isn't a success either, so the card goes amber rather than green.
 if [ "${1:-}" != "--dry" ]; then
-    if [ "$ST" -eq 0 ]; then _PUB=success; else _PUB=failed; fi
+    case "$ST" in
+        0)  _PUB=success ;;
+        75) _PUB=partial ;;
+        *)  _PUB=failed  ;;
+    esac
     "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('vantura_slack_sales','Sales Board Fill','$_PUB')" >> "$LOG_FILE" 2>&1 || true
 fi
 
 # A failure here is silent otherwise — nobody watches this log, and the 5:10am
-# board post will happily render an unfilled day. Alert the same way the
-# orchestrator does for the reports it runs.
-if [ "$ST" -ne 0 ]; then
+# board post will happily render an unfilled day.
+#
+# A wrong-week HOLD only alerts on the MORNING pass. An evening hold means the
+# board hasn't been rolled to the new week yet, which is normal on a Monday
+# afternoon and would otherwise fire six times; the morning one is the one that
+# matters, because the 5:10am post goes out ten minutes later.
+_ALERT=no
+[ "$ST" -ne 0 ] && [ "$ST" -ne 75 ] && _ALERT=yes
+[ "$ST" -eq 75 ] && [ "$(date +%H)" -lt 10 ] && _ALERT=yes
+if [ "$_ALERT" = "yes" ]; then
     "$VENV_PY" -m automations.vantura_slack_sales.alert "$LOG_FILE" "$ST" >> "$LOG_FILE" 2>&1 || true
 fi
 exit 0

@@ -35,12 +35,30 @@ def _tail(log_path: str, n: int = TAIL_LINES) -> str:
 def build_message(log_path: str, exit_code: str) -> list[str]:
     """The corrections post. Carries a PASTE TO CLAUDE block so the failure can
     be worked in-thread the moment it lands."""
-    return [
-        f":rotating_light: *{REPORT_NAME}* failed — exit {exit_code}",
-        "",
-        "The Sales Board's Base / BOX / AT&T columns did NOT get filled. "
-        "If this was the *5:00am* pass, the *5:10am* Sales Boards post will "
-        "render an unfilled day.",
+    if str(exit_code) == "75":
+        # Wrong-week hold — a real person has to roll the board; no amount of
+        # retrying fixes it, so say exactly what to do.
+        head = [
+            f":warning: *{REPORT_NAME}* is HOLDING — the board is on the "
+            f"wrong week",
+            "",
+            "The gold *WE* cell on the *Sales Board* tab is still showing last "
+            "week, so nothing was written — filling now would overwrite the "
+            "previous week's column.",
+            "",
+            "*Roll the board to the new week* (set `B2`), then re-run. The "
+            "*5:10am* Sales Boards post gates on the same cell, so it is "
+            "holding too.",
+        ]
+    else:
+        head = [
+            f":rotating_light: *{REPORT_NAME}* failed — exit {exit_code}",
+            "",
+            "The Sales Board's Base / BOX / AT&T columns did NOT get filled. "
+            "If this was the *5:00am* pass, the *5:10am* Sales Boards post will "
+            "render an unfilled day.",
+        ]
+    return head + [
         "",
         f"Re-run:  `{RERUN}`",
         "",
