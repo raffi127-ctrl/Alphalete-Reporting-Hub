@@ -135,7 +135,8 @@ def load(ws=None, tree_ws=None, aliases=None):
             continue
         lists.setdefault(leader, []).append(
             {"icd": icd, "manual_week": _cellf(r, 2), "manual_total": _cellf(r, 3),
-             "note": (r[4] or "").strip() if len(r) > 4 else ""})
+             "note": (r[4] or "").strip() if len(r) > 4 else "",
+             "adoption": ((r[5] or "").strip().upper() == "YES") if len(r) > 5 else False})
 
     podium, problems = [], []
     for r in _labelled_block(tvals, LEADERS_LABEL, skip=1):
@@ -147,6 +148,7 @@ def load(ws=None, tree_ws=None, aliases=None):
         exp_n = _cellf(r, 3)
         exp_wk = _cellf(r, 4)
         wk, tot, missing, manual = 0.0, 0.0, [], []
+        organic, adoptions = 0.0, []      # organic = the total LESS adoptions
         partial = False
         row_wk, row_keys = 0.0, set()      # the part backed by a real DD row
         for item in lists.get(name, []):
@@ -156,10 +158,18 @@ def load(ws=None, tree_ws=None, aliases=None):
                 tot += row["total"]
                 row_wk += row["weeks"][0]
                 row_keys.add(row["key"])
+                if item["adoption"]:
+                    adoptions.append(item["icd"])
+                else:
+                    organic += row["weeks"][0]
             elif item["manual_week"] is not None:
                 wk += item["manual_week"]
                 tot += item["manual_total"] or 0.0
                 manual.append(item["icd"])
+                if item["adoption"]:
+                    adoptions.append(item["icd"])
+                else:
+                    organic += item["manual_week"]
                 if item["manual_total"] is None:
                     partial = True
                     problems.append(f"{name}: '{item['icd']}' has no 2026 total — "
@@ -174,6 +184,7 @@ def load(ws=None, tree_ws=None, aliases=None):
                        "week": round(wk, 2), "total": round(tot, 2),
                        "row_week": round(row_wk, 2), "row_keys": row_keys,
                        "items": lists.get(name, []), "total_partial": partial,
+                       "organic": round(organic, 2), "adoptions": adoptions,
                        "n_icds": len(lists.get(name, [])), "expected_n": exp_n,
                        "expected_week": exp_wk, "missing": missing, "manual": manual})
 
@@ -194,6 +205,7 @@ def load(ws=None, tree_ws=None, aliases=None):
                           - sum(by_name[m]["row_week"] for m in p["minus"]
                                 if m in by_name), 2)
         p["total"] = None                        # no 2026 equivalent of that line
+        p["organic"] = p["week"]                 # no list, so nothing to strip
         # Independent cross-check: the same figure reached by adding up every
         # active ICD that is on none of the subtracted lists. If the two routes
         # disagree, a list is wrong — say so rather than publish either one.

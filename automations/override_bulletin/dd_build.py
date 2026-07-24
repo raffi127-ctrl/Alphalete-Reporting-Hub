@@ -137,6 +137,13 @@ def _podium(podium):
             sub = f'{_fmt(p["total"])} in 2026'
             if p.get("total_partial"):
                 sub += " (partial)"
+        # Raf 2026-07-24: a leader holding an adoption also shows an ORGANIC
+        # figure — the same treatment Colten already had. The big number stays
+        # the total (adoptions included); organic sits under it.
+        if p.get("adoptions"):
+            sub = (f'{_fmt(p["organic"])} organic &middot; {sub}'
+                   if p.get("total") is not None
+                   else f'{_fmt(p["organic"])} organic')
         cards.append(
             f'<div class="card"><div class="rk">{i}</div>{pic}'
             f'<div class="nm">{p["name"].upper()}</div>'
