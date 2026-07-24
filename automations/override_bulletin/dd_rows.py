@@ -30,11 +30,17 @@ import re
 
 from automations.override_bulletin.dd_data import money
 
-# Credico bills under a company name; these are the owners behind them. Known
-# pairs from DD_SOURCES.md. Spelled as the DD tab spells them, then resolved
-# through ICD Aliases like every other name.
+# Credico bills under a company name; these are the owners behind them. The
+# first two keys are the EXACT strings in Credico's own "Select Office" dropdown,
+# read off the live screen 2026-07-23 — DD_SOURCES had them as "Able
+# Acquisitions" / "Phoenix Acquisitions", which would never have matched. The
+# looser spellings are kept so either form resolves. Owner names are spelled as
+# the DD tab spells them, then resolved through ICD Aliases like every other name.
 COMPANY_TO_OWNER = {
+    "abyl acquisition group inc": "Abel Draper",
+    "phoenix acquisition": "Jahvid Thompson",
     "able acquisitions": "Abel Draper",
+    "abyl acquisitions": "Abel Draper",
     "phoenix acquisitions": "Jahvid Thompson",
 }
 

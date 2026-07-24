@@ -104,6 +104,91 @@ def discover(page=None, verbose=True):
     return rows
 
 
+def discover_deep(week_label="7.19.26", page=None, verbose=True):
+    """Drive the controls and dump the grid they produce. READ-ONLY.
+
+    The plain `--discover` pass sees only the empty form: Select Office, Select
+    Campaign, a `.calendar` text input and a Load button (AngularJS). The rows
+    only exist AFTER a Load, so this picks each office/campaign in turn, sets the
+    Saturday, clicks Load and dumps what comes back. Clicking Load is a read —
+    nothing on Credico is modified."""
+    saturday = credico_saturday(week_label)
+    rows = [["WHAT", "DETAIL", "VALUE"]]
+    own = page is None
+    ctx = credico_session(headless=True) if own else None
+    page = ctx.__enter__() if own else page
+    try:
+        page.goto(REPORTS_URL, wait_until="domcontentloaded")
+        page.wait_for_timeout(5000)
+
+        sels = page.query_selector_all("select")
+        opts = []
+        for i, s in enumerate(sels):
+            vals = [(o.get_attribute("value"), " ".join((o.inner_text() or "").split()))
+                    for o in s.query_selector_all("option")]
+            opts.append(vals)
+            for v, t in vals:
+                rows.append([f"select{i}-option", t, str(v)])
+        for i, inp in enumerate(page.query_selector_all("input")):
+            rows.append([f"input{i}", (inp.get_attribute("type") or "") + " " +
+                         (inp.get_attribute("class") or "")[:40],
+                         f"value={inp.get_attribute('value')!r} "
+                         f"placeholder={inp.get_attribute('placeholder')!r}"])
+        rows.append(["target-date", "computed one week forward",
+                     f"{saturday:%Y-%m-%d} ({saturday:%m/%d/%Y})"])
+
+        # office x campaign, skipping each dropdown's placeholder first option
+        offices = [o for o in (opts[0] if opts else []) if o[0] and "select" not in (o[1] or "").lower()]
+        camps = [o for o in (opts[1] if len(opts) > 1 else []) if o[0] and "select" not in (o[1] or "").lower()]
+        for oi, (ov, ot) in enumerate(offices):
+            for ci, (cv, ct) in enumerate(camps):
+                try:
+                    sels[0].select_option(ov)
+                    page.wait_for_timeout(700)
+                    page.query_selector_all("select")[1].select_option(cv)
+                    page.wait_for_timeout(700)
+                    cal = page.query_selector("input.calendar") or page.query_selector("input[type=text]")
+                    if cal:
+                        cal.fill(f"{saturday:%m/%d/%Y}")
+                        page.keyboard.press("Escape")
+                    btn = page.query_selector("button:has-text('Load')")
+                    if btn:
+                        btn.click()
+                        page.wait_for_timeout(6000)
+                    rows.append(["LOADED", f"{ot} / {ct}", page.url])
+                    for t in page.query_selector_all("table")[:3]:
+                        hdr = [" ".join((h.inner_text() or "").split())
+                               for h in t.query_selector_all("th")[:14]]
+                        if hdr:
+                            rows.append(["  headers", f"{ot} / {ct}", " | ".join(hdr)[:400]])
+                        for tr in t.query_selector_all("tbody tr")[:8]:
+                            cells = [" ".join((td.inner_text() or "").split())
+                                     for td in tr.query_selector_all("td")[:14]]
+                            if any(cells):
+                                rows.append(["  row", f"{ot} / {ct}", " | ".join(cells)[:400]])
+                    if not page.query_selector_all("table"):
+                        body = " ".join((page.inner_text("body") or "").split())
+                        rows.append(["  NO TABLE", f"{ot} / {ct}", body[-400:]])
+                except Exception as e:  # noqa: BLE001
+                    rows.append(["  ERROR", f"{ot} / {ct}", f"{type(e).__name__}: {e}"[:300]])
+    finally:
+        if own:
+            ctx.__exit__(None, None, None)
+
+    if verbose:
+        for r in rows:
+            print(" | ".join(str(c)[:120] for c in r))
+    OUT.mkdir(parents=True, exist_ok=True)
+    (OUT / "discover_deep.tsv").write_text(
+        "\n".join("\t".join(str(c) for c in r) for r in rows), encoding="utf-8")
+    try:
+        _dump_to_sheet(rows)
+        print(f"\n✓ {len(rows)} row(s) → '{DUMP_TAB}' tab")
+    except Exception as e:  # noqa: BLE001
+        print(f"\n⚠ couldn't write '{DUMP_TAB}' ({e}) — TSV is on disk")
+    return rows
+
+
 def _dump_to_sheet(rows):
     """Mirror discovery into a throwaway tab so it is readable from any machine."""
     from automations.recruiting_report import fill as _fill
@@ -167,8 +252,14 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="Credico DD pull (Lucy 1)")
     ap.add_argument("--discover", action="store_true",
                     help="dump the Reports screen structure (read-only)")
+    ap.add_argument("--deep", action="store_true",
+                    help="drive office/campaign/date + Load and dump the grid "
+                         "(read-only)")
     ap.add_argument("--week", help="sheet week label, e.g. 7.19.26")
     a = ap.parse_args(argv)
+    if a.deep:
+        discover_deep(a.week or "7.19.26")
+        return 0
     if a.discover:
         discover()
         return 0

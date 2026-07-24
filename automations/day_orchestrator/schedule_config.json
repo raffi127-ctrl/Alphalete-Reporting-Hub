@@ -3634,6 +3634,29 @@
         "type": "not_configured"
       },
       "machine": "Lucy 1"
+    },
+    "credico_discover_deep": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "One-shot: drive Select Office / Select Campaign / date + Load on the Credico Reports screen and dump the resulting grid, so the DD pull can be written against real markup. READ-ONLY — Load is a read; nothing on Credico is modified. Output lands on the '_credico_discover' tab of the override workbook.",
+      "display_name": "Credico — discover the Reports grid (deep)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.credico.report"
+      ],
+      "base_args": [
+        "--deep"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
     }
   },
   "read_only_standalone": {
