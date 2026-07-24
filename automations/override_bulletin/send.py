@@ -334,6 +334,21 @@ def send(*, tab=None, do_send=False, preview=False, force=False, out_dir=None):
             week_label, tab))
         return {"published": False, "reason": "week not filled", "week": week_label}
 
+    # week_is_filled only asks whether the column has SOME data — a week can sail
+    # through it while an entire COMPONENT is missing. That is not hypothetical:
+    # on Fri 2026-07-24 the live 7.19 column was filled with regular overrides
+    # while all five DD-sourced captain bonuses and Raf's special were blank,
+    # because the Tableau views feeding them were down. The bulletin then read
+    # "$57,749 this week" against $147,901, with five captains at $0 and steep
+    # fake declines on every card. Blank sub-rows now surface as series=None
+    # (see build.read_data), so we can refuse to publish that to the org.
+    unsourced = [r["name"] for r in section2 if r.get("week") is None]
+    if unsourced:
+        print("\n⚠ CAPTAIN/SPECIAL not sourced for {} ({}): {}".format(
+            week_label, len(unsourced), ", ".join(unsourced)))
+        print("  Their weekly cells are BLANK, so every total above is short by "
+              "their captain/special money.")
+
     subject = B.email_subject(week_label)
     caption = caption_for(week_label)
     if preview:
@@ -354,11 +369,28 @@ def send(*, tab=None, do_send=False, preview=False, force=False, out_dir=None):
         print("⚠ contact group(s) NOT FOUND: {} — the distro is INCOMPLETE".format(
             ", ".join(missing)))
 
+    print("captain/spec: {}".format(
+        "all sourced" if not unsourced
+        else "{} NOT sourced — --send is refused".format(len(unsourced))))
+
     if not (do_send or preview):
         print("\nDRY RUN — nothing posted, nothing emailed. "
               "Re-run with --preview (email Megan only) or --send (real distro).")
         return {"published": False, "dry_run": True, "week": week_label,
-                "png": str(png_path), "to": to_addrs, "missing": missing}
+                "png": str(png_path), "to": to_addrs, "missing": missing,
+                "unsourced": unsourced}
+    # A missing component makes every total on the page WRONG, not merely
+    # incomplete, so the org never sees it by accident. --preview still goes out:
+    # looking at a broken one is how it gets fixed.
+    if unsourced and do_send and not force:
+        print("\nREFUSING TO SEND — {} captain/special row(s) unsourced for {}. "
+              "Fill them (or wait for the source to come back), then re-run. "
+              "--force publishes anyway.".format(len(unsourced), week_label))
+        return {"published": False, "reason": "captain/special unsourced",
+                "week": week_label, "unsourced": unsourced}
+    if unsourced and do_send and force:
+        print("\n⚠ --force: publishing with {} unsourced captain/special "
+              "row(s).".format(len(unsourced)))
     if missing and do_send:
         raise SystemExit("refusing to send: contact group(s) missing: {}. Fix the "
                          "group name(s) in alphaletereporting@gmail.com's contacts "

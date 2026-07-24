@@ -194,16 +194,37 @@ def read_data(tab=None):
     # --- Section 2: CAPTAIN/SPECIAL OVERRIDES ONLY ----------------------------
     section2 = []
     if cap_start:
-        for r in vals[cap_start:]:
-            name = (r[0] if r else "").strip()
+        # Group each leader row with ITS sub-rows. The leader cell is a =SUM over
+        # them, so when the sub-rows are blank the sheet reports $0.00 — and a
+        # number nobody has supplied then looks exactly like a real zero. We keep
+        # the sub-row positions so an unsourced week can be told apart and shown
+        # as "—" (Megan 2026-07-24, on the five $0 captains during the Tableau
+        # outage: "are these 0 because of the tableau break?" — the bulletin
+        # itself should answer that).
+        entries, cur = [], None
+        for i in range(cap_start, len(vals)):
+            name = (vals[i][0] if vals[i] else "").strip()
             low = name.lower()
             if not name:
                 break                            # blank row ends the section
-            # Skip the per-leader sub-rows; keep only the person total rows.
             if low in ("captain override", "special override", "special overrides"):
+                if cur is not None:
+                    cur[1].append(i)
                 continue
-            led = led_for(low)
-            section2.append(_mk_row(r, week_cols, year_cols, led))
+            cur = (i, [])
+            entries.append(cur)
+        for i, subs in entries:
+            r = vals[i]
+            led = led_for((r[0] or "").strip().lower())
+            row = _mk_row(r, week_cols, year_cols, led)
+            for k, (ci, _lbl) in enumerate(week_cols):
+                if k >= len(row["series"]) or not subs:
+                    continue
+                if all(not (vals[s][ci].strip() if ci < len(vals[s]) else "")
+                       for s in subs):
+                    row["series"][k] = None       # nothing was ever supplied
+            row["week"] = row["series"][0] if row["series"] else None
+            section2.append(row)
         section2.sort(key=lambda x: (x["total"] or 0), reverse=True)
 
     return week_labels, section1, section2
