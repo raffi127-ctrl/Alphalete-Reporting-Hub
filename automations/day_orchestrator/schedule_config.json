@@ -3440,6 +3440,27 @@
       },
       "machine": "Lucy 1"
     },
+    "override_backtrack": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Re-reads the last 4 weeks of the Override Bulletin and corrects any that DRIFTED. Prior weeks keep settling: between 2026-07-23 and 07-24 the VA's own 7.12 column moved (Rafael +$294.51, Carlos +$441.77, Burden +$480.18). Runs automatically inside override_bulletin (including on a HOLD pass); this entry is for a manual `lucy rerun override_backtrack`. Corrects the REGULAR component only and rebuilds each cell as fresh-regular + the captain/special ALREADY on the sheet (DD only ever carries the just-closed week). DRY-RUN unless --write; sandbox only; a person absent from the source is reported, never zeroed.",
+      "display_name": "Override fill — backtrack the last 4 weeks",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.override_bulletin.backtrack"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
+    },
     "install_b2b_quality_agent": {
       "on_scheduler": false,
       "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_b2b_quality_agent` can install/refresh the STANDALONE com.alphalete.b2b-quality LaunchAgent on LUCY 2 (5:30am CST daily, deploy/b2b_quality.sh, --post). install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run after the plist changes.",

@@ -134,8 +134,27 @@ def pull_all(week_mdy, week_header, period_num, period_year, *, page=None,
             F.rekey(special, aliases))
 
 
+def _do_backtrack(tab, weeks, write, verbose):
+    """Re-read the recent weeks and correct any that drifted.
+
+    Runs even when the fill HOLDS: prior weeks keep settling whether or not the
+    new week has published, and a hold is exactly the quiet pass that should be
+    spent fixing them. Verified drift on the VA's own 7.12 column between
+    2026-07-23 and 07-24 — Rafael +$294.51, Carlos +$441.77, Burden +$480.18.
+
+    Best-effort: a backtrack failure must never lose (or fail) the fill."""
+    if not weeks:
+        return
+    try:
+        from automations.override_bulletin import backtrack as BT
+        print(f"\n--- backtrack: re-reading the last {weeks} week(s) ---")
+        BT.backtrack(tab=tab, weeks=weeks, write=write, verbose=verbose)
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠ backtrack skipped: {type(e).__name__}: {e}")
+
+
 def run(week_mdy=None, *, tab=F.SANDBOX_TAB, write=False, verbose=True,
-        force=False):
+        force=False, backtrack_weeks=4):
     from automations.recruiting_report import fill as _fill
     from automations.shared.tableau_patchright import tableau_session
     wb = _fill._client().open_by_key(F.WORKBOOK_ID)
@@ -172,15 +191,24 @@ def run(week_mdy=None, *, tab=F.SANDBOX_TAB, write=False, verbose=True,
                 week_mdy, why = src_weeks[0], (f"--force: refilling {src_weeks[0]} "
                                                f"(overwriting existing values)")
             print(f"week: {why}")
-            if week_mdy is None:
-                print("HOLDING — nothing written, nothing published.")
-                return None, None, "HOLD"
-        m, d, y = week_mdy.split(".")
-        week_header = f"{int(m)}/{int(d)}/20{y[-2:]}"
-        regular, captain, special = pull_all(week_mdy, week_header,
-                                             period_num=int(m), period_year=f"20{y[-2:]}",
-                                             page=page, verbose=verbose,
-                                             aliases=aliases, org_rows=org_rows)
+        if week_mdy is None:
+            # HOLD — but fall out of the session first. The backtrack opens its
+            # own tableau_session, and nesting one inside this block would fight
+            # the holder for the browser.
+            held = True
+        else:
+            held = False
+            m, d, y = week_mdy.split(".")
+            week_header = f"{int(m)}/{int(d)}/20{y[-2:]}"
+            regular, captain, special = pull_all(
+                week_mdy, week_header, period_num=int(m),
+                period_year=f"20{y[-2:]}", page=page, verbose=verbose,
+                aliases=aliases, org_rows=org_rows)
+    if held:
+        print("HOLDING — nothing written, nothing published.")
+        # A hold is the quiet pass to spend fixing weeks that have drifted.
+        _do_backtrack(tab, backtrack_weeks, write, verbose)
+        return None, None, "HOLD"
     print(f"pulls: regular={len(regular)}  captain={len(captain)}  special={len(special)}")
 
     section1, section2, unmatched = F.assemble(
@@ -203,6 +231,7 @@ def run(week_mdy=None, *, tab=F.SANDBOX_TAB, write=False, verbose=True,
         F.week_col(ws, week_mdy) is not None) else None
     if col is None:
         print(f"no {week_mdy} column yet — nothing written")
+        _do_backtrack(tab, backtrack_weeks, write, verbose)
         return section1, section2, unmatched
     print(f"\nwrote {len(section1)} ALL-ORG + {len(section2)} CAPTAIN cells to col {col}")
     # ---- late Special/Credico: place any PENDING period whose money has landed.
@@ -235,6 +264,8 @@ def run(week_mdy=None, *, tab=F.SANDBOX_TAB, write=False, verbose=True,
               f"but CHECK each one: a name mismatch looks identical to a real zero.")
         for n in unmatched:
             print(f"    • {n}")
+
+    _do_backtrack(tab, backtrack_weeks, write, verbose)
     return section1, section2, unmatched
 
 
@@ -249,6 +280,9 @@ def main(argv=None):
     ap.add_argument("--force", action="store_true",
                     help="refill the week even if the tab already has values for "
                          "it (overwrites mapped cells; deletes nothing)")
+    ap.add_argument("--backtrack-weeks", type=int, default=4,
+                    help="how many recent weeks to re-read and correct for "
+                         "source drift (0 disables)")
     ap.add_argument("--clear-week", metavar="WEEK",
                     help="blank this week's mapped cells so it can be filled "
                          "again (sandbox only; needs --write to actually clear)")
@@ -261,7 +295,7 @@ def main(argv=None):
                      F.read_captains(ws, aliases), dry_run=not a.write)
         return 0
     _s1, _s2, un = run(a.week, tab=a.tab, write=a.write, verbose=not a.quiet,
-                       force=a.force)
+                       force=a.force, backtrack_weeks=a.backtrack_weeks)
     # Holding is a CORRECT outcome, not a failure, so exit 0. launchd fires the
     # Friday passes on a fixed schedule and never needs a non-zero to retry, while
     # a non-zero makes the Hub card and `lucy rerun` report a normal hold as
