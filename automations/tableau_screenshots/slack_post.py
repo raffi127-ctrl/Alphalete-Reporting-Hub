@@ -45,6 +45,9 @@ ORG_CHANNELS = {
     "domin8":      ["C0B395PUUCW"],       # #domin8-b2b-sales (private) — Lucy
                                           # (U0BCFGCR5PV) must be a MEMBER or
                                           # files_upload_v2 → not_in_channel.
+    "a_players":   ["C0AJQA8P716"],       # #a-players-b2b (private, Carlos) —
+                                          # mirrors #alphalete-gp-sales exactly
+                                          # (same boards, same B2B-first order).
 }
 ORGS = list(ORG_CHANNELS)
 DEFAULT_ORG = "alphalete"
@@ -58,7 +61,8 @@ ORG_LABEL = {"alphalete": "#alphalete-sales + #top-leaders-alphalete-org",
              "carlos_gp": "#alphalete-gp-sales",
              "ambient_1": "#ambient-sales-1",
              "aeon": "#aeon-sales",
-             "domin8": "#domin8-b2b-sales"}
+             "domin8": "#domin8-b2b-sales",
+             "a_players": "#a-players-b2b"}
 
 # Per-org tracker ORDER override (Carlos wants the B2B trackers + Box first in his
 # channel, 2026-07-14). An org NOT listed here posts in the default pages.py
@@ -66,13 +70,20 @@ ORG_LABEL = {"alphalete": "#alphalete-sales + #top-leaders-alphalete-org",
 # listed ones, in default order — so adding a new tracker never silently drops it
 # from a custom-ordered feed. Keys are org keys from ORG_CHANNELS; values are
 # lists of tracker ids (pages.py `id`s).
+# Carlos's B2B-first order: B2B (AT&T, CRU, Box, D2D) first, then AT&T/NDS/Fiber.
+# SHARED by both of Carlos's channels so they stay genuinely mirrored — Carlos
+# asked for #a-players-b2b to match #alphalete-gp-sales (2026-07-23), and a
+# copy-pasted second list would silently drift the day one of them is retuned.
+# To let them diverge, give one its own list here instead of this constant.
+_B2B_FIRST = [
+    "b2b_att_country", "b2b_att_country_cru", "b2b_box",
+    "b2b_d2d_consolidated", "att_country", "att_country_internet_only",
+    "nds", "quantum_fiber",
+]
+
 ORG_ORDER: dict[str, list[str]] = {
-    # Carlos wants B2B (AT&T, CRU, Box, D2D) first, then the AT&T/NDS/Fiber ones.
-    "carlos_gp": [
-        "b2b_att_country", "b2b_att_country_cru", "b2b_box",
-        "b2b_d2d_consolidated", "att_country", "att_country_internet_only",
-        "nds", "quantum_fiber",
-    ],
+    "carlos_gp": _B2B_FIRST,
+    "a_players": _B2B_FIRST,     # mirror of #alphalete-gp-sales (Carlos 7/23)
 }
 
 # Per-org tracker SELECTION — a channel that wants only a SUBSET of the trackers.

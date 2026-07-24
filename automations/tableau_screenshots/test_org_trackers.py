@@ -67,6 +67,19 @@ class OrgTrackerSelectionTest(unittest.TestCase):
         self.assertIn("order_tiered_bonus",
                       [p["id"] for p in pg.PAGES])  # …but it DOES exist / gets captured
 
+    def test_a_players_mirrors_alphalete_gp_exactly(self):
+        """Carlos asked for #a-players-b2b to match #alphalete-gp-sales (7/23).
+        They share _B2B_FIRST, so this pins that they can't drift — same header,
+        same reply order, same late handling — while still posting to their OWN
+        channels."""
+        gp = self._plan("carlos_gp")
+        ap = self._plan("a_players")
+        self.assertEqual(gp["header"], ap["header"])
+        self.assertEqual([r["file"] for r in gp["replies"]],
+                         [r["file"] for r in ap["replies"]])
+        self.assertEqual(gp["pending_late"], ap["pending_late"])
+        self.assertNotEqual(gp["channels"], ap["channels"])  # different channels
+
     def test_unknown_id_in_selection_is_dropped_not_crashed(self):
         orig = dict(sp.ORG_TRACKERS)
         sp.ORG_TRACKERS["_test"] = ["b2b_att_country", "does_not_exist"]
