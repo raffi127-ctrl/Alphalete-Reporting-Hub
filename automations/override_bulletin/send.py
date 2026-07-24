@@ -135,11 +135,24 @@ def build_email(png_paths, week_label, to_addrs, subject=None, title=None):
     msg["To"] = ", ".join(to_addrs)
     msg["Subject"] = subject
     cids = [make_msgid()[1:-1] for _ in png_paths]
+    # CENTRED, and sized to the render (Megan 2026-07-24: "I don't like all the
+    # blank space on the right"). The page renders 1180 CSS px wide, so capping
+    # at 1000 both shrank the figures AND left the bulletin pinned to the left of
+    # a full-width black block — the dead space she saw. A centring <table> is
+    # what actually works in Gmail/Outlook; `margin:0 auto` alone does not.
     imgs = "".join(
-        '<img src="cid:{}" style="max-width:1000px;width:100%;display:block">'.format(c)
+        '<img src="cid:{}" width="1180" style="width:100%;max-width:1180px;'
+        'height:auto;display:block;border:0">'.format(c)
         for c in cids)
     html = ('<div style="font-family:Arial,Helvetica,sans-serif;background:#000;'
-            'padding:0;margin:0">{}</div>'.format(imgs))
+            'padding:0;margin:0">'
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            'border="0" style="background:#000;border-collapse:collapse">'
+            '<tr><td align="center" style="padding:0">'
+            '<table role="presentation" cellpadding="0" cellspacing="0" border="0" '
+            'style="width:100%;max-width:1180px;border-collapse:collapse">'
+            '<tr><td style="padding:0">{}</td></tr>'
+            '</table></td></tr></table></div>'.format(imgs))
     msg.set_content(
         "{} — week ending {}.\n"
         "This email is best viewed in an HTML email client.".format(title, week_label))

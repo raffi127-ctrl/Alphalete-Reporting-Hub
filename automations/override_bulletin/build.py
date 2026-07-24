@@ -368,23 +368,28 @@ def build_html(week_labels: list, section1: list, section2: list) -> str:
   .total span {{ display:block; color:#8f8a7e; font-size:8px; letter-spacing:2px; font-weight:normal; margin-bottom:1px; }}
   /* section tables */
   .sec {{ margin-top:38px; }}
-  .sec-h {{ text-align:center; color:{GOLD}; letter-spacing:4px; font-size:17px;
-    font-weight:bold; margin-bottom:14px;
+  .sec-h {{ text-align:center; color:{GOLD}; letter-spacing:4px; font-size:20px;
+    font-weight:bold; margin-bottom:16px;
     background:linear-gradient(180deg,{GOLD_LT},{GOLD}); -webkit-background-clip:text;
     -webkit-text-fill-color:transparent; }}
-  .sec table {{ width:100%; border-collapse:collapse; font-size:12.5px; }}
-  .sec th {{ color:#8f8a7e; font-size:10px; letter-spacing:1px; font-weight:normal;
-    padding:9px 5px; border-bottom:1px solid {GOLD}; text-align:right; text-transform:uppercase; }}
+  /* Type scale (Megan 2026-07-24: "not very easy to read/see the numbers").
+     The figures ARE the report, so they get read at a glance on a phone: the
+     table went 12.5 -> 16px, headers 10 -> 12px, rows breathe (8 -> 12px), and
+     every value sits on a brighter ink than the mid-grey it used to. Prior-year
+     columns stay dimmer than the live weeks, but are no longer near-invisible. */
+  .sec table {{ width:100%; border-collapse:collapse; font-size:16px; }}
+  .sec th {{ color:#a8a294; font-size:12px; letter-spacing:1px; font-weight:normal;
+    padding:11px 7px; border-bottom:1px solid {GOLD}; text-align:right; text-transform:uppercase; }}
   .sec th.nmcell, .sec td.nmcell {{ text-align:left; }}
   .sec th.wk.cur, .sec td.wk.cur {{ color:{GOLD_LT}; }}
   .sec th.t26, .sec td.t26 {{ color:{GOLD_LT}; }}
-  .sec th.yr {{ color:#6f6b60; }}
-  .sec td {{ padding:8px 5px; text-align:right; color:#d3cdbf;
-    border-bottom:1px solid #17140f; }}
-  .sec td.nmcell {{ color:#cbc5b7; }}
-  .sec td.t26 {{ font-weight:bold; }}
-  .sec td.wk.cur {{ font-weight:bold; }}
-  .sec td.yr {{ color:#8a857a; }}
+  .sec th.yr {{ color:#8b8579; }}
+  .sec td {{ padding:12px 7px; text-align:right; color:#eae5d9;
+    border-bottom:1px solid #1d1913; }}
+  .sec td.nmcell {{ color:#f2eee4; font-size:16.5px; }}
+  .sec td.t26 {{ font-weight:bold; font-size:17px; }}
+  .sec td.wk.cur {{ font-weight:bold; font-size:17px; }}
+  .sec td.yr {{ color:#a29c8f; font-size:15px; }}
   .sec tr.lead td.nmcell {{ color:#f6f2e9; font-weight:bold;
     border-left:3px solid {GOLD}; padding-left:9px; }}
   .sec tr.lead td {{ background:rgba(201,162,75,0.14); }}
