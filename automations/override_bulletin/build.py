@@ -397,12 +397,18 @@ def build_html(week_labels: list, section1: list, section2: list) -> str:
      every value sits on a brighter ink than the mid-grey it used to. Prior-year
      columns stay dimmer than the live weeks, but are no longer near-invisible. */
   .sec table {{ width:100%; border-collapse:collapse; font-size:16px; }}
-  .sec th {{ color:#a8a294; font-size:12px; letter-spacing:1px; font-weight:normal;
-    padding:11px 7px; border-bottom:1px solid {GOLD}; text-align:right; text-transform:uppercase; }}
+  /* Column headers (Megan 2026-07-24: "still hard to read the date headers").
+     They were 12px, un-bold, on mid-grey with 1px tracking — the faintest text
+     on the page, and the one that tells you WHICH WEEK you're looking at. Now
+     15px bold on near-white, with the tracking eased off: letter-spacing helps
+     a word read as a label but actively hurts a date like 7.19.26. */
+  .sec th {{ color:#ded8ca; font-size:15px; letter-spacing:0.3px; font-weight:bold;
+    padding:11px 7px 13px; border-bottom:1px solid {GOLD}; text-align:right;
+    text-transform:uppercase; }}
   .sec th.nmcell, .sec td.nmcell {{ text-align:left; }}
   .sec th.wk.cur, .sec td.wk.cur {{ color:{GOLD_LT}; }}
   .sec th.t26, .sec td.t26 {{ color:{GOLD_LT}; }}
-  .sec th.yr {{ color:#c4bda9; }}
+  .sec th.yr {{ color:#cfc8b7; }}
   .sec td {{ padding:12px 7px; text-align:right; color:#eae5d9;
     border-bottom:1px solid #1d1913; }}
   .sec td.nmcell {{ color:#f2eee4; font-size:16.5px; }}
