@@ -61,11 +61,33 @@ Raf's instructions for OUR reporting, and where each lands in the code:
 | Raf's rule | How it is implemented |
 |---|---|
 | "Include the deals in the reporting." | They render on page 2 under **Tracked Separately**, with a per-row reason. |
-| "When adding up total units for 'My org' don't count adoptions that aren't mine, **only count them for the person receiving the double over ride**." | They are OUT of the ORG. TOTAL DD headline, and IN **Colten's** podium list — Colten is the person receiving the double override. |
-| "Future depth promotions shouldn't…" | *(the pasted copy cuts off mid-sentence — get the rest before wiring depth handling)* |
+| "When adding up total units for 'My org' don't count adoptions that aren't mine, **only count them for the person receiving the double over ride**." | They are OUT of the ORG. TOTAL DD headline, and IN the podium list of whoever receives the override. |
+| "Future depth promotions shouldn't…" | *(cut off in the pasted copy — depth handling stays unwired)* |
 
-So the current treatment is correct on Raf's rule, not just on the VA's habit:
-excluded from the org total, counted for Colten, and never invisible.
+### The `Adoption?` column and the ORGANIC figure (Raf, 2026-07-24 14:36)
+On the bulletin thread, Eve asked whether Jairo could be added. Raf:
+
+> "Yeah we can add him. **Justin is an adoption, not organic.** Lets the same
+> thing like Colten where we have organic DD row."
+
+So `PODIUM ORG LISTS` has an **`Adoption?`** column. A `YES` row still counts
+toward that leader's **TOTAL** but is excluded from their **ORGANIC** figure,
+which renders under the big number on the card:
+
+| Leader | Total | Organic | Adoption(s) |
+|---|---|---|---|
+| Colten Wright | $431,124.00 | **$390,637.00** | Justin Fermin, Karrington + Milan |
+| Jairo Ruiz | $176,559.00 | **$163,471.00** | Justin Fermin |
+
+**Justin Fermin counts to BOTH Jairo and Colten.** He sits under Jairo in the
+tree, so Jairo receives the double override — and Colten's org contains Jairo's.
+Podium figures overlap by design, so both is correct, not a double-count bug.
+Colten's $431,124 still reconciles to the VA's published figure exactly: the flag
+changes what we can SHOW, not what we count.
+
+**Jairo Ruiz is on the podium** as of 2026-07-24. His `Expected week DD` is
+deliberately BLANK — there is no published figure to check him against yet, and
+inventing one would fake the check that protects every other leader.
 
 ## CREDICO — a real second source
 
