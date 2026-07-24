@@ -30,6 +30,50 @@ LEDGER_SPECIAL = "Special Override"   # needle refined to period at call time
 LEDGER_CREDICO = "Credico"
 
 
+def _scan_summary(page, out_dir, *, verbose=True, year=None):
+    """Download the ORG Override Summary across a WINDOW of retail periods and
+    return (weeks_newest_first, week_to_period, rows_by_period).
+
+    Overrides run on 13 retail periods a year (~4 weeks each), NOT calendar
+    months — Period 7 ended ~7/12, so 7.19 sat in Period 8 while Period 7's
+    newest week was still 7.12 (confirmed on Lucy 1, 2026-07-24). The old loop
+    broke on the FIRST period that downloaded and read its newest week, so it
+    held on 7.12 forever and never discovered 7.19 one period over. Scanning a
+    window and taking the overall newest week fixes that, and records which
+    period each week lives in so every period-scoped pull uses the RIGHT one
+    (the month-derived period number was wrong for any spilled-over week)."""
+    import datetime as _dt
+    from automations.shared.tableau_patchright import download_crosstab_patchright
+    year = year or _dt.date.today().year
+    base = _dt.date.today().month
+    cands = []
+    for off in (1, 0, 2, -1, 3):          # current period, the next, then around
+        p = base + off
+        if 1 <= p <= 13 and p not in cands:
+            cands.append(p)
+    week_period, rows_by = {}, {}
+    for cand in cands:
+        try:
+            url = P._with_filter(P.ORG_SUMMARY_VIEW, "Period", f"Period {year}-{cand}")
+            download_crosstab_patchright(url, P.ORG_SUMMARY_SHEET,
+                                         out_dir / f"org-{cand}.csv",
+                                         page=page, verbose=verbose)
+        except Exception:  # noqa: BLE001
+            continue
+        rows = P.read_crosstab(out_dir / f"org-{cand}.csv")
+        wks = P.summary_weeks(rows)
+        if not wks:
+            continue
+        rows_by[cand] = rows
+        for w in wks:
+            week_period.setdefault(w, cand)   # first (newest-biased) period wins
+    def _key(w):
+        m, d, y = (int(x) for x in w.split("."))
+        return _dt.date(2000 + y, m, d)
+    weeks_desc = sorted(week_period, key=_key, reverse=True)
+    return weeks_desc, week_period, rows_by
+
+
 def _dd_week_for(dd_weeks, sheet_week):
     """Amount for the sheet's Sunday week from a captain's DD per-week dict.
 
@@ -168,21 +212,14 @@ def run(week_mdy=None, *, tab=F.SANDBOX_TAB, write=False, verbose=True,
 
     from pathlib import Path
     dd = Path("output/override_bulletin/run"); dd.mkdir(parents=True, exist_ok=True)
+    import datetime as _dt
+    year = _dt.date.today().year
     with tableau_session(headless=True, verbose=verbose) as page:
-        # Phase 1 — the override summary decides which week can be filled.
-        from automations.shared.tableau_patchright import download_crosstab_patchright
-        today = week_mdy or "1.1.26"
-        pm = int((week_mdy or "").split(".")[0] or 0) or None
-        for cand in ([pm] if pm else []) + [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6]:
-            try:
-                url = P._with_filter(P.ORG_SUMMARY_VIEW, "Period", f"Period 2026-{cand}")
-                download_crosstab_patchright(url, P.ORG_SUMMARY_SHEET, dd / "org.csv",
-                                             page=page, verbose=verbose)
-                break
-            except Exception:  # noqa: BLE001
-                continue
-        org_rows = P.read_crosstab(dd / "org.csv")
-        src_weeks = P.summary_weeks(org_rows)
+        # Phase 1 — scan a window of retail periods; the newest week across them
+        # decides which week can be filled, and week_period says which period it
+        # lives in (retail periods != calendar months — see _scan_summary).
+        src_weeks, week_period, rows_by = _scan_summary(page, dd, verbose=verbose,
+                                                        year=year)
         if week_mdy is None:
             week_mdy, why = resolve_target_week(src_weeks, ws)
             if week_mdy is None and force and src_weeks:
@@ -201,9 +238,14 @@ def run(week_mdy=None, *, tab=F.SANDBOX_TAB, write=False, verbose=True,
             held = False
             m, d, y = week_mdy.split(".")
             week_header = f"{int(m)}/{int(d)}/20{y[-2:]}"
+            # The RETAIL period that actually carries this week drives every
+            # period-scoped pull (regular / raf-special / ledger); fall back to
+            # the month only if the scan didn't place it.
+            period_num = week_period.get(week_mdy, int(m))
+            org_rows = rows_by.get(period_num)
             regular, captain, special = pull_all(
-                week_mdy, week_header, period_num=int(m),
-                period_year=f"20{y[-2:]}", page=page, verbose=verbose,
+                week_mdy, week_header, period_num=period_num,
+                period_year=str(year), page=page, verbose=verbose,
                 aliases=aliases, org_rows=org_rows)
     if held:
         print("HOLDING — nothing written, nothing published.")
