@@ -3,9 +3,10 @@
 Rules live in DD_SOURCES.md. In short:
   * active ICDs = `Active ICD` YES on `Org DDs Ongoing Report`
   * the podium is NOT derivable from the Org Tree and NOT the flat ORG column.
-    Each leader's figure is a SPECIFIC ICD LIST that only exists in the VA's
-    emailed bulletin, transcribed onto `Lucy Org Tree` under PODIUM ORG LISTS.
-    We sum those lists directly and check each against its expected total.
+    Each leader's figure is a SPECIFIC ICD LIST, kept on `Lucy Org Tree` under
+    PODIUM ORG LISTS. We sum those lists and check each against its expected
+    total. The lists are NOT in the emailed bulletin (that carries only the
+    headline and the 7 figures) — they live in the VA's working file.
   * ADOPTIONS (Karrington Moody, Milan Godbolt) and JACOB DOVER are EXCLUDED from
     the org headline but still reported — their numbers must never vanish
   * Raf's podium figure is the bulletin's "total outside Carlos & Colten" line:
@@ -115,9 +116,10 @@ def load(ws=None, tree_ws=None, aliases=None):
                      and wk_cols[0][0] < len(r)), None)
 
     # ---- the podium: per-leader ICD LISTS off `Lucy Org Tree`, summed directly.
-    # These lists exist ONLY in the VA's emailed bulletin — they are not derivable
-    # from the Org Tree or the ORG column (a previous build burned hours proving
-    # that). Transcribe the bulletin into the tab; this just adds it up.
+    # Not derivable from the Org Tree or the ORG column (a previous build burned
+    # hours proving that), and NOT in the emailed bulletin either — that carries
+    # only the headline and the 7 figures. The lists were reconstructed and are
+    # validated against those published figures to the penny. This just adds up.
     tvals = tree_ws.get_all_values()
     lists = {}                                   # leader -> [list rows]
     for r in _labelled_block(tvals, LISTS_LABEL, skip=1):
@@ -139,6 +141,7 @@ def load(ws=None, tree_ws=None, aliases=None):
         exp_n = _cellf(r, 3)
         exp_wk = _cellf(r, 4)
         wk, tot, missing, manual = 0.0, 0.0, [], []
+        partial = False
         row_wk, row_keys = 0.0, set()      # the part backed by a real DD row
         for item in lists.get(name, []):
             row = by_key.get(_key(item["icd"], aliases))
@@ -152,8 +155,10 @@ def load(ws=None, tree_ws=None, aliases=None):
                 tot += item["manual_total"] or 0.0
                 manual.append(item["icd"])
                 if item["manual_total"] is None:
+                    partial = True
                     problems.append(f"{name}: '{item['icd']}' has no 2026 total — "
-                                    f"the leader's 2026 figure is understated")
+                                    f"the leader's 2026 figure is understated, so "
+                                    f"the card says 'partial'")
             else:
                 missing.append(item["icd"])
                 problems.append(f"{name}: '{item['icd']}' has no DD row and no "
@@ -162,7 +167,7 @@ def load(ws=None, tree_ws=None, aliases=None):
                        "minus": minus, "list_week": round(wk, 2),
                        "week": round(wk, 2), "total": round(tot, 2),
                        "row_week": round(row_wk, 2), "row_keys": row_keys,
-                       "items": lists.get(name, []),
+                       "items": lists.get(name, []), "total_partial": partial,
                        "n_icds": len(lists.get(name, [])), "expected_n": exp_n,
                        "expected_week": exp_wk, "missing": missing, "manual": manual})
 

@@ -106,9 +106,17 @@ as `override_bulletin/discover.py`. Then write `_extract()` against real markup.
 Ranked high→low by each leader's org DD total.
 
 **DO NOT try to derive the podium from the `Org Tree` tab.** Two sessions have
-now burned hours on it. Each leader's figure is a **specific ICD list** that
-exists only in the VA's emailed bulletin — it is neither the flat `ORG` column
-nor any downline roll-up, and no tree walk reproduces it.
+now burned hours on it. Each leader's figure is a **specific ICD list** — neither
+the flat `ORG` column nor any downline roll-up, and no tree walk reproduces it.
+
+**And do NOT go looking for those lists in the emailed bulletin.** Verified
+2026-07-23 against the real send (`Alphalete Organization Bulletin WE`,
+alphaletereporting@gmail.com, 7/23 15:32, WE 7.19.26): the email carries **only**
+the headline and the 7 leader cards — name, city, one dollar figure each. No ICD
+tables, no 2026 totals, no adoptions breakdown. The lists live in the VA's own
+working file (the campaign-pivoted Tableau crosstab plus her `adoptions` tab),
+which we do not have. Ours were reconstructed and are validated against the
+published figures to the penny — that check is the thing to trust.
 
 The lists are transcribed onto **`Lucy Org Tree` (gid 1263646043)** in two
 label-found blocks, and `dd_data.load()` just adds them up:
@@ -172,14 +180,17 @@ Gotchas the numbers pin down:
 Podium totals OVERLAP by design (a larger org contains smaller ones), so they sum
 to MORE than the org total.
 
-### Still open on the podium (needs the emailed bulletin to close)
-1. Carlos's list computes right with 19 names but the bulletin says **18** — one
-   of the two $0 people (David Martinez, Benjamin Burden) is not on it. No effect
-   on the money, only the count.
+### Still open on the podium — needs the VA's WORKING FILE, not the email
+None of these affect a published weekly figure; all three are flagged every run.
+1. Carlos's list computes right with 19 names but the count says **18** — one of
+   the two $0 people (David Martinez, Benjamin Burden) is not on it. The count is
+   not rendered anywhere, and the money is confirmed correct either way.
 2. The **adoptions are one line worth $27,399 combined**; the per-person split is
-   unconfirmed (derived, not read).
-3. **No 2026 totals** for Justin, Marcos or the adoptions, so Colten's "in 2026"
-   card figure is understated. Flagged on every run.
+   derived, not read. Also not rendered per person.
+3. **No 2026 totals** for Justin, Marcos or the adoptions. This one DOES show:
+   Colten's card reads "(partial)" after his 2026 figure rather than printing a
+   number we know is short. Note the 2026 line is OUR addition — the VA's
+   bulletin shows the week only — so this is a nicety, not a defect.
 
 ## THE LIVE SHEET IS THE SOURCE OF TRUTH — not a sample email
 

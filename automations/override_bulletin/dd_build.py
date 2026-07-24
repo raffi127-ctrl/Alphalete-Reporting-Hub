@@ -127,9 +127,16 @@ def _podium(podium):
                f'border:2px solid {GOLD}"></div>')
         # Raf's card carries no 2026 line: his figure is a subtraction ("total
         # outside Carlos & Colten"), which has no 2026 equivalent on the tab.
-        sub = (f'{_fmt(p["total"])} in 2026' if p.get("total") is not None
-               else "Total outside " + " &amp; ".join(
-                   m.split()[0] for m in p.get("minus", [])))
+        # The 2026 line is OUR addition — the VA's bulletin shows the week only —
+        # so where part of a leader's list has no 2026 figure anywhere we can
+        # reach, say "partial" rather than print a number we know is short.
+        if p.get("total") is None:
+            sub = "Total outside " + " &amp; ".join(
+                m.split()[0] for m in p.get("minus", []))
+        else:
+            sub = f'{_fmt(p["total"])} in 2026'
+            if p.get("total_partial"):
+                sub += " (partial)"
         cards.append(
             f'<div class="card"><div class="rk">{i}</div>{pic}'
             f'<div class="nm">{p["name"].upper()}</div>'
