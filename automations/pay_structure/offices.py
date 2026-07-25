@@ -22,6 +22,28 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
+# branding.json (committed) carries each office's logo, accent, AND business_name
+# so the DEPLOYED editor is correct without the AppStream directory / heavy
+# report imports (all-offices.json isn't in the repo, and daily_focus pulls deps
+# Streamlit Cloud doesn't have). Read once, cached.
+_BRANDING_FILE: "Optional[Dict[str, dict]]" = None
+
+
+def _branding_file() -> "Dict[str, dict]":
+    global _BRANDING_FILE
+    if _BRANDING_FILE is None:
+        try:
+            _BRANDING_FILE = json.loads(
+                Path(__file__).with_name("branding.json").read_text())
+        except Exception:
+            _BRANDING_FILE = {}
+    return _BRANDING_FILE
+
+
+def _biz(key: str, fallback: str) -> str:
+    """Committed business name (branding.json) first, else the resolved fallback."""
+    return (_branding_file().get(key) or {}).get("business_name") or fallback
+
 
 @dataclass(frozen=True)
 class PayOffice:
@@ -115,7 +137,8 @@ _RAF_OWNER = "Rafael Hidalgo"
 def _build_registry() -> "Dict[str, PayOffice]":
     offices: Dict[str, PayOffice] = {
         "raf": PayOffice(key="raf", owner=_RAF_OWNER, label="Rafael's Office",
-                         business_name=_company_name([_RAF_OWNER]))}
+                         business_name=_biz("raf", _company_name([_RAF_OWNER])),
+                         website=WEBSITES.get("raf", ""))}
     try:
         from automations.office_metrics.offices import OFFICES as _OM
     except Exception:
@@ -124,19 +147,22 @@ def _build_registry() -> "Dict[str, PayOffice]":
         # Resolve the full legal name by the canonical owner first, then the
         # AppStream/ownerville alias (knocks_office) — that's how Hammad/Kash/
         # Salik resolve, since their directory name differs from the roster name.
-        company = _company_name([o.owner, getattr(o, "knocks_office", "")])
+        company = _biz(key, _company_name([o.owner, getattr(o, "knocks_office", "")]))
         offices.setdefault(key, PayOffice(
-            key=key, owner=o.owner, label=o.label, business_name=company))
+            key=key, owner=o.owner, label=o.label, business_name=company,
+            website=WEBSITES.get(key, "")))
 
     # B2B offices — a different report family (Carlos's BOX/AT&T B2B logs, Atef's
     # Domin8), so they aren't in office_metrics. Pinned by AppStream office id
     # because the owner name is ambiguous in the directory (two "Carlos Hidalgo").
     offices["carlos"] = PayOffice(
         key="carlos", owner="Carlos Hidalgo", label="Carlos's B2B Office",
-        business_name=_company_by_id("11580"))
+        business_name=_biz("carlos", _company_by_id("11580")),
+        website=WEBSITES.get("carlos", ""))
     offices["atef"] = PayOffice(
         key="atef", owner="Atef Choudhury", label="Atef's B2B Office",
-        business_name=_company_by_id("23467"))
+        business_name=_biz("atef", _company_by_id("23467")),
+        website=WEBSITES.get("atef", ""))
     return offices
 
 
@@ -194,21 +220,11 @@ def _code_map() -> "Dict[str, str]":
     return {}
 
 
-_BRANDING: "Optional[Dict[str, dict]]" = None
-_BRANDING_PATH = Path(__file__).with_name("branding.json")
-
-
 def branding(office_key: str) -> dict:
     """Committed logo + accent for an office (branding.json), so the deployed
     editor is branded from the repo — the Sheet only holds the editable pay data,
     the logo/color is set by us and ships with the code. {} if none."""
-    global _BRANDING
-    if _BRANDING is None:
-        try:
-            _BRANDING = json.loads(_BRANDING_PATH.read_text())
-        except Exception:
-            _BRANDING = {}
-    return _BRANDING.get(office_key, {})
+    return _branding_file().get(office_key, {})
 
 
 def access_code(office_key: str) -> str:
