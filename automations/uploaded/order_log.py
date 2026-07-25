@@ -1486,16 +1486,54 @@ def _write_rep_row(ws, row_idx: int, values: list, border, center_v,
             cell.number_format = "m/d/yyyy"
 
 
-def _append_rep_breakdown_tabs(wb, df: pd.DataFrame) -> int:
+def _load_pay_grid(owner: str):
+    """The office's pay structure for this owner, or None. Any failure disables
+    the estimate silently — it must never break the Order Log itself."""
+    if not owner:
+        return None
+    try:
+        from automations.pay_structure import offices as _po, store as _ps
+        office = _po.for_owner(owner)
+        if not office:
+            return None
+        grid = _ps.load(office.key)
+        # 'att_residential' is the campaign this (residential AT&T) log prices.
+        if grid and "att_residential" in grid.rates:
+            return grid
+    except Exception:
+        pass
+    return None
+
+
+def _sale_type_counts(recs) -> dict:
+    """Tally a week's ACTIVE lines by exact sale type ('PRODUCT TYPE — Package'),
+    the same key the pay editor prices against."""
+    counts: dict = {}
+    for rec in recs:
+        pt = str(rec.get("Product Type", "") or "").strip()
+        pk = str(rec.get("Package", "") or "").strip()
+        if pt and pk:
+            key = "{} — {}".format(pt, pk)
+            counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _append_rep_breakdown_tabs(wb, df: pd.DataFrame, owner: str = "") -> int:
     """Append ONE tab per rep: weeks stacked as sections (Active), then a
     Pending/Disconnect/Cancel section. Returns the number of tabs added.
 
     One tab per rep (not per rep-week) keeps the count sane for a big office
     (~150 reps) and lets a rep open their single tab and see everything.
+
+    When the office has entered a pay structure (the self-serve Pay Structure
+    link), each week section also gets a rough "Estimated pay by level" line —
+    what that rep would earn at Level 1/2/3… from that week's active lines. No
+    structure → nothing extra shows.
     """
     if df.empty or "Rep" not in df.columns:
         return 0
 
+    pay_grid = _load_pay_grid(owner)
     border = _thin_border()
     header_fill = PatternFill("solid", fgColor="434343")
     header_font = _ol_font("FFFFFF")
@@ -1556,6 +1594,9 @@ def _append_rep_breakdown_tabs(wb, df: pd.DataFrame) -> int:
                 _write_rep_row(sh, r, [("Code", "A")] + [(h, rec[h]) for h in _REP_TAB_COLUMNS],
                                border, center_v, "57BB8A", "000000")
                 r += 1
+            if pay_grid:
+                r = _write_week_estimate(sh, r, weeks[(ws_, we_, paid)],
+                                         pay_grid, border, banner_rows)
             r += 2   # spacer between sections
 
         # Pending / Disconnect / Cancel section — legend lives here, where the
@@ -1579,6 +1620,37 @@ def _append_rep_breakdown_tabs(wb, df: pd.DataFrame) -> int:
     return added
 
 
+def _write_week_estimate(sh, r, recs, pay_grid, border, banner_rows: set) -> int:
+    """Append a merged 'Estimated pay this week' line under a week's active rows,
+    showing the total at each level. Returns the next free row. Rows are added to
+    banner_rows so autosize ignores their long text."""
+    from automations.pay_structure.estimate import estimate_by_level
+    by_level, unpriced = estimate_by_level("att_residential",
+                                           _sale_type_counts(recs), pay_grid)
+    if not by_level or not any(by_level.values()):
+        return r
+    accent = (pay_grid.accent or "#1F9D57").lstrip("#") or "1F9D57"
+    parts = "     ".join("{}: ${:,.0f}".format(lvl, amt)
+                         for lvl, amt in by_level.items())
+    cell = sh.cell(row=r, column=1,
+                   value="\U0001F4B5 Estimated pay this week (rough)   —   " + parts)
+    cell.fill = PatternFill("solid", fgColor=accent)
+    cell.font, cell.alignment, cell.border = _ol_font("FFFFFF"), _OL_CENTER, border
+    sh.merge_cells(start_row=r, start_column=1, end_row=r, end_column=_REP_NCOL)
+    banner_rows.add(r)
+    r += 1
+    if unpriced:
+        note = ("Not yet priced (excluded): " + ", ".join(unpriced[:5])
+                + ("…" if len(unpriced) > 5 else ""))
+        c2 = sh.cell(row=r, column=1, value=note)
+        c2.font = _ol_font("CC0000", italic=True)
+        c2.alignment, c2.border = _OL_CENTER, border
+        sh.merge_cells(start_row=r, start_column=1, end_row=r, end_column=_REP_NCOL)
+        banner_rows.add(r)
+        r += 1
+    return r
+
+
 def _autosize_rep_tab(ws, banner_rows: set) -> None:
     widths: dict = {}
     for row in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=_REP_NCOL):
@@ -1599,7 +1671,8 @@ def _autosize_rep_tab(ws, banner_rows: set) -> None:
 _TAB_ERROR: Optional[str] = None
 
 
-def csv_to_xlsx(csv_path: Path, output_dir: Path, name_suffix: str = "") -> Path:
+def csv_to_xlsx(csv_path: Path, output_dir: Path, name_suffix: str = "",
+                owner: str = "") -> Path:
     """Build the cleaned, color-coded .xlsx ready for Slack.
 
     Sets the module-level _TAB_ERROR when the per-rep breakdown tabs failed to
@@ -1664,7 +1737,7 @@ def csv_to_xlsx(csv_path: Path, output_dir: Path, name_suffix: str = "") -> Path
     global _TAB_ERROR
     _TAB_ERROR = None
     try:
-        n_tabs = _append_rep_breakdown_tabs(wb, df)
+        n_tabs = _append_rep_breakdown_tabs(wb, df, owner)
         if n_tabs:
             print(f"  (added {n_tabs} per-rep breakdown tab(s))")
     except Exception as e:  # noqa: BLE001 — see above; base tab still ships
@@ -1874,7 +1947,8 @@ async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True,
         # owner's locked same-day files on the mini. Slack display names stay
         # clean (set separately in _post_order_log).
         _suffix = _owner_file_suffix(owner_name)
-        xlsx_path = csv_to_xlsx(csv_path, OUTPUT_DIR, name_suffix=_suffix)
+        xlsx_path = csv_to_xlsx(csv_path, OUTPUT_DIR, name_suffix=_suffix,
+                                owner=owner_name)
         print(f"\n✓ Saved to Downloads: {xlsx_path.name}")
 
         # Rep Activations summary — two Sun-Sat tables (last week + running

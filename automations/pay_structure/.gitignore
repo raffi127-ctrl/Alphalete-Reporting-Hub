@@ -1,0 +1,3 @@
+# Real access codes and locally-stored structures never belong in the public repo.
+.codes.json
+data/
