@@ -369,24 +369,50 @@ def _drive_dd_week(label, verbose=False):
                       "leaving default".format(label))
             _close_dropdown(page, viz)
             return
-        # Click via the framework's own handler (el.click()) — bypasses pointer
-        # interception from the tab-glass overlay that made Locator.click() no-op.
-        try:
-            target.evaluate("el => el.click()")
-        except Exception:  # noqa: BLE001
+        def _aria(el):
             try:
-                target.click(timeout=8000, force=True)
+                return el.get_attribute("aria-checked")
             except Exception:  # noqa: BLE001
-                pass
-        page.wait_for_timeout(1500)
+                return "?"
+        before = _aria(target)
+        # Tableau's item handler fires on the real MOUSE SEQUENCE, which the
+        # tab-glass overlay intercepts (so a plain Locator.click no-op'd) — and a
+        # bare JS el.click() dispatches no mousedown, so the handler never runs
+        # either. So: drop the glass, then fire a full pointer sequence on the
+        # item (glyph first, then the row) with real Playwright clicks.
+        try:
+            viz.locator("div.tab-glass").evaluate_all(
+                "els => els.forEach(e => e.remove())")
+        except Exception:  # noqa: BLE001
+            pass
+        glyph = target.locator(".FICheckRadio").first
+        for node in (glyph if glyph.count() else target, target):
+            try:
+                node.scroll_into_view_if_needed(timeout=4000)
+                node.click(timeout=6000, force=True)
+            except Exception:  # noqa: BLE001
+                # last resort: synthesize the full sequence in the DOM
+                try:
+                    (node if node.count() else target).evaluate(
+                        "el => ['pointerdown','mousedown','pointerup','mouseup',"
+                        "'click'].forEach(t => el.dispatchEvent("
+                        "new MouseEvent(t,{bubbles:true,cancelable:true})))")
+                except Exception:  # noqa: BLE001
+                    pass
+            page.wait_for_timeout(1500)
+            if _aria(target) == "true" or (tbox.inner_text() or "").strip() == label:
+                break
+        after = _aria(target)
         _close_dropdown(page, viz)
         page.wait_for_timeout(2500)
         final = (tbox.inner_text() or "").strip()
         if verbose:
-            print("  [dd] cl.DD Week set to {}".format(final))
+            print("  [dd] cl.DD Week: box={!r} all-item aria {} -> {}".format(
+                final, before, after))
         if final != label:
             raise RuntimeError(
-                "DD week select failed: box={!r} expected {!r}".format(final, label))
+                "DD week select failed: box={!r} expected {!r} "
+                "(aria {}->{})".format(final, label, before, after))
 
     return pre_export
 
