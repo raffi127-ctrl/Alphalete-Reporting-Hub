@@ -279,20 +279,134 @@ LEDGER_VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
 LEDGER_SHEET = "Transaction Details"
 
 
-def dd_captain_overrides(owners, out_path, *, page=None, verbose=True,
-                         period=None):
-    """{owner_norm: {week_key: amount}} — every Captain's-Bonus override for the
-    captains in `owners`, keyed by the description's week (M.D.YY). The caller
-    picks the target week per captain.
+def dd_week_combobox_label(sheet_week):
+    """The `cl.DD Week` filter's dropdown label for a sheet week.
 
-    This view used to need NO filter (its default WAS the just-closed week), and
-    that is still tried first. But on 2026-07-24 the unfiltered load came back
-    EMPTY — 'no sheets to select', which reads identically to a broken view — so
-    a period filter is now tried as a fallback rather than giving up."""
+    The DD Detail view's ONLY dated filter is `cl.DD Week`, and it labels a week
+    by its MONDAY: sheet Sunday 7.19 shows as '07/20/2026' (confirmed on Lucy 1
+    2026-07-24 — the pinned default was 07/20 while the sheet's newest week was
+    7.19). So the label is the sheet Sunday + 1 day, zero-padded M/D/YYYY. Note
+    this is a DIFFERENT convention from the Captain's-Bonus DESCRIPTION text,
+    which runs a day BEHIND the sheet (7.18) — the two are unrelated date fields."""
+    m, d, y = (int(x) for x in sheet_week.split("."))
+    nxt = dt.date(2000 + y if y < 100 else y, m, d) + dt.timedelta(days=1)
+    return "{:02d}/{:02d}/{}".format(nxt.month, nxt.day, nxt.year)
+
+
+def _drive_dd_week(label, verbose=False):
+    """pre_export hook that drives the `cl.DD Week` filter to exactly `label`.
+
+    The default download only carries the CURRENT DD week — that is why an
+    already-closed week (e.g. 7.12, which the VA has fully filled) returns
+    nothing: its rows aren't in the file. The VA reaches an old week by changing
+    this same filter. Adapted from org_sales_board.je_pull's proven
+    'Sales Week Ending' driver: the filter is a Tableau categorical quick filter,
+    each option a `div.FIItem[role=checkbox]` toggled via its `.FICheckRadio`
+    glyph; filters apply immediately (no Apply button). We check the target week,
+    uncheck every other still-checked week, then collapse the dropdown so it
+    can't overlay the Download button."""
+    import re as _re
+
+    def _close_dropdown(page, viz):
+        try:
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(600)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            glass = viz.locator("div.tab-glass").first
+            if glass.count():
+                glass.click(timeout=3000)
+                page.wait_for_timeout(400)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def pre_export(page, viz):
+        boxes = viz.locator('span.tabComboBox[role="combobox"]')
+        # cl.DD Week is the ONLY combobox showing a single date (the rest are
+        # '(All)'); find it by its M/D/YYYY text rather than a fixed index.
+        tbox = cur = None
+        for _ in range(20):
+            for i in range(boxes.count()):
+                t = (boxes.nth(i).inner_text() or "").strip()
+                if _re.match(r"^\d{1,2}/\d{1,2}/\d{4}$", t):
+                    tbox, cur = boxes.nth(i), t
+                    break
+            if tbox is not None:
+                break
+            page.wait_for_timeout(1000)
+        if tbox is None:
+            if verbose:
+                print("  [dd] ⚠ cl.DD Week dropdown not found — leaving default week")
+            return
+        if cur == label:
+            return
+
+        def _toggle(week):
+            item = viz.locator('div.FIItem[role="checkbox"]').filter(
+                has_text=_re.compile(r"^{}$".format(_re.escape(week)))).first
+            glyph = item.locator(".FICheckRadio").first
+            glyph.scroll_into_view_if_needed()
+            glyph.click(timeout=10000)
+
+        def _checked():
+            c = viz.locator('div.FIItem[role="checkbox"][aria-checked="true"]')
+            return [(c.nth(j).inner_text() or "").strip() for j in range(c.count())]
+
+        tbox.click()
+        page.wait_for_timeout(1200)
+        if viz.locator('div.FIItem[role="checkbox"]').filter(
+                has_text=_re.compile(r"^{}$".format(_re.escape(label)))).count() == 0:
+            if verbose:
+                print("  [dd] week {} not in the cl.DD Week list — leaving "
+                      "default".format(label))
+            _close_dropdown(page, viz)
+            return
+        _toggle(label)
+        page.wait_for_timeout(1200)
+        for _ in range(8):
+            others = [o for o in _checked() if o and o != label]
+            if not others:
+                break
+            for o in others:
+                _toggle(o)
+                page.wait_for_timeout(700)
+        _close_dropdown(page, viz)
+        page.wait_for_timeout(2500)
+        final = (tbox.inner_text() or "").strip()
+        if verbose:
+            print("  [dd] cl.DD Week set to {}".format(final))
+        if final != label:
+            raise RuntimeError(
+                "DD week select failed: box={!r} expected {!r}".format(final, label))
+
+    return pre_export
+
+
+def dd_captain_overrides(owners, out_path, *, page=None, verbose=True,
+                         period=None, sheet_week=None):
+    """{owner_norm: {week_key: amount}} — every Captain's-Bonus override for the
+    captains in `owners`, keyed by the description's week (M.D.YY).
+
+    When `sheet_week` is given, the `cl.DD Week` filter is driven to that week so
+    the download carries exactly that week's rows — the ONLY way to reach a week
+    other than the current default (the VA does the same by hand). Without it,
+    the default download (current week) is used, with a period filter as a
+    fallback for the empty-viz case."""
     want = {_norm_name(o) for o in owners}
 
     def _accept(rows):
         return parse_dd_captain(rows, want) or None
+
+    if sheet_week:
+        from automations.shared.tableau_patchright import download_crosstab_patchright
+        label = dd_week_combobox_label(sheet_week)
+        if verbose:
+            print("  [dd] driving cl.DD Week to {} (sheet {})".format(label, sheet_week))
+        download_crosstab_patchright(
+            DD_DETAIL_VIEW, DD_DETAIL_SHEET, out_path, page=page, verbose=verbose,
+            pre_export=_drive_dd_week(label, verbose=verbose))
+        return parse_dd_captain(read_crosstab(out_path), want)
 
     periods = [None] + (period_candidates(period) if period else [])
     val, _used = _download_first_nonempty(

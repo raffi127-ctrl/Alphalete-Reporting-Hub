@@ -338,7 +338,26 @@ def main(argv=None):
                     help="DIAGNOSTIC: open DD Detail and dump its filter controls "
                          "(comboboxes + any 'Week' labels) so the cl.DD Week "
                          "driver can target the exact control. No writes.")
+    ap.add_argument("--dd-week", metavar="WEEK",
+                    help="DIAGNOSTIC: drive the cl.DD Week filter to WEEK's Monday "
+                         "and dump the captain-bonus amounts pulled — to confirm "
+                         "we reproduce the VA's numbers for an old week. No writes.")
     a = ap.parse_args(argv)
+    if a.dd_week:
+        from automations.shared.tableau_patchright import tableau_session
+        from pathlib import Path as _P
+        d = _P("output/override_bulletin/run"); d.mkdir(parents=True, exist_ok=True)
+        label = P.dd_week_combobox_label(a.dd_week)
+        print("cl.DD Week label for sheet {} = {}".format(a.dd_week, label))
+        with tableau_session(headless=True, verbose=not a.quiet) as page:
+            parsed = P.dd_captain_overrides(
+                DD_CAPTAINS, d / "dd_week.csv", page=page, verbose=not a.quiet,
+                sheet_week=a.dd_week)
+        print("\ncaptain-bonus amounts pulled for sheet week {}:".format(a.dd_week))
+        for cap in DD_CAPTAINS:
+            wk = parsed.get(P._norm_name(cap), {})
+            print("  {:<18} {}".format(cap, wk or "(none)"))
+        return 0
     if a.dd_filters:
         from automations.shared.tableau_patchright import tableau_session
         with tableau_session(headless=True, verbose=not a.quiet) as page:
