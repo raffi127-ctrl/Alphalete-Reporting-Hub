@@ -52,10 +52,11 @@ point.
 ## Secrets (Streamlit Cloud dashboard, or `.streamlit/secrets.toml` locally)
 
 ```toml
-office_onboarding_code = "…"          # access code — keep out of source (public repo)
 [gcp_service_account]                 # OR [gcp_oauth] — creds for the master sheet
 # … service-account json …
 ```
+
+No access-code gate — it's an internal Megan/Eve tool.
 
 Without creds the form still runs and saves to
 `output/office_onboarding_submissions.json` (fine for building / sandbox — it never

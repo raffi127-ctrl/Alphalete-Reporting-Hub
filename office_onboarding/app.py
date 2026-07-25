@@ -14,8 +14,9 @@ Run locally:   .venv/bin/streamlit run office_onboarding/app.py
 On the web:    deploy this repo to Streamlit Community Cloud with
                office_onboarding/app.py as the entry point.
 
+No access-code gate — it's an internal Megan/Eve tool.
+
 Secrets (Streamlit Cloud, or .streamlit/secrets.toml locally):
-  office_onboarding_code = "…"          # the access code (keep out of source)
   [gcp_service_account] / [gcp_oauth]   # Google creds for the master sheet
 Without creds the form still runs and saves to a local JSON (fine for building /
 sandbox — it never touches the live master sheet until creds are present).
@@ -71,26 +72,6 @@ def _inject_gs_client() -> None:
             scopes=list(o.get("scopes") or
                         ["https://www.googleapis.com/auth/spreadsheets"]))
         store.set_client(gspread.authorize(creds))
-
-
-def _gate() -> bool:
-    try:
-        code = st.secrets.get("office_onboarding_code")
-    except Exception:
-        code = None
-    if not code:                       # not configured (local dev) — open
-        return True
-    if st.session_state.get("_ob_ok"):
-        return True
-    st.markdown("## 🏢 Metrics Onboarding")
-    st.text_input("Access code", type="password", key="_ob_code")
-    if st.button("Enter", type="primary"):
-        if st.session_state.get("_ob_code") == code:
-            st.session_state["_ob_ok"] = True
-            st.rerun()
-        else:
-            st.error("Incorrect code.")
-    return False
 
 
 def _machine_badge(machine: str) -> str:
@@ -307,6 +288,6 @@ def _show_result() -> None:
 
 
 # --------------------------------------------------------------------------
+# No access-code gate — this is an internal Megan/Eve tool (Megan 2026-07-25).
 _inject_gs_client()
-if _gate():
-    form_view()
+form_view()
