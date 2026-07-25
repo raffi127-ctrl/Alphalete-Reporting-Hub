@@ -611,6 +611,28 @@
         "type": "not_configured"
       }
     },
+    "install_override_bulletin_send_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_override_bulletin_send_agent` installs/refreshes the STANDALONE com.alphalete.override-bulletin-send-fri LaunchAgent on the mini, which SENDS the Override Bulletin Fridays 10:30-13:00 CST (q25m, gated) via deploy/override_bulletin_send_fri.sh. SOFT LAUNCH: runs `send --test --send` = emails the 4-person TEST_TO group (Megan/Eve/Carlos/Raf), NO Slack. Renders the LIVE tab; holds if the week isn't filled; records the week so retries don't double-email. Flip to full-org by editing MODE in the wrapper to `--send`. install_agent only reloads the plist. Re-run after the plist changes.",
+      "display_name": "Install Override Bulletin SEND agent (Fri 10:30am)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "override-bulletin-send-fri"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "install_pnl_office_agent": {
       "on_scheduler": false,
       "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_pnl_office_agent` can install/refresh the STANDALONE com.alphalete.pnl-office-fri LaunchAgent on the mini, which posts PNL for the Office to #top-leaders-alphalete-org + #alphalete-lvl1-chat Fridays 10:00-12:55 CST (q25m, gated) via deploy/pnl_office_fri.sh (--post = LIVE). install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",

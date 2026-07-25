@@ -3629,18 +3629,27 @@ AUTOMATED_REPORTS = [
             "never quietly written as $0.\n\n"
             "WHEN IT RUNS\n"
             "**Fridays around 10:00am CST**, filling the week that ended the "
-            "**previous Sunday** (7.12 was filled Fri 7/17, 7.5 on Fri 7/10).\n\n"
+            "**previous Sunday** (7.12 was filled Fri 7/17, 7.5 on Fri 7/10). "
+            "The **send** runs right after, 10:30am\u20131:00pm.\n\n"
+            "SENDING \u2014 SOFT LAUNCH\n"
+            "**\u2022** Right now the Friday send **emails the bulletin to a "
+            "4-person preview group** (Megan, Eve, Carlos, Raf) and posts "
+            "**nothing to Slack** \u2014 a week of preview before the full org "
+            "sees it.\n"
+            "**\u2022** The following week it flips to the **full distro**: "
+            "Slack (#alphalete-sales + #rafs-office-recruiting) plus the "
+            "\u201cAlphalete Org Owners\u201d + \u201cBulletins\u201d contact "
+            "groups.\n"
+            "**\u2022** All five number sources now match the VA **to the cent** "
+            "(the DD captain bonuses were the last to be verified, 7/25).\n\n"
             "SAFETY GATES\n"
             "**\u2022** If the Override Summary hasn't published the new week "
-            "yet, it **holds** \u2014 writes nothing and sends nothing, rather "
-            "than putting out a near-empty bulletin.\n"
-            "**\u2022** Writes go to the **Copy of** (sandbox) tab only; the "
-            "live tab is refused.\n"
-            "**\u2022** **Nothing is sent automatically.** The Slack post and "
-            "the bulletin email are built and ready, but they only go out when "
-            "someone runs the send step on purpose \u2014 use **Preview "
-            "Bulletin** to see exactly what would be posted and who would be "
-            "emailed, without sending anything."
+            "yet, it **holds** \u2014 nothing filled, nothing sent, rather than "
+            "putting out a near-empty bulletin.\n"
+            "**\u2022** The fill writes the **Copy of** (sandbox) tab only; the "
+            "live tab is refused. The send renders whichever tab is live.\n"
+            "**\u2022** The send only goes once per week (retries can\u2019t "
+            "double-email) and **holds if the week isn\u2019t filled**."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"),
@@ -3691,6 +3700,14 @@ AUTOMATED_REPORTS = [
                 "help": "Builds the bulletin image and shows the subject line, the two Slack channels and every email address it would go to. Sends nothing.",
                 "module": "automations.override_bulletin.send",
                 "args_fn": lambda: [],
+            },
+            {
+                "label": "Send to Preview Group (email 4)",
+                "icon": "\U0001F4E4",
+                "primary": False,
+                "help": "Emails the bulletin to the 4-person soft-launch group (Megan, Eve, Carlos, Raf). No Slack, no full distro. This is the same thing the Friday agent does.",
+                "module": "automations.override_bulletin.send",
+                "args_fn": lambda: ["--test", "--send"],
             },
         ],
     },
