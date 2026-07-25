@@ -87,11 +87,13 @@ def _collect(rows: list[dict], host: str, day: str, exact: bool = True) -> list[
     """One entry per REPORT for the target machine + day (latest status + run
     count), newest-run first. Mirrors Lucy 1's summary: a report that retried 8×
     is one line showing its final outcome, not eight. `exact=False` matches the
-    hostname as a substring (for --host, tolerant of .local vs .attlocal.net)."""
+    hostname as a substring (for --host, tolerant of .local vs .attlocal.net).
+    `host=None`/'' scans EVERY machine (the intraday both-machine error watcher)."""
+    all_machines = not (host and str(host).strip())
     # 1) Reduce each run's start+end pair (same RunID) to the end row.
     by_run = {}
     for r in rows:
-        if not _machine_matches(str(r.get("Machine") or ""), host, exact):
+        if not all_machines and not _machine_matches(str(r.get("Machine") or ""), host, exact):
             continue
         started = str(r.get("Started At") or "").strip()
         if started[:10] != day:
@@ -129,6 +131,7 @@ def _collect(rows: list[dict], host: str, day: str, exact: bool = True) -> list[
             "started": str(rep.get("Started At") or ""),
             "ended": str(rep.get("Ended At") or ""),
             "user": str(rep.get("User") or "").strip(),
+            "machine": str(rep.get("Machine") or "").strip(),
         })
     reports.sort(key=lambda x: x["started"], reverse=True)
     return reports
@@ -170,17 +173,125 @@ def _render(reports: list[dict], machine_label: str, day_human: str) -> tuple[st
     return subject, h, "\n".join(t)
 
 
+import json as _json
+from pathlib import Path as _Path
+
+_STATE_DIR = _Path(__file__).resolve().parents[2] / "output" / "state"
+
+
+def _watch_state_path(day: str) -> _Path:
+    return _STATE_DIR / f"error_watch_{day}.json"
+
+
+def _load_alerted(day: str) -> set:
+    """report_ids already alerted today (so a 30-min sweep posts each ONCE)."""
+    try:
+        return set(_json.loads(_watch_state_path(day).read_text()))
+    except Exception:
+        return set()
+
+
+def _save_alerted(day: str, ids: set) -> None:
+    try:
+        _STATE_DIR.mkdir(parents=True, exist_ok=True)
+        _watch_state_path(day).write_text(_json.dumps(sorted(ids)))
+    except Exception as e:  # noqa: BLE001 — losing dedup state is better than crashing
+        print(f"[watch] could not save dedup state: {e}", flush=True)
+
+
+def _orchestrator_ids(cfg) -> set:
+    """report_ids the orchestrator already alerts on in REAL TIME (so the watcher
+    skips them — no double-post). That's every scheduled registry report EXCEPT
+    ones flagged `standalone_watch: true` (a registry report that actually runs on
+    its own agent, so the orchestrator never sees it and the watcher must)."""
+    ids = set()
+    raw = cfg.raw.get("reports", {})
+    for rid in cfg.reports:
+        if not raw.get(rid, {}).get("standalone_watch"):
+            ids.add(rid)
+    return ids
+
+
+def _machine_label(row_machine: str, lucy2_hosts: str) -> str:
+    """'Lucy 2' when the row's machine matches the Lucy-2 hostname substrings,
+    else 'Lucy 1' — so a both-machine alert says which box it ran on."""
+    if lucy2_hosts and _machine_matches(row_machine, lucy2_hosts, exact=False):
+        return "Lucy 2"
+    return "Lucy 1"
+
+
+def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: str) -> int:
+    """Intraday BOTH-MACHINE error watcher: scan the shared Hub Activity log and
+    post a deduped, real-time corrections alert for any STANDALONE report (either
+    machine) that errored / ran partial today. Orchestrator-managed reports are
+    skipped — they already self-alert in real time. Silent when nothing new is
+    wrong. No email, ever (Megan 2026-07-25: know all day which reports errored on
+    both Lucy 1 and Lucy 2)."""
+    from automations.day_orchestrator import notify, registry as _reg
+    cfg = _reg.load_config()
+    if not notify._corrections_channel(cfg):
+        print(f"[{ts}] watch: no corrections channel set — nothing to do.", flush=True)
+        return 0
+    try:
+        rows = _read_activity()
+    except Exception as e:
+        print(f"[{ts}] watch: Hub Activity read failed: {type(e).__name__}: {e}",
+              flush=True)
+        return 1
+    reports = _collect(rows, None, day, exact=False)   # host=None → all machines
+    skip = _orchestrator_ids(cfg)
+    already = _load_alerted(day)
+    newly = set()
+    posted = 0
+    for r in reports:
+        if _classify(r["status"])[1] not in ("failed", "partial"):
+            continue
+        rid = r.get("report_id") or r.get("name") or "?"
+        if rid in skip or rid in already:
+            continue
+        kind = "INCOMPLETE" if _classify(r["status"])[1] == "partial" else "FAILED"
+        when = _time_only(r["started"]) + (f"–{_time_only(r['ended'])}" if r["ended"] else "")
+        try:
+            notify.send_standalone_alert(
+                cfg, name=r["name"], report_id=rid, kind=kind,
+                status=r["status"] or kind, when=when, day=day_human,
+                machine_label=_machine_label(r.get("machine", ""), lucy2_hosts),
+                dry_run=dry_run)
+            newly.add(rid)
+            posted += 1
+        except Exception as e:  # noqa: BLE001 — one bad alert must not sink the rest
+            print(f"[{ts}] watch: alert failed for {r['name']}: "
+                  f"{type(e).__name__}: {e}", flush=True)
+    if newly and not dry_run:
+        _save_alerted(day, already | newly)
+    print(f"[{ts}] watch: {posted} new problem alert(s) across both machines on "
+          f"{day}{' (dry-run)' if dry_run else ''}; {len(already)} already alerted "
+          "earlier today.", flush=True)
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--date", default=None, help="YYYY-MM-DD (default: today)")
     ap.add_argument("--host", default=None,
                     help="summarize ANOTHER machine by hostname substring "
-                         "(default: this machine's own hostname)")
+                         "(default: this machine's own hostname). In --watch, this "
+                         "is the Lucy-2 hostname list used only to LABEL rows.")
     ap.add_argument("--label", default=None,
                     help="name for the subject, e.g. 'Lucy 2' (default: this "
                          "machine's orchestrator prefix)")
+    ap.add_argument("--watch", action="store_true",
+                    help="intraday BOTH-MACHINE error watcher: post deduped, "
+                         "real-time corrections alerts for standalone reports that "
+                         "errored today; no summary email. Run it every ~30 min.")
     args = ap.parse_args(argv)
+
+    if args.watch:
+        _day = args.date or dt.date.today().isoformat()
+        _day_h = dt.date.fromisoformat(_day).strftime("%a %b %d")
+        _ts = dt.datetime.now().isoformat(timespec="seconds")
+        return _run_watch(_day, _day_h, args.host or "", args.dry_run, _ts)
 
     day = args.date or dt.date.today().isoformat()
     day_human = dt.date.fromisoformat(day).strftime("%a %b %d")

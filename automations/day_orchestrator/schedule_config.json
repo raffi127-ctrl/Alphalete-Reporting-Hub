@@ -896,6 +896,26 @@
       "depends_on": [],
       "verify": null
     },
+    "install_lucy2_digest_agent": {
+      "on_scheduler": true,
+      "_note": "MANUAL: `lucy rerun install_lucy2_digest_agent` (re)installs com.alphalete.lucy2-digest on the mini. That job is now the INTRADAY BOTH-MACHINE error watcher (every 30 min, 04-21 CST) — reads the shared Hub Activity log and posts deduped real-time corrections alerts for standalone reports that errored on either Lucy 1 or Lucy 2; NO summary email. Run this once after pulling the reschedule so launchd picks up the new StartInterval. weekdays [] = manual only.",
+      "display_name": "Install Lucy 2 / error-watch agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "lucy2-digest"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null
+    },
     "install_new_start_rollcall_agent": {
       "on_scheduler": true,
       "_note": "MANUAL: `lucy rerun install_new_start_rollcall_agent` installs com.alphalete.new-start-followup-rollcall (Sat 8:00am CST). Lucy posts the roll call tagging every 2nd-round interviewer who has a Monday new start \u2014 this replaced Aisha's hand-typed 8am tag list on 7/19/2026 because hers was missing people. Idempotent: no-ops if a roll call is already in the thread. weekdays [] = manual only.",
