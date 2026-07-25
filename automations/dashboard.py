@@ -11108,7 +11108,21 @@ else:  # st.session_state.view == "user"
                     "🏢 Open onboarding form",
                     "https://alphaletemetricsintake.streamlit.app",
                     use_container_width=True)
-                st.caption("For Megan & Eve · access-code gated")
+                st.caption("For Megan & Eve")
+            # ---- Tracker Onboarding (Office Operations) — add an office to the
+            # daily Tableau tracker screenshots: its Slack channel + which trackers
+            # + order. The daily run + trackers card pick it up automatically.
+            st.markdown("### 📊 Tracker Onboarding")
+            with st.container(border=True):
+                st.markdown(
+                    "**Add an office to the daily tracker screenshots** — pick its "
+                    "Slack channel and which Tableau trackers to post, in what "
+                    "order. Same boards everyone gets; the daily run picks it up.")
+                _safe_link_button(
+                    "📊 Open tracker form",
+                    "https://alphaletetrackerintake.streamlit.app",
+                    use_container_width=True)
+                st.caption("For Megan & Eve")
             st.markdown("---")
 
         # ---- Personal portfolio: projects this user has claimed / shipped ----

@@ -101,6 +101,43 @@ ORG_TRACKERS: dict[str, list[str]] = {
 }
 
 
+# --- Offices onboarded via the Tracker Onboarding tool (tracker_onboarding) ---
+# A committed sibling JSON that tracker_onboarding.apply regenerates from the
+# 'Tracker Onboarding' tab. Each row adds a channel + its ordered tracker subset,
+# so the office joins ORG_CHANNELS/ORG_LABEL/ORG_TRACKERS and the daily run + Hub
+# card pick it up. STRICT NO-OP when the file is absent (today's state).
+import json as _json                              # noqa: E402
+from pathlib import Path as _Path                 # noqa: E402
+
+_ONBOARDED_TRACKERS = _Path(__file__).with_name("onboarded_trackers.json")
+
+
+def _merge_onboarded_trackers() -> None:
+    if not _ONBOARDED_TRACKERS.exists():
+        return
+    try:
+        rows = _json.loads(_ONBOARDED_TRACKERS.read_text())
+    except Exception:
+        return
+    for r in rows:
+        key = (r.get("key") or "").strip()
+        cids = [c for c in (r.get("channel_ids") or []) if c]
+        if not key or key in ORG_CHANNELS or not cids:
+            continue                 # never clobber a hardcoded org
+        ORG_CHANNELS[key] = cids
+        ORG_LABEL[key] = r.get("label") or key
+        trk = [t for t in (r.get("trackers") or []) if t]
+        if trk:
+            ORG_TRACKERS[key] = trk   # their exact subset + order
+
+
+_merge_onboarded_trackers()
+
+# Recompute after the merge so a newly onboarded org is in ORGS (the run loops it
+# and the Hub card lists it). No-op vs the line above when nothing was merged.
+ORGS = list(ORG_CHANNELS)
+
+
 def tracker_ids_for(org: str, pages: list) -> list:
     """The tracker ids `org` posts, in post order. An ORG_TRACKERS selection wins
     (that IS the channel's whole feed + order); otherwise the default org-wide set
