@@ -100,7 +100,27 @@ class ApplicantStream:
     _NEXT_NAME = re.compile(r"^\s*next\s*$", re.I)
     _SUBMIT_NAME = re.compile(r"sign\s*in|log\s*in|submit|continue|enter", re.I)
 
-    def login(self):
+    def login(self, attempts: int = 3):
+        """Log in, retrying the whole flow on an intermittent token miss. The
+        two-step submit fires a Cloudflare→SSO redirect chain that occasionally
+        lands without an rqst link (esp. under load / a stale profile session),
+        surfacing as 'Could not find session token' — a retry from a clean nav
+        clears it. (Recruiting sidesteps this by attaching to a warm held
+        session; a retry is the low-risk fix here.)"""
+        last = None
+        for i in range(max(1, attempts)):
+            try:
+                self._login_once()
+                return
+            except Exception as e:  # noqa: BLE001 — incl. the no-token RuntimeError
+                last = e
+                if i + 1 < attempts:
+                    print(f"  ~ login attempt {i + 1}/{attempts} failed "
+                          f"({type(e).__name__}); retrying", flush=True)
+                    self.page.wait_for_timeout(2500)
+        raise last
+
+    def _login_once(self):
         # Go to the app (index.cfm). Authenticated → it serves the app with rqst
         # links; unauthenticated → it serves the ownerville login form.
         self.page.goto(BASE, wait_until="domcontentloaded")
@@ -132,6 +152,11 @@ class ApplicantStream:
                 self.page.wait_for_load_state("domcontentloaded")
                 self.page.wait_for_timeout(5000)
                 self._wait_for_cloudflare()
+                # Land on a page that actually carries rqst links before capture —
+                # the post-submit landing sometimes has none yet.
+                self.page.goto(BASE, wait_until="domcontentloaded")
+                self._wait_for_cloudflare()
+                self.page.wait_for_timeout(1500)
             except PWTimeout:
                 pass
         self._capture_token()
