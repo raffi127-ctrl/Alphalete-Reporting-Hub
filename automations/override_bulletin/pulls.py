@@ -355,10 +355,6 @@ def _drive_dd_week(label, verbose=False):
 
         tbox.click()
         page.wait_for_timeout(1200)
-        # cl.DD Week is SINGLE-select (the box shows one date), so the JE
-        # multi-select 'check target, uncheck the rest' dance is wrong — the
-        # uncheck step re-clicks the current week and re-selects it. Here we just
-        # click the target row; a single-select auto-deselects the old week.
         items = viz.locator('div.FIItem')
         if verbose:
             try:
@@ -371,12 +367,12 @@ def _drive_dd_week(label, verbose=False):
             has_text=_re.compile(r"^{}$".format(_re.escape(label)))).first
         if target.count() == 0:
             if verbose:
-                print("  [dd] week {} not in the cl.DD Week list — leaving "
+                print("  [dd] option {} not in the cl.DD Week list — leaving "
                       "default".format(label))
             _close_dropdown(page, viz)
             return
-        # Try the radio glyph, then the row itself — different single-select
-        # skins respond to one or the other.
+        # cl.DD Week is single-select; click the target (auto-deselects the old
+        # week). Try the radio glyph, then the row itself — skins differ.
         for how in ("glyph", "row"):
             try:
                 if how == "glyph":
@@ -403,6 +399,20 @@ def _drive_dd_week(label, verbose=False):
     return pre_export
 
 
+def _drive_dd_week_all(verbose=False):
+    """pre_export hook that sets the cl.DD Week filter to '(All)'.
+
+    Reaching a far-down weekly option by click proved flaky (the list is
+    virtualized — 07/13 wouldn't register), but '(All)' is the FIRST option and
+    always rendered. Selecting it downloads EVERY week in one file; the caller
+    then picks the target week from the parsed result. This is the robust way to
+    reach any past week (verification) or catch captain bonuses that post after
+    the current week's default download (backfill)."""
+    return _drive_dd_week("(All)", verbose=verbose)
+
+    return pre_export
+
+
 def dd_captain_overrides(owners, out_path, *, page=None, verbose=True,
                          period=None, sheet_week=None):
     """{owner_norm: {week_key: amount}} — every Captain's-Bonus override for the
@@ -420,12 +430,15 @@ def dd_captain_overrides(owners, out_path, *, page=None, verbose=True,
 
     if sheet_week:
         from automations.shared.tableau_patchright import download_crosstab_patchright
-        label = dd_week_combobox_label(sheet_week)
+        # Drive cl.DD Week to '(All)' so the download carries EVERY week — the
+        # only reliable way to reach a week other than the current default. The
+        # caller keys per week (_dd_week_for), so getting all weeks is harmless
+        # and also picks up captain bonuses that posted after the current week.
         if verbose:
-            print("  [dd] driving cl.DD Week to {} (sheet {})".format(label, sheet_week))
+            print("  [dd] driving cl.DD Week to (All) to reach sheet {}".format(sheet_week))
         download_crosstab_patchright(
             DD_DETAIL_VIEW, DD_DETAIL_SHEET, out_path, page=page, verbose=verbose,
-            pre_export=_drive_dd_week(label, verbose=verbose))
+            pre_export=_drive_dd_week_all(verbose=verbose))
         return parse_dd_captain(read_crosstab(out_path), want)
 
     periods = [None] + (period_candidates(period) if period else [])
