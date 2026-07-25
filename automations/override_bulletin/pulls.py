@@ -197,28 +197,77 @@ _CAP_RE = re.compile(r"captain'?s?\s+bonus", re.I)
 _WK_IN_DESC = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{2,4})")
 
 
-def parse_dd_captain(rows, owners):
-    """{owner_norm: {week_key: amount}} of Captain's-Bonus overrides from the
-    ORG DD Detail crosstab.
+_WK_SLASH = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{2,4})$")
 
-    The crosstab is HIERARCHICAL — empty dimensions collapse per row, so columns
-    do NOT align to the header (the amount lands wherever the row happens to end).
-    So we match by CONTENT, not column index:
-      * the row has a 'Captain('s) Bonus M.D.YY' cell (the description),
-      * its owner (any cell) is in `owners` (normalized captain names),
-      * the amount is the max money cell (Total $ to ICD == the non-zero one).
-    week_key is 'M.D.YY' parsed from the description (rows with no date — e.g. the
-    $0 NDS wireless 'Captain Bonus' — are skipped). The fill maps week_key to the
-    sheet column positionally, so the DD-vs-sheet day offset doesn't matter."""
+
+def _ddweek_key(s):
+    """Normalize a DD week value to 'M.D.YY'. Handles the cl.DD Week column
+    format ('7/11/2026') and a dotted date embedded in a description ('7.11.26')."""
+    s = str(s).strip()
+    m = _WK_SLASH.match(s)
+    if m:
+        return "{}.{}.{}".format(int(m.group(1)), int(m.group(2)), m.group(3)[-2:])
+    m = _WK_IN_DESC.search(s)
+    if m:
+        return "{}.{}.{}".format(int(m.group(1)), int(m.group(2)), m.group(3)[-2:])
+    return None
+
+
+def parse_dd_captain(rows, owners):
+    """{owner_norm: {dd_week: amount}} of Captain's-Bonus overrides from the ORG
+    DD Detail crosstab.
+
+    Column-driven off the header (the Download→Crosstab export IS aligned): a row
+    counts when a cell matches 'Captain('s) Bonus' (any spelling), the owner is in
+    `owners`, and it contributes its **Total $ to ICD**. The week comes from the
+    **cl.DD Week** column — NOT from a date in the description.
+
+    Why the column and not the description: captain-bonus rows come three ways —
+    'Captain's Bonus 7.11.26' (dated), and 'Captain Bonus' / 'Captains Bonus' (NO
+    date). Keying off a description date silently dropped every no-date row, which
+    lost Colten/Khalil/Jairo entirely and half of Eveliz (2576 without her +540).
+    Verified against the VA's 7.12 column: all five match to the cent with this.
+    Falls back to the old content scan only if the header columns aren't found."""
+    if not rows:
+        return {}
+    hdr = rows[0]
+    oc = _hdr_col(hdr, "cl.ICD Owner Name")
+    wc = _hdr_col(hdr, "cl.DD Week")
+    tc = _hdr_col(hdr, "Total $ to ICD")
+    if None in (oc, wc, tc):
+        return _parse_dd_captain_content(rows, owners)
+    out = {}
+    for r in rows[1:]:
+        if not any(_CAP_RE.search(str(c)) for c in r):
+            continue
+        owner = _norm_name(r[oc]) if oc < len(r) else ""
+        if owner not in owners:
+            continue
+        wk = _ddweek_key(r[wc]) if wc < len(r) else None
+        if not wk:                              # no DD Week cell → try any date
+            wk = next((k for c in r if (k := _ddweek_key(c))), None)
+        if not wk:
+            continue
+        amt = _num_locale(r[tc]) if tc < len(r) else None
+        if amt:
+            d = out.setdefault(owner, {})
+            d[wk] = round(d.get(wk, 0) + amt, 2)
+    return out
+
+
+def _parse_dd_captain_content(rows, owners):
+    """Fallback for a MISALIGNED crosstab (no usable header): match by content —
+    a 'Captain('s) Bonus M.D.YY' cell + an owner + the max money cell. Keys off
+    the description date, so it can only see dated rows (the header path above is
+    the accurate one; this just degrades rather than returning nothing)."""
     out = {}
     for r in rows:
         cap = next((str(c) for c in r if _CAP_RE.search(str(c))), None)
         if not cap:
             continue
-        m = _WK_IN_DESC.search(cap)
-        if not m:
+        wk = _ddweek_key(cap)
+        if not wk:
             continue
-        wk = f"{int(m.group(1))}.{int(m.group(2))}.{m.group(3)[-2:]}"
         owner = next((_norm_name(c) for c in r if _norm_name(c) in owners), None)
         if not owner:
             continue

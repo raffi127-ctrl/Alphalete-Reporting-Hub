@@ -77,21 +77,25 @@ def _scan_summary(page, out_dir, *, verbose=True, year=None):
 def _dd_week_for(dd_weeks, sheet_week):
     """Amount for the sheet's Sunday week from a captain's DD per-week dict.
 
-    The DD Detail default download carries only the just-closed week, labelled a
-    day behind the sheet (sheet Sunday 7.19 ↔ DD 7.18). So: exact label, then the
-    day-behind neighbour, then — since the download holds a single week — that one
-    week as the fallback. Returns the amount, or None if the captain has no row."""
-    if sheet_week in dd_weeks:
-        return dd_weeks[sheet_week]
+    A captain's DD rows for ONE sheet week can carry two cl.DD Week dates: the
+    Sunday itself (NDS 'Captain Bonus', 7/12) and the Saturday a day behind (B2B
+    "Captain's Bonus", 7/11). Verified on 7.12 — Colten's bonus is under 7/12 and
+    Carlos's under 7/11, both belonging to sheet week 7.12. So SUM the exact label
+    and the day-behind neighbour; returns the total, or None if neither is present
+    (a genuinely absent captain is reported, never filled from another week)."""
     from datetime import datetime, timedelta
+    total, found = 0.0, False
+    if sheet_week in dd_weeks:
+        total += dd_weeks[sheet_week]; found = True
     m, d, y = (int(x) for x in sheet_week.split("."))
-    try:                                              # DD runs a day behind
+    try:                                              # DD can run a day behind
         prev = datetime(2000 + y, m, d) - timedelta(days=1)
+        pk = f"{prev.month}.{prev.day}.{prev.year % 100}"
+        if pk in dd_weeks:
+            total += dd_weeks[pk]; found = True
     except ValueError:
-        return None
-    # NO single-week fallback: if the download doesn't hold this week, the captain
-    # is reported as unmatched rather than filled with another week's number.
-    return dd_weeks.get(f"{prev.month}.{prev.day}.{prev.year % 100}")
+        pass
+    return round(total, 2) if found else None
 
 
 def sheet_weeks(ws):
