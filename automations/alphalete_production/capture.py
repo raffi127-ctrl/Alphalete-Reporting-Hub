@@ -202,10 +202,15 @@ def _daily_show_cols(grid, team_avgs: bool = True) -> set:
             print("[alphalete_production] warn: column not found: %s" % what)
         return c
 
-    # last-week APPS — match is drift-tolerant ("LAST WEEK'S TOTALS",
-    # "LAST WEEKS TOTAL", etc. all start with "LAST WEEK").
+    # last-week APPS — the block-title column ("LAST WEEK'S TOTALS") IS that
+    # block's Apps column, mirroring D under "RUNNING WEEK TOTALS". The 7/2026
+    # sheet edit that renamed running Apps -> "Total Apps" left last-week's Apps
+    # header BLANK, so an "== APPS" match silently dropped col K from the Daily
+    # Production image. Anchor on the row-1 title (unique to this block's Apps
+    # col) and accept APPS / Total Apps / blank in row 3.
     lw = _col(lambda c: _cell(grid, 0, c).strip().upper().startswith("LAST WEEK")
-              and _cell(grid, 2, c).strip().upper() == "APPS", "LAST WEEK / APPS")
+              and _cell(grid, 2, c).strip().upper() in ("APPS", "TOTAL APPS", ""),
+              "LAST WEEK / APPS")
     if lw is not None:
         show.add(lw)
     # each day's Apps
