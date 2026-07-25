@@ -125,8 +125,7 @@ def _login():
         return offices.get(office_key)
 
     st.markdown("## 💵 Pay Structure")
-    st.caption("Enter the access code for your office. You'll only ever see your "
-               "own office's pay structure.")
+    st.caption("Enter the access code for your office.")
     st.text_input("Access code", type="password", key="_code")
     if st.button("Open my pay structure", type="primary"):
         office = offices.office_for_code(st.session_state.get("_code", ""))

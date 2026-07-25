@@ -1486,12 +1486,22 @@ def _write_rep_row(ws, row_idx: int, values: list, border, center_v,
             cell.number_format = "m/d/yyyy"
 
 
+# The AUTOMATION MASTER workbook — where the self-serve Pay Structure editor
+# saves each office's structure (one tab per office). The Order Log reads it live
+# each run, so an overnight pricing change shows up the next morning. Set as an
+# env default (setdefault) so a caller can still override; the mini reads it with
+# the Hub OAuth token, no per-machine config needed beyond `lucy update`.
+_PAY_STRUCTURE_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
+
+
 def _load_pay_grid(owner: str):
     """The office's pay structure for this owner, or None. Any failure disables
     the estimate silently — it must never break the Order Log itself."""
     if not owner:
         return None
     try:
+        import os
+        os.environ.setdefault("PAY_STRUCTURE_SHEET_ID", _PAY_STRUCTURE_SHEET_ID)
         from automations.pay_structure import offices as _po, store as _ps
         office = _po.for_owner(owner)
         if not office:
@@ -1534,6 +1544,12 @@ def _append_rep_breakdown_tabs(wb, df: pd.DataFrame, owner: str = "") -> int:
         return 0
 
     pay_grid = _load_pay_grid(owner)
+    # When the office has a pay structure, each rep tab gains one column per
+    # leader level (after Activation Date) showing that product's pay, plus a
+    # TOTAL row per week. No structure -> the tab is exactly as before.
+    _levels = list(pay_grid.levels) if pay_grid else []
+    _full_header = _REP_FULL_HEADER + _levels
+    _ncol = len(_full_header)
     border = _thin_border()
     header_fill = PatternFill("solid", fgColor="434343")
     header_font = _ol_font("FFFFFF")
@@ -1548,10 +1564,10 @@ def _append_rep_breakdown_tabs(wb, df: pd.DataFrame, owner: str = "") -> int:
     def _banner(sh, r, text, fill, font):
         cell = sh.cell(row=r, column=1, value=text)
         cell.fill, cell.font, cell.alignment, cell.border = fill, font, _OL_CENTER, border
-        sh.merge_cells(start_row=r, start_column=1, end_row=r, end_column=_REP_NCOL)
+        sh.merge_cells(start_row=r, start_column=1, end_row=r, end_column=_ncol)
 
     def _header(sh, r):
-        for c, h in enumerate(_REP_FULL_HEADER, start=1):
+        for c, h in enumerate(_full_header, start=1):
             cell = sh.cell(row=r, column=c, value=h)
             cell.font, cell.fill = header_font, header_fill
             cell.alignment, cell.border = _OL_CENTER, border
@@ -1593,10 +1609,13 @@ def _append_rep_breakdown_tabs(wb, df: pd.DataFrame, owner: str = "") -> int:
             for rec in sorted(weeks[(ws_, we_, paid)], key=_week_key):
                 _write_rep_row(sh, r, [("Code", "A")] + [(h, rec[h]) for h in _REP_TAB_COLUMNS],
                                border, center_v, "57BB8A", "000000")
+                if pay_grid:
+                    _write_pay_cells(sh, r, rec, pay_grid, len(_REP_FULL_HEADER) + 1,
+                                     "57BB8A", border, active=True)
                 r += 1
             if pay_grid:
-                r = _write_week_estimate(sh, r, weeks[(ws_, we_, paid)],
-                                         pay_grid, border, banner_rows)
+                r = _write_week_total(sh, r, weeks[(ws_, we_, paid)], pay_grid,
+                                      len(_REP_FULL_HEADER), _ncol, border, banner_rows)
             r += 2   # spacer between sections
 
         # Pending / Disconnect / Cancel section — legend lives here, where the
@@ -1604,14 +1623,19 @@ def _append_rep_breakdown_tabs(wb, df: pd.DataFrame, owner: str = "") -> int:
         if pdc:
             _banner(sh, r, "Pending / Disconnect / Cancel", pend_fill, banner_font)
             banner_rows.add(r); r += 1
-            _banner(sh, r, "Legend:  A = Active   P = Pending   D = Disconnect   C = Cancel",
-                    PatternFill("solid", fgColor="FFF2CC"), legend_font)
+            _legend = ("Legend:  A = Active   P = Pending   D = Disconnect   C = Cancel"
+                       + ("    NYP = Not Yet Priced (office hasn't set a rate; not in the total)"
+                          if pay_grid else ""))
+            _banner(sh, r, _legend, PatternFill("solid", fgColor="FFF2CC"), legend_font)
             banner_rows.add(r); r += 1
             _header(sh, r); r += 1
             for code, rec in sorted(pdc, key=lambda x: (x[0], _week_key(x[1]))):
                 bg = STATUS_COLORS.get(str(rec["Status"]).strip(), "FFD666")
                 _write_rep_row(sh, r, [("Code", code)] + [(h, rec[h]) for h in _REP_TAB_COLUMNS],
                                border, center_v, bg, "000000")
+                if pay_grid:
+                    _write_pay_cells(sh, r, rec, pay_grid, len(_REP_FULL_HEADER) + 1,
+                                     bg, border, active=False)
                 r += 1
 
         _autosize_rep_tab(sh, banner_rows)
@@ -1620,40 +1644,63 @@ def _append_rep_breakdown_tabs(wb, df: pd.DataFrame, owner: str = "") -> int:
     return added
 
 
-def _write_week_estimate(sh, r, recs, pay_grid, border, banner_rows: set) -> int:
-    """Append a merged 'Estimated pay this week' line under a week's active rows,
-    showing the total at each level. Returns the next free row. Rows are added to
-    banner_rows so autosize ignores their long text."""
-    from automations.pay_structure.estimate import estimate_by_level
-    by_level, unpriced = estimate_by_level("att_residential",
-                                           _sale_type_counts(recs), pay_grid)
-    if not by_level or not any(by_level.values()):
-        return r
+_PAY_CAMPAIGN = "att_residential"        # the campaign the residential log prices
+_MONEY_FMT = '"$"#,##0'
+
+
+def _line_rates(rec, pay_grid):
+    """(per-level rates for this line, is_unpriced). Unpriced = no rate at any
+    level (the office hasn't set one) -> shown as NYP, excluded from the total."""
+    key = "{} — {}".format(str(rec.get("Product Type", "") or "").strip(),
+                           str(rec.get("Package", "") or "").strip())
+    vals = [pay_grid.rate(_PAY_CAMPAIGN, key, lvl) for lvl in pay_grid.levels]
+    return vals, (not any(vals))
+
+
+def _write_pay_cells(sh, r, rec, pay_grid, start_col, bg, border, active):
+    """Per-level pay cells for one line. Active lines show $ (or red NYP); a
+    P/D/C line leaves them blank (it doesn't pay)."""
+    fill = PatternFill("solid", fgColor=bg)
+    vals, unpriced = _line_rates(rec, pay_grid)
+    for i, _lvl in enumerate(pay_grid.levels):
+        cell = sh.cell(row=r, column=start_col + i)
+        cell.fill, cell.alignment, cell.border = fill, _OL_CENTER, border
+        if not active:
+            cell.font = _ol_font("000000")
+            continue
+        if unpriced:
+            cell.value, cell.font = "NYP", _ol_font("CC0000")
+        else:
+            cell.value, cell.font = vals[i], _ol_font("000000")
+            cell.number_format = _MONEY_FMT
+
+
+def _write_week_total(sh, r, recs, pay_grid, base_ncol, ncol, border, banner_rows: set) -> int:
+    """A TOTAL row under a week's active lines: label across the base columns,
+    then the summed pay in each level column (office brand color)."""
+    totals = [sum(_line_rates(rec, pay_grid)[0][i] for rec in recs)
+              for i in range(len(pay_grid.levels))]
     accent = (pay_grid.accent or "#1F9D57").lstrip("#") or "1F9D57"
-    parts = "     ".join("{}: ${:,.0f}".format(lvl, amt)
-                         for lvl, amt in by_level.items())
-    cell = sh.cell(row=r, column=1,
-                   value="\U0001F4B5 Estimated pay this week (rough)   —   " + parts)
-    cell.fill = PatternFill("solid", fgColor=accent)
-    cell.font, cell.alignment, cell.border = _ol_font("FFFFFF"), _OL_CENTER, border
-    sh.merge_cells(start_row=r, start_column=1, end_row=r, end_column=_REP_NCOL)
+    label = sh.cell(row=r, column=1,
+                    value="\U0001F4B5 TOTAL — estimated pay this week")
+    label.fill = PatternFill("solid", fgColor="F2F2F2")
+    label.font = _ol_font("333333")
+    label.alignment = Alignment(horizontal="right", vertical="center")
+    label.border = border
+    sh.merge_cells(start_row=r, start_column=1, end_row=r, end_column=base_ncol)
+    for i in range(len(pay_grid.levels)):
+        cell = sh.cell(row=r, column=base_ncol + 1 + i, value=totals[i])
+        cell.fill = PatternFill("solid", fgColor=accent)
+        cell.font = _ol_font("FFFFFF")
+        cell.alignment, cell.border = _OL_CENTER, border
+        cell.number_format = _MONEY_FMT
     banner_rows.add(r)
-    r += 1
-    if unpriced:
-        note = ("Not yet priced (excluded): " + ", ".join(unpriced[:5])
-                + ("…" if len(unpriced) > 5 else ""))
-        c2 = sh.cell(row=r, column=1, value=note)
-        c2.font = _ol_font("CC0000", italic=True)
-        c2.alignment, c2.border = _OL_CENTER, border
-        sh.merge_cells(start_row=r, start_column=1, end_row=r, end_column=_REP_NCOL)
-        banner_rows.add(r)
-        r += 1
-    return r
+    return r + 1
 
 
 def _autosize_rep_tab(ws, banner_rows: set) -> None:
     widths: dict = {}
-    for row in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=_REP_NCOL):
+    for row in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=ws.max_column):
         for cell in row:
             if cell.row in banner_rows or cell.value in (None, ""):
                 continue
