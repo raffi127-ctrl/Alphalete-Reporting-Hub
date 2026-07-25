@@ -85,47 +85,51 @@ def search(page=None, verbose=True):
                 all_names.add(s)
 
     header = rows[0] if rows else []
-    found = {}                       # target name -> list of matching raw rows
-    for r in rows[1:]:
-        hit = next((keys[P._norm_name(c)] for c in r
-                    if P._norm_name(c) in keys), None)
-        if hit:
-            found.setdefault(hit, []).append(r)
+    # Columns found BY HEADER LABEL, never index (CLAUDE.md) — the layout,
+    # decoded from the first structure dump 2026-07-24:
+    #   cl.ICD Owner Name  = the owner        (name we match on)
+    #   cl.DD Week         = the DD week      (M/D/YYYY)
+    #   Total $ to ICD     = the dollar line  (NOT cl.Account ID, a huge ID that
+    #                                          the first pass mistook for money)
+    oc = P._hdr_col(header, "cl.ICD Owner Name")
+    wc = P._hdr_col(header, "cl.DD Week")
+    ac = P._hdr_col(header, "Total $ to ICD")
 
-    # First: which of the four are present at all — the actual question.
-    out = [["TARGET", "IN TABLEAU?", "MATCHING ROWS"]]
+    per = {}          # target name -> {dd_week: summed Total $ to ICD}
+    rc = {}           # target name -> row count
+    for r in rows[1:]:
+        nm = r[oc].strip() if oc is not None and oc < len(r) else ""
+        hit = keys.get(P._norm_name(nm))
+        if not hit:
+            continue
+        wk = r[wc].strip() if wc is not None and wc < len(r) else "(no week)"
+        amt = P._num_locale(r[ac]) if ac is not None and ac < len(r) else None
+        d = per.setdefault(hit, {})
+        d[wk] = round(d.get(wk, 0.0) + (amt or 0.0), 2)
+        rc[hit] = rc.get(hit, 0) + 1
+
+    out = [["TARGET", "IN TABLEAU?", "DD WEEK", "TOTAL $ TO ICD", "ROWS"]]
     for name in TARGETS:
-        hits = found.get(name)
-        if hits:
-            out.append([name, "YES", str(len(hits))])
-        else:
+        weeks = per.get(name)
+        if not weeks:
             near = sorted(n for n in all_names
                           if name.split()[0].lower() in n.lower()
                           or name.split()[-1].lower() in n.lower())
-            out.append([name, "NO", ("near: " + ", ".join(near[:6])) if near
-                        else "no similar name in the crosstab"])
-
-    # Then the STRUCTURE, so the amount+week columns can be identified rather than
-    # guessed: the header row, and up to 6 full raw rows for the first name that
-    # matched (every cell, so the right column is visible instead of the max-cell
-    # heuristic that grabbed ID numbers). Column index prefixes each cell.
+            out.append([name, "NO", "", "",
+                        ("near: " + ", ".join(near[:5])) if near else "no match"])
+            continue
+        first = True
+        for wk, amt in sorted(weeks.items()):
+            out.append([name if first else "", "YES" if first else "",
+                        wk, f"${amt:,.2f}", str(rc[name]) if first else ""])
+            first = False
+    # The columns used, so the mapping is auditable on the tab.
     out.append([""])
-    out.append(["--- HEADER (col index : label) ---"])
-    for i, h in enumerate(header):
-        if (h or "").strip():
-            out.append([f"col {i}", str(h)[:80]])
-    sample_name = next((n for n in TARGETS if found.get(n)), None)
-    if sample_name:
-        out.append([""])
-        out.append([f"--- RAW ROWS for {sample_name} (first 6, all cells) ---"])
-        for r in found[sample_name][:6]:
-            for i, cell in enumerate(r):
-                if (cell or "").strip():
-                    out.append([f"col {i}", str(cell)[:80]])
-            out.append(["— end row —"])
+    out.append(["columns used", f"owner=col {oc} · week=col {wc} · amount=col {ac}",
+                "(by header label)", "", ""])
     if verbose:
         for r in out:
-            print(" | ".join(str(c)[:70] for c in r))
+            print(" | ".join(str(c) for c in r))
 
     _dump(out)
     print(f"\n✓ {len(out)} row(s) → '{DUMP_TAB}' tab + {csv_path}")
