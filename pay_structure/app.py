@@ -369,7 +369,11 @@ def admin_view() -> None:
     # --- who's filled in ---------------------------------------------------
     st.divider()
     st.subheader("Who's filled in")
-    done = {r["office"].lower(): r for r in store.list_structures()}
+    try:
+        _structs = store.list_structures()
+    except Exception:                    # noqa: BLE001 — never crash the panel
+        _structs = []
+    done = {r["office"].lower(): r for r in _structs}
     rows = []
     for k in offices.ORDER:
         o = offices.get(k)
@@ -387,7 +391,10 @@ def admin_view() -> None:
     st.caption("Each office logs in with its code. Edit a code and Save; changes "
                "take effect immediately (no redeploy). Saves to the 'Pay "
                "Structure Codes' tab in the master sheet.")
-    cur = store.load_codes()
+    try:
+        cur = store.load_codes()
+    except Exception:                    # noqa: BLE001
+        cur = {}
     df = pd.DataFrame([{"Office": offices.get(k).business_name or k,
                         "office_key": k,
                         "Access code": cur.get(k) or offices.access_code(k)}
