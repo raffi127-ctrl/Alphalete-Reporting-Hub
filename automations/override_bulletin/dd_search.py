@@ -147,6 +147,12 @@ def _pull(page=None, verbose=True):
     def cell(r, i):
         return r[i].strip() if i is not None and i < len(r) else ""
 
+    # per name -> per week -> totals + a SELF-CHECK on the fee rule. The rule is
+    # "drop any line whose Status/Category says 'ledger'"; the fee lines we have
+    # seen are small NEGATIVE deductions (Justin -$100 BG check). Two ways it can
+    # misfire, both tracked so drift can't be silent (Megan 2026-07-24):
+    #   * a POSITIVE line dropped as ledger  -> real DD wrongly excluded (too low)
+    #   * a NEGATIVE line KEPT in clean       -> a fee the rule missed (too low)
     per = {}
     for r in data:
         hit = keys.get(P._norm_name(cell(r, oc)))
@@ -155,12 +161,33 @@ def _pull(page=None, verbose=True):
         wk = _mdy(cell(r, wc)) or "(no week)"
         amt = P._num_locale(cell(r, ac)) or 0.0
         ledger = "ledger" in cell(r, sc).lower() or "ledger" in cell(r, cc).lower()
-        d = per.setdefault(hit, {}).setdefault(wk, {"raw": 0.0, "clean": 0.0, "rows": 0})
+        d = per.setdefault(hit, {}).setdefault(
+            wk, {"raw": 0.0, "clean": 0.0, "rows": 0,
+                 "dropped_pos": 0.0, "neg_kept": 0.0})
         d["raw"] += amt
         d["rows"] += 1
-        if not ledger:
+        if ledger:
+            if amt > 0:
+                d["dropped_pos"] += amt        # real DD wrongly dropped
+        else:
             d["clean"] += amt
+            if amt < 0:
+                d["neg_kept"] += amt           # a deduction the rule missed
     return per, all_names
+
+
+def _fee_flags(name, wk, d):
+    """Warnings if the fee rule looks like it misfired for this name/week."""
+    out = []
+    if d.get("dropped_pos", 0) > 0.5:
+        out.append(f"⚠ {name} {wk}: dropped ${d['dropped_pos']:,.2f} of POSITIVE "
+                   f"lines as 'ledger' — a real DD line may be misclassified; the "
+                   f"figure could be too LOW")
+    if d.get("neg_kept", 0) < -0.5:
+        out.append(f"⚠ {name} {wk}: kept ${d['neg_kept']:,.2f} of NEGATIVE lines "
+                   f"in the total — a fee/deduction the 'ledger' rule did not "
+                   f"catch; the figure could be too LOW")
+    return out
 
 
 def _newest_week(weeks):
@@ -182,12 +209,15 @@ def accumulate(write=False, page=None, verbose=True):
     aliases = F.load_alias_map()
 
     per, _ = _pull(page=page, verbose=verbose)
-    figs = {}
+    figs, flags = {}, []
     for name in TARGETS:
         weeks = per.get(name) or {}
         nw = _newest_week(weeks)
         if nw:
             figs[name] = (nw, round(weeks[nw]["clean"], 2))
+            flags += _fee_flags(name, nw, weeks[nw])
+    for f in flags:
+        print(f)
 
     ws = _fill._client().open_by_key(D.WORKBOOK_ID).worksheet(D.DD_TAB)
     vals = ws.get_all_values()
@@ -252,6 +282,11 @@ def search(page=None, verbose=True):
     out.append([""])
     out.append(["note", "VA FIGURE = Total $ to ICD minus ledger/fee lines; "
                 "should match the bulletin's manual figure.", "", "", ""])
+    # Self-check: surface any week where the fee rule looks like it misfired.
+    flags = [f for name in TARGETS for wk, d in (per.get(name) or {}).items()
+             for f in _fee_flags(name, wk, d)]
+    for f in flags:
+        out.append([f, "", "", "", ""])
     if verbose:
         for r in out:
             print(" | ".join(str(c) for c in r))
