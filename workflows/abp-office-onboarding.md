@@ -56,6 +56,30 @@ office wants different thresholds.
   channel; nothing is pooled (proven: one office's owner filter returns
   empty on another's CSV).
 
+## Pay Structure link (do this too when onboarding an office)
+
+Every office we onboard into metrics posting also gets a **Pay Structure** link
+so their order logs can show reps an estimated paycheck. Part of onboarding:
+
+1. **Megan gives me the office's website** (for auto-branding).
+2. **I add the office** to `automations/pay_structure/offices.py` (registry +
+   `WEBSITES`) and pull its **logo + brand color** from the site into
+   `branding.json`. This is the one code step — the admin panel can't add a
+   brand-new office by itself (its password table only lists registered offices).
+3. **Megan sets the office's password** in the admin panel
+   (`alphaletepaystructure.streamlit.app/?admin=1` → Access codes → Save, or
+   manage it in Cloud secrets + "↻ Pull codes from secrets").
+4. **Megan sends the office** the link (`alphaletepaystructure.streamlit.app`)
+   + their code, and they fill in their commission structure.
+5. Once filled in, that office's daily order log automatically shows the
+   per-level pay columns + weekly total (D2D via Lucy 1, B2B via Lucy 2 — both
+   read the office's row live from the "Lucy Pay Structures" tab).
+
+New campaign (not just a new office)? The sale-type list is FIXED — a new
+campaign's sale types are added deliberately (rebuild the catalog from the real
+log), NOT auto-grown. Office runs a campaign we don't list → "message Eve &
+Megan" (the editor says so).
+
 ## Office roster
 
 | Office | Owner | View | Sheet | Channel | Status |
