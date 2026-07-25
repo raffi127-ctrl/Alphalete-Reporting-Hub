@@ -80,10 +80,18 @@ DD_CHANNELS = [
 ]
 # Preview recipient for --preview (Megan only, before the distro goes live).
 PREVIEW_TO = ["Meganhidalgo1191@gmail.com"]
+# Soft-launch distro for --test (Megan 2026-07-24): run it a WEEK to this small
+# group, email only / no Slack, before flipping to the full org distro. Megan,
+# Eve (the VA), Carlos, Raf.
+TEST_TO = ["Meganhidalgo1191@gmail.com", "alphaletereporting@gmail.com",
+           "CarlosHidalgo349@gmail.com", "raffi127@gmail.com"]
 
 STATE_DIR = Path.home() / ".config" / "recruiting-report"
 STATE_PATH = STATE_DIR / "override_bulletin_last_sent.txt"
 DD_STATE_PATH = STATE_DIR / "dd_bulletin_last_sent.txt"
+# Separate state for the soft-launch test send, so a week of test emails never
+# marks the real distro as "already sent".
+DD_TEST_STATE_PATH = STATE_DIR / "dd_bulletin_test_last_sent.txt"
 
 
 def _channels(dd=False):
@@ -213,13 +221,18 @@ def dd_caption(week_label):
     return "🏆 Alphalete Organization Bulletin — WE {}".format(md)
 
 
-def send_dd(*, do_send=False, preview=False, force=False, out_dir=None,
-            credico="auto"):
+def send_dd(*, do_send=False, preview=False, test=False, force=False,
+            out_dir=None, credico="auto"):
     """Build → render → (optionally) publish the DD / Organization bulletin.
 
     Two pages: the leaders page and the by-ICD breakdown. Dry run by default —
     do_send=False and preview=False builds everything, resolves every recipient
-    and prints what would go where, but nothing leaves the machine."""
+    and prints what would go where, but nothing leaves the machine.
+
+    `test` is the soft-launch mode: recipients are the 4-person TEST_TO group and
+    NOTHING posts to Slack (email only). Combine with --send to actually email
+    them; the scheduled Thursday send runs `--dd --test --send` for the first
+    week before the full distro is turned on."""
     from automations.override_bulletin import dd_build as DB
     from automations.override_bulletin import dd_data as D
 
@@ -233,7 +246,13 @@ def send_dd(*, do_send=False, preview=False, force=False, out_dir=None,
     names = [p.name for p in png_paths]
 
     subject, caption = dd_subject(week_label), dd_caption(week_label)
-    to_addrs, missing = (list(PREVIEW_TO), []) if preview else recipients()
+    if preview:
+        to_addrs, missing = list(PREVIEW_TO), []
+    elif test:
+        to_addrs, missing = list(TEST_TO), []
+    else:
+        to_addrs, missing = recipients()
+    slack_on = do_send and not test        # test mode is email-only
 
     print("\nweek        : {}".format(week_label))
     print("headline    : ${:,.2f} across {} active ICDs".format(
@@ -242,8 +261,10 @@ def send_dd(*, do_send=False, preview=False, force=False, out_dir=None,
         "{} ${:,.0f}".format(p["name"].split()[0], p["week"]) for p in d["podium"])))
     print("pages       : {}".format(", ".join(str(p) for p in png_paths)))
     print("subject     : {}".format(subject))
-    print("slack       : {}".format(
-        ", ".join("{} ({})".format(n, c) for n, c in _channels(dd=True))))
+    print("mode        : {}".format("TEST (email only, no Slack)" if test
+                                    else "preview" if preview else "full distro"))
+    print("slack       : {}".format("(none — test/preview)" if not slack_on else
+          ", ".join("{} ({})".format(n, c) for n, c in _channels(dd=True))))
     print("email to    : {} address(es)".format(len(to_addrs)))
     for a in to_addrs:
         print("    • {}".format(a))
@@ -260,7 +281,8 @@ def send_dd(*, do_send=False, preview=False, force=False, out_dir=None,
 
     if not (do_send or preview):
         print("\nDRY RUN — nothing posted, nothing emailed. "
-              "Re-run with --dd --preview (email Megan only) or --dd --send.")
+              "Re-run with --dd --preview (email Megan only), --dd --test --send "
+              "(email the 4-person soft-launch group), or --dd --send.")
         return {"published": False, "dry_run": True, "week": week_label,
                 "png": [str(p) for p in png_paths], "to": to_addrs,
                 "missing": missing, "blocking": blocking}
@@ -280,26 +302,28 @@ def send_dd(*, do_send=False, preview=False, force=False, out_dir=None,
         raise SystemExit("refusing to send: contact group(s) missing: {}. Fix the "
                          "group name(s) in alphaletereporting@gmail.com's contacts "
                          "or pass the groups explicitly.".format(", ".join(missing)))
-    if do_send and already_sent(week_label, DD_STATE_PATH) and not force:
-        print("\nALREADY SENT for {} — not sending again (pass --force to "
-              "override).".format(week_label))
+    state_path = DD_TEST_STATE_PATH if test else DD_STATE_PATH
+    if do_send and already_sent(week_label, state_path) and not force:
+        print("\nALREADY SENT for {} ({}) — not sending again (pass --force to "
+              "override).".format(week_label, "test" if test else "full"))
         return {"published": False, "reason": "already sent", "week": week_label}
 
     result = {"week": week_label, "png": [str(p) for p in png_paths],
-              "to": to_addrs, "blocking": blocking}
-    if do_send:
+              "to": to_addrs, "blocking": blocking, "test": test}
+    if slack_on:
         result["slack"] = post_slack(png_paths, caption, names,
                                      channels=_channels(dd=True))
         for r in result["slack"]:
             print("posted to {} ok={}".format(r["channel"], r.get("ok")))
     else:
-        print("\n(preview: Slack post skipped — email only)")
+        print("\n({} — Slack post skipped, email only)".format(
+            "test" if test else "preview"))
 
     send_email(build_email(png_paths, week_label, to_addrs, subject=subject,
                            title="Alphalete Organization Bulletin"))
     print("emailed {} recipient(s): {}".format(len(to_addrs), subject))
     if do_send:
-        mark_sent(week_label, DD_STATE_PATH)
+        mark_sent(week_label, state_path)
     result["published"] = True
     return result
 
@@ -430,6 +454,10 @@ def main(argv=None):
                     help="REALLY publish: Slack every channel + email both groups")
     ap.add_argument("--preview", action="store_true",
                     help="email Megan only, post nothing to Slack")
+    ap.add_argument("--test", action="store_true",
+                    help="--dd soft launch: email the 4-person TEST_TO group "
+                         "(Megan, Eve, Carlos, Raf), no Slack. Combine with "
+                         "--send to actually email them.")
     ap.add_argument("--force", action="store_true",
                     help="send again even though this week was already sent — "
                          "and, for --dd, publish despite blocking problems")
@@ -442,8 +470,10 @@ def main(argv=None):
         raise SystemExit("--send and --preview are mutually exclusive")
     if a.no_credico and not a.dd:
         raise SystemExit("--no-credico only applies to --dd")
+    if a.test and not a.dd:
+        raise SystemExit("--test only applies to --dd")
     if a.dd:
-        send_dd(do_send=a.send, preview=a.preview, force=a.force,
+        send_dd(do_send=a.send, preview=a.preview, test=a.test, force=a.force,
                 out_dir=a.out_dir, credico=False if a.no_credico else "auto")
         return 0
     send(tab=a.tab, do_send=a.send, preview=a.preview, force=a.force,
