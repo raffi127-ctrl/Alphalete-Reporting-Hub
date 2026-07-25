@@ -193,7 +193,9 @@ def editor_view(office) -> None:
         st.markdown(
             logo_html
             + f"<div style='font-size:1.35rem;color:#4B5563;font-weight:700;"
-            f"letter-spacing:.01em;margin-bottom:2px'>{display_name}</div>"
+            f"letter-spacing:.01em;margin-bottom:1px'>{display_name}</div>"
+            f"<div style='font-size:1.02rem;color:#6B7280;font-weight:600;"
+            f"margin-bottom:5px'>{office.owner}</div>"
             f"<div style='font-size:2.3rem;font-weight:800;color:{accent};"
             f"line-height:1.05'>Pay Structure</div>",
             unsafe_allow_html=True)
