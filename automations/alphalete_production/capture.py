@@ -193,21 +193,42 @@ def _daily_show_cols(grid, team_avgs: bool = True) -> set:
     """DP visible set (by header label): #, name, running-APPS, last-week-APPS, each
     day's Apps, the identity columns, and (optionally) the Teams-table avg columns."""
     show = {0, 1, 2, 3}                                  # A, B, C, D(running APPS)
-    # last-week APPS
-    show.add(next(c for c in range(len(grid[0]))
-                  if _cell(grid, 0, c).strip() == "LAST WEEK'S TOTALS"
-                  and _cell(grid, 2, c).strip().upper() == "APPS"))
+    # A header we hunt for may be absent (label drift, a sheet-layout edit). A
+    # missing one must NOT crash the whole report — skip it (rendering without
+    # that column beats a StopIteration that kills the post) and log it.
+    def _col(pred, what):
+        c = next((c for c in range(len(grid[0])) if pred(c)), None)
+        if c is None:
+            print("[alphalete_production] warn: column not found: %s" % what)
+        return c
+
+    # last-week APPS — match is drift-tolerant ("LAST WEEK'S TOTALS",
+    # "LAST WEEKS TOTAL", etc. all start with "LAST WEEK").
+    lw = _col(lambda c: _cell(grid, 0, c).strip().upper().startswith("LAST WEEK")
+              and _cell(grid, 2, c).strip().upper() == "APPS", "LAST WEEK / APPS")
+    if lw is not None:
+        show.add(lw)
     # each day's Apps
     for c in range(len(grid[1])):
         if _cell(grid, 0, c).strip() in DAY_NAMES and _cell(grid, 2, c).strip().lower() == "apps":
             show.add(c)
     # identity columns by their row-1 header
     for lbl in ("Trainer", "Field Status", "Team", "Leadership Status", "Location"):
-        show.add(next(c for c in range(len(grid[0])) if _cell(grid, 0, c).strip() == lbl))
-    show.add(_campaign_col(grid))          # Fiber / Energy / Fiber-Wireless (Raf 7/14)
+        c = _col(lambda c, _l=lbl: _cell(grid, 0, c).strip() == _l, lbl)
+        if c is not None:
+            show.add(c)
+    try:
+        camp = _campaign_col(grid)          # Fiber / Energy / Fiber-Wireless (Raf 7/14)
+    except Exception as e:                   # noqa: BLE001 — missing col shouldn't crash
+        print("[alphalete_production] warn: %s" % e)
+        camp = None
+    if camp is not None:
+        show.add(camp)
     # Completed / ATTUID by their row-3 header
     for lbl in ("Completed", "ATTUID"):
-        show.add(next(c for c in range(len(grid[0])) if _cell(grid, 2, c).strip() == lbl))
+        c = _col(lambda c, _l=lbl: _cell(grid, 2, c).strip() == _l, lbl)
+        if c is not None:
+            show.add(c)
     # Teams-table avg columns (row-158-ish header band); by label so they survive moves
     if team_avgs:
         for c in range(len(grid[0])):
