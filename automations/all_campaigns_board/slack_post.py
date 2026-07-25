@@ -31,12 +31,14 @@ except Exception:
 
 TARGET_TAB = "All Campaigns Org Sales Board"     # live title has a trailing space
 TITLE = "All Campaigns Org Sales Board"
+# Slack user IDs (not names) so delivery never depends on the bot having the
+# users:read scope — resolved 2026-07-25. Name in the comment for readability.
 RECIPIENTS = [
-    "Rafael Hidalgo",
-    "Carlos Hidalgo",
-    "Maud Miller",
-    "Megan Hidalgo",
-    "Evelyn Sobrino",
+    "U045Z8N0ZQC",   # Rafael Hidalgo (raffi127@gmail.com)
+    "U046G04P5LG",   # Carlos Hidalgo (carloshidalgo349@gmail.com)
+    "U045USN7NCD",   # Maud Miller (maudmiller4@gmail.com)
+    "U04G5HJBGFN",   # Megan Hidalgo (ltdhidalgos@gmail.com)
+    "U088E2KJEV8",   # Evelyn Sobrino
 ]
 MAX_COL = 26                                      # A..Z (covers the delta box)
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "all_campaigns_board"
