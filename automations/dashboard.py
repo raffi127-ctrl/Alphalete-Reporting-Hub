@@ -3646,8 +3646,10 @@ AUTOMATED_REPORTS = [
             "**\u2022** If the Override Summary hasn't published the new week "
             "yet, it **holds** \u2014 nothing filled, nothing sent, rather than "
             "putting out a near-empty bulletin.\n"
-            "**\u2022** The fill writes the **Copy of** (sandbox) tab only; the "
-            "live tab is refused. The send renders whichever tab is live.\n"
+            "**\u2022** The fill writes the **Copy of** (sandbox) tab from the "
+            "real sources, and the bulletin renders **that** \u2014 never the "
+            "VA\u2019s live tab (hers is a reference for comparison, not a data "
+            "source).\n"
             "**\u2022** The send only goes once per week (retries can\u2019t "
             "double-email) and **holds if the week isn\u2019t filled**."
         ),

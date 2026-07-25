@@ -613,7 +613,7 @@
     },
     "install_override_bulletin_send_agent": {
       "on_scheduler": false,
-      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_override_bulletin_send_agent` installs/refreshes the STANDALONE com.alphalete.override-bulletin-send-fri LaunchAgent on the mini, which SENDS the Override Bulletin Fridays 10:30-13:00 CST (q25m, gated) via deploy/override_bulletin_send_fri.sh. SOFT LAUNCH: runs `send --test --send` = emails the 4-person TEST_TO group (Megan/Eve/Carlos/Raf), NO Slack. Renders the LIVE tab; holds if the week isn't filled; records the week so retries don't double-email. Flip to full-org by editing MODE in the wrapper to `--send`. install_agent only reloads the plist. Re-run after the plist changes.",
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_override_bulletin_send_agent` installs/refreshes the STANDALONE com.alphalete.override-bulletin-send-fri LaunchAgent on the mini, which SENDS the Override Bulletin Fridays 10:30-13:00 CST (q25m, gated) via deploy/override_bulletin_send_fri.sh. SOFT LAUNCH: runs `send --test --send` = emails the 4-person TEST_TO group (Megan/Eve/Carlos/Raf), NO Slack. Renders OUR copy-tab fill (NOT the VA's live tab \u2014 hers is a reference, not a source); holds if the copy tab isn't filled; records the week so retries don't double-email. Flip to full-org by editing MODE in the wrapper to `--send`. install_agent only reloads the plist. Re-run after the plist changes.",
       "display_name": "Install Override Bulletin SEND agent (Fri 10:30am)",
       "source_type": "local",
       "data_sources": [],

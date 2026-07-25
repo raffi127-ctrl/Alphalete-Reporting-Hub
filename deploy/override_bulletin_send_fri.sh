@@ -7,10 +7,13 @@
 # full-org distro. To flip to FULL (Slack + both contact groups), change MODE
 # below to `--send` (drop --test); that is a deliberate one-line change.
 #
-# The send RENDERS the live 'Org Overrides Ongoing Report' tab. It is gated:
-# send.py refuses a week that isn't filled, and records the week it sent so the
-# q25m retries never double-email. So if the tab isn't filled yet, this holds
-# quietly and the next pass tries again.
+# The send RENDERS OUR OWN fill — the 'Copy of Org Overrides Ongoing Report'
+# (sandbox) tab that override_bulletin.run fills from the real sources. It does
+# NOT read the VA's live tab: that tab is a REFERENCE for comparison, not a data
+# source (Megan 2026-07-25 — rendering hers would just re-publish her work and
+# defeat the automation). It is gated: send.py refuses a week that isn't filled,
+# and records the week it sent so the q25m retries never double-email. So if the
+# copy tab isn't filled yet, this holds quietly until the fill agent populates it.
 #
 # launchd fires passes Friday 10:30-13:00 CST (after the ~10am fill window), q25m.
 # TIME KNOB: edit StartCalendarInterval in the plist.
@@ -35,15 +38,16 @@ export _PYTHON_DEFAULT_USE_POSIX_SPAWN=1
 export NO_COLOR=1
 export PYTHONPATH="$(pwd)"
 
-# SOFT LAUNCH: email the 4-person test group, no Slack. `--dry` previews without
-# sending. To go full-org, change to MODE="--send".
-MODE="--test --send"
-[ "${1:-}" = "--dry" ] && MODE="--test"
+# SOFT LAUNCH: render OUR copy-tab fill and email the 4-person test group, no
+# Slack. `--dry` previews without sending. To go full-org, drop --test (-> --send).
+# An ARRAY, because the tab name has spaces — an unquoted string would word-split.
+ARGS=(--tab "Copy of Org Overrides Ongoing Report" --test --send)
+[ "${1:-}" = "--dry" ] && ARGS=(--tab "Copy of Org Overrides Ongoing Report" --test)
 
 LOG_FILE="$LOG_DIR/override-bulletin-send-$(date +%Y-%m-%d-%H%M%S).log"
-echo "[$(date)] override-bulletin-send starting (mode: $MODE)" > "$LOG_FILE"
+echo "[$(date)] override-bulletin-send starting (mode: ${ARGS[*]})" > "$LOG_FILE"
 
-"$VENV_PY" -u -m automations.override_bulletin.send $MODE >> "$LOG_FILE" 2>&1
+"$VENV_PY" -u -m automations.override_bulletin.send "${ARGS[@]}" >> "$LOG_FILE" 2>&1
 ST=$?
 
 echo "[$(date)] override-bulletin-send finished exit=$ST" >> "$LOG_FILE"

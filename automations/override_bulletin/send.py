@@ -337,8 +337,14 @@ def send(*, tab=None, do_send=False, preview=False, test=False, force=False,
 
     `test` is the soft-launch mode (Megan 2026-07-25): email the 4-person TEST_TO
     group (Megan, Eve, Carlos, Raf) and post NOTHING to Slack — a week of preview
-    to the leaders before the full-org distro. Combine with do_send to email."""
-    tab = tab or F.LIVE_TAB
+    to the leaders before the full-org distro. Combine with do_send to email.
+
+    The bulletin renders OUR OWN fill — the SANDBOX copy tab that
+    override_bulletin.run fills from the real sources — NOT the VA's live tab.
+    Her tab is a REFERENCE for comparison, not a data source; rendering it would
+    just re-publish her work (Megan 2026-07-25). Pass tab=F.LIVE_TAB only once we
+    have actually taken the live tab over."""
+    tab = tab or F.SANDBOX_TAB
     out_dir = Path(out_dir) if out_dir else B.OUT_DIR
 
     # One read of the tab, not two — build() would re-read it for the same rows.
@@ -459,10 +465,11 @@ def main(argv=None):
     ap.add_argument("--dd", action="store_true",
                     help="publish the DD / Organization bulletin (two pages) "
                          "instead of the Override Bulletin")
-    ap.add_argument("--tab", default=F.LIVE_TAB,
-                    help="source tab to build the bulletin from (default: the "
-                         "live tab; use the sandbox copy while testing). "
-                         "Override bulletin only.")
+    ap.add_argument("--tab", default=F.SANDBOX_TAB,
+                    help="tab to build the bulletin from. Default is the SANDBOX "
+                         "copy tab — OUR fill from the real sources. The VA's live "
+                         "tab is a reference, not a source; pass it explicitly only "
+                         "after we take the live tab over. Override bulletin only.")
     ap.add_argument("--send", action="store_true",
                     help="REALLY publish: Slack every channel + email both groups")
     ap.add_argument("--preview", action="store_true",
