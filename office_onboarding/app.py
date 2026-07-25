@@ -23,8 +23,11 @@ sandbox — it never touches the live master sheet until creds are present).
 """
 from __future__ import annotations
 
+import os
+import smtplib
 import sys
 from datetime import datetime, timezone
+from email.message import EmailMessage
 from pathlib import Path
 
 import streamlit as st
@@ -39,21 +42,19 @@ st.set_page_config(page_title="Metrics Onboarding", page_icon="🏢",
 # --------------------------------------------------------------------------
 # Google client (only needed to write the live master sheet; absent = local JSON)
 # --------------------------------------------------------------------------
-def _inject_gs_client() -> None:
-    import os
+def _build_gs_client():
     if os.environ.get("OFFICE_ONBOARDING_LOCAL_ONLY") == "1":
-        return                         # sandbox: save to local JSON, never the sheet
+        return None                    # sandbox: save to local JSON, never the sheet
     try:
         import gspread
     except Exception:
-        return
+        return None
     try:
         sa = st.secrets.get("gcp_service_account")
     except Exception:
         sa = None
     if sa:
-        store.set_client(gspread.service_account_from_dict(dict(sa)))
-        return
+        return gspread.service_account_from_dict(dict(sa))
     try:
         o = st.secrets.get("gcp_oauth")
     except Exception:
@@ -71,7 +72,91 @@ def _inject_gs_client() -> None:
             client_id=o.get("client_id"), client_secret=o.get("client_secret"),
             scopes=list(o.get("scopes") or
                         ["https://www.googleapis.com/auth/spreadsheets"]))
-        store.set_client(gspread.authorize(creds))
+        return gspread.authorize(creds)
+    return None
+
+
+def _inject_gs_client() -> None:
+    """Share one client with BOTH stores: office_onboarding (the Office Onboarding
+    tab) and pay_structure (the Pay Structure Codes tab) — both live in the same
+    AUTOMATION MASTER sheet, so onboarding can register the office's pay code."""
+    gc = _build_gs_client()
+    if gc is None:
+        return
+    store.set_client(gc)
+    try:
+        os.environ.setdefault("PAY_STRUCTURE_SHEET_ID", store.MASTER_SHEET_ID)
+        from automations.pay_structure import store as _ps
+        _ps.set_client(gc)
+    except Exception:
+        pass
+
+
+# --------------------------------------------------------------------------
+# Email (Pay Structure invite) — sends only when [smtp] secrets are configured.
+# --------------------------------------------------------------------------
+def _smtp():
+    try:
+        return st.secrets.get("smtp")
+    except Exception:
+        return None
+
+
+def send_pay_invite(to_addr: str, subject: str, html: str) -> "tuple":
+    """Send the HTML invite from the team address; cc the team so there's a copy
+    (mirrors Megan's 'to owner … Alphalete'). Returns (ok, note)."""
+    s = _smtp()
+    pw = (s or {}).get("password", "")
+    if not s or not pw or pw.startswith("PASTE"):
+        return False, "email isn't configured (add [smtp] secrets to send)"
+    if not to_addr or "@" not in to_addr:
+        return False, "no owner email to send to"
+    cc = [a for a in [(s or {}).get("team"), S.EVE_EMAIL] if a and a != to_addr]
+    msg = EmailMessage()
+    msg["From"] = s.get("from", s["user"])
+    msg["To"] = to_addr
+    if cc:
+        msg["Cc"] = ", ".join(dict.fromkeys(cc))
+    msg["Subject"] = subject
+    msg.set_content(f"Set your office's payouts: open {S.PAY_STRUCTURE_URL} "
+                    "and enter your code (see the HTML version of this email).")
+    msg.add_alternative(html, subtype="html")
+    try:
+        with smtplib.SMTP(s["host"], int(s.get("port", 587)), timeout=60) as srv:
+            srv.starttls()
+            srv.login(s["user"], s["password"])
+            srv.send_message(msg)
+        return True, ", ".join([to_addr] + cc)
+    except Exception as e:                           # noqa: BLE001
+        return False, f"{type(e).__name__}: {e}"
+
+
+def register_pay_code(rec) -> "tuple":
+    """Pre-stage the office's Pay Structure code in the codes tab (load-merge-save
+    so other offices aren't clobbered). It resolves for the owner once the office
+    is wired (apply + commit → Pay Structure redeploys). Returns (ok, note)."""
+    try:
+        from automations.pay_structure import store as _ps, offices as _po
+    except Exception as e:                           # noqa: BLE001
+        return False, f"pay_structure import failed: {e}"
+    try:
+        codes = dict(_ps.load_codes() or {})
+    except Exception:
+        codes = {}
+    codes[rec.key] = rec.pay_code
+    business = {}
+    try:
+        for k in _po.ORDER:
+            business[k] = _po.get(k).business_name
+    except Exception:
+        pass
+    business[rec.key] = rec.business_name
+    order = list(dict.fromkeys(list(codes.keys())))
+    try:
+        _ps.save_codes(codes, business, order)
+        return True, ""
+    except Exception as e:                           # noqa: BLE001
+        return False, f"{type(e).__name__}: {e}"
 
 
 def _machine_badge(machine: str) -> str:
@@ -221,6 +306,24 @@ def form_view() -> None:
     enrolled = [S.EnrolledReport(key=rk.key, order=order)
                 for rk, order in sorted(picked, key=lambda t: t[1])]
 
+    # ---- 6. Owner welcome email ------------------------------------------
+    st.divider()
+    st.markdown("### 6. Owner welcome email")
+    st.caption("On submit, Lucy emails the owner a welcome to Lucy reporting + "
+               "their Pay Structure code (so they can set their office's payouts). "
+               "Uncheck to skip the send.")
+    we1, we2 = st.columns([3, 2])
+    with we1:
+        owner_email = st.text_input(
+            "Owner email", help="Where the welcome email is sent.")
+    with we2:
+        pay_code = st.text_input(
+            "Pay Structure code", value=S.gen_pay_code(business, key or ""),
+            help="Auto-made from the company name — edit if you want a cleaner "
+                 "code. This is what the owner enters on the Pay Structure site.")
+    send_welcome = st.checkbox(
+        "✉️ Send the welcome email to the owner on submit", value=True)
+
     # ---- build the record -------------------------------------------------
     st.divider()
     rec = S.OnboardingRecord(
@@ -229,6 +332,7 @@ def form_view() -> None:
         business_name=business.strip(), website=website.strip(),
         channel_id=channel_id.strip(), channel_name=channel_name.strip(),
         sheet_id=sheet_id, family=family, ov_account=ov_account.strip(),
+        owner_email=owner_email.strip(), pay_code=pay_code.strip(),
         reports=enrolled, header_label=header_label.strip())
 
     # ---- submit -----------------------------------------------------------
@@ -237,6 +341,9 @@ def form_view() -> None:
         problems = S.validate(
             rec, existing_channels=reg["channels"],
             existing_keys=reg["keys"], existing_views=reg["views"])
+        if send_welcome and rec.owner_email and "@" not in rec.owner_email:
+            problems.append("Owner email doesn't look valid (or uncheck 'Send the "
+                            "welcome email').")
         if problems:
             st.error("Fix these before submitting:")
             for p in problems:
@@ -249,7 +356,16 @@ def form_view() -> None:
         except Exception as e:                       # noqa: BLE001
             st.error(f"Couldn't save: {e}")
             return
-        st.session_state["_last_submit"] = {"rec": rec.to_json(), "where": where}
+        result = {"rec": rec.to_json(), "where": where}
+        # Welcome email: pre-stage the pay code, then send.
+        if send_welcome and rec.owner_email:
+            code_ok, code_note = register_pay_code(rec)
+            subject, html = S.welcome_email(rec.owner, rec.pay_code)
+            sent_ok, sent_note = send_pay_invite(rec.owner_email, subject, html)
+            result["welcome"] = {
+                "sent": sent_ok, "note": sent_note, "code": rec.pay_code,
+                "to": rec.owner_email, "code_ok": code_ok, "code_note": code_note}
+        st.session_state["_last_submit"] = result
         st.rerun()
 
     _show_result()
@@ -282,6 +398,29 @@ def _show_result() -> None:
     st.code(f"python -m automations.office_onboarding.apply --only {d['key']}\n"
             f"python -m automations.office_onboarding.apply --only {d['key']} --write",
             language="bash")
+
+    # ---- welcome email outcome ----
+    w = res.get("welcome")
+    if w:
+        st.markdown("#### Owner welcome email")
+        if w["sent"]:
+            st.success(f"✉️ Welcome email sent to {w['note']} — code **{w['code']}**.")
+        else:
+            st.warning(f"⚠️ Couldn't send the welcome email: {w['note']}. The code "
+                       f"is **{w['code']}** — send it manually or add the [smtp] "
+                       f"secrets and re-run.")
+        if not w.get("code_ok"):
+            st.caption(f"Pay code not pre-staged yet ({w.get('code_note','')}). It "
+                       "registers once the office is wired + Pay Structure "
+                       "redeploys — that's also when the code starts working.")
+        else:
+            st.caption("Pay code staged. It starts working for the owner once the "
+                       "office is wired (apply + commit → Pay Structure redeploys).")
+        subj, html = S.welcome_email(d.get("owner", ""), w["code"])
+        with st.expander("Preview the email that was sent"):
+            st.caption(f"Subject: {subj}")
+            st.markdown(html, unsafe_allow_html=True)
+
     if st.button("Onboard another office"):
         del st.session_state["_last_submit"]
         st.rerun()

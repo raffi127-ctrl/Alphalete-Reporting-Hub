@@ -120,6 +120,64 @@ SHEET_TAB_TEMPLATES: "Dict[str, list]" = {
 }
 
 
+# --- Pay Structure invite ---------------------------------------------------
+# On onboarding, the tool emails the owner their Pay Structure link + a code so
+# they can set their office's commission structure (feeds each rep's estimated
+# payout on the daily order log). Same self-serve site as [[project_pay_structure]].
+PAY_STRUCTURE_URL = "https://alphaletepaystructure.streamlit.app"
+EVE_EMAIL = "alphaletereporting@gmail.com"
+
+
+def gen_pay_code(business: str, key: str) -> str:
+    """A per-office access code, e.g. 'aeon137'. First word of the business name
+    (or the key) + a stable 3-digit suffix (deterministic from the key so
+    re-submits don't churn the code). Megan can edit it before sending."""
+    first = (business or key or "office").strip().split()[0] if (business or key) else "office"
+    slug = re.sub(r"[^a-z0-9]", "", first.lower()) or (key or "office")
+    seed = sum(ord(c) for c in (key or business or "x"))
+    return f"{slug}{100 + seed % 900}"
+
+
+def welcome_email(owner: str, code: str) -> "tuple":
+    """(subject, html_body) — the WELCOME email a newly-enrolled office gets: Lucy
+    now posts their office's daily metrics, plus their Pay Structure link + code so
+    they can set their payouts. Same formatting as Megan's rollout email, reframed
+    from a 'new feature' note to an onboarding welcome."""
+    last = owner.strip().split()[-1] if owner.strip() else "your office"
+    subject = f"Welcome to Lucy reporting - {last}"
+    body = f"""\
+<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#222;line-height:1.5">
+<p>Hey team!</p>
+<p><b>Welcome to Lucy reporting!</b> Your office is now set up with its own daily
+metrics — every morning Lucy posts them to your Slack channel (knocks, order log,
+churn, activations, ABP and more), so you can see how your office is doing at a
+glance.</p>
+<p>One thing to set up on your end: your commission structure. Enter what you pay
+per product at each level and Lucy will show each rep an estimated payout — right
+on their order log tab, <b><i>every morning.</i></b></p>
+<p><b>It takes about 5 minutes:</b></p>
+<ul>
+  <li>Open your link: <a href="{PAY_STRUCTURE_URL}">{PAY_STRUCTURE_URL}</a></li>
+  <li>Enter your code: <b>{code}</b></li>
+  <li>Check the campaigns you run, then fill in your pay per product at each level
+      (Level 1, Level 2, …). Fill in every cell — even when the pay is the same
+      across levels.</li>
+  <li>Hit Save. Done.</li>
+</ul>
+<p><b>A few notes:</b></p>
+<ul>
+  <li>You can update your pricing anytime; the next morning's log picks up the
+      change automatically.</li>
+  <li>Any product showing "NYP" (Not Yet Priced) just means you haven't set a rate
+      for it yet — set it and save, and it starts calculating.</li>
+  <li>Questions, or don't see a campaign you run? Message Eve
+      (<a href="mailto:{EVE_EMAIL}">{EVE_EMAIL}</a>) &amp; Megan and we'll help.</li>
+</ul>
+<p><b>Welcome aboard!</b></p>
+</div>"""
+    return subject, body
+
+
 def needed_tabs(family: str, enrolled_keys: "Optional[List[str]]" = None) -> "List[dict]":
     """The sheet tabs this office needs — the sheet-writing reports it enrolls.
     Each entry: {report, tab, template}. When enrolled_keys is None, returns all
@@ -159,6 +217,8 @@ class OnboardingRecord:
     family: str                   # "d2d" | "b2b".
     ov_account: str = ""          # Ownerville account number (metadata; may equal
                                   # the AppStream office id but isn't guaranteed to).
+    owner_email: str = ""         # where the Pay Structure invite is sent.
+    pay_code: str = ""            # the office's Pay Structure access code.
     reports: List[EnrolledReport] = field(default_factory=list)
     label: str = ""               # "Cyrus's Local Office"; derived if blank.
     header_label: str = ""        # set ONLY when sharing a channel (distinct thread).
