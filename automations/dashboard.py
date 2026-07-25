@@ -11056,6 +11056,7 @@ else:  # st.session_state.view == "user"
                         "https://alphaletepaystructure.streamlit.app/?admin=1",
                         use_container_width=True)
                     st.caption("Add passwords · see who's filled in")
+                    st.markdown("Admin code: **A\\*\\*\\*\\*123**")
             st.markdown("---")
 
         # ---- Personal portfolio: projects this user has claimed / shipped ----
