@@ -284,7 +284,7 @@ def main(argv=None) -> int:
     ap.add_argument("--watch", action="store_true",
                     help="intraday BOTH-MACHINE error watcher: post deduped, "
                          "real-time corrections alerts for standalone reports that "
-                         "errored today; no summary email. Run it every ~30 min.")
+                         "errored today; no summary email. Run it every ~10 min.")
     args = ap.parse_args(argv)
 
     if args.watch:

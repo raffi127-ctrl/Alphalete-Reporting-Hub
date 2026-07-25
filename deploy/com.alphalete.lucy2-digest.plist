@@ -24,10 +24,11 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Every 30 min. The wrapper self-gates to 04–21 CST so off-hours firings are
-         a no-op (no wasted Sheet reads overnight). -->
+    <!-- Every 10 min — surface a failure fast (Megan 2026-07-25: as soon as
+         something fails, 10 min at most). The wrapper self-gates to 04–21 CST so
+         off-hours firings are a no-op (no wasted Sheet reads overnight). -->
     <key>StartInterval</key>
-    <integer>1800</integer>
+    <integer>600</integer>
 
     <key>StandardOutPath</key>
     <string>/Users/megan/1st Claude Folder/output/logs/lucy2-digest.launchd.out.log</string>

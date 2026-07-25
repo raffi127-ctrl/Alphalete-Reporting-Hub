@@ -1,5 +1,5 @@
 #!/bin/bash
-# Intraday BOTH-MACHINE error watcher — runs ON LUCY 1 every ~30 min all day.
+# Intraday BOTH-MACHINE error watcher — runs ON LUCY 1 every ~10 min all day.
 # (com.alphalete.lucy2-digest.) The Hub Activity log is shared, so from the mini
 # we can see every report's outcome on BOTH Lucy 1 and Lucy 2. It posts a deduped,
 # real-time corrections Slack alert for any STANDALONE report (either machine) that
@@ -17,7 +17,7 @@ set -u
 cd "$(dirname "$0")/.." || exit 1
 
 # Only sweep during the active report window (04–21 CST) — the mini is Central, so
-# no wasted Sheet reads overnight. launchd fires this every 30 min; this gate makes
+# no wasted Sheet reads overnight. launchd fires this every 10 min; this gate makes
 # the off-hours firings a no-op.
 HOUR=$(date +%H)
 if [ "$HOUR" -lt 4 ] || [ "$HOUR" -ge 21 ]; then

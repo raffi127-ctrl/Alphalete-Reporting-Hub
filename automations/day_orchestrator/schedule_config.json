@@ -898,7 +898,7 @@
     },
     "install_lucy2_digest_agent": {
       "on_scheduler": true,
-      "_note": "MANUAL: `lucy rerun install_lucy2_digest_agent` (re)installs com.alphalete.lucy2-digest on the mini. That job is now the INTRADAY BOTH-MACHINE error watcher (every 30 min, 04-21 CST) — reads the shared Hub Activity log and posts deduped real-time corrections alerts for standalone reports that errored on either Lucy 1 or Lucy 2; NO summary email. Run this once after pulling the reschedule so launchd picks up the new StartInterval. weekdays [] = manual only.",
+      "_note": "MANUAL: `lucy rerun install_lucy2_digest_agent` (re)installs com.alphalete.lucy2-digest on the mini. That job is now the INTRADAY BOTH-MACHINE error watcher (every 10 min, 04-21 CST) — reads the shared Hub Activity log and posts deduped real-time corrections alerts for standalone reports that errored on either Lucy 1 or Lucy 2; NO summary email. Run this once after pulling the reschedule so launchd picks up the new StartInterval. weekdays [] = manual only.",
       "display_name": "Install Lucy 2 / error-watch agent",
       "source_type": "local",
       "data_sources": [],
