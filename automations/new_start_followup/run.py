@@ -49,24 +49,7 @@ def _post(rec, body: str, live: bool) -> int:
     return 0
 
 
-def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="New-start follow-up: who texted their new starts.")
-    ap.add_argument("--mode",
-                    choices=["status", "rollcall", "nudge", "checklist"],
-                    default="status",
-                    help="status = print only; rollcall = Saturday 8am tag-everyone; "
-                         "nudge = Saturday reminder; checklist = Sunday roll-up")
-    ap.add_argument("--force", action="store_true",
-                    help="post the roll call again even if one is already in the thread")
-    ap.add_argument("--when", choices=["auto", "morning", "midday", "evening"], default="auto",
-                    help="which Saturday nudge to send (wording differs); "
-                         "auto picks by clock time so one launchd job covers all three")
-    ap.add_argument("--monday", help="start-week Monday as YYYY-MM-DD (default: next Monday)")
-    ap.add_argument("--live", action="store_true", help="actually post to Slack")
-    ap.add_argument("--dry-run", action="store_true", default=True,
-                    help="print only (default)")
-    args = ap.parse_args(argv)
-
+def _run(args) -> int:
     monday = dt.date.fromisoformat(args.monday) if args.monday else None
     when = args.when
     if when == "auto":
@@ -128,6 +111,59 @@ def main(argv=None) -> int:
     body = (report_mod.render_nudge(rec, when) if args.mode == "nudge"
             else report_mod.render_checklist(rec))
     return _post(rec, body, args.live)
+
+
+def _hub_done(live_post: bool, hub_run_id, ok: bool) -> None:
+    """Best-effort — a Hub-publish hiccup must never break the actual post."""
+    if not live_post:
+        return
+    try:
+        from automations.day_orchestrator import hub_publish
+        hub_publish.publish_done("new_start_followup", "New-Start Follow-Up",
+                                 status="success" if ok else "failed",
+                                 run_id=hub_run_id)
+    except Exception as e:  # noqa: BLE001
+        print(f"[hub] publish_done skipped: {e}")
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description="New-start follow-up: who texted their new starts.")
+    ap.add_argument("--mode",
+                    choices=["status", "rollcall", "nudge", "checklist"],
+                    default="status",
+                    help="status = print only; rollcall = Saturday 8am tag-everyone; "
+                         "nudge = Saturday reminder; checklist = Sunday roll-up")
+    ap.add_argument("--force", action="store_true",
+                    help="post the roll call again even if one is already in the thread")
+    ap.add_argument("--when", choices=["auto", "morning", "midday", "evening"], default="auto",
+                    help="which Saturday nudge to send (wording differs); "
+                         "auto picks by clock time so one launchd job covers all three")
+    ap.add_argument("--monday", help="start-week Monday as YYYY-MM-DD (default: next Monday)")
+    ap.add_argument("--live", action="store_true", help="actually post to Slack")
+    ap.add_argument("--dry-run", action="store_true", default=True,
+                    help="print only (default)")
+    args = ap.parse_args(argv)
+
+    # Each LIVE pass publishes to the Hub run feed so the New-Start Follow-Up
+    # card's pill climbs as the Saturday passes land (Sat 4 -> green, Sun 1 ->
+    # green), exactly like bg_check_sync. --mode status posts nothing, so it
+    # never publishes.
+    live_post = args.live and args.mode in ("rollcall", "nudge", "checklist")
+    hub_run_id = None
+    if live_post:
+        try:
+            from automations.day_orchestrator import hub_publish
+            hub_run_id = hub_publish.publish_running("new_start_followup", "New-Start Follow-Up")
+        except Exception as e:  # noqa: BLE001
+            print(f"[hub] publish_running skipped: {e}")
+
+    try:
+        rc = _run(args)
+    except Exception:
+        _hub_done(live_post, hub_run_id, ok=False)
+        raise
+    _hub_done(live_post, hub_run_id, ok=(rc == 0))
+    return rc
 
 
 if __name__ == "__main__":

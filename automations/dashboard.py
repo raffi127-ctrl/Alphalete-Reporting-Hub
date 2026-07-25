@@ -4195,10 +4195,16 @@ AUTOMATED_REPORTS = [
         # rather than reposting. Slack-only — no iMessage (texting is parked).
         "run_machine": "Lucy 1",
         "run_rerun_id": "new_start_followup",
-        # Own launchd timers (Sat ×3 + Sun ×1) — hide the DUE-TODAY + schedule
+        # Own launchd timers (Sat ×4 + Sun ×1) — hide the DUE-TODAY + schedule
         # pills and keep it out of the "due today" tallies, same as bg-check-sync.
         "hide_schedule": True,
         "self_scheduled": True,
+        # Pill climbs as each pass lands: Saturday = 4 (roll-call 8am + nudges
+        # 10am/1pm/5pm) greens at 4/4; Sunday = the single 1pm checklist greens
+        # at 1/1. Weekday-keyed (weekday(): Sat=5, Sun=6) so the lighter day
+        # still turns green instead of amber-ing at 1/4. Each live pass records
+        # itself via hub_publish (new_start_followup -> this card).
+        "daily_runs": {"5": 4, "6": 1},
         "schedule": {
             "frequency": "weekly",
             "weekdays": [5, 6],  # Saturday, Sunday
@@ -6204,6 +6210,16 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
             return "up" if _day == today else "fail"   # stuck if it's a past day
         return "fail"                         # any other terminal status
 
+    def _expected_runs(_rr, _dd) -> int:
+        """Passes expected for this card on this weekday. Usually a flat int
+        (daily_runs); a dict keyed by weekday() lets a card whose pass-count
+        differs by day green correctly on each (New-Start: Sat=4, Sun=1) instead
+        of one fixed count leaving the lighter day amber forever."""
+        _cfg = _rr.get("daily_runs") or 1
+        if isinstance(_cfg, dict):
+            return int(_cfg.get(str(_dd.weekday()), _cfg.get(_dd.weekday(), 1)))
+        return int(_cfg)
+
     _cal_cols = st.columns(7)
     for _i, _day in enumerate(_week_days):
         with _cal_cols[_i]:
@@ -6297,8 +6313,8 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                     # coral ⚠️ failed/incomplete, gray – scheduled-didn't-run,
                     # plain = upcoming). Status is encoded in the button key
                     # (__calstat_<status>) which the injected CSS colors.
-                    _stat = _cal_status(_r["id"], _day,
-                                        int(_r.get("daily_runs") or 1))
+                    _dr_today = _expected_runs(_r, _day)
+                    _stat = _cal_status(_r["id"], _day, _dr_today)
                     if _day == today and _r["id"] in _running_ids:
                         _stat = "running"          # live subprocess right now
                     _icon = {"ok": "✅ ", "partial": "🟠 ", "fail": "⚠️ ",
@@ -6309,7 +6325,7 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                     # (e.g. "1/3") so the amber pill says WHY it isn't green yet.
                     if _stat == "progress":
                         _label += (f" {_cal_counts.get((_r['id'], _day), 0)}"
-                                   f"/{int(_r.get('daily_runs') or 1)}")
+                                   f"/{_dr_today}")
                     # Self-scheduled reports fire on their OWN fixed timer (not the
                     # 4am batch), so show the run time on the tile — otherwise there
                     # is no way to see WHEN it runs. Batch reports omit it (they run

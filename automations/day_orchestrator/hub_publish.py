@@ -92,6 +92,11 @@ _HUB_CARD = {
     # 7:30pm deck posts. daily_runs=4 on the card counts these 4 success rows.
     "owners_call_reminder": "leaders-call",
     "bg_check_sync": "bg-check-sync",
+    # New-Start Follow-Up's Saturday roll-call + nudges (and Sunday checklist)
+    # run as their own launchd jobs, not the 4am batch. Each live pass publishes
+    # here so the card's pill climbs as the passes land (Sat 4/4, Sun 1/1) —
+    # without this line those runs post to Slack while the card stays white.
+    "new_start_followup": "new-start-followup",
     "residential_rep_count": "residential_rep_count",
     # Sara+ issue escalation. This one runs every 5 min around the clock, so it
     # publishes ONLY when it actually escalates an issue (not on every tick) —
