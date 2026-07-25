@@ -355,22 +355,42 @@ def _drive_dd_week(label, verbose=False):
 
         tbox.click()
         page.wait_for_timeout(1200)
-        if viz.locator('div.FIItem[role="checkbox"]').filter(
-                has_text=_re.compile(r"^{}$".format(_re.escape(label)))).count() == 0:
+        # cl.DD Week is SINGLE-select (the box shows one date), so the JE
+        # multi-select 'check target, uncheck the rest' dance is wrong — the
+        # uncheck step re-clicks the current week and re-selects it. Here we just
+        # click the target row; a single-select auto-deselects the old week.
+        items = viz.locator('div.FIItem')
+        if verbose:
+            try:
+                opts = [(items.nth(i).inner_text() or "").strip()
+                        for i in range(min(items.count(), 8))]
+                print("  [dd] first options: {}".format(opts))
+            except Exception:  # noqa: BLE001
+                pass
+        target = items.filter(
+            has_text=_re.compile(r"^{}$".format(_re.escape(label)))).first
+        if target.count() == 0:
             if verbose:
                 print("  [dd] week {} not in the cl.DD Week list — leaving "
                       "default".format(label))
             _close_dropdown(page, viz)
             return
-        _toggle(label)
-        page.wait_for_timeout(1200)
-        for _ in range(8):
-            others = [o for o in _checked() if o and o != label]
-            if not others:
+        # Try the radio glyph, then the row itself — different single-select
+        # skins respond to one or the other.
+        for how in ("glyph", "row"):
+            try:
+                if how == "glyph":
+                    g = target.locator(".FICheckRadio").first
+                    g.scroll_into_view_if_needed()
+                    g.click(timeout=8000)
+                else:
+                    target.scroll_into_view_if_needed()
+                    target.click(timeout=8000)
+            except Exception:  # noqa: BLE001
+                continue
+            page.wait_for_timeout(1500)
+            if (tbox.inner_text() or "").strip() == label:
                 break
-            for o in others:
-                _toggle(o)
-                page.wait_for_timeout(700)
         _close_dropdown(page, viz)
         page.wait_for_timeout(2500)
         final = (tbox.inner_text() or "").strip()
