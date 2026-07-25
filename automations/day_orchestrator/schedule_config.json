@@ -3916,7 +3916,8 @@
       "freshness_target": null,
       "depends_on": [
         "credico_fetch",
-        "dd_special_accumulate"
+        "dd_special_accumulate",
+        "dd_headshots_sync"
       ],
       "verify": {
         "type": "not_configured"
@@ -3947,6 +3948,29 @@
       "depends_on": [
         "dd_bulletin"
       ],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
+    },
+    "dd_headshots_sync": {
+      "on_scheduler": true,
+      "_off_scheduler_note": "Download the leader headshots from the private '_headshots' tab of the override workbook onto Lucy 1 (resources/leader-headshots/processed/). The photos are gitignored (public repo) so git never syncs them; this restores them via the Sheets API the reports already use. READ-ONLY on the sheet; writes only local image files. Runs Thursday before the DD bulletin build so the leader cards render with faces. Re-upload from the laptop with `python -m automations.override_bulletin.headshot_sync --upload` when a headshot changes.",
+      "display_name": "DD \u2014 sync leader headshots to Lucy 1",
+      "source_type": "sheet",
+      "data_sources": [],
+      "command": [
+        "automations.override_bulletin.headshot_sync"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [
+          3
+        ]
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
       "verify": {
         "type": "not_configured"
       },
