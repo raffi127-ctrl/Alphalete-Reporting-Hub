@@ -496,6 +496,34 @@ both `on_scheduler: false` and both on **Lucy 1** — that is where the Credico
 workbooks land. Run `lucy rerun credico_fetch` before the build, or Credico
 reports as not folded in and the send is refused.
 
+## ACTIVE OWNERS — the rule, and three VA-formula bugs fixed (2026-07-24)
+
+The Active-Owners block on `Org DDs Ongoing Report` is the VA's own COUNTIFS
+block (we read it, never recompute in the bulletin). Rigorous review with Megan
+found its weekly formulas counted `"<>"&""` (any NON-BLANK cell), which counts a
+`$0.00` entry — so a terminated/inactive owner who sold nothing still counted.
+
+**The rule Megan settled on: an active owner = `Active ICD = YES` AND revenue > 0
+that week.** Every weekly formula is now
+`=COUNTIFS($D$2:$D$131,"<org>",$B$2:$B$131,"YES",<week>$2:<week>$131,">0")`
+(campaign rows key `$C` instead of `$D`; the Total row drops the org/campaign
+criterion). This excludes inactive owners in EVERY week and still reflects who
+actually sold, so real week-to-week movement is preserved (Carlos 10/11/11/9, JE
+Retail 4/5/5/3). Note `">0"` alone was WRONG — it counted an inactive owner in
+the weeks they DID earn before going inactive (Kevin Driggs showed 4 in prior
+weeks); the `Active=YES` AND `>0` pair is what excludes them entirely.
+
+Three PRE-EXISTING typos in the VA's formulas, fixed on the live tab:
+- **Khalil's Org 2026 (E)** keyed `"David"` (no such org) → returned 0. → `"Khalil"`.
+- **Colten's Org 2026 (E)** used range `$D3:$D132` (off by one) → 6 instead of 7.
+- **Benjamin's Org (all cols)** keyed `"Salik"` — so Salik was double-counted and
+  Ben's org (Roshan, Abel, Jahvid) counted nowhere. → `"Ben"`.
+
+VERIFIED after the fixes: the org rows SUM to the Total row in every displayed
+week ([38,38,39,37]), Khalil reads 3/3/3/3 (Kevin Driggs, Active=NO, excluded),
+and no row trips the impossible-total red flag. If the VA ever re-copies these
+formulas the bugs can return — re-check against this note.
+
 ## Presentation
 
 The OneDrive `Org. Bulletin.xlsx` and BeeFree are **formatting only** (Megan:
