@@ -2,8 +2,8 @@
 
 Screenshots the whole 'All Campaigns Org Sales Board' tab (exact-sheet render via
 the Sheets PDF export — no browser, same path the ORG board email/Slack use) and
-sends it as an INDIVIDUAL Slack DM (from Lucy) to a fixed recipient list, under
-the title 'All Campaigns Org Sales Board'.
+sends it as ONE shared Slack GROUP DM (from Lucy) with the whole recipient list
+in a single thread, under the title 'All Campaigns Org Sales Board'.
 
 Dry-run by default (builds the PNG, resolves recipients, sends nothing);
 `--post` actually delivers the DMs.
@@ -106,32 +106,20 @@ def main(argv=None) -> int:
     png, rng = build_png()
     print(f"screenshot {rng} → {png} ({png.stat().st_size // 1024} KB)")
 
-    # Resolve recipients up front (read-only) so a bad name is caught before any
-    # send, and logged either way.
-    client, as_bot = _pick_client()
-    resolved = []
-    for name in recipients:
-        try:
-            uid = smp._resolve_user_id(client, name)
-            resolved.append((name, uid))
-            print(f"  resolved {name!r} → {uid}")
-        except Exception as e:
-            print(f"  ⚠ could NOT resolve {name!r}: {type(e).__name__}: {e}")
-            resolved.append((name, None))
-
-    print(f"{'DRY-RUN (no send)' if dry else 'SENDING'} — title {TITLE!r}")
-    results = []
-    for name, uid in resolved:
-        if uid is None:
-            results.append({"name": name, "ok": False, "reason": "unresolved"})
-            continue
-        r = smp.dm_user_with_file(
-            png, user=uid, comment=TITLE,
-            file_name=f"{TITLE}.png", dry_run=dry, as_bot=as_bot)
-        print(f"  DM {name}: {r}")
-        results.append({"name": name, **r})
-    ok = sum(1 for r in results if r.get("ok") or r.get("dry_run"))
-    print(f"=== {ok}/{len(recipients)} DM(s) {'previewed' if dry else 'sent'} ===")
+    # ONE shared group DM (mpim) with ALL recipients in a single thread — NOT
+    # separate individual DMs (Megan 2026-07-25: "todo en un mismo dm"). Needs the
+    # Lucy bot's mpim:write scope; dm_users_with_file falls back to individual DMs
+    # only if that scope is missing (surfaced via mode='individual_dms').
+    _, as_bot = _pick_client()
+    print(f"{'DRY-RUN (no send)' if dry else 'SENDING group DM'} to {recipients} "
+          f"— title {TITLE!r}")
+    resp = smp.dm_users_with_file(
+        png, users=recipients, comment=TITLE,
+        file_name=f"{TITLE}.png", dry_run=dry, as_bot=as_bot)
+    print(f"  result: {resp}")
+    if not dry and resp.get("mode") == "individual_dms":
+        print("  ⚠ fell back to INDIVIDUAL DMs — the Lucy bot is missing the "
+              "mpim:write scope; add it + reinstall for ONE shared group DM.")
     return 0
 
 
