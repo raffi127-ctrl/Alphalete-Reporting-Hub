@@ -129,17 +129,17 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
                 "===== PASTE THIS TO CLAUDE TO FIX =====\n"
                 f"Report: \"{name}\" (report_id: {report_id})\n"
                 f"Date: {day}\n"
-                f"Ran on: Lucy 2 (standalone launchd agent), status \"{status}\".\n"
-                "This report is NOT in the orchestrator loop — its log is on Lucy 2 "
-                "(Carlos's mini), not in output/logs on Lucy 1. Diagnose from that "
-                "report's own log / last run and fix it in the repo; if it's a "
-                "transient blip, just re-run it from the Hub.\n"
+                f"Ran on: {lbl} (standalone launchd agent), status \"{status}\".\n"
+                "This report runs on its OWN agent, not the day-orchestrator loop, "
+                f"so its log is on {lbl} (not in output/logs on Lucy 1 unless {lbl} "
+                "IS Lucy 1). Diagnose from that report's own log / last run and fix "
+                "it in the repo; if it's a transient blip, just re-run it from the Hub.\n"
                 "===== END ====="
             )
             reply = [
-                "This one runs standalone on Lucy 2 (not the 4am orchestrator flow).",
+                f"This one runs standalone on {lbl} (not the 4am orchestrator flow).",
                 "*To re-run it:* open the report on the Hub and hit play (runs from "
-                "any machine), or trigger it its usual way on Lucy 2.",
+                f"any machine), or trigger it its usual way on {lbl}.",
                 "",
                 "If it keeps failing, paste this to Claude:",
                 "```", claude, "```",
@@ -150,8 +150,8 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
             return True
         # fall through to email if the Slack post didn't land
     # Email fallback / non-Slack path.
-    subj = f"⚠️ [Lucy 2] {name} {kind} — {day}"
-    text = (f"A Lucy 2 report didn't run clean.\n\nReport: {name} "
+    subj = f"⚠️ [{lbl}] {name} {kind} — {day}"
+    text = (f"A {lbl} report didn't run clean.\n\nReport: {name} "
             f"(report_id: {report_id})\nStatus: {status}\n"
             + (f"When: {when}\n" if when else ""))
     html = ("<div style='font-family:Arial,sans-serif;font-size:14px'>"

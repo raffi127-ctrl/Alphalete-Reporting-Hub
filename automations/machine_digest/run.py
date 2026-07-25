@@ -199,16 +199,31 @@ def _save_alerted(day: str, ids: set) -> None:
         print(f"[watch] could not save dedup state: {e}", flush=True)
 
 
-def _orchestrator_ids(cfg) -> set:
-    """report_ids the orchestrator already alerts on in REAL TIME (so the watcher
-    skips them — no double-post). That's every scheduled registry report EXCEPT
-    ones flagged `standalone_watch: true` (a registry report that actually runs on
-    its own agent, so the orchestrator never sees it and the watcher must)."""
+def _orchestrator_ids(cfg, target_date) -> set:
+    """The set of Hub Activity report-ids the day orchestrator TRACKS AND ALERTS
+    today — so the watcher skips them (no double-post). That's a registry report
+    the orchestrator actually SCHEDULES today, i.e. on_scheduler + today is in its
+    weekdays. Reports with weekdays [] (weather, new-start-followup: on_scheduler
+    but run on their OWN launchd, never the loop) are NOT excluded — the watcher is
+    their only alert. Matched by BOTH the registry key AND its hyphenated Hub CARD
+    id (the Activity log uses the card id, e.g. daily-rep-breakdown), via the
+    canonical hub_publish map. `standalone_watch: true` force-includes a report."""
+    try:
+        from automations.day_orchestrator.hub_publish import _HUB_CARD
+    except Exception:  # noqa: BLE001
+        _HUB_CARD = {}
+    wd = target_date.weekday()
     ids = set()
     raw = cfg.raw.get("reports", {})
-    for rid in cfg.reports:
-        if not raw.get(rid, {}).get("standalone_watch"):
-            ids.add(rid)
+    for rid, rep in cfg.reports.items():
+        if raw.get(rid, {}).get("standalone_watch"):
+            continue
+        if wd not in (getattr(rep, "weekdays", None) or []):
+            continue   # not orchestrator-scheduled today → the watcher must cover it
+        ids.add(rid)
+        card = _HUB_CARD.get(rid)
+        if card:
+            ids.add(card)
     return ids
 
 
@@ -239,7 +254,7 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
               flush=True)
         return 1
     reports = _collect(rows, None, day, exact=False)   # host=None → all machines
-    skip = _orchestrator_ids(cfg)
+    skip = _orchestrator_ids(cfg, dt.date.fromisoformat(day))
     already = _load_alerted(day)
     newly = set()
     posted = 0
