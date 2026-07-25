@@ -219,27 +219,29 @@ def decide(person: Person, events: list[BGEvent]) -> Decision:
                     needs_adjudication=ev.needs_adjudication)
 
 
-def _surname_tokens(last: str) -> set:
-    """Normalized surname tokens, split on spaces/hyphens/punctuation.
-    'Gomez-Valadez' -> {'gomez','valadez'}; 'Gomez' -> {'gomez'}."""
-    return {t for t in re.split(r"[^a-z0-9]+", norm(last)) if t}
+def _name_tokens(name: str) -> set:
+    """Normalized name tokens, split on spaces/hyphens/punctuation.
+    'Gomez-Valadez' -> {'gomez','valadez'}; 'Alexander Manuel' -> {'alexander','manuel'}."""
+    return {t for t in re.split(r"[^a-z0-9]+", norm(name)) if t}
 
 
-def _fuzzy_person(event: BGEvent, by_first: dict) -> Optional["Person"]:
-    """Match an email to a roster person when surnames differ only by a dropped
-    part of a compound name (common with double surnames): require the FIRST name
-    to match exactly AND one surname's token set to be a subset of the other's
-    (with overlap). Returns the person only if EXACTLY ONE roster person qualifies
-    -- ambiguous matches are refused (compliance: never guess on a BG status)."""
-    cands = by_first.get(norm(event.first), [])
-    etoks = _surname_tokens(event.last)
-    if not etoks:
-        return None
-    hits = []
-    for p in cands:
-        ptoks = _surname_tokens(p.last)
-        if ptoks and (ptoks <= etoks or etoks <= ptoks):
-            hits.append(p)
+def _subset(a: set, b: set) -> bool:
+    """True if the two token sets overlap and one contains the other — i.e. they
+    differ only by a dropped part of a compound/middle name."""
+    return bool(a) and bool(b) and (a <= b or b <= a)
+
+
+def _fuzzy_person(event: BGEvent, people: list) -> Optional["Person"]:
+    """Match an email to a roster person when the names differ only by a dropped
+    part of a compound name — a double SURNAME (sheet 'Gomez' vs email
+    'Gomez-Valadez') OR a middle/second FIRST name (sheet 'Alexander' vs email
+    'Alexander Manuel'). Requires BOTH the surname tokens and the first-name
+    tokens to be subset-compatible, and matches only when EXACTLY ONE roster
+    person qualifies -- ambiguous matches are refused (never guess a BG status)."""
+    e_last, e_first = _name_tokens(event.last), _name_tokens(event.first)
+    hits = [p for p in people
+            if _subset(_name_tokens(p.last), e_last)
+            and _subset(_name_tokens(p.first), e_first)]
     uniq = {p.key for p in hits}
     return hits[0] if len(uniq) == 1 else None
 
@@ -247,21 +249,19 @@ def _fuzzy_person(event: BGEvent, by_first: dict) -> Optional["Person"]:
 def match_events_to_people(people: list[Person], events: list[BGEvent],
                            fuzzy_log: Optional[list] = None) -> dict[str, list[BGEvent]]:
     """Group events by person. Exact (last|first) match first; if none, a
-    conservative fuzzy match handles compound-surname mismatches (e.g. sheet
-    'Gomez, Baruc' vs email 'Gomez-Valadez, Baruc'). Any fuzzy match is appended
-    to fuzzy_log (if given) so it can be surfaced for a human to eyeball. Events
-    matching nobody are dropped (other weeks/offices)."""
+    conservative fuzzy match handles name-variant mismatches — compound surnames
+    (sheet 'Gomez, Baruc' vs email 'Gomez-Valadez, Baruc') AND middle/second
+    first names (sheet 'Delgado, Alexander' vs email 'Delgado, Alexander Manuel').
+    Any fuzzy match is appended to fuzzy_log (if given) so it can be surfaced for
+    a human to eyeball. Events matching nobody are dropped (other weeks/offices)."""
     keys = {p.key for p in people}
-    by_first: dict[str, list] = {}
-    for p in people:
-        by_first.setdefault(norm(p.first), []).append(p)
     out: dict[str, list[BGEvent]] = {p.key: [] for p in people}
     for e in events:
         k = _norm_key(e.first, e.last)
         if k in keys:
             out[k].append(e)
             continue
-        p = _fuzzy_person(e, by_first)
+        p = _fuzzy_person(e, people)
         if p is not None:
             out[p.key].append(e)
             if fuzzy_log is not None:
