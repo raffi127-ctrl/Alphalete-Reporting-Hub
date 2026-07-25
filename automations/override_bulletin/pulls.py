@@ -342,51 +342,43 @@ def _drive_dd_week(label, verbose=False):
         if cur == label:
             return
 
-        def _toggle(week):
-            item = viz.locator('div.FIItem[role="checkbox"]').filter(
-                has_text=_re.compile(r"^{}$".format(_re.escape(week)))).first
-            glyph = item.locator(".FICheckRadio").first
-            glyph.scroll_into_view_if_needed()
-            glyph.click(timeout=10000)
+        def _find_visible(loc):
+            """First VISIBLE match — the open dropdown's item, not a cached one
+            from another of the 10 filter panels (all have their own FIItems)."""
+            for i in range(loc.count()):
+                try:
+                    if loc.nth(i).is_visible():
+                        return loc.nth(i)
+                except Exception:  # noqa: BLE001
+                    continue
+            return None
 
-        def _checked():
-            c = viz.locator('div.FIItem[role="checkbox"][aria-checked="true"]')
-            return [(c.nth(j).inner_text() or "").strip() for j in range(c.count())]
-
-        tbox.click()
-        page.wait_for_timeout(1200)
-        items = viz.locator('div.FIItem')
-        if verbose:
-            try:
-                opts = [(items.nth(i).inner_text() or "").strip()
-                        for i in range(min(items.count(), 8))]
-                print("  [dd] first options: {}".format(opts))
-            except Exception:  # noqa: BLE001
-                pass
-        target = items.filter(
-            has_text=_re.compile(r"^{}$".format(_re.escape(label)))).first
-        if target.count() == 0:
+        tbox.click()                              # open the dropdown
+        page.wait_for_timeout(1500)
+        # '(All)' has its own class; a date is matched by exact text. Scope to the
+        # VISIBLE item so we don't grab an identically-named item from a closed
+        # panel (which is why earlier clicks silently did nothing).
+        if label == "(All)":
+            target = _find_visible(viz.locator('div.FIItem.all-item'))
+        else:
+            target = _find_visible(viz.locator('div.FIItem[role="checkbox"]').filter(
+                has_text=_re.compile(r"^{}$".format(_re.escape(label)))))
+        if target is None:
             if verbose:
-                print("  [dd] option {} not in the cl.DD Week list — leaving "
-                      "default".format(label))
+                print("  [dd] option {} not visible in the cl.DD Week list — "
+                      "leaving default".format(label))
             _close_dropdown(page, viz)
             return
-        # cl.DD Week is single-select; click the target (auto-deselects the old
-        # week). Try the radio glyph, then the row itself — skins differ.
-        for how in ("glyph", "row"):
+        # Click via the framework's own handler (el.click()) — bypasses pointer
+        # interception from the tab-glass overlay that made Locator.click() no-op.
+        try:
+            target.evaluate("el => el.click()")
+        except Exception:  # noqa: BLE001
             try:
-                if how == "glyph":
-                    g = target.locator(".FICheckRadio").first
-                    g.scroll_into_view_if_needed()
-                    g.click(timeout=8000)
-                else:
-                    target.scroll_into_view_if_needed()
-                    target.click(timeout=8000)
+                target.click(timeout=8000, force=True)
             except Exception:  # noqa: BLE001
-                continue
-            page.wait_for_timeout(1500)
-            if (tbox.inner_text() or "").strip() == label:
-                break
+                pass
+        page.wait_for_timeout(1500)
         _close_dropdown(page, viz)
         page.wait_for_timeout(2500)
         final = (tbox.inner_text() or "").strip()
