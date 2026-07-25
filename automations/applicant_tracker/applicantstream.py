@@ -155,7 +155,12 @@ class ApplicantStream:
 
     # ---- navigation ------------------------------------------------------
     def goto_page(self, page_num: int):
-        self.page.goto(f"{BASE}?rqst={self.token}&p={page_num}", wait_until="networkidle")
+        # domcontentloaded, NOT networkidle: the report/console page (p=701) keeps
+        # a socket.io connection open, so 'networkidle' never settles and every
+        # console load 30s-times-out. Mirrors recruiting's fetch_office.
+        self.page.goto(f"{BASE}?rqst={self.token}&p={page_num}",
+                       wait_until="domcontentloaded")
+        self.page.wait_for_timeout(1200)  # let jQuery-UI wire up #searchMC
 
     def select_office(self, office_id: str, attempts: int = 3) -> str:
         """Select an office in #searchMC, retrying transient timeouts. Under
@@ -184,9 +189,46 @@ class ApplicantStream:
                 self.page.wait_for_timeout(1500)
         raise last  # exhausted retries — the caller's per-office guard logs + skips
 
+    def _focus_search_box(self) -> bool:
+        """Click into #searchMC so we can type. A hover menu can re-open over it
+        and intercept the click, so fall back to a force-click — both bounded to
+        8s so a genuinely-missing box fails FAST instead of burning the default
+        30s. Returns False when the box isn't on the page (caller reloads the
+        console). Mirrors recruiting's fetch_office._focus_search_box."""
+        if self.page.locator("#searchMC").count() == 0:
+            return False
+        try:
+            self.page.locator("#searchMC").click(timeout=8000)
+            return True
+        except Exception:  # noqa: BLE001
+            try:
+                self.page.locator("#searchMC").click(force=True, timeout=8000)
+                return True
+            except Exception:  # noqa: BLE001
+                return False
+
+    def _reload_console(self) -> None:
+        """Re-navigate to a page that carries the #searchMC switcher, reusing the
+        session's rqst token. Used when the switcher has gone missing (the page
+        drifted off the console). WITHOUT this, ONE missing switcher 30s-timed-out
+        and cascaded into every later office — the exact 16/17-office failure."""
+        m = re.search(r"rqst=([A-Z0-9-]+)", self.page.url or "", re.I)
+        rqst = m.group(1) if m else self.token
+        if rqst:
+            self.page.goto(f"{BASE}?rqst={rqst}&p={PAGES['retention_details']}",
+                           wait_until="domcontentloaded")
+        else:
+            self.page.goto(BASE, wait_until="domcontentloaded")
+        self.page.wait_for_timeout(1500)
+
     def _select_office_once(self, office_id: str) -> str:
+        # Get into #searchMC; if it's absent the page drifted off the console —
+        # reload it once (reusing the rqst token) and retry before giving up.
+        if not self._focus_search_box():
+            self._reload_console()
+            if not self._focus_search_box():
+                raise PWTimeout("#searchMC not present even after a console reload")
         box = self.page.locator("#searchMC")
-        box.click()
         box.fill("")
         box.type(str(office_id), delay=60)  # real keystrokes drive jQuery UI
         item = self.page.locator("ul.ui-autocomplete li", has_text=str(office_id)).first
@@ -206,8 +248,11 @@ class ApplicantStream:
         # item text is "<id>\n<owner>\n<company>" -- second line is the owner
         parts = [p.strip() for p in item.inner_text().split("\n") if p.strip()]
         self.current_owner = parts[1] if len(parts) >= 2 else str(office_id)
-        item.click()
-        self.page.wait_for_load_state("networkidle")
+        # The office switch IS a navigation; wait for a ready DOM instead of
+        # 'networkidle' — the report page keeps a socket.io connection open, so
+        # networkidle/'load' never settles and 30s-times-out every switch.
+        with self.page.expect_navigation(timeout=30000, wait_until="domcontentloaded"):
+            item.click()
         return self.current_owner
 
     def _autocomplete_responded(self) -> bool:
