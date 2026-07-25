@@ -195,12 +195,16 @@ def save(grid: Grid) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Google Sheet backend — one tab per office, structure stored as JSON. The
-# editor is the only writer, so a JSON blob is simpler + lossless vs. trying to
-# lay a nested campaign/sale-type/level cube out as a flat grid. A1 holds a human
-# hint; A2 holds the JSON.
+# Google Sheet backend — ONE shared tab, one ROW per office (Megan 2026-07-24:
+# keep the master workbook to a single tab, not a tab per ICD). Columns give a
+# readable at-a-glance view; the last column holds the structure as JSON (the
+# source of truth the editor writes + the Order Log reads). Logo is NOT stored
+# here — it ships in the committed branding.json — so the JSON stays small.
 # ---------------------------------------------------------------------------
-_SHEET_HINT = "Edited through the Pay Structure app — do not edit here."
+_STRUCT_TAB = "Lucy Pay Structures"
+_STRUCT_HEADER = ["Office", "Business Name", "Campaigns", "Updated (UTC)",
+                  "Data (JSON) — do not edit"]
+_DATA_COL = len(_STRUCT_HEADER)          # 1-based index of the JSON column
 
 
 def _retry(fn):
@@ -218,37 +222,57 @@ def _open_ss(sheet_id: str):
     return open_by_key(sheet_id)
 
 
-def _open_ws(sheet_id: str, office_key: str, create: bool):
+def _open_struct_ws(sheet_id: str, create: bool):
     ss = _open_ss(sheet_id)
     try:
-        return _retry(lambda: ss.worksheet(office_key))
+        return _retry(lambda: ss.worksheet(_STRUCT_TAB))
     except Exception:
         if not create:
             return None
-        return _retry(lambda: ss.add_worksheet(title=office_key, rows=10, cols=2))
+        ws = _retry(lambda: ss.add_worksheet(title=_STRUCT_TAB, rows=60,
+                                             cols=len(_STRUCT_HEADER)))
+        _retry(lambda: ws.update([_STRUCT_HEADER], range_name="A1"))
+        return ws
 
 
 def _sheet_load(sheet_id: str, office_key: str) -> "Optional[Grid]":
-    ws = _open_ws(sheet_id, office_key, create=False)
+    ws = _open_struct_ws(sheet_id, create=False)
     if ws is None:
         return None
-    # A2 = grid JSON (no logo, stays small); A3 = logo data URI (own cell so the
-    # base64 can't push the grid JSON over Sheets' 50k-char cell limit).
-    vals = _retry(lambda: ws.get("A2:A3"))
-    raw = (vals[0][0] if vals and vals[0] else "") if vals else ""
-    if not raw:
+    values = _retry(lambda: ws.get_all_values())
+    if not values:
         return None
-    try:
-        g = Grid.from_dict(json.loads(raw))
-    except Exception:
-        return None
-    if len(vals) > 1 and vals[1]:
-        g.logo = vals[1][0] or ""
-    return g
+    di = _DATA_COL - 1
+    want = office_key.strip().lower()
+    for row in values[1:]:
+        if row and row[0].strip().lower() == want:
+            raw = row[di] if di < len(row) else ""
+            if not raw:
+                return None
+            try:
+                return Grid.from_dict(json.loads(raw))
+            except Exception:
+                return None
+    return None
 
 
 def _sheet_save(sheet_id: str, grid: Grid) -> None:
-    ws = _open_ws(sheet_id, grid.office_key, create=True)
+    ws = _open_struct_ws(sheet_id, create=True)
+    values = _retry(lambda: ws.get_all_values()) or []
+    if not values or (values[0][:1] or [""])[0] != _STRUCT_HEADER[0]:
+        _retry(lambda: ws.update([_STRUCT_HEADER], range_name="A1"))
+        values = [_STRUCT_HEADER]
     body = json.dumps(grid.to_dict(include_logo=False))
-    _retry(lambda: ws.update([[_SHEET_HINT], [body], [grid.logo or ""]],
-                             range_name="A1:A3"))
+    rowvals = [grid.office_key, grid.office_name, ", ".join(grid.campaigns),
+               grid.updated_at, body]
+    want = grid.office_key.strip().lower()
+    row_num = None
+    for i, row in enumerate(values[1:], start=2):
+        if row and row[0].strip().lower() == want:
+            row_num = i
+            break
+    if row_num:
+        _retry(lambda: ws.update([rowvals], range_name="A%d" % row_num,
+                                 value_input_option="RAW"))
+    else:
+        _retry(lambda: ws.append_row(rowvals, value_input_option="RAW"))
