@@ -471,6 +471,7 @@ def _rollup(d, weeks):
             return _cell(rec["weeks"][i]) if rec and i < len(rec["weeks"]) else "—"
 
         av1 = f"<td>{wk(a, 1)}</td>" if w1 else ""
+        av2 = f"<td>{wk(a, 2)}</td>" if w2 else ""   # 3rd Avg DD week (Megan 2026-07-24)
         # An active-owner count that ROSE from the week before turns green, to
         # flag an addition (Megan 2026-07-24). Only up — a drop stays plain, and
         # red is reserved for "this figure is wrong" elsewhere on the report.
@@ -489,15 +490,16 @@ def _rollup(d, weeks):
         body.append(
             f'<tr{c}><td>{v["label"]}</td>'
             f'<td class="{av26}">{_cell(a["total"]) if a else "—"}</td>'
-            f'<td>{wk(a, 0)}</td>{av1}'
+            f'<td>{wk(a, 0)}</td>{av1}{av2}'
             f'{ow0}{ow1}{ow2}{ow3}</tr>')
     w1h = f"<th>Avg DD {w1}</th>" if w1 else ""
+    w2h = f"<th>Avg DD {w2}</th>" if w2 else ""
     w1o = f"<th>Active Owners {w1}</th>" if w1 else ""
     w2o = f"<th>Active Owners {w2}</th>" if w2 else ""
     w3o = f"<th>Active Owners {w3}</th>" if w3 else ""
     return (f'<div class="sect">Org &amp; Campaign — Average DD and Active Owners</div>'
             f'<table><tr><th>Org / Campaign</th>'
-            f'<th class="t26">Avg DD 2026</th><th>Avg DD {w0}</th>{w1h}'
+            f'<th class="t26">Avg DD 2026</th><th>Avg DD {w0}</th>{w1h}{w2h}'
             f'<th class="owstart">Active Owners {w0}</th>{w1o}{w2o}{w3o}</tr>'
             f'{"".join(body)}</table>')
 
