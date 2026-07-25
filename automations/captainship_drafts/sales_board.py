@@ -120,22 +120,31 @@ def discover_blocks() -> Dict[str, CaptainBlocks]:
         return _norm(row[col - 1]) if col - 1 < len(row) else ""
 
     # --- Product Summary: ordered list of (first-header-row, key) ---
+    # The team header normally sits in col B, but it drifts to col A when
+    # someone re-pastes a block (Khalil's "KHALIL'S CAPTAIN TEAM" landed in A
+    # 2026-07-25 — his whole section went missing AND Sahil's span silently
+    # swallowed it). So: read col B, fall back to col A. Only col B drives the
+    # "structural row" reset below, since col A also holds the WE-history dates.
     ps_hits: List[Tuple[int, str]] = []
     seen_key_last: Optional[str] = None
     for r in range(1, n + 1):
         b = cell(r, 2)
-        if not b:
-            continue
-        for key, token in CAPTAIN_TOKEN.items():
-            if _is_ps_header(b, token):
-                # Collapse the fiber/rafael duplicate ("ALL UNITS PERFORMANCE"
-                # repeats the SAME captain header) into one span.
-                if not (ps_hits and ps_hits[-1][1] == key
-                        and seen_key_last == key):
-                    ps_hits.append((r, key))
-                seen_key_last = key
+        hit: Optional[str] = None
+        for text in (b, cell(r, 1)):
+            if not text:
+                continue
+            hit = next((key for key, token in CAPTAIN_TOKEN.items()
+                        if _is_ps_header(text, token)), None)
+            if hit:
                 break
-        else:
+        if hit:
+            # Collapse the fiber/rafael duplicate ("ALL UNITS PERFORMANCE"
+            # repeats the SAME captain header) into one span.
+            if not (ps_hits and ps_hits[-1][1] == hit
+                    and seen_key_last == hit):
+                ps_hits.append((r, hit))
+            seen_key_last = hit
+        elif b:
             # A non-PS structural row (e.g. "RAF ORG - Current vs Prior")
             # ends the PS region for boundary purposes.
             seen_key_last = None
@@ -155,11 +164,19 @@ def discover_blocks() -> Dict[str, CaptainBlocks]:
     # non-captain section.
     all_anchor_rows: List[int] = [r for r in range(1, n + 1)
                                   if cell(r, 3).lower() == _TOTAL_FOR_WEEK]
+    # Same col B -> col A fallback as the PS headers above. A units label that
+    # drifts to col A is WORSE than the PS case: it raises nothing, the captain
+    # just silently loses their unit charts. The col-C "Total for week" anchor
+    # keeps this tight, so reading col A too can't pull in unrelated rows.
     units_hits: List[Tuple[int, str, str]] = []
     for r in all_anchor_rows:
-        b = cell(r, 2)
-        for key, token in CAPTAIN_TOKEN.items():
-            if _is_units_header(b, cell(r, 3), token):
+        c = cell(r, 3)
+        for text in (cell(r, 2), cell(r, 1)):
+            if not text:
+                continue
+            key = next((k for k, token in CAPTAIN_TOKEN.items()
+                        if _is_units_header(text, c, token)), None)
+            if key:
                 sub = cell(r + 1, 2) or "UNITS"
                 units_hits.append((r, key, sub))
                 break

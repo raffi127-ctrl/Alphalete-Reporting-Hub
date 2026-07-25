@@ -38,8 +38,8 @@ from patchright.sync_api import sync_playwright
 import datetime as dt
 
 from automations.captainship_drafts.sales_board import (
-    PS_END_COL, SALES_BOARD_ID, _open_ws, _values,
-    discover_blocks, prior_day_columns, ps_shot_view,
+    CAPTAIN_TOKEN, PS_END_COL, SALES_BOARD_ID, SALES_BOARD_TAB,
+    _open_ws, _values, discover_blocks, prior_day_columns, ps_shot_view,
 )
 
 SHEETS_PROFILE_DIR = (
@@ -60,6 +60,20 @@ _HIDE_OVERLAYS_CSS = (
 # cells, so it can't be hidden with CSS — instead _selection_rect clamps the clip
 # top below it. This selector reads its extent.
 _COL_HEADER_SEL = ".column-headers-background"
+
+class SheetsSignedOut(RuntimeError):
+    """The screenshot profile is no longer logged into Google.
+
+    Sticky for the rest of the process: once one capture hits the sign-in wall
+    every later one will too, so we short-circuit instead of launching (and
+    timing out) a browser per captain — a 12-captain run otherwise repeats the
+    same failure 12 times and buries the one line that matters."""
+
+
+_SIGNED_OUT = False
+_SIGNED_OUT_MSG = ("Google signed the screenshot profile out — re-run ON THE "
+                   "MACHINE THAT RUNS THE REPORT: python -m "
+                   "automations.captainship_drafts.sheet_shot login")
 
 _DEFAULT_VIEWPORT = {"width": 1600, "height": 1100}
 _VIEWPORT_PAD = 80               # room for scrollbars beyond the range
@@ -197,9 +211,9 @@ def _goto_range(page, rng: str, timeout_s: int,
     prev, stable = None, 0
     while time.time() < deadline:
         if "accounts.google.com" in page.url:
-            raise RuntimeError(
-                f"Google signed the profile out — re-run: python -m "
-                f"automations.captainship_drafts.sheet_shot login")
+            global _SIGNED_OUT
+            _SIGNED_OUT = True
+            raise SheetsSignedOut(_SIGNED_OUT_MSG)
         rect = _selection_rect(page)
         if rect is not None and prev is not None and all(
                 abs(rect[k] - prev[k]) < 0.5 for k in rect):
@@ -318,6 +332,8 @@ def capture_ranges(items: Iterable[Tuple[str, Path]], *, scale: float = 2.0,
     """Screenshot each (range, out_path) of the Sales Board tab in one
     browser session. Returns the written paths. `edit_url`/`gid` target a
     different workbook/tab (default: the captainship drafts' Sales Board)."""
+    if _SIGNED_OUT:            # a previous capture already hit the sign-in wall
+        raise SheetsSignedOut(_SIGNED_OUT_MSG)
     done: list[Path] = []
     with sync_playwright() as p:
         ctx = _launch(p, headless=True, viewport=dict(_DEFAULT_VIEWPORT),
@@ -384,7 +400,19 @@ def captain_shots(captain_key: str, flavor: str, out_dir: Path, *,
 
     Returns {'product_summary': Path, 'units': [(caption, Path), ...]}."""
     today = today or dt.date.today()
-    blocks = discover_blocks()[captain_key]
+    all_blocks = discover_blocks()
+    if captain_key not in all_blocks:
+        # Bare KeyError here surfaces as just "'khalil'" in the run log, which
+        # reads like a config typo. Say what actually happened: the captain's
+        # team header is gone from the sheet (renamed, deleted, or moved out of
+        # cols A/B), so no Product Summary span could be located.
+        raise RuntimeError(
+            f"no Product Summary block found for {captain_key!r} on "
+            f"'{SALES_BOARD_TAB}' — its team header (a col A/B cell containing "
+            f"'{CAPTAIN_TOKEN.get(captain_key, captain_key)}' + 'captai' + "
+            f"'team') is missing or renamed. Found: "
+            f"{sorted(all_blocks)}")
+    blocks = all_blocks[captain_key]
     vals = _values()
     out_dir = Path(out_dir)
     ps_path = out_dir / f"captainship_{captain_key}_product_summary.png"

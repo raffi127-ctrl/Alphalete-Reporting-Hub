@@ -211,27 +211,39 @@ def main(argv=None) -> int:
 
     _normalize_sizes(built)
 
+    # Assemble + emit per captain, ISOLATED: an assembly or Gmail failure on
+    # one captain must not abort the other 11 (it did on 2026-07-25 — the run
+    # stopped dead after the first draft and 11 captains got nothing).
     for captain, bundle in built:
-        msg = email_build.build(captain, bundle, today)
-        print(f"  built draft: subj={msg['Subject']!r}, "
-              f"{bundle['_n_imgs']} image(s)")
+        try:
+            msg = email_build.build(captain, bundle, today)
+            print(f"  built draft: subj={msg['Subject']!r}, "
+                  f"{bundle['_n_imgs']} image(s)")
 
-        if args.dry_run:
-            _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-            eml = _OUTPUT_DIR / (
-                f"captainship_draft_{captain.key}_{today:%Y%m%d}.eml")
-            eml.write_bytes(bytes(msg))
-            # Also emit a browser-previewable .html (cid images inlined as
-            # data URIs) — an .eml shows blank when dragged into Gmail.
-            html = preview.eml_to_html(eml)
-            print(f"  ✓ preview written: {eml.name} + {html.name}")
-        else:
-            # LIVE. Idempotency (delete the day's prior draft for this
-            # captain before creating) lands in the live phase — flagged
-            # so we don't silently accumulate drafts on re-run.
-            from automations.shared.gmail_draft import create_draft
-            res = create_draft(msg)
-            print(f"  ✓ draft created: {res}")
+            if args.dry_run:
+                _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+                eml = _OUTPUT_DIR / (
+                    f"captainship_draft_{captain.key}_{today:%Y%m%d}.eml")
+                eml.write_bytes(bytes(msg))
+                # Also emit a browser-previewable .html (cid images inlined as
+                # data URIs) — an .eml shows blank when dragged into Gmail.
+                html = preview.eml_to_html(eml)
+                print(f"  ✓ preview written: {eml.name} + {html.name}")
+            else:
+                # LIVE. Idempotency (delete the day's prior draft for this
+                # captain before creating) lands in the live phase — flagged
+                # so we don't silently accumulate drafts on re-run.
+                from automations.shared.gmail_draft import create_draft
+                res = create_draft(msg)
+                print(f"  ✓ draft created: {res}")
+        except Exception as e:
+            failures += 1
+            import traceback
+            print(f"  ✗ {captain.key}: draft not created: "
+                  f"{type(e).__name__}: {e}")
+            # stdout, not stderr — the orchestrator log tail only keeps stdout,
+            # which is why this failure showed up as a bare "exit 1".
+            traceback.print_exc(file=sys.stdout)
 
     if failures:
         print(f"\n✗ {failures} captain(s) failed.")
