@@ -158,10 +158,20 @@ def _json_path(office_key: str) -> Path:
 # ---------------------------------------------------------------------------
 # Public API — load / save
 # ---------------------------------------------------------------------------
+class SaveError(Exception):
+    """Persistence isn't reachable (bad/missing Google creds, etc.)."""
+
+
 def load(office_key: str) -> "Optional[Grid]":
     sid = _sheet_id()
     if sid:
-        return _sheet_load(sid, office_key)
+        # A sheet we can't reach (missing creds, network) must NOT crash the
+        # editor — treat it as "no structure yet" so the branded page still
+        # loads. Saving surfaces the real error via SaveError.
+        try:
+            return _sheet_load(sid, office_key)
+        except Exception:
+            return None
     p = _json_path(office_key)
     if p.exists():
         return Grid.from_dict(json.loads(p.read_text()))
@@ -172,7 +182,13 @@ def save(grid: Grid) -> None:
     grid.normalize()
     sid = _sheet_id()
     if sid:
-        _sheet_save(sid, grid)
+        try:
+            _sheet_save(sid, grid)
+        except Exception as e:                       # noqa: BLE001
+            raise SaveError(
+                "Couldn't reach the pay-structure sheet — the app's Google "
+                "credentials ([gcp_oauth] secret) look missing or invalid. "
+                "({}: {})".format(type(e).__name__, e))
         return
     _DATA_DIR.mkdir(parents=True, exist_ok=True)
     _json_path(grid.office_key).write_text(json.dumps(grid.to_dict(), indent=2))
