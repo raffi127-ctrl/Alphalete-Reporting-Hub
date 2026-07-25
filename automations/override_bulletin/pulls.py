@@ -402,17 +402,36 @@ def _drive_dd_week(label, verbose=False):
             page.wait_for_timeout(1500)
             if _aria(target) == "true" or (tbox.inner_text() or "").strip() == label:
                 break
-        after = _aria(target)
-        _close_dropdown(page, viz)
-        page.wait_for_timeout(2500)
+        checked = _aria(target) == "true"
+        # The click REGISTERS (aria false->true) but the combobox text lags — it
+        # is not the source of truth, the downloaded rows are. Commit the change:
+        # an Apply-button filter needs Apply; ESCAPE would CANCEL it. Then collapse
+        # by toggling the combobox (not Escape) and proceed to export regardless
+        # of the stale box text — the parse confirms whether all weeks came.
+        for sel in ('button:has-text("Apply")', 'a:has-text("Apply")',
+                    '[data-tb-test-id*="pply"]'):
+            try:
+                b = viz.locator(sel).first
+                if b.count() and b.is_visible():
+                    b.click(timeout=4000, force=True)
+                    page.wait_for_timeout(1000)
+                    break
+            except Exception:  # noqa: BLE001
+                continue
+        try:
+            tbox.click(timeout=4000)          # toggle closed — NOT Escape
+            page.wait_for_timeout(1500)
+        except Exception:  # noqa: BLE001
+            pass
         final = (tbox.inner_text() or "").strip()
         if verbose:
-            print("  [dd] cl.DD Week: box={!r} all-item aria {} -> {}".format(
-                final, before, after))
-        if final != label:
+            print("  [dd] cl.DD Week: box={!r} all-item {}->{} (checked={})".format(
+                final, before, _aria(target), checked))
+        # Only a genuine failure — the checkbox never flipped — aborts (so the
+        # download_crosstab retry re-navigates and tries again).
+        if not checked and final != label:
             raise RuntimeError(
-                "DD week select failed: box={!r} expected {!r} "
-                "(aria {}->{})".format(final, label, before, after))
+                "DD week select failed: aria never checked; box={!r}".format(final))
 
     return pre_export
 
