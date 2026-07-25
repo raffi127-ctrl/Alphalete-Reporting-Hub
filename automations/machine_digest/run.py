@@ -122,6 +122,7 @@ def _collect(rows: list[dict], host: str, day: str, exact: bool = True) -> list[
         failed_count = sum(1 for r in runs if _stat(r) in _BAD) if ok_runs else 0
         reports.append({
             "name": str(rep.get("Report Name") or rep.get("Report ID") or "?"),
+            "report_id": str(rep.get("Report ID") or "").strip(),
             "status": str(rep.get("Status") or "").strip(),
             "count": len(runs),
             "failed_count": failed_count,
@@ -210,6 +211,35 @@ def main(argv=None) -> int:
     if not reports:
         print(f"[{ts}] machine-digest: nothing ran for '{target}' on {day} "
               "— staying quiet (no email).", flush=True)
+        return 0
+
+    # Corrections channel ON → NO summary email. Post a per-report Slack alert for
+    # anything that errored / ran partial (silent if everything ran clean), so
+    # Lucy 2 gets the same problem-only Slack notifications as Lucy 1 instead of a
+    # daily digest email (Megan 2026-07-25).
+    try:
+        from automations.day_orchestrator import notify, registry as _reg
+        cfg = _reg.load_config()
+    except Exception:
+        cfg, notify = None, None
+    if cfg is not None and notify is not None and notify._corrections_channel(cfg):
+        label = (args.label or "Lucy 2").strip()
+        problems = [r for r in reports if _classify(r["status"])[1] in ("failed", "partial")]
+        for r in problems:
+            kind = "INCOMPLETE" if _classify(r["status"])[1] == "partial" else "FAILED"
+            when = _time_only(r["started"]) + (f"–{_time_only(r['ended'])}" if r["ended"] else "")
+            rid = r.get("report_id") or r.get("name") or "?"
+            try:
+                notify.send_standalone_alert(
+                    cfg, name=r["name"], report_id=rid, kind=kind,
+                    status=r["status"] or kind, when=when, day=day_human,
+                    machine_label=label, dry_run=args.dry_run)
+            except Exception as e:  # noqa: BLE001 — one bad alert must not sink the rest
+                print(f"[{ts}] machine-digest: alert failed for {r['name']}: "
+                      f"{type(e).__name__}: {e}", flush=True)
+        print(f"[{ts}] machine-digest: corrections mode — {len(problems)} problem "
+              f"alert(s) of {len(reports)} report(s) for '{target}' on {day}"
+              f"{' (dry-run)' if args.dry_run else ''}; no summary email.", flush=True)
         return 0
 
     subject, h, t = _render(reports, machine_label, day_human)

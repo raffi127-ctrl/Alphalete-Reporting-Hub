@@ -105,6 +105,61 @@ def send_session_alert(cfg, ds, reason, *, channel="email", dry_run=False):
     _dispatch(cfg, subj, html, text, channel, dry_run, tag="session-alert")
 
 
+def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day="",
+                          machine_label="Lucy 2", channel="email", dry_run=False):
+    """Per-report problem alert for a STANDALONE report that isn't in the
+    orchestrator loop (Lucy 2's launchd agents, summarized off the shared Hub
+    Activity log by machine_digest) — so Lucy 2 gets the SAME per-problem Slack
+    posts as Lucy 1 instead of a daily summary email (Megan 2026-07-25). No
+    orchestrator ReportState / log tail here, so it carries what the Activity log
+    knows (name, id, status, time) + a paste-to-Claude block. Same channel routing
+    + email fallback as send_failure_alert. Returns True if delivered."""
+    lbl = machine_label or "Lucy 2"
+    if _corrections_channel(cfg):
+        if kind == "INCOMPLETE":
+            title = f":warning: *{name}* — ran partial on {lbl}"
+        else:
+            title = f":x: *{name}* — didn't run clean on {lbl}"
+        err = f"status \"{status}\"" + (f" · {when}" if when else "")
+        parent = [f"*Error:* {err}"]
+        ts = _post_corrections(cfg, title, parent, dry_run,
+                               tag=f"standalone-{report_id}")
+        if ts:
+            claude = (
+                "===== PASTE THIS TO CLAUDE TO FIX =====\n"
+                f"Report: \"{name}\" (report_id: {report_id})\n"
+                f"Date: {day}\n"
+                f"Ran on: Lucy 2 (standalone launchd agent), status \"{status}\".\n"
+                "This report is NOT in the orchestrator loop — its log is on Lucy 2 "
+                "(Carlos's mini), not in output/logs on Lucy 1. Diagnose from that "
+                "report's own log / last run and fix it in the repo; if it's a "
+                "transient blip, just re-run it from the Hub.\n"
+                "===== END ====="
+            )
+            reply = [
+                "This one runs standalone on Lucy 2 (not the 4am orchestrator flow).",
+                "*To re-run it:* open the report on the Hub and hit play (runs from "
+                "any machine), or trigger it its usual way on Lucy 2.",
+                "",
+                "If it keeps failing, paste this to Claude:",
+                "```", claude, "```",
+                "_Reply here and we'll correct it in this thread._",
+            ]
+            _post_corrections(cfg, "", reply, dry_run,
+                              tag=f"standalone-{report_id}-details", thread_ts=ts)
+            return True
+        # fall through to email if the Slack post didn't land
+    # Email fallback / non-Slack path.
+    subj = f"⚠️ [Lucy 2] {name} {kind} — {day}"
+    text = (f"A Lucy 2 report didn't run clean.\n\nReport: {name} "
+            f"(report_id: {report_id})\nStatus: {status}\n"
+            + (f"When: {when}\n" if when else ""))
+    html = ("<div style='font-family:Arial,sans-serif;font-size:14px'>"
+            f"{_esc(text).replace(chr(10), '<br>')}</div>")
+    _dispatch(cfg, subj, html, text, channel, dry_run, tag=f"standalone-{report_id}")
+    return True
+
+
 def send_failure_alert(cfg, ds, rs, *, channel="email", dry_run=False):
     """Fire the moment ONE report fails terminally — before the 7:30 checkpoint or
     the FINAL summary — so a broken report can be fixed while the batch is still
