@@ -7,8 +7,10 @@ Rules live in DD_SOURCES.md. In short:
     PODIUM ORG LISTS. We sum those lists and check each against its expected
     total. The lists are NOT in the emailed bulletin (that carries only the
     headline and the 7 figures) — they live in the VA's working file.
-  * ADOPTIONS (Karrington Moody, Milan Godbolt) and JACOB DOVER are EXCLUDED from
-    the org headline but still reported — their numbers must never vanish
+  * the adoptions / off-book names live in the 'ICD (Special Cases)' section on
+    the DD tab (below the headline formulas); they are EXCLUDED from the org
+    total but still reported under Tracked Separately. Jacob Dover is NOT one of
+    them — he is a normal Active-YES ICD IN the org total
   * Raf's podium figure is the bulletin's "total outside Carlos & Colten" line:
     the headline MINUS Carlos's and Colten's list totals (not his own list sum —
     those disagree by $41,962, and the published line is the subtraction)
@@ -30,10 +32,6 @@ WORKBOOK_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
 DD_TAB = "Org DDs Ongoing Report"
 TREE_TAB = "Lucy Org Tree"
 WOW_WEEKS = 4
-
-# Excluded from the ORG headline, still reported (see DD_SOURCES.md).
-ADOPTIONS = ["Karrington Moody", "Milan Godbolt"]
-SPECIAL = ["Jacob Dover"]
 
 LEADERS_LABEL = "PODIUM LEADERS"
 LISTS_LABEL = "PODIUM ORG LISTS"
@@ -424,17 +422,14 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
               for r in vals
               if r and (r[0] or "").strip().lower().startswith("total - ")]
 
-    # ---- the two off-book cases, reported so no number silently disappears.
-    # They point in OPPOSITE directions, so each row says which:
-    #   Jacob Dover / adoptions with a DD row → IN the org total, on no podium list
-    #   bulletin-only names (Justin, Marcos, the adoptions) → ON a podium list,
-    #     but with no DD row, so NOT in the org total
-    excluded = {_key(n, aliases) for n in ADOPTIONS + SPECIAL}
-    tracked = [{**r, "why": "In the organization total"}
-               for r in icds if r["key"] in excluded]
-    # The 'ICD (Special Cases)' rows — adoptions / off-book names — carry their
-    # own weekly history from the DD tab now, so they come straight from `special`
-    # rather than the podium's one-week manual fallback.
+    # Tracked Separately is ONLY names that sit OUTSIDE the org total. Jacob
+    # Dover is NOT one — he is a normal Active-YES ICD counted in the headline
+    # (Megan 2026-07-24: "he's in the org"), so he already appears in the All-ICDs
+    # table like everyone else and does not belong here. What belongs: the
+    # 'ICD (Special Cases)' rows (adoptions / off-book, excluded from the total),
+    # carrying their own weekly history from the DD tab, and any Credico-only
+    # owner with no DD row.
+    tracked = []
     for r in special:
         tracked.append({**r, "why": (f"{r['org']} · not in the total"
                                      if r.get("org") else "not in the total")})
