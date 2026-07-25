@@ -398,11 +398,19 @@ def admin_view() -> None:
                        "office_key": None,
                        "Access code": st.column_config.TextColumn(required=True)},
         key="_codes_editor")
-    if st.button("💾 Save codes", type="primary"):
+    _bcols = st.columns([1, 1])
+    with _bcols[0]:
+        save_codes = st.button("💾 Save codes", type="primary")
+    with _bcols[1]:
+        pull = st.button("↻ Pull codes from Cloud secrets",
+                         help="Overwrite the table + sheet with the "
+                              "[pay_structure_codes] in this app's secrets.")
+
+    business = {k: offices.get(k).business_name for k in offices.ORDER}
+    if save_codes:
         mapping = {row["office_key"]: str(row["Access code"]).strip()
                    for _, row in edited.iterrows()
                    if str(row.get("Access code", "")).strip()}
-        business = {k: offices.get(k).business_name for k in offices.ORDER}
         try:
             store.save_codes(mapping, business, list(offices.ORDER))
             offices.set_codes(store.load_codes())
@@ -410,6 +418,24 @@ def admin_view() -> None:
             st.error("Couldn't save: {}".format(e))
         else:
             st.success("Saved. New codes are live.")
+    if pull:
+        try:
+            sec = dict(st.secrets.get("pay_structure_codes", {}))
+        except Exception:
+            sec = {}
+        sec = {k: str(v).strip() for k, v in sec.items() if str(v).strip()}
+        if not sec:
+            st.info("No [pay_structure_codes] found in this app's secrets.")
+        else:
+            try:
+                store.save_codes(sec, business, list(offices.ORDER))
+                offices.set_codes(store.load_codes())
+            except Exception as e:       # noqa: BLE001
+                st.error("Couldn't save: {}".format(e))
+            else:
+                st.success("Pulled {} codes from secrets into the sheet — "
+                           "they're live now.".format(len(sec)))
+                st.rerun()
 
 
 # --------------------------------------------------------------------------
