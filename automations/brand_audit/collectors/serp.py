@@ -10,6 +10,9 @@ one ties SEO to reputation, which is the whole point of this tool.
 """
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import urlparse
 
 from automations.brand_audit import credentials
@@ -37,6 +40,27 @@ BRAND_PROFILE_DOMAINS = (
     "smartrecruiters.com", "ziprecruiter.com", "crunchbase.com", "yelp.com",
     "bbb.org", "builtin.com", "comparably.com",
 )
+
+# Branded search VARIATIONS an applicant/customer actually types — each is its
+# own Google query with its own reputation picture ("<brand> scam" surfaces very
+# different results than the bare name). {name}=company, {city}=first city.
+# (label = short human tag for the card.) Generic on purpose so it works for any
+# tenant, not just Alphalete. The bare-name query above runs every day; this
+# sweep runs WEEKLY (see _SWEEP_EVERY_DAYS) to stay under SerpAPI's ~100/mo cap.
+VARIATIONS = (
+    ("{name} reviews", "reviews"),
+    ("{name} scam", "scam"),
+    ("{name} complaints", "complaints"),
+    ("{name} legit", "legit"),
+    ("{name} reddit", "reddit"),
+    ("working at {name}", "working at"),
+    ("is {name} a scam", "is a scam"),
+    ("{name} {city}", "{city}"),
+)
+_SWEEP_EVERY_DAYS = 7
+# Cached between runs so the card always shows the latest sweep even on the days
+# it doesn't re-query. Local state only (like review_history) — safe every run.
+_SWEEP_STATE = Path.home() / ".config" / "brand-audit" / "serp_sweep.json"
 
 
 def _domain(url: str) -> str:
@@ -76,6 +100,87 @@ def _categorize(is_own: bool, is_negative: bool, domain: str) -> str:
     return "neutral"           # everything else
 
 
+def _search(query: str, location: str) -> dict:
+    """One SerpAPI Google query. Raises on transport or API error."""
+    params = {
+        "engine": "google",
+        "q": query,
+        "hl": "en",
+        "gl": "us",
+        "num": "10",
+        "api_key": credentials.serpapi_api_key(),
+    }
+    if location:
+        params["location"] = f"{location}, United States"
+    from automations.brand_audit.collectors.base import get_json
+    data = get_json(_URL, params=params)
+    if data.get("error"):
+        raise RuntimeError(f"serpapi: {data['error']}")
+    return data
+
+
+def _page1_negatives(organic: list, own_domain: str) -> list:
+    """Reputation-damaging results on a page (excludes the company's own site)."""
+    out = []
+    for r in organic:
+        title, link, snippet = r.get("title", ""), r.get("link", ""), r.get("snippet", "")
+        dom = _domain(link)
+        if own_domain and dom.endswith(own_domain):
+            continue
+        if _looks_negative(title, link, snippet):
+            out.append({"position": r.get("position"), "title": title,
+                        "link": link, "domain": dom})
+    return out
+
+
+def _run_variation_sweep(company, location: str, own_domain: str) -> list:
+    """Query each branded variation; record page-1 negatives per variation.
+    One SerpAPI call per variation — WEEKLY only (the caller gates cadence)."""
+    city = location.split(",")[0].strip() if location else ""
+    sweep = []
+    for template, label in VARIATIONS:
+        if "{city}" in template and not city:
+            continue
+        query = template.format(name=company.name, city=city)
+        lbl = label.format(city=city) if "{city}" in label else label
+        try:
+            organic = (_search(query, location).get("organic_results") or [])
+        except Exception as e:
+            sweep.append({"query": query, "label": lbl, "error": str(e),
+                          "negatives": [], "top_negative_position": None})
+            continue
+        negs = _page1_negatives(organic, own_domain)
+        sweep.append({
+            "query": query, "label": lbl, "negatives": negs,
+            "top_negative_position": min(
+                (n["position"] for n in negs if n.get("position")), default=None),
+        })
+    return sweep
+
+
+def _sweep_state() -> dict:
+    try:
+        return json.loads(_SWEEP_STATE.read_text())
+    except Exception:
+        return {}
+
+
+def _sweep_save(state: dict) -> None:
+    _SWEEP_STATE.parent.mkdir(parents=True, exist_ok=True)
+    _SWEEP_STATE.write_text(json.dumps(state, indent=2))
+
+
+def _sweep_due(rec: dict) -> bool:
+    ts = (rec or {}).get("ts")
+    if not ts:
+        return True
+    try:
+        last = datetime.fromisoformat(ts)
+    except Exception:
+        return True
+    return (datetime.now(timezone.utc) - last).total_seconds() >= _SWEEP_EVERY_DAYS * 86400
+
+
 def collect(company) -> CollectorResult:
     res = CollectorResult(source=SOURCE)
     if not company.name:
@@ -87,24 +192,10 @@ def collect(company) -> CollectorResult:
     # location is supplied via the `location` param instead, so we still see
     # results as someone near the business would.
     location = _clean_location(company.location)
-    params = {
-        "engine": "google",
-        "q": company.name,
-        "hl": "en",
-        "gl": "us",
-        "num": "10",
-        "api_key": credentials.serpapi_api_key(),
-    }
-    if location:
-        params["location"] = f"{location}, United States"
-
     try:
-        from automations.brand_audit.collectors.base import get_json
-        data = get_json(_URL, params=params)
+        data = _search(company.name, location)
     except Exception as e:
         return CollectorResult.failed(SOURCE, f"serpapi request failed: {e}")
-    if data.get("error"):
-        return CollectorResult.failed(SOURCE, f"serpapi: {data['error']}")
 
     own_domain = _domain(company.website)
     organic = data.get("organic_results") or []
@@ -182,5 +273,44 @@ def collect(company) -> CollectorResult:
     elif own_position and own_position > 1:
         res.flag(INFO, f"Your website ranks #{own_position} (not #1) for your name",
                  url=company.website)
+
+    # --- Branded-variation sweep (weekly) -----------------------------------
+    # The bare-name query above is only ONE of the searches people run. Sweep
+    # "<brand> scam / reviews / reddit / working at ...", each its own SERP, so
+    # the card shows the reputation picture per search intent. Runs weekly (cost)
+    # and caches the result so the card still reflects it on the off days.
+    try:
+        state = _sweep_state()
+        rec = state.get(company.name) or {}
+        if _sweep_due(rec):
+            sweep = _run_variation_sweep(company, location, own_domain)
+            state[company.name] = {"ts": datetime.now(timezone.utc).isoformat(),
+                                   "sweep": sweep}
+            _sweep_save(state)
+        else:
+            sweep = rec.get("sweep") or []
+    except Exception as e:
+        sweep = []
+        res.evidence["variation_sweep_error"] = str(e)
+
+    if sweep:
+        res.evidence["variation_sweep"] = sweep
+        hits = [s for s in sweep if s.get("negatives")]
+        res.metrics["variation_queries"] = len(sweep)
+        res.metrics["variation_queries_with_negatives"] = len(hits)
+        if hits:
+            parts = []
+            for s in hits:
+                pos = s.get("top_negative_position")
+                parts.append(f"'{s['label']}' #{pos}" if pos else f"'{s['label']}'")
+            msg = (f"Negative results rank on page 1 for {len(hits)} of "
+                   f"{len(sweep)} branded searches — " + ", ".join(parts))
+            worst = None
+            for s in hits:
+                for n in s["negatives"]:
+                    if worst is None or (n.get("position") or 99) < (worst.get("position") or 99):
+                        worst = n
+            res.flag(NEGATIVE, msg, url=(worst or {}).get("link"),
+                     detail=(worst or {}).get("title"))
 
     return res
