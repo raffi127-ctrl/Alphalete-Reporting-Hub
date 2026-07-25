@@ -329,7 +329,43 @@ def main(argv=None):
     ap.add_argument("--clear-week", metavar="WEEK",
                     help="blank this week's mapped cells so it can be filled "
                          "again (sandbox only; needs --write to actually clear)")
+    ap.add_argument("--dd-probe", action="store_true",
+                    help="DIAGNOSTIC: download DD Detail and dump, per captain, "
+                         "every Captain's-Bonus week+amount our parser finds. "
+                         "Shows whether an old week's data is in the download at "
+                         "all (coverage) vs mis-matched (parse). No writes.")
     a = ap.parse_args(argv)
+    if a.dd_probe:
+        from automations.shared.tableau_patchright import tableau_session
+        from pathlib import Path as _P
+        import datetime as _dt
+        d = _P("output/override_bulletin/run"); d.mkdir(parents=True, exist_ok=True)
+        yr = _dt.date.today().year
+        with tableau_session(headless=True, verbose=not a.quiet) as page:
+            # Raw parse of the WHOLE download (every owner, not just our five) so
+            # we can see exactly which weeks the source is handing us.
+            from automations.shared.tableau_patchright import download_crosstab_patchright
+            download_crosstab_patchright(P.DD_DETAIL_VIEW, P.DD_DETAIL_SHEET,
+                                         d / "dd_probe.csv", page=page,
+                                         verbose=not a.quiet)
+        rows = P.read_crosstab(d / "dd_probe.csv")
+        want = {P._norm_name(o) for o in DD_CAPTAINS}
+        parsed = P.parse_dd_captain(rows, want)
+        allweeks = sorted({w for wk in parsed.values() for w in wk})
+        print(f"\nDD PROBE — {len(rows)} rows downloaded")
+        print(f"distinct captain-bonus weeks present: {allweeks or '(none)'}")
+        for cap in DD_CAPTAINS:
+            wk = parsed.get(P._norm_name(cap), {})
+            print(f"  {cap:<18} {wk or '(no Captain-Bonus rows found)'}")
+        # Also: EVERY owner that has a captain-bonus row (owner names live in
+        # col 1, 'cl.ICD Owner Name', repeated on every row). Catches a name gap —
+        # a captain the download HAS but spelled so our alias/norm doesn't match.
+        universe = {P._norm_name(r[1]) for r in rows if len(r) > 1 and (r[1] or "").strip()}
+        every = P.parse_dd_captain(rows, universe)
+        print(f"\nowners WITH captain-bonus rows in the download ({len(every)}):")
+        for k in sorted(every):
+            print(f"  {k}: {sorted(every[k])}")
+        return 0
     if a.clear_week:
         from automations.recruiting_report import fill as _fill
         ws = _fill._client().open_by_key(F.WORKBOOK_ID).worksheet(a.tab)
