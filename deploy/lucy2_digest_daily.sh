@@ -16,11 +16,13 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
-# Only sweep during the active report window (04–21 CST) — the mini is Central, so
-# no wasted Sheet reads overnight. launchd fires this every 10 min; this gate makes
-# the off-hours firings a no-op.
+# Only sweep during the active report window (04:00–23:59 CST) — the mini is
+# Central, and the latest scheduled job is STF Field Check at 23:00, so the window
+# runs to midnight to catch it. Nothing runs 00:00–03:59, so skip then (no wasted
+# Sheet reads overnight). launchd fires this every 10 min; this gate no-ops the
+# off-hours firings.
 HOUR=$(date +%H)
-if [ "$HOUR" -lt 4 ] || [ "$HOUR" -ge 21 ]; then
+if [ "$HOUR" -lt 4 ]; then
   exit 0
 fi
 

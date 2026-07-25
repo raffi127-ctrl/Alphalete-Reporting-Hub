@@ -850,6 +850,11 @@ def _alert_new_failures(cfg, ds, todays_by_id, channel, dry_run):
         elif rs.status == state.INCOMPLETE and not _retryable_incomplete(
                 rs, todays_by_id.get(rs.report_id)):
             pass
+        elif rs.status in (state.MISSED_NOT_READY, state.BLOCKED_SESSION):
+            # "Didn't run" — marked terminal at the noon backstop. Since the daily
+            # summary email was dropped (Megan 2026-07-25), this per-report alert is
+            # now the ONLY signal that an orchestrator report never ran, so fire it.
+            pass
         else:
             continue
         _maybe_failure_alert(cfg, ds, rs, channel, dry_run)

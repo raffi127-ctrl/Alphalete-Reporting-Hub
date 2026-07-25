@@ -116,35 +116,60 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
     + email fallback as send_failure_alert. Returns True if delivered."""
     lbl = machine_label or "Lucy 2"
     if _corrections_channel(cfg):
-        if kind == "INCOMPLETE":
+        if kind == "MISSED":
+            title = f":no_entry_sign: *{name}* — didn't run today on {lbl}"
+            err = f"no run recorded today ({status})" + (f" · {when}" if when else "")
+        elif kind == "INCOMPLETE":
             title = f":warning: *{name}* — ran partial on {lbl}"
+            err = f"status \"{status}\"" + (f" · {when}" if when else "")
         else:
             title = f":x: *{name}* — didn't run clean on {lbl}"
-        err = f"status \"{status}\"" + (f" · {when}" if when else "")
+            err = f"status \"{status}\"" + (f" · {when}" if when else "")
         parent = [f"*Error:* {err}"]
         ts = _post_corrections(cfg, title, parent, dry_run,
                                tag=f"standalone-{report_id}")
         if ts:
-            claude = (
-                "===== PASTE THIS TO CLAUDE TO FIX =====\n"
-                f"Report: \"{name}\" (report_id: {report_id})\n"
-                f"Date: {day}\n"
-                f"Ran on: {lbl} (standalone launchd agent), status \"{status}\".\n"
-                "This report runs on its OWN agent, not the day-orchestrator loop, "
-                f"so its log is on {lbl} (not in output/logs on Lucy 1 unless {lbl} "
-                "IS Lucy 1). Diagnose from that report's own log / last run and fix "
-                "it in the repo; if it's a transient blip, just re-run it from the Hub.\n"
-                "===== END ====="
-            )
-            reply = [
-                f"This one runs standalone on {lbl} (not the 4am orchestrator flow).",
-                "*To re-run it:* open the report on the Hub and hit play (runs from "
-                f"any machine), or trigger it its usual way on {lbl}.",
-                "",
-                "If it keeps failing, paste this to Claude:",
-                "```", claude, "```",
-                "_Reply here and we'll correct it in this thread._",
-            ]
+            if kind == "MISSED":
+                claude = (
+                    "===== PASTE THIS TO CLAUDE TO FIX =====\n"
+                    f"Report: \"{name}\" (report_id: {report_id})\n"
+                    f"Date: {day}\n"
+                    f"It NORMALLY runs today on {lbl} but produced NO run in the Hub "
+                    "Activity log. Check its LaunchAgent on that machine (loaded? "
+                    "last exit?), whether the machine was asleep, and its own log. "
+                    "Then re-run it from the Hub.\n"
+                    "===== END ====="
+                )
+                reply = [
+                    f"It usually runs on {lbl} but hasn't today.",
+                    "*To run it now:* open the report on the Hub and hit play (runs "
+                    f"from any machine), or trigger it its usual way on {lbl}.",
+                    "",
+                    "If it's stuck, paste this to Claude:",
+                    "```", claude, "```",
+                    "_Reply here and we'll sort it out in this thread._",
+                ]
+            else:
+                claude = (
+                    "===== PASTE THIS TO CLAUDE TO FIX =====\n"
+                    f"Report: \"{name}\" (report_id: {report_id})\n"
+                    f"Date: {day}\n"
+                    f"Ran on: {lbl} (standalone launchd agent), status \"{status}\".\n"
+                    "This report runs on its OWN agent, not the day-orchestrator loop, "
+                    f"so its log is on {lbl} (not in output/logs on Lucy 1 unless {lbl} "
+                    "IS Lucy 1). Diagnose from that report's own log / last run and fix "
+                    "it in the repo; if it's a transient blip, just re-run it from the Hub.\n"
+                    "===== END ====="
+                )
+                reply = [
+                    f"This one runs standalone on {lbl} (not the 4am orchestrator flow).",
+                    "*To re-run it:* open the report on the Hub and hit play (runs from "
+                    f"any machine), or trigger it its usual way on {lbl}.",
+                    "",
+                    "If it keeps failing, paste this to Claude:",
+                    "```", claude, "```",
+                    "_Reply here and we'll correct it in this thread._",
+                ]
             _post_corrections(cfg, "", reply, dry_run,
                               tag=f"standalone-{report_id}-details", thread_ts=ts)
             return True
@@ -169,7 +194,12 @@ def send_failure_alert(cfg, ds, rs, *, channel="email", dry_run=False):
     its own. One per report per day (deduped by the caller via failure_alerts_sent).
     """
     label = rs.display_name or rs.report_id
-    kind = "INCOMPLETE" if rs.status == "INCOMPLETE" else "FAILED"
+    if rs.status == "INCOMPLETE":
+        kind = "INCOMPLETE"
+    elif rs.status in ("MISSED_NOT_READY", "BLOCKED_SESSION"):
+        kind = "MISSED"     # never ran / never became ready by the noon backstop
+    else:
+        kind = "FAILED"
     reason, needs_reseed, rerun = _diagnose(rs, cfg, _d(ds))
     subj = f"⚠️ {label} {kind} — {_d(ds)} (before the summary)"
     lines = [
@@ -229,6 +259,9 @@ def _post_failure_corrections(cfg, ds, rs, kind, reason, needs_reseed, rerun, dr
                 err += f" — {reason}"
         else:
             err = reason
+    elif kind == "MISSED":
+        title = f":no_entry_sign: *{label}* — didn't run today"
+        err = reason
     else:
         title = f":x: *{label}* — didn't finish"
         err = reason

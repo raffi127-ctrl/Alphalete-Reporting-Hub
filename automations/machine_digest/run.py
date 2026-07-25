@@ -235,6 +235,49 @@ def _machine_label(row_machine: str, lucy2_hosts: str) -> str:
     return "Lucy 1"
 
 
+_DIDNT_RUN_GRACE_HOURS = 2   # how long past a report's usual start before "didn't run"
+
+
+def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: int = 2):
+    """Which reports NORMALLY run on this weekday — the baseline for 'didn't run at
+    all' (no Activity row today). Derived from the shared log itself, so it needs no
+    schedule config and self-maintains: a card that produced a row on at least
+    `min_days` of the last `lookback_weeks` SAME-weekday dates is 'expected today'.
+    MUST have run on the MOST RECENT same-weekday (last week) — this recency gate
+    self-corrects when a report is renamed or consolidated: an old id (e.g.
+    daily-metrics, now folded into office-metrics) stops appearing and drops out
+    within a week, instead of false-flagging 'didn't run' for three.
+    Returns {card_id: {'start_hour', 'machine', 'name'}} where start_hour is the
+    earliest it usually starts (so we only flag it missing AFTER its usual time)."""
+    import datetime as _dt
+    last_week = (target_date - _dt.timedelta(days=7)).isoformat()
+    dates = {(target_date - _dt.timedelta(days=7 * w)).isoformat()
+             for w in range(1, lookback_weeks + 1)}
+    seen = {}
+    for r in rows:
+        started = str(r.get("Started At") or "").strip()
+        d = started[:10]
+        if d not in dates:
+            continue
+        cid = str(r.get("Report ID") or r.get("Report Name") or "").strip()
+        if not cid:
+            continue
+        rec = seen.setdefault(cid, {"days": set(), "hours": [], "machine": "", "name": cid})
+        rec["days"].add(d)
+        try:
+            rec["hours"].append(_dt.datetime.fromisoformat(started).hour)
+        except Exception:
+            pass
+        rec["machine"] = str(r.get("Machine") or "") or rec["machine"]
+        rec["name"] = str(r.get("Report Name") or cid) or rec["name"]
+    out = {}
+    for cid, rec in seen.items():
+        if last_week in rec["days"] and len(rec["days"]) >= min_days:
+            out[cid] = {"start_hour": min(rec["hours"]) if rec["hours"] else 0,
+                        "machine": rec["machine"], "name": rec["name"]}
+    return out
+
+
 def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: str) -> int:
     """Intraday BOTH-MACHINE error watcher: scan the shared Hub Activity log and
     post a deduped, real-time corrections alert for any STANDALONE report (either
@@ -253,11 +296,16 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
         print(f"[{ts}] watch: Hub Activity read failed: {type(e).__name__}: {e}",
               flush=True)
         return 1
+    target_date = dt.date.fromisoformat(day)
     reports = _collect(rows, None, day, exact=False)   # host=None → all machines
-    skip = _orchestrator_ids(cfg, dt.date.fromisoformat(day))
+    skip = _orchestrator_ids(cfg, target_date)
     already = _load_alerted(day)
+    ran_ids = {(r.get("report_id") or r.get("name") or "?") for r in reports}
     newly = set()
     posted = 0
+
+    # 1) ERRORED — a standalone report on either machine whose latest run today is
+    #    failed / partial (orchestrator reports self-alert, so they're skipped).
     for r in reports:
         if _classify(r["status"])[1] not in ("failed", "partial"):
             continue
@@ -277,9 +325,33 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
         except Exception as e:  # noqa: BLE001 — one bad alert must not sink the rest
             print(f"[{ts}] watch: alert failed for {r['name']}: "
                   f"{type(e).__name__}: {e}", flush=True)
+
+    # 2) DIDN'T RUN AT ALL — a report that NORMALLY runs today (same-weekday
+    #    history) but has NO row today, once its usual start time + grace has passed.
+    #    Orchestrator reports are skipped: the day orchestrator fires its own
+    #    "didn't run today" (MISSED) alert at the noon backstop.
+    now = dt.datetime.now()
+    for cid, info in _historical_expected(rows, target_date).items():
+        if cid in ran_ids or cid in skip or cid in already:
+            continue
+        if now.hour < info["start_hour"] + _DIDNT_RUN_GRACE_HOURS:
+            continue   # too early to call it missing
+        try:
+            notify.send_standalone_alert(
+                cfg, name=info["name"], report_id=cid, kind="MISSED",
+                status="did not run today",
+                when=f"usually starts ~{info['start_hour']}:00", day=day_human,
+                machine_label=_machine_label(info["machine"], lucy2_hosts),
+                dry_run=dry_run)
+            newly.add(cid)
+            posted += 1
+        except Exception as e:  # noqa: BLE001
+            print(f"[{ts}] watch: didn't-run alert failed for {cid}: "
+                  f"{type(e).__name__}: {e}", flush=True)
+
     if newly and not dry_run:
         _save_alerted(day, already | newly)
-    print(f"[{ts}] watch: {posted} new problem alert(s) across both machines on "
+    print(f"[{ts}] watch: {posted} new alert(s) across both machines on "
           f"{day}{' (dry-run)' if dry_run else ''}; {len(already)} already alerted "
           "earlier today.", flush=True)
     return 0
