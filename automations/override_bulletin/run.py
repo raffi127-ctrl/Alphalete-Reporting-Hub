@@ -387,6 +387,33 @@ def main(argv=None):
                     print(f"  {(wk.nth(i).inner_text() or '').strip()[:80]!r}")
             except Exception as e:  # noqa: BLE001
                 print(f"  week-label scan failed: {type(e).__name__}: {e}")
+            # Open the dated combobox and dump the live dropdown structure so the
+            # driver clicks the right element (search input? radio? which panel?).
+            import re as _re
+            boxes2 = viz.locator('span.tabComboBox[role="combobox"]')
+            dated = None
+            for i in range(boxes2.count()):
+                if _re.match(r"^\d{1,2}/\d{1,2}/\d{4}$",
+                             (boxes2.nth(i).inner_text() or "").strip()):
+                    dated = boxes2.nth(i); break
+            if dated is not None:
+                dated.click(); page.wait_for_timeout(1500)
+                fi = viz.locator('div.FIItem')
+                print(f"\nopen dropdown: {fi.count()} FIItem(s)")
+                try:
+                    print("  first FIItem HTML:\n    " +
+                          fi.first.evaluate("el => el.outerHTML")[:600])
+                except Exception as e:  # noqa: BLE001
+                    print(f"  outerHTML failed: {type(e).__name__}: {e}")
+                inp = viz.locator('input')
+                print(f"\ninputs in frame ({inp.count()}):")
+                for i in range(min(inp.count(), 8)):
+                    try:
+                        ph = inp.nth(i).get_attribute("placeholder")
+                        cl = inp.nth(i).get_attribute("class")
+                        print(f"  [{i}] placeholder={ph!r} class={cl!r}")
+                    except Exception:  # noqa: BLE001
+                        pass
         return 0
     if a.dd_probe:
         from automations.shared.tableau_patchright import tableau_session
