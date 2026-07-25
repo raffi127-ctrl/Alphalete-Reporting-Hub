@@ -334,7 +334,41 @@ def main(argv=None):
                          "every Captain's-Bonus week+amount our parser finds. "
                          "Shows whether an old week's data is in the download at "
                          "all (coverage) vs mis-matched (parse). No writes.")
+    ap.add_argument("--dd-filters", action="store_true",
+                    help="DIAGNOSTIC: open DD Detail and dump its filter controls "
+                         "(comboboxes + any 'Week' labels) so the cl.DD Week "
+                         "driver can target the exact control. No writes.")
     a = ap.parse_args(argv)
+    if a.dd_filters:
+        from automations.shared.tableau_patchright import tableau_session
+        with tableau_session(headless=True, verbose=not a.quiet) as page:
+            try:
+                page.goto("about:blank", wait_until="domcontentloaded", timeout=10_000)
+            except Exception:  # noqa: BLE001
+                pass
+            page.goto(P.DD_DETAIL_VIEW, wait_until="domcontentloaded")
+            viz = page.frame_locator('iframe[title="Data Visualization"]')
+            viz.locator('[data-tb-test-id="viz-viewer-toolbar-button-download"]'
+                        ).wait_for(state="visible", timeout=120_000)
+            page.wait_for_timeout(25_000)
+            boxes = viz.locator('span.tabComboBox[role="combobox"]')
+            n = boxes.count()
+            print(f"\nDD FILTERS — {n} combobox(es):")
+            for i in range(n):
+                try:
+                    print(f"  [{i}] {(boxes.nth(i).inner_text() or '').strip()!r}")
+                except Exception as e:  # noqa: BLE001
+                    print(f"  [{i}] <unreadable: {type(e).__name__}>")
+            # Any element whose text mentions Week — filter titles / legends.
+            wk = viz.locator('text=/DD Week|Week Ending|cl\\.DD/i')
+            try:
+                wn = wk.count()
+                print(f"\nelements mentioning a 'Week' field ({wn}):")
+                for i in range(min(wn, 12)):
+                    print(f"  {(wk.nth(i).inner_text() or '').strip()[:80]!r}")
+            except Exception as e:  # noqa: BLE001
+                print(f"  week-label scan failed: {type(e).__name__}: {e}")
+        return 0
     if a.dd_probe:
         from automations.shared.tableau_patchright import tableau_session
         from pathlib import Path as _P
