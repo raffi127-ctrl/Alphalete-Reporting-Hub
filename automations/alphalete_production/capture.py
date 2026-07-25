@@ -416,8 +416,20 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
         elif kind == "ranking":
             show = set(range(0, 10))                         # A..J (# name + running block)
             export_rng = f"A1:J{tot_row}"
-            sort_col = next(c for c in range(3, 10)
-                            if _cell(grid, 2, c).strip().upper() == spec["sort"].upper())
+            # Running-block metric header, matched drift-tolerantly. Maud renamed the
+            # running Apps header "APPS" -> "Total Apps" (7/2026); an exact match then
+            # StopIterationed and took down the WHOLE post. Accept the "Total " prefix,
+            # and fall back to the known running-Apps column (D=3) rather than crash.
+            want = spec["sort"].strip().upper()
+            def _is_rank_hdr(c, _w=want):
+                h = _cell(grid, 2, c).strip().upper()
+                return h == _w or h == "TOTAL " + _w
+            sort_col = next((c for c in range(3, 10) if _is_rank_hdr(c)),
+                            3 if want in ("APPS", "TOTAL APPS") else None)
+            if sort_col is None:
+                raise RuntimeError(
+                    f"ranking sort header {spec['sort']!r} not found in running block D:J "
+                    f"(row-3 headers: {[_cell(grid, 2, c).strip() for c in range(3, 10)]})")
             filt_specs.append({"columnIndex": sun, "filterCriteria": {"hiddenValues": ["F", "T"]}})
 
         elif kind == "field_status":
@@ -571,15 +583,28 @@ def capture_all(sections, today: dt.date, out_dir: Path, only=None) -> List[Tupl
     token = _access_token()
     out_dir.mkdir(parents=True, exist_ok=True)
     out = []
+    failures = []
     for spec in sections:
         if only and spec["id"] not in only:
             continue
-        if spec["kind"] == "team":
-            for team in team_list(grid):
-                meta = dict(spec, title=f"{team} {spec['title']}", team=team)
-                png = _render(ss, ws, grid, spec, today, out_dir, token, team=team)
-                out.append((meta, png))
-        else:
-            png = _render(ss, ws, grid, spec, today, out_dir, token)
-            out.append((dict(spec), png))
+        # One section hitting label drift must NOT zero the whole post (it did on
+        # 7/25 when "APPS"->"Total Apps" StopIterationed rank_apps). Render each
+        # independently; log + skip any that fail so the rest still go out.
+        try:
+            if spec["kind"] == "team":
+                for team in team_list(grid):
+                    meta = dict(spec, title=f"{team} {spec['title']}", team=team)
+                    png = _render(ss, ws, grid, spec, today, out_dir, token, team=team)
+                    out.append((meta, png))
+            else:
+                png = _render(ss, ws, grid, spec, today, out_dir, token)
+                out.append((dict(spec), png))
+        except Exception as e:              # noqa: BLE001 — one bad section != dead post
+            failures.append((spec["id"], f"{type(e).__name__}: {e}"))
+            print(f"[alphalete_production] SECTION FAILED, skipping {spec['id']}: "
+                  f"{type(e).__name__}: {str(e)[:200]}", flush=True)
+    if failures:
+        print("[alphalete_production] %d/%d section(s) failed: %s"
+              % (len(failures), len(sections),
+                 ", ".join(i for i, _ in failures)), flush=True)
     return out, grid, ws.title
