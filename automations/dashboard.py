@@ -11105,7 +11105,7 @@ else:  # st.session_state.view == "user"
                     "needs.")
                 _safe_link_button(
                     "🏢 Open onboarding form",
-                    "https://alphaletemetricsonboarding.streamlit.app",
+                    "https://alphaletemetricsintake.streamlit.app",
                     use_container_width=True)
                 st.caption("For Megan & Eve · access-code gated")
             st.markdown("---")
