@@ -50,11 +50,23 @@ def _keys(names, aliases):
     return out
 
 
+# Periods to pull. The crosstab's default download carries only the just-closed
+# week, so history needs the Period filter: July covers 7.5 / 7.12 / 7.19, June
+# covers 6.28. period_candidates() handles the 'Period 2026-7' vs 'Period 7'
+# naming drift.
+PERIODS = ["Period 2026-7", "Period 2026-6"]
+
+
+def _mdy(dd_week):
+    """'7/19/2026' -> '7.19.26' so it matches the bulletin's week labels."""
+    m = re.match(r"\s*(\d{1,2})/(\d{1,2})/(\d{2,4})\s*$", dd_week or "")
+    return f"{int(m.group(1))}.{int(m.group(2))}.{m.group(3)[-2:]}" if m else (dd_week or "").strip()
+
+
 def search(page=None, verbose=True):
     aliases = F.load_alias_map()
     keys = _keys(TARGETS, aliases)
     OUT.mkdir(parents=True, exist_ok=True)
-    csv_path = OUT / "dd_search.csv"
 
     own = page is None
     ctx = None
@@ -62,71 +74,111 @@ def search(page=None, verbose=True):
         from automations.shared.tableau_patchright import tableau_session
         ctx = tableau_session(headless=True, verbose=verbose)
         page = ctx.__enter__()
+
+    header, data, seen_uk = None, [], set()
     try:
         from automations.shared.tableau_patchright import download_crosstab_patchright
-        download_crosstab_patchright(P.DD_DETAIL_VIEW, P.DD_DETAIL_SHEET,
-                                     csv_path, page=page, verbose=verbose)
+        # Pull each period; keep the first candidate spelling that returns rows.
+        for label in PERIODS:
+            got = False
+            for cand in P.period_candidates(label):
+                csv_path = OUT / f"dd_search_{cand.replace(' ', '_')}.csv"
+                url = P._with_filter(P.DD_DETAIL_VIEW, "Period", cand)
+                try:
+                    download_crosstab_patchright(url, P.DD_DETAIL_SHEET, csv_path,
+                                                 page=page, verbose=verbose)
+                except Exception as e:  # noqa: BLE001
+                    if verbose:
+                        print(f"  {cand}: no crosstab ({type(e).__name__})")
+                    continue
+                rows = P.read_crosstab(csv_path)
+                if len(rows) <= 1:
+                    if verbose:
+                        print(f"  {cand}: empty")
+                    continue
+                if header is None:
+                    header = rows[0]
+                uk = P._hdr_col(rows[0], "cl.Unique Key")
+                added = 0
+                for r in rows[1:]:
+                    k = r[uk] if uk is not None and uk < len(r) else None
+                    if k and k in seen_uk:
+                        continue          # same line in two period pulls — once
+                    if k:
+                        seen_uk.add(k)
+                    data.append(r)
+                    added += 1
+                if verbose:
+                    print(f"  {cand}: {added} new row(s)")
+                got = True
+                break
+            if not got and verbose:
+                print(f"  {label}: no period candidate returned rows")
     finally:
         if own and ctx is not None:
             ctx.__exit__(None, None, None)
 
-    rows = P.read_crosstab(csv_path)
+    header = header or []
     if verbose:
-        print(f"-> ORG DD Detail: {len(rows)} row(s)")
+        print(f"-> ORG DD Detail: {len(data)} unique row(s) across {len(PERIODS)} period(s)")
 
-    # Every distinct owner-ish cell, so a name that is present under an unexpected
-    # spelling can still be eyeballed on the dump tab.
     all_names = set()
-    for r in rows[1:]:
+    for r in data:
         for c in r:
             s = (c or "").strip()
             if s and re.search(r"[A-Za-z]", s) and not P._num_locale(s) \
                and len(s.split()) <= 4 and "$" not in s:
                 all_names.add(s)
 
-    header = rows[0] if rows else []
-    # Columns found BY HEADER LABEL, never index (CLAUDE.md) — the layout,
-    # decoded from the first structure dump 2026-07-24:
-    #   cl.ICD Owner Name  = the owner        (name we match on)
-    #   cl.DD Week         = the DD week      (M/D/YYYY)
-    #   Total $ to ICD     = the dollar line  (NOT cl.Account ID, a huge ID that
-    #                                          the first pass mistook for money)
+    # Columns BY HEADER LABEL (CLAUDE.md). Layout decoded 2026-07-24:
+    #   cl.ICD Owner Name = owner   cl.DD Week = week   Total $ to ICD = dollars
+    #   cl.Status / cl.Category flag the LEDGER/fee lines the VA's figure excludes.
     oc = P._hdr_col(header, "cl.ICD Owner Name")
     wc = P._hdr_col(header, "cl.DD Week")
     ac = P._hdr_col(header, "Total $ to ICD")
+    sc = P._hdr_col(header, "cl.Status")
+    cc = P._hdr_col(header, "cl.Category")
 
-    per = {}          # target name -> {dd_week: summed Total $ to ICD}
-    rc = {}           # target name -> row count
-    for r in rows[1:]:
-        nm = r[oc].strip() if oc is not None and oc < len(r) else ""
-        hit = keys.get(P._norm_name(nm))
+    def cell(r, i):
+        return r[i].strip() if i is not None and i < len(r) else ""
+
+    # per name -> per week -> {"raw", "clean", "rows"}. `clean` drops ledger/fee
+    # lines so it matches what the VA types; `raw` keeps them for comparison.
+    per = {}
+    for r in data:
+        hit = keys.get(P._norm_name(cell(r, oc)))
         if not hit:
             continue
-        wk = r[wc].strip() if wc is not None and wc < len(r) else "(no week)"
-        amt = P._num_locale(r[ac]) if ac is not None and ac < len(r) else None
-        d = per.setdefault(hit, {})
-        d[wk] = round(d.get(wk, 0.0) + (amt or 0.0), 2)
-        rc[hit] = rc.get(hit, 0) + 1
+        wk = _mdy(cell(r, wc)) or "(no week)"
+        amt = P._num_locale(cell(r, ac)) or 0.0
+        ledger = "ledger" in cell(r, sc).lower() or "ledger" in cell(r, cc).lower()
+        d = per.setdefault(hit, {}).setdefault(wk, {"raw": 0.0, "clean": 0.0, "rows": 0})
+        d["raw"] += amt
+        d["rows"] += 1
+        if not ledger:
+            d["clean"] += amt
 
-    out = [["TARGET", "IN TABLEAU?", "DD WEEK", "TOTAL $ TO ICD", "ROWS"]]
+    out = [["TARGET", "DD WEEK", "VA FIGURE (fees excl.)", "RAW (fees incl.)", "ROWS"]]
     for name in TARGETS:
         weeks = per.get(name)
         if not weeks:
             near = sorted(n for n in all_names
                           if name.split()[0].lower() in n.lower()
                           or name.split()[-1].lower() in n.lower())
-            out.append([name, "NO", "", "",
-                        ("near: " + ", ".join(near[:5])) if near else "no match"])
+            out.append([name, "NOT FOUND", "", "",
+                        ("near: " + ", ".join(near[:4])) if near else ""])
             continue
         first = True
-        for wk, amt in sorted(weeks.items()):
-            out.append([name if first else "", "YES" if first else "",
-                        wk, f"${amt:,.2f}", str(rc[name]) if first else ""])
+        for wk in sorted(weeks, key=lambda w: [int(x) for x in w.split(".")]
+                         if re.match(r"^\d+\.\d+\.\d+$", w) else [0]):
+            d = weeks[wk]
+            out.append([name if first else "", wk,
+                        f"${round(d['clean'],2):,.2f}", f"${round(d['raw'],2):,.2f}",
+                        str(d["rows"])])
             first = False
-    # The columns used, so the mapping is auditable on the tab.
     out.append([""])
-    out.append(["columns used", f"owner=col {oc} · week=col {wc} · amount=col {ac}",
-                "(by header label)", "", ""])
+    out.append(["note", "VA FIGURE = Total $ to ICD minus ledger/fee lines; "
+                "should match the bulletin's manual figure.", "", "", ""])
     if verbose:
         for r in out:
             print(" | ".join(str(c) for c in r))
