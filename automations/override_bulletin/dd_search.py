@@ -133,7 +133,7 @@ def search(page=None, verbose=True):
 
     _dump(out)
     print(f"\n✓ {len(out)} row(s) → '{DUMP_TAB}' tab + {csv_path}")
-    return found
+    return per
 
 
 def _dump(rows):
