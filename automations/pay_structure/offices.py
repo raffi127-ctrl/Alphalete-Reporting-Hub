@@ -198,8 +198,20 @@ def for_owner(owner: str) -> "Optional[PayOffice]":
 #   4. dev fallback  "<key>-pay" (local building only; NEVER a real office code)
 _LOCAL_CODES = Path(__file__).with_name(".codes.json")
 
+# Codes the editor app injects from the master sheet's "Pay Structure Codes"
+# tab (managed via the admin panel). These WIN, so Megan can add/change a
+# password from the admin panel and it takes effect without a redeploy.
+_INJECTED_CODES: "Optional[Dict[str, str]]" = None
+
+
+def set_codes(mapping) -> None:
+    global _INJECTED_CODES
+    _INJECTED_CODES = {str(k): str(v) for k, v in dict(mapping or {}).items()}
+
 
 def _code_map() -> "Dict[str, str]":
+    if _INJECTED_CODES:
+        return dict(_INJECTED_CODES)
     raw = os.environ.get("PAY_STRUCTURE_CODES")
     if raw:
         try:

@@ -276,3 +276,81 @@ def _sheet_save(sheet_id: str, grid: Grid) -> None:
                                  value_input_option="RAW"))
     else:
         _retry(lambda: ws.append_row(rowvals, value_input_option="RAW"))
+
+
+# ---------------------------------------------------------------------------
+# Access codes + progress, managed in the master workbook so Megan can add a
+# password from the admin panel without touching Streamlit Cloud secrets.
+# ---------------------------------------------------------------------------
+_CODES_TAB = "Pay Structure Codes"
+_CODES_HEADER = ["Office", "Business Name", "Access Code"]
+
+
+def _open_codes_ws(sheet_id: str, create: bool):
+    ss = _open_ss(sheet_id)
+    try:
+        return _retry(lambda: ss.worksheet(_CODES_TAB))
+    except Exception:
+        if not create:
+            return None
+        ws = _retry(lambda: ss.add_worksheet(title=_CODES_TAB, rows=40, cols=3))
+        _retry(lambda: ws.update([_CODES_HEADER], range_name="A1"))
+        return ws
+
+
+def load_codes() -> "Dict[str, str]":
+    """{office_key: access_code} from the codes tab, or {} if none/unreachable."""
+    sid = _sheet_id()
+    if not sid:
+        return {}
+    try:
+        ws = _open_codes_ws(sid, create=False)
+        if ws is None:
+            return {}
+        out: Dict[str, str] = {}
+        for row in (_retry(lambda: ws.get_all_values()) or [])[1:]:
+            if row and row[0].strip() and len(row) >= 3 and row[2].strip():
+                out[row[0].strip()] = row[2].strip()
+        return out
+    except Exception:
+        return {}
+
+
+def save_codes(mapping: "Dict[str, str]", business: "Dict[str, str]",
+               order: "List[str]") -> None:
+    """Rewrite the codes tab from {office_key: code} (+ business names, in the
+    given office order)."""
+    sid = _sheet_id()
+    if not sid:
+        raise SaveError("No pay-structure sheet configured.")
+    try:
+        ws = _open_codes_ws(sid, create=True)
+        rows = [_CODES_HEADER]
+        for key in order:
+            rows.append([key, business.get(key, ""), mapping.get(key, "")])
+        _retry(lambda: ws.clear())
+        _retry(lambda: ws.update(rows, range_name="A1", value_input_option="RAW"))
+    except Exception as e:                           # noqa: BLE001
+        raise SaveError("Couldn't save codes: {}".format(e))
+
+
+def list_structures() -> "List[dict]":
+    """Who's filled in — [{office, business, campaigns, updated}] from the
+    structures tab, for the admin 'progress' view."""
+    sid = _sheet_id()
+    if not sid:
+        return []
+    try:
+        ws = _open_struct_ws(sid, create=False)
+        if ws is None:
+            return []
+        out: List[dict] = []
+        for row in (_retry(lambda: ws.get_all_values()) or [])[1:]:
+            if row and row[0].strip():
+                out.append({"office": row[0].strip(),
+                            "business": row[1] if len(row) > 1 else "",
+                            "campaigns": row[2] if len(row) > 2 else "",
+                            "updated": row[3] if len(row) > 3 else ""})
+        return out
+    except Exception:
+        return []

@@ -11033,6 +11033,31 @@ else:  # st.session_state.view == "user"
                     st.markdown("Admin code: **B\\*\\*\\*\\*\\*123!**")
             st.markdown("---")
 
+        # ---- Pay Structure (Office Operations) — quick links to the self-serve
+        # pay structure site + its admin (manage office passwords, see who's
+        # filled in). Same pattern as the Document Builder block above.
+        if user_name == "Office Operations":
+            st.markdown("### 💵 Pay Structure")
+            with st.container(border=True):
+                st.markdown(
+                    "**Per-office pay structures** — ICDs enter their commission "
+                    "structure; the daily order logs then show each rep an "
+                    "estimated paycheck by level.")
+                _pg = st.columns(2)
+                with _pg[0]:
+                    _safe_link_button(
+                        "💵 Open site",
+                        "https://alphaletepaystructure.streamlit.app",
+                        use_container_width=True)
+                    st.caption("Send each office its own code")
+                with _pg[1]:
+                    _safe_link_button(
+                        "⚙️ Admin (codes + progress)",
+                        "https://alphaletepaystructure.streamlit.app/?admin=1",
+                        use_container_width=True)
+                    st.caption("Add passwords · see who's filled in")
+            st.markdown("---")
+
         # ---- Personal portfolio: projects this user has claimed / shipped ----
         # Pulled from the Automation Request Log. "In progress" = anything
         # this user has currently claimed (Assigned To matches). "Shipped" =

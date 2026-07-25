@@ -237,8 +237,7 @@ def editor_view(office) -> None:
     # --- Step 2: campaigns you run ----------------------------------------
     st.divider()
     st.markdown("### 2. Which campaigns do you run?")
-    st.caption("Check the campaigns your office sells. Only those show up below "
-               "to price — you won't scroll past products you don't sell.")
+    st.caption("Check the campaigns your office sells.")
     cat = catalog.campaigns()
     checked = []
     cols = st.columns(2)
@@ -335,7 +334,94 @@ def _preview(grid: store.Grid, checked, cat) -> None:
 
 
 # --------------------------------------------------------------------------
+# Admin panel (?admin=1) — manage per-office passwords + see who's filled in.
+# --------------------------------------------------------------------------
+def _admin_gate() -> bool:
+    code = st.secrets.get("pay_structure_admin_code") if hasattr(st, "secrets") else None
+    try:
+        code = st.secrets.get("pay_structure_admin_code")
+    except Exception:
+        code = None
+    if not code:                         # not configured (local dev) — open
+        return True
+    if st.session_state.get("_admin_ok"):
+        return True
+    st.markdown("## 🔒 Pay Structure — Admin")
+    st.text_input("Admin code", type="password", key="_admincode")
+    if st.button("Enter", type="primary"):
+        if st.session_state.get("_admincode") == code:
+            st.session_state["_admin_ok"] = True
+            st.rerun()
+        else:
+            st.error("Incorrect admin code.")
+    return False
+
+
+def admin_view() -> None:
+    if not _admin_gate():
+        return
+    st.markdown("## 🔒 Pay Structure — Admin")
+    st.caption("Manage each office's password and see who has filled in their "
+               "pay structure. Onboarding a new office: add it to the registry, "
+               "set its website for branding, then set a password here and send "
+               "them the link + code.")
+
+    # --- who's filled in ---------------------------------------------------
+    st.divider()
+    st.subheader("Who's filled in")
+    done = {r["office"].lower(): r for r in store.list_structures()}
+    rows = []
+    for k in offices.ORDER:
+        o = offices.get(k)
+        r = done.get(k.lower())
+        rows.append({"Office": o.business_name or o.label, "Owner": o.owner,
+                     "Filled in?": "✅ " + (r["updated"] or "") if r else "—",
+                     "Campaigns": r["campaigns"] if r else ""})
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    st.write("**{}/{}** offices have filled in their pay structure."
+             .format(len(done), len(offices.ORDER)))
+
+    # --- passwords ---------------------------------------------------------
+    st.divider()
+    st.subheader("Access codes (passwords)")
+    st.caption("Each office logs in with its code. Edit a code and Save; changes "
+               "take effect immediately (no redeploy). Saves to the 'Pay "
+               "Structure Codes' tab in the master sheet.")
+    cur = store.load_codes()
+    df = pd.DataFrame([{"Office": offices.get(k).business_name or k,
+                        "office_key": k,
+                        "Access code": cur.get(k) or offices.access_code(k)}
+                       for k in offices.ORDER])
+    edited = st.data_editor(
+        df, width="stretch", hide_index=True,
+        column_config={"Office": st.column_config.TextColumn(disabled=True),
+                       "office_key": None,
+                       "Access code": st.column_config.TextColumn(required=True)},
+        key="_codes_editor")
+    if st.button("💾 Save codes", type="primary"):
+        mapping = {row["office_key"]: str(row["Access code"]).strip()
+                   for _, row in edited.iterrows()
+                   if str(row.get("Access code", "")).strip()}
+        business = {k: offices.get(k).business_name for k in offices.ORDER}
+        try:
+            store.save_codes(mapping, business, list(offices.ORDER))
+            offices.set_codes(store.load_codes())
+        except Exception as e:           # noqa: BLE001
+            st.error("Couldn't save: {}".format(e))
+        else:
+            st.success("Saved. New codes are live.")
+
+
+# --------------------------------------------------------------------------
 _inject_gs_client()
-_office = _login()
-if _office:
-    editor_view(_office)
+try:
+    offices.set_codes(store.load_codes())     # sheet-managed codes win
+except Exception:
+    pass
+
+if st.query_params.get("admin"):
+    admin_view()
+else:
+    _office = _login()
+    if _office:
+        editor_view(_office)
