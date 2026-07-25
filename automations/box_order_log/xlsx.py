@@ -157,12 +157,96 @@ def _legend(sh, row: int) -> int:
     return row
 
 
+# --- pay-structure estimate (Carlos's office; the 'box' campaign) -----------
+# BOX has no pricing of its own (see payout.py), so if Carlos has filled in his
+# Pay Structure link we price each accepted deal by its BF Tier x Term rate.
+_PAY_CAMPAIGN = "box"
+_PAY_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"   # AUTOMATION MASTER
+_MONEY_FMT = '"$"#,##0'
+_BOX_PAYS = ("Accepted by Supplier",)    # the status that pays (box_order_log.payout)
+
+
+def _load_pay_grid():
+    """Carlos's box pay structure, or None. Never let it break the log."""
+    try:
+        import os
+        os.environ.setdefault("PAY_STRUCTURE_SHEET_ID", _PAY_SHEET_ID)
+        from automations.pay_structure import store as _ps
+        g = _ps.load("carlos")
+        if g and _PAY_CAMPAIGN in g.rates:
+            return g
+    except Exception:
+        pass
+    return None
+
+
+def _sale_key(s) -> str:
+    """'BF 1 — 36mo' — the exact sale-type key the editor prices against."""
+    bf = _fmt(s.fields.get("BF Tier"))
+    term = _fmt(s.fields.get("Term"))
+    return "{} — {}mo".format(bf, term) if bf and term else ""
+
+
+def _line_rates(s, grid):
+    key = _sale_key(s)
+    if not key:
+        return [0.0] * len(grid.levels), True
+    vals = [grid.rate(_PAY_CAMPAIGN, key, lvl) for lvl in grid.levels]
+    return vals, (not any(vals))
+
+
+def _write_pay_cells(sh, r, s, grid, start_col):
+    """Per-level pay for one deal (NYP in red when the office hasn't priced it)."""
+    border = _border()
+    fill_hex = clean.color_for(s.status, s.history)
+    fill = PatternFill("solid", fgColor=fill_hex) if fill_hex else None
+    vals, unpriced = _line_rates(s, grid)
+    for i, _lvl in enumerate(grid.levels):
+        cell = sh.cell(row=r, column=start_col + i)
+        cell.alignment, cell.border = CENTER, border
+        if fill is not None:
+            cell.fill = fill
+        if unpriced:
+            cell.value, cell.font = "NYP", _font("CC0000")
+        else:
+            cell.value, cell.font = vals[i], _font()
+            cell.number_format = _MONEY_FMT
+
+
+def _write_week_total(sh, r, group, grid, base_ncol, ncol):
+    """TOTAL row: estimated pay from the ACCEPTED deals in this week, per level."""
+    totals = [0.0] * len(grid.levels)
+    for s in group:
+        if s.status in _BOX_PAYS:
+            vals, unpriced = _line_rates(s, grid)
+            if not unpriced:
+                for i in range(len(grid.levels)):
+                    totals[i] += vals[i]
+    accent = (grid.accent or "#1F9D57").lstrip("#") or "1F9D57"
+    border = _border()
+    label = sh.cell(row=r, column=1,
+                    value="\U0001F4B5 TOTAL — est. pay (accepted deals)")
+    label.font = _font("333333", bold=True)
+    label.fill = PatternFill("solid", fgColor="F2F2F2")
+    label.alignment = Alignment(horizontal="right", vertical="center")
+    label.border = border
+    sh.merge_cells(start_row=r, start_column=1, end_row=r, end_column=base_ncol)
+    for i in range(len(grid.levels)):
+        cell = sh.cell(row=r, column=base_ncol + 1 + i, value=totals[i])
+        cell.fill = PatternFill("solid", fgColor=accent)
+        cell.font = _font("FFFFFF", bold=True)
+        cell.alignment, cell.border = CENTER, border
+        cell.number_format = _MONEY_FMT
+    return r + 1
+
+
 def build(sales: Sequence, out_path: Path, *,
           today: Optional[dt.date] = None) -> Path:
     """Write the workbook: 'All Reps' summary, then one tab per rep."""
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     today = today or dt.date.today()
+    pay_grid = _load_pay_grid()          # None unless Carlos filled in his link
 
     wb = Workbook()
     used: set = set()
@@ -256,6 +340,8 @@ def build(sales: Sequence, out_path: Path, *,
     for s in ordered:
         by_rep.setdefault(_fmt(s.fields.get("Rep Name")) or "(no rep)", []).append(s)
 
+    cols = COLUMNS + (tuple(pay_grid.levels) if pay_grid else ())
+    ncol = len(cols)
     for rep in sorted(by_rep):
         rep_sales = by_rep[rep]
         rsh = wb.create_sheet(_safe_title(rep, used))
@@ -270,16 +356,22 @@ def build(sales: Sequence, out_path: Path, *,
         for week, group in clean.by_week(rep_sales).items():
             label = week.strftime("%m/%d/%Y") if week else "No sale date"
             _banner(rsh, r, "Week Ending {}  •  {} sale{}".format(
-                label, len(group), "" if len(group) == 1 else "s"), len(COLUMNS))
+                label, len(group), "" if len(group) == 1 else "s"), ncol)
             r += 1
-            _write_header(rsh, r, COLUMNS)
+            _write_header(rsh, r, cols)
             r += 1
             for s in group:
                 _write_row(rsh, r, s, COLUMNS)
+                if pay_grid:
+                    _write_pay_cells(rsh, r, s, pay_grid, len(COLUMNS) + 1)
                 r += 1
+            if pay_grid:
+                r = _write_week_total(rsh, r, group, pay_grid, len(COLUMNS), ncol)
             r += 2
         _legend(rsh, r)
         _autosize(rsh, COLUMNS, rep_sales)
+        for i in range(len(pay_grid.levels) if pay_grid else 0):
+            rsh.column_dimensions[get_column_letter(len(COLUMNS) + 1 + i)].width = 11
 
     wb.save(out_path)
     return out_path

@@ -65,20 +65,23 @@
   "b2b_att": {
     "label": "AT&T B2B",
     "sale_types": [
-      "CRU AIR",
-      "CRU BYOD - Port - IF",
-      "CRU BYOD - Port - OOF",
-      "CRU Bonus - BYOD",
-      "CRU Bonus - New Internet",
-      "CRU Bonus - New/Port",
-      "CRU INTERNET 1000",
-      "CRU Port Line - IF",
-      "CRU Port Line - OOF",
-      "IRU AIR",
-      "IRU INTERNET 1000",
-      "IRU INTERNET 500",
-      "IRU Port Line - IF",
-      "IRU Port Line - OOF"
+      "CRU \u00b7 AIR/AWB \u00b7 AT&T Business Advanced",
+      "CRU \u00b7 AIR/AWB \u00b7 AT&T Internet Air for Business Premium",
+      "CRU \u00b7 AIR/AWB \u00b7 AT&T Internet Air for Business Standard",
+      "CRU \u00b7 NEW INTERNET \u00b7 AT&T Internet for Business - Business Fiber 1000s",
+      "CRU \u00b7 NEW INTERNET \u00b7 AT&T Internet for Business - Business Fiber 300s",
+      "CRU \u00b7 NEW INTERNET \u00b7 AT&T Internet for Business - Business Fiber 500s",
+      "CRU \u00b7 TABLET/WEARABLE \u00b7 AT&T Business Unlimited Standard 3.0",
+      "CRU \u00b7 VOICE \u00b7 Phone Unlimited North America",
+      "CRU \u00b7 WIRELESS \u00b7 AT&T Business Unlimited Advanced 3.0",
+      "CRU \u00b7 WIRELESS \u00b7 AT&T Business Unlimited Premium 3.0",
+      "IRU \u00b7 AIR/AWB \u00b7 AT&T Internet Air",
+      "IRU \u00b7 NEW INTERNET \u00b7 Internet 1000 (Fiber 1 GIG)",
+      "IRU \u00b7 NEW INTERNET \u00b7 Internet 500 (Fiber 500)",
+      "IRU \u00b7 WIRELESS \u00b7 AT&T 55+",
+      "IRU \u00b7 WIRELESS \u00b7 AT&T Extra 2.0",
+      "IRU \u00b7 WIRELESS \u00b7 AT&T Premium 2.0",
+      "IRU \u00b7 WIRELESS \u00b7 AT&T Value 2.0"
     ]
   },
   "box": {

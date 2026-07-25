@@ -154,7 +154,89 @@ def _banner(sh, row: int, text: str, span: int) -> None:
     cell.alignment = LEFT
 
 
-def _write_log(sh, lines, labels, *, freeze=True) -> None:
+# --- pay-structure estimate (Carlos's office; the 'b2b_att' campaign) --------
+# The AT&T B2B log carries no payout, so if Carlos has filled in his Pay
+# Structure link we price each posted line by its CRU/IRU · Product Type ·
+# Package rate — the exact sale-type key the editor lists.
+_PAY_CAMPAIGN = "b2b_att"
+_PAY_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"   # AUTOMATION MASTER
+_MONEY_FMT = '"$"#,##0'
+
+
+def _load_pay_grid():
+    try:
+        import os
+        os.environ.setdefault("PAY_STRUCTURE_SHEET_ID", _PAY_SHEET_ID)
+        from automations.pay_structure import store as _ps
+        g = _ps.load("carlos")
+        if g and _PAY_CAMPAIGN in g.rates:
+            return g
+    except Exception:
+        pass
+    return None
+
+
+def _att_key(ln: dict) -> str:
+    cru = str(ln.get("CRU/IRU", "") or "").strip()
+    pt = str(ln.get("Product Type (Broken Out)", "") or "").strip()
+    pkg = str(ln.get("Package", "") or "").strip()
+    return "{} · {} · {}".format(cru, pt, pkg) if (cru and pt and pkg) else ""
+
+
+def _line_rates(ln, grid):
+    key = _att_key(ln)
+    if not key:
+        return [0.0] * len(grid.levels), True
+    vals = [grid.rate(_PAY_CAMPAIGN, key, lvl) for lvl in grid.levels]
+    return vals, (not any(vals))
+
+
+def _write_pay_cells(sh, r, ln, grid, start_col):
+    b = _border()
+    hexfill = colors.fill_for(ln.get("DTR Status (enriched)", ""))
+    fill = PatternFill("solid", fgColor=hexfill.lstrip("#")) if hexfill else None
+    vals, unpriced = _line_rates(ln, grid)
+    for i, _lvl in enumerate(grid.levels):
+        cell = sh.cell(row=r, column=start_col + i)
+        cell.alignment, cell.border = CENTER, b
+        if fill is not None:
+            cell.fill = fill
+        if unpriced:
+            cell.value, cell.font = "NYP", _font("CC0000")
+        else:
+            cell.value, cell.font = vals[i], _font()
+            cell.number_format = _MONEY_FMT
+
+
+def _write_pay_total(sh, r, group, grid, base_ncol):
+    """TOTAL row for a paycheck week: sum each level over the posted lines."""
+    totals = [0.0] * len(grid.levels)
+    for ln in group:
+        vals, unpriced = _line_rates(ln, grid)
+        if not unpriced:
+            for i in range(len(grid.levels)):
+                totals[i] += vals[i]
+    accent = (grid.accent or "#1F9D57").lstrip("#") or "1F9D57"
+    b = _border()
+    label = sh.cell(row=r, column=1,
+                    value="\U0001F4B5 TOTAL — estimated pay this week")
+    label.font = _font("333333", bold=True)
+    label.fill = PatternFill("solid", fgColor="F2F2F2")
+    label.alignment = Alignment(horizontal="right", vertical="center")
+    label.border = b
+    sh.merge_cells(start_row=r, start_column=1, end_row=r, end_column=base_ncol)
+    for i in range(len(grid.levels)):
+        cell = sh.cell(row=r, column=base_ncol + 1 + i, value=totals[i])
+        cell.fill = PatternFill("solid", fgColor=accent)
+        cell.font = _font("FFFFFF", bold=True)
+        cell.alignment, cell.border = CENTER, b
+        cell.number_format = _MONEY_FMT
+
+
+def _write_log(sh, lines, labels, *, freeze=True, pay_grid=None) -> None:
+    cols = list(labels) + (list(pay_grid.levels) if pay_grid else [])
+    ncol = len(cols)
+    base_ncol = len(labels)
     row = 1
     for wk, group in by_week(lines).items():
         n = len(group)
@@ -164,15 +246,24 @@ def _write_log(sh, lines, labels, *, freeze=True) -> None:
         else:
             text = "Not Yet Posted  •  {} order{} (no paycheck yet)".format(
                 n, "" if n == 1 else "s")
-        _banner(sh, row, text, len(labels))
+        _banner(sh, row, text, ncol)
         row += 1
-        _write_header(sh, row, labels)
+        _write_header(sh, row, cols)
         row += 1
         for ln in group:
             _write_row(sh, row, ln, labels)
+            if pay_grid:
+                _write_pay_cells(sh, row, ln, pay_grid, base_ncol + 1)
+            row += 1
+        # A total only on real paycheck weeks (the Not-Yet-Posted section isn't
+        # on any paycheck yet, so a total there would be misleading).
+        if pay_grid and wk:
+            _write_pay_total(sh, row, group, pay_grid, base_ncol)
             row += 1
         row += 2
     _autosize(sh, labels)
+    for i in range(len(pay_grid.levels) if pay_grid else 0):
+        sh.column_dimensions[get_column_letter(base_ncol + 1 + i)].width = 11
     if freeze:
         sh.freeze_panes = "A3"
 
@@ -262,6 +353,7 @@ def build(lines: Sequence[dict], out_path: Path, *,
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     today = today or dt.date.today()
+    pay_grid = _load_pay_grid()          # None unless Carlos filled in his link
     wb = Workbook()
     used: set = set()
 
@@ -287,7 +379,7 @@ def build(lines: Sequence[dict], out_path: Path, *,
     rep_labels = [l for l in _LOG_LABELS if l != _REP_LABEL]
     for rep in sorted(by_rep):
         rsh = wb.create_sheet(_safe_title(rep, used))
-        _write_log(rsh, by_rep[rep], rep_labels)
+        _write_log(rsh, by_rep[rep], rep_labels, pay_grid=pay_grid)
 
     wb.save(out_path)
     return out_path
