@@ -63,7 +63,13 @@ def _mdy(dd_week):
     return f"{int(m.group(1))}.{int(m.group(2))}.{m.group(3)[-2:]}" if m else (dd_week or "").strip()
 
 
-def search(page=None, verbose=True):
+def _pull(page=None, verbose=True):
+    """Download the period crosstabs and fold them into per-name weekly totals.
+
+    Returns (per, all_names). `per` is {target name: {'M.D.YY': {raw, clean,
+    rows}}} where `clean` drops the ledger/fee lines so it matches what the VA
+    types, and `raw` keeps them. Opens its own Tableau session if `page` is None.
+    """
     aliases = F.load_alias_map()
     keys = _keys(TARGETS, aliases)
     OUT.mkdir(parents=True, exist_ok=True)
@@ -78,7 +84,6 @@ def search(page=None, verbose=True):
     header, data, seen_uk = None, [], set()
     try:
         from automations.shared.tableau_patchright import download_crosstab_patchright
-        # Pull each period; keep the first candidate spelling that returns rows.
         for label in PERIODS:
             got = False
             for cand in P.period_candidates(label):
@@ -142,8 +147,6 @@ def search(page=None, verbose=True):
     def cell(r, i):
         return r[i].strip() if i is not None and i < len(r) else ""
 
-    # per name -> per week -> {"raw", "clean", "rows"}. `clean` drops ledger/fee
-    # lines so it matches what the VA types; `raw` keeps them for comparison.
     per = {}
     for r in data:
         hit = keys.get(P._norm_name(cell(r, oc)))
@@ -157,7 +160,77 @@ def search(page=None, verbose=True):
         d["rows"] += 1
         if not ledger:
             d["clean"] += amt
+    return per, all_names
 
+
+def _newest_week(weeks):
+    """The latest 'M.D.YY' key in a week->... dict, by date."""
+    def keyf(w):
+        return [int(x) for x in w.split(".")] if re.match(r"^\d+\.\d+\.\d+$", w) else [0]
+    return max(weeks, key=keyf) if weeks else None
+
+
+def accumulate(write=False, page=None, verbose=True):
+    """Write this week's fees-excluded figure for the special-case names into the
+    'ICD (Special Cases)' section on the DD tab, current-week column — the weekly
+    step that builds their 4-week history one week at a time (the DD Detail view
+    only ever serves the current week). DRY-RUN unless write=True; only ever
+    touches the special rows' current-week cell, so it is safe to re-run.
+    """
+    from automations.override_bulletin import dd_data as D
+    from automations.recruiting_report import fill as _fill
+    aliases = F.load_alias_map()
+
+    per, _ = _pull(page=page, verbose=verbose)
+    figs = {}
+    for name in TARGETS:
+        weeks = per.get(name) or {}
+        nw = _newest_week(weeks)
+        if nw:
+            figs[name] = (nw, round(weeks[nw]["clean"], 2))
+
+    ws = _fill._client().open_by_key(D.WORKBOOK_ID).worksheet(D.DD_TAB)
+    vals = ws.get_all_values()
+    hdr = vals[0]
+    wcol = next((i for i, h in enumerate(hdr)
+                 if re.match(r"^\s*\d{1,2}\.\d{1,2}\.\d{2,4}\s*$", h or "")), None)
+    tabweek = hdr[wcol].strip() if wcol is not None else ""
+    # locate the 'ICD (Special Cases)' rows by name
+    special_rows, on = {}, False
+    for i, r in enumerate(vals, 1):
+        lab = " ".join((r[0] or "").split()).lower()
+        if not on:
+            on = lab.startswith("icd (special cases)")
+            continue
+        nm = (r[0] or "").strip()
+        if not nm:
+            break
+        special_rows[P._norm_name(F.canon(nm, aliases))] = i
+
+    print(f"tab current week = {tabweek!r}; special rows found = {len(special_rows)}")
+    wrote = 0
+    for name, (wk, amt) in figs.items():
+        rk = P._norm_name(F.canon(name, aliases))
+        row = special_rows.get(rk)
+        if row is None:
+            print(f"  ⚠ {name}: no row in the 'ICD (Special Cases)' section — skipped")
+            continue
+        if wk != tabweek:
+            print(f"  ⚠ {name}: Tableau week {wk} != tab week {tabweek} — skipped "
+                  f"(the tab has not rolled to this week yet)")
+            continue
+        if write:
+            ws.update_cell(row, wcol + 1, amt)
+        print(f"  {'wrote' if write else '[dry-run] would write'} {name}: "
+              f"${amt:,.2f} → row {row}, week {tabweek}")
+        wrote += 1
+    print(f"\n{'wrote' if write else 'would write'} {wrote} figure(s)"
+          + ("" if write else "  (pass --write to actually write)"))
+    return figs
+
+
+def search(page=None, verbose=True):
+    per, all_names = _pull(page=page, verbose=verbose)
     out = [["TARGET", "DD WEEK", "VA FIGURE (fees excl.)", "RAW (fees incl.)", "ROWS"]]
     for name in TARGETS:
         weeks = per.get(name)
@@ -184,7 +257,7 @@ def search(page=None, verbose=True):
             print(" | ".join(str(c) for c in r))
 
     _dump(out)
-    print(f"\n✓ {len(out)} row(s) → '{DUMP_TAB}' tab + {csv_path}")
+    print(f"\n✓ {len(out)} row(s) → '{DUMP_TAB}' tab")
     return per
 
 
@@ -205,8 +278,21 @@ def _dump(rows):
 
 
 def main(argv=None):
+    import argparse
+    ap = argparse.ArgumentParser(description="Search / accumulate DD for the "
+                                             "special-case names (Lucy 1)")
+    ap.add_argument("--accumulate", action="store_true",
+                    help="write this week's fees-excluded figure into the DD "
+                         "tab's 'ICD (Special Cases)' section (dry-run without "
+                         "--write)")
+    ap.add_argument("--write", action="store_true",
+                    help="with --accumulate, actually write to the tab")
+    a = ap.parse_args(argv)
     try:
-        search()
+        if a.accumulate:
+            accumulate(write=a.write)
+        else:
+            search()
     except Exception as e:  # noqa: BLE001
         print(f"✗ {type(e).__name__}: {e}")
         return 1

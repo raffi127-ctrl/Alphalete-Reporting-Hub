@@ -3707,6 +3707,29 @@
       },
       "machine": "Lucy 1"
     },
+    "dd_special_accumulate": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Weekly step for the DD bulletin: pull this week's fees-excluded figure for the four special-case names (Justin/Marcos/Karrington/Milan) from the Tableau ORG DD Detail crosstab and write it into the 'ICD (Special Cases)' section on the Org DDs Ongoing Report tab, current-week column — building their 4-week history one week at a time (the DD Detail view only serves the current week). DRY-RUN by default; base_args carries --accumulate only, so it PRINTS what it would write. Add --write to actually write. Only ever touches the special rows' current-week cell, below the headline formulas. LUCY 1 (Raf's Tableau login).",
+      "display_name": "DD — accumulate special-case weekly DD",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.override_bulletin.dd_search"
+      ],
+      "base_args": [
+        "--accumulate"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      },
+      "machine": "Lucy 1"
+    },
     "dd_name_search": {
       "on_scheduler": false,
       "_off_scheduler_note": "One-shot: download the Tableau ORG DD Detail crosstab and search it for the four bulletin-only names (Justin Fermin, Marcos Barbosa, Karrington Moody, Milan Godbolt) to settle whether they have weekly DD history in the source or exist only as a single manual figure. READ-ONLY — writes nothing to any report tab; results land on the '_dd_search' tab of the override workbook, readable from any machine. Needs Raf's Tableau login, so LUCY 1.",
