@@ -199,6 +199,31 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
         icds.append(row)
         by_key[row["key"]] = row
 
+    # ---- ICD (Special Cases): the adoptions / off-book names, kept in Megan's
+    # labeled 'ICD (Special Cases)' section BELOW the Total rows on the DD tab.
+    # They are NOT Active-YES and sit outside SUM(F2:F131), so the scan above
+    # skips them and they never touch the headline — but the podium lists
+    # reference them, so they go into by_key (a leader's list finds them like any
+    # ICD, and the Adoption? flag still keeps them out of ORGANIC), and they
+    # render in Tracked Separately with whatever weekly history has accumulated.
+    special, _on = [], False
+    for r in vals:
+        lab = " ".join((r[0] or "").split()).lower()
+        if not _on:
+            _on = lab.startswith("icd (special cases)")
+            continue
+        nm = (r[0] or "").strip()
+        if not nm:
+            break                        # first blank column A ends the block
+        row = {"name": nm, "key": _key(nm, aliases),
+               "campaign": (r[2] or "").strip() if len(r) > 2 else "",
+               "org": (r[3] or "").strip() if len(r) > 3 else "",
+               "total": money(r[tot_col]) if tot_col < len(r) else 0.0,
+               "weeks": [money(r[i]) if i < len(r) else 0.0 for i, _ in wk_cols[:WOW_WEEKS]],
+               "special": True}
+        special.append(row)
+        by_key.setdefault(row["key"], row)
+
     # `blocking` is the subset of `problems` that must stop a SEND — a figure we
     # know is wrong, as opposed to one we know is incomplete and label as such.
     problems, blocking = [], []
@@ -249,8 +274,14 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
             if row:
                 wk += row["weeks"][0]
                 tot += row["total"]
-                row_wk += row["weeks"][0]
-                row_keys.add(row["key"])
+                # A SPECIAL row (adoption / off-book) counts toward the leader's
+                # shown total but is NOT part of the headline base, so it must NOT
+                # go into row_wk / row_keys — those feed the 'headline minus this
+                # org' subtraction for Raf, and subtracting money the headline
+                # never contained is exactly the $41,962 error we corrected.
+                if not row.get("special"):
+                    row_wk += row["weeks"][0]
+                    row_keys.add(row["key"])
                 members.append({"name": item["icd"], "week": row["weeks"][0],
                                 "adoption": item["adoption"]})
                 if item["adoption"]:
@@ -401,6 +432,12 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
     excluded = {_key(n, aliases) for n in ADOPTIONS + SPECIAL}
     tracked = [{**r, "why": "In the organization total"}
                for r in icds if r["key"] in excluded]
+    # The 'ICD (Special Cases)' rows — adoptions / off-book names — carry their
+    # own weekly history from the DD tab now, so they come straight from `special`
+    # rather than the podium's one-week manual fallback.
+    for r in special:
+        tracked.append({**r, "why": (f"{r['org']} · not in the total"
+                                     if r.get("org") else "not in the total")})
     for p in podium:
         for item in p["items"]:
             if _key(item["icd"], aliases) in by_key or item["manual_week"] is None:
