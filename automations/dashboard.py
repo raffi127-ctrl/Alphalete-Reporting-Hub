@@ -3608,12 +3608,13 @@ AUTOMATED_REPORTS = [
         # Gold \u2014 matches the black/gold bulletin artwork.
         "color": "#B45309",
         "category": "\U0001F4CA Metrics",
-        "description": "Fills the weekly column on the Org Overrides Ongoing Report from the override sources, then renders the black/gold Override Bulletin (top-5 leader cards + the two override tables) that goes to the org.",
+        "description": "Fills our own copy of the Org Overrides Ongoing Report from the override sources, then renders the black/gold Override Bulletin (top-5 leader cards + the two override tables). Currently emailed to a 4-person preview group each Friday; goes full-org the following week.",
         "breakdown": (
             "WHAT IT DOES\n"
             "**\u2022** Works out **which week to fill** by reading the Override "
-            "Summary itself, then fills that week's column on the "
-            "**Org Overrides Ongoing Report**.\n"
+            "Summary itself, then fills that week's column on **our own copy** "
+            "of the Org Overrides Ongoing Report (the sandbox tab \u2014 the VA\u2019s "
+            "live tab is a reference only, never a data source).\n"
             "**\u2022** Each person's weekly number = **regular override + their "
             "captain/special override**, pulled from five places: the ORG "
             "Override Summary, Raf's PNL (his Captain Override), Raf's Special "
