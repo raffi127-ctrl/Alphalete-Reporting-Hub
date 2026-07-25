@@ -371,7 +371,7 @@ def send(*, tab=None, do_send=False, preview=False, force=False, out_dir=None):
 
     print("captain/spec: {}".format(
         "all sourced" if not unsourced
-        else "{} NOT sourced — --send is refused".format(len(unsourced))))
+        else "{} still $0 — will send anyway (matches the VA)".format(len(unsourced))))
 
     if not (do_send or preview):
         print("\nDRY RUN — nothing posted, nothing emailed. "
@@ -379,18 +379,18 @@ def send(*, tab=None, do_send=False, preview=False, force=False, out_dir=None):
         return {"published": False, "dry_run": True, "week": week_label,
                 "png": str(png_path), "to": to_addrs, "missing": missing,
                 "unsourced": unsourced}
-    # A missing component makes every total on the page WRONG, not merely
-    # incomplete, so the org never sees it by accident. --preview still goes out:
-    # looking at a broken one is how it gets fixed.
-    if unsourced and do_send and not force:
-        print("\nREFUSING TO SEND — {} captain/special row(s) unsourced for {}. "
-              "Fill them (or wait for the source to come back), then re-run. "
-              "--force publishes anyway.".format(len(unsourced), week_label))
-        return {"published": False, "reason": "captain/special unsourced",
-                "week": week_label, "unsourced": unsourced}
-    if unsourced and do_send and force:
-        print("\n⚠ --force: publishing with {} unsourced captain/special "
-              "row(s).".format(len(unsourced)))
+    # Missing captain/special rows are a WARNING, not a blocker. The VA sends the
+    # bulletin on schedule whether or not the captain bonuses have posted yet —
+    # the numbers fill in over the following days — and Megan's rule (2026-07-24)
+    # is to match her: "if the VA sent it out without the info then we would also
+    # send it." Every send is still Megan-triggered (dry-run default), so this is
+    # a heads-up, not a gate. It's the same $0-captain state she reviewed and
+    # signed off on.
+    if unsourced and do_send:
+        print("\n⚠ publishing with {} captain/special row(s) still $0 (not yet "
+              "posted): {}. Matches the VA, who sends on schedule regardless; "
+              "the numbers update as they land.".format(
+                  len(unsourced), ", ".join(unsourced)))
     if missing and do_send:
         raise SystemExit("refusing to send: contact group(s) missing: {}. Fix the "
                          "group name(s) in alphaletereporting@gmail.com's contacts "
