@@ -103,6 +103,34 @@ OFFICES = {
 }
 
 
+def _merge_onboarded():
+    """Add B2B offices onboarded via office_onboarding (the same committed JSON
+    b2b_metrics.offices merges). owner is the UPPER bare name the D2D parser
+    matches; verify a new office with `--probe-owners` before trusting it.
+    STRICT NO-OP when the file is absent."""
+    import json as _json
+    from pathlib import Path as _Path
+    f = _Path(__file__).resolve().parents[1] / "b2b_metrics" / "onboarded_offices.json"
+    if not f.exists():
+        return
+    try:
+        rows = _json.loads(f.read_text())
+    except Exception:
+        return
+    for r in rows:
+        key = (r.get("key") or "").strip()
+        if not key or key in OFFICES:
+            continue
+        owner = (r.get("owner") or "").strip().upper()
+        sid = r.get("sheet_id") or ""
+        if owner and sid:
+            OFFICES[key] = {"label": r.get("label") or key.title(),
+                            "owner": owner, "sheet_id": sid}
+
+
+_merge_onboarded()
+
+
 def _pull_and_adapt(page, tag: str, spec: dict, log=print) -> Path:
     """Crosstab-download one view and rename its header to D2D naming.
 

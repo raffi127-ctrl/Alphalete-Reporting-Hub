@@ -105,6 +105,11 @@ class Office:
     # sales): the owner name is added to the Metrics header so each gets its own
     # distinguishable thread. Empty = single-office channel, no label (default).
     header_label: str = ""
+    # Onboarding extras (only ever set on offices added via office_onboarding —
+    # the hardcoded rows above leave them default). website auto-brands Pay
+    # Structure; business_name is the office's own brand for displays.
+    website: str = ""
+    business_name: str = ""
 
     @property
     def views(self) -> dict:
@@ -191,6 +196,66 @@ OFFICES: dict[str, Office] = {
         sheet_id="1YMBUk-q4Jqx_TVFJB0vbtwK_7sIEDbEAMgsIZc-gmXc",
     ),
 }
+
+# ---------------------------------------------------------------------------
+# Offices onboarded via the Metrics Onboarding tool (office_onboarding). They
+# live in a COMMITTED sibling JSON that office_onboarding.apply regenerates from
+# the 'Office Onboarding' tab, so a new D2D office is data — no row hand-added
+# here, and the Hub card + Pay Structure (both read OFFICES) pick it up for free.
+#
+# STRICT NO-OP when the file is absent (today's state): the merge only runs if
+# onboarded_offices.json exists and parses, and it never overrides a hardcoded
+# row. A local file read at import mirrors branding.json — no network.
+# ---------------------------------------------------------------------------
+import json as _json                              # noqa: E402
+from pathlib import Path as _Path                 # noqa: E402
+
+_ONBOARDED_FILE = _Path(__file__).with_name("onboarded_offices.json")
+
+# map an onboarded per_office_views {report_key: url} onto the Office view fields
+_VIEW_FIELD = {"ongoing_cancel": "view_ongoing_cancel", "churn_ni": "view_churn_ni",
+               "churn_wl": "view_churn_wl", "abp": "view_abp"}
+
+# Per-office thresholds/notes captured at onboarding, keyed by office key. Not
+# consumed by the runner yet (defaults hold); exposed for displays + later use.
+ONBOARDED_EXTRA: dict = {}
+
+
+def _merge_onboarded() -> None:
+    if not _ONBOARDED_FILE.exists():
+        return
+    try:
+        rows = _json.loads(_ONBOARDED_FILE.read_text())
+    except Exception:
+        return
+    for r in rows:
+        key = (r.get("key") or "").strip()
+        # only D2D rows belong here; never clobber a hardcoded office
+        if not key or key in OFFICES or r.get("machine", "Lucy 1") == "__b2b__":
+            continue
+        kw = dict(
+            key=key, report_id=r.get("report_id") or f"{key}_metrics",
+            label=r.get("label") or f"{key.title()}'s Local Office",
+            owner=r.get("owner", ""), channel_id=r.get("channel_id", ""),
+            channel_name=r.get("channel_name", ""), sheet_id=r.get("sheet_id", ""),
+            knocks_office=r.get("knocks_office", "") or r.get("owner", ""),
+            header_label=r.get("header_label", ""),
+            website=r.get("website", ""), business_name=r.get("business_name", ""))
+        for rk, url in (r.get("per_office_views") or {}).items():
+            fld = _VIEW_FIELD.get(rk)
+            if fld and url:
+                kw[fld] = url
+        try:
+            OFFICES[key] = Office(**kw)
+            ONBOARDED_EXTRA[key] = {"thresholds": r.get("thresholds", {}),
+                                    "notes": r.get("notes", ""),
+                                    "enrolled_reports": r.get("enrolled_reports", [])}
+        except Exception:
+            # a malformed row must never break import for the live offices
+            continue
+
+
+_merge_onboarded()
 
 ORDER = list(OFFICES)          # stable order for listing
 

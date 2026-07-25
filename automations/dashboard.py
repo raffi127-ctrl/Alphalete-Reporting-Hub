@@ -11092,6 +11092,22 @@ else:  # st.session_state.view == "user"
                         use_container_width=True)
                     st.caption("Add passwords · see who's filled in")
                     st.markdown("Admin code: **A\\*\\*\\*\\*123**")
+            # ---- Metrics Onboarding (Office Operations) — Megan/Eve add a new
+            # office to daily metrics posting; writes to the Office Onboarding tab
+            # (the config store the reports + Hub read from). Same pattern as the
+            # Pay Structure block above.
+            st.markdown("### 🏢 Metrics Onboarding")
+            with st.container(border=True):
+                st.markdown(
+                    "**Add an office to metrics posting** — fill it in once; it "
+                    "writes the office's config to the Office Onboarding tab and "
+                    "shows which machine (Lucy 1/2) runs it + the tabs its sheet "
+                    "needs.")
+                _safe_link_button(
+                    "🏢 Open onboarding form",
+                    "https://alphaletemetricsonboarding.streamlit.app",
+                    use_container_width=True)
+                st.caption("For Megan & Eve · access-code gated")
             st.markdown("---")
 
         # ---- Personal portfolio: projects this user has claimed / shipped ----

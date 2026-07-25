@@ -263,6 +263,62 @@ OFFICES: dict = {
     ),
 }
 
+# ---------------------------------------------------------------------------
+# B2B offices onboarded via the Metrics Onboarding tool (office_onboarding).
+# Same pattern as office_metrics.offices: a committed sibling JSON that
+# office_onboarding.apply regenerates from the 'Office Onboarding' tab. A normal
+# B2B office is owner + channel + sheet (+ owner_office) and URL-slices the shared
+# TEAM views — no view_overrides. STRICT NO-OP when the file is absent.
+# ---------------------------------------------------------------------------
+import json as _json                              # noqa: E402
+from pathlib import Path as _Path                 # noqa: E402
+
+_ONBOARDED_FILE = _Path(__file__).with_name("onboarded_offices.json")
+
+# onboarding report key -> B2B view_key it overrides (only the cleanly-mapped
+# ones; a single churn URL can't drive the 3 product views, so churn/order-log
+# overrides are left for a manual view_overrides edit and flagged in EXTRA).
+_B2B_VIEW_FIELD = {"b2b_sales": "sales_metrics", "b2b_activation": "activation_rate"}
+
+ONBOARDED_EXTRA: dict = {}
+
+
+def _merge_onboarded() -> None:
+    if not _ONBOARDED_FILE.exists():
+        return
+    try:
+        rows = _json.loads(_ONBOARDED_FILE.read_text())
+    except Exception:
+        return
+    for r in rows:
+        key = (r.get("key") or "").strip()
+        if not key or key in OFFICES:
+            continue
+        pov = r.get("per_office_views") or {}
+        overrides, unmapped = {}, []
+        for rk, url in pov.items():
+            fld = _B2B_VIEW_FIELD.get(rk)
+            if fld and url:
+                overrides[fld] = url
+            elif url:
+                unmapped.append(rk)
+        try:
+            OFFICES[key] = B2BOffice(
+                key=key, label=r.get("label") or f"{key.title()}'s B2B Office",
+                owner=r.get("owner", ""), channel_id=r.get("channel_id", ""),
+                channel_name=r.get("channel_name", ""), sheet_id=r.get("sheet_id", ""),
+                owner_office=r.get("owner_office", ""),
+                view_overrides=overrides)
+            ex = {"thresholds": r.get("thresholds", {}), "notes": r.get("notes", "")}
+            if unmapped:
+                ex["_unmapped_views"] = unmapped   # need a manual view_overrides edit
+            ONBOARDED_EXTRA[key] = ex
+        except Exception:
+            continue
+
+
+_merge_onboarded()
+
 ORDER = list(OFFICES)
 
 

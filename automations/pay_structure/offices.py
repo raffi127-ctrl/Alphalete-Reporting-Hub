@@ -148,9 +148,15 @@ def _build_registry() -> "Dict[str, PayOffice]":
         # AppStream/ownerville alias (knocks_office) — that's how Hammad/Kash/
         # Salik resolve, since their directory name differs from the roster name.
         company = _biz(key, _company_name([o.owner, getattr(o, "knocks_office", "")]))
+        # Offices onboarded via office_onboarding carry their own website +
+        # business_name on the Office row; use those when the committed WEBSITES /
+        # branding maps don't have the key yet (so a newly-onboarded office is
+        # branded without a second hand-edit here).
+        website = WEBSITES.get(key) or getattr(o, "website", "") or ""
+        business_name = company or getattr(o, "business_name", "")
         offices.setdefault(key, PayOffice(
-            key=key, owner=o.owner, label=o.label, business_name=company,
-            website=WEBSITES.get(key, "")))
+            key=key, owner=o.owner, label=o.label, business_name=business_name,
+            website=website))
 
     # B2B offices — a different report family (Carlos's BOX/AT&T B2B logs, Atef's
     # Domin8), so they aren't in office_metrics. Pinned by AppStream office id
