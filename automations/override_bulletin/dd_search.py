@@ -84,34 +84,45 @@ def search(page=None, verbose=True):
                and len(s.split()) <= 4 and "$" not in s:
                 all_names.add(s)
 
-    found = {}                       # target display name -> [(week, amount, desc)]
+    header = rows[0] if rows else []
+    found = {}                       # target name -> list of matching raw rows
     for r in rows[1:]:
         hit = next((keys[P._norm_name(c)] for c in r
                     if P._norm_name(c) in keys), None)
-        if not hit:
-            continue
-        amt = max((P._num_locale(c) or 0) for c in r)
-        desc = next((str(c) for c in r if _WK_RE.search(str(c))), "")
-        m = _WK_RE.search(desc)
-        wk = f"{int(m.group(1))}.{int(m.group(2))}.{m.group(3)[-2:]}" if m else "(no week)"
-        found.setdefault(hit, []).append((wk, amt, desc.strip()[:80]))
+        if hit:
+            found.setdefault(hit, []).append(r)
 
-    out = [["TARGET", "IN TABLEAU?", "WEEK", "AMOUNT", "DESCRIPTION"]]
+    # First: which of the four are present at all — the actual question.
+    out = [["TARGET", "IN TABLEAU?", "MATCHING ROWS"]]
     for name in TARGETS:
         hits = found.get(name)
-        if not hits:
-            # Not in the crosstab under this name or its alias — check whether a
-            # near-spelling exists among the owner cells, so a miss is not just a
-            # spelling gap masquerading as "genuinely absent".
+        if hits:
+            out.append([name, "YES", str(len(hits))])
+        else:
             near = sorted(n for n in all_names
                           if name.split()[0].lower() in n.lower()
                           or name.split()[-1].lower() in n.lower())
-            out.append([name, "NO — not found",
-                        "", "", ("near spellings: " + ", ".join(near[:6])) if near
-                        else "no similar name in the crosstab either"])
-        else:
-            for wk, amt, desc in sorted(hits):
-                out.append([name, "YES", wk, f"${amt:,.2f}", desc])
+            out.append([name, "NO", ("near: " + ", ".join(near[:6])) if near
+                        else "no similar name in the crosstab"])
+
+    # Then the STRUCTURE, so the amount+week columns can be identified rather than
+    # guessed: the header row, and up to 6 full raw rows for the first name that
+    # matched (every cell, so the right column is visible instead of the max-cell
+    # heuristic that grabbed ID numbers). Column index prefixes each cell.
+    out.append([""])
+    out.append(["--- HEADER (col index : label) ---"])
+    for i, h in enumerate(header):
+        if (h or "").strip():
+            out.append([f"col {i}", str(h)[:80]])
+    sample_name = next((n for n in TARGETS if found.get(n)), None)
+    if sample_name:
+        out.append([""])
+        out.append([f"--- RAW ROWS for {sample_name} (first 6, all cells) ---"])
+        for r in found[sample_name][:6]:
+            for i, cell in enumerate(r):
+                if (cell or "").strip():
+                    out.append([f"col {i}", str(cell)[:80]])
+            out.append(["— end row —"])
     if verbose:
         for r in out:
             print(" | ".join(str(c)[:70] for c in r))
