@@ -4416,7 +4416,7 @@ AUTOMATED_REPORTS = [
     # ── ApplicantStream → Applicant Tracker (Francia; consolidated) ───────
     # ONE module (automations.applicant_tracker.run) drives all four of
     # Francia's ApplicantStream reports as two phases that share ONE login:
-    #   morning (reads yesterday) = Call List + 2R Status   → rides the 4am run
+    #   morning (reads yesterday) = Call List + 2R Status   → own ~6:45am timer
     #   evening (reads today)     = 2R Retention + First-Day → 8pm launchd
     # Pill: orange after the morning pass, green after the evening pass
     # (daily_runs: 2). First-Day (col R) stays DRY until verified (FIRST_DAY_LIVE).
@@ -4432,7 +4432,7 @@ AUTOMATED_REPORTS = [
             "WHAT IT DOES\n"
             "One ApplicantStream login syncs the whole **Applicant Tracker** in "
             "two phases (17 offices each):\n\n"
-            "🌅 **MORNING** — reads **yesterday**, rides the **4am run**:\n"
+            "🌅 **MORNING** — reads **yesterday**, runs **~6:45am** (its own timer):\n"
             "**•** **Export Call List** → Call List tab (owner **A**, data "
             "**B–H**). Appends; no de-dupe.\n"
             "**•** **Update 2R Status** → 2R tab, on rows already there: Offered "
@@ -4461,8 +4461,8 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "weekly",
             "weekdays": [0, 1, 2, 3, 4, 5],
-            "time": "4:00 AM",
-            "time_label": "4 AM + 8 PM CST · Mon–Sat",
+            "time": "6:45 AM",
+            "time_label": "6:45 AM + 8 PM CST · Mon–Sat",
             "estimated_minutes": 12,
         },
         "checklist": [],
