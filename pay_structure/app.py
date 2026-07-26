@@ -366,7 +366,7 @@ def editor_view(office) -> None:
         # ICD payout + editable rep pay per level + a single compact "You keep %"
         # column (keep% at each level, L1·L2·L3). Recomputes each rerun from the
         # session-persisted rates, so it updates right after a pay cell is committed.
-        _KEEPCOL = "You keep %"
+        _KEEPCOL = "You keep (L1 / L2 / L3)"
         data = []
         for st_ in types:
             pay = pf.get(st_)
@@ -376,8 +376,9 @@ def editor_view(office) -> None:
             for lvl in grid.levels:
                 rep = grid.rate(ck, st_, lvl)
                 row[lvl] = rep
-                keeps.append("{}".format(round((pay - rep) / pay * 100)) if pay else "—")
-            row[_KEEPCOL] = " · ".join(keeps) if pay else "—"
+                keeps.append("${:,.0f} ({}%)".format(pay - rep, round((pay - rep) / pay * 100))
+                             if pay else "—")
+            row[_KEEPCOL] = " / ".join(keeps) if pay else "—"
             data.append(row)
         cols = [_SALE_COL, "ICD payout"] + list(grid.levels) + [_KEEPCOL]
         df = pd.DataFrame(data, columns=cols)
