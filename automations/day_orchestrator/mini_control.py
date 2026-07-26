@@ -35,6 +35,8 @@ Actions:
                         set_applicant_service_account.
   restart_holder        relaunch the ownerville session-holder LaunchAgent
   reseed_appstream      open the AppStream login (a human clears Cloudflare)
+  sheets_login [check]  the Sales Board screenshot profile: 'check' probes it
+                        headlessly; bare opens the Google login for a human
 
 CLI:
   python -m automations.day_orchestrator.mini_control --loop      # on the mini
@@ -91,7 +93,8 @@ DAILY_AUTORUN_CAP = 100
 PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_holder",
                     "pip_install", "playwright_install", "set_applicant_service_account",
                     "applicant_key", "watch_test", "diag", "set_sleep",
-                    "set_slack_token", "set_gbp_token", "set_gmail_token"}
+                    "set_slack_token", "set_gbp_token", "set_gmail_token",
+                    "sheets_login"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
@@ -536,6 +539,38 @@ def _action_reseed_appstream(args: str) -> tuple[bool, str]:
            "--appstream-login"]
     ok, res = _run_cmd(cmd, timeout_s=12 * 60)
     return ok, res + " (needs a human at the Cloudflare check on the mini)"
+
+
+def _action_sheets_login(args: str) -> tuple[bool, str]:
+    """The Sales Board SCREENSHOT profile — check it, or open its Google login.
+
+      sheets_login check   headless probe: can the saved profile open the sheet?
+      sheets_login         open the headed login so a HUMAN finishes the Google
+                           sign-in (2FA) on the mini's screen
+
+    Why: captainship_drafts §1 (Product Summary + Captainship Units) is a real
+    browser screenshot of the Sales Board, driven by a dedicated Chrome profile
+    logged in as alphaletereporting@. On 2026-07-25 that profile was signed out
+    and 9 of 12 captains lost §1. It can't be fixed by shipping a file the way
+    set_gmail_token does — Chrome seals its cookies with an OS-level key
+    (macOS Keychain / Windows DPAPI), so a profile copied off another machine is
+    unreadable. Same shape as reseed_appstream: this only launches the
+    legitimate human-cleared flow.
+
+    `check` is read-only and safe to run any time; prefer it before queueing the
+    interactive form, which ties up the poller until someone acts."""
+    mode = (args or "").strip().lower() or "login"
+    if mode not in ("login", "check"):
+        return False, ("sheets_login takes 'check' (headless probe) or nothing "
+                       "(open the login for a human)")
+    cmd = [sys.executable, "-m", "automations.captainship_drafts.sheet_shot", mode]
+    ok, res = _run_cmd(cmd, timeout_s=(3 * 60 if mode == "check" else 8 * 60),
+                       log_name=f"sheets_login-{mode}.log")
+    if mode == "check":
+        return ok, res + (" — profile is signed in" if ok
+                          else " — SIGNED OUT: queue `sheets_login` and finish "
+                               "the Google sign-in on the mini's screen")
+    return ok, res + " (needs a human to finish the Google sign-in on the mini)"
 
 
 def _action_ping(args: str) -> tuple[bool, str]:
@@ -1534,6 +1569,7 @@ ACTIONS = {
     "install_bg_check_watchdog": _action_install_bg_check_watchdog,
     "run_bg_check_sync": _action_run_bg_check_sync,
     "reseed_appstream": _action_reseed_appstream,
+    "sheets_login": _action_sheets_login,
     "watch_test": _action_watch_test,
     "diag": _action_diag,
     "set_sleep": _action_set_sleep,
