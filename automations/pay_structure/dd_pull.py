@@ -72,17 +72,23 @@ def _is_autopay(r) -> bool:
     return "auto bill pay" in ot and "no auto" not in ot
 
 
+def _mode(vals: "List[float]") -> float:
+    return collections.Counter(round(v, 2) for v in vals).most_common(1)[0][0]
+
+
 def gross_revenue_by_office(rows) -> "Dict[str, Dict[str, dict]]":
-    """{owner: {'CATEGORY | Description': {'base': mode$, 'n': deals}}} — the MODE
-    of Total $ to ICD per (owner, category, description), over AUTO-BILL-PAY deals
-    only (each crosstab row is one deal). `rows` = list of dicts. Auto-pay + the
-    per-description split isolate the base tier; the caller applies MIN_SAMPLE so a
-    one-off deal can't set a product's base (the old un-filtered MODE picked $115
-    for a 1-deal outlier when the real 151-deal base was $298)."""
-    acc: Dict[tuple, List[float]] = collections.defaultdict(list)
+    """{owner: {'CATEGORY | Description': {'base': mode$, 'n': autopay_deals}}}.
+    base = the MODE of Total $ to ICD per (owner, category, description). PREFER
+    auto-bill-pay deals (Raf: assume auto-pay 100%), but for a product the office
+    sold ONLY no-auto-pay, fall back to those deals so every product it sold still
+    gets a payout. `n` = the auto-pay count only, so main_products' MIN_SAMPLE
+    guard still keeps the simulator's base tier stable (a 1-deal outlier can't set
+    Internet 1 GIG / New Line)."""
+    ap: Dict[tuple, List[float]] = collections.defaultdict(list)
+    al: Dict[tuple, List[float]] = collections.defaultdict(list)
     for r in rows:
         cat = str(r.get(COL_CATEGORY, "") or "").strip().upper()
-        if cat not in PRODUCT_CATEGORIES or not _is_autopay(r):
+        if cat not in PRODUCT_CATEGORIES:
             continue
         owner = str(r.get(COL_OWNER, "") or "").strip()
         desc = str(r.get(COL_DESCRIPTION, "") or "").strip()
@@ -90,36 +96,40 @@ def gross_revenue_by_office(rows) -> "Dict[str, Dict[str, dict]]":
         if (not owner or owner.lower() in ("nan", "null")
                 or "total" in owner.lower() or not desc or tot is None or tot <= 0):
             continue
-        acc[(owner, cat, desc)].append(tot)
+        al[(owner, cat, desc)].append(tot)
+        if _is_autopay(r):
+            ap[(owner, cat, desc)].append(tot)
     out: Dict[str, Dict[str, dict]] = {}
-    for (owner, cat, desc), vals in acc.items():
-        base = collections.Counter(round(v, 2) for v in vals).most_common(1)[0][0]
+    for key, allv in al.items():
+        owner, cat, desc = key
+        apv = ap.get(key) or []
         out.setdefault(owner, {})["{} | {}".format(cat, desc)] = {
-            "base": base, "n": len(vals)}
+            "base": _mode(apv or allv), "n": len(apv)}
     return out
 
 
 def org_gross_revenue(rows) -> "Dict[str, float]":
-    """{'CATEGORY | Description': base} over ALL owners' AUTO-PAY deals — the
-    org-wide reference payout per product, so the editor can show an ICD payout for
-    a product an office hasn't personally sold this DD period (office's own value
-    wins when present)."""
-    acc: Dict[tuple, List[float]] = collections.defaultdict(list)
+    """{'CATEGORY | Description': base} over ALL owners — the org-wide reference
+    payout per product, so the editor shows an ICD payout for a product an office
+    hasn't personally sold (office's own value wins when present). PREFER auto-pay
+    deals; fall back to any deal so every product that appears in the DD at all
+    gets a reference (NO sample floor here — this is the org-wide backstop)."""
+    ap: Dict[tuple, List[float]] = collections.defaultdict(list)
+    al: Dict[tuple, List[float]] = collections.defaultdict(list)
     for r in rows:
         cat = str(r.get(COL_CATEGORY, "") or "").strip().upper()
-        if cat not in PRODUCT_CATEGORIES or not _is_autopay(r):
+        if cat not in PRODUCT_CATEGORIES:
             continue
         desc = str(r.get(COL_DESCRIPTION, "") or "").strip()
         tot = _num(r.get(COL_TOTAL))
         if not desc or tot is None or tot <= 0:
             continue
-        acc[(cat, desc)].append(tot)
+        al[(cat, desc)].append(tot)
+        if _is_autopay(r):
+            ap[(cat, desc)].append(tot)
     out: Dict[str, float] = {}
-    for (cat, desc), vals in acc.items():
-        if len(vals) < MIN_SAMPLE:
-            continue
-        out["{} | {}".format(cat, desc)] = collections.Counter(
-            round(v, 2) for v in vals).most_common(1)[0][0]
+    for key, allv in al.items():
+        out["{} | {}".format(*key)] = _mode(ap.get(key) or allv)
     return out
 
 
@@ -138,13 +148,7 @@ def energy_products(rows) -> "Dict[str, float]":
         if not desc or tot is None or tot <= 0:
             continue
         acc[desc].append(tot)
-    out: Dict[str, float] = {}
-    for desc, vals in acc.items():
-        if len(vals) < MIN_SAMPLE:
-            continue
-        out["ELE | {}".format(desc)] = collections.Counter(
-            round(v, 2) for v in vals).most_common(1)[0][0]
-    return out
+    return {"ELE | {}".format(desc): _mode(vals) for desc, vals in acc.items()}
 
 
 def main_products(office_gross: "Dict[str, dict]") -> "Dict[str, float]":
