@@ -6,9 +6,12 @@ Golden rules (runbook Part 5/6/9), enforced here:
     touched. The control box (A4:D7 beyond B5:B7), the F4:L12 tiers chart,
     the C3 dropdown, and the R99+ customer-notes lookup table are never
     written.
-  * Each tab's helper capacity comes from ITS OWN C5 SUMIF formula
-    ($AD$2:$AD$25 on Carlos, $AD$2:$AD$40 on Atef). If a day's disconnect
-    list ever outgrows it we raise instead of silently truncating.
+  * Each tab's helper capacity comes from ITS OWN A16 FILTER / C5 SUMIF
+    ranges (derived, never hardcoded). If a day's disconnect list outgrows
+    the current range, update_churn_tab GROWS the A16 + C5:C7 ranges
+    additively (never rewriting the formula logic) to the actual count plus
+    headroom — and keeps every tab at >= MIN_HELPER_ROWS — so it neither
+    truncates nor crashes. See _grow_helper_formulas.
   * Activations: notes (col P) are preserved by SPM before the overwrite,
     the basic filter is reset to show all rows (a rep-filtered view would
     scramble a paste) and re-spanned to the new data, and everything is
@@ -86,6 +89,15 @@ H_NOTES_F, H_KEY, H_REMAINING = 11, 12, 13
 H_WIDTH = 14
 # Gap between the helper block and the per-rep list.
 REP_GAP = 2
+# Keep every churn tab's helper formulas covering at least this many rows.
+# The block shipped at 24 rows; on 2026-07-26 Atef's disconnect list hit 26
+# and the write crashed rather than truncate. update_churn_tab now grows the
+# ranges additively to this floor (plus per-day headroom) so growth past the
+# old ceiling never crashes again. 40 is far below the customer-notes lookup
+# table at row 100, so extending here can never collide with it.
+MIN_HELPER_ROWS = 40
+# Per-day slack kept above the actual disconnect count when a tab has to grow.
+HELPER_HEADROOM = 14
 
 
 def _col_idx(letter: str) -> int:
@@ -615,17 +627,74 @@ def update_activation_rates(ws: gspread.Worksheet, office: dict, reps: dict,
         f"{len(ranked)} reps with 0-30 data listed")
 
 
+# Only the trailing "$<col>$<row>" of an A1 range — the range END. A range
+# START (e.g. $P$2) is never preceded by ':' so it's left at row 2; we only
+# grow the BOTTOM of each range. Two-letter columns and 1-2 digit rows cover
+# the whole helper block (P:AC, rows 2-40).
+_RANGE_END = re.compile(r":\$([A-Z]{1,2})\$(\d+)")
+
+
+def _grow_helper_formulas(ws: gspread.Worksheet, old_cap: int, new_cap: int,
+                          f0: int, log=print) -> None:
+    """Extend the helper-block ranges in A16 (FILTER) and C5:C7 (SUMIF) from
+    row `old_cap` down to `new_cap`, PURELY ADDITIVELY.
+
+    A range is grown ONLY when its END row is exactly `old_cap` AND its END
+    column sits inside the 14-wide helper block [f0 .. f0+H_WIDTH-1]. Every
+    other token is left byte-for-byte identical — the customer-notes VLOOKUP
+    ($P$100:$Q$500, ends at row 500), the $B$3 filter cell, the A5/A6/A7
+    criteria. The formula LOGIC is never rewritten; only the bottom row of the
+    block's own ranges moves down. Idempotent: a cell already long enough (no
+    range ending at old_cap) is not rewritten.
+    """
+    lo, hi = f0, f0 + H_WIDTH - 1
+
+    def _grow(formula: str) -> str:
+        def repl(m):
+            col_i = _col_idx(m.group(1))
+            if int(m.group(2)) == old_cap and lo <= col_i <= hi:
+                return f":${m.group(1)}${new_cap}"
+            return m.group(0)
+        return _RANGE_END.sub(repl, formula)
+
+    updates = []
+    for cell in ("A16", "C5", "C6", "C7"):
+        cur = _retry(lambda c=cell: ws.get(c, value_render_option="FORMULA"))
+        old = str(cur[0][0]) if cur and cur[0] else ""
+        new = _grow(old)
+        if new != old:
+            updates.append({"range": cell, "values": [[new]]})
+    if updates:
+        _retry(lambda: ws.batch_update(updates,
+                                       value_input_option="USER_ENTERED"))
+    log(f"  ✓ {ws.title}: helper formulas grown to row {new_cap} "
+        f"({len(updates)} cell(s) extended: "
+        f"{', '.join(u['range'] for u in updates) or 'none'})")
+
+
 def update_churn_tab(ws: gspread.Worksheet, bases: dict,
                      helper_rows: list[list], log=print) -> None:
     b = helper_bounds(ws)
     f0, cap = b["f0"], b["cap"]
-    first, last = _colletter(f0), _colletter(f0 + H_WIDTH - 1)
     n = len(helper_rows)
-    if n > cap - 1:
-        raise RuntimeError(
-            f"{ws.title}: {n} disconnect rows but the tab's formulas only "
-            f"cover {first}2:{last}{cap} ({cap - 1} rows). Extend the C5:C7 "
-            "SUMIF and A16 FILTER ranges on the sheet, then re-run.")
+    # Grow the block additively rather than crash (or truncate): keep it
+    # covering today's rows plus headroom, and never below the standing floor.
+    # A range whose end already reaches `need` is a no-op, so every daily run
+    # quietly keeps ALL churn tabs at >= MIN_HELPER_ROWS.
+    need = max(n + HELPER_HEADROOM, MIN_HELPER_ROWS)
+    if need > cap - 1:
+        new_cap = need + 1
+        # Safety rail: the customer-notes lookup table starts at row 100, so
+        # the block must never reach it. 40-ish rows is nowhere near — bail
+        # loudly if a day ever asks for something absurd rather than clobber it.
+        if new_cap >= 100:
+            raise RuntimeError(
+                f"{ws.title}: {n} disconnect rows would push the helper block "
+                f"to row {new_cap}, colliding with the notes lookup at row 100 "
+                "— refusing to auto-extend. Investigate the pull.")
+        _grow_helper_formulas(ws, cap, new_cap, f0, log=log)
+        cap = new_cap
+    first, last = _colletter(f0), _colletter(f0 + H_WIDTH - 1)
 
     cols = {"rem": _colletter(f0 + H_REMAINING), "key": _colletter(f0 + H_KEY),
             "cust": _colletter(f0 + H_CUSTOMER),
