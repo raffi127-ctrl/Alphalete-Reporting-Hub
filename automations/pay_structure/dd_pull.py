@@ -114,8 +114,15 @@ def main_products(office_gross: "Dict[str, dict]") -> "Dict[str, float]":
               and ("1000" in k or "1 gig" in k.lower()))
     if ig is not None:
         out["Internet 1 GIG"] = ig
-    nl = best(lambda k: k.startswith("WIRELESS | ")
-              and "new line" in k.lower() and "port" not in k.lower())
+    # Raf's model "New Line" = "New Ported Line" (his gross_profit.py note) = the DD
+    # **Port Line** (ported number, $198/35 deals for raf) — the dominant, higher-
+    # value wireless add — NOT the DD 'New Line' (brand-new number, ~$103/8 deals).
+    # Prefer the ported line; fall back to a genuine 'New Line' desc only if an
+    # office has no qualifying Port Line sample.
+    nl = best(lambda k: k.startswith("WIRELESS | ") and "port line" in k.lower())
+    if nl is None:
+        nl = best(lambda k: k.startswith("WIRELESS | ")
+                  and "new line" in k.lower() and "port" not in k.lower())
     if nl is not None:
         out["New Line"] = nl
     return out
