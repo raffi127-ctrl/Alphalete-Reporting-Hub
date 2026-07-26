@@ -360,8 +360,15 @@ def editor_view(office) -> None:
         st.markdown(f"<div style='font-size:1.15rem;font-weight:700;"
                     f"color:{accent};margin-top:8px'>{camp.label}</div>",
                     unsafe_allow_html=True)
-        types = _campaign_types(grid, ck, camp)
         pf = pay_map.get(ck, {})
+        types = _campaign_types(grid, ck, camp)
+        # Only list products that have a real DD payout (or that this office has
+        # already priced) — hides catalog leftovers with no payout (unsold speeds,
+        # Voice, …). Skip the filter if we have no payout data yet (don't blank the
+        # table). A hidden product reappears automatically once the DD prices it.
+        if pf:
+            types = [t for t in types
+                     if pf.get(t) or any(grid.rate(ck, t, lvl) for lvl in grid.levels)]
         # ONE combined table (wide layout gives the room): Sale type + ICD payout,
         # then each editable Level column immediately followed by its own "keeps"
         # column ($ · %). Keep columns recompute each rerun from the session-

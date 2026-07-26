@@ -89,7 +89,13 @@ def _att_residential_payout(sale_type: str, dd: "Dict[tuple, float]") -> "Option
         return dd.get(("WIRELESS", "port line")) or dd.get(("WIRELESS", "new line"))
     if pt == "AIR":
         return dd.get(("AIR", "air"))       # residential AIR = $143 (one DD line)
-    # VIDEO / VOICE — no clean DD product line yet
+    if pt == "VIDEO":
+        # DD category 'DIRECTV STREAM', desc = the tier (CHOICE/ULTIMATE/…).
+        p = (pkg or "").upper().replace(" ", "")
+        for tier in ("OPTIMOMAS", "ENTERTAINMENT", "ULTIMATE", "PREMIER", "CHOICE"):
+            if tier in p:
+                return dd.get(("DIRECTV STREAM", tier.lower()))
+    # VOICE — no DD line (not sold); hidden by the editor's no-payout filter
     return None
 
 
