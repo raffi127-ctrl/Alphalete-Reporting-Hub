@@ -114,12 +114,25 @@ def _b2b_att_payout(sale_type: str, dd: "Dict[tuple, float]") -> "Optional[float
     return None
 
 
+def _box_payout(sale_type: str, dd: "Dict[tuple, float]") -> "Optional[float]":
+    """BOX energy (B2B-BOX-Energy) — flat per-enrollment payout (~$275) for every
+    BF tier×term sale type; the DD's 'Energy Enrollment' line doesn't distinguish
+    tier/term, so all share the campaign's dominant value."""
+    return dd.get(("ELE", "b2b-box-energy"))
+
+
+def _base_payout(sale_type: str, dd: "Dict[tuple, float]") -> "Optional[float]":
+    """BASE energy (RES-BASE POWER-Energy) — flat $200 per enrollment for every
+    BF tier×term sale type (the DD value is a clean single $200)."""
+    return dd.get(("ELE", "res-base power-energy"))
+
+
 # campaign key -> mapper(sale_type, dd) -> base or None
 MAPPERS = {
     "att_residential": _att_residential_payout,
     "b2b_att": _b2b_att_payout,
-    # "box"/"base" (energy): the DD ELE lines aren't auto-bill-pay, so the pull's
-    # auto-pay filter drops them — energy payout source still TBD (see dd_pull).
+    "box": _box_payout,
+    "base": _base_payout,
 }
 
 
