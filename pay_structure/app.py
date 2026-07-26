@@ -179,6 +179,54 @@ def _campaign_types(grid: store.Grid, ck: str, camp) -> "list":
 # --------------------------------------------------------------------------
 # The editor
 # --------------------------------------------------------------------------
+def _gross_profit_simulator(office) -> None:
+    """Raf's gross-profit model: set gross revenue + what you pay the rep on the
+    main products, an activation rate + volume, and see profit + margin %."""
+    from automations.pay_structure import gross_profit as gp
+    st.divider()
+    st.markdown("### 📊 Gross profit simulator")
+    st.caption("Model your margin on the main products. **Gross revenue** = what "
+               "SEI/AT&T pays your office per ACTIVATED sale (base tier, ABP "
+               "100%). Set what you pay the rep to see profit + margin.")
+    ctop = st.columns([2, 2])
+    pct = ctop[0].radio("How do you pay the rep?",
+                        ["$ per sale", "% of gross revenue"], horizontal=True,
+                        key=f"gp_method_{office.key}") == "% of gross revenue"
+    activation = ctop[1].slider("Office activation rate (%)", 50, 100, 85,
+                                key=f"gp_act_{office.key}") / 100.0
+
+    plans, volumes = [], {}
+    for name, default_gross in gp.MAIN_PRODUCTS.items():
+        c = st.columns([2.2, 2, 2, 1.6])
+        c[0].markdown("**{}**".format(name))
+        gross = c[1].number_input("Gross revenue (SEI pays $)",
+                                  value=float(default_gross), min_value=0.0,
+                                  step=5.0, key=f"gp_g_{office.key}_{name}")
+        payout = c[2].number_input("You pay rep ({})".format("%" if pct else "$"),
+                                   value=(50.0 if pct else round(default_gross * 0.35)),
+                                   min_value=0.0, step=(1.0 if pct else 5.0),
+                                   key=f"gp_p_{office.key}_{name}")
+        sales = c[3].number_input("# sales", value=100, min_value=0, step=10,
+                                  key=f"gp_v_{office.key}_{name}")
+        plans.append(gp.ProductPlan(name, gross, payout, pct))
+        volumes[name] = sales
+
+    res = gp.simulate(plans, volumes, activation)
+    rows = [{"Product": r["product"],
+             "Gross revenue": "${:,.0f}".format(r["revenue"]),
+             "Rep payout (+12% tax)": "${:,.0f}".format(r["rep_payout"] + r["payroll_tax"]),
+             "Profit": "${:,.0f}".format(r["profit"]),
+             "Margin %": "{}%".format(r["margin_pct"])}
+            for r in res["per_product"]]
+    if rows:
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+        m = st.columns(3)
+        m[0].metric("Total office profit", "${:,.0f}".format(res["total_profit"]))
+        m[1].metric("Blended margin", "{}%".format(res["blended_margin_pct"]))
+        m[2].metric("Paid out (cost of the rep)",
+                    "{}%".format(res["blended_cost_ratio_pct"]))
+
+
 def _render_margin(ck, camp, bucket, levels) -> None:
     """A color-coded read-only table under a campaign's rep-pay grid: the ICD
     payout (what the company pays the office) + the office's profit $ and % kept
@@ -353,6 +401,8 @@ def editor_view(office) -> None:
 
     with st.expander("How reps see this"):
         _preview(updated, checked, cat)
+
+    _gross_profit_simulator(office)
 
 
 def _preview(grid: store.Grid, checked, cat) -> None:
