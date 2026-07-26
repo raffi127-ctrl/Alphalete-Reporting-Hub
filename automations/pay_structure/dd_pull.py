@@ -368,4 +368,5 @@ if __name__ == "__main__":
         res = run(write=a.write, src=Path(a.src) if a.src else None)
         print("parsed gross revenue for {} office(s):".format(len(res)))
         for k, v in res.items():
-            print("  {:8} main: {}".format(k, v["main"]))
+            if "main" in v:                 # skip the _org reference row (no 'main')
+                print("  {:8} main: {}".format(k, v["main"]))
