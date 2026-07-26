@@ -193,7 +193,7 @@ def _gross_profit_simulator(office) -> None:
     except Exception:                    # noqa: BLE001
         gr = {}
     office_gross = gr.get("main", {})
-    act_default = int(round((gr.get("activation") or 0.85) * 100))
+    act_default = int(round((gr.get("activation") or 0.80) * 100))   # Raf: default 80%
 
     ctop = st.columns([2, 2])
     pct = ctop[0].radio("How do you pay the rep?",
@@ -252,13 +252,15 @@ def _gross_profit_simulator(office) -> None:
                    "what's left after that.")
 
 
-def _render_margin(ck, camp, bucket, levels) -> None:
-    """A color-coded read-only table under a campaign's rep-pay grid: the ICD
-    payout (what the company pays the office) + the office's profit $ and % kept
-    at each level. Only sale types with a mapped payout appear."""
+def _render_margin(pay_for_type, camp, bucket, levels) -> None:
+    """Read-only calculator under a campaign's rep-pay grid. For every sale type
+    with a known ICD payout (what the company pays the office per sale), show — at
+    each level — what's PAID OUT to the rep vs what the office KEEPS ($ and %).
+    `pay_for_type` = {sale_type: ICD payout $} from the DD pull (office value, org
+    fallback)."""
     rows = []
     for st_ in camp.sale_types:
-        pay = icd_payout.payout(ck, st_)
+        pay = pay_for_type.get(st_)
         if not pay:
             continue
         row = {_SALE_COL: st_, "ICD payout": "${:,.0f}".format(pay)}
@@ -266,9 +268,11 @@ def _render_margin(ck, camp, bucket, levels) -> None:
             rep = float((bucket.get(st_) or {}).get(lvl) or 0.0)
             profit = pay - rep
             keep = round(profit / pay * 100) if pay else 0
-            row[lvl] = "${:,.0f}  ·  {}%".format(profit, keep)
+            row[lvl] = "pay ${:,.0f} · keep ${:,.0f} ({}%)".format(rep, profit, keep)
         rows.append(row)
     if not rows:
+        st.caption("💵 ICD payout + keep/paid-out will show here once this "
+                   "campaign's products have DD payout data.")
         return
     df = pd.DataFrame(rows)
 
@@ -279,9 +283,9 @@ def _render_margin(ck, camp, bucket, levels) -> None:
             return ["background-color:#DCFCE7"] * len(col)      # green
         return [""] * len(col)
 
-    st.caption("💵 **Your margin** — amber is what the company pays your office "
-               "(ICD payout); green is your **profit $ and the % you keep** after "
-               "paying the rep at each level.")
+    st.caption("💵 **ICD payout & margin** — amber = what the company pays your "
+               "office per sale. Green = at each level, what you **pay the rep** "
+               "vs what you **keep** ($ and %).")
     st.dataframe(df.style.apply(_bg), hide_index=True, width="stretch")
 
 
@@ -369,6 +373,13 @@ def editor_view(office) -> None:
                    "enter it at each level so the estimate stays accurate. Your "
                    "payout + margin show in the colored table under each campaign.")
 
+    # Accurate ICD payout per sale type, from the DD gross-revenue pull (office's
+    # own auto-pay base, org-wide fallback). One Sheet read for the whole editor.
+    try:
+        pay_map = icd_payout.payouts_for_office(office.key, cat)
+    except Exception:      # noqa: BLE001 — never let the payout lookup break pricing
+        pay_map = {}
+
     new_rates = {}
     for ck in checked:
         camp = cat.get(ck)
@@ -397,7 +408,7 @@ def editor_view(office) -> None:
                 bucket[st_] = {lvl: float(row.get(lvl) or 0.0)
                                for lvl in grid.levels}
         new_rates[ck] = bucket
-        _render_margin(ck, camp, bucket, grid.levels)
+        _render_margin(pay_map.get(ck, {}), camp, bucket, grid.levels)
 
     # Fold this run's edits into the working grid so nothing is lost on rerun.
     # Carry logo + accent forward (they're branding, not edited here) or the page

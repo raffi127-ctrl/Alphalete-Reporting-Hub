@@ -74,9 +74,17 @@ def _att_residential_payout(sale_type: str, dd: "Dict[tuple, float]") -> "Option
     if pt in ("NEW INTERNET", "UPGRADE INTERNET"):
         return _internet_base(pkg, dd)
     if pt == "WIRELESS":
-        # every plan tier shares the ICD's New-Line base
-        return dd.get(("WIRELESS", "new line"))
-    # VIDEO / VOICE / AIR — no clean DD product line yet
+        # Raf's main wireless product = the New Ported Line = DD 'Port Line'
+        # ($198), NOT the brand-new 'New Line' ($103); every plan tier shares it.
+        pk = (pkg or "").lower()
+        if "byod" in pk:
+            return dd.get(("WIRELESS", "byod"))
+        if "new line" in pk and "port" not in pk:
+            return dd.get(("WIRELESS", "new line"))
+        return dd.get(("WIRELESS", "port line")) or dd.get(("WIRELESS", "new line"))
+    if pt == "AIR":
+        return dd.get(("AIR", (pkg or "").strip().lower()))
+    # VIDEO / VOICE — no clean DD product line yet
     return None
 
 
@@ -131,3 +139,31 @@ def payout(campaign: str, sale_type: str) -> "Optional[float]":
         if k.strip().lower() == want:
             return val
     return None
+
+
+# --- live per-office payouts (from the DD gross-revenue pull) ---------------
+def _raw_to_dd(raw: "Dict[str, float]") -> "Dict[tuple, float]":
+    """{'CATEGORY | Description': base} -> {(CATEGORY_upper, desc_lower): base}."""
+    dd: Dict[tuple, float] = {}
+    for key, base in (raw or {}).items():
+        cat, _, desc = str(key).partition(" | ")
+        try:
+            dd[(cat.strip().upper(), desc.strip().lower())] = float(base)
+        except (TypeError, ValueError):
+            continue
+    return dd
+
+
+def payouts_for_office(office_key: str, campaigns) -> "Dict[str, Dict[str, float]]":
+    """{campaign: {sale_type: ICD payout}} from the DD gross-revenue pull — the
+    office's OWN auto-pay base per product, falling back to the org-wide reference
+    for a product the office hasn't sold this period. Uses the same per-campaign
+    MAPPERS as the reference table. One Sheet read; safe to call per render."""
+    from automations.pay_structure import store as _store
+    office = _store.load_gross_revenue(office_key) or {}
+    org = _store.load_gross_revenue("_org") or {}
+    dd = _raw_to_dd(org.get("raw"))
+    dd.update(_raw_to_dd(office.get("raw")))     # office value wins over org
+    if not dd:
+        return {}
+    return build_payouts(dd, campaigns)

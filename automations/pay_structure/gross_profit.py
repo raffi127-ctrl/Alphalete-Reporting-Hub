@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 PAYROLL_TAX = 0.12
-DEFAULT_ACTIVATION = 0.85          # Raf's algorithm block default; sim uses 70-90%
+DEFAULT_ACTIVATION = 0.80          # Raf's Loom: default activation 80%
 
 # Base-tier gross revenue ("gross payout to office") for the main products, from
 # Raf's sheet. Editable starting values; the DD puller can refresh them.

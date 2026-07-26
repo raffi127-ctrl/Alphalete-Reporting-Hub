@@ -98,6 +98,30 @@ def gross_revenue_by_office(rows) -> "Dict[str, Dict[str, dict]]":
     return out
 
 
+def org_gross_revenue(rows) -> "Dict[str, float]":
+    """{'CATEGORY | Description': base} over ALL owners' AUTO-PAY deals — the
+    org-wide reference payout per product, so the editor can show an ICD payout for
+    a product an office hasn't personally sold this DD period (office's own value
+    wins when present)."""
+    acc: Dict[tuple, List[float]] = collections.defaultdict(list)
+    for r in rows:
+        cat = str(r.get(COL_CATEGORY, "") or "").strip().upper()
+        if cat not in PRODUCT_CATEGORIES or not _is_autopay(r):
+            continue
+        desc = str(r.get(COL_DESCRIPTION, "") or "").strip()
+        tot = _num(r.get(COL_TOTAL))
+        if not desc or tot is None or tot <= 0:
+            continue
+        acc[(cat, desc)].append(tot)
+    out: Dict[str, float] = {}
+    for (cat, desc), vals in acc.items():
+        if len(vals) < MIN_SAMPLE:
+            continue
+        out["{} | {}".format(cat, desc)] = collections.Counter(
+            round(v, 2) for v in vals).most_common(1)[0][0]
+    return out
+
+
 def main_products(office_gross: "Dict[str, dict]") -> "Dict[str, float]":
     """Map an office's {CATEGORY|Description: {base, n}} to the model's MAIN
     products (Internet 1 GIG = INTERNET 1000; New Line = WIRELESS New Line, NOT
@@ -189,6 +213,9 @@ def run(write: bool = False, src: "Optional[Path]" = None) -> dict:
             by_office[office.key] = {"raw": raw, "main": main_products(gross),
                                      "activation": activation.get(owner),
                                      "pulled": pulled}
+    # org-wide reference payouts (every product anyone sells), for the editor's
+    # per-sale-type ICD payout when an office has no own value for a product.
+    by_office["_org"] = {"raw": org_gross_revenue(rows), "pulled": pulled}
     if write:
         import os
         os.environ.setdefault("PAY_STRUCTURE_SHEET_ID",
