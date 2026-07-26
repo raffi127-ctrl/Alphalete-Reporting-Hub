@@ -217,7 +217,7 @@ def _gross_profit_simulator(office) -> None:
                                   value=float(default_gross), min_value=0.0,
                                   step=5.0, key=f"gp_g_{office.key}_{name}")
         payout = c[2].number_input("You pay rep ({})".format("%" if pct else "$"),
-                                   value=(50.0 if pct else round(default_gross * 0.35)),
+                                   value=(50.0 if pct else float(round(default_gross * 0.35))),
                                    min_value=0.0, step=(1.0 if pct else 5.0),
                                    key=f"gp_p_{office.key}_{name}")
         sales = c[3].number_input("# sales", value=100, min_value=0, step=10,
