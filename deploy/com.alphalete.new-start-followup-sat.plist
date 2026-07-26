@@ -14,7 +14,7 @@
         <string>--mode</string>
         <string>nudge</string>
         <string>--when</string>
-        <string>auto</string>
+        <string>morning</string>
         <string>--live</string>
     </array>
 
@@ -28,24 +28,19 @@
     </dict>
 
     <!-- Saturday only (Weekday 6), machine LOCAL time (mini is Central).
-         Raf's spec: ~10am when atmosphere ends, 1pm, and 5pm as the day closes.
-         The "when auto" flag picks the wording from the clock, so both runs
-         share one job.
-         Each run re-reads the thread and tags ONLY whoever still hasn't replied,
-         so leaders who already sent stop getting pinged.
-
-         The 5pm ping lives in its own -sat-pm plist ON PURPOSE: schedule_guard
-         skips any job with MORE THAN 2 intervals as a high-frequency poller
-         (schedule_guard.py `_timed_schedule`), which would leave a 3-interval
-         job outside the nightly anti-drift reload. Two here + one there keeps
-         both jobs covered. Don't merge them back. -->
+         ONE nudge at 1pm. Cut from three (10am/1pm/5pm) on 2026-07-26 — a
+         straggler was getting @-tagged 5x a weekend (8am roll call + 3 nudges +
+         Sun checklist) and Megan called it too many pings. Now: 8am roll call +
+         this one 1pm nudge + Sun checklist = ~3 tags max.
+         The run re-reads the thread and tags ONLY whoever still hasn't replied,
+         so leaders who already sent don't get pinged.
+         "--when morning" is the neutral "Reminder — if you haven't texted…"
+         wording (not "Second reminder"/"Last call"), which fits a lone nudge.
+         The 5pm -sat-pm plist was RETIRED in the same change (uninstall via
+         `lucy rerun uninstall_new_start_nudge_pm_agent`); one interval here is
+         under schedule_guard's 2-interval poller cutoff, so no split is needed. -->
     <key>StartCalendarInterval</key>
     <array>
-        <dict>
-            <key>Weekday</key><integer>6</integer>
-            <key>Hour</key><integer>10</integer>
-            <key>Minute</key><integer>0</integer>
-        </dict>
         <dict>
             <key>Weekday</key><integer>6</integer>
             <key>Hour</key><integer>13</integer>

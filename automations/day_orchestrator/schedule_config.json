@@ -960,7 +960,7 @@
     },
     "install_new_start_nudge_agent": {
       "on_scheduler": true,
-      "_note": "MANUAL: `lucy rerun install_new_start_nudge_agent` installs com.alphalete.new-start-followup-sat (Sat 10:00 / 13:00 / 17:00 CST). Reminds only the leaders who still haven't replied 'Sent'. weekdays [] = manual only.",
+      "_note": "MANUAL: `lucy rerun install_new_start_nudge_agent` installs com.alphalete.new-start-followup-sat (Sat 13:00 CST — ONE nudge). Cut from 10/13/17 on 2026-07-26 (too many pings; the 5pm -sat-pm plist was retired the same day). Reminds only the leaders who still haven't replied 'Sent'. weekdays [] = manual only.",
       "display_name": "Install New-Start Saturday nudge agent",
       "source_type": "local",
       "data_sources": [],
@@ -978,14 +978,14 @@
       "depends_on": [],
       "verify": null
     },
-    "install_new_start_nudge_pm_agent": {
+    "uninstall_new_start_nudge_pm_agent": {
       "on_scheduler": true,
-      "_note": "MANUAL: `lucy rerun install_new_start_nudge_pm_agent` installs com.alphalete.new-start-followup-sat-pm (Sat 17:00 CST). Split out of the -sat plist so neither job has more than 2 calendar intervals \u2014 schedule_guard skips >2-interval jobs as high-frequency pollers, which would drop them from the nightly anti-drift reload. weekdays [] = manual only.",
-      "display_name": "Install New-Start Saturday 5pm nudge agent",
+      "_note": "RETIREMENT (2026-07-26): removes the com.alphalete.new-start-followup-sat-pm (Sat 17:00) nudge agent from the mini. Run via `lucy rerun uninstall_new_start_nudge_pm_agent`. The 3 Saturday nudges (10/13/17) were cut to ONE (13:00) because a straggler got @-tagged 5x a weekend \u2014 too many pings (Megan). on_scheduler:true ONLY so registry keeps it (rerun looks it up here); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. launchctl-boots-out + deletes the plist on the mini so the 5pm ping stops with zero mini visit. Idempotent \u2014 safe to re-run. Once confirmed gone, this entry can be dropped.",
+      "display_name": "Retire New-Start Saturday 5pm nudge agent",
       "source_type": "local",
       "data_sources": [],
       "command": [
-        "automations.day_orchestrator.install_agent"
+        "automations.day_orchestrator.uninstall_agent"
       ],
       "base_args": [
         "new-start-followup-sat-pm"
