@@ -138,9 +138,20 @@ def _css():
   td.bad {{ color:#E5484D !important; font-weight:bold; }}
   td.rk {{ color:#8d887e; text-align:center; width:26px; }}
   th.icd, td.icd {{ text-align:left; }}
-  /* Shared fixed layout so the All-ICDs and Tracked tables line up exactly. */
-  .icdtable {{ table-layout:fixed; }}
-  .icdtable td, .icdtable th {{ overflow:hidden; text-overflow:ellipsis; }}
+  /* Content-FIT, centred — NOT stretched full width. With only four weeks of
+     data the old width:100% fixed layout blew every column out to ~18% and
+     right-aligned the numbers, leaving a wide void between the ICD name and the
+     first week (Raf 2026-07-25: "still too much space"). Auto layout shrink-wraps
+     each column to its widest number; generous side padding keeps it readable and
+     fills the page without a gap. Grows gracefully as more weeks fill in. */
+  /* Full width with a SHARED fixed column grid so the All-ICDs table and the
+     Tracked-Separately table below it line up column-for-column, and both share
+     the page's left/right edges with the rollup (Megan 2026-07-25: "these charts
+     should all line up"). Eight weeks now fill the width, so full-width no longer
+     leaves the void that the four-week version did. */
+  .icdtable {{ table-layout:fixed; width:100%; }}
+  .icdtable td, .icdtable th {{ white-space:nowrap; overflow:hidden;
+    text-overflow:ellipsis; }}
   /* A pending source, stated in plain gold — not a raw error dump. */
   .pending {{ text-align:center; color:{GOLD_LT}; font-size:13px; font-style:italic;
     padding:6px 0 2px; }}
@@ -152,18 +163,32 @@ def _css():
   .twoup {{ display:grid; grid-template-columns:1fr 1fr; gap:18px;
     align-items:start; margin-top:8px; }}
   .twoup .sect {{ margin-top:8px; }}
-  /* Masonry packing, not a rigid grid — Raf's 38-row org used to tower over the
-     2-row orgs and leave big empty gaps beside them (Megan 2026-07-24). CSS
-     columns let the short cards flow up and fill that space, so the section
-     packs tight and reads top-to-bottom, column by column. */
-  .orggrid {{ column-count:3; column-gap:16px; margin-top:26px; }}
-  .orgcard {{ break-inside:avoid; -webkit-column-break-inside:avoid;
-    margin:0 0 16px; }}
-  .orgtab {{ font-size:11.5px; margin:0; width:100%; }}
-  .orgtab th {{ text-align:center; font-size:11px; letter-spacing:1px;
-    padding:7px 6px; }}
-  .orgtab td {{ padding:4px 6px; }}
-  .orgtab td.rk {{ width:22px; text-align:center; color:#8d887e; }}
+  /* Three equal-height columns that stretch to the tallest (Raf's org), with the
+     cards inside each spread top-to-bottom to fill it — so Colten's block drops
+     to Raf's bottom and the five small orgs on the right space out evenly, giving
+     one clean square of orgs (Megan 2026-07-25: "line up Colten with Raf's bottom
+     … the 5 on the right space out … a full square of orgs"). Python packs the
+     cards into the columns; CSS just distributes them. */
+  .orggrid {{ display:flex; gap:16px; align-items:stretch; margin-top:26px; }}
+  .orgcol {{ flex:1; display:flex; flex-direction:column;
+    justify-content:space-between; }}
+  .orgcard {{ break-inside:avoid; }}
+  /* Content-FIT, not stretched. The tables used to be width:100%, so a short
+     "rank · name · $wire" row was spread across the whole card and left a wide
+     dead gap in the middle (Raf 2026-07-25: "very little blank space — cells
+     fit the content"). width:auto shrink-wraps each table to its own longest
+     row; the small ragged right edge reads far cleaner than an internal void.
+     Each table is CENTRED in its masonry column (margin:0 auto) so the block
+     sits balanced under the leader photos above it, rather than pinned left
+     (Megan 2026-07-25: "the orgs aren't centered with the photos above"). */
+  .orgtab {{ font-size:11.5px; margin:0 auto; width:auto; }}
+  .orgtab th {{ text-align:left; font-size:10.5px; letter-spacing:0.5px;
+    padding:7px 8px; white-space:normal; }}
+  .orgtab td {{ padding:4px 8px; white-space:nowrap; }}
+  /* Rank tight-left, name hard against it, then a fixed gap before the wire so
+     the number never crowds the name. */
+  .orgtab td:nth-child(2) {{ text-align:left; padding-right:34px; }}
+  .orgtab td.rk {{ text-align:center; color:#8d887e; padding:4px 6px; }}
   .orgtab tr.tot td {{ font-size:11.5px; }}
   .adopt {{ color:#E5484D; font-weight:bold; }}
   .footkey {{ text-align:right; color:#8d887e; font-size:11px; margin-top:10px; }}
@@ -292,14 +317,19 @@ def _block_table(title, rows, weeks, first_hdr, rank=False):
             f'{"".join(body)}</table>')
 
 
-# The All-ICDs and Tracked-Separately tables share this exact column layout so
-# they line up column-for-column (Megan 2026-07-24: "these charts still aren't
-# lining up"). `table-layout:fixed` + one colgroup means the widths no longer
-# depend on each table's own content: # | ICD | four weeks | total.
-ICD_COLS = ('<colgroup><col style="width:6%"><col style="width:26%">'
-            '<col style="width:13.6%"><col style="width:13.6%">'
-            '<col style="width:13.6%"><col style="width:13.6%">'
-            '<col style="width:14%"></colgroup>')
+# The All-ICDs and Tracked-Separately tables share ONE fixed column layout so
+# they line up column-for-column (Megan 2026-07-24). It adapts to the week count:
+# the ICD name column is sized to fit a name (not a wide gap — Raf 2026-07-25),
+# and the freed width goes to the week columns so the table fills the page.
+def _icd_colgroup(nweeks):
+    #  # | ICD | <nweeks> weeks | Total 2026. Shared by the All-ICDs and Tracked
+    #  tables so their columns line up exactly (Megan 2026-07-25).
+    rk_w, name_w, tot_w = 3.5, 13.0, 10.5
+    wk_w = (100 - rk_w - name_w - tot_w) / max(1, nweeks)
+    cols = ([f'<col style="width:{rk_w}%">', f'<col style="width:{name_w}%">']
+            + [f'<col style="width:{wk_w:.3f}%">'] * nweeks
+            + [f'<col style="width:{tot_w}%">'])
+    return "<colgroup>" + "".join(cols) + "</colgroup>"
 
 
 FEATURED = 5          # Megan 2026-07-24: top 5 only, with photos. Leaders below
@@ -332,7 +362,7 @@ def _org_tables(podium):
     # to least — Raf's would be all the way on the left"). Raf's org is the whole
     # active roster, so it leads; ties break on the org's week DD.
     orgs.sort(key=lambda pm: (-len(pm[1]), -(pm[0]["week"] or 0)))
-    blocks = []
+    cards = []
     for p, mem in orgs:
         rows = []
         for i, m in enumerate(mem, 1):
@@ -352,16 +382,36 @@ def _org_tables(podium):
         # repeat the ICD count.
         org_ct = sum(1 for m in mem if not m.get("adoption"))
         org_suffix = f' ({org_ct} ORG)' if org_ct != len(mem) else ""
-        blocks.append(
+        html = (
             f'<div class="orgcard"><table class="orgtab">'
             f'<tr><th colspan="3">{p["name"]}&rsquo;s Org &middot; '
             f'{len(mem)} ICD{"s" if len(mem) != 1 else ""}{org_suffix}</th></tr>'
             f'{"".join(rows)}</table></div>')
-    if not blocks:
+        # Row count drives the column packing below — header + members + total
+        # (+ organic when adoptions are present).
+        h = len(mem) + 2 + (1 if p.get("adoptions") else 0)
+        cards.append((html, h))
+    if not cards:
         return ""
+    # Pack into three explicit columns by cumulative height, biggest first — this
+    # reproduces the old masonry balance (Raf alone, Carlos+Colten, then the small
+    # orgs) but as a real flex grid we control. Each column stretches to the same
+    # height and justify-content:space-between spreads its cards to fill it, so
+    # Colten drops to Raf's bottom and the five small orgs on the right space out —
+    # the block reads as one full square of orgs (Megan 2026-07-25).
+    total_h = sum(h for _, h in cards)
+    target = total_h / 3 if total_h else 1
+    cols, colh, ci = [[], [], []], [0, 0, 0], 0
+    for html, h in cards:
+        if ci < 2 and colh[ci] >= target:
+            ci += 1
+        cols[ci].append(html)
+        colh[ci] += h
     # No section heading, no inline key here — the '* adoption' legend lives at
     # the page footer instead (Megan 2026-07-24: "move that somewhere else").
-    return f'<div class="orggrid">{"".join(blocks)}</div>'
+    col_html = "".join(f'<div class="orgcol">{"".join(c)}</div>'
+                       for c in cols if c)
+    return f'<div class="orggrid">{col_html}</div>'
 
 
 def _adoption_key(podium):
@@ -492,15 +542,19 @@ def _rollup(d, weeks):
             f'<td class="{av26}">{_cell(a["total"]) if a else "—"}</td>'
             f'<td>{wk(a, 0)}</td>{av1}{av2}'
             f'{ow0}{ow1}{ow2}{ow3}</tr>')
-    w1h = f"<th>Avg DD {w1}</th>" if w1 else ""
-    w2h = f"<th>Avg DD {w2}</th>" if w2 else ""
-    w1o = f"<th>Active Owners {w1}</th>" if w1 else ""
-    w2o = f"<th>Active Owners {w2}</th>" if w2 else ""
-    w3o = f"<th>Active Owners {w3}</th>" if w3 else ""
+    # Force a uniform two-line break (label on top, date under) on every dated
+    # header — the owner columns hold a 2-digit count but the header text is long,
+    # so left to wrap on their own they broke at different points and read ragged
+    # (Megan 2026-07-25: "this looks weird"). A hard <br> makes all four identical.
+    w1h = f"<th>Avg DD<br>{w1}</th>" if w1 else ""
+    w2h = f"<th>Avg DD<br>{w2}</th>" if w2 else ""
+    w1o = f"<th class='owcol'>Active Owners<br>{w1}</th>" if w1 else ""
+    w2o = f"<th class='owcol'>Active Owners<br>{w2}</th>" if w2 else ""
+    w3o = f"<th class='owcol'>Active Owners<br>{w3}</th>" if w3 else ""
     return (f'<div class="sect">Org &amp; Campaign — Average DD and Active Owners</div>'
             f'<table><tr><th>Org / Campaign</th>'
-            f'<th class="t26">Avg DD 2026</th><th>Avg DD {w0}</th>{w1h}{w2h}'
-            f'<th class="owstart">Active Owners {w0}</th>{w1o}{w2o}{w3o}</tr>'
+            f'<th class="t26">Avg DD<br>2026</th><th>Avg DD<br>{w0}</th>{w1h}{w2h}'
+            f'<th class="owstart owcol">Active Owners<br>{w0}</th>{w1o}{w2o}{w3o}</tr>'
             f'{"".join(body)}</table>')
 
 
@@ -555,7 +609,7 @@ def _tracked(d):
         rows.append(f'<tr><td class="rk">{i}</td><td class="icd">{r["name"]}</td>'
                     f'{wk}<td class="t26">{_fmt(r["total"]) or "—"}</td></tr>')
     return (f'<div class="sect">Tracked Separately</div>'
-            f'<table class="icdtable">{ICD_COLS}'
+            f'<table class="icdtable">{_icd_colgroup(len(weeks))}'
             f'<tr><th>#</th><th class="icd">ICD</th>{ths}'
             f'<th class="t26">Total 2026</th></tr>{"".join(rows)}</table>')
 
@@ -582,7 +636,7 @@ def _all_icds(d):
         body.append(f'<tr{c}><td class="rk">{i}</td><td class="icd">{r["name"]}</td>'
                     f'{wk}<td class="t26">{_fmt(r["total"])}</td></tr>')
     return (f'<div class="sect">All ICDs &mdash; {len(rows)} with DD Data</div>'
-            f'<table class="icdtable">{ICD_COLS}'
+            f'<table class="icdtable">{_icd_colgroup(len(weeks))}'
             f'<tr><th>#</th><th class="icd">ICD</th>{ths}'
             f'<th class="t26">Total 2026</th></tr>{"".join(body)}</table>')
 

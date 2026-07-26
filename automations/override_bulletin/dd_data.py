@@ -31,7 +31,9 @@ from automations.override_bulletin import fill as F
 WORKBOOK_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
 DD_TAB = "Org DDs Ongoing Report"
 TREE_TAB = "Lucy Org Tree"
-WOW_WEEKS = 4
+WOW_WEEKS = 8      # Raf 2026-07-25: show more weeks so the ICD tables fill the
+#                    width instead of leaving blank space in the name column.
+#                    The rollup stays 4 weeks (it slices weeks[:4] itself).
 
 LEADERS_LABEL = "PODIUM LEADERS"
 LISTS_LABEL = "PODIUM ORG LISTS"
