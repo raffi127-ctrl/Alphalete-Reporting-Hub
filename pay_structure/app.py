@@ -29,12 +29,13 @@ import pandas as pd
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from automations.pay_structure import catalog, offices, store  # noqa: E402
+from automations.pay_structure import catalog, icd_payout, offices, store  # noqa: E402
 from automations.pay_structure.estimate import estimate_by_level  # noqa: E402
 
 st.set_page_config(page_title="Pay Structure", page_icon="💵", layout="centered")
 
 _SALE_COL = "Sale type"
+_ICD_COL = "ICD gets"
 
 
 def _brand_css(accent: str) -> None:
@@ -259,7 +260,10 @@ def editor_view(office) -> None:
     else:
         st.caption("Dollars a rep earns for each ACTIVE line of that sale type. "
                    "Fill in every cell — even if the pay doesn't change by level, "
-                   "enter it at each level so the estimate stays accurate.")
+                   "enter it at each level so the estimate stays accurate. "
+                   "**ICD gets** = what the company pays your office for that "
+                   "product; **Keep %** = the share you keep after paying the rep "
+                   "(both update after you enter a rate).")
 
     new_rates = {}
     for ck in checked:
@@ -270,16 +274,33 @@ def editor_view(office) -> None:
                     f"color:{accent};margin-top:8px'>{camp.label}</div>",
                     unsafe_allow_html=True)
         types = _campaign_types(grid, ck, camp)
-        df = pd.DataFrame(
-            [[st_] + [grid.rate(ck, st_, lvl) for lvl in grid.levels]
-             for st_ in types],
-            columns=[_SALE_COL] + list(grid.levels))
-        col_cfg = {_SALE_COL: st.column_config.TextColumn(_SALE_COL,
-                                                          width="large",
-                                                          disabled=True)}
+        keep_cols = ["Keep {} %".format(lvl) for lvl in grid.levels]
+        _nan = float("nan")
+        rows = []
+        for st_ in types:
+            pay = icd_payout.payout(ck, st_)          # ICD's Commission Base
+            reps = [grid.rate(ck, st_, lvl) for lvl in grid.levels]
+            keeps = [(round((pay - r) / pay * 100) if pay and pay > 0 else _nan)
+                     for r in reps]
+            rows.append([st_, (pay if pay else _nan)] + reps + keeps)
+        df = pd.DataFrame(rows, columns=[_SALE_COL, _ICD_COL]
+                          + list(grid.levels) + keep_cols)
+        col_cfg = {
+            _SALE_COL: st.column_config.TextColumn(_SALE_COL, width="large",
+                                                   disabled=True),
+            _ICD_COL: st.column_config.NumberColumn(
+                _ICD_COL, disabled=True, format="$%.0f",
+                help="What the company pays your office (Commission Base to ICD) "
+                     "for this product. Blank = not mapped yet."),
+        }
         for lvl in grid.levels:
             col_cfg[lvl] = st.column_config.NumberColumn(lvl, min_value=0.0,
                                                          step=1.0, format="$%.2f")
+        for kc in keep_cols:
+            col_cfg[kc] = st.column_config.NumberColumn(
+                kc, disabled=True, format="%d%%",
+                help="Share of the ICD payout your office keeps after paying the "
+                     "rep at that level.")
         edited = st.data_editor(df, width="stretch", column_config=col_cfg,
                                 hide_index=True, key=f"rates_{office.key}_{ck}")
         bucket = {}
