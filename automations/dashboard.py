@@ -6342,10 +6342,12 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                              "progress": "🟡 "}.get(_stat, "")
                     _label = f"{_icon}{_r.get('emoji', '📄')} {_r['name']}"
                     # Multi-run card mid-day: show how many passes have landed
-                    # (e.g. "1/3") so the amber pill says WHY it isn't green yet.
+                    # (e.g. "(1/3 done)") so the amber pill says WHY it isn't
+                    # green yet. Parenthesized + "done" so a bare "6/7" jammed
+                    # after the name doesn't read like a date (e.g. June 7).
                     if _stat == "progress":
-                        _label += (f" {_cal_counts.get((_r['id'], _day), 0)}"
-                                   f"/{_dr_today}")
+                        _label += (f" ({_cal_counts.get((_r['id'], _day), 0)}"
+                                   f"/{_dr_today} done)")
                     # Self-scheduled reports fire on their OWN fixed timer (not the
                     # 4am batch), so show the run time on the tile — otherwise there
                     # is no way to see WHEN it runs. Batch reports omit it (they run
