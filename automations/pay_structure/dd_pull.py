@@ -259,6 +259,15 @@ def inspect(owner: str, src: "Optional[Path]" = None) -> None:
         for dsc, vals in sorted(bydesc.items(), key=lambda x: -len(x[1]))[:5]:
             mode = collections.Counter(round(v, 0) for v in vals).most_common(1)[0]
             print("INSP|{} desc={!r} n={} mode={}".format(want, dsc, len(vals), mode))
+    # energy (ELE) — why box/base map empty: order-type split (auto-pay?) + descs.
+    for want in ("ELE", "DTV", "DIRECTV STREAM"):
+        sub = [r for r in mine if str(r.get(COL_CATEGORY, "")).strip().upper() == want]
+        if not sub:
+            continue
+        ots = collections.Counter(str(r.get(COL_ORDER_TYPE, "")).strip() or "(blank)" for r in sub)
+        dsc = collections.Counter(str(r.get(COL_DESCRIPTION, "")).strip() or "(blank)" for r in sub)
+        print("INSP|{} n={} ordertypes={}".format(want, len(sub), dict(ots.most_common(4))))
+        print("INSP|{} descs={}".format(want, dict(dsc.most_common(6))))
     go = gross_revenue_by_office(rows).get(owner, {})
     print("INSP|MAPPED={}".format(main_products(go)))
     print("INSP|activation={}".format(activation_by_office(rows).get(owner)))

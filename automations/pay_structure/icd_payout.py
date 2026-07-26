@@ -88,12 +88,38 @@ def _att_residential_payout(sale_type: str, dd: "Dict[tuple, float]") -> "Option
     return None
 
 
+def _b2b_att_payout(sale_type: str, dd: "Dict[tuple, float]") -> "Optional[float]":
+    """B2B sale type = 'CRU|IRU · PRODUCT TYPE · Package'. The DD encodes the
+    business unit as a prefix on the description: 'CRU INTERNET 1000',
+    'IRU Port Line - OOF', 'CRU AIR', etc. Wireless/BYOD split In-Footprint (IF) vs
+    Out-Of-Footprint (OOF) — the sale type doesn't say which, so prefer OOF (the
+    consistently-present one) and fall back to IF."""
+    parts = [p.strip() for p in sale_type.split("·")]
+    if len(parts) < 3:
+        return None
+    cru = parts[0].lower()            # 'cru' | 'iru'
+    pt = parts[1].upper()             # NEW INTERNET | AIR/AWB | WIRELESS | ...
+    pkg = parts[2]
+    if "INTERNET" in pt:
+        m = re.search(r"(\d{3,4})", pkg)
+        if m:
+            return dd.get(("INTERNET", "{} internet {}".format(cru, m.group(1))))
+        return None
+    if "AIR" in pt:
+        return dd.get(("AIR", "{} air".format(cru)))
+    if "WIRELESS" in pt or "TABLET" in pt or "WEARABLE" in pt:
+        return (dd.get(("WIRELESS", "{} port line - oof".format(cru)))
+                or dd.get(("WIRELESS", "{} port line - if".format(cru))))
+    # VOICE — no clean DD product line yet
+    return None
+
+
 # campaign key -> mapper(sale_type, dd) -> base or None
 MAPPERS = {
     "att_residential": _att_residential_payout,
-    # "b2b_att": ...,   # TBD (Raf loom)
-    # "box": ...,       # TBD
-    # "base": ...,      # TBD
+    "b2b_att": _b2b_att_payout,
+    # "box"/"base" (energy): the DD ELE lines aren't auto-bill-pay, so the pull's
+    # auto-pay filter drops them — energy payout source still TBD (see dd_pull).
 }
 
 
