@@ -222,22 +222,37 @@ def run(phase: str, target: dt.date | None = None) -> None:
 
     # Report completion for the Hub pill. Only real (non-dry) runs count.
     #
-    # A run is SUCCESS only when EVERY expected office synced. Any miss —
-    # a genuine failure (office threw) OR a no-access gap — publishes PARTIAL, so
-    # the card stays amber (not green) rather than showing all-clear while an
-    # office is silently omitted. Megan's call 2026-07-25: the card should NOT go
-    # green while office 14229 (Akib/Motiv8) is still unreachable — she's getting
-    # Motiv8 access, and the moment that lands all 17 sync and it greens on its
-    # own. Until then, amber = "ran fine, one office still needs access" (named
-    # in the NOT VISIBLE log line above).
+    # The card follows the SAME rules as every other report: a completed run is
+    # SUCCESS (green). A missed office no longer holds the pill amber — instead
+    # the gap is posted to the corrections channel so it's still visible (Megan
+    # 2026-07-25, revised: green + Slack the gap, not an amber pill).
     if not sheets.DRY_RUN:
         try:
             from automations.shared import hub_activity
-            hub_activity.log_completed(
-                CARD_ID, CARD_NAME,
-                status="partial" if (failed or no_access) else "success")
+            hub_activity.log_completed(CARD_ID, CARD_NAME, status="success")
         except Exception:
             pass
+        # Any office that did NOT sync (a genuine error OR a no-access gap) goes
+        # to #claudecorrections-and-requests so the miss is seen even though the
+        # pill is green. Best-effort — a Slack hiccup never fails the run.
+        if failed or no_access:
+            try:
+                from automations.day_orchestrator import notify
+                from automations.day_orchestrator.registry import load_config
+                lines = ["🗂️ *Applicant Tracker — {} run: {} of {} office(s) "
+                         "did not sync*".format(
+                             phase, len(failed) + len(no_access), total)]
+                if no_access:
+                    lines.append("• No access ({}): {}".format(
+                        len(no_access), ", ".join(no_access)))
+                if failed:
+                    lines.append("• Errored ({}): {}".format(
+                        len(failed), ", ".join(failed)))
+                notify._post_corrections(load_config(), None, lines,
+                                         dry_run=False,
+                                         tag="applicant-tracker-gaps")
+            except Exception as e:  # noqa: BLE001 — Slack must not fail the run
+                print("  (corrections post skipped: {})".format(e))
     print(f"=== {phase.upper()} phase done ===")
 
 
