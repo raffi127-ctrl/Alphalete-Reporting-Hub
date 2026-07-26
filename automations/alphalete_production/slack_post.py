@@ -32,15 +32,35 @@ def header_title(today: dt.date) -> str:
     return f"{TITLE_PREFIX} {_date(today)}"
 
 
-def header_text(sections: list, today: dt.date) -> str:
-    """Bold dated title + one ':emoji: Section' line per section (parent message)."""
+def header_text(sections: list, today: dt.date, captures: list | None = None) -> str:
+    """Bold dated title + one ':emoji: Section' line per section (parent message).
+
+    The Zero Streak line lists its depths like the B2B twin —
+    ':no_entry_sign: Zero Streak 7.24 (1 Day, 2 Days, 3 Days)' — built from the
+    rendered levels; falls back to the plain title if none were produced."""
+    zmeta = sorted([m for m, _ in (captures or []) if m.get("kind") == "zeros"],
+                   key=lambda m: m.get("level", 0))
     lines = [f"*{header_title(today)}*", ""]
-    lines += [f":{s['react']}: {s['title']}" for s in sections]
+    for s in sections:
+        if s.get("kind") == "zeros" and zmeta:
+            base = zmeta[0]["title"].split(" — ")[0]          # "Zero Streak 7.24"
+            levels = ", ".join(m["title"].split(" — ")[1] for m in zmeta)
+            lines.append(f":{s['react']}: {base} ({levels})")
+        else:
+            lines.append(f":{s['react']}: {s['title']}")
     return "\n".join(lines)
 
 
 def reply_caption(meta: dict, today: dt.date) -> str:
-    """'*Ceaseless Team Sales 07/05/2026*' -- bold, title (+team) + uniform date."""
+    """'*Ceaseless Team Sales 07/05/2026*' -- bold, title (+team) + uniform date.
+    Zero Streak captions follow the B2B twin instead: no redundant date (the
+    depth already carries the anchor m.d), with the rep count appended."""
+    if meta.get("no_date"):
+        cap = f"*{meta['title']}*"
+        reps = meta.get("reps")
+        if reps is not None:
+            cap += f"  —  {reps} rep{'' if reps == 1 else 's'}"
+        return cap
     return f"*{meta['title']} {_date(today)}*"
 
 
@@ -82,7 +102,7 @@ def _post_thread(client, channel: str, captures: list, sections: list,
     created = ts is None
     if ts is None:
         ts = client.chat_postMessage(
-            channel=channel, text=banner + header_text(sections, today))["ts"]
+            channel=channel, text=banner + header_text(sections, today, captures))["ts"]
     if not banner:                     # real post: react the section emojis onto parent
         for name in _reactions(sections):
             try:
@@ -105,7 +125,7 @@ def post_all(captures: list, sections: list, today: dt.date | None = None,
     today = today or dt.date.today()
     if dry_run:
         return {"dry_run": True, "channel": CHANNEL,
-                "header": header_text(sections, today),
+                "header": header_text(sections, today, captures),
                 "replies": [{"file": Path(p).name, "caption": reply_caption(m, today)}
                             for m, p in captures]}
     client = smp._client()
@@ -118,7 +138,7 @@ def preview_dm(captures: list, sections: list, users: list,
     today = today or dt.date.today()
     if dry_run:
         return {"dry_run": True, "to_users": users,
-                "header": header_text(sections, today),
+                "header": header_text(sections, today, captures),
                 "replies": [{"file": Path(p).name, "caption": reply_caption(m, today)}
                             for m, p in captures]}
     banner = ("*(PREVIEW — this is what will post to #alphalete-sales; nothing "
