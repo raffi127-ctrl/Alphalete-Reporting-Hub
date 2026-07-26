@@ -4066,7 +4066,7 @@
     },
     "dd_gross_revenue": {
       "on_scheduler": false,
-      "_note": "Pulls each office's base-tier GROSS REVENUE (Total $ to ICD) + activation from DD DETAIL (ORG) for the pay-structure gross-profit model (Raf). Manual: `lucy rerun dd_gross_revenue`. Low-urgency; should auto-run 1st & 15th at noon (day-of-month cadence is a follow-up \u2014 weekday cadence can't express it).",
+      "_note": "Pulls each office's base-tier GROSS REVENUE (Total $ to ICD) + activation from DD DETAIL (ORG) for the pay-structure gross-profit model (Raf). Manual: `lucy rerun dd_gross_revenue`. Auto 1st & 15th at noon via its OWN launchd plist (com.alphalete.dd-gross-revenue, StartCalendarInterval Day 1/15) \u2014 NOT the weekday scheduler; install with `lucy rerun install_dd_gross_revenue_agent`.",
       "display_name": "Pay Structure: ICD gross revenue (DD)",
       "source_type": "tableau",
       "data_sources": [
@@ -4086,6 +4086,28 @@
       "depends_on": [],
       "verify": null,
       "timeout_minutes": 15,
+      "machine": "Lucy 1"
+    },
+    "install_dd_gross_revenue_agent": {
+      "on_scheduler": false,
+      "_note": "One-shot installer for com.alphalete.dd-gross-revenue on Lucy 1 (auto-pull 1st & 15th at 12:00 noon CST; deploy/dd_gross_revenue.sh -> python -m automations.pay_structure.dd_pull --write). Run via `lucy rerun install_dd_gross_revenue_agent` after `lucy update`. install_agent only reloads the plist (race-free bootout+bootstrap).",
+      "display_name": "Install Pay Structure DD gross-revenue agent (1st & 15th noon)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "dd-gross-revenue"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5,
       "machine": "Lucy 1"
     }
   },

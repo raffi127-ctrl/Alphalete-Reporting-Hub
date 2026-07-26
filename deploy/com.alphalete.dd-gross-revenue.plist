@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.dd-gross-revenue</string>
+
+    <!-- Path is the laptop placeholder; on Lucy 1, install_agent.py rewrites it:
+           python -m automations.day_orchestrator.install_agent dd-gross-revenue
+         RUNS ON LUCY 1 (holds the ownerville/Tableau session). Pulls each
+         office's base-tier gross revenue + activation from DD DETAIL (ORG) for
+         the pay-structure gross-profit model. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/dd_gross_revenue.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- 1st and 15th of every month at 12:00 noon (machine LOCAL time; the mini
+         is Central). DD updates rarely — low-urgency, off the 4am batch so it
+         never competes. launchd Day = day-of-month. TIME KNOB: edit Hour/Minute. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Day</key><integer>1</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Day</key><integer>15</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/dd-gross-revenue.out</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/dd-gross-revenue.err</string>
+</dict>
+</plist>
