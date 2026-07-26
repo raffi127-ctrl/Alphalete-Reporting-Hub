@@ -362,32 +362,25 @@ def editor_view(office) -> None:
                     unsafe_allow_html=True)
         types = _campaign_types(grid, ck, camp)
         pf = pay_map.get(ck, {})
-        # ONE combined table that FITS on screen (no horizontal scroll): Sale type +
-        # ICD payout + editable rep pay per level + a single compact "You keep %"
-        # column (keep% at each level, L1·L2·L3). Recomputes each rerun from the
-        # session-persisted rates, so it updates right after a pay cell is committed.
-        _KEEPCOL = "You keep"
-        _lbl = ["L1", "L2", "L3", "L4", "L5"]
+        # ONE combined table (wide layout gives the room): Sale type + ICD payout,
+        # then each editable Level column immediately followed by its own "keeps"
+        # column ($ · %). Keep columns recompute each rerun from the session-
+        # persisted rates, so they update right after a pay cell is committed.
+        _KEEP = {lvl: "{} keeps".format(lvl) for lvl in grid.levels}
         data = []
         for st_ in types:
             pay = pf.get(st_)
             row = {_SALE_COL: st_,
                    "ICD payout": "${:,.0f}".format(pay) if pay else "—"}
-            keeps = []
             for lvl in grid.levels:
                 rep = grid.rate(ck, st_, lvl)
                 row[lvl] = rep
-                keeps.append((pay - rep, round((pay - rep) / pay * 100)) if pay else None)
-            if not pay:
-                row[_KEEPCOL] = "—"
-            elif len(set(keeps)) == 1:                 # same at every level → one value
-                row[_KEEPCOL] = "${:,.0f}  ({}%)".format(keeps[0][0], keeps[0][1])
-            else:                                       # differs by level → label each
-                row[_KEEPCOL] = "   ".join(
-                    "{}: ${:,.0f} ({}%)".format(_lbl[i], k[0], k[1])
-                    for i, k in enumerate(keeps))
+                row[_KEEP[lvl]] = ("${:,.0f} ({}%)".format(pay - rep,
+                                   round((pay - rep) / pay * 100)) if pay else "—")
             data.append(row)
-        cols = [_SALE_COL, "ICD payout"] + list(grid.levels) + [_KEEPCOL]
+        cols = [_SALE_COL, "ICD payout"]
+        for lvl in grid.levels:               # Level 1, its keeps, Level 2, its keeps, …
+            cols += [lvl, _KEEP[lvl]]
         df = pd.DataFrame(data, columns=cols)
         col_cfg = {
             _SALE_COL: st.column_config.TextColumn(_SALE_COL, width="medium",
@@ -395,17 +388,15 @@ def editor_view(office) -> None:
             "ICD payout": st.column_config.TextColumn(
                 "ICD payout", width="small", disabled=True,
                 help="What the company pays your office per sale"),
-            _KEEPCOL: st.column_config.TextColumn(
-                _KEEPCOL, width="medium", disabled=True,
-                help="What your office keeps after paying the rep ($ and %). One "
-                     "value when it's the same at every level; labeled L1/L2/L3 "
-                     "when the pay differs by level."),
         }
         for lvl in grid.levels:
             col_cfg[lvl] = st.column_config.NumberColumn(lvl, min_value=0.0,
                                                          step=1.0, format="$%.0f",
                                                          width="small",
                                                          help="What you pay the rep")
+            col_cfg[_KEEP[lvl]] = st.column_config.TextColumn(
+                "{} keeps".format(lvl), width="small", disabled=True,
+                help="What your office keeps at this level ($ and %)")
         edited = st.data_editor(df, width="stretch", column_config=col_cfg,
                                 hide_index=True, key=f"rates_{office.key}_{ck}")
         bucket = {}
