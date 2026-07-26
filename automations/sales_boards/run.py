@@ -226,10 +226,21 @@ def post_thread(imgs: dict, zeros: dict, day, yday, dry_run: bool,
     for name, cid, wz in targets:
         ts = find_thread_ts(client, cid, day)
         created = False
+        header = header_text(day, zeros if wz else None, tag)
         if not ts:
-            ts = client.chat_postMessage(
-                channel=cid, text=header_text(day, zeros if wz else None, tag)).get("ts")
+            ts = client.chat_postMessage(channel=cid, text=header).get("ts")
             created = True
+        elif wz and zeros:
+            # The parent may have been posted on an EARLIER pass before the zeros
+            # existed (Saturday's 0s land late, or a --only-zeros backfill), so its
+            # text is missing the Zero Streak summary line while the replies are in
+            # the thread. Refresh it to match — chat_update is idempotent and only
+            # Lucy (the author) can edit Lucy's message, so this no-ops off-mini.
+            # Best-effort: a failed edit must never block the replies below.
+            try:
+                client.chat_update(channel=cid, ts=ts, text=header)
+            except Exception as e:  # noqa: BLE001
+                print(f"    (parent header not refreshed on {name} — {type(e).__name__})")
         out.append({"channel": name, "thread_ts": ts, "created_parent": created})
         for plain, caption, ups in _replies(imgs, zeros, tag, wz):
             # dedupe on the PLAIN text — Slack may store the emoji as a shortcode
