@@ -119,8 +119,8 @@ def _b2b_att_payout(sale_type: str, dd: "Dict[tuple, float]") -> "Optional[float
     if "AIR" in pt:
         return dd.get(("AIR", "{} air".format(cru)))
     if "WIRELESS" in pt or "TABLET" in pt or "WEARABLE" in pt:
-        return (dd.get(("WIRELESS", "{} port line - oof".format(cru)))
-                or dd.get(("WIRELESS", "{} port line - if".format(cru))))
+        # footprint (IF/OOF) folded into one 'Port Line' by the pull's _norm_desc
+        return dd.get(("WIRELESS", "{} port line".format(cru)))
     # VOICE — no clean DD product line yet
     return None
 

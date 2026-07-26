@@ -9,3 +9,4 @@ google-auth>=2.20
 # rebuild 2026-07-26b: box/base energy mappers + combined table — reboot to reload.
 # rebuild 2026-07-26c: box BF-tier payouts + AIR/copper mappers — reboot to reload.
 # rebuild 2026-07-26d: DIRECTV mapper + hide no-payout products — reboot to reload.
+# rebuild 2026-07-26e: campaign-aware B2B simulator + IF/OOF fold — reboot to reload.

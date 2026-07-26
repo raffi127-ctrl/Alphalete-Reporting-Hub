@@ -73,6 +73,18 @@ def _is_autopay(r) -> bool:
     return "auto bill pay" in ot and "no auto" not in ot
 
 
+import re as _re
+# B2B wireless splits In-Footprint / Out-Of-Footprint ("… - IF" / "… - OOF" /
+# "… - INFP"); the sale type doesn't say which, so fold both footprints into one
+# product and let the MODE pick the dominant footprint (by deal count) — no arbitrary
+# IF-vs-OOF choice. Residential descriptions have no such suffix (no-op).
+_FOOTPRINT_RE = _re.compile(r"\s*-\s*(IF|OOF|INFP)\s*$", _re.I)
+
+
+def _norm_desc(desc: str) -> str:
+    return _FOOTPRINT_RE.sub("", desc or "").strip()
+
+
 def _mode(vals: "List[float]") -> float:
     return collections.Counter(round(v, 2) for v in vals).most_common(1)[0][0]
 
@@ -92,7 +104,7 @@ def gross_revenue_by_office(rows) -> "Dict[str, Dict[str, dict]]":
         if cat not in PRODUCT_CATEGORIES:
             continue
         owner = str(r.get(COL_OWNER, "") or "").strip()
-        desc = str(r.get(COL_DESCRIPTION, "") or "").strip()
+        desc = _norm_desc(str(r.get(COL_DESCRIPTION, "") or "").strip())
         tot = _num(r.get(COL_TOTAL))
         if (not owner or owner.lower() in ("nan", "null")
                 or "total" in owner.lower() or not desc or tot is None or tot <= 0):
@@ -121,7 +133,7 @@ def org_gross_revenue(rows) -> "Dict[str, float]":
         cat = str(r.get(COL_CATEGORY, "") or "").strip().upper()
         if cat not in PRODUCT_CATEGORIES:
             continue
-        desc = str(r.get(COL_DESCRIPTION, "") or "").strip()
+        desc = _norm_desc(str(r.get(COL_DESCRIPTION, "") or "").strip())
         tot = _num(r.get(COL_TOTAL))
         if not desc or tot is None or tot <= 0:
             continue

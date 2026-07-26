@@ -179,9 +179,11 @@ def _campaign_types(grid: store.Grid, ck: str, camp) -> "list":
 # --------------------------------------------------------------------------
 # The editor
 # --------------------------------------------------------------------------
-def _gross_profit_simulator(office) -> None:
+def _gross_profit_simulator(office, campaigns=None) -> None:
     """Raf's gross-profit model: set gross revenue + what you pay the rep on the
-    main products, an activation rate + volume, and see profit + margin %."""
+    main products, an activation rate + volume, and see profit + margin %. The main
+    products follow the office's CHECKED CAMPAIGNS (B2B offices get their B2B
+    drivers, not the residential ones)."""
     from automations.pay_structure import gross_profit as gp
     st.divider()
     st.markdown("### 📊 Gross profit simulator")
@@ -193,7 +195,22 @@ def _gross_profit_simulator(office) -> None:
     except Exception:                    # noqa: BLE001
         gr = {}
     office_gross = gr.get("main", {})
+    raw = gr.get("raw", {})
     act_default = int(round((gr.get("activation") or 0.80) * 100))   # Raf: default 80%
+
+    # Main products for THIS office = the drivers of every campaign it runs (office's
+    # own DD payout when we have it, else the campaign's model default). Falls back
+    # to the residential pair if no campaign is checked yet.
+    main_products, _seen = [], set()
+    for ck in (campaigns or []):
+        for name, ddkey, dflt in gp.MAIN_BY_CAMPAIGN.get(ck, []):
+            if name in _seen:
+                continue
+            _seen.add(name)
+            main_products.append((name, float(raw.get(ddkey) or office_gross.get(name) or dflt)))
+    if not main_products:
+        main_products = [(n, float(office_gross.get(n, d)))
+                         for n, d in gp.MAIN_PRODUCTS.items()]
 
     ctop = st.columns([2, 2])
     pct = ctop[0].radio("How do you pay the rep?",
@@ -209,8 +226,7 @@ def _gross_profit_simulator(office) -> None:
                    "office yet) — edit freely.")
 
     plans, volumes = [], {}
-    for name, model_default in gp.MAIN_PRODUCTS.items():
-        default_gross = float(office_gross.get(name, model_default))
+    for name, default_gross in main_products:
         c = st.columns([2.2, 2, 2, 1.6])
         c[0].markdown("**{}**".format(name))
         gross = c[1].number_input("Gross revenue (SCI pays $)",
@@ -445,7 +461,7 @@ def editor_view(office) -> None:
     with st.expander("How reps see this"):
         _preview(updated, checked, cat)
 
-    _gross_profit_simulator(office)
+    _gross_profit_simulator(office, checked)
 
 
 def _preview(grid: store.Grid, checked, cat) -> None:
