@@ -60,40 +60,64 @@ def _num(v) -> "Optional[float]":
         return None
 
 
-def gross_revenue_by_office(rows) -> "Dict[str, Dict[str, float]]":
-    """{owner_name: {'CATEGORY | Description': base_gross_revenue}} — the MODE of
-    Total $ to ICD per (owner, category, description) for product-category rows.
-    `rows` = list of dicts (crosstab records)."""
+MIN_SAMPLE = 5     # a base value needs >= this many auto-pay deals to be trusted
+
+
+def _is_autopay(r) -> bool:
+    """Raf's model assumes auto-bill-pay 100%. Keep 'Auto Bill Pay', drop
+    'No Auto Bill Pay' (a lower payout) — the phrase contains 'auto bill pay' too,
+    so exclude it explicitly."""
+    ot = str(r.get(COL_ORDER_TYPE, "") or "").lower()
+    return "auto bill pay" in ot and "no auto" not in ot
+
+
+def gross_revenue_by_office(rows) -> "Dict[str, Dict[str, dict]]":
+    """{owner: {'CATEGORY | Description': {'base': mode$, 'n': deals}}} — the MODE
+    of Total $ to ICD per (owner, category, description), over AUTO-BILL-PAY deals
+    only (each crosstab row is one deal). `rows` = list of dicts. Auto-pay + the
+    per-description split isolate the base tier; the caller applies MIN_SAMPLE so a
+    one-off deal can't set a product's base (the old un-filtered MODE picked $115
+    for a 1-deal outlier when the real 151-deal base was $298)."""
     acc: Dict[tuple, List[float]] = collections.defaultdict(list)
     for r in rows:
         cat = str(r.get(COL_CATEGORY, "") or "").strip().upper()
-        if cat not in PRODUCT_CATEGORIES:
+        if cat not in PRODUCT_CATEGORIES or not _is_autopay(r):
             continue
         owner = str(r.get(COL_OWNER, "") or "").strip()
         desc = str(r.get(COL_DESCRIPTION, "") or "").strip()
         tot = _num(r.get(COL_TOTAL))
         if (not owner or owner.lower() in ("nan", "null")
-                or "total" in owner.lower() or not desc or tot is None or tot == 0):
+                or "total" in owner.lower() or not desc or tot is None or tot <= 0):
             continue
         acc[(owner, cat, desc)].append(tot)
-    out: Dict[str, Dict[str, float]] = {}
+    out: Dict[str, Dict[str, dict]] = {}
     for (owner, cat, desc), vals in acc.items():
         base = collections.Counter(round(v, 2) for v in vals).most_common(1)[0][0]
-        out.setdefault(owner, {})["{} | {}".format(cat, desc)] = base
+        out.setdefault(owner, {})["{} | {}".format(cat, desc)] = {
+            "base": base, "n": len(vals)}
     return out
 
 
-def main_products(office_gross: "Dict[str, float]") -> "Dict[str, float]":
-    """Map an office's raw {CATEGORY|Description: base} to the model's MAIN
-    products (Internet 1 GIG, New Line). Best-effort by label; missing = absent."""
+def main_products(office_gross: "Dict[str, dict]") -> "Dict[str, float]":
+    """Map an office's {CATEGORY|Description: {base, n}} to the model's MAIN
+    products (Internet 1 GIG = INTERNET 1000; New Line = WIRELESS New Line, NOT
+    Port Line — Raf: different gross). Pick the LARGEST-sample matching bucket and
+    require MIN_SAMPLE deals, so a noisy tiny bucket never sets the base."""
+    def best(pred) -> "Optional[float]":
+        cands = [(v.get("n", 0), v.get("base"))
+                 for k, v in office_gross.items()
+                 if pred(k) and v.get("n", 0) >= MIN_SAMPLE and v.get("base")]
+        return max(cands)[1] if cands else None
+
     out: Dict[str, float] = {}
-    for key, base in office_gross.items():
-        cat, _, desc = key.partition(" | ")
-        d = desc.lower()
-        if cat == "INTERNET" and "1000" in d:
-            out["Internet 1 GIG"] = base
-        elif cat == "WIRELESS" and ("new line" in d or "port" in d):
-            out.setdefault("New Line", base)
+    ig = best(lambda k: k.startswith("INTERNET | ")
+              and ("1000" in k or "1 gig" in k.lower()))
+    if ig is not None:
+        out["Internet 1 GIG"] = ig
+    nl = best(lambda k: k.startswith("WIRELESS | ")
+              and "new line" in k.lower() and "port" not in k.lower())
+    if nl is not None:
+        out["New Line"] = nl
     return out
 
 
@@ -154,7 +178,8 @@ def run(write: bool = False, src: "Optional[Path]" = None) -> dict:
     for owner, gross in by_owner.items():
         office = _po.for_owner(owner)
         if office:
-            by_office[office.key] = {"raw": gross, "main": main_products(gross),
+            raw = {k: v["base"] for k, v in gross.items()}   # flat for the sheet
+            by_office[office.key] = {"raw": raw, "main": main_products(gross),
                                      "activation": activation.get(owner),
                                      "pulled": pulled}
     if write:
@@ -186,10 +211,12 @@ def inspect(owner: str, src: "Optional[Path]" = None) -> None:
         sub = [r for r in mine if str(r.get(COL_CATEGORY, "")).strip().upper() == want]
         descs = collections.Counter(str(r.get(COL_DESCRIPTION, "")).strip() for r in sub)
         print("INSP|{} descs={}".format(want, dict(descs.most_common(6))))
-        ap_ = [r for r in sub if "no auto" not in str(r.get(COL_ORDER_TYPE, "")).lower()
-               and "auto bill pay" in str(r.get(COL_ORDER_TYPE, "")).lower()]
+        ap_ = [r for r in sub if _is_autopay(r)]
         tot = collections.Counter(round(_num(r.get(COL_TOTAL)) or 0, 0) for r in ap_)
         print("INSP|{} autopayTotal$={}".format(want, dict(tot.most_common(6))))
+    go = gross_revenue_by_office(rows).get(owner, {})
+    print("INSP|MAPPED={}".format(main_products(go)))
+    print("INSP|activation={}".format(activation_by_office(rows).get(owner)))
 
 
 if __name__ == "__main__":
