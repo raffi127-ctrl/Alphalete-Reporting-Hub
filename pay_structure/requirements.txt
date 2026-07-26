@@ -2,3 +2,5 @@ streamlit>=1.30
 pandas>=2.0
 gspread>=5.10
 google-auth>=2.20
+# rebuild 2026-07-25: force a full Cloud reboot so the process re-imports
+# gross_profit fresh (stale sys.modules cache dropped ProductPlan.tier_bonuses).
