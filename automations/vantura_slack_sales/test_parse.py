@@ -64,9 +64,19 @@ CASES = [
      "CX1\nNL 1\nNL 2\nNL3", "B2B", 3),
     ("att lines plus fiber", "B2B (Business)\nAuto Pay on\n\nCx 1\n\nNL 1\n"
      "NL 2\n\nNL 3\n\nNL 4\n\nNL 5\n\nCX 2\n\nFiber 1000 #6", "B2B", 6),
-    # Inseego is NOT its own unit (Jolie/Carlos 2026-07-24) — three NLs = 3.
-    ("att inseego not a unit", "B2B (Business)\nAuto Pay on\n\nCx 1\n\nNL 1\n"
-     "NL 2\n\nNL 3\n\nInseego", "B2B", 3),
+    # Inseego on its OWN line IS a line item (William Bautista 7/16): 3 NL + 1.
+    ("att standalone inseego line", "B2B (consumer)\nCx1\nNL #1\nCx2 (business)"
+     "\nNL #2\nInseego #3\nCx3 (consumer)\nNL #4", "B2B", 4),
+    # Inseego with no NL at all is the line itself (Nick Smedra 7/14) = 1.
+    ("att inseego only", "B2B (Business)\nAutopay :white_check_mark:\n"
+     "Wrap up text\nCx1 Inseego", "B2B", 1),
+    # Bare "NL" with no number (Giovanni Monreal 7/16) = 1 line.
+    ("att bare nl", "B2B (consumer)\nAuto pay :white_check_mark:\nCx1\nNL", "B2B", 1),
+    # "NL - 1" with a dash (Eric Forsythe 7/18) = 1 line.
+    ("att nl dash", "B2B BUSINESS\nCx1\nNL - 1", "B2B", 1),
+    # "NL BYOD" — bare NL annotated with the device (Luis 7/14) = 1.
+    ("att nl byod no number", "B2B (Business)\nWrapUp\nAutopay\nCx1\n"
+     "NL BYOD (Premium)", "B2B", 1),
     ("att fiber only", "B2B (consumer)\nAuto pay :white_check_mark:\n\n"
      "Fiber 1g", "B2B", 1),
     ("att byod lines", "B2B (Business)\n\nCx 1\n\nNL 1 (BYOD)\n\nNL 2 (BYOD)\n\n"
@@ -227,7 +237,7 @@ def main() -> int:
     bad = [b for chk in checks for b in chk()]
     for b in bad:
         print("FAIL", b)
-    total = len(CASES) + 20
+    total = len(CASES) + 24
     print(f"{total - len(bad)}/{total} passed")
     return 1 if bad else 0
 
