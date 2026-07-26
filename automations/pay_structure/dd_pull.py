@@ -37,6 +37,7 @@ COL_CATEGORY = "cl.Category"
 COL_DESCRIPTION = "cl.Description"
 COL_DETAIL = "cl.Description Detail"
 COL_TOTAL = "Total $ to ICD"        # gross revenue to the ICD (Raf: this IS gross revenue)
+COL_CAMPAIGN = "cl.Campaign__c"     # RES-ATT / RES-BASE POWER-Energy / B2B-BOX-Energy / …
 
 # The product categories that carry sellable gross revenue (skip Bonus / Override
 # / Chargeback / Total rows).
@@ -233,6 +234,26 @@ def inspect(owner: str, src: "Optional[Path]" = None) -> None:
     rows = _read_rows(Path(path))
     if not rows:
         print("INSP|EMPTY {}".format(path)); return
+    # Org-wide ENERGY probe: `--inspect __ELE__`. Energy is NOT auto-pay (order type
+    # blank) so the normal filter drops it; here we dump every ELE row grouped by
+    # (owner, campaign) with the Total$ distribution, to see if the payout varies
+    # (BF tier×term) or is a flat per-enrollment value.
+    if owner.strip().upper() in ("__ELE__", "__ENERGY__"):
+        ele = [r for r in rows if str(r.get(COL_CATEGORY, "")).strip().upper() == "ELE"]
+        print("INSP|ELE total rows={}".format(len(ele)))
+        bycamp: Dict[str, List[float]] = collections.defaultdict(list)
+        for r in ele:
+            bycamp[str(r.get(COL_CAMPAIGN, "")).strip() or "(blank)"].append(_num(r.get(COL_TOTAL)) or 0)
+        for camp, vals in sorted(bycamp.items(), key=lambda x: -len(x[1]))[:6]:
+            modes = collections.Counter(round(v, 0) for v in vals).most_common(6)
+            print("INSP|ELE camp={!r} n={} Total$modes={}".format(camp, len(vals), modes))
+        # which owners/offices sell energy (for owner->office mapping)
+        from automations.pay_structure import offices as _po
+        byown = collections.Counter(str(r.get(COL_OWNER, "")).strip() for r in ele)
+        for own, n in byown.most_common(8):
+            off = _po.for_owner(own)
+            print("INSP|ELE owner={!r} n={} office={}".format(own, n, off.key if off else None))
+        return
     cols = list(rows[0].keys())
     print("INSP|rows={} cols={} hasDesc={} hasAct={} hasOrderType={}".format(
         len(rows), len(cols), COL_DESCRIPTION in cols, COL_ACTIVATION in cols,
