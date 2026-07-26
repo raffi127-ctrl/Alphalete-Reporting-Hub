@@ -366,7 +366,8 @@ def editor_view(office) -> None:
         # ICD payout + editable rep pay per level + a single compact "You keep %"
         # column (keep% at each level, L1·L2·L3). Recomputes each rerun from the
         # session-persisted rates, so it updates right after a pay cell is committed.
-        _KEEPCOL = "You keep (L1 / L2 / L3)"
+        _KEEPCOL = "You keep"
+        _lbl = ["L1", "L2", "L3", "L4", "L5"]
         data = []
         for st_ in types:
             pay = pf.get(st_)
@@ -376,9 +377,15 @@ def editor_view(office) -> None:
             for lvl in grid.levels:
                 rep = grid.rate(ck, st_, lvl)
                 row[lvl] = rep
-                keeps.append("${:,.0f} ({}%)".format(pay - rep, round((pay - rep) / pay * 100))
-                             if pay else "—")
-            row[_KEEPCOL] = " / ".join(keeps) if pay else "—"
+                keeps.append((pay - rep, round((pay - rep) / pay * 100)) if pay else None)
+            if not pay:
+                row[_KEEPCOL] = "—"
+            elif len(set(keeps)) == 1:                 # same at every level → one value
+                row[_KEEPCOL] = "${:,.0f}  ({}%)".format(keeps[0][0], keeps[0][1])
+            else:                                       # differs by level → label each
+                row[_KEEPCOL] = "   ".join(
+                    "{}: ${:,.0f} ({}%)".format(_lbl[i], k[0], k[1])
+                    for i, k in enumerate(keeps))
             data.append(row)
         cols = [_SALE_COL, "ICD payout"] + list(grid.levels) + [_KEEPCOL]
         df = pd.DataFrame(data, columns=cols)
@@ -389,9 +396,10 @@ def editor_view(office) -> None:
                 "ICD payout", width="small", disabled=True,
                 help="What the company pays your office per sale"),
             _KEEPCOL: st.column_config.TextColumn(
-                _KEEPCOL, width="small", disabled=True,
-                help="% your office keeps at each level (L1 · L2 · L3), after "
-                     "paying the rep"),
+                _KEEPCOL, width="medium", disabled=True,
+                help="What your office keeps after paying the rep ($ and %). One "
+                     "value when it's the same at every level; labeled L1/L2/L3 "
+                     "when the pay differs by level."),
         }
         for lvl in grid.levels:
             col_cfg[lvl] = st.column_config.NumberColumn(lvl, min_value=0.0,
