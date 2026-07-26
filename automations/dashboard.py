@@ -4229,7 +4229,9 @@ AUTOMATED_REPORTS = [
             "frequency": "weekly",
             "weekdays": [5, 6],  # Saturday, Sunday
             "time": "8:00 AM",
-            "time_label": "Sat 8am/10am/1pm/5pm · Sun 1pm CST",
+            # Weekday-keyed (Sat=5, Sun=6): each day's pill shows only its own
+            # times — no redundant "Sat …/Sun …" prefix in the day's column.
+            "time_label": {"5": "8am/10am/1pm/5pm CST", "6": "1pm CST"},
             "estimated_minutes": 1,
         },
         "checklist": [],
@@ -6361,6 +6363,13 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                         # timezone); schedule.time stays the sortable START time
                         # so _report_time_minutes still orders the card at 8am.
                         _sched_lbl = _sched.get("time_label")
+                        # Weekday-keyed time_label (like daily_runs): a card whose
+                        # cadence differs by day (New-Start: Sat 4×, Sun 1×) shows
+                        # just THIS day's times — the pill already sits in the day's
+                        # column, so a "Sat …/Sun …" prefix is redundant.
+                        if isinstance(_sched_lbl, dict):
+                            _sched_lbl = (_sched_lbl.get(str(_day.weekday()))
+                                          or _sched_lbl.get(_day.weekday()))
                         if _sched_lbl:
                             _label += f" · {_sched_lbl}"
                         elif _sched.get("time"):
