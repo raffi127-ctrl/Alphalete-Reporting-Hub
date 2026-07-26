@@ -126,9 +126,17 @@ CAMPAIGNS = [
         exclude=re.compile(r"\bd2d\b|\bbox\s*#?\s*\d|\bbill submitted\b", re.I),
         override=None,
         mode="units",
-        # Every line, fiber drop and hotspot is one unit on the board.
-        markers=[re.compile(r"\bnl\s*#?\s*\d{1,2}(?!\d)|\bfiber\b|\binseego\b",
-                            re.I)],
+        # One unit per NEW LINE (NL) and per Fiber drop. The number sits on
+        # EITHER side — "NL 1" and "1 NL (PREMIUM)" are both one line. Diego
+        # Borres wrote the number-first form and went entirely uncounted
+        # (Jolie/Carlos 2026-07-24). Inseego is a LINE TYPE, not its own sale:
+        # "NL 1 inseego air" is ONE line, not two — Eric Forsythe was
+        # double-counted the same day. So Inseego is only a campaign-ID signal
+        # (still in _ATT_SIGNAL), never a unit here.
+        markers=[re.compile(
+            r"\bnl\s*#?\s*\d{1,2}(?!\d)"      # NL 1 / NL3 / NL #2
+            r"|\b\d{1,2}[ \t]*nl\b"          # 1 NL / 2 NL  (number first)
+            r"|\bfiber\b", re.I)],
         evidence=re.compile(r"\bcx\b", re.I),
     ),
 ]
