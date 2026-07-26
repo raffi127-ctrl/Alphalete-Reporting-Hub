@@ -3179,7 +3179,10 @@
         "vantura_churn"
       ],
       "timeout_minutes": 30,
-      "verify": null,
+      "verify": {
+        "type": "manifest",
+        "report_id": "b2b_metrics"
+      },
       "machine": "Lucy 2"
     },
     "att_order_log": {
@@ -3211,7 +3214,10 @@
       "freshness_target": null,
       "depends_on": [],
       "timeout_minutes": 25,
-      "verify": null,
+      "verify": {
+        "type": "manifest",
+        "report_id": "att_order_log"
+      },
       "machine": "Lucy 2"
     },
     "install_att_order_log_agent": {

@@ -203,12 +203,29 @@ def main(argv=None) -> int:
         if res.get("unmapped"):
             log("  NOTE: unmapped statuses present: {}".format(
                 ", ".join(res["unmapped"])))
+        # Record a clean run so the orchestrator's manifest verifier confirms it
+        # ACTUALLY completed (vs the old verify:null soft-pass). Only on a REAL
+        # Sheet write (args.sheet) — a dry run must not mark the day clean.
+        # Best-effort: manifest bookkeeping must never fail the report.
+        try:
+            from automations.shared import run_manifest
+            run_manifest.mark_clean("att_order_log", kind="sheet")
+        except Exception:  # noqa: BLE001
+            pass
         return 0
     except Exception:  # noqa: BLE001 — report the failure, don't traceback-dump
         log("")
         log("FAILED:")
         for ln in traceback.format_exc().splitlines()[-14:]:
             log("  " + ln[:200])
+        try:
+            from automations.shared import run_manifest
+            run_manifest.write_manifest(
+                "att_order_log", failed=["sheet write"],
+                retry_args=["--sheet"], kind="sheet",
+                note="att_order_log run raised before completing the Sheet write")
+        except Exception:  # noqa: BLE001
+            pass
         return 1
 
 

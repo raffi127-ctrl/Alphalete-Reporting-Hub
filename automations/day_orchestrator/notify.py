@@ -477,6 +477,17 @@ def _rerun_for(rs, cfg, units=None):
          that scope to the failed parts (e.g. daily_metrics --only churn).
       3) `lucy rerun <id>` — whole report, when nothing narrower is known.
     """
+    # A post-watch pseudo-report posts OUTSIDE the orchestrator (its own
+    # LaunchAgent), so `lucy rerun` doesn't apply — surface the wrapper command
+    # the watch target carries instead.
+    try:
+        from automations.day_orchestrator import post_watch as _pw
+        if rs.report_id.endswith(_pw.WATCH_SUFFIX):
+            hint = _pw.rerun_hint_for(rs.report_id)
+            if hint:
+                return hint
+    except Exception:  # noqa: BLE001 — fall through to the generic path
+        pass
     r = cfg.reports.get(rs.report_id)
     # 1) named-unit scoped command
     scoped = getattr(r, "scoped_rerun_cmd", None) if r is not None else None

@@ -35,7 +35,7 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-from automations.day_orchestrator import registry, state, readiness, reconcile
+from automations.day_orchestrator import registry, state, readiness, reconcile, post_watch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LOG_DIR = REPO_ROOT / "output" / "logs"
@@ -192,8 +192,19 @@ def main(argv: Optional[List[str]] = None) -> int:
         for r in todays:
             ds.reports[r.report_id].display_name = r.display_name
         for rid, rs in ds.reports.items():
-            if rid not in todays_by_id and not rs.is_terminal():
+            if (rid not in todays_by_id and not rs.is_terminal()
+                    and not rid.endswith(post_watch.WATCH_SUFFIX)):
                 ds.set(rid, state.SKIPPED, reason="not scheduled today")
+        # Seed post-watch pseudo-reports (machine + weekday gated inside
+        # targets_for). These are VERIFY-ONLY: they ride the alert path but the
+        # run loop never launches them (it iterates `todays`, not ds.reports), so
+        # a self-scheduled poster is watched without risking a double-post. Seed
+        # AFTER the SKIPPED sweep (which now skips __watch ids) so a resume keeps
+        # a watch report's saved status instead of re-SKIPPING it.
+        for w in post_watch.targets_for(registry.this_machine(), target):
+            if w.watch_id not in ds.reports:
+                ds.reports[w.watch_id] = state.ReportState(
+                    report_id=w.watch_id, display_name=w.display_name)
         state.save(ds)
 
         _log(f"Day orchestrator start · {target.isoformat()} · dry_run={dry_run} "
@@ -228,6 +239,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             # human to read the email and rerun by hand (Megan 2026-07-16).
             _retry_incomplete_parts(ds, todays, target,
                                     dry_run=dry_run, simulate=args.simulate)
+            # Post-watch: confirm self-scheduled Slack posters left today's
+            # done-marker by their deadline; a no-show flips to MISSED_NOT_READY
+            # so the SAME "didn't run" alert fires. Verify-only — never launches
+            # them. Runs BEFORE the alert sweep so a fresh miss pages this pass.
+            _check_post_watch(ds, target, now)
             # An INCOMPLETE that just exhausted its part-retries is now stuck for
             # good — alert on it (once) before the checkpoint / final, same as any
             # other terminal failure.
@@ -858,6 +874,36 @@ def _alert_new_failures(cfg, ds, todays_by_id, channel, dry_run):
         else:
             continue
         _maybe_failure_alert(cfg, ds, rs, channel, dry_run)
+
+
+def _check_post_watch(ds, target, now):
+    """Evaluate each seeded post-watch pseudo-report against its done-marker.
+
+    'ok'      -> DONE   (the self-scheduled poster completed today).
+    'missed'  -> MISSED_NOT_READY (no marker past the deadline) -> the existing
+                 "didn't run" alert fires it, same wording as any missed report.
+    'pending' -> leave PENDING (before the deadline; keeps the loop alive so a
+                 marker that lands late this morning still flips it to DONE).
+
+    Only targets for THIS machine + today were seeded, so this loops a tiny set.
+    A watch report that's already terminal is left as-is: a confirmed DONE stays
+    green, and a MISSED that already alerted isn't re-flipped/re-alerted. Best-
+    effort — a watch hiccup must never crash the batch."""
+    try:
+        for w in post_watch.targets_for(registry.this_machine(), target):
+            rs = ds.reports.get(w.watch_id)
+            if rs is None or rs.is_terminal():
+                continue
+            verdict = post_watch.evaluate(w, target, now)
+            if verdict == "ok":
+                ds.set(w.watch_id, state.DONE, reason="post confirmed (done-marker present)")
+                _log(f"  {w.watch_id}: DONE — post-marker present")
+            elif verdict == "missed":
+                ds.set(w.watch_id, state.MISSED_NOT_READY, reason=w.note)
+                _log(f"  {w.watch_id}: MISSED — {w.note}")
+            # 'pending' -> no change
+    except Exception as e:  # noqa: BLE001 — a watch must never sink the batch
+        _log(f"  post-watch check failed: {type(e).__name__}: {str(e)[:120]}")
 
 
 def _apply_backstop(ds, stale_after):

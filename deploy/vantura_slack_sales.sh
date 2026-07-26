@@ -48,6 +48,18 @@ ST=$?
 
 echo "[$(date)] vantura-slack-sales finished exit=$ST" >> "$LOG_FILE"
 
+# Post-watch done-marker (day_orchestrator.post_watch). Written on ANY completed
+# run — success, wrong-week hold, OR failure — because a FAILED run already
+# self-alerts below (alert.py), so the watch's job is only to catch the case
+# nothing else can: the LaunchAgent never firing at all (mini launchd drift).
+# Marker present = "a pass ran today"; absent past 6:15 = "no morning pass ran".
+# Skipped on --dry (a preview must not look like a real pass). Never a real pass
+# on the concurrent-skip early-exit above (that returns before reaching here).
+if [ "${1:-}" != "--dry" ]; then
+    touch "$LOG_DIR/.vantura-slack-sales-done-$(date +%Y-%m-%d)"
+    find "$LOG_DIR" -name ".vantura-slack-sales-done-*" -mtime +3 -delete 2>/dev/null
+fi
+
 # Report this standalone run to the Hub (shared Hub Activity sheet) so the card's
 # pill reflects a REAL success/failure — the orchestrator publishes the reports IT
 # runs, and a launchd job bypasses it entirely, so without this a clean run is
