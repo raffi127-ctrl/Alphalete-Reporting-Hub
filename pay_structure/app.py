@@ -179,6 +179,39 @@ def _campaign_types(grid: store.Grid, ck: str, camp) -> "list":
 # --------------------------------------------------------------------------
 # The editor
 # --------------------------------------------------------------------------
+def _render_margin(ck, camp, bucket, levels) -> None:
+    """A color-coded read-only table under a campaign's rep-pay grid: the ICD
+    payout (what the company pays the office) + the office's profit $ and % kept
+    at each level. Only sale types with a mapped payout appear."""
+    rows = []
+    for st_ in camp.sale_types:
+        pay = icd_payout.payout(ck, st_)
+        if not pay:
+            continue
+        row = {_SALE_COL: st_, "ICD payout": "${:,.0f}".format(pay)}
+        for lvl in levels:
+            rep = float((bucket.get(st_) or {}).get(lvl) or 0.0)
+            profit = pay - rep
+            keep = round(profit / pay * 100) if pay else 0
+            row[lvl] = "${:,.0f}  ·  {}%".format(profit, keep)
+        rows.append(row)
+    if not rows:
+        return
+    df = pd.DataFrame(rows)
+
+    def _bg(col):
+        if col.name == "ICD payout":
+            return ["background-color:#FEF3C7"] * len(col)      # amber
+        if col.name in levels:
+            return ["background-color:#DCFCE7"] * len(col)      # green
+        return [""] * len(col)
+
+    st.caption("💵 **Your margin** — amber is what the company pays your office "
+               "(ICD payout); green is your **profit $ and the % you keep** after "
+               "paying the rep at each level.")
+    st.dataframe(df.style.apply(_bg), hide_index=True, width="stretch")
+
+
 def editor_view(office) -> None:
     grid = _working_grid(office)
     display_name = grid.office_name or office.business_name or office.label
@@ -260,10 +293,8 @@ def editor_view(office) -> None:
     else:
         st.caption("Dollars a rep earns for each ACTIVE line of that sale type. "
                    "Fill in every cell — even if the pay doesn't change by level, "
-                   "enter it at each level so the estimate stays accurate. "
-                   "**ICD gets** = what the company pays your office for that "
-                   "product; **Keep %** = the share you keep after paying the rep "
-                   "(both update after you enter a rate).")
+                   "enter it at each level so the estimate stays accurate. Your "
+                   "payout + margin show in the colored table under each campaign.")
 
     new_rates = {}
     for ck in checked:
@@ -274,33 +305,16 @@ def editor_view(office) -> None:
                     f"color:{accent};margin-top:8px'>{camp.label}</div>",
                     unsafe_allow_html=True)
         types = _campaign_types(grid, ck, camp)
-        keep_cols = ["Keep {} %".format(lvl) for lvl in grid.levels]
-        _nan = float("nan")
-        rows = []
-        for st_ in types:
-            pay = icd_payout.payout(ck, st_)          # ICD's Commission Base
-            reps = [grid.rate(ck, st_, lvl) for lvl in grid.levels]
-            keeps = [(round((pay - r) / pay * 100) if pay and pay > 0 else _nan)
-                     for r in reps]
-            rows.append([st_, (pay if pay else _nan)] + reps + keeps)
-        df = pd.DataFrame(rows, columns=[_SALE_COL, _ICD_COL]
-                          + list(grid.levels) + keep_cols)
-        col_cfg = {
-            _SALE_COL: st.column_config.TextColumn(_SALE_COL, width="large",
-                                                   disabled=True),
-            _ICD_COL: st.column_config.NumberColumn(
-                _ICD_COL, disabled=True, format="$%.0f",
-                help="What the company pays your office (Commission Base to ICD) "
-                     "for this product. Blank = not mapped yet."),
-        }
+        df = pd.DataFrame(
+            [[st_] + [grid.rate(ck, st_, lvl) for lvl in grid.levels]
+             for st_ in types],
+            columns=[_SALE_COL] + list(grid.levels))
+        col_cfg = {_SALE_COL: st.column_config.TextColumn(_SALE_COL,
+                                                          width="large",
+                                                          disabled=True)}
         for lvl in grid.levels:
             col_cfg[lvl] = st.column_config.NumberColumn(lvl, min_value=0.0,
                                                          step=1.0, format="$%.2f")
-        for kc in keep_cols:
-            col_cfg[kc] = st.column_config.NumberColumn(
-                kc, disabled=True, format="%d%%",
-                help="Share of the ICD payout your office keeps after paying the "
-                     "rep at that level.")
         edited = st.data_editor(df, width="stretch", column_config=col_cfg,
                                 hide_index=True, key=f"rates_{office.key}_{ck}")
         bucket = {}
@@ -310,6 +324,7 @@ def editor_view(office) -> None:
                 bucket[st_] = {lvl: float(row.get(lvl) or 0.0)
                                for lvl in grid.levels}
         new_rates[ck] = bucket
+        _render_margin(ck, camp, bucket, grid.levels)
 
     # Fold this run's edits into the working grid so nothing is lost on rerun.
     # Carry logo + accent forward (they're branding, not edited here) or the page
