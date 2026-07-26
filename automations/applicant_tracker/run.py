@@ -220,28 +220,22 @@ def run(phase: str, target: dt.date | None = None) -> None:
               f"login ({config.__name__} OFFICE_IDS): {', '.join(no_access)} — "
               "this repeats nightly until access is granted or the id is removed")
 
-    # Report completion for the Hub pill: orange after the morning pass, green
-    # after the evening pass (daily_runs: 2). The Hub counts only SUCCESS rows
-    # toward the daily 2, so the status here decides the colour. Only real
-    # (non-dry) runs count.
+    # Report completion for the Hub pill. Only real (non-dry) runs count.
     #
-    # GENUINE FAILURES (offices that threw — expired session, timeout, etc.)
-    # publish PARTIAL: the card stays amber and the error-watcher alerts, so a
-    # flaky run can't masquerade as a clean green tile.
-    #
-    # A KNOWN ACCESS GAP does NOT demote the pill. Office 14229 (Akib/Motiv8) is
-    # a different company the rcaptain login can't see — it's no-access EVERY
-    # run, so counting it as partial would peg the card amber forever and it
-    # could never go green (the orange→green design would be dead on arrival).
-    # It's a standing external gap (awaiting Motiv8 access), already named in the
-    # "NOT VISIBLE" log line above, not this run's failure — so a pass whose only
-    # misses are no-access still publishes SUCCESS and the pill colours normally.
+    # A run is SUCCESS only when EVERY expected office synced. Any miss —
+    # a genuine failure (office threw) OR a no-access gap — publishes PARTIAL, so
+    # the card stays amber (not green) rather than showing all-clear while an
+    # office is silently omitted. Megan's call 2026-07-25: the card should NOT go
+    # green while office 14229 (Akib/Motiv8) is still unreachable — she's getting
+    # Motiv8 access, and the moment that lands all 17 sync and it greens on its
+    # own. Until then, amber = "ran fine, one office still needs access" (named
+    # in the NOT VISIBLE log line above).
     if not sheets.DRY_RUN:
         try:
             from automations.shared import hub_activity
             hub_activity.log_completed(
                 CARD_ID, CARD_NAME,
-                status="partial" if failed else "success")  # no_access ≠ failure
+                status="partial" if (failed or no_access) else "success")
         except Exception:
             pass
     print(f"=== {phase.upper()} phase done ===")
