@@ -26,6 +26,9 @@ Actions:
   set_slack_user_token <tok>  install the 'Lucy' USER token (xoxp-…) — the one
                         channel/thread posts actually use
   set_gbp_token <json>  install the Google Business Profile OAuth token (gbp-token.json contents)
+  set_gmail_token <json>  install the gmail.compose token (gmail-token.json contents)
+                        so draft-creating reports (captainship_drafts) can run
+                        unattended. Verifies the mailbox is alphaletereporting@.
   applicant_key [remove]  is the Applicant Tracker service-account key on THIS
                         machine? `remove` deletes it + every .bak copy. Never
                         prints key material. Re-push with
@@ -88,7 +91,7 @@ DAILY_AUTORUN_CAP = 100
 PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_holder",
                     "pip_install", "playwright_install", "set_applicant_service_account",
                     "applicant_key", "watch_test", "diag", "set_sleep",
-                    "set_slack_token", "set_gbp_token"}
+                    "set_slack_token", "set_gbp_token", "set_gmail_token"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
@@ -1233,6 +1236,97 @@ def _action_set_gbp_token(args: str) -> tuple[bool, str]:
                   f"(fetched {len(sample)} review as a check)")
 
 
+def _safe_shlex_first(raw: str) -> bool:
+    """True if `raw` shlex-splits into at least one token (so callers can try the
+    un-shlexed form without wrapping every use in its own try/except)."""
+    import shlex as _shlex
+    try:
+        return bool(_shlex.split(raw))
+    except Exception:  # noqa: BLE001 — unbalanced quotes
+        return False
+
+
+def _action_set_gmail_token(args: str) -> tuple[bool, str]:
+    """Install the gmail.compose OAuth token on THIS machine so reports that
+    create Gmail DRAFTS (captainship_drafts) can run unattended. Args is the
+    CONTENTS of ~/.config/recruiting-report/gmail-token.json (self-contained:
+    refresh_token + client_id/secret, so no oauth-client.json is needed here).
+
+    Why this exists: on 2026-07-25 captainship_drafts died on its FIRST draft
+    with "No Gmail token at ~/.config/recruiting-report/gmail-token.json" — the
+    one-time `python -m automations.shared.gmail_auth` had never been run on the
+    mini, and that authorization is interactive (browser + consent), so it can't
+    be done over the queue. Shipping the already-authorized token is the only
+    unattended path. Backs up any existing token, writes it, then verifies by
+    resolving the mailbox. NEVER echoes the token.
+
+    Note: the token transits the control Sheet's Args cell to get here — redact
+    that cell after this shows 'done' (the queuer does this from the laptop)."""
+    import json
+    import shlex
+    import shutil
+    # Two delivery paths reach here: `lucy` shlex-JOINS multi-char args before
+    # the Sheet round-trip, while enqueue() writes the cell verbatim. shlex.split
+    # on already-raw JSON eats the quotes ('{"a":1}' -> '{a:1}'), so try the raw
+    # text FIRST and only fall back to un-shlexing. Handles both without guessing.
+    raw = (args or "").strip()
+    parsed = None
+    for cand in (raw, *( [shlex.split(raw)[0]] if _safe_shlex_first(raw) else [] )):
+        cand = (cand or "").strip()
+        if not cand.startswith("{"):
+            continue
+        try:
+            parsed = json.loads(cand)
+            break
+        except Exception:  # noqa: BLE001 — try the next candidate
+            continue
+    if parsed is None:
+        if not raw.startswith("{") and not raw.startswith('"{'):
+            return False, ("set_gmail_token needs the gmail-token.json CONTENTS "
+                           "(a JSON object) as Args")
+        return False, "Args isn't valid JSON (neither raw nor shlex-unwrapped)"
+    if not parsed.get("refresh_token"):
+        return False, "token JSON has no refresh_token — re-authorize and pass the whole file"
+    if not (parsed.get("client_id") and parsed.get("client_secret")):
+        return False, ("token JSON has no client_id/client_secret — it must be "
+                       "self-contained to refresh on this machine")
+
+    from automations.shared.gmail_auth import GMAIL_ACCOUNT, GMAIL_TOKEN_PATH
+    path = GMAIL_TOKEN_PATH
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't create {path.parent}: {str(e).splitlines()[0][:120]}"
+    if path.exists():
+        stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+        try:
+            shutil.copy2(path, path.parent / f"gmail-token.json.bak.{stamp}")
+        except Exception:  # noqa: BLE001 — a failed backup shouldn't block the fix
+            pass
+    try:
+        path.write_text(json.dumps(parsed, indent=2), encoding="utf-8")
+        os.chmod(path, 0o600)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path}: {str(e).splitlines()[0][:120]}"
+    # Verify through the SAME loader the reports use — proof it refreshes here
+    # AND lands in the right mailbox (a token for the wrong account would file
+    # every draft where nobody looks). Never echo the token.
+    try:
+        from googleapiclient.discovery import build
+
+        from automations.shared.gmail_auth import load_credentials
+        svc = build("gmail", "v1", credentials=load_credentials(),
+                    cache_discovery=False)
+        who = svc.users().getProfile(userId="me").execute().get("emailAddress", "")
+    except Exception as e:  # noqa: BLE001
+        return True, (f"token written to {path} but verify errored "
+                      f"({type(e).__name__}: {str(e).splitlines()[0][:110]})")
+    if who.lower() != GMAIL_ACCOUNT.lower():
+        return False, (f"token written but it authorizes {who!r}, not "
+                       f"{GMAIL_ACCOUNT!r} — drafts would land in the wrong mailbox")
+    return True, f"Gmail token installed + verified: mailbox {who}"
+
+
 def _action_set_raffi_app_password(args: str) -> tuple[bool, str]:
     """Install the raffi127 Gmail APP PASSWORD on THIS machine so bg_check_sync
     can read the First Advantage / Sterling emails over IMAP unattended. Args is
@@ -1428,6 +1522,7 @@ ACTIONS = {
     "set_slack_token": _action_set_slack_token,
     "set_slack_user_token": _action_set_slack_user_token,
     "set_gbp_token": _action_set_gbp_token,
+    "set_gmail_token": _action_set_gmail_token,
     "restart_holder": _action_restart_holder,
     "restart_poller": _action_restart_poller,
     "restart_hub": _action_restart_hub,
