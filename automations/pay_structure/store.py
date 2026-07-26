@@ -334,6 +334,53 @@ def save_codes(mapping: "Dict[str, str]", business: "Dict[str, str]",
         raise SaveError("Couldn't save codes: {}".format(e))
 
 
+_GROSS_TAB = "Pay Structure Gross Revenue"
+
+
+def _open_gross_ws(sheet_id: str, create: bool):
+    ss = _open_ss(sheet_id)
+    try:
+        return _retry(lambda: ss.worksheet(_GROSS_TAB))
+    except Exception:
+        if not create:
+            return None
+        ws = _retry(lambda: ss.add_worksheet(title=_GROSS_TAB, rows=40, cols=2))
+        _retry(lambda: ws.update([["Office", "Gross revenue (JSON) — set by dd_pull"]],
+                                 range_name="A1"))
+        return ws
+
+
+def save_gross_revenue(by_office: "Dict[str, dict]") -> None:
+    """Write each office's parsed gross revenue ({office_key: {raw, main}})."""
+    sid = _sheet_id()
+    if not sid:
+        raise SaveError("No pay-structure sheet configured.")
+    ws = _open_gross_ws(sid, create=True)
+    rows = [["Office", "Gross revenue (JSON) — set by dd_pull"]]
+    for k, v in by_office.items():
+        rows.append([k, json.dumps(v)])
+    _retry(lambda: ws.clear())
+    _retry(lambda: ws.update(rows, range_name="A1", value_input_option="RAW"))
+
+
+def load_gross_revenue(office_key: str) -> dict:
+    """The office's parsed gross revenue {raw:{...}, main:{...}}, or {}."""
+    sid = _sheet_id()
+    if not sid:
+        return {}
+    try:
+        ws = _open_gross_ws(sid, create=False)
+        if ws is None:
+            return {}
+        want = office_key.strip().lower()
+        for row in (_retry(lambda: ws.get_all_values()) or [])[1:]:
+            if row and row[0].strip().lower() == want and len(row) > 1 and row[1].strip():
+                return json.loads(row[1])
+    except Exception:
+        pass
+    return {}
+
+
 def list_structures() -> "List[dict]":
     """Who's filled in — [{office, business, campaigns, updated}] from the
     structures tab, for the admin 'progress' view."""

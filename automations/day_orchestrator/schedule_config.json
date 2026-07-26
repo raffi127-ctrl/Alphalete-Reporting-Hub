@@ -129,7 +129,7 @@
     },
     "applicant_sync_morning": {
       "on_scheduler": false,
-      "_note": "MORNING phase (reads YESTERDAY: Export Call List + Update 2R Status). Runs ~6:45am Mon–Sat on its OWN launchd (com.alphalete.applicant-morning), NOT the 4am batch: daily_focus uses the SAME rcaptain ApplicantStream login in that batch and the concurrent logins collided (16/17 + no-session-token failures). 6:45 is after the 4am batch clears (~6:12). base_args ['morning']; reports completion as card 'applicant-tracker-sync' (pill → orange). Install via install_applicant_morning_agent.",
+      "_note": "MORNING phase (reads YESTERDAY: Export Call List + Update 2R Status). Runs ~6:45am Mon\u2013Sat on its OWN launchd (com.alphalete.applicant-morning), NOT the 4am batch: daily_focus uses the SAME rcaptain ApplicantStream login in that batch and the concurrent logins collided (16/17 + no-session-token failures). 6:45 is after the 4am batch clears (~6:12). base_args ['morning']; reports completion as card 'applicant-tracker-sync' (pill \u2192 orange). Install via install_applicant_morning_agent.",
       "display_name": "Applicant Tracker: morning phase (4am)",
       "source_type": "appstream",
       "data_sources": [],
@@ -158,7 +158,7 @@
     },
     "install_applicant_morning_agent": {
       "on_scheduler": false,
-      "_note": "One-shot installer for com.alphalete.applicant-morning on Lucy 1 (6:45am CST Mon–Sat; deploy/applicant_tracker.sh morning -> python -m automations.applicant_tracker.run morning). Runs the MORNING phase after the 4am batch frees the rcaptain login. `lucy rerun install_applicant_morning_agent`.",
+      "_note": "One-shot installer for com.alphalete.applicant-morning on Lucy 1 (6:45am CST Mon\u2013Sat; deploy/applicant_tracker.sh morning -> python -m automations.applicant_tracker.run morning). Runs the MORNING phase after the 4am batch frees the rcaptain login. `lucy rerun install_applicant_morning_agent`.",
       "display_name": "Install Applicant Tracker morning agent (6:45am)",
       "source_type": "local",
       "data_sources": [],
@@ -920,7 +920,7 @@
     },
     "install_lucy2_digest_agent": {
       "on_scheduler": true,
-      "_note": "MANUAL: `lucy rerun install_lucy2_digest_agent` (re)installs com.alphalete.lucy2-digest on the mini. That job is now the INTRADAY BOTH-MACHINE error watcher (every 10 min, 04-21 CST) — reads the shared Hub Activity log and posts deduped real-time corrections alerts for standalone reports that errored on either Lucy 1 or Lucy 2; NO summary email. Run this once after pulling the reschedule so launchd picks up the new StartInterval. weekdays [] = manual only.",
+      "_note": "MANUAL: `lucy rerun install_lucy2_digest_agent` (re)installs com.alphalete.lucy2-digest on the mini. That job is now the INTRADAY BOTH-MACHINE error watcher (every 10 min, 04-21 CST) \u2014 reads the shared Hub Activity log and posts deduped real-time corrections alerts for standalone reports that errored on either Lucy 1 or Lucy 2; NO summary email. Run this once after pulling the reschedule so launchd picks up the new StartInterval. weekdays [] = manual only.",
       "display_name": "Install Lucy 2 / error-watch agent",
       "source_type": "local",
       "data_sources": [],
@@ -4062,6 +4062,30 @@
       "verify": {
         "type": "not_configured"
       },
+      "machine": "Lucy 1"
+    },
+    "dd_gross_revenue": {
+      "on_scheduler": false,
+      "_note": "Pulls each office's base-tier GROSS REVENUE (Total $ to ICD) + activation from DD DETAIL (ORG) for the pay-structure gross-profit model (Raf). Manual: `lucy rerun dd_gross_revenue`. Low-urgency; should auto-run 1st & 15th at noon (day-of-month cadence is a follow-up \u2014 weekday cadence can't express it).",
+      "display_name": "Pay Structure: ICD gross revenue (DD)",
+      "source_type": "tableau",
+      "data_sources": [
+        "DD DETAIL (ORG)"
+      ],
+      "command": [
+        "automations.pay_structure.dd_pull"
+      ],
+      "base_args": [
+        "--write"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 15,
       "machine": "Lucy 1"
     }
   },

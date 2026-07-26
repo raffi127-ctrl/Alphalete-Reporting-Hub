@@ -186,20 +186,34 @@ def _gross_profit_simulator(office) -> None:
     st.divider()
     st.markdown("### 📊 Gross profit simulator")
     st.caption("Model your margin on the main products. **Gross revenue** = what "
-               "SEI/AT&T pays your office per ACTIVATED sale (base tier, ABP "
+               "SCI/AT&T pays your office per ACTIVATED sale (base tier, ABP "
                "100%). Set what you pay the rep to see profit + margin.")
+    try:
+        gr = store.load_gross_revenue(office.key)
+    except Exception:                    # noqa: BLE001
+        gr = {}
+    office_gross = gr.get("main", {})
+    act_default = int(round((gr.get("activation") or 0.85) * 100))
+
     ctop = st.columns([2, 2])
     pct = ctop[0].radio("How do you pay the rep?",
                         ["$ per sale", "% of gross revenue"], horizontal=True,
                         key=f"gp_method_{office.key}") == "% of gross revenue"
-    activation = ctop[1].slider("Office activation rate (%)", 50, 100, 85,
+    activation = ctop[1].slider("Office activation rate (%)", 50, 100, act_default,
                                 key=f"gp_act_{office.key}") / 100.0
+    if gr.get("pulled"):
+        st.caption("✅ Gross revenue + activation are your office's real DD numbers "
+                   "— **last pulled {}**. Edit any of them freely.".format(gr["pulled"]))
+    else:
+        st.caption("Numbers below are the model defaults (DD not pulled for your "
+                   "office yet) — edit freely.")
 
     plans, volumes = [], {}
-    for name, default_gross in gp.MAIN_PRODUCTS.items():
+    for name, model_default in gp.MAIN_PRODUCTS.items():
+        default_gross = float(office_gross.get(name, model_default))
         c = st.columns([2.2, 2, 2, 1.6])
         c[0].markdown("**{}**".format(name))
-        gross = c[1].number_input("Gross revenue (SEI pays $)",
+        gross = c[1].number_input("Gross revenue (SCI pays $)",
                                   value=float(default_gross), min_value=0.0,
                                   step=5.0, key=f"gp_g_{office.key}_{name}")
         payout = c[2].number_input("You pay rep ({})".format("%" if pct else "$"),
@@ -208,11 +222,20 @@ def _gross_profit_simulator(office) -> None:
                                    key=f"gp_p_{office.key}_{name}")
         sales = c[3].number_input("# sales", value=100, min_value=0, step=10,
                                   key=f"gp_v_{office.key}_{name}")
-        plans.append(gp.ProductPlan(name, gross, payout, pct))
+        cb = st.columns([2.2, 2, 2, 1.6])
+        cb[0].caption("Volume tier bonus ($/sale)")
+        b5 = cb[1].number_input("at 5+ units", value=0.0, min_value=0.0, step=5.0,
+                                key=f"gp_b5_{office.key}_{name}")
+        b8 = cb[2].number_input("at 8+ units", value=0.0, min_value=0.0, step=5.0,
+                                key=f"gp_b8_{office.key}_{name}")
+        plans.append(gp.ProductPlan(name, gross, payout, pct,
+                                    tier_bonuses={5: b5, 8: b8}))
         volumes[name] = sales
 
     res = gp.simulate(plans, volumes, activation)
     rows = [{"Product": r["product"],
+             "Bonus/sale": ("${:,.0f}".format(r.get("tier_bonus", 0))
+                            if r.get("tier_bonus") else "—"),
              "Gross revenue": "${:,.0f}".format(r["revenue"]),
              "Rep payout (+12% tax)": "${:,.0f}".format(r["rep_payout"] + r["payroll_tax"]),
              "Profit": "${:,.0f}".format(r["profit"]),

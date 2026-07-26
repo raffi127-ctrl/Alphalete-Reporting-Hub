@@ -44,9 +44,20 @@ class ProductPlan:
     gross_payout: float            # gross revenue to the office per ACTIVATED unit, base tier
     payout: float                  # $ per unit, or a percent (0-100) if pay_is_pct
     pay_is_pct: bool = False
+    # Volume tier bonuses the owner pays the rep: {units_threshold: $ per sale}.
+    # Raf's sheet uses 5 & 8 units. When the week's volume hits a threshold, EVERY
+    # sale that week earns that per-sale bonus (the owner sets it to drive sales).
+    tier_bonuses: "Dict[int, float]" = None   # e.g. {5: 40, 8: 55}
 
     def commission(self) -> float:
         return self.gross_payout * self.payout / 100.0 if self.pay_is_pct else self.payout
+
+    def bonus_per_sale(self, sales: float) -> float:
+        """Best (highest-threshold) tier bonus the rep qualifies for at `sales`."""
+        if not self.tier_bonuses:
+            return 0.0
+        hit = [b for t, b in self.tier_bonuses.items() if sales >= t]
+        return max(hit) if hit else 0.0
 
 
 def _line(gross_payout, commission, sales, activation, payroll_tax):
@@ -85,8 +96,11 @@ def simulate(plans: "List[ProductPlan]", volumes: "Dict[str, float]",
         n = float(volumes.get(p.name, 0) or 0)
         if n <= 0:
             continue
-        d = _line(p.gross_payout, p.commission(), n, activation, payroll_tax)
+        # base commission + any qualified volume tier bonus, per activated sale
+        eff_comm = p.commission() + p.bonus_per_sale(n)
+        d = _line(p.gross_payout, eff_comm, n, activation, payroll_tax)
         d["product"] = p.name
+        d["tier_bonus"] = round(p.bonus_per_sale(n), 2)
         rows.append(d)
         rev += d["revenue"]; pay += d["rep_payout"]; tax += d["payroll_tax"]
         profit += d["profit"]
