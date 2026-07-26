@@ -70,17 +70,38 @@ def first_empty_row_in_column(ws, col_letter: str) -> int:
     return len(values) + 1
 
 
+def _ensure_grid(ws, need_row: int, need_col: int) -> None:
+    """Grow the worksheet grid so a write to (need_row, need_col) fits. The Call
+    List is append-only and grew into Google's grid cap (40,207 rows), so an append
+    past it failed `Range … exceeds grid limits` and silently dropped whole offices
+    — the 'partial' syncs since 2026-07-24. Adds rows/cols (with a buffer so we're
+    not resizing every single append); never removes anything. Best-effort: a
+    resize hiccup shouldn't sink the write, which will then surface its own error."""
+    try:
+        cur_rows = int(getattr(ws, "row_count", 0) or 0)
+        cur_cols = int(getattr(ws, "col_count", 0) or 0)
+        if need_row > cur_rows:
+            ws.add_rows(need_row - cur_rows + 1000)   # +buffer to amortize
+        if need_col > cur_cols:
+            ws.add_cols(need_col - cur_cols + 2)
+    except Exception as e:  # noqa: BLE001
+        print(f"    (grid resize skipped: {type(e).__name__}: {e})")
+
+
 def paste_block(ws, start_row: int, start_col_letter: str, rows: list[list]):
     """Paste a 2-D block of values starting at start_col_letter+start_row."""
     if not rows:
         return
     start = f"{start_col_letter}{start_row}"
     n_cols = max(len(r) for r in rows)
-    end_col = gspread.utils.rowcol_to_a1(1, gspread.utils.a1_to_rowcol(start)[1] + n_cols - 1)
+    start_col_idx = gspread.utils.a1_to_rowcol(start)[1]
+    end_col = gspread.utils.rowcol_to_a1(1, start_col_idx + n_cols - 1)
     end_col_letter = "".join(c for c in end_col if c.isalpha())
-    end = f"{end_col_letter}{start_row + len(rows) - 1}"
+    last_row = start_row + len(rows) - 1
+    end = f"{end_col_letter}{last_row}"
     if DRY_RUN:
         print(f"    [dry-run] would paste {len(rows)} row(s) x {n_cols} col(s) "
               f"into {start}:{end}")
         return
+    _ensure_grid(ws, last_row, start_col_idx + n_cols - 1)
     ws.update(f"{start}:{end}", rows, value_input_option="USER_ENTERED")
