@@ -266,6 +266,36 @@ def inspect(owner: str, src: "Optional[Path]" = None) -> None:
     # blank) so the normal filter drops it; here we dump every ELE row grouped by
     # (owner, campaign) with the Total$ distribution, to see if the payout varies
     # (BF tier×term) or is a flat per-enrollment value.
+    # Full product catalog probe: `--inspect __PRODUCTS__`. Every distinct
+    # (category, description) that is a real PRODUCT (bonuses/guarantees excluded),
+    # with its auto-pay payout — the master list Megan wants the editor to list so
+    # every product has an accurate ICD payout. Energy keyed by campaign.
+    if owner.strip().upper() in ("__PRODUCTS__", "__PROD__"):
+        BONUS = ("bonus", "captains", "lead disposition", "converged", "kwh",
+                 "guarantee", "disposition", "pilot", "adjustment", "chargeback")
+        prod: Dict[tuple, List[float]] = collections.defaultdict(list)
+        for r in rows:
+            cat = str(r.get(COL_CATEGORY, "") or "").strip().upper()
+            if cat not in PRODUCT_CATEGORIES:
+                continue
+            desc = str(r.get(COL_DESCRIPTION, "") or "").strip()
+            if not desc or any(b in desc.lower() for b in BONUS):
+                continue
+            tot = _num(r.get(COL_TOTAL))
+            if tot is None or tot <= 0:
+                continue
+            # energy: key by campaign (desc is flat/varies); AT&T: auto-pay only
+            if cat == "ELE":
+                camp = str(r.get(COL_CAMPAIGN, "") or "").strip()
+                prod[(cat, "{} [{}]".format(desc, camp))].append(tot)
+            elif _is_autopay(r):
+                prod[(cat, desc)].append(tot)
+        for (cat, desc), vals in sorted(prod.items()):
+            if len(vals) < MIN_SAMPLE:
+                continue
+            mode = collections.Counter(round(v, 0) for v in vals).most_common(1)[0][0]
+            print("INSP|P|{}|{}|n={}|${:.0f}".format(cat, desc, len(vals), mode))
+        return
     if owner.strip().upper() in ("__ELE__", "__ENERGY__"):
         ele = [r for r in rows if str(r.get(COL_CATEGORY, "")).strip().upper() == "ELE"]
         print("INSP|ELE total rows={}".format(len(ele)))
