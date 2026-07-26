@@ -19,7 +19,7 @@ SECTIONS = [
      "emoji": "\U0001F4CA", "react": "bar_chart", "kind": "daily"},
     {"id": "daily_production_el", "title": "Daily Production — Entry Level",
      "emoji": "\U0001F331", "react": "seedling", "kind": "field_status"},
-    {"id": "zeros_two_day", "title": "Back-to-Back Zeros",
+    {"id": "zero_streak", "title": "Zero Streak",
      "emoji": "\U0001F6AB", "react": "no_entry_sign", "kind": "zeros"},
     {"id": "energy_board", "title": "Energy Sales Board",
      "emoji": "⚡", "react": "zap", "kind": "energy"},

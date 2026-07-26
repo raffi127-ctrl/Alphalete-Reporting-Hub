@@ -17,7 +17,8 @@ The live sheet the team is using is never touched. Recipes per 'kind':
   energy       -- daily leaderboard filtered to Campaign = Energy, ranked by Apps
   team         -- ONE per team (col CI): running Apps + last completed day expanded
   highrollers  -- only reps who produced yesterday, sorted by the day's Apps
-  zeros        -- reps who rolled a literal 0 on BOTH of the last two completed days
+  zeros        -- escalating Zero Streak, one image per depth (see zeros_streak.py;
+                  fanned out in capture_all, not rendered here)
   ranking      -- running block E-J expanded, sorted by APPS/INT/NL
 """
 from __future__ import annotations
@@ -128,36 +129,13 @@ def last_completed_day(today: dt.date) -> dt.date:
     return today - dt.timedelta(days=1)
 
 
-def last_two_mandatory_days(today: dt.date) -> List[dt.date]:
-    """The two most recent completed days that have MANDATORY hours (Mon-Sat).
-    Sunday is skipped (Megan 7/10: no mandatory hours Sundays), so a Monday run
-    yields Sat+Fri, not Sun+Sat. Returns [most-recent, older]."""
-    days, d = [], last_completed_day(today)
-    while len(days) < 2:
-        if d.weekday() != 6:               # 6 = Sunday
-            days.append(d)
-        d -= dt.timedelta(days=1)
-    return days
-
-
 def _norm_name(s: str) -> str:
     """Rep name stripped of parenthetical suffixes ('(Wk 3)', '(NC)', nicknames
     like '(Shun)') + collapsed whitespace, lowercased. The week suffix INCREMENTS
     every week ('… (Wk 2)' -> '(Wk 3)'), so a raw name won't match the same rep
-    across weekly tabs — normalize both sides before comparing."""
+    across weekly tabs — normalize both sides before comparing. Reused by the Zero
+    Streak renderer to match reps across prior-week tabs."""
     return re.sub(r"\s+", " ", re.sub(r"\([^)]*\)", "", s)).strip().lower()
-
-
-def _zero_names_for_day(grid, day: dt.date) -> set:
-    """Normalized rep names who posted a numeric 0 in `day`'s Apps column (used to
-    match zeros across a week boundary, where the two days live in different tabs).
-    '0'/'0.00' count; X/T/F/blank do not."""
-    try:
-        c = _day_block(grid, day)[0]
-    except RuntimeError:
-        return set()
-    return {_norm_name(_cell(grid, r, 2)) for r in range(3, len(grid))
-            if _cell(grid, r, 2).strip() and re.fullmatch(r"0(\.0+)?", _cell(grid, r, c).strip())}
 
 
 def _running_apps_col(grid) -> int:
@@ -383,8 +361,6 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
         tmp_ws = next(w for w in ss.worksheets() if w.title == TMP_TAB)
         reqs, filt_specs, sort_col, export_rng, subtotal_cols = [], [], 3, None, []
         sorts = None            # [(col, order), ...]; None -> [(sort_col, "DESCENDING")]
-        cross_write = None      # zeros cross-week: values to write onto the copy pre-filter
-        cross_col = None        # zeros cross-week: the borrowed Saturday column index
 
         # common filters: hide blank rep names
         filt_specs.append({"columnIndex": 2, "filterCriteria": {"hiddenValues": [""]}})
@@ -472,84 +448,11 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
             sorts = [(3, "DESCENDING")]           # rank by running-week APPS, high -> low
             subtotal_cols = [c for c in show if _cell(grid, 2, c).strip().lower() == "apps"]
 
-        elif kind == "zeros":
-            # anyone who rolled a literal 0 on BOTH of the last two MANDATORY days
-            # (Raf 7/10; Sunday skipped per Megan 7/10 -> Monday compares Fri+Sat).
-            # NUMBER_EQ excludes X/T/F/blank, so only reps who worked and got shut
-            # out count. Alphabetical by rep name; identity cols for accountability.
-            d_recent, d_older = last_two_mandatory_days(today)
-            c_recent = _day_block(grid, d_recent)[0]         # always in this week's tab
-            fs_col = _field_status_col(grid)
-            camp_col = _campaign_col(grid)                   # Fiber/Energy/Fiber-Wireless (Raf 7/14)
-            team_col = next(c for c in range(len(grid[0])) if _cell(grid, 0, c).strip() == "Team")
-            trainer_col = next(c for c in range(len(grid[0])) if _cell(grid, 0, c).strip() == "Trainer")
-            # Trainer-only staff (e.g. Bas) carry NO Campaign — they're not on a selling
-            # campaign, so they have no data to zero out and don't belong on this callout
-            # (Megan 7/16). Working trainers who DO sell (a campaign + a trainer of
-            # record, e.g. Jordan Ruiz) still count.
-            filt_specs.append({"columnIndex": camp_col, "filterCriteria": {"hiddenValues": [""]}})
-            try:
-                c_older = _day_block(grid, d_older)[0]
-            except RuntimeError:
-                c_older = None                               # older day is in the PRIOR week's tab (Tue run)
-
-            if c_older is not None:
-                # both mandatory days on this tab -> show both as proof, filter each == 0
-                show = {0, 1, 2, c_older, c_recent, trainer_col, camp_col, fs_col, team_col}
-                for c in (c_recent, c_older):
-                    filt_specs.append({"columnIndex": c, "filterCriteria": {
-                        "condition": {"type": "NUMBER_EQ",
-                                      "values": [{"userEnteredValue": "0"}]}}})
-                subtotal_cols = [c_older, c_recent]
-            else:
-                # cross-week (Tue: Mon + last Sat). The older day lives in the prior
-                # week's tab, so COPY each rep's Saturday Apps onto this copy — into the
-                # spacer column just left of Monday, matched by NORMALIZED name (the
-                # week suffix increments across weeks). Then both days filter + display
-                # natively, identical to any other day.
-                older_grid = find_week_tab(ss, d_older).get_all_values()
-                sc = _day_block(older_grid, d_older)[0]
-                sat_by_name = {_norm_name(_cell(older_grid, r, 2)): _cell(older_grid, r, sc).strip()
-                               for r in range(3, len(older_grid)) if _cell(older_grid, r, 2).strip()}
-                c_older = c_recent - 1                       # spacer col immediately left of Monday
-                cross_col = c_older
-                col_v = [[sat_by_name.get(_norm_name(_cell(grid, r - 1, 2)), "")]
-                         for r in range(4, tot_row)]         # 1-based rows 4..tot_row-1 (grid idx r-1)
-                cl = col_letter(c_older)
-                cross_write = [
-                    {"range": f"{cl}1", "values": [["SAT"]]},
-                    {"range": f"{cl}2", "values": [[str(d_older.day)]]},
-                    {"range": f"{cl}3", "values": [["Apps"]]},
-                    {"range": f"{cl}4:{cl}{tot_row - 1}", "values": col_v},
-                ]
-                show = {0, 1, 2, c_older, c_recent, trainer_col, camp_col, fs_col, team_col}
-                for c in (c_recent, c_older):
-                    filt_specs.append({"columnIndex": c, "filterCriteria": {
-                        "condition": {"type": "NUMBER_EQ", "values": [{"userEnteredValue": "0"}]}}})
-                subtotal_cols = [c_older, c_recent]
-                # make the borrowed Saturday column look like a native day column
-                reqs.append({"copyPaste": {
-                    "source": {"sheetId": gid, "startRowIndex": 0, "endRowIndex": tot_row,
-                               "startColumnIndex": c_recent, "endColumnIndex": c_recent + 1},
-                    "destination": {"sheetId": gid, "startRowIndex": 0, "endRowIndex": tot_row,
-                                    "startColumnIndex": c_older, "endColumnIndex": c_older + 1},
-                    "pasteType": "PASTE_FORMAT"}})
-
-            right = col_letter(max(show))
-            export_rng = f"A1:{right}{tot_row}"
-            sorts = [(team_col, "ASCENDING"), (2, "ASCENDING")]   # group by team, then name (Raf 7/14)
-
         else:
             raise ValueError(f"unknown kind {kind}")
 
         if sorts is None:
             sorts = [(sort_col, "DESCENDING")]
-        if cross_write:                    # write the older day's column BEFORE filtering/sorting
-            ss.batch_update({"requests": [{"unmergeCells": {"range": {   # header may be merged
-                "sheetId": gid, "startRowIndex": 0, "endRowIndex": 3,
-                "startColumnIndex": cross_col, "endColumnIndex": cross_col + 1}}}]})
-            tmp_ws.batch_update(cross_write, value_input_option="USER_ENTERED")
-            time.sleep(0.5)
         reqs += _hide_cols(gid, show, ncols)
         reqs.append({"setBasicFilter": {"filter": {
             "range": {"sheetId": gid, "startRowIndex": 2, "endRowIndex": tot_row - 1,
@@ -601,6 +504,12 @@ def capture_all(sections, today: dt.date, out_dir: Path, only=None) -> List[Tupl
                     meta = dict(spec, title=f"{team} {spec['title']}", team=team)
                     png = _render(ss, ws, grid, spec, today, out_dir, token, team=team)
                     out.append((meta, png))
+            elif spec["kind"] == "zeros":
+                # Escalating Zero Streak: one image per depth (1 Day / 2 Days / …),
+                # walked across prior-week tabs. Fans out like Team Sales.
+                from automations.alphalete_production import zeros_streak
+                out.extend(zeros_streak.render_streaks(
+                    ss, ws, grid, spec, today, out_dir, token))
             else:
                 png = _render(ss, ws, grid, spec, today, out_dir, token)
                 out.append((dict(spec), png))

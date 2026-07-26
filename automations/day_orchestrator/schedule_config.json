@@ -1069,7 +1069,11 @@
       "command": [
         "automations.alphalete_production.run"
       ],
-      "base_args": [],
+      "base_args": [
+        "--preview-dm",
+        "U04G5HJBGFN"
+      ],
+      "_hold": "HELD IN PREVIEW 2026-07-25: base_args set to preview-DM Megan only while she reviews the new Zero Streak section (replaces Back-to-Back Zeros). The 4am run DMs Megan the thread instead of posting to #alphalete-sales. Flip base_args back to [] to go live once approved.",
       "cadence": {
         "weekdays": [
           0,
