@@ -239,15 +239,17 @@ def _gross_profit_simulator(office) -> None:
              "Gross revenue": "${:,.0f}".format(r["revenue"]),
              "Rep payout (+12% tax)": "${:,.0f}".format(r["rep_payout"] + r["payroll_tax"]),
              "Profit": "${:,.0f}".format(r["profit"]),
-             "Margin %": "{}%".format(r["margin_pct"])}
+             "Gross Profit %": "{}%".format(r["margin_pct"])}
             for r in res["per_product"]]
     if rows:
         st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
         m = st.columns(3)
-        m[0].metric("Total office profit", "${:,.0f}".format(res["total_profit"]))
-        m[1].metric("Blended margin", "{}%".format(res["blended_margin_pct"]))
-        m[2].metric("Paid out (cost of the rep)",
-                    "{}%".format(res["blended_cost_ratio_pct"]))
+        m[0].metric("Gross Profit %", "{}%".format(res["blended_margin_pct"]))
+        m[1].metric("Total office profit", "${:,.0f}".format(res["total_profit"]))
+        m[2].metric("% paid to rep", "{}%".format(res["blended_cost_ratio_pct"]))
+        st.caption("**Gross Profit %** = office profit ÷ gross revenue — the share "
+                   "your office keeps after paying the rep (incl. 12% payroll tax). "
+                   "**% paid to rep** is the rest.")
 
 
 def _render_margin(ck, camp, bucket, levels) -> None:
