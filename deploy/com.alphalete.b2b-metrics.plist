@@ -24,15 +24,24 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- DAILY incl. weekends (no Weekday key). First pass 5:30 CST, then q8m
-         retries through 5:54 — SHORT ON PURPOSE: this must be FINISHED by 6:00
-         (Megan 2026-07-18), because Sales Boards starts at 6:00 and the VA
-         posts by hand ~5:57. The module skips views already in today's thread,
-         so later passes are no-ops. TIME KNOB: edit these entries (Hour/Minute
-         are machine LOCAL time; Lucy 2 is Central). -->
+    <!-- DAILY incl. weekends (no Weekday key). PRIMARY pass 7:45 CST, after
+         vantura_churn's 7:00 run writes today's LUCY CHURN tab (items #4/#5
+         screenshot it). Then a FRESHNESS LADDER for the two order-log sections
+         (#8/#9), which depend on the ORDERLOG extract that can land late
+         (esp. weekends): 8:45 and 9:45 retry in require-fresh mode (the
+         wrapper adds that flag before 10:00, so a stale log is DEFERRED), and
+         10:30 is the FLOOR (flag omitted, posts whatever the extract has, so
+         the sections are never permanently absent). Mirrors box_order_log's
+         7:00 require-fresh gate plus 8:30 floor. Retries are CHEAP: the runner
+         skips re-capturing anything already in today's thread, so a later pass
+         re-pulls only the still-missing sections. TIME KNOB: edit these entries
+         (Hour/Minute are machine LOCAL time; Lucy 2 is Central). -->
     <key>StartCalendarInterval</key>
     <array>
         <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>30</integer></dict>
     </array>
 
     <key>StandardOutPath</key>

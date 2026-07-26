@@ -34,6 +34,7 @@ import traceback
 from pathlib import Path
 
 from automations.b2b_metrics import offices as _off
+from automations.b2b_metrics.capture import OrderLogNotFresh
 from automations.b2b_metrics.offices import B2BOffice, THREAD_TITLE
 
 try:
@@ -224,6 +225,31 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
         o.label, today, "POST" if post else "DRY-RUN"))
     log("  header: {}".format(header_title(o, today)))
 
+    # Pre-capture skip (retry/floor passes): drop any item already in EVERY
+    # target thread today, so a later pass re-pulls the ~120MB ORDERLOG export
+    # and re-shoots the Tableau images ONLY for the still-missing sections
+    # (normally just the deferred order-log), not the whole thread. Cheap: thread
+    # state is a Sheet read, no Slack client. Skipped under --force (which exists
+    # to re-post) and --channel (a verification post with its own scratch thread).
+    if post and not force and not channel_override:
+        import automations.b2b_quality.run as _bq
+        _tgts = [o.channel_id] + [c for c, _n in o.mirror_channels
+                                  if c != o.channel_id]
+        _done = [set(_bq._load_state(today, c).get("posted") or []) for c in _tgts]
+        _done_all = set.intersection(*_done) if _done else set()
+        if _done_all:
+            _skip = [i["id"] for i in items if i["id"] in _done_all]
+            items = [i for i in items if i["id"] not in _done_all]
+            if _skip:
+                log("  already in every thread — skip capture: {}".format(
+                    ", ".join(_skip)))
+        if not items:
+            _exp = expected_ids(o)
+            log("  nothing new — every expected section already in today's thread")
+            return {"thread_ts": None, "posted": [],
+                    "present": [i for i in _exp if i in _done_all],
+                    "missed": [i for i in _exp if i not in _done_all]}
+
     # 1) capture everything first (so a capture crash never leaves a
     #    half-posted thread), continue-on-failure.
     captured = {}
@@ -233,6 +259,12 @@ def run(o: B2BOffice, *, post: bool, only: str = None, dm: str = None,
             captured[item["id"]] = path
             log("  [{}] {}".format(item["id"],
                                    path.name if path else "no artifact"))
+        except OrderLogNotFresh as nf:
+            # Not a failure — the extract just hasn't landed. A later floor pass
+            # posts it once it's in. Logged as DEFERRED so it doesn't read as a
+            # crash (and doesn't spew a traceback).
+            log("  [{}] DEFERRED — {}".format(item["id"], nf))
+            captured[item["id"]] = None
         except Exception:  # noqa: BLE001 — one item must not kill the rest
             log("  [{}] FAILED:".format(item["id"]))
             for ln in traceback.format_exc().splitlines()[-6:]:
@@ -340,12 +372,25 @@ def main(argv=None) -> int:
                     help="re-post even items already in today's thread state "
                          "(backfill a fixed item over a bad one). Pair with "
                          "--only so ONLY that item re-posts, not the whole thread.")
+    ap.add_argument("--require-fresh", action="store_true",
+                    help="EARLY/scheduled passes: DEFER the order-log sections "
+                         "(#8 Order Log, #9 Activation Report Overview) when the "
+                         "ORDERLOG extract hasn't reached the prior completed day, "
+                         "so a stale log isn't posted. The 8 non-order-log items "
+                         "post regardless. A later FLOOR pass (this flag OMITTED) "
+                         "posts whatever the extract has, so the sections are "
+                         "never permanently absent — mirrors box_order_log's 7:00 "
+                         "--require-fresh + 8:30 floor.")
     ap.add_argument("--today", default=None, metavar="YYYY-MM-DD")
     args = ap.parse_args(argv)
 
     if args.no_crop:
         import os
         os.environ["B2B_SKIP_CROP"] = "1"
+
+    if args.require_fresh:
+        import os
+        os.environ["B2B_REQUIRE_FRESH"] = "1"
 
     if args.check:
         problems = _off.validate()

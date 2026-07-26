@@ -20,11 +20,52 @@ b2b_quality's Carlos-hardcoded SPECS, so the owner slice actually takes effect.
 from __future__ import annotations
 
 import datetime as dt
+import os
 from pathlib import Path
 
 from automations.b2b_metrics.offices import B2BOffice, OWNER_FIELD, VIEW_META
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# Order-date column in the raw ORDERLOG crosstab — the same one the freshness
+# probe (att_order_log.freshness.DATE_COL) and sheet.py key on. Used by the
+# --require-fresh gate below to read how far the extract reaches.
+_ORDER_DATE_COL = "sp.Order Date (copy)"
+
+
+class OrderLogNotFresh(Exception):
+    """The ORDERLOG extract hasn't reached the prior completed day, so the two
+    order-log sections (#8 Order Log, #9 Activation Report Overview) DEFER —
+    posted later once it lands — instead of shipping a stale log. Mirrors
+    box_order_log's 7:00 --require-fresh gate. Raised ONLY when B2B_REQUIRE_FRESH
+    is set (the early/scheduled passes); the floor pass leaves it unset and posts
+    whatever the extract has, so the sections are never permanently absent."""
+
+    def __init__(self, maxd, need):
+        self.maxd, self.need = maxd, need
+        super().__init__(
+            "ORDERLOG only through {} (need >= {})".format(maxd, need))
+
+
+def _require_fresh_gate(lines, log=print) -> None:
+    """DEFER the order-log sections unless the ORDERLOG data reaches yesterday.
+
+    Reuses the lines the batch already pulled — NO extra Tableau call. A no-op
+    unless B2B_REQUIRE_FRESH is set, so the default path (and the fail-open floor
+    pass) is unchanged. 'need' is the prior completed day: same-day B2B orders
+    don't finalize until business hours, so gating on today would defer all
+    morning; the floor pass is the backstop for a genuine no-prior-day-data day."""
+    if not os.environ.get("B2B_REQUIRE_FRESH"):
+        return
+    from automations.att_order_log.sheet import _parse_date
+    dates = [d for d in (_parse_date(l.get(_ORDER_DATE_COL)) for l in lines) if d]
+    maxd = max(dates) if dates else None
+    need = dt.date.today() - dt.timedelta(days=1)
+    if maxd is None or maxd < need:
+        log("  [order-log] DEFER — ORDERLOG only through {} (need >= {}); "
+            "waiting for a fresher extract".format(maxd, need))
+        raise OrderLogNotFresh(maxd, need)
+    log("  [order-log] fresh — ORDERLOG through {}".format(maxd))
 
 
 # --- #6 / #7 : screenshots of the LUCY CHURN tab ---------------------------
@@ -87,6 +128,10 @@ def _order_lines(o: B2BOffice, out_dir: Path, log=print):
     else:
         log("  [order-log] reusing this batch's export (pulled once)")
     lines = clean.load_rows(csv, owner_prefix=o.owner)   # slice per office
+    # DEFER (raise) if --require-fresh and the extract is behind. Runs BEFORE the
+    # cache write so payout's re-call re-checks (it reuses the cached CSV, so no
+    # re-pull) and both order-log sections defer together.
+    _require_fresh_gate(lines, log=log)
     _LINE_CACHE[o.key] = lines
     return lines
 
