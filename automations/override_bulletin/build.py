@@ -58,7 +58,7 @@ LEADERS = [
 
 # How many recent weeks to show in the tables + card sparklines (Megan 2026-07-22:
 # "just want the last 4 weeks").
-WOW_WEEKS = 4
+WOW_WEEKS = 5
 
 # Prior years to show (Megan: "and then the last 3 years"). Their COLUMN positions
 # are found by header label at read time, never hardcoded — the fill inserts a new
@@ -326,10 +326,16 @@ def _section_table(title: str, rows: list, week_labels: list, years: list,
         body += (f'<tr class="{"lead" if r["name"] in featured else ""}">'
                  f'<td class="nmcell">{r["name"]}</td>'
                  f'<td class="t26">{_fmt(r["total"])}</td>{wk}{yr}</tr>')
+    # Shared <colgroup> so both tables get identical column widths and line up.
+    colgroup = ("<colgroup><col class=\"c-name\"><col class=\"c-t26\">"
+                + '<col class="c-wk">' * len(weeks)
+                + '<col class="c-yr">' * len(years)
+                + "</colgroup>")
     return f"""
     <div class="sec">
       <div class="sec-h">{title}</div>
       <table>
+        {colgroup}
         <tr><th class="nmcell">Leader</th><th class="t26">Total 2026</th>{wk_head}{yr_head}</tr>
         {body}
       </table>
@@ -357,8 +363,10 @@ def build_html(week_labels: list, section1: list, section2: list) -> str:
                              ["2025", "2024", "2023"], featured_names)
     # The captain/special section IS the leadership tier — highlight ALL of them
     # (Megan 2026-07-22), not just this week's top 5.
+    # Same 3 year columns as ALL ORG so the two tables share an identical column
+    # layout and line up (Megan 2026-07-25).
     tbl_cap = _section_table("CAPTAIN / SPECIAL OVERRIDES ONLY", section2,
-                             week_labels, ["2025", "2024"],
+                             week_labels, ["2025", "2024", "2023"],
                              {r["name"] for r in section2})
     org_total = sum(r["total"] or 0 for r in section1)
     wk_total = sum(r["week"] or 0 for r in section1)
@@ -417,24 +425,50 @@ def build_html(week_labels: list, section1: list, section2: list) -> str:
      table went 12.5 -> 16px, headers 10 -> 12px, rows breathe (8 -> 12px), and
      every value sits on a brighter ink than the mid-grey it used to. Prior-year
      columns stay dimmer than the live weeks, but are no longer near-invisible. */
-  .sec table {{ width:100%; border-collapse:collapse; font-size:16px; }}
+  /* table-layout:fixed + shared column widths so BOTH tables line up column-for-
+     column (Megan 2026-07-25). Widths are for the 1-name + 1-total + 6-week +
+     3-year layout and sum to 100%; 5 weeks so the columns have room to breathe. */
+  .sec table {{ width:100%; border-collapse:collapse; font-size:15px;
+    table-layout:fixed; }}
+  .sec col.c-name {{ width:17%; }}
+  .sec col.c-t26  {{ width:10%; }}
+  .sec col.c-wk   {{ width:8%; }}
+  .sec col.c-yr   {{ width:11%; }}
   /* Column headers (Megan 2026-07-24: "still hard to read the date headers").
      They were 12px, un-bold, on mid-grey with 1px tracking — the faintest text
      on the page, and the one that tells you WHICH WEEK you're looking at. Now
      15px bold on near-white, with the tracking eased off: letter-spacing helps
      a word read as a label but actively hurts a date like 7.19.26. */
-  .sec th {{ color:#ded8ca; font-size:15px; letter-spacing:0.3px; font-weight:bold;
-    padding:11px 7px 13px; border-bottom:1px solid {GOLD}; text-align:right;
-    text-transform:uppercase; }}
-  .sec th.nmcell, .sec td.nmcell {{ text-align:left; }}
-  .sec th.wk.cur, .sec td.wk.cur {{ color:{GOLD_LT}; }}
-  .sec th.t26, .sec td.t26 {{ color:{GOLD_LT}; }}
+  .sec th {{ color:#ded8ca; font-size:14px; letter-spacing:0.3px; font-weight:bold;
+    padding:7px 8px 8px; border-bottom:1px solid {GOLD}; text-align:right;
+    text-transform:uppercase; white-space:nowrap; }}
+  /* Condensed (Raf 2026-07-25): cells fit their content — the name column takes
+     only what the longest name needs (width:1% + nowrap collapses it to content,
+     no more big empty gap), and MORE weeks fill the freed width. */
+  .sec th.nmcell, .sec td.nmcell {{ text-align:left; white-space:nowrap;
+    padding-right:12px; overflow:hidden; text-overflow:ellipsis; }}
+  /* This Week stays GOLD (matches the cards' big gold "THIS WEEK"); Total 2026 is
+     bright cream so the two headline columns read as distinct, not one gold block
+     (Megan 2026-07-25). The current-week column also opens the WEEKLY block with a
+     vertical gold rule, so the table reads as three blocks — [leader+total] |
+     [weeks] | [years] — like the DD bulletin Megan likes. */
+  .sec th.wk.cur, .sec td.wk.cur {{ color:{GOLD_LT};
+    border-left:2px solid rgba(201,162,75,0.55); padding-left:14px; }}
+  /* keep the Total 2026 number clear of the divider on its right */
+  .sec th.t26, .sec td.t26 {{ padding-right:14px; }}
+  .sec th.t26, .sec td.t26 {{ color:#f4efe2; }}
   .sec th.yr {{ color:#cfc8b7; }}
-  .sec td {{ padding:12px 7px; text-align:right; color:#eae5d9;
-    border-bottom:1px solid #1d1913; }}
-  .sec td.nmcell {{ color:#f2eee4; font-size:16.5px; }}
-  .sec td.t26 {{ font-weight:bold; font-size:17px; }}
-  .sec td.wk.cur {{ font-weight:bold; font-size:17px; }}
+  /* Bolder row rule + zebra shading so the eye tracks straight across a wide row
+     (Megan 2026-07-25: "bolder lines and some nuance in color every other line"). */
+  .sec td {{ padding:6px 8px; text-align:right; color:#eae5d9;
+    white-space:nowrap; border-bottom:1px solid rgba(201,162,75,0.34); }}
+  .sec tr:nth-child(even) td {{ background:rgba(255,255,255,0.05); }}
+  .sec td.nmcell {{ color:#f2eee4; font-size:15px; }}
+  /* Total 2026 and This Week are bold (and cream / gold) to stand out — same SIZE
+     as the rest so the big totals don't overflow their column into the divider
+     (Megan 2026-07-25 "overlap"). */
+  .sec td.t26 {{ font-weight:bold; }}
+  .sec td.wk.cur {{ font-weight:bold; }}
   /* Annual totals (Megan 2026-07-24, second pass: "the annual totals are still
      hard to read"). They were deliberately dimmed to push the eye to the live
      weeks, but a number nobody can read has no reason to be on the page. Now the
@@ -443,7 +477,7 @@ def build_html(week_labels: list, section1: list, section2: list) -> str:
   .sec td.yr {{ color:#e2ddd1; font-size:16px; }}
   /* The rule dividing the weekly block from the annual one, sitting CENTRED in
      the gap: equal breathing room either side so it never crowds a number. */
-  .sec th.sep, .sec td.sep {{ border-left:1px solid rgba(201,162,75,0.45);
+  .sec th.sep, .sec td.sep {{ border-left:2px solid rgba(201,162,75,0.60);
     padding-left:22px; }}
   .sec th.lastwk, .sec td.lastwk {{ padding-right:22px; }}
   .sec tr.lead td.nmcell {{ color:#f6f2e9; font-weight:bold;
