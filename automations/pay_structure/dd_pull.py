@@ -97,7 +97,8 @@ def main_products(office_gross: "Dict[str, float]") -> "Dict[str, float]":
     return out
 
 
-COL_ACTIVATION = "cl.Activation_Date"
+COL_ACTIVATION = "cl.Activation Date"    # real crosstab header uses a SPACE, not "_"
+COL_ORDER_TYPE = "cl.Order Type"         # "Auto Bill Pay" vs "No Auto Bill Pay"
 
 
 def activation_by_office(rows) -> "Dict[str, float]":
@@ -165,12 +166,43 @@ def run(write: bool = False, src: "Optional[Path]" = None) -> dict:
     return by_office
 
 
+def inspect(owner: str, src: "Optional[Path]" = None) -> None:
+    """Diagnostic: dump the REAL structure of the last-saved crosstab for one
+    owner so we can model base-tier correctly (no re-download). Lines are prefixed
+    'INSP|' so `lucy logtail <log> INSP` retrieves them from the mini."""
+    path = src or (OUTPUT_DIR / "ORG DD Detail.csv")
+    rows = _read_rows(Path(path))
+    if not rows:
+        print("INSP|EMPTY {}".format(path)); return
+    cols = list(rows[0].keys())
+    print("INSP|rows={} cols={} hasDesc={} hasAct={} hasOrderType={}".format(
+        len(rows), len(cols), COL_DESCRIPTION in cols, COL_ACTIVATION in cols,
+        COL_ORDER_TYPE in cols))
+    mine = [r for r in rows if str(r.get(COL_OWNER, "")).strip() == owner]
+    print("INSP|{} rows={}".format(owner, len(mine)))
+    cats = collections.Counter(str(r.get(COL_CATEGORY, "")).strip().upper() for r in mine)
+    print("INSP|cats={}".format(dict(cats.most_common(6))))
+    for want in ("INTERNET", "WIRELESS"):
+        sub = [r for r in mine if str(r.get(COL_CATEGORY, "")).strip().upper() == want]
+        descs = collections.Counter(str(r.get(COL_DESCRIPTION, "")).strip() for r in sub)
+        print("INSP|{} descs={}".format(want, dict(descs.most_common(6))))
+        ap_ = [r for r in sub if "no auto" not in str(r.get(COL_ORDER_TYPE, "")).lower()
+               and "auto bill pay" in str(r.get(COL_ORDER_TYPE, "")).lower()]
+        tot = collections.Counter(round(_num(r.get(COL_TOTAL)) or 0, 0) for r in ap_)
+        print("INSP|{} autopayTotal$={}".format(want, dict(tot.most_common(6))))
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Pull ICD gross revenue from DD DETAIL (ORG)")
     ap.add_argument("--write", action="store_true", help="persist to the sheet (default dry-run)")
     ap.add_argument("--src", help="parse an existing crosstab file instead of pulling")
+    ap.add_argument("--inspect", metavar="OWNER", help="dump the last-saved crosstab's "
+                    "real structure for one owner (no download/write); for modeling")
     a = ap.parse_args()
-    res = run(write=a.write, src=Path(a.src) if a.src else None)
-    print("parsed gross revenue for {} office(s):".format(len(res)))
-    for k, v in res.items():
-        print("  {:8} main: {}".format(k, v["main"]))
+    if a.inspect:
+        inspect(a.inspect, src=Path(a.src) if a.src else None)
+    else:
+        res = run(write=a.write, src=Path(a.src) if a.src else None)
+        print("parsed gross revenue for {} office(s):".format(len(res)))
+        for k, v in res.items():
+            print("  {:8} main: {}".format(k, v["main"]))
