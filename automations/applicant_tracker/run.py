@@ -220,26 +220,28 @@ def run(phase: str, target: dt.date | None = None) -> None:
               f"login ({config.__name__} OFFICE_IDS): {', '.join(no_access)} — "
               "this repeats nightly until access is granted or the id is removed")
 
-    # Report completion for the Hub pill (orange after morning, green after
-    # evening). Only real (non-dry) runs count toward the daily 2.
+    # Report completion for the Hub pill: orange after the morning pass, green
+    # after the evening pass (daily_runs: 2). The Hub counts only SUCCESS rows
+    # toward the daily 2, so the status here decides the colour. Only real
+    # (non-dry) runs count.
     #
-    # A pass where offices threw is PARTIAL, not success. This used to publish an
-    # unconditional "success", so all 17 offices could fail and the card still
-    # went green — a clean run and a total miss looked identical. The Hub counts
-    # only SUCCESS rows toward daily_runs, so a partial evening pass now leaves
-    # the card amber 1/2 (its "ran, but some parts missed" state) instead of a
-    # green tile hiding silent gaps.
+    # GENUINE FAILURES (offices that threw — expired session, timeout, etc.)
+    # publish PARTIAL: the card stays amber and the error-watcher alerts, so a
+    # flaky run can't masquerade as a clean green tile.
     #
-    # An unreachable office counts as partial too: an office we EXPECT to fill and
-    # don't is incomplete data, whoever's fault it is. That deliberately keeps the
-    # card amber until someone either grants the login access or removes the id —
-    # the alternative is a green card that quietly omits an office forever.
+    # A KNOWN ACCESS GAP does NOT demote the pill. Office 14229 (Akib/Motiv8) is
+    # a different company the rcaptain login can't see — it's no-access EVERY
+    # run, so counting it as partial would peg the card amber forever and it
+    # could never go green (the orange→green design would be dead on arrival).
+    # It's a standing external gap (awaiting Motiv8 access), already named in the
+    # "NOT VISIBLE" log line above, not this run's failure — so a pass whose only
+    # misses are no-access still publishes SUCCESS and the pill colours normally.
     if not sheets.DRY_RUN:
         try:
             from automations.shared import hub_activity
             hub_activity.log_completed(
                 CARD_ID, CARD_NAME,
-                status="partial" if (failed or no_access) else "success")
+                status="partial" if failed else "success")  # no_access ≠ failure
         except Exception:
             pass
     print(f"=== {phase.upper()} phase done ===")
