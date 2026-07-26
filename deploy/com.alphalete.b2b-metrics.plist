@@ -26,22 +26,21 @@
 
     <!-- DAILY incl. weekends (no Weekday key). PRIMARY pass 7:45 CST, after
          vantura_churn's 7:00 run writes today's LUCY CHURN tab (items #4/#5
-         screenshot it). Then a FRESHNESS LADDER for the two order-log sections
-         (#8/#9), which depend on the ORDERLOG extract that can land late
-         (esp. weekends): 8:45 and 9:45 retry in require-fresh mode (the
-         wrapper adds that flag before 10:00, so a stale log is DEFERRED), and
-         10:30 is the FLOOR (flag omitted, posts whatever the extract has, so
-         the sections are never permanently absent). Mirrors box_order_log's
-         7:00 require-fresh gate plus 8:30 floor. Retries are CHEAP: the runner
-         skips re-capturing anything already in today's thread, so a later pass
-         re-pulls only the still-missing sections. TIME KNOB: edit these entries
-         (Hour/Minute are machine LOCAL time; Lucy 2 is Central). -->
+         screenshot it). The 7:45 pass runs in require-fresh mode (wrapper adds
+         the flag before 8:00), so the two order-log sections (#8/#9), which
+         depend on the ORDERLOG extract that can land late (esp. weekends),
+         DEFER instead of posting a stale log; the 8 non-order-log items post
+         regardless. The 8:30 pass is the FLOOR (flag omitted, posts whatever
+         the extract has, so the sections are never permanently absent).
+         Mirrors box_order_log's 7:00 require-fresh gate plus 8:30 floor. The
+         floor is CHEAP: the runner skips re-capturing anything already in
+         today's thread, so it re-pulls only the still-missing sections. TIME
+         KNOB: edit these entries (Hour/Minute are machine LOCAL time; Lucy 2
+         is Central). -->
     <key>StartCalendarInterval</key>
     <array>
         <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>45</integer></dict>
-        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>45</integer></dict>
-        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>45</integer></dict>
-        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>30</integer></dict>
     </array>
 
     <key>StandardOutPath</key>

@@ -37,15 +37,14 @@ export PYTHONPATH="$(pwd)"
 MODE="--post"
 [ "${1:-}" = "--dry" ] && MODE=""
 
-# FRESHNESS LADDER (mirrors box_order_log). The ORDERLOG extract can land late,
-# especially on weekends. Passes before 10:00 add --require-fresh, so the two
-# order-log sections (#8 Order Log, #9 Activation Report Overview) DEFER instead
-# of posting a stale log; the 8 non-order-log items post on the first pass
-# regardless. The 10:30 FLOOR pass omits the flag and posts whatever the extract
-# has, so they're never permanently absent. Later passes are cheap — the runner
-# skips re-capturing anything already in today's thread. (Data-timed like BOX's
-# 7:00 require-fresh + 8:30 floor; the plist ladder gives the retries.)
-if [ -n "$MODE" ] && [ "$(date +%H)" -lt 10 ]; then
+# FRESHNESS LADDER (mirrors box_order_log's 7:00 require-fresh + 8:30 floor).
+# The ORDERLOG extract can land late, esp. on weekends. The 7:45 pass adds
+# --require-fresh, so the two order-log sections (#8 Order Log, #9 Activation
+# Report Overview) DEFER instead of posting a stale log; the 8 non-order-log
+# items post regardless. The 8:30 FLOOR pass omits the flag and posts whatever
+# the extract has, so they're never permanently absent. The floor is cheap —
+# the runner skips re-capturing anything already in today's thread.
+if [ -n "$MODE" ] && [ "$(date +%H)" -lt 8 ]; then
     MODE="$MODE --require-fresh"
 fi
 
