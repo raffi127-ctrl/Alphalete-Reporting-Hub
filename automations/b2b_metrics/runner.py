@@ -123,6 +123,45 @@ def _publish_hub(status: str) -> None:
         pass
 
 
+def _write_manifest(per_office: list) -> None:
+    """Persist section-level completeness so the orchestrator's reconciler can
+    turn a silent partial post into an INCOMPLETE alert (the AT&T Order Log went
+    missing 2026-07-26 and nothing paged Megan). Additive: the runner already
+    KNOWS `present`/`missed` per office — this just records it. No Slack effect.
+
+    `per_office` is a list of dicts: {key, present:[id], missed:[id], failed:bool}
+    where `failed` marks an office whose whole run raised (no parent posted).
+
+      succeeded  -> "<office>: <section>" for each present section
+      failed     -> "<office>: <section>" for each missed section
+      kind       -> "section"
+      retry_args -> ["--all", "--post"]  (a re-post skips items already in the
+                    thread state, so it backfills ONLY the missing sections)
+
+    Best-effort: a manifest write must NEVER fail the report. `ok` is true only
+    when nothing missed across every office; a partial run records failed[] which
+    the manifest verifier renders as INCOMPLETE with the named sections."""
+    try:
+        from automations.shared import run_manifest
+        succeeded, failed = [], []
+        for po in per_office:
+            key = po["key"]
+            for sid in po.get("present", []):
+                succeeded.append("{}: {}".format(key, sid))
+            for sid in po.get("missed", []):
+                # Name the office-run crash distinctly from a single dropped section.
+                tag = "{}: {} (office run failed)".format(key, sid) if po.get("failed") \
+                    else "{}: {}".format(key, sid)
+                failed.append(tag)
+        n = len(failed)
+        note = "" if not n else "{} section(s) missing from the thread".format(n)
+        run_manifest.write_manifest(
+            "b2b_metrics", failed=failed, succeeded=succeeded,
+            retry_args=["--all", "--post"], kind="section", note=note)
+    except Exception:  # noqa: BLE001 — never let bookkeeping sink the report
+        pass
+
+
 def header_title(o: B2BOffice, day: dt.date) -> str:
     return "{} {:02d}/{:02d}/{}".format(THREAD_TITLE, day.month, day.day, day.year)
 
@@ -130,8 +169,22 @@ def header_title(o: B2BOffice, day: dt.date) -> str:
 def header_text(o: B2BOffice, day: dt.date) -> str:
     lines = ["*{}*".format(header_title(o, day))]
     lines += ["{} {}".format(i["emoji"], i["title"])
-              for i in ITEMS if i["id"] not in o.skip_views]
+              for i in expected_items(o)]
     return "\n".join(lines)
+
+
+def expected_items(o: B2BOffice) -> list:
+    """The sections this office's parent post ENUMERATES — the completeness
+    contract. Exactly what header_text() lists: every ITEM except the ones this
+    office gates out (`skip_views`). Items that post even when blank
+    (`post_when_blank`, e.g. Out of Bounds) ARE expected — an empty-but-posted
+    section still lands in the thread, so it's never a miss. Used both to build
+    the header and to reconcile expected-vs-actual, so the two can never drift."""
+    return [i for i in ITEMS if i["id"] not in o.skip_views]
+
+
+def expected_ids(o: B2BOffice) -> list:
+    return [i["id"] for i in expected_items(o)]
 
 
 def _out_dir(o: B2BOffice) -> Path:
@@ -318,6 +371,7 @@ def main(argv=None) -> int:
     publishable = args.post and not args.channel and not args.only
 
     statuses = []
+    per_office = []     # {key, present, missed, failed} — feeds the run-manifest
     for key in office_keys:
         o = _off.get(key)
         try:
@@ -328,15 +382,26 @@ def main(argv=None) -> int:
             present = res.get("present") or []
             statuses.append("success" if not missed
                             else ("partial" if present else "failed"))
+            per_office.append({"key": key, "present": present, "missed": missed,
+                               "failed": False})
         except Exception:
             statuses.append("failed")
+            # The whole office run raised BEFORE (or mid) posting — treat every
+            # section it was supposed to post as missing, so the manifest names
+            # them rather than recording an empty (falsely-clean) office.
+            per_office.append({"key": key, "present": [],
+                               "missed": expected_ids(o), "failed": True})
             if not args.all_offices:      # single-office: fail loud as before
                 if publishable:
+                    _write_manifest(per_office)
                     _publish_hub("failed")
                 raise
             traceback.print_exc()         # --all: one office must not kill the rest
 
     if publishable:
+        # Record section-level completeness for the orchestrator's reconciler
+        # (drives the INCOMPLETE / missing-section alert once verify is wired).
+        _write_manifest(per_office)
         # Green only if EVERY office fully posted; orange if some did; red if none.
         if all(s == "success" for s in statuses):
             status = "success"
@@ -345,7 +410,12 @@ def main(argv=None) -> int:
         else:
             status = "failed"
         _publish_hub(status)
-    return 0
+    # Non-zero ONLY when an office fully failed (no parent / nothing posted) — that
+    # routes to the orchestrator's FAILED/retry path. A partial run (some sections
+    # missed but the thread exists) stays exit 0; its manifest failed[] drives the
+    # INCOMPLETE alert instead, so a single dropped section doesn't trigger a full
+    # Tableau re-auth retry of a report that mostly worked.
+    return 2 if any(s == "failed" for s in statuses) else 0
 
 
 if __name__ == "__main__":

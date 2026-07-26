@@ -41,6 +41,8 @@ def verify(report, target_date: dt.date, *, dry_run: bool, verbose: bool = True)
             return _verify_manifest(vcfg, target_date)
         if vtype == "sheet_column":
             return _verify_sheet_column(vcfg, target_date)
+        if vtype == "slack_sections":
+            return _verify_slack_sections(vcfg, target_date)
         # not_configured / unknown
         return ReconResult(ok=True, unknown=True,
                            note=f"verify not wired ({vtype}) — confirm cells by hand")
@@ -89,6 +91,92 @@ def _verify_manifest(vcfg: dict, target_date: dt.date) -> ReconResult:
     failed = m.get("failed", []) or []
     return ReconResult(ok=False, missing=failed,
                        note=m.get("note", "") or f"{len(failed)} unit(s) failed")
+
+
+# ---------------- slack-sections verifier (defense-in-depth) ----------------
+
+def _verify_slack_sections(vcfg: dict, target_date: dt.date) -> ReconResult:
+    """Verify a threaded Slack report posted EVERY section it enumerated in its
+    parent, by comparing expected-vs-actual against Slack's own posted-state —
+    NOT the report's self-report. This is the independent cross-check to the
+    manifest verifier: the manifest trusts what the runner THOUGHT it posted;
+    this trusts the thread_state.json the runner writes only AFTER each upload
+    returns success. A section counts as posted only when it's actually landed.
+
+    Why thread_state (not a live Slack read): these office channels are
+    no-history-read for our token — the runner itself can't read them back, which
+    is exactly why it persists thread_state.json (needs no Slack scope). So this
+    verifier reuses that authority. It is PER MACHINE: the file lives on the
+    runner that posted (Lucy 2 for b2b_metrics), and the orchestrator reconciling
+    the same report runs on that same machine, so the file is local.
+
+    Config:
+      report_id: "b2b_metrics"   # which report's offices/sections to reconcile
+      state_file: "output/b2b_quality/thread_state.json"  # actual-posted authority
+
+    Completeness rule MIRRORS the runner: an office posts to its primary channel
+    plus any mirrors, each keeping its own thread; a section counts present only
+    when it's in EVERY one of that office's channels (set-intersection), so a
+    mirror that dropped one still reads as a miss — same as the card pill.
+
+    False-alarm guards:
+      • Expected = ITEMS minus the office's skip_views (identical to the parent
+        header), so a gated-out section is never expected. Items that post even
+        when blank (Out of Bounds) are expected AND land, so never a miss.
+      • state_file ABSENT entirely -> unknown (soft pass): can't verify from here
+        (e.g. running on the wrong machine), never a false failure.
+      • An office with NO thread_state for today -> "no parent posted" miss (the
+        'didn't post at all' case), reported distinctly from a dropped section.
+    """
+    from pathlib import Path
+    import json
+
+    report_id = vcfg.get("report_id", "b2b_metrics")
+    if report_id != "b2b_metrics":
+        # Only b2b_metrics is wired to this adapter today; anything else is a
+        # config typo — soft-pass rather than crash the reconcile.
+        return ReconResult(ok=True, unknown=True,
+                           note=f"slack_sections: no adapter for {report_id!r}")
+
+    from automations.b2b_metrics import runner as _rn
+    from automations.b2b_metrics import offices as _off
+
+    repo_root = Path(__file__).resolve().parents[2]
+    state_path = repo_root / vcfg.get("state_file",
+                                      "output/b2b_quality/thread_state.json")
+    if not state_path.exists():
+        return ReconResult(ok=True, unknown=True,
+                           note=f"slack_sections: {state_path.name} not present "
+                                f"here — can't verify (per-machine state)")
+    try:
+        blob = json.loads(state_path.read_text())
+    except Exception as e:
+        return ReconResult(ok=True, unknown=True,
+                           note=f"slack_sections: unreadable state ({str(e)[:60]})")
+
+    def _posted_for(channel: str) -> set:
+        entry = blob.get(f"{target_date.isoformat()}|{channel}")
+        return set((entry or {}).get("posted") or []) if isinstance(entry, dict) else set()
+
+    missing: List[str] = []
+    for key in _off.ORDER:
+        o = _off.get(key)
+        expected = _rn.expected_ids(o)
+        channels = [o.channel_id] + [c for c, _name in o.mirror_channels]
+        posted_sets = [_posted_for(c) for c in channels]
+        # No thread at all for this office today -> nothing posted -> whole office.
+        if all(not s for s in posted_sets):
+            missing.append(f"{key}: (no parent posted)")
+            continue
+        present = set.intersection(*posted_sets) if posted_sets else set()
+        for sid in expected:
+            if sid not in present:
+                missing.append(f"{key}: {sid}")
+
+    if missing:
+        return ReconResult(ok=False, missing=missing,
+                           note=f"{len(missing)} Slack section(s) not confirmed in-thread")
+    return ReconResult(ok=True, note="all Slack sections confirmed in every thread")
 
 
 # ---------------- sheet-column verifier ----------------
