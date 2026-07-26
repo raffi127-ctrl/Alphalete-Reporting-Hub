@@ -128,8 +128,8 @@
       "machine": "Lucy 1"
     },
     "applicant_sync_morning": {
-      "on_scheduler": true,
-      "_note": "MORNING phase (reads YESTERDAY): Export Call List + Update 2R Status. Auto-run by the 4am orchestrator, Mon\u2013Sat (AppStream = wave 1, fills early). Reports completion to the Hub as card 'applicant-tracker-sync' so the pill turns ORANGE; the EVENING phase (8pm via com.alphalete.applicant-evening) turns it GREEN. One login, each office selected once.",
+      "on_scheduler": false,
+      "_note": "MORNING phase (reads YESTERDAY: Export Call List + Update 2R Status). Runs ~6:45am Mon–Sat on its OWN launchd (com.alphalete.applicant-morning), NOT the 4am batch: daily_focus uses the SAME rcaptain ApplicantStream login in that batch and the concurrent logins collided (16/17 + no-session-token failures). 6:45 is after the 4am batch clears (~6:12). base_args ['morning']; reports completion as card 'applicant-tracker-sync' (pill → orange). Install via install_applicant_morning_agent.",
       "display_name": "Applicant Tracker: morning phase (4am)",
       "source_type": "appstream",
       "data_sources": [],
@@ -154,6 +154,28 @@
       "depends_on": [],
       "verify": null,
       "timeout_minutes": 25,
+      "machine": "Lucy 1"
+    },
+    "install_applicant_morning_agent": {
+      "on_scheduler": false,
+      "_note": "One-shot installer for com.alphalete.applicant-morning on Lucy 1 (6:45am CST Mon–Sat; deploy/applicant_tracker.sh morning -> python -m automations.applicant_tracker.run morning). Runs the MORNING phase after the 4am batch frees the rcaptain login. `lucy rerun install_applicant_morning_agent`.",
+      "display_name": "Install Applicant Tracker morning agent (6:45am)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "applicant-morning"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5,
       "machine": "Lucy 1"
     },
     "install_applicant_evening_agent": {
@@ -1069,11 +1091,7 @@
       "command": [
         "automations.alphalete_production.run"
       ],
-      "base_args": [
-        "--preview-dm",
-        "U04G5HJBGFN"
-      ],
-      "_hold": "HELD IN PREVIEW 2026-07-25: base_args set to preview-DM Megan only while she reviews the new Zero Streak section (replaces Back-to-Back Zeros). The 4am run DMs Megan the thread instead of posting to #alphalete-sales. Flip base_args back to [] to go live once approved.",
+      "base_args": [],
       "cadence": {
         "weekdays": [
           0,
