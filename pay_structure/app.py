@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from automations.pay_structure import catalog, icd_payout, offices, store  # noqa: E402
 from automations.pay_structure.estimate import estimate_by_level  # noqa: E402
 
-st.set_page_config(page_title="Pay Structure", page_icon="💵", layout="centered")
+st.set_page_config(page_title="Pay Structure", page_icon="💵", layout="wide")
 
 _SALE_COL = "Sale type"
 _ICD_COL = "ICD gets"
