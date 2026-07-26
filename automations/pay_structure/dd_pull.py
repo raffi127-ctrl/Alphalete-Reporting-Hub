@@ -41,7 +41,8 @@ COL_CAMPAIGN = "cl.Campaign__c"     # RES-ATT / RES-BASE POWER-Energy / B2B-BOX-
 
 # The product categories that carry sellable gross revenue (skip Bonus / Override
 # / Chargeback / Total rows).
-PRODUCT_CATEGORIES = {"INTERNET", "WIRELESS", "ELE", "AIR", "DTV"}
+PRODUCT_CATEGORIES = {"INTERNET", "WIRELESS", "ELE", "AIR", "DTV",
+                      "DIRECTV STREAM", "VOICE"}
 
 
 def pull(out_path: "Optional[Path]" = None, page=None):
