@@ -214,6 +214,17 @@ def inspect(owner: str, src: "Optional[Path]" = None) -> None:
         ap_ = [r for r in sub if _is_autopay(r)]
         tot = collections.Counter(round(_num(r.get(COL_TOTAL)) or 0, 0) for r in ap_)
         print("INSP|{} autopayTotal$={}".format(want, dict(tot.most_common(6))))
+    # per-WIRELESS-description auto-pay base + count (New Line vs Port Line vs BYOD),
+    # to settle whether Raf's "New Line" ($173) = the DD 'Port Line' (New Ported Line).
+    for want in ("WIRELESS", "INTERNET"):
+        wl = [r for r in mine
+              if str(r.get(COL_CATEGORY, "")).strip().upper() == want and _is_autopay(r)]
+        bydesc: Dict[str, List[float]] = collections.defaultdict(list)
+        for r in wl:
+            bydesc[str(r.get(COL_DESCRIPTION, "")).strip()].append(_num(r.get(COL_TOTAL)) or 0)
+        for dsc, vals in sorted(bydesc.items(), key=lambda x: -len(x[1]))[:5]:
+            mode = collections.Counter(round(v, 0) for v in vals).most_common(1)[0]
+            print("INSP|{} desc={!r} n={} mode={}".format(want, dsc, len(vals), mode))
     go = gross_revenue_by_office(rows).get(owner, {})
     print("INSP|MAPPED={}".format(main_products(go)))
     print("INSP|activation={}".format(activation_by_office(rows).get(owner)))
