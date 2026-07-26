@@ -44,9 +44,10 @@ PRODUCT_CATEGORIES = {"INTERNET", "WIRELESS", "ELE", "AIR", "DTV"}
 
 
 def pull(out_path: "Optional[Path]" = None, page=None):
-    """Download the ORG DD Detail crosstab. Returns the path."""
+    """Download the ORG DD Detail crosstab. Returns the path. Tableau crosstab
+    exports are UTF-16 TAB-delimited CSV (not xlsx), so the file is .csv."""
     from automations.shared.tableau_patchright import download_crosstab_patchright
-    out = Path(out_path) if out_path else (OUTPUT_DIR / "ORG DD Detail.xlsx")
+    out = Path(out_path) if out_path else (OUTPUT_DIR / "ORG DD Detail.csv")
     out.parent.mkdir(parents=True, exist_ok=True)
     download_crosstab_patchright(DD_VIEW, DD_SHEET, out, page=page)
     return out
@@ -120,9 +121,20 @@ def activation_by_office(rows) -> "Dict[str, float]":
 
 
 def _read_rows(path: Path):
-    import pandas as pd
-    df = pd.ExcelFile(path).parse(0)
-    return df.to_dict("records")
+    """Tableau crosstab = UTF-16 tab-delimited (sometimes UTF-8/comma). Reuse
+    override_bulletin's proven encoding/delimiter-robust reader (returns row
+    lists), then zip the header row into per-row dicts (what the parsers expect)."""
+    from automations.override_bulletin.pulls import read_crosstab
+    table = read_crosstab(path)
+    if not table:
+        return []
+    header = [str(h).strip() for h in table[0]]
+    rows = []
+    for r in table[1:]:
+        if not any(str(c).strip() for c in r):
+            continue
+        rows.append({header[i]: r[i] for i in range(min(len(header), len(r)))})
+    return rows
 
 
 def run(write: bool = False, src: "Optional[Path]" = None) -> dict:
