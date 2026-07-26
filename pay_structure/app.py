@@ -234,59 +234,31 @@ def _gross_profit_simulator(office) -> None:
 
     res = gp.simulate(plans, volumes, activation)
     rows = [{"Product": r["product"],
-             "Bonus/sale": ("${:,.0f}".format(r.get("tier_bonus", 0))
-                            if r.get("tier_bonus") else "—"),
              "Gross revenue": "${:,.0f}".format(r["revenue"]),
              "Rep payout (+12% tax)": "${:,.0f}".format(r["rep_payout"] + r["payroll_tax"]),
-             "Profit": "${:,.0f}".format(r["profit"]),
-             "Gross Profit %": "{}%".format(r["cost_ratio_pct"])}
+             "Gross Profit %": "{}%".format(r["cost_ratio_pct"]),
+             "Total office profit": "${:,.0f}".format(r["profit"]),
+             "Office keeps %": "{}%".format(r["margin_pct"])}
             for r in res["per_product"]]
     if rows:
-        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
-        m = st.columns(3)
-        m[0].metric("Gross Profit %", "{}%".format(res["blended_cost_ratio_pct"]))
-        m[1].metric("Total office profit", "${:,.0f}".format(res["total_profit"]))
-        m[2].metric("Office keeps %", "{}%".format(res["blended_margin_pct"]))
-        st.caption("**Gross Profit %** matches your sheet — the rep payout + 12% "
-                   "payroll tax as a share of gross revenue. **Office keeps %** is "
-                   "what's left after that.")
+        rows.append({"Product": "— OVERALL —",
+                     "Gross revenue": "${:,.0f}".format(res["total_revenue"]),
+                     "Rep payout (+12% tax)": "${:,.0f}".format(
+                         res["total_rep_payout"] + res["total_tax"]),
+                     "Gross Profit %": "{}%".format(res["blended_cost_ratio_pct"]),
+                     "Total office profit": "${:,.0f}".format(res["total_profit"]),
+                     "Office keeps %": "{}%".format(res["blended_margin_pct"])})
 
+        def _bold_total(row):
+            last = row.name == len(rows) - 1
+            return ["font-weight:700;background-color:#F1F5F9" if last else ""] * len(row)
 
-def _render_margin(pay_for_type, camp, bucket, levels) -> None:
-    """Read-only calculator under a campaign's rep-pay grid. For every sale type
-    with a known ICD payout (what the company pays the office per sale), show — at
-    each level — what's PAID OUT to the rep vs what the office KEEPS ($ and %).
-    `pay_for_type` = {sale_type: ICD payout $} from the DD pull (office value, org
-    fallback)."""
-    rows = []
-    for st_ in camp.sale_types:
-        pay = pay_for_type.get(st_)
-        if not pay:
-            continue
-        row = {_SALE_COL: st_, "ICD payout": "${:,.0f}".format(pay)}
-        for lvl in levels:
-            rep = float((bucket.get(st_) or {}).get(lvl) or 0.0)
-            profit = pay - rep
-            keep = round(profit / pay * 100) if pay else 0
-            row[lvl] = "pay ${:,.0f} · keep ${:,.0f} ({}%)".format(rep, profit, keep)
-        rows.append(row)
-    if not rows:
-        st.caption("💵 ICD payout + keep/paid-out will show here once this "
-                   "campaign's products have DD payout data.")
-        return
-    df = pd.DataFrame(rows)
-
-    def _bg(col):
-        if col.name == "ICD payout":
-            return ["background-color:#FEF3C7"] * len(col)      # amber
-        if col.name in levels:
-            return ["background-color:#DCFCE7"] * len(col)      # green
-        return [""] * len(col)
-
-    st.caption("💵 **ICD payout & margin** — amber = what the company pays your "
-               "office per sale. Green = at each level, what you **pay the rep** "
-               "vs what you **keep** ($ and %).")
-    st.dataframe(df.style.apply(_bg), hide_index=True, width="stretch")
+        st.dataframe(pd.DataFrame(rows).style.apply(_bold_total, axis=1),
+                     hide_index=True, width="stretch")
+        st.caption("Per product and, in the bold **OVERALL** row, the total. "
+                   "**Gross Profit %** matches your sheet (rep payout + 12% payroll "
+                   "tax as a share of gross revenue); **Office keeps %** is what's "
+                   "left; **Total office profit** is the dollars kept.")
 
 
 def editor_view(office) -> None:
@@ -368,10 +340,10 @@ def editor_view(office) -> None:
     if not checked:
         st.info("Check at least one campaign above to start pricing.")
     else:
-        st.caption("Dollars a rep earns for each ACTIVE line of that sale type. "
-                   "Fill in every cell — even if the pay doesn't change by level, "
-                   "enter it at each level so the estimate stays accurate. Your "
-                   "payout + margin show in the colored table under each campaign.")
+        st.caption("Each row shows the **ICD payout** (what the company pays your "
+                   "office per sale). Enter what a rep earns per ACTIVE line at each "
+                   "level — the **keeps** column beside it shows what your office "
+                   "keeps ($ · %). Fill every level so the estimate stays accurate.")
 
     # Accurate ICD payout per sale type, from the DD gross-revenue pull (office's
     # own auto-pay base, org-wide fallback). One Sheet read for the whole editor.
@@ -389,16 +361,44 @@ def editor_view(office) -> None:
                     f"color:{accent};margin-top:8px'>{camp.label}</div>",
                     unsafe_allow_html=True)
         types = _campaign_types(grid, ck, camp)
-        df = pd.DataFrame(
-            [[st_] + [grid.rate(ck, st_, lvl) for lvl in grid.levels]
-             for st_ in types],
-            columns=[_SALE_COL] + list(grid.levels))
-        col_cfg = {_SALE_COL: st.column_config.TextColumn(_SALE_COL,
-                                                          width="large",
-                                                          disabled=True)}
+        pf = pay_map.get(ck, {})
+        # ONE combined table: the ICD payout + the editable rep pay AND, per level,
+        # what the office keeps ($ · %). Keep columns recompute each rerun from the
+        # session-persisted rates, so they update right after a pay cell is committed.
+        _KEEP = {lvl: "{} keep".format(lvl) for lvl in grid.levels}
+        data = []
+        for st_ in types:
+            pay = pf.get(st_)
+            row = {_SALE_COL: st_,
+                   "ICD payout": "${:,.0f}".format(pay) if pay else "—"}
+            for lvl in grid.levels:
+                rep = grid.rate(ck, st_, lvl)
+                row[lvl] = rep
+                if pay:
+                    profit = pay - rep
+                    row[_KEEP[lvl]] = "${:,.0f} · {}%".format(
+                        profit, round(profit / pay * 100))
+                else:
+                    row[_KEEP[lvl]] = "—"
+            data.append(row)
+        cols = [_SALE_COL, "ICD payout"]
+        for lvl in grid.levels:
+            cols += [lvl, _KEEP[lvl]]
+        df = pd.DataFrame(data, columns=cols)
+        col_cfg = {
+            _SALE_COL: st.column_config.TextColumn(_SALE_COL, width="large",
+                                                   disabled=True),
+            "ICD payout": st.column_config.TextColumn("ICD payout", disabled=True,
+                                                      help="What the company pays "
+                                                      "your office per sale"),
+        }
         for lvl in grid.levels:
             col_cfg[lvl] = st.column_config.NumberColumn(lvl, min_value=0.0,
-                                                         step=1.0, format="$%.2f")
+                                                         step=1.0, format="$%.2f",
+                                                         help="What you pay the rep")
+            col_cfg[_KEEP[lvl]] = st.column_config.TextColumn(
+                "{} keeps".format(lvl), disabled=True,
+                help="What your office keeps at this level ($ · %)")
         edited = st.data_editor(df, width="stretch", column_config=col_cfg,
                                 hide_index=True, key=f"rates_{office.key}_{ck}")
         bucket = {}
@@ -408,7 +408,9 @@ def editor_view(office) -> None:
                 bucket[st_] = {lvl: float(row.get(lvl) or 0.0)
                                for lvl in grid.levels}
         new_rates[ck] = bucket
-        _render_margin(pay_map.get(ck, {}), camp, bucket, grid.levels)
+        if not pf:
+            st.caption("💵 ICD payout + keep columns fill in once this campaign's "
+                       "products have DD payout data.")
 
     # Fold this run's edits into the working grid so nothing is lost on rerun.
     # Carry logo + accent forward (they're branding, not edited here) or the page

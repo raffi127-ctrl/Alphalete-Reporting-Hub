@@ -6,3 +6,4 @@ google-auth>=2.20
 # gross_profit fresh (stale sys.modules cache dropped ProductPlan.tier_bonuses).
 # rebuild 2026-07-26: icd_payout gained payouts_for_office() — full reboot so the
 # cached module reloads (a stale one would AttributeError on the new function).
+# rebuild 2026-07-26b: box/base energy mappers + combined table — reboot to reload.
