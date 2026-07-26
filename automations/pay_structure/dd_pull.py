@@ -123,27 +123,26 @@ def org_gross_revenue(rows) -> "Dict[str, float]":
     return out
 
 
-def energy_by_campaign(rows) -> "Dict[str, float]":
-    """{'ELE | <campaign>': mode Total$} for energy (box/base). Energy is NOT
-    auto-pay (order type blank), so it bypasses the auto-pay filter; and its
-    cl.Description is a flat 'Energy Enrollment', so the payout is keyed by CAMPAIGN
-    (cl.Campaign__c: B2B-BOX-Energy=box ~$275, RES-BASE POWER-Energy=base $200).
-    The box spread ($275–375) likely tracks BF tier but isn't distinguishable in
-    the DD, so all BF tier×term sale types share the campaign's dominant value."""
+def energy_products(rows) -> "Dict[str, float]":
+    """{'ELE | <description>': mode Total$} for energy. Energy is NOT auto-pay
+    (order type blank), so it bypasses the auto-pay filter; and unlike AT&T it's
+    keyed by DESCRIPTION, which IS the product: BOX breaks down by BF tier
+    (BF 1=$325, BF 2=$275, BF 3=$210), BASE is a flat 'Energy Enrollment'=$200,
+    Just Energy is Green/Not Green. Descriptions don't collide across campaigns."""
     acc: Dict[str, List[float]] = collections.defaultdict(list)
     for r in rows:
         if str(r.get(COL_CATEGORY, "") or "").strip().upper() != "ELE":
             continue
-        camp = str(r.get(COL_CAMPAIGN, "") or "").strip()
+        desc = str(r.get(COL_DESCRIPTION, "") or "").strip()
         tot = _num(r.get(COL_TOTAL))
-        if not camp or tot is None or tot <= 0:
+        if not desc or tot is None or tot <= 0:
             continue
-        acc[camp].append(tot)
+        acc[desc].append(tot)
     out: Dict[str, float] = {}
-    for camp, vals in acc.items():
+    for desc, vals in acc.items():
         if len(vals) < MIN_SAMPLE:
             continue
-        out["ELE | {}".format(camp)] = collections.Counter(
+        out["ELE | {}".format(desc)] = collections.Counter(
             round(v, 2) for v in vals).most_common(1)[0][0]
     return out
 
@@ -243,7 +242,7 @@ def run(write: bool = False, src: "Optional[Path]" = None) -> dict:
     # per-sale-type ICD payout when an office has no own value for a product.
     # Energy (box/base) is merged in — it's keyed by campaign, not description.
     org_raw = org_gross_revenue(rows)
-    org_raw.update(energy_by_campaign(rows))
+    org_raw.update(energy_products(rows))
     by_office["_org"] = {"raw": org_raw, "pulled": pulled}
     if write:
         import os

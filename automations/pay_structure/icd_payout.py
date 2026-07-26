@@ -64,7 +64,12 @@ def _internet_base(package: str, dd: "Dict[tuple, float]") -> "Optional[float]":
     m = _SPEED_RE.search(package or "")
     if not m:
         return None
-    return dd.get(("INTERNET", ("internet " + m.group(1)).lower()))
+    speed = m.group(1)
+    # 'Copper to Internet N' is a DISTINCT product (copper→fiber conversion,
+    # ~$60–115) from fiber 'INTERNET N' (~$218–288) — match it explicitly.
+    if "copper" in (package or "").lower():
+        return dd.get(("INTERNET", "copper to internet {}".format(speed)))
+    return dd.get(("INTERNET", "internet {}".format(speed)))
 
 
 def _att_residential_payout(sale_type: str, dd: "Dict[tuple, float]") -> "Optional[float]":
@@ -83,7 +88,7 @@ def _att_residential_payout(sale_type: str, dd: "Dict[tuple, float]") -> "Option
             return dd.get(("WIRELESS", "new line"))
         return dd.get(("WIRELESS", "port line")) or dd.get(("WIRELESS", "new line"))
     if pt == "AIR":
-        return dd.get(("AIR", (pkg or "").strip().lower()))
+        return dd.get(("AIR", "air"))       # residential AIR = $143 (one DD line)
     # VIDEO / VOICE — no clean DD product line yet
     return None
 
@@ -115,16 +120,19 @@ def _b2b_att_payout(sale_type: str, dd: "Dict[tuple, float]") -> "Optional[float
 
 
 def _box_payout(sale_type: str, dd: "Dict[tuple, float]") -> "Optional[float]":
-    """BOX energy (B2B-BOX-Energy) — flat per-enrollment payout (~$275) for every
-    BF tier×term sale type; the DD's 'Energy Enrollment' line doesn't distinguish
-    tier/term, so all share the campaign's dominant value."""
-    return dd.get(("ELE", "b2b-box-energy"))
+    """BOX energy — the DD breaks down by BF tier in the description: BF 1=$325,
+    BF 2=$275, BF 3=$210. Term (12–60mo) doesn't change the payout, so a sale type
+    'BF 2 — 24mo' takes the BF-2 value."""
+    m = re.match(r"\s*BF\s*(\d)", sale_type or "", re.I)
+    if m:
+        return dd.get(("ELE", "bf {}".format(m.group(1))))
+    return None
 
 
 def _base_payout(sale_type: str, dd: "Dict[tuple, float]") -> "Optional[float]":
-    """BASE energy (RES-BASE POWER-Energy) — flat $200 per enrollment for every
-    BF tier×term sale type (the DD value is a clean single $200)."""
-    return dd.get(("ELE", "res-base power-energy"))
+    """BASE energy (RES-BASE POWER-Energy) — a flat 'Energy Enrollment' = $200 per
+    enrollment (the DD carries no BF tier for base), so every BF tier×term shares it."""
+    return dd.get(("ELE", "energy enrollment"))
 
 
 # campaign key -> mapper(sale_type, dd) -> base or None

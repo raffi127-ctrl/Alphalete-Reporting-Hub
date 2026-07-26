@@ -7,3 +7,4 @@ google-auth>=2.20
 # rebuild 2026-07-26: icd_payout gained payouts_for_office() — full reboot so the
 # cached module reloads (a stale one would AttributeError on the new function).
 # rebuild 2026-07-26b: box/base energy mappers + combined table — reboot to reload.
+# rebuild 2026-07-26c: box BF-tier payouts + AIR/copper mappers — reboot to reload.
