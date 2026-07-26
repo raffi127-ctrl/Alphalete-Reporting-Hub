@@ -1080,7 +1080,8 @@ def _shared_library_upsert(metadata: dict, script_text: str) -> tuple[bool, str]
             ws.update([row], f"A{cell.row}:G{cell.row}")
         else:
             ws.append_row(row, value_input_option="RAW")
-        _read_shared_library.clear()
+        _read_shared_library_rows.clear()  # bust the cached row read (the plain
+        # _read_shared_library wrapper has no .clear())
         return True, "published to the shared library (live for everyone)"
     except Exception as e:
         return False, f"{type(e).__name__}: {e}"
