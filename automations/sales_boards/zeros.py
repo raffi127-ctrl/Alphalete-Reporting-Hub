@@ -18,12 +18,14 @@ you didn't sell. Reconciled against the board's own counter: on the 7.26 week th
 sheet's "AT&T (B2B) — Rolled a Zero" reads 7 for Monday, and there are exactly 7
 B2B rep rows carrying a literal 0 in the Monday column.
 
-SUNDAY (Megan 7/23, same rule as the D2D zeros): Sunday is not a mandatory work
-day, so it never counts as a zero and never appears as a column — BUT a Sunday
-SALE still breaks the run. So walking back from the anchor, a Sunday is invisible
-unless the rep put up a positive number on it, in which case the streak stops
-there. Sunday is likewise never the anchor: on a Monday run (yesterday = Sunday)
-we anchor on Saturday.
+WEEKENDS (Sunday — Megan 7/23; Saturday — Megan 7/26, "post on Sunday for
+Mon-Sat"): neither weekend day is a mandatory work day, so neither counts as a
+zero or appears as a column — BUT a weekend SALE still breaks the run. Walking
+back from the anchor, a Saturday or Sunday is invisible unless the rep put up a
+positive number on it, in which case the streak stops there. Neither is ever the
+anchor: a Sunday run (yesterday = Saturday) and a Monday run (yesterday = Sunday)
+both anchor on FRIDAY and carry Friday's streaks forward. A "selling day" is
+therefore Mon-Fri; MAX_DAYS of them reaches ~1.5 weeks back.
 
 STREAKS CROSS WEEKS (Megan 7/23) — up to MAX_DAYS selling days back. The board only
 ever holds ONE week, so earlier days come from the `WeekData` tab, which archives
@@ -91,18 +93,24 @@ def _norm(s) -> str:
 
 
 def anchor_day(yday: dt.date) -> dt.date:
-    """The most recent day a zero can be rolled on. Sunday isn't a work day, so a
-    Monday run (yesterday = Sunday) anchors on Saturday instead."""
-    return yday - dt.timedelta(days=1) if yday.weekday() == 6 else yday
+    """The most recent day a zero can be rolled on. Neither weekend day is a
+    mandatory work day (Sunday — Megan 7/23; Saturday — Megan 7/26: "post on
+    Sunday for Mon-Sat"), so we never anchor on one: a Sunday run (yesterday =
+    Saturday) and a Monday run (yesterday = Sunday) both anchor on FRIDAY and
+    carry Friday's streaks forward."""
+    d = yday
+    while d.weekday() >= 5:          # Sat (5) or Sun (6): step back to Friday
+        d -= dt.timedelta(days=1)
+    return d
 
 
 def mandatory_days(anchor: dt.date, n: int) -> list:
     """The n most recent SELLING days ending on `anchor`, OLDEST FIRST, skipping
-    Sundays. Walks straight through week boundaries — that's the whole point.
-    These are the days that get counted and shown as columns."""
+    weekends (Sat + Sun). Walks straight through week boundaries — that's the
+    whole point. These are the days that get counted and shown as columns."""
     out, d = [], anchor
     while len(out) < n:
-        if d.weekday() != 6:
+        if d.weekday() < 5:         # Mon-Fri only
             out.append(d)
         d -= dt.timedelta(days=1)
     return list(reversed(out))
@@ -184,14 +192,17 @@ def rep_values(g, row, dates, board_we, exact, norm, board_day_col) -> tuple:
 def walk_streak(vals: dict, anchor: dt.date, cap: int) -> int:
     """Consecutive zeros ending on the anchor, walking back day by day.
 
-    Sunday is transparent — it adds nothing to the count, but a Sunday SALE stops
-    the walk (Megan 7/23). Any other non-zero (a sale, an 'X', a 'T', or a day we
-    have no data for) stops it too.
+    BOTH WEEKEND DAYS ARE TRANSPARENT (Sunday — Megan 7/23; Saturday — Megan
+    7/26): they add nothing to the count and never show as a column, but a
+    weekend SALE still stops the walk. So a rep who rolled zeros through the week
+    keeps the run across the weekend, while a rep who put up a Saturday or Sunday
+    number breaks it. Any WEEKDAY non-zero (a sale, an 'X', a 'T', or no data)
+    stops it too.
     """
     n, d = 0, anchor
     while n < cap:
         v = vals.get(d, "")
-        if d.weekday() == 6:
+        if d.weekday() >= 5:                  # Sat or Sun: transparent unless a sale
             if is_sale(v):
                 break
             d -= dt.timedelta(days=1)
@@ -215,9 +226,6 @@ def render_zeros(sh, src_ws, sheet_id, token, yday, out_dir: Path) -> dict:
     first, last = R.rep_region(g, ts)
     board_we = R.cell(g, 2, 2).strip()
 
-    anchor = anchor_day(yday)
-    days = mandatory_days(anchor, MAX_DAYS)        # shown columns, oldest first
-    span = [anchor - dt.timedelta(days=i) for i in range(LOOKBACK_CAL_DAYS)]  # incl. Sundays
     board_day_col = {}
     for wd, nm in enumerate(DAY_NAMES):
         c = R.day_column(g, nm)
@@ -226,13 +234,21 @@ def render_zeros(sh, src_ws, sheet_id, token, yday, out_dir: Path) -> dict:
                              f"(row {R.DAY_HEADER_ROW} renamed?)")
         board_day_col[wd] = c
 
-    exact, norm = load_week_data(sh)
-    print(f"  zeros: window {days[0]:%a %m/%d} → {days[-1]:%a %m/%d} "
-          f"({len(days)} selling days, Sundays skipped; board week = {board_we})")
-
     rows = [r for r in range(first, last + 1)
             if R.cell(g, r, R.NAME_COL).strip()
             and R.cell(g, r, CAMPAIGN_COL).strip() in R.PROGRAMS]
+
+    # Anchor on the most recent WEEKDAY (anchor_day skips Sat + Sun), so a Sunday
+    # or Monday run both anchor on Friday and carry Friday's streaks forward. The
+    # walk still reads across the weekend (span includes Sat/Sun) so a weekend
+    # SALE breaks a run, but neither weekend day is ever a column.
+    anchor = anchor_day(yday)
+    days = mandatory_days(anchor, MAX_DAYS)        # shown columns, oldest first
+    span = [anchor - dt.timedelta(days=i) for i in range(LOOKBACK_CAL_DAYS)]  # incl. weekends
+
+    exact, norm = load_week_data(sh)
+    print(f"  zeros: window {days[0]:%a %m/%d} → {days[-1]:%a %m/%d} "
+          f"({len(days)} selling days, weekends skipped; board week = {board_we})")
     window, streaks, gaps = {}, {}, {}
     for r in rows:
         if R.is_terminated(g, r):
