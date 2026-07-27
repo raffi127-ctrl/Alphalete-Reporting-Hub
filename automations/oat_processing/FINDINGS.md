@@ -38,20 +38,61 @@ No service-account key, no Cloudflare prompt.
 - Filters on the page: `numDays` (30 Days), `matchedOnly`, `filterByDate`,
   `filterByJboard`.
 
-## STILL UNOBSERVED — needs an applicant in each state (the last-mile blockers)
-The applicant that happened to be first in the OAT queue was a plain **no-phone**
-case, so these never rendered:
-1. **The overwrite/duplicate confirm dialog** that appears when you Send to AI on
-   a duplicate ("overwrite old applicant?"). Needed for SEND_AI + OVERRIDE_SEND_AI.
-2. **The "Interview Assigned" status line + date** (future vs past interview).
-   Needed for REMOVE_FUTURE_INTERVIEW and the past-interview re-text branch.
-3. **`sent_to_call_list_today`** signal — how the page shows "already sent today".
-4. **How the page advances** to the next applicant after Send/Save (auto-load? a
-   Next control? does `p=604` just always show the next unprocessed app?).
-5. **The await-template source** for the re-text branch — is it a `qNotes` Quick
-   Note, or a saved "await message" the applicant last received?
+## State model — from Carlos's Loom (watched frame-by-frame 2026-07-27)
 
-These are stateful, so they can't be forced by health-checking whatever applicant
-is first in queue. Fastest unlocks: Carlos shows a duplicate + an interview-assigned
-applicant (screenshot or a short driven session), or a supervised dry-run that
-logs the states as they appear across a batch.
+**All state is inline text/tables on the OAT page (p=604) — no modal to catch.**
+
+### The duplicate table (the key state source)
+When the applicant matches prior records, the page shows a table titled
+**"Following Applicants found with the same email address or phone number"** with
+columns: Owner · Office · Applicant · Email · Phone · Cell · Job Board ·
+**Date Entered** · **Status** · **Duplicate Type** (Email / Phone). Example Status
+values seen:
+- `Interview Assigned (View Last Activity) (1st Interview - Unmarked Show)` →
+  **past interview, no-show**. (A future interview shows the scheduled date instead
+  — Carlos: "scheduled for the 27th".)
+- `Sent to Call List` with **Date Entered = today** → the "already sent to the call
+  list today via another ad" case → remove for duplicate.
+So `has_interview` / `interview_date` / `sent_to_call_list_today` all come from
+parsing this table's Status + Date Entered per row.
+
+### Red inline messages (the AI-correspondence block)
+- `Cannot send to AI as correspondence with this phone number has already occurred.
+  The last correspondence was on <MM/DD/YYYY h:mm AM/PM>` → past correspondence;
+  parse that date for the 1-week re-text rule.
+- `Cannot override this applicant.` → the AI-send override is blocked (→ re-text or
+  remove path, not override+send).
+
+### The overwrite buttons (the overridable-duplicate case)
+When the dup CAN be overridden, the page shows a pink box "To Save this Applicant,
+the applicants shown above will have to be removed as duplicates." + two buttons:
+**"Overwrite old Applicants"** and **"Overwrite Old Applicants (Send to AI)"**. The
+second = override + send to AI (classify OVERRIDE_SEND_AI).
+
+### Advance mechanism
+The OAT queue is **paginated** — a pager top-right of the dup area reads
+`<page> of <N> Emails` (e.g. "2 of 24 Emails") with prev/next arrows. Advancing =
+clicking the next arrow (or setting the page select). So `advance_to_next` drives
+that pager; the run ends at page N.
+
+### Re-text (RETEXT_THEN_REMOVE) is a cross-page flow
+Not done on p=604. Carlos: copy the applicant's email → **Advanced Search** → paste
+→ open the prior record → **Send SMS** modal (Chat History + a message box that
+pre-fills the last await message; **Load Template** to swap to the position they
+applied to) → **Send** → back to OAT → remove for duplicate. The await copy lives
+in that SMS modal / templates, NOT a local file. (Most intricate branch — wire last.)
+
+## Status — RESOLVED from the Loom (2026-07-27)
+The 5 previously-unobserved bits are now understood (see the State model above):
+overwrite handling (inline buttons, not a modal), Interview-Assigned status (dup
+table Status column), sent-today (dup table Date Entered), advance (pager), and the
+await source (Send SMS modal / Load Template). Remaining work is code, not
+observation:
+- **Read layer** — parse the dup table + red messages + overwrite-button presence +
+  pager into the Applicant state flags; validate on Lucy 2 with `--debug` before
+  trusting it. Selectors are TEXT-based (find the table whose header has
+  "Status"+"Duplicate Type"; search page text for the red-message patterns), since
+  we have pixels not DOM — robust to exact ids.
+- **Actions** — still gated until a supervised dry-run confirms the read layer
+  classifies real applicants correctly, then arm one branch at a time
+  (remove-duplicate first, then override+send, then the cross-page re-text last).

@@ -2,7 +2,7 @@
 
     python -m automations.oat_processing.test_classify
 
-Exercises each branch of classify() against the scenarios Carlos described.
+Exercises each branch of classify() against the states Carlos showed in the Loom.
 """
 from __future__ import annotations  # Lucy 2 / mini run Python 3.9
 
@@ -10,7 +10,7 @@ import datetime as dt
 
 from .classify import Applicant, Action, classify
 
-TODAY = dt.date(2026, 7, 26)
+TODAY = dt.date(2026, 7, 27)
 
 
 def _check(label, applicant, expected):
@@ -23,36 +23,30 @@ def _check(label, applicant, expected):
 
 def main() -> int:
     cases = [
-        # 1. no phone -> parked
         ("no phone", Applicant(first_name="Donald", last_name="Sowells",
                                email="x@indeed", job_board="Indeed"),
          Action.FLAG_NO_PHONE),
-        # 2. future interview -> remove
         ("future interview", Applicant(first_name="A", phone="555",
-                                       has_interview=True,
-                                       interview_date=dt.date(2026, 7, 27)),
+                                       interview_future=True),
          Action.REMOVE_FUTURE_INTERVIEW),
-        # 3. sent to call list today -> remove duplicate
-        ("sent today", Applicant(first_name="B", phone="555",
-                                 sent_to_call_list_today=True),
+        ("sent to call list today", Applicant(first_name="B", phone="555",
+                                              sent_to_call_list_today=True),
          Action.REMOVE_DUPLICATE),
-        # 4a. past interview > 1wk, not overridable -> re-text then remove
-        ("past interview 28d", Applicant(first_name="C", phone="555",
-                                         position="AT&T Wireless Associate",
-                                         has_interview=True, override_offered=False,
-                                         interview_date=dt.date(2026, 6, 28)),
+        ("blocked, last contact 28d ago", Applicant(
+            first_name="C", phone="555", position="AT&T Wireless Associate",
+            correspondence_blocked=True, last_correspondence=dt.date(2026, 6, 28)),
          Action.RETEXT_THEN_REMOVE),
-        # 4b. past interview <= 1wk -> remove without texting
-        ("past interview 3d", Applicant(first_name="D", phone="555",
-                                        has_interview=True, override_offered=False,
-                                        interview_date=dt.date(2026, 7, 23)),
+        ("blocked, last contact 3d ago", Applicant(
+            first_name="D", phone="555", correspondence_blocked=True,
+            last_correspondence=dt.date(2026, 7, 25)),
          Action.REMOVE_DUPLICATE),
-        # 5. overridable dup, not sent today -> override + send
-        ("override offered", Applicant(first_name="E", phone="555",
-                                       override_offered=True),
+        ("past no-show, undated", Applicant(
+            first_name="E", phone="555", interview_past_noshow=True),
+         Action.REMOVE_DUPLICATE),
+        ("overwrite offered", Applicant(first_name="F", phone="555",
+                                        override_button=True),
          Action.OVERRIDE_SEND_AI),
-        # 6. fresh -> send
-        ("fresh applicant", Applicant(first_name="F", phone="555"),
+        ("fresh applicant", Applicant(first_name="G", phone="555"),
          Action.SEND_AI),
     ]
     print("OAT classify() checks:")
