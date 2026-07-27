@@ -5496,8 +5496,10 @@ def _sched_sorted(reports: list[dict], day: dt.date) -> list[dict]:
         ordered_ids = [r.report_id for r in
                        _reg.run_order(_reg.scheduled_today(cfg, day), day)]
         card_rank: dict[str, int] = {}   # Hub card id -> run position
+        id_rank: dict[str, int] = {}     # raw orchestrator report_id -> run position
         mod_rank: dict[str, int] = {}    # action module -> run position (fallback)
         for pos, rid in enumerate(ordered_ids):
+            id_rank[rid] = pos           # auto-registered cards use id == report_id
             cid = _hub_card.get(rid)
             if cid is not None:
                 card_rank[cid] = pos
@@ -5509,6 +5511,16 @@ def _sched_sorted(reports: list[dict], day: dt.date) -> list[dict]:
             cid = str(card.get("id"))
             if cid in card_rank:
                 return card_rank[cid]
+            # Auto-registered library cards (hub_coverage) key on the raw
+            # report_id: their card id IS the report_id, and they carry the
+            # orchestrator id in source_report_id — so they land in their true
+            # run slot instead of at the bottom (their action module is the
+            # materialized launcher, which mod_rank never matches).
+            if cid in id_rank:
+                return id_rank[cid]
+            srid = str(card.get("source_report_id") or "")
+            if srid in id_rank:
+                return id_rank[srid]
             for a in card.get("actions", []):
                 if a.get("module") in mod_rank:
                     return mod_rank[a["module"]]
