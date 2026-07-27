@@ -1858,7 +1858,17 @@ def fill_opt_for_tab(
     int_row = _match_owner(tab_name, int_by_owner, aliases_map)
     metrics_row = _match_owner(tab_name, metrics_by_owner, aliases_map)
     if not att_row and not int_row and not metrics_row:
-        return [f"[SKIP] {tab_name}: no crosstab row (ATT / INT / Metrics)"]
+        # Matching NOTHING is a different failure from matching some views:
+        # it's what a missing (or deleted) 'ICD Aliases' row looks like, and it
+        # leaves the ICD's whole column blank while every other tab fills. Emit
+        # the '[gap] … not in Tableau view(s)' line too so the completion email
+        # names the ICD and points at the alias sheet, instead of the tab just
+        # showing up as "OPT" in the missing-parts list. (Audrey Mendoza's alias
+        # row vanished between 2026-07-23 and 07-27 and WE 7/26 stayed empty
+        # with no actionable warning — Eve.)
+        return [f"[SKIP] {tab_name}: no crosstab row (ATT / INT / Metrics)",
+                f"[gap] {tab_name} — not in Tableau view(s): ATT, INT, Metrics "
+                f"(ALL — check the 'ICD Aliases' sheet)"]
 
     grid = fill._retry(ws.get_all_values)
     sunday_to_col = fill.find_sunday_columns(grid, header_row_idx=0)
@@ -2336,6 +2346,15 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
         aliases_map = _al.load_aliases()
     except Exception:
         aliases_map = {}
+    # The alias sheet is team-editable and load_aliases() fails soft (returns
+    # {}), so a bad share / rename / wiped tab silently un-bridges EVERY ICD
+    # whose Tableau spelling differs from its tab name. Surface it as its own
+    # alert line — one broken load is a report-wide outage, not a per-ICD gap.
+    alias_alert = (None if aliases_map else
+                   "[alias] the 'ICD Aliases' sheet loaded 0 rows — every ICD "
+                   "whose Tableau name differs from its tab name will be "
+                   "skipped this run (check the sheet is shared + not renamed)")
+    logfn(f"OPT: alias sheet — {len(aliases_map)} name group(s)")
 
     sh = fill.open_sheet()
     mapping = fill.load_mapping()
@@ -2366,6 +2385,8 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
     filled: List[str] = []
     skipped: List[str] = []
     all_gaps: List[str] = []
+    if alias_alert:
+        all_gaps.append(alias_alert)
     if dl_gaps:
         # Surface download failures at the top of the gap report — these affect
         # the metric on EVERY tab, not one tab's data.

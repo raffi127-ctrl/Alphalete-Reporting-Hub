@@ -573,16 +573,40 @@ def main() -> int:
             for _g in [g for g in _gaps if g.startswith("[download]")]:
                 _notes.append("⚠ " + _g
                               + "  ·  FIX (refill OPT only): lucy rerun opt_phase")
+            # The alias sheet failed to load at all — report-wide, so it goes
+            # first: every alias-bridged ICD is unfilled, not just one.
+            for _g in [g for g in _gaps if g.startswith("[alias]")]:
+                _notes.append("⚠ " + _g.replace("[alias] ", ""))
             # ICDs the fill couldn't find in a Tableau view — usually a name
             # mismatch to fix on the ICD Aliases sheet, not a missing pull.
-            _nomatch = [g.split(" — ")[0].replace("[gap] ", "").strip()
-                        for g in _gaps
-                        if g.startswith("[gap] ") and "not in Tableau view" in g]
-            if _nomatch:
-                _notes.append(f"⚠ {len(_nomatch)} ICD(s) not found in a Tableau "
-                              "view (check spelling on the ICD Aliases sheet): "
-                              + ", ".join(_nomatch[:8])
-                              + (" …" if len(_nomatch) > 8 else ""))
+            # Split by severity: matching NO view at all means the ICD's whole
+            # OPT column stays blank (that's what a deleted alias row looks
+            # like — Audrey Mendoza, WE 7/26), while a partial miss only costs
+            # the rows fed by that one view. The all-views case is called out
+            # separately so it doesn't hide inside a long list (Eve 2026-07-27).
+            _nomatch_all, _nomatch_some = [], []
+            for _g in _gaps:
+                if not (_g.startswith("[gap] ") and "not in Tableau view" in _g):
+                    continue
+                _who = _g.split(" — ")[0].replace("[gap] ", "").strip()
+                (_nomatch_all if "(ALL" in _g else _nomatch_some).append(_who)
+            if _nomatch_all:
+                _notes.append(
+                    f"⚠ {len(_nomatch_all)} ICD(s) found in NO Tableau view — "
+                    "their whole OPT/sales column is blank. Most likely a "
+                    "missing or deleted row on the 'ICD Aliases' sheet "
+                    "(alias = the Tableau spelling, canonical = the tab name): "
+                    + ", ".join(_nomatch_all[:8])
+                    + (" …" if len(_nomatch_all) > 8 else "")
+                    + "  ·  FIX (after adding the alias): lucy rerun opt_phase"
+                    + (f' --only "{_nomatch_all[0]}"'
+                       if len(_nomatch_all) == 1 else ""))
+            if _nomatch_some:
+                _notes.append(f"⚠ {len(_nomatch_some)} ICD(s) missing from SOME "
+                              "Tableau view(s) (check spelling on the ICD "
+                              "Aliases sheet): "
+                              + ", ".join(_nomatch_some[:8])
+                              + (" …" if len(_nomatch_some) > 8 else ""))
             if _term_note:
                 _notes.append("⚠ " + _term_note)
             if _notes:
