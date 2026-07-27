@@ -1516,6 +1516,38 @@
       ],
       "verify": null
     },
+    "country_sales_board_slack": {
+      "order": 11.6,
+      "on_scheduler": true,
+      "_note": "Screenshots the 'Country Sales Board' tab (exact-sheet PDF-export render, no browser — same path as org_board_slack / all_campaigns_board_slack) and sends it as ONE shared Slack GROUP DM (all recipients in a single mpim thread, needs the bot's mpim:write scope) under the title 'Country Sales Board'. RECIPIENTS ARE THREE, deliberately fewer than the All Campaigns DM's five (Eve 2026-07-27): Rafael Hidalgo, Maud Miller, Evelyn Sobrino — no Carlos, no Megan. Hard-coded Slack user IDs in slack_post.RECIPIENTS (no users:read dependency). NOT A WHOLE-TAB SHOT: this tab runs to row 310 x column BC (52 frozen leaderboard weeks + a per-rep 7-day delta box), which renders as an unreadable postage stamp, so CAPTURE_RANGE is 'A1:J94' — title + Product Summary + Current vs Prior (through Grand Total, which is why it reaches col J) + the full 76-rep ranking and TOTALS with 8 weeks of trend. Verified legible 2026-07-27. To send the per-rep DAY BLOCK instead, set CAPTURE_RANGE to 'A1:L175'. Sends AS LUCY (bot token) — runs on the runner that has the Lucy slack-bot-token; a machine with only the per-user token sends from that account instead. `--post` = LIVE send; without it the run is a dry-run that still builds the PNG. Proving send to one person: `--only U088E2KJEV8 --post`. On-demand: `lucy rerun country_sales_board_slack` (uses base_args, so it sends).",
+      "display_name": "Country Sales Board — Slack DM",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.country_sales_board.slack_post"
+      ],
+      "base_args": [
+        "--post"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "after": [
+        "country_sales_board"
+      ],
+      "verify": null
+    },
     "captainship_drafts": {
       "order": 20,
       "on_scheduler": true,

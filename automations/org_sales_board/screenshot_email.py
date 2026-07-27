@@ -295,13 +295,22 @@ def _access_token() -> str:
     return creds.token
 
 
-def _export_png(gid: int, rng: str, out_path: Path, token: str) -> Path:
-    """Render one A1 range of the copy tab to a trimmed PNG via the Sheets PDF
-    export endpoint — exact-sheet look (colors/fonts/borders), no browser."""
+def _export_png(gid: int, rng: str, out_path: Path, token: str,
+                spreadsheet_id: str | None = None) -> Path:
+    """Render one A1 range of a tab to a trimmed PNG via the Sheets PDF export
+    endpoint — exact-sheet look (colors/fonts/borders), no browser.
+
+    `spreadsheet_id` defaults to this module's SHEET_ID (the ORG board's
+    workbook). Pass it explicitly to render a tab in a DIFFERENT workbook —
+    `gid` alone is not enough, since the export URL needs the file too, and a
+    gid from another workbook silently renders the wrong sheet. Used by
+    country_sales_board.slack_post, whose tab lives in the ATT Program - Focus
+    Report workbook."""
     import fitz  # PyMuPDF
     from PIL import Image, ImageChops
     import time
-    base = (f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=pdf"
+    base = (f"https://docs.google.com/spreadsheets/d/"
+            f"{spreadsheet_id or SHEET_ID}/export?format=pdf"
             f"&gid={gid}&range={rng}&gridlines=false&sheetnames=false"
             f"&printtitle=false&pagenumbers=false&fzr=false"
             f"&top_margin=0.05&bottom_margin=0.05&left_margin=0.05&right_margin=0.05")
