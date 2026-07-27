@@ -42,6 +42,15 @@ LOGIN_FILE = Path.home() / ".config" / "recruiting-report" / "saraplus-login"
 # the root is a basic connectivity check, not a full VPN verdict — the login
 # page is the real test.
 SARA_URL = os.environ.get("SARAPLUS_URL", "https://www.saraplus.com/").strip()
+LOGIN_URL = "https://www.saraplus.com/e/servicepages/login.aspx"
+# Persistent profile so the "Remember Me" session sticks and most runs skip the
+# login. Per-machine, under the git-ignored config area.
+USER_DATA_DIR = str(Path.home() / ".config" / "recruiting-report" / "sara-profile")
+
+# Login form (mapped from the live page 2026-07-27 — ASP.NET WebForms).
+_SEL_USER = "#ctl00_MainContent_txtUserName"
+_SEL_PASS = "#ctl00_MainContent_txtPassword"
+_SEL_LOGIN = "#MainContent_btnLogin"
 
 
 def _log(m: str) -> None:
@@ -67,35 +76,122 @@ def load_login() -> tuple[str, str]:
 
 
 # ------------------------------------------------------------------ scrape
+#
+# Per-rep board B2B count = the "AT&T Internet" column + the "Wireless New
+# Lines" column. NOT "Total Sales" (deals, ~2/rep — the board counts LINES),
+# NOT "Total Wireless". VERIFIED to reconcile with the board B2B total exactly
+# on 4 days: 7/22 1+20=21, 7/23 1+14=15, 7/24 1+10=11, 7/25 0+1=1.
+_COL_INTERNET = "AT&T Internet"
+_COL_WIRELESS = "Wireless New Lines"
+
+
+def _mdy(d: dt.date) -> str:
+    """M/D/YYYY, the format Sara's date boxes show (7/27/2026)."""
+    return f"{d.month}/{d.day}/{d.year}"
+
+
+def _launch(log):
+    from patchright.sync_api import sync_playwright
+    pw = sync_playwright().start()
+    ctx = pw.chromium.launch_persistent_context(
+        user_data_dir=USER_DATA_DIR,
+        headless=True,
+        viewport={"width": 1600, "height": 1000},
+        accept_downloads=True,
+        args=["--disable-blink-features=AutomationControlled"],
+    )
+    page = ctx.pages[0] if ctx.pages else ctx.new_page()
+    return pw, ctx, page
+
+
+def _login(page, log) -> None:
+    """Log in if the persistent session isn't already authenticated."""
+    page.goto(LOGIN_URL, wait_until="domcontentloaded")
+    page.wait_for_timeout(1500)
+    # If Remember-Me already carried us past login, the username box is absent.
+    if page.query_selector(_SEL_USER) is None:
+        log("  already authenticated (persistent session)")
+        return
+    user, pw = load_login()
+    page.fill(_SEL_USER, user)
+    page.fill(_SEL_PASS, pw)
+    log("  submitting login…")
+    page.click(_SEL_LOGIN)
+    page.wait_for_load_state("domcontentloaded")
+    page.wait_for_timeout(3000)
+    if page.query_selector(_SEL_USER) is not None:
+        raise SystemExit("Sara login failed — still on the login form. Check "
+                         "the saraplus-login file (email line 1, password "
+                         "line 2), then re-run.")
+    log(f"  logged in — now at {page.url}")
+
+
+def _dump(page, log, label: str) -> None:
+    """Recon: print the page's selectors + grid so the extractor can be built
+    from the log (no file access to Lucy 2 needed)."""
+    import json
+    info = page.evaluate("""() => {
+      const t = e => (e.innerText||e.value||'').trim().slice(0,40);
+      return {
+        url: location.href,
+        links: [...document.querySelectorAll('a')].map(a=>({t:t(a),h:a.getAttribute('href')})).filter(x=>x.t).slice(0,60),
+        inputs: [...document.querySelectorAll('input,select')].map(e=>({tag:e.tagName,type:e.type,id:e.id,name:e.name,val:(e.value||'').slice(0,20)})).filter(e=>e.id||e.name).slice(0,60),
+        buttons: [...document.querySelectorAll('button,input[type=submit],input[type=button],a.rbButton')].map(e=>({id:e.id,t:t(e)})).filter(e=>e.t).slice(0,40),
+        headers: [...document.querySelectorAll('th')].map(t2=>t2.innerText.trim()).filter(Boolean).slice(0,40),
+        rows: [...document.querySelectorAll('tr')].map(tr=>[...tr.querySelectorAll('td')].map(td=>td.innerText.trim())).filter(r=>r.filter(Boolean).length).slice(0,50),
+      };
+    }""")
+    log(f"=== RECON [{label}] {info['url']} ===")
+    for k in ("links", "inputs", "buttons", "headers", "rows"):
+        log(f"--- {k} ---")
+        for item in info[k]:
+            log("  " + json.dumps(item, ensure_ascii=False))
+
+
+def _open_dashboard(page, day: dt.date, log) -> None:
+    """Get onto the Sales Dashboard for one day and Submit. Selectors are
+    discovered on the first recon run and pinned here."""
+    # Best-effort navigation: the app usually lands on/near the dashboard after
+    # login. Recon confirms the real URL/nav; pinned once known.
+    page.wait_for_timeout(1500)
+
+
+def _scrape(day: dt.date, recon: bool, log=_log) -> dict:
+    pw, ctx, page = _launch(log)
+    try:
+        _login(page, log)
+        if recon:
+            _dump(page, log, "post-login")
+            return {}
+        _open_dashboard(page, day, log)
+        return _extract(page, day, log)
+    finally:
+        try:
+            ctx.close(); pw.stop()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _extract(page, day: dt.date, log) -> dict:
+    """Read per-agent AT&T Internet + Wireless New Lines from the grid.
+
+    Built against the grid structure once recon pins the column order; guarded
+    so it refuses to return a silent-empty result (which would look like 'no
+    sales' and, with overwrite, could wrongly hold numbers). Not yet pinned.
+    """
+    raise NotImplementedError(
+        "extractor not pinned yet — run `--recon` on Lucy 2 first; this dumps "
+        "the dashboard selectors + grid so _open_dashboard/_extract can be "
+        "finished. Refusing to write from an unbuilt extractor.")
+
+
 def fetch_b2b(day: dt.date, log=_log) -> dict[str, int]:
     """Per-rep AT&T counts from Sara Plus for one day: {agent name: count}.
 
-    SPEC (mapped from the live Sales Dashboard 2026-07-27, no VPN needed):
-      login  https://www.saraplus.com/e/servicepages/login.aspx
-             fields: ctl00$MainContent$txtUserName / $txtPassword / $btnLogin
-             (ASP.NET WebForms; session id sits in the URL path). Then the app
-             lands on the Sales Dashboard.
-      set    Date Range = day..day (both date boxes), Service = All, Submit.
-      read   the "Agent" group rows. **Per-rep AT&T count = the "AT&T Internet"
-             column + the "Wireless New Lines" column.** NOT "Total Sales"
-             (that counts DEALS, ~2/rep; the board counts LINES). NOT "Total
-             Wireless" (that's not new-lines-only).
-
-    VERIFIED: AT&T Internet + Wireless New Lines reconciles with the board's B2B
-    total EXACTLY on 4 completed days — 7/22=1+20=21, 7/23=1+14=15,
-    7/24=1+10=11, 7/25=0+1=1 — i.e. the reps' "NL" = Wireless New Lines and
-    "Fiber"/internet = AT&T Internet. (AT&T UV / DIRECTV cols are 0 for these
-    reps; if one ever goes non-zero, re-check whether the board should include
-    it.)
-
-    BUILD: prefer the CSV export (Export Options -> CSV) over grid scraping —
-    download + parse the Agent rows. Build with patchright on Lucy 2, dumping
-    HTML/CSV to the log to nail the date-field + export selectors. Until then a
-    --yes run fails loudly rather than writing guesses.
+    count per agent = the "AT&T Internet" column + the "Wireless New Lines"
+    column (see the block above for why + the 4-day reconciliation proof).
     """
-    raise NotImplementedError(
-        "Sara Plus scrape not built yet — formula + selectors are spec'd above; "
-        "build fetch_b2b against the live site on Lucy 2.")
+    return _scrape(day, recon=False, log=log)
 
 
 # --------------------------------------------------------------- reconcile
@@ -198,6 +294,8 @@ def preflight(log=_log) -> int:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--preflight", action="store_true")
+    ap.add_argument("--recon", action="store_true",
+                    help="log in and DUMP the dashboard selectors/grid (build aid)")
     ap.add_argument("--date", help="sales day (YYYY-MM-DD); default yesterday")
     ap.add_argument("--yes", action="store_true", help="actually write")
     a = ap.parse_args(argv)
@@ -205,6 +303,10 @@ def main(argv=None) -> int:
         return preflight()
     day = (dt.date.fromisoformat(a.date) if a.date
            else dt.datetime.now(TZ).date() - dt.timedelta(days=1))
+    if a.recon:
+        _log(f"Sara RECON for {day:%A %m/%d}")
+        _scrape(day, recon=True)
+        return 0
     _log(f"Sara reconcile for {day:%A %m/%d} — B2B only")
     return reconcile(day, a.yes)
 
