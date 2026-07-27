@@ -21,14 +21,19 @@ THE THREAD, in Carlos's order (2026-07-20; churn expanded to 3 product views
   2. Activation Rate        Tableau — ACTIVATIONRATES team view, owner-sliced.
   3. Wireless Churn         Tableau — CHURNRATES / CarlosTeamWIRELESSExp, sliced.
   4. INT Churn              Tableau — CHURNRATES / CarlosTeamINTExp, sliced.
+                            (Carlos SKIPS 4+5 as of 2026-07-27 — skip_views;
+                            Atef still posts them.)
   5. AIR Churn              Tableau — CHURNRATES / CarlosTeamAIRExp, sliced.
   6. Customer Churn         Sheet — the office board's LUCY CHURN tab main block
                             (the 0-30 Day Rolloff List), via vantura_churn.shot.
   7. Activation Rate by rep Sheet — the LUCY CHURN tab's rep chart (cols AE:AF).
   8. Order Log              The att_order_log xlsx (ORDERLOG export, owner-filtered).
-  9. Activation report ovw. Two-week Activated/Cancelled/Still-Open per-rep image
+  9. Order Tiered Bonus     Tableau — OrderTieredBonus-RepRanking, Owner Name
+                            sliced, full canvas. Carlos only (Domin8 gets it via
+                            the Tableau Country Trackers post). Added 2026-07-27.
+ 10. Activation report ovw. Two-week Activated/Cancelled/Still-Open per-rep image
                             (att_order_log.payout), from the same export.
- 10. Out of Bounds          Tableau — OutofBoundsReport, owner-sliced. Posted even
+ 11. Out of Bounds          Tableau — OutofBoundsReport, owner-sliced. Posted even
                             when BLANK (Carlos's Loom: "if it shows nothing, we
                             still want the screenshot").
 
@@ -88,6 +93,12 @@ TEAM: dict = {
     "churn_air": (_T + "ATTTRACKER-B2B/CHURNRATES/"
                   "66dd0946-c47b-488e-990c-cf67f04de4c0/"
                   "CarlosTEAMAIREXP?:iid=1"),
+    # Order Tiered Bonus - Rep Ranking (Carlos 2026-07-27). Base view shows
+    # every team — slice by Owner Name (Carlos's screenshot filters on "Owner
+    # Name" = the plain owner). Captured full canvas (no data_cols in VIEW_META)
+    # so the un-highlighted DNQ reps below the yellow "1-order-away" rows aren't
+    # cropped off. Carlos posts it; Atef skips it (Country Trackers covers him).
+    "order_tiered_bonus": _T + "ATTTRACKER-B2B/OrderTieredBonus-RepRanking",
     # OutofBoundsReport base view already shows all offices — slice by owner.
     "out_of_bounds": _T + "ATTTRACKER-B2B/OutofBoundsReport",
 }
@@ -109,6 +120,9 @@ VIEW_META: dict = {
     "churn_wireless":  {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 5},
     "churn_int":       {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 5},
     "churn_air":       {"filter_field": OWNER_OFFICE_FIELD, "data_cols": 5},
+    # No data_cols -> no last-colored-row crop: keep the WHOLE ranking table
+    # (the DNQ reps at the bottom aren't highlighted and would be trimmed).
+    "order_tiered_bonus": {"filter_field": OWNER_FIELD},
     "out_of_bounds":   {"filter_field": OWNER_FIELD},
 }
 
@@ -225,6 +239,10 @@ OFFICES: dict = {
                                 "4c53fb7e-5a1b-4e8f-990e-0b2c8cf42309/"
                                 "CarlosLocalOfficeEXPANDED"),
         },
+        # Carlos 2026-07-27: drop INT + AIR churn from HIS thread (Atef keeps
+        # them). The overrides above stay intact so un-skipping restores them;
+        # skip_views is the only toggle. Wireless churn + Customer churn remain.
+        skip_views=frozenset({"churn_int", "churn_air"}),
         # Carlos 2026-07-23: the SAME thread also posts to #a-players-b2b
         # (private, Lucy added as a member). Its own daily thread + dedup.
         mirror_channels=(("C0AJQA8P716", "#a-players-b2b"),),
@@ -260,6 +278,12 @@ OFFICES: dict = {
         # correctly this morning with NO click — Megan 2026-07-23). Clicking it
         # would toggle that off, so opt Atef's activation OUT of the sort click.
         baked_sort_views=frozenset({"activation_rate"}),
+        # Order Tiered Bonus already reaches #domin8-b2b-sales via the daily
+        # "Tableau Country Trackers" post (tableau_screenshots, AtefExp view).
+        # Skip it here so Domin8 doesn't get it twice in the same channel; the
+        # section stays in Carlos's thread only (Carlos 2026-07-27 asked for it
+        # in his B2B Metrics post).
+        skip_views=frozenset({"order_tiered_bonus"}),
     ),
 }
 
