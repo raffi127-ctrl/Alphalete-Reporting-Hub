@@ -348,14 +348,15 @@ def send(*, tab=None, do_send=False, preview=False, test=False, force=False,
     out_dir = Path(out_dir) if out_dir else B.OUT_DIR
 
     # One read of the tab, not two — build() would re-read it for the same rows.
-    week_labels, section1, section2 = B.read_data(tab)
+    week_labels, combined, regular, captainship, program = B.read_data(tab)
     week_label = week_labels[0] if week_labels else ""
     out_dir.mkdir(parents=True, exist_ok=True)
     html_path = out_dir / "override-bulletin.html"
-    html_path.write_text(B.build_html(week_labels, section1, section2),
-                         encoding="utf-8")
-    print("built {} (week {!r}; ALL ORG {} rows, CAPTAIN/SPECIAL {} rows)".format(
-        html_path, week_label, len(section1), len(section2)))
+    html_path.write_text(
+        B.build_html(week_labels, combined, regular, captainship, program),
+        encoding="utf-8")
+    print("built {} (week {!r}; combined {}, captainship {}, program {})".format(
+        html_path, week_label, len(combined), len(captainship), len(program)))
     png_name = "Override-Bulletin-WE-{}.png".format(
         ".".join(week_label.split(".")[:2]) or "unknown")
     png_path = B.render_png(html_path, out_dir / png_name)
@@ -377,9 +378,9 @@ def send(*, tab=None, do_send=False, preview=False, test=False, force=False,
     # "$57,749 this week" against $147,901, with five captains at $0 and steep
     # fake declines on every card. Blank sub-rows now surface as series=None
     # (see build.read_data), so we can refuse to publish that to the org.
-    unsourced = [r["name"] for r in section2 if r.get("week") is None]
+    unsourced = [r["name"] for r in (captainship + program) if r.get("week") is None]
     if unsourced:
-        print("\n⚠ CAPTAIN/SPECIAL not sourced for {} ({}): {}".format(
+        print("\n⚠ CAPTAINSHIP/PROGRAM not sourced for {} ({}): {}".format(
             week_label, len(unsourced), ", ".join(unsourced)))
         print("  Their weekly cells are BLANK, so every total above is short by "
               "their captain/special money.")

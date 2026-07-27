@@ -137,10 +137,17 @@ def _year_cols(header):
 
 def _mk_row(r, week_cols, year_cols, led):
     series = [_money(r[i]) if i < len(r) else None for i, _lbl in week_cols]
+    # Total 2026 = the sum of the 2026 weekly columns, computed here rather than
+    # read from the sheet's col-D formula. Col D is =SUM(E:AF) for the good rows
+    # (so this matches), but a few sub-rows carry a broken range (Eveliz's Captain
+    # Override is =SUM(E:CG), pulling in prior years) — summing the 2026 weeks
+    # ourselves keeps every category consistent so Combined = Regular + Captainship
+    # + Program and Regular never goes negative.
+    total = round(sum(v or 0 for v in series), 2) if any(v is not None for v in series) else None
     return {
         "name": led["name"] if led else (r[0] or "").strip(),
         "led": led,
-        "total": _money(r[3] if len(r) > 3 else ""),
+        "total": total,
         "series": series,
         "week": series[0] if series else None,
         "years": {yr: (_money(r[i]) if i < len(r) else None)
@@ -149,16 +156,19 @@ def _mk_row(r, week_cols, year_cols, led):
 
 
 def read_data(tab=None):
-    """Return (week_labels, section1, section2).
+    """Return (week_labels, combined, regular, captainship, program).
 
-    `tab` overrides the source tab so a build can preview off the SANDBOX copy
-    without touching the live one (default: the live tab).
+    `tab` overrides the source tab so a build can preview off the SANDBOX copy.
 
-    week_labels: recent dated columns newest-first (we show WOW_WEEKS of them).
-    section1 = ALL ORG OVERRIDES — everyone with 2026 activity, ranked by 2026
-    total desc (matches the bulletin). section2 = CAPTAIN/SPECIAL OVERRIDES ONLY
-    — the captain leaders, ranked by 2026 total desc. Each row carries `led`
-    (org-head config or None), total, series (weekly), and years (2025/24/23)."""
+    Raf 2026-07-25: break the overrides into the three categories his org uses,
+    plus the combined total — four stacked sections:
+      combined    = ALL ORG OVERRIDES — everyone's total override (all 3 combined).
+      regular     = the base override (1st Gen / RC / NC) = combined − captainship
+                    − program, per person.
+      captainship = the 'Captain Override' rows (the captain bonus).
+      program     = the 'Special Override' rows — the program-specific override
+                    that not everyone gets (only Rafael / Carlos / Colten).
+    Each row carries `led`, total, series (weekly), week, years (2025/24/23)."""
     from automations.recruiting_report import fill as _fill
     ws = _fill._client().open_by_key(WORKBOOK_ID).worksheet(tab or TAB)
     vals = ws.get_all_values()
@@ -169,65 +179,77 @@ def read_data(tab=None):
     def led_for(low):
         return next((l for l in LEADERS if l["match"] in low), None)
 
-    # --- Section 1: ALL ORG OVERRIDES (rows below header, until "Total") -------
-    section1, cap_start = [], None
+    # --- COMBINED: ALL ORG OVERRIDES (everyone's total override) ---------------
+    combined, cap_start = [], None
     for ri, r in enumerate(vals[1:], start=1):
         name = (r[0] if r else "").strip()
         low = name.lower()
         if "captain/special" in low:            # section-2 header — remember + stop
             cap_start = ri + 1
             break
-        if low == "total" or "credico" in low:
+        if low == "total" or "credico" in low or not name:
             continue
-        if not name:
-            continue
-        led = led_for(low)
-        row = _mk_row(r, week_cols, year_cols, led)
-        # Drop anyone with NO override THIS week (Megan 2026-07-22: "anyone who
-        # doesn't have any rev for that week should drop off the list"). Applies
-        # to everyone, org heads included — a leader with a $0 week isn't listed.
-        # Their headshot stays a standing asset and returns the week they earn.
+        row = _mk_row(r, week_cols, year_cols, led_for(low))
+        # Drop anyone with NO override THIS week (Megan 2026-07-22).
         if (row["week"] or 0) > 0:
-            section1.append(row)
-    section1.sort(key=lambda x: (x["total"] or 0), reverse=True)
+            combined.append(row)
+    combined.sort(key=lambda x: (x["total"] or 0), reverse=True)
 
-    # --- Section 2: CAPTAIN/SPECIAL OVERRIDES ONLY ----------------------------
-    section2 = []
+    # --- CAPTAINSHIP + PROGRAM: the sub-rows under each section-2 leader -------
+    cap_by, prog_by, leader_name = {}, {}, {}    # normalized leader name -> row
     if cap_start:
-        # Group each leader row with ITS sub-rows. The leader cell is a =SUM over
-        # them, so when the sub-rows are blank the sheet reports $0.00 — and a
-        # number nobody has supplied then looks exactly like a real zero. We keep
-        # the sub-row positions so an unsourced week can be told apart and shown
-        # as "—" (Megan 2026-07-24, on the five $0 captains during the Tableau
-        # outage: "are these 0 because of the tableau break?" — the bulletin
-        # itself should answer that).
-        entries, cur = [], None
+        cur = None
         for i in range(cap_start, len(vals)):
             name = (vals[i][0] if vals[i] else "").strip()
             low = name.lower()
             if not name:
                 break                            # blank row ends the section
-            if low in ("captain override", "special override", "special overrides"):
-                if cur is not None:
-                    cur[1].append(i)
-                continue
-            cur = (i, [])
-            entries.append(cur)
-        for i, subs in entries:
-            r = vals[i]
-            led = led_for((r[0] or "").strip().lower())
-            row = _mk_row(r, week_cols, year_cols, led)
-            for k, (ci, _lbl) in enumerate(week_cols):
-                if k >= len(row["series"]) or not subs:
-                    continue
-                if all(not (vals[s][ci].strip() if ci < len(vals[s]) else "")
-                       for s in subs):
-                    row["series"][k] = None       # nothing was ever supplied
-            row["week"] = row["series"][0] if row["series"] else None
-            section2.append(row)
-        section2.sort(key=lambda x: (x["total"] or 0), reverse=True)
+            if low == "captain override":
+                if cur:
+                    cap_by[cur] = _mk_row(vals[i], week_cols, year_cols, led_for(cur))
+            elif low in ("special override", "special overrides"):
+                if cur:
+                    prog_by[cur] = _mk_row(vals[i], week_cols, year_cols, led_for(cur))
+            else:                                # a leader name row
+                cur = low
+                leader_name[cur] = name
 
-    return week_labels, section1, section2
+    def _named(by):
+        out = []
+        for key, row in by.items():
+            row = dict(row)
+            row["name"] = leader_name.get(key, row["name"])
+            row["led"] = led_for(key)
+            if (row["total"] or 0) > 0:
+                out.append(row)
+        out.sort(key=lambda x: (x["total"] or 0), reverse=True)
+        return out
+    captainship, program = _named(cap_by), _named(prog_by)
+
+    # --- REGULAR = combined − captainship − program, per person/week ----------
+    def _val(src, key, i=None, yr=None):
+        if not src:
+            return 0
+        if i is not None:
+            s = src["series"]
+            return (s[i] or 0) if i < len(s) else 0
+        if yr is not None:
+            return src["years"].get(yr) or 0
+        return src["total"] or 0
+    regular = []
+    for row in combined:
+        key = row["name"].strip().lower()
+        cap, prog = cap_by.get(key), prog_by.get(key)
+        reg = dict(row)
+        reg["series"] = [(row["series"][i] or 0) - _val(cap, "s", i=i) - _val(prog, "s", i=i)
+                         for i in range(len(row["series"]))]
+        reg["week"] = reg["series"][0] if reg["series"] else None
+        reg["total"] = (row["total"] or 0) - _val(cap, "t") - _val(prog, "t")
+        reg["years"] = {y: (v or 0) - _val(cap, "y", yr=y) - _val(prog, "y", yr=y)
+                        for y, v in row["years"].items()}
+        regular.append(reg)
+
+    return week_labels, combined, regular, captainship, program
 
 
 def _delta(row):
@@ -342,7 +364,7 @@ def _section_table(title: str, rows: list, week_labels: list, years: list,
     </div>"""
 
 
-def build_html(week_labels: list, section1: list, section2: list) -> str:
+def build_html(week_labels, combined, regular, captainship, program) -> str:
     week_label = week_labels[0] if week_labels else ""
     logo = _b64(LOGO)
     # FEATURED = our org leaders — the people we have headshots for — who earned
@@ -356,20 +378,24 @@ def build_html(week_labels: list, section1: list, section2: list) -> str:
     # tables below; the featured 5 are highlighted there to tie back to the cards.
     # We still keep headshots for the whole roster so whoever lands in the top 5
     # any given week has a photo.
-    featured = sorted(section1, key=lambda x: (x["week"] or 0), reverse=True)[:5]
+    featured = sorted(combined, key=lambda x: (x["week"] or 0), reverse=True)[:5]
     featured_names = {r["name"] for r in featured}
     grid = "\n".join(_card(r, i + 1) for i, r in enumerate(featured))
-    tbl_all = _section_table("ALL ORG OVERRIDES", section1, week_labels,
-                             ["2025", "2024", "2023"], featured_names)
-    # The captain/special section IS the leadership tier — highlight ALL of them
-    # (Megan 2026-07-22), not just this week's top 5.
-    # Same 3 year columns as ALL ORG so the two tables share an identical column
-    # layout and line up (Megan 2026-07-25).
-    tbl_cap = _section_table("CAPTAIN / SPECIAL OVERRIDES ONLY", section2,
-                             week_labels, ["2025", "2024", "2023"],
-                             {r["name"] for r in section2})
-    org_total = sum(r["total"] or 0 for r in section1)
-    wk_total = sum(r["week"] or 0 for r in section1)
+    YRS = ["2025", "2024", "2023"]               # same 3 year cols so all line up
+    # Four stacked sections (Raf 2026-07-25): the combined total, then the three
+    # categories separated. The leadership tier (whoever has captain/program) is
+    # highlighted in every table so the same names tie together across sections.
+    lead_names = {r["name"] for r in captainship} | {r["name"] for r in program}
+    tbl_all = _section_table("ALL OVERRIDES — COMBINED", combined, week_labels,
+                             YRS, featured_names)
+    tbl_reg = _section_table("REGULAR OVERRIDES — 1ST GEN / RC / NC", regular,
+                             week_labels, YRS, featured_names)
+    tbl_cap = _section_table("CAPTAINSHIP OVERRIDES", captainship, week_labels,
+                             YRS, lead_names)
+    tbl_prog = _section_table("PROGRAM OVERRIDES", program, week_labels,
+                              YRS, lead_names)
+    org_total = sum(r["total"] or 0 for r in combined)
+    wk_total = sum(r["week"] or 0 for r in combined)
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <style>
   * {{ margin:0; padding:0; box-sizing:border-box; }}
@@ -499,7 +525,9 @@ def build_html(week_labels: list, section1: list, section2: list) -> str:
   </div>
   <div class="grid">{grid}</div>
   {tbl_all}
+  {tbl_reg}
   {tbl_cap}
+  {tbl_prog}
   <div class="foot">
     <div class="tag">LEARN MORE. DREAM MORE. DO MORE.</div>
     <div class="dt">Overrides through {week_label}</div>
@@ -508,14 +536,15 @@ def build_html(week_labels: list, section1: list, section2: list) -> str:
 
 
 def build(out_dir: Path = OUT_DIR, tab=None) -> Path:
-    week_labels, section1, section2 = read_data(tab)
+    week_labels, combined, regular, captainship, program = read_data(tab)
     out_dir.mkdir(parents=True, exist_ok=True)
-    html = build_html(week_labels, section1, section2)
+    html = build_html(week_labels, combined, regular, captainship, program)
     path = out_dir / "override-bulletin.html"
     path.write_text(html, encoding="utf-8")
     wk = week_labels[0] if week_labels else "?"
-    print(f"built {path}  (week {wk!r}; ALL ORG {len(section1)} rows, "
-          f"CAPTAIN/SPECIAL {len(section2)} rows, {WOW_WEEKS}-week)")
+    print(f"built {path}  (week {wk!r}; combined {len(combined)}, regular "
+          f"{len(regular)}, captainship {len(captainship)}, program {len(program)}, "
+          f"{WOW_WEEKS}-week)")
     return path
 
 
