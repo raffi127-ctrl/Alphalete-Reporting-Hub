@@ -1,14 +1,19 @@
-"""Slack safety net for AT&T Fiber Owners removals.
+"""Slack safety net for AT&T Fiber Owners removals — reaction-driven.
 
-Flow (Megan 2026-07-27):
-  Phase 1 (post): announce the owners about to be removed to #l10-alphalete, opening
-                  a thread with a 24h objection window.
-  Phase 2 (finalize, +24h): anyone a human vouched for with a `Name - not terminated`
-                  reply is skipped this cycle (re-add once, NOT pinned); the rest are
-                  removed.
+Flow (Raf 2026-07-27, mirroring the social-media approval automation):
+  Phase 1 (post): a parent "ICDs being removed from Email Contacts" message, then ONE
+                  threaded reply per ICD. Lucy seeds ✅ / ❌ so approvers just tap.
+  Phase 2 (finalize, +24h): an ICD is KEPT if an approver (Eve / Raf / Megan / Maud)
+                  reacted ✅ on its line; otherwise it's removed.
 
-Posts AS Lucy (the automated-reports identity), reusing the shared Slack token
-helpers. Lucy must be a member of the channel.
+Semantics (as Raf phrased it — "removed tomorrow if not ✅"):
+  ✅  = keep on the list (still an active ICD)
+  ❌  = confirm the removal
+  no approver reaction = removed tomorrow (default)
+
+Reactions are READ via conversations_replies (history scope) — reactions.get needs a
+scope the token lacks (same as brand_audit.social_inbox). Posts + reacts AS the token
+identity: Lucy on the mini, Megan on the laptop.
 """
 from __future__ import annotations
 
@@ -17,14 +22,40 @@ import re
 import ssl
 from typing import Dict, List, Optional, Tuple
 
+_ACRONYM = re.compile(r"^[A-Z]{2,4}$")
+
+
+def clean_name(name: str) -> str:
+    """Display name for Slack: drop org/location tags a contact tacked on, e.g.
+    'Tony Chavez SCI Cali' → 'Tony Chavez'. Truncates at the first all-caps acronym
+    token (SCI) or a parenthetical; keeps real multi-word names ('Jose Antonio
+    Chavez', 'John Richard Young') untouched."""
+    n = re.sub(r"\s*[\(\[].*$", "", name or "").strip()
+    toks = n.split()
+    out: List[str] = []
+    for i, t in enumerate(toks):
+        if i >= 1 and _ACRONYM.match(t):
+            break
+        out.append(t)
+    return " ".join(out) or (name or "").strip()
+
 CHANNEL_ID = os.environ.get("FIBER_DISTRO_SLACK_CHANNEL", "C075PCEL92M")  # #l10-alphalete
 
-VOUCH_RE = re.compile(r"^\s*(.+?)\s*[-–—]\s*not\s+terminated\b", re.I)
+KEEP_EMOJI = "white_check_mark"     # ✅  keep
+REMOVE_EMOJI = "x"                   # ❌  confirm removal
+
+# Only these people's reactions count (Raf 2026-07-27). Eve pending — add her ID.
+APPROVERS: Dict[str, str] = {
+    "Eve": "U088E2KJEV8",     # Evelyn Sobrino
+    "Raf": "U045Z8N0ZQC",     # Rafael Hidalgo
+    "Megan": "U04G5HJBGFN",   # Megan Hines
+    "Maud": "U045USN7NCD",    # Maud Miller
+}
 
 
 def _client():
-    """Channel posts use the xoxp USER token (Lucy on the mini, Megan on the
-    laptop) — same pattern as every other channel-posting report."""
+    """Channel posts/reactions use the xoxp USER token (Lucy on the mini, Megan on
+    the laptop) — same pattern as every other channel-posting report."""
     import certifi
     from slack_sdk import WebClient
     from automations.shared import slack_metrics_post as smp
@@ -32,95 +63,85 @@ def _client():
     return WebClient(token=smp._load_token(), ssl=ctx)
 
 
-def _norm(s: str) -> str:
-    return re.sub(r"[^a-z ]", "", (s or "").lower()).strip()
-
-
-def build_message(departures: List[dict], roster_date: str) -> str:
-    lines = [
-        f"🧹 *AT&T Fiber Owners — weekly list cleanup* (roster {roster_date})",
-        "",
-        f"These {len(departures)} owner(s) are no longer on Kelly's roster and will be "
-        "*removed from the distribution list in 24 hours*:",
-    ]
-    for m in departures:
-        emails = ", ".join(m.get("emails") or [])
-        lines.append(f"   •  {m.get('name') or '(no name)'}  <{emails}>")
-    lines += [
-        "",
-        "If any of them did *not* actually terminate, reply in this thread:",
-        "`Name - not terminated`   (e.g. `Jane Smith - not terminated`)",
-        "Anyone vouched for stays this week.",
-    ]
-    return "\n".join(lines)
-
-
-def post_departures(departures: List[dict], roster_date: str,
-                    channel: str = CHANNEL_ID, dry_run: bool = True) -> Optional[str]:
-    """Post the departure announcement. Returns the thread ts (parent message)."""
-    text = build_message(departures, roster_date)
-    if dry_run:
-        from pathlib import Path
-        import datetime as dt
-        outdir = Path(__file__).resolve().parents[2] / "output" / "fiber_owners_distro"
-        outdir.mkdir(parents=True, exist_ok=True)
-        p = outdir / f"slack-departures-{roster_date}.txt"
-        p.write_text(text, encoding="utf-8")
-        print(f"[dry-run] would post to {channel}:\n"
-              f"------------------------------------------------------------\n"
-              f"{text}\n"
-              f"------------------------------------------------------------\n"
-              f"(preview → {p})")
-        return None
-    resp = _client().chat_postMessage(channel=channel, text=text)
-    return resp["ts"]
-
-
 def _strip(text: str) -> str:
     return (text or "").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
 
 
-def read_vouched(thread_ts: str, departures: List[dict],
-                 channel: str = CHANNEL_ID) -> List[dict]:
-    """Departures a human vouched for via `Name - not terminated`. Matches the
-    replied name to a candidate leniently (shared last name + first initial, or
-    substring)."""
-    client = _client()
-    resp = client.conversations_replies(channel=channel, ts=thread_ts, limit=200)
-    vouched_names: List[str] = []
-    for msg in resp.get("messages", []):
-        if msg.get("ts") == thread_ts:
-            continue
-        m = VOUCH_RE.match(_strip(msg.get("text", "")))
-        if m:
-            vouched_names.append(_norm(m.group(1)))
+def post_departures(departures: List[dict], roster_date: str,
+                    channel: str = CHANNEL_ID, dry_run: bool = True) -> Optional[dict]:
+    """Post the parent + one reply per ICD with seeded ✅/❌. Returns
+    {parent_ts, candidates:[{name,emails,resourceName,reply_ts}]} (None if none)."""
+    if not departures:
+        return None
+    parent_text = "🐺 *ICDs being removed from Email Contacts* — ✅ keep · ❌ remove"
 
-    def matches(cand_name: str, vouch: str) -> bool:
-        c, v = _norm(cand_name), vouch
-        if not c or not v:
-            return False
-        if v in c or c in v:
-            return True
-        ct, vt = c.split(), v.split()
-        if ct and vt and ct[-1] == vt[-1] and ct[0][:1] == vt[0][:1]:
-            return True          # same surname + first initial
-        return len(set(ct) & set(vt)) >= 2
+    if dry_run:
+        from pathlib import Path
+        outdir = Path(__file__).resolve().parents[2] / "output" / "fiber_owners_distro"
+        outdir.mkdir(parents=True, exist_ok=True)
+        preview = [parent_text] + [f"    ↳ *{clean_name(d['name'])}* — removed tomorrow if not ✅   [✅ ❌]"
+                                   for d in departures]
+        txt = "\n".join(preview)
+        (outdir / f"slack-departures-{roster_date}.txt").write_text(txt, encoding="utf-8")
+        print(f"[dry-run] would post to {channel}:\n"
+              f"------------------------------------------------------------\n{txt}\n"
+              f"------------------------------------------------------------")
+        return None
 
-    out = []
-    for m in departures:
-        if any(matches(m.get("name", ""), v) for v in vouched_names):
-            out.append(m)
+    cli = _client()
+    parent = cli.chat_postMessage(channel=channel, text=parent_text)
+    parent_ts = parent["ts"]
+    cands = []
+    for d in departures:
+        reply = cli.chat_postMessage(
+            channel=channel, thread_ts=parent_ts,
+            text=f"*{clean_name(d['name'])}* — removed tomorrow if not ✅")
+        ts = reply["ts"]
+        for emoji in (KEEP_EMOJI, REMOVE_EMOJI):
+            try:
+                cli.reactions_add(channel=channel, timestamp=ts, name=emoji)
+            except Exception:
+                pass
+        cands.append({"name": d["name"], "emails": d.get("emails") or [],
+                      "resourceName": d["resourceName"], "reply_ts": ts})
+    return {"parent_ts": parent_ts, "candidates": cands}
+
+
+def _reactions_by_ts(cli, parent_ts: str, channel: str) -> Dict[str, list]:
+    """{message_ts: [reactions]} for the thread, via conversations_replies."""
+    out: Dict[str, list] = {}
+    try:
+        for m in cli.conversations_replies(channel=channel, ts=parent_ts).get("messages", []):
+            out[m["ts"]] = m.get("reactions") or []
+    except Exception:
+        pass
     return out
 
 
-def post_summary(thread_ts: str, removed: List[dict], kept: List[dict],
+def read_decisions(parent_ts: str, candidates: List[dict],
+                   channel: str = CHANNEL_ID) -> Tuple[List[dict], List[dict]]:
+    """Return (to_remove, to_keep). An ICD is KEPT only if an APPROVER reacted ✅ on
+    its line; everything else is removed."""
+    cli = _client()
+    rx = _reactions_by_ts(cli, parent_ts, channel)
+    approver_ids = set(APPROVERS.values())
+    keep, remove = [], []
+    for c in candidates:
+        reacts = rx.get(c["reply_ts"], [])
+        kept = any(r.get("name") == KEEP_EMOJI
+                   and approver_ids.intersection(r.get("users") or [])
+                   for r in reacts)
+        (keep if kept else remove).append(c)
+    return remove, keep
+
+
+def post_summary(parent_ts: str, removed: List[dict], kept: List[dict],
                  channel: str = CHANNEL_ID, dry_run: bool = True) -> None:
-    parts = [f"✅ Cleanup done. Removed {len(removed)} owner(s) no longer on the roster."]
+    parts = [f"✅ Done — removed {len(removed)} ICD(s) from Email Contacts."]
     if kept:
-        parts.append("Kept this week (vouched as not terminated): "
-                     + ", ".join(m.get("name", "?") for m in kept))
+        parts.append("Kept (✅): " + ", ".join(clean_name(m.get("name", "?")) for m in kept))
     text = "\n".join(parts)
     if dry_run:
-        print(f"[dry-run] would post summary to thread {thread_ts}:\n{text}")
+        print(f"[dry-run] would post summary to thread {parent_ts}:\n{text}")
         return
-    _client().chat_postMessage(channel=channel, thread_ts=thread_ts, text=text)
+    _client().chat_postMessage(channel=channel, thread_ts=parent_ts, text=text)

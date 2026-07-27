@@ -183,17 +183,15 @@ def phase_post(account: str, group: str, xlsx: Path, edate: dt.datetime,
         print(f"  applied: +{len(plan['add'])} ({len(created)} new contacts), "
               f"-{len(plan['stale_duplicates'])} stale dups.")
 
-    thread_ts = notify.post_departures(plan["true_departures"], stamp, dry_run=dry_run)
-    if not dry_run and plan["true_departures"]:
+    posted = notify.post_departures(plan["true_departures"], stamp, dry_run=dry_run)
+    if not dry_run and posted:
         state = {"account": account, "group": group, "channel": notify.CHANNEL_ID,
-                 "thread_ts": thread_ts, "roster_date": stamp,
+                 "parent_ts": posted["parent_ts"], "roster_date": stamp,
                  "posted_at": dt.datetime.now().isoformat(),
-                 "departures": [{"name": m["name"], "emails": m["emails"],
-                                 "resourceName": m["resourceName"]}
-                                for m in plan["true_departures"]]}
+                 "candidates": posted["candidates"]}
         _state_path(account, group).write_text(json.dumps(state, indent=2), encoding="utf-8")
-        print(f"  posted departures thread; window open 24h. state → "
-              f"{_state_path(account, group).name}")
+        print(f"  posted {len(posted['candidates'])} ICD line(s) w/ ✅/❌; window open "
+              f"24h. state → {_state_path(account, group).name}")
     return 0
 
 
@@ -212,19 +210,17 @@ def phase_finalize(account: str, group: str, dry_run: bool = True,
         print(f"objection window not elapsed ({hrs:.1f}h of 24h). Re-run later "
               "or pass --force.")
         return 0
-    departures = state["departures"]
-    vouched = notify.read_vouched(state["thread_ts"], departures, state["channel"])
-    vouched_rns = {m["resourceName"] for m in vouched}
-    to_remove = [m for m in departures if m["resourceName"] not in vouched_rns]
+    candidates = state["candidates"]
+    to_remove, kept = notify.read_decisions(state["parent_ts"], candidates, state["channel"])
     print(f"phase FINALIZE ({'dry-run' if dry_run else 'LIVE'}): "
-          f"{len(to_remove)} to remove, {len(vouched)} vouched-kept.")
+          f"{len(to_remove)} to remove, {len(kept)} kept (✅ by an approver).")
     for m in to_remove:
         print(f"   - {m['name']} <{', '.join(m['emails'])}>")
     if not dry_run:
         svc = contacts_write._service(account)
         grp = contacts_write.find_group(svc, group)
         contacts_write.remove_members(svc, grp, to_remove)
-        notify.post_summary(state["thread_ts"], to_remove, vouched,
+        notify.post_summary(state["parent_ts"], to_remove, kept,
                             channel=state["channel"], dry_run=False)
         sp.unlink()
         print("  removed + posted summary; pending state cleared.")
