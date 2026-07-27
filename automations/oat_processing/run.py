@@ -43,6 +43,7 @@ from __future__ import annotations  # Lucy 2 / mini run Python 3.9
 import argparse
 import csv
 import datetime as dt
+import re
 import os
 import sys
 
@@ -298,70 +299,155 @@ def _has_dup_signal(x: Applicant) -> bool:
                 or x.interview_past_noshow or x.sent_to_call_list_today)
 
 
-def do_send_ai(page, a: Applicant, live: bool) -> None:
-    """Push a FRESH applicant to the AI call list. IRREVERSIBLE when live."""
+def _body(page) -> str:
+    try:
+        return (page.inner_text("body") or "").lower()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _parse_last_corr(body: str):
+    m = re.search(r"last correspondence was on\s+([0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4})",
+                  body)
+    return _parse_us_date(m.group(1)) if m else None
+
+
+def _perform_remove(page) -> bool:
+    """Remove-for-duplicate: check removApp, set rmvReason to a '…duplicate…'
+    option, click 'Save Applicant'. Returns True if submitted. Auto-remove was
+    authorized by Megan (2026-07-27). Never removes if the 'duplicate' reason
+    option isn't found (fails safe)."""
+    try:
+        cb = page.locator("[name='removApp']").first
+        if cb.count():
+            cb.check(timeout=4000)
+        picked = page.evaluate(
+            """() => { const s=document.querySelector("select[name='rmvReason']");
+               if(!s) return '';
+               const o=[...s.options].find(o=>/duplicate/i.test(o.text));
+               if(!o) return '';
+               s.value=o.value; s.dispatchEvent(new Event('change',{bubbles:true}));
+               return o.text; }""")
+        if not picked:
+            _log("    remove: no '…duplicate…' rmvReason option — NOT removing")
+            return False
+        if not _click_first(page, ["Save Applicant"]):
+            _log("    remove: 'Save Applicant' not found")
+            return False
+        page.wait_for_timeout(2200)
+        return True
+    except Exception as e:  # noqa: BLE001
+        _log(f"    remove error: {type(e).__name__}: {e}")
+        return False
+
+
+def _try_overwrite_send(page) -> bool:
+    """Push to AI via 'Overwrite Old Applicants (Send to AI)' when the ATS allows
+    it (button present, no 'Cannot override'). The ATS still blocks a recent
+    contact, so this only sends when legitimately allowed. Send-maximizer."""
+    body = _body(page)
+    if "overwrite" not in body or "cannot override this applicant" in body:
+        return False
+    if not _click_first(page, ["Overwrite Old Applicants (Send to AI)",
+                               "Overwrite Old Applicants", "Overwrite"]):
+        return False
+    page.wait_for_timeout(2500)
+    return "cannot send to ai" not in _body(page)
+
+
+_RETEXT_ROWS: list = []
+
+
+def _flag_retext(a: Applicant, days) -> None:
+    """Re-text (>1wk) sends a real message, so it's FLAGGED for review (not
+    auto-sent yet) — written to output/oat-retext-queue.csv."""
+    _RETEXT_ROWS.append([dt.date.today().isoformat(), a.first_name, a.last_name,
+                         a.email, a.position, days if days is not None else ""])
+
+
+def do_send_ai(page, a: Applicant, live: bool) -> str:
+    """GOAL = get to AI. Attempt Send, then handle the ATS's post-click reveal:
+    SEND > overwrite+SEND > (>1wk) flag re-text > auto-remove. Returns an outcome
+    tag for the run summary."""
     _would(live, "click 'Send to AI'")
     if not live:
-        return
-    # DEFENSIVE re-read: never send if ANY dup/interview/contact signal is present,
-    # even though classify() said SEND_AI. Guards against an extraction gap on a
-    # dup layout we haven't seen — the one way a live run could wrongly text a dup.
+        return "dry"
     guard = read_current_applicant(page)
     if _has_dup_signal(guard):
-        _log("    ABORT: dup/interview signal on re-read — NOT sending, left for human")
-        return
+        # a dup that WAS visible on load slipped in as SEND_AI — route it.
+        return _handle_visible_dup(page, guard, live)
     if not _click_first(page, ["Send to AI", "Send To AI"]):
         _log("    'Send to AI' button not found — skipped")
-        return
+        return "no_button"
     page.wait_for_timeout(2500)
-    # The ATS itself refuses to send to an already-contacted applicant (seen in
-    # the Loom). Detect that so we never mis-report a blocked send as sent.
-    try:
-        body = (page.inner_text("body") or "").lower()
-    except Exception:  # noqa: BLE001
-        body = ""
-    if "cannot send to ai" in body:
-        _log("    ATS blocked the send (prior correspondence) — not sent, left as dup")
-        return
-    # Diagnostics for the first live runs: report any dialog/buttons now visible.
-    try:
-        btns = page.evaluate(
-            "() => [...document.querySelectorAll('button,input[type=button],"
-            "input[type=submit],a')].map(e=>(e.innerText||e.value||'').trim())"
-            ".filter(t=>t&&t.length<30).slice(0,15)")
-        _log(f"    Send to AI clicked; on-screen buttons now: {btns}")
-    except Exception:  # noqa: BLE001
-        _log("    Send to AI clicked")
+    if "cannot send to ai" not in _body(page):
+        _log(f"    ✅ SENT to AI: {a.first_name} {a.last_name}")
+        return "sent"
+    # blocked by prior correspondence — first try to send anyway via overwrite.
+    if _try_overwrite_send(page):
+        _log(f"    ✅ SENT via overwrite: {a.first_name} {a.last_name}")
+        return "sent_override"
+    # genuinely can't send → >1wk re-text (flag) else auto-remove (recent dup).
+    lc = _parse_last_corr(_body(page))
+    days = (dt.date.today() - lc).days if lc else None
+    if days is not None and days > config.RETEXT_MIN_DAYS:
+        _log(f"    ⚑ FLAG re-text: {a.first_name} {a.last_name} (last contact {days}d)")
+        _flag_retext(a, days)
+        return "flag_retext"
+    if _perform_remove(page):
+        _log(f"    🗑 auto-removed (dup, last contact "
+             f"{days if days is not None else '?'}d): {a.first_name} {a.last_name}")
+        return "removed"
+    return "left"
 
 
-def _dup_left_for_human(page, a: Applicant, live: bool, what: str) -> None:
-    """A dup/interview branch fired. The action clicks aren't armed yet, so LOG
-    it clearly and LEAVE the applicant untouched for a human (safe no-op)."""
-    _would(live, what)
+def _handle_visible_dup(page, a: Applicant, live: bool) -> str:
+    """Route a dup that classify() saw on page load, prioritizing a send."""
+    if a.override_button:
+        return do_override_send_ai(page, a, live)
+    if a.interview_future or a.sent_to_call_list_today:
+        return do_remove_duplicate(page, a, live)      # already booked / sent today
+    if (a.last_correspondence
+            and (dt.date.today() - a.last_correspondence).days > config.RETEXT_MIN_DAYS):
+        _flag_retext(a, (dt.date.today() - a.last_correspondence).days)
+        return "flag_retext"
+    return do_remove_duplicate(page, a, live)
+
+
+def do_override_send_ai(page, a: Applicant, live: bool) -> str:
+    _would(live, "Overwrite Old Applicants (Send to AI)")
+    if not live:
+        return "dry"
+    if _try_overwrite_send(page):
+        _log(f"    ✅ SENT via overwrite: {a.first_name} {a.last_name}")
+        return "sent_override"
+    _log(f"    overwrite-send unavailable/blocked — left: {a.first_name} {a.last_name}")
+    return "left"
+
+
+def do_remove_duplicate(page, a: Applicant, live: bool) -> str:
+    _would(live, "remove for duplicate")
+    if not live:
+        return "dry"
+    if _perform_remove(page):
+        _log(f"    🗑 auto-removed for duplicate: {a.first_name} {a.last_name}")
+        return "removed"
+    return "left"
+
+
+def do_retext_then_remove(page, a: Applicant, live: bool) -> str:
+    """Re-text (>1wk) — FLAG only for now (sends a real message; validate first)."""
+    _would(live, "flag re-text")
     if live:
-        _log(f"    DUP CASE — detected, left for a human (branch not yet armed): "
-             f"{a.first_name} {a.last_name} [{a.raw_status[:80]}]")
-
-
-def do_override_send_ai(page, a: Applicant, live: bool) -> None:
-    _dup_left_for_human(page, a, live,
-                        "click 'Overwrite Old Applicants (Send to AI)'")
-
-
-def do_remove_duplicate(page, a: Applicant, live: bool) -> None:
-    _dup_left_for_human(page, a, live,
-                        "check removApp + rmvReason='…duplicate…' + 'Save Applicant'")
-
-
-def do_retext_then_remove(page, a: Applicant, live: bool) -> None:
-    _dup_left_for_human(page, a, live,
-                        f"re-text (await for '{a.position or '?'}') then remove")
+        _flag_retext(a, None)
+        _log(f"    ⚑ FLAG re-text: {a.first_name} {a.last_name}")
+    return "flag_retext"
 
 
 _NO_PHONE_ROWS: list = []
 
 
-def flag_no_phone(page, a: Applicant, live: bool) -> None:
+def flag_no_phone(page, a: Applicant, live: bool) -> str:
     """Parked branch: record the applicant so a human (or a later Octo/Indeed
     lookup) can get their number. This write is SAFE (local CSV) so it runs in
     dry-run too."""
@@ -370,21 +456,29 @@ def flag_no_phone(page, a: Applicant, live: bool) -> None:
         a.email, a.job_board, a.position,
     ])
     _log(f"    flagged no-phone -> {config.NO_PHONE_FLAG_CSV}")
+    return "flag_no_phone"
 
 
-def _flush_no_phone() -> None:
-    if not _NO_PHONE_ROWS:
+def _flush_csv(path, header, rows, label) -> None:
+    if not rows:
         return
-    path = config.NO_PHONE_FLAG_CSV
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     new = not os.path.exists(path)
     with open(path, "a", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         if new:
-            w.writerow(["flagged_date", "first_name", "last_name",
-                        "email", "job_board", "position"])
-        w.writerows(_NO_PHONE_ROWS)
-    _log(f"[oat] wrote {len(_NO_PHONE_ROWS)} no-phone applicant(s) to {path}")
+            w.writerow(header)
+        w.writerows(rows)
+    _log(f"[oat] wrote {len(rows)} {label} to {path}")
+
+
+def _flush_queues() -> None:
+    _flush_csv(config.NO_PHONE_FLAG_CSV,
+               ["flagged_date", "first_name", "last_name", "email", "job_board",
+                "position"], _NO_PHONE_ROWS, "no-phone applicant(s)")
+    _flush_csv("output/oat-retext-queue.csv",
+               ["flagged_date", "first_name", "last_name", "email", "position",
+                "days_since_contact"], _RETEXT_ROWS, "re-text applicant(s)")
 
 
 _DISPATCH = {
@@ -464,7 +558,7 @@ def health_check(page) -> None:
 # Main
 # --------------------------------------------------------------------------- #
 def run(live: bool = False, limit: int = None, debug: bool = False,
-        headed: bool = False, max_sends: int = None) -> int:
+        headed: bool = False, max_actions: int = None) -> int:
     limit = limit if limit is not None else config.MAX_PER_RUN
     today = dt.date.today()
 
@@ -548,6 +642,23 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                             _log(f"HC PAGER {i}: {pg}")
                     except Exception as e:  # noqa: BLE001
                         _log(f"HC MARK failed: {e}")
+                    # Resume probe: is a missing phone recoverable from the resume
+                    # panel / email on-page (across iframes)? Answers "can we fill
+                    # the number ourselves and send them through?".
+                    try:
+                        phones = set()
+                        for fr in page.frames:
+                            try:
+                                txt = fr.inner_text("body")
+                            except Exception:  # noqa: BLE001
+                                continue
+                            for m in re.findall(
+                                    r"\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}", txt or ""):
+                                phones.add(m.strip())
+                        _log(f"HC RESUME: phones found across {len(page.frames)} "
+                             f"frame(s): {sorted(phones)[:8]}")
+                    except Exception as e:  # noqa: BLE001
+                        _log(f"HC RESUME failed: {e}")
                 return 0
 
             if not open_oat(page):
@@ -555,7 +666,8 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                 return 2
 
             processed = 0
-            sends = 0                   # live Send-to-AI attempts this run
+            actions = 0                 # live mutations (sent/removed) this run
+            MUTATIONS = ("sent", "sent_override", "removed")
             counts: dict = {}
             seen: set = set()          # applicant keys we've already processed
             while processed < limit:
@@ -570,7 +682,6 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                     break
                 seen.add(key)
                 d: Decision = classify(a, today)
-                counts[d.action.value] = counts.get(d.action.value, 0) + 1
                 sig = (f"phone={'Y' if (a.phone or a.cell_phone) else 'N'} "
                        f"ovr={int(a.override_button)} blk={int(a.correspondence_blocked)} "
                        f"intF={int(a.interview_future)} intN={int(a.interview_past_noshow)} "
@@ -578,27 +689,32 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                        f"lc={a.last_correspondence or '-'}")
                 _log(f"[{processed + 1}] {d.action.value.upper()} — {d.reason}  [{sig}]")
                 try:
-                    _DISPATCH[d.action](page, a, live)
-                except NotImplementedError as e:
-                    _log(f"    (skipped: {e})")
+                    outcome = _DISPATCH[d.action](page, a, live)
                 except Exception as e:  # noqa: BLE001
                     _log(f"    ERROR performing {d.action.value}: "
                          f"{type(e).__name__}: {e}")
+                    outcome = "error"
+                counts[outcome or d.action.value] = counts.get(outcome or d.action.value, 0) + 1
 
                 processed += 1
-                # Cap irreversible sends per run (a safety throttle; the first
-                # live test uses --max-sends 1 to send exactly one applicant).
-                if live and d.action == Action.SEND_AI:
-                    sends += 1
-                    if max_sends is not None and sends >= max_sends:
-                        _log(f"[oat] reached --max-sends {max_sends} — stopping")
+                # Throttle live mutations (a controlled test uses --max-actions 1).
+                if live and outcome in MUTATIONS:
+                    actions += 1
+                    if max_actions is not None and actions >= max_actions:
+                        _log(f"[oat] reached --max-actions {max_actions} — stopping")
                         break
                 if processed >= limit:
                     break
+                # After a send/remove the queue usually auto-loads the next app, so
+                # re-read instead of paging Next (paging would skip one). # >>> the
+                # exact auto-advance behaviour is confirmed during capped live tests.
+                if outcome in MUTATIONS:
+                    page.wait_for_timeout(1500)
+                    continue
                 if not advance_to_next(page):
                     break
 
-            _flush_no_phone()
+            _flush_queues()
             _log(f"\n[oat] done — {processed} applicant(s) this run: "
                  + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
     except AppStreamBusy:
@@ -620,14 +736,14 @@ def main(argv=None) -> int:
     p.add_argument("--debug", action="store_true",
                    help="Land on the OAT page, print a health check, then stop")
     p.add_argument("--headed", action="store_true", help="Force a visible browser")
-    p.add_argument("--max-sends", type=int, default=None, dest="max_sends",
-                   help="Cap live Send-to-AI actions this run (safety throttle; "
-                        "use --max-sends 1 for a controlled first live send)")
+    p.add_argument("--max-actions", type=int, default=None, dest="max_actions",
+                   help="Cap live mutations (send/overwrite-send/remove) this run "
+                        "(safety throttle; use --max-actions 1 for a controlled test)")
     args = p.parse_args(argv)
 
     live = args.live and not args.dry_run
     return run(live=live, limit=args.limit, debug=args.debug, headed=args.headed,
-               max_sends=args.max_sends)
+               max_actions=args.max_actions)
 
 
 if __name__ == "__main__":
