@@ -77,8 +77,12 @@ python -m automations.oat_processing.run --live --limit 5
 
 ## Reuse
 
-- Session + login + office switch: `automations.applicant_tracker.applicantstream`
-  (classic ApplicantStream, `#searchMC` office picker, token capture). Office
-  11580 is already in its `OFFICE_IDS`.
+- Session + office switch: `appstream_direct_session` (holder-warmed patchright,
+  seeded from the exported ownerville session — **no service-account key, no
+  Cloudflare login form**) + `fetch_office._switch_office`, exactly like
+  `resume_pushing`. Lands on Carlos's classic console; OAT stays on the classic
+  surface (resume_pushing clicks into "Explore Appstream AI" v2 instead).
 - Relationship to `automations/resume_pushing/`: that handles the **v2 batch**
   bulk send; this handles the **classic OAT** leftovers it couldn't send.
+- (An earlier cut used `applicant_tracker.applicantstream` — dropped because its
+  service-account-key path is Lucy-1-only; that key is absent on Lucy 2.)

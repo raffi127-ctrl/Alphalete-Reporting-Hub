@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """OAT Processing — automate the "One App at a time" leftovers queue.
 
-Runs on Lucy 2 (Carlos's account / office 11580). Reuses the CLASSIC
-ApplicantStream driver + office switch from `automations.applicant_tracker`
-(same site, same login, same persistent profile), then walks the OAT queue
-under Applicants -> Process Emails -> One App at a time, classifying each
-applicant (see classify.py) and carrying out the action.
+Runs on Lucy 2 (Carlos's account / office 11580). Rides the SAME holder-warmed
+patchright session resume_pushing uses (`appstream_direct_session` — seeded from
+the exported ownerville session, so NO service-account key and NO Cloudflare
+login form), switches to office 11580 via `fetch_office._switch_office`, then
+walks the classic OAT queue under Applicants -> Process Emails -> One App at a
+time, classifying each applicant (see classify.py) and carrying out the action.
+
+(The classic `applicant_tracker` driver was the first cut, but its
+service-account-reads-creds-from-a-Sheet path is a Lucy-1 thing — that key is
+deliberately absent on Lucy 2. The AppStream session is already warm here.)
 
 SAFETY MODEL
 ------------
@@ -41,8 +46,9 @@ import datetime as dt
 import os
 import sys
 
-from automations.applicant_tracker.applicantstream import (
-    session, OfficeNotAvailable)
+from automations.shared.tableau_patchright import (
+    appstream_direct_session, AppStreamBusy)
+from automations.recruiting_report import fetch_office
 
 from . import config
 from .classify import Applicant, Action, Decision, classify
@@ -55,14 +61,13 @@ def _log(msg: str) -> None:
 # --------------------------------------------------------------------------- #
 # Navigation to the classic OAT screen
 # --------------------------------------------------------------------------- #
-def open_oat(app) -> bool:
+def open_oat(page) -> bool:
     """Applicants -> Process Emails -> "One App at a time" (classic surface).
 
     Text/label-based (no hardcoded p= page number): hover/click "Applicants",
     then click the "One App at a time" link. Returns True if we landed on it.
     # >>> VERIFY on Lucy 2: confirm the nav labels + that this is the right page.
     """
-    page = app.page
     try:
         page.locator(
             "xpath=//a[contains(normalize-space(.),'One App at a time')]"
@@ -239,52 +244,59 @@ def health_check(page) -> None:
 def run(live: bool = False, limit: int = None, debug: bool = False,
         headed: bool = False) -> int:
     limit = limit if limit is not None else config.MAX_PER_RUN
-    headless = None if not headed else False
     today = dt.date.today()
 
     mode = "LIVE" if live else "DRY-RUN"
     _log(f"[oat] OAT Processing — office {config.OFFICE_ID} "
          f"({config.OFFICE_HINT}) — {mode}")
 
-    with session(headless=headless) as app:
-        try:
-            owner = app.select_office(config.OFFICE_ID)
-            _log(f"[oat] office {config.OFFICE_ID} -> {owner}")
-        except OfficeNotAvailable as e:
-            _log(f"[oat] FATAL: {e}")
-            return 2
+    try:
+        # Same holder-warmed AppStream session resume_pushing rides. No
+        # extensions needed (OAT doesn't use the resume-extractor plugin).
+        # yield_if_busy so we step aside if another Carlos-session run holds it.
+        with appstream_direct_session(yield_if_busy=True) as page:
+            if not fetch_office._switch_office(page, config.OFFICE_ID,
+                                               config.OFFICE_HINT):
+                _log(f"[oat] FATAL: office switch to {config.OFFICE_ID} failed")
+                return 2
+            _log(f"[oat] on office {config.OFFICE_ID} ({config.OFFICE_HINT})")
 
-        if not open_oat(app):
-            _log("[oat] FATAL: could not open the One-App-at-a-time page")
-            return 2
+            if not open_oat(page):
+                _log("[oat] FATAL: could not open the One-App-at-a-time page")
+                return 2
 
-        if debug:
-            health_check(app.page)
-            return 0
+            if debug:
+                health_check(page)
+                return 0
 
-        processed = 0
-        counts: dict = {}
-        while processed < limit:
-            a = read_current_applicant(app.page)
-            # position/state flags come from VERIFY-pending reads; classify is
-            # conservative until those land.
-            d: Decision = classify(a, today)
-            counts[d.action.value] = counts.get(d.action.value, 0) + 1
-            _log(f"[{processed + 1}] {d.action.value.upper()} — {d.reason}")
-            try:
-                _DISPATCH[d.action](app.page, a, live)
-            except NotImplementedError as e:
-                _log(f"    (skipped: {e})")
-            except Exception as e:  # noqa: BLE001
-                _log(f"    ERROR performing {d.action.value}: {type(e).__name__}: {e}")
+            processed = 0
+            counts: dict = {}
+            while processed < limit:
+                a = read_current_applicant(page)
+                # position/state flags come from VERIFY-pending reads; classify
+                # is conservative until those land.
+                d: Decision = classify(a, today)
+                counts[d.action.value] = counts.get(d.action.value, 0) + 1
+                _log(f"[{processed + 1}] {d.action.value.upper()} — {d.reason}")
+                try:
+                    _DISPATCH[d.action](page, a, live)
+                except NotImplementedError as e:
+                    _log(f"    (skipped: {e})")
+                except Exception as e:  # noqa: BLE001
+                    _log(f"    ERROR performing {d.action.value}: "
+                         f"{type(e).__name__}: {e}")
 
-            processed += 1
-            if not advance_to_next(app.page):
-                break
+                processed += 1
+                if not advance_to_next(page):
+                    break
 
-        _flush_no_phone()
-        _log(f"\n[oat] done — {processed} applicant(s) this run: "
-             + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
+            _flush_no_phone()
+            _log(f"\n[oat] done — {processed} applicant(s) this run: "
+                 + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
+    except AppStreamBusy:
+        _log("[oat] AppStream session busy (another run holds Carlos's "
+             "session) — stepping aside; try again shortly")
+        return 3
     return 0
 
 
