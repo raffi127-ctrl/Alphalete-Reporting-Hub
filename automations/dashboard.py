@@ -3505,6 +3505,154 @@ AUTOMATED_REPORTS = [
             },
         ],
     },
+    # The Country Sales Board pair, kept adjacent to the Org Sales Board cards
+    # above because they're the same shape: a fill card, then the Slack DM that
+    # renders what the fill just wrote.
+    {
+        "id": "country-sales-board",
+        "name": "Country Sales Board",
+        "creator": "Eve & Claude",
+        "emoji": "🌎",
+        "color": "#0D9488",
+        "category": "📊 Metrics",
+        "description": "Fills the Country Sales Board tab from Tableau (ATT Tracker 2.1 - D2D → 'D2D Page 1 - This Week') and rolls the week over every Tuesday. Writes the REAL tab — the one the country reads.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Downloads ONE crosstab from **ATT Tracker 2.1 - D2D / "
+            "D2D 1-PAGERV4**, worksheet **'Sales By ICD (ATT) (V2)'** — the "
+            "tracker whose header reads **This Week**.\n"
+            "**•** Writes only the **Mon-Sun day cells** of the "
+            "'Fiber - All Units' block. Everything else on the tab "
+            "(leaderboard, Totals, Product Summary, Current vs Prior) is "
+            "formula-driven and re-derives itself.\n"
+            "**•** Fills every rep already on the board — a rep with no sales "
+            "gets a real **0**, never a blank.\n\n"
+            "WHEN IT RUNS\n"
+            "**Daily**, right after the Alphalete Org Sales Board fill. Only "
+            "completed days fill; today and future days stay blank.\n\n"
+            "THE TUESDAY ROLLOVER\n"
+            "Fires **automatically on Tuesday** (the first run that day): "
+            "freezes the finished week into the leaderboard, pushes it onto the "
+            "WE history stack, shifts each rep's weekly totals, then clears the "
+            "day cells for the new week. **Monday never rolls** — Monday's fill "
+            "exists to write Sunday into the week that's closing. If Tuesday is "
+            "missed, the next run rolls instead; re-running is safe (a no-op "
+            "once that week is rolled). It snapshots to "
+            "**'Country Sales Board (pre-rollover backup)'** before touching "
+            "anything.\n\n"
+            "⚠️ THE VAs MUST NOT ALSO ROLL THIS TAB\n"
+            "Two rollovers on the same Tuesday shift the leaderboard one column "
+            "too far and push a duplicate week into the history. If it happens, "
+            "restore from the pre-rollover backup tab.\n\n"
+            "NAMES THAT DON'T MATCH\n"
+            "A board row absent from Tableau is filled **0** and flagged in the "
+            "log. That's expected for inactive reps — but a rep who IS selling "
+            "showing up there means a spelling drift, fixed with one row on the "
+            "**ICD Aliases** sheet."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE/edit"
+                      "?gid=1121646560#gid=1121646560"),
+        "assignees": ["Lucy 1"],
+        # Needs the warm ownerville/Tableau session, which lives on the runner.
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "country_sales_board",
+        "schedule": {
+            "frequency": "daily",
+            "time": "6:45 AM",
+            "estimated_minutes": 5,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Country Sales Board filled — day cells written, leaderboard and summary re-derived.",
+            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run Daily Fill",
+                "icon": "▶",
+                "primary": True,
+                "help": "Pulls the D2D 'This Week' crosstab and fills the completed days on the real Country Sales Board tab. On Tuesdays it rolls the week over first (snapshotting the tab beforehand).",
+                "module": "automations.country_sales_board.run",
+                "args_fn": lambda: ["--real", "--i-mean-it", "--enable-rollover"],
+            },
+            {
+                "label": "Preview (no writes)",
+                "icon": "👁",
+                "help": "Same pull, but prints the planned cells instead of writing them. Safe to run any time.",
+                "module": "automations.country_sales_board.run",
+                "args_fn": lambda: ["--real", "--i-mean-it", "--enable-rollover",
+                                    "--dry-run"],
+            },
+        ],
+    },
+    {
+        "id": "country-sales-board-slack",
+        # Name carries the destination, same convention as the Org board's card.
+        "name": "Country Sales Board → Rafael, Maud & Evelyn (DM)",
+        "creator": "Eve & Claude",
+        "emoji": "📸",
+        "color": "#0EA5E9",
+        "category": "📊 Metrics",
+        "description": "Posts the daily Country Sales Board image as Lucy into ONE shared group DM with Rafael Hidalgo, Maud Miller and Evelyn Sobrino.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Renders the Country Sales Board exactly as it looks on the "
+            "sheet (same colors, fonts, borders) via the Sheets PDF export — "
+            "**no browser**.\n"
+            "**•** Sends it as **ONE shared group DM** — all three people in a "
+            "single thread, not three separate DMs.\n"
+            "**•** Posts as **Lucy**.\n\n"
+            "WHO GETS IT\n"
+            "**Rafael Hidalgo, Maud Miller, Evelyn Sobrino** — deliberately a "
+            "shorter list than the All Campaigns board DM.\n\n"
+            "WHAT'S IN THE IMAGE\n"
+            "The **Product Summary**, **Current vs Prior Weeks**, and the full "
+            "**76-rep ranking with TOTALS** and 8 weeks of trend. NOT the whole "
+            "tab — the tab runs 310 rows by 54 columns (52 weeks of frozen "
+            "history plus a per-rep daily delta box) and renders as an "
+            "unreadable postage stamp at full size.\n\n"
+            "WHEN IT RUNS\n"
+            "**Daily**, right after the Country Sales Board fill, so the "
+            "numbers are fresh.\n\n"
+            "RUNS ON THE MINI\n"
+            "Lucy's Slack token lives there. From another machine it would send "
+            "from that person's own account instead of Lucy."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE/edit"
+                      "?gid=1121646560#gid=1121646560"),
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "country_sales_board_slack",
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "estimated_minutes": 2,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Country Sales Board sent to Rafael, Maud & Evelyn.",
+            "message_failed": "❌ Send failed — check the log above, fix, then re-run.",
+        },
+        "actions": [
+            {
+                "label": "Post Now",
+                "icon": "▶",
+                "primary": True,
+                "help": "Renders the board and SENDS it to the group DM (Rafael, Maud, Evelyn) as Lucy.",
+                "module": "automations.country_sales_board.slack_post",
+                "args_fn": lambda: ["--post"],
+            },
+            {
+                "label": "Preview (build image, no send)",
+                "icon": "👁",
+                "help": "Builds the PNG into output/country_sales_board/ and resolves the recipients, but sends nothing.",
+                "module": "automations.country_sales_board.slack_post",
+                "args_fn": lambda: [],
+            },
+        ],
+    },
     {
         "id": "dd-bulletin",
         # Thursday's bulletin, so it sits directly before the Friday Override
