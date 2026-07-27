@@ -1,5 +1,5 @@
 {
-  "confirmed_count": 52,
+  "confirmed_count": 53,
   "needs_review_count": 0,
   "skip_count": 28,
   "confirmed": [
@@ -381,6 +381,15 @@
       "as_company": "Kaizen Solutions, Inc.",
       "confidence": 1.0,
       "auto_onboarded": true
+    },
+    {
+      "sheet_tab": "Ja Mosley",
+      "office_id": "22532",
+      "as_owner": "Francisco Castillo",
+      "as_company": "Imperium Consultants, Inc.",
+      "confidence": 1.0,
+      "temporary_shared_office": true,
+      "note": "TEMPORARY (Eve 2026-07-27): Ja Mosley has no AppStream office of his own yet, so his recruiting funnel mirrors Francisco Castillo's office 22532. Swap office_id + as_owner the moment his own office code exists. OPT/sales half is NOT shared \u2014 it fills from Tableau under his own name."
     }
   ],
   "needs_review": [],
