@@ -191,6 +191,23 @@ def _launcher_script(cid: str, real_module: Optional[str],
             % (cid, real_module, argv, real_module))
 
 
+def _schedule_meta(weekdays: List[int], est_minutes: Optional[int]) -> dict:
+    """Build the `schedule` block the Hub reads for calendar days + the time chip.
+    Orchestrator reports don't run at a fixed clock time — they run in the 4 AM
+    flow once their data is ready — so the time label says exactly that rather
+    than inventing a precise minute. Empty weekdays => on-demand (no calendar)."""
+    if not weekdays:
+        sched = {"frequency": "on-demand", "time": "On-demand"}
+    elif len(weekdays) >= 7:
+        sched = {"frequency": "daily", "time": "4 AM flow (when data's ready)"}
+    else:
+        sched = {"frequency": "weekly", "weekdays": weekdays,
+                 "time": "4 AM flow (when data's ready)"}
+    if est_minutes:
+        sched["estimated_minutes"] = est_minutes
+    return sched
+
+
 def ensure_library_card(report_id: str, report_name: str, *,
                         module: Optional[str] = None,
                         dry_run: bool = False) -> Tuple[bool, str]:
@@ -202,15 +219,22 @@ def ensure_library_card(report_id: str, report_name: str, *,
     cid = report_id  # underscore id -> valid materialized-module filename
     real_module, base_args = module, []  # type: Optional[str], List[str]
     name = report_name
+    machine, weekdays, est = "Lucy 1", [], None
     try:
         cfg = json.loads(CONFIG_PATH.read_text())
         r = cfg.get("reports", {}).get(report_id, {})
         real_module = real_module or (r.get("command") or [None])[0]
         base_args = list(r.get("base_args", []) or [])
         name = name or r.get("display_name") or report_id.replace("_", " ").title()
+        # Profile + schedule so the card lands under the right runner, on the
+        # right days, with a time chip — same fields the hardcoded cards use.
+        machine = r.get("machine") or "Lucy 1"
+        weekdays = list(r.get("cadence", {}).get("weekdays", []) or [])
+        est = r.get("timeout_minutes")
     except Exception:
         name = name or report_id.replace("_", " ").title()
     script = _launcher_script(cid, real_module, base_args)
+    schedule = _schedule_meta(weekdays, est)
     meta = {
         "id": cid,
         "name": name,
@@ -224,6 +248,8 @@ def ensure_library_card(report_id: str, report_name: str, *,
         "description": ("Auto-registered from a scheduled run so it's visible on "
                         "the Hub. Rename / add detail any time."),
         "category": "🗂 Auto-registered",
+        "assignees": [machine],       # profile grouping
+        "schedule": schedule,         # calendar days + time chip
     }
     if dry_run:
         return True, "DRY-RUN: would create library card %r (%s)" % (cid, name)
@@ -295,6 +321,31 @@ def sync(dry_run: bool = True) -> List[str]:
     return msgs
 
 
+def reenrich(dry_run: bool = True) -> List[str]:
+    """Rewrite every AUTO-REGISTERED library card from current schedule_config +
+    code (profile, schedule, launcher). Use after changing the card template or a
+    report's cadence/machine. Only touches cards this module created — never a
+    human-curated one. Idempotent: updates in place, never dupes."""
+    msgs = []
+    try:
+        recs = _library_ws().get_all_records()
+    except Exception as e:
+        return ["  ✗ could not read library: %s" % e]
+    for r in recs:
+        if not str(r.get("Created By", "")).startswith("Auto"):
+            continue
+        try:
+            meta = json.loads(str(r.get("Metadata") or "{}"))
+        except Exception:
+            meta = {}
+        rid = meta.get("source_report_id") or str(r.get("ID", "")).strip()
+        if not rid:
+            continue
+        ok, msg = ensure_library_card(rid, meta.get("name", ""), dry_run=dry_run)
+        msgs.append(("  ✓ " if ok else "  ✗ ") + rid + ": " + msg)
+    return msgs
+
+
 def _print_audit() -> None:
     a = audit()
     print("Hub coverage audit — %s" % dt.date.today().isoformat())
@@ -317,13 +368,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(prog="hub_coverage")
     ap.add_argument("--audit", action="store_true", help="show coverage gaps (read-only)")
     ap.add_argument("--sync", action="store_true", help="create missing library cards")
-    ap.add_argument("--dry-run", action="store_true", help="with --sync: don't write")
+    ap.add_argument("--reenrich", action="store_true",
+                    help="rewrite existing auto-registered cards from current config")
+    ap.add_argument("--dry-run", action="store_true", help="don't write")
     args = ap.parse_args(argv)
-    if args.sync:
-        for m in sync(dry_run=args.dry_run):
+    if args.sync or args.reenrich:
+        msgs = sync(dry_run=args.dry_run) if args.sync else []
+        if args.reenrich:
+            msgs += reenrich(dry_run=args.dry_run)
+        for m in msgs:
             print(m)
         if args.dry_run:
-            print("\n(dry-run — nothing written. Drop --dry-run to create these.)")
+            print("\n(dry-run — nothing written.)")
         return 0
     _print_audit()
     return 0
