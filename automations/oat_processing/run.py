@@ -684,6 +684,23 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                              f"frame(s): {sorted(phones)[:8]}")
                     except Exception as e:  # noqa: BLE001
                         _log(f"HC RESUME failed: {e}")
+                    # Remove mechanism: dump ALL rmvReason options (is there a
+                    # 'Duplicate'?) + the Save/remove-related controls, so we wire
+                    # the RIGHT "remove for duplicate" action. Read-only.
+                    try:
+                        rm = page.evaluate(r"""() => {
+                          const s=document.querySelector("select[name='rmvReason']");
+                          const opts = s ? [...s.options].map(o=>o.text.trim()) : [];
+                          const save = [...document.querySelectorAll('button,input,a')]
+                            .filter(e=>/save applicant|remove|overwrite|duplicate/i.test(e.innerText||e.value||''))
+                            .map(e=>`${e.tagName}[${e.name||e.id||''}]='${(e.innerText||e.value||'').trim().slice(0,32)}'`);
+                          return {rmvReason: opts, controls: [...new Set(save)].slice(0,20),
+                                  hasRemovApp: !!document.querySelector("[name='removApp']")};
+                        }""")
+                        _log(f"HC RMVREASON ({len(rm.get('rmvReason',[]))}): {rm.get('rmvReason')}")
+                        _log(f"HC REMOVE hasRemovApp={rm.get('hasRemovApp')} controls={rm.get('controls')}")
+                    except Exception as e:  # noqa: BLE001
+                        _log(f"HC RMVREASON failed: {e}")
                 return 0
 
             if not open_oat(page):
