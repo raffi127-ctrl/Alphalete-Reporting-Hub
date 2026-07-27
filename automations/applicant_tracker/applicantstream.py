@@ -42,7 +42,16 @@ from __future__ import annotations  # Lucy 2 / mini run Python 3.9
 import datetime as dt
 import re
 from contextlib import contextmanager
-from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+from playwright.sync_api import sync_playwright, TimeoutError as _PWTimeoutP
+
+# The warm session (appstream_direct_session) yields a PATCHRIGHT page, whose
+# TimeoutError is a DIFFERENT class than playwright's. Catch both, or the
+# office-select retry / login guards silently miss a real timeout.
+try:
+    from patchright.sync_api import TimeoutError as _PWTimeoutPatch
+    PWTimeout = (_PWTimeoutP, _PWTimeoutPatch)
+except Exception:  # noqa: BLE001 — patchright not installed (laptop) → playwright only
+    PWTimeout = _PWTimeoutP
 
 from . import config
 from . import sheets
@@ -417,20 +426,29 @@ class ApplicantStream:
         return {f"{r[0]} {r[1]}".strip() for r in rows if len(r) >= 2}
 
     # ---- calendar helpers ------------------------------------------------
-    def open_calendar_for(self, date: dt.date):
-        """Open the calendar day view for a specific date (uses the page's own
-        cal.navigate() since the date is not a plain URL param)."""
-        self.open_calendar()
-        self.page.evaluate(
-            """(mmddyyyy) => {
-                const $ = window.jQuery;
-                if ($) $("#topLevelDatePicker").val(mmddyyyy);
-                if (window.cal) { cal.currentDate = mmddyyyy; cal.currentDateLocale = mmddyyyy; cal.navigate(); }
-            }""",
-            date.strftime("%m/%d/%Y"),
-        )
-        self.page.wait_for_load_state("networkidle")
-        self.page.wait_for_timeout(1200)  # cal.navigate re-renders async
+    def open_calendar_for(self, date: dt.date) -> bool:
+        """Open the calendar day view for a date. BEST-EFFORT: it drives the
+        calendar through jQuery/window.cal, INVISIBLE to patchright\'s
+        isolated-world page.evaluate — so on the warm session this can\'t move
+        the calendar and returns False (the caller skips BOB dates, leaving 2R
+        Notes(J) blank rather than failing the office). No networkidle wait: the
+        calendar holds a socket.io connection that would never settle."""
+        try:
+            self.open_calendar()
+            ok = self.page.evaluate(
+                """(mmddyyyy) => {
+                    const $ = window.jQuery;
+                    if (!$ && !window.cal) return false;
+                    if ($) $("#topLevelDatePicker").val(mmddyyyy);
+                    if (window.cal) { cal.currentDate = mmddyyyy; cal.currentDateLocale = mmddyyyy; cal.navigate(); }
+                    return true;
+                }""",
+                date.strftime("%m/%d/%Y"),
+            )
+            self.page.wait_for_timeout(1200)  # cal.navigate re-renders async
+            return bool(ok)
+        except Exception:  # noqa: BLE001 — calendar is a nice-to-have, never fatal
+            return False
 
     def scrape_calendar_bob_dates(self) -> dict[str, str]:
         """From the currently-shown calendar day, return {full_name: bob_date_str}
@@ -456,13 +474,24 @@ class ApplicantStream:
 
 @contextmanager
 def session(headless: bool | None = None):
-    app = ApplicantStream(headless=headless)
-    try:
-        app.start()
-        app.login()
-        yield app
-    finally:
-        app.close()
+    """Bind the driver to the WARM rcaptain console recruiting keeps alive
+    (automations.shared.tableau_patchright.appstream_direct_session) instead of a
+    fresh login. The report's own 2-step login was the glitch: it intermittently
+    landed with no rqst link ("Could not find session token") and the scheduled
+    launchd runs hung at startup; manual dry-runs only worked because they reused
+    a still-valid CACHED session, which hid it. appstream_direct_session is the
+    self-healing, in-production session daily_focus drives across 40+ offices
+    (reuses the saved session or re-logs-in unattended, Cloudflare + profile
+    locking handled). Patchright page -> isolated-world evaluate, so
+    window.jQuery/window.cal are invisible; only the calendar BOB-date scrape
+    degrades (open_calendar_for is best-effort). start()/login() are now dead
+    (kept only for the one-time headed-login helper)."""
+    from automations.shared.tableau_patchright import appstream_direct_session
+    with appstream_direct_session(verbose=True) as page:   # headed, like daily_focus
+        app = ApplicantStream(headless=headless)
+        app.page = page
+        app._capture_token()            # rqst already in the console URL
+        yield app                       # the session cm owns the page — don't close
 
 
 if __name__ == "__main__":

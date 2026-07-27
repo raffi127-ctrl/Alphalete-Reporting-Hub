@@ -109,8 +109,14 @@ def _morning_office(app, ws_call, ws_2r, office_id: str, header: str) -> None:
     showed = app.names_at(h_showed)
     offered = app.names_at(h_offered)
     bob = app.names_at(h_bob)
-    app.open_calendar_for(_header_to_date(header))
-    bob_dates = app.scrape_calendar_bob_dates()  # {name_lower: "Jul 27"}
+    # Brought-on-board dates come from the calendar (only needed if anyone was
+    # BOB). Best-effort: on the warm patchright session the jQuery calendar nav
+    # is invisible, so bob_dates comes back empty and Notes(J) stays blank — the
+    # rest of the status still writes. See applicantstream.open_calendar_for.
+    bob_dates = {}
+    if bob:
+        app.open_calendar_for(_header_to_date(header))
+        bob_dates = app.scrape_calendar_bob_dates()  # {name_lower: "Jul 27"}
 
     updated = 0
     for name in roster:

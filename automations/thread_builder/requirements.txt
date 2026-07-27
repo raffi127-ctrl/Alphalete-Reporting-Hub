@@ -1,0 +1,6 @@
+# Thread Builder panel (automations/thread_builder/app.py) deps.
+# NOTE: the metrics RUNNERS do not need these — they read thread_plans.json via
+# automations.shared.thread_plans, which is pure-stdlib. Only the editor UI needs
+# streamlit + the drag component.
+streamlit>=1.40
+streamlit-sortables>=0.3.1
