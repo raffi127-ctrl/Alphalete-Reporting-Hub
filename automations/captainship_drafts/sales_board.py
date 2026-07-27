@@ -327,18 +327,80 @@ def _rows_hidden(ranges: List[Tuple[int, int]]):
         _set(False)
 
 
+def _user_hidden_rows(lo: int, hi: int) -> List[int]:
+    """1-based rows in [lo, hi] a PERSON has hidden (hiddenByUser)."""
+    ws = _open_ws()
+    meta = ws.spreadsheet.fetch_sheet_metadata(
+        {"fields": "sheets(properties(sheetId),"
+                   "data(rowMetadata(hiddenByUser)))"})
+    rm = next(((sh.get("data") or [{}])[0].get("rowMetadata") or []
+               for sh in meta["sheets"]
+               if sh["properties"]["sheetId"] == ws.id), [])
+    return [r for r in range(lo, min(hi, len(rm)) + 1)
+            if (rm[r - 1] or {}).get("hiddenByUser")]
+
+
+@contextlib.contextmanager
+def _rows_unhidden(rows: List[int]):
+    """Temporarily REVEAL person-hidden `rows` (1-based), RE-HIDING them on
+    exit. Mirror of _rows_hidden, and the asymmetry is the whole point: these
+    rows were hidden by a HUMAN, so the restore must put hiddenByUser back to
+    True. Never widen this to rows we didn't just reveal — restoring a row we
+    found visible would silently hide someone's data."""
+    if not rows:
+        yield 0
+        return
+    ws = _open_ws()
+    merged: List[Tuple[int, int]] = []          # 0-based half-open
+    for r in sorted(set(rows)):
+        if merged and r - 1 == merged[-1][1]:
+            merged[-1] = (merged[-1][0], r)
+        else:
+            merged.append((r - 1, r))
+
+    def _set(hidden: bool):
+        reqs = [{"updateDimensionProperties": {
+            "range": {"sheetId": ws.id, "dimension": "ROWS",
+                      "startIndex": s, "endIndex": e},
+            "properties": {"hiddenByUser": hidden},
+            "fields": "hiddenByUser"}} for (s, e) in merged]
+        ws.spreadsheet.batch_update({"requests": reqs})
+
+    _set(False)
+    try:
+        yield len(rows)
+    finally:
+        _set(True)
+
+
 @contextlib.contextmanager
 def ps_shot_view(ps_start: int, ps_end: int, keep_weeks: int = 4):
     """Sheet view state for a Product Summary screenshot: EXPAND the collapsed
-    weekly-history groups (so weeks 2..keep_weeks are visible) AND HIDE the
-    mid-block older weeks. Yields the 1-based `end_row` the caller should use as
-    the capture range end (trims the last sub-block's older weeks + trailing
-    chrome). Both edits are restored on exit — same accepted shared-view model
-    as ps_groups_expanded."""
-    ranges, end_row = ps_shot_plan(ps_start, ps_end, keep_weeks)
+    weekly-history groups (so weeks 2..keep_weeks are visible), HIDE the
+    mid-block older weeks, and REVEAL any of the kept weeks a person had
+    hidden. Yields the 1-based `end_row` the caller should use as the capture
+    range end (trims the last sub-block's older weeks + trailing chrome). All
+    edits are restored on exit — same accepted shared-view model as
+    ps_groups_expanded.
+
+    Why the reveal step: ps_shot_plan picks the newest `keep_weeks` rows
+    POSITIONALLY, so a week row hidden by hand inside that window silently
+    shrinks the shot to fewer than keep_weeks weeks (Khalil, 2026-07-25: rows
+    1387-1389 hidden -> the PS rendered 2 weeks, not 4, with no error). We
+    reveal rather than skip-and-walk-further on purpose: skipping would emit
+    4 rows spanning NON-CONSECUTIVE weeks, silently dropping real data and
+    reading as if it were the last 4 weeks. Scoped to week-history rows only,
+    so a rep row someone hid deliberately stays hidden."""
+    vals = _values()
+    ranges, end_row = ps_shot_plan(ps_start, ps_end, keep_weeks, vals)
+    week_rows = {r for run in week_history_runs(ps_start, ps_end, vals)
+                 for r in run}
+    reveal = [r for r in _user_hidden_rows(ps_start, end_row)
+              if r in week_rows]
     with ps_groups_expanded(ps_start, ps_end):
         with _rows_hidden(ranges):
-            yield end_row
+            with _rows_unhidden(reveal):
+                yield end_row
 
 
 @contextlib.contextmanager
