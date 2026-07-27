@@ -11500,7 +11500,8 @@ else:  # st.session_state.view == "user"
                         "🧵 Thread Builder (admin)",
                         "https://alphaletemetricsintake.streamlit.app/?admin=1",
                         use_container_width=True)
-                    st.caption("Edit sections + order · admin password")
+                    st.caption("Edit sections + order")
+                    st.markdown("Admin password: **A\\*\\*\\*\\*123**")
             # ---- Tracker Onboarding (Office Operations) — add an office to the
             # daily Tableau tracker screenshots: its Slack channel + which trackers
             # + order. The daily run + trackers card pick it up automatically.
