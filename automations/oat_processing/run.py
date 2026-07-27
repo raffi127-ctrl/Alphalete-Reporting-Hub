@@ -215,27 +215,63 @@ _DISPATCH = {
 # Debug health check
 # --------------------------------------------------------------------------- #
 def health_check(page) -> None:
-    """Dump the controls/labels visible on the OAT page so we can fill the
-    stubbed selectors. Mirrors resume_pushing's --debug."""
+    """Dump the controls on the OAT page so we can fill the stubbed selectors.
+
+    The remote `logtail` reader caps each read at ~470 chars, so we DON'T print a
+    tall tree. Each category is joined with ' | ', split into <=380-char chunks,
+    and every chunk gets a UNIQUE greppable tag ('HC BTN 0:', 'HC SEL 0:', ...).
+    From the laptop: `lucy logtail oat_processing "HC INDEX"` for the counts, then
+    `... "HC BTN 0"`, `"HC SEL 0"`, etc. to page each category cleanly."""
     info = page.evaluate(
         """() => {
-            const txt = el => (el.innerText||el.value||'').replace(/\\s+/g,' ').trim().slice(0,60);
+            const txt = el => (el.innerText||el.value||'').replace(/\\s+/g,' ').trim();
             const uniq = a => [...new Set(a.filter(Boolean))];
-            return {
-                url: location.href,
-                buttons: uniq([...document.querySelectorAll('button,input[type=button],input[type=submit],a.btn')].map(txt)).slice(0,60),
-                labels: uniq([...document.querySelectorAll('td,th,label')].map(txt)).filter(t=>t.length<=40).slice(0,80),
-                selects: uniq([...document.querySelectorAll('select')].map(s => (s.name||s.id||'?'))).slice(0,40),
-                inputs: uniq([...document.querySelectorAll('input')].map(i => (i.name||i.id||i.type||'?'))).slice(0,60),
-            };
+            const btns = uniq([...document.querySelectorAll(
+                "button, input[type=button], input[type=submit], a")]
+                .map(e => txt(e).slice(0,45)).filter(t => t && t.length<=45));
+            const sels = [...document.querySelectorAll('select')].map(s => {
+                const opts = [...s.options].slice(0,12).map(o => txt(o).slice(0,30));
+                return (s.name||s.id||'?') + '=[' + opts.join(',') + ']';
+            });
+            const inps = [...document.querySelectorAll('input,textarea')].map(i =>
+                (i.name||i.id||'?') + ':' + (i.type||'text')
+                + (i.value ? '(has-val)' : ''));
+            // label -> the input in its row: the map read_current_applicant needs.
+            const rows = [];
+            [...document.querySelectorAll('td,th,label')].forEach(n => {
+                const t = txt(n); if (!t || t.length>28) return;
+                const row = n.closest('tr') || n.parentElement;
+                const inp = row && row.querySelector('input,select,textarea');
+                if (inp) rows.push(t.replace(/:$/,'') + '->' + (inp.name||inp.id||inp.type||'?'));
+            });
+            return {url: location.href, buttons: btns, selects: sels,
+                    inputs: inps, rows: uniq(rows)};
         }"""
     )
+
+    def emit(tag, items):
+        joined = " | ".join(str(x) for x in items) or "(none)"
+        chunks, cur = [], ""
+        for piece in joined.split(" | "):
+            if len(cur) + len(piece) + 3 > 380 and cur:
+                chunks.append(cur); cur = ""
+            cur += (" | " if cur else "") + piece
+        if cur:
+            chunks.append(cur)
+        for i, ch in enumerate(chunks):
+            _log(f"HC {tag} {i}: {ch}")
+        return len(chunks)
+
     _log("=== OAT page health check ===")
-    _log(f"url: {info.get('url')}")
-    for k in ("buttons", "selects", "inputs", "labels"):
-        _log(f"\n{k}:")
-        for v in info.get(k, []):
-            _log(f"  - {v}")
+    _log(f"HC url: {info.get('url')}")
+    nb = emit("BTN", info.get("buttons", []))
+    ns = emit("SEL", info.get("selects", []))
+    ni = emit("INP", info.get("inputs", []))
+    nr = emit("ROW", info.get("rows", []))
+    _log(f"HC INDEX: BTN={nb} SEL={ns} INP={ni} ROW={nr} "
+         f"(counts: buttons={len(info.get('buttons',[]))} "
+         f"selects={len(info.get('selects',[]))} inputs={len(info.get('inputs',[]))} "
+         f"rows={len(info.get('rows',[]))})")
 
 
 # --------------------------------------------------------------------------- #
