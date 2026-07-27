@@ -146,6 +146,37 @@ class ReadinessCache:
                     return Readiness(True, f"Financial workbooks in ({n}/3 senders)")
                 return Readiness(
                     False, f"waiting on this week's Financial workbooks ({n}/3 senders in)")
+            if rpt.report_id == "sci_campaigns":
+                # Ready once the inbox holds a tracker week the tab does NOT yet
+                # have. Keyed off the EMAIL's own week (its subject), never the
+                # clock: Adriana's email for a Saturday week-ending arrives the
+                # FOLLOWING Friday, usually late in the day, and has slipped to
+                # a Sunday twice. A date-based gate would fire at 4am against an
+                # inbox that won't get the mail for another 12 hours.
+                # "Everything already filled" is also NOT-ready — there is
+                # genuinely nothing to do, and saying so keeps the orchestrator
+                # circling back until the week's email actually lands.
+                from automations.sci_campaigns import email_source as ses
+                from automations.sci_campaigns import run as scr
+                from automations.sci_campaigns import fill as scf
+                from automations.recruiting_report.fill import open_by_key, _retry
+                inbox = ses.available_weeks()
+                if not inbox:
+                    return Readiness(False, "no tracker email found at all")
+                sh = open_by_key(scr.SHEET_ID)
+                tab = scr.PROD_TAB if "--real" in rpt.base_args else scr.SANDBOX_TAB
+                grid = _retry(scr._find_ws(sh, tab).get_all_values)
+                cols = scf.week_columns(grid)
+                have = scr._filled_weeks(grid)
+                todo = sorted(w for w in inbox if w >= scr.DEFAULT_SINCE
+                              and scf.snap_to_column(w, cols) not in have)
+                if todo:
+                    return Readiness(
+                        True, f"{len(todo)} unfilled tracker week(s) in the "
+                              f"inbox (newest WE {ses.we_label(todo[-1])})")
+                return Readiness(
+                    False, f"no new tracker email — {tab!r} is current through "
+                           f"WE {ses.we_label(max(inbox))}")
             return Readiness(True, "email — no probe wired; running on schedule")
         except Exception as e:  # noqa: BLE001 — fail open; the report self-guards
             return Readiness(
