@@ -114,3 +114,60 @@ def pull_icd_days(page, out_dir: Path, *, last_week: bool = False,
           f"{days[0].isoformat() if days else '?'}"
           f"..{days[-1].isoformat() if days else '?'}")
     return parsed
+
+
+def pull_days(parsed: PullShape) -> set:
+    """The set of real dates a parsed pull carries."""
+    return {d for m in parsed.values() for v in m.values() for d in v}
+
+
+def pull_icd_days_aligned(page, out_dir: Path, board_dates, *,
+                          today: dt.date | None = None, logfn=print):
+    """Pull the week the BOARD is showing, whichever worksheet holds it.
+
+    The view exposes exactly two relative windows and neither is filterable
+    (see the module docstring), so we can't ask for a week — we ask for one,
+    check what came back, and switch if it's the wrong one:
+
+        'Sales By ICD (ATT) (V2)'        -> 'D2D Page 1 - This Week'
+        'Sales By ICD (ATT) (V2) (LW2)'  -> the week before it
+
+    Normally the first one IS the board's week: both roll TUESDAY, so on a
+    Monday the source returns the closing week just like the board displays it
+    (verified on the 2026-07-20 probe — a Monday — which returned 07-13..07-19).
+    But 'normally' is an assumption about someone else's Tableau calc, and if it
+    ever shifts, blindly writing the returned numbers would smear one week's
+    sales into another week's columns. So we verify the overlap and fall back.
+
+    Returns (pull, sheet_used). Raises NoDataYet only when NEITHER window has
+    data — an empty This Week with a usable LW2 is the normal Tuesday-morning
+    state, not a failure.
+    """
+    today = today or dt.date.today()
+    want = set(board_dates)
+    first_err: Exception | None = None
+    for last_week in (False, True):
+        sheet = LAST_WEEK_SHEET if last_week else THIS_WEEK_SHEET
+        try:
+            parsed = pull_icd_days(page, out_dir, last_week=last_week,
+                                   today=today, logfn=logfn)
+        except NoDataYet as e:
+            logfn(f"  {sheet!r}: empty (Tableau hid it)")
+            first_err = first_err or e
+            continue
+        got = pull_days(parsed)
+        if got & want:
+            logfn(f"  ✓ {sheet!r} covers the board's week "
+                  f"({len(got & want)}/7 day(s) overlap)")
+            return parsed, sheet
+        logfn(f"  ✗ {sheet!r} is on a different week "
+              f"({min(got).isoformat()}..{max(got).isoformat()} vs board "
+              f"{board_dates[0].isoformat()}..{board_dates[-1].isoformat()}) — "
+              f"{'trying the (LW2) worksheet' if not last_week else 'giving up'}")
+    if first_err is not None:
+        raise first_err
+    raise NoDataYet(
+        f"neither {THIS_WEEK_SHEET!r} nor {LAST_WEEK_SHEET!r} covers the "
+        f"board's week {board_dates[0].isoformat()}..{board_dates[-1].isoformat()} "
+        f"— the board is more than two weeks out of step with the view; roll it "
+        f"forward (or check the day-number row) rather than filling blind")

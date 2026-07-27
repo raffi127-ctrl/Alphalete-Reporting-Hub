@@ -1481,6 +1481,41 @@
       ],
       "verify": null
     },
+    "country_sales_board": {
+      "order": 11.5,
+      "on_scheduler": true,
+      "_note": "Fills the 'Country Sales Board' tab's per-ICD daily block ('Fiber - All Units') and runs its TUESDAY rollover. Modelled on all_campaigns_board and slotted right after it, i.e. after the 'Copy of Alphalete ORG Sales Board' block (Eve 2026-07-27). SOURCE IS TABLEAU, NOT THE COPY TAB — unlike all_campaigns_board this one does its own crosstab download: ATT Tracker 2.1 - D2D / D2D 1-PAGERV4, worksheet 'Sales By ICD (ATT) (V2)', which is the 'D2D Page 1 - This Week' tracker (its header row literally reads 'This Week'). One crosstab in, seven day columns out; the leaderboard =SUMIF, Totals =SUM, Product Summary and Current-vs-Prior all derive themselves, so the fill writes ONLY the Mon-Sun day cells. The view's two windows are relative and NOT filterable by week, so pull.pull_icd_days_aligned checks which week came back and falls back to the '(LW2)' worksheet if 'This Week' doesn't cover the board — a source that ever rolls a day early can never smear one week into another week's columns. TUESDAY ROLLOVER (base_args '--enable-rollover'): keyed off week.reporting_sunday, so it fires on the first run of the new reporting week and is a no-op every other day; a missed Tuesday rolls Wednesday. MONDAY never rolls (Monday's fill writes SUNDAY into the closing week). Snapshots to 'Country Sales Board (pre-rollover backup)' before touching anything. VALIDATED 2026-07-27 (Eve): fill engine reproduced the VAs' own frozen WE 07.19 leaderboard column 75/75 EXACT off the 7/20 crosstab, 0 differences — the only delta was Blue Mendoza, blank on the VA column because her row postdates that freeze and correctly 50 from the automation. Rollover run live end-to-end on the sandbox (WE 07.26 -> WE 08.02): leaderboard grows right, WE stack insert + Current-vs-Prior re-anchor, per-rep J->K->L, day cells clear, and it is a no-op on every later day of the week. Unmatched board ICDs are WARNED, never a non-zero exit — 5 rows (Edgar Muniz II, Niko Figueroa, Mason Davis, Mary Maya, Jacob Morgan) are inactive reps absent from the view sitting at a correct 0.",
+      "_warn": "LIVE ON THE REAL TAB since 2026-07-27 (Eve, after the sandbox validation in _note) — base_args carries '--real --i-mean-it', so this writes 'Country Sales Board', the tab the country reads and the one the VAs used to key BY HAND. THE VAs MUST NOT ALSO ROLL IT: two rollovers on one tab in one Tuesday double-shift the leaderboard (every frozen week lands one column too far right) and push a second WE row into the history stack. The Tuesday roll snapshots to 'Country Sales Board (pre-rollover backup)' before touching anything — that is the tab to restore from if it ever happens. To back out, drop '--real --i-mean-it' from base_args and it returns to 'Country Sales Board (sandbox)'; nothing else changes.",
+      "display_name": "Country Sales Board",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.country_sales_board.run"
+      ],
+      "base_args": [
+        "--real",
+        "--i-mean-it",
+        "--enable-rollover"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P1",
+      "freshness_target": null,
+      "depends_on": [],
+      "after": [
+        "org_sales_board"
+      ],
+      "verify": null
+    },
     "captainship_drafts": {
       "order": 20,
       "on_scheduler": true,

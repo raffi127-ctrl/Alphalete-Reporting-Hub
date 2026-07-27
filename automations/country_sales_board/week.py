@@ -2,10 +2,24 @@
 
 The board's week is MONDAY-first, Sunday-ending — the day header row reads
 Monday..Sunday and the leaderboard columns are labelled by the ending Sunday
-("WE 07.26"). That is NOT the ORG board's week (which rolls Tuesday), so this
-report keeps its own helpers rather than importing org_sales_board.week.
+("WE 07.26").
 
-The authority on which week the board is CURRENTLY showing is the sheet
+IT ROLLS TUESDAY, like the ORG board (Eve 2026-07-27). On MONDAY the board is
+still reporting the week that just ended, because Monday's fill exists to write
+SUNDAY's production into it; the columns advance Tuesday. `reporting_sunday`
+below is that model — the same one org_sales_board.week implements — and it is
+what `rollover.needs_rollover` keys off.
+
+The SOURCE agrees. Tableau's 'D2D Page 1 - This Week' tracker (the
+'Sales By ICD (ATT) (V2)' worksheet, whose header row literally reads
+'This Week') is on the same Tuesday-rolling week: the 2026-07-20 probe — taken
+on a MONDAY — returned Mon (07-13)..Sun (07-19), i.e. the closing week, not the
+calendar one (output/probe_d2d_Sales_By_ICD_ATT_V2_.csv). So board week and
+source week advance together and Monday fills Sunday into the week it belongs
+to. `pull.pull_icd_days_aligned` does not TRUST that alignment, it verifies it
+and falls back to the (LW2) worksheet if the source ever rolls a day early.
+
+The authority on which week the board is CURRENTLY showing is still the sheet
 itself — the day-number row under the day headers — not the calendar. See
 `sheet_week`: it reads those numbers back into real dates. That way a board
 that hasn't rolled yet (or was rolled early) is filled for the week it is
@@ -26,6 +40,21 @@ def week_monday(d: dt.date) -> dt.date:
 def week_sunday(d: dt.date) -> dt.date:
     """The Sunday that ends `d`'s week (Mon-Sun)."""
     return week_monday(d) + dt.timedelta(days=6)
+
+
+def reporting_sunday(d: dt.date) -> dt.date:
+    """Week-ending Sunday of the board's ACTIVE reporting week — the week the
+    daily fill is about to write into, and therefore the week the board should
+    be displaying.
+
+    Lags one day on Monday so the board rolls TUESDAY, not Monday: on Mon 7/27
+    this is still 7/26, because Monday's run exists to write Sunday 7/26 into
+    the week that just closed. Rolling Monday would advance the columns out from
+    under that fill and lose every Sunday. Identical to
+    org_sales_board.week.reporting_sunday — kept here so this module stays the
+    one place the Country board's week is defined."""
+    ref = d - dt.timedelta(days=1) if d.weekday() == 0 else d
+    return week_sunday(ref)
 
 
 def week_dates(sunday: dt.date) -> List[dt.date]:
