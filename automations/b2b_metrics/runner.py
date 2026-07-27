@@ -418,6 +418,18 @@ def main(argv=None) -> int:
         print("\noffices:", ", ".join(_off.ORDER))
         return 0
 
+    # Before a LIVE post, pull the latest Thread Builder edits from the shared
+    # sheet into thread_plans.json so today's threads match what the admin set
+    # (Megan 2026-07-27 "reference it each morning to make sure it's accurate").
+    # Best-effort: no creds / a sheet hiccup just leaves the committed plans in
+    # place — it must never block the morning post. Skipped on dry-run/preview.
+    if args.post:
+        try:
+            from automations.thread_builder import sync as _tb_sync
+            _tb_sync.sync(verbose=False)
+        except Exception:  # noqa: BLE001 — sync must never break the report
+            pass
+
     today = dt.date.fromisoformat(args.today) if args.today else dt.date.today()
     office_keys = list(_off.ORDER) if args.all_offices else [args.office]
     # Publish to the Hub only for a REAL post run of the office's own channel —

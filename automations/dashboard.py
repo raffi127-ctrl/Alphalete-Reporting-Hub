@@ -11450,6 +11450,22 @@ else:  # st.session_state.view == "user"
                     "https://alphaletemetricsintake.streamlit.app",
                     use_container_width=True)
                 st.caption("For Megan & Eve")
+            # ---- Thread Builder (Office Operations) — edit an ENROLLED office's
+            # thread: which sections post + their order, per office (D2D + B2B).
+            # Admin mode of the same enrollment app; the morning reports sync the
+            # edits automatically (thread_builder.sync at live-run start).
+            st.markdown("### 🧵 Thread Builder")
+            with st.container(border=True):
+                st.markdown(
+                    "**Edit an enrolled office's thread** — turn sections on/off "
+                    "and drag to reorder them, per office (D2D + B2B). Saves to the "
+                    "Thread Plans tab; the next morning's run picks it up "
+                    "automatically — no deploy.")
+                _safe_link_button(
+                    "🧵 Open Thread Builder",
+                    "https://alphaletemetricsintake.streamlit.app",
+                    use_container_width=True)
+                st.caption("For Megan & Eve · admin password required")
             # ---- Tracker Onboarding (Office Operations) — add an office to the
             # daily Tableau tracker screenshots: its Slack channel + which trackers
             # + order. The daily run + trackers card pick it up automatically.

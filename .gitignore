@@ -85,3 +85,8 @@ automations/applicant_tracker/service_account.json
 automations/applicant_tracker/.browser_profile*
 automations/applicant_tracker/downloads/
 automations/applicant_tracker/.env
+
+# Thread Builder runtime cache (regenerated from the Thread Plans sheet by
+# thread_builder.sync; the sheet is the source of truth, not git).
+automations/shared/thread_plans.json
+output/thread_plans_store.json

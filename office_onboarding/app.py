@@ -90,6 +90,12 @@ def _inject_gs_client() -> None:
         _ps.set_client(gc)
     except Exception:
         pass
+    # Thread Builder admin edits share the same master sheet ('Thread Plans' tab).
+    try:
+        from automations.thread_builder import store as _tbs
+        _tbs.set_client(gc)
+    except Exception:
+        pass
 
 
 # --------------------------------------------------------------------------
@@ -427,6 +433,48 @@ def _show_result() -> None:
 
 
 # --------------------------------------------------------------------------
-# No access-code gate — this is an internal Megan/Eve tool (Megan 2026-07-25).
+# Thread Builder — password-gated admin editor for an ENROLLED office's thread
+# (which sections post, and in what order). Edits save to the 'Thread Plans' tab
+# and go live on the next morning sync (thread_builder.sync) — no deploy.
+def _thread_admin_password():
+    # Production: the app's secret. Fallback: a THREAD_ADMIN_PASSWORD env var for
+    # local/dev preview (secret wins when both are set).
+    try:
+        val = st.secrets.get("thread_admin_password")
+    except Exception:
+        val = None
+    return val or os.environ.get("THREAD_ADMIN_PASSWORD")
+
+
+def thread_admin_view() -> None:
+    st.subheader("✏️ Edit an enrolled office's thread")
+    pw = _thread_admin_password()
+    if not pw:
+        st.warning("Admin editing is locked until a password is set. Add "
+                   "`thread_admin_password = \"…\"` to the app's Secrets, then "
+                   "reload.")
+        return
+    if not st.session_state.get("_thread_admin_ok"):
+        entered = st.text_input("Admin password", type="password",
+                                key="_thread_admin_pw")
+        if not entered:
+            st.stop()
+        if entered != pw:
+            st.error("Wrong password.")
+            st.stop()
+        st.session_state["_thread_admin_ok"] = True
+
+    from automations.thread_builder.editor import SheetBackend, render_editor
+    render_editor(SheetBackend(), by="admin")
+
+
+# --------------------------------------------------------------------------
 _inject_gs_client()
-form_view()
+
+_MODES = ("🏢 Enroll a new office", "✏️ Edit a thread (admin)")
+_mode = st.radio("What do you want to do?", _MODES, index=0, horizontal=True)
+st.write("---")
+if _mode == _MODES[1]:
+    thread_admin_view()
+else:
+    form_view()

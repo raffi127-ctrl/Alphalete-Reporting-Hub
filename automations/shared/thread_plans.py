@@ -125,6 +125,20 @@ def clear_plan(campaign: str, office_key: str) -> bool:
     return True
 
 
+def replace_all(mapping: dict) -> None:
+    """Overwrite the ENTIRE plans file with `mapping` (campaign -> office -> ids).
+    Used by thread_builder.sync to materialize the Sheet each morning. Normalized
+    + atomically written; an empty mapping writes an empty (all-defaults) file."""
+    clean: dict = {}
+    for campaign, offices in (mapping or {}).items():
+        if campaign not in CAMPAIGNS or not isinstance(offices, dict):
+            continue
+        clean[campaign] = {k: [str(x) for x in ids]
+                           for k, ids in offices.items()
+                           if isinstance(ids, list)}
+    _write(clean)
+
+
 def _write(data: dict) -> None:
     p = _path()
     p.parent.mkdir(parents=True, exist_ok=True)

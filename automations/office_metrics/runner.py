@@ -632,6 +632,16 @@ def main(argv=None, *, office_key: str | None = None) -> int:
     if args.prove_cancel:
         return _prove_cancel(args.office)
 
+    # Before a LIVE post, refresh thread_plans.json from the shared Thread Builder
+    # sheet so today's thread matches the admin's latest edit. Best-effort — a
+    # sheet hiccup leaves the committed plans in place and the report continues.
+    if args.live:
+        try:
+            from automations.thread_builder import sync as _tb_sync
+            _tb_sync.sync(verbose=False)
+        except Exception:  # noqa: BLE001 — sync must never break the report
+            pass
+
     o = _off.get(args.office)
     metrics = metrics_for(o)
     # Thread Builder: reorder / subset the sections per this office's saved plan
