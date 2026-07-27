@@ -116,7 +116,10 @@ def open_oat(page) -> bool:
 # the DOM — so it's robust to exact ids. See FINDINGS.md for the state model.
 _EXTRACT_JS = r"""() => {
   const val = n => { const e=document.querySelector(`[name='${n}']`);
-    return e ? (e.value||'').trim() : ''; };
+    if(!e) return '';
+    // for a <select>, return the visible option text, not the numeric value
+    if(e.tagName==='SELECT') return (e.options[e.selectedIndex]?.text||'').trim();
+    return (e.value||'').trim(); };
   const body = (document.body.innerText||'');
   // --- the duplicate table: header row has both "Status" and "Duplicate Type" ---
   let dupRows = [];
@@ -235,13 +238,13 @@ def advance_to_next(page) -> bool:
     """Advance the OAT pager ("<page> of <N> Emails", top-right of the dup area)
     to the next applicant. Returns False when there's no next control (end of
     queue). # >>> VERIFY on Lucy 2: confirm the next-arrow locator."""
-    before = page.url
+    # The pager Next control is an <img alt="Next"> (confirmed 2026-07-27). Click
+    # the image itself (its click handler is jQuery-bound, no inline onclick).
     candidates = [
-        "xpath=//a[normalize-space(.)='►' or normalize-space(.)='>' or "
-        "contains(translate(@title,'NEXT','next'),'next') or "
-        "contains(translate(@class,'NEXT','next'),'next')]",
+        "xpath=//img[translate(@alt,'NEXT','next')='next']",
+        "xpath=//img[contains(translate(@alt,'NEXT','next'),'next')]",
         "xpath=//img[contains(translate(@alt,'NEXT','next'),'next')]/ancestor::a[1]",
-        "xpath=//input[@type='button' and (@value='>' or @value='►')]",
+        "xpath=//a[normalize-space(.)='►' or normalize-space(.)='>']",
     ]
     for xp in candidates:
         try:
@@ -249,8 +252,7 @@ def advance_to_next(page) -> bool:
             if loc.count() == 0:
                 continue
             loc.click(timeout=5000, no_wait_after=True)
-            page.wait_for_timeout(1500)
-            # advanced if the URL/page changed
+            page.wait_for_timeout(1800)
             return True
         except Exception:  # noqa: BLE001
             continue
@@ -506,7 +508,12 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                 a = read_current_applicant(page, today)
                 d: Decision = classify(a, today)
                 counts[d.action.value] = counts.get(d.action.value, 0) + 1
-                _log(f"[{processed + 1}] {d.action.value.upper()} — {d.reason}")
+                sig = (f"phone={'Y' if (a.phone or a.cell_phone) else 'N'} "
+                       f"ovr={int(a.override_button)} blk={int(a.correspondence_blocked)} "
+                       f"intF={int(a.interview_future)} intN={int(a.interview_past_noshow)} "
+                       f"sent={int(a.sent_to_call_list_today)} "
+                       f"lc={a.last_correspondence or '-'}")
+                _log(f"[{processed + 1}] {d.action.value.upper()} — {d.reason}  [{sig}]")
                 try:
                     _DISPATCH[d.action](page, a, live)
                 except NotImplementedError as e:
