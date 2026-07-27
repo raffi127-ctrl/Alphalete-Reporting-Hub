@@ -16,6 +16,15 @@ so make sure gmail_auth was authorized as the right account.
   msg["Subject"] = "..."; msg["To"] = "a@b.com"; msg.set_content("hi")
   create_draft(msg)          # -> {'draft_id': ..., 'message_id': ...}
   create_draft(msg, dry_run=True)   # build only, no API call
+
+For re-runnable reports, list_drafts() + delete_draft() let a caller sweep
+its own prior drafts before creating fresh ones, so a second run REPLACES
+rather than accumulates. The caller owns the match rule — this module
+never guesses which drafts belong to which report.
+
+  for d in list_drafts(query="subject:(Captainship Report)"):
+      if mine(d["subject"]):
+          delete_draft(d["draft_id"])
 """
 from __future__ import annotations
 
@@ -66,3 +75,58 @@ def create_draft(msg: EmailMessage, *, dry_run: bool = False,
               "message_id": (draft.get("message") or {}).get("id")}
     logfn(f"  ✓ draft created: id={result['draft_id']} subj={subject!r}")
     return result
+
+
+def list_drafts(query: str | None = None) -> list[dict]:
+    """Return [{'draft_id', 'message_id', 'subject'}] for the authorized
+    mailbox's drafts, newest-API-order, optionally narrowed by a Gmail
+    search `query` (same syntax as the Gmail search box).
+
+    `query` only narrows what we fetch metadata for — it is NOT a match
+    rule. Gmail's search normalizes punctuation and does partial matching,
+    so callers MUST re-check the returned `subject` themselves before
+    acting on it. Passing a query is purely an API-call saver.
+    """
+    service = _service()
+    out: list[dict] = []
+    token = None
+    while True:
+        kw = {"userId": "me", "maxResults": 500}
+        if query:
+            kw["q"] = query
+        if token:
+            kw["pageToken"] = token
+        page = service.users().drafts().list(**kw).execute()
+        for d in page.get("drafts") or []:
+            msg_id = (d.get("message") or {}).get("id")
+            # drafts().get, NOT messages().get — the gmail.compose scope
+            # grants drafts.* only, so reading the subject off the message
+            # resource 403s ("insufficient authentication scopes").
+            full = service.users().drafts().get(
+                userId="me", id=d.get("id"), format="metadata").execute()
+            subject = ""
+            payload = (full.get("message") or {}).get("payload") or {}
+            for h in payload.get("headers") or []:
+                if h.get("name", "").lower() == "subject":
+                    subject = h.get("value", "")
+                    break
+            out.append({"draft_id": d.get("id"), "message_id": msg_id,
+                        "subject": subject})
+        token = page.get("nextPageToken")
+        if not token:
+            break
+    return out
+
+
+def delete_draft(draft_id: str, *, dry_run: bool = False,
+                 logfn=print) -> bool:
+    """Permanently delete one draft by id. Returns True if the API call
+    ran. Deleting a DRAFT discards an unsent message only — it can never
+    touch a sent or received mail, so this is safe to run unattended.
+    """
+    if dry_run:
+        logfn(f"  (dry-run) would delete draft id={draft_id}")
+        return False
+    _service().users().drafts().delete(userId="me", id=draft_id).execute()
+    logfn(f"  ✓ deleted prior draft: id={draft_id}")
+    return True

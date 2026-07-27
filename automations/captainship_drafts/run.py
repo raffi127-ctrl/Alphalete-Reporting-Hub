@@ -11,6 +11,9 @@ churn images, assembles each draft, and creates it in Gmail.
 
 --dry-run writes each assembled email to output/ as a .eml you can open
 in any mail client to preview (images embedded) — nothing touches Gmail.
+A LIVE run is idempotent: it deletes this captain's existing draft for the
+same date before creating the new one, so re-running replaces rather than
+piles up 12 more drafts. --no-replace opts out.
 --skip-sheets skips the Sales Board screenshots (no browser login / no sheet
 row-group toggling) — those sections show a 'pending' note.
 
@@ -64,6 +67,38 @@ def _tableau_shots(captain, today, render_dir, *, logfn):
     if captain.flavor in ("rafael", "fiber"):
         return path, None      # (cancel_tableau, teamstats_tableau)
     return None, path
+
+
+def _norm_subject(s: str) -> str:
+    """Normalize a subject for idempotency matching: drop parentheses and
+    collapse whitespace. This is what lets the sweep still recognize drafts
+    written under the OLD "(7/26)" subject format as the same day's draft —
+    a format change must not orphan the drafts it was meant to replace."""
+    return " ".join(s.replace("(", " ").replace(")", " ").split())
+
+
+def _delete_prior_drafts(captain: config.Captain, today: dt.date,
+                         *, logfn=print) -> int:
+    """Delete this captain's already-existing draft(s) for `today` so a
+    re-run REPLACES rather than accumulates. Matches on the normalized
+    subject built by email_build.subject_for, so it can only ever hit this
+    captain's draft for this date — never another captain's, never another
+    day's, never a non-report mail (drafts only). Never fatal: a sweep that
+    fails leaves a duplicate, which is far better than losing the run."""
+    from automations.shared.gmail_draft import list_drafts, delete_draft
+    want = _norm_subject(email_build.subject_for(captain, today))
+    n = 0
+    try:
+        # Narrow the fetch to this report's drafts; the real check is `want`.
+        for d in list_drafts(query='subject:"Captainship Report"'):
+            if _norm_subject(d.get("subject") or "") != want:
+                continue
+            delete_draft(d["draft_id"], logfn=logfn)
+            n += 1
+    except Exception as e:
+        logfn(f"  ⚠ prior-draft sweep failed for {captain.key} "
+              f"({type(e).__name__}: {e}) — a duplicate may result")
+    return n
 
 
 def _capture_one(captain: config.Captain, today: dt.date, render_dir: Path,
@@ -173,6 +208,9 @@ def main(argv=None) -> int:
     ap.add_argument("--skip-tableau", action="store_true",
                     help="Skip the §2 Tableau shots (no Tableau session); those "
                          "sections show a 'pending' note.")
+    ap.add_argument("--no-replace", action="store_true",
+                    help="Keep any existing draft for the same captain+date "
+                         "instead of deleting it first (default: replace).")
     args = ap.parse_args(argv)
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
@@ -230,9 +268,12 @@ def main(argv=None) -> int:
                 html = preview.eml_to_html(eml)
                 print(f"  ✓ preview written: {eml.name} + {html.name}")
             else:
-                # LIVE. Idempotency (delete the day's prior draft for this
-                # captain before creating) lands in the live phase — flagged
-                # so we don't silently accumulate drafts on re-run.
+                # LIVE. Sweep this captain's prior draft for today FIRST, so
+                # a re-run replaces instead of accumulating. Delete-then-
+                # create (not update) keeps it simple and self-healing: a
+                # draft deleted by hand just means nothing to sweep.
+                if not args.no_replace:
+                    _delete_prior_drafts(captain, today)
                 from automations.shared.gmail_draft import create_draft
                 res = create_draft(msg)
                 print(f"  ✓ draft created: {res}")

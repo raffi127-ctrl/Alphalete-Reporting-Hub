@@ -46,7 +46,8 @@ def _intro_html(captain: Captain) -> str:
 def _pending(what: str) -> str:
     return (f'<div style="font-size:12px;color:#9a6b00;background:#fff4d6;'
             f'border:1px solid #f0d271;border-radius:4px;padding:8px 10px;'
-            f'margin:4px 0 10px">— {what} not available in this preview —</div>')
+            f'margin:4px 0 10px">— {what} could not be captured on this run '
+            f'(re-run after fixing the source) —</div>')
 
 
 class _Images:
@@ -101,6 +102,23 @@ def _section_html(captain: Captain, heading: str, kind: str, n: int,
     return head + body
 
 
+def subject_prefix(captain: Captain) -> str:
+    """The captain-identifying, date-free part of the subject.
+
+    Possessive: names ending in 's' take a bare apostrophe (spec:
+    "Carlos'", "Luis'"); everyone else takes "'s" ("Wayne's", "Eveliz's")."""
+    name = captain.display_name
+    poss = f"{name}'" if name.endswith("s") else f"{name}'s"
+    return f"{poss} Captainship Report"
+
+
+def subject_for(captain: Captain, today: dt.date) -> str:
+    """The exact Subject header build() sets. Single source of truth — the
+    idempotency sweep in run.py matches against this, so a subject format
+    change can never silently stop matching the drafts it should replace."""
+    return f"{subject_prefix(captain)} {today.month}/{today.day}"
+
+
 def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
     """Build the draft message for `captain` from its image `bundle`.
 
@@ -108,13 +126,8 @@ def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
     fiber_activation(Path), cancel_tableau(Path), teamstats_tableau(Path),
     churn_ni([(cap,Path)]), churn_wireless([(cap,Path)]).  Missing keys
     render as a per-section 'pending' note."""
-    # Possessive: names ending in 's' take a bare apostrophe (spec:
-    # "Carlos'", "Luis'"); everyone else takes "'s" ("Wayne's", "Eveliz's").
-    name = captain.display_name
-    poss = f"{name}'" if name.endswith("s") else f"{name}'s"
     msg = EmailMessage()
-    msg["Subject"] = (f"{poss} Captainship Report "
-                      f"({today.month}/{today.day})")
+    msg["Subject"] = subject_for(captain, today)
     msg["From"] = FROM_ADDR
     msg["To"] = ""   # blank on purpose — reviewer fills before sending
 
