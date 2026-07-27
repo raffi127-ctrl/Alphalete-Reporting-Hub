@@ -67,15 +67,17 @@ def used_range(ws) -> str:
 
 
 def _pick_client():
-    """Prefer the 'Lucy' bot token (DMs come from Lucy, matching the other
-    Slack reports). Fall back to the per-user token if the bot token isn't on
-    this machine (e.g. running off the runner). Returns (client, as_bot)."""
-    try:
-        return smp._bot_client(), True
-    except Exception as e:
-        print(f"  (no Lucy bot token here — {type(e).__name__}; using the user "
-              f"token, DMs send from that account)")
-        return smp._client(), False
+    """Send as LUCY via the provisioned 'Lucy Reporting' USER token
+    (slack-user-token) — the same xoxp token every metrics post, leaders_call
+    and raf_captainship_bonus already use. Returns (client, as_bot).
+
+    THIS IS NOT A FALLBACK. The separate bot-app token (SLACK_BOT_TOKEN) was
+    never created on the mini, so the old 'try the bot, warn, drop to the user
+    token' path logged a SlackPostError on every run since this DM went live on
+    2026-07-25 — making a perfectly good send read like a broken one. The user
+    token IS Lucy (confirmed by Eve 2026-07-27 off a delivered DM), so say so
+    instead of apologising for it."""
+    return smp._client(), False
 
 
 def build_png() -> tuple[Path, str]:

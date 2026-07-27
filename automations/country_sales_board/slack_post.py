@@ -78,16 +78,30 @@ def _find_ws(sh, title: str = TARGET_TAB):
         raise ValueError(f"Tab {title!r} not found in the workbook.") from None
 
 
-def _pick_client():
-    """Prefer the 'Lucy' bot token (DMs come from Lucy, matching the other Slack
-    reports). Fall back to the per-user token if the bot token isn't on this
-    machine. Returns (client, as_bot)."""
-    try:
-        return smp._bot_client(), True
-    except Exception as e:
-        print(f"  (no Lucy bot token here — {type(e).__name__}; using the user "
-              f"token, the DM sends from that account)")
-        return smp._client(), False
+def _pick_client(prefer_bot: bool = False):
+    """Send as LUCY via the provisioned 'Lucy Reporting' USER token
+    (slack-user-token) — the same xoxp token every metrics post, leaders_call
+    and raf_captainship_bonus already use. Returns (client, as_bot).
+
+    THIS IS NOT A FALLBACK. The separate bot-app token (SLACK_BOT_TOKEN) was
+    never created on the mini, so the old 'try the bot, warn, drop to the user
+    token' path printed a SlackPostError on every single run and made a working
+    send read like a broken one — which is exactly how we spent 2026-07-27
+    believing these DMs came from a personal account. They come from Lucy: the
+    user token IS Lucy (confirmed by Eve off the delivered DM). Naming that
+    outright, the way leaders_call and raf_captainship_bonus do, is the whole
+    point. [[project_country-sales-board]]
+
+    `prefer_bot` is for a machine where the bot app HAS been seeded (Lucy 2) and
+    someone deliberately wants the DM to come from the app instead."""
+    if prefer_bot:
+        try:
+            return smp._bot_client(), True
+        except Exception as e:
+            print(f"  --as-bot asked for the bot app but no bot token is on "
+                  f"this machine ({type(e).__name__}) — sending as Lucy "
+                  f"(user token) instead")
+    return smp._client(), False
 
 
 def capture_ranges(grid) -> list[str]:
@@ -177,6 +191,9 @@ def main(argv=None) -> int:
     ap.add_argument("--only", default="",
                     help="comma-separated Slack user id(s) to send to INSTEAD "
                          "of the full recipient list (for a targeted test)")
+    ap.add_argument("--as-bot", action="store_true",
+                    help="send from the Slack BOT APP instead of Lucy's user "
+                         "token (only on a machine where the bot is seeded)")
     ap.add_argument("--tab", default=TARGET_TAB,
                     help="tab to screenshot (default: the real board)")
     ap.add_argument("--range", dest="rng", default=None,
@@ -200,7 +217,8 @@ def main(argv=None) -> int:
     # separate individual DMs. Needs the Lucy bot's mpim:write scope;
     # dm_users_with_file falls back to individual DMs only if that scope is
     # missing (surfaced via mode='individual_dms').
-    _, as_bot = _pick_client()
+    _, as_bot = _pick_client(prefer_bot=args.as_bot)
+    print(f"  sending as {'the Slack bot app' if as_bot else 'Lucy (user token)'}")
     print(f"{'DRY-RUN (no send)' if dry else 'SENDING group DM'} to {recipients} "
           f"— title {TITLE!r}")
     resp = smp.dm_users_with_file(
