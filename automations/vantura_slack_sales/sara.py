@@ -150,18 +150,35 @@ def reconcile(day: dt.date, write: bool, log=_log) -> int:
 
 # --------------------------------------------------------------- preflight
 def preflight(log=_log) -> int:
-    """Are the prerequisites in place on THIS machine? No secret is printed."""
-    cred = LOGIN_FILE.exists() or bool(os.environ.get("SARAPLUS_USER"))
-    log(f"credential present: {'YES' if cred else 'NO — place it, see module doc'}")
-    log(f"Sara URL set: {'YES ('+SARA_URL+')' if SARA_URL else 'NO — set SARAPLUS_URL'}")
+    """Are the prerequisites in place on THIS machine? The email (not a secret)
+    is shown to confirm the right account; the password is NEVER printed — only
+    whether it's filled in."""
+    if os.environ.get("SARAPLUS_USER") and os.environ.get("SARAPLUS_PASS"):
+        log("credential: YES (from env SARAPLUS_USER/PASS)")
+    elif LOGIN_FILE.exists():
+        lines = LOGIN_FILE.read_text(encoding="utf-8-sig").splitlines()
+        user = lines[0].strip() if lines else ""
+        pw = lines[1] if len(lines) > 1 else ""
+        if user and pw.strip():
+            log(f"credential: YES — file has user {user} + a password ({len(pw)} chars)")
+        else:
+            u_state = "set" if user else "MISSING"
+            p_state = "set" if pw.strip() else ("EMPTY — re-run the save command "
+                                                "and paste the password at the prompt")
+            log(f"credential: INCOMPLETE — user {u_state}, password {p_state}")
+    else:
+        log("credential: NO — file not found; run the save command on Lucy 2")
+    log(f"Sara URL set: {'YES ('+SARA_URL+')' if SARA_URL else 'NO'}")
     if SARA_URL:
         try:
             import requests
             r = requests.get(SARA_URL, timeout=15)
-            log(f"reachable: HTTP {r.status_code} (VPN appears "
-                f"{'ON' if r.ok else 'reachable but non-200'})")
+            log(f"reachable: HTTP {r.status_code} — Sara loads from here, "
+                f"so NO VPN needed on Lucy 2" if r.ok else
+                f"reachable: HTTP {r.status_code} (responded but non-200)")
         except Exception as e:  # noqa: BLE001
-            log(f"NOT reachable: {type(e).__name__} — VPN off, or wrong URL")
+            log(f"NOT reachable: {type(e).__name__} — Sara needs the VPN on "
+                "Lucy 2, or the login is at a different path")
     return 0
 
 
