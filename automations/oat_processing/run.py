@@ -89,59 +89,55 @@ def open_oat(page) -> bool:
     try:
         page.locator(oat_xp).first.click(timeout=8000)
         page.wait_for_timeout(1500)
-        return True
+        if "p=604" in (page.url or ""):
+            return True
     except Exception as e:  # noqa: BLE001
-        _log(f"[oat] could not click 'One App at a time' link: "
-             f"{type(e).__name__}: {e}")
+        _log(f"[oat] menu click missed ({type(e).__name__}); trying direct nav")
+
+    # Fallback: the OAT page is index.cfm?p=604 (confirmed 2026-07-27). Navigate
+    # straight there, reusing the session's rqst token from the current URL.
+    import re
+    m = re.search(r"rqst=([A-F0-9-]+)", page.url or "", re.I)
+    if not m:
+        _log("[oat] no rqst token in URL — cannot direct-nav to p=604")
         return False
+    page.goto(f"https://applicantstream.com/index.cfm?p=604&rqst={m.group(1)}",
+              wait_until="domcontentloaded")
+    page.wait_for_timeout(1500)
+    return "p=604" in (page.url or "")
 
 
 # --------------------------------------------------------------------------- #
 # Reading one applicant off the OAT screen  # >>> VERIFY on Lucy 2
 # --------------------------------------------------------------------------- #
-def _field_value(page, label: str) -> str:
-    """Best-effort read of an 'Applicant Details' field by its visible label
-    (First Name / Last Name / Phone / Cell Phone / Email / Job Board). The
-    classic screen renders label + input rows; we find the input nearest the
-    label text. # >>> VERIFY on Lucy 2: confirm the row/input structure."""
+# Confirmed field NAMES on the OAT panel (p=604), from the Lucy 2 --debug pass
+# 2026-07-27: fname, lname, phone, cellPhone, email are <input name=…>; jBoard is
+# the Job Board <select>. Reading by name is robust to layout changes.
+def _named_value(page, name: str) -> str:
     try:
-        return page.evaluate(
-            """(label) => {
-                const norm = s => (s||'').replace(/\\s+/g,' ').trim().toLowerCase();
-                const target = norm(label).replace(/:$/,'');
-                // find a cell/label whose text matches, then the input in the
-                // same row (tr) or immediately after it.
-                const nodes = [...document.querySelectorAll('td,th,label,div,span')];
-                for (const n of nodes) {
-                    if (norm(n.innerText).replace(/:$/,'') !== target) continue;
-                    const row = n.closest('tr') || n.parentElement;
-                    const inp = row && row.querySelector('input,select,textarea');
-                    if (inp) return (inp.value || inp.getAttribute('value') || '').trim();
-                }
-                return '';
-            }""",
-            label,
-        ) or ""
+        loc = page.locator(f"[name='{name}']").first
+        if loc.count() == 0:
+            return ""
+        return (loc.input_value(timeout=3000) or "").strip()
     except Exception:  # noqa: BLE001
         return ""
 
 
 def read_current_applicant(page) -> Applicant:
-    """Read the fields we can see on the OAT screen into an Applicant.
-
-    The name/phone/cell/email/job-board/position reads use the labels visible in
-    the screenshot. The STATE flags (override_offered, sent_to_call_list_today,
-    has_interview, interview_date) are LEFT UNSET here — those live in the
-    duplicate dialog / status line we haven't captured yet, so classify() will
-    treat an unread applicant conservatively (SEND_AI/FLAG_NO_PHONE) until the
-    selectors are filled. # >>> VERIFY on Lucy 2 (see task #4)."""
+    """Read the applicant panel (p=604) into an Applicant, by confirmed field
+    NAME (see the --debug pass). The STATE flags (override_offered,
+    sent_to_call_list_today, has_interview, interview_date) are still UNSET —
+    those surface only for applicants in those states (a dup-overwrite dialog, an
+    "Interview Assigned" status line), which the first-in-queue applicant we
+    health-checked wasn't in. classify() stays conservative (SEND_AI /
+    FLAG_NO_PHONE) until they're wired. # >>> VERIFY on Lucy 2 (task #4)."""
     a = Applicant(
-        first_name=_field_value(page, "First Name"),
-        last_name=_field_value(page, "Last Name"),
-        phone=_field_value(page, "Phone"),
-        cell_phone=_field_value(page, "Cell Phone"),
-        email=_field_value(page, "Email"),
-        job_board=_field_value(page, "Job Board"),
+        first_name=_named_value(page, "fname"),
+        last_name=_named_value(page, "lname"),
+        phone=_named_value(page, "phone"),
+        cell_phone=_named_value(page, "cellPhone"),
+        email=_named_value(page, "email"),
+        job_board=_named_value(page, "jBoard"),
     )
     # >>> VERIFY: position comes off the resume panel / subject ("AT&T Sales
     #     Representative ..."). override_offered / sent_to_call_list_today /
@@ -163,29 +159,43 @@ def _would(live: bool, what: str) -> None:
     _log(f"    {'[LIVE] ' if live else '[dry-run] would '}{what}")
 
 
+# Confirmed OAT controls (Lucy 2 --debug, 2026-07-27), for when these get armed:
+#   "Send to AI" button · removApp checkbox + rmvReason <select> (pick the option
+#   whose text contains "duplicate") + "Save Applicant" (submitSaveApplicant) ·
+#   "Email Applicant" button + emailApplicantSubject / emailApplicantMessage
+#   (textarea) + qNotes Quick-Note <select>. What's NOT yet observed: the
+#   overwrite/duplicate confirm DIALOG that appears when you Send to AI on a dup,
+#   the "Interview Assigned" status line, and how the page ADVANCES to the next
+#   applicant. So the clicks stay gated until those states are seen live.
 def do_send_ai(page, a: Applicant, live: bool) -> None:
-    _would(live, "send to AI (call list)")
+    _would(live, "click 'Send to AI'")
     if live:
-        raise NotImplementedError("send-to-AI click not wired — run --debug on Lucy 2")
+        raise NotImplementedError(
+            "send-to-AI not armed — need the overwrite/confirm dialog observed first")
 
 
 def do_override_send_ai(page, a: Applicant, live: bool) -> None:
-    _would(live, "overwrite old applicant + send to AI")
+    _would(live, "click 'Send to AI' → confirm the overwrite-old-applicant dialog")
     if live:
-        raise NotImplementedError("override+send click not wired — run --debug on Lucy 2")
+        raise NotImplementedError(
+            "override+send not armed — need the overwrite dialog observed first")
 
 
 def do_remove_duplicate(page, a: Applicant, live: bool) -> None:
-    _would(live, "remove for duplicate")
+    _would(live, "check removApp + set rmvReason='…duplicate…' + click 'Save Applicant'")
     if live:
-        raise NotImplementedError("remove-duplicate click not wired — run --debug on Lucy 2")
+        raise NotImplementedError(
+            "remove-duplicate not armed — confirm rmvReason 'duplicate' label + "
+            "that Save advances the queue")
 
 
 def do_retext_then_remove(page, a: Applicant, live: bool) -> None:
-    _would(live, f"set Await Call Email to the '{a.position or '?'}' template, "
-                 f"send email/SMS, then remove for duplicate")
+    _would(live, f"'Email Applicant' with the await template matching "
+                 f"'{a.position or '?'}', then remove for duplicate")
     if live:
-        raise NotImplementedError("re-text flow not wired — run --debug on Lucy 2")
+        raise NotImplementedError(
+            "re-text not armed — need the await-template source (qNotes vs a saved "
+            "await message) confirmed")
 
 
 _NO_PHONE_ROWS: list = []
