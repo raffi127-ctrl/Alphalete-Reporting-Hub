@@ -113,17 +113,38 @@ def _login(page, log) -> None:
         log("  already authenticated (persistent session)")
         return
     user, pw = load_login()
+    log(f"  login as {user} (password {len(pw)} chars)")   # never logs the pw
     page.fill(_SEL_USER, user)
     page.fill(_SEL_PASS, pw)
     log("  submitting login…")
-    page.click(_SEL_LOGIN)
-    page.wait_for_load_state("domcontentloaded")
-    page.wait_for_timeout(3000)
-    if page.query_selector(_SEL_USER) is not None:
-        raise SystemExit("Sara login failed — still on the login form. Check "
-                         "the saraplus-login file (email line 1, password "
-                         "line 2), then re-run.")
-    log(f"  logged in — now at {page.url}")
+    # ASP.NET postback: the click reloads the whole page. Wait for the nav, then
+    # give the postback room; a stale 3s could read the pre-reload form.
+    try:
+        with page.expect_navigation(wait_until="domcontentloaded", timeout=30000):
+            page.click(_SEL_LOGIN)
+    except Exception:  # noqa: BLE001 — some flows postback without a full nav
+        page.wait_for_timeout(2000)
+    page.wait_for_timeout(4000)
+    if page.query_selector(_SEL_USER) is None:
+        log(f"  logged in — now at {page.url}")
+        return
+    # Still on the login form. Surface WHY: any visible validation/error text
+    # (e.g. "Invalid email or password") tells us credential-vs-flow. No secret.
+    msg = page.evaluate("""() => {
+      const cands = [...document.querySelectorAll(
+        '.error, .validation, [id*=Error], [id*=Message], [id*=lbl], span, div')]
+        .map(e => (e.innerText||'').trim())
+        .filter(t => t && t.length < 200 &&
+          /invalid|incorrect|wrong|not\\s|try again|required|locked|match|password|email/i.test(t));
+      return [...new Set(cands)].slice(0, 6);
+    }""")
+    log(f"  STILL on login form at {page.url}")
+    for m in (msg or []):
+        log(f"    page says: {m}")
+    raise SystemExit(
+        "Sara login failed. If the page said 'invalid email/password', the "
+        "saraplus-login file has the wrong password — re-save it on Lucy 2. "
+        "Otherwise the submit flow needs a tweak (see the page-says lines).")
 
 
 def _dump(page, log, label: str) -> None:
@@ -305,7 +326,12 @@ def main(argv=None) -> int:
            else dt.datetime.now(TZ).date() - dt.timedelta(days=1))
     if a.recon:
         _log(f"Sara RECON for {day:%A %m/%d}")
-        _scrape(day, recon=True)
+        # Diagnostic only — never signal "failed" (it would alert the
+        # corrections channel on every build iteration). Log and exit clean.
+        try:
+            _scrape(day, recon=True)
+        except BaseException as e:  # noqa: BLE001 — incl. SystemExit
+            _log(f"recon note: {e}")
         return 0
     _log(f"Sara reconcile for {day:%A %m/%d} — B2B only")
     return reconcile(day, a.yes)
