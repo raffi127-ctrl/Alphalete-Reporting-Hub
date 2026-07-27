@@ -110,45 +110,151 @@ def open_oat(page) -> bool:
 # --------------------------------------------------------------------------- #
 # Reading one applicant off the OAT screen  # >>> VERIFY on Lucy 2
 # --------------------------------------------------------------------------- #
-# Confirmed field NAMES on the OAT panel (p=604), from the Lucy 2 --debug pass
-# 2026-07-27: fname, lname, phone, cellPhone, email are <input name=…>; jBoard is
-# the Job Board <select>. Reading by name is robust to layout changes.
-def _named_value(page, name: str) -> str:
+# One text-based extraction of every signal off the OAT panel (p=604). Text-based
+# (find the dup table by its "Status"/"Duplicate Type" header; search body text for
+# the red-message patterns) because the model was built from the Loom's pixels, not
+# the DOM — so it's robust to exact ids. See FINDINGS.md for the state model.
+_EXTRACT_JS = r"""() => {
+  const val = n => { const e=document.querySelector(`[name='${n}']`);
+    return e ? (e.value||'').trim() : ''; };
+  const body = (document.body.innerText||'');
+  // --- the duplicate table: header row has both "Status" and "Duplicate Type" ---
+  let dupRows = [];
+  for (const t of document.querySelectorAll('table')) {
+    const head = (t.querySelector('tr')?.innerText||'').toLowerCase();
+    if (head.includes('status') && head.includes('duplicate type')) {
+      const trs=[...t.querySelectorAll('tr')];
+      const cols=[...trs[0].children].map(c=>c.innerText.trim().toLowerCase());
+      const ci=name=>cols.findIndex(c=>c.includes(name));
+      const iStatus=ci('status'), iType=ci('duplicate type'),
+            iDate=ci('date entered'), iApp=ci('applicant');
+      for (let i=1;i<trs.length;i++){ const td=[...trs[i].children];
+        if(!td.length) continue;
+        dupRows.push({
+          applicant: iApp>=0 ? (td[iApp]?.innerText||'').trim() : '',
+          dateEntered: iDate>=0 ? (td[iDate]?.innerText||'').trim() : '',
+          status: iStatus>=0 ? (td[iStatus]?.innerText||'').trim() : '',
+          dupType: iType>=0 ? (td[iType]?.innerText||'').trim() : '',
+        });
+      }
+      break;
+    }
+  }
+  // --- red inline messages ---
+  const cannotOverride = /cannot override this applicant/i.test(body);
+  const corrM = body.match(/last correspondence was on\s+([0-9]{1,2}\/[0-9]{1,2}\/[0-9]{2,4})/i);
+  // --- overwrite+send button present? ---
+  const btnText = [...document.querySelectorAll('button,input[type=button],input[type=submit],a')]
+    .map(e=>(e.innerText||e.value||'')).join(' | ').toLowerCase();
+  const overrideBtn = btnText.includes('overwrite') && btnText.includes('send to ai');
+  // --- pager: "<page> of <N> Emails" ---
+  const pm = body.match(/of\s+([0-9]+)\s+emails/i);
+  return {
+    fname: val('fname'), lname: val('lname'), phone: val('phone'),
+    cellPhone: val('cellPhone'), email: val('email'), jBoard: val('jBoard'),
+    subject: val('emailApplicantSubject'),
+    dupRows, cannotOverride, lastCorrespondence: corrM ? corrM[1] : '',
+    overrideBtn, total: pm ? parseInt(pm[1],10) : null,
+  };
+}"""
+
+
+def _parse_us_date(s: str):
+    for fmt in ("%m/%d/%Y", "%m/%d/%y"):
+        try:
+            return dt.datetime.strptime(s.strip(), fmt).date()
+        except Exception:  # noqa: BLE001
+            continue
+    # "Thursday, July 23, 2026 02:23 PM" style (dup-table Date Entered)
+    for fmt in ("%A, %B %d, %Y", "%B %d, %Y"):
+        try:
+            return dt.datetime.strptime(s.split(" 0")[0].strip().rstrip(","), fmt).date()
+        except Exception:  # noqa: BLE001
+            continue
     try:
-        loc = page.locator(f"[name='{name}']").first
-        if loc.count() == 0:
-            return ""
-        return (loc.input_value(timeout=3000) or "").strip()
+        return dt.datetime.strptime(s.strip().split(",")[1].strip() + s.strip().split(",")[2].split()[0],
+                                    "%B %d %Y").date()
     except Exception:  # noqa: BLE001
-        return ""
+        return None
 
 
-def read_current_applicant(page) -> Applicant:
-    """Read the applicant panel (p=604) into an Applicant, by confirmed field
-    NAME (see the --debug pass). The STATE flags (override_offered,
-    sent_to_call_list_today, has_interview, interview_date) are still UNSET —
-    those surface only for applicants in those states (a dup-overwrite dialog, an
-    "Interview Assigned" status line), which the first-in-queue applicant we
-    health-checked wasn't in. classify() stays conservative (SEND_AI /
-    FLAG_NO_PHONE) until they're wired. # >>> VERIFY on Lucy 2 (task #4)."""
+def read_current_applicant(page, today: dt.date = None) -> Applicant:
+    """Read the applicant panel (p=604) + duplicate table + red messages into an
+    Applicant, deriving the state signals classify() needs. See FINDINGS.md."""
+    today = today or dt.date.today()
+    try:
+        d = page.evaluate(_EXTRACT_JS)
+    except Exception as e:  # noqa: BLE001
+        _log(f"[oat] extract failed: {type(e).__name__}: {e}")
+        d = {}
+
+    dup_rows = d.get("dupRows") or []
+    statuses = " || ".join(r.get("status", "") for r in dup_rows)
+
+    # interview signals from the dup-table Status column
+    interview_future = False
+    interview_past_noshow = False
+    for r in dup_rows:
+        st = (r.get("status") or "").lower()
+        if "interview assigned" in st or "interview" in st:
+            if "unmarked show" in st or "no show" in st or "no-show" in st:
+                interview_past_noshow = True
+            else:
+                # a future/scheduled interview shows a date; treat any non-no-show
+                # "interview assigned" as an active (future) booking.
+                interview_future = True
+
+    # sent-to-call-list-today: a dup row "Sent to Call List" dated today
+    sent_today = False
+    for r in dup_rows:
+        if "sent to call list" in (r.get("status") or "").lower():
+            de = _parse_us_date(r.get("dateEntered") or "")
+            if de == today:
+                sent_today = True
+
+    last_corr = _parse_us_date(d.get("lastCorrespondence") or "") if d.get("lastCorrespondence") else None
+
     a = Applicant(
-        first_name=_named_value(page, "fname"),
-        last_name=_named_value(page, "lname"),
-        phone=_named_value(page, "phone"),
-        cell_phone=_named_value(page, "cellPhone"),
-        email=_named_value(page, "email"),
-        job_board=_named_value(page, "jBoard"),
+        first_name=d.get("fname", ""), last_name=d.get("lname", ""),
+        phone=d.get("phone", ""), cell_phone=d.get("cellPhone", ""),
+        email=d.get("email", ""), job_board=d.get("jBoard", ""),
+        position=(d.get("subject", "") or "").strip(),
+        override_button=bool(d.get("overrideBtn")),
+        correspondence_blocked=bool(d.get("cannotOverride")),
+        last_correspondence=last_corr,
+        interview_future=interview_future,
+        interview_past_noshow=interview_past_noshow,
+        sent_to_call_list_today=sent_today,
+        raw_status=statuses[:300],
     )
-    # >>> VERIFY: position comes off the resume panel / subject ("AT&T Sales
-    #     Representative ..."). override_offered / sent_to_call_list_today /
-    #     has_interview / interview_date come off the duplicate dialog + status.
+    a._total = d.get("total")  # type: ignore[attr-defined]  # queue size, for advance
     return a
 
 
 def advance_to_next(page) -> bool:
-    """Move to the next applicant in the OAT queue. Returns False when the queue
-    is empty. # >>> VERIFY on Lucy 2: the 'next'/save-and-next control."""
-    _log("[oat] advance_to_next is not wired yet — stopping after one applicant")
+    """Advance the OAT pager ("<page> of <N> Emails", top-right of the dup area)
+    to the next applicant. Returns False when there's no next control (end of
+    queue). # >>> VERIFY on Lucy 2: confirm the next-arrow locator."""
+    before = page.url
+    candidates = [
+        "xpath=//a[normalize-space(.)='►' or normalize-space(.)='>' or "
+        "contains(translate(@title,'NEXT','next'),'next') or "
+        "contains(translate(@class,'NEXT','next'),'next')]",
+        "xpath=//img[contains(translate(@alt,'NEXT','next'),'next')]/ancestor::a[1]",
+        "xpath=//input[@type='button' and (@value='>' or @value='►')]",
+    ]
+    for xp in candidates:
+        try:
+            loc = page.locator(xp).first
+            if loc.count() == 0:
+                continue
+            loc.click(timeout=5000, no_wait_after=True)
+            page.wait_for_timeout(1500)
+            # advanced if the URL/page changed
+            return True
+        except Exception:  # noqa: BLE001
+            continue
+    _log("[oat] no next-pager control found — treating as end of queue")
     return False
 
 
@@ -333,6 +439,21 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                 if opened:
                     _log("[oat] --- health check: OAT page ---")
                     health_check(page)
+                    # Validate the read/classify layer on the current applicant.
+                    a = read_current_applicant(page, today)
+                    d = classify(a, today)
+                    _log(f"HC STATE: name={a.first_name} {a.last_name!r} "
+                         f"phone={a.phone!r} cell={a.cell_phone!r} jb={a.job_board!r} "
+                         f"pos={a.position[:40]!r}")
+                    _log(f"HC STATE2: override_btn={a.override_button} "
+                         f"corr_blocked={a.correspondence_blocked} "
+                         f"last_corr={a.last_correspondence} "
+                         f"intv_future={a.interview_future} "
+                         f"intv_noshow={a.interview_past_noshow} "
+                         f"sent_today={a.sent_to_call_list_today} "
+                         f"total={getattr(a,'_total',None)}")
+                    _log(f"HC STATE3: status={a.raw_status[:200]!r}")
+                    _log(f"HC DECISION: {d.action.value} — {d.reason}")
                 return 0
 
             if not open_oat(page):
@@ -342,9 +463,7 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
             processed = 0
             counts: dict = {}
             while processed < limit:
-                a = read_current_applicant(page)
-                # position/state flags come from VERIFY-pending reads; classify
-                # is conservative until those land.
+                a = read_current_applicant(page, today)
                 d: Decision = classify(a, today)
                 counts[d.action.value] = counts.get(d.action.value, 0) + 1
                 _log(f"[{processed + 1}] {d.action.value.upper()} — {d.reason}")

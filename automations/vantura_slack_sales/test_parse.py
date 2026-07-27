@@ -230,14 +230,45 @@ def test_week_guard():
     return bad
 
 
+def test_sara_overwrite():
+    """Sara finalize: overwrite matched reps up OR down; leave unmatched (Megan
+    2026-07-26)."""
+    from automations.vantura_slack_sales import sara as S, run as R
+
+    def grid(cells):  # {rowname: (b2b_value)}
+        g = [[""] * 12 for _ in range(4 + len(cells) + 1)]
+        g[3][1], g[3][4], g[3][11] = "REP", "Monday", "Campaign"
+        for i, (name, val) in enumerate(cells.items()):
+            r = 4 + i
+            g[r][1], g[r][4], g[r][11] = name, val, "B2B"
+        g[4 + len(cells)][1] = R.TOTALS_TOP
+        return g
+
+    g = grid({"Jacob Ortega": "7", "Nick Smedra": "2", "Diego Borres": "3"})
+    rows = R.campaign_rows(g, "B2B")
+    # Sara: Jacob down 7->5, Nick up 2->4, Diego absent (left), extra rep unknown
+    writes, flags = S.plan_overwrite(g, 5, rows,
+                                     {"Jacob Ortega": 5, "Nick Smedra": 4,
+                                      "Ghost Rep": 2})
+    got = {w[0]: w[3] for w in writes}
+    bad = []
+    if got != {"Jacob Ortega": 5, "Nick Smedra": 4}:
+        bad.append(f"writes wrong: {got}")
+    if not any("Diego Borres" in f and "LEFT" in f for f in flags):
+        bad.append("Diego (absent from Sara) should be left+flagged")
+    if not any("Ghost Rep" in f for f in flags):
+        bad.append("Ghost Rep (not on board) should be flagged")
+    return bad
+
+
 def main() -> int:
     checks = [test_cases, test_running_counter, test_units_sum, test_week_guard,
               test_run_on_address, test_campaigns_dont_poach, test_day_rollover,
-              test_fill_only_raises]
+              test_fill_only_raises, test_sara_overwrite]
     bad = [b for chk in checks for b in chk()]
     for b in bad:
         print("FAIL", b)
-    total = len(CASES) + 24
+    total = len(CASES) + 25
     print(f"{total - len(bad)}/{total} passed")
     return 1 if bad else 0
 
