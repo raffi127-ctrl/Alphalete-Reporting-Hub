@@ -469,6 +469,19 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                             heads: [...document.querySelectorAll('table')]
                               .map(t=>(t.querySelector('tr')?.innerText||'').replace(/\s+/g,' ').slice(0,70))
                               .filter(Boolean).slice(0,18),
+                            // pager controls: anything clickable/selectable whose
+                            // text or nearby text mentions Emails/page navigation.
+                            pager: (()=>{
+                              const out=[];
+                              document.querySelectorAll('a,input,select,img,button').forEach(e=>{
+                                const t=(e.innerText||e.value||e.alt||e.title||'').trim();
+                                const oc=(e.getAttribute('onclick')||'').slice(0,50);
+                                const nm=e.name||e.id||'';
+                                if(/next|prev|page|email|›|»|◄|►|>|</i.test(t+' '+oc+' '+nm) && (t.length<25))
+                                  out.push(`${e.tagName}<${nm}> '${t}' oc=${oc}`);
+                              });
+                              return [...new Set(out)].slice(0,20);
+                            })(),
                           };
                         }""")
                         _log(f"HC MARK: following={mk.get('following')} "
@@ -477,6 +490,8 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                              f"emails={mk.get('emails')!r}")
                         for i, h in enumerate(mk.get("heads", [])):
                             _log(f"HC THEAD {i}: {h}")
+                        for i, pg in enumerate(mk.get("pager", [])):
+                            _log(f"HC PAGER {i}: {pg}")
                     except Exception as e:  # noqa: BLE001
                         _log(f"HC MARK failed: {e}")
                 return 0
