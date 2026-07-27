@@ -1,0 +1,8 @@
+{
+  "_comment": "Addresses to ALWAYS KEEP in the distro even though they're not on Kelly's roster (internal team, captains, Raf's own alt emails). The weekly reset never removes these. Keyed by lowercase email.",
+  "iraffi127@icloud.com": "Raf — personal iCloud",
+  "rafael-hidalgo@alphaletemarketing.com": "Raf — work email",
+  "maudmiller1994@gmail.com": "Maud Miller — internal",
+  "maudmiller4@gmail.com": "Maud Miller — internal (alt)",
+  "maudmiller66@gmail.com": "Maud Miller — internal (alt)"
+}
