@@ -37,9 +37,11 @@ from automations.vantura_slack_sales.parse import TZ
 
 CAMPAIGN = "B2B"
 LOGIN_FILE = Path.home() / ".config" / "recruiting-report" / "saraplus-login"
-# The Sara Plus app URL — unknown until we see it on Lucy 2. Set SARAPLUS_URL
-# (env or here) once known; --preflight reports it missing until then.
-SARA_URL = os.environ.get("SARAPLUS_URL", "").strip()
+# Sara Plus (Carlos 2026-07-27). This is the site ROOT; the actual login/app
+# path gets pinned when we build the scrape off Carlos's walkthrough. Reaching
+# the root is a basic connectivity check, not a full VPN verdict — the login
+# page is the real test.
+SARA_URL = os.environ.get("SARAPLUS_URL", "https://www.saraplus.com/").strip()
 
 
 def _log(m: str) -> None:
