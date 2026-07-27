@@ -313,41 +313,36 @@ def _parse_last_corr(body: str):
 
 
 def _perform_remove(page) -> bool:
-    """Remove-for-duplicate: check removApp, set rmvReason to a '…duplicate…'
-    option, click 'Save Applicant'. Returns True if submitted. Auto-remove was
-    authorized by Megan (2026-07-27). Never removes if the 'duplicate' reason
-    option isn't found (fails safe)."""
+    """Remove-for-duplicate (Carlos's flow, confirmed by Megan 2026-07-27): check
+    'Remove Applicant?' (removApp) + set the Remove Reason to the '…Duplicate…'
+    option + click 'Save Applicant' (submitSaveApplicant). Done in ONE in-page
+    step so it isn't tripped up by the post-block panel's actionability quirks.
+    Fails safe (returns False, logs why) if the Duplicate reason or Save button
+    isn't found."""
     try:
-        cb = page.locator("[name='removApp']").first
-        if cb.count():
-            cb.check(timeout=4000)
-        picked = page.evaluate(
-            """() => { const s=document.querySelector("select[name='rmvReason']");
-               if(!s) return '';
-               const o=[...s.options].find(o=>/duplicate/i.test(o.text));
-               if(!o) return '';
-               s.value=o.value; s.dispatchEvent(new Event('change',{bubbles:true}));
-               return o.text; }""")
-        if not picked:
-            _log("    remove: no '…duplicate…' rmvReason option — NOT removing")
-            return False
-        # Click Save Applicant. Prefer the input by NAME (submitSaveApplicant) —
-        # more robust than text after the block state; scroll it into view first.
-        btn = page.locator(
-            "[name='submitSaveApplicant'], input[value='Save Applicant'], "
-            "input[value='Save Applicant ']").first
-        try:
-            if btn.count() > 0:
-                btn.scroll_into_view_if_needed(timeout=3000)
-                btn.click(timeout=6000, no_wait_after=True)
-            elif not _click_first(page, ["Save Applicant"]):
-                _log("    remove: 'Save Applicant' control not found")
-                return False
-        except Exception as e:  # noqa: BLE001
-            _log(f"    remove: Save click failed ({type(e).__name__}) — not removed")
-            return False
-        page.wait_for_timeout(2200)
-        return True
+        res = page.evaluate(r"""() => {
+            const cb = document.querySelector("[name='removApp']");
+            if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change',{bubbles:true})); }
+            const s = document.querySelector("select[name='rmvReason']");
+            let picked = '';
+            if (s) { const o = [...s.options].find(o => /duplicate/i.test(o.text));
+                     if (o) { s.value = o.value;
+                              s.dispatchEvent(new Event('change',{bubbles:true}));
+                              picked = o.text; } }
+            if (!picked) return 'FAIL:no-duplicate-reason';
+            if (!cb || !cb.checked) return 'FAIL:removApp-not-set';
+            const btn = document.querySelector("[name='submitSaveApplicant']")
+                || [...document.querySelectorAll("input[type=submit],button")]
+                     .find(b => /save applicant/i.test(b.value || b.innerText || ''));
+            if (!btn) return 'FAIL:no-save-button';
+            btn.click();
+            return 'OK:' + picked;
+        }""")
+        _log(f"    [remove] {res}")
+        if str(res).startswith("OK"):
+            page.wait_for_timeout(2500)
+            return True
+        return False
     except Exception as e:  # noqa: BLE001
         _log(f"    remove error: {type(e).__name__}: {e}")
         return False
