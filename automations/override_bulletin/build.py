@@ -190,8 +190,11 @@ def read_data(tab=None):
         if low == "total" or "credico" in low or not name:
             continue
         row = _mk_row(r, week_cols, year_cols, led_for(low))
-        # Drop anyone with NO override THIS week (Megan 2026-07-22).
-        if (row["week"] or 0) > 0:
+        # Show everyone with 2026 override ACTIVITY (Megan 2026-07-25: the
+        # combined section was 'missing ICDs' — the old rule dropped anyone with
+        # $0 THIS week, which hid people like Ryan McSpadden who has $17,856 for
+        # the year but $0 in 7.19). Only a genuine $0-all-year ICD stays off.
+        if (row["total"] or 0) > 0:
             combined.append(row)
     combined.sort(key=lambda x: (x["total"] or 0), reverse=True)
 
