@@ -331,8 +331,20 @@ def _perform_remove(page) -> bool:
         if not picked:
             _log("    remove: no '…duplicate…' rmvReason option — NOT removing")
             return False
-        if not _click_first(page, ["Save Applicant"]):
-            _log("    remove: 'Save Applicant' not found")
+        # Click Save Applicant. Prefer the input by NAME (submitSaveApplicant) —
+        # more robust than text after the block state; scroll it into view first.
+        btn = page.locator(
+            "[name='submitSaveApplicant'], input[value='Save Applicant'], "
+            "input[value='Save Applicant ']").first
+        try:
+            if btn.count() > 0:
+                btn.scroll_into_view_if_needed(timeout=3000)
+                btn.click(timeout=6000, no_wait_after=True)
+            elif not _click_first(page, ["Save Applicant"]):
+                _log("    remove: 'Save Applicant' control not found")
+                return False
+        except Exception as e:  # noqa: BLE001
+            _log(f"    remove: Save click failed ({type(e).__name__}) — not removed")
             return False
         page.wait_for_timeout(2200)
         return True
@@ -472,6 +484,14 @@ def _flush_csv(path, header, rows, label) -> None:
     _log(f"[oat] wrote {len(rows)} {label} to {path}")
 
 
+_ACTIVITY_ROWS: list = []
+
+
+def _activity_csv(today: dt.date = None) -> str:
+    today = today or dt.date.today()
+    return f"output/oat-activity-{today.isoformat()}.csv"
+
+
 def _flush_queues() -> None:
     _flush_csv(config.NO_PHONE_FLAG_CSV,
                ["flagged_date", "first_name", "last_name", "email", "job_board",
@@ -479,6 +499,11 @@ def _flush_queues() -> None:
     _flush_csv("output/oat-retext-queue.csv",
                ["flagged_date", "first_name", "last_name", "email", "position",
                 "days_since_contact"], _RETEXT_ROWS, "re-text applicant(s)")
+    # Daily activity log — accumulates across every run of the day; the scorecard
+    # reads the whole file and tallies.
+    _flush_csv(_activity_csv(),
+               ["time", "applicant", "source", "position", "action", "outcome",
+                "reason"], _ACTIVITY_ROWS, "activity row(s)")
 
 
 _DISPATCH = {
@@ -695,6 +720,14 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                          f"{type(e).__name__}: {e}")
                     outcome = "error"
                 counts[outcome or d.action.value] = counts.get(outcome or d.action.value, 0) + 1
+                # Activity log — one row per applicant, for the daily scorecard.
+                if live:
+                    _ACTIVITY_ROWS.append([
+                        dt.datetime.now().strftime("%H:%M"),
+                        f"{a.first_name} {a.last_name}".strip(),
+                        a.job_board, a.position[:60],
+                        d.action.value, outcome or "", d.reason[:140],
+                    ])
 
                 processed += 1
                 # Throttle live mutations (a controlled test uses --max-actions 1).
