@@ -1790,6 +1790,26 @@
       "verify": null,
       "timeout_minutes": 120
     },
+    "oat_processing": {
+      "on_scheduler": false,
+      "machine": "Lucy 2",
+      "_off_scheduler_note": "Carlos's 'One App at a time' (OAT) leftovers handler on the CLASSIC ApplicantStream surface (office 11580) — the manual queue resume_pushing can't auto-send (dupes / no-phone / past-interview). Built 2026-07-26 from Carlos's Loom. on_scheduler:false so the 4am orchestrator NEVER runs it; this entry exists ONLY so `lucy rerun oat_processing --debug` (page health check) and the default dry-run (read + classify, NO clicks) resolve on Lucy 2. --live sends real texts + removes records and is NOT wired to any launchd agent — do not run --live until Megan/Carlos sign off. source_type 'applicantstream' (NOT appstream/tableau) so rerun SKIPS chrome_guard and never disturbs box_order_log's CDP Chrome. Reuses the classic applicant_tracker session/profile.",
+      "display_name": "OAT Processing (Carlos, office 11580)",
+      "source_type": "applicantstream",
+      "data_sources": [],
+      "command": [
+        "automations.oat_processing.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 15
+    },
     "install_resume_pushing_agent": {
       "on_scheduler": true,
       "_note": "NOT a report \u2014 a one-shot LaunchAgent installer, run via `lucy rerun install_resume_pushing_agent` (same pattern as install_je_agent). on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Regens + launchctl-bootstraps com.alphalete.resume-pushing on Lucy 2 \u2014 Carlos's ApplicantStream office-11580 resume extract + send-to-AI, every 10 min 8am-10pm CST Sun+Mon-Fri (plist fires q10min; resume_pushing_10min.sh gates the window + skips Sat). Runs on the machine's own AppStream session (Lucy 2 = Carlos's account). NOTE: the scheduled run is LIVE (send-to-AI is IRREVERSIBLE) \u2014 dry-run first with `bash deploy/resume_pushing_10min.sh --dry-run` before installing. Re-runnable any time.",
