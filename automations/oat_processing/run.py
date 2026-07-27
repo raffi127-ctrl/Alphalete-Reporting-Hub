@@ -738,12 +738,12 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                         break
                 if processed >= limit:
                     break
-                # After a send/remove the queue usually auto-loads the next app, so
-                # re-read instead of paging Next (paging would skip one). # >>> the
-                # exact auto-advance behaviour is confirmed during capped live tests.
+                # Advance to the next applicant. CONFIRMED 2026-07-27: the OAT page
+                # does NOT auto-load the next app after a send/remove (the loop
+                # stopped early assuming it did), so always page Next — even after a
+                # mutation. Cycle-detection at the top stops us at end-of-queue.
                 if outcome in MUTATIONS:
-                    page.wait_for_timeout(1500)
-                    continue
+                    page.wait_for_timeout(1200)
                 if not advance_to_next(page):
                     break
 
