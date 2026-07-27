@@ -64,14 +64,30 @@ def _log(msg: str) -> None:
 def open_oat(page) -> bool:
     """Applicants -> Process Emails -> "One App at a time" (classic surface).
 
-    Text/label-based (no hardcoded p= page number): hover/click "Applicants",
-    then click the "One App at a time" link. Returns True if we landed on it.
+    Text/label-based (no hardcoded p= page number): open the "Applicants" top-nav
+    (its Process Emails submenu holds the link), then click "One App at a time".
+    Returns True if we landed on it.
     # >>> VERIFY on Lucy 2: confirm the nav labels + that this is the right page.
     """
+    # 1) reveal the Applicants menu (hover, then click as fallback).
+    for how in ("hover", "click"):
+        try:
+            loc = page.locator(
+                "xpath=//a[normalize-space(.)='Applicants'] "
+                "| //*[self::button or @role='button'][normalize-space(.)='Applicants']"
+            ).first
+            if loc.count() == 0:
+                break
+            getattr(loc, how)(timeout=5000)
+            page.wait_for_timeout(800)
+        except Exception:  # noqa: BLE001
+            pass
+    # 2) click the OAT link (a/link/menu item), tolerating minor label variants.
+    oat_xp = ("xpath=//a[contains(normalize-space(.),'One App at a time')] "
+              "| //*[@role='menuitem'][contains(normalize-space(.),'One App at a time')] "
+              "| //a[contains(normalize-space(.),'One App at a Time')]")
     try:
-        page.locator(
-            "xpath=//a[contains(normalize-space(.),'One App at a time')]"
-        ).first.click(timeout=8000)
+        page.locator(oat_xp).first.click(timeout=8000)
         page.wait_for_timeout(1500)
         return True
     except Exception as e:  # noqa: BLE001
@@ -297,13 +313,21 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                 return 2
             _log(f"[oat] on office {config.OFFICE_ID} ({config.OFFICE_HINT})")
 
+            if debug:
+                # Dump the LANDING console first (shows the real nav anchors),
+                # then attempt OAT and dump that page too if we get there.
+                _log("[oat] --- health check: LANDING console ---")
+                health_check(page)
+                opened = open_oat(page)
+                _log(f"[oat] open_oat -> {opened}")
+                if opened:
+                    _log("[oat] --- health check: OAT page ---")
+                    health_check(page)
+                return 0
+
             if not open_oat(page):
                 _log("[oat] FATAL: could not open the One-App-at-a-time page")
                 return 2
-
-            if debug:
-                health_check(page)
-                return 0
 
             processed = 0
             counts: dict = {}
