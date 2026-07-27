@@ -275,35 +275,87 @@ def _would(live: bool, what: str) -> None:
 #   overwrite/duplicate confirm DIALOG that appears when you Send to AI on a dup,
 #   the "Interview Assigned" status line, and how the page ADVANCES to the next
 #   applicant. So the clicks stay gated until those states are seen live.
+def _click_first(page, labels, timeout: int = 6000) -> bool:
+    """Click the first visible button/link/submit whose text (or value) contains
+    one of `labels`. Returns True if something was clicked."""
+    for label in labels:
+        loc = page.locator(
+            f"xpath=//button[contains(normalize-space(.),'{label}')]"
+            f" | //a[contains(normalize-space(.),'{label}')]"
+            f" | //input[@type='submit' or @type='button'][contains(@value,'{label}')]"
+            f" | //*[@role='button'][contains(normalize-space(.),'{label}')]")
+        try:
+            if loc.count() > 0:
+                loc.first.click(timeout=timeout, no_wait_after=True)
+                return True
+        except Exception:  # noqa: BLE001
+            continue
+    return False
+
+
+def _has_dup_signal(x: Applicant) -> bool:
+    return bool(x.override_button or x.correspondence_blocked or x.interview_future
+                or x.interview_past_noshow or x.sent_to_call_list_today)
+
+
 def do_send_ai(page, a: Applicant, live: bool) -> None:
+    """Push a FRESH applicant to the AI call list. IRREVERSIBLE when live."""
     _would(live, "click 'Send to AI'")
+    if not live:
+        return
+    # DEFENSIVE re-read: never send if ANY dup/interview/contact signal is present,
+    # even though classify() said SEND_AI. Guards against an extraction gap on a
+    # dup layout we haven't seen — the one way a live run could wrongly text a dup.
+    guard = read_current_applicant(page)
+    if _has_dup_signal(guard):
+        _log("    ABORT: dup/interview signal on re-read — NOT sending, left for human")
+        return
+    if not _click_first(page, ["Send to AI", "Send To AI"]):
+        _log("    'Send to AI' button not found — skipped")
+        return
+    page.wait_for_timeout(2500)
+    # The ATS itself refuses to send to an already-contacted applicant (seen in
+    # the Loom). Detect that so we never mis-report a blocked send as sent.
+    try:
+        body = (page.inner_text("body") or "").lower()
+    except Exception:  # noqa: BLE001
+        body = ""
+    if "cannot send to ai" in body:
+        _log("    ATS blocked the send (prior correspondence) — not sent, left as dup")
+        return
+    # Diagnostics for the first live runs: report any dialog/buttons now visible.
+    try:
+        btns = page.evaluate(
+            "() => [...document.querySelectorAll('button,input[type=button],"
+            "input[type=submit],a')].map(e=>(e.innerText||e.value||'').trim())"
+            ".filter(t=>t&&t.length<30).slice(0,15)")
+        _log(f"    Send to AI clicked; on-screen buttons now: {btns}")
+    except Exception:  # noqa: BLE001
+        _log("    Send to AI clicked")
+
+
+def _dup_left_for_human(page, a: Applicant, live: bool, what: str) -> None:
+    """A dup/interview branch fired. The action clicks aren't armed yet, so LOG
+    it clearly and LEAVE the applicant untouched for a human (safe no-op)."""
+    _would(live, what)
     if live:
-        raise NotImplementedError(
-            "send-to-AI not armed — need the overwrite/confirm dialog observed first")
+        _log(f"    DUP CASE — detected, left for a human (branch not yet armed): "
+             f"{a.first_name} {a.last_name} [{a.raw_status[:80]}]")
 
 
 def do_override_send_ai(page, a: Applicant, live: bool) -> None:
-    _would(live, "click 'Send to AI' → confirm the overwrite-old-applicant dialog")
-    if live:
-        raise NotImplementedError(
-            "override+send not armed — need the overwrite dialog observed first")
+    _dup_left_for_human(page, a, live,
+                        "click 'Overwrite Old Applicants (Send to AI)'")
 
 
 def do_remove_duplicate(page, a: Applicant, live: bool) -> None:
-    _would(live, "check removApp + set rmvReason='…duplicate…' + click 'Save Applicant'")
-    if live:
-        raise NotImplementedError(
-            "remove-duplicate not armed — confirm rmvReason 'duplicate' label + "
-            "that Save advances the queue")
+    _dup_left_for_human(page, a, live,
+                        "check removApp + rmvReason='…duplicate…' + 'Save Applicant'")
 
 
 def do_retext_then_remove(page, a: Applicant, live: bool) -> None:
-    _would(live, f"'Email Applicant' with the await template matching "
-                 f"'{a.position or '?'}', then remove for duplicate")
-    if live:
-        raise NotImplementedError(
-            "re-text not armed — need the await-template source (qNotes vs a saved "
-            "await message) confirmed")
+    _dup_left_for_human(page, a, live,
+                        f"re-text (await for '{a.position or '?'}') then remove")
 
 
 _NO_PHONE_ROWS: list = []
@@ -412,7 +464,7 @@ def health_check(page) -> None:
 # Main
 # --------------------------------------------------------------------------- #
 def run(live: bool = False, limit: int = None, debug: bool = False,
-        headed: bool = False) -> int:
+        headed: bool = False, max_sends: int = None) -> int:
     limit = limit if limit is not None else config.MAX_PER_RUN
     today = dt.date.today()
 
@@ -503,6 +555,7 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                 return 2
 
             processed = 0
+            sends = 0                   # live Send-to-AI attempts this run
             counts: dict = {}
             seen: set = set()          # applicant keys we've already processed
             while processed < limit:
@@ -533,6 +586,15 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                          f"{type(e).__name__}: {e}")
 
                 processed += 1
+                # Cap irreversible sends per run (a safety throttle; the first
+                # live test uses --max-sends 1 to send exactly one applicant).
+                if live and d.action == Action.SEND_AI:
+                    sends += 1
+                    if max_sends is not None and sends >= max_sends:
+                        _log(f"[oat] reached --max-sends {max_sends} — stopping")
+                        break
+                if processed >= limit:
+                    break
                 if not advance_to_next(page):
                     break
 
@@ -558,10 +620,14 @@ def main(argv=None) -> int:
     p.add_argument("--debug", action="store_true",
                    help="Land on the OAT page, print a health check, then stop")
     p.add_argument("--headed", action="store_true", help="Force a visible browser")
+    p.add_argument("--max-sends", type=int, default=None, dest="max_sends",
+                   help="Cap live Send-to-AI actions this run (safety throttle; "
+                        "use --max-sends 1 for a controlled first live send)")
     args = p.parse_args(argv)
 
     live = args.live and not args.dry_run
-    return run(live=live, limit=args.limit, debug=args.debug, headed=args.headed)
+    return run(live=live, limit=args.limit, debug=args.debug, headed=args.headed,
+               max_sends=args.max_sends)
 
 
 if __name__ == "__main__":
