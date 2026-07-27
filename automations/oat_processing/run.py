@@ -706,17 +706,29 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
             actions = 0                 # live mutations (sent/removed) this run
             MUTATIONS = ("sent", "sent_override", "removed")
             counts: dict = {}
-            seen: set = set()          # applicant keys we've already processed
+            seen: set = set()          # applicant keys already handled this run
+            no_progress = 0            # consecutive already-seen reads (end guard)
             while processed < limit:
                 a = read_current_applicant(page, today)
-                # End-of-queue / cycle detection: the pager "Next" stays on the
-                # last applicant at the end, so stop once we re-see one (identity =
-                # email + name; falls back to name when email is blank).
                 key = f"{a.email}|{a.first_name} {a.last_name}".strip().lower()
-                if key and key != "|" and key in seen:
-                    _log(f"[oat] re-reached {a.first_name} {a.last_name} — end of "
-                         f"queue after {processed}")
-                    break
+                # Walk logic that survives the queue shifting under us: after a
+                # REMOVE/SEND the app leaves its slot, so the NEXT app becomes
+                # current (fresh key → handled below, no Next needed); after a
+                # non-mutation the SAME app stays current, so we page Next to move
+                # past it. Stop only when we can't reach a fresh applicant (the
+                # true end), not on the first re-seen one.
+                if not key or key == "|" or key in seen:
+                    no_progress += 1
+                    if no_progress > 3:
+                        _log(f"[oat] no fresh applicants — end of queue after "
+                             f"{processed} processed")
+                        break
+                    if not advance_to_next(page):
+                        _log(f"[oat] no next control — end of queue after "
+                             f"{processed} processed")
+                        break
+                    continue
+                no_progress = 0
                 seen.add(key)
                 d: Decision = classify(a, today)
                 sig = (f"phone={'Y' if (a.phone or a.cell_phone) else 'N'} "
@@ -750,14 +762,12 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                         break
                 if processed >= limit:
                     break
-                # Advance to the next applicant. CONFIRMED 2026-07-27: the OAT page
-                # does NOT auto-load the next app after a send/remove (the loop
-                # stopped early assuming it did), so always page Next — even after a
-                # mutation. Cycle-detection at the top stops us at end-of-queue.
-                if outcome in MUTATIONS:
-                    page.wait_for_timeout(1200)
-                if not advance_to_next(page):
-                    break
+                # Do NOT page Next here. Re-read on the next loop: a removed/sent
+                # app has left its slot (a fresh app is now current → handled), and
+                # an app that stayed re-reads as already-seen so the guard at the
+                # top pages Next past it. This walks the WHOLE queue instead of
+                # stopping after the first mutation.
+                page.wait_for_timeout(1200 if outcome in MUTATIONS else 400)
 
             _flush_queues()
             _log(f"\n[oat] done — {processed} applicant(s) this run: "
