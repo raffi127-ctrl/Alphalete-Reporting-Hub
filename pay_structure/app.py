@@ -180,37 +180,31 @@ def _campaign_types(grid: store.Grid, ck: str, camp) -> "list":
 # The editor
 # --------------------------------------------------------------------------
 def _gross_profit_simulator(office, campaigns=None) -> None:
-    """Raf's gross-profit model: set gross revenue + what you pay the rep on the
-    main products, an activation rate + volume, and see profit + margin %. The main
-    products follow the office's CHECKED CAMPAIGNS (B2B offices get their B2B
-    drivers, not the residential ones)."""
+    """Gross-profit calculator (Raf 7/26). Lists the office's AT&T Fiber products
+    straight from the DD (NOT the order log) — energy + bonuses excluded — and for
+    each shows, per unit: gross revenue, what you pay the rep ($ or %), the % that
+    is of gross, the gross profit $ (after 12% payroll tax), and the gross profit %
+    the office keeps. A manual # sales projects the total (× activation)."""
     from automations.pay_structure import gross_profit as gp
     st.divider()
-    st.markdown("### 📊 Gross profit simulator")
-    st.caption("Model your margin on the main products. **Gross revenue** = what "
-               "SCI/AT&T pays your office per ACTIVATED sale (base tier, ABP "
-               "100%). Set what you pay the rep to see profit + margin.")
+    st.markdown("### 📊 Gross profit calculator")
     try:
         gr = store.load_gross_revenue(office.key)
     except Exception:                    # noqa: BLE001
         gr = {}
-    office_gross = gr.get("main", {})
-    raw = gr.get("raw", {})
+    raw = gr.get("raw", {}) or {}
+    # AT&T Fiber products = the office's DD products, EXCLUDING energy (ELE); bonuses
+    # are already excluded by the pull. The product name IS the DD description.
+    fiber = {}
+    for key, payout in raw.items():
+        cat, _, desc = str(key).partition(" | ")
+        if cat.strip().upper() == "ELE" or not desc:
+            continue
+        try:
+            fiber[desc] = float(payout)
+        except (TypeError, ValueError):
+            continue
     act_default = int(round((gr.get("activation") or 0.80) * 100))   # Raf: default 80%
-
-    # Main products for THIS office = the drivers of every campaign it runs (office's
-    # own DD payout when we have it, else the campaign's model default). Falls back
-    # to the residential pair if no campaign is checked yet.
-    main_products, _seen = [], set()
-    for ck in (campaigns or []):
-        for name, ddkey, dflt in gp.MAIN_BY_CAMPAIGN.get(ck, []):
-            if name in _seen:
-                continue
-            _seen.add(name)
-            main_products.append((name, float(raw.get(ddkey) or office_gross.get(name) or dflt)))
-    if not main_products:
-        main_products = [(n, float(office_gross.get(n, d)))
-                         for n, d in gp.MAIN_PRODUCTS.items()]
 
     ctop = st.columns([2, 2])
     pct = ctop[0].radio("How do you pay the rep?",
@@ -218,63 +212,77 @@ def _gross_profit_simulator(office, campaigns=None) -> None:
                         key=f"gp_method_{office.key}") == "% of gross revenue"
     activation = ctop[1].slider("Office activation rate (%)", 50, 100, act_default,
                                 key=f"gp_act_{office.key}") / 100.0
-    if gr.get("pulled"):
-        st.caption("✅ Gross revenue + activation are your office's real DD numbers "
-                   "— **last pulled {}**. Edit any of them freely.".format(gr["pulled"]))
-    else:
-        st.caption("Numbers below are the model defaults (DD not pulled for your "
-                   "office yet) — edit freely.")
+    if not fiber:
+        st.caption("No AT&T Fiber DD products for your office yet — this fills in "
+                   "after the next DD pull.")
+        return
+    st.caption("Your AT&T Fiber products, straight from the DD (last pulled {}). "
+               "**Gross revenue** = what SCI/AT&T pays your office per activated "
+               "sale — edit it freely. Enter **# sales** to project the total."
+               .format(gr.get("pulled", "—")))
 
-    plans, volumes = [], {}
-    for name, default_gross in main_products:
-        c = st.columns([2.2, 2, 2, 1.6])
-        c[0].markdown("**{}**".format(name))
-        gross = c[1].number_input("Gross revenue (SCI pays $)",
-                                  value=float(default_gross), min_value=0.0,
-                                  step=5.0, key=f"gp_g_{office.key}_{name}")
-        payout = c[2].number_input("You pay rep ({})".format("%" if pct else "$"),
-                                   value=(50.0 if pct else float(round(default_gross * 0.35))),
-                                   min_value=0.0, step=(1.0 if pct else 5.0),
-                                   key=f"gp_p_{office.key}_{name}")
-        sales = c[3].number_input("# sales", value=100, min_value=0, step=10,
-                                  key=f"gp_v_{office.key}_{name}")
-        cb = st.columns([2.2, 2, 2, 1.6])
-        cb[0].caption("Volume tier bonus ($/sale)")
-        b5 = cb[1].number_input("at 5+ units", value=0.0, min_value=0.0, step=5.0,
-                                key=f"gp_b5_{office.key}_{name}")
-        b8 = cb[2].number_input("at 8+ units", value=0.0, min_value=0.0, step=5.0,
-                                key=f"gp_b8_{office.key}_{name}")
-        plans.append(gp.ProductPlan(name, gross, payout, pct,
-                                    tier_bonuses={5: b5, 8: b8}))
-        volumes[name] = sales
+    tax = gp.PAYROLL_TAX
+    ss = st.session_state.setdefault("gpsim_" + office.key, {})   # scratch inputs
+    _PAY = "You pay rep ({})".format("%" if pct else "$")
+    data = []
+    for name in sorted(fiber):
+        cur = ss.get(name, {})
+        gross = float(cur.get("gross", fiber[name]))
+        pay = float(cur.get("pay", 50.0 if pct else float(round(gross * 0.35))))
+        sales = int(cur.get("sales", 0))
+        rep_d = gross * pay / 100.0 if pct else pay
+        prof = gross - rep_d - tax * rep_d
+        data.append({
+            "Product": name,
+            "Gross revenue": gross,
+            _PAY: pay,
+            "% payout to rep": "{}%".format(round(rep_d / gross * 100)) if gross else "—",
+            "Gross profit $": "${:,.0f}".format(prof),
+            "Gross profit % (office keeps)": "{}%".format(round(prof / gross * 100)) if gross else "—",
+            "# sales": sales,
+        })
+    cols = ["Product", "Gross revenue", _PAY, "% payout to rep", "Gross profit $",
+            "Gross profit % (office keeps)", "# sales"]
+    df = pd.DataFrame(data, columns=cols)
+    cfg = {
+        "Product": st.column_config.TextColumn("Product", width="medium", disabled=True),
+        "Gross revenue": st.column_config.NumberColumn(
+            "Gross revenue", min_value=0.0, step=5.0, format="$%.0f",
+            help="What SCI/AT&T pays your office per activated sale"),
+        _PAY: st.column_config.NumberColumn(
+            _PAY, min_value=0.0, step=(1.0 if pct else 5.0),
+            format=("%.0f%%" if pct else "$%.0f")),
+        "% payout to rep": st.column_config.TextColumn("% payout to rep", width="small",
+                                                       disabled=True),
+        "Gross profit $": st.column_config.TextColumn("Gross profit $", width="small",
+                                                      disabled=True),
+        "Gross profit % (office keeps)": st.column_config.TextColumn(
+            "Gross profit % (office keeps)", disabled=True),
+        "# sales": st.column_config.NumberColumn("# sales", min_value=0, step=10,
+                                                 format="%d", help="Project a volume"),
+    }
+    edited = st.data_editor(df, width="stretch", column_config=cfg, hide_index=True,
+                            key=f"gpsim_ed_{office.key}")
+    for _, r in edited.iterrows():            # persist edits so the auto columns recompute
+        ss[str(r["Product"])] = {"gross": float(r["Gross revenue"] or 0),
+                                 "pay": float(r[_PAY] or 0),
+                                 "sales": int(r["# sales"] or 0)}
 
-    res = gp.simulate(plans, volumes, activation)
-    rows = [{"Product": r["product"],
-             "Gross revenue": "${:,.0f}".format(r["revenue"]),
-             "Rep payout (+12% tax)": "${:,.0f}".format(r["rep_payout"] + r["payroll_tax"]),
-             "Gross Profit %": "{}%".format(r["cost_ratio_pct"]),
-             "Total office profit": "${:,.0f}".format(r["profit"]),
-             "Office keeps %": "{}%".format(r["margin_pct"])}
-            for r in res["per_product"]]
-    if rows:
-        rows.append({"Product": "— OVERALL —",
-                     "Gross revenue": "${:,.0f}".format(res["total_revenue"]),
-                     "Rep payout (+12% tax)": "${:,.0f}".format(
-                         res["total_rep_payout"] + res["total_tax"]),
-                     "Gross Profit %": "{}%".format(res["blended_cost_ratio_pct"]),
-                     "Total office profit": "${:,.0f}".format(res["total_profit"]),
-                     "Office keeps %": "{}%".format(res["blended_margin_pct"])})
-
-        def _bold_total(row):
-            last = row.name == len(rows) - 1
-            return ["font-weight:700;background-color:#F1F5F9" if last else ""] * len(row)
-
-        st.dataframe(pd.DataFrame(rows).style.apply(_bold_total, axis=1),
-                     hide_index=True, width="stretch")
-        st.caption("Per product and, in the bold **OVERALL** row, the total. "
-                   "**Gross Profit %** matches your sheet (rep payout + 12% payroll "
-                   "tax as a share of gross revenue); **Office keeps %** is what's "
-                   "left; **Total office profit** is the dollars kept.")
+    # OVERALL total across products (activation applied to # sales)
+    t_rev = t_prof = 0.0
+    for v in ss.values():
+        g = v["gross"]
+        rep_d = g * v["pay"] / 100.0 if pct else v["pay"]
+        activated = v["sales"] * activation
+        t_rev += g * activated
+        t_prof += (g - rep_d - tax * rep_d) * activated
+    if t_rev:
+        m = st.columns(3)
+        m[0].metric("Total gross profit", "${:,.0f}".format(t_prof))
+        m[1].metric("Gross profit % (office keeps)", "{:.0f}%".format(t_prof / t_rev * 100))
+        m[2].metric("Total gross revenue", "${:,.0f}".format(t_rev))
+        st.caption("Total at your # sales × {:.0f}% activation. Per-product columns "
+                   "are per unit.".format(activation * 100))
 
 
 def editor_view(office) -> None:
