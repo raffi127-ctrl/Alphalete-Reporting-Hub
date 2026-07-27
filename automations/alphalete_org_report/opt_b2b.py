@@ -61,6 +61,14 @@ B2B_ICDS = [
     # as_owner from office-mapping-alphalete-org.json for the same reason.
     # Not to be confused with Boaktear Chowdhury (Retail) — different person.
     ("Atef Choudhury",  "Atef Choudhry - B2B"),
+    # Eveliz Wright (South Shore Consulting, office 18404) and Lizette
+    # Ruiz-Conejo (Revolution Consulting, office 22109) — added 2026-07-27.
+    # Both had a tab AND an AppStream office but sat in the mapping's `skip`
+    # list with no reason, so neither half ever ran for them. Lizette is
+    # another tab-vs-source spelling split: tab "Lizette Ruiz", AppStream and
+    # Tableau "Lizette Ruiz-Conejo".
+    ("Eveliz Wright",       "Eveliz Wright - B2B"),
+    ("Lizette Ruiz-Conejo", "Lizette Ruiz - B2B"),
 ]
 
 # Personal Production = the per-rep 'B2BLASTWEEK' view (REPEXPANDED filtered to

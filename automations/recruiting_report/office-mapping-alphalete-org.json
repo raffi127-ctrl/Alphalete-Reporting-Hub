@@ -1,7 +1,7 @@
 {
-  "confirmed_count": 19,
+  "confirmed_count": 21,
   "needs_review_count": 0,
-  "skip_count": 25,
+  "skip_count": 23,
   "confirmed": [
     {
       "sheet_tab": "Isaiah Revelle - NDS",
@@ -156,6 +156,24 @@
       "as_company": "Domin8 Acquisitions, Inc.",
       "confidence": 1.0,
       "campaign": "B2B"
+    },
+    {
+      "sheet_tab": "Eveliz Wright - B2B",
+      "office_id": "18404",
+      "as_owner": "Eveliz Wright",
+      "as_company": "South Shore Consulting Group, Inc.",
+      "confidence": 1.0,
+      "campaign": "B2B",
+      "note": "Was in skip + tab HIDDEN since ~2026-05 (recruiting stopped 04-26). The runner skips hidden tabs, so being in skip was a symptom, not the cause. Un-hidden + reinstated 2026-07-27 on Eve's call; she is an active captain (captainship_drafts 'eveliz'). If recruiting goes blank again, check the tab's hidden flag FIRST."
+    },
+    {
+      "sheet_tab": "Lizette Ruiz - B2B",
+      "office_id": "22109",
+      "as_owner": "Lizette Ruiz-Conejo",
+      "as_company": "Revolution Consulting Group, Inc.",
+      "confidence": 1.0,
+      "campaign": "B2B",
+      "note": "Same as Eveliz: skip + tab HIDDEN since ~2026-05 (recruiting stopped 04-26), un-hidden + reinstated 2026-07-27 on Eve's call. Spelling split: tab 'Lizette Ruiz', AppStream/Tableau 'Lizette Ruiz-Conejo' — as_owner is the bridge for both halves."
     }
   ],
   "needs_review": [],
@@ -190,12 +208,6 @@
     },
     {
       "sheet_tab": "NDS Template"
-    },
-    {
-      "sheet_tab": "Eveliz Wright - B2B"
-    },
-    {
-      "sheet_tab": "Lizette Ruiz - B2B"
     },
     {
       "sheet_tab": "x - Carlos Hidalgo - BOX"
