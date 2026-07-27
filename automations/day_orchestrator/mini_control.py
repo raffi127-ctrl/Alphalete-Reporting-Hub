@@ -94,7 +94,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "pip_install", "playwright_install", "set_applicant_service_account",
                     "applicant_key", "watch_test", "diag", "set_sleep",
                     "set_slack_token", "set_gbp_token", "set_gmail_token",
-                    "sheets_login"}
+                    "set_contacts_token", "sheets_login"}
 # Generous default — daily_rep_breakdown alone budgets ~130m. `rerun` overrides
 # this with the report's own timeout_minutes.
 DEFAULT_TIMEOUT_S = 130 * 60
@@ -1362,6 +1362,69 @@ def _action_set_gmail_token(args: str) -> tuple[bool, str]:
     return True, f"Gmail token installed + verified: mailbox {who}"
 
 
+def _action_set_contacts_token(args: str) -> tuple[bool, str]:
+    """Install the raffi127 read-WRITE Google Contacts token on THIS machine so
+    fiber_owners_distro can sync the "ATT Fiber Owners" group unattended. Args is
+    the CONTENTS of contacts-rw-token-raffi127.json (self-contained: refresh_token
+    + client_id/secret). That authorization is interactive (browser consent), so
+    it can't be done over the queue — shipping the already-authorized token is the
+    only unattended path. Backs up any existing token, writes it, verifies by
+    listing contact groups. NEVER echoes the token.
+
+    Note: the token transits the control Sheet's Args cell to get here — redact
+    that cell after this shows 'done' (the queuer does this from the laptop)."""
+    import json
+    import shlex
+    import shutil
+    raw = (args or "").strip()
+    parsed = None
+    for cand in (raw, *([shlex.split(raw)[0]] if _safe_shlex_first(raw) else [])):
+        cand = (cand or "").strip()
+        if not cand.startswith("{"):
+            continue
+        try:
+            parsed = json.loads(cand)
+            break
+        except Exception:  # noqa: BLE001
+            continue
+    if parsed is None:
+        return False, ("set_contacts_token needs the contacts-rw-token-raffi127.json "
+                       "CONTENTS (a JSON object) as Args")
+    if not parsed.get("refresh_token"):
+        return False, "token JSON has no refresh_token — re-authorize and pass the whole file"
+    if not (parsed.get("client_id") and parsed.get("client_secret")):
+        return False, "token JSON has no client_id/client_secret — must be self-contained"
+
+    from automations.fiber_owners_distro import contacts_write as cw
+    account = "raffi127@gmail.com"
+    path = cw.token_path(account)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't create {path.parent}: {str(e).splitlines()[0][:120]}"
+    if path.exists():
+        stamp = _now().replace(":", "").replace("-", "").replace("T", "-")
+        try:
+            shutil.copy2(path, path.parent / f"{path.name}.bak.{stamp}")
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        path.write_text(json.dumps(parsed, indent=2), encoding="utf-8")
+        os.chmod(path, 0o600)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write {path}: {str(e).splitlines()[0][:120]}"
+    # Verify through the same loader the report uses — proves it refreshes here.
+    try:
+        from googleapiclient.discovery import build
+        svc = build("people", "v1", credentials=cw.load_credentials(account),
+                    cache_discovery=False)
+        n = len(svc.contactGroups().list(pageSize=5).execute().get("contactGroups", []))
+    except Exception as e:  # noqa: BLE001
+        return True, (f"token written to {path} but verify errored "
+                      f"({type(e).__name__}: {str(e).splitlines()[0][:110]})")
+    return True, f"Contacts (raffi127) read-write token installed + verified (People API OK, {n}+ groups)"
+
+
 def _action_set_raffi_app_password(args: str) -> tuple[bool, str]:
     """Install the raffi127 Gmail APP PASSWORD on THIS machine so bg_check_sync
     can read the First Advantage / Sterling emails over IMAP unattended. Args is
@@ -1558,6 +1621,7 @@ ACTIONS = {
     "set_slack_user_token": _action_set_slack_user_token,
     "set_gbp_token": _action_set_gbp_token,
     "set_gmail_token": _action_set_gmail_token,
+    "set_contacts_token": _action_set_contacts_token,
     "restart_holder": _action_restart_holder,
     "restart_poller": _action_restart_poller,
     "restart_hub": _action_restart_hub,
