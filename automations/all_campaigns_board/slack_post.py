@@ -120,6 +120,18 @@ def main(argv=None) -> int:
     if not dry and resp.get("mode") == "individual_dms":
         print("  ⚠ fell back to INDIVIDUAL DMs — the Lucy bot is missing the "
               "mpim:write scope; add it + reinstall for ONE shared group DM.")
+    # A FAILED SEND MUST FAIL THE RUN. dm_users_with_file swallows Slack errors
+    # into the payload, so returning 0 unconditionally let a DM that delivered
+    # nothing get recorded as DONE — the orchestrator's failure alert would
+    # never fire and this DM could stop going out unnoticed. Partial delivery
+    # counts too: the individual-DM fallback reports ok=True if ANY recipient
+    # got it, so four of five silently missing out would otherwise look clean.
+    failed = [r.get("user_id") for r in resp.get("results", [])
+              if not r.get("ok")]
+    if not dry and (not resp.get("ok", False) or failed):
+        print(f"  ❌ send FAILED{f' for {failed}' if failed else ''} — "
+              f"not everyone got it.")
+        return 1
     return 0
 
 

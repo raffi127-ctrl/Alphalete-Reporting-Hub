@@ -126,8 +126,24 @@ def main(argv=None) -> int:
         file_name=f"{TITLE}.png", dry_run=dry, as_bot=as_bot)
     print(f"  result: {resp}")
     if not dry and resp.get("mode") == "individual_dms":
-        print("  ⚠ fell back to INDIVIDUAL DMs — the Lucy bot is missing the "
-              "mpim:write scope; add it + reinstall for ONE shared group DM.")
+        print("  ⚠ fell back to INDIVIDUAL DMs — the group-DM open failed. A "
+              "SINGLE recipient is the usual cause: one user opens an IM, not "
+              "an mpim, so it needs im:write rather than mpim:write.")
+    # A FAILED SEND MUST FAIL THE RUN. dm_users_with_file swallows Slack errors
+    # and reports them in the payload, so returning 0 unconditionally made a
+    # send that delivered nothing get recorded as DONE — the orchestrator's
+    # failure alert would never fire and nobody would know the DM stopped going
+    # out. Caught 2026-07-27 by a proving send that failed on missing_scope and
+    # still exited 0.
+    # Partial delivery counts as failure too: the individual-DM fallback reports
+    # ok=True if ANY recipient got it, so two of three silently missing out
+    # would otherwise look clean.
+    failed = [r.get("user_id") for r in resp.get("results", [])
+              if not r.get("ok")]
+    if not dry and (not resp.get("ok", False) or failed):
+        print(f"  ❌ send FAILED{f' for {failed}' if failed else ''} — "
+              f"not everyone got it.")
+        return 1
     return 0
 
 
