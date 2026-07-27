@@ -68,21 +68,34 @@ def load_login() -> tuple[str, str]:
 
 # ------------------------------------------------------------------ scrape
 def fetch_b2b(day: dt.date, log=_log) -> dict[str, int]:
-    """Per-rep AT&T counts from Sara Plus for one day: {rep name: count}.
+    """Per-rep AT&T counts from Sara Plus for one day: {agent name: count}.
 
-    NOT BUILT YET — needs the live site on Lucy 2 (a portal I can't see from
-    here). Carlos's Loom gives the manual steps to automate:
-      1. VPN on, open Sara Plus, log in (load_login()).
-      2. Date Range -> Select Yesterday -> Submit.
-      3. Read the per-rep table; the AT&T count per rep = internets + wireless
-         lines COMBINED (they used to split new-lines vs new-internets; now
-         it's all together — Loom 4:46).
-    Build with patchright on Lucy 2, dumping page HTML to the log to find
-    selectors. Until then a --yes run fails loudly rather than writing guesses.
+    SPEC (mapped from the live Sales Dashboard 2026-07-27, no VPN needed):
+      login  https://www.saraplus.com/e/servicepages/login.aspx
+             fields: ctl00$MainContent$txtUserName / $txtPassword / $btnLogin
+             (ASP.NET WebForms; session id sits in the URL path). Then the app
+             lands on the Sales Dashboard.
+      set    Date Range = day..day (both date boxes), Service = All, Submit.
+      read   the "Agent" group rows. **Per-rep AT&T count = the "AT&T Internet"
+             column + the "Wireless New Lines" column.** NOT "Total Sales"
+             (that counts DEALS, ~2/rep; the board counts LINES). NOT "Total
+             Wireless" (that's not new-lines-only).
+
+    VERIFIED: AT&T Internet + Wireless New Lines reconciles with the board's B2B
+    total EXACTLY on 4 completed days — 7/22=1+20=21, 7/23=1+14=15,
+    7/24=1+10=11, 7/25=0+1=1 — i.e. the reps' "NL" = Wireless New Lines and
+    "Fiber"/internet = AT&T Internet. (AT&T UV / DIRECTV cols are 0 for these
+    reps; if one ever goes non-zero, re-check whether the board should include
+    it.)
+
+    BUILD: prefer the CSV export (Export Options -> CSV) over grid scraping —
+    download + parse the Agent rows. Build with patchright on Lucy 2, dumping
+    HTML/CSV to the log to nail the date-field + export selectors. Until then a
+    --yes run fails loudly rather than writing guesses.
     """
     raise NotImplementedError(
-        "Sara Plus scrape not built — run --preflight, then build fetch_b2b "
-        "against the live site on Lucy 2 (VPN on).")
+        "Sara Plus scrape not built yet — formula + selectors are spec'd above; "
+        "build fetch_b2b against the live site on Lucy 2.")
 
 
 # --------------------------------------------------------------- reconcile
