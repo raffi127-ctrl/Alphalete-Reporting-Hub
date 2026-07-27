@@ -44,8 +44,22 @@ def load_rows(date: dt.date) -> list:
         return list(csv.DictReader(fh))
 
 
+def _dedupe(rows: list) -> list:
+    """Each applicant appears once — their FINAL outcome for the day. No-phone /
+    re-text / blocked applicants stay in the queue and get re-processed every run
+    (duplicate rows); a 'left' one that later became 'removed' should count as
+    removed. Keep the LAST row per applicant name."""
+    by_name: dict = {}
+    for r in rows:
+        name = (r.get("applicant") or "").strip().lower()
+        if name:
+            by_name[name] = r
+    return list(by_name.values())
+
+
 def tally(rows: list) -> dict:
-    """Bucket the day's rows into the scorecard categories."""
+    """Bucket the day's rows into the scorecard categories (deduped by applicant)."""
+    rows = _dedupe(rows)
     sent, removed, retext, nophone, blocked = [], [], [], [], []
     for r in rows:
         outcome = (r.get("outcome") or "").strip()
