@@ -504,8 +504,18 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
 
             processed = 0
             counts: dict = {}
+            seen: set = set()          # applicant keys we've already processed
             while processed < limit:
                 a = read_current_applicant(page, today)
+                # End-of-queue / cycle detection: the pager "Next" stays on the
+                # last applicant at the end, so stop once we re-see one (identity =
+                # email + name; falls back to name when email is blank).
+                key = f"{a.email}|{a.first_name} {a.last_name}".strip().lower()
+                if key and key != "|" and key in seen:
+                    _log(f"[oat] re-reached {a.first_name} {a.last_name} — end of "
+                         f"queue after {processed}")
+                    break
+                seen.add(key)
                 d: Decision = classify(a, today)
                 counts[d.action.value] = counts.get(d.action.value, 0) + 1
                 sig = (f"phone={'Y' if (a.phone or a.cell_phone) else 'N'} "
