@@ -11434,38 +11434,33 @@ else:  # st.session_state.view == "user"
                         use_container_width=True)
                     st.caption("Add passwords · see who's filled in")
                     st.markdown("Admin code: **A\\*\\*\\*\\*123**")
-            # ---- Metrics Onboarding (Office Operations) — Megan/Eve add a new
-            # office to daily metrics posting; writes to the Office Onboarding tab
-            # (the config store the reports + Hub read from). Same pattern as the
-            # Pay Structure block above.
+            # ---- Metrics Onboarding + Thread Builder (Office Operations) — one
+            # card, two links (Pay Structure pattern): LEFT enroll a new office
+            # (writes the Office Onboarding tab), RIGHT the password-gated admin
+            # editor for an enrolled office's thread (sections + order; the
+            # morning reports sync those edits automatically). ?admin=1 opens the
+            # same app straight into the editor mode.
             st.markdown("### 🏢 Metrics Onboarding")
             with st.container(border=True):
                 st.markdown(
-                    "**Add an office to metrics posting** — fill it in once; it "
-                    "writes the office's config to the Office Onboarding tab and "
-                    "shows which machine (Lucy 1/2) runs it + the tabs its sheet "
-                    "needs.")
-                _safe_link_button(
-                    "🏢 Open onboarding form",
-                    "https://alphaletemetricsintake.streamlit.app",
-                    use_container_width=True)
-                st.caption("For Megan & Eve")
-            # ---- Thread Builder (Office Operations) — edit an ENROLLED office's
-            # thread: which sections post + their order, per office (D2D + B2B).
-            # Admin mode of the same enrollment app; the morning reports sync the
-            # edits automatically (thread_builder.sync at live-run start).
-            st.markdown("### 🧵 Thread Builder")
-            with st.container(border=True):
-                st.markdown(
-                    "**Edit an enrolled office's thread** — turn sections on/off "
-                    "and drag to reorder them, per office (D2D + B2B). Saves to the "
-                    "Thread Plans tab; the next morning's run picks it up "
-                    "automatically — no deploy.")
-                _safe_link_button(
-                    "🧵 Open Thread Builder",
-                    "https://alphaletemetricsintake.streamlit.app",
-                    use_container_width=True)
-                st.caption("For Megan & Eve · admin password required")
+                    "**Enroll an office or edit its thread** — enroll writes the "
+                    "office's config (which machine runs it + the sheet tabs it "
+                    "needs); the admin editor turns sections on/off and reorders "
+                    "them per office, and the morning run picks edits up "
+                    "automatically.")
+                _mo = st.columns(2)
+                with _mo[0]:
+                    _safe_link_button(
+                        "🏢 Open onboarding form",
+                        "https://alphaletemetricsintake.streamlit.app",
+                        use_container_width=True)
+                    st.caption("Add a new office")
+                with _mo[1]:
+                    _safe_link_button(
+                        "🧵 Thread Builder (admin)",
+                        "https://alphaletemetricsintake.streamlit.app/?admin=1",
+                        use_container_width=True)
+                    st.caption("Edit sections + order · admin password")
             # ---- Tracker Onboarding (Office Operations) — add an office to the
             # daily Tableau tracker screenshots: its Slack channel + which trackers
             # + order. The daily run + trackers card pick it up automatically.

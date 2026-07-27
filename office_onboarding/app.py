@@ -472,7 +472,13 @@ def thread_admin_view() -> None:
 _inject_gs_client()
 
 _MODES = ("🏢 Enroll a new office", "✏️ Edit a thread (admin)")
-_mode = st.radio("What do you want to do?", _MODES, index=0, horizontal=True)
+# ?admin=1 (the Hub's Thread Builder button) opens straight into the editor.
+try:
+    _admin_q = str(st.query_params.get("admin", "")).lower() in ("1", "true", "yes")
+except Exception:
+    _admin_q = False
+_mode = st.radio("What do you want to do?", _MODES, index=1 if _admin_q else 0,
+                 horizontal=True)
 st.write("---")
 if _mode == _MODES[1]:
     thread_admin_view()
