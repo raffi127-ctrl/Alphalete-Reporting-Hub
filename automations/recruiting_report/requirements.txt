@@ -17,6 +17,10 @@ pandas>=2.0
 python-dateutil>=2.8
 # Frontier OPT Data Pull parses the emailed Frontier PDFs. Added 2026-05-24;
 # without it Eve's Windows Hub crashes on the Frontier run (ModuleNotFoundError).
+# ALSO required by SCI Campaigns (automations/sci_campaigns/parse.py), which
+# reads the two PDFs on Adriana's weekly tracker email — and unlike Frontier
+# that one is on the Friday/Saturday scheduler, so dropping this line breaks an
+# unattended run, not just a manual one.
 pdfplumber>=0.11
 slack_sdk
 certifi
