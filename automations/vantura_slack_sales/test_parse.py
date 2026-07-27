@@ -64,12 +64,30 @@ CASES = [
      "CX1\nNL 1\nNL 2\nNL3", "B2B", 3),
     ("att lines plus fiber", "B2B (Business)\nAuto Pay on\n\nCx 1\n\nNL 1\n"
      "NL 2\n\nNL 3\n\nNL 4\n\nNL 5\n\nCX 2\n\nFiber 1000 #6", "B2B", 6),
-    ("att inseego counts", "B2B (Business)\nAuto Pay on\n\nCx 1\n\nNL 1\n"
-     "NL 2\n\nNL 3\n\nInseego", "B2B", 4),
+    # Inseego on its OWN line IS a line item (William Bautista 7/16): 3 NL + 1.
+    ("att standalone inseego line", "B2B (consumer)\nCx1\nNL #1\nCx2 (business)"
+     "\nNL #2\nInseego #3\nCx3 (consumer)\nNL #4", "B2B", 4),
+    # Inseego with no NL at all is the line itself (Nick Smedra 7/14) = 1.
+    ("att inseego only", "B2B (Business)\nAutopay :white_check_mark:\n"
+     "Wrap up text\nCx1 Inseego", "B2B", 1),
+    # Bare "NL" with no number (Giovanni Monreal 7/16) = 1 line.
+    ("att bare nl", "B2B (consumer)\nAuto pay :white_check_mark:\nCx1\nNL", "B2B", 1),
+    # "NL - 1" with a dash (Eric Forsythe 7/18) = 1 line.
+    ("att nl dash", "B2B BUSINESS\nCx1\nNL - 1", "B2B", 1),
+    # "NL BYOD" — bare NL annotated with the device (Luis 7/14) = 1.
+    ("att nl byod no number", "B2B (Business)\nWrapUp\nAutopay\nCx1\n"
+     "NL BYOD (Premium)", "B2B", 1),
     ("att fiber only", "B2B (consumer)\nAuto pay :white_check_mark:\n\n"
      "Fiber 1g", "B2B", 1),
     ("att byod lines", "B2B (Business)\n\nCx 1\n\nNL 1 (BYOD)\n\nNL 2 (BYOD)\n\n"
      "NL 3 (BYOD)\n\nNL 4 (BYOD)", "B2B", 4),
+    # Jolie/Carlos 2026-07-24: Eric was double-counted. "inseego air" is the
+    # LINE TYPE, not a second sale — the one NL is one sale.
+    ("att inseego is a line type", "B2B BUSINESS\nWrap Text sent W/ Taylor "
+     ":white_check_mark:\nAuto Pay on\n\nNL 1 inseego air", "B2B", 1),
+    # Same report: Diego wrote the number BEFORE "NL" and went uncounted.
+    ("att number-first NL", "B2B (Business)\nWrap Text sent\nAuto Pay on\n\n"
+     "AT&T\n\n1 NL ( PREMIUM )\n\n2 NL ( Premium )", "B2B", 2),
 
     # --- not sales at all --------------------------------------------------
     ("goals post", "Todays Goals:bangbang:\nA&T - 9/20\nBox - 7/8\nBase -4/15",
@@ -219,7 +237,7 @@ def main() -> int:
     bad = [b for chk in checks for b in chk()]
     for b in bad:
         print("FAIL", b)
-    total = len(CASES) + 18
+    total = len(CASES) + 24
     print(f"{total - len(bad)}/{total} passed")
     return 1 if bad else 0
 

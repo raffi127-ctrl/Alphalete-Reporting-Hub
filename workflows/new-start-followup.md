@@ -23,26 +23,30 @@ new starts.
 | Job | When (Central) | Does |
 |---|---|---|
 | `com.alphalete.new-start-followup-rollcall` | Sat 08:00 | @-tags **every** leader with a new start, each with their count |
-| `com.alphalete.new-start-followup-sat` | Sat 10:00 / 13:00 | replies in the thread, tagging **only** leaders who still haven't sent |
-| `com.alphalete.new-start-followup-sat-pm` | Sat 17:00 | same, the last call of the day |
+| `com.alphalete.new-start-followup-sat` | Sat 13:00 | ONE nudge, tagging **only** leaders who still haven't sent |
 | `com.alphalete.new-start-followup-sun` | Sun 13:00 | posts the numbered ✅ roll-up + tags whoever is still out |
 
-All four go through `deploy/new_start_followup.sh` →
-`automations.new_start_followup.run`. Wording for the Saturday pings is picked
-from the clock (`--when auto`), so they don't need separate flags.
+All three go through `deploy/new_start_followup.sh` →
+`automations.new_start_followup.run`. The Saturday nudge uses `--when morning`
+(the neutral "Reminder — if you haven't texted…" wording that reads right for a
+lone nudge).
 
-**Why the 5pm ping is a separate plist.** `schedule_guard` treats any job with
-**more than 2 calendar intervals** as a high-frequency poller and skips it
-(`schedule_guard.py` → `_timed_schedule`) — which would leave a single
-3-interval job outside the nightly anti-drift reload that exists because timed
-jobs on the mini have silently drifted before. Two intervals here + one there
-keeps both inside it. **Don't merge them back into one plist.** Confirm coverage
-any time with `lucy rerun schedule_audit` — all four should be listed.
+**Ping budget (why one Saturday nudge, not three).** Until 2026-07-26 the
+Saturday nudge fired at 10:00 / 13:00 / 17:00 (a `-sat` plist with two intervals
+plus a separate `-sat-pm` plist for the third, to stay under `schedule_guard`'s
+2-interval poller cutoff). That meant a leader who hadn't replied got @-tagged
+**5×** in a weekend (8am roll call + 3 nudges + Sun checklist). Megan flagged it
+as too many pings, so it was cut to a single 1pm nudge — now ~3 tags max. The
+`-sat-pm` plist is **retired** (`lucy rerun uninstall_new_start_nudge_pm_agent`);
+with one interval left, `-sat` no longer needs the split. Confirm coverage any
+time with `lucy rerun schedule_audit` — rollcall, sat, and sun should be listed
+(sat-pm should NOT).
 
 Installed on the mini (**Lucy 1**) with `lucy update` then
 `lucy rerun install_new_start_rollcall_agent` /
-`install_new_start_nudge_agent` / `install_new_start_nudge_pm_agent` /
-`install_new_start_checklist_agent`.
+`install_new_start_nudge_agent` / `install_new_start_checklist_agent`.
+To stop the retired 5pm ping on the mini:
+`lucy rerun uninstall_new_start_nudge_pm_agent`.
 
 The roll call is **idempotent**: it looks for its own marker
 (`New-Start Texts — Roll Call`) in the thread and no-ops if one is already
@@ -56,7 +60,8 @@ there, so a re-fire can't tag 21 people twice. `--force` overrides.
   **"2ND Round Interviewer"**, one row per new start. Rows whose column J
   "Final Status" is declined/cancelled/no-show/rescheduled don't count.
 - **Who already sent** — `#rafs-office-recruiting` (`C06881A7WLV`) → Aisha's
-  Friday anchor post → replies after the Saturday roll call matching `/sent/i`.
+  Friday anchor post → replies after the Saturday roll call matching
+  `/sent|done/i` (some leaders reply "Done!" instead of "Sent").
   The `xN` in "sent x4" is read as the claimed count. Aisha's hand-typed roll
   call is still recognised if she posts one, so a transition week parses either
   way; with no roll call at all, everything under the anchor counts.

@@ -64,7 +64,12 @@ def _internet_base(package: str, dd: "Dict[tuple, float]") -> "Optional[float]":
     m = _SPEED_RE.search(package or "")
     if not m:
         return None
-    return dd.get(("INTERNET", ("internet " + m.group(1)).lower()))
+    speed = m.group(1)
+    # 'Copper to Internet N' is a DISTINCT product (copper→fiber conversion,
+    # ~$60–115) from fiber 'INTERNET N' (~$218–288) — match it explicitly.
+    if "copper" in (package or "").lower():
+        return dd.get(("INTERNET", "copper to internet {}".format(speed)))
+    return dd.get(("INTERNET", "internet {}".format(speed)))
 
 
 def _att_residential_payout(sale_type: str, dd: "Dict[tuple, float]") -> "Optional[float]":
@@ -74,18 +79,74 @@ def _att_residential_payout(sale_type: str, dd: "Dict[tuple, float]") -> "Option
     if pt in ("NEW INTERNET", "UPGRADE INTERNET"):
         return _internet_base(pkg, dd)
     if pt == "WIRELESS":
-        # every plan tier shares the ICD's New-Line base
-        return dd.get(("WIRELESS", "new line"))
-    # VIDEO / VOICE / AIR — no clean DD product line yet
+        # Raf's main wireless product = the New Ported Line = DD 'Port Line'
+        # ($198), NOT the brand-new 'New Line' ($103); every plan tier shares it.
+        pk = (pkg or "").lower()
+        if "byod" in pk:
+            return dd.get(("WIRELESS", "byod"))
+        if "new line" in pk and "port" not in pk:
+            return dd.get(("WIRELESS", "new line"))
+        return dd.get(("WIRELESS", "port line")) or dd.get(("WIRELESS", "new line"))
+    if pt == "AIR":
+        return dd.get(("AIR", "air"))       # residential AIR = $143 (one DD line)
+    if pt == "VIDEO":
+        # DD category 'DIRECTV STREAM', desc = the tier (CHOICE/ULTIMATE/…).
+        p = (pkg or "").upper().replace(" ", "")
+        for tier in ("OPTIMOMAS", "ENTERTAINMENT", "ULTIMATE", "PREMIER", "CHOICE"):
+            if tier in p:
+                return dd.get(("DIRECTV STREAM", tier.lower()))
+    # VOICE — no DD line (not sold); hidden by the editor's no-payout filter
     return None
+
+
+def _b2b_att_payout(sale_type: str, dd: "Dict[tuple, float]") -> "Optional[float]":
+    """B2B sale type = 'CRU|IRU · PRODUCT TYPE · Package'. The DD encodes the
+    business unit as a prefix on the description: 'CRU INTERNET 1000',
+    'IRU Port Line - OOF', 'CRU AIR', etc. Wireless/BYOD split In-Footprint (IF) vs
+    Out-Of-Footprint (OOF) — the sale type doesn't say which, so prefer OOF (the
+    consistently-present one) and fall back to IF."""
+    parts = [p.strip() for p in sale_type.split("·")]
+    if len(parts) < 3:
+        return None
+    cru = parts[0].lower()            # 'cru' | 'iru'
+    pt = parts[1].upper()             # NEW INTERNET | AIR/AWB | WIRELESS | ...
+    pkg = parts[2]
+    if "INTERNET" in pt:
+        m = re.search(r"(\d{3,4})", pkg)
+        if m:
+            return dd.get(("INTERNET", "{} internet {}".format(cru, m.group(1))))
+        return None
+    if "AIR" in pt:
+        return dd.get(("AIR", "{} air".format(cru)))
+    if "WIRELESS" in pt or "TABLET" in pt or "WEARABLE" in pt:
+        # footprint (IF/OOF) folded into one 'Port Line' by the pull's _norm_desc
+        return dd.get(("WIRELESS", "{} port line".format(cru)))
+    # VOICE — no clean DD product line yet
+    return None
+
+
+def _box_payout(sale_type: str, dd: "Dict[tuple, float]") -> "Optional[float]":
+    """BOX energy — the DD breaks down by BF tier in the description: BF 1=$325,
+    BF 2=$275, BF 3=$210. Term (12–60mo) doesn't change the payout, so a sale type
+    'BF 2 — 24mo' takes the BF-2 value."""
+    m = re.match(r"\s*BF\s*(\d)", sale_type or "", re.I)
+    if m:
+        return dd.get(("ELE", "bf {}".format(m.group(1))))
+    return None
+
+
+def _base_payout(sale_type: str, dd: "Dict[tuple, float]") -> "Optional[float]":
+    """BASE energy (RES-BASE POWER-Energy) — a flat 'Energy Enrollment' = $200 per
+    enrollment (the DD carries no BF tier for base), so every BF tier×term shares it."""
+    return dd.get(("ELE", "energy enrollment"))
 
 
 # campaign key -> mapper(sale_type, dd) -> base or None
 MAPPERS = {
     "att_residential": _att_residential_payout,
-    # "b2b_att": ...,   # TBD (Raf loom)
-    # "box": ...,       # TBD
-    # "base": ...,      # TBD
+    "b2b_att": _b2b_att_payout,
+    "box": _box_payout,
+    "base": _base_payout,
 }
 
 
@@ -131,3 +192,31 @@ def payout(campaign: str, sale_type: str) -> "Optional[float]":
         if k.strip().lower() == want:
             return val
     return None
+
+
+# --- live per-office payouts (from the DD gross-revenue pull) ---------------
+def _raw_to_dd(raw: "Dict[str, float]") -> "Dict[tuple, float]":
+    """{'CATEGORY | Description': base} -> {(CATEGORY_upper, desc_lower): base}."""
+    dd: Dict[tuple, float] = {}
+    for key, base in (raw or {}).items():
+        cat, _, desc = str(key).partition(" | ")
+        try:
+            dd[(cat.strip().upper(), desc.strip().lower())] = float(base)
+        except (TypeError, ValueError):
+            continue
+    return dd
+
+
+def payouts_for_office(office_key: str, campaigns) -> "Dict[str, Dict[str, float]]":
+    """{campaign: {sale_type: ICD payout}} from the DD gross-revenue pull — the
+    office's OWN auto-pay base per product, falling back to the org-wide reference
+    for a product the office hasn't sold this period. Uses the same per-campaign
+    MAPPERS as the reference table. One Sheet read; safe to call per render."""
+    from automations.pay_structure import store as _store
+    office = _store.load_gross_revenue(office_key) or {}
+    org = _store.load_gross_revenue("_org") or {}
+    dd = _raw_to_dd(org.get("raw"))
+    dd.update(_raw_to_dd(office.get("raw")))     # office value wins over org
+    if not dd:
+        return {}
+    return build_payouts(dd, campaigns)

@@ -30,6 +30,17 @@ from typing import Dict, List, Optional
 
 _DATA_DIR = Path(__file__).with_name("data")
 
+
+def estimate_live() -> bool:
+    """Master switch for the DAILY ORDER-LOG pay estimate. Default OFF — the posted
+    order logs must NOT show rep paycheck estimates until Megan flips this on (set
+    env PAY_ESTIMATE_LIVE=1 on the runner). Keeps estimates out of the live posts
+    while the pay-structure/payout build is still being locked down, even if an ICD
+    fills in their structure during review. The EDITOR is unaffected — offices can
+    fill in and preview; only the order-log integration is gated."""
+    return os.environ.get("PAY_ESTIMATE_LIVE", "").strip().lower() in (
+        "1", "true", "yes", "on")
+
 # Optional gspread client the editor injects (built from Streamlit secrets), so
 # the deployed app can reach the Sheet. Unset -> the Sheet backend falls back to
 # recruiting_report.fill.open_by_key (how the mini's build reads the same Sheet).

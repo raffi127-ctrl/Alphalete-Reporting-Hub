@@ -28,13 +28,35 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 PAYROLL_TAX = 0.12
-DEFAULT_ACTIVATION = 0.85          # Raf's algorithm block default; sim uses 70-90%
+DEFAULT_ACTIVATION = 0.80          # Raf's Loom: default activation 80%
 
 # Base-tier gross revenue ("gross payout to office") for the main products, from
 # Raf's sheet. Editable starting values; the DD puller can refresh them.
 MAIN_PRODUCTS = {
     "Internet 1 GIG": 310.0,       # sheet office-P&L value ($261 on the DD owner-pay plan)
     "New Line": 173.0,             # New Ported Line, ATT-RES ($215 Hybrid)
+}
+
+# The "driver" products the simulator models, PER CAMPAIGN — so a B2B office sees
+# its B2B drivers, not the residential ones. Each entry: (display name, the office's
+# DD `raw` key to read its actual payout, model fallback). Raf: AT&T Fiber = Internet
+# 1 GIG + New (ported) Lines; Carlos's B2B = Business Fiber + Business wireless; energy
+# by BF tier / enrollment.
+MAIN_BY_CAMPAIGN = {
+    "att_residential": [
+        ("Internet 1 GIG", "INTERNET | INTERNET 1000", 298.0),
+        ("New Line (Port Line)", "WIRELESS | Port Line", 198.0),
+    ],
+    "b2b_att": [
+        ("B2B Fiber 1 GIG", "INTERNET | CRU INTERNET 1000", 653.0),
+        ("B2B Wireless (Port Line)", "WIRELESS | CRU Port Line", 268.0),
+    ],
+    "box": [
+        ("Box — BF 2 (Energy)", "ELE | BF 2", 275.0),
+    ],
+    "base": [
+        ("Base — Energy Enrollment", "ELE | Energy Enrollment", 200.0),
+    ],
 }
 
 

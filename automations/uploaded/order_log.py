@@ -1503,6 +1503,8 @@ def _load_pay_grid(owner: str):
         import os
         os.environ.setdefault("PAY_STRUCTURE_SHEET_ID", _PAY_STRUCTURE_SHEET_ID)
         from automations.pay_structure import offices as _po, store as _ps
+        if not _ps.estimate_live():          # gated OFF until go-live (PAY_ESTIMATE_LIVE=1)
+            return None
         office = _po.for_owner(owner)
         if not office:
             return None

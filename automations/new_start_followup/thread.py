@@ -11,9 +11,9 @@ building it from OBCL column B so nobody with a new start gets left out -- Aisha
 hand-built list was missing 4 leaders the week this was written. Aisha's version
 is still recognised so the transition week (and any manual re-post) still parses.
 
-A leader counts as done when they post a reply matching /sent/i AFTER the roll
-call. Only replies after it count -- Aisha's setup messages and Friday chatter
-sit above it. With no roll call at all, everything under the anchor counts.
+A leader counts as done when they post a reply matching /sent|done/i AFTER the
+roll call. Only replies after it count -- Aisha's setup messages and Friday
+chatter sit above it. With no roll call at all, everything under the anchor counts.
 """
 from __future__ import annotations
 
@@ -30,8 +30,11 @@ CHANNEL_ID = os.environ.get("NSF_SLACK_CHANNEL", "C06881A7WLV")  # #rafs-office-
 # de-formatted text) so bold markers or a trailing date don't break it.
 ANCHOR_PATTERN = re.compile(r"new starts scheduled for monday", re.I)
 
-# "Sent", "sent x4", "Sentttttt x3", "Sent (Sosa)", "sent them all".
-SENT_PATTERN = re.compile(r"\bsen+t+\b", re.I)
+# "Sent", "sent x4", "Sentttttt x3", "Sent (Sosa)", "sent them all", plus the
+# "Done" / "Done!" some leaders reply instead of "Sent" (Megan 2026-07-26: count
+# those too -- Tiffani wrote "Done!" on the 7/27 week and got nudged again
+# because Lucy didn't read it as a confirmation).
+SENT_PATTERN = re.compile(r"\b(?:sen+t+|done)\b", re.I)
 # Trailing multiplier: "x4", "X 4", "×4".
 COUNT_PATTERN = re.compile(r"[x×]\s*(\d+)", re.I)
 

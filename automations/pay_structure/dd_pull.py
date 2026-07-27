@@ -37,10 +37,12 @@ COL_CATEGORY = "cl.Category"
 COL_DESCRIPTION = "cl.Description"
 COL_DETAIL = "cl.Description Detail"
 COL_TOTAL = "Total $ to ICD"        # gross revenue to the ICD (Raf: this IS gross revenue)
+COL_CAMPAIGN = "cl.Campaign__c"     # RES-ATT / RES-BASE POWER-Energy / B2B-BOX-Energy / …
 
 # The product categories that carry sellable gross revenue (skip Bonus / Override
 # / Chargeback / Total rows).
-PRODUCT_CATEGORIES = {"INTERNET", "WIRELESS", "ELE", "AIR", "DTV"}
+PRODUCT_CATEGORIES = {"INTERNET", "WIRELESS", "ELE", "AIR", "DTV",
+                      "DIRECTV STREAM", "VOICE"}
 
 
 def pull(out_path: "Optional[Path]" = None, page=None):
@@ -71,31 +73,95 @@ def _is_autopay(r) -> bool:
     return "auto bill pay" in ot and "no auto" not in ot
 
 
+import re as _re
+# B2B wireless splits In-Footprint / Out-Of-Footprint ("… - IF" / "… - OOF" /
+# "… - INFP"); the sale type doesn't say which, so fold both footprints into one
+# product and let the MODE pick the dominant footprint (by deal count) — no arbitrary
+# IF-vs-OOF choice. Residential descriptions have no such suffix (no-op).
+_FOOTPRINT_RE = _re.compile(r"\s*-\s*(IF|OOF|INFP)\s*$", _re.I)
+
+
+def _norm_desc(desc: str) -> str:
+    return _FOOTPRINT_RE.sub("", desc or "").strip()
+
+
+def _mode(vals: "List[float]") -> float:
+    return collections.Counter(round(v, 2) for v in vals).most_common(1)[0][0]
+
+
 def gross_revenue_by_office(rows) -> "Dict[str, Dict[str, dict]]":
-    """{owner: {'CATEGORY | Description': {'base': mode$, 'n': deals}}} — the MODE
-    of Total $ to ICD per (owner, category, description), over AUTO-BILL-PAY deals
-    only (each crosstab row is one deal). `rows` = list of dicts. Auto-pay + the
-    per-description split isolate the base tier; the caller applies MIN_SAMPLE so a
-    one-off deal can't set a product's base (the old un-filtered MODE picked $115
-    for a 1-deal outlier when the real 151-deal base was $298)."""
-    acc: Dict[tuple, List[float]] = collections.defaultdict(list)
+    """{owner: {'CATEGORY | Description': {'base': mode$, 'n': autopay_deals}}}.
+    base = the MODE of Total $ to ICD per (owner, category, description). PREFER
+    auto-bill-pay deals (Raf: assume auto-pay 100%), but for a product the office
+    sold ONLY no-auto-pay, fall back to those deals so every product it sold still
+    gets a payout. `n` = the auto-pay count only, so main_products' MIN_SAMPLE
+    guard still keeps the simulator's base tier stable (a 1-deal outlier can't set
+    Internet 1 GIG / New Line)."""
+    ap: Dict[tuple, List[float]] = collections.defaultdict(list)
+    al: Dict[tuple, List[float]] = collections.defaultdict(list)
     for r in rows:
         cat = str(r.get(COL_CATEGORY, "") or "").strip().upper()
-        if cat not in PRODUCT_CATEGORIES or not _is_autopay(r):
+        if cat not in PRODUCT_CATEGORIES:
             continue
         owner = str(r.get(COL_OWNER, "") or "").strip()
-        desc = str(r.get(COL_DESCRIPTION, "") or "").strip()
+        desc = _norm_desc(str(r.get(COL_DESCRIPTION, "") or "").strip())
         tot = _num(r.get(COL_TOTAL))
         if (not owner or owner.lower() in ("nan", "null")
                 or "total" in owner.lower() or not desc or tot is None or tot <= 0):
             continue
-        acc[(owner, cat, desc)].append(tot)
+        al[(owner, cat, desc)].append(tot)
+        if _is_autopay(r):
+            ap[(owner, cat, desc)].append(tot)
     out: Dict[str, Dict[str, dict]] = {}
-    for (owner, cat, desc), vals in acc.items():
-        base = collections.Counter(round(v, 2) for v in vals).most_common(1)[0][0]
+    for key, allv in al.items():
+        owner, cat, desc = key
+        apv = ap.get(key) or []
         out.setdefault(owner, {})["{} | {}".format(cat, desc)] = {
-            "base": base, "n": len(vals)}
+            "base": _mode(apv or allv), "n": len(apv)}
     return out
+
+
+def org_gross_revenue(rows) -> "Dict[str, float]":
+    """{'CATEGORY | Description': base} over ALL owners — the org-wide reference
+    payout per product, so the editor shows an ICD payout for a product an office
+    hasn't personally sold (office's own value wins when present). PREFER auto-pay
+    deals; fall back to any deal so every product that appears in the DD at all
+    gets a reference (NO sample floor here — this is the org-wide backstop)."""
+    ap: Dict[tuple, List[float]] = collections.defaultdict(list)
+    al: Dict[tuple, List[float]] = collections.defaultdict(list)
+    for r in rows:
+        cat = str(r.get(COL_CATEGORY, "") or "").strip().upper()
+        if cat not in PRODUCT_CATEGORIES:
+            continue
+        desc = _norm_desc(str(r.get(COL_DESCRIPTION, "") or "").strip())
+        tot = _num(r.get(COL_TOTAL))
+        if not desc or tot is None or tot <= 0:
+            continue
+        al[(cat, desc)].append(tot)
+        if _is_autopay(r):
+            ap[(cat, desc)].append(tot)
+    out: Dict[str, float] = {}
+    for key, allv in al.items():
+        out["{} | {}".format(*key)] = _mode(ap.get(key) or allv)
+    return out
+
+
+def energy_products(rows) -> "Dict[str, float]":
+    """{'ELE | <description>': mode Total$} for energy. Energy is NOT auto-pay
+    (order type blank), so it bypasses the auto-pay filter; and unlike AT&T it's
+    keyed by DESCRIPTION, which IS the product: BOX breaks down by BF tier
+    (BF 1=$325, BF 2=$275, BF 3=$210), BASE is a flat 'Energy Enrollment'=$200,
+    Just Energy is Green/Not Green. Descriptions don't collide across campaigns."""
+    acc: Dict[str, List[float]] = collections.defaultdict(list)
+    for r in rows:
+        if str(r.get(COL_CATEGORY, "") or "").strip().upper() != "ELE":
+            continue
+        desc = str(r.get(COL_DESCRIPTION, "") or "").strip()
+        tot = _num(r.get(COL_TOTAL))
+        if not desc or tot is None or tot <= 0:
+            continue
+        acc[desc].append(tot)
+    return {"ELE | {}".format(desc): _mode(vals) for desc, vals in acc.items()}
 
 
 def main_products(office_gross: "Dict[str, dict]") -> "Dict[str, float]":
@@ -114,8 +180,15 @@ def main_products(office_gross: "Dict[str, dict]") -> "Dict[str, float]":
               and ("1000" in k or "1 gig" in k.lower()))
     if ig is not None:
         out["Internet 1 GIG"] = ig
-    nl = best(lambda k: k.startswith("WIRELESS | ")
-              and "new line" in k.lower() and "port" not in k.lower())
+    # Raf's model "New Line" = "New Ported Line" (his gross_profit.py note) = the DD
+    # **Port Line** (ported number, $198/35 deals for raf) — the dominant, higher-
+    # value wireless add — NOT the DD 'New Line' (brand-new number, ~$103/8 deals).
+    # Prefer the ported line; fall back to a genuine 'New Line' desc only if an
+    # office has no qualifying Port Line sample.
+    nl = best(lambda k: k.startswith("WIRELESS | ") and "port line" in k.lower())
+    if nl is None:
+        nl = best(lambda k: k.startswith("WIRELESS | ")
+                  and "new line" in k.lower() and "port" not in k.lower())
     if nl is not None:
         out["New Line"] = nl
     return out
@@ -182,6 +255,12 @@ def run(write: bool = False, src: "Optional[Path]" = None) -> dict:
             by_office[office.key] = {"raw": raw, "main": main_products(gross),
                                      "activation": activation.get(owner),
                                      "pulled": pulled}
+    # org-wide reference payouts (every product anyone sells), for the editor's
+    # per-sale-type ICD payout when an office has no own value for a product.
+    # Energy (box/base) is merged in — it's keyed by campaign, not description.
+    org_raw = org_gross_revenue(rows)
+    org_raw.update(energy_products(rows))
+    by_office["_org"] = {"raw": org_raw, "pulled": pulled}
     if write:
         import os
         os.environ.setdefault("PAY_STRUCTURE_SHEET_ID",
@@ -199,6 +278,56 @@ def inspect(owner: str, src: "Optional[Path]" = None) -> None:
     rows = _read_rows(Path(path))
     if not rows:
         print("INSP|EMPTY {}".format(path)); return
+    # Org-wide ENERGY probe: `--inspect __ELE__`. Energy is NOT auto-pay (order type
+    # blank) so the normal filter drops it; here we dump every ELE row grouped by
+    # (owner, campaign) with the Total$ distribution, to see if the payout varies
+    # (BF tier×term) or is a flat per-enrollment value.
+    # Full product catalog probe: `--inspect __PRODUCTS__`. Every distinct
+    # (category, description) that is a real PRODUCT (bonuses/guarantees excluded),
+    # with its auto-pay payout — the master list Megan wants the editor to list so
+    # every product has an accurate ICD payout. Energy keyed by campaign.
+    if owner.strip().upper() in ("__PRODUCTS__", "__PROD__"):
+        BONUS = ("bonus", "captains", "lead disposition", "converged", "kwh",
+                 "guarantee", "disposition", "pilot", "adjustment", "chargeback")
+        prod: Dict[tuple, List[float]] = collections.defaultdict(list)
+        for r in rows:
+            cat = str(r.get(COL_CATEGORY, "") or "").strip().upper()
+            if cat not in PRODUCT_CATEGORIES:
+                continue
+            desc = str(r.get(COL_DESCRIPTION, "") or "").strip()
+            if not desc or any(b in desc.lower() for b in BONUS):
+                continue
+            tot = _num(r.get(COL_TOTAL))
+            if tot is None or tot <= 0:
+                continue
+            # energy: key by campaign (desc is flat/varies); AT&T: auto-pay only
+            if cat == "ELE":
+                camp = str(r.get(COL_CAMPAIGN, "") or "").strip()
+                prod[(cat, "{} [{}]".format(desc, camp))].append(tot)
+            elif _is_autopay(r):
+                prod[(cat, desc)].append(tot)
+        for (cat, desc), vals in sorted(prod.items()):
+            if len(vals) < MIN_SAMPLE:
+                continue
+            mode = collections.Counter(round(v, 0) for v in vals).most_common(1)[0][0]
+            print("INSP|P|{}|{}|n={}|${:.0f}".format(cat, desc, len(vals), mode))
+        return
+    if owner.strip().upper() in ("__ELE__", "__ENERGY__"):
+        ele = [r for r in rows if str(r.get(COL_CATEGORY, "")).strip().upper() == "ELE"]
+        print("INSP|ELE total rows={}".format(len(ele)))
+        bycamp: Dict[str, List[float]] = collections.defaultdict(list)
+        for r in ele:
+            bycamp[str(r.get(COL_CAMPAIGN, "")).strip() or "(blank)"].append(_num(r.get(COL_TOTAL)) or 0)
+        for camp, vals in sorted(bycamp.items(), key=lambda x: -len(x[1]))[:6]:
+            modes = collections.Counter(round(v, 0) for v in vals).most_common(6)
+            print("INSP|ELE camp={!r} n={} Total$modes={}".format(camp, len(vals), modes))
+        # which owners/offices sell energy (for owner->office mapping)
+        from automations.pay_structure import offices as _po
+        byown = collections.Counter(str(r.get(COL_OWNER, "")).strip() for r in ele)
+        for own, n in byown.most_common(8):
+            off = _po.for_owner(own)
+            print("INSP|ELE owner={!r} n={} office={}".format(own, n, off.key if off else None))
+        return
     cols = list(rows[0].keys())
     print("INSP|rows={} cols={} hasDesc={} hasAct={} hasOrderType={}".format(
         len(rows), len(cols), COL_DESCRIPTION in cols, COL_ACTIVATION in cols,
@@ -225,6 +354,15 @@ def inspect(owner: str, src: "Optional[Path]" = None) -> None:
         for dsc, vals in sorted(bydesc.items(), key=lambda x: -len(x[1]))[:5]:
             mode = collections.Counter(round(v, 0) for v in vals).most_common(1)[0]
             print("INSP|{} desc={!r} n={} mode={}".format(want, dsc, len(vals), mode))
+    # energy (ELE) — why box/base map empty: order-type split (auto-pay?) + descs.
+    for want in ("ELE", "DTV", "DIRECTV STREAM"):
+        sub = [r for r in mine if str(r.get(COL_CATEGORY, "")).strip().upper() == want]
+        if not sub:
+            continue
+        ots = collections.Counter(str(r.get(COL_ORDER_TYPE, "")).strip() or "(blank)" for r in sub)
+        dsc = collections.Counter(str(r.get(COL_DESCRIPTION, "")).strip() or "(blank)" for r in sub)
+        print("INSP|{} n={} ordertypes={}".format(want, len(sub), dict(ots.most_common(4))))
+        print("INSP|{} descs={}".format(want, dict(dsc.most_common(6))))
     go = gross_revenue_by_office(rows).get(owner, {})
     print("INSP|MAPPED={}".format(main_products(go)))
     print("INSP|activation={}".format(activation_by_office(rows).get(owner)))
@@ -243,4 +381,5 @@ if __name__ == "__main__":
         res = run(write=a.write, src=Path(a.src) if a.src else None)
         print("parsed gross revenue for {} office(s):".format(len(res)))
         for k, v in res.items():
-            print("  {:8} main: {}".format(k, v["main"]))
+            if "main" in v:                 # skip the _org reference row (no 'main')
+                print("  {:8} main: {}".format(k, v["main"]))

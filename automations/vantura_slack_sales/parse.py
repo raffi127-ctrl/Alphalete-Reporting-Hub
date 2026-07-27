@@ -62,10 +62,39 @@ _CX = re.compile(r"\bcx\s*#?\s*(\d{1,2})(?!\d)", re.I)
 # A number run into a street number or zip — counted, but flagged for a human.
 _GLUED = re.compile(r"\bcx\s*#?\s*(\d)(?=\d{3,})", re.I)
 
-# Markers belonging to the AT&T campaign, never to an energy one.
+# Markers belonging to the AT&T campaign, never to an energy one. "NL" is
+# matched bare too — reps write "Cx3 / NL" with no line number.
 _ATT_SIGNAL = re.compile(
-    r"\bnl\s*#?\s*\d|\bfiber\b|\binseego\b|\bwrap ?(?:up|text)\b|\bauto ?pay\b",
+    r"\bnl\b|\bfiber\b|\binseego\b|\bwrap ?(?:up|text)\b|\bauto ?pay\b",
     re.I)
+
+# A customer marker, in every form reps write it: "Cx", "Cx1", "Cx 1", "CX #2".
+# `\bcx\b` alone misses the glued "Cx1", which is how half of them are written.
+_CX_EVID = r"\bcx\b|\bcx(?=\s*#?\s*\d)"
+
+# AT&T line-item tokens. One NEW LINE = one sale, however it's written:
+# "NL 1", "NL3", "NL #2", "1 NL", "NL - 1", or a bare "NL". Count the NL
+# TOKENS, not the numbers around them (the numbers are line indexes).
+_NL_TOKEN = re.compile(r"\bnl\b|\bnl(?=\d)", re.I)
+_FIBER_TOKEN = re.compile(r"\bfiber\b", re.I)
+_INSEEGO_TOKEN = re.compile(r"\binseego\b", re.I)
+
+
+def count_att(text: str) -> int:
+    """AT&T sales in a post = NL lines + Fiber drops + STANDALONE Inseego.
+
+    Inseego is the subtle one. "NL 1 inseego air" is ONE line — inseego is the
+    line's device type, and the NL already counts it. But "Inseego #3" on its
+    own line (William Bautista 2026-07-16) is its own line, and "Cx1 Inseego"
+    with no NL (Nick Smedra) is a real sale. So an Inseego counts only on a
+    line that has no NL of its own. Cx is a customer INDEX (Cx1/Cx2/Cx3 = 1st/
+    2nd/3rd customer), never a sale count.
+    """
+    n = len(_NL_TOKEN.findall(text)) + len(_FIBER_TOKEN.findall(text))
+    for line in text.splitlines():
+        if _INSEEGO_TOKEN.search(line) and not _NL_TOKEN.search(line):
+            n += 1
+    return n
 # Contract fields that mean business energy (BOX).
 _BOX_SIGNAL = re.compile(
     r"\bbox\s*#?\s*\d|\bbf\s*#?\s*\d|\bbill submitted\b|\bannual usage\b"
@@ -91,6 +120,10 @@ class Campaign:
     mode: str
     markers: list[re.Pattern]
     evidence: re.Pattern
+    # units mode only: a custom counter (text -> sale count). Used for AT&T,
+    # where a line item can be an NL, a Fiber, or a standalone Inseego and the
+    # marker isn't a simple regex tally. None = count regex matches as before.
+    counter: object = None
 
 
 CAMPAIGNS = [
@@ -105,10 +138,16 @@ CAMPAIGNS = [
                  _CX,
                  re.compile(r"(?m)^\s*#\s*(\d{1,2})(?!\d)")],
         # Reps who skip the "#1" still quote the meter reading or the service
-        # address; "WHOSSS FIRST (BASE)" has neither.
+        # address; "WHOSSS FIRST (BASE)" has neither. A posted address is the
+        # signal — a 5-digit ZIP or the state is the most reliable tell (the
+        # street-suffix list kept missing ones like "kinwest PARKWAY").
         evidence=re.compile(
-            r"\d[\d,]*\s*kwh|\bcx\b"
-            r"|\d{2,}\s+[A-Za-z].*\b(?:dr|st|ln|ct|cir|rd|ave|blvd|way|hwy|trl|pl)\b",
+            r"\d[\d,]*\s*kwh"                       # meter reading
+            r"|" + _CX_EVID +                       # Cx / Cx1
+            r"|\b\d{5}(?:-\d{4})?\b"                # a ZIP => an address
+            r"|\btexas\b|\btx\b"                    # ...or the state
+            r"|\d{2,}\s+[A-Za-z].*\b(?:dr|st|ln|ct|cir|rd|ave|blvd|way|pkwy"
+            r"|parkway|hwy|expy|trl|pl|loop|ct)\b",
             re.I),
     ),
     Campaign(
@@ -126,10 +165,11 @@ CAMPAIGNS = [
         exclude=re.compile(r"\bd2d\b|\bbox\s*#?\s*\d|\bbill submitted\b", re.I),
         override=None,
         mode="units",
-        # Every line, fiber drop and hotspot is one unit on the board.
-        markers=[re.compile(r"\bnl\s*#?\s*\d{1,2}(?!\d)|\bfiber\b|\binseego\b",
-                            re.I)],
-        evidence=re.compile(r"\bcx\b", re.I),
+        # Counting lives in count_att — NL lines + Fiber + standalone Inseego,
+        # which a flat regex tally can't express (see that function).
+        markers=[],
+        counter=count_att,
+        evidence=re.compile(_CX_EVID, re.I),
     ),
 ]
 BY_NAME = {c.name: c for c in CAMPAIGNS}
@@ -197,6 +237,19 @@ def campaign_of(text: str) -> Campaign | None:
 def sale_markers(c: Campaign, text: str) -> tuple[list[int], list[str]]:
     """Every sale number in a post of this campaign, plus any parse flags."""
     flags: list[str] = []
+    # Campaigns with a custom counter (AT&T) don't have countable markers —
+    # the counter decides. Represent the result as N placeholder markers so the
+    # units tally (len(markers)) comes out right.
+    if c.counter is not None:
+        n = c.counter(text)
+        if n:
+            return [1] * n, flags
+        if c.evidence.search(text):
+            flags.append("no line marker in the post — counted as 1")
+            return [], flags
+        flags.append(f"mentions {c.name} but has no NL / Fiber / Cx — "
+                     "read as chatter, NOT counted")
+        return [], ["__not_a_sale__"] + flags
     found: list[int] = []
     for rx in c.markers:
         hits = rx.findall(text)
