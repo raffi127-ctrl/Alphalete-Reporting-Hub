@@ -454,6 +454,31 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                          f"total={getattr(a,'_total',None)}")
                     _log(f"HC STATE3: status={a.raw_status[:200]!r}")
                     _log(f"HC DECISION: {d.action.value} — {d.reason}")
+                    # Diagnostic: is the state content actually on the page, and
+                    # is our parser missing it, or is it genuinely absent?
+                    try:
+                        mk = page.evaluate(r"""() => {
+                          const b=(document.body.innerText||'');
+                          const has=s=>b.toLowerCase().includes(s.toLowerCase());
+                          return {
+                            following: has('Following Applicants'),
+                            cannotOverride: has('Cannot override'),
+                            overwrite: has('Overwrite Old Applicants'),
+                            lastCorr: has('last correspondence was on'),
+                            emails: (b.match(/of\s+\d+\s+emails/i)||[''])[0],
+                            heads: [...document.querySelectorAll('table')]
+                              .map(t=>(t.querySelector('tr')?.innerText||'').replace(/\s+/g,' ').slice(0,70))
+                              .filter(Boolean).slice(0,18),
+                          };
+                        }""")
+                        _log(f"HC MARK: following={mk.get('following')} "
+                             f"cannotOverride={mk.get('cannotOverride')} "
+                             f"overwrite={mk.get('overwrite')} lastCorr={mk.get('lastCorr')} "
+                             f"emails={mk.get('emails')!r}")
+                        for i, h in enumerate(mk.get("heads", [])):
+                            _log(f"HC THEAD {i}: {h}")
+                    except Exception as e:  # noqa: BLE001
+                        _log(f"HC MARK failed: {e}")
                 return 0
 
             if not open_oat(page):
