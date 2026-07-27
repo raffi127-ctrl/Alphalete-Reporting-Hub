@@ -1,5 +1,5 @@
 {
-  "confirmed_count": 18,
+  "confirmed_count": 19,
   "needs_review_count": 0,
   "skip_count": 25,
   "confirmed": [
@@ -148,6 +148,14 @@
       "as_owner": "Carlos Hidalgo",
       "as_company": "",
       "confidence": 1.0
+    },
+    {
+      "sheet_tab": "Atef Choudhry - B2B",
+      "office_id": "23467",
+      "as_owner": "Atef Choudhury",
+      "as_company": "Domin8 Acquisitions, Inc.",
+      "confidence": 1.0,
+      "campaign": "B2B"
     }
   ],
   "needs_review": [],

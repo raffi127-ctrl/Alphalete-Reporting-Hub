@@ -54,6 +54,13 @@ PP_ROW = 42   # canonical Personal Production row
 B2B_ICDS = [
     ("Valeria Tristan", "Valeria Tristan - B2B"),
     ("Carlos Hidalgo",  "Carlos Hidalgo -B2B"),
+    # Atef Choudhury (Domin8 Acquisitions, office 23467) — added 2026-07-27.
+    # NOTE the spelling split: the sheet tab says "Choudhry", AppStream and
+    # Tableau say "Choudhury". The ICD name here must match TABLEAU; the tab
+    # string is only the write target. _b2b_fallback_names also picks up
+    # as_owner from office-mapping-alphalete-org.json for the same reason.
+    # Not to be confused with Boaktear Chowdhury (Retail) — different person.
+    ("Atef Choudhury",  "Atef Choudhry - B2B"),
 ]
 
 # Personal Production = the per-rep 'B2BLASTWEEK' view (REPEXPANDED filtered to
