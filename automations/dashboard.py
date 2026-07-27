@@ -3012,6 +3012,72 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "captainship-drafts",
+        "name": "Captainship Report Drafts (12)",
+        "creator": "Eve & Claude",
+        "emoji": "✉️",
+        "color": "#8E7CC3",
+        "category": "📊 Metrics",
+        "description": "Builds the 12 Captainship Report emails as Gmail DRAFTS in alphaletereporting@gmail.com (Rafael + 5 fiber + 3 B2B + 3 NDS). Nothing is sent — a human fills the recipient and hits send.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Screenshots each captain's **Product Summary + Captainship "
+            "Units** off the *Copy of Alphalete ORG Sales Board* tab (§1).\n"
+            "**•** Adds the §2 Tableau shot — **Cancel Rates** for Rafael/fiber, "
+            "**Team Stats Breakout** for B2B/NDS — plus the daily **Fiber "
+            "Activations** PNG for fiber captains.\n"
+            "**•** Drops in the filled **churn** buckets (§3/§4).\n"
+            "**•** Creates all 12 as drafts. **Re-running REPLACES** that "
+            "captain's draft for the same date instead of piling up duplicates.\n\n"
+            "WHICH DAY EACH SECTION SHOWS\n"
+            "**•** **Sales / Captainship Units → the PRIOR day.** A Monday run "
+            "reports Sunday.\n"
+            "**•** **Churn and Fiber Activations → TODAY.**\n"
+            "That split is deliberate. Passing a back-dated `--date` to make the "
+            "subject read differently walks **every** section back a day — that "
+            "is what produced the 7/26 batch showing sales only through "
+            "Saturday. Let it use the real run date.\n\n"
+            "WHEN IT RUNS\n"
+            "**On the scheduler, Tue–Sun**, and only AFTER the Sales Board fill, "
+            "both churn runs, and Captainship Activations have finished — so it "
+            "never builds off a half-published board. If it fails, the "
+            "orchestrator's failure alert fires.\n\n"
+            "IF §1 COMES BACK EMPTY\n"
+            "A section reading *'could not be captured on this run'* means the "
+            "**Sales Board screenshot profile is signed out** on the runner, not "
+            "a Gmail image problem. Fix: `sheets_login check` on the mini, then "
+            "`sheets_login` (a human has to clear Google 2FA on its screen)."
+        ),
+        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
+                      "1IpDs2_iCFDdmBBLPQNQ8x8xLQPTUOJcxHOMRj5RWu6E/edit"),
+        "assignees": ["Lucy 1"],
+        "schedule": {"frequency": "daily", "time": "9:30 AM",
+                     "estimated_minutes": 12},
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ 12 Captainship drafts created in alphaletereporting@gmail.com — review, add the recipient, send.",
+            "message_failed": "❌ Run failed. If §1 is blank the screenshot profile is signed out — run `sheets_login` on the mini.",
+        },
+        "actions": [
+            {
+                "label": "Build the 12 Drafts",
+                "icon": "▶",
+                "primary": True,
+                "help": "Creates all 12 Gmail drafts. Replaces any existing draft for the same captain + date. Nothing is sent.",
+                "module": "automations.captainship_drafts.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Preview only (no Gmail)",
+                "icon": "👁",
+                "primary": False,
+                "help": "Writes each email to output/*.eml + .html so you can open them in a browser. Touches nothing in Gmail.",
+                "module": "automations.captainship_drafts.run",
+                "args_fn": lambda: ["--dry-run"],
+            },
+        ],
+    },
+    {
         "id": "captainship-new-internet-wireless-churn",
         "name": "Captainship - New Internet & Wireless Churn",
         "creator": "Megan",

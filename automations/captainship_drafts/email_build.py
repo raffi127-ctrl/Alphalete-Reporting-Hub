@@ -112,11 +112,29 @@ def subject_prefix(captain: Captain) -> str:
     return f"{poss} Captainship Report"
 
 
+def reported_date(today: dt.date) -> dt.date:
+    """The day the report COVERS, given the day it RUNS on — the day before.
+
+    Every section of this draft is anchored to the prior day: the Captainship
+    Units chart shows `prior_day_columns` (today-1), and the churn + fiber
+    activation images read that same day's column. So a Monday run reports
+    SUNDAY, and per Eve (2026-07-27) the subject must name the day reported,
+    not the day it ran.
+
+    Keep the run date as the argument everywhere and derive this — collapsing
+    the two back into one variable is what caused the 7/26 batch: passing
+    `--date 2026-07-26` to make the subject read 7/26 silently walked every
+    section back to SATURDAY."""
+    return today - dt.timedelta(days=1)
+
+
 def subject_for(captain: Captain, today: dt.date) -> str:
-    """The exact Subject header build() sets. Single source of truth — the
-    idempotency sweep in run.py matches against this, so a subject format
-    change can never silently stop matching the drafts it should replace."""
-    return f"{subject_prefix(captain)} {today.month}/{today.day}"
+    """The exact Subject header build() sets, for a run on `today`. Single
+    source of truth — the idempotency sweep in run.py matches against this, so
+    a subject format change can never silently stop matching the drafts it
+    should replace."""
+    d = reported_date(today)
+    return f"{subject_prefix(captain)} {d.month}/{d.day}"
 
 
 def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:

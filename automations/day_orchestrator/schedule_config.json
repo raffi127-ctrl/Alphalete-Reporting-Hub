@@ -1577,7 +1577,8 @@
         "owners_metrics_churn",
         "captainship_activations"
       ],
-      "verify": null
+      "verify": null,
+      "report_id": "captainship-drafts"
     },
     "install_retail_catchup_agent": {
       "on_scheduler": true,
