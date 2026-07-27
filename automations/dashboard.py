@@ -3741,7 +3741,7 @@ AUTOMATED_REPORTS = [
         "emoji": "📡",
         "color": "#B91C1C",
         "category": "📊 Metrics",
-        "description": "Fills the SCI Campaigns tab from Adriana Nowrouzi's weekly 'Residential Telecom Tracker – RANKED' email — one column per week ending, 13 campaign rows. Currently writing the SANDBOX tab.",
+        "description": "Fills the SCI Campaigns tab from Adriana Nowrouzi's weekly 'Residential Telecom Tracker – RANKED' email — one column per week ending, 13 campaign rows. Writes the REAL tab and DMs Rafael, Maud & Megan when the week lands.",
         "breakdown": (
             "WHAT IT DOES\n"
             "**•** Reads **alphaletereporting@gmail.com** for Adriana's "
@@ -3776,14 +3776,24 @@ AUTOMATED_REPORTS = [
             "Every IMAP folder was swept — that mail does not exist. WE 5/23 "
             "and 5/30 WERE recovered from the images on Rafael's forward. The "
             "other 7 columns stay blank until someone asks Adriana for them.\n\n"
-            "SANDBOX FOR NOW\n"
-            "Writes **'SCI Campaigns (sandbox)'** and sends **no** Slack DM "
-            "until Eve approves the cutover to the real tab."
+            "WHO GETS TOLD\n"
+            "When a week fills, it DMs **'WE 7.18.2026 complete'** to "
+            "**Rafael Hidalgo, Maud Miller and Megan Hidalgo** — one shared "
+            "group DM, every week threaded under a single **SCI Campaigns** "
+            "message so it never becomes a pile of separate DMs. Text only, "
+            "by design: it's a notice, not the numbers.\n\n"
+            "WHERE IT RUNS\n"
+            "Pinned to **Lucy 1** (the mini) so the DM sends **as Lucy** — "
+            "that's the only machine with the Lucy bot token. Run from a "
+            "laptop and the DM would post from whoever ran it."
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"
                       "?gid=1118523233#gid=1118523233"),
         "assignees": ["Lucy 1"],
+        # The Lucy bot token lives only on the mini, so the 'complete' DM has to
+        # send from there to come FROM Lucy rather than from whoever clicked Run.
+        "run_machine": "Lucy 1",
         "run_rerun_id": "sci_campaigns",
         "schedule": {
             "frequency": "weekly",
@@ -3801,23 +3811,23 @@ AUTOMATED_REPORTS = [
                 "label": "Run Weekly Fill",
                 "icon": "▶",
                 "primary": True,
-                "help": "Fills every tracker week that isn't on the sandbox tab yet. Safe to re-run — already-filled weeks are skipped.",
+                "help": "Fills every tracker week not yet on the real tab, then DMs Rafael, Maud & Megan. Safe to re-run — already-filled weeks are skipped and no DM is sent for them.",
                 "module": "automations.sci_campaigns.run",
-                "args_fn": lambda: [],
+                "args_fn": lambda: ["--real", "--i-mean-it", "--notify"],
             },
             {
-                "label": "Preview (no writes)",
+                "label": "Preview (no writes, no DM)",
                 "icon": "👁",
-                "help": "Same read and parse, but prints the planned cells instead of writing them. Safe any time.",
+                "help": "Same read and parse, but prints the planned cells instead of writing them, and sends nothing. Safe any time.",
                 "module": "automations.sci_campaigns.run",
-                "args_fn": lambda: ["--dry-run"],
+                "args_fn": lambda: ["--real", "--i-mean-it", "--dry-run"],
             },
             {
                 "label": "What's in the inbox?",
                 "icon": "📥",
                 "help": "Lists every tracker week Adriana has sent, the tab column it maps to, and whether it's filled yet.",
                 "module": "automations.sci_campaigns.run",
-                "args_fn": lambda: ["--list"],
+                "args_fn": lambda: ["--real", "--i-mean-it", "--list"],
             },
         ],
     },

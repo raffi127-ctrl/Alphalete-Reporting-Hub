@@ -296,8 +296,22 @@ def main(argv=None) -> int:
     if filled and args.notify:
         from automations.sci_campaigns import slack_post
         for we in filled:
-            out = slack_post.notify(we, dry_run=args.dry_run)
-            print(f"  slack: {out}")
+            # The Sheet is already written by here. A Slack failure must NOT be
+            # silent (nobody would know the week landed) but it also must not
+            # look like the fill failed — so it's its own reported failure, with
+            # the one-liner that re-sends just the DM.
+            try:
+                out = slack_post.notify(we, dry_run=args.dry_run)
+                print(f"  slack: {out}")
+                if not args.dry_run and not out.get("ok"):
+                    raise RuntimeError(f"Slack returned {out}")
+            except Exception as e:
+                print(f"  ✗ the fill SUCCEEDED but the Slack DM failed for WE "
+                      f"{es.we_label(we)}: {type(e).__name__}: {str(e)[:120]}")
+                print(f"    re-send just the DM with:  python -m "
+                      f"automations.sci_campaigns.slack_post "
+                      f"--week {we.isoformat()} --post")
+                failed.append((we, "filled OK, Slack DM failed"))
     elif filled:
         print(f"\n  (--notify not set — no Slack DM sent for "
               f"{', '.join(es.we_label(w) for w in filled)})")

@@ -4261,11 +4261,15 @@
       "display_name": "SCI Campaigns",
       "source_type": "email",
       "data_sources": [],
-      "_note": "Auto-ingest: Adriana Nowrouzi (anowrouzi@aptel.com) emails 'Residential Telecom Tracker - RANKED - Week Ending M.D.YYYY' to alphaletereporting@gmail.com most Fridays, with a RANKED PDF + a 'Campaign Totals By Day' PDF. Fills the 'SCI Campaigns' tab of the Alphalete Org/Captainship workbook (13 campaign rows x the week's MM/DD/YY column; 'Total Units' is a sheet formula). The week comes from the SUBJECT, not the clock - the email for a Saturday week-ending lands the FOLLOWING Friday and has slipped to Sunday, so the run fills every tracker week not yet on the tab and is idempotent + self-healing after a missed Friday. Fri+Sat cadence gives a late send one more shot. readiness._probe_email gates on an unfilled week actually being in the inbox. SANDBOX FOR NOW: base_args is empty, so the scheduled run writes the 'SCI Campaigns (sandbox)' tab and sends NO Slack DM. PROD CUTOVER (needs Eve's OK) = set base_args to ['--real','--i-mean-it','--notify'], which writes the live tab and DMs 'WE <m.d.yyyy> complete' to Rafael/Maud/Megan under the 'SCI Campaigns' thread. Same staging country_sales_board used.",
+      "_note": "Auto-ingest: Adriana Nowrouzi (anowrouzi@aptel.com) emails 'Residential Telecom Tracker - RANKED - Week Ending M.D.YYYY' to alphaletereporting@gmail.com most Fridays, with a RANKED PDF + a 'Campaign Totals By Day' PDF. Fills the 'SCI Campaigns' tab of the Alphalete Org/Captainship workbook (13 campaign rows x the week's MM/DD/YY column; 'Total Units' is a sheet formula). The week comes from the SUBJECT, not the clock - the email for a Saturday week-ending lands the FOLLOWING Friday and has slipped to Sunday, so the run fills every tracker week not yet on the tab and is idempotent + self-healing after a missed Friday. Fri+Sat cadence gives a late send one more shot. readiness._probe_email gates on an unfilled week actually being in the inbox. LIVE ON PROD since 2026-07-27 (Eve's call): writes the real 'SCI Campaigns' tab and DMs 'WE <m.d.yyyy> complete' to Rafael/Maud/Megan under the 'SCI Campaigns' thread. Pinned to machine 'Lucy 1' (the mini) so the DM sends AS Lucy — the Lucy bot token lives only there; off the mini it would fall back to the per-user token and post from whoever ran it. Backfilled WE 3.28 + 5.23 -> 7.18.2026 (10 weeks, 130 cells) with --notify OFF so the one-time catch-up didn't fire 10 DMs.",
       "command": [
         "automations.sci_campaigns.run"
       ],
-      "base_args": [],
+      "base_args": [
+        "--real",
+        "--i-mean-it",
+        "--notify"
+      ],
       "cadence": {
         "weekdays": [
           4,
@@ -4278,7 +4282,8 @@
       "verify": {
         "type": "not_configured"
       },
-      "_onboarded": true
+      "_onboarded": true,
+      "machine": "Lucy 1"
     }
   },
   "read_only_standalone": {

@@ -115,7 +115,28 @@ def notify(week_ending: dt.date, *, dry_run: bool = True,
     user_ids = [smp._resolve_user_id(client, u) for u in users]
     # One multi-party DM keyed on the member set — Slack returns the SAME
     # channel for the same users every time, so the thread persists.
-    channel = client.conversations_open(users=",".join(user_ids))["channel"]["id"]
+    try:
+        channel = client.conversations_open(
+            users=",".join(user_ids))["channel"]["id"]
+    except Exception as e:
+        # Almost certainly missing_scope (mpim:write). Deliver individually so
+        # the three still hear about it, rather than losing the notice — the
+        # same fallback slack_metrics_post.dm_users_with_file uses. There's no
+        # shared thread in this mode, so each person gets their own.
+        print(f"  group DM unavailable ({type(e).__name__}: {str(e)[:90]}) — "
+              f"sending individual DMs instead.")
+        sent = []
+        for uid in user_ids:
+            try:
+                ch = client.conversations_open(users=uid)["channel"]["id"]
+                client.chat_postMessage(channel=ch,
+                                        text=f"{THREAD_TITLE} — {text}")
+                sent.append(uid)
+            except Exception as e2:
+                print(f"  DM to {uid} failed: {type(e2).__name__}: "
+                      f"{str(e2)[:80]}")
+        return {"ok": bool(sent), "mode": "individual_dms", "sent": sent,
+                "user_ids": user_ids, "as_bot": as_bot, "text": text}
     parent = _find_parent_ts(client, channel)
     created = False
     if not parent:
@@ -124,9 +145,9 @@ def notify(week_ending: dt.date, *, dry_run: bool = True,
         _cache_write(channel, parent)
         created = True
     resp = client.chat_postMessage(channel=channel, thread_ts=parent, text=text)
-    return {"ok": resp.get("ok"), "channel": channel, "thread_ts": parent,
-            "ts": resp.get("ts"), "created_parent": created,
-            "as_bot": as_bot, "text": text}
+    return {"ok": resp.get("ok"), "mode": "group_dm", "channel": channel,
+            "thread_ts": parent, "ts": resp.get("ts"),
+            "created_parent": created, "as_bot": as_bot, "text": text}
 
 
 def main(argv=None) -> int:
