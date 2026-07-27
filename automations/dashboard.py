@@ -2963,6 +2963,46 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "fiber-owners-distro",
+        "name": "AT&T Fiber Owners List",
+        "creator": "Raf & Claude",
+        "emoji": "🐺",
+        "color": "#F59E0B",
+        "category": "🎯 Fiber",
+        "assignees": ["Lucy 1"],
+        # Own weekend cadence (Sat post / Sun finalize) via the orchestrator —
+        # hide the DUE/schedule pills + keep it out of the 4am batch tallies
+        # (same as bg-check-sync). Real cadence lives in the breakdown.
+        "hide_schedule": True,
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [5, 6],
+            "time_label": "Sat post · Sun finalize",
+            "estimated_minutes": 2,
+        },
+        "description": "Keeps Raf's “AT&T Fiber Owners” email list matched to Kelly's weekly roster — adds new owners, and removes ones who left after a 24-hour ✅/❌ check in #l10-alphalete.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Reads **Kelly Pavone's weekly “AT&T ICD Owner Roster”** and keeps "
+            "Raf's **“AT&T Fiber Owners”** Google Contacts list in sync:\n"
+            "**•** **New owners** on the **Fiber + Hybrid** tabs are **added** "
+            "right away (Wireless & B2B ignored).\n"
+            "**•** **Owners who dropped off** the roster are posted in "
+            "**#l10-alphalete**, one line each — **✅ keep / ❌ remove**.\n"
+            "**•** Only **Eve / Raf / Megan / Maud**'s reactions count. **✅** "
+            "keeps someone; no ✅ = removed the next day.\n\n"
+            "SAFETY\n"
+            "**•** Never drops an owner who just **changed their email**, or who "
+            "is still on **any** roster tab.\n"
+            "**•** **Backs up** the list before every change.\n\n"
+            "WHEN IT RUNS\n"
+            "**Saturday** posts the removal thread (off Friday's roster); "
+            "**Sunday** finalizes it 24h later. Runs on the mini as Lucy."
+        ),
+        "checklist": [],
+    },
+    {
         "id": "captainship-activations",
         "name": "Captainship Activations (per-captain)",
         "creator": "Eve",
